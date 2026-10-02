@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { STEP_STATE_LABELS } from "../contracts/labels";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { Orientation } from "../contracts/types";

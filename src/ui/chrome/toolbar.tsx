@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { JSXElement, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { JSXElement, JSXNode } from "../../render/jsx/types";
 import { invokerAttrs } from "../contracts/overlay-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";

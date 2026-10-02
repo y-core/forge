@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { createElement as el } from "../jsx/element";
+import { createElement as el } from "../render/jsx/element";
 import { render } from "./render";
 
 describe("render", () => {

@@ -21,7 +21,7 @@ audience: internal
 - §3 Runtime-Only Library Constraints: what shipping raw TS requires
 - §3a No Build Step in the Gate: the library is always consumed as source
 - §3b TypeScript Configuration Constraints: what source and test files see
-- §3c Peer Dependencies for Build Tools: esbuild and sharp are optional
+- §3c Peer Dependencies for Build Tools: esbuild and sharp are optional, and a peer-only subpath may import its peer statically
 - §3d CSS Source Scanning Stops at `ui/`: what a consumer's Tailwind build must be told
 - §4 Facade Pattern Implementation: how a facade namespace is written
 - §4a Re-export Rules for Facade Namespaces: expose what consumers need
@@ -73,6 +73,12 @@ dependency tree — only apps that build assets need them, and none is ever impo
 and `peerFile()` resolves a file the package ships, both failing with the config key that demanded it and the command that installs it. A
 **static** import at the top of a module the barrel re-exports defeats the whole arrangement — `tooling/assets/mod.ts` is loaded by every consumer
 that reads an asset config, so the package becomes required for apps that configure no fonts, no images and no bundle at all.
+
+**A subpath that exists only to use a peer may import it statically.** `@y-core/forge/render/markdown/editor/client` is the CodeMirror viewport and
+nothing else, so an app that imports it has chosen CodeMirror, and one that does not never loads a module naming it. The `@codemirror/*` packages
+are optional peers for that reason, and the editor's modules import them at the top like any dependency: a lazy door would only defer the same
+requirement to the first mount. The exemption is the subpath, never a module a wider barrel re-exports — that is the case the paragraph above
+forbids.
 
 **A tool the pipeline shells out to is a peer dependency, declared.** `buildCSS` runs `execFileSync("tailwindcss", …)` exactly as `buildJS` runs
 `esbuild` and the image step runs `sharp`; they are one category. Nothing _imports_ `tailwindcss`, which is exactly how such a requirement

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { jsx } from "../../jsx/jsx-runtime";
+import { jsx } from "../../render/jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser.fixture";
 import { CheckboxGroup } from "./checkbox-group";

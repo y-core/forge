@@ -62,7 +62,7 @@ audience: consumer
 | `timingSafeEqual` / `timingSafeEqualBytes` | internal `src/crypto/` (`@internal`) |
 | `csrfProtection`, `importCsrfKey`, `mintCsrf` | `@y-core/forge/form` |
 | `sessionMiddleware` | `@y-core/forge/session` |
-| `isHxRequest` | `@y-core/forge/html/htmx` — a UX hint, not a boundary ([`HTMX.md`][htmx-7] §7) |
+| `isHxRequest` | `@y-core/forge/render/htmx` — a UX hint, not a boundary ([`HTMX.md`][htmx-7] §7) |
 
 ---
 
@@ -120,7 +120,7 @@ must never appear in the production CSP** — keeping it in the dev entry only m
 `createSecurityHeaders` before any nonce consumer** (see [`ROUTING_AND_MIDDLEWARE.md`][ram-3d] §3d).
 
 **URL attributes in JSX are sanitized automatically at render time.** The renderer routes `href`, `src`, `action`, `formaction`, `poster`, `cite`,
-`background`, `data` and the namespaced `xlink:href` / `xml:base` through `safeUrl` (`@y-core/forge/http`), which admits an allow-list of schemes
+`background`, `data` and the namespaced `xlink:href` / `xml:base` through `safeUrl` (`@y-core/forge/html`), which admits an allow-list of schemes
 and collapses everything else — `javascript:`, `vbscript:`, `data:` — to `"#"`. **`<object data>` is in that set**, so a `javascript:` pseudo-URL
 there is neutralised by the renderer rather than left to `object-src`. Before matching the scheme it strips control characters and whitespace, so
 `java\tscript:` and a leading-newline variant are caught. **It does not decode HTML entities**, and does not need to: the same pass escapes the

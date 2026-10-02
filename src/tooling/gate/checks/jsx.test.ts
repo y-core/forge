@@ -6,8 +6,8 @@ import { dirname, join } from "node:path";
 import { fail } from "../finding";
 import { checkJsx, resolveJsxSources, validateJsxSource } from "./jsx";
 
-const PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/jsx"];
-const HEADER = `/** @jsxRuntime automatic */\n/** @jsxImportSource @y-core/forge/jsx */\n`;
+const PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/render/jsx"];
+const HEADER = `/** @jsxRuntime automatic */\n/** @jsxImportSource @y-core/forge/render/jsx */\n`;
 
 /** A throwaway repository root holding exactly the files given. */
 function fixtureRoot(files: Record<string, string>): string {
@@ -31,13 +31,13 @@ describe("validateJsxSource() — the pragma rule", () => {
     expect(findings).toHaveLength(1);
     expect(findings[0]?.level).toBe("fail");
     expect(findings[0]?.file).toBe("src/a.tsx");
-    expect(findings[0]?.detail).toEqual(["missing: /** @jsxRuntime automatic */", "missing: /** @jsxImportSource @y-core/forge/jsx */"]);
+    expect(findings[0]?.detail).toEqual(["missing: /** @jsxRuntime automatic */", "missing: /** @jsxImportSource @y-core/forge/render/jsx */"]);
   });
 
   it("reports only the pragma that is actually absent", () => {
     const source = "/** @jsxRuntime automatic */\nexport const A = () => <div />;";
 
-    expect(validateJsxSource("src/a.tsx", source, PRAGMAS)[0]?.detail).toEqual(["missing: /** @jsxImportSource @y-core/forge/jsx */"]);
+    expect(validateJsxSource("src/a.tsx", source, PRAGMAS)[0]?.detail).toEqual(["missing: /** @jsxImportSource @y-core/forge/render/jsx */"]);
   });
 
   it("accepts a project that declares its own pragmas", () => {

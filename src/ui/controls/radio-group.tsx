@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, PropsWithChildren } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, PropsWithChildren } from "../../render/jsx/types";
 import { RadioGroup as CoreRadioGroup } from "../core/radio-group";
 import { fieldAttr } from "../server/field-attr";
 import { createBoundCompound } from "./create-bound-control";

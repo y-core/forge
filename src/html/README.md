@@ -1,252 +1,126 @@
 ---
-title: Server-Side HTMX Utilities
-description: "Read the inbound HX-* headers to decide what to render, emit hx-* attributes into SSR JSX, and answer with HX-* response directives."
+title: Safe-Markup Primitives
+description: "Escape a value into markup, admit only safe URL schemes, and build HTML strings that escape every interpolation by default."
 audience: consumer
 ---
 
 # `@y-core/forge/html`
 
-htmx has two halves. The client library owns the browser half; this namespace owns the server half — reading the `HX-*` headers htmx sends,
-emitting the `hx-*` attributes it reads back, and returning the `HX-*` response directives that drive the browser after a swap.
-
-Everything here runs inside the Worker during SSR. Nothing in it is meant for, or usable from, the browser.
+Markup that carries a request's values must not let a user's name become a `<script>` tag. This namespace is the set of primitives every forge
+renderer escapes through — a tagged template that escapes by default, so you opt out of safety rather than into it, and the functions beneath it.
 
 ```ts
-import { hxAttrs, hxHeaders, isPartial, liveSearch, SWAP } from "@y-core/forge/html/htmx";
+import { escapeHtml, html, rawHtml, safeUrl } from "@y-core/forge/html";
 ```
 
-`@y-core/forge/html/htmx` is the namespace's only entry point; there is no top-level `@y-core/forge/html` export to import from.
+**If you are rendering JSX you rarely call any of these** — [`@y-core/forge/render/jsx`][jsx-readme] escapes every child and routes URL attributes
+through `safeUrl` for you. Reach for this namespace when you are building a markup string by hand. Sending one is
+[`@y-core/forge/http`][http-readme]'s: `htmlResponse` and `fragmentResponse` take the `SafeHtml` these primitives produce.
 
 ---
 
-## Getting started
+## Interpolating a value into markup safely
 
-A typical htmx route answers the same URL two ways: a whole page for a navigation, a fragment for a swap. Ask `isPartial` which one the request
-wants, render, then attach any response directives:
+The `html` tagged template escapes every `${…}` it interpolates, so a value that arrives from a request cannot close a tag or open a script.
 
 ```ts
-import { hxHeaders, isPartial } from "@y-core/forge/html/htmx";
-import { fragmentResponse, htmlResponse } from "@y-core/forge/http";
+import { html } from "@y-core/forge/html";
 
-export async function search(c) {
-  const results = await runSearch(c);
-
-  if (!isPartial(c)) return htmlResponse(await renderPage(results));
-
-  return fragmentResponse(await renderResults(results), 200, hxHeaders({ pushUrl: c.request.url }));
-}
+const body = html`<h1>Welcome, ${user.name}</h1>`; // user.name is escaped, whatever it contains
 ```
 
-On the markup side, build the attributes with `hxAttrs` — or with one of the interaction patterns — and spread them onto the element:
+The result is a `SafeHtml`, and interpolating one into another `html` template inlines it verbatim rather than double-escaping it. That is what lets
+templates compose:
 
-```tsx
-import { hxAttrs, liveSearch } from "@y-core/forge/html/htmx";
-
-function SearchBox() {
-  return (
-    <form {...hxAttrs({ post: "/api/contact", target: "#result", swap: "outerHTML" })}>
-      <input name='q' {...liveSearch({ get: "/search", target: "#results" })} />
-      <div id='results' />
-    </form>
-  );
-}
+```ts
+const rows = items.map((item) => html`<li>${item.label}</li>`); // an array is flattened and joined with no separator
+const list = html`<ul>${rows}</ul>`;
 ```
+
+`rawHtml(s)` marks a string you already trust as `SafeHtml`, and it is the **only** way out of escaping. Anything you hand it is emitted byte for
+byte, so hand it markup you control and nothing else.
+
+```ts
+import { html, rawHtml } from "@y-core/forge/html";
+
+html`<div>${rawHtml(trustedMarkupFromAnotherRenderer)} ${userInput}</div>`; // only userInput is escaped
+```
+
+**Inside a `<script>` or `<style>` element, reach for `scriptJson` or `styleText` rather than `rawHtml`.** Those two elements hold _raw text_, so
+escaping a child corrupts it and `JSON.parse(el.textContent)` throws; `rawHtml` has the opposite problem, emitting a `</script>` in your data byte
+for byte and ending the element early.
+
+```ts
+import { scriptJson, styleText } from "@y-core/forge/html";
+
+<script type='application/json'>{scriptJson(payload)}</script>; // every `<` becomes `\u003c`
+<style>{styleText(generatedCss)}</style>; // every `<` becomes the CSS hex escape `\3c `
+```
+
+`scriptJson` also escapes U+2028 and U+2029, which are legal inside a JSON string but are line terminators to a script parser, and **throws** on a
+value `JSON.stringify` cannot represent — a function or `undefined`.
+
+Outside a template — an error page assembled by hand, a mail body, a string you are concatenating — `escapeHtml` does the same escaping as a plain
+function, and `isSafeHtml` tells you whether a value came from this toolkit. `escapeHtml` covers HTML text nodes and double-quoted attribute values;
+[`FORGE_ERRORS.md`][eh-3c] §3c owns the character map it applies.
+
+**Prefer JSX components over `html` where you have the choice** — [`FORGE_ERRORS.md`][eh-3b] §3b is the ruling, and the tag is for building raw
+string fragments to splice into existing HTML strings.
 
 ---
 
-## Deciding what to render
+## Putting a user-supplied URL in an attribute
 
-**Choose between a page and a fragment with `isPartial(c)`.** It is true only for an htmx request that asked for a fragment. htmx also sends
-`HX-Request: true` when it needs a whole page back — a boosted navigation, and the request it makes to restore a page when the reader goes back —
-so `isHxRequest` alone would answer those with a fragment and htmx would put it where the body was. Why `isPartial` reads `HX-Request-Type` is
-[`HTMX.md`][htmx-10] §10's.
+Escaping is not enough for `href`, `src` or `action`: `javascript:alert(1)` contains no character `escapeHtml` touches. Run the value through
+`safeUrl` first, then escape the result for the attribute.
 
 ```ts
-if (isPartial(c)) return fragmentResponse(await renderFragment(data));
-return htmlResponse(await renderPage(data));
+import { escapeHtml, safeUrl } from "@y-core/forge/html";
+
+const href = escapeHtml(safeUrl(userSuppliedUrl));
 ```
 
-The other two predicates answer narrower questions:
+`safeUrl` admits `http:`, `https:`, `mailto:`, `tel:` and anything scheme-less — a relative path, a fragment, a query — and collapses the rest to
+`"#"`, including protocol-relative forms like `//host` and `/\host`. It strips control characters and whitespace before reading the scheme, so
+`java\tscript:` and a leading-newline variant are caught too.
 
-- `isHxRequest(c)` — the request came from htmx at all, whatever it will do with the response.
-- `isBoosted(c)` — the request came from a boosted link or form, when that case needs handling of its own.
-
-When the response depends on more than a yes or no, `readHxRequest(c)` returns every inbound header in one `HxRequest` object, whose type is the
-reference for its fields. htmx names the `source` and `target` elements as `tag#id` — `button#save`, or a bare `form` when it has no id — so
-match on that shape rather than on a bare id. The accessors `hxSource`, `hxTarget` and `hxCurrentUrl` read one header each when one is all you
-need.
-
-**None of these is an authorization check** — `HX-Request` is a client-supplied header. The ruling, and what must guard a mutation route instead,
-is [`HTMX.md`][htmx-7] §7's, and the guard order is under **Security** below.
+Inside JSX you do not call either one: the renderer already routes URL-bearing attributes through `safeUrl` and escapes the result. The full
+account, including why no `hx-*` attribute is covered, is [`SECURITY_HARDENING.md`][sh-2d] §2d.
 
 ---
-
-## Driving the browser from the response
-
-`hxHeaders` turns typed directives into the `HX-*` response headers htmx acts on after the swap. Pass it straight to a response builder:
-
-```ts
-import { hxHeaders } from "@y-core/forge/html/htmx";
-import { fragmentResponse } from "@y-core/forge/http";
-
-return fragmentResponse(body, 200, hxHeaders({ pushUrl: "/results?q=hello", trigger: "resultsLoaded" }));
-```
-
-The directives fall into these decisions:
-
-- **Leave the page, or stay on it.** `redirect` navigates the browser; `refresh: true` reloads the whole page, discarding the swap you would
-  otherwise have sent.
-- **What the back button does.** `pushUrl` adds a history entry, `replaceUrl` rewrites the current one. A live-search route wants `replaceUrl`; a
-  route the user should be able to navigate back out of wants `pushUrl`.
-- **Tell client code the response has landed.** `trigger` names events htmx fires once the swap is done, so a listener already sees the new DOM.
-- **Overriding what the element asked for.** `retarget` redirects the swap to another selector and `reswap` changes the strategy, which is how an
-  error response lands somewhere other than the element that submitted.
-
----
-
-## Attaching htmx behaviour to an element
-
-`hxAttrs` takes a typed, camelCased props object and returns a flat attribute map to spread. Each prop names the htmx attribute it becomes — `post`
-becomes `hx-post`, `selectOob` becomes `hx-select-oob`.
-
-```tsx
-<form {...hxAttrs({ post: "/api/contact", target: "#result", swap: "outerHTML" })} />
-// → hx-post="/api/contact" hx-target="#result" hx-swap="outerHTML"
-```
-
-A few props are not plain strings, because the attributes they produce are not: `values` and `headers` take a `Record<string, string>` and are
-JSON-encoded into `hx-vals` and `hx-headers`, and `boost` takes a boolean.
-
-**`disable` names the elements htmx disables while the request runs** — a selector, with `this` for the element itself. It becomes `hx-disable`.
-
-**`boost` works on a container as well as on a link or form.** It emits `hx-boost:inherited`, so `hxAttrs({ boost: true })` spread on `<body>` or
-`<nav>` boosts every link and form inside it. htmx 4 applies a bare attribute only to the element that carries it, which is why forge's JSX types
-refuse a hand-written `hx-boost` ([`HTMX.md`][htmx-9] §9).
-
-Use `SWAP` for the swap strategy rather than a bare string, so a typo is a compile error:
-
-```ts
-import { hxAttrs, SWAP } from "@y-core/forge/html/htmx";
-
-hxAttrs({ get: "/rows", target: "#list", swap: SWAP.beforeEnd });
-```
-
----
-
-## Starting from a ready-made interaction
-
-Each pattern returns the same attribute map `hxAttrs` does, with the defaults for that interaction already chosen. Every default is overridable by
-passing the matching prop:
-
-- `formSubmit({ post, target })` — a submitting form; disables the form itself while the request is in flight.
-- `liveSearch({ get, target })` — an input that searches as it is typed, debounced by 300ms and swapping inner HTML.
-- `inlineValidation({ get, target })` — a field validated on change and blur, aborting its own inflight request.
-- `infiniteScroll({ get, target })` — appends the next page when the element is revealed.
-- `paginatedTableLink({ get, target, page })` — a pagination link; builds `?page=N` onto the URL, keeping any query string it already has.
-- `dependentSelect({ get, target })` — a `<select>` that reloads another region when its value changes.
-- `asyncDialogTrigger({ get, target, dialogId })` — a control that loads dialog content, emitting the ARIA wiring the dialog needs alongside the
-  htmx attributes.
-
-```tsx
-<form {...formSubmit({ post: "/api/contact", target: "#contact-result" })} />
-<a {...paginatedTableLink({ get: "/items", target: "#table", page: 3 })} />
-```
-
-`inlineValidation` aborts only the field's own request by default, not the form's. Passing `sync: "closest form:abort"` is the right call inside a
-form and only there — why that is not the default is [`HTMX.md`][htmx-8] §8's.
-
----
-
-## Updating a region the request did not target
-
-An out-of-band swap lets one response update somewhere else in the document as well — a cart count, a notification list, a flash message. `oobSwap`
-produces the attribute for the fragment doing the updating, and `oobAppend(selector)` is the shorthand for appending rather than replacing:
-
-```tsx
-<span id='cart-count' {...oobSwap({ selector: "#cart-count" })}>{count}</span>
-<li {...oobAppend("#notifications")}>New message</li>
-```
-
-Given a `selector`, the default strategy becomes `outerHTML` — replacing the matched element. Pass `strategy` for any other htmx swap value.
-
----
-
-## Security
-
-### Guard the route, then shape the response
-
-`isPartial` and its siblings decide _how to render_, never _whether the caller is allowed_ — any client can set `HX-Request: true`
-([`HTMX.md`][htmx-7] §7). A mutation route gets a real guard first, and the htmx predicate only afterwards:
-
-```ts
-import { isPartial } from "@y-core/forge/html/htmx";
-import { originProtection } from "@y-core/forge/security";
-
-app.use("/form/*", originProtection({ allowedOrigins: config.allowedOrigins }));
-// plus csrfProtection from `@y-core/forge/form` on routes that accept a form body
-
-export const handler = (c) => (isPartial(c) ? fragmentResponse(fragment) : htmlResponse(page));
-```
-
-Which origin guard to reach for is [`SECURITY_HARDENING.md`][sh-3e] §3e's; the token half is the `form` namespace's.
-
-### Selector, expression and JSON values must be developer-supplied
-
-Every value passed to `hxAttrs` and to the pattern helpers is emitted exactly as written. Selectors (`target`, `select`, `selectOob`, `include`,
-`indicator`, `disable`), trigger and `sync` expressions, the JSON in `values` and `headers`, and the URLs of the verbs are all unsanitized by
-design — build them from route definitions and static configuration, never from request data. The trust posture is [`HTMX.md`][htmx-7] §7's, and why
-the URL-valued props are deliberately left out of `safeUrl` is §7a's.
-
-What htmx evaluates is stricter still. An `hx-on:*` attribute, and an `hx-vals` or `hx-headers` whose value begins `js:`, are run as JavaScript
-rather than read — so each may only ever be literal source you wrote ([`HTMX.md`][htmx-7b] §7b). `hxAttrs` cannot emit a `js:` value — its `values`
-and `headers` are JSON-encoded — so one is always hand-written.
-
-### Allowing Turnstile through the CSP
-
-When an htmx form posts to a route protected by Cloudflare Turnstile, the widget and its challenge endpoint have to be permitted by your
-Content-Security-Policy, or the iframe and its verification calls are blocked and the submission fails the challenge with nothing in the response to
-say so. Add `TURNSTILE_CSP` to every directive it needs — `scriptSrc`, `connectSrc` and `frameSrc`:
-
-```ts
-import { createSecurityHeaders, NONCE, TURNSTILE_CSP } from "@y-core/forge/security";
-
-createSecurityHeaders({ scriptSrc: ["'self'", NONCE, TURNSTILE_CSP], connectSrc: ["'self'", TURNSTILE_CSP], frameSrc: ["'self'", TURNSTILE_CSP] });
-```
 
 ---
 
 ## Gotchas
 
-**An empty string is the same as omitting a prop.** Both `hxAttrs` and `hxHeaders` drop `undefined` and `""`, so a value computed as empty produces
-no attribute and no header rather than an empty one.
+**`html` renders `false` as the text `false`.** Only `null` and `undefined` become the empty string. The JSX habit of writing `${cond && markup}` to
+render nothing therefore prints `false` into the page — write `${cond ? markup : null}` instead.
 
-**`refresh` emits a header only when it is `true`.** `refresh: false` is not a directive to suppress a refresh — it is simply nothing.
+**`SafeHtml` is a class, not a string.** Read the markup out with `String(value)` or by interpolating it; `String.prototype` methods are not on it.
+The barrel exports it as a **type only**, and `html` and `rawHtml` are the only ways to make one.
 
-**Absent request headers read as `""`, not `undefined`.** The string fields of `HxRequest` and the individual accessors default to the empty string,
-so test them with a truthiness or an equality check rather than a `??`.
+**Calling `html(value)` as a plain function throws a `TypeError`** rather than emitting its argument unescaped.
 
-**`paginatedTableLink` keeps an absolute URL absolute.** A `get` with its own scheme and host stays that way; only a relative one is reduced to a
-path and query.
+**`isSafeHtml` is an `instanceof` check**, so it answers `false` across two copies of this module. Forge ships raw TypeScript and a bundler produces
+one copy per build, so this only bites when two forge versions are bundled together.
+
+**`escapeHtml` is text-node and quoted-attribute grade.** It is not sufficient inside an unquoted attribute, inside `<script>` or `<style>`, or for
+a URL. Quote your attributes, and use `safeUrl` for URLs.
 
 ---
 
 ## See also
 
-- [`src/form/README.md`][form-readme] — CSRF token minting and verification, the other half of guarding a mutation route
-- [`src/http/README.md`][http-readme] — `fragmentResponse`, `htmlResponse` and the redirect builders these headers ride on
-- [`src/jsx/README.md`][jsx-readme] — the SSR renderer these attributes are spread into
-- [`src/security/README.md`][security-readme] — origin protection, CSP headers and `TURNSTILE_CSP`
-- [`docs/HTMX.md`][htmx] — the trust posture on emitted values (§7, §7a, §7b), the `isHxRequest` not-a-boundary ruling (§7), the
-  form-independent `sync` default (§8), explicit inheritance (§9), and why `isPartial` reads `HX-Request-Type` (§10)
+- [`docs/FORGE_ERRORS.md`][eh] — the `html` / `escapeHtml` render paths and the character map (§3)
+- [`docs/SECURITY_HARDENING.md`][sh-2d] §2d — automatic `safeUrl` sanitization at JSX render time, and why no `hx-*` attribute is covered
+- [`docs/NAMESPACES.md`][namespaces-5m] §5m — why the primitives are a namespace of their own, below both `http` and `render`
+- [`src/http/README.md`][http-readme] — the response builders that send what these primitives build
+- [`src/render/jsx/README.md`][jsx-readme] — the SSR renderer that escapes through them
 
-[form-readme]: ../form/README.md
-[htmx]: ../../docs/HTMX.md
-[htmx-10]: ../../docs/HTMX.md#10-a-page-or-a-fragment--ispartial-reads-hx-request-type
-[htmx-7]: ../../docs/HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
-[htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
-[htmx-8]: ../../docs/HTMX.md#8-the-form-independent-sync-default
-[htmx-9]: ../../docs/HTMX.md#9-inheritance-is-explicit--hxattrs-emits-hx-boostinherited
+[eh]: ../../docs/FORGE_ERRORS.md
+[eh-3b]: ../../docs/FORGE_ERRORS.md#3b-html-tagged-template
+[eh-3c]: ../../docs/FORGE_ERRORS.md#3c-escapehtml
 [http-readme]: ../http/README.md
-[jsx-readme]: ../jsx/README.md
-[security-readme]: ../security/README.md
-[sh-3e]: ../../docs/SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
+[jsx-readme]: ../render/jsx/README.md
+[namespaces-5m]: ../../docs/NAMESPACES.md#5m-html--safe-markup-primitives
+[sh-2d]: ../../docs/SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

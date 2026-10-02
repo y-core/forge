@@ -152,6 +152,23 @@ describe("checkExports() — one entry against the source tree", () => {
     expect(await messages(tree, { exports: { "./x": "./src/x/mod.ts" }, files: ["src"] })).toEqual(["./x: no value exports found in barrel"]);
   });
 
+  it("accepts a file export target that declares only types", async () => {
+    const tree = {
+      "src/x/mod.ts": 'export type { Mode, Thing } from "./types";\n',
+      "src/x/types.ts": `${THING}export type Mode = "quick" | "full";\n`,
+    };
+    const exports = { "./x": "./src/x/mod.ts", "./x/types": "./src/x/types.ts" };
+
+    expect(await messages(tree, { exports, files: ["src"] })).toEqual([]);
+  });
+
+  it("still reports a file export target that exports nothing at all", async () => {
+    const tree = { "src/x/mod.ts": TYPE_BARREL, "src/x/thing.ts": THING, "src/x/types.ts": "interface Local {}\nconst internal = 1;\n" };
+    const exports = { "./x": "./src/x/mod.ts", "./x/types": "./src/x/types.ts" };
+
+    expect(await messages(tree, { exports, files: ["src"] })).toEqual(["./x/types: no value exports found in barrel"]);
+  });
+
   it("reports the failure when a value-exporting barrel cannot be imported as a consumer would", async () => {
     const tree = { "src/x/mod.ts": VALUE_BARREL, "src/x/thing.ts": "export const thing = 1;\n" };
 
@@ -265,6 +282,59 @@ describe("checkExports() — @public symbols against their barrel", () => {
     expect(await messages(tree, { exports: { "./x": "./src/x/mod.ts", "./x/y": "./src/x/y/mod.ts" }, files: ["src"] })).toEqual([
       "./x/y: @public symbols missing from barrel: alpha",
     ]);
+  });
+
+  const RECEIPT = "/** A receipt. @public */\nexport interface Receipt {\n  ok: boolean;\n}\n";
+  const GATE_TYPES_EXPORTS = { "./gate": "./src/gate/mod.ts", "./gate/types": "./src/gate/types.ts" };
+
+  it("holds a file export target its barrel re-exports from to the barrel", async () => {
+    const tree = { "src/gate/mod.ts": 'export type { Thing } from "./types";\n', "src/gate/types.ts": `${THING}${RECEIPT}` };
+
+    expect(await messages(tree, { exports: GATE_TYPES_EXPORTS, files: ["src"] })).toEqual(["./gate: @public symbols missing from barrel: Receipt"]);
+  });
+
+  it("accepts that file export target once the barrel names every public symbol in it", async () => {
+    const tree = { "src/gate/mod.ts": 'export type { Receipt, Thing } from "./types";\n', "src/gate/types.ts": `${THING}${RECEIPT}` };
+
+    expect(await messages(tree, { exports: GATE_TYPES_EXPORTS, files: ["src"] })).toEqual([]);
+  });
+
+  it("reads a multi-line re-export carrying the file's extension", async () => {
+    const tree = { "src/gate/mod.ts": 'export type {\n  Thing,\n} from "./types.ts";\n', "src/gate/types.ts": `${THING}${RECEIPT}` };
+
+    expect(await messages(tree, { exports: GATE_TYPES_EXPORTS, files: ["src"] })).toEqual(["./gate: @public symbols missing from barrel: Receipt"]);
+  });
+
+  it("leaves out a file export target its barrel never re-exports from", async () => {
+    const tree = {
+      "src/testing/mod.ts": TYPE_BARREL,
+      "src/testing/thing.ts": THING,
+      "src/testing/snapshot.ts": PUBLIC_ALPHA,
+      "src/render/jsx/mod.ts": TYPE_BARREL,
+      "src/render/jsx/thing.ts": THING,
+      "src/render/jsx/jsx-runtime.ts": "/** Runtime. @public */\nexport const jsx = 1;\n",
+    };
+    const exports = {
+      "./testing": "./src/testing/mod.ts",
+      "./testing/snapshot": "./src/testing/snapshot.ts",
+      "./jsx": "./src/render/jsx/mod.ts",
+      "./jsx/jsx-runtime": "./src/render/jsx/jsx-runtime.ts",
+    };
+
+    const found = await messages(tree, { exports, files: ["src"], browserOnly: ["./testing/snapshot", "./jsx/jsx-runtime"] });
+    expect(found.filter((message) => message.includes("missing from barrel"))).toEqual([]);
+  });
+
+  it("does not count a commented-out re-export as naming the file", async () => {
+    const tree = {
+      "src/testing/mod.ts": `${TYPE_BARREL}// export { alpha } from "./snapshot";\n`,
+      "src/testing/thing.ts": THING,
+      "src/testing/snapshot.ts": PUBLIC_ALPHA,
+    };
+    const exports = { "./testing": "./src/testing/mod.ts", "./testing/snapshot": "./src/testing/snapshot.ts" };
+
+    const found = await messages(tree, { exports, files: ["src"], browserOnly: ["./testing/snapshot"] });
+    expect(found.filter((message) => message.includes("missing from barrel"))).toEqual([]);
   });
 });
 

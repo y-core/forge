@@ -83,6 +83,6 @@ export function checkIccProfile(config: IccProfileCheckConfig): CheckResult {
 
 if (import.meta.main) {
   const root = resolve(import.meta.dir, "../../../..");
-  const profile = "src/output/pdf/sRGB2014.icc";
-  writeFileSync(resolve(root, "src/output/pdf/icc.ts"), renderIccModule(profile, new Uint8Array(readFileSync(resolve(root, profile)))));
+  const profile = "src/render/pdf/sRGB2014.icc";
+  writeFileSync(resolve(root, "src/render/pdf/icc.ts"), renderIccModule(profile, new Uint8Array(readFileSync(resolve(root, profile)))));
 }

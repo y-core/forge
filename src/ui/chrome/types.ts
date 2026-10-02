@@ -1,5 +1,5 @@
-import type { JSX } from "../../jsx/types";
-import type { JSXNode } from "../../jsx/types";
+import type { JSX } from "../../render/jsx/types";
+import type { JSXNode } from "../../render/jsx/types";
 import type { Size } from "../contracts/types";
 import type { Align } from "../contracts/types";
 import type { ForgeIcon } from "../core/types";

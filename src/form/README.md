@@ -27,7 +27,8 @@ The CSRF guard is mounted as middleware, and the action declares its schema. Not
 import { defineAction } from "@y-core/forge/app";
 import { getAppContext } from "@y-core/forge/context";
 import { csrfProtection, importCsrfKey } from "@y-core/forge/form";
-import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
+import { fragmentResponse } from "@y-core/forge/http";
+import { renderSuccess } from "@y-core/forge/render/htmx";
 import { formMultilineText, formText, v } from "@y-core/forge/validation";
 
 const csrfGuard = csrfProtection({

@@ -10,7 +10,8 @@ import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
 import type { FeaturesCheckConfig } from "./checks/types";
-import type { GATE_MODES } from "./steps";
+
+export type { ImportBoundaryCheckConfig } from "./checks/types";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
 export interface StepOptions {
@@ -191,7 +192,7 @@ export interface LibraryStepOptions {
   classOrder?: Omit<Partial<ClassOrderCheckConfig>, "root">;
 }
 
-/** The counts and outcome a closing summary line is rendered from. */
+/** The counts and outcome a closing summary line is rendered from. @internal */
 export interface SummaryInput {
   /** Gate verb, used verbatim in the line so `check` and `verify` are distinguishable. */
   gate: string;
@@ -211,7 +212,7 @@ export interface SummaryInput {
   ms: number;
 }
 
-/** A passing unscoped run, recorded against the tree it judged. */
+/** A passing unscoped run, recorded against the tree it judged. @internal */
 export interface GateReceipt {
   /** `git write-tree` over the working tree, untracked files in and ignored ones out. */
   tree: string;
@@ -229,6 +230,9 @@ export interface SemVer {
 
 /** Which component of a {@link SemVer} to increment. @public */
 export type BumpKind = "major" | "minor" | "patch";
+
+/** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
+export const GATE_MODES = ["quality", "standard", "full"] as const;
 
 /** How much of the table to run. @public */
 export type GateMode = (typeof GATE_MODES)[number];

@@ -76,10 +76,10 @@ reason codes. Construct with `ok()` and `err(reason)`.
 
 ---
 
-## 2. Fragment Renderers (`http` namespace)
+## 2. Fragment Renderers (`render/htmx` namespace)
 
 Each renders HTMX-compatible partial HTML — never a full `<html>` document — and returns `SafeHtml`, not a `Response`. Import from
-`@y-core/forge/http`.
+`@y-core/forge/render/htmx`.
 
 **Set the status on `fragmentResponse(body, status?, headers?)`, not on the renderer.** `fragmentResponse` fixes `content-type` to
 `text/html; charset=utf-8`; passing a `content-type` key (case-insensitive) **throws** rather than being silently ignored.
@@ -110,6 +110,8 @@ Renders the flat message list as a `<ul>`. Pass the `error` list from a `Validat
 ---
 
 ## 3. `htmlResponse`, `html` Tag, and `escapeHtml`
+
+`htmlResponse` is `@y-core/forge/http`'s; the `html` tag, `rawHtml`, `isSafeHtml` and `escapeHtml` are `@y-core/forge/html`'s.
 
 ### 3a. `htmlResponse` Pattern
 

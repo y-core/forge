@@ -1,9 +1,9 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import { describe, expect, it } from "bun:test";
 
-import { renderToString } from "../jsx/render-to-string";
+import { renderToString } from "../render/jsx/render-to-string";
 import { mergeMeta, metaTags } from "./meta";
 import type { PageMeta } from "./types";
 

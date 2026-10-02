@@ -1,8 +1,17 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeDbIo, keyProbeAsked, keyProbeReply, projectReadRows, tableInfoAsked, tableSqlAsked, tableSqlReply } from "../db.fixture";
+import {
+  fakeDbIo,
+  keyProbeAsked,
+  keyProbeReply,
+  keysetPageReply,
+  projectReadRows,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
+} from "../db.fixture";
 import { toColumnInfo, toSchemaObjects } from "../sql";
-import type { DbIo, FakeDbIo, Home } from "../types";
+import type { FakeDbIo, Home } from "../types";
 import { SqlReal } from "./artifact";
 import {
   compareTable,
@@ -68,16 +77,6 @@ const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
   ],
 };
 
-function sortKey(value: unknown): string {
-  if (value instanceof SqlReal) return String(value.value);
-  return Array.isArray(value)
-    ? value
-        .map((byte: number) => byte.toString(16).padStart(2, "0"))
-        .join("")
-        .toUpperCase()
-    : String(value);
-}
-
 /** A fake wrangler that answers the inventory, `pragma_table_info`, and a keyset page of `rows` — one statement at a time. */
 function fakeDatabase(rows: Readonly<Record<string, Record<string, unknown>[]>> = {}): FakeDbIo {
   const io = fakeDbIo();
@@ -89,21 +88,7 @@ function fakeDatabase(rows: Readonly<Record<string, Record<string, unknown>[]>> 
     if (statement.includes("sqlite_master")) return INVENTORY;
     const probe = keyProbeAsked(statement);
     if (probe !== null) return keyProbeReply(probe.asks, rows[probe.table] ?? [], probe.column);
-    const from = /FROM "([^"]+)"/.exec(statement);
-    const after = /WHERE t\."[^"]+" > '([^']*)'/.exec(statement);
-    const afterBlob = /WHERE t\."[^"]+" > X'([0-9a-fA-F]*)'/.exec(statement);
-    const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-    const all = rows[from?.[1] ?? ""] ?? [];
-    const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-    const afterNumber = /WHERE t\."[^"]+" > (-?\d+(?:\.\d+)?) ORDER/.exec(statement);
-    const cursor = afterBlob?.[1]?.toUpperCase() ?? after?.[1];
-    const seek =
-      afterNumber !== null
-        ? all.filter((row) => Number(sortKey(row[key])) > Number(afterNumber[1]))
-        : cursor === undefined
-          ? all
-          : all.filter((row) => sortKey(row[key]) > cursor);
-    return projectReadRows(seek.slice(0, limit));
+    return keysetPageReply(statement, rows) ?? [];
   };
   io.d1Rules.push({ match: () => true, reply: answer });
   return io;
@@ -126,9 +111,52 @@ const COLLATED: Readonly<Record<string, { sql: string; columns: Record<string, u
     sql: "CREATE TABLE labels (tag TEXT NOT NULL, PRIMARY KEY (tag COLLATE NOCASE)) WITHOUT ROWID",
     columns: [{ cid: 0, name: "tag", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 }],
   },
+  handles: {
+    sql: "CREATE TABLE handles (tag TEXT NOT NULL PRIMARY KEY COLLATE NOCASE) WITHOUT ROWID",
+    columns: [{ cid: 0, name: "tag", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 }],
+  },
+  checked: {
+    sql: "CREATE TABLE checked (tag TEXT PRIMARY KEY CHECK (tag COLLATE NOCASE <> ''))",
+    columns: [{ cid: 0, name: "tag", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 }],
+  },
   codes: {
     sql: "CREATE TABLE codes (code TEXT PRIMARY KEY COLLATE BINARY)",
     columns: [{ cid: 0, name: "code", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 }],
+  },
+  roster: {
+    sql: "CREATE TABLE roster (team TEXT NOT NULL, handle TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY (team, handle))",
+    columns: [
+      { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
+      { cid: 1, name: "handle", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
+    ],
+  },
+  rosters: {
+    sql: "CREATE TABLE rosters (team TEXT NOT NULL, handle TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY (team, handle)) WITHOUT ROWID",
+    columns: [
+      { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
+      { cid: 1, name: "handle", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
+    ],
+  },
+  squads: {
+    sql: "CREATE TABLE squads (team TEXT NOT NULL, handle TEXT NOT NULL, PRIMARY KEY (team, handle COLLATE NOCASE)) WITHOUT ROWID",
+    columns: [
+      { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
+      { cid: 1, name: "handle", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
+    ],
+  },
+  tallies: {
+    sql: "CREATE TABLE tallies (a TEXT PRIMARY KEY, x TEXT, UNIQUE (x COLLATE NOCASE, a))",
+    columns: [
+      { cid: 0, name: "a", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
+      { cid: 1, name: "x", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
+    ],
+  },
+  scores: {
+    sql: "CREATE TABLE scores (a TEXT PRIMARY KEY COLLATE NOCASE, x TEXT, UNIQUE (x COLLATE NOCASE, a))",
+    columns: [
+      { cid: 0, name: "a", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
+      { cid: 1, name: "x", type: "TEXT", notnull: 0, dflt_value: null, pk: 0 },
+    ],
   },
   mail: {
     sql: "CREATE TABLE mail (id TEXT PRIMARY KEY, address TEXT COLLATE NOCASE)",
@@ -139,7 +167,7 @@ const COLLATED: Readonly<Record<string, { sql: string; columns: Record<string, u
   },
 };
 
-function collationDatabase(): DbIo {
+function collationDatabase(rows: Readonly<Record<string, Record<string, unknown>[]>> = {}): FakeDbIo {
   const io = fakeDbIo();
   const answer = (statement: string): Record<string, unknown>[] => {
     const info = tableInfoAsked(statement);
@@ -147,7 +175,7 @@ function collationDatabase(): DbIo {
     const ddl = tableSqlAsked(statement);
     if (ddl !== null) return tableSqlReply(COLLATED[ddl]?.sql);
     const probe = keyProbeAsked(statement);
-    return probe === null ? [] : keyProbeReply(probe.asks, [], probe.column);
+    return probe === null ? (keysetPageReply(statement, rows) ?? []) : keyProbeReply(probe.asks, [], probe.column);
   };
   io.d1Rules.push({ match: () => true, reply: answer });
   return io;
@@ -177,17 +205,20 @@ describe("readColumns()", () => {
 
 describe("describeTable()", () => {
   it("orders by the declared primary key", async () => {
-    expect(await describeTable(fakeDatabase(), HOME, "tasks")).toEqual({ name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 });
+    expect(await describeTable(fakeDatabase(), HOME, "tasks")).toEqual({ name: "tasks", keys: ["uuid"], columns: ["uuid", "lane"], pageRows: 256 });
   });
 
   it("falls back to rowid for a table that declares no primary key", async () => {
-    expect(await describeTable(fakeDatabase(), HOME, "notes")).toEqual({ name: "notes", key: "rowid", columns: ["body"], pageRows: 256 });
+    expect(await describeTable(fakeDatabase(), HOME, "notes")).toEqual({ name: "notes", keys: ["rowid"], columns: ["body"], pageRows: 256 });
   });
 
-  it("refuses a composite primary key, which a keyset read cannot order by", async () => {
-    expect(((await capture(() => describeTable(fakeDatabase(), HOME, "members"))) as Error).message).toBe(
-      "members has a composite primary key (team, person) — a keyset read orders by one column, so this table cannot be backed up",
-    );
+  it("orders by every column of a composite primary key, in key order", async () => {
+    expect(await describeTable(fakeDatabase(), HOME, "members")).toEqual({
+      name: "members",
+      keys: ["team", "person"],
+      columns: ["team", "person"],
+      pageRows: 256,
+    });
   });
 
   it("refuses a key holding NULL, which a keyset read can never seek past", async () => {
@@ -212,7 +243,33 @@ describe("describeTable()", () => {
     });
 
     expect(((await capture(() => describeTable(io, HOME, "tasks"))) as Error).message).toBe(
-      "tasks.uuid holds more than one storage class — a keyset read orders by one column and its seek and its order disagree across classes, so this table cannot be backed up",
+      "tasks.uuid holds more than one storage class — a keyset read's seek and its order disagree across classes, so this table cannot be backed up",
+    );
+  });
+
+  it("refuses a composite key whose second column holds NULL, probing every key column and not the first alone", async () => {
+    const io = fakeDatabase({
+      members: [
+        { team: "red", person: "ana" },
+        { team: "red", person: null },
+      ],
+    });
+
+    expect(((await capture(() => describeTable(io, HOME, "members"))) as Error).message).toBe(
+      "members.person holds NULL in at least one row — a keyset read seeks past the key it last read and cannot seek past a NULL, so this table cannot be backed up",
+    );
+  });
+
+  it("refuses a composite key whose second column spans two storage classes", async () => {
+    const io = fakeDatabase({
+      members: [
+        { team: "red", person: "ana" },
+        { team: "red", person: 7 },
+      ],
+    });
+
+    expect(((await capture(() => describeTable(io, HOME, "members"))) as Error).message).toBe(
+      "members.person holds more than one storage class — a keyset read's seek and its order disagree across classes, so this table cannot be backed up",
     );
   });
 
@@ -232,34 +289,85 @@ describe("describeTable()", () => {
       ],
     });
 
-    expect(await describeTable(io, HOME, "tasks")).toEqual({ name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 });
+    expect(await describeTable(io, HOME, "tasks")).toEqual({ name: "tasks", keys: ["uuid"], columns: ["uuid", "lane"], pageRows: 256 });
   });
 
   it("orders a key that collates NOCASE by rowid, which is ordered the way the read compares", async () => {
     expect(await describeTable(collationDatabase(), HOME, "people")).toEqual({
       name: "people",
-      key: "rowid",
+      keys: ["rowid"],
       columns: ["handle", "name"],
       pageRows: 256,
     });
   });
 
-  it("reads a collation declared on the PRIMARY KEY constraint, not only on the column", async () => {
-    expect(await describeTable(collationDatabase(), HOME, "badges")).toEqual({ name: "badges", key: "rowid", columns: ["tag"], pageRows: 256 });
+  it("reads a rowid table collating its key only in the PRIMARY KEY clause by rowid, and probes nothing", async () => {
+    const io = collationDatabase();
+
+    expect(await describeTable(io, HOME, "badges")).toEqual({ name: "badges", keys: ["rowid"], columns: ["tag"], pageRows: 256 });
+    expect(io.d1Calls.length).toBe(1);
+  });
+
+  it("reads a WITHOUT ROWID table collating its key only in the PRIMARY KEY clause by its key, probing it", async () => {
+    const io = collationDatabase();
+
+    expect(await describeTable(io, HOME, "labels")).toEqual({ name: "labels", keys: ["tag"], columns: ["tag"], pageRows: 256 });
+    expect(io.d1Calls.length).toBe(2);
+  });
+
+  it("reads a key by itself when its only COLLATE is inside a CHECK expression", async () => {
+    expect(await describeTable(collationDatabase(), HOME, "checked")).toEqual({ name: "checked", keys: ["tag"], columns: ["tag"], pageRows: 256 });
   });
 
   it("orders by the key itself when the declared collation is BINARY, which is what the read compares", async () => {
-    expect(await describeTable(collationDatabase(), HOME, "codes")).toEqual({ name: "codes", key: "code", columns: ["code"], pageRows: 256 });
+    expect(await describeTable(collationDatabase(), HOME, "codes")).toEqual({ name: "codes", keys: ["code"], columns: ["code"], pageRows: 256 });
   });
 
-  it("refuses a WITHOUT ROWID table whose key collates otherwise, naming the column and the collation", async () => {
-    expect(((await capture(() => describeTable(collationDatabase(), HOME, "labels"))) as Error).message).toBe(
-      "labels.tag collates NOCASE and labels is WITHOUT ROWID — a keyset read orders by BINARY and this table has no other column to order by, so it cannot be backed up",
+  it("refuses a WITHOUT ROWID table whose key column collates otherwise, naming the column and the collation", async () => {
+    expect(((await capture(() => describeTable(collationDatabase(), HOME, "handles"))) as Error).message).toBe(
+      "handles.tag collates NOCASE and handles is WITHOUT ROWID — a keyset read orders by BINARY and this table has no other column to order by, so it cannot be backed up",
     );
   });
 
+  it("orders a composite key by rowid when any one of its columns collates NOCASE, and probes none of them", async () => {
+    const io = collationDatabase();
+
+    expect(await describeTable(io, HOME, "roster")).toEqual({ name: "roster", keys: ["rowid"], columns: ["team", "handle"], pageRows: 256 });
+    expect(io.d1Calls.length).toBe(1);
+  });
+
+  it("refuses a WITHOUT ROWID table whose composite key has a NOCASE column, naming that column", async () => {
+    expect(((await capture(() => describeTable(collationDatabase(), HOME, "rosters"))) as Error).message).toBe(
+      "rosters.handle collates NOCASE and rosters is WITHOUT ROWID — a keyset read orders by BINARY and this table has no other column to order by, so it cannot be backed up",
+    );
+  });
+
+  it("reads a WITHOUT ROWID composite key by itself when its NOCASE entry is declared inside the PRIMARY KEY list", async () => {
+    expect(await describeTable(collationDatabase(), HOME, "squads")).toEqual({
+      name: "squads",
+      keys: ["team", "handle"],
+      columns: ["team", "handle"],
+      pageRows: 256,
+    });
+  });
+
+  it("reads a key by itself when only a UNIQUE clause collates beside it, and still by rowid when the key collates", async () => {
+    expect(await describeTable(collationDatabase(), HOME, "tallies")).toEqual({ name: "tallies", keys: ["a"], columns: ["a", "x"], pageRows: 256 });
+    expect(await describeTable(collationDatabase(), HOME, "scores")).toEqual({
+      name: "scores",
+      keys: ["rowid"],
+      columns: ["a", "x"],
+      pageRows: 256,
+    });
+  });
+
   it("leaves a collation on a column that is not the key alone", async () => {
-    expect(await describeTable(collationDatabase(), HOME, "mail")).toEqual({ name: "mail", key: "id", columns: ["id", "address"], pageRows: 256 });
+    expect(await describeTable(collationDatabase(), HOME, "mail")).toEqual({
+      name: "mail",
+      keys: ["id"],
+      columns: ["id", "address"],
+      pageRows: 256,
+    });
   });
 
   it("still costs two round trips for the one table it describes", async () => {
@@ -275,9 +383,9 @@ describe("describeTables()", () => {
     const io = fakeDatabase({ tasks: [{ uuid: "t1", lane: "todo" }], d1_migrations: [{ id: 1 }] });
 
     expect(await describeTables(io, HOME, ["tasks", "notes", "d1_migrations"])).toEqual([
-      { name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 },
-      { name: "notes", key: "rowid", columns: ["body"], pageRows: 256 },
-      { name: "d1_migrations", key: "id", columns: ["id"], pageRows: 256 },
+      { name: "tasks", keys: ["uuid"], columns: ["uuid", "lane"], pageRows: 256 },
+      { name: "notes", keys: ["rowid"], columns: ["body"], pageRows: 256 },
+      { name: "d1_migrations", keys: ["id"], columns: ["id"], pageRows: 256 },
     ]);
     expect(io.d1Calls.length).toBe(2);
   });
@@ -292,7 +400,7 @@ describe("describeTables()", () => {
   it("reaches the database once where no key needs a value probe", async () => {
     const io = fakeDatabase();
 
-    expect((await describeTables(io, HOME, ["notes"])).map((table) => table.key)).toEqual(["rowid"]);
+    expect((await describeTables(io, HOME, ["notes"])).map((table) => table.keys)).toEqual([["rowid"]]);
     expect(io.d1Calls.length).toBe(1);
   });
 
@@ -301,8 +409,8 @@ describe("describeTables()", () => {
   it("reports every structural fault before any key-value fault, whichever table each is in", async () => {
     const io = fakeDatabase({ tasks: [{ uuid: null, lane: "todo" }] });
 
-    expect(((await capture(() => describeTables(io, HOME, ["tasks", "members"]))) as Error).message).toBe(
-      "members has a composite primary key (team, person) — a keyset read orders by one column, so this table cannot be backed up",
+    expect(((await capture(() => describeTables(io, HOME, ["tasks", "aliased"]))) as Error).message).toBe(
+      "aliased declares column(s) [forge:type:id] beginning forge:type: — a read projects each column's storage class under that name, so this table cannot be backed up",
     );
     expect(((await capture(() => describeTables(io, HOME, ["tasks", "notes"]))) as Error).message).toBe(
       "tasks.uuid holds NULL in at least one row — a keyset read seeks past the key it last read and cannot seek past a NULL, so this table cannot be backed up",
@@ -314,14 +422,39 @@ describe("keyCollation()", () => {
   it("is null for DDL it cannot split, so an unparsable table is read rather than refused", () => {
     expect(keyCollation("CREATE TABLE t AS SELECT 1", "id")).toBeNull();
   });
+
+  it("ignores a COLLATE inside a CHECK, a DEFAULT or a generated expression", () => {
+    expect(keyCollation("CREATE TABLE t (a TEXT PRIMARY KEY CHECK (a COLLATE NOCASE <> ''))", "a")).toBeNull();
+    expect(keyCollation("CREATE TABLE t (a TEXT PRIMARY KEY DEFAULT ('x' COLLATE NOCASE))", "a")).toBeNull();
+    expect(keyCollation("CREATE TABLE t (a TEXT PRIMARY KEY, b TEXT AS (a COLLATE NOCASE))", "b")).toBeNull();
+  });
+
+  it("takes the column's own COLLATE after a CHECK that collates, and the last when it declares two, as SQLite does", () => {
+    expect(keyCollation("CREATE TABLE t (a TEXT PRIMARY KEY CHECK (a COLLATE BINARY <> '') COLLATE NOCASE)", "a")).toEqual({
+      collation: "NOCASE",
+      declaredOn: "column",
+    });
+    expect(keyCollation("CREATE TABLE t (a TEXT PRIMARY KEY COLLATE NOCASE COLLATE BINARY)", "a")).toBeNull();
+  });
+
+  it("says where the collation is declared, the column's own outranking the PRIMARY KEY clause's", () => {
+    expect(keyCollation("CREATE TABLE t (a TEXT, PRIMARY KEY (a COLLATE NOCASE))", "a")).toEqual({
+      collation: "NOCASE",
+      declaredOn: "primary-key",
+    });
+    expect(keyCollation("CREATE TABLE t (a TEXT COLLATE RTRIM, PRIMARY KEY (a COLLATE NOCASE))", "a")).toEqual({
+      collation: "RTRIM",
+      declaredOn: "column",
+    });
+  });
 });
 
 describe("discoverAppTables()", () => {
   it("finds the app's own tables, including one named d1_migrations, and skips forge's own managed table and the index", async () => {
     expect(await discoverAppTables(fakeDatabase(), HOME)).toEqual([
-      { name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 },
-      { name: "notes", key: "rowid", columns: ["body"], pageRows: 256 },
-      { name: "d1_migrations", key: "id", columns: ["id"], pageRows: 256 },
+      { name: "tasks", keys: ["uuid"], columns: ["uuid", "lane"], pageRows: 256 },
+      { name: "notes", keys: ["rowid"], columns: ["body"], pageRows: 256 },
+      { name: "d1_migrations", keys: ["id"], columns: ["id"], pageRows: 256 },
     ]);
   });
 
@@ -395,7 +528,7 @@ describe("dependencyOrder()", () => {
   });
 });
 
-const TASKS = { name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 };
+const TASKS = { name: "tasks", keys: ["uuid"], columns: ["uuid", "lane"], pageRows: 256 };
 
 function taskRows(count: number): Record<string, unknown>[] {
   return Array.from({ length: count }, (_, index) => ({ uuid: `t${String(index).padStart(4, "0")}`, lane: "todo" }));
@@ -410,8 +543,8 @@ describe("readPage()", () => {
       { uuid: "t0001", lane: "todo" },
       { uuid: "t0002", lane: "todo" },
     ]);
-    expect(page.rows.map((row) => row.key)).toEqual(["S:5:t0000", "S:5:t0001", "S:5:t0002"]);
-    expect(page.cursor).toBe("t0002");
+    expect(page.rows.map((row) => row.key)).toEqual([["S:5:t0000"], ["S:5:t0001"], ["S:5:t0002"]]);
+    expect(page.cursor).toEqual(["t0002"]);
     expect(page.exhausted).toBe(true);
   });
 
@@ -433,13 +566,13 @@ describe("readPage()", () => {
 
   it("seeks past a REAL key as the number it is, not as a blob", async () => {
     const rows = Array.from({ length: 300 }, (_, index) => ({ t: new SqlReal(index), v: "x" }));
-    const table = { name: "samples", key: "t", columns: ["t", "v"], pageRows: 256 };
+    const table = { name: "samples", keys: ["t"], columns: ["t", "v"], pageRows: 256 };
     const io = fakeDatabase({ samples: rows });
 
     const first = await readPage(io, HOME, table, ["t", "v"], null);
-    expect(first.cursor).toBe(255);
+    expect(first.cursor).toEqual([255]);
     expect(first.raw[1]).toEqual({ t: new SqlReal(1), v: "x" });
-    expect(first.rows[1]?.key).toBe("R:1");
+    expect(first.rows[1]?.key).toEqual(["R:1"]);
 
     const second = await readPage(io, HOME, table, ["t", "v"], first.cursor);
     const statement = io.d1Calls.at(-1)?.statements.at(-1);
@@ -451,14 +584,14 @@ describe("readPage()", () => {
 
   it("advances the cursor of a BLOB key, which a read over two pages cannot terminate without", async () => {
     const users = Array.from({ length: 300 }, (_, index) => ({ id: [1, 2, index >> 8, index & 255], email: `p${index}@example.com` }));
-    const table = { name: "auth_users", key: "id", columns: ["id", "email"], pageRows: 256 };
+    const table = { name: "auth_users", keys: ["id"], columns: ["id", "email"], pageRows: 256 };
     const io = fakeDatabase({ auth_users: users });
 
     const first = await readPage(io, HOME, table, ["id", "email"], null);
     expect(first.exhausted).toBe(false);
-    expect(first.cursor).toEqual([1, 2, 0, 255]);
+    expect(first.cursor).toEqual([[1, 2, 0, 255]]);
     expect(first.raw[0]).toEqual({ id: [1, 2, 0, 0], email: "p0@example.com" });
-    expect(first.rows[0]?.key).toBe("B:01020000");
+    expect(first.rows[0]?.key).toEqual(["B:01020000"]);
 
     const second = await readPage(io, HOME, table, ["id", "email"], first.cursor);
     expect(second.raw.length).toBe(44);
@@ -466,6 +599,43 @@ describe("readPage()", () => {
     expect(second.raw[0]).toEqual({ id: [1, 2, 1, 0], email: "p256@example.com" });
 
     expect((await readWholeTable(io, HOME, table)).rows.length).toBe(300);
+  });
+});
+
+const MEMBERS = { name: "members", keys: ["team", "person"], columns: ["team", "person"], pageRows: 2 };
+
+const SIX_MEMBERS = [
+  { team: "blue", person: "ana" },
+  { team: "red", person: "cy" },
+  { team: "red", person: "ana" },
+  { team: "red", person: "bo" },
+  { team: "blue", person: "bo" },
+  { team: "red", person: "di" },
+];
+
+describe("readPage() — a composite key", () => {
+  it("seeks past both columns, so a page that ends inside a run of one team resumes at the next person in it", async () => {
+    const io = fakeDatabase({ members: SIX_MEMBERS });
+    const first = await readPage(io, HOME, MEMBERS, ["team", "person"], null);
+    const second = await readPage(io, HOME, MEMBERS, ["team", "person"], ["red", "ana"]);
+
+    expect(first.cursor).toEqual(["blue", "bo"]);
+    expect(second.raw).toEqual([
+      { team: "red", person: "bo" },
+      { team: "red", person: "cy" },
+    ]);
+    expect(second.rows.map((row) => row.key)).toEqual([
+      ["S:3:red", "S:2:bo"],
+      ["S:3:red", "S:2:cy"],
+    ]);
+    expect(second.cursor).toEqual(["red", "cy"]);
+  });
+
+  it("carries a cell of every storage class into the cursor, a REAL as its number and a BLOB as its bytes", async () => {
+    const table = { name: "readings", keys: ["sensor", "at"], columns: ["sensor", "at", "v"], pageRows: 1 };
+    const io = fakeDatabase({ readings: [{ sensor: [1, 2], at: new SqlReal(0.5), v: "x" }] });
+
+    expect((await readPage(io, HOME, table, ["sensor", "at", "v"], null)).cursor).toEqual([[1, 2], 0.5]);
   });
 });
 
@@ -478,6 +648,59 @@ describe("readWholeTable()", () => {
     expect(read.raw[299]).toEqual({ uuid: "t0299", lane: "todo" });
   });
 
+  it("reads every row of a composite-keyed table across pages that split a run of one team, in key order", async () => {
+    const read = await readWholeTable(fakeDatabase({ members: SIX_MEMBERS }), HOME, MEMBERS);
+
+    expect(read.raw).toEqual([
+      { team: "blue", person: "ana" },
+      { team: "blue", person: "bo" },
+      { team: "red", person: "ana" },
+      { team: "red", person: "bo" },
+      { team: "red", person: "cy" },
+      { team: "red", person: "di" },
+    ]);
+  });
+
+  it("reads a composite key with a NOCASE column by rowid, which the projection adds", async () => {
+    const rows = [
+      { rowid: 2, team: "red", handle: "Ana" },
+      { rowid: 1, team: "red", handle: "ana" },
+      { rowid: 3, team: "blue", handle: "bo" },
+    ];
+    const io = collationDatabase({ roster: rows });
+    const read = await readWholeTable(io, HOME, { ...(await describeTable(io, HOME, "roster")), pageRows: 2 });
+
+    expect(read.columns).toEqual(["rowid", "team", "handle"]);
+    expect(read.rows.map((row) => row.key)).toEqual([["I:1"], ["I:2"], ["I:3"]]);
+  });
+
+  it("reads a WITHOUT ROWID composite key collated in the PRIMARY KEY clause by that key, in BINARY order across pages", async () => {
+    const rows = [
+      { team: "red", handle: "b" },
+      { team: "red", handle: "A" },
+      { team: "red", handle: "a2" },
+      { team: "red", handle: "B2" },
+      { team: "blue", handle: "c" },
+    ];
+    const io = collationDatabase({ squads: rows });
+    const read = await readWholeTable(io, HOME, { ...(await describeTable(io, HOME, "squads")), pageRows: 2 });
+
+    expect(read.raw.map((row) => `${String(row.team)}/${String(row.handle)}`)).toEqual(["blue/c", "red/A", "red/B2", "red/a2", "red/b"]);
+  });
+
+  it("names every key column when a full composite-keyed page does not advance", async () => {
+    const io = fakeDbIo();
+    const page = projectReadRows([
+      { team: "red", person: "ana" },
+      { team: "red", person: "ana" },
+    ]);
+    io.d1Rules.push({ match: () => true, reply: page });
+
+    expect(((await capture(() => readWholeTable(io, HOME, MEMBERS))) as Error).message).toBe(
+      'members read a full page and its key team, person did not advance past ["red","ana"] — a keyset read cannot page past a repeated or NULL key, so this table cannot be backed up',
+    );
+  });
+
   it("refuses a full page whose key did not advance, rather than re-reading it for ever", async () => {
     // A read that never advances is unbounded in memory as well as in time, so it must end in a
     // refusal; this fake answers every seek with the same page, as a repeated key would.
@@ -486,16 +709,16 @@ describe("readWholeTable()", () => {
     io.d1Rules.push({ match: () => true, reply: (statement) => (/pragma_table_info/.test(statement) ? (COLUMNS.tasks ?? []) : page) });
 
     expect(((await capture(() => readWholeTable(io, HOME, TASKS))) as Error).message).toBe(
-      'tasks read a full page and its key uuid did not advance past "same" — a keyset read cannot page past a repeated or NULL key, so this table cannot be backed up',
+      'tasks read a full page and its key uuid did not advance past ["same"] — a keyset read cannot page past a repeated or NULL key, so this table cannot be backed up',
     );
   });
 
   it("adds the key column to the projection when it is a rowid the table does not declare", async () => {
     const io = fakeDatabase({ notes: [{ rowid: 1, body: "a" }] });
-    const read = await readWholeTable(io, HOME, { name: "notes", key: "rowid", columns: ["body"], pageRows: 256 });
+    const read = await readWholeTable(io, HOME, { name: "notes", keys: ["rowid"], columns: ["body"], pageRows: 256 });
 
     expect(read.columns).toEqual(["rowid", "body"]);
-    expect(read.rows[0]?.key).toBe("I:1");
+    expect(read.rows[0]?.key).toEqual(["I:1"]);
   });
 });
 
@@ -514,14 +737,28 @@ describe("compareTable()", () => {
     const target = fakeDatabase({ tasks: taskRows(3).filter((row) => row.uuid !== "t0001") });
     const comparison = await compareTable(target, source, HOME);
 
-    expect(comparison.divergences).toEqual([{ kind: "only-in-source", key: "S:5:t0001" }]);
+    expect(comparison.divergences).toEqual([{ kind: "only-in-source", key: ["S:5:t0001"] }]);
     expect(comparison.divergent).toBe(1);
+  });
+
+  it("finds nothing between two copies of a composite-keyed table stored in different orders", async () => {
+    const source = await readWholeTable(fakeDatabase({ members: SIX_MEMBERS }), HOME, MEMBERS);
+    const comparison = await compareTable(fakeDatabase({ members: [...SIX_MEMBERS].reverse() }), source, HOME);
+
+    expect([comparison.divergent, comparison.sourceRows, comparison.targetRows]).toEqual([0, 6, 6]);
+  });
+
+  it("reports the composite-keyed row the target is missing by its whole key", async () => {
+    const source = await readWholeTable(fakeDatabase({ members: SIX_MEMBERS }), HOME, MEMBERS);
+    const target = fakeDatabase({ members: SIX_MEMBERS.filter((row) => !(row.team === "red" && row.person === "bo")) });
+
+    expect((await compareTable(target, source, HOME)).divergences).toEqual([{ kind: "only-in-source", key: ["S:3:red", "S:2:bo"] }]);
   });
 
   it("names the column a restored row moved in", async () => {
     const source = await readWholeTable(fakeDatabase({ tasks: [{ uuid: "t0", lane: "todo" }] }), HOME, TASKS);
     const comparison = await compareTable(fakeDatabase({ tasks: [{ uuid: "t0", lane: "doing" }] }), source, HOME);
 
-    expect(comparison.divergences).toEqual([{ kind: "value", key: "S:2:t0", column: "lane", source: "S:4:todo", target: "S:5:doing" }]);
+    expect(comparison.divergences).toEqual([{ kind: "value", key: ["S:2:t0"], column: "lane", source: "S:4:todo", target: "S:5:doing" }]);
   });
 });

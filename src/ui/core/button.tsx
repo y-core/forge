@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC } from "../../render/jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { Appearance, Shape, Size, Tone } from "../contracts/types";
 import { Spinner } from "./spinner";

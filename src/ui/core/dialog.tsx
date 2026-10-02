@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
 import { descriptionId, titleId } from "../contracts/naming";
 import type { DialogNaming } from "../contracts/types";

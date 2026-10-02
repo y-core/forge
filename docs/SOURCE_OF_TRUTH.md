@@ -167,7 +167,7 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `tooling/cf` rulings — the `cf·verb·object` grammar, id-is-identity, vars-never-written, the `.dev.vars` markers | `src/tooling/cf/README.md` |
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
 | The `tooling/curate` rulings — markers matched on a comment, the closure directions, refusal before any write, the gate row's tier | `src/tooling/curate/README.md` |
-| The `output/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/output/pdf/README.md` |
+| The `render/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/render/pdf/README.md` |
 | The `keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/keyring/README.md` |
 | The AES-GCM seal budget — the random-nonce bound per `(kid, purpose)` subkey, what crossing it costs, the rotation cadence it sets | [`AUTH_MOUNTING.md`][am-7] §7 |
 
@@ -179,7 +179,7 @@ rulings to the `docs/` document that owns them ([`AGENT_GUIDE.md`][ag-6c] §6c).
 
 **A row moves the day a `docs/` document is written for one of these namespaces**, and the README is reduced to reference in the same change. Adding
 the document without moving the row is how a second copy starts. **The move runs both ways**: retiring such a document returns the row here, which
-is how `output/pdf` arrived — its rulings were a `docs/` document whose content the README already carried.
+is how `render/pdf` arrived — its rulings were a `docs/` document whose content the README already carried.
 
 ---
 

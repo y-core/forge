@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import { Forge } from "../app/forge-app";
 import { metaTags } from "../app/meta";

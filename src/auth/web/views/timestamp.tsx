@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import type { FC } from "../../../jsx/types";
+import type { FC } from "../../../render/jsx/types";
 
 interface AuthTimestampProps {
   readonly at: number;

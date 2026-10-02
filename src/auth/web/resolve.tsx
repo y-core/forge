@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import type { AppContext } from "../../context/types";
 import { mintCsrf } from "../../form/csrf";

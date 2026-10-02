@@ -1,4 +1,4 @@
-import type { JSXNode } from "../../../jsx/types";
+import type { JSXNode } from "../../../render/jsx/types";
 
 /** How a compound describes itself to {@link cloneAsChild}. */
 export interface AsChildOptions {

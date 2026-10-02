@@ -5,13 +5,22 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
-import { fakeDbIo, keyProbeAsked, keyProbeReply, minimalWranglerConfig, tableInfoAsked, tableSqlAsked, tableSqlReply } from "../db.fixture";
+import {
+  fakeDbIo,
+  keyProbeAsked,
+  keyProbeReply,
+  keysetPageReply,
+  minimalWranglerConfig,
+  tableInfoAsked,
+  tableSqlAsked,
+  tableSqlReply,
+} from "../db.fixture";
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { migrationsDigest } from "../migrate/files";
 import { toSchemaObjects } from "../sql";
 import type { BackupManifest, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
-import { appSchemaDigestInput, BACKUP_FORMAT_VERSION, manifestSelfDigest } from "./artifact";
+import { appSchemaDigestInput, BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 import { executeRestore, prepareRestore, readBackupManifest } from "./restore";
 import type { RestoreOptions, RestoreOutcome } from "./types";
 
@@ -566,5 +575,68 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
       join(artifact, "data.sql"),
     ]);
     expect(io.logs).toEqual([]);
+  });
+
+  it("restores a composite-keyed table by route full and reads every row back across pages to match the manifest", async () => {
+    const root = appRoot();
+    const artifact = join(root, "artifact");
+    const taken = "CREATE TABLE members (team TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY (team, person));";
+    const restored = [
+      {
+        type: "table",
+        name: "members",
+        tbl_name: "members",
+        sql: "CREATE TABLE members (team TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY (team, person))",
+      },
+    ];
+    const members = Array.from({ length: 300 }, (_, index) => ({ team: `team-${index % 2}`, person: `p${String(index).padStart(3, "0")}` }));
+    const ordered = [...members.filter((row) => row.team === "team-0"), ...members.filter((row) => row.team === "team-1")];
+    const io = fakeDbIo({
+      [join(artifact, "manifest.json")]: JSON.stringify(
+        manifest("app-db", {
+          schema: {
+            migrations: ["0001_init"],
+            digest: sha256(appSchemaDigestInput(toSchemaObjects(restored))),
+            migrationsDigest: migrationsDigest([{ name: "0001_init", sha256: sha256(taken) }]),
+          },
+          migrations: [{ name: "0001_init", sha256: sha256(taken) }],
+          tables: [
+            {
+              name: "members",
+              rows: 300,
+              digest: sha256(ordered.map((row) => canonicaliseRow(["team", "person"], ["team", "person"], row).canonical).join("\n")),
+            },
+          ],
+        }),
+      ),
+      [join(artifact, "schema.sql")]: SCHEMA_SQL,
+      [join(artifact, "data.sql")]: DATA_SQL,
+      [join(artifact, "migrations", "0001_init.sql")]: taken,
+    });
+    const loaded = () => io.d1Calls.some((call) => call.source !== null);
+    const answer = (statement: string): Record<string, unknown>[] => {
+      if (tableInfoAsked(statement) === "members") {
+        return [
+          { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
+          { cid: 1, name: "person", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
+        ];
+      }
+      const ddl = tableSqlAsked(statement);
+      if (ddl !== null) return tableSqlReply(restored.find((object) => object.name === ddl)?.sql);
+      if (statement === RECORDED_CHECKSUM_SELECT) return loaded() ? [{ name: "0001_init" }] : [];
+      if (statement.includes("sqlite_master")) return loaded() ? restored : [];
+      const probe = keyProbeAsked(statement);
+      if (probe !== null) return keyProbeReply(probe.asks, members, probe.column);
+      return keysetPageReply(statement, loaded() ? { members } : {}) ?? [];
+    };
+    io.d1Rules.push({ match: () => true, reply: answer });
+    const run = await context(root, io);
+
+    expect(await runRestore(run, { artifact, route: "full" })).toEqual({
+      database: "app-db",
+      route: "full",
+      artifact,
+      tables: [{ name: "members", rows: 300, matches: true }],
+    });
   });
 });

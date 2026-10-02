@@ -88,7 +88,7 @@ export const STEPS: readonly Step[] = [
     exports: EXPORTS,
     files: pkg.files,
     browserOnly: BROWSER_ONLY,
-    sideEffectOnly: ["./jsx/register"],
+    sideEffectOnly: ["./render/jsx/register"],
     sealedInternal: SEALED_INTERNAL,
     assetDirs: [{ dir: "src/ui/assets/css", extension: ".css" }],
   }),
@@ -113,8 +113,8 @@ export const STEPS: readonly Step[] = [
   }),
   ssrBoundaryStep({
     root: ROOT,
-    clientDirs: ["src/ui/client", "src/auth/client"],
-    sources: ["src/ui", "src/auth"],
+    clientDirs: ["src/ui/client", "src/auth/client", "src/render/markdown/editor/client"],
+    sources: ["src/ui", "src/auth", "src/render/markdown"],
     entryPoints: ["client.ts"],
     packageName: pkg.name,
     exports: EXPORTS,
@@ -161,7 +161,7 @@ export const STEPS: readonly Step[] = [
     agreementDirs: ["warden/canon", "src/ui/design"],
     requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
     documentedNonExports: ["./crypto"],
-    unboundSubpaths: ["./jsx/jsx-runtime", "./jsx/jsx-dev-runtime"],
+    unboundSubpaths: ["./render/jsx/jsx-runtime", "./render/jsx/jsx-dev-runtime"],
   }),
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { tier: "full" }),
   designStep({
@@ -183,7 +183,7 @@ export const STEPS: readonly Step[] = [
   }),
   designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
   // node refuses to strip types under `node_modules`, so a consumer loads a prebuilt copy of each surface a node process imports.
-  iccProfileStep({ root: ROOT, profile: "src/output/pdf/sRGB2014.icc", module: "src/output/pdf/icc.ts" }),
+  iccProfileStep({ root: ROOT, profile: "src/render/pdf/sRGB2014.icc", module: "src/render/pdf/icc.ts" }),
   lintPluginStep(
     { root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN },
     { watches: ["src/tooling/lint/**"] },

@@ -39,8 +39,8 @@ are rulings owned by [`UI_SSR_COMPONENTS.md`][usc], [`UI_CLASS_COMPOSITION.md`][
 ## Prerequisites
 
 forge ships TypeScript/TSX **source** — no build step, no emitted `.d.ts`. Consuming any component needs a TypeScript-aware bundler (esbuild, Bun,
-Vite, or Wrangler) configured with `"jsx": "react-jsx"` and `"jsxImportSource": "@y-core/forge/jsx"`. Each forge `.tsx` file also self-declares the
-runtime with a `/** @jsxImportSource @y-core/forge/jsx */` pragma, so per-file overrides are unnecessary.
+Vite, or Wrangler) configured with `"jsx": "react-jsx"` and `"jsxImportSource": "@y-core/forge/render/jsx"`. Each forge `.tsx` file also
+self-declares the runtime with a `/** @jsxImportSource @y-core/forge/render/jsx */` pragma, so per-file overrides are unnecessary.
 
 ---
 
@@ -172,7 +172,7 @@ import { Button, Form, FormField, Input } from "@y-core/forge/ui/core";
 </Form>;
 ```
 
-Render trees inside a route handler with `renderToString` (`@y-core/forge/jsx`) and return them through `fragmentResponse` or `htmlResponse`
+Render trees inside a route handler with `renderToString` (`@y-core/forge/render/jsx`) and return them through `fragmentResponse` or `htmlResponse`
 (`@y-core/forge/http`).
 
 **Pass `csrfToken` to `Form` and it does both halves**: the hidden field, and the token merged into `hx-headers`. Pass `csrfHeader` as well when
@@ -240,7 +240,7 @@ The `challenge="submit"` controller already does both to the submitter it holds.
 ### Attach your own `data-*` and `aria-*` attributes
 
 Every component forwards **unrecognized props** onto its root (or designated inner) element, so a client-side binding convention attaches without
-re-wrapping anything. The renderer applies its own rules ([`src/jsx/render-to-string.ts`](../jsx/render-to-string.ts)): values are HTML-escaped and URL-bearing
+re-wrapping anything. The renderer applies its own rules ([`src/render/jsx/render-to-string.ts`](../render/jsx/render-to-string.ts)): values are HTML-escaped and URL-bearing
 attributes additionally scheme-sanitized via `safeUrl`; `style` is **dropped**, because forge's CSP carries no `style-src 'unsafe-inline'`
 ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a). Anything you need to position or colour at runtime is therefore a class or a custom property written through
 CSSOM, never a generated `style` string.

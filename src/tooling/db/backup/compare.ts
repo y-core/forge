@@ -23,9 +23,9 @@ export function emptyComparison(): CompareState {
 function absorb(
   side: "source" | "target",
   page: readonly CanonicalRow[],
-  lastKey: string | null,
+  lastKey: readonly string[] | null,
   found: Divergence[],
-): { readonly rows: CanonicalRow[]; readonly lastKey: string | null } {
+): { readonly rows: CanonicalRow[]; readonly lastKey: readonly string[] | null } {
   const rows: CanonicalRow[] = [];
   let previous = lastKey;
   for (const row of page) {
@@ -33,7 +33,7 @@ function absorb(
       const order = compareKeys(previous, row.key);
       // A key going backwards means the read was not ordered by the key, and comparing two
       // differently-ordered reads produces a silently clean diff — the one failure to refuse.
-      if (order > 0) throw new Error(`${side} rows are not ordered by the key: ${row.key} follows ${previous}`);
+      if (order > 0) throw new Error(`${side} rows are not ordered by the key: ${row.key.join(" ")} follows ${previous.join(" ")}`);
       if (order === 0) {
         found.push({ kind: "duplicate-key", key: row.key, side });
         continue;
@@ -133,15 +133,16 @@ export function finishComparison(table: string, state: CompareState): TableCompa
 
 /** One divergence for a terminal — the only place a canonical value is ever shortened. @internal */
 export function formatDivergence(divergence: Divergence, maxValueWidth: number): string {
+  const key = divergence.key.join(" ");
   const clip = (value: string) => (value.length <= maxValueWidth ? value : `${value.slice(0, Math.max(0, maxValueWidth - 1))}…`);
   switch (divergence.kind) {
     case "only-in-source":
-      return `− ${clip(divergence.key)} is in the source and not in the target`;
+      return `− ${clip(key)} is in the source and not in the target`;
     case "only-in-target":
-      return `+ ${clip(divergence.key)} is in the target and not in the source`;
+      return `+ ${clip(key)} is in the target and not in the source`;
     case "duplicate-key":
-      return `! ${clip(divergence.key)} appears twice in the ${divergence.side}`;
+      return `! ${clip(key)} appears twice in the ${divergence.side}`;
     default:
-      return `≠ ${clip(divergence.key)} ${divergence.column}: ${clip(divergence.source)} → ${clip(divergence.target)}`;
+      return `≠ ${clip(key)} ${divergence.column}: ${clip(divergence.source)} → ${clip(divergence.target)}`;
   }
 }

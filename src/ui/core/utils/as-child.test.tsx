@@ -1,9 +1,9 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { createElement } from "../../../jsx/element";
-import type { FC, JSX } from "../../../jsx/types";
+import { createElement } from "../../../render/jsx/element";
+import type { FC, JSX } from "../../../render/jsx/types";
 import { render } from "../../../testing/render";
 import { MENU_ITEM_CLASS } from "../../contracts/menu-contract";
 import { Button, buttonVariants } from "../button";

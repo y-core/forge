@@ -40,9 +40,9 @@ Node and Bun, and is unreachable from a Worker by design.
 
 ### HTML is the output, not a hydration payload
 
-`@y-core/forge/jsx` renders a JSX tree to a string inside the Worker. No virtual DOM, no hydration, no reconciler, and **nothing from the renderer
-reaches the browser**. Escaping happens at render time; URL-bearing attributes are scheme-sanitized for you; a `style` attribute is dropped, because
-the shipped CSP carries no `style-src 'unsafe-inline'`.
+`@y-core/forge/render/jsx` renders a JSX tree to a string inside the Worker. No virtual DOM, no hydration, no reconciler, and **nothing from the
+renderer reaches the browser**. Escaping happens at render time; URL-bearing attributes are scheme-sanitized for you; a `style` attribute is
+dropped, because the shipped CSP carries no `style-src 'unsafe-inline'`.
 
 Interactivity is then taken in the cheapest form that works. Native platform behaviour first — `<dialog>`, the Popover and Invoker Commands APIs,
 `<details>` — so a dialog, a menu and a tab panel open with no JavaScript at all. HTMX next, for swapping server-rendered fragments. Only what is
@@ -99,7 +99,7 @@ Consuming forge requires a **TypeScript-aware bundler** that resolves `.ts`/`.ts
 runtime:
 
 ```json
-{ "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "@y-core/forge/jsx" } }
+{ "compilerOptions": { "jsx": "react-jsx", "jsxImportSource": "@y-core/forge/render/jsx" } }
 ```
 
 `esbuild`, `sharp` and `tailwindcss` are **optional** peer dependencies, needed only by the asset pipeline; none is ever imported by runtime source.

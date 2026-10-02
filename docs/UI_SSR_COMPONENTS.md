@@ -15,8 +15,8 @@ audience: consumer
 > the component gallery, props, and worked usage; [`SECURITY_HARDENING.md`][sh-2d] §2d for automatic URL sanitization;
 > [`NAMESPACES.md`][namespaces-5b] §5b for the one-import rule that governs the `ui/core` / `ui/controls` name collision.
 >
-> Components produce a forge element tree that `renderToString` (`@y-core/forge/jsx`) serializes to `SafeHtml`. The JSX runtime is forge's own — set
-> `/** @jsxImportSource @y-core/forge/jsx */` at the top of each `.tsx` file.
+> Components produce a forge element tree that `renderToString` (`@y-core/forge/render/jsx`) serializes to `SafeHtml`. The JSX runtime is forge's
+> own — set `/** @jsxImportSource @y-core/forge/render/jsx */` at the top of each `.tsx` file.
 
 ---
 
@@ -386,17 +386,17 @@ adding one is visible, not a quiet edit.
 
 ### 1n. Optional Input Props Carry an Explicit `| undefined`
 
-**Declare every optional property of a type a consumer passes values into as `name?: T | undefined`** — the whole of `src/jsx/types.ts` and every
-`*Props` in `src/ui`. **Keep the bare `?:` for internal data structures and options objects**, the distinction `exactOptionalPropertyTypes` is
+**Declare every optional property of a type a consumer passes values into as `name?: T | undefined`** — the whole of `src/render/jsx/types.ts` and
+every `*Props` in `src/ui`. **Keep the bare `?:` for internal data structures and options objects**, the distinction `exactOptionalPropertyTypes` is
 actually for. **Ask "does a consumer construct a value of this type", not "is it named `*Props`"**: a definition object handed to a component —
 `NavSlot`, `NavMegaMenu`, `ToolbarPopover` — is a consumer input as much as an attribute bag is, and the suffix reading lets such a type drift.
 
-**The second of these reasons is a correctness one.** `renderToString` skips a null or undefined attribute value (`src/jsx/render-to-string.ts`), so
-absent and `undefined` are the same state at runtime and the flag would guard a distinction the renderer does not have. And without the union a
-caller under the flag writes `{...(x !== undefined ? { "aria-label": x } : {})}` rather than `aria-label={x}` — a spread, which `jsx-a11y` cannot
-see as an attribute, leaving every such site unlinted. `@types/react` writes `className?: string | undefined` for the same reason.
-**Never fix such an error at a forge call site with a guard-form spread; widen the declaration instead.** What stays is the **truthiness** spread,
-`{...(open ? { open: true } : {})}`, an omit-when-false HTML semantic.
+**The second of these reasons is a correctness one.** `renderToString` skips a null or undefined attribute value
+(`src/render/jsx/render-to-string.ts`), so absent and `undefined` are the same state at runtime and the flag would guard a distinction the renderer
+does not have. And without the union a caller under the flag writes `{...(x !== undefined ? { "aria-label": x } : {})}` rather than `aria-label={x}`
+— a spread, which `jsx-a11y` cannot see as an attribute, leaving every such site unlinted. `@types/react` writes `className?: string | undefined`
+for the same reason. **Never fix such an error at a forge call site with a guard-form spread; widen the declaration instead.** What stays is the
+**truthiness** spread, `{...(open ? { open: true } : {})}`, an omit-when-false HTML semantic.
 
 ### 1o. `Announcer` — The One Live Region
 

@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC } from "../../render/jsx/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { TURNSTILE, TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
 import type { TurnstileProps } from "./types";

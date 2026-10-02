@@ -1,10 +1,10 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import type { FC } from "../jsx/types";
+import type { FC } from "../render/jsx/types";
 import { barrelComponents } from "../testing/coverage/components";
 import { render } from "../testing/render";
 import { ISLAND_STATE_ATTR } from "./contracts/island-contract";

@@ -23,7 +23,8 @@ export const LICENCE_HEADERS: ReadonlyMap<string, string> = new Map([
   ["src/tooling/term/capability.ts", "@visulima/is-ansi-color-supported (MIT), itself after chalk/supports-color (MIT)"],
   ["src/tooling/term/codes.ts", "@visulima/colorize (MIT), itself after ansis (ISC), plus color-convert (MIT)"],
   ["src/tooling/term/color.ts", "@visulima/colorize (MIT), itself after ansis (ISC)"],
-  ["src/output/pdf/icc.ts", "sRGB2014.icc — International Color Consortium, redistributable without restriction"],
+  ["src/render/markdown/entities.ts", "character-entities 2.0.2 (MIT)"],
+  ["src/render/pdf/icc.ts", "sRGB2014.icc — International Color Consortium, redistributable without restriction"],
 ]);
 
 /** Modules exempt from needing a co-located test, each mapped to why. */
@@ -54,5 +55,9 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
   ["warden/src/cli/flags.ts", "declared flag tables — the command tree that shares them is dispatched in `commands.test.ts`"],
   ["src/testing/workerd.ts", "test infrastructure — `tests/workerd/`'s specs are what exercise it, in the `full` tier"],
+  [
+    "src/render/markdown/editor/client/theme.ts",
+    "a declared CodeMirror theme — the classes it styles are drawn and asserted by `decorations.test.ts` and `mount.browser.ts`",
+  ],
   ["src/testing/node.d.ts", "a declaration file — it defines nothing to run, and `typecheck` is what holds it against `dev-server-start.ts`"],
 ]);

@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import { oobSwap } from "../../html/htmx/htmx-patterns";
-import type { FC } from "../../jsx/types";
+import { oobSwap } from "../../render/htmx/htmx-patterns";
+import type { FC } from "../../render/jsx/types";
 import type { Tone } from "../contracts/types";
 import { Toast } from "../core/toast";
 import type { ToastPosition } from "../core/types";

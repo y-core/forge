@@ -1,6 +1,6 @@
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
-import { GATE_MODES } from "./steps";
+import { GATE_MODES } from "./types";
 import type { GateMode, GateReceipt } from "./types";
 import { worktreeGitPath } from "./worktree";
 

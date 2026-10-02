@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import type { JSXNode } from "../../jsx/types";
+import type { JSXNode } from "../../render/jsx/types";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser.fixture";
 import { scopeAttrs } from "../contracts/scope-attrs";

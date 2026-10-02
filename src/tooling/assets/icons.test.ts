@@ -202,6 +202,58 @@ describe("buildIcons()", () => {
   });
 });
 
+describe("buildIcons() — manifest", () => {
+  async function buildManifest(app: IconsConfig["app"]): Promise<string> {
+    const tmpDir = join(tmpdir(), `forge-icons-manifest-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tmpDir, { recursive: true });
+    try {
+      const srcPath = join(tmpDir, "icon.svg");
+      writeFileSync(srcPath, `<svg><path d="M0 0"/></svg>`);
+      const config: IconsConfig = {
+        src: srcPath,
+        outDir: tmpDir,
+        lightColor: "#000",
+        app,
+        outputs: [{ kind: "manifest", file: "site.webmanifest" }],
+      };
+      await buildIcons(config);
+      return readFileSync(join(tmpDir, "site.webmanifest"), "utf-8");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  }
+
+  it("writes the same bytes as before share targets existed when none is configured", async () => {
+    expect(await buildManifest({ name: "Demo", shortName: "D", backgroundColor: "#fff" })).toBe(
+      [
+        "{",
+        `  "name": "Demo",`,
+        `  "short_name": "D",`,
+        `  "theme_color": "#000",`,
+        `  "background_color": "#fff",`,
+        `  "display": "standalone",`,
+        `  "start_url": "/",`,
+        `  "scope": "/",`,
+        `  "icons": []`,
+        "}",
+      ].join("\n"),
+    );
+  });
+
+  it("emits a GET share target with its params and no enctype", async () => {
+    const shareTarget = { action: "/capture", method: "GET" as const, params: { title: "title", text: "text", url: "url" } };
+    const manifest = JSON.parse(await buildManifest({ name: "Demo", shortName: "D", backgroundColor: "#fff", shareTarget }));
+    expect(manifest.share_target).toEqual({ action: "/capture", method: "GET", params: { title: "title", text: "text", url: "url" } });
+    expect(Object.keys(manifest.share_target)).not.toContain("enctype");
+  });
+
+  it("emits a POST share target with its enctype", async () => {
+    const shareTarget = { action: "/share", method: "POST" as const, enctype: "multipart/form-data" as const, params: { text: "body" } };
+    const manifest = JSON.parse(await buildManifest({ name: "Demo", shortName: "D", backgroundColor: "#fff", shareTarget }));
+    expect(manifest.share_target).toEqual({ action: "/share", method: "POST", enctype: "multipart/form-data", params: { text: "body" } });
+  });
+});
+
 describe("iconTarget()", () => {
   const base = { src: "icon.svg", outDir: "public", lightColor: "#000", outputs: [] };
 

@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import { scriptJson } from "../http/html";
-import type { JSXNode } from "../jsx/types";
+import { scriptJson } from "../html/html";
+import type { JSXNode } from "../render/jsx/types";
 import type { MetaOptions, MetaTag, PageMeta, RobotsDirective } from "./types";
 
 /** A `robots` value as the one string the tag carries. */

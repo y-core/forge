@@ -6,7 +6,7 @@ import type { CheckResult, Finding } from "../types";
 import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { JsxCheckConfig } from "./types";
 
-const DEFAULT_PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/jsx"] as const;
+const DEFAULT_PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/render/jsx"] as const;
 
 /** The `.tsx` files the check will judge, as absolute paths. @public */
 export function resolveJsxSources(config: JsxCheckConfig): string[] {

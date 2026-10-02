@@ -1,9 +1,9 @@
 import type { BackupManifest, Migration, RestoreRoute, SchemaObject } from "../types";
 
-/** One table, with what a bounded keyset read of it needs: the column it orders by, and how many rows a page holds. @internal */
+/** One table, with what a bounded keyset read of it needs: the columns it orders by, and how many rows a page holds. @internal */
 export interface AppTable {
   readonly name: string;
-  readonly key: string;
+  readonly keys: readonly string[];
   /** Every declared column in order, which a whole-table read projects. */
   readonly columns: readonly string[];
   readonly pageRows: number;
@@ -11,7 +11,7 @@ export interface AppTable {
 
 /** One row, encoded: its identity, its whole-row form, and each cell by column name. @internal */
 export interface CanonicalRow {
-  readonly key: string;
+  readonly key: readonly string[];
   readonly canonical: string;
   readonly cells: Readonly<Record<string, string>>;
 }
@@ -24,10 +24,10 @@ export interface ArtifactFault {
 
 /** One way two copies of a table disagree. Values ride at full width; truncation is the formatter's job. @internal */
 export type Divergence =
-  | { readonly kind: "only-in-source"; readonly key: string }
-  | { readonly kind: "only-in-target"; readonly key: string }
-  | { readonly kind: "value"; readonly key: string; readonly column: string; readonly source: string; readonly target: string }
-  | { readonly kind: "duplicate-key"; readonly key: string; readonly side: "source" | "target" };
+  | { readonly kind: "only-in-source"; readonly key: readonly string[] }
+  | { readonly kind: "only-in-target"; readonly key: readonly string[] }
+  | { readonly kind: "value"; readonly key: readonly string[]; readonly column: string; readonly source: string; readonly target: string }
+  | { readonly kind: "duplicate-key"; readonly key: readonly string[]; readonly side: "source" | "target" };
 
 /** The verdict for one table. @internal */
 export interface TableComparison {
@@ -48,14 +48,14 @@ export interface CompareState {
   readonly targetRows: number;
   readonly pendingSource: readonly CanonicalRow[];
   readonly pendingTarget: readonly CanonicalRow[];
-  readonly lastSourceKey: string | null;
-  readonly lastTargetKey: string | null;
+  readonly lastSourceKey: readonly string[] | null;
+  readonly lastTargetKey: readonly string[] | null;
   readonly sourceExhausted: boolean;
   readonly targetExhausted: boolean;
 }
 
-/** Where a keyset read seeks from: the last key read as text, a number or blob bytes, or null before the first page. @internal */
-export type ReadCursor = string | number | readonly number[] | null;
+/** Where a keyset read seeks from: the last key read, one cell per key column as text, a number or blob bytes, or null before the first page. @internal */
+export type ReadCursor = readonly (string | number | readonly number[])[] | null;
 
 /** One page of a table: the canonical rows, the raw rows the artifact is authored from, and the next cursor. @internal */
 export interface RowPage {

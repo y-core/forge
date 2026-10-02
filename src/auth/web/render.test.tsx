@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import { describe, expect, it } from "bun:test";
 
@@ -7,7 +7,7 @@ import { RequestContext } from "@remix-run/fetch-router";
 
 import { pageShell, shellCtx } from "../../app/shell";
 import type { PageShell } from "../../app/types";
-import type { FC } from "../../jsx/types";
+import type { FC } from "../../render/jsx/types";
 import { renderAuthPage } from "./render";
 import type { AuthViews } from "./types";
 import { PasskeyListView } from "./views/passkey-list";

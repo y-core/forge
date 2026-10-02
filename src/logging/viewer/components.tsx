@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import { hxAttrs } from "../../html/htmx/htmx-attrs";
-import { oobSwap, SWAP } from "../../html/htmx/htmx-patterns";
-import type { FC } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import { hxAttrs } from "../../render/htmx/htmx-attrs";
+import { oobSwap, SWAP } from "../../render/htmx/htmx-patterns";
+import type { FC } from "../../render/jsx/types";
 import { ANNOUNCE_FAILURE_ATTR } from "../../ui/contracts/announcer-contract";
 import type { Tone } from "../../ui/contracts/types";
 import { Alert } from "../../ui/core/alert";

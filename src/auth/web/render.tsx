@@ -1,15 +1,15 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { mergeMeta } from "../../app/meta";
 import { renderShell } from "../../app/shell";
 import type { PageMeta } from "../../app/types";
-import { isPartial } from "../../html/htmx/htmx-headers";
 import { fragmentResponse } from "../../http/response";
-import { renderToString } from "../../jsx/render-to-string";
-import type { FC } from "../../jsx/types";
+import { isPartial } from "../../render/htmx/htmx-headers";
+import { renderToString } from "../../render/jsx/render-to-string";
+import type { FC } from "../../render/jsx/types";
 import type { AuthPageOptions, AuthViewName, AuthViewProps } from "./types";
 import { AdminElevateView } from "./views/admin-elevate";
 import { AdminUserEditView } from "./views/admin-user-edit";

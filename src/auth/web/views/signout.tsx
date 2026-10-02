@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import type { FC } from "../../../jsx/types";
+import type { FC } from "../../../render/jsx/types";
 import { Button } from "../../../ui/core/button";
 import { Form } from "../../../ui/core/form";
 import type { AuthSignoutProps } from "./types";

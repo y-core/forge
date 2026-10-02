@@ -1,7 +1,7 @@
 import type { RequestContext } from "../../context/types";
-import { hxHeaders } from "../../html/htmx/htmx-response";
-import { isHxRequest } from "../../html/htmx/hx-request";
 import { createRedirectResponse } from "../../http/response";
+import { hxHeaders } from "../../render/htmx/htmx-response";
+import { isHxRequest } from "../../render/htmx/hx-request";
 
 /** The status an auth write redirects a plain request with, so the browser follows it by GET. @internal */
 export const AUTH_REDIRECT_STATUS = 303;

@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import type { Size } from "../contracts/types";
 import { Pagination } from "./pagination";

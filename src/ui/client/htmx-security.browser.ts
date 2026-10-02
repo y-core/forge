@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
 
 import { pageShell } from "../../app/shell";
-import { jsx } from "../../jsx/jsx-runtime";
-import { renderPage } from "../../jsx/render-to-string";
+import { jsx } from "../../render/jsx/jsx-runtime";
+import { renderPage } from "../../render/jsx/render-to-string";
 import { HTMX_TRUSTED_TYPES_POLICY } from "../contracts/htmx-contract";
 import { bundleModules } from "./browser.fixture";
 

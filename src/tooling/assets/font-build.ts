@@ -167,7 +167,7 @@ function advanceOf(hb: Harfbuzz, font: Font, run: string): number {
   return buffer.getGlyphPositions().reduce((sum, glyph) => sum + glyph.xAdvance, 0);
 }
 
-/** Builds the artifacts `output/pdf/fonts` ships: a subset face and the metrics beside it. @public */
+/** Builds the artifacts `render/pdf/fonts` ships: a subset face and the metrics beside it. @public */
 export async function buildFont(build: FontBuild): Promise<{ sfnt: Uint8Array; metrics: FontMetricsData }> {
   const sfnt = await subsetFont({ sfnt: build.sfnt, codePoints: build.codePoints, wasm: build.wasm });
   return { sfnt, metrics: await extractFontMetrics(sfnt, build.codePoints) };

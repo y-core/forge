@@ -127,6 +127,78 @@ export function projectReadRows(rows: readonly Record<string, unknown>[]): Recor
   });
 }
 
+function sqlOrder(left: unknown, right: unknown): number {
+  const plain = (value: unknown) => (value instanceof SqlReal ? value.value : (value ?? null));
+  const a = plain(left);
+  const b = plain(right);
+  const rank = (value: unknown) => (value === null ? 0 : typeof value === "number" ? 1 : Array.isArray(value) ? 3 : 2);
+  if (rank(a) !== rank(b)) return Math.sign(rank(a) - rank(b));
+  if (typeof a === "number" && typeof b === "number") return Math.sign(a - b);
+  const units = (value: unknown): number[] =>
+    Array.isArray(value) ? (value as number[]) : [...String(value)].map((char) => char.codePointAt(0) ?? 0);
+  const [x, y] = [units(a), units(b)];
+  for (let index = 0; index < Math.min(x.length, y.length); index += 1) {
+    if (x[index] !== y[index]) return Math.sign((x[index] ?? 0) - (y[index] ?? 0));
+  }
+  return Math.sign(x.length - y.length);
+}
+
+function rowOrder(left: readonly unknown[], right: readonly unknown[]): number {
+  for (const [index, cell] of left.entries()) {
+    const order = sqlOrder(cell, right[index]);
+    if (order !== 0) return order;
+  }
+  return 0;
+}
+
+const KEY_REF = /t\."((?:[^"]|"")+)"/g;
+
+const LITERAL = /X'([0-9a-fA-F]*)'|'((?:[^']|'')*)'|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)/g;
+
+function sqlLiterals(text: string): unknown[] {
+  return [...text.matchAll(LITERAL)].map(([, hex, quoted, number]) =>
+    hex !== undefined
+      ? (hex.match(/../g) ?? []).map((pair) => Number.parseInt(pair, 16))
+      : quoted !== undefined
+        ? quoted.replaceAll("''", "'")
+        : Number(number),
+  );
+}
+
+/** The page a keyset read of `tables` answers, sought and ordered as SQLite would — a row-value seek included; null when the statement is not one. */
+export function keysetPageReply(
+  statement: string,
+  tables: Readonly<Record<string, readonly Record<string, unknown>[]>>,
+): Record<string, unknown>[] | null {
+  const shape =
+    /FROM "((?:[^"]|"")+)" AS t(?: WHERE (\(t\.".*?"\)|t\."(?:[^"]|"")+") > (.*?))? ORDER BY ((?:t\."(?:[^"]|"")+"(?:, )?)+) LIMIT (\d+)$/.exec(
+      statement,
+    );
+  if (shape === null) return null;
+  const [, table = "", seekKeys, seekLiterals, orderKeys = "", limit = "0"] = shape;
+  const names = (text: string) => [...text.matchAll(KEY_REF)].map(([, name = ""]) => name.replaceAll('""', '"'));
+  const order = names(orderKeys);
+  const sought = seekKeys === undefined ? [] : names(seekKeys);
+  const after = seekLiterals === undefined ? [] : sqlLiterals(seekLiterals);
+  if (sought.length !== after.length) throw new Error(`fake keyset read: ${sought.length} key(s) sought past ${after.length} literal(s)`);
+  const rows = [...(tables[table.replaceAll('""', '"')] ?? [])]
+    .filter(
+      (row) =>
+        sought.length === 0 ||
+        rowOrder(
+          sought.map((key) => row[key]),
+          after,
+        ) > 0,
+    )
+    .sort((left, right) =>
+      rowOrder(
+        order.map((key) => left[key]),
+        order.map((key) => right[key]),
+      ),
+    );
+  return projectReadRows(rows.slice(0, Number(limit)));
+}
+
 /** A successful run with nothing to say. */
 export const OK: Spawned = { code: 0, stdout: "", stderr: "" };
 

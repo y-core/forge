@@ -1,5 +1,5 @@
-import { cloneElement, Fragment, isValidElement } from "../../../jsx/element";
-import type { JSXElement, JSXNode } from "../../../jsx/types";
+import { cloneElement, Fragment, isValidElement } from "../../../render/jsx/element";
+import type { JSXElement, JSXNode } from "../../../render/jsx/types";
 import { stateAttrs } from "../../contracts/state-attrs";
 import { cn } from "./cn";
 import type { AsChildOptions } from "./types";

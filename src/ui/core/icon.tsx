@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC } from "../../render/jsx/types";
 import type { ForgeIcon, IconProps } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";

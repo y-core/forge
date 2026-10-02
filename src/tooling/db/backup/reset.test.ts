@@ -9,8 +9,8 @@ import {
   fakeDbIo,
   keyProbeAsked,
   keyProbeReply,
+  keysetPageReply,
   minimalWranglerConfig,
-  projectReadRows,
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
@@ -34,7 +34,20 @@ const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
     { cid: 0, name: "uuid", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
     { cid: 1, name: "lane", type: "TEXT", notnull: 1, dflt_value: "''", pk: 0 },
   ],
+  members: [
+    { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
+    { cid: 1, name: "person", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
+  ],
 };
+
+const MEMBERS_INVENTORY = [
+  {
+    type: "table",
+    name: "members",
+    tbl_name: "members",
+    sql: "CREATE TABLE members (team TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY (team, person))",
+  },
+];
 
 const ROWS: readonly Record<string, unknown>[] = [
   { uuid: "t1", lane: "todo" },
@@ -43,7 +56,7 @@ const ROWS: readonly Record<string, unknown>[] = [
 
 /** The digest `runBackup` records for `tasks`, over whichever rows the database holds. */
 function tasksDigest(rows: readonly Record<string, unknown>[] = ROWS): string {
-  return sha256(rows.map((row) => canonicaliseRow(["uuid", "lane"], "uuid", row).canonical).join("\n"));
+  return sha256(rows.map((row) => canonicaliseRow(["uuid", "lane"], ["uuid"], row).canonical).join("\n"));
 }
 
 const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
@@ -101,22 +114,23 @@ function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}, 
 }
 
 /** A fake wrangler answering the inventory, each app table's count, and a paged read of its rows. */
-function fakeDatabase(seed: Record<string, string>, tasks: readonly Record<string, unknown>[] = ROWS): FakeDbIo {
+function fakeDatabase(
+  seed: Record<string, string>,
+  tables: Readonly<Record<string, readonly Record<string, unknown>[]>> = { tasks: ROWS },
+  inventory = INVENTORY,
+): FakeDbIo {
   const io = fakeDbIo(seed);
   const answer = (statement: string): Record<string, unknown>[] => {
     const info = tableInfoAsked(statement);
     if (info !== null) return COLUMNS[info] ?? [];
     const ddl = tableSqlAsked(statement);
-    if (ddl !== null) return tableSqlReply(INVENTORY.find((object) => object.name === ddl)?.sql);
-    if (statement.includes("sqlite_master")) return INVENTORY;
+    if (ddl !== null) return tableSqlReply(inventory.find((object) => object.name === ddl)?.sql);
+    if (statement.includes("sqlite_master")) return inventory;
     const probe = keyProbeAsked(statement);
-    if (probe !== null) return keyProbeReply(probe.asks, tasks, probe.column);
-    if (statement.includes("COUNT(*)")) return [{ rows: tasks.length }];
-    const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-    const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
-    const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-    const seek = after === null ? tasks : tasks.filter((row) => String(row[key]) > (after[1] ?? ""));
-    return projectReadRows(seek.slice(0, limit));
+    if (probe !== null) return keyProbeReply(probe.asks, tables[probe.table] ?? [], probe.column);
+    const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
+    if (count !== null) return [{ rows: (tables[count[1] ?? ""] ?? []).length }];
+    return keysetPageReply(statement, tables) ?? [];
   };
   io.d1Rules.push({ match: () => true, reply: answer });
   return io;
@@ -376,7 +390,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
     const io = fakeDatabase(
       { [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")), ...artifactFiles(directory) },
-      [...ROWS, { uuid: "t3", lane: "done" }],
+      { tasks: [...ROWS, { uuid: "t3", lane: "done" }] },
     );
     const run = await context(root, io);
 
@@ -394,10 +408,12 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
     const io = fakeDatabase(
       { [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")), ...artifactFiles(directory) },
-      [
-        { uuid: "t1", lane: "todo" },
-        { uuid: "t2", lane: "done" },
-      ],
+      {
+        tasks: [
+          { uuid: "t1", lane: "todo" },
+          { uuid: "t2", lane: "done" },
+        ],
+      },
     );
     const run = await context(root, io);
 
@@ -405,6 +421,36 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
       `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 2 rows are recoverable:\n  tasks: 2 row(s) in both, and their contents differ\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
     );
     expect(io.exists(join(state, "db.sqlite"))).toBe(true);
+  });
+
+  it("accepts a backup of a composite-keyed table whose rows span more than one page, and refuses it once a row moves", async () => {
+    const root = appRoot();
+    const state = join(root, ".wrangler", "state", ...STATE);
+    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
+    const members = Array.from({ length: 300 }, (_, index) => ({ team: `team-${index % 2}`, person: `p${String(index).padStart(3, "0")}` }));
+    const ordered = [...members].sort((left, right) =>
+      left.team === right.team ? (left.person < right.person ? -1 : 1) : left.team < right.team ? -1 : 1,
+    );
+    const digest = sha256(ordered.map((row) => canonicaliseRow(["team", "person"], ["team", "person"], row).canonical).join("\n"));
+    const seed = {
+      [join(state, "db.sqlite")]: "",
+      [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db", { tables: [{ name: "members", rows: 300, digest }] })),
+      ...artifactFiles(directory),
+    };
+    const moved = members.map((row, index) => (index === 299 ? { ...row, person: "p999" } : row));
+
+    expect(
+      await runReset(await context(root, fakeDatabase(seed, { members }, MEMBERS_INVENTORY)), { expect: "app-db", allowUnbacked: false }),
+    ).toEqual({ database: "app-db", rows: 300, removed: state, backedUpBy: "app-db-20260911T090000Z" });
+    expect(
+      (
+        await refusal(async () =>
+          runReset(await context(root, fakeDatabase(seed, { members: moved }, MEMBERS_INVENTORY)), { expect: "app-db", allowUnbacked: false }),
+        )
+      ).message,
+    ).toBe(
+      `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 300 rows are recoverable:\n  members: 300 row(s) in both, and their contents differ\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
+    );
   });
 
   it("takes the artifact backup names rather than the most recent one", async () => {

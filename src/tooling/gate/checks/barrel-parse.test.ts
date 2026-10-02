@@ -85,6 +85,43 @@ describe("parseBarrelExports() — export star ban", () => {
   });
 });
 
+describe("parseBarrelExports() — declared type exports", () => {
+  it("counts a declared interface as a type export with no values", () => {
+    const result = parseBarrelExports("export interface Receipt {\n  ok: boolean;\n}\n");
+
+    expect(result.values).toEqual([]);
+    expect(result.hasTypeExports).toBe(true);
+  });
+
+  it("counts a declared type alias, generic or not", () => {
+    expect(parseBarrelExports('export type Mode = "quick" | "full";\n').hasTypeExports).toBe(true);
+    expect(parseBarrelExports("export type Box<T> = { value: T };\n").hasTypeExports).toBe(true);
+  });
+
+  it("counts an ambient `export declare interface`", () => {
+    expect(parseBarrelExports("export declare interface Receipt {}\n").hasTypeExports).toBe(true);
+  });
+
+  it("still counts a named type re-export", () => {
+    expect(parseBarrelExports('export type { A } from "./a";\n').hasTypeExports).toBe(true);
+  });
+
+  it("reports no type export for a file that exports nothing", () => {
+    expect(parseBarrelExports("const internal = 1;\ninterface Local {}\n").hasTypeExports).toBe(false);
+  });
+
+  it("ignores a declared interface that is commented out", () => {
+    expect(parseBarrelExports("// export interface Receipt {}\nconst internal = 1;\n").hasTypeExports).toBe(false);
+  });
+
+  it("leaves `export type * from` to the star ban rather than counting it", () => {
+    const result = parseBarrelExports('export type * from "./types";\n');
+
+    expect(result.hasExportStar).toBe(true);
+    expect(result.hasTypeExports).toBe(false);
+  });
+});
+
 describe("findPublicSymbols() — TSDoc block extent", () => {
   it("finds the symbol when the tag sits more than nine lines above the declaration", () => {
     const path = fixture(

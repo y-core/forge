@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { FileInput as CoreFileInput } from "../core/file-input";
 import { createBoundControl } from "./create-bound-control";
 

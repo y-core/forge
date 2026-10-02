@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import { describe, expect, it } from "bun:test";
 
@@ -9,8 +9,8 @@ import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
 import type { AppContext } from "../../context/types";
 import { csrfMinterCtx } from "../../form/csrf";
-import { renderToString } from "../../jsx/render-to-string";
-import type { FC, JSXElement } from "../../jsx/types";
+import { renderToString } from "../../render/jsx/render-to-string";
+import type { FC, JSXElement } from "../../render/jsx/types";
 import { err, ok } from "../../result/result";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";

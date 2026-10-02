@@ -176,7 +176,7 @@ Forge writes the history row itself, in the same load as the migration body (§6
 
 | Column | Holds |
 | --- | --- |
-| `id` | `INTEGER PRIMARY KEY`. Apply order, and the single column a backup's keyset read and `ORDER BY id DESC LIMIT 1` both need |
+| `id` | `INTEGER PRIMARY KEY`. Apply order, and the column `ORDER BY id DESC LIMIT 1` reads |
 | `name` | The file name without `.sql`. This is the identity, carried as a unique index rather than as the key |
 | `sha256` | SHA-256 of the file's bytes with its `forge:compose` stamp blanked, so a `--restamp` is not an edit |
 | `applied_at` | Epoch milliseconds. `STRICT` has no `TIMESTAMP`, so the instant is an `INTEGER` and every reader formats it |
@@ -185,9 +185,9 @@ Forge writes the history row itself, in the same load as the migration body (§6
 **`id` is never `AUTOINCREMENT`.** A backup restores keys from the artifact, and an engine-allocated key would need `sqlite_sequence` carried with
 it — the same hazard the `autoincrement` lint rule refuses on an app table (§5). Forge's own table does not get to break the rule it enforces.
 
-**The identity is `name`, and it is a unique index rather than the primary key**, because a backup's keyset read orders by one column and a
-composite key offers none. It is also what makes a duplicate migration name a hard failure: two files of the same name fail at apply time on the
-index, as a raw SQLite unique-constraint error rather than a forge message. A compose-time rule would say it better and there is not one yet.
+**The identity is `name`, carried as a unique index rather than as the primary key.** The index is what makes a duplicate migration name a hard
+failure: two files of the same name fail at apply time on it, as a raw SQLite unique-constraint error rather than a forge message. A compose-time
+rule would say it better and there is not one yet.
 
 **A `NULL` fingerprint is a fact, not a missing value:** the migration was applied, and no apply has certified the schema since. It is what a run
 that applied its last migration and then failed before certifying leaves behind, and `forge db migrate status` reports it — while still exiting zero
@@ -225,8 +225,7 @@ edited-after-applied file detectable at all; seed history is deliberately delete
 ### 4c. `_forge_seed_history` — What Has Been Seeded
 
 One row per seed: `source`, the directory that declared it, its name, the SHA-256 of its **raw** file text, and when it ran — keyed by `(source,
-name)` as a unique index over a synthetic `id`, because a backup's keyset read orders by one column. The contract it enforces is §7's, and why it is
-not merged into the migration history is §4a's.
+name)` as a unique index over a synthetic `id`. The contract it enforces is §7's, and why it is not merged into the migration history is §4a's.
 
 `forge db seed reset` deletes every row here and nothing else — the rows the seeds themselves wrote stay where they are, and every seed simply runs
 again on the next apply.

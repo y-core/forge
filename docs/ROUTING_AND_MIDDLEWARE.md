@@ -483,7 +483,7 @@ What the descriptor deliberately does not do:
   renders nothing rather than an element the policy would refuse.
 
 [boundaries-3a]: ../warden/canon/libs/BOUNDARIES.md#3a-the-boundary-rule
-[eh-2]: ./FORGE_ERRORS.md#2-fragment-renderers-http-namespace
+[eh-2]: ./FORGE_ERRORS.md#2-fragment-renderers-renderhtmx-namespace
 [eh-5b]: ./FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [eh-5d]: ./FORGE_ERRORS.md#5d-defineaction-and-definepage-error-recovery
 [iv-1d]: ./INPUT_VALIDATION.md#1d-defineaction--the-schema-contract

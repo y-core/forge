@@ -18,7 +18,69 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`createHref` and a route map's `href` from `@y-core/forge/router` produce a single leading slash**, even when a root wildcard's value brings
+  its own, and throw `CreateHrefError` with `details.type === "invalid-pathname-wildcard"` for a wildcard value containing a `.` or `..` segment.
+  Pass the wildcard path without a leading slash, and resolve dot segments before calling.
+- **Every renderer moves under `@y-core/forge/render/*`, and the old subpaths are gone rather than aliased.** Rewrite each import:
+
+  | Before | After |
+  | --- | --- |
+  | `@y-core/forge/jsx`, `/jsx/jsx-runtime`, `/jsx/jsx-dev-runtime`, `/jsx/register` | `@y-core/forge/render/jsx`, and the same three below it |
+  | `@y-core/forge/html/htmx` | `@y-core/forge/render/htmx` |
+  | `@y-core/forge/output/pdf`, `/output/pdf/audit`, `/output/pdf/fonts`, `/output/pdf/jsx-runtime` | `@y-core/forge/render/pdf`, and the same three below it |
+
+- **`jsxImportSource` is now `@y-core/forge/render/jsx`**, in `tsconfig.json` and in every `/** @jsxImportSource */` pragma, and a PDF file's
+  pragma is `@y-core/forge/render/pdf`. `validate-jsx` requires the new pragma by default, so every `.tsx` file still naming the old one fails it.
+- **The markup-safety primitives move from `@y-core/forge/http` to the new `@y-core/forge/html`:** `escapeHtml`, `safeUrl`, `html`, `rawHtml`,
+  `isSafeHtml`, `scriptJson`, `styleText` and the types `SafeHtml`, `HtmlTemplateTag` and `HtmlValue`. `@y-core/forge/http` keeps the response
+  builders, the header classes, `joinPath` and `safeRedirectPath`.
+- **The htmx status banners move from `@y-core/forge/http` to `@y-core/forge/render/htmx`:** `renderError`, `renderSuccess`,
+  `renderValidationErrors` and `FragmentOptions`. An app styling them with forge's classes changes its `@source` line from `src/http` to
+  `src/render/htmx`, or the banners render unstyled.
+
+### Added
+
+- **`@y-core/forge/tooling/gate/types` publishes the gate's types on their own subpath**, `CheckResult` and `ImportBoundaryCheckConfig`
+  among them. It typechecks under `"types": []`, so a Worker app's tests can type a check without pulling the Node-only barrel into their program.
+- **`icons.app.shareTarget` in `@y-core/forge/tooling/assets` emits a `share_target` in the built web app manifest.** It is validated: `action`
+  must be a same-origin path, `method` is `GET` (the default) or `POST`, `enctype` is accepted only with `POST`, and `params` names at least one of
+  `title`, `text` and `url`. A manifest without it is byte-identical to before.
+- **JSX types the `ins` and `del` elements**, each with `cite` and `datetime`, so a diff can mark an insertion or a deletion semantically.
+- **`@y-core/forge/render/markdown` parses and renders CommonMark 0.31.2 and GFM**, linear in its input, writing HTML only through an allowlist
+  `HtmlSchema` — raw HTML in a source stays text. `parseMarkdown`, `renderMarkdownHtml`, `walkMarkdown` and `createUnitCache` are the core;
+  `defineMarkdownSyntax` composes a dialect from the shipped constructs — wiki links and embeds (`createWikiLinkConstruct`), `#tags`, task due
+  dates, `==highlights==` and `> [!kind]` callouts (`createCalloutTransform`) — and `sanitizeSvg` renders an svg fence inline.
+- **`@y-core/forge/render/markdown/editor/client` mounts a CodeMirror markdown viewport** (`mountMarkdownViewport`) that switches between edit and
+  view and between rendered and raw, keeps the reader's place, and draws the dialect an app injects as `ViewportDialect`. It is browser-only,
+  with `createAutosave` beside it; the `@codemirror/*` packages are optional peers, installed by the app that mounts it.
+
+### Changed
+
+- **`CurateRunner` takes its `env` as `Readonly<Record<string, string | undefined>>` and returns `{ code, output }`.** A runner returning a
+  `CaptureResult` still fits; reading `.ms` off a runner's result no longer typechecks.
+- **Dependencies upgraded.** `@remix-run/fetch-router` 0.22.0 → 1.0.0, `@remix-run/route-pattern` 0.24.0 → 1.0.0, `@remix-run/headers` 0.21.1 →
+  1.0.0, and `@remix-run/session` 0.4.2 → 1.0.0. `SetCookieInit.sameSite` from `@y-core/forge/http` now accepts lowercase values; with the
+  `createHref` entry under **Breaking Changes**, that is the whole of what a consumer sees, and nothing else forge exposes changes.
+- **`checkExports` holds a file export target to the `@public`-reaches-barrel rule when its barrel re-exports from it.** A subpath file the
+  barrel never names is still left out. A consumer whose barrel re-exports part of a subpath file now gets a finding for each `@public` name it
+  leaves out.
+
+### Fixed
+
+- **A lockfile-free install resolves a single `@remix-run/route-pattern`.** The old ranges let `@remix-run/fetch-router` 0.22.2 pull
+  route-pattern 0.25 beside forge's 0.24, failing typecheck in `src/app/forge-app.ts`. A consumer's `@remix-run/fetch-router` override is no
+  longer needed and must be removed: pinning fetch-router 0.22.0 would recreate the two-copy failure.
+- **`forge db backup` handles a table with a composite primary key**, across backup, verify, restore and reset. A read pages by a row-value seek
+  over every key column, in key order; a single-key table is read exactly as before.
+- **Only a key column's own `COLLATE` constraint decides how a backup reads its table.** A `COLLATE` inside a `UNIQUE` clause, or inside a
+  `CHECK`, `DEFAULT` or generated expression, leaves the key read by its own key. A collation only in the `PRIMARY KEY (…)` clause keeps a rowid
+  table on its indexed `rowid` read, and lets a `WITHOUT ROWID` table be read by its own key where it was refused. A key column declared with a
+  collation other than BINARY still falls back to `rowid`, or is refused under `WITHOUT ROWID`. See
+  [`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md) §5.
+- **`checkExports` accepts a file export target that only declares types.** An `export interface` or `export type X =` counts as an export, so
+  a types-only subpath needs no `browserOnly` entry; a target that exports nothing is still reported.
 
 ---
 

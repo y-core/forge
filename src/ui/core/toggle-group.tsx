@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, PropsWithChildren } from "../../render/jsx/types";
 import { nameAttrs } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOGGLE_GROUP_SCOPE } from "../contracts/toggle-contract";

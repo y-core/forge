@@ -25,7 +25,8 @@ import {
   listLabel,
   formatSummary,
 } from "./report";
-import { GATE_MODES, isCheckStep, selectSteps } from "./steps";
+import { isCheckStep, selectSteps } from "./steps";
+import { GATE_MODES } from "./types";
 import type { CheckStep, GateMode, Step, StepRequirement } from "./types";
 import type { GateCommandConfig } from "./types";
 import { worktreeChanges, worktreeHash } from "./worktree";

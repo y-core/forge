@@ -7,7 +7,7 @@ import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
 import { createErrorPage } from "./error-page";
 
-// `renderError`'s banner classes, duplicated rather than imported: `http/fragment` does not export
+// `renderError`'s banner classes, duplicated rather than imported: `render/htmx/fragment` does not export
 // them, and an exact assertion needs the literal the page actually emits.
 const ERROR_CLASSES =
   "rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground";

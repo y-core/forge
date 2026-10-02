@@ -1,4 +1,4 @@
-import { URL_NOISE } from "./escape";
+import { URL_NOISE } from "../html/escape";
 
 /** Resolution base for the parse pass. `.invalid` is reserved by RFC 2606, so it can never be a real origin. */
 const PARSE_BASE = "https://redirect.invalid";

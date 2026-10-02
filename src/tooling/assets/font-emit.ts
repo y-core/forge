@@ -64,7 +64,7 @@ export function renderFacesModule(packs: readonly FontPackData[], sfnt: (path: s
 
   const exported = emit.exports ?? DEFAULT_FACE_EXPORTS;
   return `${HEADER}
-import type { PdfDefaultFaces, PdfEmbeddedFont } from "@y-core/forge/output/pdf";
+import type { PdfDefaultFaces, PdfEmbeddedFont } from "@y-core/forge/render/pdf";
 
 function bytes(base64: string): Uint8Array {
   const binary = atob(base64);

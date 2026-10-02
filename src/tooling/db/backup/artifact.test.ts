@@ -313,38 +313,52 @@ describe("canonicaliseValue()", () => {
 
 describe("canonicaliseRow()", () => {
   it("encodes the key, the whole row and each cell by column name", () => {
-    expect(canonicaliseRow(["seq", "lane"], "seq", { seq: 124, lane: "todo" })).toEqual({
-      key: "I:124",
+    expect(canonicaliseRow(["seq", "lane"], ["seq"], { seq: 124, lane: "todo" })).toEqual({
+      key: ["I:124"],
       canonical: "I:124 S:4:todo",
       cells: { seq: "I:124", lane: "S:4:todo" },
     });
   });
 
   it("gives two rows whose cells differ only in where the separator falls different canonical strings", () => {
-    const left = canonicaliseRow(["a", "b"], "a", { a: "a:b", b: "c" });
-    const right = canonicaliseRow(["a", "b"], "a", { a: "a", b: "b:c" });
+    const left = canonicaliseRow(["a", "b"], ["a"], { a: "a:b", b: "c" });
+    const right = canonicaliseRow(["a", "b"], ["a"], { a: "a", b: "b:c" });
 
     expect(left.canonical).toBe("S:3:a:b S:1:c");
     expect(right.canonical).toBe("S:1:a S:3:b:c");
   });
 
   it("encodes cells in the order columns are given", () => {
-    expect(canonicaliseRow(["lane", "seq"], "seq", { seq: 124, lane: "todo" }).canonical).toBe("S:4:todo I:124");
+    expect(canonicaliseRow(["lane", "seq"], ["seq"], { seq: 124, lane: "todo" }).canonical).toBe("S:4:todo I:124");
   });
 
   it("throws when a column is absent from the row rather than encoding it as NULL", () => {
-    const error = capture(() => canonicaliseRow(["seq", "lane"], "seq", { seq: 124 })) as UnsupportedValue;
+    const error = capture(() => canonicaliseRow(["seq", "lane"], ["seq"], { seq: 124 })) as UnsupportedValue;
 
     expect(error.column).toBe("lane");
     expect(error.message).toBe("lane: the column is absent from the row — the read did not return it");
   });
 
   it("encodes a column present and explicitly null, which is not the same as absent", () => {
-    expect(canonicaliseRow(["seq", "lane"], "seq", { seq: 124, lane: null }).cells).toEqual({ seq: "I:124", lane: "N" });
+    expect(canonicaliseRow(["seq", "lane"], ["seq"], { seq: 124, lane: null }).cells).toEqual({ seq: "I:124", lane: "N" });
+  });
+
+  it("builds the key tuple in key-column order, not in the order the columns are read", () => {
+    const row = canonicaliseRow(["note", "person", "team"], ["team", "person"], { note: "lead", person: "ana", team: 7 });
+
+    expect(row.key).toEqual(["I:7", "S:3:ana"]);
+    expect(row.canonical).toBe("S:4:lead S:3:ana I:7");
+  });
+
+  it("throws naming the second key column when that one alone is missing from the columns read", () => {
+    const error = capture(() => canonicaliseRow(["team", "note"], ["team", "person"], { team: "red", note: "lead" })) as UnsupportedValue;
+
+    expect(error.column).toBe("person");
+    expect(error.message).toBe("person: the key column is not among the columns read");
   });
 
   it("throws when the key column is not among the columns read", () => {
-    expect((capture(() => canonicaliseRow(["lane"], "seq", { lane: "todo" })) as UnsupportedValue).message).toBe(
+    expect((capture(() => canonicaliseRow(["lane"], ["seq"], { lane: "todo" })) as UnsupportedValue).message).toBe(
       "seq: the key column is not among the columns read",
     );
   });
@@ -382,55 +396,74 @@ describe("digestInput() and schemaDigestInput()", () => {
 
 describe("compareKeys()", () => {
   it("orders I:9 before I:10 numerically, which is what ORDER BY produced", () => {
-    expect(compareKeys("I:9", "I:10")).toBe(-1);
-    expect(compareKeys("I:10", "I:9")).toBe(1);
+    expect(compareKeys(["I:9"], ["I:10"])).toBe(-1);
+    expect(compareKeys(["I:10"], ["I:9"])).toBe(1);
   });
 
   it("orders a text key lexicographically, where 9 follows 10", () => {
-    expect(compareKeys("S:1:9", "S:2:10")).toBe(1);
+    expect(compareKeys(["S:1:9"], ["S:2:10"])).toBe(1);
   });
 
   it("ranks NULL before a number before text, which is SQLite's own order", () => {
-    expect(compareKeys("N", "I:0")).toBe(-1);
-    expect(compareKeys("I:0", "S:1:a")).toBe(-1);
-    expect(compareKeys("S:1:a", "N")).toBe(1);
+    expect(compareKeys(["N"], ["I:0"])).toBe(-1);
+    expect(compareKeys(["I:0"], ["S:1:a"])).toBe(-1);
+    expect(compareKeys(["S:1:a"], ["N"])).toBe(1);
   });
 
   it("reports equality for two identical keys of each type", () => {
-    expect([compareKeys("N", "N"), compareKeys("I:7", "I:7"), compareKeys("S:3:abc", "S:3:abc")]).toEqual([0, 0, 0]);
+    expect([compareKeys(["N"], ["N"]), compareKeys(["I:7"], ["I:7"]), compareKeys(["S:3:abc"], ["S:3:abc"])]).toEqual([0, 0, 0]);
   });
 
   it("compares text after the length prefix, so a longer key is not ordered by its own digits", () => {
-    expect(compareKeys("S:10:aaaaaaaaaa", "S:2:ab")).toBe(-1);
+    expect(compareKeys(["S:10:aaaaaaaaaa"], ["S:2:ab"])).toBe(-1);
   });
 
   it("orders a real alongside an integer, since both are numbers to SQLite", () => {
-    expect(compareKeys("I:1", "R:1.5")).toBe(-1);
-    expect(compareKeys("R:1.5", "I:2")).toBe(-1);
+    expect(compareKeys(["I:1"], ["R:1.5"])).toBe(-1);
+    expect(compareKeys(["R:1.5"], ["I:2"])).toBe(-1);
   });
 
   it("orders an astral character after every BMP one, as BINARY does and JS `<` does not", () => {
-    expect(compareKeys("S:1:�", "S:2:\u{1F600}")).toBe(-1);
+    expect(compareKeys(["S:1:�"], ["S:2:\u{1F600}"])).toBe(-1);
     // oxlint-disable-next-line eslint/no-constant-binary-expression -- comparing two literals is the assertion
     expect("�" < "\u{1F600}").toBe(false);
   });
 
   it("orders a prefix before the string that extends it", () => {
-    expect(compareKeys("S:3:abc", "S:4:abcd")).toBe(-1);
+    expect(compareKeys(["S:3:abc"], ["S:4:abcd"])).toBe(-1);
   });
 
   it("ranks a BLOB after text, which is where BINARY puts it", () => {
-    expect(compareKeys("S:1:z", "B:00ff")).toBe(-1);
-    expect(compareKeys("B:00ff", "S:1:z")).toBe(1);
-    expect(compareKeys("N", "B:00")).toBe(-1);
-    expect(compareKeys("I:9007199254740991", "B:00")).toBe(-1);
+    expect(compareKeys(["S:1:z"], ["B:00ff"])).toBe(-1);
+    expect(compareKeys(["B:00ff"], ["S:1:z"])).toBe(1);
+    expect(compareKeys(["N"], ["B:00"])).toBe(-1);
+    expect(compareKeys(["I:9007199254740991"], ["B:00"])).toBe(-1);
+  });
+
+  it("decides a composite key by its first differing cell, each cell by its own type", () => {
+    expect([
+      compareKeys(["S:3:red", "I:9"], ["S:3:red", "I:10"]),
+      compareKeys(["S:3:red", "S:1:9"], ["S:3:red", "S:2:10"]),
+      compareKeys(["S:4:blue", "I:99"], ["S:3:red", "I:1"]),
+      compareKeys(["I:1", "N"], ["I:1", "B:00"]),
+    ]).toEqual([-1, 1, -1, -1]);
+  });
+
+  it("reports two composite keys equal only when every cell is", () => {
+    expect([compareKeys(["S:3:red", "I:7", "B:00"], ["S:3:red", "I:7", "B:00"]), compareKeys(["S:3:red", "I:7"], ["S:3:red", "I:8"])]).toEqual([
+      0, -1,
+    ]);
+  });
+
+  it("orders a key before a longer one it is a prefix of, whichever side each is on", () => {
+    expect([compareKeys(["S:3:red"], ["S:3:red", "I:1"]), compareKeys(["S:3:red", "I:1"], ["S:3:red"]), compareKeys([], [])]).toEqual([-1, 1, 0]);
   });
 
   it("compares two blobs bytewise, a shorter one before the blob that extends it", () => {
-    expect(compareKeys("B:00", "B:0000")).toBe(-1);
-    expect(compareKeys("B:0000", "B:00")).toBe(1);
-    expect(compareKeys("B:00ff", "B:0100")).toBe(-1);
-    expect(compareKeys("B:010203", "B:010203")).toBe(0);
+    expect(compareKeys(["B:00"], ["B:0000"])).toBe(-1);
+    expect(compareKeys(["B:0000"], ["B:00"])).toBe(1);
+    expect(compareKeys(["B:00ff"], ["B:0100"])).toBe(-1);
+    expect(compareKeys(["B:010203"], ["B:010203"])).toBe(0);
   });
 });
 
@@ -669,7 +702,7 @@ describe("insertStatement()", () => {
     expect(insertStatement("auth_users", ["id", "email"], { id, email: "a@b.test" })).toBe(
       `INSERT INTO "auth_users" ("id","email") VALUES (X'00112233445566778899aabbccddeeff','a@b.test');`,
     );
-    expect(canonicaliseRow(["id", "email"], "id", { id, email: "a@b.test" }).key).toBe("B:00112233445566778899aabbccddeeff");
+    expect(canonicaliseRow(["id", "email"], ["id"], { id, email: "a@b.test" }).key).toEqual(["B:00112233445566778899aabbccddeeff"]);
   });
 
   it("throws when a column is absent from the row rather than silently writing NULL", () => {
@@ -713,8 +746,8 @@ describe("the fixed statements", () => {
 });
 
 describe("verificationSelect()", () => {
-  const UUID_KEYED: AppTable = { name: "tasks", key: "uuid", columns: ["uuid", "lane"], pageRows: 256 };
-  const INTEGER_KEYED: AppTable = { name: "counted_rows", key: "seq", columns: ["seq"], pageRows: 512 };
+  const UUID_KEYED: AppTable = { name: "tasks", keys: ["uuid"], columns: ["uuid", "lane"], pageRows: 256 };
+  const INTEGER_KEYED: AppTable = { name: "counted_rows", keys: ["seq"], columns: ["seq"], pageRows: 512 };
 
   const projected = (column: string) =>
     `CASE WHEN typeof("${column}")='blob' THEN hex("${column}") ELSE "${column}" END AS "${column}", typeof("${column}") AS "forge:type:${column}"`;
@@ -726,29 +759,43 @@ describe("verificationSelect()", () => {
   });
 
   it("seeks past the last key read on a later page", () => {
-    expect(verificationSelect(UUID_KEYED, ["uuid"], "0f6c1b2a")).toBe(
+    expect(verificationSelect(UUID_KEYED, ["uuid"], ["0f6c1b2a"])).toBe(
       `SELECT ${projected("uuid")} FROM "tasks" AS t WHERE t."uuid" > '0f6c1b2a' ORDER BY t."uuid" LIMIT 256`,
     );
   });
 
   it("seeks past an integer cursor without quoting it", () => {
-    expect(verificationSelect(INTEGER_KEYED, ["seq"], 9)).toBe(
+    expect(verificationSelect(INTEGER_KEYED, ["seq"], [9])).toBe(
       `SELECT ${projected("seq")} FROM "counted_rows" AS t WHERE t."seq" > 9 ORDER BY t."seq" LIMIT 512`,
     );
   });
 
   it("seeks past a byte-array cursor as a blob literal", () => {
-    expect(verificationSelect({ name: "auth_users", key: "id", columns: ["id", "email"], pageRows: 256 }, ["id"], [0, 17, 255])).toBe(
+    expect(verificationSelect({ name: "auth_users", keys: ["id"], columns: ["id", "email"], pageRows: 256 }, ["id"], [[0, 17, 255]])).toBe(
       `SELECT ${projected("id")} FROM "auth_users" AS t WHERE t."id" > X'0011ff' ORDER BY t."id" LIMIT 256`,
     );
-    expect(verificationSelect({ name: "auth_users", key: "id", columns: ["id", "email"], pageRows: 256 }, ["id"], [])).toBe(
+    expect(verificationSelect({ name: "auth_users", keys: ["id"], columns: ["id", "email"], pageRows: 256 }, ["id"], [[]])).toBe(
       `SELECT ${projected("id")} FROM "auth_users" AS t WHERE t."id" > X'' ORDER BY t."id" LIMIT 256`,
     );
   });
 
   it("escapes a caller-supplied key in the cursor", () => {
-    expect(verificationSelect({ name: "keys", key: "key", columns: ["key"], pageRows: 256 }, ["key"], "a'b")).toBe(
+    expect(verificationSelect({ name: "keys", keys: ["key"], columns: ["key"], pageRows: 256 }, ["key"], ["a'b"])).toBe(
       `SELECT ${projected("key")} FROM "keys" AS t WHERE t."key" > 'a''b' ORDER BY t."key" LIMIT 256`,
+    );
+  });
+
+  it("orders the first page of a composite key by every key column, in key order", () => {
+    expect(verificationSelect({ name: "members", keys: ["team", "person"], columns: ["person", "team"], pageRows: 256 }, ["person"], null)).toBe(
+      `SELECT ${projected("person")} FROM "members" AS t ORDER BY t."team", t."person" LIMIT 256`,
+    );
+  });
+
+  it("seeks past a composite cursor as one row value, each cell written as its own literal", () => {
+    const table: AppTable = { name: "readings", keys: ["site", "seq", "sensor"], columns: ["site", "seq", "sensor"], pageRows: 64 };
+
+    expect(verificationSelect(table, ["site"], ["o'k", 7, [0, 255]])).toBe(
+      `SELECT ${projected("site")} FROM "readings" AS t WHERE (t."site", t."seq", t."sensor") > ('o''k', 7, X'00ff') ORDER BY t."site", t."seq", t."sensor" LIMIT 64`,
     );
   });
 

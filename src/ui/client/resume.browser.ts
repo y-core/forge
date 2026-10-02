@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { jsx } from "../../jsx/jsx-runtime";
+import { jsx } from "../../render/jsx/jsx-runtime";
 import { render } from "../../testing/render";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { SCOPE_EVENTS } from "../contracts/scope-events";

@@ -108,14 +108,14 @@ describe("findBarrelImports()", () => {
   });
 
   it("strips a statement-level `type` marker", () => {
-    expect(findBarrelImports('import type { FC, PropsWithChildren } from "@y-core/forge/jsx";', PKG)).toEqual([
-      { line: 1, subpath: "./jsx", symbols: ["FC", "PropsWithChildren"] },
+    expect(findBarrelImports('import type { FC, PropsWithChildren } from "@y-core/forge/render/jsx";', PKG)).toEqual([
+      { line: 1, subpath: "./render/jsx", symbols: ["FC", "PropsWithChildren"] },
     ]);
   });
 
   it("strips a specifier-level `type` marker", () => {
-    expect(findBarrelImports('import { type FC, jsx } from "@y-core/forge/jsx";', PKG)).toEqual([
-      { line: 1, subpath: "./jsx", symbols: ["FC", "jsx"] },
+    expect(findBarrelImports('import { type FC, jsx } from "@y-core/forge/render/jsx";', PKG)).toEqual([
+      { line: 1, subpath: "./render/jsx", symbols: ["FC", "jsx"] },
     ]);
   });
 

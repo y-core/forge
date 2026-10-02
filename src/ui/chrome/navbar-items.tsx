@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { JSXNode } from "../../render/jsx/types";
 import { currentAttrs } from "../contracts/state-attrs";
 import { Menu } from "../core/menu";
 import { Popover } from "../core/popover";

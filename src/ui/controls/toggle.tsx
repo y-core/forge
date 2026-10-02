@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { Toggle as CoreToggle } from "../core/toggle";
 import { createBoundControl } from "./create-bound-control";
 

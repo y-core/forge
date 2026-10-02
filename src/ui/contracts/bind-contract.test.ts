@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { URL_SCHEME_CASES } from "../../http/escape.fixture";
+import { URL_SCHEME_CASES } from "../../html/escape.fixture";
 import {
   BIND_ATTR_ATTR,
   BIND_TEXT_ATTR,
@@ -91,12 +91,12 @@ describe("safeBindAttrValue", () => {
   // Read from the renderer rather than restated, so an attribute added to one side and not the other
   // fails here instead of leaving the client write weaker than the server write of the same name.
   it("holds exactly the attributes the JSX renderer sanitizes", async () => {
-    const { URL_ATTRS } = await import("../../jsx/render-to-string");
+    const { URL_ATTRS } = await import("../../render/jsx/render-to-string");
     expect([...URL_BOUND_ATTRS].sort()).toEqual([...URL_ATTRS].sort());
   });
 
-  // The shared table `src/http/escape.test.ts` asserts against `safeUrl`: `ui/contracts` is a leaf
-  // and may not import `http`, so this is what stops this copy of the rule drifting from that one.
+  // The shared table `src/html/escape.test.ts` asserts against `safeUrl`: `ui/contracts` is a leaf
+  // and may not import `html`, so this is what stops this copy of the rule drifting from that one.
   it("applies the shared scheme rule to href for every case in the table", () => {
     for (const { input, expected } of URL_SCHEME_CASES) {
       expect(safeBindAttrValue("href", input)).toBe(expected);

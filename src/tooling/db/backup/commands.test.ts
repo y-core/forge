@@ -13,7 +13,7 @@ import {
   keyProbeReply,
   minimalWranglerConfig,
   OK,
-  projectReadRows,
+  keysetPageReply,
   routedReply,
   tableInfoAsked,
   tableSqlAsked,
@@ -87,13 +87,7 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
     const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
     if (count !== null) return [{ rows: (rows[count[1] ?? ""] ?? []).length }];
     if (statement === RECORDED_CHECKSUM_SELECT) return (rows._forge_migrations ?? []).map((row) => ({ name: row.name }));
-    const from = /FROM "([^"]+)"/.exec(statement);
-    const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-    const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
-    const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-    const all = rows[from?.[1] ?? ""] ?? [];
-    const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
-    return projectReadRows(seek.slice(0, limit));
+    return keysetPageReply(statement, rows) ?? [];
   };
   io.d1Rules.push({ match: () => true, reply: answer });
   // A deployed verb reads through the CLI, so the same answers are wired to both effects.
@@ -222,7 +216,7 @@ const MANIFEST: BackupManifest = {
     {
       name: "tasks",
       rows: 2,
-      digest: sha256((ROWS.tasks ?? []).map((row) => canonicaliseRow(["uuid", "lane"], "uuid", row).canonical).join("\n")),
+      digest: sha256((ROWS.tasks ?? []).map((row) => canonicaliseRow(["uuid", "lane"], ["uuid"], row).canonical).join("\n")),
     },
   ],
   artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL)],

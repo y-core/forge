@@ -15,7 +15,7 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
   return meta;
 }
 
-// Copied rather than imported from `http/escape`: `ui/assets/build` declares no edge to `http`, so
+// Copied rather than imported from `html/escape`: `ui/assets/build` declares no edge to `html`, so
 // the import that would share this class fails `validate-namespace-graph`.
 /** C0/C1 controls and spaces, which browsers ignore when resolving a scheme. */
 // oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars

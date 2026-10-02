@@ -119,8 +119,8 @@ promise.
 ## Architecture
 
 Forge is a **facade** over its external dependencies (`valibot` via `validation`, `@remix-run/*` via `router`, `app`, `http`, and `session`). The
-`jsx` namespace is an **in-house SSR runtime**, not a facade for any third-party library. Consumers import from `@y-core/forge/{namespace}`, never
-from a wrapped package directly.
+`render/jsx` namespace is an **in-house SSR runtime**, not a facade for any third-party library. Consumers import from `@y-core/forge/{namespace}`,
+never from a wrapped package directly.
 
 **Pattern:** `src/{name}/mod.ts` barrel → implementation files → co-located tests.
 
@@ -157,7 +157,9 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 | SSR component | `ui/core` (markup only); client behaviour goes in `ui/client` | [`NAMESPACES.md`][namespaces-5b] §5b, [`UI_SSR_COMPONENTS.md`][usc] |
 | Browser controller, signal, or lazy-loaded resource | `ui/client` — never imported from a Worker-executed file | [`BOUNDARIES.md`][boundaries-1] §1, [`UI_CLIENT_RUNTIME.md`][ucr-2] §2 |
 | Third pipeline-builder variant (beyond `definePage`/`defineAction`) | extract ALL pipeline builders into a NEW `handler` namespace | [`NAMESPACES.md`][namespaces-5c] §5c |
-| HTTP output concern (response builders, header classes, HTML escaping, streaming) | `http` — never `@remix-run/headers` directly | [`NAMESPACES.md`][namespaces-5d] §5d |
+| HTTP output concern (response builders, header classes, streaming) | `http` — never `@remix-run/headers` directly | [`NAMESPACES.md`][namespaces-5d] §5d |
+| Markup-safety primitive (escaping, URL scheme checks, the `SafeHtml` type) | `html` — never `http`, never a renderer | [`NAMESPACES.md`][namespaces-5m] §5m |
+| Renderer, or a construct inside one (a document format, a markdown construct, a PDF component) | a child of `render/` — never `http` | [`NAMESPACES.md`][namespaces-5j] §5j |
 | Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `docs/` | [`UI_DESIGN_GUIDANCE.md`][udg-5a] §5a |
 | Build-time module — ask "does this drive an external builder, or is it one?" | drives one → `src/tooling/assets`; **is** one → the namespace owning the artifact | [`ASSET_PIPELINE.md`][ap-2c] §2c |
 | A relaxation production must not hold (a skipped guard, an error detail, a test credential) | `dev` as a `DevAllowance` grant — never a boolean on the production option | [`NAMESPACES.md`][namespaces-5i] §5i |
@@ -185,10 +187,12 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 [namespaces-5a]: docs/NAMESPACES.md#5a-security--transport-layer-hardening-only
 [namespaces-5b]: docs/NAMESPACES.md#5b-uicore--ssr-components-only
 [namespaces-5c]: docs/NAMESPACES.md#5c-app--bootstrap-and-pipeline-builders
-[namespaces-5d]: docs/NAMESPACES.md#5d-http--all-http-output-concerns
+[namespaces-5d]: docs/NAMESPACES.md#5d-http--responses-headers-and-paths
 [namespaces-5g]: docs/NAMESPACES.md#5g-tooling--where-a-developer-facing-tool-belongs
 [namespaces-5i]: docs/NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
+[namespaces-5j]: docs/NAMESPACES.md#5j-render--one-namespace-per-renderer
 [namespaces-5k]: docs/NAMESPACES.md#5k-keyring--at-rest-sealing-under-the-apps-own-root-secret
+[namespaces-5m]: docs/NAMESPACES.md#5m-html--safe-markup-primitives
 [nd-3]: warden/canon/libs/NAMESPACE_DESIGN.md#3-namespace-classification
 [testing-6]: docs/TEST_RUNNERS.md#6-the-verification-gate
 [tl-2]: warden/canon/libs/TESTING.md#2-co-located-test-files

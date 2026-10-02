@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { FIELD_LABEL_CLASSES } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";

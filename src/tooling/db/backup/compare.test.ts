@@ -16,7 +16,7 @@ function capture(run: () => unknown): unknown {
 const COLUMNS = ["seq", "lane"];
 
 function events(list: readonly (readonly [number, string])[]): CanonicalRow[] {
-  return list.map(([seq, lane]) => canonicaliseRow(COLUMNS, "seq", { seq, lane }));
+  return list.map(([seq, lane]) => canonicaliseRow(COLUMNS, ["seq"], { seq, lane }));
 }
 
 const BOTH_EXHAUSTED = { source: true, target: true } as const;
@@ -62,7 +62,7 @@ describe("mergeRowPage()", () => {
     ]);
     const comparison = finishComparison("events", mergeRowPage(emptyComparison(), source, target, BOTH_EXHAUSTED));
 
-    expect(comparison.divergences).toEqual([{ kind: "only-in-source", key: "I:2" }]);
+    expect(comparison.divergences).toEqual([{ kind: "only-in-source", key: ["I:2"] }]);
     expect(comparison.divergent).toBe(1);
   });
 
@@ -78,24 +78,24 @@ describe("mergeRowPage()", () => {
     ]);
     const comparison = finishComparison("events", mergeRowPage(emptyComparison(), source, target, BOTH_EXHAUSTED));
 
-    expect(comparison.divergences).toEqual([{ kind: "only-in-target", key: "I:2" }]);
+    expect(comparison.divergences).toEqual([{ kind: "only-in-target", key: ["I:2"] }]);
   });
 
   it("names the column that moved rather than printing two whole rows", () => {
     const comparison = finishComparison("events", mergeRowPage(emptyComparison(), events([[1, "todo"]]), events([[1, "doing"]]), BOTH_EXHAUSTED));
 
-    expect(comparison.divergences).toEqual([{ kind: "value", key: "I:1", column: "lane", source: "S:4:todo", target: "S:5:doing" }]);
+    expect(comparison.divergences).toEqual([{ kind: "value", key: ["I:1"], column: "lane", source: "S:4:todo", target: "S:5:doing" }]);
   });
 
   it("reports every column that moved on one row, in column-name order", () => {
     const columns = ["seq", "actor", "lane"];
-    const source = [canonicaliseRow(columns, "seq", { seq: 1, actor: "a", lane: "todo" })];
-    const target = [canonicaliseRow(columns, "seq", { seq: 1, actor: "b", lane: "doing" })];
+    const source = [canonicaliseRow(columns, ["seq"], { seq: 1, actor: "a", lane: "todo" })];
+    const target = [canonicaliseRow(columns, ["seq"], { seq: 1, actor: "b", lane: "doing" })];
     const comparison = finishComparison("events", mergeRowPage(emptyComparison(), source, target, BOTH_EXHAUSTED));
 
     expect(comparison.divergences).toEqual([
-      { kind: "value", key: "I:1", column: "actor", source: "S:1:a", target: "S:1:b" },
-      { kind: "value", key: "I:1", column: "lane", source: "S:4:todo", target: "S:5:doing" },
+      { kind: "value", key: ["I:1"], column: "actor", source: "S:1:a", target: "S:1:b" },
+      { kind: "value", key: ["I:1"], column: "lane", source: "S:4:todo", target: "S:5:doing" },
     ]);
   });
 
@@ -123,8 +123,8 @@ describe("mergeRowPage()", () => {
       ),
     );
 
-    expect(left.divergences).toEqual([{ kind: "duplicate-key", key: "I:1", side: "source" }]);
-    expect(right.divergences).toEqual([{ kind: "duplicate-key", key: "I:1", side: "target" }]);
+    expect(left.divergences).toEqual([{ kind: "duplicate-key", key: ["I:1"], side: "source" }]);
+    expect(right.divergences).toEqual([{ kind: "duplicate-key", key: ["I:1"], side: "target" }]);
   });
 
   it("throws on unsorted input rather than reporting a clean diff", () => {
@@ -165,7 +165,7 @@ describe("mergeRowPage()", () => {
     );
 
     expect(first.divergences).toEqual([]);
-    expect(first.pendingSource.map((row) => row.key)).toEqual(["I:2"]);
+    expect(first.pendingSource.map((row) => row.key)).toEqual([["I:2"]]);
 
     const comparison = finishComparison("events", mergeRowPage(first, [], events([[2, "doing"]]), BOTH_EXHAUSTED));
 
@@ -181,7 +181,7 @@ describe("mergeRowPage()", () => {
     expect(comparison.divergent).toBe(25);
     expect(comparison.divergences.length).toBe(MAX_DIVERGENCES);
     expect(comparison.truncated).toBe(true);
-    expect(comparison.divergences.map((divergence) => divergence.key)).toEqual(Array.from({ length: 20 }, (_, index) => `I:${index + 1}`));
+    expect(comparison.divergences.map((divergence) => divergence.key)).toEqual(Array.from({ length: 20 }, (_, index) => [`I:${index + 1}`]));
   });
 
   it("keeps MAX_DIVERGENCES at 20, since the cap is part of what a report promises", () => {
@@ -197,9 +197,63 @@ describe("mergeRowPage()", () => {
     const flushed = mergeRowPage(emptyComparison(), source, events([[1, "todo"]]), { source: false, target: true });
 
     expect(held.divergences).toEqual([]);
-    expect(held.pendingSource.map((row) => row.key)).toEqual(["I:2"]);
-    expect(flushed.divergences).toEqual([{ kind: "only-in-source", key: "I:2" }]);
+    expect(held.pendingSource.map((row) => row.key)).toEqual([["I:2"]]);
+    expect(flushed.divergences).toEqual([{ kind: "only-in-source", key: ["I:2"] }]);
     expect(flushed.pendingSource).toEqual([]);
+  });
+});
+
+function members(list: readonly (readonly [string, string, string])[]): CanonicalRow[] {
+  return list.map(([team, person, role]) => canonicaliseRow(["team", "person", "role"], ["team", "person"], { team, person, role }));
+}
+
+describe("mergeRowPage() — a composite key", () => {
+  it("joins on the whole key, so two rows sharing the first cell are neither duplicates nor matched to each other", () => {
+    const source = members([
+      ["red", "ana", "lead"],
+      ["red", "bo", "dev"],
+      ["red", "cy", "dev"],
+    ]);
+    const target = members([
+      ["red", "ana", "lead"],
+      ["red", "cy", "ops"],
+    ]);
+    const comparison = finishComparison("members", mergeRowPage(emptyComparison(), source, target, BOTH_EXHAUSTED));
+
+    expect(comparison.divergences).toEqual([
+      { kind: "only-in-source", key: ["S:3:red", "S:2:bo"] },
+      { kind: "value", key: ["S:3:red", "S:2:cy"], column: "role", source: "S:3:dev", target: "S:3:ops" },
+    ]);
+  });
+
+  it("reports a composite key repeated in full as a duplicate", () => {
+    const source = members([
+      ["red", "ana", "lead"],
+      ["red", "ana", "dev"],
+    ]);
+
+    expect(
+      finishComparison("members", mergeRowPage(emptyComparison(), source, members([["red", "ana", "lead"]]), BOTH_EXHAUSTED)).divergences,
+    ).toEqual([{ kind: "duplicate-key", key: ["S:3:red", "S:3:ana"], side: "source" }]);
+  });
+
+  it("throws when a later cell goes backwards under an equal first cell, writing each key with its cells space-joined", () => {
+    const target = members([
+      ["red", "bo", "dev"],
+      ["red", "ana", "lead"],
+    ]);
+
+    expect((capture(() => mergeRowPage(emptyComparison(), [], target, NEITHER_EXHAUSTED)) as Error).message).toBe(
+      "target rows are not ordered by the key: S:3:red S:3:ana follows S:3:red S:2:bo",
+    );
+  });
+
+  it("throws when a later page reopens a composite key an earlier page passed", () => {
+    const first = mergeRowPage(emptyComparison(), members([["red", "bo", "dev"]]), [], NEITHER_EXHAUSTED);
+
+    expect((capture(() => mergeRowPage(first, members([["red", "ana", "lead"]]), [], NEITHER_EXHAUSTED)) as Error).message).toBe(
+      "source rows are not ordered by the key: S:3:red S:3:ana follows S:3:red S:2:bo",
+    );
   });
 });
 
@@ -235,22 +289,42 @@ describe("finishComparison()", () => {
 
 describe("formatDivergence()", () => {
   it("formats each kind, with both sides at full width", () => {
-    expect(formatDivergence({ kind: "only-in-source", key: "S:14:feat-260806-04" }, 40)).toBe(
+    expect(formatDivergence({ kind: "only-in-source", key: ["S:14:feat-260806-04"] }, 40)).toBe(
       "− S:14:feat-260806-04 is in the source and not in the target",
     );
-    expect(formatDivergence({ kind: "only-in-target", key: "S:14:feat-260806-04" }, 40)).toBe(
+    expect(formatDivergence({ kind: "only-in-target", key: ["S:14:feat-260806-04"] }, 40)).toBe(
       "+ S:14:feat-260806-04 is in the target and not in the source",
     );
-    expect(formatDivergence({ kind: "duplicate-key", key: "I:124", side: "target" }, 40)).toBe("! I:124 appears twice in the target");
-    expect(formatDivergence({ kind: "value", key: "S:14:feat-260806-04", column: "lane", source: "S:4:todo", target: "S:5:doing" }, 40)).toBe(
+    expect(formatDivergence({ kind: "duplicate-key", key: ["I:124"], side: "target" }, 40)).toBe("! I:124 appears twice in the target");
+    expect(formatDivergence({ kind: "value", key: ["S:14:feat-260806-04"], column: "lane", source: "S:4:todo", target: "S:5:doing" }, 40)).toBe(
       "≠ S:14:feat-260806-04 lane: S:4:todo → S:5:doing",
     );
   });
 
+  it("writes a composite key with its cells space-joined, for every kind", () => {
+    const key = ["S:3:red", "I:42"];
+
+    expect([
+      formatDivergence({ kind: "only-in-source", key }, 40),
+      formatDivergence({ kind: "only-in-target", key }, 40),
+      formatDivergence({ kind: "duplicate-key", key, side: "source" }, 40),
+      formatDivergence({ kind: "value", key, column: "role", source: "S:3:dev", target: "S:3:ops" }, 40),
+    ]).toEqual([
+      "− S:3:red I:42 is in the source and not in the target",
+      "+ S:3:red I:42 is in the target and not in the source",
+      "! S:3:red I:42 appears twice in the source",
+      "≠ S:3:red I:42 role: S:3:dev → S:3:ops",
+    ]);
+  });
+
+  it("clips a composite key as one value, across the space between its cells", () => {
+    expect(formatDivergence({ kind: "only-in-target", key: ["S:3:red", "I:42"] }, 10)).toBe("+ S:3:red I… is in the target and not in the source");
+  });
+
   it("clips every value past the width, and leaves one exactly at it alone", () => {
-    expect(formatDivergence({ kind: "value", key: "S:14:feat-260806-04", column: "lane", source: "S:4:todo", target: "S:5:doing" }, 8)).toBe(
+    expect(formatDivergence({ kind: "value", key: ["S:14:feat-260806-04"], column: "lane", source: "S:4:todo", target: "S:5:doing" }, 8)).toBe(
       "≠ S:14:fe… lane: S:4:todo → S:5:doi…",
     );
-    expect(formatDivergence({ kind: "only-in-source", key: "S:14:feat-260806-04" }, 6)).toBe("− S:14:… is in the source and not in the target");
+    expect(formatDivergence({ kind: "only-in-source", key: ["S:14:feat-260806-04"] }, 6)).toBe("− S:14:… is in the source and not in the target");
   });
 });

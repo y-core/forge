@@ -303,7 +303,7 @@ The intents — `danger`, `warning`, `success`, `info` — each carry the roles 
 
 | Role | Use for |
 | --- | --- |
-| `--status-danger-subtle` / `--status-danger-subtle-foreground` | The panel tier: `Alert`, `Toast`, and the banners `src/http/fragment.ts` renders |
+| `--status-danger-subtle` / `--status-danger-subtle-foreground` | The panel tier: `Alert`, `Toast`, and the banners `src/render/htmx/fragment.ts` renders |
 | `--status-danger-strong` / `--status-danger-strong-foreground` | The chip tier: `Badge`, which starts one stop in because a filled chip sits on a tinted surface rather than a panel's |
 | `--status-danger-border` | The edge of either tier |
 

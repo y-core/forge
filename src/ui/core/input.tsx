@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX } from "../../render/jsx/types";
 import { applyFormat, INPUT_FORMAT_SCOPE } from "../contracts/input-format-contract";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";

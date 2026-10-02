@@ -4,10 +4,10 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { createPdfFontSet, readPdfFontPack } from "../../output/pdf/fonts/mod";
-import type { PdfFontPackData } from "../../output/pdf/fonts/types";
-import { createPdfRenderer } from "../../output/pdf/mod";
-import type { PdfArtwork, PdfLetterhead } from "../../output/pdf/types";
+import { createPdfFontSet, readPdfFontPack } from "../../render/pdf/fonts/mod";
+import type { PdfFontPackData } from "../../render/pdf/fonts/types";
+import { createPdfRenderer } from "../../render/pdf/mod";
+import type { PdfArtwork, PdfLetterhead } from "../../render/pdf/types";
 import { buildAll, generateAssetsTypes, readEmittedManifest, structuralSignature } from "./pipeline";
 import type { ResolvedConfig } from "./types";
 

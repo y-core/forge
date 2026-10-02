@@ -230,6 +230,86 @@ describe("AssetsConfigSchema — icons", () => {
   });
 });
 
+describe("AssetsConfigSchema — icons share target", () => {
+  const withShareTarget = (shareTarget: unknown) =>
+    parse({
+      icons: {
+        src: "a.svg",
+        outDir: "p",
+        lightColor: "#fff",
+        app: { name: "App", shortName: "A", backgroundColor: "#fff", shareTarget },
+        outputs: [],
+      },
+    });
+  const params = { title: "title", text: "text", url: "url" };
+
+  it("accepts a GET share target and defaults an omitted method to GET", () => {
+    const config = {
+      icons: {
+        src: "a.svg",
+        outDir: "p",
+        lightColor: "#fff",
+        app: { name: "App", shortName: "A", backgroundColor: "#fff", shareTarget: { action: "/capture", params } },
+        outputs: [],
+      },
+    };
+    expect(v.parse(AssetsConfigSchema, config).icons?.app?.shareTarget).toEqual({ action: "/capture", method: "GET", params });
+  });
+
+  it("accepts a POST share target with each enctype", () => {
+    for (const enctype of ["application/x-www-form-urlencoded", "multipart/form-data"]) {
+      expect(withShareTarget({ action: "/share", method: "POST", enctype, params }).success).toBe(true);
+    }
+  });
+
+  it("accepts a params block naming only one field", () => {
+    expect(withShareTarget({ action: "/capture", params: { url: "link" } }).success).toBe(true);
+  });
+
+  it("rejects an action that is not a same-origin path", () => {
+    for (const action of [
+      "//evil.com/x",
+      "/\\evil.com",
+      "https://evil.com/capture",
+      "capture",
+      "/..//evil.com/x",
+      "/cap\nture",
+      "/cap\u0000ture",
+      "",
+    ]) {
+      expect(withShareTarget({ action, params }).success).toBe(false);
+    }
+  });
+
+  it("rejects an action the parser would rewrite, since the manifest would carry a different path", () => {
+    expect(withShareTarget({ action: "/a/../capture", params }).success).toBe(false);
+  });
+
+  it("rejects an enctype on a GET share target, naming the reason", () => {
+    for (const method of ["GET", undefined]) {
+      const result = withShareTarget({ action: "/capture", method, enctype: "multipart/form-data", params });
+      expect(result.success).toBe(false);
+      expect(result.issues?.[0]?.message).toBe("a share target enctype needs method POST");
+    }
+  });
+
+  it("rejects a method or enctype outside the two each allows", () => {
+    expect(withShareTarget({ action: "/capture", method: "PUT", params }).success).toBe(false);
+    expect(withShareTarget({ action: "/capture", method: "POST", enctype: "text/plain", params }).success).toBe(false);
+  });
+
+  it("rejects an empty params block, naming the reason", () => {
+    const result = withShareTarget({ action: "/capture", params: {} });
+    expect(result.success).toBe(false);
+    expect(result.issues?.[0]?.message).toBe("a share target needs at least one of params title, text or url");
+  });
+
+  it("rejects an empty param name and a missing params block", () => {
+    expect(withShareTarget({ action: "/capture", params: { title: "" } }).success).toBe(false);
+    expect(withShareTarget({ action: "/capture" }).success).toBe(false);
+  });
+});
+
 describe("AssetsConfigSchema — site", () => {
   const siteConfig = { origin: "https://example.com", pages: ["/"], robots: { rules: [{ userAgent: "*" }] } };
 

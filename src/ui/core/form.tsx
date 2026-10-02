@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "../../form/constants";
-import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
+import type { FC, JSX, JSXNode, PropsWithChildren } from "../../render/jsx/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 

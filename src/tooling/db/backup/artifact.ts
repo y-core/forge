@@ -153,14 +153,17 @@ export function canonicaliseValue(column: string, value: unknown): string {
 }
 
 /** A row read from `--json`, encoded; a column absent from the row throws rather than encoding as NULL. @internal */
-export function canonicaliseRow(columns: readonly string[], keyColumn: string, row: Readonly<Record<string, unknown>>): CanonicalRow {
+export function canonicaliseRow(columns: readonly string[], keyColumns: readonly string[], row: Readonly<Record<string, unknown>>): CanonicalRow {
   const cells: Record<string, string> = {};
   for (const column of columns) {
     if (!Object.hasOwn(row, column)) throw new UnsupportedValue(column, "the column is absent from the row — the read did not return it");
     cells[column] = canonicaliseValue(column, row[column]);
   }
-  const key = cells[keyColumn];
-  if (key === undefined) throw new UnsupportedValue(keyColumn, "the key column is not among the columns read");
+  const key = keyColumns.map((keyColumn) => {
+    const cell = cells[keyColumn];
+    if (cell === undefined) throw new UnsupportedValue(keyColumn, "the key column is not among the columns read");
+    return cell;
+  });
   return { key, canonical: columns.map((column) => cells[column] ?? "").join(" "), cells };
 }
 
@@ -182,8 +185,7 @@ export function appSchemaDigestInput(objects: readonly SchemaObject[]): string {
   return schemaDigestInput(objects.filter((object) => classifyTable(object.name) === "app"));
 }
 
-/** Two canonical keys in the order `ORDER BY <key>` produced them: NULL, then numbers numerically, then text, then blobs. @internal */
-export function compareKeys(left: string, right: string): number {
+function compareKeyCells(left: string, right: string): number {
   const rank = (key: string) => (key === "N" ? 0 : key.startsWith("I:") || key.startsWith("R:") ? 1 : key.startsWith("B:") ? 3 : 2);
   const leftRank = rank(left);
   const rightRank = rank(right);
@@ -198,6 +200,17 @@ export function compareKeys(left: string, right: string): number {
   // longer one's hex — which is the same shorter-is-less BINARY already gives text.
   if (leftRank === 3) return compareCodePoints(left.slice(2), right.slice(2));
   return compareCodePoints(left.slice(left.indexOf(":", 2) + 1), right.slice(right.indexOf(":", 2) + 1));
+}
+
+/** Two canonical keys in the order `ORDER BY <keys>` produced them, cell by cell: NULL, then numbers numerically, then text, then blobs. @internal */
+export function compareKeys(left: readonly string[], right: readonly string[]): number {
+  for (const [index, cell] of left.entries()) {
+    const other = right[index];
+    if (other === undefined) return 1;
+    const order = compareKeyCells(cell, other);
+    if (order !== 0) return order;
+  }
+  return left.length < right.length ? -1 : 0;
 }
 
 /** A value as SQL text, carrying a newline on a token rather than on an escape wrangler's dumper leaves ambiguous. @internal */
@@ -280,9 +293,11 @@ export function verificationSelect(table: AppTable, columns: readonly string[], 
     .join(", ");
   // The table is aliased and the key qualified, because a bare `ORDER BY "id"` binds to a result
   // alias of that name while `WHERE "id" > …` binds to the base column, and the orders disagree.
-  const key = `t.${quoteSqlIdentifier(table.key)}`;
-  const seek = after === null ? "" : ` WHERE ${key} > ${typeof after === "object" ? `X'${toBlobHex(after)}'` : quoteSqlLiteral(after)}`;
-  return `SELECT ${projection} FROM ${quoteSqlIdentifier(table.name)} AS t${seek} ORDER BY ${key} LIMIT ${table.pageRows}`;
+  const keys = table.keys.map((key) => `t.${quoteSqlIdentifier(key)}`);
+  const rowValue = (items: readonly string[]) => (items.length === 1 ? (items[0] ?? "") : `(${items.join(", ")})`);
+  const literals = after?.map((cell) => (typeof cell === "object" ? `X'${toBlobHex(cell)}'` : quoteSqlLiteral(cell)));
+  const seek = literals === undefined ? "" : ` WHERE ${rowValue(keys)} > ${rowValue(literals)}`;
+  return `SELECT ${projection} FROM ${quoteSqlIdentifier(table.name)} AS t${seek} ORDER BY ${keys.join(", ")} LIMIT ${table.pageRows}`;
 }
 
 function fromBlobHex(column: string, hex: unknown): readonly number[] {

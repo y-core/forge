@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { Switch as CoreSwitch } from "../core/switch";
 import { createBoundControl } from "./create-bound-control";
 

@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode, PropsWithChildren } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode, PropsWithChildren } from "../../render/jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";

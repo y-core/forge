@@ -122,9 +122,14 @@ What the format carries, and the limits that follow from it — each refused up 
   ([`DATABASE_MANAGEMENT.md`][dm-5] §5).
 - **No `AUTOINCREMENT` on an app table.** A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried
   alongside it.
-- **A key that collates otherwise than BINARY is read by `rowid` instead**, since the read seeks past the last key it saw and compares by code point
-  — BINARY's order and no other collation's. A `WITHOUT ROWID` table has no other column to order by and is refused up front, naming the column and
-  its collation.
+- **A table whose key has any column declared with a collation other than BINARY is read by `rowid` instead**, since the read seeks past the last
+  key it saw — every column of a composite key compared as one row value — and compares by code point, BINARY's order and no other collation's. A
+  `WITHOUT ROWID` table has no other column to order by and is refused up front, naming the column and its collation. Only the column's own
+  `COLLATE` counts: one inside a `CHECK`, `DEFAULT` or generated expression does not change how the column sorts.
+- **A key collated only inside the `PRIMARY KEY (…)` clause** sorts BINARY, but its index is ordered by that clause's collation and cannot serve
+  the read's order, so a key read would scan and sort the table on every page. A rowid table is read by `rowid` to keep the indexed seek; a
+  `WITHOUT ROWID` table is read by its own key and accepts that scan, which is correct because a key unique under its collation is unique under
+  BINARY too.
 - **A trigger may delete rows.** `schema.sql` is checked statement by statement, and a `CREATE TRIGGER … BEGIN … END` is one statement, so a
   `DELETE FROM` inside its body is the trigger's and not a row-removal the schema must never carry.
 

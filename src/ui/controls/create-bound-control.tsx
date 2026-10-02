@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSXElement } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSXElement } from "../../render/jsx/types";
 import { fieldAttr } from "../server/field-attr";
 
 /** A `ui/core` component and the statics hung off it. @internal */

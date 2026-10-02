@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import type { JSXNode } from "../../jsx/types";
+import type { JSXNode } from "../../render/jsx/types";
 import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Drawer } from "./drawer";

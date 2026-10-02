@@ -2,9 +2,7 @@ import { matchesGlob } from "node:path";
 
 import { splitList } from "../cli/parse";
 import type { CheckStep, GateMode, Selection, Step } from "./types";
-
-/** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
-export const GATE_MODES = ["quality", "standard", "full"] as const;
+import { GATE_MODES } from "./types";
 
 /** Paths every step reads, so a change to one selects the whole table under `--affected`. @public */
 export const DEFAULT_GATE_INPUTS: readonly string[] = ["package.json", "bun.lock", "bunfig.toml", "tsconfig*.json", "config/**", "../**"];

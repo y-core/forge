@@ -96,7 +96,12 @@ export const GOLDEN: readonly GoldenQuery[] = [
 
   { query: "requestLogger requestLog", expect: "project:src/logging/README.md#~logging-every-request", within: 2, dimension: "reference" },
   { query: "getNonce script tag", expect: "project:src/security/README.md#~putting-the-nonce-on-a-script-tag", within: 2, dimension: "reference" },
-  { query: "turnstile csp", expect: "project:src/html/README.md#~security~allowing-turnstile-through-the-csp", within: 2, dimension: "reference" },
+  {
+    query: "turnstile csp",
+    expect: "project:src/render/htmx/README.md#~security~allowing-turnstile-through-the-csp",
+    within: 2,
+    dimension: "reference",
+  },
   { query: "sign and harden the session cookie", expect: "project:src/session/README.md#~security", within: 2, dimension: "reference" },
   {
     query: "routePaths forMethod",

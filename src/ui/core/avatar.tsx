@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, PropsWithChildren } from "../../render/jsx/types";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
 import { slotToken } from "./utils/as-child";

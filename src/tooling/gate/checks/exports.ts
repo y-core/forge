@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { findPublicSymbols, parseBarrelExportNames, parseBarrelExports } from "./barrel-parse";
-import { collectFiles, listDirectories, listFiles } from "./source-scan";
+import { blankSourceComments, collectFiles, listDirectories, listFiles } from "./source-scan";
 import type { ExportsCheckConfig, ExportsMap } from "./types";
 
 interface PatternEntry {
@@ -106,6 +106,14 @@ function collectOwnedSourceFiles(ownerDir: string, barrelDirs: Set<string>, barr
 /** Every `mod.ts` under `dir`, repo-relative. */
 function collectModFiles(root: string, dir: string): string[] {
   return collectFiles(root, dir, (name) => name === "mod.ts");
+}
+
+function reExportedFiles(barrelSource: string, barrelDir: string): Set<string> {
+  const files = new Set<string>();
+  for (const [, specifier = ""] of blankSourceComments(barrelSource).matchAll(/\bexport\s+(?:type\s+)?\{[^}]*\}\s*from\s*["']([^"']+)["']/g)) {
+    if (specifier.startsWith(".")) files.add(resolve(barrelDir, specifier).replace(/\.tsx?$/, ""));
+  }
+  return files;
 }
 
 /** Runs all five passes verifying the `exports` map against the source tree. @public */
@@ -249,9 +257,12 @@ export async function checkExports(config: ExportsCheckConfig): Promise<CheckRes
     const barrelFile = resolve(root, rawPath);
     if (!existsSync(barrelFile)) continue;
 
-    const barrelNames = parseBarrelExportNames(readFileSync(barrelFile, "utf-8"));
+    const barrelSource = readFileSync(barrelFile, "utf-8");
+    const barrelNames = parseBarrelExportNames(barrelSource);
+    const onBarrel = reExportedFiles(barrelSource, dirname(barrelFile));
+    const offBarrelTargets = new Set([...ownExportTargetFiles].filter((file) => !onBarrel.has(file.replace(/\.tsx?$/, ""))));
     const missing = new Set<string>();
-    for (const file of collectOwnedSourceFiles(dirname(barrelFile), barrelDirs, barrelFile, ownExportTargetFiles)) {
+    for (const file of collectOwnedSourceFiles(dirname(barrelFile), barrelDirs, barrelFile, offBarrelTargets)) {
       for (const symbol of findPublicSymbols(readFileSync(file, "utf-8"))) {
         if (!barrelNames.has(symbol)) missing.add(symbol);
       }

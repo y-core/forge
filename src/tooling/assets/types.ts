@@ -1,3 +1,4 @@
+import { safeRedirectPath } from "../../http/redirect-path";
 import { SiteConfigSchema } from "../../site/types";
 import { v } from "../../validation/mod";
 
@@ -63,13 +64,39 @@ const CssColorSchema = v.pipe(
   ),
 );
 
+// A browser navigates to `action` with the shared content, so a value that resolves off-origin
+// would hand whatever the user shared to another host.
+const ShareTargetActionSchema = v.pipe(
+  v.string(),
+  v.check(
+    (action) => action !== "" && safeRedirectPath(action, "") === action,
+    "not a same-origin path — one leading slash, and no scheme, host or control character",
+  ),
+);
+
+const ShareParamNameSchema = v.optional(v.pipe(v.string(), v.minLength(1)));
+
+const ShareTargetSchema = v.pipe(
+  v.object({
+    action: ShareTargetActionSchema,
+    method: v.optional(v.picklist(["GET", "POST"]), "GET"),
+    enctype: v.optional(v.picklist(["application/x-www-form-urlencoded", "multipart/form-data"])),
+    params: v.object({ title: ShareParamNameSchema, text: ShareParamNameSchema, url: ShareParamNameSchema }),
+  }),
+  v.check((target) => target.enctype === undefined || target.method === "POST", "a share target enctype needs method POST"),
+  v.check(
+    (target) => [target.params.title, target.params.text, target.params.url].some((name) => name !== undefined),
+    "a share target needs at least one of params title, text or url",
+  ),
+);
+
 const IconsConfigSchema = v.object({
   src: v.string(),
   outDir: v.string(),
   publicPrefix: v.optional(v.string()),
   lightColor: CssColorSchema,
   darkColor: v.optional(CssColorSchema),
-  app: v.optional(v.object({ name: v.string(), shortName: v.string(), backgroundColor: v.string() })),
+  app: v.optional(v.object({ name: v.string(), shortName: v.string(), backgroundColor: v.string(), shareTarget: v.optional(ShareTargetSchema) })),
   outputs: v.array(IconOutputSchema),
 });
 
@@ -315,7 +342,7 @@ export interface MarkBuild {
   to: string;
 }
 
-/** The artifact a subset writes beside its bytes, which `output/pdf/fonts` reads as a pack. @public */
+/** The artifact a subset writes beside its bytes, which `render/pdf/fonts` reads as a pack. @public */
 export interface FontPackData {
   family: string;
   faces: {

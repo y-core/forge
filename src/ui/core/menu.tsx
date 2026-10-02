@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { MENU_ITEM_CLASS, MENU_KEEP_OPEN_ATTR, MENU_SCOPE, menuItemAttrs } from "../contracts/menu-contract";
 import { nameAttrs, triggerId } from "../contracts/naming";
 import { invokerAttrs, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";

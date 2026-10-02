@@ -1,11 +1,11 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import { renderShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
-import { isPartial } from "../../html/htmx/htmx-headers";
 import { fragmentResponse } from "../../http/response";
-import { renderToString } from "../../jsx/render-to-string";
+import { isPartial } from "../../render/htmx/htmx-headers";
+import { renderToString } from "../../render/jsx/render-to-string";
 import { v } from "../../validation/mod";
 import type { LogLevel, LogQuery, LogReadResult, LogRecord } from "../types";
 import { LOG_LEVELS } from "../types";

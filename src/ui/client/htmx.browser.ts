@@ -2,8 +2,8 @@ import { expect, test } from "@playwright/test";
 import type { Page, Route } from "@playwright/test";
 
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "../../form/constants";
-import { jsx } from "../../jsx/jsx-runtime";
-import type { JSXNode } from "../../jsx/types";
+import { jsx } from "../../render/jsx/jsx-runtime";
+import type { JSXNode } from "../../render/jsx/types";
 import { render } from "../../testing/render";
 import { ANNOUNCE_FAILURE_ATTR, ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
 import { Alert } from "../core/alert";

@@ -9,7 +9,7 @@ import { applyPendingHeaders } from "../context/pending-headers";
 import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
-import { escapeHtml } from "../http/escape";
+import { escapeHtml } from "../html/escape";
 import { CacheControl } from "../http/headers";
 import { createLogger } from "../logging/logger";
 import { requestLog } from "../logging/request-logger";

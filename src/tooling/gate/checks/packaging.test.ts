@@ -181,8 +181,8 @@ describe("checkPackaging() — namespace READMEs", () => {
 
   it("asks nothing of an export whose target is a file rather than a barrel", () => {
     const result = bare(
-      { "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui", "src/html/htmx.ts": BARREL },
-      { exports: { ...EXPORTS, "./html/htmx": "./src/html/htmx.ts" }, files: [...FILES, "src/html/"] },
+      { "src/ui/mod.ts": BARREL, "src/ui/README.md": "# ui", "src/render/htmx.ts": BARREL },
+      { exports: { ...EXPORTS, "./render/htmx": "./src/render/htmx.ts" }, files: [...FILES, "src/html/"] },
     );
 
     expect(result.findings).toEqual([]);

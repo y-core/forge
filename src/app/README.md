@@ -148,11 +148,11 @@ to an `app.use` path. Nothing a hand-written pattern reaches; a generated one ca
 ## Rendering a page
 
 `definePage` turns a loader and a view into a route handler. The loader does the I/O; the view turns state into a `Response`, typically via
-`renderPage` from [`@y-core/forge/jsx`][jsx-readme]. Keeping I/O out of the view is [`ROUTING_AND_MIDDLEWARE.md`][ram-5c] §5c's rule.
+`renderPage` from [`@y-core/forge/render/jsx`][jsx-readme]. Keeping I/O out of the view is [`ROUTING_AND_MIDDLEWARE.md`][ram-5c] §5c's rule.
 
 ```tsx
 import { definePage } from "@y-core/forge/app";
-import { renderPage } from "@y-core/forge/jsx";
+import { renderPage } from "@y-core/forge/render/jsx";
 
 export const homePage = definePage<Bindings, AppConfig>({
   cache: { maxAge: 300, scope: "public" },
@@ -185,7 +185,8 @@ read → guard → validate sequence first ([`ROUTING_AND_MIDDLEWARE.md`][ram-2d
 
 ```ts
 import { defineAction } from "@y-core/forge/app";
-import { fragmentResponse, renderSuccess } from "@y-core/forge/http";
+import { fragmentResponse } from "@y-core/forge/http";
+import { renderSuccess } from "@y-core/forge/render/htmx";
 import { formMultilineText, formText, v } from "@y-core/forge/validation";
 
 const ContactSchema = v.strictObject({
@@ -434,7 +435,7 @@ export default { fetch: (request: Request, env: Env, ctx: ExecutionContext) => a
 
 ## Gotchas
 
-**`renderPage` is not in this namespace.** It comes from `@y-core/forge/jsx`, and a view calls it to turn a JSX tree into a `Response`.
+**`renderPage` is not in this namespace.** It comes from `@y-core/forge/render/jsx`, and a view calls it to turn a JSX tree into a `Response`.
 
 **A `HEAD` request never reaches a handler as itself.** The app copy-constructs it into a `GET`, runs the full chain, then strips the body — so
 handlers never special-case it, and `router` ships no `head` verb ([`ROUTING_AND_MIDDLEWARE.md`][ram-1d] §1d).
@@ -474,7 +475,7 @@ hooks guarantee.
 [iv-1b]: ../../docs/INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
 [iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-4b]: ../../docs/INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
-[jsx-readme]: ../jsx/README.md
+[jsx-readme]: ../render/jsx/README.md
 [la-3d]: ../../docs/FORGE_STRUCTURE.md#3d-css-source-scanning-stops-at-ui
 [ram]: ../../docs/ROUTING_AND_MIDDLEWARE.md
 [ram-1a]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1a-declarative-route-map-pattern

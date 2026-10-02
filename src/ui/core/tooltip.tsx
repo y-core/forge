@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import { isValidElement } from "../../jsx/element";
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+import { isValidElement } from "../../render/jsx/element";
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import type { Align, PhysicalSide } from "../contracts/types";

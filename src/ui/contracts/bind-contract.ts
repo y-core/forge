@@ -21,8 +21,8 @@ export const URL_BOUND_ATTRS: ReadonlySet<string> = new Set([
 /** URL schemes a bound value may carry. Everything else collapses to `"#"`. */
 const SAFE_BOUND_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 
-// A copy of `safeUrl` (`src/http/escape.ts`), not an import: `ui/contracts` is a declared leaf with
-// no edge to `http`, so the rule crosses the boundary as duplication pinned equal by a shared table.
+// A copy of `safeUrl` (`src/html/escape.ts`), not an import: `ui/contracts` is a declared leaf with
+// no edge to `html`, so the rule crosses the boundary as duplication pinned equal by a shared table.
 // oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars, which browsers ignore when resolving a scheme
 const BOUND_URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
 

@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC } from "../../render/jsx/types";
 import { presentationAttrs } from "../contracts/vocabulary";
 import type { LinkProps } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";

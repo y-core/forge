@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { Select as CoreSelect } from "../core/select";
 import { createBoundControl } from "./create-bound-control";
 

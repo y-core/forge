@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import type { Page, Request } from "@playwright/test";
 
-import { jsx } from "../../../jsx/jsx-runtime";
+import { jsx } from "../../../render/jsx/jsx-runtime";
 import { render } from "../../../testing/render";
 import { mount } from "../../../ui/client/browser.fixture";
 import { Announcer } from "../../../ui/core/announcer";

@@ -11,8 +11,8 @@
     "skipLibCheck": true,
     "types": [],
     "jsx": "react-jsx",
-    "jsxImportSource": "@y-core/forge/jsx",
+    "jsxImportSource": "@y-core/forge/render/jsx",
     "paths": { "@y-core/forge/*": ["../../../src/*"] }
   },
-  "include": ["main.ts", "worker.ts", "workerd-globals.d.ts", "workerd-suite.ts", "snapshot-suite.ts"]
+  "include": ["main.ts", "worker.ts", "workerd-globals.d.ts", "workerd-suite.ts", "snapshot-suite.ts", "gate-suite.ts"]
 }

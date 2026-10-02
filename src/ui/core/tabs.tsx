@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { nameAttrs, tabId } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";

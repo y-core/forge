@@ -58,7 +58,7 @@ describe("isToolingDirective() — outside the budget entirely", () => {
   });
 
   it("is true of a JSX pragma", () => {
-    expect(isToolingDirective(only("/** @jsxImportSource @y-core/forge/jsx */"))).toBe(true);
+    expect(isToolingDirective(only("/** @jsxImportSource @y-core/forge/render/jsx */"))).toBe(true);
   });
 
   it("is true of the `<marker>: <rule> — <reason>` form a check reads", () => {

@@ -1,6 +1,6 @@
-import type { JSX } from "../../jsx/types";
-import type { JSXNode } from "../../jsx/types";
-import type { FC } from "../../jsx/types";
+import type { JSX } from "../../render/jsx/types";
+import type { JSXNode } from "../../render/jsx/types";
+import type { FC } from "../../render/jsx/types";
 import type { Appearance } from "../contracts/types";
 import type { Shape } from "../contracts/types";
 import type { Size } from "../contracts/types";

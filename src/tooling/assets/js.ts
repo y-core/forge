@@ -86,7 +86,7 @@ export async function buildJS(
         minify: options.minify,
         platform: "browser",
         jsx: "automatic",
-        jsxImportSource: "@y-core/forge/jsx",
+        jsxImportSource: "@y-core/forge/render/jsx",
         chunkNames: "chunks/[name]-[hash]",
         entryNames: shouldHash ? "[name]-[hash]" : "[name]",
         metafile: true,

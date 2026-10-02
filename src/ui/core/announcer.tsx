@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX } from "../../render/jsx/types";
 import { ANNOUNCER_REGION_SLOTS, ANNOUNCER_SCOPE } from "../contracts/announcer-contract";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";

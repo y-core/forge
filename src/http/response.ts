@@ -1,4 +1,4 @@
-import type { SafeHtml } from "./html";
+import type { SafeHtml } from "../html/html";
 
 const DOCTYPE = "<!DOCTYPE html>";
 

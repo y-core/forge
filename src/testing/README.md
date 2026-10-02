@@ -358,7 +358,7 @@ to survive a round trip through an unmodelled table hands the code its own store
 
 ## See also
 
-- [`docs/TEST_RUNNERS.md`][testing-7] §7 — the rulings behind every fixture here, and why `testing` may import `app` and `jsx`
+- [`docs/TEST_RUNNERS.md`][testing-7] §7 — the rulings behind every fixture here, and why `testing` may import `app` and `render/jsx`
 - [`docs/TEST_RUNNERS.md`][testing-3c] §3c — render once, assert once
 - [`src/auth/README.md`][auth-readme] — testing an auth mount: sessions, challenges, and the CSRF round trip
 - [`src/storage/README.md`][storage-readme] — the D1, KV and R2 clients these fakes stand in for

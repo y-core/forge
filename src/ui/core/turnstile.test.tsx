@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { renderToString } from "../../jsx/render-to-string";
+import { renderToString } from "../../render/jsx/render-to-string";
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { Turnstile } from "./turnstile";
 

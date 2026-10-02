@@ -436,6 +436,15 @@ and an empty `changed` selects nothing at all, not even a step with no `watches`
 **The duplicate check is a property of the table**, so it runs before the mode is applied and before `--only` narrows — a malformed table is refused
 whichever run was asked for.
 
+**A program compiled under `"types": []` — a Worker app's tests — takes a check's config and result types from
+`@y-core/forge/tooling/gate/types`.** The barrel pulls in Node-only modules, so importing a type from it fails that program's typecheck.
+
+```ts
+import type { CheckResult, ImportBoundaryCheckConfig } from "@y-core/forge/tooling/gate/types";
+
+type CheckImportBoundary = (config: ImportBoundaryCheckConfig) => CheckResult;
+```
+
 ---
 
 ## Reading and promoting a changelog

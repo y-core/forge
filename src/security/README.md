@@ -519,7 +519,7 @@ comes from `getNonce(c)` and from nowhere else.
 
 **What is routinely looked for here lives elsewhere:** CSRF token mint and verify in `@y-core/forge/form`, session management in
 `@y-core/forge/session`, authentication and RBAC in `@y-core/forge/auth`, and constant-time comparison in the internal `src/crypto/`
-([`SECURITY_HARDENING.md`][sh-1] §1 has the full list). `isHxRequest` from `@y-core/forge/html/htmx` is a UX hint, not a security boundary.
+([`SECURITY_HARDENING.md`][sh-1] §1 has the full list). `isHxRequest` from `@y-core/forge/render/htmx` is a UX hint, not a security boundary.
 
 ---
 
@@ -547,7 +547,8 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 
 - [`src/form/README.md`][form-readme] — CSRF tokens, and form parsing with byte caps
 - [`src/session/README.md`][session-readme] — session cookies and the middleware that persists them
-- [`src/http/README.md`][http-readme] — `safeUrl` sanitization, response builders, typed headers
+- [`src/html/README.md`][html-readme] — `safeUrl` sanitization and the other escaping primitives
+- [`src/http/README.md`][http-readme] — response builders and typed headers
 - [`docs/SECURITY_HARDENING.md`][sh] — the header set and nonce contract (§2), route policies and a handler's own CSP (§2f), origin-guard
   tiering (§3e), `allowedOrigins` in dev (§3f), rate-limit key selection (§4d), and the Cloudflare header trust boundary (§5c)
 - [`WORKERS_PLATFORM.md`][wp-4e] §4e — the https-everywhere dev transport posture the origin guards depend on
@@ -557,6 +558,7 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 [dev-readme]: ../dev/README.md
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [form-readme]: ../form/README.md
+[html-readme]: ../html/README.md
 [htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [http-readme]: ../http/README.md
 [ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement

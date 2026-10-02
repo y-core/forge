@@ -1,0 +1,35 @@
+import type { HtmlSchema } from "./mod";
+
+/** The schema the CommonMark spec examples render under: every element the engine writes, every URL as written. */
+export const SPEC_SCHEMA: HtmlSchema = {
+  elements: {
+    p: {},
+    h1: {},
+    h2: {},
+    h3: {},
+    h4: {},
+    h5: {},
+    h6: {},
+    hr: {},
+    blockquote: {},
+    pre: {},
+    code: { attributes: ["class"] },
+    ul: {},
+    ol: { attributes: ["start"] },
+    li: {},
+    em: {},
+    strong: {},
+    del: {},
+    br: {},
+    a: { attributes: ["href", "title"], urls: ["href"] },
+    table: {},
+    thead: {},
+    tbody: {},
+    tr: {},
+    th: { attributes: ["align"] },
+    td: { attributes: ["align"] },
+    input: { attributes: ["type", "checked", "disabled"] },
+    img: { attributes: ["src", "alt", "title"], urls: ["src"] },
+  },
+  url: ({ value }) => value,
+};

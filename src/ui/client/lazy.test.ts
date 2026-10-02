@@ -88,6 +88,7 @@ describe("lazy", () => {
   afterEach(() => {
     globalThis.setTimeout = realSetTimeout;
     globalThis.clearTimeout = realClearTimeout;
+    Reflect.deleteProperty(globalThis, "document");
   });
 
   /** What the mount armed and what it gave back, so a deleted `clearTimeout` has somewhere to show. */

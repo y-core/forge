@@ -40,6 +40,22 @@ describe("createHref re-export (F4)", () => {
     expect(thrown).toBeInstanceOf(CreateHrefError);
     expect((thrown as CreateHrefError).details.type).toBe("missing-params");
   });
+
+  it("gives a root wildcard exactly one leading slash, even when its value brings its own", () => {
+    expect(createHref("/*path", { path: "/docs/readme.md" })).toBe("/docs/readme.md");
+  });
+
+  it("refuses a wildcard value with a dot segment, naming the segment", () => {
+    let thrown: unknown;
+    try {
+      createHref("/files/*path", { path: "a/../b" });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CreateHrefError);
+    expect((thrown as CreateHrefError).details).toEqual({ type: "invalid-pathname-wildcard", value: "a/../b", segment: ".." });
+    expect(createHref("/files/*path", { path: "a/b/c.txt" })).toBe("/files/a/b/c.txt");
+  });
 });
 
 describe("joinPatterns re-export (F4)", () => {

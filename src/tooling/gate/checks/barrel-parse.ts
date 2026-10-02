@@ -2,15 +2,17 @@ import { blankSourceComments } from "./source-scan";
 
 const EXPORT_STAR_RE = /export\s+(?:type\s+)?\*(?:\s*as\s+[A-Za-z_$][\w$]*)?\s+from\s+/;
 
+const DECLARED_TYPE_EXPORT_RE = /\bexport\s+(?:declare\s+)?(?:interface\s+[A-Za-z_$]|type\s+[A-Za-z_$][\w$]*\s*[<=])/;
+
 const DECLARATION_LOOKAHEAD = 9;
 
-/** Runtime value exports of a barrel, plus whether it uses a banned star or type-only re-export. */
+/** Runtime value exports of a barrel, plus whether it uses a banned star and whether it exports any type. */
 export function parseBarrelExports(source: string): { values: string[]; hasExportStar: boolean; hasTypeExports: boolean } {
   const stripped = blankSourceComments(source);
 
   const hasExportStar = EXPORT_STAR_RE.test(stripped);
   const values: string[] = [];
-  let hasTypeExports = false;
+  let hasTypeExports = DECLARED_TYPE_EXPORT_RE.test(stripped);
 
   const blockRe = /export\s+(type\s+)?\{([^}]+)\}/gs;
   for (const match of stripped.matchAll(blockRe)) {

@@ -42,9 +42,9 @@ describe("collectSurface()", () => {
 
   it("scans a target that is not a barrel", () => {
     const manifest = JSON.stringify({
-      exports: { "./jsx-runtime": { import: "./src/jsx/runtime.ts" }, "./http": { import: "./src/http/mod.ts" } },
+      exports: { "./jsx-runtime": { import: "./src/render/jsx/runtime.ts" }, "./http": { import: "./src/http/mod.ts" } },
     });
-    const surface = collectSurface(manifest, reader({ "src/jsx/runtime.ts": R2_BARREL, "src/http/mod.ts": HTTP_BARREL }));
+    const surface = collectSurface(manifest, reader({ "src/render/jsx/runtime.ts": R2_BARREL, "src/http/mod.ts": HTTP_BARREL }));
     expect([...surface].sort()).toEqual(["./http#ResponseInit", "./http#jsonResponse", "./http#serveObject", "./jsx-runtime#r2Client"]);
   });
 

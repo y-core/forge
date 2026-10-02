@@ -1,8 +1,8 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import { hxAttrs } from "../../../html/htmx/htmx-attrs";
-import type { FC } from "../../../jsx/types";
+import { hxAttrs } from "../../../render/htmx/htmx-attrs";
+import type { FC } from "../../../render/jsx/types";
 import { Badge } from "../../../ui/core/badge";
 import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";

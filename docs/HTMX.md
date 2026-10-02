@@ -8,7 +8,7 @@ audience: consumer
 
 > Owns the rulings behind forge's server-side HTMX surface — the trust posture on emitted attribute values, the ruling that `isHxRequest` is
 > **not** a security boundary (§7), which attribute forge marks as inherited (§9), and how a handler tells a page request from a fragment request
-> (§10). The exports, their signatures, and every usage example are owned by `src/html/README.md`.
+> (§10). The exports, their signatures, and every usage example are owned by `src/render/htmx/README.md`.
 >
 > Defers to: [`SECURITY_HARDENING.md`][sh-3e] §3e and §2d for the guards that must accompany it and for automatic URL sanitization;
 > [`SECURITY_HARDENING.md`][sh-2g] §2g for the `forge-htmx` Trusted Types policy; [`UI_SSR_COMPONENTS.md`][usc] for the components these attributes
@@ -57,8 +57,8 @@ attribute values nor the request hint substitute for `originProtection`/`crossOr
 
 The URL-valued htmx props — `get`, `post`, `put`, `patch`, `delete`, `pushUrl` and `replaceUrl` — carry addresses rather than selectors, so §7's
 argument does not reach them: escaping a URL does not break it, and a sanitizer would not corrupt a legitimate value. They are nonetheless emitted
-verbatim. The attribute names the JSX renderer routes through `safeUrl` are owned by `src/jsx/render-to-string.ts`, and no `hx-*` name is among
-them. **That is a decision, not an oversight, and the reason is what `safeUrl` does on rejection.**
+verbatim. The attribute names the JSX renderer routes through `safeUrl` are owned by `src/render/jsx/render-to-string.ts`, and no `hx-*` name is
+among them. **That is a decision, not an oversight, and the reason is what `safeUrl` does on rejection.**
 
 **`safeUrl` maps a rejected URL to `"#"`, and `"#"` is not inert on an `hx-*` attribute.** On an `href` it is a visibly dead link — the refusal is
 loud, and the user sees nothing happen. On an `hx-get` it is a valid same-origin URL naming the **current page**: htmx would issue a real request
@@ -80,9 +80,9 @@ own:
 The caller's obligation is therefore identical to §7's even though the argument differs. What changes is the remedy available when that obligation
 is broken — for a selector there is none, and for a URL the available one is rejected above rather than missing.
 
-**Adding `hx-*` names to the renderer's URL-attribute set is the specific change this section refuses.** `src/jsx/render-to-string.test.ts` pins it:
-an element carrying one value on both `href` and `hx-push-url` must render `href="#"` beside an unchanged `hx-push-url`, an assertion that fails the
-moment the two are treated alike.
+**Adding `hx-*` names to the renderer's URL-attribute set is the specific change this section refuses.** `src/render/jsx/render-to-string.test.ts`
+pins it: an element carrying one value on both `href` and `hx-push-url` must render `href="#"` beside an unchanged `hx-push-url`, an assertion that
+fails the moment the two are treated alike.
 
 ### 7b. What htmx Evaluates: hx-on:* and a js:-Prefixed hx-vals or hx-headers
 
@@ -92,8 +92,8 @@ string: it is script, and the only thing that decides whether it is safe is who 
 
 - **`hx-on:*`**, whose whole value is an event-handler body.
 - **`hx-vals` and `hx-headers` whose value begins `js:`** (`javascript:` is the accepted alias). The rest of the attribute is then an expression
-  htmx evaluates per request rather than the JSON it otherwise parses. `src/jsx/types.ts` types both as a raw `string`, so nothing in the type
-  surface tells the two forms apart.
+  htmx evaluates per request rather than the JSON it otherwise parses. `src/render/jsx/types.ts` types both as a raw `string`, so nothing in the
+  type surface tells the two forms apart.
 - **An `hx-trigger` filter in square brackets, and an `hx-confirm` whose value begins `js:`.** Each is an expression htmx evaluates when the
   trigger fires.
 - **A verb attribute whose URL begins `js:` or `javascript:`.** `forge-htmx` refuses it before htmx evaluates it (§7a), so the rule below is not
@@ -104,16 +104,17 @@ control, and it is the same for each. It is not a stronger version of §7's trus
 weight, because here a broken obligation is direct evaluation rather than a misrouted swap.
 
 **`hxAttrs` cannot emit a `js:` value**, so the exposure is a hand-written attribute: its `values` and `headers` are `Record<string, string>` and
-are JSON-encoded (`src/html/htmx/htmx-attrs.ts`). Forge's own code already treats the prefix as the evaluated form — `<Form>` refuses to merge a
+are JSON-encoded (`src/render/htmx/htmx-attrs.ts`). Forge's own code already treats the prefix as the evaluated form — `<Form>` refuses to merge a
 CSRF token into an `hx-headers` value it cannot parse as a JSON object, rather than shipping a form whose token silently went missing
 (`src/ui/core/form.tsx`).
 
 **The renderer emits `hx-on:*` verbatim, and its type surface does not stop it either.** There _is_ an `on*` filter in the JSX renderer — it drops
 any attribute whose lowercased name begins `on`, so an untrusted spread key cannot inject `onclick` — and `hx-on:click` lowercases to a name
 beginning `hx-`, which places it deliberately outside that filter. Past the filter the only name-based gate is the attribute-name validity regex
-owned by `src/jsx/render-to-string.ts`, which `hx-on:click` satisfies, so the value is escaped and written like any other attribute. Escaping does
-not help: htmx reads the attribute from the DOM _after_ the parser has decoded entities, so an escaped payload is decoded again before evaluation.
-The exemption is listed as a known pattern in [`FORGE_REVIEW.md`][fr-6] §6, which is the other half [`BOUNDARIES.md`][boundaries-5c] §5c requires.
+owned by `src/render/jsx/render-to-string.ts`, which `hx-on:click` satisfies, so the value is escaped and written like any other attribute. Escaping
+does not help: htmx reads the attribute from the DOM _after_ the parser has decoded entities, so an escaped payload is decoded again before
+evaluation. The exemption is listed as a known pattern in [`FORGE_REVIEW.md`][fr-6] §6, which is the other half [`BOUNDARIES.md`][boundaries-5c] §5c
+requires.
 
 A CSP without `'unsafe-eval'` is the **second** layer — a backstop, not a permission model. htmx compiles an `hx-on:*` body with `new Function`,
 which only `'unsafe-eval'` would permit, and forge's emitted policy carries that source in no directive by default. The **string** `'unsafe-eval'`
@@ -133,14 +134,14 @@ for it ([`SECURITY_HARDENING.md`][sh-2g] §2g). A `<script>` inside swapped cont
 policy's `createScript`. The default CSP still refuses an injected one, because it permits only nonced inline script.
 
 **`hx-on:*` is deliberately absent from the JSX attribute types and stays absent.** Typing it means a template-pattern index signature — the suffix
-is an arbitrary event name, so no fixed set of keys covers it — added to the htmx attribute interface in `src/jsx/types.ts`. That interface is mixed
-into both the HTML and SVG attribute bases, which every per-tag element type extends and every `ui/core` prop type reaches through
+is an arbitrary event name, so no fixed set of keys covers it — added to the htmx attribute interface in `src/render/jsx/types.ts`. That interface
+is mixed into both the HTML and SVG attribute bases, which every per-tag element type extends and every `ui/core` prop type reaches through
 `JSX.IntrinsicElements`. A template index signature admits every key matching its pattern without further checking, so a misspelled event name stops
 being an error on every element in the library at once. That is a repo-wide weakening of excess-property checking, bought for autocomplete on a
 capability no CSP option can enable. Declined.
 
-**The absence is therefore not a guard, and must not be read as one.** A case in `src/jsx/render-to-string.test.ts` asserts that `hx-on:click`
-renders verbatim, so the rule above never comes to rest on a type error that only exists at a JSX call site.
+**The absence is therefore not a guard, and must not be read as one.** A case in `src/render/jsx/render-to-string.test.ts` asserts that
+`hx-on:click` renders verbatim, so the rule above never comes to rest on a type error that only exists at a JSX call site.
 
 ---
 
@@ -168,8 +169,8 @@ spelling on the element itself as well. Every other `hx-*` attribute forge rende
 verb and its `hx-headers` on the `<form>` — so none of them needs the suffix, and `hxAttrs` never adds it. An app that wants another attribute to
 reach descendants writes the suffix by hand.
 
-**`src/jsx/types.ts` types `hx-boost:inherited` and not a bare `hx-boost`**, so the container spelling htmx 4 does not honour is a type error at
-the JSX call site. `src/html/htmx/htmx-attrs.test.ts` pins the emitted name.
+**`src/render/jsx/types.ts` types `hx-boost:inherited` and not a bare `hx-boost`**, so the container spelling htmx 4 does not honour is a type error
+at the JSX call site. `src/render/htmx/htmx-attrs.test.ts` pins the emitted name.
 
 ---
 
@@ -191,7 +192,7 @@ from the response, and `partial` otherwise. An `hx-select` request is therefore 
 as `requestType`, which is `""` in that case.
 
 **`isPartial` is a rendering hint on the same terms as `isHxRequest`** (§7). `HX-Request-Type` is a header the client sets, so it decides how to
-render and never whether the caller is allowed. `src/html/htmx/htmx-headers.test.ts` pins each case above.
+render and never whether the caller is allowed. `src/render/htmx/htmx-headers.test.ts` pins each case above.
 
 ---
 

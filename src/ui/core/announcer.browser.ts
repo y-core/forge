@@ -1,8 +1,8 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
-import { jsx } from "../../jsx/jsx-runtime";
-import type { JSXNode } from "../../jsx/types";
+import { jsx } from "../../render/jsx/jsx-runtime";
+import type { JSXNode } from "../../render/jsx/types";
 import { render } from "../../testing/render";
 import { mount } from "../client/browser.fixture";
 import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";

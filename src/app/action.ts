@@ -1,10 +1,10 @@
 import type { RequestHandler } from "@remix-run/fetch-router";
 
 import { ConfigKey, getAppContext } from "../context/types";
-import { renderError } from "../http/fragment";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
 import { serializeError } from "../logging/serialize-error";
+import { renderError } from "../render/htmx/fragment";
 import { toError } from "../result/result";
 import type { v } from "../validation/validation";
 import { createSubmissionPipeline } from "./pipeline";

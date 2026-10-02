@@ -1,5 +1,6 @@
 import { CliError } from "../../cli/errors";
 import { scanSql, splitCreateTableBody, sqlIdentifierEquals, unquoteSqlIdentifier } from "../schema/normalize";
+import type { SqlToken } from "../schema/types";
 import { INVENTORY_SELECT, quoteSqlIdentifier, tableInfoSelect, tableSqlSelect, toColumnInfo, toSchemaObjects } from "../sql";
 import type { ColumnInfo, DbIo, Home } from "../types";
 import { queryBatches, queryRows } from "../wrangler";
@@ -16,25 +17,56 @@ export async function readColumns(io: DbIo, home: Home, table: string): Promise<
   return toColumnInfo(await queryRows(io, home, tableInfoSelect(table)));
 }
 
-/** The collation the DDL declares on `key`, or null when it declares none and SQLite's own BINARY applies. @internal */
-export function keyCollation(tableSql: string, key: string): string | null {
+function declaredCollation(tokens: readonly SqlToken[]): string | null {
+  let depth = 0;
+  let collation: string | null = null;
+  for (const [index, token] of tokens.entries()) {
+    if (token.kind === "punct" && token.text === "(") depth += 1;
+    if (token.kind === "punct" && token.text === ")") depth -= 1;
+    if (depth === 0 && token.kind === "word" && token.text.toUpperCase() === "COLLATE") {
+      collation = unquoteSqlIdentifier(tokens[index + 1]?.text ?? "");
+    }
+  }
+  return collation;
+}
+
+function primaryKeyEntries(tokens: readonly SqlToken[]): SqlToken[][] {
+  const at = tokens.findIndex(
+    (token, index) => token.kind === "word" && token.text.toUpperCase() === "PRIMARY" && tokens[index + 1]?.text.toUpperCase() === "KEY",
+  );
+  if (at === -1) return [];
+  const entries: SqlToken[][] = [[]];
+  let depth = 0;
+  for (const token of tokens.slice(at + 2)) {
+    const punct = token.kind === "punct" ? token.text : "";
+    if (punct === ")" && depth === 1) break;
+    if (punct === "(") depth += 1;
+    if (punct === ")") depth -= 1;
+    if (punct === "," && depth === 1) entries.push([]);
+    else if (depth > 1 || (depth === 1 && punct !== "(")) entries[entries.length - 1]?.push(token);
+  }
+  return entries;
+}
+
+/** How and where the DDL collates `key` otherwise than BINARY, a column's own outranking the PRIMARY KEY clause's, or null. @internal */
+export function keyCollation(tableSql: string, key: string): { collation: string; declaredOn: "column" | "primary-key" } | null {
   let parts: ReturnType<typeof splitCreateTableBody>;
   try {
     parts = splitCreateTableBody(tableSql);
   } catch {
     return null;
   }
+  let found: ReturnType<typeof keyCollation> = null;
   for (const clause of parts.clauses) {
     const tokens = scanSql(clause.normalized).filter((token) => token.kind !== "space");
-    const names = tokens.filter((token) => token.kind === "word" || token.kind === "identifier").map((token) => unquoteSqlIdentifier(token.text));
-    // A column clause names the key first; a PRIMARY KEY constraint names it anywhere inside its list.
-    const covers = clause.kind === "column" ? sqlIdentifierEquals(names[0] ?? "", key) : names.some((name) => sqlIdentifierEquals(name, key));
-    if (!covers) continue;
-    const at = tokens.findIndex((token) => token.kind === "word" && token.text.toUpperCase() === "COLLATE");
-    const collation = at === -1 ? null : unquoteSqlIdentifier(tokens[at + 1]?.text ?? "");
-    if (collation !== null && collation.toUpperCase() !== "BINARY") return collation;
+    const entries = clause.kind === "column" ? [tokens] : primaryKeyEntries(tokens);
+    const entry = entries.find((candidate) => sqlIdentifierEquals(unquoteSqlIdentifier(candidate[0]?.text ?? ""), key));
+    const collation = entry === undefined ? null : declaredCollation(entry);
+    if (collation === null || collation.toUpperCase() === "BINARY") continue;
+    if (clause.kind === "column") return { collation, declaredOn: "column" };
+    found ??= { collation, declaredOn: "primary-key" };
   }
-  return null;
+  return found;
 }
 
 /** The statements a key probe asks: whether any row holds NULL, then how many storage classes the column spans. @internal */
@@ -54,17 +86,17 @@ function checkKeyValues(name: string, key: string, nulls: readonly Record<string
   if (Number(classes[0]?.classes ?? 1) > 1) {
     throw new CliError(
       "invalid-args",
-      `${name}.${key} holds more than one storage class — a keyset read orders by one column and its seek and its order disagree across classes, so this table cannot be backed up`,
+      `${name}.${key} holds more than one storage class — a keyset read's seek and its order disagree across classes, so this table cannot be backed up`,
     );
   }
 }
 
-/** One table's shape, and the key a value probe still has to be run for — null where the key needs none. */
+/** One table's shape, and the key columns a value probe still has to be run for — none where the keys need none. */
 function analyseTable(
   name: string,
   info: readonly Record<string, unknown>[],
   declaration: readonly Record<string, unknown>[],
-): { table: AppTable; probe: string | null } {
+): { table: AppTable; probes: readonly string[] } {
   const columns = toColumnInfo(info);
   const aliased = columns.filter((column) => column.name.startsWith(TYPE_ALIAS_PREFIX)).map((column) => column.name);
   if (aliased.length > 0) {
@@ -73,28 +105,31 @@ function analyseTable(
       `${name} declares column(s) [${aliased.join(", ")}] beginning ${TYPE_ALIAS_PREFIX} — a read projects each column's storage class under that name, so this table cannot be backed up`,
     );
   }
-  const keys = columns.filter((column) => column.pk > 0).sort((left, right) => left.pk - right.pk);
-  if (keys.length > 1) {
-    throw new CliError(
-      "invalid-args",
-      `${name} has a composite primary key (${keys.map((column) => column.name).join(", ")}) — a keyset read orders by one column, so this table cannot be backed up`,
-    );
-  }
-  const key = keys[0]?.name ?? "rowid";
+  const names = columns.map((column) => column.name);
+  const rowidTable = { name, keys: ["rowid"], columns: names, pageRows: PAGE_ROWS };
+  const keys = columns
+    .filter((column) => column.pk > 0)
+    .sort((left, right) => left.pk - right.pk)
+    .map((column) => column.name);
+  // A rowid is the engine's own integer: never NULL, never another storage class, so never read for one.
+  if (keys.length === 0) return { table: rowidTable, probes: [] };
   const tableSql = String(declaration[0]?.sql ?? "");
-  const collation = key === "rowid" ? null : keyCollation(tableSql, key);
-  if (collation === null) {
-    // A rowid is the engine's own integer: never NULL, never another storage class, so never read for one.
-    return { table: { name, key, columns: columns.map((column) => column.name), pageRows: PAGE_ROWS }, probe: key === "rowid" ? null : key };
-  }
-
-  if (/\bWITHOUT\s+ROWID\b/i.test(tableSql)) {
+  const collated = keys.flatMap((key) => {
+    const declared = keyCollation(tableSql, key);
+    return declared === null ? [] : [{ key, ...declared }];
+  });
+  const withoutRowid = /\bWITHOUT\s+ROWID\b/i.test(tableSql);
+  const columnCollated = collated.find((entry) => entry.declaredOn === "column");
+  if (columnCollated !== undefined && withoutRowid) {
     throw new CliError(
       "invalid-args",
-      `${name}.${key} collates ${collation} and ${name} is WITHOUT ROWID — a keyset read orders by BINARY and this table has no other column to order by, so it cannot be backed up`,
+      `${name}.${columnCollated.key} collates ${columnCollated.collation} and ${name} is WITHOUT ROWID — a keyset read orders by BINARY and this table has no other column to order by, so it cannot be backed up`,
     );
   }
-  return { table: { name, key: "rowid", columns: columns.map((column) => column.name), pageRows: PAGE_ROWS }, probe: null };
+  // A PRIMARY KEY clause's collation leaves the key read BINARY-correct but scanning and sorting the
+  // table on every page, since the index no longer serves that order; rowid keeps the indexed seek.
+  if (collated.length > 0 && !withoutRowid) return { table: rowidTable, probes: [] };
+  return { table: { name, keys, columns: names, pageRows: PAGE_ROWS }, probes: keys };
 }
 
 /** Describes several tables as a bounded read addresses them, in the order asked, in two spawns rather than two each. @internal */
@@ -105,19 +140,19 @@ export async function describeTables(io: DbIo, home: Home, names: readonly strin
     names.flatMap((name) => [tableInfoSelect(name), tableSqlSelect(name)]),
   );
   const analysed = names.map((name, index) => analyseTable(name, described[index * 2] ?? [], described[index * 2 + 1] ?? []));
-  const probed = analysed.filter((analysis): analysis is { table: AppTable; probe: string } => analysis.probe !== null);
+  const probes = analysed.flatMap((analysis) => analysis.probes.map((key) => ({ name: analysis.table.name, key })));
   const answers = await queryBatches(
     io,
     home,
-    probed.flatMap((analysis) => keyProbeSelects(analysis.table.name, analysis.probe)),
+    probes.flatMap((probe) => keyProbeSelects(probe.name, probe.key)),
   );
-  probed.forEach((analysis, index) => {
-    checkKeyValues(analysis.table.name, analysis.probe, answers[index * 2] ?? [], answers[index * 2 + 1] ?? []);
+  probes.forEach((probe, index) => {
+    checkKeyValues(probe.name, probe.key, answers[index * 2] ?? [], answers[index * 2 + 1] ?? []);
   });
   return analysed.map((analysis) => analysis.table);
 }
 
-/** The table as a bounded read addresses it: the column it orders by, and the page size. @internal */
+/** The table as a bounded read addresses it: the columns it orders by, and the page size. @internal */
 export async function describeTable(io: DbIo, home: Home, name: string): Promise<AppTable> {
   const [table] = await describeTables(io, home, [name]);
   if (table === undefined) throw new CliError("invalid-args", `${name} could not be described — the read returned nothing for it`);
@@ -163,7 +198,7 @@ export function dependencyOrder(names: readonly string[], edges: readonly { read
   return [...ordered, ...remaining];
 }
 
-/** Every table the app owns, parents first, each with the key a paged read of it orders by. @internal */
+/** Every table the app owns, parents first, each with the keys a paged read of it orders by. @internal */
 export async function discoverAppTables(io: DbIo, home: Home): Promise<AppTable[]> {
   const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
   const tables = objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app");
@@ -182,25 +217,29 @@ export async function discoverAppTables(io: DbIo, home: Home): Promise<AppTable[
 export async function readPage(io: DbIo, home: Home, table: AppTable, columns: readonly string[], after: ReadCursor): Promise<RowPage> {
   const read = await queryRows(io, home, verificationSelect(table, columns, after));
   const raw = read.map((row) => decodeReadRow(columns, row));
-  const rows = raw.map((row) => canonicaliseRow(columns, table.key, row));
+  const rows = raw.map((row) => canonicaliseRow(columns, table.keys, row));
   const last = raw[raw.length - 1];
-  const key = last?.[table.key];
-  const cursor = last === undefined ? null : key instanceof SqlReal ? key.value : (key as ReadCursor);
+  const cursor =
+    last === undefined
+      ? null
+      : table.keys.map((key) => {
+          const cell = last[key];
+          return cell instanceof SqlReal ? cell.value : (cell as string | number | readonly number[]);
+        });
   return { rows, raw, cursor, exhausted: raw.length < table.pageRows };
 }
 
 function advanced(table: AppTable, previous: ReadCursor, next: ReadCursor): ReadCursor {
-  const same = Array.isArray(previous) && Array.isArray(next) ? previous.join() === (next as readonly number[]).join() : previous === next;
-  if (!same) return next;
+  if (JSON.stringify(previous) !== JSON.stringify(next)) return next;
   throw new CliError(
     "invalid-args",
-    `${table.name} read a full page and its key ${table.key} did not advance past ${JSON.stringify(previous)} — a keyset read cannot page past a repeated or NULL key, so this table cannot be backed up`,
+    `${table.name} read a full page and its key ${table.keys.join(", ")} did not advance past ${JSON.stringify(previous)} — a keyset read cannot page past a repeated or NULL key, so this table cannot be backed up`,
   );
 }
 
 /** Every row of one table, read a page at a time. @internal */
 export async function readWholeTable(io: DbIo, home: Home, table: AppTable): Promise<SourceTable> {
-  const columns = table.columns.includes(table.key) ? table.columns : [table.key, ...table.columns];
+  const columns = [...table.keys.filter((key) => !table.columns.includes(key)), ...table.columns];
   const rows: CanonicalRow[] = [];
   const raw: Record<string, unknown>[] = [];
   let cursor: ReadCursor = null;

@@ -1,8 +1,8 @@
 import type { AppContext } from "../context/types";
-import { safeUrl } from "../http/escape";
-import { renderError } from "../http/fragment";
-import { html } from "../http/html";
+import { safeUrl } from "../html/escape";
+import { html } from "../html/html";
 import { htmlResponse } from "../http/response";
+import { renderError } from "../render/htmx/fragment";
 import { requestIdCtx } from "../security/request-id";
 import type { ErrorPageOptions } from "./types";
 

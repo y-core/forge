@@ -92,6 +92,7 @@ export async function buildIcons(config: IconsConfig): Promise<void> {
 }
 
 function renderManifest(config: IconsConfig, pngs: Array<Extract<IconOutput, { kind: "png" }>>): string {
+  const target = config.app?.shareTarget;
   return JSON.stringify(
     {
       name: config.app?.name ?? "",
@@ -104,6 +105,7 @@ function renderManifest(config: IconsConfig, pngs: Array<Extract<IconOutput, { k
       start_url: "/",
       scope: "/",
       icons: pngs.map((png) => ({ src: iconTarget(config, png).path, sizes: `${png.size}x${png.size}`, type: "image/png" })),
+      ...(target ? { share_target: { action: target.action, method: target.method, enctype: target.enctype, params: target.params } } : {}),
     },
     null,
     2,
@@ -123,9 +125,9 @@ function buildIco(sizes: number[], pngs: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(cursor);
   const view = new DataView(out.buffer);
 
-  view.setUint16(0, 0, true); // reserved
-  view.setUint16(2, 1, true); // type = 1 (ICO)
-  view.setUint16(4, count, true); // count
+  view.setUint16(0, 0, true);
+  view.setUint16(2, 1, true);
+  view.setUint16(4, count, true);
 
   let pos = 6;
   for (let i = 0; i < count; i++) {
@@ -133,14 +135,14 @@ function buildIco(sizes: number[], pngs: Uint8Array[]): Uint8Array {
     const png = pngs[i];
     const offset = offsets[i] ?? 0;
     const sz = size < 256 ? size : 0;
-    out[pos] = sz; // width
-    out[pos + 1] = sz; // height
-    out[pos + 2] = 0; // color count
-    out[pos + 3] = 0; // reserved
-    view.setUint16(pos + 4, 1, true); // planes
-    view.setUint16(pos + 6, 32, true); // bit count
-    view.setUint32(pos + 8, png ? png.length : 0, true); // size
-    view.setUint32(pos + 12, offset, true); // offset
+    out[pos] = sz;
+    out[pos + 1] = sz;
+    out[pos + 2] = 0;
+    out[pos + 3] = 0;
+    view.setUint16(pos + 4, 1, true);
+    view.setUint16(pos + 6, 32, true);
+    view.setUint32(pos + 8, png ? png.length : 0, true);
+    view.setUint32(pos + 12, offset, true);
     pos += 16;
   }
 

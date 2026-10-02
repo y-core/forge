@@ -1,5 +1,4 @@
 import { v } from "../../validation/mod";
-import type { CaptureResult } from "../cli/types";
 
 /** Whether `path` stays inside the root it is read against: relative, with no `..` segment and no leading `./`. */
 function isTreePath(path: string): boolean {
@@ -63,7 +62,11 @@ export interface FeatureAddition {
 }
 
 /** Runs one command inside the curated tree and answers how it exited. @public */
-export type CurateRunner = (argv: readonly [string, ...string[]], cwd: string, env: typeof process.env) => CaptureResult;
+export type CurateRunner = (
+  argv: readonly [string, ...string[]],
+  cwd: string,
+  env: Readonly<Record<string, string | undefined>>,
+) => { code: number; output: string };
 
 /** One curation: which working tree, where its copy goes, and which features the copy leaves out. @public */
 export interface CurateRequest {

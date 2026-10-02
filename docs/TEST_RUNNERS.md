@@ -38,7 +38,7 @@ audience: consumer
 - §5d Security Matrix — Row-to-Test Coverage Map: where each row is covered
 - §6 The Verification Gate: what must pass before a task is complete
 - §7 Testing Namespace Utilities: the shared fixtures
-- §7a Declared Integration Edge: why `testing` may import `app` and `jsx`
+- §7a Declared Integration Edge: why `testing` may import `app` and `render/jsx`
 - §7b In-Memory Storage Fakes: `fakeKV`, `fakeD1`, `fakeR2`
 - §7c render() — SSR Render-to-String: the assertion entry point
 - §7d buildRequest() — Request Builder: options and body helpers
@@ -257,7 +257,7 @@ The JSX renderer escapes **every** string child, static and interpolated alike. 
 Never assert raw `&`, `<`, `>`, `'` or `"` on the strength of a literal being written in the source.
 
 **The one bypass is `SafeHtml`:** a child that passed through `rawHtml` is emitted verbatim. Assert the unescaped form there, and only there. See
-`src/jsx/render-to-string.ts`.
+`src/render/jsx/render-to-string.ts`.
 
 **URL-bearing attributes are a further exception:** the renderer routes `href` / `src` / `action` through `safeUrl`, so a `javascript:` URL renders
 as `"#"`. Assert the sanitized form.
@@ -280,8 +280,8 @@ it("renders the exact button markup", async () => {
 })
 ```
 
-**Do not call the private `jsx` render path, do not render twice to assert two fragments, and do not fall back to `toContain` / `toMatch`.** A
-single entity-aware `toBe` on the full output is the only accepted shape.
+**Do not call the private `render/jsx` render path, do not render twice to assert two fragments, and do not fall back to `toContain` / `toMatch`.**
+A single entity-aware `toBe` on the full output is the only accepted shape.
 
 **One whole-element assertion per `ui/core` component test file, and it is the HTML-escaping case.** Every other case in the file reads back only
 the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/testing/markup.ts`.
@@ -424,11 +424,11 @@ outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c]
 each is a published subpath of its own rather than a file reached past a barrel. `src/testing/README.md` teaches the fixtures by the task each
 one serves.
 
-### 7a. Declared Integration Edge — testing Imports app and jsx
+### 7a. Declared Integration Edge — testing Imports app and render/jsx
 
-`testing` is an integration namespace ([`NAMESPACES.md`][namespaces-4b] §4b). A test-only namespace reaching into `app` and `jsx` is the **declared,
-acceptable** edge — these utilities exist precisely to drive the app and render pipelines. **This is the one place forge source may depend on the
-private `jsx` render helper**, re-exported as `render()` (§7c).
+`testing` is an integration namespace ([`NAMESPACES.md`][namespaces-4b] §4b). A test-only namespace reaching into `app` and `render/jsx` is the
+**declared, acceptable** edge — these utilities exist precisely to drive the app and render pipelines. **This is the one place forge source may
+depend on the private `render/jsx` render helper**, re-exported as `render()` (§7c).
 
 ### 7b. In-Memory Storage Fakes — fakeKV, fakeD1, fakeR2
 
@@ -462,8 +462,8 @@ unwritable.
 
 ### 7c. render() — SSR Render-to-String
 
-`render` renders a JSX element to its exact HTML string, wrapping the private `jsx` `renderToString` runtime and coercing the result to a plain
-string — so the render-once / assert-once convention (§3c) is a single call.
+`render` renders a JSX element to its exact HTML string, wrapping the private `render/jsx` `renderToString` runtime and coercing the result to a
+plain string — so the render-once / assert-once convention (§3c) is a single call.
 
 ### 7d. buildRequest() — Request Builder
 
@@ -491,8 +491,8 @@ line.** Import it by its own subpath; it is not re-exported from `src/testing/mo
 `node:os`, `node:path` and `node:url`. A Worker-side test program compiles under `"types": []` against the Workers and DOM lib set, and none of
 those modules exists there — putting the symbol on the barrel would make every `import … from "@y-core/forge/testing"` in a Worker-typed suite pull
 a module its own program cannot type. Off the barrel, the only way to reach it is to ask for it by name, which is a decision the importing file
-makes visibly. `checkExports` supports this directly: a non-`mod.ts` export target is excluded from its parent barrel's `@public` coverage walk, so
-"published but off the barrel" is a shape the gate holds rather than one it tolerates.
+makes visibly. `checkExports` supports this directly: a non-`mod.ts` export target its barrel never re-exports from is left out of that barrel's
+`@public` coverage walk, so "published but off the barrel" is a shape the gate holds rather than one it tolerates.
 
 **A suite that imports it references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a types-only subpath declaring exactly
 the node surface `startDevServer` reaches — the `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
@@ -581,7 +581,7 @@ not. `key` is `barrel/component`, the spelling a coverage manifest's own keys us
 [namespaces-3c]: NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [nd-1c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1c-what-the-export-gate-proves
-[pdf-readme]: ../src/output/pdf/README.md
+[pdf-readme]: ../src/render/pdf/README.md
 [sb-1g]: ./STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
 [sb-2c]: ./STORAGE_BINDINGS.md#2c-kvstore-operations
 [sot-2a]: ./SOURCE_OF_TRUTH.md#2a-package-and-configuration-facts

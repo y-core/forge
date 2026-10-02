@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { argvHas, fakeDbIo, jsonRows, minimalWranglerConfig, OK, routedReply } from "./db.fixture";
+import { SqlReal } from "./backup/artifact";
+import { argvHas, fakeDbIo, jsonRows, keysetPageReply, minimalWranglerConfig, OK, routedReply } from "./db.fixture";
 
 describe("argvHas()", () => {
   it("finds words in order without requiring them to be adjacent", () => {
@@ -104,6 +105,78 @@ describe("routedReply()", () => {
   it("answers an unbatched read exactly as it answers the same statement inside a batch", () => {
     const answer = (statement: string): Record<string, unknown>[] => [{ statement }];
     expect(routedReply("SELECT 1", answer)).toEqual(routedReply("SELECT 1;", answer));
+  });
+});
+
+describe("keysetPageReply()", () => {
+  const MEMBERS = {
+    members: [
+      { team: "b", person: "p1" },
+      { team: "a", person: "p3" },
+      { team: "a", person: "p1" },
+      { team: "a", person: "p2" },
+    ],
+  };
+  const people = (page: Record<string, unknown>[] | null) => page?.map((row) => `${String(row.team)}/${String(row.person)}`);
+
+  it("answers the first page ordered by every ORDER BY column, cut at the limit, each cell beside its storage class", () => {
+    expect(keysetPageReply('SELECT * FROM "members" AS t ORDER BY t."team", t."person" LIMIT 2', MEMBERS)).toEqual([
+      { team: "a", "forge:type:team": "text", person: "p1", "forge:type:person": "text" },
+      { team: "a", "forge:type:team": "text", person: "p2", "forge:type:person": "text" },
+    ]);
+  });
+
+  it("seeks past a row value, so a tie on the first column is broken by the second", () => {
+    const page = keysetPageReply(
+      `SELECT * FROM "members" AS t WHERE (t."team", t."person") > ('a', 'p2') ORDER BY t."team", t."person" LIMIT 5`,
+      MEMBERS,
+    );
+
+    expect(people(page)).toEqual(["a/p3", "b/p1"]);
+  });
+
+  it("seeks past one column alone when the seek names one, whatever the ORDER BY", () => {
+    const page = keysetPageReply(`SELECT * FROM "members" AS t WHERE t."team" > 'a' ORDER BY t."team", t."person" LIMIT 5`, MEMBERS);
+
+    expect(people(page)).toEqual(["b/p1"]);
+  });
+
+  it("orders NULL, then numbers numerically, then text by code point, then blobs bytewise", () => {
+    const rows = { mixed: [{ k: [0] }, { k: "\u{1F600}" }, { k: "\uFFFD" }, { k: 10 }, { k: new SqlReal(9.5) }, { k: null }] };
+    const page = keysetPageReply('SELECT * FROM "mixed" AS t ORDER BY t."k" LIMIT 9', rows);
+
+    expect(page?.map((row) => row.k)).toEqual([null, 9.5, 10, "\uFFFD", "\u{1F600}", "00"]);
+  });
+
+  it("reads integer, text with a doubled quote, and blob literals in one row value", () => {
+    const rows = {
+      keyed: [
+        { n: 1, s: "o'k", b: [0, 255] },
+        { n: 1, s: "o'k", b: [1] },
+        { n: 1, s: "p", b: [0] },
+        { n: 2, s: "a", b: [0] },
+      ],
+    };
+    const page = keysetPageReply(
+      `SELECT * FROM "keyed" AS t WHERE (t."n", t."s", t."b") > (1, 'o''k', X'00ff') ORDER BY t."n", t."s", t."b" LIMIT 9`,
+      rows,
+    );
+
+    expect(page?.map((row) => [row.n, row.s, row.b])).toEqual([
+      [1, "o'k", "01"],
+      [1, "p", "00"],
+      [2, "a", "00"],
+    ]);
+  });
+
+  it("refuses a seek whose keys and literals do not pair up, rather than reading a guess", () => {
+    expect(() =>
+      keysetPageReply(`SELECT * FROM "members" AS t WHERE (t."team", t."person") > ('a') ORDER BY t."team", t."person" LIMIT 5`, MEMBERS),
+    ).toThrow("fake keyset read: 2 key(s) sought past 1 literal(s)");
+  });
+
+  it("is null for a statement that is not a keyset read", () => {
+    expect(keysetPageReply('SELECT COUNT(*) AS rows FROM "members"', MEMBERS)).toBeNull();
   });
 });
 

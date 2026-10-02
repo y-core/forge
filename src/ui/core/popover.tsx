@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, JSXNode } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { nameAttrs } from "../contracts/naming";
 import { invokerAttrs, POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";

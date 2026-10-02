@@ -238,7 +238,7 @@ describe("checkDevBoundary — rule C, only a dev entry imports a dev-only modul
   });
 
   it("leaves a runtime subpath of the same dependency alone", () => {
-    const config = project({ "src/worker.ts": 'import { html } from "@y-core/forge/http";\nexport default html;\n' }, { workerConfig: null });
+    const config = project({ "src/worker.ts": 'import { html } from "@y-core/forge/html";\nexport default html;\n' }, { workerConfig: null });
     mkdirSync(join(config.root, "node_modules", "@y-core", "forge"), { recursive: true });
     writeFileSync(join(config.root, "node_modules", "@y-core", "forge", "package.json"), JSON.stringify({ forge: { devOnly: ["./testing"] } }));
 

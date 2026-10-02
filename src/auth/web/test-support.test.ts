@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { createElement } from "../../jsx/element";
+import { createElement } from "../../render/jsx/element";
 import { render } from "../../testing/render";
 import {
   attrOf,

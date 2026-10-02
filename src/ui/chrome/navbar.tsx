@@ -1,7 +1,7 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
-import type { FC, JSXNode } from "../../jsx/types";
+import type { FC, JSXNode } from "../../render/jsx/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { slotToken } from "../core/utils/as-child";

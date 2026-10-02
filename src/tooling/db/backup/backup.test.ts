@@ -11,6 +11,7 @@ import {
   fakeDbIo,
   keyProbeAsked,
   keyProbeReply,
+  keysetPageReply,
   minimalWranglerConfig,
   OK,
   projectReadRows,
@@ -60,6 +61,25 @@ const ROWS: Readonly<Record<string, Record<string, unknown>[]>> = {
   _forge_migrations: [{ name: "0001_init", sha256: "ab" }],
 };
 
+const COMPOSITE = {
+  inventory: [
+    ...INVENTORY,
+    {
+      type: "table",
+      name: "members",
+      tbl_name: "members",
+      sql: "CREATE TABLE members (team TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY (team, person))",
+    },
+  ],
+  columns: {
+    ...COLUMNS,
+    members: [
+      { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
+      { cid: 1, name: "person", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
+    ],
+  },
+};
+
 const DIRECTORY_NAME = "app-db-20260911T100000Z";
 
 function appRoot(): string {
@@ -80,6 +100,8 @@ function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}, 
 /** What a fake database answers with, source side and — where they differ — on the scratch a proof restores into. */
 interface FakeDatabase {
   readonly seed?: Record<string, string>;
+  readonly inventory?: Record<string, unknown>[];
+  readonly rows?: Readonly<Record<string, Record<string, unknown>[]>>;
   readonly columns?: Readonly<Record<string, Record<string, unknown>[]>>;
   readonly counts?: Readonly<Record<string, number>>;
   readonly scratchInventory?: Record<string, unknown>[];
@@ -113,8 +135,10 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
   // A proof reads its scratch under a database named for the route, which is what tells the two apart.
   function answerFor(statement: string, scratch: boolean): Record<string, unknown>[] {
     {
-      const rows = scratch ? (over.scratchRows ?? ROWS) : ROWS;
-      const inventory = scratch ? (over.scratchInventory ?? INVENTORY) : INVENTORY;
+      const sourceRows = over.rows ?? ROWS;
+      const rows = scratch ? (over.scratchRows ?? sourceRows) : sourceRows;
+      const sourceInventory = over.inventory ?? INVENTORY;
+      const inventory = scratch ? (over.scratchInventory ?? sourceInventory) : sourceInventory;
       const answer = (): Record<string, unknown>[] => {
         const info = tableInfoAsked(statement);
         if (info !== null) return (over.columns ?? COLUMNS)[info] ?? [];
@@ -126,16 +150,10 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
         const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
         if (count !== null) {
           const table = count[1] ?? "";
-          return [{ rows: scratch ? (rows[table] ?? []).length : (over.counts?.[table] ?? (ROWS[table] ?? []).length) }];
+          return [{ rows: scratch ? (rows[table] ?? []).length : (over.counts?.[table] ?? (sourceRows[table] ?? []).length) }];
         }
         if (statement === RECORDED_CHECKSUM_SELECT) return (rows._forge_migrations ?? []).map((row) => ({ name: row.name }));
-        const from = /FROM "([^"]+)"/.exec(statement);
-        const key = /ORDER BY t\."([^"]+)"/.exec(statement)?.[1] ?? "";
-        const after = /WHERE t\."[^"]+" > '?([^']*)'?\s+ORDER BY/.exec(statement);
-        const limit = Number(/LIMIT (\d+)$/.exec(statement)?.[1] ?? 0);
-        const all = rows[from?.[1] ?? ""] ?? [];
-        const seek = after === null ? all : all.filter((row) => String(row[key]) > (after[1] ?? ""));
-        return projectReadRows(seek.slice(0, limit));
+        return keysetPageReply(statement, rows) ?? [];
       };
       return answer();
     }
@@ -374,6 +392,48 @@ describe("runBackup", () => {
     expect(outcome.manifest.verified).toEqual([
       { route: "full", divergent: 0 },
       { route: "migrations", divergent: 0 },
+    ]);
+  });
+
+  it("backs up and proves by both routes a table keyed by two columns, read across a page boundary inside one team", async () => {
+    const root = appRoot();
+    const members = Array.from({ length: 300 }, (_, index) => ({ team: `team-${index % 2}`, person: `p${String(index).padStart(3, "0")}` }));
+    const io = fakeWrangler({ ...COMPOSITE, rows: { ...ROWS, members } });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: true, label: null });
+    const inserts = (io.files.get(join(outcome.directory, "data.sql")) ?? "")
+      .split("\n")
+      .filter((line) => line.startsWith('INSERT INTO "members"'));
+
+    expect(outcome.manifest.verified).toEqual([
+      { route: "full", divergent: 0 },
+      { route: "migrations", divergent: 0 },
+    ]);
+    expect(outcome.manifest.tables.map((table) => ({ name: table.name, rows: table.rows }))).toEqual([
+      { name: "tasks", rows: 2 },
+      { name: "members", rows: 300 },
+    ]);
+    expect(inserts.length).toBe(300);
+    expect([inserts[149], inserts[150]]).toEqual([
+      `INSERT INTO "members" ("team","person") VALUES ('team-0','p298');`,
+      `INSERT INTO "members" ("team","person") VALUES ('team-1','p001');`,
+    ]);
+  });
+
+  it("names a composite-keyed row the restore lost by its whole key, and refuses the artifact", async () => {
+    const root = appRoot();
+    const members = [
+      { team: "red", person: "ana" },
+      { team: "red", person: "bo" },
+    ];
+    const io = fakeWrangler({ ...COMPOSITE, rows: { ...ROWS, members }, scratchRows: { ...ROWS, members: members.slice(0, 1) } });
+    const run = await context(root, io);
+
+    expect((await refusal(() => runBackup(run, { out: null, verify: true, label: null }))).message).toBe(
+      "route full left 1 divergence(s); route migrations left 1 divergence(s)",
+    );
+    expect(io.logs.filter((line) => line.includes("S:3:red S:2:bo"))).toEqual([
+      "        − S:3:red S:2:bo is in the source and not in the target",
+      "        − S:3:red S:2:bo is in the source and not in the target",
     ]);
   });
 

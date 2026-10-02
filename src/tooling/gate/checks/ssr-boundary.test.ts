@@ -103,7 +103,7 @@ describe("validateSsrBoundary — a self-import by published subpath", () => {
   });
 
   it("still passes a published subpath that stays on the server", () => {
-    expect(judge("src/ui/core/button.tsx", 'import { html } from "@y-core/forge/http";\n')).toEqual([]);
+    expect(judge("src/ui/core/button.tsx", 'import { html } from "@y-core/forge/html";\n')).toEqual([]);
   });
 
   it("still passes a type-only self-import, which is erased before any bundle sees it", () => {

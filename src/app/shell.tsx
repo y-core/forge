@@ -1,12 +1,12 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
 import type { AppContext } from "../context/types";
-import { renderPage } from "../jsx/render-to-string";
-import type { JSXNode } from "../jsx/types";
+import { renderPage } from "../render/jsx/render-to-string";
+import type { JSXNode } from "../render/jsx/types";
 import { metaTags } from "./meta";
 import type { PageShell, ShellDocument, ShellSlot } from "./types";
 

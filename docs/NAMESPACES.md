@@ -33,17 +33,19 @@ audience: internal
 - §5a security — Transport-Layer Hardening Only: what goes to `auth` instead
 - §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, and the deliberate `ui/controls` shadowing
 - §5c app — Bootstrap and Pipeline Builders: the third-builder trigger and what counts toward it
-- §5d http — All HTTP Output Concerns: the canonical output home
+- §5d http — Responses, Headers and Paths: the canonical home for what a handler sends, and why escaping is not part of it
 - §5e Exported Factory and Type Naming Convention: `create*`, `resolve*`, and type suffixes
 - §5f ui/client — Where a Browser Controller Belongs: controllers, signals, and lazy-loaded resources
 - §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is
   Worker-reachable
 - §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
 - §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
-- §5j `output` — One Namespace per Output Format: the container and its children, the bare-component carve-out, the call shape, and the JSX edge
+- §5j `render` — One Namespace per Renderer: the container and its children, the call shape, the JSX edge, the `render/pdf` bare-component
+  carve-out, and what `render/markdown` leaves to an app
 - §5k `keyring` — At-Rest Sealing Under the App's Own Root Secret: what routes here rather than to `auth` or `crypto`, the one-way edge
   between them, and why the other HMAC consumers keep their own keys
 - §5l `security` — Webhook Message Authentication, by Local Ruling: why a body-reading signature check is transport-layer
+- §5m `html` — Safe-Markup Primitives: what belongs here, and why it is a leaf below both `http` and `render`
 - §6 When to Add a New Namespace: criteria and checklist
 - §7 Binding a Subpath to Its Governance: a prose rule binds a subpath, and naming it does not
 
@@ -172,9 +174,9 @@ this step the boundary was re-litigable one declared edge at a time.
 **A type-only import still counts as an edge.** It is erased at emit and so cannot create a runtime cycle (§2), but it is a coupling that a rename
 breaks, so it is declared with its kind rather than left out. A namespace whose every edge is type-only is integration all the same.
 
-**Duplicated markup across a leaf boundary is the accepted cost, not an oversight.** `src/http/fragment.ts` restates the banner classes
-`src/ui/core/alert.tsx` renders because sharing them would add an `http → ui/core` edge that `validate-namespace-graph` rejects — and it would put
-every consumer of a response builder behind the SSR component tier for a class string. Both copies drift only in appearance, and both resolve
+**Duplicated markup across a leaf boundary is the accepted cost, not an oversight.** `src/render/htmx/fragment.ts` restates the banner classes
+`src/ui/core/alert.tsx` renders because sharing them would add a `render/htmx → ui/core` edge that `validate-namespace-graph` rejects — and it
+would put every consumer of an htmx helper behind the SSR component tier for a class string. Both copies drift only in appearance, and both resolve
 through the same `--status-*` tokens, which is where the coupling that matters actually lives.
 
 ### 4b. Integration Namespace Rules
@@ -273,10 +275,13 @@ into a new `handler` namespace.**
 factoring a sequence out of them is an implementation seam and keeps the count at two, so it does not fire the rule
 ([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
 
-### 5d. http — All HTTP Output Concerns
+### 5d. http — Responses, Headers and Paths
 
-`http` is the canonical home for response builders, header value classes, and HTML escaping — never `@remix-run/headers` directly. A new HTTP output
+`http` is the canonical home for response builders, header value classes and URL paths — never `@remix-run/headers` directly. A new HTTP output
 concern — a JSON response builder, a streaming helper, content negotiation — is added here rather than in the namespace that first needs it.
+
+**Escaping is not an HTTP output concern, and lives in `html` (§5m).** `http` names `html` at value: `htmlResponse` takes the `SafeHtml` a
+renderer produces, and `safeRedirectPath` strips the same control characters `safeUrl` does.
 
 ### 5e. Exported Factory and Type Naming Convention
 
@@ -382,34 +387,47 @@ not this namespace's: fakes are `testing`'s, and a dev route is the app's own `*
 every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). The token is for the ones that are not legitimate, and the difference must stay
 visible at the call site.
 
-### 5j. `output` — One Namespace per Output Format
+### 5j. `render` — One Namespace per Renderer
 
-**`output/` is a container, not a namespace.** It holds one child per format a Worker renders a document in — `output/pdf` today, `output/email`
-the intended second — and owns no code of its own. The shape is precedented by `tooling/`: the parent directory names a concern, and every namespace
-under it is classified, documented and gated separately. A format's own children are namespaces too, matched by the same longest-prefix rule — so a
-parent reaching into `@y-core/forge/output/pdf/fonts` is a declared edge, never an internal import, and the pair never points both ways at value.
+**`render/` is a container, not a namespace.** It holds one child per renderer — `render/jsx` the SSR runtime, `render/htmx` the htmx response
+helpers, `render/markdown` the markdown engine and `render/pdf` the document engine — and owns no code of its own. The shape is precedented by
+`tooling/`: the parent directory names a concern, and every namespace under it is classified, documented and gated separately. A renderer's own
+children are namespaces too, matched by the same longest-prefix rule — so a parent reaching into `@y-core/forge/render/pdf/fonts` is a declared
+edge, never an internal import, and the pair never points both ways at value.
 
-**A format's renderer goes in its own child, never in `http`.** `http` owns the _response_ — `pdfResponse` is its, because handing bytes to a client
-is an HTTP output concern (§5d) — and takes bytes without knowing how they were made. That is what keeps the dependency one-way and lets a format
-namespace carry a large engine without any of it reaching the response path.
-
-**Inside `output/*`, components carry bare names.** `Text`, `Row`, `Stack` and `Box` are the spelling, and this is a deliberate carve-out from
-[`CODE_RULES.md`][cr-7] §7's domain-word requirement: the namespace qualifier is the domain word at every call site, and `pdf.Text` reads as a
-domain-scoped name that `PdfText` would only repeat. `warden-review` cites this section rather than re-arguing the point per review. The carve-out
-covers component names only — a factory, a type or a constant leaving the barrel takes its domain word as usual (§5e). **A bare name may mean
-something else in another namespace**: `ui/core`'s `Stack` layers its children where `output/pdf`'s sequences them, and a file importing both
-aliases one.
+**A renderer goes in its own child, never in `http`.** `http` owns the _response_ — `htmlResponse` and `pdfResponse` are its, because handing a
+body to a client is an HTTP output concern (§5d) — and takes the body without knowing how it was made. That is what keeps the dependency one-way and
+lets a renderer carry a large engine without any of it reaching the response path. `render/jsx` and `render/htmx` escape through `html` (§5m);
+`render/markdown` keeps its own escaper, which writes the hex references CommonMark conformance expects, and stays a leaf.
 
 **A component takes one props object, with `children` inside it.** Never `Component(options, children)` — the single-argument shape is what forge's
-JSX runtime calls (`src/jsx/jsx-runtime.ts`, `FC<P>` in `src/jsx/types.ts`), so the same component is callable by hand and as JSX, and a second call
-convention never has to be kept in step with the first.
+JSX runtime calls (`src/render/jsx/jsx-runtime.ts`, `FC<P>` in `src/render/jsx/types.ts`), so the same component is callable by hand and as JSX,
+and a second call convention never has to be kept in step with the first.
 
-**A format that takes markup depends on `jsx` at value and publishes its own `jsx-runtime`.** `jsx()` builds a descriptor rather than calling the
-component, so the format lowers the tree itself, and recognising a fragment means holding `jsx`'s `Fragment` marker — a value import, which is why
-`output/pdf` is not a leaf. The runtime is its own because TypeScript resolves the `JSX` namespace through `jsxImportSource`:
-`@y-core/forge/output/pdf/jsx-runtime` admits a component answering with a `PdfElement` and declares no intrinsic elements, so `<div>` is a mistake
-rather than a fallback. Widening `./jsx/jsx-runtime` instead would let a PDF component stand where `renderToString` is called, which is the
+**A renderer that takes markup depends on `render/jsx` at value and publishes its own `jsx-runtime`.** `jsx()` builds a descriptor rather than
+calling the component, so the renderer lowers the tree itself, and recognising a fragment means holding the `Fragment` marker — a value import,
+which is why `render/pdf` is not a leaf. The runtime is its own because TypeScript resolves the `JSX` namespace through `jsxImportSource`:
+`@y-core/forge/render/pdf/jsx-runtime` admits a component answering with a `PdfElement` and declares no intrinsic elements, so `<div>` is a mistake
+rather than a fallback. Widening `./render/jsx/jsx-runtime` instead would let a PDF component stand where `renderToString` is called, which is the
 guarantee that runtime exists to keep.
+
+**Inside `render/pdf`, components carry bare names.** `Text`, `Row`, `Stack` and `Box` are the spelling, and this is a deliberate carve-out from
+[`CODE_RULES.md`][cr-7] §7's domain-word requirement: the namespace qualifier is the domain word at every call site, and `pdf.Text` reads as a
+domain-scoped name that `PdfText` would only repeat. `warden-review` cites this section rather than re-arguing the point per review. The carve-out
+covers `render/pdf`'s component names only — a factory, a type or a constant leaving the barrel takes its domain word as usual (§5e), and so does
+every other renderer. **A bare name may mean something else in another namespace**: `ui/core`'s `Stack` layers its children where `render/pdf`'s
+sequences them, and a file importing both aliases one.
+
+**`@y-core/forge/render/markdown` holds the CommonMark and GFM engine and the dialect constructs any app could compose, and nothing that decides
+what a particular app's markdown means.** A construct is parameterised wherever an app would differ: callout kinds are an argument, an embed's id is
+what the app's `embedId` answers, and a wiki link's target stays the raw text the app resolves. A fixed set of kinds, an id format, a target
+resolver, a render schema or the handlers that write an app's classes stay in the app, because each is a decision about that app's pages. Every
+node type a construct produces is declared in the namespace's own types, so no consumer augments forge's tree across the package boundary.
+
+**`@y-core/forge/render/markdown/editor/client` is the CodeMirror viewport for the same markdown, and it sits under `render/markdown`, not `ui`.**
+Under `ui` it would belong in `ui/client` (§5f), and every `ui/client` consumer would then have to install CodeMirror. The editor is browser-only by
+its `client` segment ([`BOUNDARIES.md`][boundaries-1] §1), imports nothing from `render/markdown`, and takes the dialect it decorates as an injected
+option, so an app's constructs reach it without forge knowing them. CodeMirror is its optional peer dependency.
 
 ### 5k. `keyring` — At-Rest Sealing Under the App's Own Root Secret
 
@@ -438,6 +456,18 @@ it.** A webhook signature authenticates the whole message and is a transport art
 `form` because it reads one form field. No other home holds: a `webhook` namespace would be one file and fails
 [`NAMESPACE_DESIGN.md`][nd-5a] §5a, `form` parses forms, `auth` is user identity, and `http` owns output.
 
+### 5m. `html` — Safe-Markup Primitives
+
+**`@y-core/forge/html` holds the primitives that keep rendered markup safe:** `escapeHtml`, `safeUrl`, the `html` tag, `rawHtml`, `isSafeHtml`,
+`scriptJson`, `styleText`, and the `SafeHtml` type they agree on. A primitive takes a value and returns markup or a verdict on it. Rendering a
+component, building a fragment and answering a request are `render/*`'s and `http`'s.
+
+**`html` is a leaf, and sits below both of its consumers.** `render/jsx` escapes through it and `http` types an HTML body with its `SafeHtml`, so
+holding the primitives in either would make the other depend on it for a function that is not its concern.
+
+**Pre-styled markup is not a primitive.** The htmx status banners carry forge's status classes and answer a swap, so they are `render/htmx`'s, and
+`html` emits no class string.
+
 ---
 
 ## 6. When to Add a New Namespace
@@ -454,7 +484,7 @@ table row is governed by nothing, however complete the table looks.
 
 **Every published subpath is bound by at least one prose rule, or is declared exempt with its reason.** A rule binds a subpath by naming it in
 prose: `./ui/client` is bound by §5f, `./http` by §5d, `./tooling/*` by §5g. An exemption is as good as a rule when the reason is stated — the
-`./jsx/jsx-runtime` family is written by the compiler and reached by no author, so no rule about what belongs there could be acted on.
+`./render/jsx/jsx-runtime` family is written by the compiler and reached by no author, so no rule about what belongs there could be acted on.
 
 **Existence only.** The reconciliation runs both ways — every subpath has a rule, and every rule names a live subpath — and it asks nothing about
 whether the rule is any good. Adequacy is a judgement a check cannot make, and a check that pretended to make it would be trusted for a guarantee it

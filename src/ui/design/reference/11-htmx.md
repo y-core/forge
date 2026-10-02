@@ -5,8 +5,8 @@ description: "The design consequences of swapping fragments: what a partial upda
 
 # HTMX Surfaces
 
-This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`, `hxHeaders`, the pattern helpers, `isPartial` for
-choosing between a page and a fragment, the trust posture on selector-valued attributes — belongs to [`HTMX.md`][htmx] and `src/html/README.md`, and
+This page is about the _design_ consequences of swapping fragments. The API — `hxAttrs`, `hxHeaders`, the pattern helpers, `isPartial` for choosing
+between a page and a fragment, the trust posture on selector-valued attributes — belongs to [`HTMX.md`][htmx] and `src/render/htmx/README.md`, and
 is not restated here.
 
 The one idea everything below follows from: **a swapped region is a surface, not a hole.** It is rendered by its own handler, it can be requested

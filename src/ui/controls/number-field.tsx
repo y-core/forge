@@ -1,5 +1,5 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
+/** @jsxImportSource @y-core/forge/render/jsx */
 import { NumberField as CoreNumberField } from "../core/number-field";
 import { createBoundCompound, createBoundControl } from "./create-bound-control";
 

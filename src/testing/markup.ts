@@ -1,4 +1,4 @@
-import { VOID_ELEMENTS } from "../jsx/render-to-string";
+import { VOID_ELEMENTS } from "../render/jsx/render-to-string";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
 function rx(literal: string): string {

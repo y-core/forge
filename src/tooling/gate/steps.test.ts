@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { checkResult } from "./finding";
-import { DEFAULT_GATE_INPUTS, GATE_MODES, isCheckStep, selectSteps } from "./steps";
+import { DEFAULT_GATE_INPUTS, isCheckStep, selectSteps } from "./steps";
 import type { Step } from "./types";
 
 const FIXTURE: readonly Step[] = [
@@ -14,12 +14,6 @@ const FIXTURE: readonly Step[] = [
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);
 }
-
-describe("GATE_MODES", () => {
-  it("is the three tiers in ascending order, which is what the selector ranks against", () => {
-    expect([...GATE_MODES]).toEqual(["quality", "standard", "full"]);
-  });
-});
 
 describe("isCheckStep()", () => {
   const check: Step = { label: "in-process", run: () => checkResult([], "walked nothing") };

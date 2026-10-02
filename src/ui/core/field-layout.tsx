@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
-/** @jsxImportSource @y-core/forge/jsx */
-import type { FC, JSX, PropsWithChildren } from "../../jsx/types";
+/** @jsxImportSource @y-core/forge/render/jsx */
+import type { FC, JSX, PropsWithChildren } from "../../render/jsx/types";
 import { FIELD_LABEL_CLASSES, FieldDescription, FieldError, FieldLabel, FieldRoot } from "./field";
 import { Separator } from "./separator";
 import { slotToken } from "./utils/as-child";

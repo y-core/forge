@@ -64,7 +64,7 @@ reads it.
 | Block | Add it when you want |
 | --- | --- |
 | `css` | A Tailwind CLI build per entry |
-| `js.bundles` | esbuild bundles, compiled with `@y-core/forge/jsx` as the JSX source |
+| `js.bundles` | esbuild bundles, compiled with `@y-core/forge/render/jsx` as the JSX source |
 | `sprites` | SVG sheets, plus a typed icon component per group |
 | `icons` | Favicon, PWA icons and a web-app manifest rasterised from one master SVG |
 | `fonts.downloads` | Remote fonts fetched into the public directory and cached on disk |
@@ -307,6 +307,22 @@ path is yours to choose.
 A `png` earns a head `<link>` only when it declares a `rel`; one marked `manifest: true` is already declared by the web-app manifest. `sharp` is
 loaded only when a `png` or `ico` output is configured, so an icon set of `svg` and `manifest` alone needs no optional peer at all.
 
+To make an installed app a target of the system share sheet, declare `shareTarget` on `app`. Each name in `params` is the query or form field the
+shared title, text or URL arrives in:
+
+```ts
+app: {
+  name: "My App",
+  shortName: "App",
+  backgroundColor: "#ffffff",
+  shareTarget: { action: "/capture", params: { title: "title", text: "text", url: "url" } },
+},
+```
+
+`action` must be a path on your own origin, and the build rejects anything else. `method` defaults to `GET`. A `POST` target may also set
+`enctype` to `application/x-www-form-urlencoded` or `multipart/form-data`. The route behind `action` is yours to write, and it receives the shared
+values as untrusted input.
+
 ---
 
 ## Baking themed cursors
@@ -375,7 +391,7 @@ pasted into a mail client has to keep working. `currentColor` is not substituted
 ## Converting an SVG for a renderer that cannot parse one
 
 `marks` converts an SVG into the paths a renderer draws, so a Worker never parses XML to put a logo on a page. Its output is what
-`@y-core/forge/output/pdf` takes as a letterhead's mark:
+`@y-core/forge/render/pdf` takes as a letterhead's mark:
 
 ```ts
 marks: [{ from: "src/svg/logo-lockup.svg", to: "marks/letterhead.json" }],

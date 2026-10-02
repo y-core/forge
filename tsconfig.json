@@ -21,7 +21,7 @@
     "skipLibCheck": true,
     "types": [],
     "jsx": "react-jsx",
-    "jsxImportSource": "@y-core/forge/jsx"
+    "jsxImportSource": "@y-core/forge/render/jsx"
   },
   "include": ["src/**/*.ts", "src/**/*.tsx", "config/**/*.ts", "warden/**/*.ts", ".types/**/*.d.ts"],
   // `src/testing/node.d.ts` is the shim a consumer references for its workerd suite: it declares the
