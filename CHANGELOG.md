@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.4.0] — 2026-10-04
+
 ### Breaking Changes
 
 - **`createHref` and a route map's `href` from `@y-core/forge/router` produce a single leading slash**, even when a root wildcard's value brings
@@ -5507,6 +5513,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.4.0]: https://github.com/y-core/forge/compare/v0.3.12...v0.4.0
 [0.3.12]: https://github.com/y-core/forge/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/y-core/forge/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/y-core/forge/compare/v0.3.9...v0.3.10
