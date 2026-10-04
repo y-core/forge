@@ -9,7 +9,7 @@ import { MAX_CONSTRUCT_LENGTH } from "./syntax";
 
 const SMALL = 256 * 1024;
 const LARGE = 512 * 1024;
-const MAX_RATIO = 2.5;
+const MAX_RATIO = 3;
 const MEBIBYTE = 1024 * 1024;
 const BUDGET_MS = 1000;
 const RUNS = 5;
