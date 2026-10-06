@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.4.2] — 2026-10-06
+
 ### Added
 
 - **`rescanUnitBounds` from `@y-core/forge/render/markdown` re-splits a source after an edit**, returning the unit bounds `scanBlocks` would
@@ -5531,6 +5537,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.4.2]: https://github.com/y-core/forge/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/y-core/forge/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/y-core/forge/compare/v0.3.12...v0.4.0
 [0.3.12]: https://github.com/y-core/forge/compare/v0.3.11...v0.3.12
