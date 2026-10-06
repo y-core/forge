@@ -1,9 +1,12 @@
 import { describe, expect, test } from "bun:test";
 
+import fc from "fast-check";
+
 import spec from "../../../tests/fixtures/markdown/spec.json";
+import { blockMarkdown, markdownEdit, mixedMarkdown } from "./arbitraries.fixture";
 import { MAX_CONTAINER_DEPTH } from "./block";
-import { parseMarkdown, renderMarkdownHtml, scanBlocks } from "./mod";
-import type { MarkdownBlock, MarkdownDocument, MarkdownListInfo, MarkdownSegments } from "./mod";
+import { parseMarkdown, renderMarkdownHtml, rescanUnitBounds, scanBlocks } from "./mod";
+import type { MarkdownBlock, MarkdownDocument, MarkdownListInfo, MarkdownSegments, MarkdownUnitBounds } from "./mod";
 import { atSize, PATHOLOGICAL_SHAPES } from "./pathological.fixture";
 import { hasHtmlBlockStart } from "./raw-html.fixture";
 import { SPEC_SCHEMA } from "./spec-schema.fixture";
@@ -221,5 +224,59 @@ describe("link reference definitions as blocks", () => {
   test("extends an item over every line of its definition", () => {
     const [unit] = parseMarkdown("- [a]:\n  /u\n- b").units;
     expect(unit?.node.end).toBe("- [a]:\n  /u".length);
+  });
+});
+
+describe("scanBlocks neutrality", () => {
+  test("marks a unit whose first line opens with no block left open", () => {
+    expect(scanBlocks("a\n\n- b\n- c\n\n> d\n").units.map(({ neutral }) => neutral)).toEqual([true, true, false, false]);
+  });
+
+  test("leaves a unit after a paragraph line with no blank between unmarked", () => {
+    expect(scanBlocks("a\n# b\n").units.map(({ neutral }) => neutral)).toEqual([true, false]);
+  });
+
+  test("leaves the first unit unmarked when a byte order mark is still to be skipped", () => {
+    expect(scanBlocks("\u{feff}a\n\nb\n").units.map(({ neutral }) => neutral)).toEqual([false, true]);
+  });
+});
+
+describe("rescanUnitBounds", () => {
+  const boundsOf = (source: string): MarkdownUnitBounds[] => scanBlocks(source).units.map(({ start, end, neutral }) => ({ start, end, neutral }));
+
+  test("returns the bounds scanBlocks gives the edited source", () => {
+    fc.assert(
+      fc.property(fc.oneof(blockMarkdown, mixedMarkdown), markdownEdit, (before, { at, remove, insert }) => {
+        const start = Math.floor(at * before.length);
+        const end = Math.min(before.length, start + remove);
+        const after = before.slice(0, start) + insert + before.slice(end);
+        expect(rescanUnitBounds(after, scanBlocks(before).units, start, end)).toEqual(boundsOf(after));
+      }),
+      { seed: 261004, numRuns: 2000 },
+    );
+  });
+
+  test("closes the units after an edit that opens a fence, up to the source's end", () => {
+    const before = "a\n\nb\n\nc\n";
+    const after = "a\n\n```\nb\n\nc\n";
+    expect(rescanUnitBounds(after, scanBlocks(before).units, 3, 3)).toEqual([
+      { start: 0, end: 3, neutral: true },
+      { start: 3, end: after.length, neutral: true },
+    ]);
+  });
+
+  test("scans the whole source when the changed range does not fit the previous bounds", () => {
+    const previous = scanBlocks("a\n\nb\n").units;
+    for (const [start, end] of [
+      [-1, 0],
+      [2, 1],
+      [0, 99],
+    ] as const) {
+      expect(rescanUnitBounds("x\n\ny\n\nz\n", previous, start, end)).toEqual(boundsOf("x\n\ny\n\nz\n"));
+    }
+  });
+
+  test("scans the whole source when there are no previous bounds", () => {
+    expect(rescanUnitBounds("x\n\ny\n", [], 0, 0)).toEqual(boundsOf("x\n\ny\n"));
   });
 });

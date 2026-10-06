@@ -1,6 +1,6 @@
 import { DEV_SERVER_ATTEMPT_TIMEOUT_MS, spawnDevServer } from "./dev-server-start";
 
-/** What `startDevServer` needs to know about the fixture it serves. @public */
+/** What `startDevServer` needs to know about the fixture it serves; without `persistTo`, every start persists to its own empty directory, which `stop()` removes. @public */
 export interface DevServerOptions {
   /** Worker entry, positional to `wrangler dev` — overrides the config's `main`. */
   entry?: string;
@@ -12,6 +12,8 @@ export interface DevServerOptions {
   readyPath?: string;
   /** Pipe stdout and stderr into `logs()` instead of discarding them. */
   capture?: boolean;
+  /** A caller-owned `--persist-to` directory, served as it stands and never emptied or removed. */
+  persistTo?: string;
 }
 
 /** A `wrangler dev` process, the origins it answers on, and what it printed. @public */

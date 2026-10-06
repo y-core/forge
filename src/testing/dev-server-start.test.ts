@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 
 import { DEV_SERVER_ATTEMPT_TIMEOUT_MS, spawnDevServer } from "./dev-server-start";
 import type { DevServer } from "./workerd";
@@ -14,6 +14,10 @@ const HANG_THEN_ANSWER = `const earlier = existsSync(log) ? readFileSync(log, "u
 appendFileSync(log, process.pid + " " + port + "\\n");
 if (earlier === 0) setInterval(() => {}, 1 << 30);
 else require("node:http").createServer((_, res) => res.end("answered by start " + (earlier + 1))).listen(port, "127.0.0.1");`;
+
+const RECORD_DIRS_THEN_ANSWER = `const flag = (name) => process.argv[process.argv.indexOf(name) + 1];
+appendFileSync(log + ".dirs", flag("--env-file") + " " + flag("--persist-to") + "\\n");
+require("node:http").createServer((_, res) => res.end("ok")).listen(port, "127.0.0.1");`;
 
 const EXIT_AT_ONCE = `appendFileSync(log, process.pid + " " + port + "\\n");
 process.exit(1);`;
@@ -82,6 +86,38 @@ describe("spawnDevServer()", () => {
     expect(server.origin).toBe(`http://127.0.0.1:${secondPort}`);
     expect(await fetch(server.origin).then((res) => res.text())).toBe("answered by start 2");
     expect(isAlive(firstPid ?? 0)).toBe(false);
+  }, 30_000);
+
+  it("persists each start's local state beside its env file, in a directory no other start shares", async () => {
+    fakeNode(RECORD_DIRS_THEN_ANSWER);
+
+    const first = await spawnDevServer({}, { attemptTimeoutMs: 10_000 });
+    const second = await spawnDevServer({}, { attemptTimeoutMs: 10_000 });
+    servers.push(first, second);
+    const [[firstEnv = "", firstState = ""] = [], [secondEnv = "", secondState = ""] = []] = readFileSync(join(dir, "starts.dirs"), "utf-8")
+      .trim()
+      .split("\n")
+      .map((line) => line.split(" "));
+
+    expect(dirname(firstState)).toBe(dirname(firstEnv));
+    expect(dirname(secondState)).toBe(dirname(secondEnv));
+    expect(firstState).not.toBe(secondState);
+    first.stop();
+    expect(existsSync(dirname(firstState))).toBe(false);
+  }, 30_000);
+
+  it("persists to a caller's directory as given, and leaves it in place on stop()", async () => {
+    fakeNode(RECORD_DIRS_THEN_ANSWER);
+    const persistTo = join(dir, "caller-state");
+    mkdirSync(persistTo);
+
+    const server = await spawnDevServer({ persistTo }, { attemptTimeoutMs: 10_000 });
+    servers.push(server);
+    const [, recorded] = readFileSync(join(dir, "starts.dirs"), "utf-8").trim().split(" ");
+    server.stop();
+
+    expect(recorded).toBe(persistTo);
+    expect(existsSync(persistTo)).toBe(true);
   }, 30_000);
 
   it("rejects once wrangler exits, without waiting out the readiness budget", async () => {

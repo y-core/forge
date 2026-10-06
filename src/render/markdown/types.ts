@@ -255,10 +255,15 @@ export interface MarkdownListInfo {
   spread: boolean;
 }
 
-/** A top-level block, or one item of a top-level list, with its node's offsets relative to `start`; `interrupting` marks one opened on a line that interrupted a paragraph. */
-export interface MarkdownUnit {
+/** Where a unit sits in its source; `neutral` marks one whose first line the scanner began with no block open, so a rescan may resume there. */
+export interface MarkdownUnitBounds {
   start: number;
   end: number;
+  neutral: boolean;
+}
+
+/** A top-level block, or one item of a top-level list, with its node's offsets relative to `start`; `interrupting` marks one opened on a line that interrupted a paragraph. */
+export interface MarkdownUnit extends MarkdownUnitBounds {
   line: number;
   node: MarkdownBlock;
   list?: MarkdownListInfo | undefined;

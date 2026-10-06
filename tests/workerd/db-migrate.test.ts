@@ -37,7 +37,7 @@ beforeAll(async () => {
   const migrate = forgeDb(["migrate", "--target", "local", "--yes"]);
   expect(migrate.code, `migrate failed\n${migrate.stdout}\n${migrate.stderr}`).toBe(0);
   expect(`${migrate.stdout}\n${migrate.stderr}`.includes("0001_init")).toBe(true);
-  server = await startDevServer({ config: CONFIG, readyPath: "/tables" });
+  server = await startDevServer({ config: CONFIG, readyPath: "/tables", persistTo: join(FIXTURE, ".wrangler", "state") });
   db = await openD1(FIXTURE);
 }, 240_000);
 

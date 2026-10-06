@@ -103,7 +103,8 @@ async function spawnDevServerOnce(options: DevServerOptions, attemptTimeoutMs: n
   if (options.config !== undefined) args.push("--config", options.config);
   // `--local-protocol http` is stated, never defaulted: wrangler documents http as the default but
   // serves https once it detects it runs under an agent, and every `fetch` then meets a TLS handshake.
-  args.push("--env-file", envFile, "--port", String(port), "--ip", "127.0.0.1", "--local-protocol", "http");
+  args.push("--env-file", envFile, "--persist-to", options.persistTo ?? join(varsDir, "state"));
+  args.push("--port", String(port), "--ip", "127.0.0.1", "--local-protocol", "http");
 
   // Resolved through the package, never a path relative to this file: in a consumer this module sits
   // under `node_modules/@y-core/forge/`, whose sibling `node_modules` holds no wrangler.

@@ -280,8 +280,12 @@ Give the `beforeAll` a generous timeout: a cold `wrangler dev` start is measured
 `https` onto origin-bearing headers before the Worker sees them, so an app told the http origin refuses its own suite at the origin guard.
 `SITE_ORIGIN` is written to the env file as `siteOrigin` for you, and your `vars` are merged over it.
 
-`stop()` takes down the whole process tree and removes the temp file. The same kill is bound to the runner's exit and signals, so an interrupted run
-leaves nothing behind ([`TEST_RUNNERS.md`][testing-1f] §1f).
+**Every start begins with empty local state by default.** Durable Objects, KV, D1 and alarms persist to a directory of that start's own, so
+nothing carries over from an earlier start and two servers running at once never share a database. A spec that prepares state before starting —
+after `forge db migrate --target local`, say — passes that directory as `persistTo`. It is the caller's: the server neither empties nor removes it.
+
+`stop()` takes down the whole process tree and removes the temp files, the default local state included. The same kill is bound to the runner's
+exit and signals, so an interrupted run leaves nothing behind ([`TEST_RUNNERS.md`][testing-1f] §1f).
 
 ---
 

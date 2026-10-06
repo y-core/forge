@@ -10,6 +10,7 @@ import type {
   MarkdownListItem,
   MarkdownTableRow,
   MarkdownUnit,
+  MarkdownUnitBounds,
 } from "./types";
 import { unescapeSpan } from "./unescape";
 
@@ -242,7 +243,14 @@ function readAlignment(source: string, start: number, end: number): MarkdownAlig
   return left && right ? "center" : left ? "left" : right ? "right" : null;
 }
 
-function scanContainers(source: string, definitions: Map<string, MarkdownDefinitionTarget>, footnotes: Set<string>): Open {
+function scanContainers(
+  source: string,
+  definitions: Map<string, MarkdownDefinitionTarget>,
+  footnotes: Set<string>,
+  from: number,
+  neutralStarts: number[],
+  resumesAt?: (lineStart: number) => boolean,
+): Open {
   const document = createOpen("document", null, 0, 1);
   let tip = document;
   let oldTip = document;
@@ -881,8 +889,12 @@ function scanContainers(source: string, definitions: Map<string, MarkdownDefinit
     }
   }
 
-  let at = source.charCodeAt(0) === BYTE_ORDER_MARK ? 1 : 0;
+  let at = from === 0 && source.charCodeAt(0) === BYTE_ORDER_MARK ? 1 : from;
   while (at < source.length) {
+    if (tip === document) {
+      neutralStarts.push(at);
+      if (resumesAt?.(at) === true) return document;
+    }
     let end = at;
     let code = source.charCodeAt(end);
     while (end < source.length && code !== LINE_FEED && code !== CARRIAGE_RETURN) code = source.charCodeAt(++end);
@@ -912,13 +924,14 @@ function rebase(node: MarkdownBlock, base: number): void {
   }
 }
 
-/** Runs the block phase over a source: its units, link reference definitions and line index, with every inline child still empty. */
-export function scanBlocks(source: string): MarkdownDocument {
-  const definitions = new Map<string, MarkdownDefinitionTarget>();
-  const footnoteDefinitions = new Set<string>();
-  const document = scanContainers(source, definitions, footnoteDefinitions);
-  const lineStarts = createLineIndex(source);
-  const pending: { node: MarkdownBlock; list: MarkdownListInfo | undefined; interrupting: boolean }[] = [];
+interface PendingUnit {
+  node: MarkdownBlock;
+  list: MarkdownListInfo | undefined;
+  interrupting: boolean;
+}
+
+function collectUnits(document: Open): PendingUnit[] {
+  const pending: PendingUnit[] = [];
   for (const child of document.children) {
     for (const node of child.nodes) {
       if (node.type !== "list") {
@@ -929,14 +942,94 @@ export function scanBlocks(source: string): MarkdownDocument {
       node.children.forEach((item, index) => pending.push({ node: item, list, interrupting: child.children[index]?.interrupting ?? false }));
     }
   }
-  const units: MarkdownUnit[] = pending.map(({ node, list, interrupting }, index) => {
+  return pending;
+}
+
+function markNeutral(units: MarkdownUnitBounds[], neutralStarts: readonly number[]): void {
+  let next = 0;
+  for (const unit of units) {
+    while ((neutralStarts[next] ?? Number.POSITIVE_INFINITY) < unit.start) next++;
+    unit.neutral = neutralStarts[next] === unit.start;
+  }
+}
+
+function lineStartBefore(source: string, offset: number): number {
+  let at = offset;
+  while (at > 0) {
+    const code = source.charCodeAt(at - 1);
+    if (code === LINE_FEED || (code === CARRIAGE_RETURN && source.charCodeAt(at) !== LINE_FEED)) break;
+    at--;
+  }
+  return at;
+}
+
+/** Runs the block phase over a source: its units, link reference definitions and line index, with every inline child still empty. */
+export function scanBlocks(source: string): MarkdownDocument {
+  const definitions = new Map<string, MarkdownDefinitionTarget>();
+  const footnoteDefinitions = new Set<string>();
+  const neutralStarts: number[] = [];
+  const document = scanContainers(source, definitions, footnoteDefinitions, 0, neutralStarts);
+  const lineStarts = createLineIndex(source);
+  const units: MarkdownUnit[] = collectUnits(document).map(({ node, list, interrupting }, index) => {
     const line = index === 0 ? 1 : lineAtOffset(lineStarts, node.start);
-    return { start: index === 0 ? 0 : (lineStarts[line - 1] ?? 0), end: source.length, line, node, list, interrupting };
+    return { start: index === 0 ? 0 : (lineStarts[line - 1] ?? 0), end: source.length, neutral: false, line, node, list, interrupting };
   });
+  markNeutral(units, neutralStarts);
   for (let index = 0; index < units.length; index++) {
     const unit = units[index] as MarkdownUnit;
     unit.end = units[index + 1]?.start ?? source.length;
     rebase(unit.node, unit.start);
   }
   return { source, units, definitions, footnoteDefinitions, lineStarts };
+}
+
+/** Returns the unit bounds `scanBlocks(source)` would, given the bounds of the source before `[changedStart, changedEnd)` of it was replaced. */
+export function rescanUnitBounds(
+  source: string,
+  previous: readonly MarkdownUnitBounds[],
+  changedStart: number,
+  changedEnd: number,
+): MarkdownUnitBounds[] {
+  const previousLength = previous.at(-1)?.end ?? 0;
+  const delta = source.length - previousLength;
+  const consistent =
+    previous.length > 0 && 0 <= changedStart && changedStart <= changedEnd && changedEnd <= previousLength && changedStart <= changedEnd + delta;
+  let restart = 0;
+  if (consistent) {
+    for (let index = previous.length - 1; index > 0; index--) {
+      const { start, neutral } = previous[index] as MarkdownUnitBounds;
+      if (neutral && start <= changedStart) {
+        restart = index;
+        break;
+      }
+    }
+  }
+  let cursor = Math.max(restart, 1);
+  let resumed = previous.length;
+  const resumesAt = (lineStart: number): boolean => {
+    if (lineStart < changedEnd + delta) return false;
+    while ((previous[cursor]?.start ?? Number.POSITIVE_INFINITY) + delta < lineStart) cursor++;
+    const candidate = previous[cursor];
+    if (candidate?.neutral !== true || candidate.start + delta !== lineStart) return false;
+    resumed = cursor;
+    return true;
+  };
+  const neutralStarts: number[] = [];
+  const from = consistent ? (previous[restart]?.start ?? 0) : 0;
+  const document = scanContainers(source, new Map(), new Set(), from, neutralStarts, consistent ? resumesAt : undefined);
+  const bounds: MarkdownUnitBounds[] = consistent ? previous.slice(0, restart).map(({ start, neutral }) => ({ start, end: 0, neutral })) : [];
+  const scanned = collectUnits(document).map(({ node }) => ({ start: lineStartBefore(source, node.start), end: 0, neutral: false }));
+  markNeutral(scanned, neutralStarts);
+  for (const unit of scanned) bounds.push(unit);
+  for (let index = resumed; index < previous.length; index++) {
+    const { start, neutral } = previous[index] as MarkdownUnitBounds;
+    bounds.push({ start: start + delta, end: 0, neutral });
+  }
+  const first = bounds[0];
+  if (first !== undefined) {
+    first.start = 0;
+    first.neutral = source.charCodeAt(0) !== BYTE_ORDER_MARK;
+  }
+  for (let index = 0; index < bounds.length; index++) (bounds[index] as MarkdownUnitBounds).end = bounds[index + 1]?.start ?? source.length;
+  return bounds;
 }

@@ -21,6 +21,7 @@ declare global {
     forgeAnnounce: typeof import("./announce");
     politeWrites: string[];
     htmxDone: Promise<void>;
+    htmxAnswered: Promise<void>;
   }
 }
 
@@ -63,12 +64,24 @@ async function answer(page: Page, respond: (route: Route) => Promise<void>): Pro
   await page.route("http://forge.test/results", respond);
 }
 
+/** Clicks the button with the page's clock paused until htmx fires `answered`, so the response always lands inside the announcer's settle. */
+async function clickWithinSettle(page: Page, answered: string): Promise<void> {
+  await page.clock.install();
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1);
+  await page.evaluate((event) => {
+    window.htmxAnswered = new Promise((resolve) => document.addEventListener(event, () => resolve(), { once: true }));
+    document.querySelector<HTMLElement>("#load")?.click();
+  }, answered);
+  await page.evaluate(() => window.htmxAnswered);
+  await page.clock.resume();
+}
+
 /** Clicks the button and resolves once htmx has settled the swap its response caused. */
 async function loadAndSettle(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.htmxDone = new Promise((resolve) => document.addEventListener("htmx:after:swap", () => resolve(), { once: true }));
   });
-  await page.click("#load");
+  await clickWithinSettle(page, "htmx:after:request");
   await page.evaluate(() => window.htmxDone);
 }
 
@@ -103,11 +116,7 @@ test.describe("htmx — a request's busy indicator", () => {
     await mountPage(page, await markup());
     await answer(page, (route) => route.abort());
 
-    await page.evaluate(() => {
-      window.htmxDone = new Promise((resolve) => document.addEventListener("htmx:error", () => resolve(), { once: true }));
-    });
-    await page.click("#load");
-    await page.evaluate(() => window.htmxDone);
+    await clickWithinSettle(page, "htmx:error");
 
     expect(await politeWritesSettled(page)).toEqual(["probe"]);
   });

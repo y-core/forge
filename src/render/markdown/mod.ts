@@ -1,4 +1,4 @@
-export { scanBlocks } from "./block";
+export { rescanUnitBounds, scanBlocks } from "./block";
 export { createCalloutTransform } from "./callout";
 export { createUnitCache, parseMarkdown } from "./document";
 export { codeBlockText, createHtmlWriter, inlinePlainText, renderMarkdownHtml } from "./html";
@@ -71,6 +71,7 @@ export type {
   MarkdownText,
   MarkdownThematicBreak,
   MarkdownUnit,
+  MarkdownUnitBounds,
   MarkdownWalkContext,
   MarkdownWikiLink,
   SanitizedSvg,

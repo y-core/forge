@@ -18,7 +18,19 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`rescanUnitBounds` from `@y-core/forge/render/markdown` re-splits a source after an edit**, returning the unit bounds `scanBlocks` would
+  give while rescanning only from the last neutral unit before the edit to the first unit after it where both scans agree. A range that does
+  not fit the previous bounds scans the whole source. The new `MarkdownUnitBounds` type carries `start`, `end` and `neutral`, and
+  `MarkdownUnit` now extends it.
+
+### Fixed
+
+- **`startDevServer` from `@y-core/forge/testing/workerd` gives every start its own empty local state**, passed as `--persist-to` and removed
+  by `stop()`. Concurrent servers no longer share `.wrangler/state`, where workerd's alarm database failed a call with `SQLITE_BUSY`. A spec
+  that prepares state before starting, such as after `forge db migrate --target local`, names its directory as the new `persistTo` option,
+  which the server neither empties nor removes.
 
 ---
 

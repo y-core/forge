@@ -203,4 +203,21 @@ const pieces = scanBlocks(source).units.map((unit) => source.slice(unit.start, u
 
 Each item of a top-level list is a unit of its own, and every item of that list shares one `list` record.
 
+### Re-splitting after an edit
+
+When an edit replaced `[changedStart, changedEnd)` of the previous source, `rescanUnitBounds` returns the bounds `scanBlocks` would give the new
+source, scanning only from the last unit before the edit that opens with no block left open to the first unit after it where both scans agree.
+Keep each unit's `start`, `end` and `neutral` from the earlier scan or rescan; nothing else is needed.
+
+```ts
+import { rescanUnitBounds, scanBlocks } from "@y-core/forge/render/markdown";
+
+const before = scanBlocks(draft).units;
+const next = draft.slice(0, changedStart) + inserted + draft.slice(changedEnd);
+const bounds = rescanUnitBounds(next, before, changedStart, changedEnd);
+```
+
+It returns bounds alone, without nodes, definitions or line index; parse the source when you need those. A range that does not fit the previous
+bounds makes it scan the whole source.
+
 [editor]: ./editor/client/README.md
