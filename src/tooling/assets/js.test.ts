@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import type { Metafile } from "esbuild";
 
-import { buildJS, staticImportClosure } from "./js";
+import { buildJS, importClosure } from "./js";
 
 type Output = Metafile["outputs"][string];
 type Import = Output["imports"][number];
@@ -17,7 +17,7 @@ function metaOutput(imports: Import[] = [], cssBundle?: string): Output {
 const statically = (path: string): Import => ({ path, kind: "import-statement" });
 const lazily = (path: string): Import => ({ path, kind: "dynamic-import" });
 
-describe("staticImportClosure()", () => {
+describe("importClosure()", () => {
   const cases: { name: string; outputs: Metafile["outputs"]; roots: string[]; expected: string[] }[] = [
     { name: "reaches nothing from no roots", outputs: { "main.js": metaOutput() }, roots: [], expected: [] },
     {
@@ -69,9 +69,26 @@ describe("staticImportClosure()", () => {
 
   for (const { name, outputs, roots, expected } of cases) {
     it(name, () => {
-      expect([...staticImportClosure(outputs, roots)].sort()).toEqual(expected);
+      expect([...importClosure(outputs, roots, false)].sort()).toEqual(expected);
     });
   }
+
+  it("follows a dynamic import when lazy, and everything the lazy chunk imports statically", () => {
+    const outputs = { "main.js": metaOutput([lazily("lazy.js")]), "lazy.js": metaOutput([statically("lazy-dep.js")]), "lazy-dep.js": metaOutput() };
+
+    expect([...importClosure(outputs, ["main.js"], true)].sort()).toEqual(["lazy-dep.js", "lazy.js", "main.js"]);
+  });
+
+  it("follows a dynamic import a lazy chunk itself makes, when lazy", () => {
+    const outputs = {
+      "main.js": metaOutput([lazily("a.js")]),
+      "a.js": metaOutput([lazily("b.js")], "a.css"),
+      "a.css": metaOutput(),
+      "b.js": metaOutput(),
+    };
+
+    expect([...importClosure(outputs, ["main.js"], true)].sort()).toEqual(["a.css", "a.js", "b.js", "main.js"]);
+  });
 });
 
 function chunkHolding(publicDir: string, marker: string): string {
@@ -126,6 +143,40 @@ describe("buildJS() — the precache shell", () => {
 
       expect(precache.sort()).toEqual([chunkHolding(publicDir, "SHARED_MARKER"), "js/main.js"].sort());
       expect(mapping["js/admin.js"]).toBe("js/admin.js");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('precaches the chunk a precache: "all" entry loads lazily, beside its static shell', async () => {
+    const { root, srcDir, publicDir } = sharedProject();
+    try {
+      const { precache } = await buildJS([{ entry: join(srcDir, "main.ts"), outdir: "js", splitting: true, precache: "all" }], {
+        outDir: publicDir,
+      });
+
+      expect(precache.sort()).toEqual([chunkHolding(publicDir, "LAZY_MARKER"), "js/main.js"].sort());
+      for (const output of precache) expect(existsSync(join(publicDir, output))).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('precaches a lazy chunk only for the precache: "all" entry that loads it, not for a shell entry in the same build', async () => {
+    const { root, srcDir, publicDir } = sharedProject();
+    writeFileSync(join(srcDir, "reader.ts"), 'export const read = () => import("./reader-lazy");');
+    writeFileSync(join(srcDir, "reader-lazy.ts"), 'export const readerLazy = "DEFERRED_MARKER";');
+    try {
+      const { precache } = await buildJS(
+        [
+          { entry: join(srcDir, "main.ts"), outdir: "js", splitting: true, precache: "all" },
+          { entry: join(srcDir, "reader.ts"), outdir: "js", splitting: true, precache: "shell" },
+        ],
+        { outDir: publicDir },
+      );
+
+      expect(precache.sort()).toEqual([chunkHolding(publicDir, "LAZY_MARKER"), "js/main.js", "js/reader.js"].sort());
+      expect(chunkHolding(publicDir, "DEFERRED_MARKER")).toMatch(/^js\/chunks\/reader-lazy-[A-Z0-9]+\.js$/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

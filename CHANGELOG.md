@@ -18,7 +18,15 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`precache: "all"` on a `js.bundles` entry precaches every chunk it reaches through `import()`**, along with the static shell, so an
+  offline-first app's lazily loaded code works offline without having loaded online first.
+
+### Breaking Changes
+
+- **A bundle's `precache` takes `false`, `"shell"` or `"all"`, and no longer `true`.** `"shell"` is the default and the old `true`; replace
+  `precache: true` with `precache: "shell"`, or drop it. `staticImportClosure` is now `importClosure(outputs, roots, lazy)`.
 
 ---
 

@@ -75,20 +75,21 @@ describe("AssetsConfigSchema", () => {
     expect(() => v.parse(AssetsConfigSchema, raw)).toThrow();
   });
 
-  it("keeps a bundle's precache flag through v.parse, either way", () => {
+  it("keeps a bundle's precache scope through v.parse, each of false, shell and all", () => {
     const parsed = v.parse(AssetsConfigSchema, {
       js: {
         bundles: [
           { entry: "src/admin.ts", outdir: "js", precache: false },
-          { entry: "src/main.ts", outdir: "js", precache: true },
+          { entry: "src/main.ts", outdir: "js", precache: "shell" },
+          { entry: "src/app.ts", outdir: "js", precache: "all" },
         ],
       },
     });
-    expect(parsed.js?.bundles?.map((bundle) => bundle.precache)).toEqual([false, true]);
+    expect(parsed.js?.bundles?.map((bundle) => bundle.precache)).toEqual([false, "shell", "all"]);
   });
 
-  const nonBooleans: unknown[] = ["false", 0, null];
-  for (const precache of nonBooleans) {
+  const notScopes: unknown[] = [true, "false", "lazy", 0, null];
+  for (const precache of notScopes) {
     it(`rejects a bundle whose precache is ${JSON.stringify(precache)}`, () => {
       expect(() => v.parse(AssetsConfigSchema, { js: { bundles: [{ entry: "src/main.ts", outdir: "js", precache }] } })).toThrow();
     });

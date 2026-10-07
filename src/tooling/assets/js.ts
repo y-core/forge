@@ -21,15 +21,19 @@ function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
   return stems.has(stem) || [...stems].some((own) => stem.startsWith(`${own}-`));
 }
 
-/** Every output reachable from `roots` through static imports, roots and CSS bundles included; a dynamic import ends the walk. @internal */
-export function staticImportClosure(outputs: Metafile["outputs"], roots: Iterable<string>): Set<string> {
+/** Every output reachable from `roots` through static imports, and through dynamic ones too when `lazy`, roots and CSS bundles included. @internal */
+export function importClosure(outputs: Metafile["outputs"], roots: Iterable<string>, lazy: boolean): Set<string> {
   const reached = new Set<string>();
   const pending = [...roots];
   for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
     const meta = outputs[path];
     if (meta === undefined || reached.has(path)) continue;
     reached.add(path);
-    pending.push(...meta.imports.filter((imported) => imported.kind === "import-statement").map((imported) => imported.path));
+    pending.push(
+      ...meta.imports
+        .filter((imported) => imported.kind === "import-statement" || (lazy && imported.kind === "dynamic-import"))
+        .map((imported) => imported.path),
+    );
     if (meta.cssBundle !== undefined) pending.push(meta.cssBundle);
   }
   return reached;
@@ -115,9 +119,12 @@ export async function buildJS(bundles: ResolvedJsBundle[], opts: { outDir: strin
         relPath: toRelPath(outPath),
         entryPoint: meta.entryPoint === undefined ? undefined : resolve(meta.entryPoint),
       }));
-      const shellEntries = new Set(subGroup.filter((bundle) => bundle.precache !== false).map((bundle) => resolve(bundle.entry)));
-      const shellRoots = emitted.filter(({ entryPoint }) => entryPoint !== undefined && shellEntries.has(entryPoint)).map(({ outPath }) => outPath);
-      precache.push(...[...staticImportClosure(metaOutputs, shellRoots)].map(toRelPath));
+      const rootsOf = (scope: "shell" | "all"): string[] => {
+        const entries = new Set(subGroup.filter((bundle) => (bundle.precache ?? "shell") === scope).map((bundle) => resolve(bundle.entry)));
+        return emitted.filter(({ entryPoint }) => entryPoint !== undefined && entries.has(entryPoint)).map(({ outPath }) => outPath);
+      };
+      const reached = new Set([...importClosure(metaOutputs, rootsOf("shell"), false), ...importClosure(metaOutputs, rootsOf("all"), true)]);
+      precache.push(...[...reached].map(toRelPath));
       for (const bundle of subGroup) {
         const absEntry = resolve(bundle.entry);
         for (const { relPath, entryPoint } of emitted) {

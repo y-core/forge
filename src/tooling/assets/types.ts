@@ -36,7 +36,7 @@ const JsBundleSchema = v.object({
   minify: v.optional(v.boolean()),
   define: v.optional(v.record(v.string(), DefineValueSchema)),
   conditions: v.optional(v.array(v.pipe(v.string(), v.minLength(1)))),
-  precache: v.optional(v.boolean()),
+  precache: v.optional(v.union([v.literal(false), v.picklist(["shell", "all"] as const)])),
 });
 
 // Built after every other bundle, so its precache list can name what they emitted; never hashed,
@@ -213,7 +213,7 @@ export type ResolvedServiceWorkerBuild = Omit<ServiceWorkerBuild, "define"> & { 
 /** What one `buildJS` run wrote: the logical-to-emitted entry mapping, and the files a service worker precaches as the shell. @public */
 export interface JsBuildResult {
   mapping: Record<string, string>;
-  /** Each entry output not opted out with `precache: false`, plus every chunk it statically imports, relative to the asset root. */
+  /** Each entry output not opted out with `precache: false`, plus every chunk it statically imports, and under `precache: "all"` every chunk it reaches through `import()` too, relative to the asset root. */
   precache: string[];
 }
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;

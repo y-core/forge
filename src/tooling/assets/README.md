@@ -167,6 +167,10 @@ self.addEventListener("fetch", (event) => {
 and stylesheet it statically imports. A chunk reached only through `import()` is left out. Set `precache: false` on a bundle a first visit does
 not need, such as an admin bundle, and none of its files are precached.
 
+**An app that must work offline sets `precache: "all"` on its bundle.** The list then also holds every chunk the entry can reach through
+`import()`, and everything those chunks import, so a lazily loaded feature such as an editor works offline though it never loaded online. The
+default, `"shell"`, keeps the first install small for an app whose lazy code is optional offline.
+
 **Everything else under the prefix is cached on first use.** Fonts, `copy` entries, rasters and lazily imported chunks are not in the shell; the
 `fetch` handler above puts each into the same versioned cache the first time a page requests it, so a lazy chunk works offline once it has
 loaded. The worker caches assets only, never a page's HTML.
