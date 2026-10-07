@@ -100,6 +100,20 @@ showArticle();
 scrollArticleTo(anchor);
 ```
 
+## Replacing the text from outside
+
+When the text changes somewhere other than the viewport — a merge with another device's edit, a refresh from the server — hand the new text
+to `replace`. It lands as one change, so the reader's own undo history skips it and never brings the old text back.
+
+```ts
+viewport.replace(merged.markdown, { preserveSelection: true });
+```
+
+With `preserveSelection`, the cursor and selection stay on the text they were on: only the lines that differ are replaced, so a cursor on a line
+both versions share keeps its place, and one inside a changed span moves to that span's start. A wholesale rewrite is replaced as one span. Without
+it, the cursor returns to the start of the text. `replace` works in either mode, and it does not call `onChange`: the text you just handed in is not
+an edit to save.
+
 ## Saving as the reader types
 
 `createAutosave` decides when to save; you decide how. Touch it from `onChange`, which runs on every change to the text, and flush it before

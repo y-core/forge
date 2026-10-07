@@ -83,6 +83,22 @@ test("takes typing only in edit mode, and reports each change", async ({ page })
   expect(await page.evaluate(() => [window.viewport.getMarkdown(), window.changes > 0])).toEqual(["a [b](", true]);
 });
 
+test("swaps in replaced text without reporting a change, keeping the cursor, and the reader's undo keeps it", async ({ page }) => {
+  await mountViewport(page, "one\ntwo\nthree", "edit", "raw");
+  await content(page).click();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("!");
+  const typedChanges = await page.evaluate(() => window.changes);
+
+  await page.evaluate(() => window.viewport.replace("ONE\ntwo\nthree!", { preserveSelection: true }));
+  expect(await page.evaluate(() => [window.viewport.getMarkdown(), window.changes])).toEqual(["ONE\ntwo\nthree!", typedChanges]);
+
+  await page.keyboard.type("?");
+  expect(await page.evaluate(() => window.viewport.getMarkdown())).toBe("ONE\ntwo\nthree!?");
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await page.evaluate(() => window.viewport.getMarkdown())).toBe("ONE\ntwo\nthree");
+});
+
 test("draws the injected dialect when rendered: a chip for a link it resolves, its tag, and its callout kind", async ({ page }) => {
   await mountViewport(page, MARKDOWN, "view", "rendered");
 

@@ -49,6 +49,20 @@ and `path("x.css")` agree.
 
 ---
 
+## Precaching the build in a service worker
+
+A service worker declared as `js.serviceWorker` reads the URLs to precache, and the version to name its cache by, from its own subpath, which the
+build fills for that bundle alone:
+
+```ts
+import { PRECACHE_URLS, PRECACHE_VERSION } from "@y-core/forge/assets/precache";
+```
+
+Anywhere else, a test that imports the worker included, `PRECACHE_URLS` is empty and `PRECACHE_VERSION` is `""`. What goes into them, and a
+worker that uses both, is [`@y-core/forge/tooling/assets`][tooling-assets-readme]'s to say.
+
+---
+
 ## Gotchas
 
 **An unmapped asset passes through; an unregistered sprite throws.** A name the build did not emit still yields a plausible URL rather than

@@ -342,13 +342,17 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
   };
 }
 
+const AUTH_SIGNOUT_CLEAR_SITE_DATA = '"cache", "storage"';
+
 /** The POST that ends a session, rotating its id on the way out. @public */
 export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>): { readonly signout: RequestHandler } {
   return {
     signout: (context) => {
       const c = getAppContext<Bindings>(context);
       clearAuthSession(sessionCtx.get(c, NO_SESSION));
-      return createAuthRedirect(c, options.paths.auth.signin());
+      const response = createAuthRedirect(c, options.paths.auth.signin());
+      if (options.signoutClearsSiteData === true) response.headers.set("Clear-Site-Data", AUTH_SIGNOUT_CLEAR_SITE_DATA);
+      return response;
     },
   };
 }

@@ -184,6 +184,8 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   // deployment that configures none has no claim endpoint at all, rather than an open one.
   /** The secret a first-admin claim must present; without it `admin.elevate.submit` answers 404. */
   readonly bootstrapSecret?: ((c: AppContext<Bindings>) => string | undefined) | undefined;
+  /** Sends `Clear-Site-Data: "cache", "storage"` on the sign-out response, wiping the origin's caches and storage. Defaults to off. */
+  readonly signoutClearsSiteData?: boolean | undefined;
 }
 
 /** Refusal copy and kept input one page render carries; the view owns everything else it says. @public */

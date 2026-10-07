@@ -65,6 +65,7 @@ reads it.
 | --- | --- |
 | `css` | A Tailwind CLI build per entry |
 | `js.bundles` | esbuild bundles, compiled with `@y-core/forge/render/jsx` as the JSX source |
+| `js.serviceWorker` | A service worker at `/sw.js`, with the app shell to precache and a version to name its cache by |
 | `sprites` | SVG sheets, plus a typed icon component per group |
 | `icons` | Favicon, PWA icons and a web-app manifest rasterised from one master SVG |
 | `fonts.downloads` | Remote fonts fetched into the public directory and cached on disk |
@@ -110,26 +111,78 @@ A bundle's own `minify` overrides `--minify` for that bundle's code; content has
 
 ## Building a service-worker bundle
 
-A bundle resolves package exports with esbuild's browser conditions, and some packages point their `browser` export at code that touches
-`document` when the module loads. A service worker has no `document`, so it fails to install. Give that bundle `conditions: ["worker"]` so those
-packages resolve to their worker entry instead:
+Declare the worker as `js.serviceWorker`, not as one more bundle. The build writes it to `sw.js` at the deploy root, so it is served from `/sw.js`
+and controls the whole origin, and it never hashes the name: a worker's URL is its identity, and a new one would register a second worker.
 
 ```ts
 import { defineAssetsConfig } from "@y-core/forge/tooling/assets";
 
 export default defineAssetsConfig({
   js: {
-    bundles: [
-      { entry: "src/client/main.ts", outdir: "js" },
-      { entry: "src/client/sw.ts", outdir: "js", conditions: ["worker"] },
-    ],
+    bundles: [{ entry: "src/client/main.ts", outdir: "js", splitting: true, format: "esm" }],
+    serviceWorker: { entry: "src/client/sw.ts", conditions: ["worker"] },
   },
 });
 ```
 
-The `browser` condition stays active alongside yours, so a package's own export order decides between them: one that lists `worker` ahead of
-`browser` resolves to its worker entry. Declaring `conditions` also replaces esbuild's default `module` condition for that bundle, so list
-`module` too if a dependency needs it. A bundle without `conditions` is unaffected.
+The worker imports two constants the build fills in. `PRECACHE_URLS` is the app shell, and `PRECACHE_VERSION` changes whenever any file
+under `publicDir` changes, so name the cache after it. A deploy that changes anything then installs a new worker, which drops the old cache:
+
+```ts
+import { PRECACHE_URLS, PRECACHE_VERSION } from "@y-core/forge/assets/precache";
+
+declare const self: ServiceWorkerGlobalScope;
+
+const PREFIX = "/assets/"; // your publicPrefix
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(caches.open(PRECACHE_VERSION).then((cache) => cache.addAll(PRECACHE_URLS)));
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((key) => key !== PRECACHE_VERSION).map((key) => caches.delete(key))))
+      .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || url.origin !== self.location.origin || !url.pathname.startsWith(PREFIX)) return;
+  event.respondWith(
+    caches.open(PRECACHE_VERSION).then(async (cache) => {
+      const cached = await cache.match(event.request);
+      if (cached !== undefined) return cached;
+      const response = await fetch(event.request);
+      if (response.ok) await cache.put(event.request, response.clone());
+      return response;
+    }),
+  );
+});
+```
+
+**The shell is what a first page needs.** It holds every `css` output, every sprite sheet, and each `js.bundles` entry together with every chunk
+and stylesheet it statically imports. A chunk reached only through `import()` is left out. Set `precache: false` on a bundle a first visit does
+not need, such as an admin bundle, and none of its files are precached.
+
+**Everything else under the prefix is cached on first use.** Fonts, `copy` entries, rasters and lazily imported chunks are not in the shell; the
+`fetch` handler above puts each into the same versioned cache the first time a page requests it, so a lazy chunk works offline once it has
+loaded. The worker caches assets only, never a page's HTML.
+
+`PRECACHE_URLS` is empty and `PRECACHE_VERSION` is `""` everywhere else, including in a test that imports the worker and in any other bundle. The
+worker is built after the manifest is written, so it may import `@assets` too.
+
+It is a classic script: register it with `navigator.serviceWorker.register("/sw.js")`. Its `/sw.js` URL sits outside the `publicPrefix` rule in
+`_headers`, so it is never marked immutable, and a `publicPrefix` of `/` fails the build for that reason. Only `forge assets build` builds it;
+`build js` builds `js.bundles` alone. Remove `js.serviceWorker` and the next build deletes the `sw.js` it wrote, leaving a
+hand-written one in place.
+
+`minify`, `define` and `conditions` work as they do on a bundle. A bundle resolves package exports with esbuild's browser conditions, and some
+packages point their `browser` export at code that touches `document` when the module loads, which a worker does not have. `conditions: ["worker"]`
+resolves those packages to their worker entry instead. The `browser` condition stays active alongside yours, so a package's own export order
+decides between them, and declaring `conditions` replaces esbuild's default `module` condition, so list `module` too if a dependency needs it.
 
 ---
 
@@ -424,8 +477,8 @@ to `process.env`, so a caller states what the build may see.
 or raster `from`, and a local sprite or cursor source are resolved against `root`, so a build run from a subdirectory reads the tree `--root` names
 rather than its own working directory; an already-absolute path — what `forgeUiSpriteSources()` returns — and a remote sprite source are left alone.
 
-Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildSprites`, `buildIcons`, `buildFonts`, `buildRasters`, `buildSite`,
-`copyAssets` — and each takes its own slice of the config plus an output directory rather than the whole config
+Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildServiceWorker`, `buildSprites`, `buildIcons`, `buildFonts`, `buildRasters`,
+`buildSite`, `copyAssets` — and each takes its own slice of the config plus an output directory rather than the whole config
 ([`ASSET_PIPELINE.md`][ap-2a] §2a). `createAssetsCommands` returns the `forge assets` subtree, for registering inside a CLI of your own.
 
 For a watch loop, `hashFile` plus `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes against a state file **you** name. Nothing

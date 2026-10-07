@@ -36,6 +36,16 @@ const JsBundleSchema = v.object({
   minify: v.optional(v.boolean()),
   define: v.optional(v.record(v.string(), DefineValueSchema)),
   conditions: v.optional(v.array(v.pipe(v.string(), v.minLength(1)))),
+  precache: v.optional(v.boolean()),
+});
+
+// Built after every other bundle, so its precache list can name what they emitted; never hashed,
+// because a service worker's URL is its identity and a new one registers a second worker.
+const ServiceWorkerSchema = v.object({
+  entry: v.string(),
+  minify: v.optional(v.boolean()),
+  define: v.optional(v.record(v.string(), DefineValueSchema)),
+  conditions: v.optional(v.array(v.pipe(v.string(), v.minLength(1)))),
 });
 
 // `root: true` pins an output to the asset root, where a browser with no HTML head to read probes
@@ -175,7 +185,7 @@ export const SITE_OUTPUTS: readonly string[] = ["robots.txt", "sitemap.xml"];
 
 export const AssetsConfigSchema = v.object({
   paths: v.optional(PathsConfigSchema),
-  js: v.optional(v.object({ bundles: v.optional(v.array(JsBundleSchema)) })),
+  js: v.optional(v.object({ bundles: v.optional(v.array(JsBundleSchema)), serviceWorker: v.optional(ServiceWorkerSchema) })),
   css: v.optional(v.array(CssBuildSchema)),
   copy: v.optional(v.array(CopyEntrySchema)),
   rasters: v.optional(v.array(RasterEntrySchema)),
@@ -196,6 +206,16 @@ export const AssetsConfigSchema = v.object({
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
 /** A `JsBundle` whose defines have been resolved to JavaScript source literals. @public */
 export type ResolvedJsBundle = Omit<JsBundle, "define"> & { define?: Record<string, string> };
+/** The service-worker bundle, built to `/sw.js` at the deploy root with the client build's app shell to precache. @public */
+export type ServiceWorkerBuild = v.InferOutput<typeof ServiceWorkerSchema>;
+/** A `ServiceWorkerBuild` whose defines have been resolved to JavaScript source literals. @public */
+export type ResolvedServiceWorkerBuild = Omit<ServiceWorkerBuild, "define"> & { define?: Record<string, string> };
+/** What one `buildJS` run wrote: the logical-to-emitted entry mapping, and the files a service worker precaches as the shell. @public */
+export interface JsBuildResult {
+  mapping: Record<string, string>;
+  /** Each entry output not opted out with `precache: false`, plus every chunk it statically imports, relative to the asset root. */
+  precache: string[];
+}
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;
 export type CopyEntry = v.InferOutput<typeof CopyEntrySchema>;
 /** One SVG-to-PNG rasterization; the unset dimension is derived from the source's intrinsic ratio. @public */
@@ -227,7 +247,7 @@ export interface ResolvedConfig {
   /** The application root every path below was resolved against. */
   root: string;
   paths: ResolvedPaths;
-  js: { bundles: ResolvedJsBundle[] };
+  js: { bundles: ResolvedJsBundle[]; serviceWorker: ResolvedServiceWorkerBuild | null };
   css: CssBuild[];
   copy: CopyEntry[];
   rasters: RasterEntry[];

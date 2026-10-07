@@ -134,6 +134,10 @@
       "types": "./src/assets/mod.ts",
       "import": "./src/assets/mod.ts"
     },
+    "./assets/precache": {
+      "types": "./src/assets/precache.ts",
+      "import": "./src/assets/precache.ts"
+    },
     "./auth": {
       "types": "./src/auth/mod.ts",
       "import": "./src/auth/mod.ts"

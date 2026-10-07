@@ -12,3 +12,4 @@ export { Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Ra
 export { joinPath } from "./path";
 export { safeRedirectPath } from "./redirect-path";
 export { createRedirectResponse, fragmentResponse, htmlResponse, jsonResponse, pdfResponse } from "./response";
+export { isWebSocketUpgrade } from "./upgrade";

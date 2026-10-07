@@ -12,8 +12,9 @@ import { buildFonts } from "./fonts";
 import { buildIcons, iconLinks, iconTarget } from "./icons";
 import { buildJS } from "./js";
 import { buildMarks } from "./mark-build";
-import { deployRoot, safeJoin } from "./paths";
+import { assetUrlBase, deployRoot, safeJoin } from "./paths";
 import { buildRasters } from "./rasters";
+import { buildServiceWorker, precacheUrls, precacheVersion, removeServiceWorker, SERVICE_WORKER_FILE } from "./service-worker";
 import { buildSite } from "./site";
 import { buildSprites, SPRITE_CACHE_DIR } from "./sprites";
 import type { AssetsTypesOutcome, BuildOptions, FontPackData, IconsConfig, SpriteGroupResult } from "./types";
@@ -23,6 +24,11 @@ import type { ResolvedConfig } from "./types";
 export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Promise<void> {
   const { publicDir, publicPrefix } = config.paths;
   const shouldHash = opts?.minify ?? false;
+  if (config.js.serviceWorker !== null && assetUrlBase(publicPrefix) === "") {
+    throw new Error(
+      '[forge-assets] js.serviceWorker needs a publicPrefix other than "/", or the asset rule in _headers would mark /sw.js immutable',
+    );
+  }
   mkdirSync(publicDir, { recursive: true });
 
   const manifest: Record<string, string> = {};
@@ -85,9 +91,24 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   // esbuild resolves `@assets` while bundling, so the module must exist before `buildJS`.
   await generateAssetsModule(spec(), outputPath);
 
-  Object.assign(manifest, await buildJS(config.js.bundles, { outDir: publicDir, ...minifyOpts, hash: shouldHash }));
+  const shellAssets = Object.values(manifest);
+  const js = await buildJS(config.js.bundles, { outDir: publicDir, ...minifyOpts, hash: shouldHash });
+  Object.assign(manifest, js.mapping);
 
   await generateAssetsModule(spec(), outputPath);
+
+  if (config.js.serviceWorker !== null) {
+    const outDir = deployRoot(config.root, publicDir);
+    await buildServiceWorker(config.js.serviceWorker, {
+      outDir,
+      precache: precacheUrls(publicPrefix, [...shellAssets, ...js.precache]),
+      // A single-segment publicDir is the deploy root, where the last build's worker and headers sit.
+      version: precacheVersion(publicDir, [join(outDir, SERVICE_WORKER_FILE), join(outDir, HEADERS_FILE)]),
+      ...minifyOpts,
+    });
+  } else {
+    removeServiceWorker(deployRoot(config.root, publicDir));
+  }
 
   emitHeaders(config.root, publicDir, publicPrefix, shouldHash, config.icons);
 }
@@ -301,6 +322,8 @@ export async function generateAssetsTypes(config: ResolvedConfig, opts?: { asset
   return "written";
 }
 
+const HEADERS_FILE = "_headers";
+
 const YEAR = 31536000;
 const DAY = 86400;
 const WEEK = 604800;
@@ -319,10 +342,8 @@ function headerBlock(path: string, cache: CacheControlInit): string {
 }
 
 function emitHeaders(root: string, publicDir: string, publicPrefix: string, hashed: boolean, icons: IconsConfig | null): void {
-  const headersPath = join(deployRoot(root, publicDir), "_headers");
-  // Same normalization `createManifest` applies, so the rule cannot disagree with the served URL.
-  const base = publicPrefix.endsWith("/") ? publicPrefix.slice(0, -1) : publicPrefix;
-  const blocks = [headerBlock(`${base}/*`, hashed ? HASHED_CACHE : { noCache: true })];
+  const headersPath = join(deployRoot(root, publicDir), HEADERS_FILE);
+  const blocks = [headerBlock(`${assetUrlBase(publicPrefix)}/*`, hashed ? HASHED_CACHE : { noCache: true })];
 
   // `_headers` applies every matching rule and comma-joins a header set twice, so a prefix glob here
   // would merge the manifest's own `Cache-Control` into an unusable pair of values.

@@ -1,17 +1,19 @@
 import { defaultKeymap, history, historyKeymap, insertNewline } from "@codemirror/commands";
 import { forceParsing, syntaxTree } from "@codemirror/language";
-import { Compartment, EditorState } from "@codemirror/state";
-import type { Extension, Line, StateEffect } from "@codemirror/state";
+import { Annotation, Compartment, EditorSelection, EditorState, Transaction } from "@codemirror/state";
+import type { Extension, Line, StateEffect, TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
 import { viewportDialect } from "./dialect";
 import { hybridRendering, revealActiveLines } from "./hybrid";
 import { markdownSyntax } from "./syntax";
+import { textChanges } from "./text-changes";
 import { editorTheme } from "./theme";
-import type { ViewportAnchor, ViewportController, ViewportMode, ViewportOptions, ViewportRendering } from "./types";
+import type { ViewportAnchor, ViewportController, ViewportMode, ViewportOptions, ViewportRendering, ViewportReplaceOptions } from "./types";
 
 const MODE = new Compartment();
 const RENDERING = new Compartment();
+const REPLACED = Annotation.define<true>();
 const PLACEMENT_FRAMES = 60;
 const PARSE_BUDGET_MS = 50;
 const READER_POINTER_EVENTS = ["wheel", "touchstart", "pointerdown"] as const;
@@ -45,6 +47,15 @@ export function viewportEffects(mode: ViewportMode, rendering: ViewportRendering
   return [MODE.reconfigure(modeExtension(mode)), RENDERING.reconfigure(renderingExtension(rendering))];
 }
 
+/** Answers the one transaction that turns the viewport's text into `markdown`, changing only the lines that differ. @internal */
+export function replaceTransaction(state: EditorState, markdown: string, options: ViewportReplaceOptions = {}): TransactionSpec {
+  return {
+    changes: textChanges(state.doc.toString(), markdown),
+    ...(options.preserveSelection === true ? {} : { selection: EditorSelection.cursor(0) }),
+    annotations: [Transaction.addToHistory.of(false), REPLACED.of(true)],
+  };
+}
+
 /** Creates the viewport's editor state, with mode and rendering each in its own compartment. @internal */
 export function createViewportState(options: ViewportStateOptions): EditorState {
   const { onChange } = options;
@@ -61,7 +72,7 @@ export function createViewportState(options: ViewportStateOptions): EditorState 
       MODE.of(modeExtension(options.mode)),
       RENDERING.of(renderingExtension(options.rendering)),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged) onChange?.();
+        if (update.transactions.some((tr) => tr.docChanged && tr.annotation(REPLACED) === undefined)) onChange?.();
       }),
     ],
   });
@@ -159,6 +170,7 @@ export function mountMarkdownViewport(host: HTMLElement, options: ViewportOption
     topAnchor,
     scrollTo,
     getMarkdown: () => view.state.doc.toString(),
+    replace: (markdown, replaceOptions) => view.dispatch(replaceTransaction(view.state, markdown, replaceOptions)),
     destroy: () => {
       cancelPlacement();
       view.destroy();

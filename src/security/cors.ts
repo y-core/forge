@@ -1,5 +1,6 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
+import { rebuildResponse } from "../http/rebuild";
 import type { CorsOptions } from "./types";
 
 /** Compiles origin patterns once into an exact-match set plus the wildcard patterns' regexes. */
@@ -89,6 +90,6 @@ export function cors(options: CorsOptions): Middleware {
       if (credentials) headers.set("Access-Control-Allow-Credentials", "true");
     }
     if (variesOnOrigin) appendVary(headers, "Origin");
-    return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+    return rebuildResponse(res, headers);
   };
 }

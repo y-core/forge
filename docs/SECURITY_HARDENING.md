@@ -94,7 +94,7 @@ each middleware rebuilding its own `Response`.
   overlaps — `createSecurityHeaders` owns the names it sets, `requestId` owns `x-request-id`, and session and flash use `set-cookie` with
   `{ append: true }` — so this is observable only from consumer middleware. Pinned in `src/security/headers.test.ts`.
 
-A header baked into the handler's own `Response` is resolved in the channel's favour: `applyPendingHeaders` set-overwrites onto the response.
+A header baked into the handler's own `Response` is resolved in the channel's favour: `mergePendingHeaders` set-overwrites onto the response.
 **`Content-Security-Policy` is the one name that combines instead of overwriting.** The queued policy is set and the response's own is appended
 after it, so a handler's CSP can only tighten the app's (§2f).
 
@@ -218,7 +218,7 @@ Trusted Types is enforced, htmx's own writes go through the `forge-htmx` policy 
 ### 2f. createRouteSecurityHeaders and the Handler-Set CSP
 
 **A response's own `Content-Security-Policy` is combined with the app's, never replaced by it.** Both the pending-header flush
-(`applyPendingHeaders`) and `applySecurityHeaders` set the app's policy and then append the one the response already carried, so the response
+(`mergePendingHeaders`) and `applySecurityHeaders` set the app's policy and then append the one the response already carried, so the response
 leaves with two policies. A browser enforces every policy it receives, and a load must pass all of them. A second policy can therefore only take
 permissions away: a handler's CSP tightens the app's and cannot loosen it. That is what makes combining safe as the default for every response,
 including an upstream response a handler proxies through unchanged.
@@ -362,7 +362,10 @@ The middleware below defend against cross-origin mutation. They form a deliberat
 
 **`originProtection` is the recommended default** — the others are the single-signal tiers it is built from.
 
-All of them exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing requests are gated. `originProtection` treats
+All of them exempt safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) first, so only state-changing requests are gated. **A `GET` carrying
+`Upgrade: websocket` is not exempt**: the handshake opens a cookie-bearing channel, so a foreign page holding one open is cross-site WebSocket
+hijacking. It is judged on `Origin` alone, which a browser always sends on a handshake (RFC 6455 §4.1): a `Referer` does not stand in for it, and
+`originProtection` does not fall back to Fetch-Metadata vouching when it is absent. `originProtection` treats
 `Sec-Fetch-Site` as a **veto, not a pass**: any value other than `same-origin`/`none` rejects outright, and a good value does _not_ short-circuit
 the allowlist. `allowedOrigins` — a static `string[]` or a per-request resolver — is consulted on every mutating request carrying an `Origin` or
 `Referer`; only when both are absent does the guard fall back to the browser's Fetch-Metadata vouching, and with no signal at all it fails closed.

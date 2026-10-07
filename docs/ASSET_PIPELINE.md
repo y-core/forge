@@ -75,6 +75,7 @@ the difference between a build whose inputs are stated and one whose inputs depe
 | `buildAll` | Every configured stage, in the order §4 fixes, then the generated module and `_headers` |
 | `buildCSS` | One Tailwind CLI build per `css[]` entry, purging only that entry's own prior outputs |
 | `buildJS` | One esbuild bundle per `js.bundles[]` entry, into that bundle's own `outdir` |
+| `buildServiceWorker` | The `js.serviceWorker` entry, to `sw.js` at the deploy root, with the URLs it precaches |
 | `buildSprites` | One sheet per named sprite group, from its explicit `sources[].files` list |
 | `copyAssets` | Each `copy[]` rule, `from` → `to` |
 | `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values |
@@ -179,6 +180,14 @@ incidents:
 - **Codegen runs twice, before and after `buildJS`.** esbuild resolves the `@assets` alias while bundling, so a bundle importing the manifest needs
   the module to _already exist_ — the first pass exists solely to make the second pass's inputs bundleable. The second pass then rewrites it with
   the JS bundle keys the first pass could not know.
+- **The service worker runs last, after the second pass.** Its precache list is the app shell: every CSS output and sprite sheet, plus each
+  `js.bundles` entry not marked `precache: false` and every output it statically imports. Chunks reached only by a dynamic import are left to
+  runtime caching. Its version is a digest of every file under `publicDir`, so a change to a runtime-cached file rotates the cache as well. Neither
+  is known until `buildJS` returns and the tree is complete. Both are injected as the module the worker imports from
+  `@y-core/forge/assets/precache`, never patched into the output, and never into another bundle: a client bundle carrying them would change the
+  hashes the list names. It is written unhashed to `sw.js` at the deploy root, because a worker's URL is its identity and its directory is its
+  scope; the `sw.js` and `_headers` the pipeline writes there are left out of the digest. With no `js.serviceWorker`, the build deletes a `sw.js`
+  only when it opens with the banner the build writes, so a hand-written worker survives.
 - **Cursors run after CSS.** Baking a cursor value means reading the emitted stylesheet for the custom properties it resolved, so the CSS stage must
   have produced a file the manifest can name.
 

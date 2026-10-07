@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import { copyAssets } from "./copy";
 import { buildFonts } from "./fonts";
-import { deployRoot, safeJoin } from "./paths";
+import { assetUrlBase, deployRoot, safeJoin } from "./paths";
 import { buildSprites } from "./sprites";
 
 describe("safeJoin()", () => {
@@ -99,5 +99,11 @@ describe("deployRoot()", () => {
 
   it("refuses a publicDir that climbs out of the root", () => {
     expect(() => deployRoot("/app", "/app/../assets")).toThrow("[forge-assets]");
+  });
+});
+
+describe("assetUrlBase()", () => {
+  it("drops one trailing slash, so the root prefix becomes the empty base", () => {
+    expect([assetUrlBase("/assets"), assetUrlBase("/assets/"), assetUrlBase("/")]).toEqual(["/assets", "/assets", ""]);
   });
 });

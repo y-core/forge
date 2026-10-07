@@ -205,7 +205,7 @@ The paths carry different header guarantees, and one entry below is not an error
   | `Referrer-Policy` | `no-referrer` |
   | `X-Request-Id` | this request's id — **only when `requestId` middleware already ran** |
 
-  On the in-chain path `applyPendingHeaders` set-overwrites these with the consumer's policy. No error path ships an unprotected response.
+  On the in-chain path `mergePendingHeaders` set-overwrites these with the consumer's policy. No error path ships an unprotected response.
 
 - **The `404` and, under `methodMismatch: "advertise"`, the `405`** are not errors, but they are forge-built responses carrying the baseline headers
   above. Both are built in-chain — the `405` by the innermost middleware, which replaces the one fetch-router would otherwise return unhardened

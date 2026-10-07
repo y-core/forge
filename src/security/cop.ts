@@ -1,13 +1,14 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
 import { getAppContext } from "../context/types";
+import { isWebSocketUpgrade } from "../http/upgrade";
 import { err, ok } from "../result/result";
-import { SAFE_METHODS, verifyOrigin } from "./origin";
+import { isExemptFromOriginCheck, verifyOrigin } from "./origin";
 import type { CrossOriginProtectionOptions, CrossOriginResult, OriginProtectionOptions } from "./types";
 
 /** The verdict itself, taking the missing-header allowance as a parameter rather than as an option. */
 function crossOriginVerdict(request: Request, allowMissingHeader: boolean): CrossOriginResult {
-  if (SAFE_METHODS.has(request.method.toUpperCase())) {
+  if (isExemptFromOriginCheck(request)) {
     return ok();
   }
 
@@ -48,7 +49,7 @@ export function crossOriginProtection(options: CrossOriginProtectionOptions = {}
 /** Combined cross-origin guard for mutating routes: Fetch Metadata and an Origin/Referer allowlist. @public */
 export function originProtection<Bindings = Record<string, unknown>>(options: OriginProtectionOptions<Bindings>): Middleware {
   return async (context, next) => {
-    if (SAFE_METHODS.has(context.method.toUpperCase())) return next();
+    if (isExemptFromOriginCheck(context.request)) return next();
     // Not `dev.missingFetchMetadata`, which only `checkCrossOriginProtection` reads: the allowlist
     // below is what judges a request with no Fetch Metadata, so the veto is read here without one.
     const cop = crossOriginVerdict(context.request, true);
@@ -61,7 +62,9 @@ export function originProtection<Bindings = Record<string, unknown>>(options: Or
     if (origin.ok) return next();
     // The allowlist had nothing to judge, so fall back to the tier `SECURITY_HARDENING.md` §3e names:
     // the veto above admits only `same-origin` and `none`, values page content cannot forge.
-    if (origin.error === "missing" && context.request.headers.get("Sec-Fetch-Site") !== null) return next();
+    if (origin.error === "missing" && !isWebSocketUpgrade(context.request) && context.request.headers.get("Sec-Fetch-Site") !== null) {
+      return next();
+    }
     return new Response("Forbidden", { status: 403 });
   };
 }

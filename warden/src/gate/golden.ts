@@ -21,7 +21,7 @@ export const NEGATIVE: readonly string[] = [
   "how do I configure the kubernetes ingress controller",
   "which grpc interceptor handles tracing",
   "what is the refund window for annual subscriptions",
-  "is there a websocket upgrade handler",
+  "which terraform module provisions the vpc",
 ];
 
 /** Every query the gate holds retrieval to. @public */

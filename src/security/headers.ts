@@ -3,6 +3,7 @@ import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
 import { base64urlEncode, randomBytes } from "../crypto/mod";
+import { rebuildResponse } from "../http/rebuild";
 import { NONCE } from "./nonce";
 import type {
   ApplySecurityHeadersOptions,
@@ -335,7 +336,7 @@ export function applySecurityHeaders(response: Response, options?: ApplySecurity
     headers.set(name, value);
   }
   if (ownCsp !== null) headers.append("content-security-policy", ownCsp);
-  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+  return rebuildResponse(response, headers);
 }
 
 /** Middleware applying CSP with a per-request nonce, HSTS, and the rest of forge's security headers. @public */

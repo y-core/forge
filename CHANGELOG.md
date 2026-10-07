@@ -18,7 +18,45 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`js.serviceWorker` in an assets config builds a service worker to `/sw.js`**, unhashed and at the deploy root, after the generated module is
+  written. The worker imports `PRECACHE_URLS` and `PRECACHE_VERSION` from the new `@y-core/forge/assets/precache` subpath; both are empty in every
+  other bundle and in tests. `PRECACHE_URLS` is the app shell: every CSS output and sprite sheet, and each `js.bundles` entry with the chunks it
+  statically imports, while a chunk reached only by `import()` is left out. `precache: false` on a `js.bundles` entry leaves that bundle out.
+  `PRECACHE_VERSION` is a digest of every file under `publicDir`, so any change installs a new worker, unhashed builds included. Removing
+  `js.serviceWorker` deletes the `sw.js` the build wrote, never a hand-written one. `buildServiceWorker` from `@y-core/forge/tooling/assets` runs
+  that stage alone. A `publicPrefix` of `/` is refused alongside it, because the asset rule in `_headers` would then mark `/sw.js` immutable.
+- **`signoutClearsSiteData` on `AuthWebOptions` sends `Clear-Site-Data: "cache", "storage"` on the sign-out response** from
+  `createSignoutActions` in `@y-core/forge/auth/web`, on the `303` and on the htmx `204` alike. It is off by default, because it wipes the
+  origin's storage and service workers, unsynced data included.
+- **`ViewportController.replace(markdown, options?)` from `@y-core/forge/render/markdown/editor/client` swaps in new text as one transaction**
+  that undo history skips and `onChange` does not report. Only the lines that differ are replaced, so with `preserveSelection: true` the
+  selection is mapped through the change and stays on the text it was on; without it the cursor returns to the start. The new
+  `ViewportReplaceOptions` type carries `preserveSelection`.
+- **`isWebSocketUpgrade(request)` from `@y-core/forge/http` says whether a request asks to switch to the WebSocket protocol**, so a socket
+  route can answer `426` to anything else without parsing `Upgrade` itself.
+
+### Breaking Changes
+
+- **`buildJS` from `@y-core/forge/tooling/assets` answers a `JsBuildResult`**, `{ mapping, precache }`, rather than the mapping alone.
+  `precache` is the app shell those bundles contribute, relative to the asset root. Read `.mapping` where you read the return value before.
+- **`ResolvedConfig.js` carries `serviceWorker`**, `null` when none is declared. A `ResolvedConfig` built by hand needs
+  `serviceWorker: null` beside `bundles`.
+
+### Fixed
+
+- **A `101` WebSocket response reaches the client through forge's middleware.** `Forge`'s queued headers, `definePage`, `cors` and
+  `createSecurityHeaders` each rebuilt the response without its `webSocket`, which workerd refuses for a `101`, so no socket opened on a
+  forge-routed path. Each rebuild now keeps the socket, along with every header it adds, a session cookie included.
+
+### Security
+
+- **`originGuard`, `originProtection` and `crossOriginProtection` from `@y-core/forge/security` check a WebSocket upgrade.** A `GET` carrying
+  `Upgrade: websocket` was exempt as a safe method, so a foreign page could open a cookie-bearing socket on a guarded route. It is now held to
+  the guard like a mutation, and judged on `Origin` alone: an upgrade with no `Origin` is refused even beside a matching `Referer` or a
+  `Sec-Fetch-Site: same-origin`, and `verifyOrigin` returns `"missing"` for it. A plain `GET` is still exempt. An app accepting cross-origin
+  upgrades on a guarded route must take the guard off that route.
 
 ---
 

@@ -14,6 +14,7 @@ function makeApp(opts?: Parameters<typeof crossOriginProtection>[0]) {
 }
 
 const ALLOWED = "https://app.example.com";
+const UPGRADE = { Upgrade: "websocket", Connection: "Upgrade" };
 
 function makeOriginApp(opts: OriginProtectionOptions = { allowedOrigins: [ALLOWED] }) {
   const app = new Forge();
@@ -203,5 +204,40 @@ describe("originProtection middleware", () => {
     expect(allowed.status).toBe(200);
     const disallowed = await app.request("/test", { method: "POST", headers: { Origin: "https://evil.example.com" } });
     expect(disallowed.status).toBe(403);
+  });
+
+  it("passes a same-origin WebSocket upgrade", async () => {
+    const app = makeOriginApp();
+    const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin", Origin: ALLOWED } });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for a WebSocket upgrade from a foreign Origin", async () => {
+    const app = makeOriginApp();
+    const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, Origin: "https://evil.example.com" } });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("returns 403 for a cross-site WebSocket upgrade carrying an allowed Origin", async () => {
+    const app = makeOriginApp();
+    const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "cross-site", Origin: ALLOWED } });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 403 for a WebSocket upgrade with no Origin, which Fetch Metadata does not vouch for", async () => {
+    const app = makeOriginApp();
+    const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin" } });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("crossOriginProtection on a WebSocket upgrade", () => {
+  it("returns 403 for a cross-site upgrade and passes a same-origin one", async () => {
+    const app = makeApp();
+    const crossSite = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "cross-site" } });
+    expect(crossSite.status).toBe(403);
+    const sameOrigin = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin" } });
+    expect(sameOrigin.status).toBe(200);
   });
 });

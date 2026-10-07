@@ -134,6 +134,25 @@ joinPath("showcase", "ui", "preview"); // "showcase/ui/preview"
 
 ---
 
+## Refusing a non-upgrade request on a socket route
+
+A socket route only makes sense for a request that asks to switch protocols. `isWebSocketUpgrade` reads the `Upgrade` header for the `websocket`
+token, in any casing and anywhere in a list, so the route can answer `426` to a plain `GET` before it hands anything to a Durable Object:
+
+```ts
+import { isWebSocketUpgrade } from "@y-core/forge/http";
+
+if (!isWebSocketUpgrade(context.request)) {
+  return new Response("Upgrade Required", { status: 426, headers: { upgrade: "websocket" } });
+}
+return context.env.ROOM.get(id).fetch(context.request); // the 101 and its socket pass back through forge's middleware intact
+```
+
+The check is about the request's shape and nothing else. Whether a foreign page may open the socket is the origin guard's call in
+[`@y-core/forge/security`][security-readme], which already holds an upgrade to the same rule as a mutation.
+
+---
+
 ## Gotchas
 
 **`safeRedirectPath` strips spaces and control characters anywhere in the candidate, not just at the ends** — `/a b` comes back as `/ab`. A path
@@ -158,4 +177,5 @@ that genuinely contains a space must arrive percent-encoded.
 [jsx-readme]: ../render/jsx/README.md
 [namespaces-5d]: ../../docs/NAMESPACES.md#5d-http--responses-headers-and-paths
 [pdf-readme]: ../render/pdf/README.md
+[security-readme]: ../security/README.md
 [session-readme]: ../session/README.md

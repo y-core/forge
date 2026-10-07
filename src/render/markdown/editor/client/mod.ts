@@ -11,4 +11,5 @@ export type {
   ViewportMode,
   ViewportOptions,
   ViewportRendering,
+  ViewportReplaceOptions,
 } from "./types";

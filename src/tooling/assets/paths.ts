@@ -27,3 +27,9 @@ export function deployRoot(root: string, publicDir: string): string {
   if (top === undefined || top === "") return resolve(root);
   return safeJoin(root, top);
 }
+
+// Same normalization `createManifest` applies, so a build-time URL cannot disagree with the served one.
+/** The URL every asset path is appended to after a `/`: `publicPrefix` less one trailing slash. @internal */
+export function assetUrlBase(publicPrefix: string): string {
+  return publicPrefix.endsWith("/") ? publicPrefix.slice(0, -1) : publicPrefix;
+}

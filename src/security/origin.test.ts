@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
 import { mapHandler } from "../testing/route";
-import { originGuard, verifyOrigin } from "./origin";
+import { isExemptFromOriginCheck, originGuard, verifyOrigin } from "./origin";
 
 function makeApp(allowed: string[]) {
   const app = new Forge();
@@ -42,6 +42,51 @@ describe("originGuard middleware", () => {
     const app = makeApp(ALLOWED);
     const res = await app.request("/test", { method: "HEAD" });
     expect(res.status).toBe(200);
+  });
+});
+
+describe("originGuard on a WebSocket upgrade", () => {
+  const ALLOWED = ["https://example.com"];
+  const UPGRADE = { Upgrade: "websocket", Connection: "Upgrade" };
+
+  it("passes a same-origin upgrade", async () => {
+    const app = makeApp(ALLOWED);
+    const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, Origin: "https://example.com" } });
+    expect(res.status).toBe(200);
+  });
+
+  it("returns 403 for an upgrade from a foreign Origin", async () => {
+    const app = makeApp(ALLOWED);
+    const res = await app.request("/test", { method: "GET", headers: { ...UPGRADE, Origin: "https://evil.com" } });
+    expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
+  });
+
+  it("returns 403 for an upgrade with no Origin, even beside an allowed Referer", async () => {
+    const app = makeApp(ALLOWED);
+    const bare = await app.request("/test", { method: "GET", headers: UPGRADE });
+    expect(bare.status).toBe(403);
+    const withReferer = await app.request("/test", { method: "GET", headers: { ...UPGRADE, Referer: "https://example.com/page" } });
+    expect(withReferer.status).toBe(403);
+  });
+
+  it("leaves a plain GET from a foreign Origin unchecked", async () => {
+    const app = makeApp(ALLOWED);
+    const res = await app.request("/test", { method: "GET", headers: { Origin: "https://evil.com" } });
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("isExemptFromOriginCheck", () => {
+  const request = (method: string, headers: Record<string, string> = {}) => new Request("https://example.com/live", { method, headers });
+
+  it("exempts a safe method that is not an upgrade", () => {
+    for (const method of ["GET", "HEAD", "OPTIONS"]) expect(isExemptFromOriginCheck(request(method))).toBe(true);
+  });
+
+  it("holds a WebSocket upgrade and a state-changing method to the check", () => {
+    expect(isExemptFromOriginCheck(request("GET", { Upgrade: "websocket" }))).toBe(false);
+    expect(isExemptFromOriginCheck(request("POST"))).toBe(false);
   });
 });
 
@@ -88,6 +133,11 @@ describe("verifyOrigin", () => {
 
   it("returns missing for HEAD requests without Origin (no safe-method bypass)", () => {
     const req = new Request("https://example.com/api/contact", { method: "HEAD" });
+    expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "missing" });
+  });
+
+  it("ignores a Referer on a WebSocket upgrade and returns missing", () => {
+    const req = new Request("https://example.com/live", { headers: { Upgrade: "websocket", Referer: "https://example.com/page" } });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "missing" });
   });
 });

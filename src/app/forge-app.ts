@@ -5,12 +5,13 @@ import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/matc
 
 import type { Config } from "../config/config";
 import { resolveConfig } from "../config/config";
-import { applyPendingHeaders } from "../context/pending-headers";
+import { mergePendingHeaders } from "../context/pending-headers";
 import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
 import { escapeHtml } from "../html/escape";
 import { CacheControl } from "../http/headers";
+import { rebuildResponse } from "../http/rebuild";
 import { createLogger } from "../logging/logger";
 import { requestLog } from "../logging/request-logger";
 import { serializeError } from "../logging/serialize-error";
@@ -38,7 +39,7 @@ function privatizeCookieResponse(res: Response): Response {
   cacheControl.private = true;
   const headers = new Headers(res.headers);
   headers.set("cache-control", cacheControl.toString());
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+  return rebuildResponse(res, headers);
 }
 
 function hardenedText(body: string, status: number, extra?: Record<string, string>): Response {
@@ -186,7 +187,8 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
     const applyHeaders: Middleware = async (context, next) => {
       const res = await next();
-      return privatizeCookieResponse(applyPendingHeaders(context, res));
+      const headers = mergePendingHeaders(context, res);
+      return privatizeCookieResponse(headers === null ? res : rebuildResponse(res, headers));
     };
 
     const guarded: Middleware[] = this._globals.map(

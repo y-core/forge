@@ -66,6 +66,12 @@ export interface ViewportOptions {
   readonly dialect?: ViewportDialect | undefined;
 }
 
+/** How `ViewportController.replace` treats the reader's selection. */
+export interface ViewportReplaceOptions {
+  /** Maps the selection through the change rather than returning the cursor to the start. */
+  readonly preserveSelection?: boolean | undefined;
+}
+
 /** The only surface through which the app drives the viewport, which is created once and never re-created. */
 export interface ViewportController {
   setMode(mode: ViewportMode): void;
@@ -73,6 +79,8 @@ export interface ViewportController {
   topAnchor(): ViewportAnchor;
   scrollTo(anchor: ViewportAnchor): void;
   getMarkdown(): string;
+  /** Swaps in new text as one change that undo never reverts and `onChange` never reports. */
+  replace(markdown: string, options?: ViewportReplaceOptions): void;
   destroy(): void;
 }
 
@@ -80,6 +88,11 @@ export interface ViewportController {
 export interface DocumentSpan {
   readonly from: number;
   readonly to: number;
+}
+
+/** One replaced span of the old text and what stands in for it. @internal */
+export interface TextChange extends DocumentSpan {
+  readonly insert: string;
 }
 
 /** The dialect spans of each unit decorated last pass, keyed by the unit text. @internal */

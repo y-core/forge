@@ -72,7 +72,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   // Type-only, and one way for the same reason: a pack is adapted into the face shape the engine
   // embeds, so the names cross but nothing does at runtime and the container stays acyclic.
   "render/pdf/fonts": { "render/pdf": "type" },
-  security: { dev: "type", logging: "value" },
+  security: { dev: "type", http: "value", logging: "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },
   testing: {

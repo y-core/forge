@@ -35,7 +35,7 @@ export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie,
     const retired = rotating && reading !== null && !reading.current;
     if (unchanged && !retired) return res;
 
-    // One emit point: `setPendingHeader` and `applyPendingHeaders` both append without deduping
+    // One emit point: `setPendingHeader` and `mergePendingHeaders` both append without deduping
     // by cookie name, so a second site would double-emit under `reissue`.
     setPendingHeader(context, "set-cookie", await cookie.serialize(value, value === "" ? { maxAge: 0 } : undefined), { append: true });
     return res;

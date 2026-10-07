@@ -787,6 +787,22 @@ wrong layer.
 
 ---
 
+## Wiping the browser's copy of a user's data at sign-out
+
+An app that keeps a signed-in user's data in the browser — a service-worker cache, IndexedDB, `localStorage` — can have the sign-out response
+clear it, so the next person at the machine finds nothing:
+
+```ts
+const options: AuthWebOptions<Env> = { ...rest, signoutClearsSiteData: true };
+```
+
+The sign-out response then carries `Clear-Site-Data: "cache", "storage"`, on the `303` and on the htmx `204` alike. `"storage"` also unregisters the
+origin's service workers, so the next page load registers yours afresh. **It is off by default** because it wipes the whole origin, including
+anything the app has not yet synced: warn about unsynced work before the form posts, since the browser clears it the moment the response lands. The
+header is honoured only over HTTPS and on `localhost`.
+
+---
+
 ## Security
 
 **Never render a reason a flow or a store hands back.** `redactSigninReason` is required at the rendering boundary, and `AuthEmailChangeReason`,

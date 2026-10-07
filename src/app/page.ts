@@ -2,6 +2,7 @@ import type { RequestHandler } from "@remix-run/fetch-router";
 
 import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
+import { rebuildResponse } from "../http/rebuild";
 import { createLogger } from "../logging/logger";
 import { serializeError } from "../logging/serialize-error";
 import { toError } from "../result/result";
@@ -33,7 +34,7 @@ function applyResponseHeaders(res: Response, cacheHeader: string | undefined, ex
       headers.set(key, value);
     }
   }
-  return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+  return rebuildResponse(res, headers);
 }
 
 /** Wraps a view/loader into a RequestHandler with caching, custom headers, and error recovery. @public */

@@ -75,6 +75,25 @@ describe("AssetsConfigSchema", () => {
     expect(() => v.parse(AssetsConfigSchema, raw)).toThrow();
   });
 
+  it("keeps a bundle's precache flag through v.parse, either way", () => {
+    const parsed = v.parse(AssetsConfigSchema, {
+      js: {
+        bundles: [
+          { entry: "src/admin.ts", outdir: "js", precache: false },
+          { entry: "src/main.ts", outdir: "js", precache: true },
+        ],
+      },
+    });
+    expect(parsed.js?.bundles?.map((bundle) => bundle.precache)).toEqual([false, true]);
+  });
+
+  const nonBooleans: unknown[] = ["false", 0, null];
+  for (const precache of nonBooleans) {
+    it(`rejects a bundle whose precache is ${JSON.stringify(precache)}`, () => {
+      expect(() => v.parse(AssetsConfigSchema, { js: { bundles: [{ entry: "src/main.ts", outdir: "js", precache }] } })).toThrow();
+    });
+  }
+
   it("rejects a raster entry with neither width nor height", () => {
     expect(() => v.parse(AssetsConfigSchema, { rasters: [{ from: "a.svg", to: "a.png" }] })).toThrow();
   });
@@ -153,6 +172,14 @@ describe("loadConfig()", () => {
     expect(config.rasters[0]?.from).toBe(join(root, "brand", "logo.svg"));
   });
 
+  it("carries a bundle's precache: false through to the resolved bundle", async () => {
+    const config = await loadConfig({
+      root: appRoot('export default { js: { bundles: [{ entry: "src/admin.ts", outdir: "js", precache: false }] } };'),
+    });
+
+    expect(config.js.bundles).toEqual([{ entry: join(config.root, "src", "admin.ts"), outdir: "js", precache: false }]);
+  });
+
   it("resolves a bundle entry alongside its defines rather than instead of them", async () => {
     const root = appRoot(
       `import { flag } from "${join(import.meta.dir, "config.ts")}";
@@ -162,6 +189,18 @@ describe("loadConfig()", () => {
 
     expect(config.js.bundles[0]?.entry).toBe(join(root, "src", "client", "main.ts"));
     expect(config.js.bundles[0]?.define?.__E2E__).toBe("true");
+  });
+
+  it("resolves the service-worker entry and its defines, and answers null when none is declared", async () => {
+    const root = appRoot(
+      `import { env } from "${join(import.meta.dir, "config.ts")}";
+       export default { js: { serviceWorker: { entry: "src/client/sw.ts", conditions: ["worker"], define: { VERSION: env("VERSION") } } } };`,
+    );
+    const config = await loadConfig({ root, env: { VERSION: "v7" } });
+    const bare = await loadConfig({ root: appRoot("export default {};") });
+
+    expect(config.js.serviceWorker).toEqual({ entry: join(root, "src", "client", "sw.ts"), conditions: ["worker"], define: { VERSION: '"v7"' } });
+    expect(bare.js.serviceWorker).toBeNull();
   });
 
   it("resolves a local sprite source against the root and leaves a remote one verbatim", async () => {

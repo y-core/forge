@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import { v } from "../../validation/mod";
-import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle } from "./types";
+import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle, ResolvedServiceWorkerBuild } from "./types";
 import { AssetsConfigSchema } from "./types";
 import type { LoadConfigOptions } from "./types";
 
@@ -49,12 +49,14 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
   const raw: unknown = mod.default ?? mod;
   const parsed = v.parse(AssetsConfigSchema, raw);
 
-  const bundles: ResolvedJsBundle[] = (parsed.js?.bundles ?? []).map((bundle) => {
-    const { define: rawDefine, ...rest } = bundle;
-    const entry = resolve(root, bundle.entry);
+  const resolveEntry = <Built extends { entry: string; define?: Record<string, DefineValue> | undefined }>(built: Built) => {
+    const { define: rawDefine, ...rest } = built;
+    const entry = resolve(root, built.entry);
     if (!rawDefine) return { ...rest, entry };
     return { ...rest, entry, define: Object.fromEntries(Object.entries(rawDefine).map(([k, val]) => [k, resolveDefine(val, envVars)])) };
-  });
+  };
+  const bundles: ResolvedJsBundle[] = (parsed.js?.bundles ?? []).map(resolveEntry);
+  const serviceWorker: ResolvedServiceWorkerBuild | null = parsed.js?.serviceWorker === undefined ? null : resolveEntry(parsed.js.serviceWorker);
 
   // A read path resolves against the root, so a run from a subdirectory reads where `--root` says. A
   // written one stays relative: it is the manifest key, and `safeJoin` contains it at build time.
@@ -68,7 +70,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
       publicDir: resolve(root, parsed.paths?.publicDir ?? "public/assets"),
       publicPrefix: parsed.paths?.publicPrefix ?? "/assets",
     },
-    js: { bundles },
+    js: { bundles, serviceWorker },
     css: (parsed.css ?? []).map((build) => ({ ...build, input: resolve(root, build.input) })),
     copy: (parsed.copy ?? []).map((entry) => ({ ...entry, from: resolve(root, entry.from) })),
     rasters: (parsed.rasters ?? []).map((entry) => ({ ...entry, from: resolve(root, entry.from) })),

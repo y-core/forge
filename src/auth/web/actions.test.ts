@@ -742,6 +742,37 @@ describe("createSignoutActions", () => {
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/signin");
   });
+
+  it("sends no Clear-Site-Data by default", async () => {
+    const options = fakeAuthWebOptions();
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
+
+    const res = await app.request("/auth/signout", formBody({}));
+    expect(res.headers.has("clear-site-data")).toBe(false);
+  });
+
+  it("clears the site's cache and storage when signoutClearsSiteData is set", async () => {
+    const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
+
+    const res = await app.request("/auth/signout", formBody({}));
+    expect(res.status).toBe(303);
+    expect(res.headers.get("clear-site-data")).toBe('"cache", "storage"');
+  });
+
+  it("clears the site's cache and storage on an htmx sign-out too", async () => {
+    const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
+
+    const res = await app.request("/auth/signout", {
+      method: "POST",
+      body: "",
+      headers: { "content-type": "application/x-www-form-urlencoded", ...HX_REQUEST },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("hx-redirect")).toBe("/auth/signin");
+    expect(res.headers.get("clear-site-data")).toBe('"cache", "storage"');
+  });
 });
 
 describe("createPasskeyEnrolActions — the nickname the ceremony carries", () => {

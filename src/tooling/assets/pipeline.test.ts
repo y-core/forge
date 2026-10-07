@@ -1,6 +1,6 @@
 import { describe, expect, it, mock, spyOn } from "bun:test";
 import * as childProcess from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -33,9 +33,9 @@ function extractUnionLine(source: string, typeName: string): string {
 
 const DATA_BLOCK = "const DATA: Record<string, string> = {";
 
-function stubTailwind() {
+function stubTailwind(css = "/* built css */") {
   const spy = spyOn(childProcess, "execFileSync").mockImplementation(((_cmd: string, args: string[]) => {
-    writeFileSync(args[args.indexOf("-o") + 1] as string, "/* built css */");
+    writeFileSync(args[args.indexOf("-o") + 1] as string, css);
     return new Uint8Array();
   }) as never);
   spy.mockClear();
@@ -54,7 +54,7 @@ describe("buildAll() — emitHeaders", () => {
           root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
-          js: { bundles: [] },
+          js: { bundles: [], serviceWorker: null },
           copy: [],
           rasters: [],
           sprites: {},
@@ -90,7 +90,7 @@ describe("buildAll() — emitHeaders", () => {
             root: tmpDir,
             paths: { sourceDir: tmpDir, publicDir: join(outside, "assets"), publicPrefix: "/assets" },
             css: [],
-            js: { bundles: [] },
+            js: { bundles: [], serviceWorker: null },
             copy: [],
             rasters: [],
             sprites: {},
@@ -125,7 +125,7 @@ describe("buildAll() — emitHeaders", () => {
           root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
-          js: { bundles: [] },
+          js: { bundles: [], serviceWorker: null },
           copy: [],
           rasters: [],
           sprites: {},
@@ -181,7 +181,7 @@ describe("buildAll() — emitHeaders", () => {
           root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
-          js: { bundles: [] },
+          js: { bundles: [], serviceWorker: null },
           copy: [],
           rasters: [],
           sprites: {},
@@ -214,7 +214,7 @@ describe("buildAll() — emitHeaders", () => {
           root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/static" },
           css: [],
-          js: { bundles: [] },
+          js: { bundles: [], serviceWorker: null },
           copy: [],
           rasters: [],
           sprites: {},
@@ -267,7 +267,7 @@ describe("buildAll() — rasters", () => {
           root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
-          js: { bundles: [] },
+          js: { bundles: [], serviceWorker: null },
           copy: [],
           rasters: [{ from, to: "email/logo@2x.png", width: 360 }],
           sprites: {},
@@ -314,7 +314,7 @@ describe("buildAll() — generated module available to the JS bundle", () => {
           root: tmpDir,
           paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
           css: [],
-          js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
+          js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }], serviceWorker: null },
           copy: [],
           rasters: [],
           sprites: {},
@@ -330,6 +330,221 @@ describe("buildAll() — generated module available to the JS bundle", () => {
       expect(existsSync(assetsModule)).toBe(true);
       expect(existsSync(join(publicDir, "js", "main.js"))).toBe(true);
       expect(readFileSync(assetsModule, "utf-8")).toContain("js/main.js");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+function workerApp(sw: string): string {
+  const tmpDir = mkdtempSync(join(tmpdir(), "forge-pipeline-sw-"));
+  mkdirSync(join(tmpDir, "src"), { recursive: true });
+  const forgeManifest = join(process.cwd(), "src", "assets", "mod.ts");
+  writeFileSync(
+    join(tmpDir, "tsconfig.json"),
+    JSON.stringify({ compilerOptions: { baseUrl: ".", paths: { "@assets": [".forge/assets.ts"], "@y-core/forge/assets": [forgeManifest] } } }),
+  );
+  writeFileSync(join(tmpDir, "src", "sw.ts"), sw);
+  writeFileSync(join(tmpDir, "app.css"), "@import 'tailwindcss';");
+  return tmpDir;
+}
+
+function workerConfig(tmpDir: string, publicDir: string, js: ResolvedConfig["js"], css: ResolvedConfig["css"] = []): ResolvedConfig {
+  return {
+    root: tmpDir,
+    paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
+    css,
+    js,
+    copy: [],
+    rasters: [],
+    sprites: {},
+    fonts: { downloads: [], subsets: [], emit: null },
+    marks: [],
+    icons: null,
+    cursors: null,
+    site: null,
+  };
+}
+
+const LOGS_PRECACHE = [
+  'import { PRECACHE_URLS, PRECACHE_VERSION } from "@y-core/forge/assets/precache";',
+  "console.log(JSON.stringify({ precache: PRECACHE_URLS, version: PRECACHE_VERSION }));",
+].join("\n");
+
+function runWorker(path: string): { precache: string[]; version: string } {
+  return JSON.parse(Bun.spawnSync(["bun", path]).stdout.toString()) as { precache: string[]; version: string };
+}
+
+function chunkHolding(publicDir: string, marker: string): string {
+  const chunks = readdirSync(join(publicDir, "js", "chunks")).filter((name) =>
+    readFileSync(join(publicDir, "js", "chunks", name), "utf-8").includes(marker),
+  );
+  expect(chunks).toHaveLength(1);
+  return chunks[0] as string;
+}
+
+describe("buildAll() — the service worker", () => {
+  it("writes an unhashed sw.js at the deploy root after the manifest, precaching each entry and its static chunks but no lazy chunk", async () => {
+    const tmpDir = workerApp(
+      [
+        'import { assets } from "@assets";',
+        'import { PRECACHE_URLS } from "@y-core/forge/assets/precache";',
+        'console.log(JSON.stringify({ main: assets.path("js/main.js"), admin: assets.path("js/admin.js"), precache: PRECACHE_URLS }));',
+      ].join("\n"),
+    );
+    const publicDir = join(tmpDir, "public", "assets");
+    writeFileSync(join(tmpDir, "src", "shared.ts"), 'export const shared = "SHARED_MARKER";\n');
+    writeFileSync(
+      join(tmpDir, "src", "main.ts"),
+      'import { shared } from "./shared";\nexport const open = () => [shared, import("./editor.mount")];\n',
+    );
+    writeFileSync(join(tmpDir, "src", "editor.mount.ts"), 'export const editor = "EDITOR_MARKER";\n');
+    writeFileSync(join(tmpDir, "src", "admin.ts"), 'import { shared } from "./shared";\nexport const admin = () => [shared, import("./audit")];\n');
+    writeFileSync(join(tmpDir, "src", "audit.ts"), 'export const audit = "AUDIT_MARKER";\n');
+
+    try {
+      await buildAll(
+        workerConfig(tmpDir, publicDir, {
+          bundles: [
+            { entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm", splitting: true },
+            { entry: join(tmpDir, "src", "admin.ts"), outdir: "js", format: "esm", splitting: true, precache: false },
+          ],
+          serviceWorker: { entry: join(tmpDir, "src", "sw.ts") },
+        }),
+        { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+      );
+
+      const worker = join(tmpDir, "public", "sw.js");
+      const seen = JSON.parse(Bun.spawnSync(["bun", worker]).stdout.toString()) as { main: string; admin: string; precache: string[] };
+
+      expect(seen.main).toMatch(/^\/assets\/js\/main-[A-Z0-9]+\.js$/);
+      expect(seen.admin).toMatch(/^\/assets\/js\/admin-[A-Z0-9]+\.js$/);
+      expect(seen.precache).toEqual([`/assets/js/chunks/${chunkHolding(publicDir, "SHARED_MARKER")}`, seen.main]);
+      expect(chunkHolding(publicDir, "EDITOR_MARKER")).toMatch(/^editor\.mount-[A-Z0-9]+\.js$/);
+      expect(chunkHolding(publicDir, "AUDIT_MARKER")).toMatch(/^audit-[A-Z0-9]+\.js$/);
+      expect(existsSync(join(publicDir, "sw.js"))).toBe(false);
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe("/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n");
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a different sw.js for an unhashed build whose CSS changed by one byte, with the same URLs under a new version", async () => {
+    const tmpDir = workerApp(LOGS_PRECACHE);
+    const publicDir = join(tmpDir, "public", "assets");
+    const worker = join(tmpDir, "public", "sw.js");
+    const config = workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: { entry: join(tmpDir, "src", "sw.ts") } }, [
+      { tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "css/main.css" },
+    ]);
+    const build = async (css: string) => {
+      const execSpy = stubTailwind(css);
+      try {
+        await buildAll(config, { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") });
+      } finally {
+        execSpy.mockRestore();
+      }
+      return { source: readFileSync(worker, "utf-8"), seen: runWorker(worker) };
+    };
+
+    try {
+      const before = await build("a{color:#000}");
+      const after = await build("a{color:#001}");
+
+      expect(after.seen.precache).toEqual(["/assets/css/main.css"]);
+      expect(after.seen.precache).toEqual(before.seen.precache);
+      expect(after.seen.version).not.toBe(before.seen.version);
+      expect(after.source).not.toBe(before.source);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes a byte-identical sw.js on every rebuild of an unchanged tree, when publicDir is the deploy root the worker sits in", async () => {
+    const tmpDir = workerApp(LOGS_PRECACHE);
+    const publicDir = join(tmpDir, "public");
+    const worker = join(publicDir, "sw.js");
+    const config = workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: { entry: join(tmpDir, "src", "sw.ts") } }, [
+      { tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "css/main.css" },
+    ]);
+    const execSpy = stubTailwind("a{color:#000}");
+
+    try {
+      const builds: string[] = [];
+      for (let run = 0; run < 3; run++) {
+        await buildAll(config, { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") });
+        builds.push(readFileSync(worker, "utf-8"));
+      }
+
+      expect(readdirSync(publicDir).sort()).toEqual(["_headers", "css", "sw.js"]);
+      expect(builds[1]).toBe(builds[0] as string);
+      expect(builds[2]).toBe(builds[0] as string);
+    } finally {
+      execSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("deletes the sw.js an earlier build wrote once the config drops js.serviceWorker", async () => {
+    const tmpDir = workerApp(LOGS_PRECACHE);
+    const publicDir = join(tmpDir, "public", "assets");
+    const worker = join(tmpDir, "public", "sw.js");
+    const assetsPath = join(tmpDir, ".forge", "assets.ts");
+
+    try {
+      await buildAll(workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: { entry: join(tmpDir, "src", "sw.ts") } }), { assetsPath });
+      expect(existsSync(worker)).toBe(true);
+
+      await buildAll(workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: null }), { assetsPath });
+
+      expect(existsSync(worker)).toBe(false);
+      expect(existsSync(join(tmpDir, "public", "_headers"))).toBe(true);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves a hand-written sw.js at the deploy root when no service worker is configured", async () => {
+    const tmpDir = workerApp(LOGS_PRECACHE);
+    const publicDir = join(tmpDir, "public", "assets");
+    const foreign = "self.addEventListener('fetch', () => {});\n";
+    mkdirSync(publicDir, { recursive: true });
+    writeFileSync(join(tmpDir, "public", "sw.js"), foreign);
+
+    try {
+      await buildAll(workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: null }), { assetsPath: join(tmpDir, ".forge", "assets.ts") });
+
+      expect(readFileSync(join(tmpDir, "public", "sw.js"), "utf-8")).toBe(foreign);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("buildAll() — a service worker under the root prefix", () => {
+  it("refuses a publicPrefix of / before building anything, since the asset rule would mark /sw.js immutable", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "forge-pipeline-sw-root-"));
+    const publicDir = join(tmpDir, "public");
+    try {
+      const build = buildAll(
+        {
+          root: tmpDir,
+          paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/" },
+          css: [],
+          js: { bundles: [], serviceWorker: { entry: join(tmpDir, "sw.ts") } },
+          copy: [],
+          rasters: [],
+          sprites: {},
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
+          icons: null,
+          cursors: null,
+          site: null,
+        },
+        { assetsPath: join(tmpDir, ".forge", "assets.ts") },
+      );
+
+      await expect(build).rejects.toThrow('js.serviceWorker needs a publicPrefix other than "/"');
+      expect(existsSync(publicDir)).toBe(false);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -357,7 +572,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
-        js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
+        js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {
@@ -436,7 +651,7 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
-        js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
+        js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: { ui: { target: "sprites/ui.svg", sources: [{ path: svgDir, files: ["arrow-right.svg"] }] } },
@@ -488,7 +703,7 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
       writeFileSync(join(tmpDir, "src", "admin.ts"), `export const y = 2;\n`);
       const grown: ResolvedConfig = {
         ...config,
-        js: { bundles: [...config.js.bundles, { entry: join(tmpDir, "src", "admin.ts"), outdir: "js", format: "esm" }] },
+        js: { bundles: [...config.js.bundles, { entry: join(tmpDir, "src", "admin.ts"), outdir: "js", format: "esm" }], serviceWorker: null },
       };
 
       expect(await generateAssetsTypes(grown, { assetsPath })).toBe("written");
@@ -567,7 +782,7 @@ describe("readEmittedManifest()", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
         css: [{ tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "styles.css" }],
-        js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }] },
+        js: { bundles: [{ entry: join(tmpDir, "src", "main.ts"), outdir: "js", format: "esm" }], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {},
@@ -620,7 +835,7 @@ describe("generateAssetsTypes() — glyph-name union", () => {
       root: tmpDir,
       paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
       css: [],
-      js: { bundles: [] },
+      js: { bundles: [], serviceWorker: null },
       copy: [],
       rasters: [],
       sprites,
@@ -688,7 +903,7 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
         css: [],
-        js: { bundles: [] },
+        js: { bundles: [], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {},
@@ -732,7 +947,7 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix: "/assets" },
         css: [],
-        js: { bundles: [] },
+        js: { bundles: [], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {},
@@ -768,7 +983,7 @@ describe("generateAssetsTypes() — derives from config alone", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/static" },
         css: [{ tool: "tailwindcss", input: join(missing, "app.css"), output: "styles.css" }],
-        js: { bundles: [{ entry: join(missing, "main.ts"), outdir: "js", format: "esm" }] },
+        js: { bundles: [{ entry: join(missing, "main.ts"), outdir: "js", format: "esm" }], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {
@@ -828,7 +1043,7 @@ describe("buildAll() — the mark conversion stage", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [],
-        js: { bundles: [] },
+        js: { bundles: [], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {},
@@ -896,7 +1111,7 @@ describe("buildAll() — the font subset stage", () => {
         root: tmpDir,
         paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
         css: [],
-        js: { bundles: [] },
+        js: { bundles: [], serviceWorker: null },
         copy: [],
         rasters: [],
         sprites: {},
@@ -965,7 +1180,7 @@ describe("buildAll() / generateAssetsTypes() — the emitted faces module", () =
       root,
       paths: { sourceDir: root, publicDir: join(root, "public", "assets"), publicPrefix: "/assets" },
       css: [],
-      js: { bundles: [] },
+      js: { bundles: [], serviceWorker: null },
       copy: [],
       rasters: [],
       sprites: {},

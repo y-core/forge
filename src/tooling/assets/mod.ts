@@ -14,6 +14,7 @@ export { safeJoin } from "./paths";
 export type { AssetsTypesOutcome, BuildOptions } from "./types";
 export { buildAll, generateAssetsTypes } from "./pipeline";
 export { buildRasters } from "./rasters";
+export { buildServiceWorker } from "./service-worker";
 export { buildSite } from "./site";
 export type { SpriteBuildResult, SpriteGroupResult } from "./types";
 export { buildSprites, SPRITE_CACHE_DIR } from "./sprites";
@@ -34,6 +35,7 @@ export type {
   FontSubset,
   IconOutput,
   IconsConfig,
+  JsBuildResult,
   JsBundle,
   MarkBuild,
   MarkCommandData,
@@ -44,6 +46,8 @@ export type {
   ResolvedConfig,
   ResolvedJsBundle,
   ResolvedPaths,
+  ResolvedServiceWorkerBuild,
+  ServiceWorkerBuild,
   SiteBuildConfig,
   SpriteGroup,
   SpriteSource,

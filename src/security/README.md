@@ -297,6 +297,16 @@ if (!result.ok) return new Response("Forbidden", { status: 403 });
 `"missing" | "disallowed"` for origins, `"missing-fetch-metadata" | "cross-site" | "same-site"` for Fetch Metadata. `same-site` is reported apart
 from `cross-site` because the two describe different attackers: a sibling subdomain you may partly control, versus an unrelated origin.
 
+**A WebSocket route takes the same guard.** A `GET` carrying `Upgrade: websocket` is never exempt, because the handshake opens a cookie-bearing
+channel a foreign page could otherwise hold open. List the guard in the upgrade route's controller entry like any mutating one:
+
+```ts
+live: { middleware: [originProtection({ allowedOrigins: config.allowedOrigins })], handler: openLiveSocket },
+```
+
+The handshake is judged on `Origin` alone: a browser always sends one there, so an upgrade without it is refused even beside a matching `Referer`
+or a `Sec-Fetch-Site: same-origin`. A plain `GET` on the same route stays exempt.
+
 An HTML form endpoint wants one guard more. `requireFormContentType()` answers `415` to anything whose `Content-Type` is not
 `application/x-www-form-urlencoded` or `multipart/form-data`, comparing case-insensitively (RFC 9110 §8.3.1) and ignoring any `; charset=…`. Apply
 it on form routes only — never on a JSON API.

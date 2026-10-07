@@ -1,9 +1,11 @@
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 
+import type { Metafile } from "esbuild";
+
 import { safeJoin } from "./paths";
 import { bundler } from "./peers";
-import type { ResolvedJsBundle } from "./types";
+import type { JsBuildResult, ResolvedJsBundle } from "./types";
 
 type JsSubGroupOptions = {
   format: NonNullable<ResolvedJsBundle["format"]>;
@@ -19,12 +21,23 @@ function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
   return stems.has(stem) || [...stems].some((own) => stem.startsWith(`${own}-`));
 }
 
-/** Bundles JavaScript entries with esbuild and writes them to `opts.outDir`. */
-export async function buildJS(
-  bundles: ResolvedJsBundle[],
-  opts: { outDir: string; minify?: boolean; hash?: boolean },
-): Promise<Record<string, string>> {
-  if (bundles.length === 0) return {};
+/** Every output reachable from `roots` through static imports, roots and CSS bundles included; a dynamic import ends the walk. @internal */
+export function staticImportClosure(outputs: Metafile["outputs"], roots: Iterable<string>): Set<string> {
+  const reached = new Set<string>();
+  const pending = [...roots];
+  for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
+    const meta = outputs[path];
+    if (meta === undefined || reached.has(path)) continue;
+    reached.add(path);
+    pending.push(...meta.imports.filter((imported) => imported.kind === "import-statement").map((imported) => imported.path));
+    if (meta.cssBundle !== undefined) pending.push(meta.cssBundle);
+  }
+  return reached;
+}
+
+/** Bundles JavaScript entries with esbuild and writes them to `opts.outDir`, answering the entry mapping and the shell a service worker precaches. */
+export async function buildJS(bundles: ResolvedJsBundle[], opts: { outDir: string; minify?: boolean; hash?: boolean }): Promise<JsBuildResult> {
+  if (bundles.length === 0) return { mapping: {}, precache: [] };
 
   const shouldHash = opts.hash ?? false;
   const absPublicDir = resolve(opts.outDir);
@@ -44,6 +57,7 @@ export async function buildJS(
 
   const esbuild = await bundler("js.bundles");
   const mapping: Record<string, string> = {};
+  const precache: string[] = [];
 
   for (const [outdir, group] of byOutdir) {
     // Only this group's own outputs: a sibling writing into the same directory must survive, which
@@ -94,18 +108,24 @@ export async function buildJS(
         ...(options.conditions !== undefined ? { conditions: options.conditions } : {}),
       });
 
+      const metaOutputs = result.metafile?.outputs ?? {};
+      const toRelPath = (outPath: string): string => relative(absPublicDir, resolve(outPath)).replace(/\\/g, "/");
+      const emitted = Object.entries(metaOutputs).map(([outPath, meta]) => ({
+        outPath,
+        relPath: toRelPath(outPath),
+        entryPoint: meta.entryPoint === undefined ? undefined : resolve(meta.entryPoint),
+      }));
+      const shellEntries = new Set(subGroup.filter((bundle) => bundle.precache !== false).map((bundle) => resolve(bundle.entry)));
+      const shellRoots = emitted.filter(({ entryPoint }) => entryPoint !== undefined && shellEntries.has(entryPoint)).map(({ outPath }) => outPath);
+      precache.push(...[...staticImportClosure(metaOutputs, shellRoots)].map(toRelPath));
       for (const bundle of subGroup) {
         const absEntry = resolve(bundle.entry);
-        for (const [outPath, meta] of Object.entries(result.metafile?.outputs ?? {})) {
-          if (meta.entryPoint && resolve(meta.entryPoint) === absEntry) {
-            const relPath = relative(absPublicDir, resolve(outPath)).replace(/\\/g, "/");
-            const logicalName = `${basename(bundle.entry, extname(bundle.entry))}.js`;
-            mapping[`${bundle.outdir}/${logicalName}`] = relPath;
-          }
+        for (const { relPath, entryPoint } of emitted) {
+          if (entryPoint === absEntry) mapping[`${bundle.outdir}/${basename(bundle.entry, extname(bundle.entry))}.js`] = relPath;
         }
       }
     }
   }
 
-  return mapping;
+  return { mapping, precache };
 }
