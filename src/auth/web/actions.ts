@@ -2,7 +2,7 @@ import type { Session } from "@remix-run/session";
 
 import { getAppContext } from "../../context/types";
 import type { AppContext, RequestHandler } from "../../context/types";
-import { timingSafeEqual } from "../../crypto/timing";
+import { timingSafeEqual } from "../../crypto/primitives/timing";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { isFormCapConflict, parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
@@ -20,6 +20,7 @@ import type { AuthSigninNotice } from "../flows/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
 import { authFreshStepUpWindow, stepUpHolds } from "./guards";
 import {
+  AUTH_SITE_DATA_OWED_SESSION_KEY,
   clearAuthSession,
   establishAuthSession,
   markAuthSigninPending,
@@ -88,6 +89,8 @@ const FIELD_REFUSAL: Readonly<Record<string, string>> = {
 const FIELD_REFUSAL_DEFAULT = "We could not read that. Please check the form and try again.";
 
 const RECOVERY_CODE_REFUSAL = "That is not one of the new codes. Enter one exactly as it is shown.";
+
+const TOTP_ENROL_REFUSAL = "That code did not match. Enter the code your app shows now.";
 
 const RECOVERY_CODE_UNREADABLE = "That is not a recovery code. Enter one exactly as you saved it.";
 
@@ -342,17 +345,34 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
   };
 }
 
-const AUTH_SIGNOUT_CLEAR_SITE_DATA = '"cache", "storage"';
+// Chromium holds any response carrying `"storage"` for seconds, so the navigation clears the cache
+// alone and the next auth page asks for the storage half off the critical path.
+const AUTH_SIGNOUT_CLEAR_SITE_DATA = '"cache"';
 
-/** The POST that ends a session, rotating its id on the way out. @public */
-export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>): { readonly signout: RequestHandler } {
+const AUTH_SITE_DATA_CLEAR = '"storage"';
+
+/** The POST that ends a session, rotating its id on the way out, and the one that clears the storage a sign-out owes. @public */
+export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>): {
+  readonly signout: RequestHandler;
+  readonly signoutSiteData: RequestHandler;
+} {
   return {
     signout: (context) => {
       const c = getAppContext<Bindings>(context);
-      clearAuthSession(sessionCtx.get(c, NO_SESSION));
+      const session = sessionCtx.get(c, NO_SESSION);
+      clearAuthSession(session);
       const response = createAuthRedirect(c, options.paths.auth.signin());
-      if (options.signoutClearsSiteData === true) response.headers.set("Clear-Site-Data", AUTH_SIGNOUT_CLEAR_SITE_DATA);
+      if (options.signoutClearsSiteData === true) {
+        session.set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
+        response.headers.set("Clear-Site-Data", AUTH_SIGNOUT_CLEAR_SITE_DATA);
+      }
       return response;
+    },
+    signoutSiteData: (context) => {
+      const session = sessionCtx.get(getAppContext<Bindings>(context), NO_SESSION);
+      if (session.get(AUTH_SITE_DATA_OWED_SESSION_KEY) !== true) return new Response(null, { status: 204 });
+      session.unset(AUTH_SITE_DATA_OWED_SESSION_KEY);
+      return new Response(null, { status: 204, headers: { "Clear-Site-Data": AUTH_SITE_DATA_CLEAR } });
     },
   };
 }
@@ -541,7 +561,7 @@ async function confirmTotp<Bindings>(
   if (!parsed.ok) return err(await reload(c, options, { fieldError: parsed.error.message, status: 422 }));
 
   const confirmed = await service.completeEnrolment(identity.userId, parsed.data.code, authNow(options));
-  if (!confirmed.ok) return err(await reload(c, options, { fieldError: FIELD_REFUSAL.code ?? FIELD_REFUSAL_DEFAULT, status: 422 }));
+  if (!confirmed.ok) return err(await reload(c, options, { fieldError: TOTP_ENROL_REFUSAL, status: 422 }));
   return ok(identity);
 }
 

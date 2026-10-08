@@ -1,3 +1,6 @@
+import { existsSync, readdirSync } from "node:fs";
+import { posix, resolve } from "node:path";
+
 import { CliError } from "../cli/errors";
 import { loadFeatures } from "../curate/config";
 import {
@@ -29,6 +32,7 @@ import {
   workerdStep,
 } from "./builders";
 import { checkImportBoundary } from "./checks/import-boundary";
+import { isTestSource } from "./checks/source-scan";
 import { checkResult, fail } from "./finding";
 import type { Step } from "./types";
 import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
@@ -39,6 +43,17 @@ const PACKAGE = "@y-core/forge";
 const RUNTIME_TYPES = "./.types/cloudflare.d.ts";
 
 const BINDING_TYPES = "./.types/worker-configuration.d.ts";
+
+function besideVendor(root: string, vendorDir: string): string[] {
+  const parent = posix.dirname(vendorDir);
+  const full = resolve(root, parent);
+  if (!existsSync(full)) return [];
+  return readdirSync(full, { withFileTypes: true })
+    .filter((entry) => (entry.isDirectory() ? true : entry.isFile() && /\.tsx?$/.test(entry.name) && !isTestSource(entry.name)))
+    .map((entry) => (parent === "." ? entry.name : `${parent}/${entry.name}`))
+    .filter((path) => path !== vendorDir)
+    .sort();
+}
 
 /** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
 export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {}): readonly Step[] {
@@ -126,7 +141,11 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // Opt-in, because the rule it holds is a repository's own: which directories are browser-only, and
   // which basename is allowed to cross from the server side.
   if (options.ssrBoundary !== undefined) {
-    steps.push(ssrBoundaryStep({ root, ...options.ssrBoundary }));
+    const { serverDirs, ...ssrBoundary } = options.ssrBoundary;
+    steps.push(ssrBoundaryStep({ root, ...ssrBoundary }));
+    if (serverDirs !== undefined) {
+      steps.push({ ...importBoundaryStep({ root, guarded: serverDirs, sources: ssrBoundary.clientDirs }), label: "validate-client-boundary" });
+    }
   }
 
   // Opt-in for the same reason: which trees are one-way, and which files may cross into them, is a
@@ -149,6 +168,18 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     );
   } else if (importBoundary !== undefined) {
     steps.push(importBoundaryStep({ root, ...importBoundary }));
+  }
+
+  if (options.vendorDir !== undefined) {
+    const vendorDir = options.vendorDir.replace(/\/+$/, "");
+    steps.push(
+      checkStep(
+        "validate-vendor-boundary",
+        () => checkImportBoundary({ root, guarded: besideVendor(root, vendorDir), sources: [vendorDir] }),
+        {},
+        { watches: sourceWatches([posix.dirname(vendorDir)]) },
+      ),
+    );
   }
 
   // Opt-in: the audit refuses to report a green gate that measured nothing, so it needs the pairs a

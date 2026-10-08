@@ -7,6 +7,8 @@ import { createMemorySessionStorage } from "@remix-run/session/memory-storage";
 
 import { Forge } from "../app/forge-app";
 import { setPendingHeader } from "../context/pending-headers";
+import { importKeyRing } from "../crypto/keyring/ring";
+import type { KeyRing } from "../crypto/keyring/types";
 import { mapHandler } from "../testing/route";
 import { createSignedCookie, createUnsignedCookie } from "./cookie";
 import { createKVSessionStorage } from "./kv-storage";
@@ -26,10 +28,14 @@ function fakeKV(): SessionKVBinding {
   };
 }
 
-const OLD_SECRET = "Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv";
-const NEW_SECRET = "Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe";
+const OLD_SECRET = "56de72b91e7ef9ddfa35d03da27fcba831405e6603fd1cb91a89e3701fc873e9";
+const NEW_SECRET = "8bf29d8115cf591b9b98e0eff04939dae0f016313a9ba576a2a0827a23016229";
 
-const sessionCookie = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET] });
+const OLD_RING = await importKeyRing([OLD_SECRET]);
+const NEW_RING = await importKeyRing([NEW_SECRET]);
+const ROTATING_RING = await importKeyRing([NEW_SECRET, OLD_SECRET]);
+
+const sessionCookie = createSignedCookie("__session", { path: "/", ring: OLD_RING });
 
 describe("sessionMiddleware with cookie storage", () => {
   it("creates a new session for requests with no session cookie", async () => {
@@ -305,7 +311,7 @@ describe("sessionMiddleware id observation", () => {
   // The construction lifetime surviving onto the clearing header is the defect: `Max-Age=31536000`
   // over an empty value tells the browser to keep the cookie for a year rather than drop it.
   it("clears with Max-Age=0 even where the cookie was built with a lifetime", async () => {
-    const yearly = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET], maxAge: 31_536_000 });
+    const yearly = createSignedCookie("__session", { path: "/", ring: OLD_RING, maxAge: 31_536_000 });
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), yearly));
     mapHandler(app, "GET", "/", (c) => new Response(sessionCtx.get(c).id));
@@ -382,9 +388,9 @@ function carry(res: Response): string {
   );
 }
 
-/** No `rotating` anywhere: the cookie holds the secrets, so the middleware derives it. */
-function rotationApp(secrets: [string, ...string[]], storage: SessionStorage, options?: SessionCookieOptions, maxAge?: number) {
-  const cookie = createSignedCookie("__session", { path: "/", secrets, ...(maxAge === undefined ? {} : { maxAge }) });
+/** No `rotating` anywhere: the cookie holds the ring, so the middleware derives it. */
+function rotationApp(ring: KeyRing, storage: SessionStorage, options?: SessionCookieOptions, maxAge?: number) {
+  const cookie = createSignedCookie("__session", { path: "/", ring, ...(maxAge === undefined ? {} : { maxAge }) });
   const app = new Forge();
   app.use("*", sessionMiddleware(storage, cookie, options));
   mapHandler(app, "GET", "/id", (c) => new Response(sessionCtx.get(c).id));
@@ -397,26 +403,27 @@ function rotationApp(secrets: [string, ...string[]], storage: SessionStorage, op
   return { app, cookie };
 }
 
-describe("sessionMiddleware secret rotation", () => {
-  it("re-issues a cookie signed with a retired secret, preserving the payload", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+describe("sessionMiddleware key rotation", () => {
+  it("re-issues a cookie signed under a retired key under the active key, preserving the payload", async () => {
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const seeded = await seed.app.request("/set", { method: "POST" });
     const sent = carry(seeded);
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage());
+    expect(sent.split(".")[1]).toBe(OLD_RING.activeKeyId);
+    expect((await serve.cookie.read(sent))?.current).toBe(false);
     const res = await serve.app.request("/id", { headers: { cookie: sent } });
     const issued = carry(res);
 
-    expect(issued).not.toBe("");
-    expect(issued).not.toBe(sent);
-    expect(await serve.cookie.parse(issued)).toBe(await seed.cookie.parse(sent));
+    expect(issued.split(".")[1]).toBe(ROTATING_RING.activeKeyId);
+    expect(await serve.cookie.read(issued)).toEqual({ value: await seed.cookie.parse(sent), current: true });
   });
 
-  it("emits nothing when the cookie is already signed with the current secret", async () => {
-    const seed = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
+  it("emits nothing when the cookie is already signed under the active key", async () => {
+    const seed = rotationApp(ROTATING_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage());
     const res = await serve.app.request("/id", { headers: { cookie: sent } });
     expect(res.headers.get("set-cookie")).toBeNull();
   });
@@ -424,19 +431,19 @@ describe("sessionMiddleware secret rotation", () => {
   // A configured lifetime puts an epoch second inside the signature, so re-signing to compare wire
   // bytes can never match again: without this variant the emit-on-every-request regression ships green.
   it("emits nothing for a current signature even where the cookie carries a lifetime", async () => {
-    const seed = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const seed = rotationApp(ROTATING_RING, createCookieSessionStorage(), undefined, 600);
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage(), undefined, 600);
     const res = await serve.app.request("/id", { headers: { cookie: sent } });
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("stops re-issuing once a rotation has completed under a lifetime", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage(), undefined, 600);
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), undefined, 600);
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage(), undefined, 600);
     const rotated = carry(await serve.app.request("/quiet", { headers: { cookie: sent } }));
     expect(rotated).not.toBe(sent);
 
@@ -448,10 +455,10 @@ describe("sessionMiddleware secret rotation", () => {
   // `storage.save` — a check bolted onto the save path would leave rotation stuck forever.
   it("completes rotation for KV storage on a request that touches nothing", async () => {
     const kv = fakeKV();
-    const seed = rotationApp([OLD_SECRET], createKVSessionStorage(kv));
+    const seed = rotationApp(OLD_RING, createKVSessionStorage(kv));
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createKVSessionStorage(kv));
+    const serve = rotationApp(ROTATING_RING, createKVSessionStorage(kv));
     const res = await serve.app.request("/quiet", { headers: { cookie: sent } });
     const issued = carry(res);
 
@@ -461,10 +468,10 @@ describe("sessionMiddleware secret rotation", () => {
   });
 
   it("completes rotation for cookie storage on a request that touches nothing", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage());
     const issued = carry(await serve.app.request("/quiet", { headers: { cookie: sent } }));
 
     expect(issued).not.toBe("");
@@ -472,37 +479,37 @@ describe("sessionMiddleware secret rotation", () => {
     expect(await serve.cookie.parse(issued)).toBe(await seed.cookie.parse(sent));
   });
 
-  it("lets the retired secret be dropped on the following request", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+  it("lets the retired key be dropped on the following request", async () => {
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const during = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
+    const during = rotationApp(ROTATING_RING, createCookieSessionStorage());
     const rotated = carry(await during.app.request("/quiet", { headers: { cookie: sent } }));
 
-    const after = rotationApp([NEW_SECRET], createCookieSessionStorage());
+    const after = rotationApp(NEW_RING, createCookieSessionStorage());
     const res = await after.app.request("/read", { headers: { cookie: rotated } });
     expect(await res.text()).toBe("admin");
   });
 
-  it("does not re-sign a cookie signed with a secret no longer in the array", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+  it("does not re-sign a cookie signed under a key no longer on the ring", async () => {
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const seeded = await seed.app.request("/id", { method: "GET" });
     const seededId = await seeded.text();
     const sent = carry(seeded);
 
-    const serve = rotationApp([NEW_SECRET], createCookieSessionStorage());
+    const serve = rotationApp(NEW_RING, createCookieSessionStorage());
     const res = await serve.app.request("/id", { headers: { cookie: sent } });
     expect(await res.text()).not.toBe(seededId);
   });
 
   it("does not re-sign a tampered value", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const seeded = await seed.app.request("/id");
     const seededId = await seeded.text();
     const sent = carry(seeded);
     const tampered = `${sent.slice(0, 12)}${sent[12] === "A" ? "B" : "A"}${sent.slice(13)}`;
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage());
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage());
     const res = await serve.app.request("/id", { headers: { cookie: tampered } });
     expect(await res.text()).not.toBe(seededId);
   });
@@ -510,24 +517,24 @@ describe("sessionMiddleware secret rotation", () => {
   // The cost trade, pinned: off rotation the payload decides alone, so an unchanged session is
   // never re-signed — and a retired signature it cannot see is therefore left in place.
   it("leaves a retired signature alone when rotating is not set", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([NEW_SECRET, OLD_SECRET], createCookieSessionStorage(), { rotating: false });
+    const serve = rotationApp(ROTATING_RING, createCookieSessionStorage(), { rotating: false });
     const res = await serve.app.request("/quiet", { headers: { cookie: sent } });
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
-  it("derives rotating from the cookie's own secrets", async () => {
-    expect(createSignedCookie("__session", { secrets: [OLD_SECRET] }).rotating).toBe(false);
-    expect(createSignedCookie("__session", { secrets: [NEW_SECRET, OLD_SECRET] }).rotating).toBe(true);
+  it("derives rotating from the cookie's own ring", async () => {
+    expect(createSignedCookie("__session", { ring: OLD_RING }).rotating).toBe(false);
+    expect(createSignedCookie("__session", { ring: ROTATING_RING }).rotating).toBe(true);
   });
 
   it("still emits on a genuine write when rotating is not set", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/id"));
 
-    const serve = rotationApp([OLD_SECRET], createCookieSessionStorage(), { rotating: false });
+    const serve = rotationApp(OLD_RING, createCookieSessionStorage(), { rotating: false });
     const res = await serve.app.request("/set", { method: "POST", headers: { cookie: sent } });
     expect(res.headers.getSetCookie().filter((c) => c.startsWith("__session="))).toHaveLength(1);
   });
@@ -536,32 +543,32 @@ describe("sessionMiddleware secret rotation", () => {
 describe("sessionMiddleware reissue", () => {
   it("re-issues an unchanged session cookie when set", async () => {
     const storage = createCookieSessionStorage();
-    const seed = rotationApp([OLD_SECRET], storage);
+    const seed = rotationApp(OLD_RING, storage);
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([OLD_SECRET], createCookieSessionStorage(), { reissue: true });
+    const serve = rotationApp(OLD_RING, createCookieSessionStorage(), { reissue: true });
     const res = await serve.app.request("/quiet", { headers: { cookie: sent } });
     const cookies = res.headers.getSetCookie().filter((c) => c.startsWith("__session="));
     expect(cookies).toHaveLength(1);
   });
 
   it("emits nothing for a request carrying no session cookie", async () => {
-    const serve = rotationApp([OLD_SECRET], createCookieSessionStorage(), { reissue: true });
+    const serve = rotationApp(OLD_RING, createCookieSessionStorage(), { reissue: true });
     const res = await serve.app.request("/quiet");
     expect(res.headers.get("set-cookie")).toBeNull();
   });
 
   it("emits exactly one Set-Cookie when the session also changed", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([OLD_SECRET], createCookieSessionStorage(), { reissue: true });
+    const serve = rotationApp(OLD_RING, createCookieSessionStorage(), { reissue: true });
     const res = await serve.app.request("/set", { method: "POST", headers: { cookie: sent } });
     expect(res.headers.getSetCookie().filter((c) => c.startsWith("__session="))).toHaveLength(1);
   });
 
   it("re-arms Max-Age on an unchanged session", async () => {
-    const cookie = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET], maxAge: 600 });
+    const cookie = createSignedCookie("__session", { path: "/", ring: OLD_RING, maxAge: 600 });
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), cookie, { reissue: true }));
     mapHandler(app, "POST", "/set", (c) => {
@@ -576,7 +583,7 @@ describe("sessionMiddleware reissue", () => {
   });
 
   it("carries tightened attributes to a client holding a valid session", async () => {
-    const loose = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET], sameSite: "Lax" });
+    const loose = createSignedCookie("__session", { path: "/", ring: OLD_RING, sameSite: "Lax" });
     const seedApp = new Forge();
     seedApp.use("*", sessionMiddleware(createCookieSessionStorage(), loose));
     mapHandler(seedApp, "POST", "/set", (c) => {
@@ -585,7 +592,7 @@ describe("sessionMiddleware reissue", () => {
     });
     const sent = carry(await seedApp.request("/set", { method: "POST" }));
 
-    const tight = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET], sameSite: "Strict" });
+    const tight = createSignedCookie("__session", { path: "/", ring: OLD_RING, sameSite: "Strict" });
     const serveApp = new Forge();
     serveApp.use("*", sessionMiddleware(createCookieSessionStorage(), tight, { reissue: true }));
     mapHandler(serveApp, "GET", "/quiet", () => new Response("ok"));
@@ -599,10 +606,10 @@ describe("sessionMiddleware reissue", () => {
 describe("sessionMiddleware suppression edges", () => {
   it("emits nothing when a handler unsets an absent key", async () => {
     const storage = createCookieSessionStorage();
-    const seed = rotationApp([OLD_SECRET], storage);
+    const seed = rotationApp(OLD_RING, storage);
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const cookie = createSignedCookie("__session", { path: "/", secrets: [OLD_SECRET] });
+    const cookie = createSignedCookie("__session", { path: "/", ring: OLD_RING });
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), cookie));
     mapHandler(app, "GET", "/", (c) => {
@@ -616,17 +623,17 @@ describe("sessionMiddleware suppression edges", () => {
 
   it("emits nothing when the client sends an empty session cookie", async () => {
     for (const reissue of [false, true]) {
-      const serve = rotationApp([OLD_SECRET], createCookieSessionStorage(), { reissue });
+      const serve = rotationApp(OLD_RING, createCookieSessionStorage(), { reissue });
       const res = await serve.app.request("/quiet", { headers: { cookie: "__session=" } });
       expect(res.headers.get("set-cookie")).toBeNull();
     }
   });
 
   it("reads the first value on a duplicate cookie name", async () => {
-    const seed = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const seed = rotationApp(OLD_RING, createCookieSessionStorage());
     const sent = carry(await seed.app.request("/set", { method: "POST" }));
 
-    const serve = rotationApp([OLD_SECRET], createCookieSessionStorage());
+    const serve = rotationApp(OLD_RING, createCookieSessionStorage());
     const res = await serve.app.request("/read", { headers: { cookie: `${sent}; __session=junk` } });
     expect(await res.text()).toBe("admin");
     expect(res.headers.get("set-cookie")).toBeNull();

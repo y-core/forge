@@ -368,19 +368,9 @@ export function iccProfileStep(config: IccProfileCheckConfig, options: StepOptio
   return checkStep("validate-icc-profile", () => checkIccProfile(config), options, { watches: [config.profile, config.module] });
 }
 
-/** Rebuilds the committed oxlint-plugin bundle and fails on any drift from its TypeScript source. @public */
-export function lintPluginStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-lint-plugin", () => checkBundle(config), options, { requires: esbuildRequired() });
-}
-
-/** Rebuilds the committed chromium-resolution bundle and fails on any drift from its TypeScript source. @public */
-export function chromiumBundleStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-chromium-bundle", () => checkBundle(config), options, { requires: esbuildRequired() });
-}
-
-/** Rebuilds the committed TOTP test-helper bundle and fails on any drift from its TypeScript source. @public */
-export function totpBundleStep(config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-totp-bundle", () => checkBundle(config), options, { requires: esbuildRequired() });
+/** Rebuilds a committed bundle under `label` and fails on any drift from its TypeScript source. @public */
+export function bundleStep(label: string, config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep(label, () => checkBundle(config), options, { requires: esbuildRequired() });
 }
 
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */

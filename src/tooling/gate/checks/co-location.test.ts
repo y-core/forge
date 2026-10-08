@@ -35,6 +35,10 @@ describe("checkCoLocation()", () => {
     expect(messages(fixtureRoot("src/ui/core/mod.ts", "src/ui/core/button.test.tsx"))).toEqual([]);
   });
 
+  it("asks nothing of a fixture file without a sibling test", () => {
+    expect(messages(fixtureRoot("src/ui/client/dom.fixture.ts"))).toEqual([]);
+  });
+
   it("accepts an exemption that names a walked module", () => {
     expect(messages(fixtureRoot("src/ui/core/button.tsx"), reasoned("src/ui/core/button.tsx"))).toEqual([]);
   });

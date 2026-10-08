@@ -59,7 +59,7 @@ A production app has two layers, and they have different owners.
 import type { GenOptions } from "@y-core/forge/tooling/cf";
 export const options: Partial<GenOptions> = {
   optional: new Set(["RATE_LIMITER"]),
-  refinements: { SESSION_SECRET: { minLength: 32 } },
+  refinements: { SESSION_SECRET: { minLength: 64 } },
 };
 ```
 

@@ -1,11 +1,10 @@
-import { utf8Encode } from "../../crypto/mod";
-import { openAtRestUnder, sealAtRestUnder } from "../../keyring/seal";
-import type { AtRestBinding, AtRestRefusal } from "../../keyring/types";
+import { openAtRestUnder, sealAtRestUnder } from "../../crypto/keyring/seal";
+import type { AtRestBinding, AtRestRefusal, KeyRing } from "../../crypto/keyring/types";
+import { utf8Encode } from "../../crypto/primitives/mod";
 import { ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_KEY_DOMAIN } from "../keys/ring";
 import type { AuthTokenPurpose } from "../keys/types";
-import type { AuthKeyRing } from "../types";
 import type { TotpSecretOpened } from "./types";
 
 // Bound to the owner as associated data, so a sealed secret copied into another user's row will not
@@ -15,13 +14,13 @@ function sealBinding(userId: string): AtRestBinding {
 }
 
 /** Seals a TOTP secret at rest as `kid(6) ‖ nonce(12) ‖ ciphertext‖tag`, under the ring's active key. @internal */
-export function sealTotpSecret(ring: AuthKeyRing, userId: string, secret: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
+export function sealTotpSecret(ring: KeyRing, userId: string, secret: Uint8Array<ArrayBuffer>): Promise<Uint8Array<ArrayBuffer>> {
   return sealAtRestUnder(ring, AUTH_KEY_DOMAIN, sealBinding(userId), secret);
 }
 
 /** Opens a sealed TOTP secret, carrying through why the ring refused when it did. @internal */
 export async function openTotpSecret(
-  ring: AuthKeyRing,
+  ring: KeyRing,
   userId: string,
   frame: Uint8Array<ArrayBuffer>,
 ): Promise<Result<TotpSecretOpened, AtRestRefusal>> {

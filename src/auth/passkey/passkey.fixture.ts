@@ -1,4 +1,4 @@
-import { base64urlDecode, base64urlEncode, sha256, utf8Encode } from "../../crypto/mod";
+import { base64urlDecode, base64urlEncode, sha256, utf8Encode } from "../../crypto/primitives/mod";
 import type { AuthAlgorithm } from "../types";
 import type { PasskeyAssertionCredential } from "./types";
 import type { PasskeyRegistrationCredential } from "./types";

@@ -130,9 +130,6 @@ come from **one shared generator**, so an application mixing them still gets a s
 rowid, not the primary key, so a 36-character id costs two fixed copies per row regardless of how many indexes the table has. `WITHOUT ROWID` makes
 the id the table key, which appends it to _every_ secondary index entry — past one index it is a net loss.
 
-**It is implemented in the sealed-internal `crypto` module and surfaced here** — see [`NAMESPACES.md`][namespaces-3b] §3b for why, and for the
-manual barrel discipline that placement costs.
-
 ### 1f. Schema Health
 
 `checkSchemaHealth(db)` reads the `fingerprint` of the last `_forge_migrations` row, recomputes the fingerprint from `sqlite_master` under the same
@@ -308,10 +305,13 @@ What that settles:
 
 ### 3c. Signed URLs for Secure Object Access
 
-`createSignedObjectUrl(ring, baseUrl, objectKey, options?)` produces an HMAC-SHA-256-signed URL expiring after `expiresInSeconds` (default
-`3600`), appending `?key=`, `?exp=`, `?kid=` and `?sig=`. The ring comes from `importSignedUrlKeyRing(secrets)`, which takes hex secrets newest
-first: the first one signs, and every one verifies. **The ring is the `HmacKeyRing` CSRF uses** ([`INPUT_VALIDATION.md`][iv-3b] §3b), but signed
-URLs take a secret of their own.
+`createSignedObjectUrl(ring, baseUrl, objectKey, options?)` produces an HMAC-SHA-256-signed URL expiring after `expiresInSeconds` (default `3600`),
+appending `?key=`, `?exp=`, `?kid=` and `?sig=`. The ring is a `KeyRing` from `importKeyRing(secrets)` in `@y-core/forge/crypto/keyring`, which
+takes hex secrets newest first: the first one signs, and every one verifies, and `kid` is the signing key's id. **The ring is the kind CSRF uses**
+([`INPUT_VALIDATION.md`][iv-3b] §3b), but signed URLs take a secret of their own.
+
+**Every URL is signed under the ring's `signed-url` subkey, never a root secret,** so a CSRF signature made under the same ring does not verify as
+a signed URL. Both functions throw on the auth key ring, which `importKeyRing` did not build.
 
 **A lifetime is a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME`, seven days.** Signing throws on anything else — a fraction
 included, since it would mint an `exp` that verification refuses (`src/storage/r2/signing.ts`).
@@ -333,7 +333,7 @@ next.
 
 **A retired secret stays on the ring for `MAX_SIGNED_URL_LIFETIME` after the deploy that demoted it.** No link outlives that window, so removing
 the secret any earlier turns every unexpired link it signed into `"unknown-key"`. A leaked secret is the exception: remove it at once and accept
-that its links die. A URL signed before key rings existed carries no `kid` and answers `"invalid-format"`; it is not a supported path.
+that its links die.
 
 **Every secret must come from a secret binding, never from source code. Never serve an object from a signed-URL path without verifying the
 signature first.**
@@ -448,9 +448,8 @@ exist before the worker reaches a serving state.
 [dm-6c]: ./DATABASE_MANAGEMENT.md#6c-status---check-exit-conditions
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
-[iv-3b]: ./INPUT_VALIDATION.md#3b-importcsrfkey-and-importcsrfkeyring--secret-import
+[iv-3b]: ./INPUT_VALIDATION.md#3b-the-csrf-key-ring--import-and-rotation
 [lint-readme]: ../src/tooling/lint/README.md
-[namespaces-3b]: ./NAMESPACES.md#3b-internal-namespaces
 [sh-2f]: ./SECURITY_HARDENING.md#2f-createroutesecurityheaders-and-the-handler-set-csp
 [sh-4b]: ./SECURITY_HARDENING.md#4b-the-dev-allowance-for-a-missing-binding
 [sl]: ./STRUCTURED_LOGGING.md

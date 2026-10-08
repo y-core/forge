@@ -27,6 +27,8 @@ const DELETE_REASON = "This is the last admin who can still sign in — promote 
 
 const NOT_FOUND_REASON = "That account no longer exists, so nothing was changed.";
 
+const REFERENCED_REASON = "This account still owns records in this app — remove or transfer them before deleting it.";
+
 function user(overrides: Partial<AuthUser> = {}): AuthUser {
   return {
     id: "u1",
@@ -147,6 +149,7 @@ describe("AdminUserEditView after a write reported back", () => {
     ["last-admin-deactivate", DEACTIVATE_REASON],
     ["last-admin-delete", DELETE_REASON],
     ["not-found", NOT_FOUND_REASON],
+    ["referenced", REFERENCED_REASON],
   ];
 
   for (const [outcome, reason] of refusals) {
@@ -177,6 +180,10 @@ describe("AdminUserEditView after a write reported back", () => {
 
   it("leaves the controls live after a not-found refusal, which the last-admin guard did not cause", async () => {
     expect(attrsOf(await account({ outcome: "not-found" }), 'data-ref="admin-role-submit"')["disabled"]).toBe(undefined);
+  });
+
+  it("leaves the delete live after a referenced refusal, so a retry succeeds once the app's records are cleared", async () => {
+    expect(attrsOf(await account({ outcome: "referenced" }), 'data-ref="admin-delete-submit"')["disabled"]).toBe(undefined);
   });
 });
 

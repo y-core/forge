@@ -6,7 +6,8 @@ import { describe, expect, it } from "bun:test";
 import { RequestContext } from "@remix-run/fetch-router";
 import type { Session } from "@remix-run/session";
 
-import { importCsrfKey, verifyCsrfToken } from "../../form/csrf";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import { verifyCsrfToken } from "../../form/csrf";
 import { sessionCtx } from "../../session/session";
 import { render } from "../../testing/render";
 import { authCtx } from "./identity";
@@ -38,8 +39,8 @@ function navContext(seed: NavSeed = {}): AuthNavContext {
 
 /** `authNav` wired to a key that never changes, which is every deployment with one CSRF secret. */
 async function fixedKeyNav(options: Partial<Pick<AuthNavOptions, "slot" | "signout">> = {}) {
-  const key = await importCsrfKey(HEX_SECRET);
-  return authNav({ signoutPath: SIGNOUT_PATH, secret: () => key, ...options });
+  const ring = await importKeyRing([HEX_SECRET]);
+  return authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring, ...options });
 }
 
 describe("authNav filters", () => {
@@ -75,9 +76,9 @@ describe("authNav slots", () => {
     let mints = 0;
     const nav = authNav({
       signoutPath: SIGNOUT_PATH,
-      secret: async () => {
+      ring: async () => {
         mints += 1;
-        return importCsrfKey(HEX_SECRET);
+        return importKeyRing([HEX_SECRET]);
       },
     });
 
@@ -119,8 +120,8 @@ describe("authNav slots", () => {
   });
 
   it("takes the host's wording over its own default", async () => {
-    const key = await importCsrfKey(HEX_SECRET);
-    const nav = authNav({ signoutPath: SIGNOUT_PATH, secret: () => key, signout: { label: "Log out" } });
+    const ring = await importKeyRing([HEX_SECRET]);
+    const nav = authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring, signout: { label: "Log out" } });
     const html = await render((await nav(navContext({ identity: fakeIdentity() }))).slots[AUTH_NAV_SIGNOUT_SLOT]);
 
     expect(textOf(html, "button", 'type="submit"')).toBe("Log out");
@@ -129,22 +130,22 @@ describe("authNav slots", () => {
 
 describe("authNav token", () => {
   it("binds the token to this session, so another session's cannot end it", async () => {
-    const key = await importCsrfKey(HEX_SECRET);
-    const nav = authNav({ signoutPath: SIGNOUT_PATH, secret: () => key });
+    const ring = await importKeyRing([HEX_SECRET]);
+    const nav = authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring });
     const html = await render((await nav(navContext({ identity: fakeIdentity(), sessionId: "sess-1" }))).slots[AUTH_NAV_SIGNOUT_SLOT]);
     const token = attrOf(html, 'name="_csrf"', "value");
 
-    expect(await verifyCsrfToken(key, token, SIGNOUT_PATH, { subject: "sess-1" })).toEqual({ ok: true });
-    expect(await verifyCsrfToken(key, token, SIGNOUT_PATH, { subject: "sess-2" })).toEqual({ ok: false, error: "subject-mismatch" });
+    expect(await verifyCsrfToken(ring, token, SIGNOUT_PATH, { subject: "sess-1" })).toEqual({ ok: true });
+    expect(await verifyCsrfToken(ring, token, SIGNOUT_PATH, { subject: "sess-2" })).toEqual({ ok: false, error: "subject-mismatch" });
   });
 
   it("scopes the token to the sign-out path, so it authorises no other POST", async () => {
-    const key = await importCsrfKey(HEX_SECRET);
-    const nav = authNav({ signoutPath: SIGNOUT_PATH, secret: () => key });
+    const ring = await importKeyRing([HEX_SECRET]);
+    const nav = authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring });
     const html = await render((await nav(navContext({ identity: fakeIdentity() }))).slots[AUTH_NAV_SIGNOUT_SLOT]);
     const token = attrOf(html, 'name="_csrf"', "value");
 
-    expect(await verifyCsrfToken(key, token, "/account/email", { subject: "sess-1" })).toEqual({ ok: false, error: "path-mismatch" });
+    expect(await verifyCsrfToken(ring, token, "/account/email", { subject: "sess-1" })).toEqual({ ok: false, error: "path-mismatch" });
   });
 
   // A navbar renders on every page, so the key import is the one cost that must not scale with pages.
@@ -152,9 +153,9 @@ describe("authNav token", () => {
     let imports = 0;
     const nav = authNav({
       signoutPath: SIGNOUT_PATH,
-      secret: async () => {
+      ring: async () => {
         imports += 1;
-        return importCsrfKey(HEX_SECRET);
+        return importKeyRing([HEX_SECRET]);
       },
     });
 

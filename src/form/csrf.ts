@@ -1,20 +1,9 @@
 import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
-import {
-  base64urlDecode,
-  base64urlEncode,
-  bytesToHex,
-  hmacSign,
-  hmacVerify,
-  importHmacKeyFromHex,
-  importHmacKeyRing,
-  lookupHmacKey,
-  randomBytes,
-  utf8Decode,
-  utf8Encode,
-} from "../crypto/mod";
-import type { HmacKeyRing } from "../crypto/mod";
+import { signWithKeyRing, verifyWithKeyRing } from "../crypto/keyring/sign";
+import type { KeyRing } from "../crypto/keyring/types";
+import { base64urlDecode, base64urlEncode, bytesToHex, randomBytes, utf8Decode, utf8Encode } from "../crypto/primitives/mod";
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "./constants";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
@@ -23,14 +12,14 @@ import type {
   CsrfMinterOptions,
   CsrfProtectionOptions,
   CsrfResult,
-  CsrfSecretResolver,
+  CsrfRingResolver,
   CsrfTokenOptions,
   CsrfVerifyOptions,
   ParseFormDataOptions,
 } from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
-const DEFAULT_KEY_ID = "0";
+const CSRF_PURPOSE = "csrf";
 
 const CSRF_MINTER_KEY = "csrf";
 const CSRF_TOKEN_KEY = "csrfToken";
@@ -40,45 +29,23 @@ export const csrfMinterCtx = contextVar<(path: string) => Promise<string>>(CSRF_
 /** Typed accessor for the pre-minted CSRF token, bound to the current request's pathname, set by `csrfProtection` on GET/HEAD. @public */
 export const csrfTokenCtx = contextVar<string>(CSRF_TOKEN_KEY);
 
-function normalizeRing(keyOrRing: CryptoKey | HmacKeyRing): HmacKeyRing {
-  if ("activeKeyId" in keyOrRing) {
-    return keyOrRing;
-  }
-  return { activeKeyId: DEFAULT_KEY_ID, keys: { [DEFAULT_KEY_ID]: keyOrRing } };
-}
-
-/** Imports a hex-encoded secret as a Web Crypto HMAC-SHA256 key for CSRF operations. @public */
-export function importCsrfKey(hexSecret: string): Promise<CryptoKey> {
-  return importHmacKeyFromHex(hexSecret, "CSRF secret");
-}
-
-/** Imports hex-encoded secrets into a CSRF key ring, the first becoming the active signing key. @public */
-export function importCsrfKeyRing(secrets: [string, ...string[]]): Promise<HmacKeyRing> {
-  return importHmacKeyRing(secrets, "CSRF secret");
-}
-
-/** Creates a signed CSRF token embedding kid, path, optional subject, timestamp, and 16 random bytes. @public */
-export async function createCsrfToken(key: CryptoKey, path: string, options: CsrfTokenOptions = {}): Promise<string> {
-  const effectiveKid = options.kid ?? DEFAULT_KEY_ID;
-  if (effectiveKid.includes("|")) throw new Error("CSRF key id must not contain '|'");
+/** Creates a signed CSRF token embedding the ring's active kid, path, optional subject, timestamp, and 16 random bytes. @public */
+export async function createCsrfToken(ring: KeyRing, path: string, options: CsrfTokenOptions = {}): Promise<string> {
+  const kid = ring.activeKeyId;
   const subject = options.subject ?? "";
   if (subject.includes("|")) throw new Error("CSRF subject must not contain '|'");
   if (path.includes("|")) throw new Error("CSRF path must not contain '|'");
   const timestamp = Date.now().toString();
   const nonce = bytesToHex(randomBytes(16));
-  const payload = `${effectiveKid}|${path}|${subject}|${timestamp}|${nonce}`;
+  const payload = `${kid}|${path}|${subject}|${timestamp}|${nonce}`;
   const payloadEncoded = base64urlEncode(utf8Encode(payload));
-  const sigEncoded = base64urlEncode(await hmacSign(key, payload));
+  const { mac } = await signWithKeyRing("createCsrfToken", ring, CSRF_PURPOSE, payload);
+  const sigEncoded = base64urlEncode(mac);
   return `${payloadEncoded}.${sigEncoded}`;
 }
 
 /** Verifies a CSRF token. @public */
-export async function verifyCsrfToken(
-  keyOrRing: CryptoKey | HmacKeyRing,
-  token: string,
-  path: string,
-  options: CsrfVerifyOptions = {},
-): Promise<CsrfResult> {
+export async function verifyCsrfToken(ring: KeyRing, token: string, path: string, options: CsrfVerifyOptions = {}): Promise<CsrfResult> {
   const maxAgeMs = options.maxAgeMs ?? 3_600_000;
 
   if (!token) return err("missing-token");
@@ -106,7 +73,7 @@ export async function verifyCsrfToken(
   const parts = payloadStr.split("|");
   if (parts.length !== 5) return err("invalid-format");
 
-  const [_kid, tokenPath, tokenSubject, timestampStr] = parts as [string, string, string, string, string];
+  const [kid, tokenPath, tokenSubject, timestampStr] = parts as [string, string, string, string, string];
   const timestamp = Number(timestampStr);
   if (!Number.isInteger(timestamp)) return err("expired");
   if (timestamp > Date.now() + CLOCK_SKEW_MS) return err("future-timestamp");
@@ -118,12 +85,9 @@ export async function verifyCsrfToken(
     return err("subject-mismatch");
   }
 
-  const ring = normalizeRing(keyOrRing);
-  const key = lookupHmacKey(ring, _kid);
-  if (!key) return err("unknown-key");
-
-  const valid = await hmacVerify(key, payloadStr, sigBytes);
-  if (!valid) return err("invalid-signature");
+  const verdict = await verifyWithKeyRing("verifyCsrfToken", ring, CSRF_PURPOSE, kid, payloadStr, sigBytes);
+  if (verdict === "no-key") return err("unknown-key");
+  if (verdict === "forged") return err("invalid-signature");
 
   return ok();
 }
@@ -138,15 +102,15 @@ export async function mintCsrf(context: RequestContext<any, any>, path?: string)
   return mint(path);
 }
 
-/** CSRF secret resolver type. @public */
-export type { CsrfSecretResolver };
+/** CSRF key-ring resolver type. @public */
+export type { CsrfRingResolver };
 
-/** Resolves the ring `secret` names, cached per `env` — a key import on every request is pure waste. */
+/** Resolves the ring `resolve` names, cached per `env` — a key import on every request is pure waste. */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-function ringResolver(secret: CsrfSecretResolver): (context: RequestContext<any, any>) => Promise<HmacKeyRing> {
-  const ringCache = new WeakMap<object, HmacKeyRing>();
+function ringResolver(resolve: CsrfRingResolver): (context: RequestContext<any, any>) => Promise<KeyRing> {
+  const ringCache = new WeakMap<object, KeyRing>();
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  return async (context: RequestContext<any, any>): Promise<HmacKeyRing> => {
+  return async (context: RequestContext<any, any>): Promise<KeyRing> => {
     // oxlint-disable-next-line typescript/no-explicit-any -- env shape varies across apps and tests
     const envObj = (context as any).env;
     const cacheKey = envObj && typeof envObj === "object" ? (envObj as object) : null;
@@ -154,23 +118,16 @@ function ringResolver(secret: CsrfSecretResolver): (context: RequestContext<any,
       const hit = ringCache.get(cacheKey);
       if (hit) return hit;
     }
-    const ring = normalizeRing(await Promise.resolve(secret(context)));
+    const ring = await resolve(context);
     if (cacheKey) ringCache.set(cacheKey, ring);
     return ring;
   };
 }
 
-/** The ring's active key, or a throw naming the key id nothing in it answers to. */
-function activeCsrfKey(ring: HmacKeyRing): CryptoKey {
-  const key = lookupHmacKey(ring, ring.activeKeyId);
-  if (!key) throw new Error(`CSRF key ring has no key for active key id "${ring.activeKeyId}"`);
-  return key;
-}
-
 /** Mints a token for a path this request is not on, under the subject policy that path's guard verifies with. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
 export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext<any, any>, path: string) => Promise<string> {
-  const resolveRing = ringResolver(options.secret);
+  const resolveRing = ringResolver(options.ring);
   const resolveSubject = options.subject === false ? null : options.subject;
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   return async (context: RequestContext<any, any>, path: string): Promise<string> => {
@@ -184,16 +141,16 @@ export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext
         "csrfMinter: the `subject` resolver returned undefined, so no token can be bound to a session. Register the session middleware, and register it BEFORE the mint — a resolver reading the session sees nothing when it runs first. Pass `subject: false` to opt out deliberately.",
       );
     }
-    return createCsrfToken(activeCsrfKey(ring), path, { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) });
+    return createCsrfToken(ring, path, subject !== undefined ? { subject } : {});
   };
 }
 
 /** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
 export function csrfProtection(options: CsrfProtectionOptions): Middleware {
-  const { secret, tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
+  const { tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
 
-  const resolveRing = ringResolver(secret);
+  const resolveRing = ringResolver(options.ring);
 
   // `null` where `subject: false` opted out, so "no resolver" and "the resolver returned nothing" stay distinguishable.
   const resolveSubject = options.subject === false ? null : options.subject;
@@ -211,18 +168,17 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   return async (context, next) => {
     const method = context.method.toUpperCase();
     const ring = await resolveRing(context);
-    const activeKey = activeCsrfKey(ring);
     const subject = resolveSubject ? resolveSubject(context) : undefined;
     if (resolveSubject && subject === undefined) warnUnbound();
-    const tokenOptions: CsrfTokenOptions = { kid: ring.activeKeyId, ...(subject !== undefined ? { subject } : {}) };
+    const tokenOptions: CsrfTokenOptions = subject !== undefined ? { subject } : {};
 
-    csrfMinterCtx.set(context, (path: string) => createCsrfToken(activeKey, path, tokenOptions));
+    csrfMinterCtx.set(context, (path: string) => createCsrfToken(ring, path, tokenOptions));
     // Published above every early return: a mutation must know which field was consumed, and a page render must know which header to send the token on.
     csrfFieldCtx.set(context, tokenField);
     csrfHeaderCtx.set(context, headerName);
 
     if (method === "GET" || method === "HEAD") {
-      csrfTokenCtx.set(context, await createCsrfToken(activeKey, context.url.pathname, tokenOptions));
+      csrfTokenCtx.set(context, await createCsrfToken(ring, context.url.pathname, tokenOptions));
       return next();
     }
 

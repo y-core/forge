@@ -488,6 +488,37 @@ Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildServiceW
 For a watch loop, `hashFile` plus `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes against a state file **you** name. Nothing
 in the pipeline calls them and forge writes no build state of its own ([`ASSET_PIPELINE.md`][ap-2b] §2b).
 
+## Serving assets without the Worker
+
+Every rule `_headers` holds also carries the request-independent security headers, so a file can skip the Worker without losing them. Pass the
+options your app gives `createSecurityHeaders`, so both read from one value:
+
+```ts
+import { securityHeaders } from "../src/security-headers";
+
+export default defineAssetsConfig({ securityHeaders /* , paths, css, js … */ });
+```
+
+```text
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+  strict-transport-security: max-age=63072000; includeSubDomains; preload
+  x-content-type-options: nosniff
+  cross-origin-resource-policy: same-origin
+  content-security-policy: default-src 'none'; frame-ancestors 'none'; sandbox
+```
+
+Then exclude the prefix from the Worker:
+
+```jsonc
+"run_worker_first": ["/*", "!/assets/*", "!/static/*", "!/favicon.ico"]
+```
+
+Left out, `securityHeaders` is forge's defaults, so `hsts` and `crossOriginResourcePolicy` are the options that change these lines. The page's CSP
+never reaches a file: a script or stylesheet takes its policy from the document that loads it. The fixed policy above stops one thing — an SVG
+opened as a page running script. **It also applies to a dedicated worker loaded from the prefix**, whose script takes its CSP from its own
+response, so such a worker can fetch nothing; serve it from outside the prefix, as `/sw.js` is.
+
 ---
 
 ## Gotchas
@@ -496,10 +527,10 @@ in the pipeline calls them and forge writes no build state of its own ([`ASSET_P
 `buildSprites` remove the non-hidden files matching their own output stem. Never keep a hand-authored file alongside generated output — it will be
 deleted.
 
-**`_headers` is written wholesale.** It is emitted as a sibling of `publicDir` with one rule for `paths.publicPrefix` and one per icon output, and
-the file is truncated on every build. A second writer cannot add a rule to it, including for the generated `robots.txt` and `sitemap.xml`. Icons are
-revalidated rather than pinned, because their filenames are not content-hashed; the web-app manifest is `must-revalidate`, because it is how an
-installed app learns its name, colours or icon set changed.
+**`_headers` is written wholesale.** It is emitted as a sibling of `publicDir` with one rule for `paths.publicPrefix` and one per icon output, each
+carrying the security headers above, and the file is truncated on every build. A second writer cannot add a rule to it, including for the generated
+`robots.txt` and `sitemap.xml`. Icons are revalidated rather than pinned, because their filenames are not content-hashed; the web-app manifest is
+`must-revalidate`, because it is how an installed app learns its name, colours or icon set changed.
 
 **A missing optional peer fails with a sentence, not a resolution stack trace.** `sharp` and `esbuild` are imported only when the config asks for
 what they do, and the error names the config key that demanded the package, the package, and the command that installs it:

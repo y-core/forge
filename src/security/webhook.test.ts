@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 
-import { base64DecodeOrNull, base64Encode } from "../crypto/base64";
-import { randomBytes, utf8Encode } from "../crypto/bytes";
-import { importHmacKey } from "../crypto/hmac";
-import * as timing from "../crypto/timing";
+import { base64DecodeOrNull, base64Encode } from "../crypto/primitives/base64";
+import { randomBytes, utf8Encode } from "../crypto/primitives/bytes";
+import { importHmacKey } from "../crypto/primitives/hmac";
+import * as timing from "../crypto/primitives/timing";
 import type { WebhookSigningOptions } from "./types";
 import { computeWebhookSignature, createWebhookSigning } from "./webhook";
 
 const realTimingSafeEqualBytes = timing.timingSafeEqualBytes;
 const timingSafeEqualSpy = mock((a: Uint8Array, b: Uint8Array) => realTimingSafeEqualBytes(a, b));
-await mock.module("../crypto/timing", () => ({ ...timing, timingSafeEqualBytes: timingSafeEqualSpy }));
+await mock.module("../crypto/primitives/timing", () => ({ ...timing, timingSafeEqualBytes: timingSafeEqualSpy }));
 
 const NOW = 1_700_000_000_000;
 const now = () => NOW;

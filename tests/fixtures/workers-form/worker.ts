@@ -5,7 +5,8 @@ import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { defineAction } from "../../../src/app/action";
 import { Forge } from "../../../src/app/forge-app";
-import { csrfProtection, importCsrfKey, mintCsrf } from "../../../src/form/csrf";
+import { importKeyRing } from "../../../src/crypto/keyring/ring";
+import { csrfProtection, mintCsrf } from "../../../src/form/csrf";
 import { v } from "../../../src/validation/validation";
 
 interface Env {
@@ -29,7 +30,7 @@ const routes = createRoutes({
 
 const app = new Forge<Env>();
 
-app.use("/api/*", csrfProtection({ secret: (context) => importCsrfKey((context.env as Env).CSRF_SECRET), subject: false, maxBytes: MAX_BYTES }));
+app.use("/api/*", csrfProtection({ ring: (context) => importKeyRing([(context.env as Env).CSRF_SECRET]), subject: false, maxBytes: MAX_BYTES }));
 
 app.map(
   routes,

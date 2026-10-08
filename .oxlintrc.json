@@ -6,7 +6,7 @@
   "jsPlugins": ["./src/tooling/lint/mod.ts"],
   // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
   // holds it against the source; linting or formatting it would be judging esbuild's output.
-  "ignorePatterns": ["src/tooling/gate/chromium.mjs", "src/tooling/lint/plugin.mjs", "src/testing/totp.mjs"],
+  "ignorePatterns": ["src/tooling/gate/chromium.mjs", "src/tooling/lint/plugin.mjs", "src/testing/totp.mjs", "src/tooling/cf/wrangler.mjs"],
   // `suspicious` stays off — see docs/FORGE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {
@@ -67,8 +67,8 @@
       {
         "patterns": [
           {
-            "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
-            "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+            "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+            "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
           },
           {
             "group": ["valibot"],
@@ -200,8 +200,8 @@
           {
             "patterns": [
               {
-                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
-                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
               },
               {
                 "group": ["valibot"],
@@ -226,8 +226,8 @@
           {
             "patterns": [
               {
-                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
-                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
               },
               {
                 "group": ["valibot"],
@@ -287,8 +287,8 @@
           {
             "patterns": [
               {
-                "group": ["../**/mod", "!../**/validation/mod", "!../**/crypto/mod"],
-                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. validation/crypto facades are exempt."
+                "group": ["../**/mod", "!../**/validation/mod", "!../**/primitives/mod"],
+                "message": "Import the concrete source file, not a sibling module's mod.ts barrel — barrel imports risk circular dependencies. the validation and crypto/primitives facades are exempt."
               }
             ]
           }

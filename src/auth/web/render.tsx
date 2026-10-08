@@ -22,6 +22,7 @@ import { PasskeyListView } from "./views/passkey-list";
 import { RecoveryCodesView } from "./views/recovery-codes";
 import { SigninView } from "./views/signin";
 import { SignupView } from "./views/signup";
+import { AuthSiteData } from "./views/site-data";
 import { TotpEnrolView } from "./views/totp-enrol";
 import { VerifyView } from "./views/verify";
 
@@ -87,7 +88,17 @@ export async function renderAuthPage<Name extends AuthViewName>(
   options: AuthPageOptions<Name>,
 ): Promise<Response> {
   const View = options.views?.[options.name] ?? options.view ?? AUTH_VIEWS[options.name];
-  const content = <View {...options.props} />;
+  const view = <View {...options.props} />;
+  const { siteData } = options;
+  const content =
+    siteData === undefined ? (
+      view
+    ) : (
+      <>
+        {view}
+        <AuthSiteData {...siteData} />
+      </>
+    );
   const status = options.status ?? 200;
   const headers = withNoStore(options.headers);
 

@@ -2,7 +2,7 @@ import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
 import { setPendingHeader } from "../context/pending-headers";
-import { base64urlEncode, randomBytes } from "../crypto/mod";
+import { base64urlEncode, randomBytes } from "../crypto/primitives/mod";
 import { rebuildResponse } from "../http/rebuild";
 import { NONCE } from "./nonce";
 import type {
@@ -166,11 +166,21 @@ function assertValidHstsOptions(hsts?: false | HstsOptions): void {
   }
 }
 
+const CORP_VALUES: readonly string[] = ["same-origin", "same-site", "cross-origin"] satisfies NonNullable<
+  SecurityHeadersOptions["crossOriginResourcePolicy"]
+>[];
+
+function assertValidCorp(value: unknown): void {
+  if (value === undefined || (typeof value === "string" && CORP_VALUES.includes(value))) return;
+  throw new Error(`Invalid crossOriginResourcePolicy ${JSON.stringify(value)}: must be one of ${CORP_VALUES.join(", ")}`);
+}
+
 function assertValidSecurityHeadersOptions(options: SecurityHeadersOptions = {}): void {
   assertValidCspDirectives("", options);
   if (options.reportOnly) assertValidCspDirectives("reportOnly.", resolveReportOnly(options, options.reportOnly));
   assertValidCspReporting(options.reporting);
   assertValidHstsOptions(options.hsts);
+  assertValidCorp(options.crossOriginResourcePolicy);
 }
 
 function mergeHstsOptions(base: false | HstsOptions | undefined, extra: false | HstsOptions): false | HstsOptions {
@@ -297,22 +307,43 @@ function precomputeCspHeaders(options: CspOptions): readonly HeaderEntry[] {
   return Object.freeze(entries);
 }
 
-function precomputeSecurityHeaders(options: SecurityHeadersOptions = {}): PrecomputedSecurityHeaders {
+const NOSNIFF: HeaderEntry = ["x-content-type-options", "nosniff"];
+
+// Inert on a subresource, which takes its policy from the document; `sandbox` is what stops an SVG
+// opened as a page from running script.
+const ASSET_CSP: HeaderEntry = ["content-security-policy", "default-src 'none'; frame-ancestors 'none'; sandbox"];
+
+function hstsEntries(options: SecurityHeadersOptions): HeaderEntry[] {
   const hsts = options.hsts ?? {};
-  const entries: [string, string][] = [
-    ...(hsts === false ? [] : [["strict-transport-security", buildHsts(hsts)] as [string, string]]),
+  return hsts === false ? [] : [["strict-transport-security", buildHsts(hsts)]];
+}
+
+function corpEntry(options: SecurityHeadersOptions): HeaderEntry {
+  return ["cross-origin-resource-policy", options.crossOriginResourcePolicy ?? "same-origin"];
+}
+
+function precomputeSecurityHeaders(options: SecurityHeadersOptions = {}): PrecomputedSecurityHeaders {
+  const entries: HeaderEntry[] = [
+    ...hstsEntries(options),
     ["referrer-policy", options.referrerPolicy ?? "strict-origin-when-cross-origin"],
-    ["x-content-type-options", "nosniff"],
+    NOSNIFF,
     ["permissions-policy", buildPermissionsPolicy(options.permissionsPolicy)],
     ["x-frame-options", "DENY"],
     ["cross-origin-opener-policy", options.crossOriginOpenerPolicy ?? "same-origin"],
-    ["cross-origin-resource-policy", options.crossOriginResourcePolicy ?? "same-origin"],
+    corpEntry(options),
   ];
   // COEP is opt-in: `require-corp` breaks every subresource lacking CORP/CORS opt-in.
   if (options.crossOriginEmbedderPolicy) {
     entries.push(["cross-origin-embedder-policy", options.crossOriginEmbedderPolicy]);
   }
   return { cspEntries: precomputeCspHeaders(options), staticEntries: Object.freeze(entries) };
+}
+
+/** The request-independent headers a static file served without the Worker carries, under the same options the middleware takes. @public */
+export function assetSecurityHeaders(options: SecurityHeadersOptions = {}): readonly (readonly [name: string, value: string])[] {
+  assertValidHstsOptions(options.hsts);
+  assertValidCorp(options.crossOriginResourcePolicy);
+  return [...hstsEntries(options), NOSNIFF, corpEntry(options), ASSET_CSP];
 }
 
 function renderCspHeaders(entries: readonly HeaderEntry[], nonce: string): HeaderEntry[] {

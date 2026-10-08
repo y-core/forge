@@ -1,4 +1,4 @@
-import { randomBytes, timingSafeEqual } from "../../crypto/mod";
+import { randomBytes, timingSafeEqual } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_MAX_ATTEMPTS, AUTH_OTP_TTL_MS } from "../config";

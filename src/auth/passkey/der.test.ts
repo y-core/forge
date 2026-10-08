@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { bytesToHex, hexToBytes } from "../../crypto/primitives/mod";
 import { unwrapEcdsaSignature } from "./der";
-import { bytesToHex, hexToBytes } from "./mod";
 
 // Built byte by byte from known r and s rather than captured from a signer: WebCrypto's ECDSA
 // emits raw `r‖s` and never DER, so there is no output to capture.

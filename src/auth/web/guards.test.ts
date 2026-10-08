@@ -6,7 +6,7 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
-import { bytesToHex } from "../../crypto/mod";
+import { bytesToHex } from "../../crypto/primitives/mod";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
 import { sessionCtx, sessionMiddleware } from "../../session/session";

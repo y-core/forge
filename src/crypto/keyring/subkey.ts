@@ -1,4 +1,4 @@
-import { hkdfExpand, hkdfExtract, importAeadKey, importHmacKey, utf8Encode } from "../crypto/mod";
+import { hkdfExpand, hkdfExtract, importAeadKey, importHmacKey, utf8Encode } from "../primitives/mod";
 import { lookupKeyRingKey } from "./ring";
 import type { KeyRing, KeyRingKeyUse, KeyRingSubkeyRequest } from "./types";
 
@@ -24,6 +24,14 @@ function cacheFor<T>(cache: WeakMap<KeyRing, Map<string, T>>, ring: KeyRing): Ma
   return fresh;
 }
 
+function cachePendingUntilRejected<T>(perRing: Map<string, Promise<T>>, cacheKey: string, pending: Promise<T>): Promise<T> {
+  perRing.set(cacheKey, pending);
+  pending.catch(() => {
+    if (perRing.get(cacheKey) === pending) perRing.delete(cacheKey);
+  });
+  return pending;
+}
+
 /** Resolves one purpose's HKDF subkey under one key id and domain, or `undefined` where the ring holds no such key. @internal */
 export function resolveKeyRingSubkey(ring: KeyRing, request: KeyRingSubkeyRequest): Promise<Uint8Array<ArrayBuffer>> | undefined {
   const root = lookupKeyRingKey(ring, request.kid);
@@ -32,9 +40,7 @@ export function resolveKeyRingSubkey(ring: KeyRing, request: KeyRingSubkeyReques
   const cacheKey = `${request.domain.subkeyLabel}\0${request.kid}\0${request.purpose}`;
   const hit = perRing.get(cacheKey);
   if (hit) return hit;
-  const derived = deriveSubkey(root, request.domain.subkeyLabel, request.purpose);
-  perRing.set(cacheKey, derived);
-  return derived;
+  return cachePendingUntilRejected(perRing, cacheKey, deriveSubkey(root, request.domain.subkeyLabel, request.purpose));
 }
 
 /** Resolves one purpose's subkey imported for `use`, caching the import as well as the derivation. @internal */
@@ -47,7 +53,5 @@ export function resolveKeyRingKey(ring: KeyRing, request: KeyRingSubkeyRequest, 
   const cacheKey = `${use}\0${request.domain.subkeyLabel}\0${request.kid}\0${request.purpose}`;
   const hit = perRing.get(cacheKey);
   if (hit) return hit;
-  const imported = subkey.then(IMPORTERS[use]);
-  perRing.set(cacheKey, imported);
-  return imported;
+  return cachePendingUntilRejected(perRing, cacheKey, subkey.then(IMPORTERS[use]));
 }

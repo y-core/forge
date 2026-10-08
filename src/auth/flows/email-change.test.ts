@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { uuidv7 } from "../../crypto/mod";
+import type { KeyRing } from "../../crypto/keyring/types";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import { encodeAuthToken } from "../keys/token";
-import type { AuthKeyRing, AuthMessage, AuthUser, NonceStore, UserStore } from "../types";
+import type { AuthMessage, AuthUser, NonceStore, UserStore } from "../types";
 import { createEmailChangeFlow } from "./email-change";
 import type { AuthIssueOutcome } from "./types";
 import type { AuthEmailChangeOptions } from "./types";
@@ -15,8 +16,8 @@ const OTHER_ID = uuidv7();
 const AT = 1_700_000_000_000;
 const TTL_MS = 3_600_000;
 
-let ring: AuthKeyRing;
-let otherRing: AuthKeyRing;
+let ring: KeyRing;
+let otherRing: KeyRing;
 
 beforeAll(async () => {
   ring = await importAuthKeyRing(["0ebb4b947b8932ef8a3c1f23c024a2cdf4abcd964cc1d3d064e2c068e432f1cf"]);

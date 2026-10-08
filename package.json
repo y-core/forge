@@ -33,7 +33,7 @@
   },
   "scripts": {
     "fix": "bun run src/tooling/root/bin.ts verify --fix",
-    "gen:bundles": "bun run src/tooling/gate/checks/bundle.ts",
+    "gen:bundles": "bun run config/bundles.ts",
     "gen:icc": "bun run src/tooling/gate/checks/icc-profile.ts && oxfmt src/render/pdf/icc.ts",
     "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && oxfmt src/ui/core/utils/class-groups.ts",
     "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && oxfmt src/tooling/lint/data/design-scale.ts",
@@ -159,6 +159,10 @@
       "types": "./src/context/mod.ts",
       "import": "./src/context/mod.ts"
     },
+    "./crypto/keyring": {
+      "types": "./src/crypto/keyring/mod.ts",
+      "import": "./src/crypto/keyring/mod.ts"
+    },
     "./dev": {
       "types": "./src/dev/mod.ts",
       "import": "./src/dev/mod.ts"
@@ -174,10 +178,6 @@
     "./http": {
       "types": "./src/http/mod.ts",
       "import": "./src/http/mod.ts"
-    },
-    "./keyring": {
-      "types": "./src/keyring/mod.ts",
-      "import": "./src/keyring/mod.ts"
     },
     "./logging": {
       "types": "./src/logging/mod.ts",
@@ -289,6 +289,10 @@
     "./tooling/assets": {
       "types": "./src/tooling/assets/mod.ts",
       "import": "./src/tooling/assets/mod.ts"
+    },
+    "./tooling/cf/wrangler": {
+      "types": "./src/tooling/cf/wrangler.ts",
+      "import": "./src/tooling/cf/wrangler.mjs"
     },
     "./tooling/cf": {
       "types": "./src/tooling/cf/mod.ts",
@@ -422,7 +426,6 @@
     "src/form/",
     "src/html/",
     "src/http/",
-    "src/keyring/",
     "src/logging/",
     "src/render/",
     "src/result/",

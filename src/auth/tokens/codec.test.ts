@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { base32Encode, crc32, randomBytes, utf8Encode } from "../../crypto/mod";
+import { base32Encode, crc32, randomBytes, utf8Encode } from "../../crypto/primitives/mod";
 import { assertAccessTokenPrefix, checkAccessToken, formatAccessToken } from "./codec";
 
 const PREFIX = "nt_";

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
+import { importKeyRing } from "../crypto/keyring/ring";
 import { CSRF_FIELD_DEFAULT } from "../form/constants";
-import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
+import { createCsrfToken, csrfProtection } from "../form/csrf";
 import { escapeHtml } from "../html/escape";
 import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
@@ -682,10 +683,10 @@ describe("definePage — the CSRF field the guard consumed", () => {
   }
 
   it("drops the token field on the page path, so a v.strictObject that never declares it passes", async () => {
-    const key = await importCsrfKey(SECRET);
+    const ring = await importKeyRing([SECRET]);
     const app = new Forge();
-    mapHandler(app, "POST", "/guarded", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: keysPage() });
-    const token = await createCsrfToken(key, "/guarded");
+    mapHandler(app, "POST", "/guarded", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: keysPage() });
+    const token = await createCsrfToken(ring, "/guarded");
 
     const res = await post(app, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded");
     expect(res.status).toBe(200);

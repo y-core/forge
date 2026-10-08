@@ -1,8 +1,8 @@
-import { base64DecodeOrNull, base64Encode } from "../crypto/base64";
-import { concatBytes, utf8Encode } from "../crypto/bytes";
-import { hmacSign, importHmacKey } from "../crypto/hmac";
-import { assertSecretStrength } from "../crypto/strength";
-import { timingSafeEqualBytes } from "../crypto/timing";
+import { base64DecodeOrNull, base64Encode } from "../crypto/primitives/base64";
+import { concatBytes, utf8Encode } from "../crypto/primitives/bytes";
+import { hmacSign, importHmacKey } from "../crypto/primitives/hmac";
+import { assertSecretStrength } from "../crypto/primitives/strength";
+import { timingSafeEqualBytes } from "../crypto/primitives/timing";
 import { err, ok } from "../result/result";
 import type { Result } from "../result/types";
 import type { VerifiedWebhook, WebhookRefusal, WebhookSignatureHeaders, WebhookSigning, WebhookSigningOptions, WebhookSignOptions } from "./types";

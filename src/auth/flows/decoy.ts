@@ -1,4 +1,4 @@
-import { base64urlEncode, randomBytes } from "../../crypto/mod";
+import { base64urlEncode, randomBytes } from "../../crypto/primitives/mod";
 import { authStandInToken, decodeAuthToken, encodeAuthToken } from "../keys/token";
 import type { AuthDecoyStores } from "./types";
 import type { AuthIssueOutcome } from "./types";

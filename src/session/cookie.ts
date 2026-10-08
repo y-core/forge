@@ -2,7 +2,8 @@ import { Cookie as CookieHeader } from "@remix-run/headers/cookie";
 import { SetCookie } from "@remix-run/headers/set-cookie";
 import type { SetCookieInit } from "@remix-run/headers/set-cookie";
 
-import { assertSecretStrength, base64DecodeOrNull, base64Encode, hmacSign, hmacVerify, importHmacKey, utf8Encode } from "../crypto/mod";
+import { signWithKeyRing, verifyWithKeyRing } from "../crypto/keyring/sign";
+import { base64DecodeOrNull, base64Encode, utf8Encode } from "../crypto/primitives/mod";
 import type {
   CookieAttributes,
   SignedCookie,
@@ -13,7 +14,7 @@ import type {
   UnsignedCookieOptions,
 } from "./types";
 
-// Not `crypto/mod`'s shared TEXT_DECODER: that one is lenient, so malformed bytes would decode to
+// Not `crypto/primitives`' shared TEXT_DECODER: that one is lenient, so malformed bytes would decode to
 // U+FFFD mojibake and flow into JSON.parse or the session store instead of answering `null`.
 const STRICT_DECODER = new TextDecoder("utf-8", { fatal: true });
 
@@ -27,6 +28,8 @@ const EXPIRY_LIMIT = 9_999_999_999;
 const COOKIE_MAX_BYTES = 4096;
 
 const HOST_PREFIX = /^__host-/i;
+
+const SIGNED_COOKIE_PURPOSE = "signed-cookie";
 
 /** Encodes a value to its wire payload: `base64(utf8(value))`, standard alphabet, padding retained. */
 function encodePayload(value: string): string {
@@ -148,11 +151,10 @@ export function createUnsignedCookie(name: string, options?: UnsignedCookieOptio
   };
 }
 
-/** Creates a cookie that is always httpOnly and HMAC-signed, verified against every secret so a rotation keeps existing cookies valid. @public */
+/** Creates a cookie that is always httpOnly and HMAC-signed under a key ring, naming the signing key id on the wire. @public */
 export function createSignedCookie(name: string, options: SignedCookieOptions): SignedCookie {
   if (name === "") throw new Error("createSignedCookie: name must not be empty");
-  for (const secret of options.secrets) assertSecretStrength("createSignedCookie", utf8Encode(secret));
-  const { secrets, sameSite, ...rest } = options;
+  const { ring, sameSite, ...rest } = options;
   // `secure` is hardcoded, not an option: development is https at every hop, so it is correct there
   // by construction (`WORKERS_PLATFORM.md` §4e), and relaxing it ships a cookie readable in transit.
   const defaults: CookieAttributes = { path: "/", ...rest, sameSite: sameSite ?? "Lax", httpOnly: true, secure: true };
@@ -160,49 +162,31 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
   // Fixed at construction because `parse` has no per-call attributes to consult: a value omitting an
   // expiry where a lifetime is configured is not a value of this cookie, and answers `null`.
   const bounded = expiryOf(mergeAttributes(defaults, undefined)) !== null;
+  const purpose = `${SIGNED_COOKIE_PURPOSE}/${name}`;
 
-  // The secrets are fixed at construction, so the imported keys are too — upstream re-imported one
-  // inside every sign and every unsign. Keyed by index, never by secret material.
-  const keys: (Promise<CryptoKey> | undefined)[] = secrets.map(() => undefined);
-  function keyFor(index: number, secret: string): Promise<CryptoKey> {
-    const cached = keys[index];
-    if (cached) return cached;
-    // The promise, not the key: concurrent first use imports once. The `catch` clears the slot so a
-    // transient failure cannot poison it for the isolate's life, and leaves no unhandled rejection.
-    const pending = importHmacKey(utf8Encode(secret));
-    keys[index] = pending;
-    pending.catch(() => {
-      if (keys[index] === pending) keys[index] = undefined;
-    });
-    return pending;
+  async function sign(operation: string, payload: string, expiry: number | null): Promise<string> {
+    const kid = ring.activeKeyId;
+    // The HMAC covers the expiry, so `Max-Age` stops being client-advisory. Neither standard base64
+    // nor a base64url kid holds a `.`, so the segments split apart.
+    const signed = `${expiry === null ? payload : `${expiry}.${payload}`}.${kid}`;
+    const { mac } = await signWithKeyRing(operation, ring, purpose, signed);
+    return `${signed}.${base64Encode(mac).replace(/=+$/, "")}`;
   }
 
-  async function sign(payload: string, expiry: number | null): Promise<string> {
-    // The HMAC covers the base64 payload and, where a lifetime is configured, the expiry ahead of it,
-    // so `Max-Age` stops being client-advisory. Standard base64 holds no `.`, so the segments split apart.
-    const covered = expiry === null ? payload : `${expiry}.${payload}`;
-    const signature = await hmacSign(await keyFor(0, secrets[0]), covered);
-    return `${covered}.${base64Encode(signature).replace(/=+$/, "")}`;
-  }
-
-  async function unsign(wire: string): Promise<SignedCookieReading | null> {
-    // `lastIndexOf`, not `indexOf`: the signature is the final segment, whatever precedes it.
+  async function unsign(operation: string, wire: string): Promise<SignedCookieReading | null> {
     const dot = wire.lastIndexOf(".");
     if (dot === -1) return null;
-    const covered = wire.slice(0, dot);
+    const signed = wire.slice(0, dot);
     const signature = base64DecodeOrNull(wire.slice(dot + 1));
     if (signature === null) return null;
-    let signedBy = -1;
-    for (const [index, secret] of secrets.entries()) {
-      if (await hmacVerify(await keyFor(index, secret), covered, signature)) {
-        signedBy = index;
-        break;
-      }
-    }
+    const kidDot = signed.lastIndexOf(".");
+    if (kidDot === -1) return null;
+    const covered = signed.slice(0, kidDot);
+    const kid = signed.slice(kidDot + 1);
     // The signature before the expiry, always: reading the expiry off an unverified value acts on an
     // attacker's number, and answering "expired" ahead of "forged" draws a distinction no caller wants.
-    if (signedBy === -1) return null;
-    const current = signedBy === 0;
+    if ((await verifyWithKeyRing(operation, ring, purpose, kid, signed, signature)) !== "verified") return null;
+    const current = kid === ring.activeKeyId;
     if (!bounded) return { value: decodePayload(covered), current };
     const split = covered.indexOf(".");
     if (split === -1) return { value: null, current };
@@ -211,22 +195,24 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
     return { value: decodePayload(covered.slice(split + 1)), current };
   }
 
-  async function read(header: string | null): Promise<SignedCookieReading | null> {
+  async function readAs(operation: string, header: string | null): Promise<SignedCookieReading | null> {
     const wire = readWire(header, name);
     if (wire === null) return null;
     // `""` short-circuits both directions, so the destroy sentinel survives a round trip.
     if (wire === "") return { value: "", current: true };
     // A reading, never `null`, once the name is on the header: `null` is reserved for "this cookie was
     // not sent at all", which is the one thing `parse` cannot report and a caller clearing it must know.
-    return (await unsign(wire)) ?? { value: null, current: false };
+    return (await unsign(operation, wire)) ?? { value: null, current: false };
   }
 
   return {
     name,
-    rotating: secrets.length > 1,
-    read,
+    rotating: Object.keys(ring.keys).length > 1,
+    read(header: string | null): Promise<SignedCookieReading | null> {
+      return readAs("read", header);
+    },
     async parse(header: string | null): Promise<string | null> {
-      return (await read(header))?.value ?? null;
+      return (await readAs("parse", header))?.value ?? null;
     },
     async serialize(value: string, attributes?: SignedCookieAttributes): Promise<string> {
       // Re-forced over the override, not merely set in the defaults: the override wins in the merge,
@@ -243,7 +229,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
         if (expiry === null)
           throw new Error(`serialize: "${name}" carries a lifetime, so a non-empty value needs a positive maxAge or a future expires`);
       }
-      return setCookie(name, await sign(encodePayload(value), expiry), merged);
+      return setCookie(name, await sign("serialize", encodePayload(value), expiry), merged);
     },
   };
 }

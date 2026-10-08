@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { NONCE } from "../../security/nonce";
 import { v } from "../../validation/mod";
 import { defineAssetsConfig, loadConfig } from "./config";
 import type { AssetsConfig } from "./types";
@@ -190,6 +191,50 @@ describe("loadConfig()", () => {
 
     expect(config.js.bundles[0]?.entry).toBe(join(root, "src", "client", "main.ts"));
     expect(config.js.bundles[0]?.define?.__E2E__).toBe("true");
+  });
+
+  it("carries the app's securityHeaders through whole, NONCE symbol included, and defaults them to forge's", async () => {
+    const root = appRoot(
+      `import { NONCE } from "${join(import.meta.dir, "..", "..", "security", "mod.ts")}";
+       export default { securityHeaders: { scriptSrc: ["'self'", NONCE], hsts: false } };`,
+    );
+    const config = await loadConfig({ root });
+    const bare = await loadConfig({ root: appRoot("export default {};") });
+
+    expect(config.securityHeaders).toEqual({ scriptSrc: ["'self'", NONCE], hsts: false });
+    expect(bare.securityHeaders).toEqual({});
+  });
+
+  const iconsUnder = (prefix: string, assetsPrefix = "/assets") =>
+    appRoot(
+      `export default { paths: { publicPrefix: ${JSON.stringify(assetsPrefix)} }, icons: { src: "icon.svg", outDir: "public", publicPrefix: ${JSON.stringify(prefix)}, lightColor: "#000", outputs: [{ kind: "ico", file: "favicon.ico", sizes: [16], root: true }, { kind: "svg", file: "favicon.svg" }] } };`,
+    );
+
+  it("refuses an icon prefix equal to or inside the asset prefix, naming both", async () => {
+    await expect(loadConfig({ root: iconsUnder("/assets/icons") })).rejects.toThrow(
+      '[forge-assets] icon "/assets/icons/favicon.svg" (icons.publicPrefix "/assets/icons") is inside paths.publicPrefix "/assets" — move the icons out of the asset prefix',
+    );
+    await expect(loadConfig({ root: iconsUnder("assets/") })).rejects.toThrow(
+      'icon "/assets/favicon.svg" (icons.publicPrefix "assets/") is inside paths.publicPrefix "/assets"',
+    );
+  });
+
+  it('refuses a root icon output when the asset prefix is "/", whose rule covers every path', async () => {
+    await expect(loadConfig({ root: iconsUnder("/static", "/") })).rejects.toThrow(
+      'icon "/favicon.ico" (icons.publicPrefix "/static") is inside paths.publicPrefix "/"',
+    );
+  });
+
+  it("accepts an icon prefix beside the asset prefix, one sharing its name, and a root icon output under a non-root asset prefix", async () => {
+    for (const prefix of ["/static", "/assets-icons", "/"]) {
+      const config = await loadConfig({ root: iconsUnder(prefix) });
+      expect(config.icons?.publicPrefix).toBe(prefix);
+    }
+  });
+
+  it("refuses a securityHeaders that is not an options object", async () => {
+    const root = appRoot('export default { securityHeaders: "strict" };');
+    await expect(loadConfig({ root })).rejects.toThrow("securityHeaders must be the SecurityHeadersOptions the app passes its middleware");
   });
 
   it("resolves the service-worker entry and its defines, and answers null when none is declared", async () => {

@@ -7,8 +7,9 @@ import { applyMiddlewareChain } from "../app/middleware-chain";
 import type { PageShell } from "../app/types";
 import { contextVar } from "../context/accessor";
 import type { AppContext } from "../context/types";
-import { csrfProtection, importCsrfKey } from "../form/csrf";
-import type { CsrfSecretResolver } from "../form/types";
+import { importKeyRing } from "../crypto/keyring/ring";
+import { csrfProtection } from "../form/csrf";
+import type { CsrfRingResolver } from "../form/types";
 import { ok } from "../result/result";
 import { createAnonymousSession } from "../session/anonymous";
 import { sessionCtx } from "../session/session";
@@ -69,7 +70,7 @@ const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin:
 
 const servicesCtx = contextVar<Promise<AuthRequestServices>>("journeyAuthServices");
 
-const csrfKey: CsrfSecretResolver = (context) => importCsrfKey((context as AppContext<JourneyEnv>).env.CSRF_SECRET);
+const csrfKey: CsrfRingResolver = (context) => importKeyRing([(context as AppContext<JourneyEnv>).env.CSRF_SECRET]);
 
 // wrangler prints a logged object across several lines, so the notice is one line of JSON instead.
 const notifier: AuthNotifier = {
@@ -148,7 +149,7 @@ function resolveServices(c: AppContext<JourneyEnv>): Promise<AuthRequestServices
   return building;
 }
 
-const nav = authNav({ signoutPath: paths.auth.signout(), secret: csrfKey });
+const nav = authNav({ signoutPath: paths.auth.signout(), ring: csrfKey });
 
 const shell: PageShell<JourneyEnv> = async (c, content, slot) => (
   <html lang='en'>
@@ -189,9 +190,9 @@ export function journeyWorker(ddl: string): { fetch(request: Request, env: Journ
 
   applyMiddlewareChain<JourneyEnv>(app, {
     securityHeaders: { scriptSrc: ["'self'"] },
-    session: createAnonymousSession<JourneyEnv>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+    session: createAnonymousSession<JourneyEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
     globals: [
-      csrfProtection({ secret: csrfKey, subject: (c) => sessionCtx.getOptional(c)?.id }),
+      csrfProtection({ ring: csrfKey, subject: (c) => sessionCtx.getOptional(c)?.id }),
       resolveAuth<JourneyEnv>({ users: async (c) => (await resolveServices(c)).users }),
     ],
     guards: createAuthGuards<JourneyEnv>({

@@ -1,14 +1,15 @@
-import { base64urlDecodeOrNull, cborDecodeFirst } from "../../crypto/mod";
-import type { CborValue } from "../../crypto/mod";
+import { base64urlDecodeOrNull } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
 import type { AuthStoreError } from "../errors";
 import type { AuthAlgorithm, AuthCredential } from "../types";
 import { verifyAuthData } from "./auth-data";
+import { cborDecodeFirst } from "./cbor";
 import { verifyClientData } from "./client-data";
 import { passkeyChallengeKey } from "./options";
 import { passkeyKeyImportable } from "./signature";
+import type { CborValue } from "./types";
 import type { PasskeyRegistrationInput, PasskeyRegistrationReason, PasskeyRegistrationVerifyOptions } from "./types";
 
 /** The same bound `authPasskeyLabelSchema` holds a rename to, applied here so the store never sees a longer one. */

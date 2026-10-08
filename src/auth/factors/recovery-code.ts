@@ -1,4 +1,4 @@
-import { base32Encode, randomBytes, sha256 } from "../../crypto/mod";
+import { base32Encode, randomBytes, sha256 } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_RECOVERY_CODE_BYTES, AUTH_RECOVERY_CODE_COUNT, AUTH_TOTP_LOCKOUT_MS } from "../config";

@@ -4,7 +4,8 @@ import { Forge } from "../../app/forge-app";
 import { applyMiddlewareChain } from "../../app/middleware-chain";
 import { pageShell } from "../../app/shell";
 import type { AppContext } from "../../context/types";
-import { csrfProtection, importCsrfKey } from "../../form/csrf";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import { csrfProtection } from "../../form/csrf";
 import { err, ok } from "../../result/result";
 import { createAnonymousSession } from "../../session/anonymous";
 import { sessionCtx } from "../../session/session";
@@ -113,11 +114,11 @@ function mount(): Forge<MountEnv> {
 
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
-    session: createAnonymousSession<MountEnv>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+    session: createAnonymousSession<MountEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
     // `globals`, never `before`: the resolver reads the session, which the chain publishes ahead of
     // this slot and not ahead of that one.
     globals: [
-      csrfProtection({ secret: (c) => importCsrfKey((c as AppContext<MountEnv>).env.CSRF_SECRET), subject: (c) => sessionCtx.getOptional(c)?.id }),
+      csrfProtection({ ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]), subject: (c) => sessionCtx.getOptional(c)?.id }),
     ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
@@ -150,7 +151,7 @@ function env(users: readonly FakeAuthUser[] = []): MountEnv {
   return {
     DB: fakeAuthD1(users),
     KV: fakeKV(),
-    SESSION_SECRET: "Sw8eR3tY6uI1oP4aS7dF2gH5jK9lZ0xC3vB6nM1qW4eR7tY",
+    SESSION_SECRET: "c15f22e5e9af45d15e1068ac2186b479735f5c60e4fc302f8916ab67aaf6b2c6",
     CSRF_SECRET: "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d",
   };
 }
@@ -407,9 +408,9 @@ function flowMount(
   const app = new Forge<MountEnv>(nullLogger);
   applyMiddlewareChain<MountEnv>(app, {
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
-    session: createAnonymousSession<MountEnv>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+    session: createAnonymousSession<MountEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
     globals: [
-      csrfProtection({ secret: (c) => importCsrfKey((c as AppContext<MountEnv>).env.CSRF_SECRET), subject: (c) => sessionCtx.getOptional(c)?.id }),
+      csrfProtection({ ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]), subject: (c) => sessionCtx.getOptional(c)?.id }),
     ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },

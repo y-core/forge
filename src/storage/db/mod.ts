@@ -1,5 +1,4 @@
-export type { UuidByteInput, Uuidv7Options } from "../../crypto/mod";
-export { createUuidv7, createUuidv7Bytes, uuidFromBytes, uuidToBytes, uuidv7, uuidv7Bytes } from "../../crypto/mod";
+export { createUuidv7, createUuidv7Bytes, uuidFromBytes, uuidToBytes, uuidv7, uuidv7Bytes } from "./uuid";
 export { resolveD1Client, validateD1Binding } from "./bindings";
 export { createD1Client } from "./client";
 export { checkSchemaHealth, schemaHealthCheck, schemaHealthMonitor } from "./health";
@@ -19,4 +18,6 @@ export type {
   SchemaHealthState,
   SchemaObject,
   SqlFragment,
+  UuidByteInput,
+  Uuidv7Options,
 } from "./types";

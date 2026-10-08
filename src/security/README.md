@@ -249,6 +249,20 @@ hostname to reach development at so the policy does not follow you to every loca
 
 ---
 
+## Securing files the Worker never serves
+
+A file served straight from the asset binding never meets the middleware. `assetSecurityHeaders(options)` returns the headers that still matter on
+such a file, under the same options, and the asset pipeline writes them into `_headers` for you (`tooling/assets` README, _Serving assets without
+the Worker_):
+
+```ts
+assetSecurityHeaders({ hsts: false });
+// [["x-content-type-options", "nosniff"], ["cross-origin-resource-policy", "same-origin"],
+//  ["content-security-policy", "default-src 'none'; frame-ancestors 'none'; sandbox"]]
+```
+
+---
+
 ## Keeping your URLs out of other sites' Referer
 
 By default a link to another site sends your origin, never the path. When a path itself is private, such as a document id in the URL, send no
@@ -517,7 +531,7 @@ The guards above are building blocks rather than a posture. Pair them to the thr
 
 | Layer | Mechanism | Where |
 | --- | --- | --- |
-| Token-based CSRF | Per-session token mint and verify | `@y-core/forge/form` — `csrfProtection`, `mintCsrf`, `importCsrfKey` |
+| Token-based CSRF | Per-session token mint and verify | `@y-core/forge/form` — `csrfProtection`, `mintCsrf` |
 | Origin-based CSRF | Fetch Metadata and the origin allowlist | Here — `originProtection`, `crossOriginProtection`, `originGuard` |
 | Content-type defence | Refuse a non-form body on a form route | Here — `requireFormContentType` |
 
@@ -528,8 +542,9 @@ not a token mechanism and do not substitute for one.
 comes from `getNonce(c)` and from nowhere else.
 
 **What is routinely looked for here lives elsewhere:** CSRF token mint and verify in `@y-core/forge/form`, session management in
-`@y-core/forge/session`, authentication and RBAC in `@y-core/forge/auth`, and constant-time comparison in the internal `src/crypto/`
-([`SECURITY_HARDENING.md`][sh-1] §1 has the full list). `isHxRequest` from `@y-core/forge/render/htmx` is a UX hint, not a security boundary.
+`@y-core/forge/session`, authentication and RBAC in `@y-core/forge/auth`, and constant-time comparison in the internal
+`src/crypto/primitives/` ([`SECURITY_HARDENING.md`][sh-1] §1 has the full list). `isHxRequest` from `@y-core/forge/render/htmx` is a UX hint, not
+a security boundary.
 
 ---
 

@@ -1,4 +1,4 @@
-import { base32Encode, hotpCode, randomBytes, timingSafeEqual, totpCounter } from "../../crypto/mod";
+import { base32Encode, hotpCode, randomBytes, timingSafeEqual, totpCounter } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_TOTP_LOCKOUT_MS } from "../config";

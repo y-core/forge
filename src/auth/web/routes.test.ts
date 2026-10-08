@@ -109,6 +109,7 @@ describe("authRoutes", () => {
         "/auth/verify/passkey/begin",
         "/auth/verify/passkey/finish",
         "/auth/signout",
+        "/auth/signout/site-data",
         "/auth/enrol/passkey",
         "/auth/enrol/totp",
         "/auth/enrol/totp",

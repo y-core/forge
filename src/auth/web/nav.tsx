@@ -26,7 +26,7 @@ function navFilters(context: AuthNavContext): string[] {
 /** The `activeFilters` and `slots` a `Navbar` needs to show this request's viewer their own destinations. @public */
 export function authNav(options: AuthNavOptions): (context: AuthNavContext) => Promise<AuthNav> {
   const slotKey = options.slot ?? AUTH_NAV_SIGNOUT_SLOT;
-  const mint = csrfMinter({ secret: options.secret, subject: (context) => sessionCtx.getOptional(context)?.id });
+  const mint = csrfMinter({ ring: options.ring, subject: (context) => sessionCtx.getOptional(context)?.id });
 
   return async (context: AuthNavContext): Promise<AuthNav> => {
     const activeFilters = navFilters(context);

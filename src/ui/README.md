@@ -940,7 +940,7 @@ the element that sends the request, as in `hx-status:403='swap:innerHTML'`. An e
 ### Show a message on the page after a redirect
 
 ```tsx
-const flash = createFlash({ secrets: [env.SESSION_SECRET] });
+const flash = createFlash({ ring: await importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET)) });
 
 await flash.success(c, "Profile saved.");   // in a POST handler, then redirect
 const messages = await flash.get(c);         // in the next loader; clears as it reads
@@ -949,8 +949,9 @@ const messages = await flash.get(c);         // in the next loader; clears as it
 <FlashOob messages={messages} />                                  {/* HTMX out-of-band swap */}
 ```
 
-`createFlash` takes `secrets` and returns a flasher over a signed cookie; the cookie's name, path, max-age and `sameSite` all have defaults, so pass
-one only when the app needs it to differ. `success` / `info` / `warning` / `error` are conveniences over `set`, and `get` clears as it reads.
+`createFlash` takes a key ring from `@y-core/forge/crypto/keyring` and returns a flasher over a cookie signed under it. The session's ring serves,
+because each cookie name signs under a subkey of its own. The cookie's name, path, max-age and `sameSite` all have defaults, so pass one only when
+the app needs it to differ. `success` / `info` / `warning` / `error` are conveniences over `set`, and `get` clears as it reads.
 
 **Choose the renderer by how the page is arriving.** `FlashContainer` is the full-page render — a toast container wrapping the messages.
 `FlashOob` wraps each toast in an HTMX out-of-band swap targeting the container already on the page, which is what a fragment response needs.

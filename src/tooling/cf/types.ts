@@ -207,9 +207,18 @@ export interface PipelineConfig {
   pipeline: string;
 }
 
+export interface WranglerAssetsConfig {
+  directory?: string;
+  binding?: string;
+  /** `true` sends every request to the Worker; a list routes matching paths to it, and a `!` entry exempts a path. */
+  run_worker_first?: boolean | string[];
+  [key: string]: unknown;
+}
+
 export interface WranglerConfig {
   name: string;
   main?: string;
+  assets?: WranglerAssetsConfig;
   vars?: Record<string, string>;
   kv_namespaces?: KvNamespaceConfig[];
   d1_databases?: D1DatabaseConfig[];

@@ -1,4 +1,4 @@
-import { base64urlEncode, randomBytes } from "../../crypto/mod";
+import { base64urlEncode, randomBytes } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_PASSKEY_ASSERTION_ID_MAX, AUTH_PASSKEY_ASSERTION_ID_SHAPE } from "../config";

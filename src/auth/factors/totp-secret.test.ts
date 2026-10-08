@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { bytesToHex, hexToBytes, utf8Encode, uuidv7 } from "../../crypto/mod";
-import { importKeyRing } from "../../keyring/ring";
-import { openAtRest } from "../../keyring/seal";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import { openAtRest } from "../../crypto/keyring/seal";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { bytesToHex, hexToBytes, utf8Encode } from "../../crypto/primitives/mod";
+import { uuidv7 } from "../../storage/db/uuid";
 import { importAuthKeyRing } from "../keys/ring";
-import type { AuthKeyRing } from "../types";
 import { openTotpSecret, sealTotpSecret } from "./totp-secret";
 
 const SECRET = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]) as Uint8Array<ArrayBuffer>;
@@ -13,9 +14,9 @@ const USER_ID = uuidv7();
 const ROOT_A = "e6064ea1614f137496a5d1ccd3408255da4cc39f26900b93f9dc63e4bd8543e8";
 const ROOT_B = "dfa8da70879b5fb481bb6db0032ab0fa7bda29421d4a3714fae42a018b54210d";
 
-let ringA: AuthKeyRing;
-let ringB: AuthKeyRing;
-let rotated: AuthKeyRing;
+let ringA: KeyRing;
+let ringB: KeyRing;
+let rotated: KeyRing;
 
 beforeAll(async () => {
   ringA = await importAuthKeyRing([ROOT_A]);
@@ -38,7 +39,7 @@ describe("sealTotpSecret", () => {
   });
 
   it("refuses to seal under a ring whose active key it does not hold", async () => {
-    const broken: AuthKeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
+    const broken: KeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
     await expect(sealTotpSecret(broken, USER_ID, SECRET)).rejects.toThrow('the key ring has no key for its active key id "AAAAAAAA"');
   });
 });

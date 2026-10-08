@@ -1,31 +1,28 @@
-import { base64urlDecodeOrNull, base64urlEncode, hmacSign, importHmacKeyRing, lookupHmacKey, timingSafeEqualBytes } from "../../crypto/mod";
-import type { HmacKeyRing } from "../../crypto/mod";
+import { signWithKeyRing, verifyWithKeyRing } from "../../crypto/keyring/sign";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { base64urlDecodeOrNull, base64urlEncode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { SignedUrlOptions, SignedUrlVerdict } from "./types";
 
 /** Longest lifetime, in seconds, that `createSignedObjectUrl` will sign. @public */
 export const MAX_SIGNED_URL_LIFETIME = 604_800;
 
-/** Imports hex-encoded secrets into a signed-URL key ring, the first becoming the active signing key. @public */
-export function importSignedUrlKeyRing(secrets: [string, ...string[]]): Promise<HmacKeyRing> {
-  return importHmacKeyRing(secrets, "Signed URL secret");
-}
+const SIGNED_URL_PURPOSE = "signed-url";
 
 function signingPayload(parts: { kid: string; objectKey: string; exp: number }): string {
   return `${parts.kid.length}:${parts.kid}|${parts.objectKey.length}:${parts.objectKey}|${parts.exp}`;
 }
 
 /** Creates a signed URL for GET access to an object. @public */
-export async function createSignedObjectUrl(ring: HmacKeyRing, baseUrl: string, objectKey: string, options?: SignedUrlOptions): Promise<string> {
+export async function createSignedObjectUrl(ring: KeyRing, baseUrl: string, objectKey: string, options?: SignedUrlOptions): Promise<string> {
   const expiresIn = options?.expiresInSeconds ?? 3600;
   if (!Number.isInteger(expiresIn) || expiresIn < 1 || expiresIn > MAX_SIGNED_URL_LIFETIME) {
     throw new RangeError(`createSignedObjectUrl: expiresInSeconds must be an integer in 1…${MAX_SIGNED_URL_LIFETIME}, got ${expiresIn}`);
   }
   const kid = ring.activeKeyId;
-  const key = lookupHmacKey(ring, kid);
-  if (!key) throw new Error(`createSignedObjectUrl: key ring has no key for active key id "${kid}"`);
   const exp = Math.floor(Date.now() / 1000) + expiresIn;
-  const sig = base64urlEncode(await hmacSign(key, signingPayload({ kid, objectKey, exp })));
+  const { mac } = await signWithKeyRing("createSignedObjectUrl", ring, SIGNED_URL_PURPOSE, signingPayload({ kid, objectKey, exp }));
+  const sig = base64urlEncode(mac);
   const url = new URL(baseUrl);
   url.searchParams.set("key", objectKey);
   url.searchParams.set("exp", String(exp));
@@ -35,7 +32,7 @@ export async function createSignedObjectUrl(ring: HmacKeyRing, baseUrl: string, 
 }
 
 /** Verifies a signed object URL, checking expiry and key id then comparing the HMAC in constant time. @public */
-export async function verifySignedObjectUrl(ring: HmacKeyRing, url: string): Promise<SignedUrlVerdict> {
+export async function verifySignedObjectUrl(ring: KeyRing, url: string): Promise<SignedUrlVerdict> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -55,14 +52,10 @@ export async function verifySignedObjectUrl(ring: HmacKeyRing, url: string): Pro
 
   if (Math.floor(Date.now() / 1000) > exp) return err("expired");
 
-  const key = lookupHmacKey(ring, kid);
-  if (!key) return err("unknown-key");
-
-  const actual = base64urlDecodeOrNull(sig);
-  if (!actual) return err("invalid-signature");
-
-  const expected = await hmacSign(key, signingPayload({ kid, objectKey, exp }));
-  if (!timingSafeEqualBytes(expected, actual)) return err("invalid-signature");
+  const payload = signingPayload({ kid, objectKey, exp });
+  const verdict = await verifyWithKeyRing("verifySignedObjectUrl", ring, SIGNED_URL_PURPOSE, kid, payload, base64urlDecodeOrNull(sig));
+  if (verdict === "no-key") return err("unknown-key");
+  if (verdict === "forged") return err("invalid-signature");
 
   return ok(objectKey);
 }

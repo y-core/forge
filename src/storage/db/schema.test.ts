@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { bytesToHex, sha256 } from "../../crypto/mod";
+import { bytesToHex, sha256 } from "../../crypto/primitives/mod";
 import {
   compareCodePoints,
   INVENTORY_SELECT,

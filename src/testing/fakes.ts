@@ -1,5 +1,5 @@
 import type { AssetsFetcher } from "../app/types";
-import { bytesToHex } from "../crypto/mod";
+import { bytesToHex } from "../crypto/primitives/mod";
 import { ROWS_WRITTEN_GUARD } from "../storage/db/sql";
 import type { D1DatabaseLike, D1PreparedStatement, D1Result } from "../storage/db/types";
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";

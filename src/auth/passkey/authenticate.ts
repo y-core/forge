@@ -1,5 +1,4 @@
-import { base64urlDecodeOrNull, concatBytes, decodeCosePublicKey, sha256 } from "../../crypto/mod";
-import type { CosePublicKey } from "../../crypto/mod";
+import { base64urlDecodeOrNull, concatBytes, sha256 } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
@@ -7,8 +6,10 @@ import type { AuthStoreError } from "../errors";
 import type { AuthCredential, AuthStoreResult, AuthUser } from "../types";
 import { verifyAuthData } from "./auth-data";
 import { verifyClientData } from "./client-data";
+import { decodeCosePublicKey } from "./cose";
 import { passkeyChallengeKey } from "./options";
 import { verifyPasskeySignature } from "./signature";
+import type { CosePublicKey } from "./types";
 import type { PasskeyAuthentication, PasskeyAuthenticationInput, PasskeyAuthenticationReason, PasskeyAuthenticationVerifyOptions } from "./types";
 
 function storedKey(credential: AuthCredential): CosePublicKey | null {

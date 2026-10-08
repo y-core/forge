@@ -118,22 +118,25 @@ sends `abc` and not the comment. Double quotes suppress that cut and expand `\n`
 
 ## Rotating a secret
 
-A secret this project generated — a `SESSION_SECRET`, say — can be replaced with 32 fresh bytes of hex, the shape `openssl rand -hex 32` produces. A
-third-party API key cannot: overwrite it and it is gone. So **rotation is opt-in per key, declared beside the key it governs**:
+A secret this project generated — an `INTERNAL_API_TOKEN`, say — can be replaced with 32 fresh bytes of hex, the shape `openssl rand -hex 32`
+produces. A third-party API key cannot: overwrite it and it is gone. So **rotation is opt-in per key, declared beside the key it governs**:
 
 ```bash
 # .dev.vars
 
 # forge:generate
-SESSION_SECRET=ab3f…
+INTERNAL_API_TOKEN=ab3f…
 
 STRIPE_API_KEY=sk_live_…   # unmarked — never rotated
 ```
 
 ```bash
-forge cf sync --commit --rotate SESSION_SECRET           # new value on Cloudflare
-forge cf sync --commit --local --rotate SESSION_SECRET   # new value in .dev.vars
+forge cf sync --commit --rotate INTERNAL_API_TOKEN           # new value on Cloudflare
+forge cf sync --commit --local --rotate INTERNAL_API_TOKEN   # new value in .dev.vars
 ```
+
+A value that signs or seals something, such as `SESSION_SECRET`, `CSRF_SECRET` or a sealing key, is a key ring and rotates as the next section
+describes.
 
 The two are separate acts because **a remote secret is never kept on this machine**. `--rotate` generates a value, pushes it, and does not print it
 or write it to `.dev.vars`; `--local --rotate` replaces the development value and touches no API, so it needs no credentials. The local and remote
@@ -150,12 +153,19 @@ A key ring is one variable of comma-joined hex secrets, newest first. Replacing 
 # .dev.vars
 
 # forge:ring
-APP_SEAL_KEY_RING=9c1e…,ab3f…
+SESSION_SECRET=9c1e…,ab3f…
+
+# forge:ring
+APP_SEAL_KEY_RING=7d20…,e48a…
 ```
 
 ```bash
-forge cf sync --commit --local --rotate APP_SEAL_KEY_RING   # prepend a new key in .dev.vars
+forge cf sync --commit --local --rotate SESSION_SECRET   # prepend a new key in .dev.vars
 ```
+
+For sessions, prepending is what keeps everyone signed in: a cookie signed under an older key still verifies, and `sessionMiddleware` re-signs it
+under the new key on the next request that carries it. The two-deploy sequence that retires the old key is in
+[`src/session/README.md`][session-readme].
 
 `--local --rotate` on a ring with no value yet seeds it with one key, and `--local --rotate all` includes every ring. **A plain `--commit` creates a
 ring that is missing remotely from `.dev.vars`, and never overwrites one that exists.** Cloudflare's copy cannot be read, so forge cannot prove a
@@ -168,7 +178,8 @@ openssl rand -hex 32                           # the fresh key
 wrangler secret put APP_SEAL_KEY_RING          # paste <fresh key>,<current production ring>
 ```
 
-Keep every old key in the value you paste. Split the variable in the Worker with `keyRingSecrets` from [`src/keyring/README.md`][keyring-readme].
+Keep every old key in the value you paste. Split the variable in the Worker with `parseKeyRingSecrets` from
+[`src/crypto/keyring/README.md`][keyring-readme].
 
 ---
 
@@ -237,7 +248,7 @@ only one.
 is [`src/config/README.md`][config-readme]:
 
 1. **`src/app/env.config.ts`** — optional hand-written policy, a `Partial<GenOptions>`: `optional: new Set(["RATE_LIMITER"])` for bindings absent
-   under `wrangler dev`, or `refinements: { SESSION_SECRET: { minLength: 32 } }` for per-var constraints.
+   under `wrangler dev`, or `refinements: { SESSION_SECRET: { minLength: 64 } }` for per-var constraints.
 2. **`src/app/env.schema.ts`** — the generated module, committed and regenerated whenever `wrangler.jsonc` bindings change.
 3. **`validateBindings(EnvSchema)`** ([`@y-core/forge/app`][app-readme]) — registered as middleware, so the contract is enforced on the first
    request.
@@ -270,6 +281,25 @@ export type Env = v.InferOutput<typeof EnvSchema>;
 ```
 
 The command emits the module and runs an oxfmt pass, so the generated file passes the lint gate.
+
+---
+
+## Reading wrangler.jsonc from a Playwright config
+
+A `playwright.config.ts` runs under node, and node cannot load this namespace's barrel. Import the parser from its own subpath instead:
+
+```ts
+// playwright.config.ts
+import { parseWranglerConfig } from "@y-core/forge/tooling/cf/wrangler";
+
+const workerFirst = parseWranglerConfig("wrangler.jsonc").assets?.run_worker_first;
+```
+
+`parseWranglerConfig` returns the config itself, not a `Result`. It throws when the file is missing, is not valid JSONC, or lacks a field forge
+requires, such as a string `name`, so a broken config stops the test run at config load. A relative path resolves against the working directory,
+which is where you ran `playwright test` from.
+
+The subpath exports `parseWranglerConfig` and nothing else. Why it is published separately is [`docs/NAMESPACES.md`][ns-3c] §3c.
 
 ---
 
@@ -321,6 +351,8 @@ destroyed. A splice that fails its own verification writes nothing, `--force` in
 
 [app-readme]: ../../app/README.md
 [config-readme]: ../../config/README.md
-[keyring-readme]: ../../keyring/README.md#rotating-the-root-secret
+[keyring-readme]: ../../crypto/keyring/README.md#rotating-the-root-secret
+[ns-3c]: ../../../docs/NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
+[session-readme]: ../../session/README.md#rotating-a-signing-secret
 [site-readme]: ../../site/README.md
 [sot-2f]: ../../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows

@@ -1,7 +1,7 @@
-import { uuidv7Bytes } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
+import { uuidv7Bytes } from "../../storage/db/uuid";
 import type { RecoveryCodeStore } from "../types";
 import { storeError, unknownOwner, uuidKey } from "./rows";
 

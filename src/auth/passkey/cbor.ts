@@ -1,4 +1,4 @@
-import { bytesToHex } from "./bytes";
+import { bytesToHex } from "../../crypto/primitives/mod";
 import type { CborDecoded, CborValue } from "./types";
 
 /** How deep a nested item may go before the decoder refuses it. */

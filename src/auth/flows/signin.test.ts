@@ -1,8 +1,9 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { uuidv7 } from "../../crypto/mod";
+import type { KeyRing } from "../../crypto/keyring/types";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { createFactorRegistry } from "../factors/registry";
 import type {
@@ -15,7 +16,7 @@ import type {
 } from "../factors/types";
 import type { ImplicitFactorService } from "../factors/types";
 import { importAuthKeyRing } from "../keys/ring";
-import type { AuthFactor, AuthKeyRing, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
+import type { AuthFactor, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
 import { createSigninFlow, redactSigninReason } from "./signin";
 import type { AuthIssueOutcome } from "./types";
 import type { AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./types";
@@ -25,7 +26,7 @@ const EMAIL = "Person@Example.COM";
 const EMAIL_KEY = "person@example.com";
 const AT = 1_700_000_000_000;
 
-let ring: AuthKeyRing;
+let ring: KeyRing;
 
 beforeAll(async () => {
   ring = await importAuthKeyRing(["e7ae715d21b12b5421420dbb7636a3a37ff40dc73df25691a57fb38cf9fa25a2"]);

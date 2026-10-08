@@ -1,7 +1,8 @@
-import { base64urlEncode, decodeCosePublicKey, sha256, timingSafeEqualBytes } from "../../crypto/mod";
-import type { CosePublicKey } from "../../crypto/mod";
+import { base64urlEncode, sha256, timingSafeEqualBytes } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
+import { decodeCosePublicKey } from "./cose";
+import type { CosePublicKey } from "./types";
 import type { AuthData, AuthDataExpectation, AuthDataFlags, AuthDataReason } from "./types";
 
 const RP_ID_HASH_BYTES = 32;

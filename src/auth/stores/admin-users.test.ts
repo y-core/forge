@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidToBytes, uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
+import { uuidToBytes, uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
@@ -229,6 +229,21 @@ describe("createAdminUserStore — the last-admin guard", () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.error.code).toBe("unavailable");
     expect(outcome.ok === false && outcome.error.operation).toBe("adminUsers.remove");
+  });
+
+  it("answers referenced, not an error, when a foreign key refuses the user row", async () => {
+    const [client] = clientOf((sql) => (sql.includes("AS present") ? [{ present: 1, deletable: 1 }] : []), {
+      failOn: (sql) => (sql.includes("DELETE FROM auth_users") ? new Error("D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT") : null),
+    });
+    expect(await createAdminUserStore(client).remove(USER_ID)).toEqual({ ok: true, data: "referenced" });
+  });
+
+  it("reports any other failure of the delete batch as unavailable", async () => {
+    const [client] = clientOf((sql) => (sql.includes("AS present") ? [{ present: 1, deletable: 1 }] : []), {
+      failOn: (sql) => (sql.includes("DELETE FROM auth_users") ? new Error("D1_ERROR: network lost") : null),
+    });
+    const outcome = await createAdminUserStore(client).remove(USER_ID);
+    expect(outcome.ok === false && `${outcome.error.code} ${outcome.error.operation}`).toBe("unavailable adminUsers.remove");
   });
 
   it("carries the first-admin guard in the claiming statement's own WHERE, never in a read before it", async () => {

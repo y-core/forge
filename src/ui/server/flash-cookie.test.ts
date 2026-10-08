@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
+import { importKeyRing } from "../../crypto/keyring/ring";
 import { mapHandler } from "../../testing/route";
 import { createFlash } from "./flash-cookie";
 import type { FlashMessage } from "./types";
 
-const SECRET = "Fl4shC00kieS3cretV8pQ2mX9wLz7tRb";
+const ring = await importKeyRing(["df7bc215d10b817ca5757fe2b023738f06d7ccb1de2f33087c06428643c8ee3b"]);
 
 function extractCookieValue(setCookieHeader: string | null): string | null {
   if (!setCookieHeader) return null;
@@ -14,14 +15,21 @@ function extractCookieValue(setCookieHeader: string | null): string | null {
 }
 
 describe("createFlash", () => {
-  it("throws when a secret is under 32 bytes, naming the floor", () => {
-    expect(() => createFlash({ secrets: ["too-short"] })).toThrow(/at least 32 bytes/);
+  it("names the ring's active key id on the wire", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.set(c, [{ type: "info", text: "kid" }]);
+      return new Response("ok");
+    });
+    const cookieValue = extractCookieValue((await app.request("/")).headers.get("Set-Cookie"));
+    expect(cookieValue?.split(".").at(-2)).toBe(ring.activeKeyId);
   });
 });
 
 describe("set", () => {
   it("writes a signed Set-Cookie header with correct attributes", async () => {
-    const flash = createFlash({ secrets: [SECRET] });
+    const flash = createFlash({ ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.set(c, [{ type: "success", text: "Hello" }]);
@@ -41,7 +49,7 @@ describe("set", () => {
 
 describe("get", () => {
   it("round-trips a message array", async () => {
-    const flash = createFlash({ secrets: [SECRET] });
+    const flash = createFlash({ ring });
     const messages: FlashMessage[] = [
       { type: "info", text: "test message" },
       { type: "warning", text: "watch out" },
@@ -63,7 +71,7 @@ describe("get", () => {
   });
 
   it("clears the cookie after reading (read-once)", async () => {
-    const flash = createFlash({ secrets: [SECRET] });
+    const flash = createFlash({ ring });
 
     const setApp = new Forge();
     mapHandler(setApp, "GET", "/", async (c) => {
@@ -84,7 +92,7 @@ describe("get", () => {
   });
 
   it("returns empty array when no flash cookie is present", async () => {
-    const flash = createFlash({ secrets: [SECRET] });
+    const flash = createFlash({ ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
     const res = await app.request("/");
@@ -92,7 +100,7 @@ describe("get", () => {
   });
 
   it("returns empty array for a tampered cookie value", async () => {
-    const flash = createFlash({ secrets: [SECRET] });
+    const flash = createFlash({ ring });
 
     const setApp = new Forge();
     mapHandler(setApp, "GET", "/", async (c) => {
@@ -117,7 +125,7 @@ describe("get", () => {
   // The clear is keyed on the cookie being present, not on its value verifying: a value the server
   // now refuses is re-sent by the browser on every request, and would be re-refused forever.
   it("clears a cookie the signed expiry has since put out of reach", async () => {
-    const flash = createFlash({ secrets: [SECRET], maxAge: 1 });
+    const flash = createFlash({ ring, maxAge: 1 });
 
     const setApp = new Forge();
     mapHandler(setApp, "GET", "/", async (c) => {
@@ -135,7 +143,7 @@ describe("get", () => {
   });
 
   it("emits no clear at all where the request carried no flash cookie", async () => {
-    const flash = createFlash({ secrets: [SECRET] });
+    const flash = createFlash({ ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
     const res = await app.request("/", { headers: { Cookie: "other=1" } });
@@ -153,7 +161,7 @@ describe("convenience methods", () => {
 
   for (const { name, type } of cases) {
     it(`${name}() stores exactly one message of type "${type}"`, async () => {
-      const flash = createFlash({ secrets: [SECRET] });
+      const flash = createFlash({ ring });
 
       const setApp = new Forge();
       mapHandler(setApp, "GET", "/", async (c) => {

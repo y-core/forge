@@ -4,7 +4,6 @@ export {
   AUTH_ADMIN_ROLE,
   AUTH_FRESH_STEP_UP_MS,
   AUTH_IDENTIFYING_FACTORS,
-  AUTH_KEY_ID_LENGTH,
   AUTH_PASSKEY_ASSERTION_ID_MAX,
   AUTH_PASSKEY_ASSERTION_ID_SHAPE,
   AUTH_PASSKEY_CHALLENGE_BYTES,
@@ -130,6 +129,7 @@ export {
   PASSKEY_VERIFY_PATH_ATTR,
   PASSKEY_VERIFY_TOKEN_ATTR,
 } from "./passkey-contract";
+export { SITE_DATA_CSRF_HEADER_ATTR, SITE_DATA_PATH_ATTR, SITE_DATA_SCOPE, SITE_DATA_TOKEN_ATTR } from "./site-data-contract";
 export type {
   AccessTokenIssued,
   AccessTokenIssueInput,
@@ -156,11 +156,10 @@ export type {
   AuthFactorKind,
   AuthIdentityLink,
   AuthIdentityLinkInput,
-  AuthKeyRing,
   AuthMessage,
   AuthNotifier,
   AuthOptions,
-  AuthSecretResolver,
+  AuthRingResolver,
   AuthServices,
   AuthStoreResult,
   AuthUser,

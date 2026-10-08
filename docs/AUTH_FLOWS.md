@@ -328,7 +328,8 @@ instead of a full table scan. A substring in the middle of an address — the do
 **The last-admin guard lives in the statement's own `WHERE`, not in a count-then-write.** Two concurrent demotions therefore leave one admin
 standing rather than none, and the admin count the page displays is a display value only — never the thing a write is trusted against.
 
-Deleting a user removes its children first, in one batch that rolls back whole, because D1 does not guarantee foreign-key enforcement is on.
+Deleting a user removes its children first, in one batch that rolls back whole. A row in an app table that still references the user refuses
+the delete, and the page answers **409** with the outcome `referenced`: the app's own records go first.
 
 **An account's factors page carries a reset control**, the last resort for a user who has lost every second factor and every recovery code.
 What it clears and what it allows is §8e.

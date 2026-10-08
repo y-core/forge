@@ -3,7 +3,10 @@ import { basename, dirname, extname, join } from "node:path";
 
 import type { CacheControlInit } from "../../http/headers";
 import { CacheControl } from "../../http/headers";
+import { assetSecurityHeaders } from "../../security/headers";
+import type { SecurityHeadersOptions } from "../../security/types";
 import { buildCursors } from "../../ui/assets/build/cursors";
+import { assertIconPrefixOutsideAssets } from "./config";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
 import { buildFontPacks, buildFontSubsets } from "./font-build";
@@ -29,6 +32,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
       '[forge-assets] js.serviceWorker needs a publicPrefix other than "/", or the asset rule in _headers would mark /sw.js immutable',
     );
   }
+  assertIconPrefixOutsideAssets(publicPrefix, config.icons);
   mkdirSync(publicDir, { recursive: true });
 
   const manifest: Record<string, string> = {};
@@ -110,7 +114,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
     removeServiceWorker(deployRoot(config.root, publicDir));
   }
 
-  emitHeaders(config.root, publicDir, publicPrefix, shouldHash, config.icons);
+  emitHeaders(config.root, publicDir, publicPrefix, shouldHash, config.icons, config.securityHeaders);
 }
 
 // Emitted identically from `buildAll` and from `gen types`: a face is derivable from the config and
@@ -337,19 +341,28 @@ const MANIFEST_CACHE: CacheControlInit = { public: true, maxAge: 0, mustRevalida
 /** A hashed name is a new URL, so the old one can be pinned for as long as a cache will hold it. @internal */
 const HASHED_CACHE: CacheControlInit = { public: true, maxAge: YEAR, immutable: true };
 
-function headerBlock(path: string, cache: CacheControlInit): string {
-  return `${path}\n  Cache-Control: ${new CacheControl(cache).toString()}\n`;
+function headerBlock(path: string, cache: CacheControlInit, security: readonly (readonly [string, string])[]): string {
+  const lines = [`Cache-Control: ${new CacheControl(cache).toString()}`, ...security.map(([name, value]) => `${name}: ${value}`)];
+  return `${path}\n${lines.map((line) => `  ${line}\n`).join("")}`;
 }
 
-function emitHeaders(root: string, publicDir: string, publicPrefix: string, hashed: boolean, icons: IconsConfig | null): void {
+function emitHeaders(
+  root: string,
+  publicDir: string,
+  publicPrefix: string,
+  hashed: boolean,
+  icons: IconsConfig | null,
+  securityHeaders: SecurityHeadersOptions,
+): void {
   const headersPath = join(deployRoot(root, publicDir), HEADERS_FILE);
-  const blocks = [headerBlock(`${assetUrlBase(publicPrefix)}/*`, hashed ? HASHED_CACHE : { noCache: true })];
+  const security = assetSecurityHeaders(securityHeaders);
+  const blocks = [headerBlock(`${assetUrlBase(publicPrefix)}/*`, hashed ? HASHED_CACHE : { noCache: true }, security)];
 
   // `_headers` applies every matching rule and comma-joins a header set twice, so a prefix glob here
   // would merge the manifest's own `Cache-Control` into an unusable pair of values.
   if (icons) {
     for (const output of icons.outputs) {
-      blocks.push(headerBlock(iconTarget(icons, output).path, output.kind === "manifest" ? MANIFEST_CACHE : ICON_CACHE));
+      blocks.push(headerBlock(iconTarget(icons, output).path, output.kind === "manifest" ? MANIFEST_CACHE : ICON_CACHE, security));
     }
   }
 

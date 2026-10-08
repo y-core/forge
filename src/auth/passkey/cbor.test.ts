@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { hexToBytes } from "../../crypto/primitives/mod";
 import { cborDecodeFirst } from "./cbor";
-import { hexToBytes } from "./mod";
 import type { CborValue } from "./types";
 
 /** RFC 8949 Appendix A, the rows this decoder's subset covers. */

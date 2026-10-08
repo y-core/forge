@@ -1,13 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import type { WranglerConfig } from "../../cf/types";
-import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
 import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { DevBoundaryCheckConfig } from "./types";
+import { readWorkerConfig } from "./worker-config";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
@@ -69,25 +68,12 @@ function judgeMain(config: DevBoundaryCheckConfig): Finding[] {
   const workerConfig = config.workerConfig === undefined ? "wrangler.jsonc" : config.workerConfig;
   if (workerConfig === null) return [];
 
-  const workerPath = resolve(config.root, workerConfig);
-  if (!existsSync(workerPath)) {
-    return [
-      fail(`\`${workerConfig}\` not found`, {
-        file: workerConfig,
-        detail: ["name the Worker config, or pass `workerConfig: null` for a repository that deploys none"],
-      }),
-    ];
-  }
+  const read = readWorkerConfig(config.root, workerConfig, "dev-boundary", [
+    "name the Worker config, or pass `workerConfig: null` for a repository that deploys none",
+  ]);
+  if (!("config" in read)) return [...read.findings];
 
-  let parsed: WranglerConfig;
-  try {
-    parsed = JSON.parse(stripJsonc(readFileSync(workerPath, "utf-8"))) as WranglerConfig;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return [fail(`\`${workerConfig}\` is not parseable: ${message}`, { file: workerConfig })];
-  }
-
-  const main = parsed.main;
+  const main = read.config.main;
   if (main === undefined) {
     return [
       fail("`main` is unstated, and an unstated entry point is one no check can hold to the production/development split", {

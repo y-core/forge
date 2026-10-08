@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Database } from "../../storage/db/types";
+import { uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import { AuthStoreError } from "../errors";

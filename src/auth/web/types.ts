@@ -7,7 +7,7 @@ import type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import type { PageMeta } from "../../app/types";
 import type { AppContext } from "../../context/types";
-import type { CsrfSecretResolver } from "../../form/types";
+import type { CsrfRingResolver } from "../../form/types";
 import type { FC } from "../../render/jsx/types";
 import type { JSXNode } from "../../render/jsx/types";
 import type { ForgeIcon } from "../../ui/core/types";
@@ -33,6 +33,7 @@ import type { AdminUserEditViewProps } from "./views/types";
 import type { AdminUsersViewProps } from "./views/types";
 import type { AuthFactorsViewProps } from "./views/types";
 import type { AuthSignoutProps } from "./views/types";
+import type { AuthSiteDataProps } from "./views/types";
 import type { EmailChangeViewProps } from "./views/types";
 import type { PasskeyEditViewProps } from "./views/types";
 import type { PasskeyEnrolViewProps } from "./views/types";
@@ -184,7 +185,7 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   // deployment that configures none has no claim endpoint at all, rather than an open one.
   /** The secret a first-admin claim must present; without it `admin.elevate.submit` answers 404. */
   readonly bootstrapSecret?: ((c: AppContext<Bindings>) => string | undefined) | undefined;
-  /** Sends `Clear-Site-Data: "cache", "storage"` on the sign-out response, wiping the origin's caches and storage. Defaults to off. */
+  /** Wipes the origin's HTTP cache on the sign-out response and its storage from the next auth page. Defaults to off. */
   readonly signoutClearsSiteData?: boolean | undefined;
 }
 
@@ -262,6 +263,8 @@ export interface AuthPageOptions<Name extends AuthViewName> {
   readonly meta?: Partial<PageMeta>;
   readonly status?: number;
   readonly headers?: Record<string, string>;
+  /** Set while the session owes the storage clear a sign-out left, so the page asks for it whatever view renders it. */
+  readonly siteData?: AuthSiteDataProps | undefined;
 }
 
 /** Which factor the verify page is asking for, and whose account it is asking about. @internal */
@@ -376,8 +379,8 @@ export type AuthNavContext = RequestContext<any, any>;
 export interface AuthNavOptions {
   /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */
   readonly signoutPath: string;
-  /** The secret the `csrfProtection` guarding that path verifies with; the token is bound to the session, as that guard's is. */
-  readonly secret: CsrfSecretResolver;
+  /** The ring the `csrfProtection` guarding that path verifies with; the token is bound to the session, as that guard's is. */
+  readonly ring: CsrfRingResolver;
   /** Names the slot, for a `NavDefinition` that spells the sign-out slot differently. */
   readonly slot?: string | undefined;
   /** Composed onto the sign-out control, over the navbar-shaped defaults. */

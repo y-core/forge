@@ -4,7 +4,7 @@ import {
   assetManifestStep,
   assetRootStep,
   browserStep,
-  chromiumBundleStep,
+  bundleStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
@@ -23,7 +23,6 @@ import {
   iccProfileStep,
   importBoundaryStep,
   jsxStep,
-  lintPluginStep,
   lintStep,
   markdownStep,
   menuNamingStep,
@@ -35,7 +34,6 @@ import {
   stubGlobalsStep,
   featuresStep,
   testStep,
-  totpBundleStep,
   typeAwareLintStep,
   typecheckStep,
   workerdStep,
@@ -289,6 +287,20 @@ describe("builders — tier", () => {
   });
 });
 
+describe("bundleStep()", () => {
+  const BUNDLE = { root: "/nowhere", entry: "src/lint/mod.ts", bundle: "src/lint/plugin.mjs", fixer: "gen" };
+
+  it("takes a label, so each committed bundle gets a drift row of its own", () => {
+    expect([bundleStep("validate-a", BUNDLE).label, bundleStep("validate-b", BUNDLE).label]).toEqual(["validate-a", "validate-b"]);
+  });
+
+  it("requires esbuild, naming the command that installs it, and carries no in-process fixer", () => {
+    const step = bundleStep("validate-a", BUNDLE);
+
+    expect([step.requires?.tool, step.requires?.hint, step.fix]).toEqual(["esbuild", "run `bun add -d esbuild`", undefined]);
+  });
+});
+
 describe("builders — conditional on tailwindcss", () => {
   const conditional = () => [
     classGroupsStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/class-groups.ts" }),
@@ -401,9 +413,7 @@ describe("builders — derived watches", () => {
       [assetRootStep({ root: "/nowhere", assetConfig: "assets.ts" }), undefined],
       [assetManifestStep({ root: "/nowhere", assetConfig: "assets.ts" }), undefined],
       [contrastStep(CONTRAST), undefined],
-      [lintPluginStep(BUNDLE), undefined],
-      [chromiumBundleStep(BUNDLE), undefined],
-      [totpBundleStep(BUNDLE), undefined],
+      [bundleStep("validate-bundle", BUNDLE), undefined],
       [lintStep(), ["src", "src/**", ".oxlintrc*", ".oxlintignore", ".gitignore"]],
       [formatStep({ sources: ["."] }), ["**", ".oxfmtrc*", ".prettierignore", ".gitignore"]],
       [jsxStep({ root: "/nowhere" }), ["src", "src/**"]],

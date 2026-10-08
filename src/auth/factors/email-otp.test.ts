@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import { uuidv7 } from "../../crypto/mod";
 import { ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import type { AuthMessage, AuthNotifier, NonceStore, OtpState, OtpStateStore } from "../types";

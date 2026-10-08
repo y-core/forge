@@ -7,8 +7,10 @@ import type { RouteMap } from "@remix-run/fetch-router/routes";
 import { Forge } from "../../app/forge-app";
 import { applyMiddlewareChain } from "../../app/middleware-chain";
 import type { AppContext } from "../../context/types";
-import { base32Decode, totpCode } from "../../crypto/mod";
-import { csrfProtection, importCsrfKey, mintCsrf } from "../../form/csrf";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { base32Decode, totpCode } from "../../crypto/primitives/mod";
+import { csrfProtection, mintCsrf } from "../../form/csrf";
 import { requestLog } from "../../logging/request-logger";
 import type { Logger } from "../../logging/types";
 import { err, ok } from "../../result/result";
@@ -25,17 +27,7 @@ import type { AuthFactorRegistry, AuthFactorRequirement, AuthFactorResolution, A
 import { createSigninFlow } from "../flows/signin";
 import { createSignupFlow } from "../flows/signup";
 import { importAuthKeyRing } from "../keys/ring";
-import type {
-  AuthFactor,
-  AuthFactorKind,
-  AuthKeyRing,
-  AuthUser,
-  FactorStore,
-  NonceStore,
-  OtpStateStore,
-  RecoveryCodeStore,
-  UserStore,
-} from "../types";
+import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, RecoveryCodeStore, UserStore } from "../types";
 import { createAuthGuards, requireAuth } from "./guards";
 import { authCtx } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
@@ -56,7 +48,10 @@ const RING_ROOTS = [
   "d4536f2555836b0b1bdc536c56e6f7245a2e89dd20ff8df68ade3cf0e7f39a65",
   "5be0c6a7d93f14e8a20b7c61f5d9e3a48b17c02e6f94a1d3c85b2e70f9a6d41c",
 ];
-const SESSION_SECRETS = ["Sw8eR3tY6uI1oP4aS7dF2gH5jK9lZ0xC3vB6nM1qW4eR7tY", "Qa1zWs2xEd3cRf4vTg5bYh6nUj7mIk8oLp9Za0Xs1Cd2Vf3"];
+const SESSION_SECRETS = [
+  "c15f22e5e9af45d15e1068ac2186b479735f5c60e4fc302f8916ab67aaf6b2c6",
+  "3434544ef1b4c1319a6f319f350d59a5ff41f0dd9e4547774ced1488d26d9738",
+];
 const CSRF_SECRETS = [
   "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d",
   "1f0e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0",
@@ -261,7 +256,7 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
   const defer = (work: Promise<unknown>) => void pending.push(work.catch(() => undefined));
   const audit = { served: 0, violations: [] as string[] };
   const warnings: [string, Record<string, unknown> | undefined][] = [];
-  let ring: AuthKeyRing = await importAuthKeyRing([RING_ROOTS[0] as string]);
+  let ring: KeyRing = await importAuthKeyRing([RING_ROOTS[0] as string]);
   let bindings: ResilienceEnv = { KV: fakeKV(), SESSION_SECRET: SESSION_SECRETS[0] as string, CSRF_SECRET: CSRF_SECRETS[0] as string };
 
   const logger: Logger = { ...nullLogger, warn: (message, data) => void warnings.push([message, data]), child: () => logger };
@@ -347,10 +342,10 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
   applyMiddlewareChain<ResilienceEnv>(app, {
     before: [invariant],
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
-    session: createAnonymousSession<ResilienceEnv>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.KV }),
+    session: createAnonymousSession<ResilienceEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
     globals: [
       csrfProtection({
-        secret: (c) => importCsrfKey((c as AppContext<ResilienceEnv>).env.CSRF_SECRET),
+        ring: (c) => importKeyRing([(c as AppContext<ResilienceEnv>).env.CSRF_SECRET]),
         subject: (c) => sessionCtx.getOptional(c)?.id,
       }),
     ],

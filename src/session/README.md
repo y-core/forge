@@ -26,10 +26,11 @@ behaviour, consult the `@remix-run/session` documentation.
 Registered once at app level: a hardened cookie, a storage backend, and the middleware that joins them.
 
 ```ts
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { createCookieSessionStorage, createSignedCookie, sessionMiddleware } from "@y-core/forge/session";
 
 const sessionCookie = createSignedCookie("__Host-session", {
-  secrets: [env.SESSION_SECRET], // a weak secret throws — see Security
+  ring: await importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET)), // a weak secret throws — see Security
   maxAge: 60 * 60 * 24 * 7,
   sameSite: "Lax",
 });
@@ -63,7 +64,7 @@ id**; the data lives server-side in KV under that id with a sliding TTL.
 app.use(
   "*",
   createAnonymousSession<AppEnv>({
-    secret: (c) => c.env.SESSION_SECRET, // a weak secret throws — see Security
+    ring: (c) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET)), // a weak secret throws — see Security
     kv: (c) => c.env.SESSIONS_KV,
   }),
 );
@@ -109,30 +110,42 @@ production.
 
 ## Rotating a signing secret
 
+**The secret is a key ring: hex root secrets comma-joined, newest first.** The first is the active key and signs; every key on the ring verifies,
+so existing cookies keep working. A cookie value names the key that signed it, as `value.kid.signature`, and the cookie reports `rotating` whenever
+the ring holds more than one key.
+
+```ts
+const cookie = createSignedCookie("__Host-session", { ring: await importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET)) });
+```
+
 A rotation is two deploys, and the upgrade in between happens on its own.
 
-**1. Prepend the new secret.** The first element signs; the rest only verify, so existing cookies keep working. Nothing else is set — the cookie
-reports `rotating` from its own array.
+**1. Prepend the new secret.** Nothing else is set — the ring is the whole configuration.
 
-```ts
-const cookie = createSignedCookie("__Host-session", { secrets: [env.SESSION_SECRET_NEW, env.SESSION_SECRET_OLD] });
+```bash
+SESSION_SECRET=9c1e…,ab3f…
 ```
 
-From here `sessionMiddleware` re-signs each still-old cookie on the next request that carries it. A session never used again is never upgraded, so
-leave this deploy in place for at least the cookie's `maxAge`.
+From here `sessionMiddleware` re-signs each cookie still naming the old key on the next request that carries it. A session never used again is never
+upgraded, so leave this deploy in place for at least the cookie's `maxAge`.
 
-**2. Drop the old secret.** Any cookie still carrying the old signature now fails to parse and its holder starts fresh — after a full `maxAge`, only
-a client inactive for the whole window.
+**2. Drop the old secret.** Any cookie still naming the old key now fails to verify and its holder starts fresh — after a full `maxAge`, only a
+client inactive for the whole window.
 
-```ts
-const cookie = createSignedCookie("__Host-session", { secrets: [env.SESSION_SECRET_NEW] });
+```bash
+SESSION_SECRET=9c1e…
 ```
 
-`createAnonymousSession` takes the same array from its `secret` resolver, and each element is length-checked individually.
+`createAnonymousSession` takes its ring from the `ring` resolver, so the same variable rotates it. Each secret is held to
+[`SECURITY_HARDENING.md`][sh-8] §8's strength rule; `openssl rand -hex 32` gives one that passes.
+
+**Each cookie name signs under a subkey of its own.** `createSignedCookie` derives a `signed-cookie/<name>` subkey from the ring, so a value minted
+for one cookie never verifies as another, nor as a CSRF token signed under the same ring. It refuses the auth key ring, which `importKeyRing` did
+not build.
 
 **Suppressing the re-issue is the deliberate act, not enabling it.** `{ rotating: false }` makes the middleware decide on the payload alone — old
-cookies keep verifying and are never upgraded, so step 2 would sign every remaining holder out. Pass it only to stop re-issuing for a retired secret
-you are keeping in the array long-term.
+cookies keep verifying and are never upgraded, so step 2 would sign every remaining holder out. Pass it only to stop re-issuing for a retired key
+you are keeping on the ring long-term.
 
 ---
 
@@ -198,8 +211,8 @@ const theme = await themeCookie.parse(c.request.headers.get("cookie")); // strin
 const header = await themeCookie.serialize("dark");
 ```
 
-`parse` never throws: a missing header, an absent name, malformed base64 and malformed UTF-8 all answer `null`. `serialize` throws only on a lone
-surrogate, which UTF-8 cannot represent and which would therefore not survive a round trip.
+`parse` never throws on malformed input: a missing header, an absent name, malformed base64 and malformed UTF-8 all answer `null`. `serialize`
+throws only on a lone surrogate, which UTF-8 cannot represent and which would therefore not survive a round trip.
 
 ---
 
@@ -256,18 +269,18 @@ binding the token to the session id so one minted in one browser cannot be repla
 [`src/form/README.md`][form-readme]'s.
 
 **Source secrets from bindings, and generate each one.** `env.SESSION_SECRET`, never a literal, holding the output of `openssl rand -hex 32`.
-`createSignedCookie` measures a secret as the UTF-8 bytes of the string, and throws on one that fails the strength rule in
-[`SECURITY_HARDENING.md`][sh-8] §8 — so `createAnonymousSession` and flash cookies refuse it too.
+`importKeyRing` decodes each secret from hex and throws on one that fails the strength rule in [`SECURITY_HARDENING.md`][sh-8] §8, so no session,
+anonymous-session or flash cookie is built on a weak one.
 
 ---
 
 ## Gotchas
 
-**The payload decides whether a cookie is written, except under rotation, where the signing secret does.** An unchanged payload means the client
-already holds what would be written. Under rotation the cookie reports which of its secrets verified the incoming value, so one still carrying the
-old signature is re-issued on any request it makes, under either storage, including one that touches nothing — no re-signing and no byte comparison,
-which an embedded expiry would make useless anyway. A cookie that fails to parse — tampered, expired, or signed with a secret the array does not
-carry — is never re-signed back into validity.
+**The payload decides whether a cookie is written, except under rotation, where the signing key does.** An unchanged payload means the client
+already holds what would be written. Under rotation the cookie reports whether the ring's active key signed the incoming value, so one still naming
+an older key is re-issued on any request it makes, under either storage, including one that touches nothing — no re-signing and no byte comparison,
+which an embedded expiry would make useless anyway. A cookie that fails to parse — tampered, expired, or signed under a key the ring does not hold —
+is never re-signed back into validity.
 
 **A sliding window needs a change each request.** Neither reading `session.id` nor re-serializing an unchanged session emits a cookie on its own, so
 nothing re-arms `Max-Age` — and since the expiry is inside the signature, nothing re-arms the server's copy of it either. Use `session.set(…)` or
@@ -277,11 +290,11 @@ nothing re-arms `Max-Age` — and since the expiry is inside the signature, noth
 Without that, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id no cookie carried forward, and every
 anonymous mutation would answer 403. Where the cookie _is_ the id and storage restored it, nothing is written.
 
-**`createAnonymousSession` caches on the `env` object's identity, not on the cookie name and secret.** That is load-bearing: the cached middleware
-closes over the KV namespace `options.kv(c)` returned for the request that built it, so two tenants sharing a cookie name, secure flag and secret
+**`createAnonymousSession` caches on the `env` object's identity, not on the cookie name and ring.** That is load-bearing: the cached middleware
+closes over the KV namespace `options.kv(c)` returned for the request that built it, so two tenants sharing a cookie name, secure flag and ring
 would hash to one slot and share **one KV namespace** — tenant B reading and writing tenant A's sessions.
 
-**The `secret` resolver is called once per isolate, not per request.** A secret change ships as a deploy, which starts fresh isolates, so a rotation
+**The `ring` resolver is called once per isolate, not per request.** A secret change ships as a deploy, which starts fresh isolates, so a rotation
 is picked up when the isolate is rather than mid-life.
 
 **The serialized cookie is queued on the per-request pending-header channel**, flushed by the app's single `applyHeaders` pass — this middleware

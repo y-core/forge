@@ -1,5 +1,5 @@
-import { uuidToBytes } from "../crypto/mod";
 import type { D1DatabaseLike } from "../storage/db/types";
+import { uuidToBytes } from "../storage/db/uuid";
 import { fakeD1 } from "./fakes";
 import type { FakeD1Options } from "./types";
 import type { FakeAuthUser } from "./types";

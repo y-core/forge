@@ -7,7 +7,7 @@ import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
   browserStep,
-  chromiumBundleStep,
+  bundleStep,
   classGroupsStep,
   classOrderStep,
   classTokensStep,
@@ -25,7 +25,6 @@ import {
   importBoundaryStep,
   jsxStep,
   menuNamingStep,
-  lintPluginStep,
   lintStep,
   markdownStep,
   modernCssStep,
@@ -34,7 +33,6 @@ import {
   ssrBoundaryStep,
   stubGlobalsStep,
   testStep,
-  totpBundleStep,
   typeAwareLintStep,
   typecheckStep,
   workerdStep,
@@ -45,6 +43,7 @@ import type { Step } from "../src/tooling/gate/types";
 import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
 import { changelogStep, designStep, docsStep, duplicatesStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
+import { BUNDLE_FIXER, BUNDLES } from "./bundles";
 import { BROWSER_ONLY, CN_FIXTURE_SPECS, CO_LOCATION_EXEMPT, DESIGN_CORPUS_EXCLUDED, LICENCE_HEADERS, SEALED_INTERNAL } from "./exemptions";
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
@@ -54,8 +53,6 @@ import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 
 const EXPORTS = pkg.exports as ExportsMap;
-
-const GEN = "bun run gen:bundles";
 
 const CORPUS_WATCHES = ["**/*.md", "warden/**"];
 
@@ -160,7 +157,7 @@ export const STEPS: readonly Step[] = [
     citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
     agreementDirs: ["warden/canon", "src/ui/design"],
     requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
-    documentedNonExports: ["./crypto"],
+    documentedNonExports: ["./crypto/primitives"],
     unboundSubpaths: ["./render/jsx/jsx-runtime", "./render/jsx/jsx-dev-runtime"],
   }),
   changelogStep({ root: ROOT, packageVersion: pkg.version }, { tier: "full" }),
@@ -182,20 +179,8 @@ export const STEPS: readonly Step[] = [
     stateRecipes: FORGE_STATE_RECIPES,
   }),
   designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
-  // node refuses to strip types under `node_modules`, so a consumer loads a prebuilt copy of each surface a node process imports.
   iccProfileStep({ root: ROOT, profile: "src/render/pdf/sRGB2014.icc", module: "src/render/pdf/icc.ts" }),
-  lintPluginStep(
-    { root: ROOT, entry: "src/tooling/lint/mod.ts", bundle: "src/tooling/lint/plugin.mjs", fixer: GEN },
-    { watches: ["src/tooling/lint/**"] },
-  ),
-  chromiumBundleStep(
-    { root: ROOT, entry: "src/tooling/gate/checks/chromium.ts", bundle: "src/tooling/gate/chromium.mjs", fixer: GEN },
-    { watches: ["src/tooling/gate/checks/chromium.ts", "src/tooling/gate/chromium.mjs"] },
-  ),
-  totpBundleStep(
-    { root: ROOT, entry: "src/testing/totp.ts", bundle: "src/testing/totp.mjs", fixer: GEN },
-    { watches: ["src/testing/totp.ts", "src/crypto/base32.ts", "src/crypto/hotp.ts", "src/testing/totp.mjs"] },
-  ),
+  ...BUNDLES.map(({ label, entry, bundle, watches }) => bundleStep(label, { root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }, { watches })),
   contrastStep(
     {
       root: ROOT,

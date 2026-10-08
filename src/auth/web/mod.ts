@@ -35,6 +35,7 @@ export {
   AUTH_PENDING_SIGNIN_SESSION_KEY,
   AUTH_SESSION_KEY,
   AUTH_SIGNED_IN_SESSION_KEY,
+  AUTH_SITE_DATA_OWED_SESSION_KEY,
   AUTH_STEP_UP_SESSION_KEY,
   AUTH_SURVIVED_SESSION_KEY,
   clearAuthSession,
@@ -93,6 +94,8 @@ export type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./views/types";
 export { PasskeyEnrolView } from "./views/passkey-enrol";
 export type { AuthSignoutProps } from "./views/types";
 export { AuthSignout } from "./views/signout";
+export type { AuthSiteDataProps } from "./views/types";
+export { AuthSiteData } from "./views/site-data";
 export type { SigninViewProps } from "./views/types";
 export { SigninView } from "./views/signin";
 export type { SignupViewProps } from "./views/types";

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { base64urlDecode, base64urlEncode } from "../../crypto/primitives/mod";
 import { AUTH_KV_MIN_TTL_SECONDS } from "../config";
-import type { AuthKeyRing } from "../types";
 import { importAuthKeyRing } from "./ring";
 import { AUTH_TOKEN_VERSION, authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken, tokenKeyId } from "./token";
 import type { AuthTokenPurpose } from "./types";
@@ -24,7 +24,7 @@ const FIELDS: readonly { name: string; offset: number }[] = [
   { name: "ciphertext", offset: 35 },
 ];
 
-function ringOf(...secrets: string[]): Promise<AuthKeyRing> {
+function ringOf(...secrets: string[]): Promise<KeyRing> {
   return importAuthKeyRing(secrets as [string, ...string[]]);
 }
 
@@ -104,7 +104,7 @@ describe("encodeAuthToken and decodeAuthToken", () => {
 
   it("refuses a hand-built ring whose active key id is not the derived form", async () => {
     const ring = await ringOf(SECRET_A);
-    const handBuilt: AuthKeyRing = { activeKeyId: "constructor", keys: { constructor: ring.keys[ring.activeKeyId] as Uint8Array<ArrayBuffer> } };
+    const handBuilt: KeyRing = { activeKeyId: "constructor", keys: { constructor: ring.keys[ring.activeKeyId] as Uint8Array<ArrayBuffer> } };
     expect(encodeAuthToken(handBuilt, "verify", "x", TTL)).rejects.toThrow(
       'encodeAuthToken: key id "constructor" must be 8 base64url characters — use importAuthKeyRing to derive one',
     );
@@ -226,7 +226,7 @@ describe("authNonceKey", () => {
     const withOtherSecret = await importAuthKeyRing([SECRET_B]);
     // Same token, different root key: a bare `sha256(token)` would collide here, and that collision
     // is exactly the consumed-or-not oracle an observer would get.
-    const forged: AuthKeyRing = {
+    const forged: KeyRing = {
       activeKeyId: ring.activeKeyId,
       keys: { [ring.activeKeyId]: withOtherSecret.keys[withOtherSecret.activeKeyId] as Uint8Array<ArrayBuffer> },
     };

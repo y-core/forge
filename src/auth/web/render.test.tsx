@@ -11,6 +11,7 @@ import type { FC } from "../../render/jsx/types";
 import { renderAuthPage } from "./render";
 import type { AuthViews } from "./types";
 import { PasskeyListView } from "./views/passkey-list";
+import type { AuthSiteDataProps } from "./views/types";
 import type { SigninViewProps } from "./views/types";
 import type { VerifyViewProps } from "./views/types";
 
@@ -35,11 +36,23 @@ function context(headers: Record<string, string> = {}, shell?: PageShell): Reque
   return c;
 }
 
-function signin(c: RequestContext, extra: { views?: AuthViews; status?: number; headers?: Record<string, string> } = {}) {
+function signin(
+  c: RequestContext,
+  extra: { views?: AuthViews; status?: number; headers?: Record<string, string>; siteData?: AuthSiteDataProps } = {},
+) {
   return renderAuthPage(c, { name: "signin", view: ForgeSignin, props: signinProps("Ada & Co <ada@example.com>"), ...extra });
 }
 
 describe("renderAuthPage", () => {
+  it("follows the view with the site-data scope when the page carries one", async () => {
+    const res = await signin(context({}, appShell), {
+      siteData: { path: "/auth/signout/site-data", csrfToken: "tok", csrfHeader: "X-CSRF-Token" },
+    });
+    expect(await res.text()).toBe(
+      '<!DOCTYPE html><html lang="en"><body><p data-view="forge">Ada &amp; Co &lt;ada@example.com&gt;</p><div hidden data-scope="auth-site-data" data-site-data-path="/auth/signout/site-data" data-site-data-token="tok" data-site-data-csrf-header="X-CSRF-Token"></div></body></html>',
+    );
+  });
+
   it("renders a full document for an ordinary navigation", async () => {
     const res = await signin(context({}, appShell));
     expect(res.status).toBe(200);

@@ -44,11 +44,22 @@ export type { ConfigDiff } from "./config/types";
 export { diffConfig } from "./config/diff";
 export type { LoadedWranglerConfig, WriteOutcome } from "./config/types";
 export { loadWranglerConfig, parseWranglerConfig, stripJsonc, writeWranglerConfig } from "./config/parse";
-export { createGenEnvCommand, loadOptions, readWranglerConfig } from "./gen/cf-env-command";
+export { createGenEnvCommand, loadOptions } from "./gen/cf-env-command";
 export type { GenOptions } from "./gen/types";
 export type { TableSection } from "./types";
 export { renderSections, renderTable } from "./table";
 export { refusePagesConfig } from "./target";
-export type { CfAuth, PrefixStrategy, ResourceType, SyncAction, SyncConfig, SyncNote, SyncOutput, SyncResult, WranglerConfig } from "./types";
+export type {
+  CfAuth,
+  PrefixStrategy,
+  ResourceType,
+  SyncAction,
+  SyncConfig,
+  SyncNote,
+  SyncOutput,
+  SyncResult,
+  WranglerAssetsConfig,
+  WranglerConfig,
+} from "./types";
 export { ACTION_LABELS, RESOURCE_TYPES } from "./types";
 export { createSyncZoneCommand, planZoneRules, rulesInSync } from "./zone/commands";

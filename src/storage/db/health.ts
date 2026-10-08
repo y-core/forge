@@ -2,7 +2,7 @@ import type { Middleware } from "@remix-run/fetch-router";
 
 import { getAppContext } from "../../context/types";
 import type { AppContext } from "../../context/types";
-import { bytesToHex, sha256 } from "../../crypto/mod";
+import { bytesToHex, sha256 } from "../../crypto/primitives/mod";
 import { createLogger } from "../../logging/logger";
 import { serializeError } from "../../logging/serialize-error";
 import { INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT, schemaFingerprintInput, toSchemaObjects } from "./schema";

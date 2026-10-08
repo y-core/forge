@@ -1,10 +1,12 @@
 import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 
-import { base64urlEncode, bytesToHex, base32Decode, hotpCode, totpCounter, uuidv7 } from "../../crypto/mod";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { base64urlEncode, bytesToHex, base32Decode, hotpCode, totpCounter } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
-import type { AuthFactor, AuthFactorInput, AuthKeyRing, FactorStore } from "../types";
+import type { AuthFactor, AuthFactorInput, FactorStore } from "../types";
 import { installTimingProbe } from "./factors.fixture";
 import { createFactorRegistry } from "./registry";
 import { createTotpAppFactor } from "./totp-app";
@@ -18,9 +20,9 @@ const CURRENT = totpCounter(Math.floor(AT / 1000), { period: PERIOD });
 const ROOT_OLD = "2c83943e16eb5c3741d74260b4751de91afeab397689cfd139f7263b21aec037";
 const ROOT_NEW = "9d1f4b6a0c27e8531fa4d90b6e2c7148ab35f0d962741ec8530b9af62d418c75";
 
-let ring: AuthKeyRing;
+let ring: KeyRing;
 /** The same key demoted behind a newer one, so anything sealed under `ring` opens here as stale. */
-let rotated: AuthKeyRing;
+let rotated: KeyRing;
 
 beforeAll(async () => {
   ring = await importAuthKeyRing([ROOT_OLD]);
@@ -148,7 +150,7 @@ function factor(spy: StoreSpy): AuthFactor {
   return row;
 }
 
-function build(spy: StoreSpy, maxAttempts?: number, lockoutMs?: number, keys: AuthKeyRing = ring) {
+function build(spy: StoreSpy, maxAttempts?: number, lockoutMs?: number, keys: KeyRing = ring) {
   return createTotpAppFactor({
     keys,
     factors: spy.store,
@@ -485,7 +487,7 @@ describe("createTotpAppFactor — a secret that will never open again", () => {
 
 describe("createTotpAppFactor — a sealing key merely absent from the ring", () => {
   /** A ring holding a different root entirely, so nothing sealed under `ring` resolves a key here. */
-  let strangers: AuthKeyRing;
+  let strangers: KeyRing;
 
   beforeAll(async () => {
     strangers = await importAuthKeyRing([ROOT_NEW]);

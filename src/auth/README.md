@@ -15,7 +15,7 @@ Which subpath you reach for is decided by what you are building:
 | --- | --- |
 | `@y-core/forge/auth` | calling the domain — key rings, stores, factors, flows. It builds no `Response`, touches no `Session`, renders nothing |
 | `@y-core/forge/auth/web` | mounting pages, guarding routes, or replacing forge's markup |
-| `@y-core/forge/auth/client` | bundling the browser half of the passkey ceremony — a side-effect import, and `onPasskeyPrf` for a page that derives a key from a passkey |
+| `@y-core/forge/auth/client` | bundling the browser half of the passkey ceremony or of `signoutClearsSiteData` — a side-effect import, and `onPasskeyPrf` for a page that derives a key from a passkey |
 
 The edge is one-way — `auth/web` imports `auth`, and `auth` never names `auth/web` ([`NAMESPACES.md`][namespaces-5h] §5h).
 
@@ -52,7 +52,7 @@ import type { AppContext } from "@y-core/forge/context";
 import { createD1Client } from "@y-core/forge/storage/db";
 
 // Module scope: the ring is resolved once per isolate, not once per request.
-const authOptions = { secret: (c: AppContext<Env>) => importAuthKeyRing([c.env.AUTH_SECRET]) };
+const authOptions = { ring: (c: AppContext<Env>) => importAuthKeyRing([c.env.AUTH_SECRET]) };
 
 async function resolveServices(c: AppContext<Env>): Promise<AuthRequestServices> {
   const { keys } = await resolveAuthServices(c, authOptions);
@@ -241,8 +241,8 @@ surface the admin routes hold. The service is forge's, not yours to substitute.
 neither method is on the type it was given. Build the administrative one only where an administrative route needs it.
 
 Every write answers an `AdminUserOutcome` rather than a boolean, so a refusal says which guard fired: `changed`, `not-found`, `admin-exists`,
-`self`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. What each refusal means to a visitor, the prefix-only
-search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
+`self`, `referenced`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. What each refusal means to a visitor, the
+prefix-only search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
 
 **The first-admin claim needs `AuthWebOptions.bootstrapSecret`, and both halves answer 404 without one** — no secret, no claim endpoint and no
 page. Give it a resolver reading the secret off `c.env` per request, and the claim form then asks for it alongside the confirmation.
@@ -254,6 +254,10 @@ const options: AuthWebOptions<Env> = { ...rest, bootstrapSecret: (c) => c.env.AD
 **Deactivation takes effect on the next request, not the next sign-in.** `resolveAuthIdentity` re-reads the user every request and answers `null`
 for a deactivated one, dropping that session's auth keys as it does — so reactivating the account does not revive the cookies issued before it,
 and the visitor signs in again. A store outage denies without clearing.
+
+**Delete an account your own tables point at by clearing those rows first.** When an app table has a foreign key to `auth_users(id)`, `remove`
+answers `referenced` and deletes nothing — the account's factors and credentials included — and the admin page shows it as a 409 refusal. Where
+your app deletes accounts, delete or transfer the rows that reference the user, then call `remove`.
 
 ---
 
@@ -394,7 +398,7 @@ nothing about any token they do not already hold.
 to their session — shaped to spread straight onto `Navbar`:
 
 ```tsx
-const nav = authNav({ signoutPath: paths.auth.signout(), secret: (c) => importCsrfKey(config(c).csrf.secret) });
+const nav = authNav({ signoutPath: paths.auth.signout(), ring: (c) => importKeyRing(parseKeyRingSecrets(config(c).csrf.secret)) });
 // …per request, in the layout:
 <Navbar config={primaryNav} resolveHref={resolveNavHref} icon={AppIcon} {...(await nav(context))} />;
 ```
@@ -573,7 +577,7 @@ purpose of its own, which is a change to this namespace rather than a call you c
 
 `authNonceKey(ring, token)` derives the key to spend a token against a `NonceStore`.
 
-A value you store rather than send belongs in [`@y-core/forge/keyring`][keyring-readme], not in a token with a long TTL.
+A value you store rather than send belongs in [`@y-core/forge/crypto/keyring`][keyring-readme], not in a token with a long TTL.
 
 ---
 
@@ -617,11 +621,11 @@ No table carries a TTL: every read holds a row against the clock.
 
 ## Rotating the signing secret
 
-A rotation is prepending a secret. `importAuthKeyRing` takes hex root secrets **newest first**, and derives each key id from the key material
-rather than taking one you type. Hold them in one variable, comma-joined, and split it with `keyRingSecrets` from `@y-core/forge/keyring`:
+A rotation is prepending a secret. `importAuthKeyRing` takes hex root secrets **newest first**, and derives each key id from the key material rather
+than taking one you type. Hold them in one variable, comma-joined, and split it with `parseKeyRingSecrets` from `@y-core/forge/crypto/keyring`:
 
 ```ts
-const keys = await importAuthKeyRing(keyRingSecrets(c.env.AUTH_KEY_RING));
+const keys = await importAuthKeyRing(parseKeyRingSecrets(c.env.AUTH_KEY_RING));
 ```
 
 Mark the variable `# forge:ring` in `.dev.vars`, so `forge cf sync --commit --local --rotate AUTH_KEY_RING` prepends a new key and keeps the old
@@ -733,6 +737,7 @@ contract — and know that **the methods below carry rules the caller does none 
 | `RecoveryCodeStore.consume` | Spend a live, unused code and clear the factor's `failed_attempts` in one batch — clearing only when this call spent the code. A staged code, a used one or another user's never matches |
 | `RecoveryCodeStore.commit` | Swap the staged set in for the live one and confirm the factor in one batch, so a failure leaves the old set working |
 | `AdminUserStore.resetFactors` | Delete the user's factors, credentials and recovery codes, revoke their unrevoked bearer tokens, and raise the revocation barrier, in one batch |
+| `AdminUserStore.remove` | Delete the children and the user in one batch, and answer `referenced` — not an error — when a foreign key refuses the user row, leaving every child in place |
 | `IdentityLinkStore.unlink` | Carry the owner in the `WHERE`, so a link id belonging to somebody else unlinks nothing |
 | `OtpStateStore.discard` | Delete **that named code** and no other, so an undelivered issue returns its cooldown without wiping a racing issue that did send |
 | `OtpStateStore.issue` / `countAttempt` | Decide in one conditional statement. A read then a write hands every parallel request a free extra guess |
@@ -749,7 +754,8 @@ Contract-wide rules hold for every method you write:
 
 `AuthStoreError` carries `code`, `operation`, and `constraint` where the backend named an index. Branch on `code`: `conflict` is a uniqueness
 violation the caller can act on, `invalid` says the caller's own value was refused (rendering that as an outage tells a visitor the deployment is
-down when their address was simply too long), and `unavailable` is everything else.
+down when their address was simply too long), `reference` is a foreign key refusing the write — a row still points at the one deleted, or an
+insert names an owner that is not there — and `unavailable` is everything else.
 
 `ChallengeStore` and `NonceStore` are shapes rather than tables, and both are load-bearing: `ChallengeStore.take` is **read-and-delete**, and
 `NonceStore.markConsumed` reports `true` **only the first time**.
@@ -796,10 +802,18 @@ clear it, so the next person at the machine finds nothing:
 const options: AuthWebOptions<Env> = { ...rest, signoutClearsSiteData: true };
 ```
 
-The sign-out response then carries `Clear-Site-Data: "cache", "storage"`, on the `303` and on the htmx `204` alike. `"storage"` also unregisters the
-origin's service workers, so the next page load registers yours afresh. **It is off by default** because it wipes the whole origin, including
-anything the app has not yet synced: warn about unsynced work before the form posts, since the browser clears it the moment the response lands. The
-header is honoured only over HTTPS and on `localhost`.
+The sign-out response then carries `Clear-Site-Data: "cache"`, on the `303` and on the htmx `204` alike, and the sign-in page it lands on posts to
+`auth.signoutSiteData()` for `Clear-Site-Data: "storage"`. It clears only once per sign-out: the mark it consumes is set by the sign-out on the new
+session, so a link to the endpoint wipes nothing. `"storage"` also unregisters the origin's service workers, so the next page load registers yours
+afresh.
+
+**The `"storage"` half needs the auth pages to import `@y-core/forge/auth/client` before `resume()` and to run JavaScript**, the same import the
+passkey ceremony takes, even in an app with no passkeys. Without it nothing fails: sign-out still sends `"cache"`, but IndexedDB,
+`localStorage`, Cache Storage and the service workers survive it for the next person at the machine.
+
+**It is off by default** because it wipes the whole origin, including anything the app has not yet synced: warn about unsynced work before the form
+posts. The header is honoured only over HTTPS and on `localhost`, and the endpoint is under the auth prefix, so it carries the same CSRF and origin
+protection as every other auth `POST`.
 
 ---
 
@@ -861,7 +875,7 @@ go beyond `isAdmin`.
 - [`src/session/README.md`][session-readme] — the session the identity rides on, and the cookie under it
 - [`src/form/README.md`][form-readme] — `csrfProtection`, the token every auth mutation carries
 - [`src/storage/README.md`][storage-readme] — the `D1Client` every adapter is built over, and the UUIDv7 set
-- [`src/crypto/README.md`][crypto-readme] — the sealed primitives this namespace builds on
+- [`src/crypto/README.md`][crypto-readme] — the `crypto` container, and the key ring this namespace signs and seals under
 
 [af]: ../../docs/AUTH_FLOWS.md
 [af-1]: ../../docs/AUTH_FLOWS.md#1-signup
@@ -889,7 +903,7 @@ go beyond `isAdmin`.
 [eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../form/README.md
-[keyring-readme]: ../keyring/README.md
+[keyring-readme]: ../crypto/keyring/README.md
 [namespaces-5h]: ../../docs/NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [session-readme]: ../session/README.md

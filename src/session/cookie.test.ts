@@ -1,51 +1,73 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
-import { base64Encode, hmacSign, importHmacKey, utf8Encode } from "../crypto/mod";
+import { HMAC_DOMAIN, importKeyRing, importKeyRingUnder } from "../crypto/keyring/ring";
+import { resolveKeyRingKey } from "../crypto/keyring/subkey";
+import type { KeyRing } from "../crypto/keyring/types";
+import { base64Encode, hmacSign } from "../crypto/primitives/mod";
 import { createSignedCookie, createUnsignedCookie } from "./cookie";
 import type { SignedCookie } from "./types";
 
-const SECRET_32 = "D5EfoRtVdAg6PLeZU7o7xie8rkRq515c";
-const SECRET_64 = "lMBatlqHQB44SSL8m9owfAj3Q17WGZK7rEnE9dIWHx2pNq8WvR4tLm0YcJ6sKb3F";
-const SECRET = "d7o1aaO6eUnrMUqpdYz0jhE3RcwJ2QRs4UbT3BWj";
-const OTHER = "qsF8gYubD5OSmPBtk0BMNT257XAPeDZt6St0Nd6K";
+const SECRET = "b256a7d7b96e6d3a4b0af43f66e603b82cbc9099daf2fa5ea155af03f0f26fd6";
+const OTHER = "60b88f866b08ade0b7078fc11af89214271cbe56417919986ffd20d21b7d317f";
+const SPARE = "df7bc215d10b817ca5757fe2b023738f06d7ccb1de2f33087c06428643c8ee3b";
+
+const ring = await importKeyRing([SECRET]);
+const otherRing = await importKeyRing([OTHER]);
+const rotated = await importKeyRing([OTHER, SECRET]);
 
 /** The `name=value` pair a browser would send back from a `Set-Cookie`. */
 function back(setCookieHeader: string): string {
   return setCookieHeader.split(";")[0] as string;
 }
 
-/** A wire value carrying `covered` verbatim under a valid signature — the only way to reach a segment `serialize` would never emit. */
-async function forgeWire(covered: string): Promise<string> {
-  const signature = await hmacSign(await importHmacKey(utf8Encode(SECRET)), covered);
-  return `c=${covered}.${base64Encode(signature).replace(/=+$/, "")}`;
+/** The base64 HMAC, padding stripped, of `signed` under the subkey cookie `name` derives for `kid` from `under`. */
+async function signatureUnder(under: KeyRing, name: string, kid: string, signed: string): Promise<string> {
+  const key = resolveKeyRingKey(under, { domain: HMAC_DOMAIN, kid, purpose: `signed-cookie/${name}` }, "hmac");
+  if (!key) throw new Error(`test ring has no key for "${kid}"`);
+  return base64Encode(await hmacSign(await key, signed)).replace(/=+$/, "");
 }
 
-// The wire-format contract, captured against `@remix-run/cookie` 0.5.4 and re-signed under `SECRET` by the
-// HMAC-SHA-256 that reproduces that capture: a cookie in the wild must keep verifying.
+/** A wire value carrying `covered` and `kid` verbatim under a valid signature — the only way to reach a segment `serialize` would never emit. */
+async function forgeWire(covered: string, kid: string = ring.activeKeyId, under: KeyRing = ring): Promise<string> {
+  return `c=${covered}.${kid}.${await signatureUnder(under, "c", kid, `${covered}.${kid}`)}`;
+}
+
 const GOLDEN = {
-  hello: { unsigned: "c=aGVsbG8=", signed: "c=aGVsbG8=.15c9FnTBDt0oRSESFN41sQVGma5g1cfR6/YsHYLAnXc" },
-  "a+b/c=d": { unsigned: "c=YStiL2M9ZA==", signed: "c=YStiL2M9ZA==.qiKMOXX6rqoaGzwjnZQhEL+8LUv2TaJAqlsGNKi6v4o" },
-  café: { unsigned: "c=Y2Fmw6k=", signed: "c=Y2Fmw6k=.FDqCc5LcRzPyQZq6QM4JI7/ZfrQBELC/8yV962lFrMk" },
-  "🎉": { unsigned: "c=8J+OiQ==", signed: "c=8J+OiQ==.FFX9WG9Ox/QBguXAZO/p5oiCNpioWHoEn1krt8DdOBE" },
+  hello: { unsigned: "c=aGVsbG8=", signed: "c=aGVsbG8=.k5EfTANi.RDhqvc13hjo33Dq+9Kozr2zu3ZxXhZk+k4WV0jkOWTE" },
+  "a+b/c=d": { unsigned: "c=YStiL2M9ZA==", signed: "c=YStiL2M9ZA==.k5EfTANi.sR4dNixynT+ujRCbkuQ0/S8JOib0MczaGqrKfKFGZLk" },
+  café: { unsigned: "c=Y2Fmw6k=", signed: "c=Y2Fmw6k=.k5EfTANi.ECsaMB65gu2lFwVA9uUAArdhM3oE0J1ZwXiKItpcBhc" },
+  "🎉": { unsigned: "c=8J+OiQ==", signed: "c=8J+OiQ==.k5EfTANi.uk0kTwuK0psM5yrP2Cq+AspmT4/4okLNrGguKpDQleg" },
   '{"i":"abc","d":{}}': {
     unsigned: "c=eyJpIjoiYWJjIiwiZCI6e319",
-    signed: "c=eyJpIjoiYWJjIiwiZCI6e319.lXr9DBd9G9mDl1SHyLQ3TpIhzn5UHmHHYZ8EtMdC8EU",
+    signed: "c=eyJpIjoiYWJjIiwiZCI6e319.k5EfTANi.02SPSu4me/WlCmc9hgsM/BDeLL63gWB01hhhDSh+Qnc",
   },
-  "ÿÿÿ~": { unsigned: "c=w7/Dv8O/fg==", signed: "c=w7/Dv8O/fg==.l3I+GteuGMEn9eS0ngqnysKkRZ/+cmbeHRU2RlvDhTI" },
+  "ÿÿÿ~": { unsigned: "c=w7/Dv8O/fg==", signed: "c=w7/Dv8O/fg==.k5EfTANi.8kO5itbYDE77zWWZhtPlOSaiT4xtPIoVqBuuBch3cLE" },
 } as const;
 
 describe("wire format — golden vectors", () => {
   for (const [value, expected] of Object.entries(GOLDEN)) {
-    it(`serializes ${JSON.stringify(value)} to the bytes the previous implementation produced`, async () => {
+    it(`serializes ${JSON.stringify(value)} to its pinned bytes`, async () => {
       expect(back(await createUnsignedCookie("c").serialize(value))).toBe(expected.unsigned);
-      expect(back(await createSignedCookie("c", { secrets: [SECRET] }).serialize(value))).toBe(expected.signed);
+      expect(back(await createSignedCookie("c", { ring }).serialize(value))).toBe(expected.signed);
     });
 
-    it(`parses the stored wire bytes of ${JSON.stringify(value)} back to the value`, async () => {
+    it(`parses the pinned wire bytes of ${JSON.stringify(value)} back to the value`, async () => {
       expect(await createUnsignedCookie("c").parse(expected.unsigned)).toBe(value);
-      expect(await createSignedCookie("c", { secrets: [SECRET] }).parse(expected.signed)).toBe(value);
+      expect(await createSignedCookie("c", { ring }).parse(expected.signed)).toBe(value);
     });
   }
+
+  it("serializes and parses a cookie with a lifetime to its pinned bytes", async () => {
+    const pinned = "c=1790000600.aGVsbG8=.k5EfTANi.0/7ER1fjodlzGKS1lou+1wf67ckuyscBFoa9kmoOG5k";
+    const bounded = createSignedCookie("c", { ring, maxAge: 600 });
+    const now = spyOn(Date, "now").mockReturnValue(1_790_000_000_000);
+    try {
+      expect(back(await bounded.serialize("hello"))).toBe(pinned);
+      expect(await bounded.parse(pinned)).toBe("hello");
+    } finally {
+      now.mockRestore();
+    }
+  });
 
   // The base64url alphabet would spell these `-`, `_` and no padding — a slip that breaks a
   // fraction of live sessions while a round-trip-only test still passes.
@@ -57,29 +79,26 @@ describe("wire format — golden vectors", () => {
     expect(payload.endsWith("==")).toBe(true);
   });
 
+  it("puts the ring's active key id between the payload and the signature", async () => {
+    const [payload, kid, signature] = back(await createSignedCookie("c", { ring: rotated }).serialize("hello"))
+      .slice(2)
+      .split(".");
+    expect(payload).toBe("aGVsbG8=");
+    expect(kid).toBe(rotated.activeKeyId);
+    expect(signature).toBe(await signatureUnder(rotated, "c", rotated.activeKeyId, `aGVsbG8=.${rotated.activeKeyId}`));
+  });
+
   it("strips the signature's padding to 43 characters", async () => {
-    const wire = back(await createSignedCookie("c", { secrets: [SECRET] }).serialize("hello")).slice(2);
+    const wire = back(await createSignedCookie("c", { ring }).serialize("hello")).slice(2);
     const signature = wire.slice(wire.lastIndexOf(".") + 1);
     expect(signature).toHaveLength(43);
     expect(signature).not.toContain("=");
   });
 
-  it("re-signs the @remix-run/cookie 0.5.4 capture with the same HMAC-SHA-256 that produced it", async () => {
-    const signatureUnder = async (secret: string, covered: string) =>
-      base64Encode(await hmacSign(await importHmacKey(utf8Encode(secret)), covered)).replace(/=+$/, "");
-    const REMIX_CAPTURE_SECRET = "s".repeat(32);
-    const REMIX_CAPTURE: Record<keyof typeof GOLDEN, string> = {
-      hello: "uoovmJ2VqIgTjdJDvVNBw2gWM8OGq76JA366LG3+vLg",
-      "a+b/c=d": "Xgh4Y09ZKUbR3sTEMaYXM8eUHypbQDrgkLHhT8W/eOA",
-      café: "0+0fPenBZMMrthNXyPkESo2dgs1ZzhK3R4mqU9wjMQY",
-      "🎉": "G18giGWY9SQDW7pqTqTkD830gtk0duc+wPB3UDSg8OI",
-      '{"i":"abc","d":{}}': "dA3fbiAsNbjDsKTJC7H8aFslzw4X85hiEwkRFaU3hXo",
-      "ÿÿÿ~": "BVR4+jJ8gEBkERuWgJUkCmn8aQtQnsJ+fIXks7kB8s8",
-    };
-    for (const [value, { unsigned, signed }] of Object.entries(GOLDEN)) {
-      const payload = unsigned.slice(2);
-      expect(await signatureUnder(REMIX_CAPTURE_SECRET, payload)).toBe(REMIX_CAPTURE[value as keyof typeof GOLDEN]);
-      expect(`c=${payload}.${await signatureUnder(SECRET, payload)}`).toBe(signed);
+  it("signs the payload and kid under the cookie name's HKDF subkey, so the pinned bytes are reproducible", async () => {
+    for (const { unsigned, signed } of Object.values(GOLDEN)) {
+      const covered = `${unsigned.slice(2)}.${ring.activeKeyId}`;
+      expect(`c=${covered}.${await signatureUnder(ring, "c", ring.activeKeyId, covered)}`).toBe(signed);
     }
   });
 });
@@ -95,15 +114,15 @@ describe("round trip", () => {
   });
 
   it("round-trips through a signed cookie", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET] });
+    const cookie = createSignedCookie("c", { ring });
     for (const value of values) {
       expect(await cookie.parse(back(await cookie.serialize(value)))).toBe(value);
     }
   });
 });
 
-describe("parse — never throws", () => {
-  const cookie = createSignedCookie("c", { secrets: [SECRET] });
+describe("parse — never throws on malformed input", () => {
+  const cookie = createSignedCookie("c", { ring });
   const unsigned = createUnsignedCookie("c");
 
   it("answers null for a falsy header", async () => {
@@ -128,7 +147,7 @@ describe("parse — never throws", () => {
   });
 
   it("answers null for a signature from a foreign secret", async () => {
-    const foreign = back(await createSignedCookie("c", { secrets: [OTHER] }).serialize("hello"));
+    const foreign = back(await createSignedCookie("c", { ring: otherRing }).serialize("hello"));
     expect(await cookie.parse(foreign)).toBeNull();
   });
 
@@ -161,24 +180,24 @@ describe("parse — never throws", () => {
 
 describe("serialize — the empty-value sentinel", () => {
   it("emits `name=` with no encode and no HMAC", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET] });
+    const cookie = createSignedCookie("c", { ring });
     expect(back(await cookie.serialize(""))).toBe("c=");
   });
 
   it("keeps the overridden Path while clearing", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET], path: "/" });
+    const cookie = createSignedCookie("c", { ring, path: "/" });
     expect(await cookie.serialize("", { path: "/x" })).toContain("Path=/x");
   });
 });
 
 describe("serialize — attribute override", () => {
   it("emits Max-Age=0 rather than dropping it as falsy", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET], maxAge: 60 });
+    const cookie = createSignedCookie("c", { ring, maxAge: 60 });
     expect(await cookie.serialize("", { maxAge: 0, path: "/" })).toContain("Max-Age=0");
   });
 
   it("leaves untouched fields at their construction defaults", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET], path: "/app", maxAge: 60, sameSite: "Strict" });
+    const cookie = createSignedCookie("c", { ring, path: "/app", maxAge: 60, sameSite: "Strict" });
     const header = await cookie.serialize("v", { maxAge: 30 });
     expect(header).toContain("Path=/app");
     expect(header).toContain("SameSite=Strict");
@@ -186,7 +205,7 @@ describe("serialize — attribute override", () => {
   });
 
   it("refuses the three attributes it forces, so a caller cannot be quietly ignored", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET] });
+    const cookie = createSignedCookie("c", { ring });
     // @ts-expect-error -- `sameSite` is not part of SignedCookieAttributes
     await cookie.serialize("v", { sameSite: "None" });
     // @ts-expect-error -- `httpOnly` is not part of SignedCookieAttributes
@@ -207,24 +226,90 @@ describe("serialize — attribute override", () => {
 });
 
 describe("createSignedCookie — read", () => {
-  const cookie = createSignedCookie("c", { secrets: [SECRET, OTHER] });
+  const cookie = createSignedCookie("c", { ring: rotated });
 
   it("tells an absent cookie apart from one whose value did not verify", async () => {
     expect(await cookie.read(null)).toBeNull();
     expect(await cookie.read("d=value")).toBeNull();
-    expect(await cookie.read("c=aGVsbG8=.AAAA")).toEqual({ value: null, current: false });
+    expect(await cookie.read(`c=aGVsbG8=.${rotated.activeKeyId}.AAAA`)).toEqual({ value: null, current: false });
   });
 
-  it("reports which secret signed a value it verified", async () => {
-    const mine = back(await cookie.serialize("hello"));
-    const retired = back(await createSignedCookie("c", { secrets: [OTHER] }).serialize("hello"));
-    expect(await cookie.read(mine)).toEqual({ value: "hello", current: true });
+  it("reports a value signed under the active key as current", async () => {
+    expect(await cookie.read(back(await cookie.serialize("hello")))).toEqual({ value: "hello", current: true });
+  });
+
+  it("verifies a value signed under a retired key still on the ring, as not current", async () => {
+    const retired = back(await createSignedCookie("c", { ring }).serialize("hello"));
+    expect(retired.split(".")[1]).toBe(ring.activeKeyId);
     expect(await cookie.read(retired)).toEqual({ value: "hello", current: false });
+  });
+
+  it("rejects a value whose key has been dropped from the ring", async () => {
+    const dropped = back(await createSignedCookie("c", { ring }).serialize("hello"));
+    expect(await createSignedCookie("c", { ring: otherRing }).read(dropped)).toEqual({ value: null, current: false });
+  });
+});
+
+describe("createSignedCookie — the key id on the wire", () => {
+  const cookie = createSignedCookie("c", { ring: rotated });
+
+  it("rejects a tampered payload, key id or signature", async () => {
+    const [payload, kid, signature] = back(await cookie.serialize("hello"))
+      .slice(2)
+      .split(".") as [string, string, string];
+    const retiredKid = ring.activeKeyId;
+    const flipped = `${signature.startsWith("A") ? "B" : "A"}${signature.slice(1)}`;
+    expect(await cookie.parse(`c=Y2Fmw6k=.${kid}.${signature}`)).toBeNull();
+    expect(await cookie.parse(`c=${payload}.${retiredKid}.${signature}`)).toBeNull();
+    expect(await cookie.parse(`c=${payload}.${kid}.${flipped}`)).toBeNull();
+    expect(await cookie.parse(`c=${payload}.${signature}`)).toBeNull();
+  });
+
+  it("does not verify one cookie name's value under another name, because the subkey is per name", async () => {
+    const theme = back(await createSignedCookie("theme", { ring: rotated }).serialize("hello")).replace(/^theme=/, "c=");
+    expect(await cookie.parse(theme)).toBeNull();
+  });
+
+  for (const kid of ["constructor", "__proto__", "toString", ""]) {
+    it(`rejects the key id ${JSON.stringify(kid)}, which no ring declares`, async () => {
+      const shadowed: KeyRing = { activeKeyId: rotated.activeKeyId, keys: { ...rotated.keys, [kid]: rotated.keys[rotated.activeKeyId]! } };
+      expect(await cookie.parse(await forgeWire("aGVsbG8=", kid, shadowed))).toBeNull();
+    });
+  }
+
+  it("reports rotating only when the ring holds more than one key", () => {
+    expect(createSignedCookie("c", { ring }).rotating).toBe(false);
+    expect(cookie.rotating).toBe(true);
+  });
+});
+
+describe("createSignedCookie — the auth key ring", () => {
+  const AUTH_DOMAIN = { keyIdLabel: "y-core/forge/test/auth/kid", subkeyLabel: "y-core/forge/test/auth/v1" };
+
+  it("refuses to sign under it", async () => {
+    const authRing = await importKeyRingUnder("importAuthKeyRing", AUTH_DOMAIN, [SPARE]);
+    await expect(createSignedCookie("c", { ring: authRing }).serialize("hello")).rejects.toThrow(
+      `serialize: active key id "${authRing.activeKeyId}" is not one importKeyRing derives`,
+    );
+  });
+
+  it("refuses to verify under it", async () => {
+    const authRing = await importKeyRingUnder("importAuthKeyRing", AUTH_DOMAIN, [SPARE]);
+    await expect(createSignedCookie("c", { ring: authRing }).parse(`c=aGVsbG8=.${authRing.activeKeyId}.AAAA`)).rejects.toThrow(
+      `parse: active key id "${authRing.activeKeyId}" is not one importKeyRing derives`,
+    );
+  });
+
+  it("refuses to read under it", async () => {
+    const authRing = await importKeyRingUnder("importAuthKeyRing", AUTH_DOMAIN, [SPARE]);
+    await expect(createSignedCookie("c", { ring: authRing }).read(`c=aGVsbG8=.${authRing.activeKeyId}.AAAA`)).rejects.toThrow(
+      `read: active key id "${authRing.activeKeyId}" is not one importKeyRing derives`,
+    );
   });
 });
 
 describe("createSignedCookie — the signed expiry", () => {
-  const bounded = createSignedCookie("c", { secrets: [SECRET], maxAge: 600 });
+  const bounded = createSignedCookie("c", { ring, maxAge: 600 });
 
   /** The wire value `bounded` would emit for `value`, with its expiry segment replaced by `expiry`. */
   async function restamp(value: string, expiry: string): Promise<string> {
@@ -241,7 +326,7 @@ describe("createSignedCookie — the signed expiry", () => {
   });
 
   it("answers null once the value is past its expiry", async () => {
-    const brief = createSignedCookie("c", { secrets: [SECRET], maxAge: 2 });
+    const brief = createSignedCookie("c", { ring, maxAge: 2 });
     const wire = back(await brief.serialize("hello"));
     expect(await brief.parse(wire)).toBe("hello");
     await new Promise((resolve) => setTimeout(resolve, 2500));
@@ -253,7 +338,7 @@ describe("createSignedCookie — the signed expiry", () => {
   });
 
   it("answers null for a value carrying no expiry at all", async () => {
-    const unbounded = createSignedCookie("c", { secrets: [SECRET] });
+    const unbounded = createSignedCookie("c", { ring });
     expect(await bounded.parse(back(await unbounded.serialize("hello")))).toBeNull();
   });
 
@@ -276,7 +361,7 @@ describe("createSignedCookie — the signed expiry", () => {
   });
 
   it("honours expires where no maxAge is given", async () => {
-    const future = createSignedCookie("c", { secrets: [SECRET], expires: new Date(Date.now() + 60_000) });
+    const future = createSignedCookie("c", { ring, expires: new Date(Date.now() + 60_000) });
     const wire = back(await future.serialize("hello")).slice(2);
     expect(wire.slice(0, wire.indexOf("."))).toMatch(/^\d{10}$/);
     expect(await future.parse(`c=${wire}`)).toBe("hello");
@@ -289,148 +374,82 @@ describe("createSignedCookie — the signed expiry", () => {
       back(await bounded.serialize("hello"))
         .slice(2)
         .split("."),
-    ).toHaveLength(3);
-    const unbounded = createSignedCookie("c", { secrets: [SECRET] });
+    ).toHaveLength(4);
+    const unbounded = createSignedCookie("c", { ring });
     expect(
       back(await unbounded.serialize("hello"))
         .slice(2)
         .split("."),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
   });
 
   it("refuses an elapsed expires rather than signing values that verify forever", () => {
-    expect(() => createSignedCookie("c", { secrets: [SECRET], expires: new Date(Date.now() - 60_000) })).toThrow(
+    expect(() => createSignedCookie("c", { ring, expires: new Date(Date.now() - 60_000) })).toThrow(
       "createSignedCookie: expires must be in the future",
     );
   });
 
   it("refuses a per-call override that leaves a bounded cookie nothing to embed", async () => {
     await expect(bounded.serialize("hello", { maxAge: 0 })).rejects.toThrow('serialize: "c" carries a lifetime');
-    const byExpires = createSignedCookie("c", { secrets: [SECRET], expires: new Date(Date.now() + 60_000) });
+    const byExpires = createSignedCookie("c", { ring, expires: new Date(Date.now() + 60_000) });
     await expect(byExpires.serialize("hello", { expires: new Date(Date.now() - 60_000) })).rejects.toThrow("expires must be in the future");
     expect(back(await bounded.serialize("", { maxAge: 0 }))).toBe("c=");
   });
 
   it("refuses a non-finite maxAge rather than signing NaN", () => {
-    expect(() => createSignedCookie("c", { secrets: [SECRET], maxAge: Number.NaN })).toThrow("must be a finite number");
-    expect(() => createSignedCookie("c", { secrets: [SECRET], expires: new Date("nonsense") })).toThrow("must be a valid date");
+    expect(() => createSignedCookie("c", { ring, maxAge: Number.NaN })).toThrow("must be a finite number");
+    expect(() => createSignedCookie("c", { ring, expires: new Date("nonsense") })).toThrow("must be a valid date");
   });
 
   // A year in milliseconds is the slip this catches: the expiry would overflow ten digits, every
   // value minted under it would fail its own format check, and nothing would say why.
   it("refuses a maxAge whose expiry would not fit the segment", async () => {
-    expect(() => createSignedCookie("c", { secrets: [SECRET], maxAge: 60 * 60 * 24 * 365 * 1000 })).toThrow("at most 9999999999 epoch seconds");
-    const brief = createSignedCookie("c", { secrets: [SECRET], maxAge: 60 });
+    expect(() => createSignedCookie("c", { ring, maxAge: 60 * 60 * 24 * 365 * 1000 })).toThrow("at most 9999999999 epoch seconds");
+    const brief = createSignedCookie("c", { ring, maxAge: 60 });
     await expect(brief.serialize("hello", { maxAge: 60 * 60 * 24 * 365 * 1000 })).rejects.toThrow("at most 9999999999 epoch seconds");
   });
 
   it("clears with Max-Age=0 rather than carrying the construction lifetime onto the clearing header", async () => {
-    const yearly = createSignedCookie("c", { secrets: [SECRET], maxAge: 31_536_000 });
+    const yearly = createSignedCookie("c", { ring, maxAge: 31_536_000 });
     expect(await yearly.serialize("", { maxAge: 0 })).toBe("c=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure");
     expect(await yearly.serialize("")).toContain("Max-Age=31536000");
   });
 });
 
-describe("createSignedCookie — secret validation", () => {
-  it("does not throw for a single secret of exactly 32 bytes", () => {
-    expect(() => createSignedCookie("session", { secrets: [SECRET_32] })).not.toThrow();
-  });
-
-  it("does not throw for a single secret longer than 32 bytes", () => {
-    expect(() => createSignedCookie("session", { secrets: [SECRET_64] })).not.toThrow();
-  });
-
-  it("does not throw when all secrets in a multi-secret array are valid", () => {
-    expect(() => createSignedCookie("session", { secrets: [SECRET_32, SECRET_64] })).not.toThrow();
-  });
-
-  it("throws when the only secret is shorter than 32 bytes", () => {
-    expect(() => createSignedCookie("session", { secrets: ["short"] })).toThrow(
-      "createSignedCookie: each secret must be at least 32 bytes (got 5)",
-    );
-  });
-
-  it("throws when one secret in a multi-secret array is too short (even if first is valid)", () => {
-    expect(() => createSignedCookie("session", { secrets: [SECRET_32, "short"] })).toThrow("at least 32 bytes");
-  });
-
-  it("throws with a message that includes the offending length", () => {
-    let message = "";
-    try {
-      createSignedCookie("session", { secrets: ["abc"] });
-    } catch (err) {
-      message = (err as Error).message;
-    }
-    expect(message).toContain("3");
-    expect(message).toContain("at least 32 bytes");
-  });
-
-  it("measures a secret in UTF-8 bytes, so eleven three-byte characters clear the floor", () => {
-    expect(() => createSignedCookie("session", { secrets: ["日本語の秘密鍵を生成す"] })).not.toThrow();
-  });
-
-  it("throws when a 32-character secret repeats one character", () => {
-    expect(() => createSignedCookie("session", { secrets: ["s".repeat(32)] })).toThrow(
-      "createSignedCookie: a secret whose bytes are all the same value is not a secret",
-    );
-  });
-
-  it("throws when a secret is drawn from too small an alphabet", () => {
-    expect(() => createSignedCookie("session", { secrets: [SECRET_32, "abcd".repeat(8)] })).toThrow(
-      "createSignedCookie: a secret carrying only 4 distinct byte values is not one a CSPRNG produced",
-    );
-  });
-});
-
 describe("createSignedCookie — returned cookie", () => {
   it("returns a cookie object with the provided name", () => {
-    expect(createSignedCookie("auth-session", { secrets: [SECRET_32] }).name).toBe("auth-session");
-  });
-
-  it("returns a cookie with the provided name when multiple secrets are supplied", () => {
-    expect(createSignedCookie("my-cookie", { secrets: [SECRET_32, SECRET_64] }).name).toBe("my-cookie");
+    expect(createSignedCookie("auth-session", { ring }).name).toBe("auth-session");
   });
 
   it("defaults sameSite to Lax when not specified", async () => {
-    expect(await createSignedCookie("session", { secrets: [SECRET_32] }).serialize("value")).toContain("SameSite=Lax");
+    expect(await createSignedCookie("session", { ring }).serialize("value")).toContain("SameSite=Lax");
   });
 
   it("respects a Strict sameSite override", async () => {
-    expect(await createSignedCookie("session", { secrets: [SECRET_32], sameSite: "Strict" }).serialize("value")).toContain("SameSite=Strict");
+    expect(await createSignedCookie("session", { ring, sameSite: "Strict" }).serialize("value")).toContain("SameSite=Strict");
   });
 
   it("always sets HttpOnly on the serialized cookie", async () => {
-    expect(await createSignedCookie("session", { secrets: [SECRET_32] }).serialize("value")).toContain("HttpOnly");
+    expect(await createSignedCookie("session", { ring }).serialize("value")).toContain("HttpOnly");
   });
 
   // Hardcoded, with no option to relax it: development is https at every hop, so `Secure` is
   // correct there by construction (`WORKERS_PLATFORM.md` §4e).
   it("always sets Secure, and takes no option that could drop it", async () => {
-    expect(await createSignedCookie("session", { secrets: [SECRET_32] }).serialize("value")).toContain("Secure");
+    expect(await createSignedCookie("session", { ring }).serialize("value")).toContain("Secure");
     // @ts-expect-error -- `secure` is not part of SignedCookieOptions
-    const relaxed = createSignedCookie("session", { secrets: [SECRET_32], secure: false });
+    const relaxed = createSignedCookie("session", { ring, secure: false });
     expect(await relaxed.serialize("value")).toContain("Secure");
   });
 
   // The per-call override wins everywhere else in the merge, so without the re-force a decorated
   // `serialize` — or one line of consumer code — drops `httpOnly` and `secure` back off.
   it("re-forces HttpOnly and Secure over a serialize-time override that drops them", async () => {
-    const cookie = createSignedCookie("session", { secrets: [SECRET_32] });
+    const cookie = createSignedCookie("session", { ring });
     // @ts-expect-error -- neither is part of SignedCookieAttributes; this is the untyped caller
     const header = await cookie.serialize("value", { httpOnly: false, secure: false });
     expect(header).toContain("HttpOnly");
     expect(header).toContain("Secure");
-  });
-
-  it("reports rotating only when more than one secret is held", () => {
-    expect(createSignedCookie("c", { secrets: [SECRET_32] }).rotating).toBe(false);
-    expect(createSignedCookie("c", { secrets: [SECRET_32, SECRET_64] }).rotating).toBe(true);
-  });
-
-  it("verifies against every secret, in array order", async () => {
-    const seeded = back(await createSignedCookie("c", { secrets: [OTHER] }).serialize("payload"));
-    expect(await createSignedCookie("c", { secrets: [SECRET, OTHER] }).parse(seeded)).toBe("payload");
-    expect(await createSignedCookie("c", { secrets: [SECRET] }).parse(seeded)).toBeNull();
   });
 });
 
@@ -452,14 +471,14 @@ describe("serialize — the browser's size cap", () => {
   }
 
   it("serializes a payload that still fits, and reads it back whole", async () => {
-    const cookie = createSignedCookie("session", { secrets: [SECRET] });
+    const cookie = createSignedCookie("session", { ring });
     const value = await largestFitting(cookie);
     expect(value.length).toBeGreaterThan(2048);
     expect(await cookie.parse(back(await cookie.serialize(value)))).toBe(value);
   });
 
   it("throws naming the measured size once one character more is asked for", async () => {
-    const cookie = createSignedCookie("session", { secrets: [SECRET] });
+    const cookie = createSignedCookie("session", { ring });
     const over = `${await largestFitting(cookie)}x`;
     const message = await cookie.serialize(over).then(
       () => "",
@@ -477,7 +496,7 @@ describe("serialize — the browser's size cap", () => {
   // The clearing header is a name and a handful of attributes, so no session can be large enough to
   // leave its own holder unable to sign out.
   it("never trips on the destroy path, however large the value it replaces", async () => {
-    const cookie = createSignedCookie("session", { secrets: [SECRET], maxAge: 600 });
+    const cookie = createSignedCookie("session", { ring, maxAge: 600 });
     expect(await cookie.serialize("", { maxAge: 0 })).toContain("Max-Age=0");
   });
 });
@@ -485,31 +504,31 @@ describe("serialize — the browser's size cap", () => {
 describe("construction guards", () => {
   it("throws on an empty name", () => {
     // An empty name is the one path to `SetCookie.toString()` returning `""`, i.e. an empty header.
-    expect(() => createSignedCookie("", { secrets: [SECRET_32] })).toThrow("must not be empty");
+    expect(() => createSignedCookie("", { ring })).toThrow("must not be empty");
     expect(() => createUnsignedCookie("")).toThrow("must not be empty");
   });
 
   it("throws on a lone surrogate rather than substituting U+FFFD", async () => {
     await expect(createUnsignedCookie("c").serialize("\uD83D")).rejects.toThrow("lone surrogates");
-    await expect(createSignedCookie("c", { secrets: [SECRET] }).serialize("bad \uDC00 here")).rejects.toThrow("lone surrogates");
+    await expect(createSignedCookie("c", { ring }).serialize("bad \uDC00 here")).rejects.toThrow("lone surrogates");
   });
 });
 
 describe("createSignedCookie — the __Host- prefix", () => {
   it("refuses a domain at construction", () => {
-    expect(() => createSignedCookie("__Host-s", { secrets: [SECRET], domain: "example.com" })).toThrow(
+    expect(() => createSignedCookie("__Host-s", { ring, domain: "example.com" })).toThrow(
       'createSignedCookie: "__Host-s" is a __Host- cookie, so it must not carry a domain (got example.com)',
     );
   });
 
   it("refuses a path other than / at construction", () => {
-    expect(() => createSignedCookie("__Host-s", { secrets: [SECRET], path: "/app" })).toThrow(
+    expect(() => createSignedCookie("__Host-s", { ring, path: "/app" })).toThrow(
       'createSignedCookie: "__Host-s" is a __Host- cookie, so its path must be "/" (got /app)',
     );
   });
 
   it("refuses a domain or a path other than / on a per-call override", async () => {
-    const cookie = createSignedCookie("__Host-s", { secrets: [SECRET] });
+    const cookie = createSignedCookie("__Host-s", { ring });
     await expect(cookie.serialize("v", { domain: "example.com" })).rejects.toThrow(
       'serialize: "__Host-s" is a __Host- cookie, so it must not carry a domain',
     );
@@ -517,7 +536,7 @@ describe("createSignedCookie — the __Host- prefix", () => {
   });
 
   it("serializes with Path=/, Secure and no Domain under its defaults", async () => {
-    const header = await createSignedCookie("__Host-s", { secrets: [SECRET] }).serialize("v");
+    const header = await createSignedCookie("__Host-s", { ring }).serialize("v");
     expect(header.startsWith("__Host-s=")).toBe(true);
     expect(header).toContain("Path=/");
     expect(header).toContain("Secure");
@@ -544,43 +563,23 @@ describe("key cache", () => {
     return calls;
   }
 
-  it("imports a key once, then never again", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET] });
+  it("derives and imports a key on first use, then never again", async () => {
+    const cookie = createSignedCookie("c", { ring: await importKeyRing([SPARE]) });
     const first = await countImports(async () => {
       await cookie.parse(back(await cookie.serialize("warm")));
     });
-    expect(first).toBe(1);
+    expect(first).toBeGreaterThan(0);
     const rest = await countImports(async () => {
       for (let i = 0; i < 5; i++) await cookie.parse(back(await cookie.serialize(`v${i}`)));
     });
     expect(rest).toBe(0);
   });
 
-  it("imports once under concurrent first use", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET] });
-    const calls = await countImports(() => Promise.all([cookie.serialize("a"), cookie.serialize("b"), cookie.serialize("c")]));
-    expect(calls).toBe(1);
-  });
-
-  it("imports one key per secret, not one per call", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET, OTHER] });
-    const seeded = back(await createSignedCookie("c", { secrets: [OTHER] }).serialize("payload"));
-    const calls = await countImports(async () => {
-      expect(await cookie.parse(seeded)).toBe("payload");
-      expect(await cookie.parse(seeded)).toBe("payload");
-    });
-    expect(calls).toBe(2);
-  });
-
-  it("clears the slot when the import fails, so a transient failure is not permanent", async () => {
-    const cookie = createSignedCookie("c", { secrets: [SECRET] });
-    const original = crypto.subtle.importKey.bind(crypto.subtle);
-    crypto.subtle.importKey = (() => Promise.reject(new Error("transient"))) as typeof crypto.subtle.importKey;
-    try {
-      await expect(cookie.serialize("v")).rejects.toThrow("transient");
-    } finally {
-      crypto.subtle.importKey = original;
-    }
-    expect(await cookie.parse(back(await cookie.serialize("v")))).toBe("v");
+  it("imports no more under concurrent first use than under one", async () => {
+    const single = createSignedCookie("c", { ring: await importKeyRing([SPARE]) });
+    const once = await countImports(() => single.serialize("a"));
+    const concurrent = createSignedCookie("c", { ring: await importKeyRing([SPARE]) });
+    const calls = await countImports(() => Promise.all([concurrent.serialize("a"), concurrent.serialize("b"), concurrent.serialize("c")]));
+    expect(calls).toBe(once);
   });
 });

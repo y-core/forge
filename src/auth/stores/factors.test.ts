@@ -1,19 +1,21 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlDecode, uuidToBytes, uuidv7 } from "../../crypto/mod";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { base64urlDecode } from "../../crypto/primitives/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
+import { uuidToBytes, uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
 import type { AuthFactorRequirement } from "../factors/types";
-import type { AuthFactor, AuthKeyRing, AuthStoreResult } from "../types";
+import type { AuthFactor, AuthStoreResult } from "../types";
 import { createFactorStore, purgeStaleTotpSecrets } from "./factors";
 
 const DAY = 86_400_000;
 
 /** The purge takes the ring, so the key it keeps is the one the deployment actually seals under. */
-const RING: AuthKeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
+const RING: KeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
 
 const USER_ID = uuidv7();
 const OTHER_ID = uuidv7();

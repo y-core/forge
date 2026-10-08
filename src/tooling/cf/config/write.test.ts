@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { CliError } from "../../cli/errors";
 import { syncBindings } from "../account/engine";
 import { kvHandler } from "../account/handlers/kv";
 import type { WranglerConfig } from "../types";
@@ -166,6 +167,22 @@ describe("write-back refusals", () => {
     if (write.ok) throw new Error("expected refusal");
     expect(write.error.message).toMatch(/gone \(key removed\)/);
   });
+
+  for (const force of [false, true]) {
+    it(`refuses a splice whose reparse differs from the update, and leaves the file unchanged (force: ${force})`, () => {
+      const source = `{\n  "name": "w",\n  "stray": 1,\n  "kv_namespaces": [\n    {\n      "binding": "A"\n    }\n  ]\n}\n`;
+      const parsed = loadedFrom(source);
+      const loaded = { ...parsed, config: { name: "w", kv_namespaces: [{ binding: "A" }] } };
+      const updated: WranglerConfig = { name: "w", kv_namespaces: [{ binding: "A", id: "x" }] };
+
+      const write = writeWranglerConfig(loaded, updated, { force });
+
+      if (write.ok) throw new Error("expected refusal");
+      expect(write.error).toBeInstanceOf(CliError);
+      expect(write.error.message).toContain("did not reproduce the expected result");
+      expect(readFileSync(loaded.path, "utf-8")).toBe(source);
+    });
+  }
 
   it("still splices when the file carries no comments at all", () => {
     const path = project(`{\n  "name": "w",\n  "kv_namespaces": [\n    {\n      "binding": "A"\n    }\n  ]\n}\n`);

@@ -1,4 +1,4 @@
-import { timingSafeEqual, utf8Decode } from "../../crypto/mod";
+import { timingSafeEqual, utf8Decode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import type { ClientData, ClientDataExpectation, ClientDataReason, PasskeyCeremony } from "./types";

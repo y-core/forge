@@ -267,9 +267,10 @@ return serveObject(r2Backend(c.env.ASSETS), c.request, key, { contentDisposition
 A signed URL delegates GET access to one object for a fixed window without exposing the bucket.
 
 ```ts
-import { createSignedObjectUrl, importSignedUrlKeyRing, r2Backend, serveObject, verifySignedObjectUrl } from "@y-core/forge/storage/r2";
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+import { createSignedObjectUrl, r2Backend, serveObject, verifySignedObjectUrl } from "@y-core/forge/storage/r2";
 
-const ring = await importSignedUrlKeyRing([c.env.SIGNED_URL_KEY]); // hex, from a secret binding — never a literal
+const ring = await importKeyRing(parseKeyRingSecrets(c.env.SIGNED_URL_KEY_RING)); // hex, from a secret binding — never a literal
 
 const url = await createSignedObjectUrl(ring, c.request.url, "avatars/42.png", { expiresInSeconds: 600 });
 
@@ -283,16 +284,17 @@ return serveObject(r2Backend(c.env.ASSETS), c.request, verdict.data);
 A refused link answers `"invalid-format"`, `"expired"`, `"unknown-key"` or `"invalid-signature"`. What the HMAC covers, the order the checks run
 in, and why the refusal reason belongs in your logs rather than in the response are [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
 
-**Give signed URLs a secret of their own.** Reusing the CSRF secret ties the two rotations together, and a leak of one retires both.
+**Give signed URLs a secret of their own.** Reusing the CSRF secret ties the two rotations together, and a leak of one retires both. The ring
+signs under a `signed-url` subkey, and both functions throw on the auth key ring.
 
 ---
 
 ## Rotating the signed-URL secret
 
-Prepend the new secret and deploy:
+Prepend the new secret to the ring variable, comma-joined, and deploy:
 
-```ts
-const ring = await importSignedUrlKeyRing([c.env.SIGNED_URL_KEY_NEW, c.env.SIGNED_URL_KEY_OLD]);
+```bash
+SIGNED_URL_KEY_RING=9c1e…,ab3f…
 ```
 
 Links minted after the deploy carry the new secret's key id; links already handed out keep verifying against the old one.

@@ -128,7 +128,7 @@ describe("createSecretsHandler() — absence is visible", () => {
 });
 
 describe("classification by marker", () => {
-  const { configPath } = makeProject(`LOG_LEVEL=DEBUG\n${PUSH_MARKER}\nSTRIPE_KEY=v\n${GENERATE_MARKER}\nSESSION_SECRET=v\n`);
+  const { configPath } = makeProject(`LOG_LEVEL=DEBUG\n${PUSH_MARKER}\nSTRIPE_KEY=v\n${GENERATE_MARKER}\nINTERNAL_API_TOKEN=v\n`);
 
   it("gives the fixed handler only the secret-marked keys", () => {
     expect(
@@ -140,7 +140,7 @@ describe("classification by marker", () => {
 
   it("gives the rotatable handler only the rotate-marked keys", () => {
     const entries = createRotatableSecretsHandler(configPath).extract({} as WranglerConfig);
-    expect(entries.map((e) => e.name)).toEqual(["SESSION_SECRET"]);
+    expect(entries.map((e) => e.name)).toEqual(["INTERNAL_API_TOKEN"]);
   });
 
   it("gives neither handler an unmarked key — that is the local-vars handler's", () => {
@@ -157,7 +157,7 @@ describe("classification by marker", () => {
       makeCtx({ fetch: makeFetch([]), dryRun: true }),
     );
     const rotRes = await createRotatableSecretsHandler(configPath).reconcile(
-      [{ name: "SESSION_SECRET", value: "v", conflictsWithVar: false }],
+      [{ name: "INTERNAL_API_TOKEN", value: "v", conflictsWithVar: false }],
       makeCtx({ fetch: makeFetch([]), dryRun: true }),
     );
     expect(fixedRes.results[0]?.resourceType).toBe("secrets");
@@ -221,9 +221,9 @@ describe("fixed secrets — the local value is what goes remote", () => {
 });
 
 describe("rotatable secrets — the local value never leaves", () => {
-  const { configPath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=local-value\n`);
+  const { configPath } = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=local-value\n`);
   const handler = createRotatableSecretsHandler(configPath);
-  const entry = [{ name: "SESSION_SECRET", value: "local-value", conflictsWithVar: false }];
+  const entry = [{ name: "INTERNAL_API_TOKEN", value: "local-value", conflictsWithVar: false }];
 
   function capturingFetch(remoteSecrets: unknown[], sent: { text?: string }[]): typeof globalThis.fetch {
     return async (_url, init) => {
@@ -264,7 +264,7 @@ describe("rotatable secrets — the local value never leaves", () => {
 
   it("reports in-sync when the name is already there", async () => {
     const sent: { text?: string }[] = [];
-    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("SESSION_SECRET"), sent) }));
+    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("INTERNAL_API_TOKEN"), sent) }));
     expect(sent).toHaveLength(0);
     expect(res.results[0]?.action).toBe("in-sync");
   });
@@ -273,7 +273,7 @@ describe("rotatable secrets — the local value never leaves", () => {
     const sent: { text?: string }[] = [];
     const res = await handler.reconcile(
       entry,
-      makeCtx({ fetch: capturingFetch(remote("SESSION_SECRET"), sent), rotate: new Set(["SESSION_SECRET"]) }),
+      makeCtx({ fetch: capturingFetch(remote("INTERNAL_API_TOKEN"), sent), rotate: new Set(["INTERNAL_API_TOKEN"]) }),
     );
 
     expect(sent[0]?.text).toMatch(/^[0-9a-f]{64}$/);
@@ -286,7 +286,7 @@ describe("rotatable secrets — the local value never leaves", () => {
     const sent: { text?: string }[] = [];
     const res = await handler.reconcile(
       entry,
-      makeCtx({ fetch: capturingFetch(remote("SESSION_SECRET"), sent), rotate: new Set(["SESSION_SECRET"]) }),
+      makeCtx({ fetch: capturingFetch(remote("INTERNAL_API_TOKEN"), sent), rotate: new Set(["INTERNAL_API_TOKEN"]) }),
     );
     expect(JSON.stringify(res.results)).not.toContain(sent[0]?.text as string);
   });
@@ -295,7 +295,7 @@ describe("rotatable secrets — the local value never leaves", () => {
     // The asymmetry that makes --rotate meaningful: creating destroys nothing,
     // replacing destroys the value in use.
     const sent: { text?: string }[] = [];
-    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("SESSION_SECRET"), sent) }));
+    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("INTERNAL_API_TOKEN"), sent) }));
     expect(sent).toHaveLength(0);
     expect(res.results[0]?.action).toBe("in-sync");
   });
@@ -304,7 +304,7 @@ describe("rotatable secrets — the local value never leaves", () => {
     const sent: { text?: string }[] = [];
     const res = await handler.reconcile(
       entry,
-      makeCtx({ fetch: capturingFetch(remote("SESSION_SECRET"), sent), rotate: new Set(["SESSION_SECRET"]), dryRun: true }),
+      makeCtx({ fetch: capturingFetch(remote("INTERNAL_API_TOKEN"), sent), rotate: new Set(["INTERNAL_API_TOKEN"]), dryRun: true }),
     );
     expect(sent).toHaveLength(0);
     expect(res.results[0]?.action).toBe("would-rotate");
@@ -312,7 +312,7 @@ describe("rotatable secrets — the local value never leaves", () => {
 
   it("leaves a name --rotate did not mention on its existing value", async () => {
     const sent: { text?: string }[] = [];
-    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("SESSION_SECRET"), sent), rotate: new Set(["OTHER"]) }));
+    const res = await handler.reconcile(entry, makeCtx({ fetch: capturingFetch(remote("INTERNAL_API_TOKEN"), sent), rotate: new Set(["OTHER"]) }));
     expect(sent).toHaveLength(0);
     expect(res.results[0]?.action).toBe("in-sync");
   });
@@ -320,14 +320,17 @@ describe("rotatable secrets — the local value never leaves", () => {
   it("still shows an existing secret as present when the rotation write is rejected", async () => {
     // `remote` is presence, not success: the old value is sitting untouched on the
     // remote, so `Remote: no` would send the operator looking for a secret that is there.
-    const res = await handler.reconcile(entry, makeCtx({ fetch: makeFetch(remote("SESSION_SECRET"), false), rotate: new Set(["SESSION_SECRET"]) }));
+    const res = await handler.reconcile(
+      entry,
+      makeCtx({ fetch: makeFetch(remote("INTERNAL_API_TOKEN"), false), rotate: new Set(["INTERNAL_API_TOKEN"]) }),
+    );
     expect(res.results[0]?.action).toBe("error");
     expect(res.results[0]?.remote).toBe(true);
   });
 
   it("does not report orphans — one handler names them, or a remote secret is listed twice", async () => {
     const res = await handler.reconcile(entry, makeCtx({ fetch: makeFetch(remote("SOMEONE_ELSES")) }));
-    expect(res.results.map((r) => r.binding)).toEqual(["SESSION_SECRET"]);
+    expect(res.results.map((r) => r.binding)).toEqual(["INTERNAL_API_TOKEN"]);
   });
 });
 
@@ -393,8 +396,8 @@ describe("a remote secret nothing local claims", () => {
   it("counts a rotatable or unmarked key as claiming the name", async () => {
     // Only the fixed handler lists orphans, so it must recognise every local key —
     // otherwise a rotatable secret is reported both as awaiting rotation and as an orphan.
-    const { configPath } = makeProject(`LOG_LEVEL=DEBUG\n${GENERATE_MARKER}\nSESSION_SECRET=v\n`);
-    const res = await createSecretsHandler(configPath).reconcile([], makeCtx({ fetch: makeFetch(remote("SESSION_SECRET", "LOG_LEVEL")) }));
+    const { configPath } = makeProject(`LOG_LEVEL=DEBUG\n${GENERATE_MARKER}\nINTERNAL_API_TOKEN=v\n`);
+    const res = await createSecretsHandler(configPath).reconcile([], makeCtx({ fetch: makeFetch(remote("INTERNAL_API_TOKEN", "LOG_LEVEL")) }));
     expect(res.results).toEqual([]);
   });
 });
@@ -436,14 +439,14 @@ describe("secret values never reach a result row", () => {
   });
 
   it("holds for the rotatable handler, whose local value is never sent at all", async () => {
-    const { configPath } = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=${SENTINEL}\n`);
+    const { configPath } = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=${SENTINEL}\n`);
     const handler = createRotatableSecretsHandler(configPath);
-    const rotatable = [{ name: "SESSION_SECRET", value: SENTINEL, conflictsWithVar: false }];
+    const rotatable = [{ name: "INTERNAL_API_TOKEN", value: SENTINEL, conflictsWithVar: false }];
 
     const runs = await Promise.all([
       handler.reconcile(rotatable, makeCtx({ fetch: makeFetch([]) })),
-      handler.reconcile(rotatable, makeCtx({ fetch: makeFetch(remote("SESSION_SECRET")) })),
-      handler.reconcile(rotatable, makeCtx({ fetch: makeFetch([]), rotate: new Set(["SESSION_SECRET"]) })),
+      handler.reconcile(rotatable, makeCtx({ fetch: makeFetch(remote("INTERNAL_API_TOKEN")) })),
+      handler.reconcile(rotatable, makeCtx({ fetch: makeFetch([]), rotate: new Set(["INTERNAL_API_TOKEN"]) })),
       handler.reconcile(rotatable, makeCtx({ fetch: echoingFetch(400, 9106) })),
     ]);
 
@@ -453,7 +456,7 @@ describe("secret values never reach a result row", () => {
   });
 
   it("also holds for the rendered rows produced through syncBindings", async () => {
-    const { configPath } = makeProject(`${PUSH_MARKER}\nCSRF_SECRET=${SENTINEL}\n${GENERATE_MARKER}\nSESSION_SECRET=${SENTINEL}\n`);
+    const { configPath } = makeProject(`${PUSH_MARKER}\nCSRF_SECRET=${SENTINEL}\n${GENERATE_MARKER}\nINTERNAL_API_TOKEN=${SENTINEL}\n`);
     const out = await syncBindings(
       { name: "proj" },
       { auth: AUTH },

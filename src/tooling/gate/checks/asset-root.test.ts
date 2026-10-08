@@ -25,7 +25,7 @@ function writeConfigs(blocks: string, runWorkerFirst: readonly string[]): void {
   writeFileSync(join(root, "assets.config.ts"), `export default {\n  paths: { publicDir: "public/assets" },${blocks}\n};\n`);
   writeFileSync(
     join(root, "wrangler.jsonc"),
-    `{\n  // a comment, so the JSONC path is exercised\n  "assets": { "directory": "./public", "run_worker_first": ${JSON.stringify(runWorkerFirst)} }\n}\n`,
+    `{\n  // a comment, so the JSONC path is exercised\n  "name": "app",\n  "assets": { "directory": "./public", "run_worker_first": ${JSON.stringify(runWorkerFirst)} }\n}\n`,
   );
 }
 
@@ -151,5 +151,17 @@ describe("checkAssetRoot", () => {
     const result = await run();
     expect(result.ok).toBe(false);
     expect(result.summary).toBe("asset-root exclusions: unparseable");
+  });
+
+  it("fails as unparseable when the worker config names no Worker", async () => {
+    writeConfigs(ICONS, ["/*", "!/favicon.svg"]);
+    writeFileSync(join(root, "wrangler.jsonc"), '{ "assets": { "directory": "./public" } }');
+    const result = await run();
+    expect([result.ok, result.summary, result.findings.length]).toEqual([false, "asset-root exclusions: unparseable", 1]);
+    expect(
+      result.findings[0]?.message.startsWith(
+        `\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(root, "wrangler.jsonc")}: name:`,
+      ),
+    ).toBe(true);
   });
 });

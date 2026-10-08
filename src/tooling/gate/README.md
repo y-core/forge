@@ -99,9 +99,7 @@ that match rules your repository actually holds; the label in each row is its `-
 | `classGroupsStep` → `validate-class-groups` | `cn`'s conflict table matches the one regenerated from the design system |
 | `designScaleStep` → `validate-design-scale` | The design-scale data the lint plugin reads matches the one regenerated from the design system |
 | `contrastStep` → `validate-contrast` | Every audited foreground/background pair meets its contrast criterion |
-| `lintPluginStep` → `validate-lint-plugin` | The committed oxlint-plugin bundle a consumer loads matches a fresh build of its TypeScript source |
-| `chromiumBundleStep` → `validate-chromium-bundle` | The committed chromium-resolution bundle a `playwright.config.ts` imports matches a fresh build of its source |
-| `totpBundleStep` → `validate-totp-bundle` | The committed `@y-core/forge/testing/totp` bundle a browser spec imports matches a fresh build of its source |
+| `bundleStep(label, …)` → the `label` you give it | A committed bundle a node process loads matches a fresh build of its TypeScript source |
 
 The tool rows carry no check and simply spawn: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep`
 (`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Others spawn something a machine may not have —
@@ -131,8 +129,9 @@ Most rows are opt-in, and each option is a question about your repository rather
 | A suite split by the question each set answers | `testSets` | One labelled `bun test` row per set, replacing the single `test` row that `tests` feeds |
 | `ui/*` components and a Tailwind stylesheet | `design` | The platform-CSS and class rows; `design.cssDir` adds `validate-css-tokens` |
 | Contrast pairs this repository actually draws | `contrast` | `validate-contrast` — the audit fails a run that measured no pairs |
-| A browser-only directory tier of your own | `ssrBoundary` | `validate-ssr-boundary` |
+| A browser-only directory tier of your own | `ssrBoundary` | `validate-ssr-boundary`; `ssrBoundary.serverDirs` adds `validate-client-boundary`, which fails a module under `clientDirs` importing one of those directories at value |
 | A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; beside `features`, it also reads the feature manifest |
+| A third-party tree copied into your source | `vendorDir` | `validate-vendor-boundary` — a module inside it may import the tree itself and packages, never a directory or source file beside it under its parent |
 | Markdown oxfmt has been told to ignore | `markdown` | `validate-markdown` |
 | A library's `.tsx` compiled under a consumer's tsconfig | `jsx` | `validate-jsx`; an application states `jsxImportSource` once instead |
 | Cloned `.claude/` trees | `warden: true` | The `warden sync --check` row |
@@ -166,7 +165,7 @@ exportsStep({
   exports: pkg.exports,
   files: pkg.files,
   browserOnly: [],
-  sealedInternal: ["src/crypto/mod.ts"],
+  sealedInternal: ["src/crypto/primitives/mod.ts"],
 }),
 ```
 

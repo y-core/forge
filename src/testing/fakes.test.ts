@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { hexToBytes } from "../crypto/mod";
+import { hexToBytes } from "../crypto/primitives/mod";
 import { createD1Client } from "../storage/db/client";
 import { requireRowsWritten, sql } from "../storage/db/sql";
 import { createKVStore } from "../storage/kv/store";

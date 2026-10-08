@@ -4,8 +4,9 @@ import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { createConfig } from "../config/config";
+import { importKeyRing } from "../crypto/keyring/ring";
 import { devAllowance } from "../dev/allowance";
-import { csrfProtection, importCsrfKey } from "../form/csrf";
+import { csrfProtection } from "../form/csrf";
 import type { SerializedError } from "../logging/types";
 import { MatcherResourceError } from "../router/mod";
 import { createSecurityHeaders } from "../security/headers";
@@ -226,10 +227,10 @@ describe("error path carries security headers (F9)", () => {
   });
 
   it("attaches security headers to a CSRF 403 rejection", async () => {
-    const key = await importCsrfKey("9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf");
+    const ring = await importKeyRing(["9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf"]);
     const app = new Forge();
     app.use("*", createSecurityHeaders());
-    app.use("*", csrfProtection({ secret: () => key, subject: false }));
+    app.use("*", csrfProtection({ ring: () => ring, subject: false }));
     mapHandler(app, "POST", "/submit", () => new Response("should not reach"));
 
     const res = await app.request("/submit", {

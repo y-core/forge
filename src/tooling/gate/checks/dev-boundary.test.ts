@@ -7,7 +7,7 @@ import { checkDevBoundary, devOnlySpecifiers, isDevEntry } from "./dev-boundary"
 import { gateFixtureRoot } from "./gate.fixture";
 import type { DevBoundaryCheckConfig } from "./types";
 
-const WRANGLER = '{\n  // the production entry\n  "main": "src/worker.ts",\n}\n';
+const WRANGLER = '{\n  "name": "app",\n  // the production entry\n  "main": "src/worker.ts",\n}\n';
 
 function project(files: Record<string, string>, config: Partial<DevBoundaryCheckConfig> = {}): DevBoundaryCheckConfig {
   return { root: gateFixtureRoot(files, "forge-dev-"), sources: ["src"], devOnlyDirs: ["src/dev"], ...config };
@@ -61,7 +61,7 @@ describe("checkDevBoundary — rule A, `main` is not a dev entry", () => {
   it("fails a config deploying the development entry, whatever the rest of the tree does", () => {
     const result = checkDevBoundary(
       project(
-        { "wrangler.jsonc": '{ "main": "./src/worker.dev.ts" }\n', "src/worker.ts": "export default {};\n" },
+        { "wrangler.jsonc": '{ "name": "app", "main": "./src/worker.dev.ts" }\n', "src/worker.ts": "export default {};\n" },
         { workerConfig: "wrangler.jsonc" },
       ),
     );
@@ -94,6 +94,18 @@ describe("checkDevBoundary — rule A, `main` is not a dev entry", () => {
 
     expect(result.ok).toBe(false);
     expect(result.findings[0]?.message.startsWith("`wrangler.jsonc` is not parseable:")).toBe(true);
+  });
+
+  it("fails loudly on a config that names no Worker, as one it cannot parse", () => {
+    const root = gateFixtureRoot({ "wrangler.jsonc": '{ "main": "src/worker.ts" }\n', "src/worker.ts": "export default {};\n" }, "forge-dev-");
+    const result = checkDevBoundary({ root, sources: ["src"], devOnlyDirs: ["src/dev"], workerConfig: "wrangler.jsonc" });
+
+    expect([result.ok, result.findings.length]).toEqual([false, 1]);
+    expect(
+      result.findings[0]?.message.startsWith(
+        `\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${resolve(root, "wrangler.jsonc")}: name:`,
+      ),
+    ).toBe(true);
   });
 
   it("omits the rule entirely for a repository that deploys no Worker", () => {

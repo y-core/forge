@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
+import { importKeyRing } from "../crypto/keyring/ring";
+import { parseKeyRingSecrets } from "../crypto/keyring/secrets";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
 import { sessionCtx } from "./session";
 import type { SessionKVBinding } from "./types";
 
-const SECRET = "Rk7vQ2mX9pLw4sTz8bNc3yHd6fJg1aUe";
+const SECRET = "c15f22e5e9af45d15e1068ac2186b479735f5c60e4fc302f8916ab67aaf6b2c6";
 
 function fakeSessionKV() {
   const data = new Map<string, string>();
@@ -24,9 +26,11 @@ function fakeSessionKV() {
 
 type Env = { SESSION_SECRET: string; SESSIONS: SessionKVBinding };
 
+const envRing = (c: { env: { SESSION_SECRET: string } }) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET));
+
 function makeApp() {
   const app = new Forge<Env>();
-  app.use("*", createAnonymousSession<Env>({ cookieName: "test_session", secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.SESSIONS }));
+  app.use("*", createAnonymousSession<Env>({ cookieName: "test_session", ring: envRing, kv: (c) => c.env.SESSIONS }));
   mapHandler(app, "POST", "/save", (context) => {
     const session = sessionCtx.get(context);
     session.set("settings", { theme: "dark" });
@@ -44,7 +48,7 @@ function rotatingApp(secrets: [string, ...string[]], reissue?: boolean) {
   app.use(
     "*",
     createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
-      secret: () => secrets,
+      ring: () => importKeyRing(secrets),
       kv: (c) => c.env.SESSIONS,
       ...(reissue === undefined ? {} : { reissue }),
     }),
@@ -89,7 +93,7 @@ describe("createAnonymousSession — KV mode", () => {
   it("emits a Secure cookie by default (secure omitted)", async () => {
     const { kv } = fakeSessionKV();
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.SESSIONS }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS }));
     mapHandler(app, "POST", "/save", (context) => {
       sessionCtx.get(context).set("k", "v");
       return new Response("ok");
@@ -113,7 +117,7 @@ describe("createAnonymousSession — KV mode", () => {
     const { kv } = fakeSessionKV();
     const legacy = createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
       cookieName: "__session",
-      secret: () => SECRET,
+      ring: () => importKeyRing([SECRET]),
       kv: (c) => c.env.SESSIONS,
     });
     const legacyApp = new Forge<{ SESSIONS: SessionKVBinding }>();
@@ -138,7 +142,7 @@ describe("createAnonymousSession — KV mode", () => {
       return kv;
     };
     const app = new Forge<Env>();
-    app.use("*", createAnonymousSession<Env>({ secret: (c) => c.env.SESSION_SECRET, kv: countingKvResolver }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: countingKvResolver }));
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
     const env = { SESSION_SECRET: SECRET, SESSIONS: kv };
@@ -147,12 +151,12 @@ describe("createAnonymousSession — KV mode", () => {
     await app.request("/", {}, env);
     expect(storageBuilds).toBe(1);
 
-    await app.request("/", {}, { SESSION_SECRET: "Xq4wE7rT1yUi9oPa3sDf6gHj2kLz5xCv", SESSIONS: kv });
+    await app.request("/", {}, { SESSION_SECRET: "3434544ef1b4c1319a6f319f350d59a5ff41f0dd9e4547774ced1488d26d9738", SESSIONS: kv });
     expect(storageBuilds).toBe(2);
   });
 
   describe("multi-tenant KV isolation", () => {
-    it("does not serve tenant A's session data to tenant B when secret and cookie name match", async () => {
+    it("does not serve tenant A's session data to tenant B when the key ring and cookie name match", async () => {
       const tenantA = fakeSessionKV();
       const tenantB = fakeSessionKV();
       const app = makeApp();
@@ -190,22 +194,22 @@ describe("createAnonymousSession — KV mode", () => {
     const { kv } = fakeSessionKV();
     const app = new Forge<Env>();
     app.setOnError((err) => new Response(err.message, { status: 500 }));
-    app.use("*", createAnonymousSession<Env>({ secret: (c) => c.env.SESSION_SECRET, kv: (c) => c.env.SESSIONS }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS }));
     mapHandler(app, "GET", "/", () => new Response("ok"));
 
-    const res = await app.request("/", {}, { SESSION_SECRET: "short", SESSIONS: kv });
+    const res = await app.request("/", {}, { SESSION_SECRET: "abcd", SESSIONS: kv });
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe("createSignedCookie: each secret must be at least 32 bytes (got 5)");
+    expect(await res.text()).toBe("importKeyRing: each secret must be at least 32 bytes (got 2)");
   });
 });
 
-describe("createAnonymousSession — secret rotation", () => {
-  // No flag is passed here: the factory derives `rotating` from the array it resolved, which is
+describe("createAnonymousSession — key rotation", () => {
+  // No flag is passed here: the factory derives `rotating` from the ring it resolved, which is
   // what keeps a rotation from silently never completing.
-  it("accepts a secret array and signs with the first", async () => {
+  it("re-issues a cookie signed under a retired key under the ring's active key", async () => {
     const { kv } = fakeSessionKV();
-    const OLD = "Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv";
-    const NEW = "Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe";
+    const OLD = "3e8f0241998536b82050a9b2cdb21c47ee4215e1bd4ec7a04ec2ad348757f370";
+    const NEW = "17205855bdb251c4096292802c9a3aa04af4e27a549226c829204ab1fce2ea22";
 
     const seeded = await rotatingApp([OLD]).request("/save", { method: "POST" }, { SESSIONS: kv });
     const sent = (seeded.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
@@ -215,6 +219,7 @@ describe("createAnonymousSession — secret rotation", () => {
     const issued = (res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
     expect(issued).not.toBe("");
     expect(issued).not.toBe(sent);
+    expect(issued.split(".")[2]).toBe((await importKeyRing([NEW])).activeKeyId);
 
     const after = await rotatingApp([NEW]).request("/read", { headers: { cookie: issued } }, { SESSIONS: kv });
     expect(await after.json()).toEqual({ settings: { theme: "dark" } });
@@ -223,23 +228,6 @@ describe("createAnonymousSession — secret rotation", () => {
     // this factory sets puts an epoch second in the signature — so a third request is what proves it.
     const settled = await rotatingApp([NEW, OLD]).request("/quiet", { headers: { cookie: issued } }, { SESSIONS: kv });
     expect(settled.headers.get("set-cookie")).toBeNull();
-  });
-
-  it("rejects a short secret inside an array, reporting its byte count", async () => {
-    const { kv } = fakeSessionKV();
-    const app = new Forge<{ SESSIONS: SessionKVBinding }>();
-    app.setOnError((err) => new Response(err.message, { status: 500 }));
-    app.use(
-      "*",
-      createAnonymousSession<{ SESSIONS: SessionKVBinding }>({
-        secret: () => ["Nb9mV3cX6zLk2jHg5fDs8aPo1iUy4tRe", "short"],
-        kv: (c) => c.env.SESSIONS,
-      }),
-    );
-    mapHandler(app, "GET", "/", () => new Response("ok"));
-
-    const res = await app.request("/", {}, { SESSIONS: kv });
-    expect(await res.text()).toBe("createSignedCookie: each secret must be at least 32 bytes (got 5)");
   });
 
   it("forwards reissue to the middleware", async () => {
@@ -257,16 +245,20 @@ describe("createAnonymousSession — secret rotation", () => {
   // The empty-name throw stays ahead of the storage pair, so a call missing both still names the
   // one a developer can see in front of them.
   it("refuses an empty cookie name", () => {
-    expect(() => createAnonymousSession({ cookieName: "", secret: () => SECRET })).toThrow("createAnonymousSession: cookieName must not be empty");
+    expect(() => createAnonymousSession({ cookieName: "", ring: () => importKeyRing([SECRET]) })).toThrow(
+      "createAnonymousSession: cookieName must not be empty",
+    );
   });
 
   it("refuses a call naming neither kv nor cookie storage", () => {
-    expect(() => createAnonymousSession({ secret: () => SECRET })).toThrow('pass `kv` to hold session data server-side, or `storage: "cookie"`');
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]) })).toThrow(
+      'pass `kv` to hold session data server-side, or `storage: "cookie"`',
+    );
   });
 
   it("refuses a call naming both kv and cookie storage", () => {
     const kv = () => fakeSessionKV().kv;
-    expect(() => createAnonymousSession({ secret: () => SECRET, kv, storage: "cookie" })).toThrow(
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, storage: "cookie" })).toThrow(
       'createAnonymousSession: pass either `kv` or `storage: "cookie"`, not both',
     );
   });
@@ -275,7 +267,7 @@ describe("createAnonymousSession — secret rotation", () => {
 describe("createAnonymousSession — cookie-storage mode", () => {
   it("persists small sessions entirely in the cookie", async () => {
     const app = new Forge<{ SESSION_SECRET: string }>();
-    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ secret: (c) => c.env.SESSION_SECRET, storage: "cookie" }));
+    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ ring: envRing, storage: "cookie" }));
     mapHandler(app, "POST", "/save", (context) => {
       sessionCtx.get(context).set("n", 1);
       return new Response("ok");

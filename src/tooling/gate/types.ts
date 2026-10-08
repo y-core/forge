@@ -153,9 +153,14 @@ export interface CloudflareWorkerStepOptions {
   /** Omit to emit no JSX-pragma row. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Omit to emit no SSR-boundary row: which directories are browser-only is a repository's own rule. */
-  ssrBoundary?: Omit<SsrBoundaryCheckConfig, "root">;
+  ssrBoundary?: Omit<SsrBoundaryCheckConfig, "root"> & {
+    /** Omit to emit no client-boundary row; nothing under `clientDirs` may import these at value. */
+    serverDirs?: readonly string[];
+  };
   /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. With `features` set, the row also reads the feature manifest. */
   importBoundary?: Omit<ImportBoundaryCheckConfig, "root" | "features">;
+  /** Omit to emit no vendor-boundary row; its modules may import nothing beside it under its parent directory. */
+  vendorDir?: string;
   /** Omit to emit no contrast row. */
   contrast?: Omit<ContrastCheckConfig, "root">;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */

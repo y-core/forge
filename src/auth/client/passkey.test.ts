@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 
-import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
+import { base64urlDecode, base64urlEncode } from "../../crypto/primitives/mod";
 import { FakeEvent, fakeTree } from "../../ui/client/dom.fixture";
 import type { FakeElement, FakeWindow } from "../../ui/client/dom.fixture";
 import { ANNOUNCER_REGION_SLOTS } from "../../ui/contracts/announcer-contract";

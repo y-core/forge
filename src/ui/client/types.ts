@@ -206,6 +206,7 @@ export interface FakeRequest {
   method: string;
   headers: Record<string, string>;
   body: unknown;
+  keepalive?: boolean;
 }
 
 export interface TooltipOptions {

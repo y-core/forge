@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
+import { importKeyRing } from "../crypto/keyring/ring";
+import type { KeyRing } from "../crypto/keyring/types";
 import { CSRF_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
-import { createCsrfToken, csrfProtection, importCsrfKey } from "../form/csrf";
+import { createCsrfToken, csrfProtection } from "../form/csrf";
 import { parseFormData } from "../form/parse-form-data";
 import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
@@ -507,38 +509,38 @@ describe("defineAction behind csrfProtection — body size cap", () => {
     });
   }
 
-  async function guardedBody(path: string, key: CryptoKey, payloadLength: number): Promise<string> {
-    const token = await createCsrfToken(key, path);
+  async function guardedBody(path: string, ring: KeyRing, payloadLength: number): Promise<string> {
+    const token = await createCsrfToken(ring, path);
     return `${CSRF_FIELD_DEFAULT}=${token}&name=${"x".repeat(payloadLength)}`;
   }
 
   it("accepts a body over the default cap when the route and its guard both raise maxBytes", async () => {
-    const key = await importCsrfKey(CSRF_HEX_KEY);
+    const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
     mapHandler(app, "POST", "/upload", {
-      middleware: [csrfProtection({ secret: () => key, subject: false, maxBytes: RAISED })],
+      middleware: [csrfProtection({ ring: () => ring, subject: false, maxBytes: RAISED })],
       handler: echoAction(RAISED),
     });
 
-    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", key, 200_000) });
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", ring, 200_000) });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("200000");
   });
 
   it("answers 413 rather than a misleading 403 when the body exceeds the guard's cap", async () => {
-    const key = await importCsrfKey(CSRF_HEX_KEY);
+    const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
-    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
+    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: echoAction() });
 
-    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", key, 200_000) });
+    const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/upload", ring, 200_000) });
     expect(res.status).toBe(413);
     expect(await res.text()).toBe("Payload Too Large");
   });
 
   it("keeps a genuine token failure on 403 when the body is within the cap", async () => {
-    const key = await importCsrfKey(CSRF_HEX_KEY);
+    const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
-    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
+    mapHandler(app, "POST", "/upload", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: echoAction() });
 
     const res = await app.request("/upload", { method: "POST", headers: FORM_HEADERS, body: "name=Jane" });
     expect(res.status).toBe(403);
@@ -546,21 +548,21 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   });
 
   it("keeps two routes with different caps independent within the same isolate", async () => {
-    const key = await importCsrfKey(CSRF_HEX_KEY);
+    const ring = await importKeyRing([CSRF_HEX_KEY]);
     const app = new Forge();
     mapHandler(app, "POST", "/big", {
-      middleware: [csrfProtection({ secret: () => key, subject: false, maxBytes: RAISED })],
+      middleware: [csrfProtection({ ring: () => ring, subject: false, maxBytes: RAISED })],
       handler: echoAction(RAISED),
     });
-    mapHandler(app, "POST", "/small", { middleware: [csrfProtection({ secret: () => key, subject: false })], handler: echoAction() });
+    mapHandler(app, "POST", "/small", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: echoAction() });
 
-    const first = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", key, 200_000) });
+    const first = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", ring, 200_000) });
     expect(first.status).toBe(200);
 
-    const strict = await app.request("/small", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/small", key, 200_000) });
+    const strict = await app.request("/small", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/small", ring, 200_000) });
     expect(strict.status).toBe(413);
 
-    const again = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", key, 200_000) });
+    const again = await app.request("/big", { method: "POST", headers: FORM_HEADERS, body: await guardedBody("/big", ring, 200_000) });
     expect(again.status).toBe(200);
   });
 
@@ -806,13 +808,13 @@ describe("defineAction — injected field derivation", () => {
   }
 
   async function guardedApp(tokenField?: string) {
-    const key = await importCsrfKey(SECRET);
+    const ring = await importKeyRing([SECRET]);
     const app = new Forge();
     mapHandler(app, "POST", "/guarded", {
-      middleware: [csrfProtection({ secret: () => key, subject: false, ...(tokenField !== undefined ? { tokenField } : {}) })],
+      middleware: [csrfProtection({ ring: () => ring, subject: false, ...(tokenField !== undefined ? { tokenField } : {}) })],
       handler: keysAction(),
     });
-    return { app, token: await createCsrfToken(key, "/guarded") };
+    return { app, token: await createCsrfToken(ring, "/guarded") };
   }
 
   it("strips the CSRF token from a body validated against a schema that never declares it", async () => {
@@ -832,13 +834,13 @@ describe("defineAction — injected field derivation", () => {
   });
 
   it("strips only the name the guard actually consumed, so a stray default field is still refused", async () => {
-    const key = await importCsrfKey(SECRET);
+    const ring = await importKeyRing([SECRET]);
     const app = new Forge();
     mapHandler(app, "POST", "/guarded", {
-      middleware: [csrfProtection({ secret: () => key, subject: false, tokenField: "xsrf" })],
+      middleware: [csrfProtection({ ring: () => ring, subject: false, tokenField: "xsrf" })],
       handler: issueTypesAction(),
     });
-    const token = await createCsrfToken(key, "/guarded");
+    const token = await createCsrfToken(ring, "/guarded");
 
     const res = await post(app, `xsrf=${token}&name=Jane&${CSRF_FIELD_DEFAULT}=stray`, "/guarded");
     expect(res.status).toBe(400);

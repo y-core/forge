@@ -25,7 +25,7 @@ export function createAnonymousSession<Bindings = Record<string, unknown>>(optio
   if (options.kv !== undefined && options.storage !== undefined) {
     throw new Error('createAnonymousSession: pass either `kv` or `storage: "cookie"`, not both');
   }
-  // Keyed on `env` identity, never on `(cookieName, secure, secret)`: the cached middleware closes
+  // Keyed on `env` identity, never on `(cookieName, secure, ring)`: the cached middleware closes
   // over one tenant's KV namespace, so a value-keyed cache would serve tenant A's sessions to B.
   const cache = new WeakMap<object, Middleware>();
 
@@ -37,16 +37,15 @@ export function createAnonymousSession<Bindings = Record<string, unknown>>(optio
     const hit = cacheKey ? cache.get(cacheKey) : undefined;
     if (hit) return hit(context, next);
 
-    const resolved = options.secret(c);
-    const secrets: [string, ...string[]] = typeof resolved === "string" ? [resolved] : resolved;
-    const cookie = createSignedCookie(cookieName, { secrets, sameSite: "Lax", maxAge });
+    const ring = await options.ring(c);
+    const cookie = createSignedCookie(cookieName, { ring, sameSite: "Lax", maxAge });
     const storage = options.kv
       ? createKVSessionStorage(options.kv(c), {
           ...(options.prefix !== undefined ? { prefix: options.prefix } : {}),
           ttlSeconds: options.ttlSeconds ?? maxAge,
         })
       : createCookieSessionStorage();
-    // `rotating` is not passed on: the cookie carries the secrets, so the middleware derives it.
+    // `rotating` is not passed on: the cookie carries the ring, so the middleware derives it.
     const mw = sessionMiddleware(storage, cookie, options);
     // No env to key on: build per request rather than share one instance across unrelated envs.
     if (cacheKey) cache.set(cacheKey, mw);

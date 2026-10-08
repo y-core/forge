@@ -1,3 +1,4 @@
+import { importKeyRing } from "../../crypto/keyring/ring";
 import { err, ok } from "../../result/result";
 import { createSignedCookie } from "../../session/cookie";
 import type { ForgeIcon } from "../../ui/core/types";
@@ -103,7 +104,10 @@ export const HOSTILE_TEXT = `Ada & "Bob" <script>'x'`;
 export const HOSTILE_TEXT_ESCAPED = "Ada &amp; &quot;Bob&quot; &lt;script&gt;&#39;x&#39;";
 
 /** The session cookie every web unit mounts `sessionMiddleware` with. @internal */
-export const fakeSessionCookie = createSignedCookie("__session", { path: "/", secrets: ["Ow5nE8rT2yUi4oPa7sDf1gHj3kLz6xCv"] });
+export const fakeSessionCookie = createSignedCookie("__session", {
+  path: "/",
+  ring: await importKeyRing(["3e8f0241998536b82050a9b2cdb21c47ee4215e1bd4ec7a04ec2ad348757f370"]),
+});
 
 /** Which kinds carry an enrolment row; email-OTP's enrolment is a verified email, so it has none. @internal */
 export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "recovery-code", "totp-app"];

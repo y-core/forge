@@ -1,7 +1,7 @@
-import { uuidFromBytes, uuidToBytes } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
 import type { D1Client, SqlFragment } from "../../storage/db/types";
+import { uuidFromBytes, uuidToBytes } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import type {
   AdminUserOutcome,
@@ -60,9 +60,9 @@ export function readRow<T>(operation: string, read: () => T): AuthStoreResult<T>
 
 // An insert is the one shape with no in-band "no such row". A foreign key pointing at a malformed
 // id is what the constraint would have refused, so the caller sees the failure the backend gives.
-/** The failure an insert reports when the owner id it must reference is not a canonical UUID. @internal */
+/** The failure an insert reports when the owner id it must reference is not a canonical UUID — the one the foreign key gives. @internal */
 export function unknownOwner(operation: string): AuthStoreError {
-  return new AuthStoreError("unavailable", operation);
+  return new AuthStoreError("reference", operation);
 }
 
 /** Folds a queried row into a finder's contract: the decoded row, `null` when there was none, `unavailable` when it will not decode. @internal */
@@ -84,6 +84,7 @@ export function storeError(operation: string, cause: unknown): AuthStoreError {
   // A CHECK is the schema refusing the caller's value — an over-long address, say. Folding it into
   // `unavailable` would render a client's own mistake to them as this deployment being down.
   if (/CHECK constraint failed/i.test(message)) return new AuthStoreError("invalid", operation, { cause });
+  if (/FOREIGN KEY constraint failed/i.test(message)) return new AuthStoreError("reference", operation, { cause });
   return new AuthStoreError("unavailable", operation, { cause });
 }
 

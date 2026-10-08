@@ -1,23 +1,21 @@
 import type { EdgeKind } from "../src/tooling/gate/mod";
 
 /** Namespaces any other namespace may import without that import counting as an edge. */
-export const PRIMITIVES: readonly string[] = ["context", "crypto", "result", "validation"];
+export const PRIMITIVES: readonly string[] = ["context", "crypto/primitives", "result", "validation"];
 
 /** Namespaces declared to have zero cross-namespace edges beyond the primitives above. */
 export const LEAF: readonly string[] = [
   "assets",
   "config",
   "context",
+  "crypto/keyring",
   "dev",
   "html",
-  "keyring",
   "render/markdown",
   "render/markdown/editor/client",
   "result",
   "router",
-  "session",
   "site",
-  "storage/r2",
   "tooling/lint",
   "tooling/term",
   "ui/contracts",
@@ -38,7 +36,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "render/jsx": "value",
     security: "value",
   },
-  auth: { keyring: "value", "storage/db": "value" },
+  auth: { "crypto/keyring": "value", "storage/db": "value" },
   "auth/client": { auth: "value", http: "value", "ui/client": "value" },
   "auth/web": {
     app: "value",
@@ -51,7 +49,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     session: "value",
     "ui/core": "value",
   },
-  form: { dev: "type" },
+  form: { "crypto/keyring": "value", dev: "type" },
   http: { html: "value" },
   logging: { "storage/kv": "type" },
   "logging/viewer": {
@@ -73,10 +71,13 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   // embeds, so the names cross but nothing does at runtime and the container stays acyclic.
   "render/pdf/fonts": { "render/pdf": "type" },
   security: { dev: "type", http: "value", logging: "value" },
+  session: { "crypto/keyring": "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },
+  "storage/r2": { "crypto/keyring": "value" },
   testing: {
     app: "type",
+    "crypto/keyring": "value",
     form: "value",
     logging: "value",
     "render/jsx": "value",
@@ -85,14 +86,14 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "storage/r2": "value",
   },
   "testing/coverage": { "ui/chrome": "value", "ui/controls": "value", "ui/core": "value", "ui/server": "value" },
-  "tooling/assets": { assets: "type", http: "value", site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
+  "tooling/assets": { assets: "type", http: "value", security: "value", site: "value", "tooling/cli": "value", "ui/assets/build": "value" },
   "tooling/cf": { "tooling/cli": "value", "tooling/term": "value", site: "value" },
   "tooling/cli": { "tooling/term": "value" },
   "tooling/curate": { "tooling/cli": "value", "tooling/term": "value" },
   "tooling/db": { "storage/db": "value", "tooling/cf": "value", "tooling/cli": "value", "tooling/term": "value" },
   "tooling/gate": {
     "tooling/assets": "value",
-    "tooling/cf": "type",
+    "tooling/cf": "value",
     "tooling/cli": "value",
     "tooling/curate": "value",
     "tooling/lint": "value",
@@ -106,5 +107,12 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "ui/client": { "ui/contracts": "value" },
   "ui/controls": { "render/jsx": "type", "ui/core": "value", "ui/server": "value" },
   "ui/core": { form: "value", "render/jsx": "value", "ui/client": "value", "ui/contracts": "value" },
-  "ui/server": { "render/htmx": "value", "render/jsx": "type", session: "value", "ui/contracts": "value", "ui/core": "value" },
+  "ui/server": {
+    "crypto/keyring": "type",
+    "render/htmx": "value",
+    "render/jsx": "type",
+    session: "value",
+    "ui/contracts": "value",
+    "ui/core": "value",
+  },
 };

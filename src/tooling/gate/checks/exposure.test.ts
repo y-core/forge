@@ -8,7 +8,7 @@ import { checkExposure } from "./exposure";
 let root: string;
 
 function writeWorkerConfig(body: string): void {
-  writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment, so the JSONC path is exercised\n${body}\n}\n`);
+  writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment, so the JSONC path is exercised\n  "name": "app",\n${body}\n}\n`);
 }
 
 const run = () => checkExposure({ root, workerConfig: "wrangler.jsonc" });
@@ -95,6 +95,17 @@ describe("checkExposure", () => {
     const result = await run();
     expect(result.ok).toBe(false);
     expect(result.summary).toBe("deployment exposure: unparseable");
+  });
+
+  it("fails as unparseable when the worker config names no Worker", async () => {
+    writeFileSync(join(root, "wrangler.jsonc"), '{ "workers_dev": false, "preview_urls": false }');
+    const result = await run();
+    expect([result.ok, result.summary, result.findings.length]).toEqual([false, "deployment exposure: unparseable", 1]);
+    expect(
+      result.findings[0]?.message.startsWith(
+        `\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(root, "wrangler.jsonc")}: name:`,
+      ),
+    ).toBe(true);
   });
 
   it("defaults the worker config path to wrangler.jsonc", async () => {
@@ -254,11 +265,10 @@ describe("checkExposure", () => {
     expect(result.summary).toBe("deployment exposure: 3/6 keys stated across 2 deployments");
   });
 
-  it("fails when the worker config does not hold a JSON object", async () => {
+  it("fails as unparseable when the worker config does not hold a JSON object", async () => {
     writeFileSync(join(root, "wrangler.jsonc"), "[1, 2]");
     const result = await run();
     expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`wrangler.jsonc` does not hold a JSON object"]);
-    expect(result.summary).toBe("deployment exposure: unreadable");
+    expect(result.summary).toBe("deployment exposure: unparseable");
   });
 });

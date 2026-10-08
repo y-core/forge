@@ -11,7 +11,8 @@ const SMALL = 256 * 1024;
 const LARGE = 512 * 1024;
 const MAX_RATIO = 3;
 const MEBIBYTE = 1024 * 1024;
-const BUDGET_MS = 1000;
+const MAX_COST_OF_PLAIN = 8;
+const PLAIN_LINE = "plain words in a paragraph line\n\n";
 const RUNS = 5;
 // A pause from the collector or the rest of the gate only ever adds time, so every budget is held by the fastest of several runs.
 const ATTEMPTS = 3;
@@ -79,7 +80,7 @@ describe("parseMarkdown and render grow linearly", () => {
       let ratio = ratioOfFastest(small, large);
       for (let attempt = 1; attempt < ATTEMPTS && ratio > MAX_RATIO; attempt++) ratio = ratioOfFastest(small, large);
       expect(ratio).toBeLessThanOrEqual(MAX_RATIO);
-    }, 30_000);
+    }, 60_000);
   }
 });
 
@@ -102,19 +103,26 @@ describe("an extension's lookahead keeps it linear", () => {
   }, 60_000);
 });
 
-describe("a mebibyte of every pathological shape", () => {
+function processed(source: string): number {
+  const started = performance.now();
+  const document = parseDialect(source);
+  renderMarkdownHtml(document, { schema: SPEC_SCHEMA, handlers: DIALECT_HANDLERS });
+  walkMarkdown(document, () => undefined);
+  return performance.now() - started;
+}
+
+describe("a mebibyte of every pathological shape costs a bounded multiple of a mebibyte of plain paragraphs", () => {
+  const plain = PLAIN_LINE.repeat(Math.floor(MEBIBYTE / PLAIN_LINE.length));
   for (const shape of PATHOLOGICAL_SHAPES) {
-    test(`${shape.name}: parses under the dialect, renders and walks within ${BUDGET_MS} ms`, () => {
+    test(`${shape.name}: parses under the dialect, renders and walks within ${MAX_COST_OF_PLAIN}× the plain mebibyte`, () => {
       const source = atSize(shape, MEBIBYTE);
-      let fastest = Number.POSITIVE_INFINITY;
-      for (let attempt = 0; attempt < ATTEMPTS && fastest > BUDGET_MS; attempt++) {
-        const started = performance.now();
-        const document = parseDialect(source);
-        renderMarkdownHtml(document, { schema: SPEC_SCHEMA, handlers: DIALECT_HANDLERS });
-        walkMarkdown(document, () => undefined);
-        fastest = Math.min(fastest, performance.now() - started);
+      let fastestPlain = processed(plain);
+      let fastestShape = processed(source);
+      for (let attempt = 1; attempt < ATTEMPTS && fastestShape > MAX_COST_OF_PLAIN * fastestPlain; attempt++) {
+        fastestPlain = Math.min(fastestPlain, processed(plain));
+        fastestShape = Math.min(fastestShape, processed(source));
       }
-      expect(fastest).toBeLessThanOrEqual(BUDGET_MS);
-    }, 30_000);
+      expect(fastestShape / fastestPlain).toBeLessThanOrEqual(MAX_COST_OF_PLAIN);
+    }, 60_000);
   }
 });

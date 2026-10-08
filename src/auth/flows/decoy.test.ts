@@ -1,10 +1,11 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
+import type { KeyRing } from "../../crypto/keyring/types";
 import { ok } from "../../result/result";
 import { createEmailOtpFactor } from "../factors/email-otp";
 import { importAuthKeyRing } from "../keys/ring";
 import { encodeAuthToken } from "../keys/token";
-import type { AuthKeyRing, AuthNotifier, NonceStore, OtpState, OtpStateStore, UserStore } from "../types";
+import type { AuthNotifier, NonceStore, OtpState, OtpStateStore, UserStore } from "../types";
 import { issueAuthDecoy, verifyAuthDecoy } from "./decoy";
 import type { AuthDecoyStores } from "./types";
 
@@ -16,7 +17,7 @@ const REAL_USER_ID = "0192f0c0-0000-7000-8000-000000000001";
 
 const NOTIFIER: AuthNotifier = { send: () => Promise.resolve(ok(undefined)) } as unknown as AuthNotifier;
 
-let ring: AuthKeyRing;
+let ring: KeyRing;
 let liveState: OtpState;
 
 beforeAll(async () => {
@@ -43,7 +44,7 @@ const SHAPES: readonly Shape[] = [
 const LIVE = SHAPES[0] as Shape;
 
 /** Every store the decoy may touch, each call recorded in the order it was made. */
-function recording(shape: Shape, keys: AuthKeyRing = ring): { stores: AuthDecoyStores; calls: string[] } {
+function recording(shape: Shape, keys: KeyRing = ring): { stores: AuthDecoyStores; calls: string[] } {
   const calls: string[] = [];
   const users = {
     findById: (id: string) => {
@@ -91,7 +92,7 @@ function recording(shape: Shape, keys: AuthKeyRing = ring): { stores: AuthDecoyS
   return { stores: { keys, users, state, nonces }, calls };
 }
 
-const noKeys: AuthKeyRing = { activeKeyId: "aaaaaaaa", keys: {} };
+const noKeys: KeyRing = { activeKeyId: "aaaaaaaa", keys: {} };
 
 /** The AEAD seals and opens one awaited operation spends, counted off `crypto.subtle` itself. */
 async function aeadOps(work: () => Promise<unknown>): Promise<{ seals: number; opens: number }> {

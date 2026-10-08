@@ -1,7 +1,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { base64urlEncode, uuidv7 } from "../../crypto/mod";
+import { base64urlEncode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AUTH_PASSKEY_ASSERTION_ID_MAX, AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS, AUTH_PASSKEY_TTL_SECONDS } from "../config";
 import { AuthStoreError } from "../errors";
 import { PASSKEY_FLAG, createPasskeyKeyPair, fakePasskeyAssertion, fakePasskeyRegistration } from "../passkey/passkey.fixture";

@@ -1,10 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { CompatibilityCheckConfig } from "./types";
+import { readWorkerConfig } from "./worker-config";
 
 /** Forge's own posture: the pure Workers/V8 surface, plus the module registry's semantics. */
 const REQUIRED_FLAGS = ["no_nodejs_compat", "no_nodejs_compat_v2", "new_module_registry"] as const;
@@ -71,23 +68,9 @@ export async function checkCompatibility(config: CompatibilityCheckConfig): Prom
   const { root } = config;
   const required = config.require ?? REQUIRED_FLAGS;
   const workerConfig = config.workerConfig ?? "wrangler.jsonc";
-  const workerPath = resolve(root, workerConfig);
-
-  if (!existsSync(workerPath)) {
-    return checkResult([fail(`\`${workerConfig}\` not found`, { file: workerConfig })], "compatibility flags: no worker config");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonc(readFileSync(workerPath, "utf-8")));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return checkResult([fail(`\`${workerConfig}\` is not parseable: ${message}`, { file: workerConfig })], "compatibility flags: unparseable");
-  }
-
-  if (!isRecord(parsed)) {
-    return checkResult([fail(`\`${workerConfig}\` does not hold a JSON object`, { file: workerConfig })], "compatibility flags: unreadable");
-  }
+  const read = readWorkerConfig(root, workerConfig, "compatibility flags");
+  if (!("config" in read)) return read;
+  const parsed = read.config;
 
   const top = judgeBlock(parsed, "", required, workerConfig);
   const findings: Finding[] = [...top.findings];

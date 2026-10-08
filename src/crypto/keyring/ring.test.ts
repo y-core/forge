@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlDecode, hexToBytes } from "../crypto/mod";
-import { importKeyRing, importKeyRingUnder, KEYRING_DOMAIN, keyRingKeyId, lookupKeyRingKey } from "./ring";
+import { base64urlDecode, hexToBytes } from "../primitives/mod";
+import { assertAppKeyRing, importKeyRing, importKeyRingUnder, KEY_RING_DOMAIN, keyRingKeyId, lookupKeyRingKey } from "./ring";
 import type { KeyRing } from "./types";
 
 const SECRET_A = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
@@ -34,8 +34,8 @@ describe("importKeyRing", () => {
 
   it("derives a different key id for the same secret under a different domain", async () => {
     const root = hexToBytes(SECRET_A);
-    const other = { keyIdLabel: "y-core/forge/test/kid", subkeyLabel: KEYRING_DOMAIN.subkeyLabel };
-    expect(await keyRingKeyId(KEYRING_DOMAIN, root)).not.toBe(await keyRingKeyId(other, root));
+    const other = { keyIdLabel: "y-core/forge/test/kid", subkeyLabel: KEY_RING_DOMAIN.subkeyLabel };
+    expect(await keyRingKeyId(KEY_RING_DOMAIN, root)).not.toBe(await keyRingKeyId(other, root));
   });
 });
 
@@ -68,10 +68,12 @@ describe("importKeyRing — refusals", () => {
   });
 
   it("names the operation it was called under in every refusal", async () => {
-    await expect(importKeyRingUnder("importAuthKeyRing", KEYRING_DOMAIN, ["00".repeat(32)])).rejects.toThrow(
+    await expect(importKeyRingUnder("importAuthKeyRing", KEY_RING_DOMAIN, ["00".repeat(32)])).rejects.toThrow(
       "importAuthKeyRing: a secret whose bytes are all the same value is not a secret",
     );
-    await expect(importKeyRingUnder("importAuthKeyRing", KEYRING_DOMAIN, [])).rejects.toThrow("importAuthKeyRing: at least one secret is required");
+    await expect(importKeyRingUnder("importAuthKeyRing", KEY_RING_DOMAIN, [])).rejects.toThrow(
+      "importAuthKeyRing: at least one secret is required",
+    );
   });
 });
 
@@ -90,5 +92,32 @@ describe("lookupKeyRingKey", () => {
     for (const kid of ["constructor", "__proto__", "toString", "hasOwnProperty", "valueOf"]) {
       expect(lookupKeyRingKey(ring, kid)).toBeUndefined();
     }
+  });
+});
+
+describe("assertAppKeyRing", () => {
+  it("accepts a ring importKeyRing built, and one pinned to an older key of it", async () => {
+    const ring = await ringOf(SECRET_A, SECRET_B);
+    const older = Object.keys(ring.keys).find((kid) => kid !== ring.activeKeyId);
+    await expect(assertAppKeyRing("derivePseudonym", ring)).resolves.toBeUndefined();
+    await expect(assertAppKeyRing("derivePseudonym", { ...ring, activeKeyId: older as string })).resolves.toBeUndefined();
+  });
+
+  it("refuses a ring imported under another domain, naming the operation and the auth key ring", async () => {
+    const foreign = await importKeyRingUnder("importAuthKeyRing", { keyIdLabel: "y-core/forge/test/kid", subkeyLabel: "y-core/forge/test/v1" }, [
+      SECRET_A,
+    ]);
+    await expect(assertAppKeyRing("derivePseudonym", foreign)).rejects.toThrow(
+      `derivePseudonym: active key id "${foreign.activeKeyId}" is not one importKeyRing derives — use only a ring importKeyRing built, never the auth key ring`,
+    );
+  });
+
+  it("refuses a ring with no key for its active id, and one whose active key was swapped", async () => {
+    const ringA = await ringOf(SECRET_A);
+    const swapped: KeyRing = { activeKeyId: ringA.activeKeyId, keys: { [ringA.activeKeyId]: hexToBytes(SECRET_B) } };
+    await expect(assertAppKeyRing("signCsrf", { activeKeyId: "AAAAAAAA", keys: {} })).rejects.toThrow(
+      'signCsrf: active key id "AAAAAAAA" is not one importKeyRing derives',
+    );
+    await expect(assertAppKeyRing("signCsrf", swapped)).rejects.toThrow("is not one importKeyRing derives");
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorChallenge, ImplicitFactorService } from "../factors/types";

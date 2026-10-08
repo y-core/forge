@@ -1,5 +1,5 @@
+import type { KeyRing } from "../../crypto/keyring/types";
 import type { AuthFactorRequirement } from "../factors/types";
-import type { AuthKeyRing } from "../types";
 
 /** @public */
 export interface ChallengeStoreOptions {
@@ -89,7 +89,7 @@ export interface AccessTokenRow {
 /** What a scheduled `totp-app` secret purge acts on. @public */
 export interface TotpSecretPurgeOptions {
   /** The ring itself, never a bare key id: the purge deletes the complement of the active key, so a wrong one deletes the live enrolments. */
-  readonly keys: AuthKeyRing;
+  readonly keys: KeyRing;
   /** How long a row must have gone without an accepted code, measured from `last_verified_at` — or from enrolment, for a row that never had one. */
   readonly idleForMs: number;
   /** What the deployment offers `totp-app` under. Anything but `mandatory` is refused — see the throw. */

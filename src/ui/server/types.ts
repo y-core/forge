@@ -1,8 +1,10 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
+import type { KeyRing } from "../../crypto/keyring/types";
+
 /** Options for `createFlash`. @public */
 export interface FlashCookieOptions {
-  secrets: [string, ...string[]];
+  ring: KeyRing;
   name?: string;
   path?: string;
   maxAge?: number;

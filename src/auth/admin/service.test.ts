@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidv7 } from "../../crypto/mod";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { normalizeEmail } from "../stores/email";
 import type { AdminUserOutcome, AdminUserStore, AuthUser, AuthUserPage } from "../types";
@@ -260,6 +260,7 @@ describe("isLastAdminRefusal", () => {
       ["last-admin-deactivate", true],
       ["last-admin-delete", true],
       ["not-found", false],
+      ["referenced", false],
       ["changed", false],
     ];
     for (const [outcome, expected] of rows) expect(`${outcome}: ${isLastAdminRefusal(outcome)}`).toBe(`${outcome}: ${expected}`);

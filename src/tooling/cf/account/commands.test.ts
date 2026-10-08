@@ -174,8 +174,8 @@ describe("printResults()", () => {
   };
   const ROTATABLE: SyncResult = {
     resourceType: "rotatable_secrets",
-    binding: "SESSION_SECRET",
-    remoteName: "SESSION_SECRET",
+    binding: "INTERNAL_API_TOKEN",
+    remoteName: "INTERNAL_API_TOKEN",
     action: "would-rotate",
     local: true,
     remote: false,
@@ -561,20 +561,20 @@ describe("--rotate and --local", () => {
   });
 
   it("refuses a name absent from .dev.vars", () => {
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=v\n`);
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=v\n`);
     expect(() => run({ local: true, config, rotate: "TYPO" })).toThrow(/Not defined in/);
   });
 
   it("rejects an empty --rotate", () => {
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=v\n`);
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=v\n`);
     expect(() => run({ local: true, config, rotate: " , " })).toThrow(/--rotate was empty/);
   });
 
   it("writes nothing to .dev.vars without --commit", async () => {
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=keep-me\n`);
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=keep-me\n`);
     const devVars = join(dirname(config), ".dev.vars");
-    await run({ local: true, config, rotate: "SESSION_SECRET" });
-    expect(readFileSync(devVars, "utf-8")).toContain("SESSION_SECRET=keep-me");
+    await run({ local: true, config, rotate: "INTERNAL_API_TOKEN" });
+    expect(readFileSync(devVars, "utf-8")).toContain("INTERNAL_API_TOKEN=keep-me");
   });
 
   it("expands --local --rotate all to every rotate- or ring-marked key, and only those", () => {
@@ -662,10 +662,12 @@ describe("--rotate and --local", () => {
     });
 
     it("names only a mixed rotation's generated secrets for --commit --rotate, leaving the ring to the by-hand route", async () => {
-      const devVars = `${GENERATE_MARKER}\nSESSION_SECRET=old\n# forge:ring\nAPP_SEAL_KEY_RING=old-key\n${GENERATE_MARKER}\nCSRF_SECRET=old\n`;
+      const devVars = `${GENERATE_MARKER}\nINTERNAL_API_TOKEN=old\n# forge:ring\nAPP_SEAL_KEY_RING=old-key\n${GENERATE_MARKER}\nPARTNER_API_TOKEN=old\n`;
       const lines = await captureLocalRotate(devVars, "all");
       const hints = lines.filter((line) => line.includes("--commit --rotate"));
-      expect(hints).toEqual(["Cloudflare is unchanged — rotate there with --commit --rotate SESSION_SECRET,CSRF_SECRET, without --local."]);
+      expect(hints).toEqual([
+        "Cloudflare is unchanged — rotate there with --commit --rotate INTERNAL_API_TOKEN,PARTNER_API_TOKEN, without --local.",
+      ]);
       expect(hints[0]).not.toContain("APP_SEAL_KEY_RING");
       expect(lines.at(-1)).toContain("A deployed key ring is rotated by hand");
     });
@@ -691,36 +693,36 @@ describe("--rotate and --local", () => {
   it("refuses to rotate without a terminal unless --yes says so deliberately", async () => {
     // The marker says a key *may* be regenerated; it does not say this run should.
     // Silence from a pipe is not consent, and the old values cannot be recovered.
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=keep-me\n`);
-    expect(run({ local: true, commit: true, config, rotate: "SESSION_SECRET" })).rejects.toThrow(
-      /Refusing to rotate 1 secret .* without a terminal to confirm at: SESSION_SECRET/s,
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=keep-me\n`);
+    expect(run({ local: true, commit: true, config, rotate: "INTERNAL_API_TOKEN" })).rejects.toThrow(
+      /Refusing to rotate 1 secret .* without a terminal to confirm at: INTERNAL_API_TOKEN/s,
     );
   });
 
   it("leaves the file untouched when it refuses", async () => {
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=keep-me\n`);
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=keep-me\n`);
     const devVars = join(dirname(config), ".dev.vars");
-    await Promise.resolve(run({ local: true, commit: true, config, rotate: "SESSION_SECRET" })).catch(() => {});
-    expect(readFileSync(devVars, "utf-8")).toContain("SESSION_SECRET=keep-me");
+    await Promise.resolve(run({ local: true, commit: true, config, rotate: "INTERNAL_API_TOKEN" })).catch(() => {});
+    expect(readFileSync(devVars, "utf-8")).toContain("INTERNAL_API_TOKEN=keep-me");
   });
 
   it("asks nothing when there is nothing to rotate", async () => {
     // A read-only run never reaches the prompt, --yes or not.
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=keep-me\n`);
-    await run({ local: true, config, rotate: "SESSION_SECRET" });
-    expect(readFileSync(join(dirname(config), ".dev.vars"), "utf-8")).toContain("SESSION_SECRET=keep-me");
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=keep-me\n`);
+    await run({ local: true, config, rotate: "INTERNAL_API_TOKEN" });
+    expect(readFileSync(join(dirname(config), ".dev.vars"), "utf-8")).toContain("INTERNAL_API_TOKEN=keep-me");
   });
 
   it("rotates the local value under --commit, and needs no credentials to do it", async () => {
     // --local touches no API, so it must not go looking for an account id or token.
-    const config = makeProject(`${GENERATE_MARKER}\nSESSION_SECRET=old\nSTRIPE_KEY=sk_live_x\n`);
+    const config = makeProject(`${GENERATE_MARKER}\nINTERNAL_API_TOKEN=old\nSTRIPE_KEY=sk_live_x\n`);
     const devVars = join(dirname(config), ".dev.vars");
 
-    await run({ local: true, commit: true, yes: true, config, rotate: "SESSION_SECRET" });
+    await run({ local: true, commit: true, yes: true, config, rotate: "INTERNAL_API_TOKEN" });
 
     const after = readFileSync(devVars, "utf-8");
-    expect(after).not.toContain("SESSION_SECRET=old");
-    expect(after).toMatch(/SESSION_SECRET=[0-9a-f]{64}\n/);
+    expect(after).not.toContain("INTERNAL_API_TOKEN=old");
+    expect(after).toMatch(/INTERNAL_API_TOKEN=[0-9a-f]{64}\n/);
     expect(after).toContain("STRIPE_KEY=sk_live_x");
   });
 });

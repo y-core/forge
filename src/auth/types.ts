@@ -1,32 +1,27 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
-import type { CoseAlgorithm } from "../crypto/mod";
+import type { KeyRing } from "../crypto/keyring/types";
 import type { Result } from "../result/types";
 import type { AuthStoreError } from "./errors";
+import type { CoseAlgorithm } from "./passkey/types";
 
 /** A COSE algorithm identifier a passkey ceremony may advertise. @public */
 export type AuthAlgorithm = CoseAlgorithm;
 
-/** Root key material for one deployment — the active key id, plus every id still valid for reads. @public */
-export interface AuthKeyRing {
-  activeKeyId: string;
-  keys: Record<string, Uint8Array<ArrayBuffer>>;
-}
-
-/** Resolves the auth root key material from the request context. @public */
+/** Resolves the auth key ring from the request context. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies per consumer
-export type AuthSecretResolver = (c: RequestContext<any, any>) => AuthKeyRing | Promise<AuthKeyRing>;
+export type AuthRingResolver = (c: RequestContext<any, any>) => KeyRing | Promise<KeyRing>;
 
 /** Behaviour configuration for the auth namespace. @public */
 export interface AuthOptions {
-  secret: AuthSecretResolver;
+  ring: AuthRingResolver;
   algorithms?: readonly AuthAlgorithm[];
 }
 
 /** The auth capabilities resolved for one request. @public */
 export interface AuthServices {
   readonly algorithms: readonly AuthAlgorithm[];
-  readonly keys: AuthKeyRing;
+  readonly keys: KeyRing;
 }
 
 /** A user record as the auth domain sees it — `emailKey` is the normalized form the unique index holds. @public */
@@ -192,6 +187,7 @@ export type AdminUserOutcome =
   | "last-admin-delete"
   | "last-admin-demote"
   | "not-found"
+  | "referenced"
   | "self";
 
 /** The administrative surface, split from `UserStore` so a sign-in service cannot hold it. @public */
@@ -315,8 +311,8 @@ export interface OtpStateStore {
   clear(userId: string): Promise<AuthStoreResult<void>>;
 }
 
-/** Why a store operation failed: a unique index, a CHECK the value broke, or the backend itself. @public */
-export type AuthStoreErrorCode = "conflict" | "invalid" | "unavailable";
+/** Why a store operation failed: a unique index, a CHECK the value broke, a foreign key, or the backend itself. @public */
+export type AuthStoreErrorCode = "conflict" | "invalid" | "reference" | "unavailable";
 
 /** What a configured knob may be, and the reason each bound exists. @internal */
 export interface AuthLimit {

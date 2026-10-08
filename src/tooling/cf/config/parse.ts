@@ -16,21 +16,26 @@ import type { ConfigDiff } from "./types";
 export { stripJsonc } from "../../cli/jsonc";
 import type { LoadedWranglerConfig, WriteOutcome } from "./types";
 
+const MISSING_NAME_MESSAGE = 'wrangler config must define a string "name"';
+
 // Wrangler configs carry many optional and arbitrary extra keys, so this uses loose
 // objects and asserts only what sync handlers read; `name` is the one hard requirement.
-const WranglerConfigSchema = v.looseObject({
-  name: v.string('wrangler config must define a string "name"'),
-  vars: v.optional(v.record(v.string(), v.unknown())),
-  kv_namespaces: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-  d1_databases: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-  r2_buckets: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-  queues: v.optional(
-    v.looseObject({
-      producers: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-      consumers: v.optional(v.array(v.looseObject({ queue: v.string() }))),
-    }),
-  ),
-});
+const WranglerConfigSchema = v.looseObject(
+  {
+    name: v.string(MISSING_NAME_MESSAGE),
+    vars: v.optional(v.record(v.string(), v.unknown())),
+    kv_namespaces: v.optional(v.array(v.looseObject({ binding: v.string() }))),
+    d1_databases: v.optional(v.array(v.looseObject({ binding: v.string() }))),
+    r2_buckets: v.optional(v.array(v.looseObject({ binding: v.string() }))),
+    queues: v.optional(
+      v.looseObject({
+        producers: v.optional(v.array(v.looseObject({ binding: v.string() }))),
+        consumers: v.optional(v.array(v.looseObject({ queue: v.string() }))),
+      }),
+    ),
+  },
+  (issue) => (issue.expected === '"name"' ? MISSING_NAME_MESSAGE : issue.message),
+);
 
 export function loadWranglerConfig(configPath: string): LoadedWranglerConfig {
   const abs = resolve(configPath);
@@ -118,8 +123,6 @@ export function writeWranglerConfig(
     return forceRewrite(loaded, updated, comments, reason);
   }
 
-  // Verify before committing: reparse what we are about to write and confirm it
-  // means exactly what `updated` means.
   const verification = verify(spliced.data, updated);
   if (verification !== null) {
     return err(
@@ -135,7 +138,6 @@ export function writeWranglerConfig(
   return ok({ path: loaded.path, written: true, edits: edits.length });
 }
 
-/** null when `text` parses to exactly `expected`; otherwise a description of the mismatch. */
 function verify(text: string, expected: WranglerConfig): string | null {
   let reparsed: unknown;
   try {

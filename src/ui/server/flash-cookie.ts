@@ -12,7 +12,7 @@ export function createFlash(options: FlashCookieOptions): Flasher {
   const maxAge = options.maxAge ?? 60;
   const sameSite = options.sameSite ?? "Lax";
 
-  const cookie = createSignedCookie(name, { secrets: options.secrets, path, maxAge, sameSite });
+  const cookie = createSignedCookie(name, { ring: options.ring, path, maxAge, sameSite });
 
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   async function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {

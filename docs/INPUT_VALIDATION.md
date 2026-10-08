@@ -28,14 +28,14 @@ audience: consumer
 - §2c parseFormData — Body Read with Size Limit: the two-way byte cap and 413
 - §3 CSRF Protection: middleware, keys, token minting
 - §3a csrfProtection Middleware: guarding mutating routes and the required `subject`
-- §3b importCsrfKey and importCsrfKeyRing: secret import and rotation
+- §3b The CSRF Key Ring: import, rotation and the `csrf` subkey
 - §3c mintCsrf — Token Minting for Form Injection: path scoping
 - §3d createCsrfToken and verifyCsrfToken: the lower-level API
 - §4 Bot Protection: Turnstile
 - §4a verifyTurnstile — Cloudflare Turnstile CAPTCHA: options, `expectedHostname`, and failing closed
 - §4b Guard Refusal Shape and Its Residual Oracle: why a guard answers as a validation failure, and the residual that leaves
 - §5 Config Schemas: startup validation of credentials
-- §5a CsrfConfigSchema: hex secret validation
+- §5a CsrfConfigSchema: hex key-ring validation
 - §5b TurnstileConfigSchema: site and secret key validation
 - §6 Validate-at-Boundary Rule: pointer to the governance rule that owns it
 
@@ -214,8 +214,8 @@ it. An attacker can obtain a valid path-scoped token — it is minted on the pub
 under session B with reason `subject-mismatch` → `403`.
 
 **Register `sessionMiddleware` before the guard**, always. The resolver runs before `next()`, so a guard registered ahead of the session middleware
-resolves against a context that has no session on it yet — the ordering is load-bearing, not a preference. `form` and `session` are independent leaf
-namespaces, so this composition lives in the consuming app — forge does not auto-wire it.
+resolves against a context that has no session on it yet — the ordering is load-bearing, not a preference. Neither `form` nor `session` imports the
+other, so this composition lives in the consuming app — forge does not auto-wire it.
 
 **A resolver returning `undefined` is a refusal.** The mutation answers `403` and the middleware logs one `[csrf]` warning naming the likely cause
 (session middleware absent, or registered after the guard). It does not degrade to a path-only token: silently dropping the binding is exactly the
@@ -226,13 +226,17 @@ opt-out that makes "this route accepts path-only CSRF tokens" auditable — grep
 
 **Attach the guard through the controller action's `middleware` array**, not inline in the handler.
 
-### 3b. `importCsrfKey` and `importCsrfKeyRing` — Secret Import
+### 3b. The CSRF Key Ring — Import and Rotation
 
-CSRF secrets are hex-encoded strings held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule. **Import them into `CryptoKey` objects before
-passing to middleware or token functions.**
+CSRF tokens are signed under a `KeyRing` from `@y-core/forge/crypto/keyring`. Its secrets are hex-encoded strings held to
+[`SECURITY_HARDENING.md`][sh-8] §8's strength rule, comma-joined newest first in one variable. **Build the ring with
+`importKeyRing(parseKeyRingSecrets(value))` and hand it to the middleware or token functions; never the auth key ring, which both refuse.**
 
-`importCsrfKeyRing` accepts an ordered array: the first entry signs, the rest are accepted for verification during a rotation window. **Rotate by
-prepending the new secret and removing the oldest once the window closes.**
+The first secret signs and every one verifies, and the token carries the signing key's id. **Rotate by prepending the new secret and removing the
+oldest once the token lifetime has elapsed.**
+
+**Every token is signed under the ring's `csrf` subkey, never a root secret.** A ring shared with R2 signed URLs or at-rest sealing therefore
+shares no key with them.
 
 ### 3c. `mintCsrf` — Token Minting for Form Injection
 
@@ -247,12 +251,12 @@ cache across requests.**
 
 ### 3d. `createCsrfToken` and `verifyCsrfToken` — Lower-Level API
 
-Both are path-scoped: `createCsrfToken(key, path, options?)` embeds the path, and `verifyCsrfToken(keyOrRing, token, path, options?)` checks it
+Both are path-scoped: `createCsrfToken(ring, path, options?)` embeds the path, and `verifyCsrfToken(ring, token, path, options?)` checks it
 along with the signature and a freshness window. The fourth argument is a `CsrfVerifyOptions` object — `{ maxAgeMs?, subject? }`; **there is no bare
 `number` overload.**
 
-`verifyCsrfToken` accepts a single `CryptoKey` or an `HmacKeyRing` and returns a `CsrfResult` — a `GuardResult` alias with the reason code in
-`error`. **Inspect `result.ok`; never echo `result.error` to a client.**
+`verifyCsrfToken` takes the `KeyRing` the token was minted under, or one that still holds its key, and returns a `CsrfResult` — a `GuardResult`
+alias with the reason code in `error`. **Inspect `result.ok`; never echo `result.error` to a client.**
 
 **Use this API only when `csrfProtection` cannot be applied directly** — a custom JSON API with non-standard token transport.
 
@@ -321,8 +325,9 @@ response the caller sees is unchanged; only the server-side record is.
 
 ### 5a. `CsrfConfigSchema` — CSRF Secret Validation
 
-Expects a hex-encoded secret string of at least 64 hex characters — the length half of [`SECURITY_HARDENING.md`][sh-8] §8, checked at parse.
-**Parse environment-sourced CSRF config through it at startup via the config store — never pass a raw `c.env` string to `importCsrfKey`.**
+Expects a key ring: comma-separated hex secrets of at least 64 hex characters each — the length half of [`SECURITY_HARDENING.md`][sh-8] §8,
+checked at parse. **Parse environment-sourced CSRF config through it at startup via the config store — never pass a raw `c.env` string to
+`parseKeyRingSecrets`.**
 
 ### 5b. `TurnstileConfigSchema` — Turnstile Credentials Validation
 

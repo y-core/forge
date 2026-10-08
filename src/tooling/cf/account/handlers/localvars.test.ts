@@ -29,7 +29,7 @@ const CTX = {
 
 describe("createLocalVarsHandler().extract()", () => {
   it("takes the unmarked keys and only those", () => {
-    const path = makeProject(`LOG_LEVEL=DEBUG\n${PUSH_MARKER}\nSTRIPE_KEY=v\n${GENERATE_MARKER}\nSESSION_SECRET=v\nSCRATCH=1\n`);
+    const path = makeProject(`LOG_LEVEL=DEBUG\n${PUSH_MARKER}\nSTRIPE_KEY=v\n${GENERATE_MARKER}\nINTERNAL_API_TOKEN=v\nSCRATCH=1\n`);
     expect(
       createLocalVarsHandler(path)
         .extract({} as WranglerConfig)

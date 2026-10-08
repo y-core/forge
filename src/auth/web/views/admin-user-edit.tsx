@@ -29,6 +29,8 @@ const DELETE_REASON = "This is the last admin who can still sign in — promote 
 
 const NOT_FOUND_REASON = "That account no longer exists, so nothing was changed.";
 
+const REFERENCED_REASON = "This account still owns records in this app — remove or transfer them before deleting it.";
+
 const SELF_DEACTIVATE_REASON = "This is your own account — deactivating it would sign you out of this console.";
 
 const SELF_DELETE_REASON = "This is your own account — ask another admin to delete it.";
@@ -46,6 +48,7 @@ const REFUSAL_REASON: Readonly<Partial<Record<AdminUserOutcome, string>>> = {
   "last-admin-deactivate": DEACTIVATE_REASON,
   "last-admin-delete": DELETE_REASON,
   "not-found": NOT_FOUND_REASON,
+  referenced: REFERENCED_REASON,
   self: SELF_REASON,
 };
 

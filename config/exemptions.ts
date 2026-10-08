@@ -1,7 +1,7 @@
 /** The gate's exemptions — every escape a check offers, each with the reason it exists. */
 
 /** Barrels intentionally absent from the exports map. */
-export const SEALED_INTERNAL: readonly string[] = ["src/crypto/mod.ts"];
+export const SEALED_INTERNAL: readonly string[] = ["src/crypto/primitives/mod.ts"];
 
 /** The design corpus, excluded from every check that judges class literals. */
 export const DESIGN_CORPUS_EXCLUDED = "!src/ui/design";

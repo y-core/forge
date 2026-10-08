@@ -367,7 +367,7 @@ export class FakeWindow {
     },
   };
 
-  fetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}): Promise<Response> {
+  fetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; keepalive?: boolean } = {}): Promise<Response> {
     const raw = init.body;
     let body: unknown = raw;
     try {
@@ -375,7 +375,9 @@ export class FakeWindow {
     } catch {
       body = raw;
     }
-    this.requests.push({ url, method: init.method ?? "GET", headers: init.headers ?? {}, body });
+    const request: FakeRequest = { url, method: init.method ?? "GET", headers: init.headers ?? {}, body };
+    if (init.keepalive !== undefined) request.keepalive = init.keepalive;
+    this.requests.push(request);
 
     const reply = this.replies.get(url);
     if (reply === null) return Promise.reject(new Error("network error"));

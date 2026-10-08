@@ -9,6 +9,7 @@ import {
   AUTH_PENDING_SIGNIN_SESSION_KEY,
   AUTH_SESSION_KEY,
   AUTH_SIGNED_IN_SESSION_KEY,
+  AUTH_SITE_DATA_OWED_SESSION_KEY,
   AUTH_STEP_UP_SESSION_KEY,
   AUTH_SURVIVED_SESSION_KEY,
   clearAuthSession,
@@ -212,6 +213,13 @@ describe("establishAuthSession", () => {
     renewAuthSession(session, Date.now(), Date.now());
     establishAuthSession(session, "u1", NOW, Date.now());
     expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBeUndefined();
+  });
+
+  it("clears a storage clear a sign-out left owing, so the new session's storage is never wiped", () => {
+    const session = createSession("sid-1");
+    session.set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
+    establishAuthSession(session, "u1", NOW, Date.now());
+    expect(session.get(AUTH_SITE_DATA_OWED_SESSION_KEY)).toBeUndefined();
   });
 });
 

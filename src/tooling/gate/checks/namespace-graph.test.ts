@@ -33,7 +33,7 @@ describe("resolveNamespaces() — the namespace set is derived, never listed", (
   it("includes a sealed-internal barrel that owns no subpath at all", () => {
     const map = { "./http": "./src/http/mod.ts" };
 
-    expect(resolveNamespaces(map, ["src/crypto/mod.ts"])).toEqual(["crypto", "http"]);
+    expect(resolveNamespaces(map, ["src/crypto/primitives/mod.ts"])).toEqual(["crypto/primitives", "http"]);
   });
 
   it("ignores an exports entry that is not a barrel", () => {

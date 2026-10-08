@@ -1,4 +1,3 @@
-import { KEYRING_KEY_ID_LENGTH } from "../keyring/ring";
 import type { AuthAlgorithm, AuthFactorKind } from "./types";
 
 // A primary factor must identify the visitor: `email-otp` does, because the visitor types the
@@ -13,9 +12,6 @@ export const AUTH_SUPPORTED_ALGORITHMS: readonly AuthAlgorithm[] = [-7, -257];
 
 /** The one role forge sources itself, and the name a `mandatoryForRoles` requirement is written against. @public */
 export const AUTH_ADMIN_ROLE = "admin";
-
-/** A key id is eight base64url characters, which is exactly the six kid bytes a token frame carries. @public */
-export const AUTH_KEY_ID_LENGTH = KEYRING_KEY_ID_LENGTH;
 
 /** Shortest expiration Workers KV accepts — session storage's floor, and the one a ceremony borrows. @public */
 export const AUTH_KV_MIN_TTL_SECONDS = 60;

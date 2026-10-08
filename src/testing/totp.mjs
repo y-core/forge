@@ -1,6 +1,6 @@
 // Generated from src/testing/totp.ts by `bun run gen:bundles` — do not edit.
 
-// src/crypto/base32.ts
+// src/crypto/primitives/base32.ts
 var BASE32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 var BASE32_VALUES = Object.fromEntries([...BASE32_ALPHABET].map((ch, i) => [ch, i]));
 var BASE32_PADDING = [0, void 0, 6, void 0, 4, 3, void 0, 1];
@@ -29,7 +29,7 @@ function base32Decode(text) {
   return out;
 }
 
-// src/crypto/hotp.ts
+// src/crypto/primitives/hotp.ts
 var DEFAULT_DIGITS = 6;
 var DEFAULT_HASH = "SHA-1";
 var DEFAULT_PERIOD = 30;

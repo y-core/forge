@@ -168,7 +168,7 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `tooling/term` rulings — the terminal-output surface and what may call it | `src/tooling/term/README.md` |
 | The `tooling/curate` rulings — markers matched on a comment, the closure directions, refusal before any write, the gate row's tier | `src/tooling/curate/README.md` |
 | The `render/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/render/pdf/README.md` |
-| The `keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/keyring/README.md` |
+| The `crypto/keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/crypto/keyring/README.md` |
 | The AES-GCM seal budget — the random-nonce bound per `(kid, purpose)` subkey, what crossing it costs, the rotation cadence it sets | [`AUTH_MOUNTING.md`][am-7] §7 |
 
 **The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document

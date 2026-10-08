@@ -21,14 +21,14 @@ audience: internal
 - §2 No-Sibling-Barrel Import Rule: the guard against circular dependencies
 - §3 Publishing a Subpath: where a namespace is described, and what a subpath may publish
 - §3a A Namespace Is Described by Its Own README: the one pointer, and which file is authoritative for which fact
-- §3b Internal Namespaces: sealed-internal `crypto`
+- §3b Internal Namespaces: the sealed-internal `crypto/primitives`
 - §3c A Surface Node Loads Is Published Prebuilt: the committed bundle a consumer's node process loads, and the build-time packages a published
   module may not import
 - §3d A Non-Module File or an Asset Family Is Published by Subpath: a file named by path, a plain-string value, one pattern per family
 - §4 Namespace Classification: the leaf/integration split
 - §4a Leaf Namespace Rules: no cross-namespace forge imports beyond the §4c primitives
 - §4b Integration Namespace Rules: where edges are declared, and what the graph gate proves
-- §4c Foundational Primitive Namespaces: `result`, `crypto`, `context` and `validation` sit below the split
+- §4c Foundational Primitive Namespaces: `result`, `crypto/primitives`, `context` and `validation` sit below the split
 - §5 Growth Rules: where a new concern belongs
 - §5a security — Transport-Layer Hardening Only: what goes to `auth` instead
 - §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, and the deliberate `ui/controls` shadowing
@@ -42,8 +42,8 @@ audience: internal
 - §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
 - §5j `render` — One Namespace per Renderer: the container and its children, the call shape, the JSX edge, the `render/pdf` bare-component
   carve-out, and what `render/markdown` leaves to an app
-- §5k `keyring` — At-Rest Sealing Under the App's Own Root Secret: what routes here rather than to `auth` or `crypto`, the one-way edge
-  between them, and why the other HMAC consumers keep their own keys
+- §5k `crypto/keyring` — Values Signed or Sealed Under the App's Own Root Secret: the `crypto` container, what routes here rather than to
+  `auth`, the one-way edge between them, and why the other HMAC consumers keep their own keys
 - §5l `security` — Webhook Message Authentication, by Local Ruling: why a body-reading signature check is transport-layer
 - §5m `html` — Safe-Markup Primitives: what belongs here, and why it is a leaf below both `http` and `render`
 - §6 When to Add a New Namespace: criteria and checklist
@@ -61,7 +61,7 @@ files that enforce it are named in [`SOURCE_OF_TRUTH.md`][sot-2b] §2b.
 ## 2. No-Sibling-Barrel Import Rule
 
 See [`NAMESPACE_DESIGN.md`][nd-2] §2 for the no-sibling-barrel rule, the cycle it prevents, and the test an exemption must pass. forge's
-exemptions — `validation/mod` and `crypto/mod` — are §4c below, which owns the closure argument that makes them safe.
+exemptions — `validation/mod` and `crypto/primitives/mod` — are §4c below, which owns the closure argument that makes them safe.
 
 ---
 
@@ -82,19 +82,11 @@ runtime namespace, so the README rule above reads `src/` namespaces only. `packa
 
 ### 3b. Internal Namespaces
 
-**`crypto` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.ts`. The allowlist is what lets
-a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
+**`crypto/primitives` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.ts`. The allowlist
+is what lets a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
 
-**Never import `crypto` from outside forge.** There is no `@y-core/forge/crypto` subpath.
-
-**Sealed means the path, not the symbol.** Almost everything here is `@internal` plumbing, but a capability may be implemented in `crypto` and
-surfaced publicly through the barrel of the namespace that owns its concern. `uuidv7` / `createUuidv7` are the standing case: implemented here so
-`storage/kv` and `auth` consume them without a layering violation, exported to consumers only via `@y-core/forge/storage/db` (see
-[`STORAGE_BINDINGS.md`][sb-1e] §1e).
-
-**That placement costs one piece of enforcement, knowingly.** `validate-exports`'s source → barrel pass walks the source files each _exported_
-namespace owns, so a `@public` symbol living in `src/crypto/` is outside every namespace it scans. Nothing mechanical will catch a public crypto
-symbol that was never added to a surfacing barrel — that entry is manual discipline, unlike everywhere else in forge where the gate proves it.
+**Never import `crypto/primitives` from outside forge.** There is no `@y-core/forge/crypto/primitives` subpath, and its parent `crypto` is a
+container with no barrel of its own (§5k).
 
 ### 3c. A Surface Node Loads Is Published Prebuilt
 
@@ -106,14 +98,14 @@ symbol that was never added to a surfacing barrel — that entry is manual disci
 `@y-core/forge/tooling/lint` from source however forge is installed; `@y-core/forge/tooling/lint/plugin` is the bundle it names instead. Forge is
 consumed as a git tarball, so there is no publish step that could build the bundle and no `prepare` hook a consumer runs: committing the artifact is
 the only form that reaches a consumer without the consumer building it. The cost is that a generated file can drift from its source, so a drift
-check rebuilds each bundle on every gate run and fails on any difference — `validate-lint-plugin`, `validate-chromium-bundle` and
-`validate-totp-bundle`.
+check rebuilds each bundle on every gate run and fails on any difference — one step per row of `config/bundles.ts`, which names each step.
 
 **Playwright is the second such host, and forge cannot choose bun on the consumer's behalf.** A `playwright.config.ts` importing a forge subpath
 dies at config load with the same error, and under bun a dev server playwright spawns binds where the browser cannot reach it — specs that pass
 under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So `@y-core/forge/tooling/gate/chromium` publishes a
 committed bundle of the one symbol a config needs. A consumer's browser spec loads the same way, so `@y-core/forge/testing/totp` is a committed
-bundle of `totpCodes`, which also stays on the `./testing` barrel for a suite running under bun.
+bundle of `totpCodes`, which also stays on the `./testing` barrel for a suite running under bun. A config that reads `wrangler.jsonc` loads the
+same way, so `@y-core/forge/tooling/cf/wrangler` is a committed bundle of `parseWranglerConfig` alone.
 
 Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
 broken bundle fails here rather than there.
@@ -121,6 +113,9 @@ broken bundle fails here rather than there.
 **A published module may not import a build-time package, so oxlint's types are restated in `types.ts` rather than imported from it.** oxlint is a
 devDependency, and an import of its types would make every consumer of forge depend on it. The same constraint reaches anything the plugin loads at
 runtime.
+
+**A bundle keeps its package dependencies as imports instead of inlining them**, so the wrangler bundle imports `valibot` from the consumer's
+install. A bundle may therefore import only `node:` builtins and the packages forge lists under `dependencies`.
 
 ### 3d. A Non-Module File or an Asset Family Is Published by Subpath
 
@@ -190,26 +185,27 @@ walk that are load-bearing and not self-evident. What is local: edges are declar
 legal exactly while one direction stays `import type` — flipping it to a value import would close a real cycle. Kind is therefore a rule, not an
 annotation, which is why the gate checks it in both directions.
 
-### 4c. Foundational Primitive Namespaces — `result`, `crypto`, `context`, `validation`
+### 4c. Foundational Primitive Namespaces — `result`, `crypto/primitives`, `context`, `validation`
 
-`result`, `crypto`, `context` and `validation` sit **below** the leaf/integration split: **any namespace may import them without that import
-counting as a layering violation.**
+`result`, `crypto/primitives`, `context` and `validation` sit **below** the leaf/integration split: **any namespace may import them without that
+import counting as a layering violation.**
 
 `result` is the single result primitive ([`FORGE_ERRORS.md`][eh-1] §1). Because explicit error handling is cross-cutting, `security` / `form` /
 `storage` importing `result` is **expected** — treat it like importing a Web API.
 
-**The test is arithmetic, not taste: how many namespaces reach for it independently.** The count is the namespaces whose source imports it, which
-no declared edge records — `context` and `validation` are reached for across near-supersets of the namespaces that reach for `crypto`, which this
-section admits on exactly this argument. A namespace that most others need is a primitive; declaring an edge per consumer instead would describe the
-same graph while implying a choice each consumer made, and none of them did.
+**The test is arithmetic, not taste: how many namespaces reach for it independently.** The count is the namespaces whose source imports it, which no
+declared edge records — `context` and `validation` are reached for across near-supersets of the namespaces that reach for `crypto/primitives`, which
+this section admits on exactly this argument. A namespace that most others need is a primitive; declaring an edge per consumer instead would
+describe the same graph while implying a choice each consumer made, and none of them did.
 
-**The set is closed, so no primitive can reach back into a consumer.** `context` imports `validation`, `validation` imports `result`, and `crypto`
-and `result` import nothing — every edge out of a primitive lands inside the set. That is what makes the carve-out safe, and it is the property to
-re-check before admitting another member: a primitive that imported a leaf would put every consumer of the primitive behind that leaf.
+**The set is closed, so no primitive can reach back into a consumer.** `context` imports `validation`, `validation` imports `result`, and
+`crypto/primitives` and `result` import nothing — every edge out of a primitive lands inside the set. That is what makes the carve-out safe, and it
+is the property to re-check before admitting another member: a primitive that imported a leaf would put every consumer of the primitive behind that
+leaf.
 
-`result` and `context` stay leaf (§4a); their concrete-file import paths keep them clear of the §2 guard without an exemption, while `crypto`
-carries the linter exemption instead ([`NAMESPACE_DESIGN.md`][nd-2c] §2c). `validation` is leaf and is imported through its barrel, which the same
-exemption already covers.
+`result` and `context` stay leaf (§4a); their concrete-file import paths keep them clear of the §2 guard without an exemption, while
+`crypto/primitives` carries the linter exemption instead ([`NAMESPACE_DESIGN.md`][nd-2c] §2c). `validation` is leaf and is imported through its
+barrel, which the same exemption already covers.
 
 ---
 
@@ -231,7 +227,7 @@ This is forge's map of the concerns [`BOUNDARIES.md`][boundaries-2b] §2b routes
 | Authentication — JWT, OAuth, magic links, login | `auth` (§5h) |
 | Permissions and RBAC | `auth` (§5h) |
 | API-key lifecycle — issue, rotate, revoke, verify | `auth` (§5h) |
-| Timing-safe comparison and other primitives | sealed-internal `crypto` (§3b) |
+| Timing-safe comparison and other primitives | sealed-internal `crypto/primitives` (§3b) |
 | Input sanitization and schema validation | `form` and `validation` |
 
 ### 5b. ui/core — SSR Components Only
@@ -429,25 +425,31 @@ Under `ui` it would belong in `ui/client` (§5f), and every `ui/client` consumer
 its `client` segment ([`BOUNDARIES.md`][boundaries-1] §1), imports nothing from `render/markdown`, and takes the dialect it decorates as an injected
 option, so an app's constructs reach it without forge knowing them. CodeMirror is its optional peer dependency.
 
-### 5k. `keyring` — At-Rest Sealing Under the App's Own Root Secret
+### 5k. `crypto/keyring` — Values Signed or Sealed Under the App's Own Root Secret
 
-**A value an app stores and later reads back under its own secret is sealed through `@y-core/forge/keyring`.** A webhook secret, a third-party
-token, any credential a row carries: the consumer names the purpose and binds the row as context, and the namespace owns the ring, the subkey
-derivation and the frame. It does not route to `auth`, because none of it is identity (§5h), and it is not a `crypto` subpath, because `crypto` is
-sealed-internal (§3b) and publishes nothing.
+**A value an app stores and later reads back under its own secret is sealed through `@y-core/forge/crypto/keyring`.** A webhook secret, a
+third-party token, any credential a row carries: the consumer names the purpose and binds the row as context, and the namespace owns the ring, the
+subkey derivation and the frame. It does not route to `auth`, because none of it is identity (§5h).
 
-**`keyring` is a leaf, and the edge is one-way: `auth` imports `keyring`, and `keyring` never names `auth`.** `auth` seals its TOTP secrets
-through the same functions; `keyring` imports only the `crypto` and `result` primitives (§4c).
+**`crypto` is a container, like `storage` and `render`: it has no barrel and no export entry, and holds one published child and one sealed one.**
+`crypto/keyring` is the published child; `crypto/primitives` is the sealed one (§3b). Code that serves one other namespace's concern lives in that
+namespace instead — the UUIDv7 set in `storage/db`, the WebAuthn wire formats in `auth/passkey`.
 
-**The other HMAC consumers keep their own keys, and each has a reason.**
+**A keyed stand-in for an id routes here too.** An app that needs an id it can look up but nobody can reverse calls `derivePseudonym` under the
+same ring, rather than hand-rolling an HMAC over Web Crypto. Its subkeys are derived under a label of their own, so a pseudonym never shares a key
+with a sealed frame.
 
-- **`form` CSRF tokens and `storage/r2` signed URLs keep `HmacKeyRing` from `crypto`.** Its keys are imported HMAC `CryptoKey`s, and a kid is
-  a fingerprint of the hex secret, carried on the wire in the token and in the URL. A `keyring` kid is derived from the domain label and the
-  key bytes, so moving would change every kid and orphan each CSRF token and signed URL already in flight.
-- **`session` secrets stay strings.** What `session` writes carries no kid, and verification tries each secret in order. A secret's UTF-8
-  bytes are its HMAC key, so hex-decoding it into `keyring`'s bytes would change the key and log every visitor out.
+**CSRF tokens, R2 signed URLs and `session`'s values sign under a `KeyRing` too.** Each derives an HMAC subkey for a purpose of its own, carries the
+ring's key id on the wire, and refuses the auth key ring.
 
-What all of them share with `keyring` is the strength rule, which is [`SECURITY_HARDENING.md`][sh-8] §8's.
+**`crypto/keyring` is a leaf that edges point into, and it names none of its importers.** Which namespaces import it is declared in
+`config/namespaces.ts` (`EDGES`), not here. `auth` seals its TOTP secrets through the same functions; `crypto/keyring` imports only the
+`crypto/primitives` and `result` primitives (§4c).
+
+**Webhook secrets stay `whsec_` strings in `security`, the one HMAC consumer keeping its own key.** The format is shared with a third party that
+signs with the same secret, so its bytes and encoding are not forge's to choose.
+
+What it shares with `crypto/keyring` is the strength rule, which is [`SECURITY_HARDENING.md`][sh-8] §8's.
 
 ### 5l. `security` — Webhook Message Authentication, by Local Ruling
 
@@ -525,7 +527,6 @@ second repository needs it.
 [nd-5]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5-when-to-add-a-new-namespace
 [nd-5a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5a-criteria-for-a-new-namespace
 [ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
-[sb-1e]: ./STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
 [testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd

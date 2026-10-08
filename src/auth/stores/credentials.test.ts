@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidToBytes, uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
+import { uuidToBytes, uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";

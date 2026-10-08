@@ -1,18 +1,12 @@
-import { existsSync, readFileSync } from "node:fs";
 import { posix, relative, resolve } from "node:path";
 
 import { loadConfig } from "../../assets/config";
 import { iconTarget } from "../../assets/icons";
 import { SITE_OUTPUTS } from "../../assets/types";
-import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail, warn } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { AssetRootCheckConfig } from "./types";
-
-interface WranglerAssets {
-  directory?: string;
-  run_worker_first?: unknown;
-}
+import { readWorkerConfig } from "./worker-config";
 
 /** Normalises a wrangler `assets.directory` or a build `outDir` to a root-relative path. @internal */
 function normaliseDir(root: string, dir: string): string {
@@ -30,20 +24,9 @@ function servedPath(assetsDir: string, outDir: string, file: string): string | n
 export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<CheckResult> {
   const { root } = config;
   const workerConfig = config.workerConfig ?? "wrangler.jsonc";
-  const workerPath = resolve(root, workerConfig);
-
-  if (!existsSync(workerPath)) {
-    return checkResult([fail(`\`${workerConfig}\` not found`, { file: workerConfig })], "asset-root exclusions: no worker config");
-  }
-
-  let assets: WranglerAssets;
-  try {
-    const parsed = JSON.parse(stripJsonc(readFileSync(workerPath, "utf-8"))) as { assets?: WranglerAssets };
-    assets = parsed.assets ?? {};
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return checkResult([fail(`\`${workerConfig}\` is not parseable: ${message}`, { file: workerConfig })], "asset-root exclusions: unparseable");
-  }
+  const read = readWorkerConfig(root, workerConfig, "asset-root exclusions");
+  if (!("config" in read)) return read;
+  const assets = read.config.assets ?? {};
 
   // A Worker with no static assets is a valid project, so this green is deliberate.
   if (assets.directory === undefined) {

@@ -4,14 +4,18 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
-import { csrfMinterCtx, importCsrfKey, verifyCsrfToken } from "../../form/csrf";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import { csrfMinterCtx, verifyCsrfToken } from "../../form/csrf";
+import { csrfHeaderCtx } from "../../form/csrf-context";
+import { jsx } from "../../render/jsx/jsx-runtime";
 import { err, ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
-import { AUTH_SESSION_KEY, authCtx } from "./identity";
+import { SITE_DATA_CSRF_HEADER_ATTR, SITE_DATA_PATH_ATTR, SITE_DATA_SCOPE, SITE_DATA_TOKEN_ATTR } from "../site-data-contract";
+import { AUTH_SESSION_KEY, AUTH_SITE_DATA_OWED_SESSION_KEY, authCtx } from "./identity";
 import {
   loadAccountPasskeyEnrol,
   loadAdminElevate,
@@ -31,6 +35,7 @@ import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types
 import {
   attrOf,
   attrsOf,
+  elementOf,
   elementsOf,
   fakeAdminUserStore,
   fakeAuthCredential,
@@ -92,6 +97,55 @@ function optionsWith(overrides: Partial<AuthRequestServices>): AuthWebOptions {
 async function page(app: Forge, path = "/page"): Promise<string> {
   return (await app.request(path)).text();
 }
+
+describe("an auth page under a session that owes a storage clear", () => {
+  /** The sign-in loader on an app whose session carries the mark a sign-out leaves, and the header the app's `csrfProtection` names. */
+  function owing(options: AuthWebOptions, owed: boolean, header?: string): Forge {
+    const app = new Forge();
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+    app.use("*", (context, next) => {
+      if (owed) sessionCtx.get(context).set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
+      csrfMinterCtx.set(context, stubMinter);
+      if (header !== undefined) csrfHeaderCtx.set(context, header);
+      return next();
+    });
+    mapHandler(app, "GET", "/page", (context) => loadSignin(getAppContext(context), options));
+    return app;
+  }
+
+  const SCOPE = `data-scope="${SITE_DATA_SCOPE}"`;
+
+  it("stamps the site-data scope with its own path, the token minted for it and csrfProtection's default header", async () => {
+    const html = await page(owing(fakeAuthWebOptions(), true));
+
+    expect(attrsOf(html, SCOPE)).toEqual({
+      hidden: "",
+      "data-scope": SITE_DATA_SCOPE,
+      [SITE_DATA_PATH_ATTR]: "/auth/signout/site-data",
+      [SITE_DATA_TOKEN_ATTR]: "csrf-for:/auth/signout/site-data",
+      [SITE_DATA_CSRF_HEADER_ATTR]: "X-CSRF-Token",
+    });
+  });
+
+  it("names the header the app renamed", async () => {
+    const html = await page(owing(fakeAuthWebOptions(), true, "X-Csrf"));
+
+    expect(attrsOf(html, SCOPE)[SITE_DATA_CSRF_HEADER_ATTR]).toBe("X-Csrf");
+  });
+
+  it("stamps it beside a view the consumer replaced", async () => {
+    const options = fakeAuthWebOptions({ views: { signin: () => jsx("p", { "data-ref": "own", children: "own" }) } });
+    const html = await page(owing(options, true));
+
+    expect([elementOf(html, "p", 'data-ref="own"'), elementsOf(html, "div", SCOPE).length]).toEqual(['<p data-ref="own">own</p>', 1]);
+  });
+
+  it("stamps nothing under a session that owes none", async () => {
+    const html = await page(owing(fakeAuthWebOptions(), false));
+
+    expect(elementsOf(html, "div", SCOPE)).toEqual([]);
+  });
+});
 
 describe("loadSignin", () => {
   it("posts to the sign-in submit path with the token minted for it", async () => {
@@ -270,11 +324,11 @@ describe("loadPasskeyList", () => {
     const tokens = valuesOf(await page(app), "hx-headers").map(
       (headers) => (JSON.parse(headers.replaceAll("&quot;", '"')) as CsrfHeaders)["X-CSRF-Token"],
     );
-    const key = await importCsrfKey(CSRF_SECRET);
+    const ring = await importKeyRing([CSRF_SECRET]);
     expect(tokens).toHaveLength(2);
     expect(new Set(tokens).size).toBe(2);
-    expect(await verifyCsrfToken(key, tokens[0] as string, "/account/passkeys/c1")).toEqual(ok());
-    expect(await verifyCsrfToken(key, tokens[1] as string, "/account/passkeys/c2")).toEqual(ok());
+    expect(await verifyCsrfToken(ring, tokens[0] as string, "/account/passkeys/c1")).toEqual(ok());
+    expect(await verifyCsrfToken(ring, tokens[1] as string, "/account/passkeys/c2")).toEqual(ok());
   });
 
   it("refuses with 503 when the credential store is down", async () => {
@@ -456,8 +510,8 @@ describe("the icon a page draws from", () => {
 
 describe("every token a page renders is bound to the path its own control submits to", () => {
   async function boundTo(html: string, selector: string, attr: string, expected: string): Promise<void> {
-    const key = await importCsrfKey(CSRF_SECRET);
-    expect(await verifyCsrfToken(key, attrOf(html, selector, attr), expected)).toEqual(ok());
+    const ring = await importKeyRing([CSRF_SECRET]);
+    expect(await verifyCsrfToken(ring, attrOf(html, selector, attr), expected)).toEqual(ok());
   }
 
   /** The token an htmx form carries in its `hx-headers` payload. */
@@ -532,8 +586,8 @@ describe("every token a page renders is bound to the path its own control submit
     const options = optionsWith({ admin: fakeAdminUserStore([fakeAuthUser({ id: "u2" })]) });
     const html = await (await loaderApp(loadAdminUserEdit, options, "/page/:id", "u9", realMinter, true).request("/page/u2")).text();
 
-    const key = await importCsrfKey(CSRF_SECRET);
-    expect(await verifyCsrfToken(key, headerToken(html, "hx-patch"), "/admin/users/u2")).toEqual(ok());
+    const ring = await importKeyRing([CSRF_SECRET]);
+    expect(await verifyCsrfToken(ring, headerToken(html, "hx-patch"), "/admin/users/u2")).toEqual(ok());
   });
 
   it("binds the elevation form's token to the elevation submit path", async () => {

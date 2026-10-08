@@ -1,11 +1,11 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { EnvKey } from "../../context/types";
-import { assertSecretStrength } from "../../crypto/strength";
-import { importKeyRingUnder, keyRingKeyId, lookupKeyRingKey } from "../../keyring/ring";
-import type { KeyRingDomain } from "../../keyring/types";
+import { importKeyRingUnder, keyRingKeyId, lookupKeyRingKey } from "../../crypto/keyring/ring";
+import type { KeyRing, KeyRingDomain } from "../../crypto/keyring/types";
+import { assertSecretStrength } from "../../crypto/primitives/strength";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
-import type { AuthAlgorithm, AuthKeyRing, AuthOptions, AuthServices } from "../types";
+import type { AuthAlgorithm, AuthOptions, AuthServices } from "../types";
 
 /** The labels every auth key id and subkey is derived under. @internal */
 export const AUTH_KEY_DOMAIN: KeyRingDomain = { keyIdLabel: "y-core/forge/auth/kid", subkeyLabel: "y-core/forge/auth/v1" };
@@ -20,7 +20,7 @@ export function authKeyId(key: Uint8Array<ArrayBuffer>): Promise<string> {
 }
 
 /** Builds a key ring from hex-encoded root secrets, the first becoming the active key. @public */
-export function importAuthKeyRing(secrets: [string, ...string[]]): Promise<AuthKeyRing> {
+export function importAuthKeyRing(secrets: [string, ...string[]]): Promise<KeyRing> {
   return importKeyRingUnder("importAuthKeyRing", AUTH_KEY_DOMAIN, secrets);
 }
 
@@ -36,7 +36,7 @@ async function assertAlgorithmsAvailable(algorithms: readonly AuthAlgorithm[]): 
   }
 }
 
-function assertRingUsable(ring: AuthKeyRing): void {
+function assertRingUsable(ring: KeyRing): void {
   if (!lookupKeyRingKey(ring, ring.activeKeyId)) {
     throw new Error(`resolveAuthServices: the key ring has no key for its active key id "${ring.activeKeyId}"`);
   }
@@ -61,7 +61,7 @@ export async function resolveAuthServices(
   // Resolving a binding throws, where a resolved store answers with a `Result`
   // ([`FORGE_ERRORS.md`](../../docs/FORGE_ERRORS.md) §5e) — so a bad ring fails here, not at sign-in.
   await assertAlgorithmsAvailable(algorithms);
-  const keys = await Promise.resolve(options.secret(context));
+  const keys = await Promise.resolve(options.ring(context));
   assertRingUsable(keys);
 
   const services: AuthServices = { algorithms, keys };

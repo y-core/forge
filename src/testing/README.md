@@ -174,7 +174,7 @@ Mounting a full auth app, seeding a signed-in session, and the CSRF round trip t
 ([`TESTING.md`][canon-testing-5c] §5c). The secret is a hex string — the same one the app under test is configured with.
 
 ```ts
-const TEST_CSRF_SECRET = "a".repeat(64);
+const TEST_CSRF_SECRET = "8550c394c93600988d55fda7027f24b3e0dc61e81530df3b9ba5c0e0f3012059";
 
 const token = await mintTestCsrfToken(TEST_CSRF_SECRET, "/api/contact");
 const res = await app.request(

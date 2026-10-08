@@ -86,3 +86,11 @@ export interface D1Result<T = unknown> {
   success: boolean;
   meta: { duration?: number; last_row_id?: number | null; changes?: number; rows_written?: number; rows_read?: number };
 }
+
+/** The byte encodings a UUID may arrive in — `readonly number[]` is what D1 returns for a `BLOB` column. @public */
+export type UuidByteInput = readonly number[] | Uint8Array | ArrayBuffer;
+
+/** Options for {@link createUuidv7Bytes} and {@link createUuidv7}. @public */
+export interface Uuidv7Options {
+  now?: () => number;
+}

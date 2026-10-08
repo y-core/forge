@@ -4,7 +4,8 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
-import { csrfMinterCtx, csrfProtection, importCsrfKey } from "../../form/csrf";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import { csrfMinterCtx, csrfProtection } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
@@ -88,10 +89,10 @@ function authApp(seed: AppSeed = {}): Forge {
       return next();
     });
   } else {
-    const key = importCsrfKey(CSRF_SECRET);
+    const ring = importKeyRing([CSRF_SECRET]);
     app.use(
       "*",
-      csrfProtection({ secret: () => key, subject: false, ...(seed.csrfHeaderName === undefined ? {} : { headerName: seed.csrfHeaderName }) }),
+      csrfProtection({ ring: () => ring, subject: false, ...(seed.csrfHeaderName === undefined ? {} : { headerName: seed.csrfHeaderName }) }),
     );
   }
   return app;

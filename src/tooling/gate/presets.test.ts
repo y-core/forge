@@ -8,7 +8,7 @@ import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
-import type { Step } from "./types";
+import type { CheckResult, Step } from "./types";
 
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);
@@ -19,6 +19,16 @@ function fixerOf(step: Step | undefined): readonly string[] | undefined {
 }
 
 const DESIGN = { stylesheet: "src/assets/tailwind.css", cssDir: "src/assets" };
+
+async function runRow(steps: readonly Step[], label: string): Promise<CheckResult> {
+  const row = steps.find((step) => step.label === label);
+  if (row === undefined || !isCheckStep(row)) throw new Error(`no ${label} row`);
+  return row.run("quality");
+}
+
+function crossingsOf(result: CheckResult): [string | undefined, string][] {
+  return result.findings.map((finding) => [finding.file, finding.message]);
+}
 
 describe("cloudflareWorkerSteps() — shape", () => {
   it("emits the fleet's order, minus the optional asset step", () => {
@@ -51,6 +61,18 @@ describe("cloudflareWorkerSteps() — shape", () => {
 
   it("gives every step a unique label", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }));
+
+    expect(new Set(labels).size).toBe(labels.length);
+  });
+
+  it("gives every step a unique label with both boundary directions and the vendor row emitted", () => {
+    const labels = labelsOf(
+      cloudflareWorkerSteps({
+        ssrBoundary: { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"], serverDirs: ["src/app"] },
+        importBoundary: { guarded: ["src/showcase"] },
+        vendorDir: "src/vendor",
+      }),
+    );
 
     expect(new Set(labels).size).toBe(labels.length);
   });
@@ -321,6 +343,8 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
   const SSR = { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"] };
   const CONTRAST = { cssDir: "src/assets", tokenFiles: ["src/assets/tokens.css"], mappingFile: "src/assets/theme.css", pairs: [], criteria: {} };
   const IMPORT = { guarded: ["src/showcase"] };
+  const SSR_SERVER = { ...SSR, serverDirs: ["src/app"] };
+  const VENDOR = "src/vendor";
 
   it("puts validate-jsx after format, where a file-granular row runs before the slow lint", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ jsx: {} }));
@@ -329,8 +353,8 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     expect(labels.indexOf("validate-jsx")).toBeLessThan(labels.indexOf("lint:types"));
   });
 
-  it("puts validate-ssr-boundary, validate-import-boundary and validate-contrast after the test rows, in that order", () => {
-    const labels = labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR, importBoundary: IMPORT, contrast: CONTRAST }));
+  it("puts the ssr, client, import, vendor and contrast rows after the test rows, in that order", () => {
+    const labels = labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR_SERVER, importBoundary: IMPORT, vendorDir: VENDOR, contrast: CONTRAST }));
 
     expect(labels).toEqual([
       "types:cf-runtime",
@@ -341,7 +365,9 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
       "lint:types",
       "test",
       "validate-ssr-boundary",
+      "validate-client-boundary",
       "validate-import-boundary",
+      "validate-vendor-boundary",
       "validate-contrast",
       "validate-dev-boundary",
     ]);
@@ -421,6 +447,155 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     expect(labels).not.toContain("validate-ssr-boundary");
     expect(labels).not.toContain("validate-import-boundary");
     expect(labels).not.toContain("validate-contrast");
+  });
+});
+
+describe("cloudflareWorkerSteps() — the client-boundary row", () => {
+  const SSR = { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"] };
+  const SSR_SERVER = { ...SSR, serverDirs: ["src/app"] };
+  const CLIENT_TREE = { "src/app/config.ts": "export const SECRET = 1;\n", "src/ui/client/util.ts": "export const util = 1;\n" };
+
+  it("emits validate-client-boundary only when ssrBoundary names serverDirs", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR }))).not.toContain("validate-client-boundary");
+    expect(labelsOf(cloudflareWorkerSteps({ ssrBoundary: SSR_SERVER }))).toContain("validate-client-boundary");
+  });
+
+  it("fails a client module importing a server directory at value, naming the client file", async () => {
+    const root = gateFixtureRoot({
+      ...CLIENT_TREE,
+      "src/ui/client/main.ts": 'import { SECRET } from "../../app/config";\nexport const main = SECRET;\n',
+    });
+    const result = await runRow(cloudflareWorkerSteps({ root, ssrBoundary: SSR_SERVER }), "validate-client-boundary");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.ok).toBe(false);
+    expect(crossingsOf(result)).toEqual([
+      ["src/ui/client/main.ts", "import boundary crossed — `../../app/config` resolves to `src/app/config.ts`"],
+    ]);
+  });
+
+  it("passes a client tree importing only within itself", async () => {
+    const root = gateFixtureRoot({ ...CLIENT_TREE, "src/ui/client/main.ts": 'import { util } from "./util";\nexport const main = util;\n' });
+    const result = await runRow(cloudflareWorkerSteps({ root, ssrBoundary: SSR_SERVER }), "validate-client-boundary");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("still fails a server module importing the client tree on the ssr row once serverDirs is set", async () => {
+    const root = gateFixtureRoot({
+      ...CLIENT_TREE,
+      "src/ui/client/main.ts": 'import { util } from "./util";\nexport const main = util;\n',
+      "src/app/router.ts": 'import { util } from "../ui/client/util";\nexport const router = util;\n',
+    });
+    const crossed = await runRow(cloudflareWorkerSteps({ root, ssrBoundary: SSR_SERVER }), "validate-ssr-boundary");
+    rmSync(join(root, "src/app/router.ts"));
+    const clean = await runRow(cloudflareWorkerSteps({ root, ssrBoundary: SSR_SERVER }), "validate-ssr-boundary");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(crossingsOf(crossed)).toEqual([["src/app/router.ts", "SSR boundary crossed"]]);
+    expect(clean.ok).toBe(true);
+  });
+});
+
+describe("cloudflareWorkerSteps() — the vendor-boundary row", () => {
+  const VENDOR = "src/vendor";
+  const VENDOR_TREE = {
+    "src/app/x.ts": "export const x = 1;\n",
+    "src/router.ts": "export const router = 1;\n",
+    "src/vendor/sibling/mod.ts": "export const sibling = 1;\n",
+  };
+
+  async function vendorResult(files: Record<string, string>, vendorDir = VENDOR): Promise<CheckResult> {
+    const root = gateFixtureRoot(files);
+    const result = await runRow(cloudflareWorkerSteps({ root, vendorDir }), "validate-vendor-boundary");
+    rmSync(root, { recursive: true, force: true });
+    return result;
+  }
+
+  it("emits no validate-vendor-boundary without vendorDir, and only that row beyond the default with it", () => {
+    const plain = labelsOf(cloudflareWorkerSteps());
+    const vendored = labelsOf(cloudflareWorkerSteps({ vendorDir: VENDOR }));
+
+    expect(plain).not.toContain("validate-vendor-boundary");
+    expect(vendored.filter((label) => !plain.includes(label))).toEqual(["validate-vendor-boundary"]);
+  });
+
+  it("fails a vendor module importing a directory beside the vendor tree", async () => {
+    const result = await vendorResult({ ...VENDOR_TREE, "src/vendor/lib/mod.ts": 'import { x } from "../../app/x";\nexport const lib = x;\n' });
+
+    expect(result.ok).toBe(false);
+    expect(crossingsOf(result)).toEqual([["src/vendor/lib/mod.ts", "import boundary crossed — `../../app/x` resolves to `src/app/x.ts`"]]);
+  });
+
+  it("fails a vendor module importing a source file beside the vendor tree", async () => {
+    const result = await vendorResult({
+      ...VENDOR_TREE,
+      "src/vendor/lib/mod.ts": 'import { router } from "../../router";\nexport const lib = router;\n',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(crossingsOf(result)).toEqual([["src/vendor/lib/mod.ts", "import boundary crossed — `../../router` resolves to `src/router.ts`"]]);
+  });
+
+  it("passes a vendor module importing only the vendor tree and a bare package", async () => {
+    const result = await vendorResult({
+      ...VENDOR_TREE,
+      "src/vendor/lib/mod.ts":
+        'import { sibling } from "../sibling/mod";\nimport { object } from "valibot";\nexport const lib = [sibling, object];\n',
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("leaves a spec beside the vendor tree unguarded, so it cannot misconfigure the row", async () => {
+    const result = await vendorResult({
+      ...VENDOR_TREE,
+      "src/router.test.ts": "export const spec = 1;\n",
+      "src/vendor/lib/mod.ts": 'import { sibling } from "../sibling/mod";\nexport const lib = sibling;\n',
+    });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("lists what sits beside the vendor tree when the row runs, not when the table is built", async () => {
+    const root = gateFixtureRoot({ ...VENDOR_TREE, "src/vendor/lib/mod.ts": "export const lib = 1;\n" });
+    const steps = cloudflareWorkerSteps({ root, vendorDir: VENDOR });
+    mkdirSync(join(root, "src/late"));
+    writeFileSync(join(root, "src/late/mod.ts"), "export const late = 1;\n");
+    writeFileSync(join(root, "src/vendor/lib/late.ts"), 'import { late } from "../../late/mod";\nexport const lib = late;\n');
+    const result = await runRow(steps, "validate-vendor-boundary");
+    rmSync(root, { recursive: true, force: true });
+
+    expect(crossingsOf(result)).toEqual([["src/vendor/lib/late.ts", "import boundary crossed — `../../late/mod` resolves to `src/late/mod.ts`"]]);
+  });
+
+  it("builds the table under a missing root without throwing, and fails the row when it runs", async () => {
+    const steps = cloudflareWorkerSteps({ root: "/nowhere", vendorDir: VENDOR });
+    const result = await runRow(steps, "validate-vendor-boundary");
+
+    expect(result.ok).toBe(false);
+    expect(crossingsOf(result)).toEqual([
+      [undefined, "`src/vendor` matched no source — refusing to report a green import-boundary gate that scanned nothing"],
+    ]);
+  });
+
+  it("still guards the vendor tree's neighbours when vendorDir ends in a slash", async () => {
+    const result = await vendorResult(
+      { ...VENDOR_TREE, "src/vendor/lib/mod.ts": 'import { x } from "../../app/x";\nexport const lib = x;\n' },
+      "src/vendor/",
+    );
+
+    expect(crossingsOf(result)).toEqual([["src/vendor/lib/mod.ts", "import boundary crossed — `../../app/x` resolves to `src/app/x.ts`"]]);
+  });
+
+  it("guards the root's other entries when the vendor tree sits directly under the root", async () => {
+    const result = await vendorResult(
+      { "lib/x.ts": "export const x = 1;\n", "vendor/a/mod.ts": 'import { x } from "../../lib/x";\nexport const a = x;\n' },
+      "vendor",
+    );
+
+    expect(crossingsOf(result)).toEqual([["vendor/a/mod.ts", "import boundary crossed — `../../lib/x` resolves to `lib/x.ts`"]]);
   });
 });
 
@@ -698,8 +873,9 @@ describe("cloudflareWorkerSteps() — watches", () => {
     jsx: {},
     markdown: {},
     design: DESIGN,
-    ssrBoundary: { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"] },
+    ssrBoundary: { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"], serverDirs: ["src/app"] },
     importBoundary: { guarded: ["src/showcase"] },
+    vendorDir: "src/vendor",
     contrast: { cssDir: "src/assets", tokenFiles: [], mappingFile: "src/assets/theme.css", pairs: [], criteria: {} },
     db: true,
     browser: true,
@@ -723,6 +899,8 @@ describe("cloudflareWorkerSteps() — watches", () => {
     expect(watches["validate-class-tokens"]).toEqual(["src", "src/**", "**/*.css"]);
     expect(watches["validate-css-tokens"]).toEqual(["**/*.css"]);
     expect(watches["validate-ssr-boundary"]).toEqual(["src", "src/**"]);
+    expect(watches["validate-client-boundary"]).toEqual(["src/ui/client", "src/ui/client/**", "src/app", "src/app/**"]);
+    expect(watches["validate-vendor-boundary"]).toEqual(["src", "src/**"]);
     expect(watches["validate-exposure"]).toEqual(["wrangler.jsonc"]);
     expect(watches["validate-compatibility"]).toEqual(["wrangler.jsonc"]);
     expect(watches["validate-dev-boundary"]).toEqual(["src", "src/**", "wrangler.jsonc"]);
@@ -748,6 +926,10 @@ describe("cloudflareWorkerSteps() — watches", () => {
       "test:workerd",
       "validate-features",
     ]);
+  });
+
+  it("watches the whole root for a vendor tree directly under it", () => {
+    expect(watchesOf(cloudflareWorkerSteps({ vendorDir: "vendor" }))["validate-vendor-boundary"]).toEqual(["**"]);
   });
 
   it("gives the features import-boundary row the watches the plain row derives for the same config", () => {

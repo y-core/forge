@@ -1,10 +1,7 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-
-import { stripJsonc } from "../../cli/jsonc";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { ExposureCheckConfig, ExposurePosture } from "./types";
+import { readWorkerConfig } from "./worker-config";
 
 interface ExposureKey {
   key: string;
@@ -106,23 +103,9 @@ export async function checkExposure(config: ExposureCheckConfig): Promise<CheckR
   const { root } = config;
   const posture = config.require ?? "stated";
   const workerConfig = config.workerConfig ?? "wrangler.jsonc";
-  const workerPath = resolve(root, workerConfig);
-
-  if (!existsSync(workerPath)) {
-    return checkResult([fail(`\`${workerConfig}\` not found`, { file: workerConfig })], "deployment exposure: no worker config");
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(stripJsonc(readFileSync(workerPath, "utf-8")));
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return checkResult([fail(`\`${workerConfig}\` is not parseable: ${message}`, { file: workerConfig })], "deployment exposure: unparseable");
-  }
-
-  if (!isRecord(parsed)) {
-    return checkResult([fail(`\`${workerConfig}\` does not hold a JSON object`, { file: workerConfig })], "deployment exposure: unreadable");
-  }
+  const read = readWorkerConfig(root, workerConfig, "deployment exposure");
+  if (!("config" in read)) return read;
+  const parsed = read.config;
 
   const top = judgeBlock(parsed, "", posture, workerConfig);
   const findings: Finding[] = [...top.findings];

@@ -1,17 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 
-import { hexToBytes } from "../../crypto/bytes";
-import { importKeyRing, lookupKeyRingKey } from "../../keyring/ring";
-import { openAtRest, sealAtRest } from "../../keyring/seal";
+import { derivePseudonym } from "../../crypto/keyring/pseudonym";
+import { importKeyRing, lookupKeyRingKey } from "../../crypto/keyring/ring";
+import { openAtRest, sealAtRest } from "../../crypto/keyring/seal";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { hexToBytes } from "../../crypto/primitives/bytes";
 import { createTestContext } from "../../testing/context";
 import { buildRequest } from "../../testing/request";
-import type { AuthKeyRing } from "../types";
 import { importAuthKeyRing, resolveAuthServices } from "./ring";
 
 const KEY_1 = hexToBytes("0f328854bb8d3fe151893c6bb80e0298d42b867e556a95190618a51b75d8b8e9");
 const KEY_2 = hexToBytes("8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d");
 
-function ring(overrides: Partial<AuthKeyRing> = {}): AuthKeyRing {
+function ring(overrides: Partial<KeyRing> = {}): KeyRing {
   return { activeKeyId: "k1", keys: { k1: KEY_1 }, ...overrides };
 }
 
@@ -41,13 +42,23 @@ describe("importAuthKeyRing — kept apart from at-rest sealing", () => {
     const frame = await sealAtRest(appRing, binding, plaintext);
     expect(await openAtRest(appRing, binding, frame)).toEqual({ ok: true, data: { plaintext, kid: appRing.activeKeyId } });
   });
+
+  it("is refused by derivePseudonym, while a ring from importKeyRing over the same secret derives one", async () => {
+    const request = { purpose: "notes-store", value: "user_01J9Z3" };
+    const authRing = await importAuthKeyRing([SECRET]);
+    await expect(derivePseudonym(authRing, request)).rejects.toThrow(
+      `derivePseudonym: active key id "${authRing.activeKeyId}" is not one importKeyRing derives — use only a ring importKeyRing built, never the auth key ring`,
+    );
+
+    expect(await derivePseudonym(await importKeyRing([SECRET]), request)).toMatch(/^[0-9a-f]{64}$/);
+  });
 });
 
 describe("resolveAuthServices", () => {
   it("answers two option sets on one env with their own services, rather than the first caller's", async () => {
     const context = contextFor({ DB: {} });
-    const first = { secret: () => ring() };
-    const second = { secret: () => ring({ activeKeyId: "k2", keys: { k2: KEY_2 } }) };
+    const first = { ring: () => ring() };
+    const second = { ring: () => ring({ activeKeyId: "k2", keys: { k2: KEY_2 } }) };
 
     expect((await resolveAuthServices(context, first)).keys.activeKeyId).toBe("k1");
     expect((await resolveAuthServices(context, second)).keys.activeKeyId).toBe("k2");
@@ -58,7 +69,7 @@ describe("resolveAuthServices", () => {
     const context = contextFor({ DB: {} });
     let calls = 0;
     const options = {
-      secret: () => {
+      ring: () => {
         calls++;
         return ring();
       },
@@ -69,26 +80,26 @@ describe("resolveAuthServices", () => {
   });
 
   it("defaults to the two algorithms every supported runtime can verify", async () => {
-    const services = await resolveAuthServices(contextFor({}), { secret: () => ring() });
+    const services = await resolveAuthServices(contextFor({}), { ring: () => ring() });
     expect(services.algorithms).toEqual([-7, -257]);
   });
 
   it("returns the resolved key ring", async () => {
-    const services = await resolveAuthServices(contextFor({}), { secret: () => ring() });
+    const services = await resolveAuthServices(contextFor({}), { ring: () => ring() });
     expect(services.keys.activeKeyId).toBe("k1");
     expect(lookupKeyRingKey(services.keys, "k1")?.byteLength).toBe(32);
   });
 
-  it("awaits an async secret resolver", async () => {
-    const services = await resolveAuthServices(contextFor({}), { secret: async () => ring() });
+  it("awaits an async ring resolver", async () => {
+    const services = await resolveAuthServices(contextFor({}), { ring: async () => ring() });
     expect(services.keys.activeKeyId).toBe("k1");
   });
 
-  it("resolves the secret once per env object and reuses it after", async () => {
+  it("resolves the ring once per env object and reuses it after", async () => {
     const env = {};
     let calls = 0;
     const options = {
-      secret: () => {
+      ring: () => {
         calls++;
         return ring();
       },
@@ -101,7 +112,7 @@ describe("resolveAuthServices", () => {
   it("resolves again for a different env object", async () => {
     let calls = 0;
     const options = {
-      secret: () => {
+      ring: () => {
         calls++;
         return ring();
       },
@@ -112,29 +123,29 @@ describe("resolveAuthServices", () => {
   });
 
   it("throws when the ring has no key for its active id", () => {
-    const secret = (): AuthKeyRing => ring({ activeKeyId: "k2" });
-    expect(resolveAuthServices(contextFor({}), { secret })).rejects.toThrow(
+    const resolve = (): KeyRing => ring({ activeKeyId: "k2" });
+    expect(resolveAuthServices(contextFor({}), { ring: resolve })).rejects.toThrow(
       'resolveAuthServices: the key ring has no key for its active key id "k2"',
     );
   });
 
   it("throws when the active key id names an inherited property", () => {
-    const secret = (): AuthKeyRing => ring({ activeKeyId: "constructor" });
-    expect(resolveAuthServices(contextFor({}), { secret })).rejects.toThrow(
+    const resolve = (): KeyRing => ring({ activeKeyId: "constructor" });
+    expect(resolveAuthServices(contextFor({}), { ring: resolve })).rejects.toThrow(
       'resolveAuthServices: the key ring has no key for its active key id "constructor"',
     );
   });
 
   it("throws when any key is shorter than 32 bytes", () => {
-    const secret = (): AuthKeyRing => ({ activeKeyId: "k1", keys: { k1: KEY_1, k0: KEY_2.slice(0, 16) } });
-    expect(resolveAuthServices(contextFor({}), { secret })).rejects.toThrow(
+    const resolve = (): KeyRing => ({ activeKeyId: "k1", keys: { k1: KEY_1, k0: KEY_2.slice(0, 16) } });
+    expect(resolveAuthServices(contextFor({}), { ring: resolve })).rejects.toThrow(
       'resolveAuthServices: key "k0": each secret must be at least 32 bytes (got 16)',
     );
   });
 
   it("throws when a hand-built ring carries a degenerate key that importAuthKeyRing would refuse", () => {
-    const secret = (): AuthKeyRing => ({ activeKeyId: "k1", keys: { k1: KEY_1, k0: new Uint8Array(32).fill(7) } });
-    expect(resolveAuthServices(contextFor({}), { secret })).rejects.toThrow(
+    const resolve = (): KeyRing => ({ activeKeyId: "k1", keys: { k1: KEY_1, k0: new Uint8Array(32).fill(7) } });
+    expect(resolveAuthServices(contextFor({}), { ring: resolve })).rejects.toThrow(
       'resolveAuthServices: key "k0": a secret whose bytes are all the same value is not a secret',
     );
   });
@@ -142,13 +153,13 @@ describe("resolveAuthServices", () => {
 
 describe("resolveAuthServices — the Ed25519 capability probe", () => {
   it("accepts -8 on a runtime that can import an Ed25519 key", async () => {
-    const services = await resolveAuthServices(contextFor({}), { secret: () => ring(), algorithms: [-8, -7, -257] });
+    const services = await resolveAuthServices(contextFor({}), { ring: () => ring(), algorithms: [-8, -7, -257] });
     expect(services.algorithms).toEqual([-8, -7, -257]);
   });
 });
 
 // Bun's WebCrypto does support Ed25519, so the unavailable runtime has to be simulated — the same
-// swap `src/crypto/mod.test.ts` uses to exercise the `timingSafeEqual` fallback.
+// swap `src/crypto/primitives/timing.test.ts` uses to exercise the `timingSafeEqual` fallback.
 describe("resolveAuthServices — with Ed25519 import unavailable", () => {
   const original = crypto.subtle.importKey.bind(crypto.subtle);
 
@@ -168,23 +179,23 @@ describe("resolveAuthServices — with Ed25519 import unavailable", () => {
   });
 
   it("throws when -8 is configured, naming the compatibility date and the opt-out", () => {
-    expect(resolveAuthServices(contextFor({}), { secret: () => ring(), algorithms: [-8, -7, -257] })).rejects.toThrow(
+    expect(resolveAuthServices(contextFor({}), { ring: () => ring(), algorithms: [-8, -7, -257] })).rejects.toThrow(
       "resolveAuthServices: COSE -8 (Ed25519) is configured but this runtime cannot import an Ed25519 key — raise the Worker's compatibility date, or drop -8 from `algorithms`",
     );
   });
 
-  it("throws before the secret resolver is called, so a misconfiguration cannot half-succeed", async () => {
+  it("throws before the ring resolver is called, so a misconfiguration cannot half-succeed", async () => {
     let calls = 0;
-    const secret = (): AuthKeyRing => {
+    const resolve = (): KeyRing => {
       calls++;
       return ring();
     };
-    await expect(resolveAuthServices(contextFor({}), { secret, algorithms: [-8] })).rejects.toThrow("COSE -8 (Ed25519) is configured");
+    await expect(resolveAuthServices(contextFor({}), { ring: resolve, algorithms: [-8] })).rejects.toThrow("COSE -8 (Ed25519) is configured");
     expect(calls).toBe(0);
   });
 
   it("resolves normally when -8 is not configured", async () => {
-    const services = await resolveAuthServices(contextFor({}), { secret: () => ring() });
+    const services = await resolveAuthServices(contextFor({}), { ring: () => ring() });
     expect(services.algorithms).toEqual([-7, -257]);
   });
 });

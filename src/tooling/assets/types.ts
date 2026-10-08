@@ -1,4 +1,5 @@
 import { safeRedirectPath } from "../../http/redirect-path";
+import type { SecurityHeadersOptions } from "../../security/types";
 import { SiteConfigSchema } from "../../site/types";
 import { v } from "../../validation/mod";
 
@@ -201,6 +202,12 @@ export const AssetsConfigSchema = v.object({
   icons: v.optional(IconsConfigSchema),
   cursors: v.optional(CursorsConfigSchema),
   site: v.optional(SiteBuildConfigSchema),
+  securityHeaders: v.optional(
+    v.custom<SecurityHeadersOptions>(
+      (x) => typeof x === "object" && x !== null,
+      "securityHeaders must be the SecurityHeadersOptions the app passes its middleware",
+    ),
+  ),
 });
 
 export type JsBundle = v.InferOutput<typeof JsBundleSchema>;
@@ -257,6 +264,8 @@ export interface ResolvedConfig {
   icons: IconsConfig | null;
   cursors: CursorsConfig | null;
   site: SiteBuildConfig | null;
+  /** The app's middleware options, which every `_headers` block derives its security headers from. */
+  securityHeaders: SecurityHeadersOptions;
 }
 
 /** What `loadConfig` needs to find and normalise a config file. @public */

@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { uuidToBytes, uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
+import { uuidToBytes, uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
@@ -66,10 +66,10 @@ describe("createAccessTokenStore — create", () => {
     });
   });
 
-  it("reports a malformed owner as unavailable and binds nothing", async () => {
+  it("reports a malformed owner as reference and binds nothing", async () => {
     const [client, db] = writerOf(() => 1);
     const created = await createAccessTokenStore(client).create({ ...INPUT, userId: "u9" }, 7_000);
-    expect(!created.ok && created.error.code).toBe("unavailable");
+    expect(!created.ok && created.error.code).toBe("reference");
     expect(db.calls).toEqual([]);
   });
 

@@ -1,14 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
+import type { KeyRing } from "../../crypto/keyring/types";
 import { err, ok } from "../../result/result";
 import { AuthStoreError } from "../errors";
-import type { AuthFactorKind, AuthKeyRing, AuthStoreResult, FactorStore } from "../types";
+import type { AuthFactorKind, AuthStoreResult, FactorStore } from "../types";
 import { authKeysRetirable } from "./retirement";
 
 const ACTIVE = "AAAAAAAA";
 
 /** The ring the predicate takes, so no caller can name a key the deployment is not sealing under. */
-const RING: AuthKeyRing = { activeKeyId: ACTIVE, keys: {} };
+const RING: KeyRing = { activeKeyId: ACTIVE, keys: {} };
 
 function factorsHolding(held: AuthStoreResult<number>, asked: { kind?: AuthFactorKind; kid?: string } = {}): FactorStore {
   return {

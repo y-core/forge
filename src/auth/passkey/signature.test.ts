@@ -1,9 +1,9 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
-import { decodeCosePublicKey } from "../../crypto/mod";
-import type { CosePublicKey } from "../../crypto/mod";
+import { decodeCosePublicKey } from "./cose";
 import { createPasskeyKeyPair } from "./passkey.fixture";
 import { verifyPasskeySignature } from "./signature";
+import type { CosePublicKey } from "./types";
 import type { PasskeyKeyPair } from "./types";
 
 const DATA = new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]) as Uint8Array<ArrayBuffer>;

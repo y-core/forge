@@ -1,6 +1,6 @@
-import { base32Decode } from "../crypto/base32";
-import { totpCode } from "../crypto/hotp";
-import type { HotpHash } from "../crypto/types";
+import { base32Decode } from "../crypto/primitives/base32";
+import { totpCode } from "../crypto/primitives/hotp";
+import type { HotpHash } from "../crypto/primitives/types";
 import type { TotpCodes } from "./types";
 
 const HASHES: Record<string, HotpHash> = { SHA1: "SHA-1", SHA256: "SHA-256", SHA512: "SHA-512" };

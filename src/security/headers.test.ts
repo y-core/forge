@@ -3,7 +3,14 @@ import { describe, expect, it } from "bun:test";
 import { Forge } from "../app/forge-app";
 import { setPendingHeader } from "../context/pending-headers";
 import { mapHandler } from "../testing/route";
-import { applySecurityHeaders, createRouteSecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHeaders } from "./headers";
+import {
+  applySecurityHeaders,
+  assetSecurityHeaders,
+  createRouteSecurityHeaders,
+  createSecurityHeaders,
+  getNonce,
+  mergeSecurityHeaders,
+} from "./headers";
 import { NONCE, TURNSTILE_CSP } from "./nonce";
 import type { CspOptions, CspSourceValue, SecurityHeadersOptions } from "./types";
 import { UNSAFE_EVAL, UNSAFE_HASHES, UNSAFE_INLINE, WASM_UNSAFE_EVAL } from "./unsafe";
@@ -180,6 +187,16 @@ describe("createSecurityHeaders — custom options", () => {
   it("overrides cross-origin-resource-policy for embeddable resources", async () => {
     const headers = await headersFor(createSecurityHeaders({ crossOriginResourcePolicy: "cross-origin" }));
     expect(headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+  });
+
+  it("refuses a cross-origin-resource-policy outside its literal set, a newline-bearing one included", () => {
+    const injected = "same-origin\n/*\n  Access-Control-Allow-Origin: *";
+    expect(() => createSecurityHeaders({ crossOriginResourcePolicy: injected as "same-origin" })).toThrow(
+      `Invalid crossOriginResourcePolicy ${JSON.stringify(injected)}: must be one of same-origin, same-site, cross-origin`,
+    );
+    expect(() => createSecurityHeaders({ crossOriginResourcePolicy: "same-host" as "same-origin" })).toThrow(
+      'Invalid crossOriginResourcePolicy "same-host"',
+    );
   });
 
   it("tightens referrer-policy to same-origin", async () => {
@@ -995,5 +1012,84 @@ describe("createRouteSecurityHeaders", () => {
     const { res, error } = await routeHeaders("/workers/x.js", { scriptSrc: [UNSAFE_INLINE] });
     expect(res.status).toBe(500);
     expect(error?.message).toBe(inertInlineMessage("scriptSrc"));
+  });
+});
+
+describe("assetSecurityHeaders", () => {
+  const assetHeaders = (options?: SecurityHeadersOptions) => new Headers(assetSecurityHeaders(options).map(([name, value]) => [name, value]));
+
+  const ASSET_CSP = "default-src 'none'; frame-ancestors 'none'; sandbox";
+
+  it("carries HSTS, nosniff, same-origin CORP and a script-free CSP by default", () => {
+    expect(assetSecurityHeaders()).toEqual([
+      ["strict-transport-security", "max-age=63072000; includeSubDomains; preload"],
+      ["x-content-type-options", "nosniff"],
+      ["cross-origin-resource-policy", "same-origin"],
+      ["content-security-policy", ASSET_CSP],
+    ]);
+  });
+
+  it("omits HSTS under hsts: false", () => {
+    expect(assetSecurityHeaders({ hsts: false }).map(([name]) => name)).toEqual([
+      "x-content-type-options",
+      "cross-origin-resource-policy",
+      "content-security-policy",
+    ]);
+  });
+
+  it("shapes HSTS from an hsts object", () => {
+    const headers = assetHeaders({ hsts: { maxAge: 300, preload: false } });
+    expect(headers.get("strict-transport-security")).toBe("max-age=300; includeSubDomains");
+  });
+
+  it("refuses an hsts maxAge that is not a non-negative integer", () => {
+    expect(() => assetSecurityHeaders({ hsts: { maxAge: -1 } })).toThrow(
+      "Invalid HSTS maxAge -1: must be a non-negative integer number of seconds",
+    );
+  });
+
+  it("follows a crossOriginResourcePolicy override", () => {
+    const headers = assetHeaders({ crossOriginResourcePolicy: "cross-origin" });
+    expect(headers.get("cross-origin-resource-policy")).toBe("cross-origin");
+  });
+
+  it("refuses a newline-bearing crossOriginResourcePolicy, which would add a _headers rule for every path", () => {
+    const injected = "same-origin\n/*\n  Access-Control-Allow-Origin: *";
+    expect(() => assetSecurityHeaders({ crossOriginResourcePolicy: injected as "same-origin" })).toThrow(
+      `Invalid crossOriginResourcePolicy ${JSON.stringify(injected)}: must be one of same-origin, same-site, cross-origin`,
+    );
+  });
+
+  it("refuses a crossOriginResourcePolicy outside its literal set", () => {
+    expect(() => assetSecurityHeaders({ crossOriginResourcePolicy: "same-host" as "same-origin" })).toThrow(
+      'Invalid crossOriginResourcePolicy "same-host"',
+    );
+  });
+
+  it("accepts an explicit same-origin crossOriginResourcePolicy on the asset path and the middleware path alike", async () => {
+    const options: SecurityHeadersOptions = { crossOriginResourcePolicy: "same-origin" };
+    expect(assetHeaders(options).get("cross-origin-resource-policy")).toBe("same-origin");
+    expect((await headersFor(createSecurityHeaders(options))).get("cross-origin-resource-policy")).toBe("same-origin");
+  });
+
+  it("carries no document-only header, and the page CSP's sources never reach the asset CSP", () => {
+    const headers = assetHeaders({
+      scriptSrc: ["'self'", NONCE, "https://cdn.example"],
+      referrerPolicy: "same-origin",
+      reporting: { endpoint: "/_csp-report" },
+      crossOriginOpenerPolicy: "same-origin-allow-popups",
+    });
+    expect(headers.get("content-security-policy")).toBe(ASSET_CSP);
+    for (const name of ["referrer-policy", "permissions-policy", "x-frame-options", "cross-origin-opener-policy", "reporting-endpoints"]) {
+      expect(headers.get(name)).toBeNull();
+    }
+  });
+
+  it("matches the middleware's value for every header the two share", async () => {
+    const options: SecurityHeadersOptions = { hsts: { maxAge: 600, includeSubDomains: false }, crossOriginResourcePolicy: "same-site" };
+    const page = await headersFor(createSecurityHeaders(options));
+    for (const [name, value] of assetSecurityHeaders(options)) {
+      if (name !== "content-security-policy") expect(page.get(name)).toBe(value);
+    }
   });
 });

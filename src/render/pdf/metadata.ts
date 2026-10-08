@@ -1,4 +1,4 @@
-import { sha256 } from "../../crypto/digest";
+import { sha256 } from "../../crypto/primitives/digest";
 import { pdfTextString } from "./text";
 import type { PdfInfo } from "./types";
 

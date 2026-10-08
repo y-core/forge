@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { uuidv7 } from "../../crypto/mod";
 import { createD1Client } from "../../storage/db/client";
 import type { D1Client, D1Database } from "../../storage/db/types";
+import { uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
@@ -75,6 +75,12 @@ describe("storeError", () => {
     const cause = new Error("D1_ERROR: CHECK constraint failed: auth_users: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_CHECK)");
     const error = storeError("users.create", cause);
     expect([error.code, error.operation, error.constraint, error.cause]).toEqual(["invalid", "users.create", undefined, cause]);
+  });
+
+  it("reports a foreign-key refusal as reference, not as unavailable", () => {
+    const cause = new Error("D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)");
+    const error = storeError("adminUsers.remove", cause);
+    expect([error.code, error.operation, error.constraint, error.cause]).toEqual(["reference", "adminUsers.remove", undefined, cause]);
   });
 
   it("reports anything else as unavailable, carrying the cause", () => {
@@ -197,7 +203,7 @@ describe("an id that is not a canonical UUID", () => {
 
   // An insert is the one shape whose contract has no in-band "no such row", so it reports the
   // failure the foreign key would have reported.
-  it("reports an insert against a malformed owner as unavailable, never as a throw", async () => {
+  it("reports an insert against a malformed owner as reference, never as a throw", async () => {
     const [client] = writerOf(() => 1);
     const inserts = [
       createFactorStore(client).enrol({ userId: "u9", kind: "passkey" }, 1),
@@ -211,7 +217,7 @@ describe("an id that is not a canonical UUID", () => {
       expect(outcome.ok).toBe(false);
       const error = outcome.ok ? null : outcome.error;
       expect(error).toBeInstanceOf(AuthStoreError);
-      expect((error as AuthStoreError).code).toBe("unavailable");
+      expect((error as AuthStoreError).code).toBe("reference");
     }
   });
 });

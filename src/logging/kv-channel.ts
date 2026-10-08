@@ -1,4 +1,4 @@
-import { bytesToHex, randomBytes } from "../crypto/mod";
+import { bytesToHex, randomBytes } from "../crypto/primitives/mod";
 import type { KVNamespaceLike } from "../storage/kv/types";
 import { cloneLogValue } from "./log-clone";
 import type { KvLogChannelOptions, KvLogMetadata, LogChannel, LogQuery, LogReadResult, LogRecord, LogRow } from "./types";

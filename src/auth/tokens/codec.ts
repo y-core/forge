@@ -1,4 +1,4 @@
-import { base32Encode, crc32, utf8Encode } from "../../crypto/mod";
+import { base32Encode, crc32, utf8Encode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { GuardResult } from "../../result/types";
 

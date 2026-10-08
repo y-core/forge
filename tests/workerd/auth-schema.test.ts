@@ -217,6 +217,16 @@ describe("the shipped store adapters against real D1", () => {
       stranger: guards.resetTokens?.bearerStrangerAfterReset,
     }).toEqual({ resetFactors: "changed", before: "200 null", after: '401 Bearer error="invalid_token"', stranger: "200 null" });
   });
+
+  it("refuses to delete a user an app table still references, keeping every child row, and deletes once the reference is cleared", () => {
+    expect(guards.referenced).toEqual({
+      refused: "referenced",
+      userKept: 1,
+      factorKept: 1,
+      unknownOwnerCode: "reference",
+      afterClearing: "changed",
+    });
+  });
 });
 
 // The whole reason the challenge and nonce stores left KV. A fake settles neither: both rest on the

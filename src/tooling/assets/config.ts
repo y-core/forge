@@ -1,7 +1,18 @@
 import { resolve } from "node:path";
 
 import { v } from "../../validation/mod";
-import type { AssetsConfig, DefineValue, EnvRef, FlagRef, ResolvedConfig, ResolvedJsBundle, ResolvedServiceWorkerBuild } from "./types";
+import { iconTarget } from "./icons";
+import { assetUrlBase } from "./paths";
+import type {
+  AssetsConfig,
+  DefineValue,
+  EnvRef,
+  FlagRef,
+  IconsConfig,
+  ResolvedConfig,
+  ResolvedJsBundle,
+  ResolvedServiceWorkerBuild,
+} from "./types";
 import { AssetsConfigSchema } from "./types";
 import type { LoadConfigOptions } from "./types";
 
@@ -40,6 +51,18 @@ function resolveSource(root: string, path: string): string {
   return REMOTE_SOURCE.test(path) ? path : resolve(root, path);
 }
 
+/** Throws when an icon is served under the asset prefix, where `_headers` would give it two rules and comma-join every header. @internal */
+export function assertIconPrefixOutsideAssets(publicPrefix: string, icons: IconsConfig | null): void {
+  if (icons === null) return;
+  const assetsBase = `${assetUrlBase(publicPrefix)}/`;
+  const overlapping = icons.outputs.map((output) => iconTarget(icons, output).path).find((path) => path.startsWith(assetsBase));
+  if (overlapping === undefined) return;
+  throw new Error(
+    `[forge-assets] icon ${JSON.stringify(overlapping)} (icons.publicPrefix ${JSON.stringify(icons.publicPrefix ?? "")}) is inside paths.publicPrefix ${JSON.stringify(publicPrefix)} — ` +
+      'move the icons out of the asset prefix, which covers every path when it is "/", or each icon matches two _headers rules and every security header is sent twice.',
+  );
+}
+
 /** Imports, validates and normalises the asset config. @public */
 export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedConfig> {
   const { root, configPath = "assets.config.ts", env: envVars = {} } = options;
@@ -61,6 +84,8 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
   // A read path resolves against the root, so a run from a subdirectory reads where `--root` says. A
   // written one stays relative: it is the manifest key, and `safeJoin` contains it at build time.
   const icons = parsed.icons ?? null;
+  const publicPrefix = parsed.paths?.publicPrefix ?? "/assets";
+  assertIconPrefixOutsideAssets(publicPrefix, icons);
   const cursors = parsed.cursors ?? null;
 
   return {
@@ -68,7 +93,7 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
     paths: {
       sourceDir: resolve(root, parsed.paths?.sourceDir ?? "src/static"),
       publicDir: resolve(root, parsed.paths?.publicDir ?? "public/assets"),
-      publicPrefix: parsed.paths?.publicPrefix ?? "/assets",
+      publicPrefix,
     },
     js: { bundles, serviceWorker },
     css: (parsed.css ?? []).map((build) => ({ ...build, input: resolve(root, build.input) })),
@@ -95,5 +120,6 @@ export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedCo
             })),
           },
     site: parsed.site === undefined ? null : { ...parsed.site, outDir: resolve(root, parsed.site.outDir) },
+    securityHeaders: parsed.securityHeaders ?? {},
   };
 }

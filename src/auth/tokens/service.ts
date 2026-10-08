@@ -1,4 +1,4 @@
-import { randomBytes, sha256 } from "../../crypto/mod";
+import { randomBytes, sha256 } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import { AUTH_ACCESS_TOKEN_MAX_LIFETIME_MS, AUTH_ACCESS_TOKEN_USE_INTERVAL_MS } from "../config";
 import { authLimit } from "../limits";

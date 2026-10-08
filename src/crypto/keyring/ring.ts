@@ -1,14 +1,17 @@
-import { assertSecretStrength, base64urlEncode, concatBytes, hexToBytes, sha256, utf8Encode } from "../crypto/mod";
+import { assertSecretStrength, base64urlEncode, concatBytes, hexToBytes, sha256, utf8Encode } from "../primitives/mod";
 import type { KeyRing, KeyRingDomain } from "./types";
 
 /** Characters in a key id — the base64url spelling of the kid bytes a frame begins with. @internal */
-export const KEYRING_KEY_ID_LENGTH = 8;
+export const KEY_RING_KEY_ID_LENGTH = 8;
 
 /** Bytes of key id every at-rest frame begins with. @internal */
-export const KEYRING_KID_BYTES = 6;
+export const KEY_RING_KID_BYTES = 6;
 
 /** The labels `importKeyRing`, `sealAtRest` and `openAtRest` work under. @internal */
-export const KEYRING_DOMAIN: KeyRingDomain = { keyIdLabel: "y-core/forge/keyring/kid", subkeyLabel: "y-core/forge/keyring/v1" };
+export const KEY_RING_DOMAIN: KeyRingDomain = { keyIdLabel: "y-core/forge/keyring/kid", subkeyLabel: "y-core/forge/keyring/v1" };
+
+/** The labels forge's own HMAC signing works under — the ring's key ids, and subkeys no `sealAtRest` purpose can reach. @internal */
+export const HMAC_DOMAIN: KeyRingDomain = { keyIdLabel: KEY_RING_DOMAIN.keyIdLabel, subkeyLabel: "y-core/forge/keyring/hmac/v1" };
 
 // `Object.hasOwn` and not `ring.keys[kid]`: an attacker-supplied kid of `constructor` resolves to a
 // function through a bare property read, which turns a key lookup into a type confusion.
@@ -19,7 +22,26 @@ export function lookupKeyRingKey(ring: KeyRing, kid: string): Uint8Array<ArrayBu
 
 /** Derives the id a key is known by under one domain — a fingerprint, so a consumer never types one. @internal */
 export async function keyRingKeyId(domain: KeyRingDomain, key: Uint8Array<ArrayBuffer>): Promise<string> {
-  return base64urlEncode(await sha256(concatBytes(utf8Encode(domain.keyIdLabel), key))).slice(0, KEYRING_KEY_ID_LENGTH);
+  return base64urlEncode(await sha256(concatBytes(utf8Encode(domain.keyIdLabel), key))).slice(0, KEY_RING_KEY_ID_LENGTH);
+}
+
+const appKeyRingVerdicts = new WeakMap<KeyRing, Promise<boolean>>();
+
+function isAppKeyRing(ring: KeyRing): Promise<boolean> {
+  const held = appKeyRingVerdicts.get(ring);
+  if (held) return held;
+  const key = lookupKeyRingKey(ring, ring.activeKeyId);
+  const verdict = key ? keyRingKeyId(KEY_RING_DOMAIN, key).then((kid) => kid === ring.activeKeyId) : Promise.resolve(false);
+  appKeyRingVerdicts.set(ring, verdict);
+  return verdict;
+}
+
+/** Throws, naming `operation`, unless `importKeyRing` built the ring — so the auth key ring is refused. @internal */
+export async function assertAppKeyRing(operation: string, ring: KeyRing): Promise<void> {
+  if (await isAppKeyRing(ring)) return;
+  throw new Error(
+    `${operation}: active key id "${ring.activeKeyId}" is not one importKeyRing derives — use only a ring importKeyRing built, never the auth key ring`,
+  );
 }
 
 /** Builds a key ring under one domain from hex-encoded root secrets, naming `operation` in every refusal. @internal */
@@ -40,5 +62,5 @@ export async function importKeyRingUnder(operation: string, domain: KeyRingDomai
 
 /** Builds a key ring from hex-encoded root secrets, the first becoming the active key. @public */
 export function importKeyRing(secrets: [string, ...string[]]): Promise<KeyRing> {
-  return importKeyRingUnder("importKeyRing", KEYRING_DOMAIN, secrets);
+  return importKeyRingUnder("importKeyRing", KEY_RING_DOMAIN, secrets);
 }

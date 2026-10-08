@@ -1,7 +1,14 @@
 export { requireFormContentType } from "./content-type";
 export { checkCrossOriginProtection, crossOriginProtection, originProtection } from "./cop";
 export { cors, matchOrigin } from "./cors";
-export { applySecurityHeaders, createRouteSecurityHeaders, createSecurityHeaders, getNonce, mergeSecurityHeaders } from "./headers";
+export {
+  applySecurityHeaders,
+  assetSecurityHeaders,
+  createRouteSecurityHeaders,
+  createSecurityHeaders,
+  getNonce,
+  mergeSecurityHeaders,
+} from "./headers";
 export { NONCE, TURNSTILE_CSP } from "./nonce";
 export { originGuard, verifyOrigin } from "./origin";
 export { rateLimit } from "./rate-limit";

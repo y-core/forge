@@ -15,6 +15,7 @@ import { requireBearer } from "../../../src/auth/web/guards";
 import type { Result } from "../../../src/result/result";
 import { createD1Client } from "../../../src/storage/db/client";
 import { requireRowsWritten } from "../../../src/storage/db/sql";
+import { uuidToBytes, uuidv7 } from "../../../src/storage/db/uuid";
 import { mapHandler } from "../../../src/testing/route";
 
 interface Env {
@@ -46,6 +47,7 @@ function messageOf(thrown: unknown): string {
 // earlier run's columns and a new index over a new one would fail.
 async function resetSchema(db: D1Database): Promise<Response> {
   const tables = [
+    "probe_owned",
     "auth_access_tokens",
     "auth_nonces",
     "auth_challenges",
@@ -568,6 +570,26 @@ async function probeResetTokens(db: D1Database): Promise<Record<string, unknown>
   };
 }
 
+async function probeReferenced(db: D1Database): Promise<Record<string, unknown>> {
+  await db.prepare("DROP TABLE IF EXISTS probe_owned").run();
+  const { users, admins, factors } = await storesOn(db);
+  await db.prepare("CREATE TABLE probe_owned (id INTEGER PRIMARY KEY NOT NULL, owner_id BLOB NOT NULL REFERENCES auth_users(id))").run();
+  const kim = must(await users.create({ email: "kim@example.test", emailKey: "kim@example.test" }, AT), "create kim").id;
+  must(await factors.enrol({ userId: kim, kind: "passkey" }, AT), "enrol kim's passkey");
+  await db.prepare("INSERT INTO probe_owned (id, owner_id) VALUES (1, ?)").bind(uuidToBytes(kim)).run();
+
+  const refused = must(await admins.remove(kim), "delete referenced kim");
+  const userKept = await countOf(db, "auth_users");
+  const factorKept = await countOf(db, "auth_factors");
+  const unknownOwner = await factors.enrol({ userId: uuidv7(), kind: "passkey" }, AT);
+  const unknownOwnerCode = unknownOwner.ok ? "accepted" : unknownOwner.error.code;
+
+  await db.prepare("DELETE FROM probe_owned").run();
+  const afterClearing = must(await admins.remove(kim), "delete kim after clearing");
+  await db.prepare("DROP TABLE probe_owned").run();
+  return { refused, userKept, factorKept, unknownOwnerCode, afterClearing };
+}
+
 async function probeGuards(db: D1Database): Promise<Response> {
   return json({
     lastAdmin: await probeLastAdmin(db),
@@ -579,6 +601,7 @@ async function probeGuards(db: D1Database): Promise<Response> {
     accessTokens: await probeAccessTokens(db),
     recoveryCodes: await probeRecoveryCodes(db),
     resetTokens: await probeResetTokens(db),
+    referenced: await probeReferenced(db),
   });
 }
 

@@ -1,9 +1,22 @@
 import type { AppContext } from "../../context/types";
+import { CSRF_HEADER_DEFAULT } from "../../form/constants";
+import { mintCsrf } from "../../form/csrf";
+import { csrfHeaderCtx } from "../../form/csrf-context";
+import { sessionCtx } from "../../session/session";
+import { AUTH_SITE_DATA_OWED_SESSION_KEY } from "./identity";
 import { renderAuthPage } from "./render";
 import { AUTH_VIEW_GUARDS, resolveAuthView } from "./resolve";
 import type { AuthPageState, AuthWebOptions } from "./types";
 import type { AuthViewName } from "./types";
 import type { AuthViewRequest } from "./types";
+import type { AuthSiteDataProps } from "./views/types";
+
+/** The storage clear this session still owes, minted for its own route, or `undefined` when it owes none. */
+async function owedSiteData<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<AuthSiteDataProps | undefined> {
+  if (sessionCtx.getOptional(c)?.get(AUTH_SITE_DATA_OWED_SESSION_KEY) !== true) return undefined;
+  const path = options.paths.auth.signoutSiteData();
+  return { path, csrfToken: await mintCsrf(c, path), csrfHeader: csrfHeaderCtx.getOptional(c) ?? CSRF_HEADER_DEFAULT };
+}
 
 /** Resolves one page against this request and renders it, or answers the refusal the resolver gave. */
 async function authPage<Name extends AuthViewName, Bindings>(
@@ -15,7 +28,14 @@ async function authPage<Name extends AuthViewName, Bindings>(
   if (!resolved.ok) return resolved.error;
   const { views } = options;
   const { props, status } = resolved.data;
-  return renderAuthPage(c, { name: request.name, props, ...(views === undefined ? {} : { views }), ...(status === undefined ? {} : { status }) });
+  const siteData = await owedSiteData(c, options);
+  return renderAuthPage(c, {
+    name: request.name,
+    props,
+    ...(views === undefined ? {} : { views }),
+    ...(status === undefined ? {} : { status }),
+    ...(siteData === undefined ? {} : { siteData }),
+  });
 }
 
 /** The sign-in page, whose primary affordance is whichever factor the deployment made primary. @public */

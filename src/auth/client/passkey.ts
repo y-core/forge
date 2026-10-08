@@ -1,4 +1,4 @@
-import { base64urlDecode, base64urlEncode } from "../../crypto/mod";
+import { base64urlDecode, base64urlEncode } from "../../crypto/primitives/mod";
 import { safeRedirectPath } from "../../http/redirect-path";
 import { announce } from "../../ui/client/announce";
 import { ownerWindow } from "../../ui/client/dom";

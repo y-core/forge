@@ -7,7 +7,7 @@ import { GENERATE_MARKER, parseDevVars, RING_MARKER } from "./devvars";
 import { describeRefusal, planRotation, randomSecret, rotateSecrets } from "./rotate";
 
 const SAMPLE = `${GENERATE_MARKER}
-SESSION_SECRET=old-session
+INTERNAL_API_TOKEN=old-token
 
 STRIPE_KEY=sk_live_x
 `;
@@ -33,7 +33,7 @@ describe("planRotation()", () => {
   const vars = parseDevVars(SAMPLE);
 
   it("accepts a marked key", () => {
-    expect(planRotation(vars, ["SESSION_SECRET"])).toEqual({ ok: true, data: ["SESSION_SECRET"] });
+    expect(planRotation(vars, ["INTERNAL_API_TOKEN"])).toEqual({ ok: true, data: ["INTERNAL_API_TOKEN"] });
   });
 
   it("refuses an unmarked key — a third-party credential cannot be re-obtained", () => {
@@ -52,7 +52,7 @@ describe("planRotation()", () => {
   });
 
   it("refuses the whole batch when one name is unrotatable", () => {
-    const plan = planRotation(vars, ["SESSION_SECRET", "STRIPE_KEY"]);
+    const plan = planRotation(vars, ["INTERNAL_API_TOKEN", "STRIPE_KEY"]);
     expect(plan.ok).toBe(false);
   });
 
@@ -79,19 +79,19 @@ describe("describeRefusal()", () => {
 describe("rotateSecrets()", () => {
   it("replaces the marked value with a fresh one", () => {
     const path = makeFile();
-    rotateSecrets(path, ["SESSION_SECRET"]);
-    const value = parseDevVars(readFileSync(path, "utf-8")).find((v) => v.name === "SESSION_SECRET")?.value;
+    rotateSecrets(path, ["INTERNAL_API_TOKEN"]);
+    const value = parseDevVars(readFileSync(path, "utf-8")).find((v) => v.name === "INTERNAL_API_TOKEN")?.value;
     expect(value).toMatch(/^[0-9a-f]{64}$/);
-    expect(value).not.toBe("old-session");
+    expect(value).not.toBe("old-token");
   });
 
   it("leaves every other key, comment and marker untouched", () => {
     const path = makeFile();
-    rotateSecrets(path, ["SESSION_SECRET"]);
+    rotateSecrets(path, ["INTERNAL_API_TOKEN"]);
     const after = readFileSync(path, "utf-8");
     expect(after).toContain("STRIPE_KEY=sk_live_x");
     expect(after).toContain(GENERATE_MARKER);
-    expect(parseDevVars(after).map((v) => v.name)).toEqual(["SESSION_SECRET", "STRIPE_KEY"]);
+    expect(parseDevVars(after).map((v) => v.name)).toEqual(["INTERNAL_API_TOKEN", "STRIPE_KEY"]);
   });
 
   it("gives each name its own value", () => {
@@ -103,7 +103,7 @@ describe("rotateSecrets()", () => {
 
   it("returns the names it rotated, never the values", () => {
     const path = makeFile();
-    expect(rotateSecrets(path, ["SESSION_SECRET"])).toEqual(["SESSION_SECRET"]);
+    expect(rotateSecrets(path, ["INTERNAL_API_TOKEN"])).toEqual(["INTERNAL_API_TOKEN"]);
   });
 });
 
@@ -125,10 +125,10 @@ describe("rotateSecrets() — a key ring", () => {
   });
 
   it("still replaces a generate-marked key rotated alongside it", () => {
-    const path = makeFile(`${RING_MARKER}\nAPP_SEAL_KEY_RING=bb22\n${GENERATE_MARKER}\nSESSION_SECRET=old-session\n`);
-    rotateSecrets(path, ["APP_SEAL_KEY_RING", "SESSION_SECRET"]);
-    const session = parseDevVars(readFileSync(path, "utf-8")).find((v) => v.name === "SESSION_SECRET")?.value;
-    expect(session).toMatch(/^[0-9a-f]{64}$/);
+    const path = makeFile(`${RING_MARKER}\nAPP_SEAL_KEY_RING=bb22\n${GENERATE_MARKER}\nINTERNAL_API_TOKEN=old-token\n`);
+    rotateSecrets(path, ["APP_SEAL_KEY_RING", "INTERNAL_API_TOKEN"]);
+    const token = parseDevVars(readFileSync(path, "utf-8")).find((v) => v.name === "INTERNAL_API_TOKEN")?.value;
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
     expect(ringOf(path).split(",")[1]).toBe("bb22");
   });
 });

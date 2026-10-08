@@ -1,10 +1,27 @@
-import type { CosePublicKey } from "../../crypto/mod";
 import type { AuthCredential } from "../types";
 import type { AuthUser } from "../types";
 import type { ChallengeStore } from "../types";
 import type { CredentialStore } from "../types";
 import type { UserStore } from "../types";
 import type { AuthAlgorithm } from "../types";
+
+/** Every value the CTAP2 canonical CBOR subset can carry. @internal */
+export type CborValue = number | bigint | string | boolean | null | undefined | Uint8Array<ArrayBuffer> | CborValue[] | Map<CborValue, CborValue>;
+
+/** A decoded value together with how many bytes it consumed. @internal */
+export interface CborDecoded {
+  readonly value: CborValue;
+  readonly bytesRead: number;
+}
+
+/** The COSE algorithm identifiers a WebAuthn credential may be verified under. @internal */
+export type CoseAlgorithm = -7 | -8 | -257;
+
+/** A COSE public key reduced to the algorithm and the raw material WebCrypto imports. @internal */
+export type CosePublicKey =
+  | { readonly algorithm: -7; readonly curve: "P-256"; readonly point: Uint8Array<ArrayBuffer> }
+  | { readonly algorithm: -8; readonly curve: "Ed25519"; readonly point: Uint8Array<ArrayBuffer> }
+  | { readonly algorithm: -257; readonly modulus: Uint8Array<ArrayBuffer>; readonly exponent: Uint8Array<ArrayBuffer> };
 
 /** Why authenticator data was refused. Each condition is its own reason. @public */
 export type AuthDataReason = "invalid-backup-state" | "malformed" | "rp-id-mismatch" | "unsupported-key" | "user-not-present" | "user-not-verified";

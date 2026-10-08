@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { hexToBytes } from "../../crypto/mod";
+import { hexToBytes } from "../../crypto/primitives/mod";
 import { fakeR2 } from "../../testing/fakes";
 import { r2Backend } from "./r2-backend";
 import { createObjectStore } from "./store";

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlDecode, base64urlEncode, cborDecodeFirst, decodeCosePublicKey, sha256 } from "../../crypto/mod";
+import { base64urlDecode, base64urlEncode, sha256 } from "../../crypto/primitives/mod";
+import { cborDecodeFirst } from "./cbor";
+import { decodeCosePublicKey } from "./cose";
 import {
   PASSKEY_FLAG,
   ceremonyCborEncode,

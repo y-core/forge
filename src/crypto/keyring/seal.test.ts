@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlEncode, hexToBytes, utf8Encode } from "../crypto/mod";
-import { importKeyRing, importKeyRingUnder, KEYRING_DOMAIN } from "./ring";
+import { base64urlEncode, hexToBytes, utf8Encode } from "../primitives/mod";
+import { importKeyRing, importKeyRingUnder, KEY_RING_DOMAIN } from "./ring";
 import { atRestKeyId, openAtRest, sealAtRest, sealAtRestUnder } from "./seal";
 import type { AtRestBinding, KeyRing } from "./types";
 
@@ -121,7 +121,7 @@ describe("sealAtRest and openAtRest — programming errors", () => {
 
   it("throws on sealing under a ring holding no key for its active id", async () => {
     const broken: KeyRing = { activeKeyId: "AAAAAAAA", keys: {} };
-    await expect(sealAtRestUnder(broken, KEYRING_DOMAIN, BINDING, PLAINTEXT)).rejects.toThrow(
+    await expect(sealAtRestUnder(broken, KEY_RING_DOMAIN, BINDING, PLAINTEXT)).rejects.toThrow(
       'sealAtRest: the key ring has no key for its active key id "AAAAAAAA"',
     );
     await expect(sealAtRest(broken, BINDING, PLAINTEXT)).rejects.toThrow('sealAtRest: active key id "AAAAAAAA" is not one importKeyRing derives');
@@ -129,7 +129,7 @@ describe("sealAtRest and openAtRest — programming errors", () => {
 
   it("throws on sealing under an active key id no ring derives", async () => {
     const handBuilt: KeyRing = { activeKeyId: "constructor", keys: { constructor: hexToBytes(SECRET_A) } };
-    await expect(sealAtRestUnder(handBuilt, KEYRING_DOMAIN, BINDING, PLAINTEXT)).rejects.toThrow(
+    await expect(sealAtRestUnder(handBuilt, KEY_RING_DOMAIN, BINDING, PLAINTEXT)).rejects.toThrow(
       'sealAtRest: active key id "constructor" is not one a key ring derives',
     );
     await expect(sealAtRest(handBuilt, BINDING, PLAINTEXT)).rejects.toThrow(
@@ -142,7 +142,7 @@ describe("sealAtRest and openAtRest — programming errors", () => {
       SECRET_A,
     ]);
     await expect(sealAtRest(foreign, BINDING, PLAINTEXT)).rejects.toThrow(
-      `sealAtRest: active key id "${foreign.activeKeyId}" is not one importKeyRing derives — seal only under a ring importKeyRing built, never the auth key ring`,
+      `sealAtRest: active key id "${foreign.activeKeyId}" is not one importKeyRing derives — use only a ring importKeyRing built, never the auth key ring`,
     );
   });
 

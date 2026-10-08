@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlDecode, uuidv7 } from "../../crypto/mod";
+import { base64urlDecode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import {
   AUTH_PASSKEY_CHALLENGE_MAX_BYTES,
   AUTH_PASSKEY_CHALLENGE_MIN_BYTES,

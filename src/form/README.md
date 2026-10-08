@@ -10,7 +10,7 @@ A form submission arrives as bytes you must cap before reading, a token you must
 namespace does all three, and each is a separate function so a route composes only what it needs.
 
 ```ts
-import { csrfProtection, importCsrfKey, mintCsrf, parseFormData, formToObject, verifyTurnstile } from "@y-core/forge/form";
+import { csrfProtection, mintCsrf, parseFormData, formToObject, verifyTurnstile } from "@y-core/forge/form";
 ```
 
 **Most routes call almost none of it.** `defineAction` (`@y-core/forge/app`) runs the read, the bot guard and the parse itself, so a route names a
@@ -26,13 +26,14 @@ The CSRF guard is mounted as middleware, and the action declares its schema. Not
 ```ts
 import { defineAction } from "@y-core/forge/app";
 import { getAppContext } from "@y-core/forge/context";
-import { csrfProtection, importCsrfKey } from "@y-core/forge/form";
+import { csrfProtection } from "@y-core/forge/form";
 import { fragmentResponse } from "@y-core/forge/http";
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { renderSuccess } from "@y-core/forge/render/htmx";
 import { formMultilineText, formText, v } from "@y-core/forge/validation";
 
 const csrfGuard = csrfProtection({
-  secret: (c) => importCsrfKey(getAppContext(c).env.CSRF_SECRET),
+  ring: (c) => importKeyRing(parseKeyRingSecrets(getAppContext(c).env.CSRF_SECRET)),
   subject: false, // path-only tokens; bind to a session wherever one exists — see below
 });
 
@@ -85,11 +86,12 @@ bind the token to the session id instead — the whole composition is a one-line
 
 ```ts
 import { getAppContext } from "@y-core/forge/context";
-import { csrfProtection, importCsrfKey } from "@y-core/forge/form";
+import { csrfProtection } from "@y-core/forge/form";
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { sessionCtx, sessionMiddleware } from "@y-core/forge/session";
 
 const csrfGuard = csrfProtection({
-  secret: (c) => importCsrfKey(getAppContext(c).env.CSRF_SECRET),
+  ring: (c) => importKeyRing(parseKeyRingSecrets(getAppContext(c).env.CSRF_SECRET)),
   subject: (c) => sessionCtx.getOptional(c)?.id,
 });
 
@@ -120,11 +122,12 @@ a token for a path whose guard this request never ran, under a subject policy th
 is `csrfProtection`'s minting half wired directly:
 
 ```ts
-import { csrfMinter, importCsrfKey } from "@y-core/forge/form";
+import { csrfMinter } from "@y-core/forge/form";
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { sessionCtx } from "@y-core/forge/session";
 
 const mintSignout = csrfMinter({
-  secret: (c) => importCsrfKey(config(c).csrf.secret),
+  ring: (c) => importKeyRing(parseKeyRingSecrets(config(c).csrf.secret)),
   subject: (c) => sessionCtx.getOptional(c)?.id,
 });
 
@@ -162,16 +165,18 @@ for it ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
 
 ## Rotating the CSRF secret
 
-`importCsrfKeyRing` takes an ordered array. The first secret signs; every secret in the array still verifies, so tokens minted before the rotation
-keep working until they expire.
+**The secret is a key ring: hex root secrets comma-joined, newest first.** The first signs, and every one still verifies, so a token minted before
+the rotation keeps working until it expires. The token carries the signing key's id, and `CsrfConfigSchema` accepts the comma-joined form.
 
-```ts
-const ring = await importCsrfKeyRing([env.CSRF_SECRET_NEW, env.CSRF_SECRET_OLD]);
-const csrfGuard = csrfProtection({ secret: () => ring, subject: false });
+```bash
+CSRF_SECRET=9c1e…,ab3f…
 ```
 
 Prepend the new secret, deploy, and remove the oldest once the token lifetime has elapsed — the procedure is [`INPUT_VALIDATION.md`][iv-3b] §3b's.
 Each secret is held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule; `openssl rand -hex 32` gives one that passes.
+
+**Tokens are signed under a subkey of their own.** `csrfProtection` derives a `csrf` subkey from the ring, so a token signature never verifies as
+anything else signed under the same ring. It refuses the auth key ring, which `importKeyRing` did not build.
 
 ---
 
@@ -265,7 +270,7 @@ it — which `csrfProtection`, the pipeline and `readAuthSubmission` all rethrow
 **A token is bound to a path, so `csrfTokenCtx` is wrong the moment the form posts elsewhere** — verification fails with `path-mismatch`. Mint one
 token per render and never cache one across requests.
 
-**The `secret` resolver runs once per distinct `env` object, not once per request.** The ring is cached against it, so a secret change is picked up
+**The `ring` resolver runs once per distinct `env` object, not once per request.** The ring is cached against it, so a secret change is picked up
 when a fresh isolate starts rather than mid-life.
 
 **`formToObject` returns a prototype-less object.** `body.hasOwnProperty(name)` is `undefined`, and calling it throws.
@@ -287,7 +292,7 @@ when a fresh isolate starts rather than mid-life.
 [iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-2c]: ../../docs/INPUT_VALIDATION.md#2c-parseformdata--body-read-with-size-limit
 [iv-3a]: ../../docs/INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
-[iv-3b]: ../../docs/INPUT_VALIDATION.md#3b-importcsrfkey-and-importcsrfkeyring--secret-import
+[iv-3b]: ../../docs/INPUT_VALIDATION.md#3b-the-csrf-key-ring--import-and-rotation
 [iv-4a]: ../../docs/INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [iv-4b]: ../../docs/INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
 [iv-5]: ../../docs/INPUT_VALIDATION.md#5-config-schemas

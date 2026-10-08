@@ -10,7 +10,7 @@ let root: string;
 const POSTURE = '  "compatibility_flags": ["no_nodejs_compat", "no_nodejs_compat_v2", "new_module_registry"]';
 
 function writeWorkerConfig(body: string): void {
-  writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment, so the JSONC path is exercised\n${body}\n}\n`);
+  writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment, so the JSONC path is exercised\n  "name": "app",\n${body}\n}\n`);
 }
 
 const run = () => checkCompatibility({ root, workerConfig: "wrangler.jsonc" });
@@ -189,12 +189,22 @@ describe("checkCompatibility", () => {
     expect(result.summary).toBe("compatibility flags: unparseable");
   });
 
-  it("fails when the worker config does not hold a JSON object", async () => {
+  it("fails as unparseable when the worker config names no Worker", async () => {
+    writeFileSync(join(root, "wrangler.jsonc"), `{\n${POSTURE}\n}\n`);
+    const result = await run();
+    expect([result.ok, result.summary, result.findings.length]).toEqual([false, "compatibility flags: unparseable", 1]);
+    expect(
+      result.findings[0]?.message.startsWith(
+        `\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(root, "wrangler.jsonc")}: name:`,
+      ),
+    ).toBe(true);
+  });
+
+  it("fails as unparseable when the worker config does not hold a JSON object", async () => {
     writeFileSync(join(root, "wrangler.jsonc"), "[1, 2]");
     const result = await run();
     expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`wrangler.jsonc` does not hold a JSON object"]);
-    expect(result.summary).toBe("compatibility flags: unreadable");
+    expect(result.summary).toBe("compatibility flags: unparseable");
   });
 
   it("defaults the worker config path to wrangler.jsonc", async () => {

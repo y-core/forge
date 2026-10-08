@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { bytesToHex, sha256, uuidv7 } from "../../crypto/mod";
+import { bytesToHex, sha256 } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
+import { uuidv7 } from "../../storage/db/uuid";
 import { AUTH_RECOVERY_CODE_COUNT, AUTH_TOTP_LOCKOUT_MS } from "../config";
 import { AuthStoreError } from "../errors";
 import type { AuthFactor, AuthFactorInput, FactorStore, RecoveryCodeStore } from "../types";

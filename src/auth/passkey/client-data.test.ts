@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { base64urlEncode, utf8Encode } from "../../crypto/mod";
+import { base64urlEncode, utf8Encode } from "../../crypto/primitives/mod";
 import { parseClientData, verifyClientData } from "./client-data";
 import type { ClientDataExpectation } from "./types";
 

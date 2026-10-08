@@ -1,6 +1,6 @@
+import type { KeyRing } from "../../crypto/keyring/types";
 import type { Result } from "../../result/types";
 import type { AUTH_IDENTIFYING_FACTORS } from "../config";
-import type { AuthKeyRing } from "../types";
 import type { AuthNotifier } from "../types";
 import type { NonceStore } from "../types";
 import type { OtpStateStore } from "../types";
@@ -34,7 +34,7 @@ interface FactorServiceBase<kind extends AuthFactorKind = AuthFactorKind> {
 
 /** @public */
 export interface EmailOtpOptions {
-  keys: AuthKeyRing;
+  keys: KeyRing;
   state: OtpStateStore;
   nonces: NonceStore;
   notifier: AuthNotifier;
@@ -180,7 +180,7 @@ export interface AuthFactorRegistry {
 
 /** @public */
 export interface TotpAppFactorOptions {
-  keys: AuthKeyRing;
+  keys: KeyRing;
   factors: FactorStore;
   issuer: string;
   /** The account label a provisioning URI shows for the identity it enrols. */

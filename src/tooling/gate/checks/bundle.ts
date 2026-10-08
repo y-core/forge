@@ -1,9 +1,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 
 import { checkResult, fail } from "../finding";
 import type { CheckResult } from "../types";
-import { fileURLToPathish } from "./design-system";
 import type { BundleCheckConfig } from "./types";
 
 /** Whether `esbuild` can be resolved — a bundle cannot be rebuilt without it, and it is an optional peer. @public */
@@ -24,6 +23,7 @@ export async function bundleSource(config: BundleCheckConfig): Promise<string> {
     bundle: true,
     format: "esm",
     platform: "node",
+    packages: "external",
     write: false,
     // Node refuses to strip types under `node_modules`, so a consumer can only load a plain `.mjs`.
     // The banner is what tells a reader of that file not to edit it.
@@ -63,17 +63,4 @@ export async function checkBundle(config: BundleCheckConfig): Promise<CheckResul
 /** Writes a fresh bundle over the committed one. @public */
 export async function writeBundle(config: BundleCheckConfig): Promise<void> {
   writeFileSync(resolve(config.root, config.bundle), await bundleSource(config), "utf-8");
-}
-
-if (import.meta.main) {
-  const root = resolve(dirname(fileURLToPathish(import.meta.url)), "../../../..");
-  const fixer = "bun run gen:bundles";
-  for (const [entry, bundle] of [
-    ["src/tooling/lint/mod.ts", "src/tooling/lint/plugin.mjs"],
-    ["src/tooling/gate/checks/chromium.ts", "src/tooling/gate/chromium.mjs"],
-    ["src/testing/totp.ts", "src/testing/totp.mjs"],
-  ] as const) {
-    await writeBundle({ root, entry, bundle, fixer });
-    console.log(`wrote ${bundle}`);
-  }
 }

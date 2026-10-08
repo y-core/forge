@@ -4,17 +4,12 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { createCommand } from "../../cli/command";
-import { stripJsonc } from "../../cli/jsonc";
 import { scopeLogger } from "../../cli/log";
 import type { CommandBase } from "../../cli/types";
+import { loadWranglerConfig } from "../config/parse";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 import type { GenOptions, SpawnSync } from "./types";
-
-/** Parse a `wrangler.jsonc` file at `path` into a config object. @public */
-export function readWranglerConfig(path: string): Record<string, unknown> {
-  return JSON.parse(stripJsonc(readFileSync(path, "utf-8"))) as Record<string, unknown>;
-}
 
 /** Loads a `--config` module's `Partial<GenOptions>` merged over `DEFAULT_OPTIONS`, or the defaults when no path is given. @public */
 export async function loadOptions(configPath?: string): Promise<GenOptions> {
@@ -48,10 +43,10 @@ export function createGenEnvCommand(spawn: SpawnSync = spawnSync): CommandBase {
       const cwd = process.cwd();
       const outPath = resolve(cwd, flags.out);
 
-      const cfg = readWranglerConfig(resolve(cwd, flags.wrangler));
+      const cfg = loadWranglerConfig(resolve(cwd, flags.wrangler)).config;
       const devVarsPath = resolve(cwd, flags["dev-vars"]);
       const devVars = existsSync(devVarsPath) ? readFileSync(devVarsPath, "utf-8") : "";
-      const wranglerVars = (cfg.vars as Record<string, unknown> | undefined) ?? {};
+      const wranglerVars = cfg.vars ?? {};
 
       const configPath = resolve(cwd, flags.config);
       const hasConfig = existsSync(configPath);

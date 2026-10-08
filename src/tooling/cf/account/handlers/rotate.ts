@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { bytesToHex, randomBytes } from "../../../../crypto/mod";
+import { bytesToHex, randomBytes } from "../../../../crypto/primitives/mod";
 import { err, ok } from "../../../../result/result";
 import { editDevVars, GENERATE_MARKER, parseDevVars, RING_MARKER, writeDevVars } from "./devvars";
 import type { DevVar } from "./types";

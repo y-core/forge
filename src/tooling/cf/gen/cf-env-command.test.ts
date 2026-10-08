@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { execute } from "../../cli/execute";
-import { createGenEnvCommand, loadOptions, readWranglerConfig } from "./cf-env-command";
+import { parseWranglerConfig } from "../config/parse";
+import { createGenEnvCommand, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 
@@ -15,45 +16,6 @@ const mockSpawnSync = mock((_cmd: string, _args: string[], _opts: { stdio: "inhe
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "cfgen-"));
 }
-
-describe("readWranglerConfig", () => {
-  it("parses JSONC with comments and trailing commas into the exact object", () => {
-    const dir = tempDir();
-    const path = join(dir, "wrangler.jsonc");
-    writeFileSync(
-      path,
-      `{
-        // worker name
-        "name": "demo", /* inline */
-        "vars": { "BASE_URL": "https://example.com", },
-        "kv_namespaces": [ { "binding": "LOGS", "id": "1" }, ],
-      }`,
-    );
-    expect(readWranglerConfig(path)).toEqual({
-      name: "demo",
-      vars: { BASE_URL: "https://example.com" },
-      kv_namespaces: [{ binding: "LOGS", id: "1" }],
-    });
-  });
-
-  it("keeps a `, ]` sequence inside a string value intact", () => {
-    const dir = tempDir();
-    const path = join(dir, "wrangler.jsonc");
-    writeFileSync(path, `{ "vars": { "CSP_TEMPLATE": "script-src 'self', ] end" } }`);
-    expect(readWranglerConfig(path)).toEqual({ vars: { CSP_TEMPLATE: "script-src 'self', ] end" } });
-  });
-
-  it("throws on malformed JSON after comment stripping", () => {
-    const dir = tempDir();
-    const path = join(dir, "wrangler.jsonc");
-    writeFileSync(path, "{ not valid json ");
-    expect(() => readWranglerConfig(path)).toThrow();
-  });
-
-  it("throws when the file does not exist", () => {
-    expect(() => readWranglerConfig(join(tempDir(), "missing.jsonc"))).toThrow();
-  });
-});
 
 describe("loadOptions — error paths", () => {
   it("rejects when the config module path does not exist", async () => {
@@ -74,6 +36,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     writeFileSync(
       wranglerPath,
       `{
+        "name": "app",
         "vars": { "BASE_URL": "https://example.com" },
         "kv_namespaces": [{ "binding": "LOGS" }], // one KV binding
       }`,
@@ -91,11 +54,8 @@ describe("createGenEnv — run handler end-to-end", () => {
       join(dir, "absent.ts"),
     ]);
 
-    const cfg = readWranglerConfig(wranglerPath);
-    const expected = emit([
-      ...collectBindings(cfg, DEFAULT_OPTIONS),
-      ...collectVars("CSRF_SECRET=deadbeef\n", cfg.vars as Record<string, unknown>, DEFAULT_OPTIONS),
-    ]);
+    const cfg = parseWranglerConfig(wranglerPath);
+    const expected = emit([...collectBindings(cfg, DEFAULT_OPTIONS), ...collectVars("CSRF_SECRET=deadbeef\n", cfg.vars ?? {}, DEFAULT_OPTIONS)]);
     expect(readFileSync(outPath, "utf-8")).toBe(expected);
   });
 
@@ -103,7 +63,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
-    writeFileSync(wranglerPath, `{ "vars": { "BASE_URL": "https://example.com" } }`);
+    writeFileSync(wranglerPath, `{ "name": "app", "vars": { "BASE_URL": "https://example.com" } }`);
 
     await execute(createGenEnvCommand(mockSpawnSync), [
       "--wrangler",
@@ -116,8 +76,8 @@ describe("createGenEnv — run handler end-to-end", () => {
       join(dir, "absent.ts"),
     ]);
 
-    const cfg = readWranglerConfig(wranglerPath);
-    const expected = emit(collectVars("", cfg.vars as Record<string, unknown>, DEFAULT_OPTIONS));
+    const cfg = parseWranglerConfig(wranglerPath);
+    const expected = emit(collectVars("", cfg.vars ?? {}, DEFAULT_OPTIONS));
     expect(readFileSync(outPath, "utf-8")).toBe(expected);
   });
 
@@ -126,7 +86,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     const wranglerPath = join(dir, "wrangler.jsonc");
     const configPath = join(dir, "env.config.ts");
     const outPath = join(dir, "env.schema.ts");
-    writeFileSync(wranglerPath, `{ "kv_namespaces": [{ "binding": "CACHE" }] }`);
+    writeFileSync(wranglerPath, `{ "name": "app", "kv_namespaces": [{ "binding": "CACHE" }] }`);
     writeFileSync(configPath, `export const options = { optional: new Set(["CACHE"]) };`);
 
     await execute(createGenEnvCommand(mockSpawnSync), [
@@ -149,7 +109,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
-    writeFileSync(wranglerPath, `{}`);
+    writeFileSync(wranglerPath, `{ "name": "app" }`);
     mockSpawnSync.mockClear();
 
     await execute(createGenEnvCommand(mockSpawnSync), [
@@ -170,6 +130,26 @@ describe("createGenEnv — run handler end-to-end", () => {
   });
 });
 
+describe("createGenEnv — a worker config it cannot load", () => {
+  it("refuses a config that names no Worker, exiting 1 and writing no schema", async () => {
+    const dir = tempDir();
+    const wranglerPath = join(dir, "wrangler.jsonc");
+    const outPath = join(dir, "env.schema.ts");
+    writeFileSync(wranglerPath, `{ "vars": { "BASE_URL": "https://example.com" } }`);
+    const err: string[] = [];
+    const exits: number[] = [];
+
+    await execute(
+      createGenEnvCommand(mockSpawnSync),
+      ["--wrangler", wranglerPath, "--dev-vars", join(dir, "none"), "--out", outPath, "--config", join(dir, "absent.ts")],
+      { stdout: () => {}, stderr: (msg) => err.push(msg), exit: ((code: number) => exits.push(code)) as (code: number) => never },
+    );
+
+    expect([exits, err.length, existsSync(outPath)]).toEqual([[1], 1, false]);
+    expect(err[0]?.startsWith(`Error: malformed wrangler config at ${wranglerPath}: name:`)).toBe(true);
+  });
+});
+
 describe("createGenEnv — an oxfmt that never formatted", () => {
   const origLog = console.log;
   const origError = console.error;
@@ -184,7 +164,7 @@ describe("createGenEnv — an oxfmt that never formatted", () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
-    writeFileSync(wranglerPath, `{}`);
+    writeFileSync(wranglerPath, `{ "name": "app" }`);
     // A non-zero exit with no `error`: oxfmt ran and refused the file, which is not a spawn failure.
     mockSpawnSync.mockImplementation(() => ({ status: 1 }));
     mockSpawnSync.mockClear();

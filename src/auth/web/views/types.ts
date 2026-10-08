@@ -225,6 +225,15 @@ export type SignupViewProps = AuthViewChrome & {
   readonly icon: ForgeIcon<"alert">;
 };
 
+/** Where the owed storage clear is posted, and the token and header that authorise it. @public */
+export type AuthSiteDataProps = {
+  /** The POST-only route from `authPaths(...).auth.signoutSiteData()`. */
+  readonly path: string;
+  readonly csrfToken: string;
+  /** The header `csrfProtection` checks the token on, stated even when it is the default. */
+  readonly csrfHeader: string;
+};
+
 /** What the control that ends a session needs, and the knobs a host places it with. @public */
 export type AuthSignoutProps = {
   /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */

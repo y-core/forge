@@ -59,8 +59,8 @@ audience: consumer
 
 | Looked for here | Actually in |
 | --- | --- |
-| `timingSafeEqual` / `timingSafeEqualBytes` | internal `src/crypto/` (`@internal`) |
-| `csrfProtection`, `importCsrfKey`, `mintCsrf` | `@y-core/forge/form` |
+| `timingSafeEqual` / `timingSafeEqualBytes` | internal `src/crypto/primitives/` (`@internal`) |
+| `csrfProtection`, `mintCsrf` | `@y-core/forge/form` |
 | `sessionMiddleware` | `@y-core/forge/session` |
 | `isHxRequest` | `@y-core/forge/render/htmx` — a UX hint, not a boundary ([`HTMX.md`][htmx-7] §7) |
 
@@ -224,7 +224,7 @@ permissions away: a handler's CSP tightens the app's and cannot loosen it. That 
 including an upstream response a handler proxies through unchanged.
 
 **The case this protects is `serveObject`'s `sandbox`.** Whether an object is active content is known only after the backend read, inside
-`storage/r2`, which is a leaf with no request context ([`STORAGE_BINDINGS.md`][sb-3b] §3b). No middleware could decide it in advance. If the app's
+`storage/r2`, which has no request context ([`STORAGE_BINDINGS.md`][sb-3b] §3b). No middleware could decide it in advance. If the app's
 policy overwrote the handler's, an uploaded HTML or SVG object served `inline` would render on the app's origin under the app policy instead of in
 a sandbox.
 
@@ -522,7 +522,7 @@ namespace, and why identity is application-layer.
 
 **Every secret forge imports is held to one rule, and a secret that fails it throws where it is imported — for a session secret, where the
 cookie is created — naming the call that refused it.** The rule is
-`assertSecretStrength` in `src/crypto/strength.ts`, which is the source of truth:
+`assertSecretStrength` in `src/crypto/primitives/strength.ts`, which is the source of truth:
 
 - **At least 32 bytes** — HMAC-SHA-256's full security margin, and HKDF's floor for input keying material.
 - **Not one byte value repeated** throughout.
@@ -536,20 +536,15 @@ passes it, so passing proves nothing about a secret chosen by hand.
 
 | Secret | Imported by | Measured as |
 | --- | --- | --- |
-| CSRF secret | `importCsrfKey`, `importCsrfKeyRing` | the hex-decoded bytes, so 64 hex characters is the floor |
-| Signed-URL secret | `importSignedUrlKeyRing` | the hex-decoded bytes |
-| Key-ring root secret | `importKeyRing`, `importAuthKeyRing`, and a hand-built `AuthKeyRing` when `resolveAuthServices` checks it | the hex-decoded bytes |
-| Session secret | `createSignedCookie`, so `createAnonymousSession` and flash cookies too | the UTF-8 bytes of the string, never hex-decoded |
+| Key-ring root secret, the CSRF, signed-URL and session secrets included | `importKeyRing`, `importAuthKeyRing`, and a hand-built `KeyRing` when `resolveAuthServices` checks it | the hex-decoded bytes, so 64 hex characters is the floor |
 | Webhook secret | `createWebhookSigning` | the base64-decoded bytes after `whsec_` |
 
-A session secret is used as the string it is, so 64 hex characters count as 64 bytes there. Hex-decoding it instead would change the HMAC key
-and invalidate every cookie already issued.
-
 **Generate every secret from a CSPRNG.** `openssl rand -hex 32` gives a secret that passes for every row above; a webhook secret is
-`whsec_$(openssl rand -base64 32)`. `forge cf sync --rotate` generates 32 CSPRNG bytes of hex for a key marked `# forge:generate`.
+`whsec_$(openssl rand -base64 32)`. `forge cf sync --rotate` generates 32 CSPRNG bytes of hex for a key marked `# forge:generate`; a key ring is
+marked `# forge:ring`, and `--local --rotate` prepends a fresh key to it.
 
-**`CsrfConfigSchema` checks the length alone.** It requires at least 64 hex characters, so a short CSRF secret fails when the config is parsed at
-startup. The variety check runs when the secret is imported.
+**`CsrfConfigSchema` checks the ring's shape.** It requires comma-separated hex secrets, each an even number of characters and at least 64
+(32 bytes), so a short or malformed CSRF secret fails when the config is parsed at startup. The variety check runs when the secret is imported.
 
 [boundaries-2]: ../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only

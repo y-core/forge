@@ -31,6 +31,15 @@ function extractUnionLine(source: string, typeName: string): string {
   return line;
 }
 
+const ASSET_SECURITY_LINES = [
+  "  strict-transport-security: max-age=63072000; includeSubDomains; preload",
+  "  x-content-type-options: nosniff",
+  "  cross-origin-resource-policy: same-origin",
+  "  content-security-policy: default-src 'none'; frame-ancestors 'none'; sandbox",
+];
+
+const headerRule = (path: string, cache: string): string => `${[path, `  Cache-Control: ${cache}`, ...ASSET_SECURITY_LINES].join("\n")}\n`;
+
 const DATA_BLOCK = "const DATA: Record<string, string> = {";
 
 function stubTailwind(css = "/* built css */") {
@@ -63,6 +72,7 @@ describe("buildAll() — emitHeaders", () => {
           icons: null,
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
@@ -99,6 +109,7 @@ describe("buildAll() — emitHeaders", () => {
             icons: null,
             cursors: null,
             site: null,
+            securityHeaders: {},
           },
           { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
         ),
@@ -108,6 +119,64 @@ describe("buildAll() — emitHeaders", () => {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  const buildWithIcons = (tmpDir: string, publicPrefix: string, icons: NonNullable<ResolvedConfig["icons"]>) =>
+    buildAll(
+      {
+        root: tmpDir,
+        paths: { sourceDir: tmpDir, publicDir: join(tmpDir, "public", "assets"), publicPrefix },
+        css: [],
+        js: { bundles: [], serviceWorker: null },
+        copy: [],
+        rasters: [],
+        sprites: {},
+        fonts: { downloads: [], subsets: [], emit: null },
+        marks: [],
+        icons,
+        cursors: null,
+        site: null,
+        securityHeaders: {},
+      },
+      { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+    );
+
+  it("refuses icons under the asset prefix, writing no _headers that would send each security header twice", async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "forge-pipeline-headers-icons-overlap-"));
+    try {
+      const build = buildWithIcons(tmpDir, "/assets", {
+        src: join(tmpDir, "logo.svg"),
+        outDir: join(tmpDir, "public"),
+        publicPrefix: "/assets/icons",
+        lightColor: "#000",
+        outputs: [{ kind: "svg", file: "favicon.svg" }],
+      });
+
+      await expect(build).rejects.toThrow(
+        'icon "/assets/icons/favicon.svg" (icons.publicPrefix "/assets/icons") is inside paths.publicPrefix "/assets"',
+      );
+      expect(existsSync(join(tmpDir, "public", "_headers"))).toBe(false);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a root icon output under a "/" asset prefix, writing no _headers', async () => {
+    const tmpDir = mkdtempSync(join(tmpdir(), "forge-pipeline-headers-icons-root-overlap-"));
+    try {
+      const build = buildWithIcons(tmpDir, "/", {
+        src: join(tmpDir, "logo.svg"),
+        outDir: join(tmpDir, "public"),
+        publicPrefix: "/static",
+        lightColor: "#000",
+        outputs: [{ kind: "ico", file: "favicon.ico", sizes: [16], root: true }],
+      });
+
+      await expect(build).rejects.toThrow('icon "/favicon.ico" (icons.publicPrefix "/static") is inside paths.publicPrefix "/"');
+      expect(existsSync(join(tmpDir, "public", "_headers"))).toBe(false);
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
@@ -145,24 +214,17 @@ describe("buildAll() — emitHeaders", () => {
           },
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
 
       expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe(
         [
-          "/assets/*",
-          "  Cache-Control: public, max-age=31536000, immutable",
-          "",
-          "/static/favicon.svg",
-          "  Cache-Control: public, max-age=86400, stale-while-revalidate=604800",
-          "",
-          "/favicon.ico",
-          "  Cache-Control: public, max-age=86400, stale-while-revalidate=604800",
-          "",
-          "/static/site.webmanifest",
-          "  Cache-Control: public, max-age=0, must-revalidate",
-          "",
+          headerRule("/assets/*", "public, max-age=31536000, immutable"),
+          headerRule("/static/favicon.svg", "public, max-age=86400, stale-while-revalidate=604800"),
+          headerRule("/favicon.ico", "public, max-age=86400, stale-while-revalidate=604800"),
+          headerRule("/static/site.webmanifest", "public, max-age=0, must-revalidate"),
         ].join("\n"),
       );
     } finally {
@@ -190,6 +252,7 @@ describe("buildAll() — emitHeaders", () => {
           icons: null,
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
@@ -223,11 +286,52 @@ describe("buildAll() — emitHeaders", () => {
           icons: null,
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
 
-      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe("/static/*\n  Cache-Control: public, max-age=31536000, immutable\n");
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe(headerRule("/static/*", "public, max-age=31536000, immutable"));
+    } finally {
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("derives each rule's security headers from the app's securityHeaders options", async () => {
+    const tmpDir = join(tmpdir(), `forge-pipeline-emitHeaders-security-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const publicDir = join(tmpDir, "public", "assets");
+    mkdirSync(publicDir, { recursive: true });
+
+    try {
+      await buildAll(
+        {
+          root: tmpDir,
+          paths: { sourceDir: tmpDir, publicDir, publicPrefix: "/assets" },
+          css: [],
+          js: { bundles: [], serviceWorker: null },
+          copy: [],
+          rasters: [],
+          sprites: {},
+          fonts: { downloads: [], subsets: [], emit: null },
+          marks: [],
+          icons: null,
+          cursors: null,
+          site: null,
+          securityHeaders: { hsts: false, crossOriginResourcePolicy: "cross-origin" },
+        },
+        { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
+      );
+
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe(
+        [
+          "/assets/*",
+          "  Cache-Control: public, max-age=31536000, immutable",
+          "  x-content-type-options: nosniff",
+          "  cross-origin-resource-policy: cross-origin",
+          "  content-security-policy: default-src 'none'; frame-ancestors 'none'; sandbox",
+          "",
+        ].join("\n"),
+      );
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -276,6 +380,7 @@ describe("buildAll() — rasters", () => {
           icons: null,
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { minify: true, assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
@@ -284,7 +389,7 @@ describe("buildAll() — rasters", () => {
       expect(existsSync(dest)).toBe(true);
       expect(resizes).toEqual([{ width: 360 }]);
 
-      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe("/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n");
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe(headerRule("/assets/*", "public, max-age=31536000, immutable"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -323,6 +428,7 @@ describe("buildAll() — generated module available to the JS bundle", () => {
           icons: null,
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { minify: false, assetsPath: assetsModule },
       );
@@ -363,6 +469,7 @@ function workerConfig(tmpDir: string, publicDir: string, js: ResolvedConfig["js"
     icons: null,
     cursors: null,
     site: null,
+    securityHeaders: {},
   };
 }
 
@@ -423,7 +530,7 @@ describe("buildAll() — the service worker", () => {
       expect(chunkHolding(publicDir, "EDITOR_MARKER")).toMatch(/^editor\.mount-[A-Z0-9]+\.js$/);
       expect(chunkHolding(publicDir, "AUDIT_MARKER")).toMatch(/^audit-[A-Z0-9]+\.js$/);
       expect(existsSync(join(publicDir, "sw.js"))).toBe(false);
-      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe("/assets/*\n  Cache-Control: public, max-age=31536000, immutable\n");
+      expect(readFileSync(join(tmpDir, "public", "_headers"), "utf-8")).toBe(headerRule("/assets/*", "public, max-age=31536000, immutable"));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -539,6 +646,7 @@ describe("buildAll() — a service worker under the root prefix", () => {
           icons: null,
           cursors: null,
           site: null,
+          securityHeaders: {},
         },
         { assetsPath: join(tmpDir, ".forge", "assets.ts") },
       );
@@ -584,6 +692,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
         icons: null,
         cursors: null,
         site: null,
+        securityHeaders: {},
       } satisfies ResolvedConfig;
 
       await buildAll(config, { minify: true, assetsPath: builtModule });
@@ -660,6 +769,7 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
         icons: null,
         cursors: null,
         site: null,
+        securityHeaders: {},
       },
     };
   }
@@ -791,6 +901,7 @@ describe("readEmittedManifest()", () => {
         icons: null,
         cursors: null,
         site: null,
+        securityHeaders: {},
       },
     };
   }
@@ -844,6 +955,7 @@ describe("generateAssetsTypes() — glyph-name union", () => {
       icons: null,
       cursors: null,
       site: null,
+      securityHeaders: {},
     };
   }
 
@@ -921,6 +1033,7 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
           ],
         },
         site: null,
+        securityHeaders: {},
         cursors: null,
       } satisfies ResolvedConfig;
 
@@ -955,6 +1068,7 @@ describe("generateAssetsTypes() — ICON_LINKS", () => {
         marks: [],
         icons: null,
         site: null,
+        securityHeaders: {},
         cursors: null,
       } satisfies ResolvedConfig;
 
@@ -1003,6 +1117,7 @@ describe("generateAssetsTypes() — derives from config alone", () => {
         marks: [],
         icons: null,
         site: null,
+        securityHeaders: {},
         cursors: {
           target: "cursors.css",
           themes: { light: ":root", dark: ".dark" },
@@ -1052,6 +1167,7 @@ describe("buildAll() — the mark conversion stage", () => {
         icons: null,
         cursors: null,
         site: null,
+        securityHeaders: {},
       },
       { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
     );
@@ -1120,6 +1236,7 @@ describe("buildAll() — the font subset stage", () => {
         icons: null,
         cursors: null,
         site: null,
+        securityHeaders: {},
       },
       { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") },
     );
@@ -1200,6 +1317,7 @@ describe("buildAll() / generateAssetsTypes() — the emitted faces module", () =
       icons: null,
       cursors: null,
       site: null,
+      securityHeaders: {},
     };
   }
 

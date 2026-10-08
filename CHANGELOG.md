@@ -18,7 +18,106 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`parseWranglerConfig` loads under node from `@y-core/forge/tooling/cf/wrangler`**, so a `playwright.config.ts` can read `wrangler.jsonc`
+  without running under bun. The subpath is a committed bundle that exports `parseWranglerConfig` alone.
+
+- **`_headers` carries the request-independent security headers on every rule**, so an app can serve its hashed assets and icons without running
+  the Worker. `defineAssetsConfig({ securityHeaders })` takes the options the app passes `createSecurityHeaders`, and each rule gains HSTS,
+  `nosniff`, `Cross-Origin-Resource-Policy` and a fixed `default-src 'none'; frame-ancestors 'none'; sandbox` CSP. `assetSecurityHeaders` in
+  `@y-core/forge/security` returns the same set.
+
+- **`cloudflareWorkerSteps()` emits both import-boundary rows an app used to append by hand.** `ssrBoundary.serverDirs` adds
+  `validate-client-boundary`, which fails a module under `clientDirs` importing one of those directories at value. `vendorDir` adds
+  `validate-vendor-boundary`, which fails a module in that tree importing a directory or source file beside it under its parent.
+
+- **`derivePseudonym` in `@y-core/forge/crypto/keyring` derives a keyed, non-reversible id under the app's own ring**, so an app stops hand-rolling
+  HMAC and hex over WebCrypto. It answers 64 lowercase hex characters, the same for the same ring, purpose and value:
+  `await derivePseudonym(ring, { purpose: "notes-store", value: userId })` replaces an `importKey` / `sign` / hex pair. Rotating the ring changes
+  every pseudonym; pin `{ ...ring, activeKeyId: oldKeyId }` to keep reading an old one. The result differs from a hand-rolled HMAC of the same id,
+  so anything named by the old value is orphaned.
+
+- **`WranglerConfig` types the `assets` block** as `WranglerAssetsConfig`, exported from `@y-core/forge/tooling/cf`.
+
+### Fixed
+
+- **`signoutClearsSiteData` no longer stalls the sign-out navigation about five seconds in Chromium**, which holds any response carrying
+  `Clear-Site-Data: "storage"`. The sign-out now sends `"cache"`, and the next auth page posts to the new `auth.signoutSiteData` route for
+  `"storage"`, once and without anything waiting on it.
+
+- **A well-formed authenticator-app code that enrolment refuses now reads "That code did not match"**, rather than the message for a malformed
+  code, which sent the user to re-check digits that were already the right shape.
+
+- **Removing a user that an app table still references is refused with a message, not a 503.** When a foreign key to `auth_users(id)` refuses
+  the delete, `AdminUserStore.remove` answers `referenced`, deletes nothing, and the admin page answers 409 asking for the account's records to
+  be removed or transferred first.
+
+- **A failed key derivation or import under a `KeyRing` is retried on the next request instead of failing every one until the isolate
+  restarts.** CSRF tokens, R2 signed URLs, signed cookies, `derivePseudonym` and `sealAtRest` all resolve their keys this way.
+
+### Breaking Changes
+
+- **`@y-core/forge/keyring` moves to `@y-core/forge/crypto/keyring`.** Its exports are unchanged; replace `from "@y-core/forge/keyring"` with
+  `from "@y-core/forge/crypto/keyring"`. The old subpath is removed with no alias. `crypto` is now a container with no import path of its own,
+  like `storage` and `render`.
+
+- **`keyRingSecrets` is renamed `parseKeyRingSecrets`.** It behaves as before; replace each call, and its errors now name `parseKeyRingSecrets`.
+
+- **`AUTH_KEY_ID_LENGTH` is removed from `@y-core/forge/auth`.** A key id is still eight base64url characters, and `importAuthKeyRing` and
+  `importKeyRing` derive every one, so an app has no length to check.
+
+- **An icon prefix inside the asset prefix is now refused at build.** `loadConfig` and `buildAll` throw when any icon would be served under
+  `paths.publicPrefix`, because each such icon matched both `_headers` rules and Cloudflare comma-joined every security header, voiding its
+  `Cross-Origin-Resource-Policy`. Move the icons to a prefix of their own, such as `/static`. A `paths.publicPrefix` of `"/"` covers every path,
+  so it is refused beside any icon, a `root: true` one included.
+
+- **`createSignoutActions` returns `signoutSiteData` beside `signout`, and `authRoutes` declares `signoutSiteData: post("/signout/site-data")`.** An
+  app that maps the auth routes itself maps the new action too; one using `registerAuth` gets it. **With `signoutClearsSiteData`, the
+  `"storage"` half of the clear now needs the auth pages to import `@y-core/forge/auth/client` before `resume()` and to run JavaScript**, because
+  that module sends the second request. An app that does not load it, such as one offering email codes and no passkeys, gets no error: sign-out
+  still sends `"cache"`, but IndexedDB, `localStorage`, Cache Storage and the service workers survive it. Add the import to the auth pages' bundle.
+
+- **`AuthStoreErrorCode` gains `"reference"` and `AdminUserOutcome` gains `"referenced"`.** A store error from a foreign-key refusal, including an
+  insert naming an owner that does not exist, now carries `reference` where it carried `unavailable`. An exhaustive switch over either union
+  needs the new case; a custom `AdminUserStore.remove` answers `referenced` when a foreign key refuses the user row.
+
+- **CSRF tokens and R2 signed URLs sign under a `KeyRing` from `@y-core/forge/crypto/keyring`.** `importCsrfKey`, `importCsrfKeyRing`,
+  `importSignedUrlKeyRing` and the type `HmacKeyRing` are removed, as is `CsrfTokenOptions.kid`: the token carries the ring's active key id. The
+  CSRF resolver option is `ring` on `csrfProtection`, `csrfMinter` and `authNav`, typed `CsrfRingResolver` in place of `CsrfSecretResolver`;
+  `createCsrfToken`, `verifyCsrfToken`, `createSignedObjectUrl` and `verifySignedObjectUrl` take the ring instead of a `CryptoKey`. Replace
+  `secret: () => importCsrfKey(env.CSRF_SECRET)` with `ring: () => importKeyRing(parseKeyRingSecrets(env.CSRF_SECRET))`, importing both from
+  `@y-core/forge/crypto/keyring`. **The existing `CSRF_SECRET` value is accepted unchanged**, and `CsrfConfigSchema` also accepts a
+  comma-separated list, newest first, to rotate. **Every CSRF token and signed URL issued before the deploy stops verifying**: a form rendered
+  before it is refused once on submit, for at most the token's one-hour life. Tests keep `mintTestCsrfToken(hexSecret, …)` as it is.
+
+- **Signed cookies sign under a `KeyRing`: `createSignedCookie`, `createAnonymousSession` and `createFlash` take `ring` in place of their
+  secrets.** Replace `secrets: [env.SESSION_SECRET]` with `ring: await importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET))`, and the anonymous
+  session's `secret: (c) => …` with `ring: (c) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET))`; the flash cookie's `secrets` becomes
+  `ring` the same way, and the session's ring serves it. **`SESSION_SECRET` and `FLASH_SECRET` must now be hex of at least 64 characters**,
+  comma-joined newest first to rotate. A value already in that form works unchanged; a shorter or non-hex one throws at import. Every app's
+  `.dev.vars.example` already documents that format, but an env schema validating `minLength(32)` lets a value through that now throws, so raise
+  it to the hex rule. **Every existing
+  session, anonymous-session and flash cookie is invalid after the deploy**: each signed-in user signs in once more. The cookie value is
+  `<payload>.<kid>.<sig>`, so a test that signs a cookie by hand passes a ring to `createSignedCookie` rather than building the value. Mark
+  `SESSION_SECRET` and `CSRF_SECRET` `# forge:ring` in `.dev.vars`, not `# forge:generate`, so `forge cf sync --local --rotate` prepends a key
+  rather than replacing the ring.
+
+- **The type `AuthKeyRing` is removed; use `KeyRing` from `@y-core/forge/crypto/keyring`.** It had the same shape. `importAuthKeyRing` returns a
+  `KeyRing`, and its key ids and tokens are unchanged, so nothing changes at runtime. Replace `import type { AuthKeyRing } from
+  "@y-core/forge/auth"` with `import type { KeyRing } from "@y-core/forge/crypto/keyring"`.
+
+- **`AuthOptions.secret` is renamed `ring`, and its type `AuthSecretResolver` is renamed `AuthRingResolver`**, so every option that takes a key
+  ring is named `ring`. Replace `{ secret: (c) => importAuthKeyRing([c.env.AUTH_SECRET]) }` with
+  `{ ring: (c) => importAuthKeyRing([c.env.AUTH_SECRET]) }`. The `AUTH_SECRET` value and every token and sealed factor are unchanged.
+
+- **The gate checks and `forge cf gen env` read `wrangler.jsonc` through one loader, which validates it.** A config with no string `name`, or one
+  failing the loader's schema another way, now fails `validate-asset-root`, `validate-exposure`, `validate-compatibility` and
+  `validate-dev-boundary` as unparseable, and `forge cf gen env` throws on it. A gate test fixture that writes a wrangler config without `name`
+  needs one. `readWranglerConfig` is removed from `@y-core/forge/tooling/cf`; use `loadWranglerConfig(path).config`.
+
+- **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
+  No consuming app calls them.
 
 ---
 

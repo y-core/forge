@@ -1,3 +1,4 @@
+import type { KeyRing } from "../../crypto/keyring/types";
 import type { Result } from "../../result/types";
 import type { AuthStoreError } from "../errors";
 import type { AuthFactorReason } from "../factors/types";
@@ -5,7 +6,6 @@ import type { AuthFactorRegistry } from "../factors/types";
 import type { AuthFactorResolution } from "../factors/types";
 import type { AuthFactorVerified } from "../factors/types";
 import type { AuthFactorKind } from "../types";
-import type { AuthKeyRing } from "../types";
 import type { AuthNotifier } from "../types";
 import type { AuthUser } from "../types";
 import type { NonceStore } from "../types";
@@ -41,7 +41,7 @@ export type AuthEmailChangeConfirm =
 
 /** @public */
 export interface AuthEmailChangeOptions {
-  keys: AuthKeyRing;
+  keys: KeyRing;
   users: UserStore;
   nonces: NonceStore;
   notifier: AuthNotifier;
@@ -74,7 +74,7 @@ export interface AuthSignin {
 // statements the known one spends, which are the emailed-code factor's stores.
 /** The stores an unknown address is answered with, so that branch spends what a known one spends. @public */
 export interface AuthDecoyStores {
-  keys: AuthKeyRing;
+  keys: KeyRing;
   users: UserStore;
   state: OtpStateStore;
   nonces: NonceStore;
@@ -82,7 +82,7 @@ export interface AuthDecoyStores {
 
 /** @public */
 export interface AuthSigninOptions {
-  keys: AuthKeyRing;
+  keys: KeyRing;
   users: UserStore;
   state: OtpStateStore;
   nonces: NonceStore;

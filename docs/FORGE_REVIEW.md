@@ -119,7 +119,7 @@ literal** for the parser under test to find — `src/tooling/gate/checks/` only,
 **Sibling-barrel import**
 
 ```bash
-rg -nP 'from "\.\./(?!validation/mod|crypto/mod)[a-z-]+/mod"' src/ --glob '!*.test.*'
+rg -nP 'from "\.\./(?!validation/mod|primitives/mod)[a-z-]+/mod"' src/ --glob '!*.test.*'
 ```
 
 _Triage:_ the negative lookahead already excludes the sanctioned exemptions ([`NAMESPACE_DESIGN.md`][nd-2c] §2c), and the `!*.test.*` glob
@@ -260,9 +260,9 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | --- | --- |
 | `new Forge<Env>()` in a test | `Forge` is exported from `src/app/mod.ts` with a public constructor. The no-bare-constructor rule targets _config holders_ — [`CODE_RULES.md`][cr-1d] §1d |
 | `@y-core/forge/context` imported by a consumer | `context` **is** a public subpath |
-| A reference to `@y-core/forge/crypto` being absent | That subpath **never existed**. `crypto` is sealed-internal — [`NAMESPACES.md`][namespaces-3b] §3b |
+| A reference to `@y-core/forge/crypto/primitives` being absent | That subpath **never existed**. `crypto/primitives` is sealed-internal — [`NAMESPACES.md`][namespaces-3b] §3b |
 | `import { v } from "../validation/mod"` in forge source | A sanctioned barrel exemption — [`NAMESPACE_DESIGN.md`][nd-2c] §2c |
-| `import … from "../crypto/mod"` in forge source | The other sanctioned exemption |
+| `import … from "../crypto/primitives/mod"` in forge source | The other sanctioned exemption |
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
 | `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |

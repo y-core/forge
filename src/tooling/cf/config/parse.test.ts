@@ -88,11 +88,39 @@ describe("parseWranglerConfig()", () => {
 
   it("throws a clear error when name is missing", () => {
     const path = writeTemp(`{ "vars": { "A": "1" } }`);
-    expect(() => parseWranglerConfig(path)).toThrow(/malformed wrangler config/);
+    expect(() => parseWranglerConfig(path)).toThrow('name: wrangler config must define a string "name"');
+  });
+
+  it("throws the same error when name is not a string", () => {
+    const path = writeTemp(`{ "name": 1 }`);
+    expect(() => parseWranglerConfig(path)).toThrow('name: wrangler config must define a string "name"');
+  });
+
+  it("keeps the type error for a config that is not an object", () => {
+    const path = writeTemp(`"my-worker"`);
+    expect(() => parseWranglerConfig(path)).toThrow('(root): Invalid type: Expected Object but received "my-worker"');
   });
 
   it("throws when the JSON is syntactically invalid", () => {
     const path = writeTemp(`{ "name": }`);
     expect(() => parseWranglerConfig(path)).toThrow(/malformed wrangler config/);
+  });
+
+  it("parses JSONC with comments and trailing commas into the exact object", () => {
+    const path = writeTemp(`{
+      // worker name
+      "name": "demo", /* inline */
+      "vars": { "BASE_URL": "https://example.com", },
+      "kv_namespaces": [ { "binding": "LOGS", "id": "1" }, ],
+    }`);
+    expect(parseWranglerConfig(path)).toEqual({
+      name: "demo",
+      vars: { BASE_URL: "https://example.com" },
+      kv_namespaces: [{ binding: "LOGS", id: "1" }],
+    });
+  });
+
+  it("throws when the file does not exist", () => {
+    expect(() => parseWranglerConfig(join("/tmp", "forge-wrangler-absent.jsonc"))).toThrow();
   });
 });

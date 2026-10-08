@@ -7,7 +7,7 @@ import type { CommentSpan } from "./types";
 
 const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
 
-// None of the three is deployed: a spec is not shipped, a `.browser.ts` spec runs under Playwright,
+// None of these is deployed: a spec is not shipped, a `.browser.ts` spec runs under Playwright,
 // and `files` excludes every `*.fixture.ts`. So each is free to reach what a deployable module may not.
 /** Whether `path` is test-only, decided by its suffix alone. @public */
 export function isTestSource(path: string): boolean {

@@ -41,6 +41,7 @@ import { authEnrolmentPaths } from "./paths";
 import type { AuthRequestServices, AuthWebOptions } from "./types";
 import {
   attrOf,
+  elementOf,
   HOSTILE_TEXT,
   fakeAdminUserStore,
   fakeAuthCredential,
@@ -751,16 +752,16 @@ describe("createSignoutActions", () => {
     expect(res.headers.has("clear-site-data")).toBe(false);
   });
 
-  it("clears the site's cache and storage when signoutClearsSiteData is set", async () => {
+  it("clears the site's cache, and only its cache, on the navigation when signoutClearsSiteData is set", async () => {
     const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
 
     const res = await app.request("/auth/signout", formBody({}));
     expect(res.status).toBe(303);
-    expect(res.headers.get("clear-site-data")).toBe('"cache", "storage"');
+    expect(res.headers.get("clear-site-data")).toBe('"cache"');
   });
 
-  it("clears the site's cache and storage on an htmx sign-out too", async () => {
+  it("clears the site's cache on an htmx sign-out too", async () => {
     const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout", createSignoutActions(options).signout);
 
@@ -771,7 +772,72 @@ describe("createSignoutActions", () => {
     });
     expect(res.status).toBe(204);
     expect(res.headers.get("hx-redirect")).toBe("/auth/signin");
-    expect(res.headers.get("clear-site-data")).toBe('"cache", "storage"');
+    expect(res.headers.get("clear-site-data")).toBe('"cache"');
+  });
+
+  /** Signs out under `options`, then posts the site-data clear `times` times on the session the sign-out left. */
+  async function siteDataAfterSignout(options: AuthWebOptions, times: number): Promise<Response[]> {
+    const actions = createSignoutActions(options);
+    const app = mounted(actionApp(), "POST", "/auth/signout", actions.signout);
+    mapHandler(app, "POST", "/auth/signout/site-data", actions.signoutSiteData);
+    let cookie = (await app.request("/auth/signout", formBody({}))).headers.get("set-cookie")?.split(";")[0] ?? "";
+    const answers: Response[] = [];
+    for (let i = 0; i < times; i++) {
+      const res = await app.request("/auth/signout/site-data", { method: "POST", headers: { cookie } });
+      cookie = res.headers.get("set-cookie")?.split(";")[0] ?? cookie;
+      answers.push(res);
+    }
+    return answers;
+  }
+
+  it("clears the site's storage once, on the first site-data post after a sign-out that owes it", async () => {
+    const answers = await siteDataAfterSignout({ ...fakeAuthWebOptions(), signoutClearsSiteData: true }, 2);
+    expect(answers.map((res) => [res.status, res.headers.get("clear-site-data")])).toEqual([
+      [204, '"storage"'],
+      [204, null],
+    ]);
+  });
+
+  it("clears no storage on a site-data post after a sign-out that owes none", async () => {
+    const answers = await siteDataAfterSignout(fakeAuthWebOptions(), 1);
+    expect(answers.map((res) => [res.status, res.headers.get("clear-site-data")])).toEqual([[204, null]]);
+  });
+
+  it("clears no storage on a site-data post from a session that never signed out", async () => {
+    const options = { ...fakeAuthWebOptions(), signoutClearsSiteData: true };
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/signout/site-data", createSignoutActions(options).signoutSiteData);
+
+    const res = await app.request("/auth/signout/site-data", { method: "POST" });
+    expect([res.status, res.headers.get("clear-site-data")]).toEqual([204, null]);
+  });
+
+  it("clears no storage on a site-data post after a sign-in that followed the sign-out", async () => {
+    const options = {
+      ...optionsWith({
+        signin: fakeAuthSigninFlow({
+          complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" } }),
+        }),
+      }),
+      signoutClearsSiteData: true,
+    };
+    const signout = createSignoutActions(options);
+    const app = mounted(actionApp(), "POST", "/auth/signout", signout.signout);
+    mapHandler(app, "POST", "/auth/signout/site-data", signout.signoutSiteData);
+    mapHandler(app, "POST", "/auth/signin", createSigninActions(options).signinSubmit);
+    mapHandler(app, "POST", "/auth/verify", createVerifyActions(options).submit);
+
+    let cookie = "";
+    const send = async (path: string, init: RequestInit): Promise<Response> => {
+      const res = await app.request(path, { ...init, headers: { ...init.headers, cookie } });
+      cookie = res.headers.get("set-cookie")?.split(";")[0] ?? cookie;
+      return res;
+    };
+    await send("/auth/signout", formBody({}));
+    await send("/auth/signin", formBody({ email: "grace@example.com" }));
+    const verified = await send("/auth/verify", formBody({ code: "123456" }));
+    const res = await send("/auth/signout/site-data", { method: "POST" });
+
+    expect([verified.headers.get("location"), res.status, res.headers.get("clear-site-data")]).toEqual(["/account/passkeys", 204, null]);
   });
 });
 
@@ -1257,6 +1323,28 @@ describe("createTotpManageActions", () => {
     const res = await app.request("/account/totp", formBody({ code: "123456" }));
     expect(res.status).toBe(422);
     expect(res.headers.get("location")).toBeNull();
+  });
+
+  it("says a well-formed code that enrolment refused did not match, never that it was the wrong shape", async () => {
+    const options = optionsWith(totpServices);
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/account/totp", createTotpManageActions(options).totpEnrol);
+
+    const html = await (await app.request("/account/totp", formBody({ code: "123456" }))).text();
+    expect([elementOf(html, "p", 'data-slot="field-error"'), html.includes("not the shape we sent")]).toEqual([
+      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-code-error">That code did not match. Enter the code your app shows now.</p>',
+      false,
+    ]);
+  });
+
+  it("says a malformed code was the wrong shape, never that it did not match", async () => {
+    const options = optionsWith(totpServices);
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/account/totp", createTotpManageActions(options).totpEnrol);
+
+    const html = await (await app.request("/account/totp", formBody({ code: "12ab" }))).text();
+    expect([elementOf(html, "p", 'data-slot="field-error"'), html.includes("did not match")]).toEqual([
+      '<p data-slot="field-error" class="text-sm font-normal text-destructive-text" id="field-code-error">That code is not the shape we sent. Enter the digits exactly as they appear.</p>',
+      false,
+    ]);
   });
 
   it("returns to the authenticator page once every enrolment row is gone", async () => {
@@ -1746,6 +1834,25 @@ describe("createAdminUserActions", () => {
     const res = await app.request(`/admin/users/${self.id.toUpperCase()}`, { method: "DELETE" });
     expect(res.status).toBe(409);
     expect(removals).toBe(0);
+  });
+
+  it("answers 409 with the account still rendered, not 503, when an app table still references the account", async () => {
+    const options = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      admin: fakeAdminUserStore([member], { remove: async () => ok("referenced" as const) }),
+    });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u2", { method: "DELETE" });
+    expect({
+      status: res.status,
+      location: res.headers.get("location"),
+      reason: textOf(await res.text(), "div", 'data-slot="alert-description"'),
+    }).toEqual({
+      status: 409,
+      location: null,
+      reason: "This account still owns records in this app — remove or transfer them before deleting it.",
+    });
   });
 });
 
