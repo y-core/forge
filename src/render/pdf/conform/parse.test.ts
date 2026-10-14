@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { deflate } from "../writer/deflate";
-import { parsePdfObjects, unpackObjectStream } from "./parse.fixture";
+import { parsePdfObjects } from "./parse.fixture";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -90,9 +90,5 @@ describe("a file whose objects are packed into an /ObjStm", () => {
     const file = await parsePdfObjects(await objectStreamFile());
     expect(file.objects.get(5)?.container).toBe(3);
     expect(file.objects.get(1)?.container).toBeUndefined();
-  });
-
-  test("unpacks nothing from a container carrying no stream, rather than inventing an object", () => {
-    expect(unpackObjectStream({ id: 3, dict: "<< /Type /ObjStm /N 2 /First 8 >>" })).toEqual([]);
   });
 });

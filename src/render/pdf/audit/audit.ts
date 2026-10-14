@@ -3,6 +3,7 @@ import { DEFAULT_ORPHANS, DEFAULT_PDF_LANG, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOW
 import { pdfWritableInfo } from "../metadata";
 import { resolvePdfPage } from "../page";
 import { paginateWithin } from "../paginate";
+import { attachmentFaults } from "../prepare";
 import { toPdfElements } from "../tree";
 import type { PdfDocument, PdfElement, PdfRendererOptions } from "../types";
 import { resolveTypesetting } from "../typesetting";
@@ -66,6 +67,7 @@ export function auditPdf(document: PdfDocument, options: PdfRendererOptions = {}
       message: `the face ${hollow.join(", ")} carries no sfnt bytes, so nothing is embedded; load the face's file into sfnt`,
     });
   }
+  findings.push(...attachmentFaults(options.attachments ?? []).map((message) => ({ rule: "attachment" as const, message })));
   findings.push(...structuralFindings(document, options));
   findings.push(...archivalFindings(document, options));
   return findings;

@@ -4,7 +4,7 @@ import { parsePdfText } from "./conform/parse.fixture";
 import { Field, Note } from "./form";
 import { fileIdentifier, infoDictionary, pdfDate, pdfWritableInfo } from "./metadata";
 import { createPdfRenderer } from "./renderer";
-import type { PdfDocument, PdfInfo } from "./types";
+import type { PdfAttachment, PdfDocument, PdfInfo } from "./types";
 import { xmpPacket } from "./xmp";
 
 const decoder = new TextDecoder("latin1");
@@ -131,6 +131,12 @@ describe("the file identifier is derived, never random", () => {
     expect(await fileIdentifier("a")).toBe(await fileIdentifier("a"));
     expect(await fileIdentifier("a")).not.toBe(await fileIdentifier("b"));
   });
+
+  test("takes material as bytes, hashing them as SHA-256 does and agreeing with the same text given as a string", async () => {
+    const abc = "[<ba7816bf8f01cfea414140de5dae2223> <ba7816bf8f01cfea414140de5dae2223>]";
+    expect(await fileIdentifier(new Uint8Array([0x61, 0x62, 0x63]))).toBe(abc);
+    expect(await fileIdentifier("abc")).toBe(abc);
+  });
 });
 
 describe("metadata in a rendered file", () => {
@@ -160,6 +166,46 @@ describe("metadata in a rendered file", () => {
     const compressed = await bytesOf({ metadata: "standard", info: INFO, compress: true });
     const plain = await bytesOf({ metadata: "standard", info: INFO, compress: false });
     expect(idOf(compressed)).toBe(idOf(plain));
+  });
+});
+
+describe("/ID tells apart two files that differ only in what they attach", () => {
+  const idOf = async (attachments: PdfAttachment[] | undefined, compress = false): Promise<string> =>
+    /\/ID (\[[^\]]+\])/.exec(await bytesOf({ metadata: "standard", info: INFO, compress, attachments }))?.[1] ?? "";
+  const encoder = new TextEncoder();
+  const LEDGER: PdfAttachment = {
+    name: "ledger.csv",
+    mime: "text/csv",
+    bytes: encoder.encode("account,amount\n4100,120.00\n"),
+    relationship: "Data",
+    modified: new Date(Date.UTC(2026, 8, 21)),
+  };
+
+  test("an attachment's bytes changed, and nothing else", async () => {
+    expect(await idOf([LEDGER])).not.toBe(await idOf([{ ...LEDGER, bytes: encoder.encode("account,amount\n4100,121.00\n") }]));
+  });
+
+  test("an attachment's name changed, and nothing else", async () => {
+    expect(await idOf([LEDGER])).not.toBe(await idOf([{ ...LEDGER, name: "ledger-2026.csv" }]));
+  });
+
+  test("an attachment whose bytes spell a second attachment's header is not that second attachment", async () => {
+    const one = { ...LEDGER, name: "a", bytes: new Uint8Array([1]) };
+    const two = { ...LEDGER, name: "b", bytes: new Uint8Array([2]) };
+    const forged = { ...one, bytes: new Uint8Array([1, ...encoder.encode("\nb\ntext/csv\n"), 2]) };
+    expect(await idOf([one, two])).not.toBe(await idOf([forged]));
+  });
+
+  test("an attachment present at all, against the same document carrying none", async () => {
+    expect(await idOf([LEDGER])).not.toBe(await idOf(undefined));
+  });
+
+  test("an empty attachment list, which is the same file as one carrying none", async () => {
+    expect(await idOf([])).toBe(await idOf(undefined));
+  });
+
+  test("the same attachments under either filter, which is still one identity", async () => {
+    expect(await idOf([LEDGER], true)).toBe(await idOf([LEDGER], false));
   });
 });
 

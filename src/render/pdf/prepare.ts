@@ -7,6 +7,7 @@ import { PDF_INK_NAMES } from "./palette";
 import { uncovered } from "./text";
 import type {
   Ink,
+  PdfAttachment,
   PdfChannel,
   PdfDocument,
   PdfDocumentFonts,
@@ -60,6 +61,24 @@ function unreachable(pages: readonly PdfPage[]): PdfRenderError | undefined {
   return undefined;
 }
 
+/** Every way a render's attachments fall short of an embedded file entry, said with its remedy. @internal */
+export function attachmentFaults(attachments: readonly PdfAttachment[]): readonly string[] {
+  return attachments.flatMap((attachment, index) => {
+    const faults: string[] = [];
+    const blank = attachment.name.trim() === "";
+    const named = blank ? `attachment ${index + 1}` : `\`${attachment.name}\``;
+    if (blank) faults.push(`${named} has no name — give it the file name a reader saves it under`);
+    else if (attachments.findIndex((other) => other.name === attachment.name) < index) {
+      faults.push(`${named} names a file another attachment already names — give each a unique name`);
+    }
+    if (attachment.mime.trim() === "") faults.push(`${named} has no MIME type — set mime, such as application/xml`);
+    if (!(attachment.modified instanceof Date) || Number.isNaN(attachment.modified.getTime())) {
+      faults.push(`${named} has no valid modification date — set modified to the date the file was last changed`);
+    }
+    return faults;
+  });
+}
+
 function unsettable(pages: readonly PdfPage[], fonts: PdfDocumentFonts | undefined): PdfRenderError | undefined {
   for (const page of pages) {
     for (const node of page.nodes) {
@@ -97,6 +116,8 @@ function overCeiling(maxPages: number): PdfRenderError {
 export function preparePdfRender(doc: PdfDocument, options: PdfRendererOptions): PdfResult<PdfPrepared> {
   const refused = unresolved(options);
   if (refused !== undefined) return err(refused);
+  const fault = attachmentFaults(options.attachments ?? [])[0];
+  if (fault !== undefined) return err({ kind: "attachment", message: fault });
   const paper = resolvePdfPage(options.page);
   const maxPages = options.maxPages ?? DEFAULT_PDF_MAX_PAGES;
   const { pages, over } = paginateWithin(

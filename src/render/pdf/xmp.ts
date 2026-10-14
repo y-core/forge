@@ -75,8 +75,6 @@ function namespaces(tagged: boolean, archival: PdfArchival | undefined): string 
   ].join(" ");
 }
 
-// Both halves are read out of the level, because the level is where both facts are: a part written
-// as a literal would keep saying 2 the day an `a-3b` is admitted, and say it silently.
 function archivalIdentification(archival: PdfArchival): string {
   const [, part = "", letter = ""] = /-(\d+)([a-z])$/.exec(archival) ?? [];
   return `\n      <pdfaid:part>${part}</pdfaid:part>\n      <pdfaid:conformance>${letter.toUpperCase()}</pdfaid:conformance>`;

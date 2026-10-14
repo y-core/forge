@@ -32,7 +32,12 @@ export function conformanceViolations(
     say("date", `PDF/A ${level} needs a creation date, and this engine never stamps one of its own — set info.created`);
   }
   if (needsTagging(level) && !pdfTaggingOn(options)) {
-    say("tagged", `PDF/A ${level} is the tagged level — set tagged: true, or ask for a-2b or a-2u instead`);
+    const part = level.slice(0, -1);
+    say("tagged", `PDF/A ${level} is the tagged level — set tagged: true, or ask for ${part}b or ${part}u instead`);
+  }
+
+  if ((options.attachments ?? []).length > 0 && level.startsWith("a-2")) {
+    say("attachment", `PDF/A ${level} permits no embedded file — ask for a-3${level.slice(-1)}, or drop the attachments`);
   }
 
   const faces = options.fonts ?? [];

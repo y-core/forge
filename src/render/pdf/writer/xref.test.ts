@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { inflate } from "../conform/parse.fixture";
+import { inflate } from "../attachments/parse";
 import { objectStreamBody, xrefRows } from "./xref";
 
 const XREF_ROW = 7;

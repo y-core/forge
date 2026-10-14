@@ -224,7 +224,7 @@ export function archivalFindings(file: PdfParsedFile): PdfConformFinding[] {
   const packet = decoder.decode([...file.objects.values()].find((object) => object.dict.includes("/Type /Metadata"))?.stream);
   const level = /<pdfaid:conformance>([BUA])<\/pdfaid:conformance>/.exec(packet)?.[1];
   if (level === undefined) return findings;
-  if (!packet.includes("<pdfaid:part>2</pdfaid:part>")) {
+  if (!/<pdfaid:part>[23]<\/pdfaid:part>/.test(packet)) {
     findings.push(finding("pdfa-declaration", "the packet names a conformance letter but no part, so it declares half a level"));
   }
   // Both standards in one packet needs the extension schema, which is the case this epic produces.

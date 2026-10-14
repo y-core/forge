@@ -2,9 +2,10 @@ import { embedFont } from "../embed";
 import { BOLD, REGULAR } from "../geometry";
 import { srgbProfile } from "../icc";
 import { imageObject } from "../image";
+import { pdfDate } from "../metadata";
 import { outlineItems } from "../outline";
-import { num } from "../text";
-import type { PdfPage } from "../types";
+import { num, pdfName, pdfTextString } from "../text";
+import type { PdfAttachment, PdfPage } from "../types";
 import { fontResource } from "./content-stream";
 import { deflate } from "./deflate";
 import { PDF_ENCODER, createObjectManager, objectBodyBytes, streamObject } from "./objects";
@@ -26,13 +27,42 @@ async function outputIntent(manager: PdfObjectManager, compact: boolean): Promis
   );
 }
 
+/** Each attachment as an embedded stream and its file specification, as the catalog entries naming them. @internal */
+async function attachedFiles(manager: PdfObjectManager, attachments: readonly PdfAttachment[], compact: boolean): Promise<string> {
+  if (attachments.length === 0) return "";
+  const specs: { name: string; key: string; id: number }[] = [];
+  for (const attachment of attachments) {
+    const bytes = compact ? await deflate(new Uint8Array(attachment.bytes)) : attachment.bytes;
+    const filter = compact ? " /Filter /FlateDecode" : "";
+    const params = `/Params << /ModDate ${pdfTextString(pdfDate(attachment.modified))} /Size ${attachment.bytes.length} >>`;
+    const stream = manager.allocate({
+      head: `<< /Type /EmbeddedFile /Subtype /${pdfName(attachment.mime)} ${params}${filter} /Length ${bytes.length} >>\nstream\n`,
+      bytes,
+      tail: "\nendstream",
+    });
+    const key = pdfTextString(attachment.name);
+    const described = attachment.description === undefined ? "" : ` /Desc ${pdfTextString(attachment.description)}`;
+    const id = manager.allocate(
+      `<< /Type /Filespec /F ${key} /UF ${key}${described} /AFRelationship /${attachment.relationship} ` +
+        `/EF << /F ${stream} 0 R /UF ${stream} 0 R >> >>`,
+    );
+    specs.push({ name: attachment.name, key, id });
+  }
+  // A name tree is searched by bisection over its keys' bytes, and a key written as UTF-16 opens with
+  // 0xFE — so it sorts after every ASCII key, and code-unit order matches byte order within each.
+  const wide = (key: string): number => Number(key.startsWith("<"));
+  const ordered = [...specs].sort((a, b) => wide(a.key) - wide(b.key) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+  const tree = ordered.map(({ key, id }) => `${key} ${id} 0 R`).join(" ");
+  return ` /Names << /EmbeddedFiles << /Names [${tree}] >> >> /AF [${specs.map(({ id }) => `${id} 0 R`).join(" ")}]`;
+}
+
 /** The display list as the bytes of a PDF file, with each stream filtered or left as it is. @internal */
 export async function writePdf(
   composition: PdfComposition,
   filtered?: readonly Uint8Array[],
   metadata?: PdfFileMetadata,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const { pages, paper, fonts, tagging, streams, resources, images, writesBase14, firstPage, structure, archival } = composition;
+  const { pages, paper, fonts, tagging, streams, resources, images, writesBase14, firstPage, structure, archival, attachments } = composition;
   const chunks: Uint8Array[] = [];
   let length = 0;
   const push = (text: string): void => {
@@ -140,10 +170,11 @@ export async function writePdf(
   // Written only where a level is asked for, the same posture as the structure tree: a document
   // declaring no archival level carries neither the intent nor the profile bytes behind it.
   const intent = archival === undefined ? "" : ` /OutputIntents [${await outputIntent(manager, compact)}]`;
+  const attached = await attachedFiles(manager, attachments ?? [], compact);
   // The outline is part of the standard metadata block rather than a switch of its own: a document
   // that declares no title and no identifier has nothing a reader would navigate it by either.
   const outlines = outlineFor(manager, metadata === undefined ? [] : outlineItems(structure), pageId);
-  manager.fill(catalogId, `<< /Type /Catalog /Pages 2 0 R${declared}${xmp}${intent}${outlines} >>`);
+  manager.fill(catalogId, `<< /Type /Catalog /Pages 2 0 R${declared}${xmp}${intent}${attached}${outlines} >>`);
 
   // Copied before a container is allocated, because `objects()` hands back the live list — and a
   // container taking its number after every other object is what keeps `pageId` predicting.

@@ -8,6 +8,7 @@ import { markedBracket, markedRuns, structureTreeOf } from "../structure";
 import { num, pdfString } from "../text";
 import type {
   PdfArchival,
+  PdfAttachment,
   PdfDocumentFonts,
   PdfImage,
   PdfNode,
@@ -100,6 +101,7 @@ export function composePdf(
   fonts?: PdfDocumentFonts,
   tagging?: PdfTagging,
   archival?: PdfArchival,
+  attachments?: readonly PdfAttachment[],
 ): PdfComposition {
   const faces = fonts ?? [];
   // The pair is resources, not metrics: a node with no `embedded` is the only thing that can select
@@ -130,5 +132,6 @@ export function composePdf(
     writesBase14,
     firstPage,
     ...(archival === undefined ? {} : { archival }),
+    ...(attachments === undefined ? {} : { attachments }),
   };
 }

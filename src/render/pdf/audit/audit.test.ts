@@ -8,9 +8,19 @@ import { Link } from "../link";
 import { resolvePdfPage } from "../page";
 import { paginateWithin } from "../paginate";
 import { createPdfPen } from "../path";
+import { attachmentFaults } from "../prepare";
 import { createPdfRenderer } from "../renderer";
 import { Table } from "../table";
-import type { PdfArtwork, PdfConformanceRule, PdfDocument, PdfElement, PdfEmbeddedFont, PdfRendererOptions } from "../types";
+import type {
+  PdfArchival,
+  PdfArtwork,
+  PdfAttachment,
+  PdfConformanceRule,
+  PdfDocument,
+  PdfElement,
+  PdfEmbeddedFont,
+  PdfRendererOptions,
+} from "../types";
 import { resolveTypesetting } from "../typesetting";
 import { auditPdf } from "./audit";
 import type { PdfAuditRule } from "./types";
@@ -296,5 +306,97 @@ describe("the audit reports exactly what the renderer would refuse", () => {
 
   test("says nothing about PDF/A where no level is asked for", () => {
     expect(auditPdf(DOC_WITH_LINK, { ...ARCHIVAL, archival: undefined }).map((finding) => finding.rule)).not.toContain("date");
+  });
+});
+
+describe("an attachment an archive cannot keep is a finding, each fault on its own", () => {
+  const INVOICE: PdfAttachment = {
+    name: "invoice.xml",
+    mime: "application/xml",
+    bytes: new TextEncoder().encode("<invoice/>"),
+    relationship: "Source",
+    modified: new Date(Date.UTC(2026, 8, 21)),
+  };
+
+  function auditWith(attachments: PdfAttachment[], level: PdfArchival | "none" = "a-3b") {
+    const archival = level === "none" ? undefined : level;
+    return auditPdf(DOC, { ...CONFORMANT, info: { ...CONFORMANT.info, created: new Date(Date.UTC(2026, 8, 21)) }, archival, attachments });
+  }
+
+  test("reports nothing about a complete attachment at every part 3 level", () => {
+    for (const level of ["a-3b", "a-3u", "a-3a"] as const) expect(auditWith([INVOICE], level)).toEqual([]);
+  });
+
+  test("reports an attachment at a part 2 level once, naming the part 3 level to ask for instead", () => {
+    const found = auditWith([INVOICE, { ...INVOICE, name: "ledger.csv" }], "a-2u");
+    expect(found.map((finding) => finding.rule)).toEqual(["attachment"]);
+    expect(found[0]?.message).toContain("a-3u");
+  });
+
+  test("reports an attachment with a blank name", () => {
+    expect(auditWith([{ ...INVOICE, name: "  " }]).map((finding) => finding.rule)).toEqual(["attachment"]);
+  });
+
+  test("reports each later use of a name an earlier attachment took, by that name", () => {
+    const found = auditWith([INVOICE, { ...INVOICE, mime: "text/plain" }, INVOICE]);
+    expect(found.map((finding) => finding.rule)).toEqual(["attachment", "attachment"]);
+    for (const finding of found) expect(finding.message).toContain("invoice.xml");
+  });
+
+  test("reports an attachment with no MIME type, by its name", () => {
+    const found = auditWith([{ ...INVOICE, mime: "" }]);
+    expect(found.map((finding) => finding.rule)).toEqual(["attachment"]);
+    expect(found[0]?.message).toContain("invoice.xml");
+  });
+
+  test("reports an attachment whose modification date is missing, invalid, or not a Date at all", () => {
+    for (const modified of [undefined, new Date(Number.NaN), "2026-09-21"]) {
+      const found = auditWith([{ ...INVOICE, modified: modified as unknown as Date }]);
+      expect(found.map((finding) => finding.rule)).toEqual(["attachment"]);
+      expect(found[0]?.message).toContain("invoice.xml");
+    }
+  });
+
+  test("lists every fault, where the render stops at the first", () => {
+    const found = auditWith([
+      { ...INVOICE, name: "" },
+      { ...INVOICE, mime: "", modified: new Date(Number.NaN) },
+    ]);
+    expect(found.map((finding) => finding.rule)).toEqual(["attachment", "attachment", "attachment"]);
+  });
+
+  const FAULTS: { fault: string; attachments: PdfAttachment[] }[] = [
+    { fault: "a blank name", attachments: [{ ...INVOICE, name: " " }] },
+    { fault: "a name an earlier attachment took", attachments: [INVOICE, { ...INVOICE, mime: "text/plain" }] },
+    { fault: "a blank MIME type", attachments: [{ ...INVOICE, mime: " " }] },
+    { fault: "an invalid modification date", attachments: [{ ...INVOICE, modified: new Date(Number.NaN) }] },
+  ];
+
+  for (const level of ["none", "a-3b"] as const) {
+    for (const { fault, attachments } of FAULTS) {
+      test(`reports ${fault} as the one finding the render refuses on, under ${level === "none" ? "no level" : level}`, () => {
+        const [refusal] = attachmentFaults(attachments);
+        expect(auditWith(attachments, level)).toEqual([{ rule: "attachment", message: refusal ?? "" }]);
+      });
+    }
+
+    test(`reports four faults across four attachments as exactly four findings, under ${level === "none" ? "no level" : level}`, () => {
+      const attachments = [
+        INVOICE,
+        { ...INVOICE, name: " " },
+        { ...INVOICE, mime: "text/plain" },
+        { ...INVOICE, name: "ledger.csv", mime: " " },
+        { ...INVOICE, name: "notes.txt", modified: new Date(Number.NaN) },
+      ];
+      const faults = attachmentFaults(attachments);
+      expect(faults).toHaveLength(4);
+      expect(auditWith(attachments, level)).toEqual(faults.map((message) => ({ rule: "attachment", message })));
+    });
+  }
+
+  test("reports a malformed attachment where no archival level is asked for, and only once under one", () => {
+    const broken = [{ ...INVOICE, name: "", mime: "" }];
+    expect(auditWith(broken, "none").map((finding) => finding.rule)).toEqual(["attachment", "attachment"]);
+    expect(auditWith(broken).map((finding) => finding.rule)).toEqual(["attachment", "attachment"]);
   });
 });

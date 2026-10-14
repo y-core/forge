@@ -1,4 +1,14 @@
-import type { PdfArchival, PdfDocumentFonts, PdfImage, PdfPage, PdfResolvedPage, PdfResources, PdfStructureNode, PdfTagging } from "../types";
+import type {
+  PdfArchival,
+  PdfAttachment,
+  PdfDocumentFonts,
+  PdfImage,
+  PdfPage,
+  PdfResolvedPage,
+  PdfResources,
+  PdfStructureNode,
+  PdfTagging,
+} from "../types";
 
 // The writer's own object shapes: numbering, containers and the cross-reference rows. Nothing
 // here describes a document — only the file one becomes, which is why they are not the parent's.
@@ -25,6 +35,7 @@ export interface PdfComposition {
   firstPage: number;
   /** The archival level this render declares, which the writer reads for its intent and groups. */
   archival?: PdfArchival | undefined;
+  attachments?: readonly PdfAttachment[] | undefined;
   /** The nested tree, built once here because the writer and the outline both read it. */
   structure: PdfStructureNode;
 }

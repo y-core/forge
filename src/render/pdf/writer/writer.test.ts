@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 
-import { inflate, parsePdfObjects } from "../conform/parse.fixture";
+import { inflate } from "../attachments/parse";
+import type { PdfParsedObject } from "../attachments/types";
+import { parsePdfObjects } from "../conform/parse.fixture";
+import type { PdfParsedFile } from "../conform/types.fixture";
 import { PAGE_HEIGHT } from "../geometry";
-import type { PdfEmbeddedFont, PdfImage, PdfLink, PdfNode, PdfPage } from "../types";
+import type { PdfAttachment, PdfEmbeddedFont, PdfImage, PdfLink, PdfNode, PdfPage } from "../types";
 import { composePdf } from "./content-stream";
 import { deflate } from "./deflate";
 import { writePdf } from "./writer";
@@ -319,5 +322,128 @@ describe("a filtered file carries a cross-reference stream rather than a classic
     expect(metadata?.container).toBeUndefined();
     expect(metadata?.dict).not.toContain("/Filter");
     expect(decoder.decode(metadata?.stream)).toBe("<?xpacket?>");
+  });
+});
+
+const encoder = new TextEncoder();
+
+const INVOICE: PdfAttachment = {
+  name: "zeta.xml",
+  mime: "application/xml",
+  bytes: encoder.encode("<note>café</note>"),
+  relationship: "Source",
+  description: "The invoice as data",
+  modified: new Date(Date.UTC(2026, 8, 21, 10, 30, 5)),
+};
+const LEDGER: PdfAttachment = {
+  name: "Alpha.csv",
+  mime: "text/csv",
+  bytes: encoder.encode("account,amount\n4100,120.00\n"),
+  relationship: "Data",
+  modified: new Date(Date.UTC(2026, 8, 22)),
+};
+
+const attaching = (attachments: PdfAttachment[]) => composePdf([pageOf([])], undefined, undefined, undefined, undefined, attachments);
+const both = attaching([INVOICE, LEDGER]);
+const loose = await parsePdfObjects(await writePdf(both));
+const packed = await parsePdfObjects(await writePdf(both, await Promise.all(both.streams.map(deflate))));
+
+function objectsOfType(file: PdfParsedFile, type: string): PdfParsedObject[] {
+  return [...file.objects.values()].filter((object) => object.dict.includes(`/Type /${type} `));
+}
+
+function filespecNamed(file: PdfParsedFile, name: string): PdfParsedObject | undefined {
+  return objectsOfType(file, "Filespec").find((object) => object.dict.includes(`/F (${name})`));
+}
+
+function embeddedFileOf(file: PdfParsedFile, spec: PdfParsedObject | undefined): PdfParsedObject | undefined {
+  return file.objects.get(Number(/\/EF << \/F (\d+) 0 R/.exec(spec?.dict ?? "")?.[1]));
+}
+
+function nameTreeOf(file: PdfParsedFile): { key: string; id: number }[] {
+  const tree = /\/EmbeddedFiles << \/Names \[([^\]]*)\] >>/.exec(objectsOfType(file, "Catalog")[0]?.dict ?? "")?.[1] ?? "";
+  return [...tree.matchAll(/(\([^)]*\)|<[\dA-F]+>) (\d+) 0 R/g)].map((found) => ({ key: found[1] ?? "", id: Number(found[2]) }));
+}
+
+function associatedFilesOf(file: PdfParsedFile): number[] {
+  const listed = /\/AF \[([^\]]*)\]/.exec(objectsOfType(file, "Catalog")[0]?.dict ?? "")?.[1] ?? "";
+  return [...listed.matchAll(/(\d+) 0 R/g)].map((found) => Number(found[1]));
+}
+
+function nameValue(encoded: string): string {
+  return encoded.replace(/#([\da-f]{2})/gi, (_escape, code: string) => String.fromCharCode(Number.parseInt(code, 16)));
+}
+
+describe("an attachment is an embedded stream behind a file specification the catalog names", () => {
+  test("writes one embedded stream and one file specification per attachment, compressed or not", () => {
+    for (const file of [loose, packed]) {
+      expect(objectsOfType(file, "EmbeddedFile")).toHaveLength(2);
+      expect(objectsOfType(file, "Filespec")).toHaveLength(2);
+    }
+  });
+
+  test("names the file twice, says how it stands to the document, and points both names at one stream", () => {
+    const spec = filespecNamed(loose, "zeta.xml")?.dict ?? "";
+    expect(/\/UF (\([^)]*\))/.exec(spec)?.[1]).toBe("(zeta.xml)");
+    expect(/\/AFRelationship \/(\w+)/.exec(spec)?.[1]).toBe("Source");
+    expect(/\/AFRelationship \/(\w+)/.exec(filespecNamed(loose, "Alpha.csv")?.dict ?? "")?.[1]).toBe("Data");
+    const [, byName, unicode] = /\/EF << \/F (\d+) 0 R \/UF (\d+) 0 R >>/.exec(spec) ?? [];
+    expect(byName).toBe(unicode ?? "");
+    expect(embeddedFileOf(loose, filespecNamed(loose, "zeta.xml"))?.dict).toStartWith("<< /Type /EmbeddedFile ");
+  });
+
+  test("describes a file only where the attachment carries a description", () => {
+    expect(/\/Desc (\([^)]*\))/.exec(filespecNamed(loose, "zeta.xml")?.dict ?? "")?.[1]).toBe("(The invoice as data)");
+    expect(filespecNamed(loose, "Alpha.csv")?.dict).not.toContain("/Desc");
+  });
+
+  test("declares the MIME type as the stream's subtype, and the file's byte size and modification date", () => {
+    const invoice = embeddedFileOf(loose, filespecNamed(loose, "zeta.xml"))?.dict ?? "";
+    expect(nameValue(/\/Subtype \/(\S+)/.exec(invoice)?.[1] ?? "")).toBe("application/xml");
+    expect(/\/Params << (.*?) >>/.exec(invoice)?.[1]).toBe("/ModDate (D:20260921103005Z) /Size 18");
+    const ledger = embeddedFileOf(loose, filespecNamed(loose, "Alpha.csv"))?.dict ?? "";
+    expect(nameValue(/\/Subtype \/(\S+)/.exec(ledger)?.[1] ?? "")).toBe("text/csv");
+  });
+
+  test("carries an uncompressed file's bytes verbatim, behind no filter", () => {
+    for (const attachment of [INVOICE, LEDGER]) {
+      const stream = embeddedFileOf(loose, filespecNamed(loose, attachment.name));
+      expect(stream?.dict).not.toContain("/Filter");
+      expect(stream?.stream).toEqual(new Uint8Array(attachment.bytes));
+    }
+  });
+
+  test("deflates a compressed file's bytes, which inflate back to the original while /Size keeps the original length", () => {
+    for (const attachment of [INVOICE, LEDGER]) {
+      const stream = embeddedFileOf(packed, filespecNamed(packed, attachment.name));
+      expect(stream?.dict).toContain("/Filter /FlateDecode");
+      expect(stream?.container).toBeUndefined();
+      expect(stream?.stream).toEqual(new Uint8Array(attachment.bytes));
+    }
+    expect(/\/Size (\d+)/.exec(embeddedFileOf(packed, filespecNamed(packed, "zeta.xml"))?.dict ?? "")?.[1]).toBe("18");
+  });
+
+  test("lists every file specification in the catalog's embedded-files name tree and its associated files", () => {
+    for (const file of [loose, packed]) {
+      const specs = objectsOfType(file, "Filespec").map((object) => object.id);
+      expect(
+        nameTreeOf(file)
+          .map(({ id }) => id)
+          .toSorted((a, b) => a - b),
+      ).toEqual(specs.toSorted((a, b) => a - b));
+      expect(associatedFilesOf(file).toSorted((a, b) => a - b)).toEqual(specs.toSorted((a, b) => a - b));
+      for (const { key, id } of nameTreeOf(file)) expect(file.objects.get(id)?.dict).toContain(`/F ${key}`);
+    }
+  });
+
+  test("orders the name tree by its keys' bytes, so a reader bisecting it finds every file", async () => {
+    expect(nameTreeOf(loose).map(({ key }) => key)).toEqual(["(Alpha.csv)", "(zeta.xml)"]);
+    const named = (name: string): PdfAttachment => ({ ...LEDGER, name });
+    const wide = await parsePdfObjects(await writePdf(attaching([named("a-é.txt"), named("b.txt"), named("B.txt")])));
+    expect(nameTreeOf(wide).map(({ key }) => key)).toEqual(["(B.txt)", "(b.txt)", "<FEFF0061002D00E9002E007400780074>"]);
+  });
+
+  test("writes no name tree and no associated files where nothing is attached", async () => {
+    expect(decoder.decode(await writePdf(attaching([])))).toContain("<< /Type /Catalog /Pages 2 0 R >>");
   });
 });

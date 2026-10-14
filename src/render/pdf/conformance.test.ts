@@ -7,7 +7,18 @@ import { createPdfImage } from "./image";
 import { jpegBytes } from "./image.fixture";
 import { Link } from "./link";
 import { paginate } from "./paginate";
-import type { PdfArchival, PdfConformanceRule, PdfContent, PdfDocument, PdfEmbeddedFont, PdfPage, PdfRendererOptions } from "./types";
+import { preparePdfRender } from "./prepare";
+import type {
+  PdfArchival,
+  PdfAttachment,
+  PdfConformanceRule,
+  PdfConformanceViolation,
+  PdfContent,
+  PdfDocument,
+  PdfEmbeddedFont,
+  PdfPage,
+  PdfRendererOptions,
+} from "./types";
 import { resolveTypesetting } from "./typesetting";
 
 const FACE: PdfEmbeddedFont = {
@@ -58,6 +69,23 @@ describe("the one table the audit reports from and the renderer refuses on", () 
     for (const level of ["a-2b", "a-2u"] as const) expect(rules(LINE, { ...CONFORMANT, tagged: false }, level)).not.toContain("tagged");
   });
 
+  test("refuses part 3's tagged level where tagging is off, and admits its other two", () => {
+    expect(rules(LINE, { ...CONFORMANT, tagged: false }, "a-3a")).toContain("tagged");
+    for (const level of ["a-3b", "a-3u"] as const) expect(rules(LINE, { ...CONFORMANT, tagged: false }, level)).not.toContain("tagged");
+  });
+
+  test("names the untagged levels of the part asked for as the remedy, never another part's", () => {
+    for (const [level, remedy, otherPart] of [
+      ["a-2a", "a-2b or a-2u", "a-3"],
+      ["a-3a", "a-3b or a-3u", "a-2"],
+    ] as const) {
+      const untagged = { ...CONFORMANT, tagged: false };
+      const message = conformanceViolations(pagesFor(LINE, untagged), untagged, level).find((found) => found.rule === "tagged")?.message ?? "";
+      expect(message).toContain(remedy);
+      expect(message).not.toContain(otherPart);
+    }
+  });
+
   test("refuses a face supplied with no bytes, which embeds nothing", () => {
     expect(rules(LINE, { ...CONFORMANT, fonts: [{ ...FACE, sfnt: new Uint8Array() }] })).toContain("font-supplied");
   });
@@ -91,5 +119,55 @@ describe("a colour space the sRGB output intent cannot explain", () => {
     expect(rgb.ok).toBe(true);
     if (!rgb.ok) return;
     expect(rules(Image({ image: rgb.data, width: 40 }))).not.toContain("colour-space");
+  });
+});
+
+const INVOICE: PdfAttachment = {
+  name: "invoice.xml",
+  mime: "application/xml",
+  bytes: new TextEncoder().encode("<invoice/>"),
+  relationship: "Source",
+  modified: new Date(Date.UTC(2026, 8, 21)),
+};
+
+function violationsWith(attachments: PdfAttachment[], level: PdfArchival = "a-3b"): readonly PdfConformanceViolation[] {
+  const options: PdfRendererOptions = { ...CONFORMANT, attachments };
+  return conformanceViolations(pagesFor(LINE, options), options, level);
+}
+
+function preparedWith(attachments: PdfAttachment[], archival: PdfArchival): ReturnType<typeof preparePdfRender> {
+  return preparePdfRender({ title: "Declaration", content: LINE }, { ...CONFORMANT, archival, attachments });
+}
+
+describe("an attachment is held to what an archive needs to keep it", () => {
+  test("admits a complete attachment at every part 3 level, in the table and in the render alike", () => {
+    for (const level of ["a-3b", "a-3u", "a-3a"] as const) {
+      expect(violationsWith([INVOICE], level)).toEqual([]);
+      expect(preparedWith([INVOICE], level).ok).toBe(true);
+    }
+  });
+
+  test("refuses an attachment at a part 2 level, in the table and in the render alike", () => {
+    const found = violationsWith([INVOICE], "a-2u");
+    expect(found.map((one) => one.rule)).toEqual(["attachment"]);
+    expect(found[0]?.message).toContain("a-3u");
+    const prepared = preparedWith([INVOICE], "a-2u");
+    expect(prepared.ok).toBe(false);
+    if (prepared.ok) return;
+    expect(prepared.error).toEqual({ kind: "pdfa", message: found[0]?.message ?? "" });
+  });
+
+  test("names each part 2 level's own part 3 twin as the remedy", () => {
+    for (const [level, twin] of [
+      ["a-2b", "a-3b"],
+      ["a-2u", "a-3u"],
+      ["a-2a", "a-3a"],
+    ] as const) {
+      expect(violationsWith([INVOICE], level).find((one) => one.rule === "attachment")?.message).toContain(twin);
+    }
+  });
+
+  test("reports a part 2 level once, however many files it is asked to carry", () => {
+    expect(violationsWith([INVOICE, { ...INVOICE, name: "ledger.csv" }], "a-2b").map((one) => one.rule)).toEqual(["attachment"]);
   });
 });

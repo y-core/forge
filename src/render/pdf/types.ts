@@ -71,12 +71,26 @@ export interface PdfField {
 }
 
 // A-1 is excluded: it is PDF 1.4 and forbids the object streams that make a tagged file affordable.
-// A-3 is excluded: it differs only in permitting an embedded file, and nothing here attaches one.
 /** The PDF/A part and conformance level a render declares. @public */
-export type PdfArchival = "a-2b" | "a-2u" | "a-2a";
+export type PdfArchival = "a-2b" | "a-2u" | "a-2a" | "a-3b" | "a-3u" | "a-3a";
 
 /** One thing PDF/A forbids that this engine can otherwise do. @public */
-export type PdfConformanceRule = "colour-space" | "date" | "font-embedded" | "font-supplied" | "link-scheme" | "metadata" | "tagged";
+export type PdfConformanceRule = "attachment" | "colour-space" | "date" | "font-embedded" | "font-supplied" | "link-scheme" | "metadata" | "tagged";
+
+/** How an attached file stands to the document, as PDF/A-3's `/AFRelationship` names it. @public */
+export type PdfAttachmentRelationship = "Source" | "Data" | "Alternative" | "Supplement" | "Unspecified";
+
+/** A file embedded in the document and associated with it as a whole. @public */
+export interface PdfAttachment {
+  /** The file name a reader saves it under; unique among a render's attachments. */
+  name: string;
+  /** The MIME type, written as the embedded stream's `/Subtype`. */
+  mime: string;
+  bytes: Uint8Array;
+  relationship: PdfAttachmentRelationship;
+  description?: string | undefined;
+  modified: Date;
+}
 
 /** One prohibition an option set breaks, named by its rule and said with its remedy. @public */
 export interface PdfConformanceViolation {
@@ -86,7 +100,19 @@ export interface PdfConformanceViolation {
 
 /** Why a document could not be rendered, as the one failure channel this namespace answers on. @public */
 export interface PdfRenderError {
-  kind: "max-pages" | "colour-name" | "colour-notation" | "compress" | "image" | "link" | "metadata" | "tagged" | "encoding" | "font" | "pdfa";
+  kind:
+    | "max-pages"
+    | "colour-name"
+    | "colour-notation"
+    | "compress"
+    | "image"
+    | "link"
+    | "metadata"
+    | "tagged"
+    | "encoding"
+    | "font"
+    | "pdfa"
+    | "attachment";
   message: string;
 }
 
@@ -745,6 +771,8 @@ export interface PdfRendererOptions {
   info?: PdfInfo | undefined;
   /** The archival level a render declares; a document asking for none pays nothing for it. */
   archival?: PdfArchival | undefined;
+  /** Files embedded in the document, which an archival render admits only at a part 3 level. */
+  attachments?: readonly PdfAttachment[] | undefined;
 }
 
 /** What a document and a set of options settle to once the refusals are past. @internal */

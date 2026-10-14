@@ -1,10 +1,4 @@
-/** One object read back out of a file, with its dictionary text and the stream payload it declared. @internal */
-export interface PdfParsedObject {
-  id: number;
-  dict: string;
-  stream?: Uint8Array<ArrayBuffer>;
-  container?: number;
-}
+import type { PdfParsedObject } from "../attachments/types";
 
 /** A file resolved to the objects it carries, however its cross-reference chose to name them. @internal */
 export interface PdfParsedFile {

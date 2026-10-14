@@ -59,7 +59,7 @@ function hex(bytes: Uint8Array): string {
 }
 
 /** The file identifier, derived rather than random so two renders of one document are one file. @internal */
-export async function fileIdentifier(material: string): Promise<string> {
+export async function fileIdentifier(material: string | Uint8Array<ArrayBuffer>): Promise<string> {
   const digest = await sha256(material);
   // Both halves are equal because the second differs from the first only after an incremental
   // update, and this writer never produces one.

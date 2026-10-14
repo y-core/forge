@@ -28,6 +28,8 @@ export type {
   PdfArchival,
   PdfArtwork,
   PdfArtworkPath,
+  PdfAttachment,
+  PdfAttachmentRelationship,
   PdfBaseFace,
   PdfCell,
   PdfConformanceRule,

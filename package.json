@@ -219,6 +219,10 @@
       "types": "./src/render/pdf/mod.ts",
       "import": "./src/render/pdf/mod.ts"
     },
+    "./render/pdf/attachments": {
+      "types": "./src/render/pdf/attachments/mod.ts",
+      "import": "./src/render/pdf/attachments/mod.ts"
+    },
     "./render/pdf/audit": {
       "types": "./src/render/pdf/audit/mod.ts",
       "import": "./src/render/pdf/audit/mod.ts"

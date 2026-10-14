@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { inflate } from "../conform/parse.fixture";
+import { inflate } from "../attachments/parse";
 import { deflate } from "./deflate";
 import { PDF_ENCODER } from "./objects";
 

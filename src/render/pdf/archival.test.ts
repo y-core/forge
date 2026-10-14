@@ -63,29 +63,29 @@ describe("an archival render declares the one output intent PDF/A requires", () 
   });
 });
 
-describe("a page names the space it composites in, where it composites at all", () => {
-  const pen = createPdfPen().move(0, 0).line(40, 0).line(40, 20).close();
-  const shaded: PdfDocument = {
-    title: "Declaration",
-    content: [
-      Path({
-        commands: pen.commands(),
-        height: 20,
-        fill: {
-          kind: "axial",
-          from: [0, 0],
-          to: [40, 0],
-          stops: [
-            { at: 0, ink: [1, 0, 0] },
-            { at: 1, ink: [0, 0, 1] },
-          ],
-        },
-      }),
-    ],
-  };
+const PEN = createPdfPen().move(0, 0).line(40, 0).line(40, 20).close();
+const SHADED: PdfDocument = {
+  title: "Declaration",
+  content: [
+    Path({
+      commands: PEN.commands(),
+      height: 20,
+      fill: {
+        kind: "axial",
+        from: [0, 0],
+        to: [40, 0],
+        stops: [
+          { at: 0, ink: [1, 0, 0] },
+          { at: 1, ink: [0, 0, 1] },
+        ],
+      },
+    }),
+  ],
+};
 
+describe("a page names the space it composites in, where it composites at all", () => {
   test("declares the group on a page carrying a shading", async () => {
-    expect(await textOf(ARCHIVAL, shaded)).toContain("/Group << /S /Transparency /CS /DeviceRGB >>");
+    expect(await textOf(ARCHIVAL, SHADED)).toContain("/Group << /S /Transparency /CS /DeviceRGB >>");
   });
 
   test("leaves a page drawing nothing translucent as it was", async () => {
@@ -93,7 +93,7 @@ describe("a page names the space it composites in, where it composites at all", 
   });
 
   test("writes no group at all where no level is asked for", async () => {
-    expect(await textOf({ ...ARCHIVAL, archival: undefined }, shaded)).not.toContain("/Group");
+    expect(await textOf({ ...ARCHIVAL, archival: undefined }, SHADED)).not.toContain("/Group");
   });
 });
 
@@ -137,5 +137,40 @@ describe("the packet and the dictionary say the same thing", () => {
     expect(text).toContain("<pdfaid:conformance>U</pdfaid:conformance>");
     expect(text).toContain("<xmp:CreateDate>2026-09-21T00:00:00Z</xmp:CreateDate>");
     expect(await parsePdfText(new TextEncoder().encode(text) as Uint8Array<ArrayBuffer>)).toContain("/CreationDate (D:20260921000000Z)");
+  });
+});
+
+describe("a part 3 level renders as its part 2 twin does, save the part it declares", () => {
+  const LEVELS = [
+    ["a-3b", "B"],
+    ["a-3u", "U"],
+    ["a-3a", "A"],
+  ] as const;
+
+  test("declares part 3 and the conformance letter each level asked for", async () => {
+    for (const [level, letter] of LEVELS) {
+      const text = await textOf({ ...ARCHIVAL, archival: level, tagged: true });
+      expect(text).toContain("<pdfaid:part>3</pdfaid:part>");
+      expect(text).not.toContain("<pdfaid:part>2</pdfaid:part>");
+      expect(text).toContain(`<pdfaid:conformance>${letter}</pdfaid:conformance>`);
+    }
+  });
+
+  test("opens PDF 1.7, carries the one output intent, and groups a compositing page", async () => {
+    for (const [level] of LEVELS) {
+      const text = await textOf({ ...ARCHIVAL, archival: level, tagged: true }, SHADED);
+      expect(text.startsWith("%PDF-1.7\n")).toBe(true);
+      expect(text).toContain("/OutputIntents [");
+      expect([...text.matchAll(/\/Type \/OutputIntent/g)]).toHaveLength(1);
+      expect(text).toContain("/Group << /S /Transparency /CS /DeviceRGB >>");
+    }
+  });
+
+  test("refuses part 3's tagged level with tagging off", async () => {
+    const rendered = await createPdfRenderer({ ...ARCHIVAL, archival: "a-3a", tagged: false }).render(DOC);
+    expect(rendered.ok).toBe(false);
+    if (rendered.ok) return;
+    expect(rendered.error.kind).toBe("pdfa");
+    expect(rendered.error.message).toContain("tagged: true");
   });
 });

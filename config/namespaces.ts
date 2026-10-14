@@ -64,6 +64,9 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "render/htmx": { html: "value" },
   "render/jsx": { html: "value", http: "value" },
   "render/pdf": { "render/jsx": "value" },
+  // Type-only and one way: a read returns the engine's own attachment shape, and the engine never
+  // reaches back for the reader — so the `render/pdf` container stays acyclic.
+  "render/pdf/attachments": { "render/pdf": "type" },
   // One way: the audit reads the engine's types and its declared defaults, and the engine never
   // reaches back for it — which is what keeps the `render/pdf` container acyclic.
   "render/pdf/audit": { "render/pdf": "value" },

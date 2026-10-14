@@ -18,7 +18,21 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`PdfArchival` admits the PDF/A-3 levels `a-3b`, `a-3u` and `a-3a`** in `@y-core/forge/render/pdf`, for an archive that asks for part 3. A
+  part 3 render declares `pdfaid:part` 3, is refused and audited on the same rules as its part 2 level, and is valid with no file attached.
+
+- **`attachments` embeds files in a PDF as associated files** in `@y-core/forge/render/pdf`, each a `PdfAttachment` with a name, a MIME type, its
+  bytes, a `PdfAttachmentRelationship` and a modification date. An archival render admits them only at a part 3 level. A render at any level
+  refuses a missing name, MIME type or date, or a name used twice, on the new `attachment` error kind; `auditPdf` reports the same faults under
+  `attachment`. The `/ID` covers the attached files.
+
+- **`@y-core/forge/render/pdf/attachments` reads the files a PDF embeds** with `readPdfAttachments(bytes, limits)`, returning each as a
+  `PdfAttachment`. It runs on Web APIs alone, caps the input size, the object count, each stream's inflated size and the total it decodes,
+  stored streams included, under `PdfAttachmentLimits` — 6 MiB for each byte limit and 100,000 objects by default, sized for a Worker's
+  isolate — and returns every refusal as a failed `Result`. Entries naming one embedded stream share its bytes. It reads a PDF's attachments
+  only, never the rest of the file.
 
 ---
 

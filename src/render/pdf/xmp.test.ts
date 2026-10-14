@@ -47,6 +47,9 @@ describe("what an archival render declares beyond the tagged packet", () => {
       ["a-2b", "2", "B"],
       ["a-2u", "2", "U"],
       ["a-2a", "2", "A"],
+      ["a-3b", "3", "B"],
+      ["a-3u", "3", "U"],
+      ["a-3a", "3", "A"],
     ] as const) {
       const packet = xmpPacket(INFO, true, level);
       expect(packet).toContain(`<pdfaid:part>${part}</pdfaid:part>`);

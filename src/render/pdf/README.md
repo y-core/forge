@@ -592,21 +592,23 @@ createPdfRenderer({
 });
 ```
 
-The levels, each a superset of the one before: **`a-2b`** is visual reproducibility, **`a-2u`** adds the Unicode mapping every embedded face
-already carries, and **`a-2a`** adds the full tagging requirement and so needs `tagged: true`.
+Within a part, each level is a superset of the one before: **`b`** is visual reproducibility, **`u`** adds the Unicode mapping every embedded face
+already carries, and **`a`** adds the full tagging requirement and so needs `tagged: true`. **Ask for part 3 (`a-3b`, `a-3u`, `a-3a`) when the
+archive you deliver to names it.** It differs from part 2 only in permitting an embedded file, so a part 3 file with nothing attached is valid and
+renders exactly as its part 2 twin does, save the part it declares.
 
-**A-1 and A-3 are not admitted.** A-1 is a PDF 1.4 part and forbids both the cross-reference stream and the object streams that make a tagged file
-affordable, so admitting it would mean keeping a second, worse writer path for an obsolete part. A-3 differs from A-2 in exactly one respect — it
-permits an embedded file — and forge has no attachment facility, so it reopens as attachment work rather than as a question about levels.
+**A-1 is not admitted.** It is a PDF 1.4 part and forbids both the cross-reference stream and the object streams that make a tagged file
+affordable, so admitting it would mean keeping a second, worse writer path for an obsolete part.
 
 **The date is yours to supply, and that is not an oversight.** `/ID` is derived from the content so two renders of one document are the same file;
 a wall-clock date would destroy that. PDF/A requires a creation date, so a render asking for a level without `info.created` is **refused by name**
 rather than stamped with the moment it ran.
 
 **Every prohibition is refused before a byte is written**, on the `pdfa` error kind, with the remedy in the message: a run left in the base-14 pair,
-a face supplied without `sfnt`, `metadata` that writes no packet, a missing creation date, `a-2a` without tagging, a link scheme an archive cannot
-follow, and a CMYK image an sRGB intent cannot explain. **`auditPdf` reports every one of them from that same table before you render**, which is
-what a Worker can run; a prohibition the audit reports but the renderer does not refuse is a test failure rather than something to notice.
+a face supplied without `sfnt`, `metadata` that writes no packet, a missing creation date, `a-2a` or `a-3a` without tagging, a link scheme an
+archive cannot follow, a CMYK image an sRGB intent cannot explain, and an attachment at a part 2 level [below](#attaching-a-file). **`auditPdf`
+reports every one of them from that same table before you render**, which is what a Worker can run; a prohibition the audit reports but the
+renderer does not refuse is a test failure rather than something to notice.
 
 **What is held is forge's own rules, not the specifications.** Every claim in this section is pinned by a test reading the bytes that were actually
 written, but nothing checks the `pdfaid` and `pdfuaid` declarations against PDF/A and PDF/UA themselves. Run an external checker before you rely on
@@ -614,9 +616,87 @@ a file being conformant.
 
 ---
 
+## Attaching a file
+
+**`attachments` embeds files in the document**, each associated with the document as a whole — the XML an invoice was rendered from, say, or the
+spreadsheet behind a table. A reader lists them in its attachments pane and saves each under its `name`.
+
+```ts
+createPdfRenderer({
+  archival: "a-3b",
+  metadata: "standard",
+  fonts: [face],
+  defaultFont: { regular: "body", bold: "body" },
+  info: { title: "Invoice 2026-0412", created: new Date("2026-10-14T09:00:00Z") },
+  attachments: [
+    {
+      name: "invoice.xml",
+      mime: "application/xml",
+      bytes: xml,
+      relationship: "Source",
+      description: "The invoice as structured data",
+      modified: new Date("2026-10-14T08:55:00Z"),
+    },
+  ],
+});
+```
+
+**`relationship` says how the file stands to the document**: `Source` is what the document was made from, `Data` is what a table or chart in it
+draws, `Alternative` is the same content in another form, `Supplement` adds to it, and `Unspecified` is for none of these.
+
+**An archival render takes attachments only at a part 3 level.** PDF/A-2 forbids an embedded file, so `a-2b`, `a-2u` and `a-2a` refuse any
+attachment and name the part 3 level to ask for instead. A document asking for no level may attach files freely.
+
+**Every attachment needs a `name` no other attachment uses, a `mime` type and a valid `modified` date, at any level or none.** A render missing
+any of them is refused on the `attachment` error kind before a byte is written, and `auditPdf` reports every one of them under the `attachment`
+rule.
+
+**The `/ID` covers the attachments.** Renders of one document that differ only in an attached file's bytes, name or MIME type carry different
+identifiers.
+
+---
+
+## Reading a PDF's attachments
+
+`@y-core/forge/render/pdf/attachments` reads back the files a PDF embeds — the XML an invoice arrived with, say — from a file you did not
+necessarily write. It uses only Web APIs, so it runs in a Worker and in a browser alike.
+
+```ts
+import { readPdfAttachments } from "@y-core/forge/render/pdf/attachments";
+
+const read = await readPdfAttachments(bytes);
+if (!read.ok) return new Response(read.error.message, { status: 422 });
+const xml = read.data.find((file) => file.mime === "application/xml");
+```
+
+**Each file comes back as the `PdfAttachment` a render takes**, so a file read from one PDF can be attached to the next. Its `name` is the
+specification's `/UF` where it has one, its `bytes` are inflated, and a `relationship` the file does not declare reads as `Unspecified`.
+
+**The read is bounded, because the bytes are hostile until proved otherwise.** It decodes only the streams it reaches — object streams and the
+attached files, never a font or a page's content — and charges each to a total as well as to its own limit, a stored stream's bytes included. It
+reads each object once however many entries reach it, so **two entries naming one embedded stream share one `bytes` array**, charged once: a write
+through either is seen through both. Pass `limits` to tighten or widen any of them:
+
+| Limit | Default | Refuses |
+| --- | --- | --- |
+| `maxInputBytes` | 6 MiB | a larger file, before a byte of it is parsed |
+| `maxObjects` | 100,000 | a file carrying more objects, packed ones included |
+| `maxInflatedBytes` | 6 MiB | a stream inflating past it — decompression is cancelled there, never finished and then measured |
+| `maxTotalDecodedBytes` | 6 MiB | the streams read so far decoding past it together, stored or inflated, any inflation cancelled the same way |
+
+**The defaults are sized for a Worker's 128 MB isolate**, because a read holds several times its input at its peak. A browser reading larger
+files raises `maxInputBytes`, `maxInflatedBytes` and `maxTotalDecodedBytes` together, and should expect the same multiple of whatever it allows.
+
+**Every refusal is a failed `Result`, never a throw**: a limit passed, no `%PDF-` header, a stream whose `/Length` is not a direct integer or runs
+past the end of the file, an object stream listing its offsets out of order, a corrupt deflate payload, an encrypted file, an attachment with
+no `/ModDate` or encoded with anything but `/FlateDecode`, and a file with no `/EmbeddedFiles` name tree — so a PDF with nothing attached is a
+failure too, rather than an empty list.
+
+---
+
 ## What it is not
 
 Not a browser. There is no CSS engine and no HTML input — a document is composed from components, not from a stylesheet. Complex-script shaping,
-runtime SVG, AES encryption, signatures, reading an existing PDF and AcroForms are all out of scope.
+runtime SVG, AES encryption, signatures and AcroForms are all out of scope, and so is reading an existing PDF beyond its attachments.
 
 [ns-5j]: ../../../docs/NAMESPACES.md#5j-render--one-namespace-per-renderer

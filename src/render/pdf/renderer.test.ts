@@ -59,6 +59,39 @@ describe("createPdfRenderer", () => {
     }
   });
 
+  test("embeds an attachment where no archival level is asked for, declaring no PDF/A part", async () => {
+    const attachment = {
+      name: "notes.txt",
+      mime: "text/plain",
+      bytes: new TextEncoder().encode("Filed late."),
+      relationship: "Supplement" as const,
+      modified: new Date(Date.UTC(2026, 8, 21)),
+    };
+    const rendered = await createPdfRenderer({ compress: false, metadata: "standard", attachments: [attachment] }).render(documentOf(0));
+    expect(rendered.ok).toBe(true);
+    if (!rendered.ok) return;
+    const written = decoder.decode(rendered.data);
+    expect([...written.matchAll(/\/Type \/Filespec /g)]).toHaveLength(1);
+    expect(written).not.toContain("pdfaid:part");
+    expect(written).toContain("/AFRelationship /Supplement");
+    expect(written).toContain("Filed late.");
+  });
+
+  test("refuses an attachment with a blank MIME type on the attachment kind, where no archival level is asked for", async () => {
+    const attachment = {
+      name: "notes.txt",
+      mime: "",
+      bytes: new TextEncoder().encode("Filed late."),
+      relationship: "Supplement" as const,
+      modified: new Date(Date.UTC(2026, 8, 21)),
+    };
+    const rendered = await createPdfRenderer({ attachments: [attachment] }).render(documentOf(0));
+    expect(rendered.ok).toBe(false);
+    if (rendered.ok) return;
+    expect(rendered.error.kind).toBe("attachment");
+    expect(rendered.error.message).toContain("notes.txt");
+  });
+
   test("answers a Result rather than throwing, so a failure is data", async () => {
     const rendered = await createPdfRenderer().render(documentOf(0));
     expect(Object.hasOwn(rendered, "ok")).toBe(true);

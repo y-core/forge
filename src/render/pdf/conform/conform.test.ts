@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { auditPdf } from "../audit/audit";
 import { PageBreak, Text } from "../components";
 import { Field, Heading, OptionGroup, TickList } from "../form";
 import { Path } from "../graphics";
@@ -7,8 +8,9 @@ import { Link } from "../link";
 import { createPdfPen } from "../path";
 import { createPdfRenderer } from "../renderer";
 import { Table } from "../table";
-import type { PdfDocument, PdfElement, PdfEmbeddedFont, PdfRendererOptions } from "../types";
+import type { PdfAttachment, PdfDocument, PdfElement, PdfEmbeddedFont, PdfRendererOptions } from "../types";
 import { conformPdf } from "./conform.fixture";
+import { parsePdfObjects } from "./parse.fixture";
 
 const decoder = new TextDecoder("latin1");
 const pen = createPdfPen().move(0, 0).line(40, 0).line(40, 20).close();
@@ -184,15 +186,73 @@ const ARCHIVAL: PdfRendererOptions = {
   info: { title: "Declaration", created: new Date(Date.UTC(2026, 8, 21)) },
 };
 
+const ARCHIVAL_DOC: PdfDocument = { title: "Declaration", content: [Text({ children: "A line." })] };
+
 async function archival(options: PdfRendererOptions = ARCHIVAL): Promise<Uint8Array<ArrayBuffer>> {
-  const out = await createPdfRenderer(options).render({ title: "Declaration", content: [Text({ children: "A line." })] });
+  const out = await createPdfRenderer(options).render(ARCHIVAL_DOC);
   if (!out.ok) throw new Error(out.error.message);
   return out.data;
 }
 
 describe("a file declaring PDF/A is held to what that declaration promises", () => {
   test("an archival render reports no finding at any level admitted", async () => {
-    for (const level of ["a-2b", "a-2u", "a-2a"] as const) expect(await conformPdf(await archival({ ...ARCHIVAL, archival: level }))).toEqual([]);
+    for (const level of ["a-2b", "a-2u", "a-2a", "a-3b", "a-3u", "a-3a"] as const) {
+      expect(await conformPdf(await archival({ ...ARCHIVAL, archival: level }))).toEqual([]);
+    }
+  });
+
+  test("the packet declares the part of the level asked for, which the checker alone admits either way", async () => {
+    for (const [level, part] of [
+      ["a-2b", "2"],
+      ["a-2u", "2"],
+      ["a-2a", "2"],
+      ["a-3b", "3"],
+      ["a-3u", "3"],
+      ["a-3a", "3"],
+    ] as const) {
+      const declared = [...decoder.decode(await archival({ ...ARCHIVAL, archival: level })).matchAll(/<pdfaid:part>(\d+)<\/pdfaid:part>/g)];
+      expect(declared.map((found) => found[1])).toEqual([part]);
+    }
+  });
+
+  test("a part 3 file carrying no attachment conforms and passes the audit with nothing to report", async () => {
+    for (const level of ["a-3b", "a-3u", "a-3a"] as const) {
+      const options: PdfRendererOptions = { ...ARCHIVAL, archival: level, lang: "en" };
+      expect(auditPdf(ARCHIVAL_DOC, options)).toEqual([]);
+      expect(await conformPdf(await archival(options))).toEqual([]);
+    }
+  });
+
+  test("a part 3 file carrying attachments names each in the catalog, one file specification apiece, and still conforms", async () => {
+    const attachments: PdfAttachment[] = [
+      {
+        name: "invoice.xml",
+        mime: "application/xml",
+        bytes: new TextEncoder().encode("<invoice/>"),
+        relationship: "Source",
+        description: "The invoice as data",
+        modified: new Date(Date.UTC(2026, 8, 21)),
+      },
+      {
+        name: "ledger.csv",
+        mime: "text/csv",
+        bytes: new TextEncoder().encode("a,b\n"),
+        relationship: "Data",
+        modified: new Date(Date.UTC(2026, 8, 21)),
+      },
+    ];
+    for (const compress of [false, true]) {
+      for (const level of ["a-3b", "a-3u", "a-3a"] as const) {
+        const file = await archival({ ...ARCHIVAL, archival: level, compress, attachments });
+        const dicts = [...(await parsePdfObjects(file)).objects.values()].map((object) => object.dict);
+        const catalog = dicts.find((dict) => dict.includes("/Type /Catalog ")) ?? "";
+        expect(catalog).toContain("/Names << /EmbeddedFiles << /Names [");
+        expect(catalog).toContain(" /AF [");
+        expect(dicts.filter((dict) => dict.includes("/Type /Filespec "))).toHaveLength(2);
+        expect(dicts.filter((dict) => dict.includes("/Type /EmbeddedFile "))).toHaveLength(2);
+        expect(await conformPdf(file)).toEqual([]);
+      }
+    }
   });
 
   test("a file declaring no level is not held to PDF/A at all", async () => {
