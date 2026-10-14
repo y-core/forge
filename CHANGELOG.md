@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.1] — 2026-10-14
+
 ### Added
 
 - **`PdfArchival` admits the PDF/A-3 levels `a-3b`, `a-3u` and `a-3a`** in `@y-core/forge/render/pdf`, for an archive that asks for part 3. A
@@ -5714,6 +5720,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.1]: https://github.com/y-core/forge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/y-core/forge/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/y-core/forge/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/y-core/forge/compare/v0.4.2...v0.4.3
