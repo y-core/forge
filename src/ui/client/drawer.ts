@@ -1,35 +1,31 @@
 import { activeElement, contains, ownerDocument, ownerWindow } from "./dom";
 import type { NavDrawerOptions } from "./types";
 
-/** Below Tailwind's `md` breakpoint (`48rem`), the width the drawer's markup is written for. */
+// Below Tailwind's `md` breakpoint (`48rem`), the width the drawer's markup is written for.
 const DEFAULT_QUERY =
   "(max-width: 47.99rem)"; /* modern-css-allow: forge-ui-platform-container-query — this arms a focus trap and a scroll lock, which are behaviour rather than style, and `@container` can only drive style; the decision is a page-chrome one taken against the viewport by design. */
 
-/** The panel inside the disclosure: its first element child that is not the backdrop. */
 const DEFAULT_PANEL_SELECTOR = ":scope > div:not([data-slot~='navbar-backdrop'])";
 
-/** A surface open inside the panel that the platform closes on Escape, after `keydown` is dispatched, so it is still open here. */
+// The platform closes these on Escape after `keydown` is dispatched, so one is still open when the handler runs.
 const OPEN_SURFACE = ":popover-open,dialog:modal";
 
-/** The trap's own candidate list: the ordinary interactive elements and nothing else. */
 const FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
 
 const mountedDrawers = new WeakMap<Element, () => void>();
 
-/** Whether a surface open inside the panel takes the Escape: the reflected `popover` normalises case and an invalid value to `manual`, which never light-dismisses. */
+// The reflected `popover` normalises case and an invalid value to `manual`, which never light-dismisses.
 function ownsEscape(panel: HTMLElement | null): boolean {
   return panel !== null && [...panel.querySelectorAll<HTMLElement>(OPEN_SURFACE)].some((surface) => surface.popover !== "manual");
 }
 
-/** The longest `duration + delay` a computed style's transition lists name, in milliseconds. */
 function transitionSpan(style: CSSStyleDeclaration): number {
   const longest = (list: string) =>
     Math.max(0, ...list.split(",").map((time) => (Number.parseFloat(time) || 0) * (time.trim().endsWith("ms") ? 1 : 1000)));
   return longest(style.transitionDuration) + longest(style.transitionDelay);
 }
 
-/** The page's own `overflow`, saved once for a document and restored when the last drawer lets go. */
 interface ScrollLock {
   saved: string;
   holders: number;
@@ -37,7 +33,6 @@ interface ScrollLock {
 
 const scrollLocks = new WeakMap<Document, ScrollLock>();
 
-/** Takes a share of the document's scroll lock, saving the page's own `overflow` on the first hold. */
 function acquireScrollLock(doc: Document): void {
   const existing = scrollLocks.get(doc);
   if (existing) {
@@ -50,7 +45,6 @@ function acquireScrollLock(doc: Document): void {
   doc.documentElement.style.setProperty("overflow", "hidden");
 }
 
-/** Drops one share; the page's own `overflow` returns only once no drawer holds the lock. */
 function releaseScrollLock(doc: Document): void {
   const lock = scrollLocks.get(doc);
   if (!lock) return;
@@ -77,8 +71,6 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   if (existing) return existing;
 
   const win = ownerWindow(el);
-  // Environmental, so it degrades: the disclosure keeps its native open/close, without the modal
-  // behaviour a drawer layers on top.
   if (typeof win.matchMedia !== "function") {
     console.warn("[nav-drawer] matchMedia is unavailable in this realm; the disclosure will not behave as a drawer");
     return noop;
@@ -93,7 +85,6 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   const summary = el.querySelector<HTMLElement>("summary");
   const panel = el.querySelector<HTMLElement>(options.panelSelector ?? DEFAULT_PANEL_SELECTOR);
 
-  /** The drawer is modal exactly while it is both narrow enough to overlay and actually disclosed. */
   const isActive = () => query.matches && el.open;
 
   const focusables = (): HTMLElement[] =>
@@ -103,8 +94,6 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   // alone leaves it outside the cycle — a keyboard trap under WCAG 2.1.2.
   const trapped = (): HTMLElement[] => (summary === null ? focusables() : [summary, ...focusables()]);
 
-  // Per mount, so this drawer's own lock/unlock stay idempotent and `dispose` releases exactly its
-  // own hold; the saved value itself belongs to the document, which is shared.
   let held = false;
 
   const lock = () => {
@@ -123,7 +112,6 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   // without `inert` a reader swipes straight past the last link into the page under the backdrop.
   let inerted: HTMLElement[] = [];
 
-  /** Makes everything outside the disclosure inert, remembering only what this drawer itself marked. */
   const isolate = () => {
     if (inerted.length > 0) return;
     let node: HTMLElement = el;
@@ -183,8 +171,6 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     }
     unlock();
     release();
-    // Only when focus is still inside the panel: a close the reader triggered from somewhere else on
-    // the page must not yank their focus back to the bar.
     if (contains(panel, activeElement(el))) summary?.focus();
   };
 
@@ -214,18 +200,18 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     first.focus();
   };
 
-  el.addEventListener("toggle", applyState);
-  query.addEventListener("change", applyState);
-  doc.addEventListener("keydown", onKeydown);
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  el.addEventListener("toggle", applyState, { signal });
+  query.addEventListener("change", applyState, { signal });
+  doc.addEventListener("keydown", onKeydown, { signal });
   if (isActive()) {
     lock();
     isolate();
   }
 
   const dispose = () => {
-    query.removeEventListener("change", applyState);
-    el.removeEventListener("toggle", applyState);
-    doc.removeEventListener("keydown", onKeydown);
+    lifetime.abort();
     cancelPendingFocus();
     unlock();
     release();

@@ -149,6 +149,7 @@ The primitive to reach for follows from what you intend to do with the outcome:
 | --- | --- |
 | Run a tool, let its output reach the terminal, and abort the script on failure | `run(cmd, args, { cwd? })` |
 | Run a tool, keep its output, and report the failure rather than abort | `capture(cmd, args, { cwd? })` |
+| Run a tool and read stdout and stderr separately, e.g. to parse JSON from stdout | `captureStreams(cmd, args, { cwd?, env? })` |
 | Assert several tools up front, each with its own install hint | `requireTools({ cmd: hint })` |
 | Ask whether an executable is on `PATH` | `hasTool(cmd)` |
 | Ask whether the thing a tool needs is actually there | `probeOk(cmd, args)` |
@@ -161,6 +162,10 @@ if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n")
 
 `capture` interleaves both streams, so `output` matches what `cmd > log 2>&1` would have written. A spawn failure appends its own error message to
 `output` rather than leaving you an empty capture, and `stdin` is ignored — a captured process never blocks waiting on a terminal.
+
+`run`, `capture` and `captureStreams` take `timeoutMs`. When it is set, the child is killed with `SIGKILL` at the deadline and reported as a
+non-zero exit. Without it, no deadline applies, because gate steps legitimately run long. `captureStreams` also reports `exited: false` for a
+child that was killed or never started, so a caller that reads a specific exit code as an answer does not mistake one for it.
 
 **Probe for the thing, not for the CLI that uses it.** `hasTool` answers `<cmd> --version`, which passes vacuously when the CLI is installed but the
 browser, the service or the credential it needs is not. That case wants a command of its own, and `probeOk` is what runs one:

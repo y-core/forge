@@ -1,4 +1,5 @@
 import type { KeyRing } from "../../crypto/keyring/types";
+import type { Logger } from "../../logging/types";
 import type { Result } from "../../result/types";
 import type { AuthStoreError } from "../errors";
 import type { AuthFactorReason } from "../factors/types";
@@ -46,6 +47,7 @@ export interface AuthEmailChangeOptions {
   nonces: NonceStore;
   notifier: AuthNotifier;
   defer: AuthDeferral;
+  logger?: Logger;
   /** The link a confirmation mail carries, given the token that authorises the change. */
   confirmUrl: (token: string) => string;
   ttlMs?: number;
@@ -70,8 +72,6 @@ export interface AuthSignin {
   readonly resolution: AuthFactorResolution;
 }
 
-// A decoy holding no store is a latency oracle: the unknown-address branch has to spend the
-// statements the known one spends, which are the emailed-code factor's stores.
 /** The stores an unknown address is answered with, so that branch spends what a known one spends. @public */
 export interface AuthDecoyStores {
   keys: KeyRing;
@@ -88,6 +88,7 @@ export interface AuthSigninOptions {
   nonces: NonceStore;
   factors: AuthFactorRegistry;
   defer: AuthDeferral;
+  logger?: Logger;
 }
 
 /** Signs a visitor in through the registry's primary factor, then applies the second-factor policy. @public */
@@ -103,6 +104,7 @@ export interface AuthSignupOptions {
   users: UserStore;
   factors: AuthFactorRegistry;
   defer: AuthDeferral;
+  logger?: Logger;
 }
 
 /** Starts an account from an address, telling a registered address and a new one apart nowhere the caller can see. @public */

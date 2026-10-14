@@ -22,9 +22,6 @@ function recordingNotifier(): AuthNotifier & { sent: AuthMessage[] } {
   return { sent, send: (message) => Promise.resolve(sent.push(message)).then(() => ({ ok: true as const, data: undefined })) };
 }
 
-// The contract as the adapter's statements answer it: a store that resolved a promise mid-decision
-// would let two callers past the same count, which is the thing under test here.
-/** A nonce store with the one property that matters here: the first `markConsumed` wins. */
 function memoryNonces(): NonceStore {
   const seen = new Set<string>();
   return {
@@ -76,7 +73,6 @@ async function harness(overrides: Partial<Parameters<typeof createEmailOtpFactor
   return { factor, keys, state, nonces, notifier };
 }
 
-/** The code the notifier was handed — the only place it exists in the clear. */
 function lastCode(notifier: { sent: AuthMessage[] }): string {
   const message = notifier.sent.at(-1);
   if (!message?.code) throw new Error("no code was sent");
@@ -151,19 +147,41 @@ describe("createEmailOtpFactor — issuing", () => {
     expect((await factor.createChallenge(other, NOW)).ok).toBe(true);
   });
 
-  // The cooldown is claimed before the mail, so what is bounded is what is *sent*; a failed send
-  // that left the claim standing would hold the identity to a code nobody could read.
   it("gives the cooldown back when delivery fails, so a second issue is not refused as too-soon", async () => {
     const failing: AuthNotifier = { send: () => Promise.resolve({ ok: false, error: new AuthStoreError("unavailable", "notify.send") }) };
     const { factor, state } = await harness({ notifier: failing, cooldownMs: COOLDOWN_MS });
     expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "unavailable" });
-    // The row is gone, not merely stale: an undeliverable code must not be answerable either.
     expect(await state.read(USER_ID, NOW)).toEqual({ ok: true, data: null });
     expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "unavailable" });
   });
 
-  // `discard` names the token; `clear` is an unconditional delete. Rolling back with `clear` would
-  // wipe a second issue that raced this one and *did* reach the address, so the choice is the point.
+  it("hands the notifier a live abort signal with the code", async () => {
+    const signals: AbortSignal[] = [];
+    const notifier: AuthNotifier = {
+      send: (_message, signal) => {
+        signals.push(signal);
+        return Promise.resolve(ok());
+      },
+    };
+    const { factor } = await harness({ notifier });
+    expect((await factor.createChallenge(USER_ID, NOW)).ok).toBe(true);
+    expect(signals.map((signal) => [signal instanceof AbortSignal, signal.aborted])).toEqual([[true, false]]);
+  });
+
+  it("answers unavailable and gives the cooldown back when the notifier rejects", async () => {
+    let sends = 0;
+    const flaky: AuthNotifier = {
+      send: () => {
+        sends += 1;
+        return sends === 1 ? Promise.reject(new Error("SMTP relay timed out")) : Promise.resolve(ok());
+      },
+    };
+    const { factor, state } = await harness({ notifier: flaky, cooldownMs: COOLDOWN_MS });
+    expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "unavailable" });
+    expect(await state.read(USER_ID, NOW)).toEqual({ ok: true, data: null });
+    expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: true, data: { kind: "email-otp", expiresAt: NOW + TTL_MS } });
+  });
+
   it("rolls the failed issue back by its own token, never with an unconditional clear", async () => {
     const inner = memoryOtpState();
     const calls: string[] = [];
@@ -271,7 +289,6 @@ describe("createEmailOtpFactor — verifying", () => {
     await factor.verifyChallenge(USER_ID, wrong, NOW);
     expect(await factor.verifyChallenge(USER_ID, lastCode(notifier), NOW)).toMatchObject({ ok: true });
     expect(await state.read(USER_ID, NOW)).toEqual({ ok: true, data: null });
-    // The budget is whole again: a second code issues, and gets its full three guesses.
     expect((await factor.createChallenge(USER_ID, NOW)).ok).toBe(true);
     const second = lastCode(notifier);
     const otherWrong = second === "000000" ? "111111" : "000000";
@@ -314,8 +331,6 @@ describe("createEmailOtpFactor — store failures", () => {
     expect(notifier.sent).toEqual([]);
   });
 
-  // The refused guess is classified by a read, so a read that fails must not name a reason it has
-  // not established — an expired code and a spent budget are different answers to the caller.
   it("reports a failure to classify a refused guess as unavailable, not as expired", async () => {
     const inner = memoryOtpState();
     const state: OtpStateStore = {
@@ -424,8 +439,6 @@ describe("createEmailOtpFactor — the ranges it holds at construction", () => {
   });
 });
 
-// The comparison is the one guard here that `===` would satisfy too, so the outcome cannot witness
-// it. Installing a real constant-time primitive and counting the platform's own calls can.
 describe("createEmailOtpFactor — the code comparison is constant-time", () => {
   let handle: TimingProbeHandle;
 

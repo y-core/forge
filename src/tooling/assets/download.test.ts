@@ -228,4 +228,81 @@ describe("fetchURL()", () => {
       undeclared.mockRestore();
     }
   });
+
+  it("applies a size cap when the caller passes no maxBytes", async () => {
+    dest = join(tmpdir(), `forge-assets-defaultcap-${Date.now()}`);
+    const spy = spyOn(globalThis, "fetch").mockResolvedValue(new Response("x", { status: 200, headers: { "content-length": String(2 ** 30) } }));
+    try {
+      await expect(fetchURL("https://cdn.example.com/huge", dest, { sha256: pin("x") })).rejects.toThrow(
+        /^\[forge-assets\] https:\/\/cdn\.example\.com\/huge: declares 1073741824 bytes, over the \d+-byte cap$/,
+      );
+      expect(await Bun.file(dest).exists()).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  /** Settles with `answer` after `ms`, or rejects with the signal's reason the moment it aborts. */
+  function settleAfter(answer: Response | null, ms: number, signal: AbortSignal | null | undefined): Promise<Response> {
+    return new Promise((resolve, reject) => {
+      const timer = answer === null ? undefined : setTimeout(() => resolve(answer), ms);
+      signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      });
+    });
+  }
+
+  it("rejects a fetch that never answers once the deadline passes, writing nothing", async () => {
+    dest = join(tmpdir(), `forge-assets-hang-${Date.now()}`);
+    const spy = spyOn(globalThis, "fetch").mockImplementation((_input, init) => settleAfter(null, 0, init?.signal));
+    try {
+      await expect(fetchURL("https://cdn.example.com/slow.woff2", dest, { sha256: pin("x"), timeoutMs: 5 })).rejects.toThrow(
+        "[forge-assets] https://cdn.example.com/slow.woff2: timed out after 5ms",
+      );
+      expect(await Bun.file(dest).exists()).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("rejects a body that stalls after the headers once the deadline passes", async () => {
+    dest = join(tmpdir(), `forge-assets-stall-${Date.now()}`);
+    const spy = spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason));
+        },
+      });
+      return new Response(body, { status: 200 });
+    });
+    try {
+      await expect(fetchURL("https://cdn.example.com/stall.woff2", dest, { sha256: pin("x"), timeoutMs: 5 })).rejects.toThrow(
+        "[forge-assets] https://cdn.example.com/stall.woff2: timed out after 5ms",
+      );
+      expect(await Bun.file(dest).exists()).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("holds one deadline across every redirect hop, so a chain of hops each inside it still times out", async () => {
+    dest = join(tmpdir(), `forge-assets-slowchain-${Date.now()}`);
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const spy = spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+      signals.push(init?.signal);
+      const answer = String(input).endsWith("/start") ? redirect("https://cdn.example.com/end") : new Response("trusted", { status: 200 });
+      return settleAfter(answer, 100, init?.signal);
+    });
+    try {
+      await expect(fetchURL("https://cdn.example.com/start", dest, { sha256: pin("trusted"), timeoutMs: 150 })).rejects.toThrow(
+        "[forge-assets] https://cdn.example.com/start: timed out after 150ms",
+      );
+      expect(signals.length).toBe(2);
+      expect(signals[1]).toBe(signals[0]);
+      expect(await Bun.file(dest).exists()).toBe(false);
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });

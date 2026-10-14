@@ -12,36 +12,25 @@ const PURGE_BATCH = 20;
 const PURGE_LIST_LIMIT = 1000;
 const DEFAULT_LIMIT = 50;
 
-// Width 15 covers every instant to 33658-09-27, so the inverted value never changes length and
-// lexicographic order over it equals numeric order over the instant — newest first.
 const INVERSION_BASE = 999_999_999_999_999;
 const INVERTED_WIDTH = 15;
 
-/** Renders `iso` as the inverted, fixed-width key segment that sorts newest-first. */
 function invertTimestamp(iso: string): string {
   const parsed = Date.parse(iso);
-  // A NaN timestamp lands with its neighbours rather than at an arbitrary end of the listing.
   const ms = Number.isNaN(parsed) ? Date.now() : parsed;
-  // Both clamps are load-bearing: an unclamped pre-1970 instant yields 16 digits, and
-  // "1000000000000000" < "999999999999999" would sort it above every real record.
   const bounded = Math.min(Math.max(ms, 0), INVERSION_BASE);
   return String(INVERSION_BASE - bounded).padStart(INVERTED_WIDTH, "0");
 }
 
-// The same walk redaction runs at dispatch, invoked again per KV write rather than folded into it:
-// `stack` is a named `SerializedError` field matched exactly, and stays out of persisted logs alone.
-/** Deep-clones `value` into a JSON-stable shape, marking cycles and optionally dropping `stack`. @internal */
 function toPersistable(value: unknown, keepStacks: boolean): unknown {
   return cloneLogValue(value, (key) => (keepStacks || key !== "stack" ? "keep" : "remove"));
 }
 
-// KV's own limits, not options: the metadata cap is a platform constant.
 const METADATA_BYTE_LIMIT = 1024;
 const MESSAGE_CODE_POINTS_MAX = 256;
 const PREFIX_CODE_POINTS_MAX = 128;
 const REQUEST_ID_CODE_POINTS_MAX = 64;
 
-/** Truncates by code point: `String.slice` would split a surrogate pair into a lone surrogate, which then serializes to six escaped bytes. */
 function truncateCodePoints(value: string, max: number): string {
   return [...value].slice(0, max).join("");
 }
@@ -50,7 +39,6 @@ function serializedBytes(metadata: KvLogMetadata): number {
   return new TextEncoder().encode(JSON.stringify(metadata)).length;
 }
 
-/** Largest code-point count for which `build` still fits the limit, found by binary search. */
 function largestFitting(build: (count: number) => KvLogMetadata, max: number): number {
   let low = 0;
   let high = max;
@@ -62,7 +50,6 @@ function largestFitting(build: (count: number) => KvLogMetadata, max: number): n
   return low;
 }
 
-/** Bounds the row-preview metadata to KV's 1024 serialized bytes, shrinking message, then prefix, then dropping requestId. */
 function boundMetadata(record: LogRecord): KvLogMetadata {
   const requestId = truncateCodePoints(record.data?.requestId != null ? String(record.data.requestId) : "", REQUEST_ID_CODE_POINTS_MAX);
 
@@ -85,7 +72,6 @@ function boundMetadata(record: LogRecord): KvLogMetadata {
   const shrunkPrefix = build(0, prefixCount, true);
   if (serializedBytes(shrunkPrefix) <= METADATA_BYTE_LIMIT) return shrunkPrefix;
 
-  // The floor is `{ level, timestamp }` — about 60 bytes, so the put can never be refused for size.
   return { level: record.level, timestamp: record.timestamp };
 }
 
@@ -116,10 +102,11 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         return putPromise;
       }
 
-      const purgePromise = purge(kv, listPrefix, maxLogs, highWater).catch(() => {});
+      const purgePromise = purge(kv, listPrefix, maxLogs, highWater);
       // `allSettled`, not `all`: `all` would settle on the put's rejection and let the isolate cancel the in-flight purge.
-      const [put] = await Promise.allSettled([putPromise, purgePromise]);
+      const [put, purged] = await Promise.allSettled([putPromise, purgePromise]);
       if (put.status === "rejected") throw put.reason;
+      if (purged.status === "rejected") throw purged.reason;
     },
 
     async read(query?: LogQuery): Promise<LogReadResult> {
@@ -130,7 +117,6 @@ export function kvLogChannel<NS extends KVNamespaceLike = KVNamespaceLike>(kv: N
         .filter((k) => k.metadata !== undefined && k.metadata !== null)
         .map((k) => ({
           key: k.name,
-          // The trust boundary: whatever storage returned is narrowed to a level here, once.
           level: parseLogLevel(k.metadata?.level, "info"),
           prefix: k.metadata?.prefix ?? "",
           message: k.metadata?.message ?? "",
@@ -175,10 +161,18 @@ async function purge(kv: KVNamespaceLike, listPrefix: string, maxLogs: number, h
   const deleteCount = result.keys.length - maxLogs;
   if (deleteCount <= 0) return;
 
-  // The head of an inverted-key listing is the newest record, so the tail is what is dropped.
   const toDelete = result.keys.slice(maxLogs);
+  const failed: { name: string; reason: unknown }[] = [];
   for (let i = 0; i < toDelete.length; i += PURGE_BATCH) {
     const batch = toDelete.slice(i, i + PURGE_BATCH);
-    await Promise.all(batch.map((k) => kv.delete(k.name)));
+    const settled = await Promise.allSettled(batch.map((k) => kv.delete(k.name)));
+    settled.forEach((outcome, j) => {
+      if (outcome.status === "rejected") failed.push({ name: batch[j]?.name ?? "", reason: outcome.reason });
+    });
   }
+  if (failed.length === 0) return;
+  throw new AggregateError(
+    failed.map((f) => f.reason),
+    `kvLogChannel: purge could not delete ${failed.map((f) => f.name).join(", ")}`,
+  );
 }

@@ -81,7 +81,6 @@ describe("hasHtmxSubmission", () => {
 });
 
 describe("restoreFocus", () => {
-  /** A focused field, a widget container, and the frame the widget renders into it. */
   const scene = () => {
     const { doc, el } = fakeTree();
     const field = el("INPUT");
@@ -147,8 +146,6 @@ describe("restoreFocus", () => {
 
   it("leaves focus alone when the field it came from is no longer connected", () => {
     const { doc, container, frame } = scene();
-    // Built outside the tree rather than removed from it: the fake reports connectedness from its
-    // parent and document, and `remove()` clears only the parent.
     const gone = new FakeElement("INPUT");
     frame.focus();
 
@@ -177,7 +174,6 @@ class FakeSubmitEvent extends FakeEvent {
   declare readonly submitter?: FakeElement | null;
 }
 
-/** The hidden input Cloudflare writes the token into, answering the compound selector the fake's `matches` cannot parse. */
 class FakeTokenInput extends FakeElement {
   override matches(selector: string): boolean {
     return selector === "input[name]" || super.matches(selector);
@@ -189,11 +185,10 @@ interface Scene {
   field: FakeElement;
   widget: FakeElement;
   calls: { executes: number; resets: number; params: Record<string, unknown> | null };
-  /** The control each replayed `submit` named, or `form` for a press with no submitter. */
   replayed: string[];
+  dispose: () => void;
 }
 
-/** A mounted controller over a form carrying `formAttrs`, with a descendant field that posts on its own. */
 function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<string, string> = {}): Scene {
   const doc = Object.assign(new FakeDocument(), { documentElement: { classList: { contains: () => false } } });
   const calls: Scene["calls"] = { executes: 0, resets: 0, params: null };
@@ -212,6 +207,7 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
       remove: () => {},
     },
     SubmitEvent: FakeSubmitEvent,
+    clearInterval: () => {},
   });
 
   const form = new FakeForm("FORM", formAttrs);
@@ -224,8 +220,8 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
   const replayed: string[] = [];
   form.addEventListener("submit", (event) => replayed.push((event as FakeSubmitEvent).submitter?.id || "form"));
 
-  mountTurnstile(form as unknown as HTMLElement);
-  return { form, field, widget, calls, replayed };
+  const dispose = mountTurnstile(form as unknown as HTMLElement);
+  return { form, field, widget, calls, replayed, dispose };
 }
 
 const finallyRequest = (scene: Scene, from: FakeElement, status?: number): { resets: number; value: string } => {
@@ -240,7 +236,6 @@ const configRequest = (scene: Scene, elt: FakeElement, submitter?: FakeElement):
   return { prevented: event.defaultPrevented, executes: scene.calls.executes };
 };
 
-/** What Cloudflare does when the deferred challenge passes: call the `callback` the render was given. */
 const completeChallenge = (scene: Scene): void => {
   const callback = scene.calls.params?.callback as (() => void) | undefined;
   callback?.();
@@ -283,7 +278,6 @@ describe("mountTurnstile — the reset is scoped to the element that issued the 
 describe("mountTurnstile — challenge='submit' holds the form's own press only", () => {
   const submitScene = () => mountedScene({ "hx-post": "/contact" }, { "data-challenge": "submit" });
 
-  /** A submit control the press can be attributed to, which is what the hold is keyed on. */
   const button = (scene: Scene, id: string) => {
     const control = new FakeElement("BUTTON", { id, type: "submit" });
     scene.form.append(control);
@@ -357,17 +351,81 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
   });
 });
 
+describe("mountTurnstile — after dispose", () => {
+  it("neither resets the widget nor clears the form when the form's request finishes", () => {
+    const scene = mountedScene({ "hx-post": "/contact" });
+    scene.field.value = "typed@example.com";
+    scene.dispose();
+
+    expect(finallyRequest(scene, scene.form, 200)).toEqual({ resets: 0, value: "typed@example.com" });
+  });
+});
+
+describe("mountTurnstile — the submitter is live when an abandonment is reported", () => {
+  it("un-busies the submitter before the abandonment reaches the form's listener", () => {
+    const scene = mountedScene({ "hx-post": "/contact" }, { "data-challenge": "submit" });
+    const pressed = new FakeElement("BUTTON", { id: "submit", type: "submit" });
+    scene.form.append(pressed);
+    const atDispatch: Array<{ disabled: boolean; busy: string | null }> = [];
+    scene.form.addEventListener(TURNSTILE_ABANDONED_EVENT, () => {
+      atDispatch.push({ disabled: pressed.disabled, busy: pressed.getAttribute("aria-busy") });
+    });
+
+    configRequest(scene, scene.form, pressed);
+    const whileHeld = { disabled: pressed.disabled, busy: pressed.getAttribute("aria-busy") };
+    const errored = scene.calls.params?.["error-callback"] as (code?: unknown) => void;
+    errored(300010);
+
+    expect({ whileHeld, atDispatch }).toEqual({ whileHeld: { disabled: true, busy: "true" }, atDispatch: [{ disabled: false, busy: null }] });
+    scene.dispose();
+  });
+});
+
 describe("mountTurnstile — explicit rendering", () => {
-  function injectedScene() {
+  function injectedScene(widgetAttrs: Record<string, string> = {}) {
     const head = new FakeElement("HEAD");
     const doc = Object.assign(new FakeDocument(), { head, documentElement: { classList: { contains: () => false } } });
     head.ownerDocument = doc;
     Object.assign(doc.defaultView, { turnstile: undefined, clearInterval: () => {} });
     const form = new FakeForm("FORM", { "hx-post": "/contact" });
     doc.body.append(form);
-    form.append(new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key" }));
+    form.append(new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key", ...widgetAttrs }));
     return { doc, head, form };
   }
+
+  const scriptListeners = (script: FakeElement | undefined) => ({
+    load: script?.listeners.get("load")?.length ?? 0,
+    error: script?.listeners.get("error")?.length ?? 0,
+  });
+
+  it("leaves no load or error listener on the injected script once disposed, and a late load renders nothing", () => {
+    const { doc, head, form } = injectedScene();
+    const renders: unknown[] = [];
+
+    const dispose = mountTurnstile(form as unknown as HTMLElement);
+    const script = head.children[0];
+    const mounted = scriptListeners(script);
+    dispose();
+    Object.assign(doc.defaultView, {
+      turnstile: { render: (el: unknown) => renders.push(el), execute: () => {}, reset: () => {}, remove: () => {} },
+    });
+    script?.dispatchEvent(new FakeEvent("load"));
+
+    expect({ mounted, disposed: scriptListeners(script), renders }).toEqual({
+      mounted: { load: 1, error: 1 },
+      disposed: { load: 0, error: 0 },
+      renders: [],
+    });
+  });
+
+  it("injects no script on a focus-in after dispose when the widget loads on focus", () => {
+    const { head, form } = injectedScene({ "data-load": "focus" });
+
+    mountTurnstile(form as unknown as HTMLElement)();
+    form.dispatchEvent(new FakeEvent("focusin"));
+
+    expect(head.children).toEqual([]);
+  });
 
   it("loads Cloudflare's script with render=explicit as its only query parameter", () => {
     const { head, form } = injectedScene();

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 
 import { Forge } from "../app/forge-app";
 import { devAllowance } from "../dev/allowance";
@@ -112,5 +112,79 @@ describe("rateLimit middleware", () => {
     );
     expect(res.status).toBe(429);
     expect(await res.json()).toEqual({ error: "rate limited" });
+  });
+});
+
+describe("rateLimit — a failing binding or key", () => {
+  let consoleLog: ReturnType<typeof spyOn<Console, "log">> | undefined;
+
+  afterEach(() => {
+    consoleLog?.mockRestore();
+    consoleLog = undefined;
+  });
+
+  function loggedLines(): Record<string, unknown>[] {
+    return (consoleLog?.mock.calls ?? []).map(([line]) => JSON.parse(String(line)) as Record<string, unknown>);
+  }
+
+  function countingApp(opts: Partial<Parameters<typeof rateLimit>[0]>) {
+    const app = new Forge<Env>();
+    const reached: string[] = [];
+    app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER, ...opts }));
+    mapHandler(app, "POST", "/test", () => {
+      reached.push("handler");
+      return new Response("ok");
+    });
+    return { app, reached };
+  }
+
+  const outage = new Error("rate limiter unreachable");
+  for (const { name, limit } of [
+    {
+      name: "throws",
+      limit: (): Promise<{ success: boolean }> => {
+        throw outage;
+      },
+    },
+    { name: "rejects", limit: (): Promise<{ success: boolean }> => Promise.reject(outage) },
+  ]) {
+    it(`refuses with 503 and logs an error when the binding's limit ${name}`, async () => {
+      consoleLog = spyOn(console, "log").mockImplementation(() => {});
+      const { app, reached } = countingApp({ key: () => "client-1" });
+      const res = await app.request("/test", { method: "POST" }, { LIMITER: { limit } });
+      expect(res.status).toBe(503);
+      expect(await res.text()).toBe("Service unavailable");
+      expect(reached).toEqual([]);
+      expect(loggedLines().map(({ timestamp: _timestamp, ...line }) => line)).toEqual([
+        {
+          level: "error",
+          prefix: "rate-limit",
+          message: "Rate limiter binding failed — refusing the request",
+          error: { type: "Error", detail: "rate limiter unreachable", stack: outage.stack },
+        },
+      ]);
+    });
+  }
+
+  it("logs a key-resolution failure with the error as a structured object", async () => {
+    consoleLog = spyOn(console, "log").mockImplementation(() => {});
+    const keyFailure = new Error("tenant header missing");
+    const { app, reached } = countingApp({
+      key: () => {
+        throw keyFailure;
+      },
+    });
+    const res = await app.request("/test", { method: "POST" }, { LIMITER: { limit: async () => ({ success: true }) } });
+    expect(res.status).toBe(503);
+    expect(await res.text()).toBe("Service unavailable");
+    expect(reached).toEqual([]);
+    expect(loggedLines().map(({ timestamp: _timestamp, ...line }) => line)).toEqual([
+      {
+        level: "warn",
+        prefix: "rate-limit",
+        message: "Rate limit key resolution failed — refusing the request",
+        error: { type: "Error", detail: "tenant header missing", stack: keyFailure.stack },
+      },
+    ]);
   });
 });

@@ -63,29 +63,23 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
     const next = (event as FocusEvent).relatedTarget as Node | null;
     if (next && list.contains(next as Node)) return;
     const tabs = tabsIn(list);
-    // Nothing requires a `Tabs` to render a selection, and under manual activation arrowing alone
-    // never makes one — so without both fallbacks the whole list leaves the tab sequence for good.
     const entry = tabs.find((tab) => tab.getAttribute("aria-selected") === "true") ?? tabs.find((tab) => !isDisabled(tab)) ?? tabs[0];
     for (const tab of tabs) tab.tabIndex = tab === entry ? 0 : -1;
   };
 
-  // Automatic activation rides `focusin`, which the arrow keys already produce, so the selection
-  // follows the roving focus without this controller knowing which key moved it.
   const activateOn = activation === "automatic" ? "focusin" : "click";
-  list.addEventListener(activateOn, onActivate);
-  list.addEventListener("click", onClick);
-  if (activation === "manual") list.addEventListener("keydown", onKeyDown);
-  list.addEventListener("focusout", onFocusOut);
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  list.addEventListener(activateOn, onActivate, { signal });
+  list.addEventListener("click", onClick, { signal });
+  if (activation === "manual") list.addEventListener("keydown", onKeyDown, { signal });
+  list.addEventListener("focusout", onFocusOut, { signal });
 
-  // Retires the `:target` fallback, which exists only for the no-script case.
   root.setAttribute(TABS_MOUNTED_ATTR, "");
 
   return () => {
+    lifetime.abort();
     root.removeAttribute(TABS_MOUNTED_ATTR);
-    list.removeEventListener(activateOn, onActivate);
-    list.removeEventListener("click", onClick);
-    list.removeEventListener("keydown", onKeyDown);
-    list.removeEventListener("focusout", onFocusOut);
     disposeFocus();
   };
 }

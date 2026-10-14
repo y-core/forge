@@ -1,7 +1,8 @@
-import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
+
+import { captureStreams } from "../cli/proc";
 
 const GIT_LOCATION_VARIABLES = [
   "GIT_DIR",
@@ -21,8 +22,8 @@ export function worktreeGitEnv(): Record<string, string | undefined> {
 }
 
 function git(cwd: string, args: string[], env?: Record<string, string | undefined>): { ok: boolean; out: string } {
-  const result = spawnSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "pipe"], env: env ?? worktreeGitEnv() });
-  return { ok: result.status === 0, out: result.stdout ?? "" };
+  const result = captureStreams("git", args, { cwd, env: env ?? worktreeGitEnv() });
+  return { ok: result.code === 0, out: result.stdout };
 }
 
 /** Resolves `name` inside the git directory of the work tree at `cwd`, or `undefined` outside one. */

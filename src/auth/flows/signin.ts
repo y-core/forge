@@ -1,3 +1,5 @@
+import { createLogger } from "../../logging/logger";
+import { serializeError } from "../../logging/serialize-error";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { authFactorContext } from "../factors/registry";
@@ -7,8 +9,6 @@ import { issueAuthDecoy, verifyAuthDecoy } from "./decoy";
 import type { AuthDecoyStores, AuthIssueOutcome } from "./types";
 import type { AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./types";
 
-// A deactivated account answering differently from an unknown one is the enumeration oracle the
-// deferred work exists to close, and an expired code on a known address is the same tell.
 /** Folds an operator's refusal to the one a visitor may see. @public */
 export function redactSigninReason(reason: AuthSigninReason): AuthSigninNotice {
   if (reason === "unavailable") return "unavailable";
@@ -26,6 +26,14 @@ function redactMembership(reason: AuthSigninReason): AuthSigninReason {
 /** Builds the signin flow. It produces no `Response` and touches no `Session` — `auth/web` owns both. @public */
 export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
   const decoy: AuthDecoyStores = { keys: options.keys, users: options.users, state: options.state, nonces: options.nonces };
+  const logger = options.logger ?? createLogger("auth/flows");
+
+  function settled(work: Promise<AuthIssueOutcome>): Promise<AuthIssueOutcome> {
+    return work.catch((error: unknown) => {
+      logger.error("auth.signin.issue.failed", { error: serializeError(error) });
+      return "unavailable";
+    });
+  }
 
   async function issue(email: string, at: number): Promise<AuthIssueOutcome> {
     const found = await options.users.findByEmailKey(normalizeEmail(email));
@@ -51,9 +59,7 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
     request(email, at) {
       // Nothing about the address is read before this returns, and both branches hand one promise to
       // the same deferral, so a registered address and an unknown one differ in neither shape nor time.
-      options.defer(issue(email, at));
-      // The factor's own lifetime, known at construction, so reading it costs none of the time the
-      // deferral above exists to hide.
+      options.defer(settled(issue(email, at)));
       return { kind: options.factors.primary.kind, expiresAt: at + options.factors.primary.challengeTtlMs };
     },
 
@@ -71,8 +77,6 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
       const verified = await options.factors.primary.verifyChallenge(user.id, presented, at);
       if (!verified.ok) return err(redactMembership(verified.error));
 
-      // An implicit factor's enrolment *is* the verified address, so passing its challenge is the
-      // proof the row waits for; without this no account verifies and the passkey verifier refuses all.
       let signedIn = user;
       if (user.emailVerifiedAt === null && options.factors.primary.enrolment === "implicit") {
         const marked = await options.users.markEmailVerified(user.id, at);
@@ -80,12 +84,8 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
         signedIn = { ...user, emailVerifiedAt: at, updatedAt: at };
       }
 
-      // The caller cannot know the subject's roles before this call: identifying the user is what the
-      // call does. So the roles are read off the row it has just loaded.
       const resolution = await options.factors.resolve(user.id, authFactorContext(user));
       if (!resolution.ok) return err("unavailable");
-      // `enrolment-required` arrives here inside `ok`: needing to enrol a second factor is a
-      // legitimate end to a correct sign-in, not a failure to sign in.
       return ok({ user: signedIn, kind: options.factors.primary.kind, resolution: resolution.data });
     },
 

@@ -6,7 +6,6 @@ import { checkMenuItem, mountMenu } from "./menu";
 
 const MENU_ITEM_ROLES = [...MENU_ITEM_SELECTOR.matchAll(/\[role='([^']+)'\]/g)].map((match) => match[1] as string);
 
-/** A popup with a checkbox row, two radio groups, and one ungrouped radio row. */
 function menu() {
   const { doc, el } = fakeTree();
   const popup = el("DIV", { "data-slot": "menu-popup", role: "menu" });
@@ -112,7 +111,6 @@ describe("checkMenuItem", () => {
 });
 
 describe("mountMenu", () => {
-  /** One row per role `MENU_ITEM_SELECTOR` names, plus a separator the ring must not pick up. */
   function navigableMenu() {
     const { doc, el } = fakeTree();
     const popup = el("DIV", { "data-slot": "menu-popup", role: "menu" });
@@ -207,7 +205,6 @@ describe("mountMenu", () => {
   });
 
   describe("mountMenu — a cyclic panel chain", () => {
-    /** Panels wired so that following `commandfor` outward from the first never reaches a root. */
     function cycle(panels: string[]) {
       installCssEscape();
       const { doc, el } = fakeTree();
@@ -248,7 +245,6 @@ describe("mountMenu", () => {
     const OFF_TRIGGER = { clientX: 200, clientY: 200 };
     const OFF_VIEWPORT = { clientX: -5, clientY: -5 };
 
-    /** An open popup, the trigger that names it, and a record of every `hidePopover()` call. */
     function openWithInvoker() {
       installCssEscape();
       const { doc, el } = fakeTree();
@@ -322,6 +318,21 @@ describe("mountMenu", () => {
       dispose();
 
       expect(hides).toEqual([]);
+    });
+
+    it("closes on a focus-out while mounted, and on neither a focus-out nor a cancelled invoker press once disposed", () => {
+      const { popup, trigger, elsewhere, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: elsewhere }));
+      const whileMounted = [...hides];
+
+      dispose();
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: elsewhere }));
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      trigger.focus();
+      trigger.dispatchEvent(new FakeEvent("pointercancel"));
+
+      expect({ whileMounted, hides }).toEqual({ whileMounted: ["m"], hides: ["m"] });
     });
 
     for (const [where, point] of [

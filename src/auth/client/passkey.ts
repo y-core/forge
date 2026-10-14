@@ -20,7 +20,6 @@ import type { PasskeyContract, PasskeyCredentials, PasskeyPrfHandler, PasskeyRea
 
 type PrfSaltJson = { first: string };
 
-/** Creation options as JSON: every `BufferSource` field crosses the wire base64url-encoded. */
 type CreationOptionsJson = Omit<PublicKeyCredentialCreationOptions, "challenge" | "excludeCredentials" | "extensions" | "user"> & {
   challenge: string;
   user: Omit<PublicKeyCredentialUserEntity, "id"> & { id: string };
@@ -28,7 +27,6 @@ type CreationOptionsJson = Omit<PublicKeyCredentialCreationOptions, "challenge" 
   extensions?: { prf?: { eval?: PrfSaltJson } };
 };
 
-/** Request options as JSON, on the same terms. */
 type RequestOptionsJson = Omit<PublicKeyCredentialRequestOptions, "allowCredentials" | "challenge" | "extensions"> & {
   challenge: string;
   allowCredentials?: Array<Omit<PublicKeyCredentialDescriptor, "id"> & { id: string }>;
@@ -41,11 +39,12 @@ const PASSKEY_ANNOUNCE_CHANNEL = "passkey";
 
 const PRF_OUTPUT_BYTES = 32;
 
+const PASSKEY_REQUEST_TIMEOUT_MS = 15_000;
+
 let prfHandler: PasskeyPrfHandler | null = null;
 
 const SUCCESS_MESSAGES: Record<PasskeyMode, string> = { registration: "Passkey created.", authentication: "Passkey accepted. Signing you in." };
 
-/** The message shown in the status line, and announced, for each way a ceremony can fail. */
 const FAILURE_MESSAGES: Record<PasskeyFailureReason, string> = {
   unsupported: "This browser cannot use passkeys. Please try again in a current version of Chrome, Edge, Firefox or Safari.",
   declined: "The passkey prompt was dismissed. Press the button to try again.",
@@ -55,10 +54,8 @@ const FAILURE_MESSAGES: Record<PasskeyFailureReason, string> = {
   "verification-failed": "That passkey wasn't accepted. Please try again.",
 };
 
-// Not `ParentNode`, for the reason `dom.ts`'s `queryAcross` is not either.
 const ref = (name: string, scope: Element): HTMLElement | null => scope.querySelector<HTMLElement>(`[data-ref='${name}']`);
 
-/** The element at or below `root` carrying `name`; the scope root may itself be the element. */
 function findRef(root: HTMLElement, name: string): HTMLElement | null {
   if (root.getAttribute("data-ref") === name) return root;
   return ref(name, root);
@@ -97,7 +94,6 @@ export function readPasskeyContract(root: HTMLElement): PasskeyContract | null {
   };
 }
 
-/** Decodes the base64url fields of creation options, by name rather than by a walk over every `id`. */
 function decodeCreation(options: CreationOptionsJson): PublicKeyCredentialCreationOptions {
   const { challenge, user, excludeCredentials, extensions, ...rest } = options;
   const prfEval = extensions?.prf?.eval;
@@ -110,7 +106,6 @@ function decodeCreation(options: CreationOptionsJson): PublicKeyCredentialCreati
   };
 }
 
-/** The same for request options, whose only credential list is the allow-list. */
 function decodeRequest(options: RequestOptionsJson): PublicKeyCredentialRequestOptions {
   const { challenge, allowCredentials, extensions, ...rest } = options;
   const evalByCredential = extensions?.prf?.evalByCredential;
@@ -175,13 +170,21 @@ export function ceremonyReason(error: unknown): PasskeyFailureReason {
   return "ceremony-failed";
 }
 
-/** Posts `body` to `path` with that path's own CSRF token; a network failure answers `null`. */
-async function post(realm: PasskeyRealm, ceremony: PasskeyContract, path: string, token: string, body: unknown): Promise<Response | null> {
+async function post(
+  realm: PasskeyRealm,
+  ceremony: PasskeyContract,
+  path: string,
+  token: string,
+  body: unknown,
+  signal?: AbortSignal,
+): Promise<Response | null> {
+  const deadline = AbortSignal.timeout(realm.requestTimeoutMs);
   try {
     return await realm.fetch(path, {
       method: "POST",
       headers: { "Content-Type": "application/json", [ceremony.csrfHeader]: token },
       body: JSON.stringify(body),
+      signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
     });
   } catch {
     return null;
@@ -189,47 +192,62 @@ async function post(realm: PasskeyRealm, ceremony: PasskeyContract, path: string
 }
 
 /** Runs a whole ceremony against `realm` and reports how it ended; navigates only on success. @internal */
-export async function runPasskeyCeremony(ceremony: PasskeyContract, realm: PasskeyRealm, nickname?: string): Promise<PasskeyOutcomeDetail> {
+export async function runPasskeyCeremony(
+  ceremony: PasskeyContract,
+  realm: PasskeyRealm,
+  nickname?: string,
+  signal?: AbortSignal,
+): Promise<PasskeyOutcomeDetail> {
   const mode = ceremony.mode;
   // Before any network call: a browser with no WebAuthn cannot finish, and asking the server for a
   // challenge it will never answer spends a single-use challenge on nothing.
   if (!realm.supported || !realm.credentials) return { mode, reason: "unsupported" };
 
-  const offered = await post(realm, ceremony, ceremony.optionsPath, ceremony.optionsToken, { mode });
+  const offered = await post(realm, ceremony, ceremony.optionsPath, ceremony.optionsToken, { mode }, signal);
+  signal?.throwIfAborted();
   if (!offered?.ok) return { mode, reason: "options-failed" };
   let options: CreationOptionsJson | RequestOptionsJson;
   try {
     options = (await offered.json()) as CreationOptionsJson | RequestOptionsJson;
+    signal?.throwIfAborted();
   } catch {
+    signal?.throwIfAborted();
     return { mode, reason: "options-failed" };
   }
 
   const publicKey = mode === "registration" ? decodeCreation(options as CreationOptionsJson) : decodeRequest(options as RequestOptionsJson);
+  const cancel = signal ? { signal } : {};
   let credential: Credential | null;
   try {
     credential =
       mode === "registration"
-        ? await realm.credentials.create({ publicKey: publicKey as PublicKeyCredentialCreationOptions })
-        : await realm.credentials.get({ publicKey: publicKey as PublicKeyCredentialRequestOptions });
+        ? await realm.credentials.create({ publicKey: publicKey as PublicKeyCredentialCreationOptions, ...cancel })
+        : await realm.credentials.get({ publicKey: publicKey as PublicKeyCredentialRequestOptions, ...cancel });
+    signal?.throwIfAborted();
   } catch (error) {
+    signal?.throwIfAborted();
     return { mode, reason: ceremonyReason(error) };
   }
   if (!credential) return { mode, reason: "ceremony-failed" };
 
   const payload = { credential: encodeCredential(credential as PublicKeyCredential), ...(nickname ? { nickname } : {}) };
-  const verified = await post(realm, ceremony, ceremony.verifyPath, ceremony.verifyToken, payload);
+  const verified = await post(realm, ceremony, ceremony.verifyPath, ceremony.verifyToken, payload, signal);
+  signal?.throwIfAborted();
   if (!verified?.ok) return { mode, reason: "verification-failed" };
 
   if (publicKey.extensions?.prf !== undefined && prfHandler !== null) {
     try {
       await prfHandler({ mode, credentialId: credential.id, output: passkeyPrfOutput(credential as PublicKeyCredential) });
+      signal?.throwIfAborted();
     } catch {
+      signal?.throwIfAborted();
       console.warn("[passkey] the PRF handler threw; the ceremony still succeeded");
     }
   }
 
   // The target reached the controller on a server-rendered attribute, which is not a trust boundary:
   // the value may have been assembled from a query parameter on the way out.
+  signal?.throwIfAborted();
   realm.navigate(safeRedirectPath(ceremony.redirect, PASSKEY_REDIRECT_FALLBACK));
   return { mode };
 }
@@ -245,6 +263,7 @@ export function realmOf(win: Window): PasskeyRealm {
     navigate: (path) => {
       win.location.assign(path);
     },
+    requestTimeoutMs: PASSKEY_REQUEST_TIMEOUT_MS,
   };
 }
 
@@ -273,8 +292,6 @@ export function mountPasskey(root: HTMLElement): () => void {
   };
 
   if (!realm.supported) {
-    // Revealed at mount rather than on the press: a button that cannot work should say so before it
-    // is pressed, not after.
     if (unsupported) unsupported.hidden = false;
     trigger.setAttribute("disabled", "");
     report({ mode: ceremony.mode, reason: "unsupported" });
@@ -284,6 +301,7 @@ export function mountPasskey(root: HTMLElement): () => void {
     };
   }
 
+  const lifetime = new AbortController();
   let running = false;
   const onClick = (event: Event) => {
     event.preventDefault();
@@ -292,20 +310,20 @@ export function mountPasskey(root: HTMLElement): () => void {
     if (running) return;
     running = true;
     trigger.setAttribute("aria-busy", "true");
-    // The encode and navigate steps run outside the ceremony's own try, so a throw there would
-    // otherwise leave the button busy and dead for the rest of the page, and say nothing.
-    void runPasskeyCeremony(ceremony, realm, nickname?.value || undefined)
-      .catch(() => ({ mode: ceremony.mode, reason: "ceremony-failed" }) as PasskeyOutcomeDetail)
-      .then(report)
+    void runPasskeyCeremony(ceremony, realm, nickname?.value || undefined, lifetime.signal)
+      .catch(() => (lifetime.signal.aborted ? null : ({ mode: ceremony.mode, reason: "ceremony-failed" } as PasskeyOutcomeDetail)))
+      .then((outcome) => {
+        if (outcome && !lifetime.signal.aborted) report(outcome);
+      })
       .finally(() => {
         running = false;
         trigger.removeAttribute("aria-busy");
       });
   };
 
-  trigger.addEventListener("click", onClick);
+  trigger.addEventListener("click", onClick, { signal: lifetime.signal });
   return () => {
-    trigger.removeEventListener("click", onClick);
+    lifetime.abort();
     trigger.removeAttribute("aria-busy");
   };
 }

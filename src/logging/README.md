@@ -385,7 +385,8 @@ matches.
 **`flush()` settles the writes already started — it is not a barrier.** Anything dispatched after it belongs to the next flush.
 
 **A selected purge is inside the `write` promise, not detached**, so `flush()` and `waitUntil()` hold the isolate open until the sweep finishes. On
-the small fraction of writes that trigger one, that window covers a `list` and a series of delete batches, post-response under `waitUntil`.
+the small fraction of writes that trigger one, that window covers a `list` and a series of delete batches, post-response under `waitUntil`. A
+purge that fails rejects that write — a failed delete only once every batch has run — so it reaches `onChannelError` rather than vanishing.
 
 **A value's own `toJSON` decides its logged form, on every channel.** Give a domain object a `toJSON` that drops its secret, and what you verified
 on the console is what persists. A `URL` is the exception: it logs as `origin + pathname` everywhere, so log a query parameter you need as its own

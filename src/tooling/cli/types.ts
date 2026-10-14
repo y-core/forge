@@ -131,7 +131,7 @@ export interface LoadedConfigModule<T> {
 
 /** How wide to render, and what to render it in. @public */
 export interface HelpOptions {
-  /** Columns the block must fit in. Defaults to 80, so a test can pin it and stay exact-match. */
+  /** Columns the block must fit in. Defaults to 80. */
   width?: number;
   /** Styler for the headings. Defaults to `PLAIN`. */
   style?: Colorize;
@@ -215,18 +215,34 @@ export interface ConfirmOptions {
   cancelMessage?: string;
 }
 
-/** The options this namespace hands a spawner — the exact shapes `run`, `capture` and `probeOk` build. */
+/** The options this namespace's spawning helpers hand a spawner. */
 export interface SpawnOptions {
-  readonly stdio: "ignore" | "inherit" | ["ignore", number, number];
+  readonly stdio: "ignore" | "inherit" | ["ignore", number, number] | ["ignore", "pipe", "pipe"];
   readonly env: typeof process.env;
   readonly cwd?: string;
+  readonly encoding?: "utf-8";
+  readonly maxBuffer?: number;
+  readonly timeout?: number;
+  readonly killSignal?: "SIGKILL";
 }
 
 /** How a spawned command exited, narrowed to what this namespace reads of it. */
 export interface SpawnOutcome {
-  readonly status: number | null;
+  readonly status?: number | null | undefined;
   readonly error?: Error | undefined;
+  readonly stdout?: string | undefined;
+  readonly stderr?: string | undefined;
 }
 
-/** Runs a command to completion — the seam these helpers take, so a test substitutes it rather than mocking the module for the whole process. */
+/** Outcome of a child process spawned by `captureStreams`, its two streams kept apart. */
+export interface StreamCapture {
+  /** The exit status, or 1 when the child never exited on its own. */
+  readonly code: number;
+  /** False on a spawn error or a kill by signal, where `code` is a stand-in rather than the child's answer. */
+  readonly exited: boolean;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+/** Runs a command to completion; the seam this namespace's spawning helpers take. */
 export type SpawnSync = (command: string, args: string[], options: SpawnOptions) => SpawnOutcome;

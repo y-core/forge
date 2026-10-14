@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import process from "node:process";
@@ -6,12 +5,12 @@ import { fileURLToPath } from "node:url";
 
 import type { D1DatabaseLike } from "../../storage/db/types";
 import { CliError } from "../cli/errors";
+import { captureStreams } from "../cli/proc";
 import { persistRoot } from "./home";
 import { retryWithBackoff } from "./retry";
 import { isReadOnlyBatch } from "./sql";
 import type { BackoffPolicy, DbIo, Home, Spawned } from "./types";
 
-/** Every `node_modules/.bin` on the way up from `from`, nearest first, so the app's wrangler wins over forge's own. */
 function binDirs(from: string): string[] {
   const found: string[] = [];
   for (let dir = from; ; dir = dirname(dir)) {
@@ -21,14 +20,12 @@ function binDirs(from: string): string[] {
   }
 }
 
-/** One open binding over a local home's state, and the workerd process behind it. */
 interface LocalD1 {
   readonly db: D1DatabaseLike;
   readonly split: (sql: string) => string[];
   readonly dispose: () => Promise<void>;
 }
 
-/** Which handle a home has: two homes share one only when they name the same state through the same config. */
 function handleKey(home: Home): string {
   return `${home.configPath}\0${home.env ?? ""}\0${persistRoot(home)}`;
 }
@@ -41,8 +38,6 @@ export function wranglerUnreachable(home: Home, refusal: { readonly missing: str
   return new CliError("external", `wrangler would not load — ${reach}${detail ? `:\n${detail}` : ""}`, { cause: refusal.error });
 }
 
-// Read together and before anything opens: the query-time read `split` used to get reported a
-// version problem as "query `SELECT …` failed", with the diagnostic gone.
 /** The first export `forge db` needs that a loaded wrangler does not have, or `null` when it has both. @internal */
 export function missingWranglerExport(module: { getPlatformProxy?: unknown; unstable_splitSqlQuery?: unknown }): string | null {
   if (module.getPlatformProxy === undefined) return "getPlatformProxy";
@@ -98,8 +93,6 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
     if (held !== undefined) return held;
     const opening = openLocalD1(home);
     handles.set(key, opening);
-    // An open that failed holds nothing, so it is not kept: a later call opens again rather than
-    // meeting the first failure a second time, from wherever it next reaches this database.
     void opening.catch(() => handles.delete(key));
     return opening;
   }
@@ -121,15 +114,7 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
   const env = { ...process.env, PATH: path, WRANGLER_SEND_METRICS: "false", FORCE_COLOR: "0" };
   return {
     spawn(cmd, args, opts): Spawned {
-      const r = spawnSync(cmd, [...args], {
-        cwd: opts.cwd,
-        env,
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "pipe"],
-        maxBuffer: 256 * 1024 * 1024,
-      });
-      const reason = r.error ? `${r.error.message}\n` : "";
-      return { code: r.status ?? 1, stdout: r.stdout ?? "", stderr: `${r.stderr ?? ""}${reason}` };
+      return captureStreams(cmd, [...args], { cwd: opts.cwd, env, maxBuffer: 256 * 1024 * 1024 });
     },
     async d1(home, sql): Promise<Record<string, unknown>[][]> {
       if (home.persistTo === null) {
@@ -160,8 +145,6 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
       );
       return answers.map((answer) => answer.results);
     },
-    // Total, because every caller releases from a `finally`: one key's failure must not abandon the
-    // handles after it, and an error raised here would replace the one the run is already failing on.
     async closeD1(home): Promise<void> {
       for (const key of home === null ? [...handles.keys()] : [handleKey(home)]) await release(key);
     },

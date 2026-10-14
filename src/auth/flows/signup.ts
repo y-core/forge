@@ -1,3 +1,5 @@
+import { createLogger } from "../../logging/logger";
+import { serializeError } from "../../logging/serialize-error";
 import { normalizeEmail } from "../stores/email";
 import type { AuthUser } from "../types";
 import type { AuthIssueOutcome } from "./types";
@@ -5,6 +7,15 @@ import type { AuthSignupFlow, AuthSignupOptions } from "./types";
 
 /** Builds the signup flow. It produces no `Response` and touches no `Session` — `auth/web` owns both. @public */
 export function createSignupFlow(options: AuthSignupOptions): AuthSignupFlow {
+  const logger = options.logger ?? createLogger("auth/flows");
+
+  function settled(work: Promise<AuthIssueOutcome>): Promise<AuthIssueOutcome> {
+    return work.catch((error: unknown) => {
+      logger.error("auth.signup.issue.failed", { error: serializeError(error) });
+      return "unavailable";
+    });
+  }
+
   async function accountFor(email: string, at: number): Promise<AuthUser | null> {
     const emailKey = normalizeEmail(email);
     const found = await options.users.findByEmailKey(emailKey);
@@ -27,9 +38,7 @@ export function createSignupFlow(options: AuthSignupOptions): AuthSignupFlow {
     request(email, at) {
       // Nothing about the address is read before this returns, so the lookup, the insert and the
       // delivery are all off the caller's clock, and the registered address and the new one are one code path.
-      options.defer(issue(email, at));
-      // The factor's own lifetime, never a knob of this flow's: a page must not be able to promise
-      // an expiry the factor does not enforce. Known at construction, so nothing is awaited here.
+      options.defer(settled(issue(email, at)));
       return { kind: options.factors.primary.kind, expiresAt: at + options.factors.primary.challengeTtlMs };
     },
   };

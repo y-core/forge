@@ -89,7 +89,7 @@ describe("realDbIo() — spawn", () => {
   it("keeps the two streams apart, so --json output is never mixed with progress", () => {
     const root = tempRoot();
     const run = spawnFresh(root, "bun", ["-e", "console.log('out'); console.error('err')"], root);
-    expect(run).toEqual({ code: 0, stdout: "out\n", stderr: "err\n" });
+    expect(run).toEqual({ code: 0, exited: true, stdout: "out\n", stderr: "err\n" });
   });
 
   it("carries the failing exit code through", () => {
@@ -101,7 +101,7 @@ describe("realDbIo() — spawn", () => {
   it("reports a command that is not on the path as a failure with the reason on stderr", () => {
     const root = tempRoot();
     const run = spawnFresh(root, "forge-db-not-a-real-command", [], root);
-    expect(run).toEqual({ code: 1, stdout: "", stderr: 'Executable not found in $PATH: "forge-db-not-a-real-command"\n' });
+    expect(run).toEqual({ code: 1, exited: false, stdout: "", stderr: 'Executable not found in $PATH: "forge-db-not-a-real-command"\n' });
   });
 
   it("resolves the app's own node_modules/.bin ahead of the ambient path", () => {
@@ -109,7 +109,21 @@ describe("realDbIo() — spawn", () => {
     mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
     writeFileSync(join(root, "node_modules", ".bin", "forge-db-fixture"), "#!/bin/sh\necho local-copy\n", "utf-8");
     chmodSync(join(root, "node_modules", ".bin", "forge-db-fixture"), 0o755);
-    expect(spawnFresh(root, "forge-db-fixture", [], root)).toEqual({ code: 0, stdout: "local-copy\n", stderr: "" });
+    expect(spawnFresh(root, "forge-db-fixture", [], root)).toEqual({ code: 0, exited: true, stdout: "local-copy\n", stderr: "" });
+  });
+
+  it("resolves the nearest node_modules/.bin first when several lie on the way up", () => {
+    const outer = tempRoot();
+    const app = join(outer, "app");
+    for (const [at, answer] of [
+      [outer, "far"],
+      [app, "near"],
+    ] as const) {
+      mkdirSync(join(at, "node_modules", ".bin"), { recursive: true });
+      writeFileSync(join(at, "node_modules", ".bin", "forge-db-nearest"), `#!/bin/sh\necho ${answer}\n`, "utf-8");
+      chmodSync(join(at, "node_modules", ".bin", "forge-db-nearest"), 0o755);
+    }
+    expect(spawnFresh(app, "forge-db-nearest", [], app)).toEqual({ code: 0, exited: true, stdout: "near\n", stderr: "" });
   });
 
   it("turns wrangler's metrics prompt off in the child's environment", () => {
@@ -266,6 +280,21 @@ describe("realDbIo() — the local D1 port", () => {
     expect(disposals - closed).toBe(1);
     await io.closeD1(localHome(root));
     expect(disposals - closed).toBe(1);
+  });
+
+  it("opens a separate handle for a home naming different config or a different environment", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    const before = opens;
+    await io.d1(localHome(root), ["SELECT 1"]);
+    await io.d1({ ...localHome(root), configPath: join(root, "wrangler.other.jsonc") }, ["SELECT 1"]);
+    await io.d1({ ...localHome(root), env: "staging" }, ["SELECT 1"]);
+    expect(opens - before).toBe(3);
+    expect(opened.slice(-2).map((options) => [options.configPath, options.environment])).toEqual([
+      [join(root, "wrangler.other.jsonc"), undefined],
+      [join(root, "wrangler.jsonc"), "staging"],
+    ]);
+    await io.closeD1(null);
   });
 
   // A failed open is a bad `wrangler.jsonc` away, and every caller releases from a `finally`: the

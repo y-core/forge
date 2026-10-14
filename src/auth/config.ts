@@ -1,7 +1,5 @@
 import type { AuthAlgorithm, AuthFactorKind } from "./types";
 
-// A primary factor must identify the visitor: `email-otp` does, because the visitor types the
-// address. A ceremony authenticating from nothing is not a sign-in this library will start.
 /** The factor kinds that identify the visitor, and so the only ones that may be offered as primary. @public */
 export const AUTH_IDENTIFYING_FACTORS = ["email-otp"] as const satisfies readonly AuthFactorKind[];
 
@@ -19,8 +17,6 @@ export const AUTH_KV_MIN_TTL_SECONDS = 60;
 /** Digits in an emailed one-time code. @public */
 export const AUTH_OTP_DIGITS = 6;
 
-// Five minutes, not the ten NIST SP 800-63B §5.1.3.2 allows: the ceiling is what a deployment may
-// raise this to, and a live code is a code an attacker has that long to spend.
 /** How long an emailed one-time code stays valid, in milliseconds. @public */
 export const AUTH_OTP_TTL_MS = 300_000;
 
@@ -42,7 +38,7 @@ export const AUTH_RECOVERY_CODE_COUNT = 10;
 export const AUTH_RECOVERY_CODE_BYTES = 15;
 
 // An absolute bound, not a sliding one: a session that is merely used often is a session an
-// attacker who took it can keep alive forever. Seven days is the ceiling, whatever the activity.
+// attacker who took it can keep alive forever.
 /** How long a signed-in session stays valid from the moment it was established, in milliseconds. @public */
 export const AUTH_SESSION_MAX_MS = 604_800_000;
 
@@ -80,3 +76,6 @@ export const AUTH_ACCESS_TOKEN_MAX_LIFETIME_MS = 31_622_400_000;
 
 /** The shortest gap between two `last_used_at` stamps on one access token, in milliseconds. @public */
 export const AUTH_ACCESS_TOKEN_USE_INTERVAL_MS = 60_000;
+
+/** How long one `AuthNotifier.send` may run before its signal aborts, in milliseconds. @internal */
+export const AUTH_NOTIFY_TIMEOUT_MS = 10_000;

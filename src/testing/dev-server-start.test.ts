@@ -1,8 +1,9 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 
+import { DEV_SERVER_LOCK } from "./dev-server-lock";
 import { DEV_SERVER_ATTEMPT_TIMEOUT_MS, spawnDevServer } from "./dev-server-start";
 import type { DevServer } from "./workerd";
 
@@ -18,6 +19,9 @@ else require("node:http").createServer((_, res) => res.end("answered by start " 
 const RECORD_DIRS_THEN_ANSWER = `const flag = (name) => process.argv[process.argv.indexOf(name) + 1];
 appendFileSync(log + ".dirs", flag("--env-file") + " " + flag("--persist-to") + "\\n");
 require("node:http").createServer((_, res) => res.end("ok")).listen(port, "127.0.0.1");`;
+
+const ANSWER_WITH_ENV_FILE = `const file = process.argv[process.argv.indexOf("--env-file") + 1];
+require("node:http").createServer((_, res) => res.end(readFileSync(file, "utf-8"))).listen(port, "127.0.0.1");`;
 
 const EXIT_AT_ONCE = `appendFileSync(log, process.pid + " " + port + "\\n");
 process.exit(1);`;
@@ -128,5 +132,49 @@ describe("spawnDevServer()", () => {
       /wrangler exited \(1\) before it was ready/,
     );
     expect(Date.now() - startedAt).toBeLessThan(15_000);
+  }, 30_000);
+
+  it("writes each var double-quoted with a newline escaped, so a multi-line value stays one dotenv entry", async () => {
+    fakeNode(ANSWER_WITH_ENV_FILE);
+
+    const server = await spawnDevServer({ vars: { GREETING: "line one\nline two" } }, { attemptTimeoutMs: 10_000 });
+    servers.push(server);
+
+    expect(await fetch(server.origin).then((res) => res.text())).toBe(`SITE_ORIGIN="${server.siteOrigin}"\nGREETING="line one\\nline two"`);
+  }, 30_000);
+
+  it("waits on a live holder's lock past five minutes, until twice the window that would make it stale", async () => {
+    fakeNode(RECORD_DIRS_THEN_ANSWER);
+    const lock = join(dir, DEV_SERVER_LOCK);
+    const base = Date.now();
+    let clock = base;
+    const frozen = spyOn(Date, "now").mockImplementation(() => clock);
+    const holdAt = (at: number): void => {
+      clock = at;
+      writeFileSync(lock, JSON.stringify({ pid: process.pid, startedAt: at, token: "live-holder" }));
+    };
+    let outcome = "pending";
+    try {
+      holdAt(base);
+      const waiting = spawnDevServer({}, { attemptTimeoutMs: 100_000 });
+      void waiting.then(
+        (server) => {
+          servers.push(server);
+          outcome = "acquired";
+        },
+        (error: Error) => (outcome = error.message),
+      );
+
+      holdAt(base + 590_000);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(outcome).toBe("pending");
+
+      holdAt(base + 600_000);
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      expect(outcome).toContain(lock);
+      expect(outcome).toContain(`pid ${process.pid}`);
+    } finally {
+      frozen.mockRestore();
+    }
   }, 30_000);
 });

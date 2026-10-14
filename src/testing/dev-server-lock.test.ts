@@ -1,4 +1,5 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import * as fs from "node:fs";
 import { existsSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -112,5 +113,67 @@ describe("acquireDevServerLock()", () => {
     release();
 
     expect(holder(path).token).toBe(next);
+  });
+
+  it("gives up at the deadline on a lock its holder keeps, naming the lock and the holder's pid", async () => {
+    const path = lockPath();
+    writeFileSync(path, JSON.stringify({ pid: 4242, startedAt: Date.now(), token: "kept" }));
+    let clock = Date.now();
+    const waiting = acquireDevServerLock({ path, staleAfterMs: 60_000, timeoutMs: 3_000, pollMs: 1, now: () => (clock += 1_000), isAlive: alive });
+
+    const error = await waiting.then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain(path);
+    expect((error as Error).message).toContain("pid 4242");
+    expect([holder(path).pid, holder(path).token]).toEqual([4242, "kept"]);
+  });
+
+  it("names the holder's pid as unknown at the deadline when the lock it keeps cannot be read", async () => {
+    const path = lockPath();
+    writeFileSync(path, "{");
+    let clock = Date.now();
+    const waiting = acquireDevServerLock({ path, staleAfterMs: 60_000, timeoutMs: 3_000, pollMs: 1, now: () => (clock += 1_000), isAlive: alive });
+
+    await expect(waiting).rejects.toThrow(path);
+    await expect(waiting).rejects.toThrow("pid unknown");
+    expect(readFileSync(path, "utf-8")).toBe("{");
+  });
+
+  it("waits a poll before retrying when the lock vanishes between the failed create and the read", async () => {
+    const path = lockPath();
+    writeFileSync(path, JSON.stringify({ pid: 4242, startedAt: Date.now(), token: "leaving" }));
+    const realRead = fs.readFileSync;
+    let vanished = false;
+    const read = spyOn(fs, "readFileSync").mockImplementation(((...args: Parameters<typeof realRead>) => {
+      if (vanished) return realRead(...args);
+      vanished = true;
+      rmSync(path);
+      throw Object.assign(new Error("gone"), { code: "ENOENT" });
+    }) as typeof realRead);
+    const timers = spyOn(globalThis, "setTimeout");
+    try {
+      await acquireDevServerLock({ path, staleAfterMs: 60_000, pollMs: 7, isAlive: alive });
+      expect(timers.mock.calls.some(([, delay]) => delay === 7)).toBe(true);
+    } finally {
+      read.mockRestore();
+      timers.mockRestore();
+    }
+    expect(holder(path).pid).toBe(process.pid);
+  });
+
+  it("takes over a stale lock without waiting a poll first", async () => {
+    const path = lockPath();
+    writeFileSync(path, JSON.stringify({ pid: DEAD_PID, startedAt: Date.now(), token: "orphan" }));
+    const timers = spyOn(globalThis, "setTimeout");
+    try {
+      await acquireDevServerLock({ path, staleAfterMs: 60_000, pollMs: 7, isAlive: alive });
+      expect(timers.mock.calls.filter(([, delay]) => delay === 7)).toEqual([]);
+    } finally {
+      timers.mockRestore();
+    }
+    expect(holder(path).pid).toBe(process.pid);
   });
 });

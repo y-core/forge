@@ -4,8 +4,7 @@ import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-// Under one of Cloudflare's published testing secrets siteverify answers a fixed `hostname` whatever
-// origin the widget ran on; relaxing the hostname check needs a `DevAllowance` grant as well.
+// Under one of Cloudflare's published testing secrets siteverify answers a fixed `hostname` whatever origin the widget ran on.
 const TESTING_SECRETS: ReadonlySet<string> = new Set([
   "1x0000000000000000000000000000000AA",
   "2x0000000000000000000000000000000AA",
@@ -25,22 +24,17 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
   const body: Record<string, string> = { secret: secretKey, response: token };
   if (options.remoteIp) body.remoteip = options.remoteIp;
 
-  const controller = new AbortController();
   // Clamped to >=1ms: a 0 would abort before the fetch dispatched and surface as a spurious "timeout".
   const timeoutMs = Math.max(1, options?.timeoutMs ?? 5_000);
-  const timeoutId = globalThis.setTimeout(() => controller.abort(), timeoutMs);
-  const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
+  const deadline = AbortSignal.timeout(timeoutMs);
+  const signal = options.signal ? AbortSignal.any([deadline, options.signal]) : deadline;
 
   let res: Response;
   try {
     res = await fetch(VERIFY_URL, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal });
   } catch (thrown) {
-    // A caller's cancellation is not a verification outcome, so it rejects rather than joining the
-    // failure union — the boundary reads it as the client having gone (`ERROR_HANDLING.md` §5b).
     if (options.signal?.aborted) throw thrown;
-    return err(controller.signal.aborted ? "timeout" : "network-error");
-  } finally {
-    clearTimeout(timeoutId);
+    return err(deadline.aborted ? "timeout" : "network-error");
   }
 
   if (!res.ok) {
@@ -50,8 +44,9 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
   let data: { action?: string; cdata?: string; hostname?: string; success: boolean };
   try {
     data = (await res.json()) as { action?: string; cdata?: string; hostname?: string; success: boolean };
-  } catch {
-    return err("parse-error");
+  } catch (thrown) {
+    if (options.signal?.aborted) throw thrown;
+    return err(deadline.aborted ? "timeout" : "parse-error");
   }
 
   if (!data.success) {

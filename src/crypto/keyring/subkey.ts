@@ -24,10 +24,15 @@ function cacheFor<T>(cache: WeakMap<KeyRing, Map<string, T>>, ring: KeyRing): Ma
   return fresh;
 }
 
-function cachePendingUntilRejected<T>(perRing: Map<string, Promise<T>>, cacheKey: string, pending: Promise<T>): Promise<T> {
-  perRing.set(cacheKey, pending);
+/** Caches a pending promise under `key`, evicting it on rejection so the next caller retries. @internal */
+export function cachePendingUntilRejected<K, T>(
+  cache: { get(key: K): Promise<T> | undefined; set(key: K, value: Promise<T>): unknown; delete(key: K): boolean },
+  key: K,
+  pending: Promise<T>,
+): Promise<T> {
+  cache.set(key, pending);
   pending.catch(() => {
-    if (perRing.get(cacheKey) === pending) perRing.delete(cacheKey);
+    if (cache.get(key) === pending) cache.delete(key);
   });
   return pending;
 }

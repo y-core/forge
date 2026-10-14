@@ -11,22 +11,23 @@ class FakeMediaQueryList {
     this.matches = matches;
   }
 
-  addEventListener(_type: string, listener: () => void): void {
+  addEventListener(_type: string, listener: () => void, options?: { signal?: AbortSignal }): void {
+    const signal = options?.signal;
+    if (signal?.aborted) return;
     this.listeners.add(listener);
+    signal?.addEventListener("abort", () => this.listeners.delete(listener), { once: true });
   }
 
   removeEventListener(_type: string, listener: () => void): void {
     this.listeners.delete(listener);
   }
 
-  /** A resize or orientation change across the breakpoint. */
   set(matches: boolean): void {
     this.matches = matches;
     for (const listener of this.listeners) listener();
   }
 }
 
-/** The slice of CSSOM the scroll lock writes through: one property, set and removed by name. */
 class FakeStyle {
   readonly properties = new Map<string, string>();
 
@@ -43,7 +44,6 @@ class FakeStyle {
   }
 }
 
-/** A frame clock the test advances by hand, in place of `requestAnimationFrame`. */
 class FakeFrames {
   private nextId = 1;
   readonly pending = new Map<number, (time: number) => void>();
@@ -59,7 +59,6 @@ class FakeFrames {
     this.pending.delete(id);
   };
 
-  /** Paints one frame at `time`, running every callback queued before it. */
   run(time: number): void {
     const due = [...this.pending.values()];
     this.pending.clear();
@@ -71,15 +70,16 @@ class FakeNode {
   readonly nodeType = 1;
   popover: string | null = null;
   ownerDocument: FakeDocument | null = null;
-  /** Set while the node is still `visibility: hidden`, which the browser refuses focus to. */
   refusesFocus = false;
+  inert = false;
+  parentElement: FakeNode | null = null;
+  readonly children: FakeNode[] = [];
 
   focus(): void {
     if (this.refusesFocus) return;
     if (this.ownerDocument) this.ownerDocument.activeElement = this;
   }
 
-  /** Cleared for a node inside a closed `<details>` or under `display: none`, which the browser renders nothing of. */
   rendered = true;
 
   checkVisibility(): boolean {
@@ -95,11 +95,9 @@ class FakeNode {
   }
 }
 
-/** The panel: a box that owns an ordered list of focusables and reports containment over it. */
 class FakePanel extends FakeNode {
   readonly items: FakeNode[] = [];
   queried: string[] = [];
-  /** Answers the open-surface lookup: a menu or dialog left open inside the panel. */
   openSurface: FakeNode | null = null;
 
   querySelectorAll(selector: string): FakeNode[] {
@@ -118,6 +116,7 @@ class FakeDocument {
   readonly documentElement = { style: new FakeStyle() };
   readonly listeners = new Map<string, Set<(event: unknown) => void>>();
   activeElement: FakeNode | null = null;
+  readonly body = new FakeNode();
 
   readonly frames = new FakeFrames();
   panelTransition = { transitionDuration: "0s", transitionDelay: "0s" };
@@ -141,10 +140,13 @@ class FakeDocument {
     };
   }
 
-  addEventListener(type: string, listener: (event: unknown) => void): void {
+  addEventListener(type: string, listener: (event: unknown) => void, options?: { signal?: AbortSignal }): void {
+    const signal = options?.signal;
+    if (signal?.aborted) return;
     const set = this.listeners.get(type) ?? new Set<(event: unknown) => void>();
     set.add(listener);
     this.listeners.set(type, set);
+    signal?.addEventListener("abort", () => this.removeEventListener(type, listener), { once: true });
   }
 
   removeEventListener(type: string, listener: (event: unknown) => void): void {
@@ -155,12 +157,10 @@ class FakeDocument {
     return [...this.listeners.values()].reduce((total, set) => total + set.size, 0);
   }
 
-  /** A key the reader pressed, with the `preventDefault` the trap is expected to call. */
   press(key: string, shiftKey = false): { defaultPrevented: boolean } {
     return this.dispatch(key, shiftKey, false);
   }
 
-  /** A key a handler nearer the target already consumed. */
   pressConsumed(key: string): { defaultPrevented: boolean } {
     return this.dispatch(key, false, true);
   }
@@ -210,7 +210,6 @@ class FakeDetails extends FakeNode {
     for (const listener of this.listeners.get("toggle") ?? []) listener();
   }
 
-  /** A summary click: the platform flips `open` itself and the event follows. */
   userToggle(): void {
     this.open = !this.isOpen;
   }
@@ -220,10 +219,13 @@ class FakeDetails extends FakeNode {
     return selector === "summary" ? this.summary : this.panel;
   }
 
-  addEventListener(type: string, listener: () => void): void {
+  addEventListener(type: string, listener: () => void, options?: { signal?: AbortSignal }): void {
+    const signal = options?.signal;
+    if (signal?.aborted) return;
     const set = this.listeners.get(type) ?? new Set<() => void>();
     set.add(listener);
     this.listeners.set(type, set);
+    signal?.addEventListener("abort", () => this.removeEventListener(type, listener), { once: true });
   }
 
   removeEventListener(type: string, listener: () => void): void {
@@ -252,11 +254,75 @@ function fixture(matches: boolean, open = false, links = 3): Fixture {
   return { el, doc, media, queries, element: el as unknown as Element, overflow: () => doc.documentElement.style.properties.get("overflow") };
 }
 
-/** A second drawer in the same document — a nav drawer and a filter drawer on one mobile page. */
 function siblingDrawer(f: Fixture, open = false): { el: FakeDetails; element: Element } {
   const el = new FakeDetails(open, f.doc, 3);
   return { el, element: el as unknown as Element };
 }
+
+function nest(parent: FakeNode, ...kids: FakeNode[]): FakeNode {
+  for (const kid of kids) {
+    kid.parentElement = parent;
+    parent.children.push(kid);
+  }
+  return parent;
+}
+
+describe("mountNavDrawer — the page outside an open drawer", () => {
+  function page() {
+    const f = fixture(true);
+    const [header, main, aside, footer] = [new FakeNode(), new FakeNode(), new FakeNode(), new FakeNode()];
+    footer.inert = true;
+    nest(main, f.el, aside);
+    nest(f.doc.body, header, main, footer);
+    const inertness = () => ({ header: header.inert, main: main.inert, drawer: f.el.inert, aside: aside.inert, footer: footer.inert });
+    return { f, inertness };
+  }
+
+  it("makes every sibling up the ancestor chain inert while open, and never the chain itself", () => {
+    const { f, inertness } = page();
+    mountNavDrawer({ element: f.element });
+
+    f.el.userToggle();
+
+    expect(inertness()).toEqual({ header: true, main: false, drawer: false, aside: true, footer: true });
+  });
+
+  it("un-inerts on close only what it marked, leaving a sibling that was already inert as it was", () => {
+    const { f, inertness } = page();
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.el.userToggle();
+
+    expect(inertness()).toEqual({ header: false, main: false, drawer: false, aside: false, footer: true });
+  });
+
+  it("releases what it marked when disposed while open", () => {
+    const { f, inertness } = page();
+    const dispose = mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    dispose();
+
+    expect(inertness()).toEqual({ header: false, main: false, drawer: false, aside: false, footer: true });
+  });
+
+  it("neither locks, isolates nor answers Escape once disposed", () => {
+    const { f, inertness } = page();
+    mountNavDrawer({ element: f.element })();
+
+    f.el.userToggle();
+    f.media.set(true);
+    const escape = f.doc.press("Escape");
+
+    expect({ overflow: f.overflow(), inert: inertness(), open: f.el.open, escapeSwallowed: escape.defaultPrevented }).toEqual({
+      overflow: undefined,
+      inert: { header: false, main: false, drawer: false, aside: false, footer: true },
+      open: true,
+      escapeSwallowed: false,
+    });
+  });
+});
 
 describe("mountNavDrawer — two drawers sharing one document", () => {
   it("keeps the page locked while either drawer is open and restores it when both close", () => {
@@ -466,8 +532,6 @@ describe("mountNavDrawer", () => {
     expect(wide.el.open).toBe(true);
   });
 
-  // The summary is the trap's first stop, not the panel's first item: it is a sibling of the panel
-  // and draws the visible close, so a cycle that skipped it would be a keyboard trap (WCAG 2.1.2).
   it("cycles Tab from the last panel item onto the summary", () => {
     const f = fixture(true);
     mountNavDrawer({ element: f.element });
@@ -560,8 +624,6 @@ describe("mountNavDrawer", () => {
     expect(mountNavDrawer({ element: f.element })).not.toBe(first);
   });
 
-  // A target the call named and that did not resolve is deterministic for that call site, so it
-  // throws rather than returning a disposer that quietly does nothing.
   it("throws when there is no element", () => {
     expect(() => mountNavDrawer({ element: null })).toThrow("did not resolve to a disclosure");
   });
@@ -586,7 +648,6 @@ describe("mountNavDrawer", () => {
 
     const dispose = mountNavDrawer({ element: f.element });
     expect(f.overflow()).toBe("hidden");
-    // Mounting is not an interaction, so it must not move the reader's focus.
     expect(f.doc.activeElement).toBeNull();
 
     dispose();

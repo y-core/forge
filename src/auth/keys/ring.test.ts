@@ -122,6 +122,56 @@ describe("resolveAuthServices", () => {
     expect(calls).toBe(2);
   });
 
+  it("resolves the ring once for two concurrent cold calls on one env", async () => {
+    const env = {};
+    let calls = 0;
+    const options = {
+      ring: async () => {
+        calls++;
+        return ring();
+      },
+    };
+    const [first, second] = await Promise.all([resolveAuthServices(contextFor(env), options), resolveAuthServices(contextFor(env), options)]);
+    expect(calls).toBe(1);
+    expect(second).toBe(first);
+  });
+
+  it("keeps both option sets cached when they are first resolved concurrently on one env", async () => {
+    const env = {};
+    const calls = { first: 0, second: 0 };
+    const first = {
+      ring: async () => {
+        calls.first++;
+        return ring();
+      },
+    };
+    const second = {
+      ring: async () => {
+        calls.second++;
+        return ring({ activeKeyId: "k2", keys: { k2: KEY_2 } });
+      },
+    };
+    await Promise.all([resolveAuthServices(contextFor(env), first), resolveAuthServices(contextFor(env), second)]);
+    await resolveAuthServices(contextFor(env), first);
+    await resolveAuthServices(contextFor(env), second);
+    expect(calls).toEqual({ first: 1, second: 1 });
+  });
+
+  it("retries a ring resolver that rejected, rather than caching its failure for the env", async () => {
+    const env = {};
+    let calls = 0;
+    const options = {
+      ring: async () => {
+        calls++;
+        if (calls === 1) throw new Error("secret store unreachable");
+        return ring();
+      },
+    };
+    await expect(resolveAuthServices(contextFor(env), options)).rejects.toThrow("secret store unreachable");
+    expect((await resolveAuthServices(contextFor(env), options)).keys.activeKeyId).toBe("k1");
+    expect(calls).toBe(2);
+  });
+
   it("throws when the ring has no key for its active id", () => {
     const resolve = (): KeyRing => ring({ activeKeyId: "k2" });
     expect(resolveAuthServices(contextFor({}), { ring: resolve })).rejects.toThrow(
@@ -158,8 +208,6 @@ describe("resolveAuthServices — the Ed25519 capability probe", () => {
   });
 });
 
-// Bun's WebCrypto does support Ed25519, so the unavailable runtime has to be simulated — the same
-// swap `src/crypto/primitives/timing.test.ts` uses to exercise the `timingSafeEqual` fallback.
 describe("resolveAuthServices — with Ed25519 import unavailable", () => {
   const original = crypto.subtle.importKey.bind(crypto.subtle);
 

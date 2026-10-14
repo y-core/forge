@@ -4,7 +4,6 @@ import { FakeEvent, fakeTree } from "./dom.fixture";
 import type { FakeElement } from "./dom.fixture";
 import { mountTooltip } from "./tooltip";
 
-/** A tooltip whose content records show/hide calls, since a fake has no top layer. */
 function tooltip(reference: Record<string, string> = { "aria-describedby": "tip" }) {
   const { doc, el } = fakeTree();
   const root = el("DIV", { "data-slot": "tooltip" });
@@ -69,7 +68,6 @@ describe("mountTooltip", () => {
     expect(actual).toEqual(kinds.map(({ kind }) => ({ kind, mounted: true, calls: ["show"] })));
   });
 
-  // WCAG 2.1 SC 1.4.13: entering the content must cancel the hide the trigger's leave armed.
   it("stays open when the pointer travels from the trigger onto the content", () => {
     const { root, trigger, content, win } = tooltip();
     mountTooltip(root as never);
@@ -111,8 +109,6 @@ describe("mountTooltip", () => {
 
   it("shows on keyboard focus, and only when the focus is visible", () => {
     const { root, trigger, content, win } = tooltip();
-    // Additive, not a replacement: the mount finds the trigger through `matches` too, so a wholesale
-    // override would leave the controller with nothing to bind to.
     const real = trigger.matches.bind(trigger);
     trigger.matches = (selector: string) => (selector === ":focus-visible" ? true : real(selector));
     mountTooltip(root as never);
@@ -135,18 +131,21 @@ describe("mountTooltip", () => {
     expect(content.calls).toEqual([]);
   });
 
-  it("stops listening once disposed", () => {
+  it("arms no timer for any pointer event on the trigger or the content once disposed", () => {
     const { root, trigger, content, win } = tooltip();
     mountTooltip(root as never)();
 
     pointer(trigger, "pointerenter");
+    pointer(trigger, "pointerdown", "touch");
+    pointer(trigger, "pointerleave");
+    pointer(content, "pointerenter");
+    pointer(content, "pointerleave");
+    const armed = win.timers.size;
     win.flush();
 
-    expect(content.calls).toEqual([]);
+    expect({ armed, calls: content.calls }).toEqual({ armed: 0, calls: [] });
   });
 
-  // The existing dispose test runs with `timer === 0`, so the `clearTimeout` is vacuous. Arming the
-  // show delay first is what makes the clear the thing under test.
   it("clears an armed show timer on dispose, so a pending tooltip never opens", () => {
     const { root, trigger, content, win } = tooltip();
     const dispose = mountTooltip(root as never);

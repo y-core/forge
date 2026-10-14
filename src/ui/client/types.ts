@@ -83,11 +83,13 @@ export interface FragmentObserverConfig {
   selector: string;
   /** The mounting function's own name, for the `root` error. */
   fn: string;
-  /** The log prefix, and what the caller should have passed as `root`. */
+  /** The log prefix. */
   label: string;
+  /** What the caller should have passed as `root`. */
   requires: string;
-  /** What is lost when the guard trips, completing "…; <degraded>". */
+  /** The noun a matched link must resolve to, completing "…resolve to <emptyTarget>". */
   emptyTarget: string;
+  /** What is lost when the guard trips, completing "…; <degraded>". */
   degraded: string;
   mounted: WeakMap<Element, () => void>;
   /** Returns the plan, or `null` after warning about markup it cannot drive. */
@@ -160,7 +162,7 @@ export interface ScopeDefinition<A extends string = string> {
   eager?: boolean;
   /** Binds DOM-mutating effects once on first resume, optionally returning a disposer. */
   // oxlint-disable-next-line typescript/no-invalid-void-type -- void in union is intentional — allows implicit-return setups
-  setup?: (ctx: Omit<ResumeContext, "el">) => void | (() => void);
+  setup?: (ctx: Omit<ResumeContext, "el"> & { signal: AbortSignal }) => void | (() => void);
   /** Action handlers keyed by the `data-on-<event>` value. */
   on?: Record<A, (ctx: ResumeContext, event: Event) => void>;
 }

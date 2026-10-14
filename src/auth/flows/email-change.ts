@@ -1,5 +1,8 @@
+import { createLogger } from "../../logging/logger";
+import { serializeError } from "../../logging/serialize-error";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
+import { AUTH_NOTIFY_TIMEOUT_MS } from "../config";
 import type { AuthStoreError } from "../errors";
 import { authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken } from "../keys/token";
 import { authLimit } from "../limits";
@@ -12,10 +15,8 @@ const MIN_TTL_MS = 60_000;
 const MAX_TTL_MS = 86_400_000;
 const PAYLOAD_SEPARATOR = " ";
 
-/** `approve` is answered by the address the account holds; only `move` — mailed to the new address — changes the row. */
 type Stage = "approve" | "move";
 
-/** The fields a token payload carries, or `undefined` for a payload this flow did not write. */
 function readPayload(payload: string): { stage: Stage; userId: string; address: string } | undefined {
   const first = payload.indexOf(PAYLOAD_SEPARATOR);
   if (first < 0) return undefined;
@@ -38,22 +39,31 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
     floor: "the shortest expiration the nonce store accepts, below which the link outlives its own replay guard",
     ceiling: "a change-of-address link that outlives a day is a standing takeover primitive",
   });
+  const logger = options.logger ?? createLogger("auth/flows");
 
   function mint(stage: Stage, userId: string, address: string, at: number): Promise<string> {
     return encodeAuthToken(options.keys, "identity", [stage, userId, address].join(PAYLOAD_SEPARATOR), ttlMs, { now: at });
   }
 
   async function deliver(to: string, token: string, expiresAt: number): Promise<AuthIssueOutcome> {
-    const sent = await options.notifier.send({ to, kind: "email-change", url: options.confirmUrl(token), expiresAt });
+    const sent = await options.notifier.send(
+      { to, kind: "email-change", url: options.confirmUrl(token), expiresAt },
+      AbortSignal.timeout(AUTH_NOTIFY_TIMEOUT_MS),
+    );
     return sent.ok ? "challenged" : "unavailable";
   }
 
-  // Only ever minted here, on an unverified account, or by `confirm` on an answered `approve`: a
-  // session alone cannot produce a token that moves the row.
+  function settled(work: Promise<AuthIssueOutcome>): Promise<AuthIssueOutcome> {
+    return work.catch((error: unknown) => {
+      logger.error("auth.email-change.deliver.failed", { error: serializeError(error) });
+      return "unavailable";
+    });
+  }
+
   async function forward(userId: string, address: string, at: number): Promise<{ sentTo: string; expiresAt: number }> {
     const token = await mint("move", userId, address, at);
     const expiresAt = at + ttlMs;
-    options.defer(deliver(address, token, expiresAt));
+    options.defer(settled(deliver(address, token, expiresAt)));
     return { sentTo: address, expiresAt };
   }
 
@@ -74,8 +84,6 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
     if (!changed.ok) return err(changed.error.code === "conflict" ? "unrecognised" : changed.error);
     if (!changed.data) return err("unrecognised");
 
-    // The address is the account's identity, so no session established under the old one may outlive
-    // the move — including the sessions on devices this request cannot see.
     const revoked = await options.users.revokeSessions(userId, at);
     if (!revoked.ok) return err(revoked.error);
 
@@ -95,21 +103,17 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
       const address = email.trim();
       if (normalizeEmail(address) === found.data.emailKey) return err("unchanged");
 
-      // An unverified address has proved nothing, so the new one is the only mailbox worth asking;
-      // looking it up here would answer "already registered", the enumeration sign-in refuses.
       if (found.data.emailVerifiedAt === null) return ok(await forward(userId, address, at));
 
       // The first link goes to the address the account already holds, so a stolen cookie cannot move
       // the account to the thief's inbox; answering it only forwards a second link to the new one.
       const token = await mint("approve", userId, address, at);
       const expiresAt = at + ttlMs;
-      options.defer(deliver(found.data.email, token, expiresAt));
+      options.defer(settled(deliver(found.data.email, token, expiresAt)));
       return ok({ expiresAt, sentTo: found.data.email });
     },
 
     async confirm(token, at) {
-      // Both the account and the address come out of the token, so there is no second argument a
-      // caller could point at a different mailbox — the binding is the payload, not a check.
       const decoded = await decodeAuthToken(options.keys, "identity", token, { now: at });
       if (!decoded.ok) return err(decoded.error === "expired" ? "expired" : "unrecognised");
       const payload = readPayload(decoded.data.payload);

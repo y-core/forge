@@ -5,9 +5,9 @@ import { mapHandler } from "../testing/route";
 import { Forge } from "./forge-app";
 import { healthCheck } from "./health";
 
-function makeApp(checks: Parameters<typeof healthCheck>[0]) {
+function makeApp(checks: Parameters<typeof healthCheck>[0], options?: Parameters<typeof healthCheck>[1]) {
   const app = new Forge();
-  mapHandler(app, "GET", "/health", healthCheck(checks));
+  mapHandler(app, "GET", "/health", healthCheck(checks, options));
   return app;
 }
 
@@ -70,5 +70,26 @@ describe("healthCheck", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { ok: boolean; checks: Record<string, boolean> };
     expect(body.checks.myVar).toBe(true);
+  });
+
+  it("reports a check still pending at the deadline as false, leaving the others their own result", async () => {
+    const app = makeApp({ hung: () => new Promise<boolean>(() => {}), up: () => true, down: () => false }, { timeoutMs: 5 });
+    const res = await app.request("/health");
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ ok: false, checks: { hung: false, up: true, down: false } });
+  });
+
+  it("still passes an immediately answering check under a deadline of zero", async () => {
+    const app = makeApp({ up: () => true, later: async () => true }, { timeoutMs: 0 });
+    const res = await app.request("/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, checks: { up: true, later: true } });
+  });
+
+  it("waits well past a few milliseconds for a slow check when no deadline is given", async () => {
+    const app = makeApp({ slow: () => new Promise<boolean>((resolve) => setTimeout(() => resolve(true), 25)) });
+    const res = await app.request("/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, checks: { slow: true } });
   });
 });

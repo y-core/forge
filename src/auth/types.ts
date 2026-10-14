@@ -285,7 +285,7 @@ export interface NonceStore {
 
 /** The delivery seam. Forge ships this contract and no mailer — the transport is the consumer's. @public */
 export interface AuthNotifier {
-  send(message: AuthMessage): Promise<AuthStoreResult<void>>;
+  send(message: AuthMessage, signal: AbortSignal): Promise<AuthStoreResult<void>>;
 }
 
 /** One identity's outstanding email code and the guesses spent against it. @public */
@@ -296,8 +296,6 @@ export interface OtpState {
   readonly expiresAt: number;
 }
 
-// Every method here decides in one statement: these are security counters on the primary factor,
-// and a read followed by a write hands every parallel request a free extra guess.
 /** The live email code for one identity — the two conditional writes the factor rests on. @public */
 export interface OtpStateStore {
   /** Writes the code unless one was issued within `cooldownMs`; `false` is the cooldown refusing. */

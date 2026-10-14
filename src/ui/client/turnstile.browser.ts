@@ -404,12 +404,25 @@ async function recordTeardown(page: Page, selector = "#form"): Promise<void> {
     const form = document.querySelector(root) as HTMLElement;
     const add = form.addEventListener.bind(form);
     const remove = form.removeEventListener.bind(form);
+    type Entry = { type: string; listener: EventListenerOrEventListenerObject; capture: boolean };
+    const live = new Set<Entry>();
+    const capture = (options?: boolean | EventListenerOptions) => (typeof options === "boolean" ? options : options?.capture === true);
+    const drop = (entry: Entry | undefined) => {
+      if (!entry || !live.delete(entry)) return;
+      record.listeners[entry.type] = (record.listeners[entry.type] ?? 0) - 1;
+    };
     form.addEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) => {
-      record.listeners[type] = (record.listeners[type] ?? 0) + 1;
+      const signal = typeof options === "object" ? options.signal : undefined;
+      if (!signal?.aborted) {
+        const entry = { type, listener, capture: capture(options) };
+        live.add(entry);
+        record.listeners[type] = (record.listeners[type] ?? 0) + 1;
+        signal?.addEventListener("abort", () => drop(entry), { once: true });
+      }
       add(type, listener, options);
     };
     form.removeEventListener = (type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) => {
-      record.listeners[type] = (record.listeners[type] ?? 0) - 1;
+      drop([...live].find((e) => e.type === type && e.listener === listener && e.capture === capture(options)));
       remove(type, listener, options);
     };
 

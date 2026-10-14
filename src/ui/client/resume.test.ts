@@ -1,7 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { FakeDocument, FakeElement, fakeTree } from "./dom.fixture";
-import { disposeScopesIn, findScopes, hydrateState, registerScope, resumeScope, scanRoot, sweepDetachedScopes } from "./resume";
+import { disposeScopesIn, findScopes, hydrateState, registerScope, resume, resumeScope, scanRoot, sweepDetachedScopes } from "./resume";
+import { effect } from "./signal";
 
 const asParent = (el: FakeElement) => el as unknown as ParentNode;
 
@@ -19,8 +20,6 @@ describe("hydrateState", () => {
   });
 
   it("throws on malformed JSON, carrying the parse error as the cause", () => {
-    // The `cause` is the whole point of the throw: a browser spec cannot read it, so this is the
-    // one place the chain from SyntaxError to authoring error is actually pinned.
     let caught: unknown;
     try {
       hydrateState("{nope");
@@ -33,7 +32,6 @@ describe("hydrateState", () => {
   });
 
   it("throws on JSON that parses cleanly but is not an object", () => {
-    // `null` is checked before `typeof`, because `typeof null === "object"` would let it through.
     expect(() => hydrateState("null")).toThrow("[resume] data-island-state must be a JSON object, got: null");
     expect(() => hydrateState("5")).toThrow("[resume] data-island-state must be a JSON object, got: 5");
     expect(() => hydrateState('"go"')).toThrow('[resume] data-island-state must be a JSON object, got: "go"');
@@ -60,7 +58,6 @@ describe("scanRoot", () => {
   });
 });
 
-/** A walk root that carries `data-scope` itself, one below it, and one inside a shadow tree. */
 function scopeTree() {
   const { el } = fakeTree();
   const root = el("DIV", { "data-scope": "root", id: "root" });
@@ -140,5 +137,119 @@ describe("sweepDetachedScopes", () => {
     expect(disposed).toEqual(["detached"]);
     disposeScopesIn(asRoot(connected));
     expect(disposed).toEqual(["detached", "connected"]);
+  });
+});
+
+describe("the setup signal", () => {
+  const asRoot = (node: FakeElement) => node as unknown as HTMLElement;
+
+  function signalProbe(name: string, eager = false): Map<string, AbortSignal> {
+    const handed = new Map<string, AbortSignal>();
+    registerScope(name, {
+      eager,
+      setup: ({ root, signal }) => {
+        handed.set(root.id, signal);
+      },
+    });
+    return handed;
+  }
+
+  it("is live while the scope is mounted", () => {
+    const handed = signalProbe("signal-live");
+    const { el } = fakeTree();
+    const root = el("DIV", { "data-scope": "signal-live", id: "live" });
+
+    resumeScope(asRoot(root));
+
+    expect(handed.get("live")?.aborted).toBe(false);
+    disposeScopesIn(asRoot(root));
+  });
+
+  it("aborts when disposeScopesIn reaches the scope from an ancestor", () => {
+    const handed = signalProbe("signal-dispose-in");
+    const { el } = fakeTree();
+    const container = el();
+    const root = el("DIV", { "data-scope": "signal-dispose-in", id: "inner" });
+    container.append(root);
+    resumeScope(asRoot(root));
+
+    disposeScopesIn(asRoot(container));
+
+    expect(handed.get("inner")?.aborted).toBe(true);
+  });
+
+  it("aborts for a detached root on the sweep, and stays live for a connected one", () => {
+    const handed = signalProbe("signal-sweep");
+    const { el } = fakeTree();
+    const connected = el("DIV", { "data-scope": "signal-sweep", id: "connected" });
+    const detached = new FakeElement("DIV", { "data-scope": "signal-sweep", id: "detached" });
+    new FakeElement().append(detached);
+    resumeScope(asRoot(connected));
+    resumeScope(asRoot(detached));
+    detached.remove();
+
+    sweepDetachedScopes();
+
+    expect({ detached: handed.get("detached")?.aborted, connected: handed.get("connected")?.aborted }).toEqual({
+      detached: true,
+      connected: false,
+    });
+    disposeScopesIn(asRoot(connected));
+  });
+
+  it("aborts for an eager scope when the disposer resume() returned runs", () => {
+    const handed = signalProbe("signal-eager", true);
+    const doc = new FakeDocument();
+    const root = new FakeElement("DIV", { "data-scope": "signal-eager", id: "eager" });
+    root.ownerDocument = doc;
+    doc.root.append(root);
+
+    const release = resume(doc as unknown as Node);
+    const before = handed.get("eager")?.aborted;
+    release();
+
+    expect({ before, after: handed.get("eager")?.aborted }).toEqual({ before: false, after: true });
+  });
+
+  it("aborts after the scope's effects are disposed and before the setup's own disposer runs", () => {
+    const order: string[] = [];
+    registerScope("signal-order", {
+      setup: ({ state, signal }) => {
+        const count = state.count as { value: number };
+        effect(() => {
+          order.push(`effect saw ${count.value}`);
+        });
+        signal.addEventListener("abort", () => {
+          count.value = 2;
+          order.push("abort");
+        });
+        return () => {
+          order.push(`setup disposer, aborted: ${signal.aborted}`);
+        };
+      },
+    });
+    const { el } = fakeTree();
+    const root = el("DIV", { "data-scope": "signal-order", "data-island-state": '{"count":1}' });
+    resumeScope(asRoot(root));
+
+    disposeScopesIn(asRoot(root));
+
+    expect(order).toEqual(["effect saw 1", "abort", "setup disposer, aborted: true"]);
+  });
+
+  it("aborts the signal a throwing setup captured, and resumeScope rethrows", () => {
+    let captured: AbortSignal | undefined;
+    const failure = new Error("setup failed");
+    registerScope("signal-throws", {
+      setup: ({ signal }) => {
+        captured = signal;
+        throw failure;
+      },
+    });
+    const { el } = fakeTree();
+    const root = el("DIV", { "data-scope": "signal-throws" });
+
+    expect(() => resumeScope(asRoot(root))).toThrow(failure);
+    expect(captured?.aborted).toBe(true);
   });
 });

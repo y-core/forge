@@ -10,7 +10,7 @@ import type { KeyRing } from "../crypto/keyring/types";
 import { base64urlDecode, base64urlEncode, hmacSign, hmacVerify, utf8Decode, utf8Encode } from "../crypto/primitives/mod";
 import { mapHandler } from "../testing/route";
 import { createCsrfToken, csrfMinter, csrfMinterCtx, csrfProtection, csrfTokenCtx, mintCsrf, verifyCsrfToken } from "./csrf";
-import { csrfHeaderCtx } from "./csrf-context";
+import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
 
 const HEX_KEY_A = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
@@ -192,8 +192,6 @@ describe("csrfProtection middleware", () => {
     expect(res.status).toBe(200);
   });
 
-  // A passkey ceremony has no form and no hidden field to fall back to, so the header name has to
-  // reach the builder that sends the token; disagreeing with the guard is a 403 with no explanation.
   it("publishes the header name it checks on a GET, custom or default", async () => {
     const named = new Forge();
     named.use("*", csrfProtection({ ring: () => ring, headerName: "X-My-Token", subject: false }));
@@ -215,6 +213,22 @@ describe("csrfProtection middleware", () => {
     const token = await (await app.request("/test")).text();
     const res = await app.request("/test", { method: "POST", headers: { "X-My-Token": token } });
     expect(await res.text()).toBe("X-My-Token");
+  });
+
+  it("publishes the token field name it consumed on a mutation", async () => {
+    const app = new Forge();
+    app.use("*", csrfProtection({ ring: () => ring, tokenField: "my_csrf", subject: false }));
+    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.get(c)));
+    mapHandler(app, "POST", "/test", (c) => new Response(csrfFieldCtx.get(c)));
+
+    const token = await (await app.request("/test")).text();
+    const res = await app.request("/test", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ my_csrf: token }).toString(),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("my_csrf");
   });
 
   it("GET sets csrf minter on context", async () => {
@@ -529,7 +543,6 @@ describe("CSRF token", () => {
     expect(result).toEqual({ ok: false, error: "unknown-key" });
   });
 
-  // Kids naming an inherited Object.prototype member — the prototype-chain lookup these pin against.
   for (const pollutedKid of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
     it(`rejects a token whose kid is the inherited member "${pollutedKid}" (unknown-key, not a throw)`, async () => {
       const token = await signCsrfPayload(ring, `${pollutedKid}|/api/contact||${Date.now()}|${"aa".repeat(16)}`);
@@ -736,6 +749,39 @@ describe("csrfMinter()", () => {
     expect(imports).toBe(2);
   });
 
+  it("imports the key once for two concurrent mints against a cold env", async () => {
+    let imports = 0;
+    const mint = csrfMinter({
+      ring: async () => {
+        imports += 1;
+        return importKeyRing([HEX_SECRET]);
+      },
+      subject: false,
+    });
+
+    const cold = { CSRF_SECRET: HEX_SECRET };
+    await Promise.all([mint(minterContext(cold), "/auth/signout"), mint(minterContext(cold), "/auth/signout")]);
+    expect(imports).toBe(1);
+  });
+
+  it("retries a resolver that threw, rather than caching its failure for the env", async () => {
+    let imports = 0;
+    const mint = csrfMinter({
+      ring: () => {
+        imports += 1;
+        if (imports === 1) throw new Error("secret binding missing");
+        return importKeyRing([HEX_SECRET]);
+      },
+      subject: false,
+    });
+
+    const context = minterContext({ CSRF_SECRET: HEX_SECRET });
+    await expect(mint(context, "/auth/signout")).rejects.toThrow("secret binding missing");
+    const token = await mint(context, "/auth/signout");
+    expect(await verifyCsrfToken(await importKeyRing([HEX_SECRET]), token, "/auth/signout")).toEqual({ ok: true });
+    expect(imports).toBe(2);
+  });
+
   it("refuses an empty path rather than minting a token bound to nothing", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const mint = csrfMinter({ ring: () => ring, subject: false });
@@ -756,8 +802,6 @@ describe("csrfMinter()", () => {
 describe("csrfProtection — body cap conflicts", () => {
   const body = (bytes: number) => `name=${"x".repeat(bytes)}`;
 
-  // An earlier guard that swallows its own 413 is what leaves csrf holding a stream it cannot re-meter;
-  // without the rethrow the refusal reads as 403, blaming a token that was never even looked for.
   it("rethrows a cap conflict to the error boundary instead of collapsing it to 403", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const app = new Forge();

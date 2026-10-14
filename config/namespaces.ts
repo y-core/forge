@@ -36,7 +36,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "render/jsx": "value",
     security: "value",
   },
-  auth: { "crypto/keyring": "value", "storage/db": "value" },
+  auth: { "crypto/keyring": "value", logging: "value", "storage/db": "value" },
   "auth/client": { auth: "value", http: "value", "ui/client": "value" },
   "auth/web": {
     app: "value",
@@ -64,14 +64,8 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "render/htmx": { html: "value" },
   "render/jsx": { html: "value", http: "value" },
   "render/pdf": { "render/jsx": "value" },
-  // Type-only and one way: a read returns the engine's own attachment shape, and the engine never
-  // reaches back for the reader — so the `render/pdf` container stays acyclic.
   "render/pdf/attachments": { "render/pdf": "type" },
-  // One way: the audit reads the engine's types and its declared defaults, and the engine never
-  // reaches back for it — which is what keeps the `render/pdf` container acyclic.
   "render/pdf/audit": { "render/pdf": "value" },
-  // Type-only, and one way for the same reason: a pack is adapted into the face shape the engine
-  // embeds, so the names cross but nothing does at runtime and the container stays acyclic.
   "render/pdf/fonts": { "render/pdf": "type" },
   security: { dev: "type", http: "value", logging: "value" },
   session: { "crypto/keyring": "value" },

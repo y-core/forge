@@ -7,7 +7,6 @@ import { mountTabs } from "./tabs";
 
 const TAB_ROLE = /\[role='([^']+)'\]/.exec(TAB_SELECTOR)?.[1] ?? TAB_SELECTOR;
 
-/** A tab set whose tabs are anchors, exactly as `Tabs.Tab` renders them. */
 function tabs(options: { activation?: string; selected?: number } = {}) {
   const { doc, el } = fakeTree();
   const { activation = "automatic", selected = 0 } = options;
@@ -37,8 +36,6 @@ const fire = (el: FakeElement, type: string) => {
 const selection = (list: FakeElement[]) => list.map((el) => el.getAttribute("aria-selected"));
 
 describe("mountTabs", () => {
-  // `aria-selected` and `data-selected` are written in one statement rather than by one function,
-  // because which ARIA attribute a state maps to is the widget's own question, not the table's.
   it("moves the styling hook with the ARIA state on every tab it repaints", () => {
     const { root, tabs: list } = tabs();
     mountTabs(root as never);
@@ -118,8 +115,6 @@ describe("mountTabs", () => {
     expect(fire(list[1] as FakeElement, "click").defaultPrevented).toBe(true);
   });
 
-  // An aria-disabled tab stays reachable and is inert on arrival — it is focused here, and the
-  // selection does not move to it. A tab that had left the ring could not be focused at all.
   it("reaches a tab marked aria-disabled without selecting it", () => {
     const { root, tabs: list } = tabs();
     list[2]?.setAttribute("aria-disabled", "true");
@@ -181,8 +176,6 @@ describe("mountTabs — handing the tab stop back", () => {
   });
 });
 
-// `tabs.test.ts` fires only `focusin`, which is the automatic-activation listener alone. The click
-// listener and the roving ring are removed by the same disposer and neither is reached that way.
 describe("mountTabs — disposing", () => {
   const counts = (el: FakeElement): number => [...el.listeners.values()].reduce((total, list) => total + list.length, 0);
 
@@ -202,6 +195,34 @@ describe("mountTabs — disposing", () => {
     (rows[1] as FakeElement).dispatchEvent(click);
 
     expect(click.defaultPrevented).toBe(false);
+  });
+
+  it("selects on Space under manual activation while mounted, swallowing the key", () => {
+    const { root, tabs: rows } = tabs({ activation: "manual" });
+    const dispose = mountTabs(root as never);
+
+    const space = new FakeEvent("keydown", { key: " ", target: rows[1] });
+    (rows[1] as FakeElement).dispatchEvent(space);
+    dispose();
+
+    expect({ selection: selection(rows), spaceSwallowed: space.defaultPrevented }).toEqual({
+      selection: ["false", "true", "false"],
+      spaceSwallowed: true,
+    });
+  });
+
+  it("selects nothing under manual activation once disposed, neither on Space nor on a click", () => {
+    const { root, tabs: rows } = tabs({ activation: "manual" });
+    mountTabs(root as never)();
+
+    const space = new FakeEvent("keydown", { key: " ", target: rows[1] });
+    (rows[1] as FakeElement).dispatchEvent(space);
+    fire(rows[2] as FakeElement, "click");
+
+    expect({ selection: selection(rows), spaceSwallowed: space.defaultPrevented }).toEqual({
+      selection: ["true", "false", "false"],
+      spaceSwallowed: false,
+    });
   });
 
   it("swallows that same click while mounted, which is what the disposal undoes", () => {

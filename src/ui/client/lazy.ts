@@ -1,16 +1,14 @@
 import { ownerDocument, ownerWindow } from "./dom";
 import type { LazyImportOptions } from "./types";
 
-/** How many times {@link lazy} calls `load()` for one element before it gives up. */
 const LAZY_MAX_ATTEMPTS = 3;
 
-/** Wait between retries; `observe()` re-fires on the next frame, so an immediate retry burns the attempt budget. */
+// `observe()` re-fires on the next frame, so an immediate retry burns the attempt budget.
 const LAZY_RETRY_DELAY_MS = 500;
 
 /** Defers loading a module until its anchor element enters the viewport, retrying a rejected load up to `LAZY_MAX_ATTEMPTS` times. @public */
 export function lazy<T>(options: LazyImportOptions<T>): () => void {
   const el = ownerDocument(options.within).querySelector(`[data-ref='${CSS.escape(options.ref)}']`);
-  // A property of the rendered page — the anchor is free not to be on this route — so it reports.
   if (!el) {
     console.warn(`[lazy] no [data-ref="${options.ref}"] in this document; "${options.ref}" will never load`);
     return () => {};
@@ -22,8 +20,6 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
 
   const win = ownerWindow(el);
 
-  // Resolved off the element's realm so a realm lacking the constructor degrades to a no-op disposer
-  // rather than throwing off the bare global. See `UI_CLIENT_RUNTIME.md` §3b.
   const observerCtor = (win as Window & { IntersectionObserver?: typeof IntersectionObserver }).IntersectionObserver;
   if (typeof observerCtor !== "function") {
     console.warn(`[lazy] IntersectionObserver is unavailable in this realm; "${options.ref}" will never load`);
@@ -35,7 +31,7 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
     else console.error(`[lazy] "${options.ref}" failed to load`, error);
   };
 
-  let disposed = false;
+  const lifetime = new AbortController();
   let attempts = 0;
   let retryId = 0;
 
@@ -45,7 +41,7 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
     attempts += 1;
     options.load().then(
       (mod) => {
-        if (disposed) return;
+        if (lifetime.signal.aborted) return;
         try {
           options.init(mod, el);
         } catch (error) {
@@ -56,10 +52,10 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
       },
       (error) => {
         report(error);
-        if (disposed || attempts >= LAZY_MAX_ATTEMPTS) return;
+        if (lifetime.signal.aborted || attempts >= LAZY_MAX_ATTEMPTS) return;
         retryId = win.setTimeout(() => {
           retryId = 0;
-          if (!disposed) observer.observe(el);
+          if (!lifetime.signal.aborted) observer.observe(el);
         }, LAZY_RETRY_DELAY_MS);
       },
     );
@@ -67,7 +63,7 @@ export function lazy<T>(options: LazyImportOptions<T>): () => void {
   observer.observe(el);
 
   return () => {
-    disposed = true;
+    lifetime.abort();
     win.clearTimeout(retryId);
     observer.disconnect();
   };

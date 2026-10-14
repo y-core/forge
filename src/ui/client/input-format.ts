@@ -14,19 +14,16 @@ export function mountInputFormat(root: HTMLElement): () => void {
     console.warn(`[input-format] ${INPUT_FORMAT_ATTR}="${template}" declares no "#" slot; nothing will be formatted`);
     return noop;
   }
-  // A bound control's signal *is* its state, so re-spacing the value would lie to the signal and to
-  // every reader that parses it back to a number.
   if (root.hasAttribute("data-field")) {
     console.warn("[input-format] a control with data-field is bound to a signal and will not be formatted");
     return noop;
   }
 
-  let disposed = false;
+  const lifetime = new AbortController();
 
   function dispose(): void {
-    if (disposed) return;
-    disposed = true;
-    root.removeEventListener("focusout", onFocusOut);
+    if (lifetime.signal.aborted) return;
+    lifetime.abort();
     mountedFormats.delete(root);
   }
 
@@ -50,7 +47,7 @@ export function mountInputFormat(root: HTMLElement): () => void {
     }
   };
 
-  root.addEventListener("focusout", onFocusOut);
+  root.addEventListener("focusout", onFocusOut, { signal: lifetime.signal });
   mountedFormats.set(root, dispose);
   return dispose;
 }

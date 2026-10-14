@@ -10,13 +10,9 @@ const HOSTNAME = "example.com";
 const TURNSTILE_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 let savedFetch: typeof globalThis.fetch;
-let savedSetTimeout: typeof globalThis.setTimeout;
-let savedClearTimeout: typeof globalThis.clearTimeout;
 
 afterEach(() => {
   if (savedFetch) globalThis.fetch = savedFetch;
-  if (savedSetTimeout) globalThis.setTimeout = savedSetTimeout;
-  if (savedClearTimeout) globalThis.clearTimeout = savedClearTimeout;
 });
 
 function mockFetch(response: object, status = 200) {
@@ -31,6 +27,17 @@ function withCapturedRequest(fn: (request: { url: string; body?: string; signal?
     const signal = init?.signal as AbortSignal | undefined;
     return fn({ url: url.toString(), ...(body !== undefined ? { body } : {}), ...(signal !== undefined ? { signal } : {}) });
   };
+}
+
+function bodyThatNeverCompletes(signal: AbortSignal | undefined): Response {
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"success":'));
+        signal?.addEventListener("abort", () => controller.error(signal.reason));
+      },
+    }),
+  );
 }
 
 describe("verifyTurnstile", () => {
@@ -119,21 +126,24 @@ describe("verifyTurnstile", () => {
   });
 
   it("returns timeout when the request aborts", async () => {
-    savedSetTimeout = globalThis.setTimeout;
-    savedClearTimeout = globalThis.clearTimeout;
-    globalThis.setTimeout = ((fn: (...args: never[]) => void) => {
-      fn();
-      return 1 as unknown as number;
-    }) as unknown as typeof globalThis.setTimeout;
-    globalThis.clearTimeout = (() => {}) as typeof globalThis.clearTimeout;
-
-    withCapturedRequest(async ({ signal }) => {
-      throw new DOMException(signal?.aborted ? "aborted" : "failed", "AbortError");
-    });
+    withCapturedRequest(
+      ({ signal }) =>
+        new Promise<Response>((_, reject) => {
+          signal?.addEventListener("abort", () => reject(signal.reason));
+        }),
+    );
 
     const fd = new FormData();
     fd.append("cf-turnstile-response", "tok");
     expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, timeoutMs: 1 })).toEqual({ ok: false, error: "timeout" });
+  });
+
+  it("returns timeout when the response arrives but its body never completes", async () => {
+    withCapturedRequest(({ signal }) => bodyThatNeverCompletes(signal));
+
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "tok");
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, timeoutMs: 5 })).toEqual({ ok: false, error: "timeout" });
   });
 
   it("returns network-error on fetch failures", async () => {
@@ -297,6 +307,30 @@ describe("verifyTurnstile — caller cancellation", () => {
     queueMicrotask(() => controller.abort());
 
     await expect(verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, signal: controller.signal })).rejects.toThrow();
+  });
+
+  it("rejects with the caller's reason when the caller aborts while the body is being read", async () => {
+    const controller = new AbortController();
+    withCapturedRequest(({ signal }) => {
+      queueMicrotask(() => controller.abort(new Error("client disconnected")));
+      return bodyThatNeverCompletes(signal);
+    });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+
+    await expect(verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, signal: controller.signal })).rejects.toThrow("client disconnected");
+  });
+
+  it("still returns parse-error for a malformed body while the caller's signal is live", async () => {
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("not json", { status: 200 });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, signal: new AbortController().signal })).toEqual({
+      ok: false,
+      error: "parse-error",
+    });
   });
 
   it("still resolves to timeout when it is the timeout that fired", async () => {

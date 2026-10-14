@@ -194,10 +194,11 @@ runs every disposer collected during that resume, so the two halves fit without 
 — on every re-resume, and a page re-resuming after each htmx swap accumulates one set per swap. Nothing warns; the page simply gets slower and
 starts handling the same keystroke several times.
 
-**The runtime owns the effects a `setup` creates; the author owns everything else.** Every `effect` created while a scope's `setup` runs is
-collected and disposed with the scope. What a `setup` _returns_ is for what the runtime cannot see: listeners, observers, timers, controller
-handles. It runs **after** the scope's effects are disposed, so no reactive computation is alive while an author's teardown mutates the DOM those
-effects write to.
+**The runtime owns the effects a `setup` creates and the `signal` it is handed; the author owns everything else.** Every `effect` created while
+a scope's `setup` runs is collected and disposed with the scope, and the context's `signal` is aborted when the scope is disposed — so a `setup`
+hands it to `fetch` and to `addEventListener` rather than tracking a flag of its own. What a `setup` _returns_ is for what neither reaches:
+observers, timers, controller handles, a listener added without the signal. It runs **after** the scope's effects are disposed and its `signal` is
+aborted, so no reactive computation is alive while an author's teardown mutates the DOM those effects write to.
 
 **Ownership is the window in which `setup` runs, and nothing wider.** An effect created in an `on` handler, or in a `.then()` resolving after
 `setup` returned, is owned by nothing and must be disposed by whoever created it — per-invocation ownership would be wrong more often than right,
@@ -208,8 +209,8 @@ These consequences follow, each the rule rather than a special case:
 - **A `setup` that returns nothing is legal**, and is not treated as a disposer.
 - **A disposer must be idempotent-safe to call after its element is gone.** Removing a listener from a detached node is a no-op, which is why
   teardown never needs to check.
-- **A `setup` that throws disposes the effects it created and leaves its root resumable.** A root marked resumed with no disposer would be
-  unreachable by every teardown and inert on re-resume, which is a worse failure than the throw.
+- **A `setup` that throws disposes the effects it created, aborts its `signal`, and leaves its root resumable.** A root marked resumed with no
+  disposer would be unreachable by every teardown and inert on re-resume, which is a worse failure than the throw.
 - **A throwing disposer is reported and does not stop the rest of teardown.** Teardown iterates every live scope, so one failure must not silently
   skip the scopes queued behind it.
 

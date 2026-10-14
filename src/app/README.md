@@ -339,7 +339,8 @@ The trade, the guard line that bounds it, and why an `ANY` asset catch-all overr
 ## Reporting whether the app is healthy
 
 `healthCheck` takes named predicates, runs them concurrently, and answers `{ ok, checks }` as JSON — `200` when all pass, `503` otherwise, always
-`no-store`. A predicate that throws or rejects counts as `false`, so a probe needs no error handling of its own.
+`no-store`. A predicate that throws or rejects counts as `false`, so a probe needs no error handling of its own. One still pending after
+`timeoutMs` — 5 s unless `healthCheck(checks, { timeoutMs })` sets it — counts as `false` too, so a hung binding cannot hang the probe.
 
 ```ts
 health: healthCheck<Bindings>({

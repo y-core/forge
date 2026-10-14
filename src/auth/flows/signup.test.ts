@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { createLogger } from "../../logging/logger";
+import type { LogRecord } from "../../logging/types";
 import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
@@ -64,7 +66,6 @@ function fakeUsers(seed: readonly AuthUser[], options: { conflict?: boolean } = 
   return { store, rows, created };
 }
 
-/** The lifetime the primary factor enforces, which is now the only source of a reported expiry. */
 const OTP_TTL_MS = 600_000;
 
 function fakeDeferral() {
@@ -100,6 +101,14 @@ function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } =
   return { flow, users, deferral, challenged };
 }
 
+function capturingLogger() {
+  const records: { level: string; message: string; data: Record<string, unknown> | undefined }[] = [];
+  const logger = createLogger("auth/flows", {
+    channels: [{ write: (record: LogRecord) => void records.push({ level: record.level, message: record.message, data: record.data }) }],
+  });
+  return { logger, records };
+}
+
 async function settle(scheduled: readonly Promise<AuthIssueOutcome>[]): Promise<readonly AuthIssueOutcome[]> {
   return Promise.all(scheduled);
 }
@@ -112,8 +121,6 @@ describe("createSignupFlow — anti-enumeration on request", () => {
     await settle([...fresh.deferral.scheduled, ...taken.deferral.scheduled]);
   });
 
-  // Both branches hand one promise to the same deferral, so the lookup, the insert and the delivery
-  // are all off the caller's clock; deleting either call reintroduces the latency tell.
   it("schedules deferred work on both branches, and reads nothing about the address first", async () => {
     for (const [name, built] of [
       ["new", scene()],
@@ -133,7 +140,6 @@ describe("createSignupFlow — anti-enumeration on request", () => {
     expect(fresh.challenged).toHaveLength(1);
   });
 
-  // A code sent to the mailbox's own owner is harmless; "that address is taken" is not.
   it("challenges a registered address rather than refusing it, and creates no second account", async () => {
     const existing = userRow();
     const taken = scene([existing]);
@@ -156,9 +162,46 @@ describe("createSignupFlow — anti-enumeration on request", () => {
 });
 
 describe("createSignupFlow — the challenge lifetime it reports", () => {
-  // The defect this closes: the flow carried a `challengeTtlMs` of its own, so a deployment could
-  // configure the factor's real lifetime and the number the page shows to different values.
   it("reports the lifetime the primary factor enforces, and has none of its own to disagree with it", () => {
     expect(scene().flow.request(EMAIL, AT)).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
   });
+});
+
+describe("createSignupFlow — a throw inside the deferred work", () => {
+  const outage = new Error("D1 connection reset");
+  const brokenUsers: UserStore = { ...fakeUsers([]).store, findByEmailKey: () => Promise.reject(outage) };
+  const brokenPrimary: ImplicitFactorService<"email-otp"> = {
+    kind: "email-otp",
+    enrolment: "implicit",
+    capabilities: { stepUp: true },
+    challengeTtlMs: OTP_TTL_MS,
+    codeDigits: 6,
+    codePeriodSeconds: null,
+    reissueAfterMs: null,
+    createChallenge: () => Promise.reject(outage),
+    verifyChallenge: () => Promise.resolve(err("unrecognised" as const)),
+    listEnrolments: () => Promise.resolve(ok([])),
+  };
+
+  for (const { name, overrides } of [
+    { name: "the user store rejects", overrides: { users: brokenUsers } },
+    {
+      name: "the primary factor rejects",
+      overrides: { factors: createFactorRegistry(NO_FACTOR_ROWS, { offered: [{ service: brokenPrimary, role: "primary" }] }) },
+    },
+  ] satisfies { name: string; overrides: Partial<AuthSignupOptions> }[]) {
+    it(`settles to unavailable and logs the error when ${name}`, async () => {
+      const captured = capturingLogger();
+      const built = scene([], {}, { ...overrides, logger: captured.logger });
+      expect(built.flow.request(EMAIL, AT)).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+      expect(await settle(built.deferral.scheduled)).toEqual(["unavailable"]);
+      expect(captured.records).toEqual([
+        {
+          level: "error",
+          message: "auth.signup.issue.failed",
+          data: { error: { type: "Error", detail: "D1 connection reset", stack: outage.stack } },
+        },
+      ]);
+    });
+  }
 });

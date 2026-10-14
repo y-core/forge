@@ -7,8 +7,10 @@ import type { CfClient } from "./types";
 
 const BASE_URL = "https://api.cloudflare.com/client/v4";
 
-export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof globalThis.fetch = globalThis.fetch): CfClient {
+export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof globalThis.fetch = globalThis.fetch, timeoutMs = 30_000): CfClient {
   async function requestEnvelope<T>(method: string, path: string, body?: unknown): Promise<Result<CfApiResponse<T>, CfApiClientError>> {
+    const deadline = AbortSignal.timeout(timeoutMs);
+    const timedOut = (): Result<never, CfApiClientError> => err(new CfApiClientError("network", `timed out after ${timeoutMs}ms`));
     let res: Response;
     try {
       const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
@@ -18,8 +20,10 @@ export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof g
           ? { Authorization: `Bearer ${auth.apiToken}` }
           : { Authorization: `Bearer ${auth.apiToken}`, "Content-Type": "application/json" },
         ...(body !== undefined ? { body: isFormData ? body : JSON.stringify(body) } : {}),
+        signal: deadline,
       });
     } catch (thrown) {
+      if (deadline.aborted) return timedOut();
       return err(new CfApiClientError("network", `Network error: ${(thrown as Error).message}`));
     }
 
@@ -27,6 +31,7 @@ export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof g
     try {
       data = (await res.json()) as CfApiResponse<T>;
     } catch {
+      if (deadline.aborted) return timedOut();
       return err(new CfApiClientError("parse", `Failed to parse response (HTTP ${res.status})`, { statusCode: res.status }));
     }
 
@@ -44,7 +49,6 @@ export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof g
     return ok(res.data.result);
   }
 
-  // Follows Cloudflare's `result_info` pagination, accumulating every page into one array.
   async function list<T>(path: string): Promise<Result<T[], CfApiClientError>> {
     const perPage = 100;
     const sep = path.includes("?") ? "&" : "?";

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import { bindControls, isChosen, paintControl, readControl } from "./bind";
 import { FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
@@ -9,7 +9,6 @@ installCssEscape();
 
 type Control = Parameters<typeof readControl>[0];
 
-/** A button surrogate: it carries `data-value` and ARIA state, and has no `checked` of its own. */
 function surrogate(value?: string) {
   const attrs = new Map<string, string>();
   return {
@@ -22,7 +21,6 @@ function surrogate(value?: string) {
   };
 }
 
-/** A `<select multiple>` carrying `values`, with `selected` chosen. */
 function multiSelect(values: string[], selected: string[]): Control {
   const options = values.map((value) => ({ value, selected: selected.includes(value) }));
   return {
@@ -62,8 +60,6 @@ describe("readControl", () => {
   });
 
   it("is idempotent across the input, change and click a single interaction fires", () => {
-    // One interaction on an input fires all three events; a membership *flip* would run three times
-    // and land back where it started, so the reading has to be stable under repetition.
     for (const [checked, start] of [
       [true, ["a"]],
       [false, ["a", "b"]],
@@ -246,8 +242,6 @@ describe("paintControl", () => {
   });
 });
 
-// A native form reset reverts controls without firing `input`, so a document-level `reset` listener
-// is the only thing that notices — and the only listener this controller puts outside `root`.
 describe("bindControls — mounting and disposing", () => {
   function scope() {
     const { doc, el } = fakeTree();
@@ -302,6 +296,21 @@ describe("bindControls — mounting and disposing", () => {
     });
   });
 
+  it("writes an interaction into the signal while mounted, and leaves the signal alone once disposed", () => {
+    const { root, input } = scope();
+    const name = createSignal("ada");
+    const dispose = bindControls(root as unknown as HTMLElement, { name });
+    input.value = "grace";
+    input.dispatchEvent(new FakeEvent("input"));
+    const whileMounted = name.value;
+
+    dispose();
+    input.value = "lin";
+    for (const type of ["input", "change", "click"]) input.dispatchEvent(new FakeEvent(type));
+
+    expect({ whileMounted, afterDispose: name.value }).toEqual({ whileMounted: "grace", afterDispose: "grace" });
+  });
+
   it("stops repainting on a reset once disposed, so the disposed listener is gone rather than inert", async () => {
     const { doc, form, root, input } = scope();
     bindControls(root as unknown as HTMLElement, { name: createSignal("ada") })();
@@ -314,8 +323,71 @@ describe("bindControls — mounting and disposing", () => {
   });
 });
 
-// Discovery costs a `querySelectorAll("*")` per tree and `paintField` runs per changed field per
-// effect, i.e. per pointermove frame. Counting the walk is the only way to see it stop happening.
+describe("bindControls — one field at a time", () => {
+  function twoFields() {
+    const { doc, el } = fakeTree();
+    const form = el("FORM");
+    const root = el("DIV");
+    const nameInput = el("INPUT", { "data-field": "name" });
+    const ageInput = el("INPUT", { "data-field": "age" });
+    root.append(nameInput, ageInput);
+    form.append(root);
+    doc.body.append(form);
+    return { doc, el, form, root, nameInput, ageInput };
+  }
+
+  it("warns about a data-field naming no signal, and does not throw", () => {
+    const { el, root, nameInput } = twoFields();
+    const ghost = el("INPUT", { "data-field": "ghost" });
+    root.append(ghost);
+    const name = createSignal("ada");
+    bindControls(root as unknown as HTMLElement, { name, age: createSignal("36") });
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      ghost.value = "boo";
+      expect(() => ghost.dispatchEvent(new FakeEvent("input"))).not.toThrow();
+      nameInput.value = "grace";
+      nameInput.dispatchEvent(new FakeEvent("input"));
+
+      expect({ warnings: warn.mock.calls.map((call) => call[0]), name: name.value }).toEqual({
+        warnings: ['[bindControls] data-field="ghost" names no signal in this scope'],
+        name: "grace",
+      });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("repaints only the controls of the signal that moved", () => {
+    const { root, nameInput, ageInput } = twoFields();
+    const name = createSignal("ada");
+    bindControls(root as unknown as HTMLElement, { name, age: createSignal("36") });
+    ageInput.value = "typed but not yet read";
+
+    name.value = "grace";
+
+    expect({ name: nameInput.value, age: ageInput.value }).toEqual({ name: "grace", age: "typed but not yet read" });
+  });
+
+  it("paints a control swapped into a new shadow root before a form reset, re-reading the trees first", async () => {
+    const { doc, el, form, root, nameInput } = twoFields();
+    const name = createSignal("ada");
+    bindControls(root as unknown as HTMLElement, { name, age: createSignal("36") });
+    const host = el("NAME-FIELD");
+    const shadow = el();
+    const swapped = el("INPUT", { "data-field": "name" });
+    shadow.append(swapped);
+    host.shadowRoot = shadow;
+    root.append(host);
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: form }));
+    await Promise.resolve();
+
+    expect({ light: nameInput.value, swapped: swapped.value }).toEqual({ light: "ada", swapped: "ada" });
+  });
+});
+
 describe("bindControls — the shadow-root walk on the paint path", () => {
   function counted() {
     const { doc, el } = fakeTree();
@@ -348,7 +420,6 @@ describe("bindControls — the shadow-root walk on the paint path", () => {
     expect({ atMount, afterFivePaints: walks.count }).toEqual({ atMount: 1, afterFivePaints: 1 });
   });
 
-  // The one case the cache loses — a shadow root attached after mount — and what recovers it.
   it("walks again when a field matches nothing, so a tree attached after mount is still found", () => {
     const { root, input, walks } = counted();
     const name = createSignal("ada");
@@ -362,8 +433,6 @@ describe("bindControls — the shadow-root walk on the paint path", () => {
   });
 });
 
-// A detached shadow root still answers `querySelectorAll`, so the stale hit looks exactly like a
-// live one and the no-match fallback never fires — the swapped-in control keeps its old value.
 describe("bindControls — a shadow host replaced after mount", () => {
   function hosted(doc: ReturnType<typeof fakeTree>["doc"], el: ReturnType<typeof fakeTree>["el"], root: FakeElement) {
     const host = el("QTY-FIELD");
@@ -380,8 +449,6 @@ describe("bindControls — a shadow host replaced after mount", () => {
     const { doc, el } = fakeTree();
     const root = el("DIV");
     doc.body.append(root);
-    // A light-DOM match as well, so `found.length` stays non-zero and only staleness can trigger
-    // the re-walk. This is the case the task's first fix accepted as lost.
     root.append(el("INPUT", { "data-field": "qty" }));
     const first = hosted(doc, el, root);
 

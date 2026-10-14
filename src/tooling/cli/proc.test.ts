@@ -3,7 +3,7 @@ import { readdirSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter } from "node:path";
 
-import { capture, hasTool, insertPath, probeOk, requireTools, run } from "./proc";
+import { capture, captureStreams, hasTool, insertPath, probeOk, requireTools, run } from "./proc";
 import type { SpawnOptions, SpawnOutcome } from "./types";
 
 // The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
@@ -133,6 +133,94 @@ describe("capture()", () => {
 
     expect(leftovers()).toBe(before);
   });
+});
+
+describe("captureStreams()", () => {
+  afterEach(() => {
+    mockSpawnSync.mockReturnValue({ status: 0 });
+  });
+
+  it("keeps stdout and stderr apart, spawning with both piped as text and stdin ignored", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValue({ status: 0, stdout: "o\n", stderr: "e\n" });
+
+    expect(captureStreams("wrangler", ["d1", "list", "--json"], {}, mockSpawnSync)).toEqual({
+      code: 0,
+      exited: true,
+      stdout: "o\n",
+      stderr: "e\n",
+    });
+    expect(mockSpawnSync.mock.calls[0]![2]).toMatchObject({ stdio: ["ignore", "pipe", "pipe"], encoding: "utf-8" });
+  });
+
+  it("carries a non-zero exit code through without throwing", () => {
+    mockSpawnSync.mockReturnValue({ status: 3, stdout: "", stderr: "bad\n" });
+
+    expect(captureStreams("git", ["status"], {}, mockSpawnSync)).toEqual({ code: 3, exited: true, stdout: "", stderr: "bad\n" });
+  });
+
+  it("reports a child with no status as exit 1, with the spawn error appended to stderr", () => {
+    mockSpawnSync.mockReturnValue({ status: null, stderr: "partial\n", error: new Error("spawnSync git ETIMEDOUT") });
+
+    expect(captureStreams("git", ["fetch"], {}, mockSpawnSync)).toEqual({
+      code: 1,
+      exited: false,
+      stdout: "",
+      stderr: "partial\nspawnSync git ETIMEDOUT\n",
+    });
+  });
+
+  it("reports exited false for a spawn error that leaves the status undefined, as bun does for a missing executable", () => {
+    mockSpawnSync.mockReturnValue({ error: new Error("Executable not found") });
+
+    expect(captureStreams("nope", [], {}, mockSpawnSync)).toMatchObject({ code: 1, exited: false });
+  });
+
+  it("passes env, cwd and maxBuffer through when given, and the process env with neither cwd nor maxBuffer when not", () => {
+    mockSpawnSync.mockClear();
+    const env = { PATH: "/bin" };
+
+    captureStreams("ls", [], { env, cwd: "/tmp", maxBuffer: 1024 }, mockSpawnSync);
+    captureStreams("ls", [], {}, mockSpawnSync);
+    const [given, omitted] = mockSpawnSync.mock.calls.map((call) => call[2]);
+    expect([given?.env, given?.cwd, given?.maxBuffer]).toEqual([env, "/tmp", 1024]);
+    expect([omitted?.env === process.env, "cwd" in omitted!, "maxBuffer" in omitted!]).toEqual([true, false, false]);
+  });
+
+  it("kills a real child still running at timeoutMs and reports a non-zero exit", () => {
+    const started = Date.now();
+    const result = captureStreams("sleep", ["5"], { timeoutMs: 100 });
+
+    expect(result.code).toBe(1);
+    expect(Date.now() - started).toBeLessThan(2_500);
+  });
+});
+
+describe("timeoutMs on the spawning helpers", () => {
+  const helpers = [
+    { name: "run", call: (timeoutMs?: number) => run("x", [], timeoutMs === undefined ? undefined : { timeoutMs }, mockSpawnSync) },
+    { name: "capture", call: (timeoutMs?: number) => capture("x", [], timeoutMs === undefined ? undefined : { timeoutMs }, mockSpawnSync) },
+    { name: "captureStreams", call: (timeoutMs?: number) => captureStreams("x", [], timeoutMs === undefined ? {} : { timeoutMs }, mockSpawnSync) },
+  ];
+
+  for (const { name, call } of helpers) {
+    it(`${name} hands the spawner no deadline when timeoutMs is absent`, () => {
+      mockSpawnSync.mockClear();
+      mockSpawnSync.mockReturnValue({ status: 0 });
+
+      call();
+      const opts = mockSpawnSync.mock.calls[0]![2];
+      expect(["timeout" in opts, "killSignal" in opts]).toEqual([false, false]);
+    });
+
+    it(`${name} hands the spawner timeoutMs as a SIGKILL deadline`, () => {
+      mockSpawnSync.mockClear();
+      mockSpawnSync.mockReturnValue({ status: 0 });
+
+      call(50);
+      expect(mockSpawnSync.mock.calls[0]![2]).toMatchObject({ timeout: 50, killSignal: "SIGKILL" });
+    });
+  }
 });
 
 describe("probeOk()", () => {

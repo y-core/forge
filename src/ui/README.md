@@ -769,6 +769,7 @@ resume(); // returns a disposer for the scopes this call resumed
 **The effect above needs no disposer, and that is the contract, not an omission.** Every effect created while a `setup` runs is owned by the runtime
 and disposed with the scope; a `setup` returns a disposer only for what the runtime cannot see — listeners, observers, timers, controller handles —
 and it runs _after_ the scope's effects are disposed. An effect created in an `on` handler, or after an `await`, belongs to whoever created it.
+`setup` also receives a `signal`, aborted when the scope is disposed: hand it to `fetch` and to `addEventListener`, and neither needs a disposer.
 
 Set `eager: true` when the markup carries no `data-on-*` action at all, since nothing would otherwise trigger a lazy resume. When to reach for
 `Resumable` and when to hand-render the scope root is [`UI_CLIENT_RUNTIME.md`][ucr-2a] §2a.

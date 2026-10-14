@@ -136,15 +136,18 @@ export interface ActionDefinition<S extends v.GenericSchema, Bindings = Record<s
   turnstile?: ActionTurnstileOptions<Bindings, ConfigData>;
   /** Replaces the refusal a tripped guard renders. */
   onBotDetected?: (rejection: BotRejection, c: AppContext<Bindings>) => Response | Promise<Response>;
-  // A CSRF guard on the same route parses the body first, so raising this alone changes nothing —
-  // `csrfProtection`'s own `maxBytes` is what the request meets first.
-  /** Body-size cap for this route's form parse, in bytes. */
+  /** Body-size cap for this route's form parse, in bytes; a `csrfProtection` on the route parses first, under its own `maxBytes`. */
   maxBytes?: number;
 }
 
 /** The fetch surface of Cloudflare's static-asset binding. @public */
 export interface AssetsFetcher {
   fetch(req: Request): Promise<Response>;
+}
+
+/** Options for `healthCheck`. @public */
+export interface HealthCheckOptions {
+  timeoutMs?: number;
 }
 
 /** The aggregate verdict of a health endpoint's registered checks. @public */
@@ -199,8 +202,6 @@ export type MetaTag =
   | { readonly property: string; readonly content: string }
   | { readonly tagName: "link"; readonly rel: string; readonly href: string };
 
-// A compound value is the common case — `noindex, nofollow` — so the union is over tokens rather
-// than over whole values, which would have to widen to `string` the first time two were needed.
 /** One token of a `robots` value; give an array for a compound directive. @public */
 export type RobotsDirective = "index" | "noindex" | "follow" | "nofollow" | "noarchive" | "nosnippet" | "noimageindex";
 
@@ -224,8 +225,6 @@ export interface PageMeta {
     readonly url?: string;
   };
   readonly twitter?: { readonly card?: "summary" | "summary_large_image"; readonly title?: string; readonly description?: string };
-  // A field rather than an `extra` entry: forge ships `script-src 'self'`, so the inline script
-  // needs this request's nonce, which `metaTags` is given and an `extra` entry could not receive.
   /** Structured data, serialised into a nonce-bearing `application/ld+json` script. */
   readonly jsonLd?: unknown;
   /** Appended verbatim, in order, after every tag above — never deduplicated against them. */
@@ -244,7 +243,6 @@ export interface MiddlewareGuardGroup<Bindings = Record<string, unknown>> {
   paths: readonly string[];
   /** Origin/Referer verification policy for state-changing routes. */
   origin?: OriginProtectionOptions<Bindings>;
-  /** Cloudflare rate-limit binding enforcement policy. */
   rateLimit?: RateLimitOptions<Bindings>;
   /** Prebuilt guards, chained after the middleware `origin` and `rateLimit` build into. */
   guards?: Middleware[];
@@ -258,13 +256,10 @@ export interface MiddlewareChainOptions<Bindings = Record<string, unknown>> {
   requestId?: boolean;
   /** Trust Cloudflare-injected request headers; only safe when the Worker is known to run behind Cloudflare. */
   trustCfHeaders?: boolean;
-  /** Per-request structured logging. */
   logging?: RequestLoggerOptions<Bindings>;
-  /** Security-header policy. */
   securityHeaders: SecurityHeadersOptions;
   /** Env schema for `validateBindings`. */
   bindings?: v.BaseSchema<unknown, unknown, v.BaseIssue<unknown>>;
-  /** Prebuilt session middleware. */
   session?: Middleware;
   /** Registered on `"*"` after `session` and before the guard groups — where anything reading the session, such as `csrfProtection`, belongs. */
   globals?: Middleware[];
@@ -284,8 +279,6 @@ export type SubmissionPipeline<S extends v.GenericSchema, Bindings = Record<stri
   config: ConfigData,
 ) => Promise<Result<v.InferOutput<S>, Response>>;
 
-// Open on purpose: a closed union of mount names would make every mountable forge adds later a
-// breaking change for every shell a consumer has already written.
 /** Which mount and page a shell is wrapping, so one shell can vary its chrome. @public */
 export interface ShellSlot {
   /** The mountable rendering this page — `auth`, `logs`, or a consumer's own. */

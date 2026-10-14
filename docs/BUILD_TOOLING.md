@@ -177,7 +177,7 @@ rather than a new way for a differently-shaped repository to fail its release.
 
 **The git and `package.json` helpers in `src/tooling/release/` are unpublished.** They exist to serve the two command factories and nothing else. A
 consumer that needs `git tag` has `git`; what forge publishes is the _policy_ over it — the ordered, refusing release command — not a thin
-`execFileSync` wrapper it would have to reimplement the policy around. `checkExports` enforces the line: an `@public` tag on any of them fails the
+`git` wrapper it would have to reimplement the policy around. `checkExports` enforces the line: an `@public` tag on any of them fails the
 gate until it is either exported or retagged.
 
 **Every one of them takes `cwd` first.** These shell out to `git`, and a git command with no working directory is a command against whatever

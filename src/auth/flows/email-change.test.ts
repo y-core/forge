@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
 import type { KeyRing } from "../../crypto/keyring/types";
+import { createLogger } from "../../logging/logger";
+import type { LogRecord } from "../../logging/types";
 import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
@@ -93,22 +95,24 @@ function fakeNonces() {
   return { store, seen };
 }
 
-/** Delivery hangs until `release`, which is how a test can prove `request` did not wait for it. */
 function fakeNotifier() {
   const sent: AuthMessage[] = [];
+  const signals: AbortSignal[] = [];
   let release: () => void = () => {};
   const delivered = new Promise<void>((resolve) => {
     release = resolve;
   });
   return {
     notifier: {
-      send: async (message: AuthMessage) => {
+      send: async (message: AuthMessage, signal: AbortSignal) => {
         sent.push(message);
+        signals.push(signal);
         await delivered;
         return ok();
       },
     },
     sent,
+    signals,
     release,
   };
 }
@@ -134,10 +138,17 @@ function scene(
   return { flow, users, nonces, mail, scheduled };
 }
 
-/** Lets the held delivery finish, then drains the deferred work the flow handed over. */
 async function settle(built: ReturnType<typeof scene>): Promise<readonly AuthIssueOutcome[]> {
   built.mail.release();
   return Promise.all(built.scheduled);
+}
+
+function capturingLogger() {
+  const records: { level: string; message: string; data: Record<string, unknown> | undefined }[] = [];
+  const logger = createLogger("auth/flows", {
+    channels: [{ write: (record: LogRecord) => void records.push({ level: record.level, message: record.message, data: record.data }) }],
+  });
+  return { logger, records };
 }
 
 function tokenOf(sent: readonly AuthMessage[]): string {
@@ -147,12 +158,8 @@ function tokenOf(sent: readonly AuthMessage[]): string {
 }
 
 describe("createEmailChangeFlow — requesting", () => {
-  // The move is authorised by whoever owns the address the account already holds, not by whoever
-  // holds the session: otherwise a stolen cookie moves the account to the thief's own inbox.
   it("mails the confirmation link to the address the account already holds, off the caller's clock", async () => {
     const built = scene();
-    // Delivery is still hanging here, and `request` has already answered: the send is deferred work
-    // and not part of what the caller waits for.
     const requested = await built.flow.request(USER_ID, "  New@Example.com  ", AT);
     expect(requested).toEqual({ ok: true, data: { expiresAt: AT + TTL_MS, sentTo: "person@example.com" } });
     expect(built.scheduled).toHaveLength(1);
@@ -162,8 +169,6 @@ describe("createEmailChangeFlow — requesting", () => {
     expect(built.mail.sent[0]?.kind).toBe("email-change");
   });
 
-  // An unverified address has proved nothing, so asking it to authorise the move would be asking
-  // nobody. The new address is the only one there is to ask.
   it("falls back to the new address when the account's own is unverified, and says so", async () => {
     const built = scene([userRow({ emailVerifiedAt: null })]);
     const requested = await built.flow.request(USER_ID, "  New@Example.com  ", AT);
@@ -172,8 +177,6 @@ describe("createEmailChangeFlow — requesting", () => {
     expect(built.mail.sent[0]?.to).toBe("New@Example.com");
   });
 
-  // Telling a signed-in visitor that the address they typed is registered is the same enumeration
-  // answer the sign-in flow refuses to give; the unique index refuses the write at confirmation.
   it("never looks the new address up, so it cannot report one as taken", async () => {
     const built = scene([userRow(), userRow({ id: OTHER_ID, email: "taken@example.com", emailKey: "taken@example.com" })]);
     const requested = await built.flow.request(USER_ID, "taken@example.com", AT);
@@ -196,14 +199,12 @@ describe("createEmailChangeFlow — requesting", () => {
 });
 
 describe("createEmailChangeFlow — confirming", () => {
-  /** The `approve` link a verified account's own address received. */
   async function requested(built: ReturnType<typeof scene>, address = "new@example.com"): Promise<string> {
     await built.flow.request(USER_ID, address, AT);
     await settle(built);
     return tokenOf(built.mail.sent);
   }
 
-  /** The `move` link the new address received once the old one approved. */
   async function approved(built: ReturnType<typeof scene>, address = "new@example.com"): Promise<string> {
     const approve = await requested(built, address);
     const forwarded = await built.flow.confirm(approve, AT + 500);
@@ -244,8 +245,6 @@ describe("createEmailChangeFlow — confirming", () => {
     expect(built.users.writes).toEqual([]);
   });
 
-  // An unverified address has proved nothing, so there is no mailbox to ask for approval and the
-  // one link goes straight to the new address as a `move`.
   it("moves an unverified account in one step, from the link its new address received", async () => {
     const built = scene([userRow({ emailVerifiedAt: null })]);
     const move = await requested(built, "new@example.com");
@@ -262,8 +261,6 @@ describe("createEmailChangeFlow — confirming", () => {
     expect((await built.flow.confirm(move, AT + 1_000)).ok).toBe(true);
   });
 
-  // The address is inside the sealed payload, so there is no argument a caller could point at
-  // another mailbox: a token issued for one address can only ever land that address.
   it("lands the token's own address, never another the caller might prefer", async () => {
     for (const address of ["one@example.com", "two@example.com"]) {
       const built = scene();
@@ -301,6 +298,18 @@ describe("createEmailChangeFlow — confirming", () => {
     expect(await built.flow.confirm(token, AT + TTL_MS)).toEqual({ ok: false, error: "expired" });
   });
 
+  it("revokes every session the account holds when the row moves, and none when an approval only forwards", async () => {
+    const built = scene();
+    const approve = await requested(built);
+    await built.flow.confirm(approve, AT + 500);
+    expect(built.users.revoked).toEqual([]);
+    await Promise.all(built.scheduled);
+
+    const moved = await built.flow.confirm(tokenOf(built.mail.sent.slice(1)), AT + 1_000);
+    expect(built.users.revoked).toEqual([{ id: USER_ID, at: AT + 1_000 }]);
+    expect(moved.ok && moved.data.status === "moved" && moved.data.user.sessionsInvalidBefore).toBe(AT + 1_000);
+  });
+
   it("names the user out of the token, so a link only ever moves the account it was issued for", async () => {
     const built = scene([userRow({ id: OTHER_ID, email: "other@example.com", emailKey: "other@example.com" })]);
     const token = await encodeAuthToken(ring, "identity", `move ${OTHER_ID} moved@example.com`, TTL_MS, { now: AT });
@@ -309,8 +318,6 @@ describe("createEmailChangeFlow — confirming", () => {
     expect(built.users.writes).toEqual([{ id: OTHER_ID, email: "moved@example.com", emailKey: "moved@example.com" }]);
   });
 
-  // `request` deliberately never looks the address up, so reporting the index that caught it would
-  // hand back at confirmation exactly the enumeration answer the request withheld.
   it("reports a collision with a registered address as the same refusal an unknown account gets", async () => {
     const built = scene([userRow()], { conflict: true });
     const token = await approved(built, "taken@example.com");
@@ -345,6 +352,69 @@ describe("createEmailChangeFlow — confirming", () => {
         `${payload}: {"ok":false,"error":"unrecognised"}`,
       );
     }
+  });
+});
+
+describe("createEmailChangeFlow — delivery", () => {
+  it("hands the notifier a live abort signal at both the approve and the forward send", async () => {
+    const built = scene();
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    await settle(built);
+    await built.flow.confirm(tokenOf(built.mail.sent), AT + 500);
+    await Promise.all(built.scheduled);
+    expect(built.mail.signals.map((signal) => [signal instanceof AbortSignal, signal.aborted])).toEqual([
+      [true, false],
+      [true, false],
+    ]);
+  });
+
+  const outage = new Error("SMTP relay refused the connection");
+  const expectedRecord = {
+    level: "error",
+    message: "auth.email-change.deliver.failed",
+    data: { error: { type: "Error", detail: "SMTP relay refused the connection", stack: outage.stack } },
+  };
+
+  for (const { name, seed } of [
+    { name: "the approve link to a verified account's own address", seed: userRow() },
+    { name: "the move link to an unverified account's new address", seed: userRow({ emailVerifiedAt: null }) },
+  ]) {
+    it(`settles to unavailable and logs the error when the notifier rejects ${name}`, async () => {
+      const captured = capturingLogger();
+      const built = scene([seed], {}, { notifier: { send: () => Promise.reject(outage) }, logger: captured.logger });
+      expect((await built.flow.request(USER_ID, "new@example.com", AT)).ok).toBe(true);
+      expect(await Promise.all(built.scheduled)).toEqual(["unavailable"]);
+      expect(captured.records).toEqual([expectedRecord]);
+    });
+  }
+
+  it("settles to unavailable and logs the error when the notifier rejects the link a confirmed approval forwards", async () => {
+    const captured = capturingLogger();
+    let sends = 0;
+    const approvals: AuthMessage[] = [];
+    const built = scene(
+      [userRow()],
+      {},
+      {
+        notifier: {
+          send: (message) => {
+            sends += 1;
+            if (sends > 1) return Promise.reject(outage);
+            approvals.push(message);
+            return Promise.resolve(ok());
+          },
+        },
+        logger: captured.logger,
+      },
+    );
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    expect(await Promise.all(built.scheduled)).toEqual(["challenged"]);
+    expect(captured.records).toEqual([]);
+
+    const forwarded = await built.flow.confirm(tokenOf(approvals), AT + 500);
+    expect(forwarded).toEqual({ ok: true, data: { status: "forwarded", sentTo: "new@example.com", expiresAt: AT + 500 + TTL_MS } });
+    expect(await Promise.all(built.scheduled)).toEqual(["challenged", "unavailable"]);
+    expect(captured.records).toEqual([expectedRecord]);
   });
 });
 

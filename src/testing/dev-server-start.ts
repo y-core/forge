@@ -18,7 +18,6 @@ const READY_ATTEMPTS = 3;
 /** The per-attempt budget `startDevServer` runs under, and the floor of every holder's lock staleness. @internal */
 export const DEV_SERVER_ATTEMPT_TIMEOUT_MS = 60_000;
 
-/** A port nothing holds, released before the caller binds it — the CLI takes a number, not a socket. */
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
@@ -49,7 +48,6 @@ async function waitForReady(origin: string, readyPath: string, child: ChildProce
   throw new Error(`dev server: not ready after ${timeoutMs}ms`);
 }
 
-/** One `KEY="value"` line per var, quoted so a newline or a quote in a value survives the round trip. */
 function dotenv(vars: Record<string, string>): string {
   return Object.entries(vars)
     .map(([key, value]) => `${key}=${JSON.stringify(value)}`)
@@ -62,7 +60,11 @@ export async function spawnDevServer(options: DevServerOptions, budget: DevServe
   // Wrangler binds a port of its own choosing while it starts, so two starting at once can collide on it.
   // Staleness judges other holders, so it never falls below the full budget one of them may be spending.
   const staleAfterMs = READY_ATTEMPTS * Math.max(DEV_SERVER_ATTEMPT_TIMEOUT_MS, budget.attemptTimeoutMs);
-  const release = await acquireDevServerLock({ path: join(tmpdir(), DEV_SERVER_LOCK), staleAfterMs });
+  const release = await acquireDevServerLock({
+    path: join(tmpdir(), DEV_SERVER_LOCK),
+    staleAfterMs,
+    timeoutMs: Math.max(300_000, 2 * staleAfterMs),
+  });
   const unlock = (): void => {
     live.delete(unlock);
     release();

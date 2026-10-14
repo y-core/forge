@@ -46,7 +46,6 @@ function makeKvStub(): KVNamespace & { _store: Map<string, StubEntry> } {
   return ns;
 }
 
-// Deletes stay parked until `releaseDeletes()`, so "the write promise covers the purge" is assertable.
 function makeDeferredDeleteKvStub(): KVNamespace & { _store: Map<string, StubEntry>; calls: string[]; releaseDeletes: () => void } {
   const base = makeKvStub();
   const calls: string[] = [];
@@ -112,7 +111,6 @@ function makeMeta(overrides?: Partial<KvLogMetadata>): KvLogMetadata {
   return { level: "info", prefix: "svc", message: "test message", timestamp: "2026-05-31T10:00:00.000Z", ...overrides };
 }
 
-/** The key shape the channel writes: an inverted, fixed-width timestamp so newest sorts first. */
 function logKey(iso: string, rand: string, prefix = "logs"): string {
   return `${prefix}||${String(999_999_999_999_999 - Date.parse(iso)).padStart(15, "0")}||${rand}`;
 }
@@ -173,8 +171,6 @@ describe("kvLogChannel — write", () => {
     expect(meta.requestId).toBe("req-abc");
   });
 
-  // Adversarial fixture: `JSON.stringify` expands one C0 control to six bytes, so a cap counted in
-  // code units serializes a 256-character message to roughly 1620 and KV rejects the put.
   it("keeps metadata inside KV's 1024 serialized bytes when every character expands sixfold", async () => {
     const stub = makeKvStub();
     const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
@@ -317,6 +313,58 @@ describe("kvLogChannel — purge", () => {
       logKey("2026-05-31T05:00:00.000Z", "aaa"),
       logKey("2026-05-31T04:00:00.000Z", "aaa"),
     ]);
+  });
+
+  it("runs every batch past a failed delete, then rejects the write with an AggregateError naming the key", async () => {
+    const base = makeKvStub();
+    const seeded = Array.from({ length: 25 }, (_, minute) => logKey(`2026-05-01T00:${String(minute).padStart(2, "0")}:00.000Z`, "aaa"));
+    for (const key of seeded) base._store.set(key, { value: "{}" });
+    const stuck = seeded[24] as string;
+    const refusal = new Error("KV delete failed");
+    const stub = {
+      ...base,
+      delete(key: string): Promise<void> {
+        return key === stuck ? Promise.reject(refusal) : base.delete(key);
+      },
+    } as unknown as typeof base;
+
+    const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 1, highWater: 2, purgeProbability: 1 });
+    const outcome = await Promise.resolve(channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }))).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(outcome).toBeInstanceOf(AggregateError);
+    expect((outcome as AggregateError).errors).toEqual([refusal]);
+    expect((outcome as AggregateError).message).toContain(stuck);
+    const remaining = [...base._store.keys()].sort();
+    expect(remaining).toHaveLength(2);
+    expect(remaining[0]).toMatch(new RegExp(`^${logKey("2026-05-31T07:00:00.000Z", "[0-9a-f]{8}").replaceAll("|", "\\|")}$`));
+    expect(remaining[1]).toBe(stuck);
+  });
+
+  it("collects a failed delete from each batch into one AggregateError", async () => {
+    const base = makeKvStub();
+    const seeded = Array.from({ length: 25 }, (_, minute) => logKey(`2026-05-01T00:${String(minute).padStart(2, "0")}:00.000Z`, "aaa"));
+    for (const key of seeded) base._store.set(key, { value: "{}" });
+    const stuck = [seeded[24] as string, seeded[0] as string];
+    const stub = {
+      ...base,
+      delete(key: string): Promise<void> {
+        return stuck.includes(key) ? Promise.reject(new Error(`KV delete failed: ${key}`)) : base.delete(key);
+      },
+    } as unknown as typeof base;
+
+    const channel = kvLogChannel(stub, { prefix: "logs", maxLogs: 1, highWater: 2, purgeProbability: 1 });
+    const outcome = await Promise.resolve(channel.write(makeRecord({ timestamp: "2026-05-31T07:00:00.000Z" }))).then(
+      () => undefined,
+      (thrown: unknown) => thrown,
+    );
+
+    expect(outcome).toBeInstanceOf(AggregateError);
+    expect((outcome as AggregateError).errors.map((error: Error) => error.message)).toEqual(stuck.map((key) => `KV delete failed: ${key}`));
+    expect(stuck.map((key) => (outcome as AggregateError).message.includes(key))).toEqual([true, true]);
+    expect([...base._store.keys()].filter((key) => seeded.includes(key)).sort()).toEqual([...stuck].sort());
   });
 
   it("does not purge when purgeProbability is 0", async () => {
@@ -537,7 +585,7 @@ describe("kvLogChannel — oversized message truncation", () => {
 });
 
 describe("kvLogChannel — purge error isolation", () => {
-  it("write resolves successfully even when kv.list throws during purge", async () => {
+  it("write rejects with the listing error when kv.list throws during purge", async () => {
     const throwingKv = {
       ...makeKvStub(),
       async put(_k: string, _v: string, _o: unknown): Promise<void> {
@@ -550,7 +598,7 @@ describe("kvLogChannel — purge error isolation", () => {
 
     const channel = kvLogChannel(throwingKv, { prefix: "logs", purgeProbability: 1 });
 
-    await expect(channel.write(makeRecord())).resolves.toBeUndefined();
+    await expect(channel.write(makeRecord())).rejects.toThrow("KV list failed");
   });
 });
 
@@ -787,8 +835,6 @@ describe("kvLogChannel and consoleChannel — one value, one meaning", () => {
   }
 
   it("agree on a redacting toJSON, so a console-verified shape is the shape KV keeps", async () => {
-    // `visit`, not `session`: a key the logger-wide policy matches is masked before either channel,
-    // which would prove nothing about the two agreeing on a `toJSON`.
     const seen = await bothSinks({ visit: new RedactingSession("s1", "SECRET") });
 
     expect(seen.console.visit).toStrictEqual(seen.kv.visit);
@@ -869,6 +915,27 @@ describe("kvLogChannel — newest-first ordering", () => {
     expect(result.rows.map((r) => r.message)).toEqual(["recent", "ancient"]);
   });
 
+  it("clamps an instant past the key width to the newest segment rather than a negative one", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs" });
+    await channel.write(makeRecord({ timestamp: "+040000-01-01T00:00:00.000Z", message: "far future" }));
+    await channel.write(makeRecord({ timestamp: "2026-05-31T10:00:00.000Z", message: "recent" }));
+
+    expect([...stub._store.keys()].map((key) => key.split("||")[1])).toContain("000000000000000");
+    expect((await channel.read!()).rows.map((r) => r.message)).toEqual(["far future", "recent"]);
+  });
+
+  it("files an unparseable timestamp under the instant it was written", async () => {
+    const stub = makeKvStub();
+    const before = Date.now();
+    await kvLogChannel(stub, { prefix: "logs" }).write(makeRecord({ timestamp: "not a date" }));
+    const after = Date.now();
+
+    const segment = Number([...stub._store.keys()][0]!.split("||")[1]);
+    expect(segment).toBeGreaterThanOrEqual(999_999_999_999_999 - after);
+    expect(segment).toBeLessThanOrEqual(999_999_999_999_999 - before);
+  });
+
   it("refuses a key outside the channel prefix, so readEntry is no arbitrary-read oracle", async () => {
     const stub = makeKvStub();
     stub._store.set("secrets||session-key", { value: '{"level":"info"}' });
@@ -893,7 +960,6 @@ describe("kvLogChannel — newest-first ordering", () => {
 });
 
 describe("kvLogChannel — metadata byte cap", () => {
-  /** Enforces KV's 1024-byte metadata limit, which the permissive stub does not — without it no test can fail for this. */
   function makeStrictKvStub(): KVNamespace & { _store: Map<string, StubEntry> } {
     const stub = makeKvStub();
     const put = stub.put.bind(stub);
@@ -941,7 +1007,6 @@ describe("kvLogChannel — metadata byte cap", () => {
     await channel.write(makeRecord({ message: "𝄞".repeat(300) }));
 
     const message = metaOf(stub).message ?? "";
-    // A `String.slice` cap would leave a lone surrogate, which serializes to six escaped bytes.
     expect(message).toBe("𝄞".repeat([...message].length));
     expect([...message].length).toBeGreaterThan(0);
     expect(metaBytes(metaOf(stub))).toBeLessThanOrEqual(1024);

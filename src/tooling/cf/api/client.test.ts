@@ -102,3 +102,83 @@ describe("an auth failure names the permission the surface needs", () => {
     expect(detail).not.toContain("Authentication error");
   });
 });
+
+function honouringSignal(): typeof globalThis.fetch {
+  return (_url, init) =>
+    new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+    });
+}
+
+function bodyStallingUntilAbort(): typeof globalThis.fetch {
+  return async (_url, init) =>
+    new Response(
+      new ReadableStream({
+        start(controller) {
+          init?.signal?.addEventListener("abort", () => controller.error(init.signal?.reason));
+        },
+      }),
+      { status: 200 },
+    );
+}
+
+function answeringAfter(ms: number): typeof globalThis.fetch {
+  return (_url, init) =>
+    new Promise((resolve, reject) => {
+      const timer = setTimeout(
+        () => resolve(new Response(JSON.stringify({ success: true, errors: [], messages: [], result: "answered" }), { status: 200 })),
+        ms,
+      );
+      init?.signal?.addEventListener("abort", () => {
+        clearTimeout(timer);
+        reject(init.signal?.reason);
+      });
+    });
+}
+
+describe("createCfClient() — the request deadline", () => {
+  it("reports a request that never answers as a network timeout naming the deadline", async () => {
+    const r = await createCfClient(AUTH, honouringSignal(), 5).get("/path");
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({ kind: "network", message: "timed out after 5ms" });
+  });
+
+  it("reports a body that stalls past the deadline as a network timeout, not a parse failure", async () => {
+    const r = await createCfClient(AUTH, bodyStallingUntilAbort(), 5).get("/path");
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({ kind: "network", message: "timed out after 5ms" });
+  });
+
+  it("gives each request its own deadline, so two calls whose sum exceeds it both succeed", async () => {
+    const client = createCfClient(AUTH, answeringAfter(150), 250);
+    const first = await client.get<string>("/one");
+    const second = await client.get<string>("/two");
+    expect([first, second]).toEqual([
+      { ok: true, data: "answered" },
+      { ok: true, data: "answered" },
+    ]);
+  });
+});
+
+describe("createCfClient().list()", () => {
+  it("follows result_info pagination and gathers every page into one array", async () => {
+    const pages: Record<string, string[]> = { "1": ["a", "b"], "2": ["c"] };
+    const asked: (string | null)[] = [];
+    const fetchFn: typeof globalThis.fetch = async (url) => {
+      const page = new URL(String(url)).searchParams.get("page");
+      asked.push(page);
+      const result = pages[page ?? ""] ?? [];
+      return new Response(
+        JSON.stringify({
+          success: true,
+          errors: [],
+          messages: [],
+          result,
+          result_info: { page: Number(page), per_page: 2, count: result.length, total_count: 3 },
+        }),
+        { status: 200 },
+      );
+    };
+    const r = await createCfClient(AUTH, fetchFn).list<string>("/accounts/acc/storage/kv/namespaces");
+    expect(r).toEqual({ ok: true, data: ["a", "b", "c"] });
+    expect(asked).toEqual(["1", "2"]);
+  });
+});

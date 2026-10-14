@@ -155,8 +155,8 @@ import { AuthStoreError, type AuthMessage, type AuthNotifier, type AuthStoreResu
 import { err, ok } from "@y-core/forge/result";
 
 const notifier: AuthNotifier = {
-  async send(message: AuthMessage): Promise<AuthStoreResult<void>> {
-    const delivered = await myMailer(message.to, message.kind === "otp" ? codeMail(message) : linkMail(message));
+  async send(message: AuthMessage, signal: AbortSignal): Promise<AuthStoreResult<void>> {
+    const delivered = await myMailer(message.to, message.kind === "otp" ? codeMail(message) : linkMail(message), signal);
     return delivered ? ok() : err(new AuthStoreError("unavailable", "notifier.send"));
   },
 };
@@ -167,6 +167,10 @@ const notifier: AuthNotifier = {
 the attempt.
 
 **A code nobody could receive costs no cooldown.** When `send` fails, the email-OTP factor rolls the claimed cooldown back.
+
+Forge aborts `signal` once its delivery deadline passes, and a `send` that rejects is read like one that returns an error, so the cooldown is
+still rolled back. Deferred work that throws is logged as `error` and settles as unavailable; pass `logger` to a flow's options to choose where
+that record goes, or leave it out for the console.
 
 ---
 

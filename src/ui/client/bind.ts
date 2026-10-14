@@ -2,7 +2,6 @@ import { asElement, closestAcross, contains, eventTarget, ownerDocument, ownerWi
 import { effect } from "./signal";
 import type { SignalRecord } from "./types";
 
-/** The controls a `[data-field]` can resolve to; a group item carries `data-value` instead of `value`. */
 interface ControlElement extends HTMLElement {
   checked?: boolean;
   value?: string;
@@ -10,7 +9,7 @@ interface ControlElement extends HTMLElement {
 
 const FIELD_SELECTOR = "[data-field]";
 
-/** Tag-name rather than `instanceof`: a control inside a shadow tree may come from another document. */
+// Tag-name rather than `instanceof`: a control inside a shadow tree may come from another document.
 function isMultiSelect(el: ControlElement): el is ControlElement & HTMLSelectElement {
   return el.tagName === "SELECT" && (el as ControlElement & HTMLSelectElement).multiple;
 }
@@ -23,8 +22,6 @@ function isFileInput(el: ControlElement): boolean {
 export function readControl(el: ControlElement, current: unknown): unknown {
   const tagged = el.dataset.value;
   if (Array.isArray(current)) {
-    // A multi-select carries the whole answer in `selectedOptions`; there is no per-item `data-value`
-    // to flip, so without this the signal never moves at all.
     if (isMultiSelect(el)) return [...el.selectedOptions].map((option) => option.value);
     if (tagged === undefined) return current;
     // Read, not flipped, because one interaction fires `input`, `change` *and* `click`: a flip would
@@ -54,8 +51,6 @@ export function isChosen(item: ControlElement, value: unknown): boolean {
 export function paintControl(el: ControlElement, value: unknown): void {
   if (el.dataset.value !== undefined) {
     const chosen = isChosen(el, value);
-    // A real input owns its own checkedness, and the CSS keys on `:checked`; only a button surrogate
-    // needs the ARIA and state-attribute pair painted for it.
     if (typeof el.checked === "boolean") {
       if (el.checked !== chosen) el.checked = chosen;
       return;
@@ -72,7 +67,6 @@ export function paintControl(el: ControlElement, value: unknown): void {
   // rethrows on its first run, which would leave every sibling control in the scope unbound.
   if (isFileInput(el)) return;
   if (typeof value === "number") {
-    // NaN is what `readControl` reports for a cleared or unparseable numeric field (`""`, `-`).
     if (!Number.isFinite(value)) return;
     // A numeric compare, not the string one below: `1.` reads back as 1, and painting `"1"` over it
     // would delete the decimal point the reader is typing past. An empty field is not a 0 to keep.
@@ -94,8 +88,6 @@ export function paintControl(el: ControlElement, value: unknown): void {
 
 /** Two-way-binds every `[data-field]` control under `root` to `signals`, and returns a disposer. @public */
 export function bindControls<T extends Record<string, unknown>>(root: HTMLElement, signals: SignalRecord<T>): () => void {
-  // One listener on the widget's own root rather than one per control, so controls swapped in later
-  // are bound with no re-mount. `closestAcross` absorbs a click that landed on an inner icon or span.
   const onInteract = (event: Event) => {
     const el = closestAcross<ControlElement>(asElement(eventTarget(event)), FIELD_SELECTOR);
     if (!el || !contains(root, el)) return;
@@ -103,15 +95,12 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
     if (field === undefined) return;
     const signal = signals[field];
     if (signal === undefined) {
-      // A property of the markup, not of the call site, so it reports rather than throws.
       console.warn(`[bindControls] data-field="${String(field)}" names no signal in this scope`);
       return;
     }
     signal.value = readControl(el, signal.value) as T[typeof field];
   };
 
-  // Discovery is the expensive half — a `querySelectorAll("*")` per tree — and `paintField` runs per
-  // pointermove frame, so the trees are re-walked only when a field matches nothing.
   let trees = shadowTrees(root);
 
   // Every shadow root under a bound root is a consumer's, forge authoring none (`UI_SSR_COMPONENTS.md` §1k); a detached one still answers
@@ -131,8 +120,6 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
     for (const el of found) paintControl(el, value);
   };
 
-  // One effect per field, not one over all of them: a repaint then touches only the controls whose
-  // own signal moved. The signal is the state and the DOM is a paint of it, so nothing is read back.
   const disposers = (Object.keys(signals) as Array<keyof T>).map((field) => effect(() => paintField(field, signals[field].value)));
 
   // A native form reset reverts every control without firing `input` or `change`, so nothing above
@@ -141,25 +128,22 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
     const form = event.target as Node | null;
     if (!form || !contains(form, root)) return;
     ownerWindow(root).queueMicrotask(() => {
-      // A reset can revert a control the form swapped in, so the trees are re-read before repainting.
       trees = shadowTrees(root);
       for (const field of Object.keys(signals) as Array<keyof T>) paintField(field, signals[field].value);
     });
   };
   const doc = ownerDocument(root);
+  const lifetime = new AbortController();
   // Capture, because `reset` is dispatched at the form: a bubble-phase listener on the document sees
   // it, but only a capture one is guaranteed to when the form sits inside a shadow tree.
-  doc.addEventListener("reset", onReset, true);
+  doc.addEventListener("reset", onReset, { capture: true, signal: lifetime.signal });
 
-  root.addEventListener("input", onInteract);
-  root.addEventListener("change", onInteract);
-  root.addEventListener("click", onInteract);
+  root.addEventListener("input", onInteract, { signal: lifetime.signal });
+  root.addEventListener("change", onInteract, { signal: lifetime.signal });
+  root.addEventListener("click", onInteract, { signal: lifetime.signal });
 
   return () => {
     for (const dispose of disposers) dispose();
-    doc.removeEventListener("reset", onReset, true);
-    root.removeEventListener("input", onInteract);
-    root.removeEventListener("change", onInteract);
-    root.removeEventListener("click", onInteract);
+    lifetime.abort();
   };
 }

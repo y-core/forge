@@ -4,7 +4,7 @@ import type { KeyRing } from "../../crypto/keyring/types";
 import { base64urlDecode, base64urlEncode } from "../../crypto/primitives/mod";
 import { AUTH_KV_MIN_TTL_SECONDS } from "../config";
 import { importAuthKeyRing } from "./ring";
-import { AUTH_TOKEN_VERSION, authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken, tokenKeyId } from "./token";
+import { AUTH_TOKEN_VERSION, authNonceKey, authNonceTtlSeconds, authStandInToken, decodeAuthToken, encodeAuthToken, tokenKeyId } from "./token";
 import type { AuthTokenPurpose } from "./types";
 
 const SECRET_A = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
@@ -14,7 +14,6 @@ const TTL = 900_000;
 
 const PURPOSES: readonly AuthTokenPurpose[] = ["verify", "identity", "totpWrap", "nonce"];
 
-/** Field offsets in `version(1) ‖ kid(6) ‖ iv(12) ‖ iat(8) ‖ exp(8) ‖ ct‖tag`. */
 const FIELDS: readonly { name: string; offset: number }[] = [
   { name: "version", offset: 0 },
   { name: "kid", offset: 1 },
@@ -126,8 +125,6 @@ describe("decodeAuthToken — refusals", () => {
     expect(await decodeAuthToken(other, "verify", token, { now: NOW })).toEqual({ ok: false, error: "unknown-key" });
   });
 
-  // A kid field is six bytes, so `constructor` and `__proto__` can only arrive as a prefix of one.
-  // The lookup is `Object.hasOwn` regardless, so neither resolves to a function on the key record.
   it("refuses an inherited property name reached through the kid field", async () => {
     const ring = await ringOf(SECRET_A);
     const token = await encodeAuthToken(ring, "verify", "x", TTL, { now: NOW });
@@ -224,8 +221,6 @@ describe("authNonceKey", () => {
     const token = await encodeAuthToken(ring, "verify", "x", TTL, { now: NOW });
     const underA = await authNonceKey(ring, token);
     const withOtherSecret = await importAuthKeyRing([SECRET_B]);
-    // Same token, different root key: a bare `sha256(token)` would collide here, and that collision
-    // is exactly the consumed-or-not oracle an observer would get.
     const forged: KeyRing = {
       activeKeyId: ring.activeKeyId,
       keys: { [ring.activeKeyId]: withOtherSecret.keys[withOtherSecret.activeKeyId] as Uint8Array<ArrayBuffer> },
@@ -248,10 +243,7 @@ describe("authNonceKey", () => {
   });
 });
 
-// Every alias decodes to the same frame and passes the tag, so without this each spelling of one
-// spent token would derive a fresh nonce key and open again.
 describe("non-canonical base64url spellings of one token", () => {
-  /** The aliases `base64urlDecode` accepts for one token, or `null` where the token happens to have none. */
   function aliasesOf(token: string): { name: string; alias: string | null }[] {
     const padded = token.length % 4 === 0 ? null : `${token}=`;
     const standard = /[-_]/.test(token) ? token.replace(/-/g, "+").replace(/_/g, "/") : null;
@@ -292,8 +284,6 @@ describe("non-canonical base64url spellings of one token", () => {
 describe("the imported key is cached, not just the derived bytes", () => {
   it("re-imports nothing once a purpose has been used, however many operations follow", async () => {
     const ring = await importAuthKeyRing([SECRET_A]);
-    // The first operation pays for the HKDF derivation and the import both; what this measures is
-    // every operation after it, which used to pay for the import again each time.
     const warm = await encodeAuthToken(ring, "verify", "a", 60_000);
     await authNonceKey(ring, warm);
 
@@ -319,7 +309,6 @@ describe("the imported key is cached, not just the derived bytes", () => {
   it("keeps the two algorithms apart, so an AEAD key is never handed to the signer", async () => {
     const ring = await importAuthKeyRing([SECRET_A]);
     const token = await encodeAuthToken(ring, "verify", "a", 60_000);
-    // A key imported for AES-GCM cannot sign; that this resolves at all is the separation holding.
     expect((await authNonceKey(ring, token)).ok).toBe(true);
   });
 });
@@ -329,11 +318,56 @@ describe("authNonceTtlSeconds", () => {
     expect(authNonceTtlSeconds(900_001)).toBe(901);
   });
 
-  // No floor any more: the nonce store is a SQL table whose rows a purge reclaims, so a short
-  // lifetime shortens only how long a consumed key is worth keeping — never whether it is consumed.
   it("carries a short lifetime through rather than clamping it up to a KV floor", () => {
     expect(authNonceTtlSeconds(1)).toBe(1);
     expect(authNonceTtlSeconds(-5)).toBe(0);
     expect(authNonceTtlSeconds(AUTH_KV_MIN_TTL_SECONDS * 1000)).toBe(AUTH_KV_MIN_TTL_SECONDS);
+  });
+});
+
+async function withImportKeyRejectingOnce(run: () => Promise<void>): Promise<void> {
+  // oxlint-disable-next-line typescript/no-explicit-any -- swapping the platform method for a one-shot failure
+  const subtle = crypto.subtle as any;
+  const original = subtle.importKey;
+  let failed = false;
+  subtle.importKey = (...args: unknown[]) => {
+    if (failed) return original.apply(crypto.subtle, args);
+    failed = true;
+    return Promise.reject(new Error("transient WebCrypto failure"));
+  };
+  try {
+    await run();
+  } finally {
+    subtle.importKey = original;
+  }
+}
+
+describe("authStandInToken", () => {
+  it("answers one ring and purpose with the same sealed frame every time", async () => {
+    const ring = await ringOf(SECRET_A);
+    const first = authStandInToken(ring, "verify");
+    expect(authStandInToken(ring, "verify")).toBe(first);
+    expect(await decodeAuthToken(ring, "verify", await first)).toMatchObject({ ok: true });
+  });
+
+  it("seals a separate frame for another purpose and for another ring", async () => {
+    const ring = await ringOf(SECRET_A);
+    const sameSecretOtherRing = await ringOf(SECRET_A);
+    const verify = await authStandInToken(ring, "verify");
+    const identity = await authStandInToken(ring, "identity");
+    const otherRing = await authStandInToken(sameSecretOtherRing, "verify");
+    expect(new Set([verify, identity, otherRing]).size).toBe(3);
+    expect(await decodeAuthToken(ring, "identity", identity)).toMatchObject({ ok: true });
+    expect(await decodeAuthToken(ring, "verify", identity)).toEqual({ ok: false, error: "not-authentic" });
+  });
+
+  it("re-seals after a rejected seal rather than answering every later caller with the rejection", async () => {
+    const ring = await ringOf(SECRET_B);
+    await withImportKeyRejectingOnce(async () => {
+      await expect(authStandInToken(ring, "nonce")).rejects.toThrow("transient WebCrypto failure");
+    });
+    const resealed = authStandInToken(ring, "nonce");
+    expect(await decodeAuthToken(ring, "nonce", await resealed)).toMatchObject({ ok: true });
+    expect(authStandInToken(ring, "nonce")).toBe(resealed);
   });
 });

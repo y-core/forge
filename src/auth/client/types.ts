@@ -24,6 +24,7 @@ export interface PasskeyRealm {
   credentials: PasskeyCredentials | undefined;
   fetch: (url: string, init: RequestInit) => Promise<Response>;
   navigate: (path: string) => void;
+  requestTimeoutMs: number;
 }
 
 /** What a verified ceremony's PRF evaluation handed the page. @public */

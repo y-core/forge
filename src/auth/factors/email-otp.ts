@@ -1,7 +1,7 @@
 import { randomBytes, timingSafeEqual } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
-import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_MAX_ATTEMPTS, AUTH_OTP_TTL_MS } from "../config";
+import { AUTH_NOTIFY_TIMEOUT_MS, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_MAX_ATTEMPTS, AUTH_OTP_TTL_MS } from "../config";
 import { authNonceKey, authNonceTtlSeconds, authStandInToken, decodeAuthToken, encodeAuthToken } from "../keys/token";
 import { authLimit } from "../limits";
 import type { AuthStoreResult } from "../types";
@@ -9,7 +9,6 @@ import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, Implici
 import type { EmailOtpOptions } from "./types";
 
 const MIN_DIGITS = 6;
-// Above nine, `10 ** digits` passes `2 ** 32` and `randomCode` samples from an empty range for good.
 const MAX_DIGITS = 8;
 const MIN_TTL_MS = 60_000;
 const MAX_TTL_MS = 600_000;
@@ -20,9 +19,9 @@ const MAX_COOLDOWN_MS = 3_600_000;
 
 const PAYLOAD_SEPARATOR = "\0";
 
-/** Rejection-sampled so every code is equally likely — a plain modulo biases the low digits. */
 function randomCode(digits: number): string {
   const ceiling = 10 ** digits;
+  // Rejection sampling: a plain modulo of a 32-bit draw would make the low codes more likely.
   const limit = Math.floor(0x1_0000_0000 / ceiling) * ceiling;
   for (;;) {
     const value = new DataView(randomBytes(4).buffer).getUint32(0, false);
@@ -65,21 +64,26 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
     ceiling: "a wait longer than an hour locks a user out of their own sign-in",
   });
 
+  async function deliverCode(to: string, code: string, expiresAt: number): Promise<boolean> {
+    try {
+      const sent = await options.notifier.send({ to, kind: "otp", code, expiresAt }, AbortSignal.timeout(AUTH_NOTIFY_TIMEOUT_MS));
+      return sent.ok;
+    } catch {
+      return false;
+    }
+  }
+
   async function createChallenge(userId: string, at: number): Promise<Result<AuthFactorChallenge, AuthFactorReason>> {
     const code = randomCode(digits);
     const token = await encodeAuthToken(options.keys, "verify", `${userId}${PAYLOAD_SEPARATOR}${code}`, ttlMs, { now: at });
     const expiresAt = at + ttlMs;
 
-    // Claimed before the mail goes out, so the cooldown bounds what is sent rather than what is
-    // recorded — and given back below, so a broken mailer leaves no identity holding a spent one.
     const claimed = await options.state.issue(userId, { token, attempts: 0, issuedAt: at, expiresAt }, cooldownMs);
     if (!claimed.ok) return err("unavailable");
     if (!claimed.data) return err("too-soon");
 
-    const sent = await options.notifier.send({ to: await options.address(userId), kind: "otp", code, expiresAt });
-    if (!sent.ok) {
-      // Give the cooldown back: the identity spent one and holds a code nobody can read. Named by
-      // token and not `clear`, so a second issue that raced this one and *did* send is left alone.
+    const to = await options.address(userId);
+    if (!(await deliverCode(to, code, expiresAt))) {
       await options.state.discard(userId, token);
       return err("unavailable");
     }
@@ -87,8 +91,6 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
   }
 
   async function verifyChallenge(userId: string, presented: string, at: number): Promise<Result<AuthFactorVerified, AuthFactorReason>> {
-    // The guess is spent and admitted by one statement, so the ceiling holds against parallel
-    // guesses. Nothing distinguishes the refusals it collapses, so a second read classifies them.
     const counted = await options.state.countAttempt(userId, maxAttempts, at);
     if (!counted.ok) return err("unavailable");
 
@@ -104,8 +106,6 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
     const [subject, code] = decoded.data.payload.split(PAYLOAD_SEPARATOR);
     if (subject !== userId || code === undefined || !timingSafeEqual(code, presented)) return err("unrecognised");
 
-    // Consumed through the nonce store, so a code that was already spent cannot be replayed even
-    // inside its own lifetime.
     const nonce = await authNonceKey(options.keys, counted.data.token);
     if (!nonce.ok) return err("unrecognised");
     const fresh = await options.nonces.markConsumed(nonce.data, authNonceTtlSeconds(ttlMs));
@@ -127,7 +127,6 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
     reissueAfterMs: cooldownMs,
     createChallenge,
     verifyChallenge,
-    // A verified address *is* the enrolment, so there is no factor row to list.
     listEnrolments: (): Promise<AuthStoreResult<readonly never[]>> => Promise.resolve(ok([])),
   };
 }

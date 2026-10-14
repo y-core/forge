@@ -23,6 +23,7 @@ export type {
   AssetsFetcher,
   BotRejection,
   CacheDirective,
+  HealthCheckOptions,
   HealthCheckResult,
   MethodMismatch,
   PageDefinition,

@@ -37,7 +37,6 @@ const CEREMONY: PasskeyContract = {
 
 const buffer = (...values: number[]): ArrayBuffer => new Uint8Array(values).buffer;
 
-/** A finished assertion, shaped as the browser hands one over. */
 const ASSERTION = {
   id: "credential-id",
   rawId: buffer(1, 2, 3),
@@ -47,7 +46,6 @@ const ASSERTION = {
   response: { clientDataJSON: buffer(4, 5), authenticatorData: buffer(6, 7), signature: buffer(8, 9), userHandle: buffer(10, 11) },
 } as unknown as PublicKeyCredential;
 
-/** A finished attestation, on the same terms. */
 const ATTESTATION = {
   id: "new-credential",
   rawId: buffer(20, 21),
@@ -78,20 +76,33 @@ interface Recorded {
   body: unknown;
 }
 
-/** A realm whose two endpoints answer from `replies`, recording every request and navigation. */
+interface CredentialCall {
+  method: string;
+  options: unknown;
+  signal: AbortSignal | undefined;
+}
+
 function fakeRealm(options: {
   replies?: Record<string, { status?: number; body?: unknown }>;
+  hang?: string[];
   answer?: unknown;
+  pendingCredential?: boolean;
   supported?: boolean;
   header?: string;
-}): { realm: PasskeyRealm; requests: Recorded[]; navigations: string[]; calls: Array<{ method: string; options: unknown }> } {
+  requestTimeoutMs?: number;
+}): { realm: PasskeyRealm; requests: Recorded[]; fetchSignals: Array<AbortSignal | undefined>; navigations: string[]; calls: CredentialCall[] } {
   const requests: Recorded[] = [];
+  const fetchSignals: Array<AbortSignal | undefined> = [];
   const navigations: string[] = [];
-  const calls: Array<{ method: string; options: unknown }> = [];
+  const calls: CredentialCall[] = [];
   const headerName = options.header ?? PASSKEY_CSRF_HEADER_DEFAULT;
 
-  const answer = (method: string, publicKey: unknown): Promise<never> | Promise<unknown> => {
-    calls.push({ method, options: publicKey });
+  const untilAborted = (signal: AbortSignal | null | undefined): Promise<never> =>
+    new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+
+  const answer = (method: string, o: CredentialRequestOptions | CredentialCreationOptions): Promise<unknown> => {
+    calls.push({ method, options: o.publicKey, signal: o.signal });
+    if (options.pendingCredential) return untilAborted(o.signal);
     if (typeof options.answer === "string") {
       const error = new Error(options.answer);
       error.name = options.answer;
@@ -102,13 +113,13 @@ function fakeRealm(options: {
 
   const realm: PasskeyRealm = {
     supported: options.supported ?? true,
-    credentials: {
-      create: (o) => answer("create", o.publicKey) as Promise<Credential | null>,
-      get: (o) => answer("get", o.publicKey) as Promise<Credential | null>,
-    },
+    credentials: { create: (o) => answer("create", o) as Promise<Credential | null>, get: (o) => answer("get", o) as Promise<Credential | null> },
     fetch: (url, init) => {
       const headers = (init.headers ?? {}) as Record<string, string>;
       requests.push({ url, header: headers[headerName], body: JSON.parse(String(init.body)) });
+      fetchSignals.push(init.signal ?? undefined);
+      if (init.signal?.aborted) return Promise.reject(init.signal.reason);
+      if (options.hang?.includes(url)) return untilAborted(init.signal);
       const reply = options.replies?.[url];
       if (!reply) return Promise.resolve(new Response("", { status: 404 }));
       return Promise.resolve(new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 }));
@@ -116,9 +127,12 @@ function fakeRealm(options: {
     navigate: (path) => {
       navigations.push(path);
     },
+    requestTimeoutMs: options.requestTimeoutMs ?? 15_000,
   };
-  return { realm, requests, navigations, calls };
+  return { realm, requests, fetchSignals, navigations, calls };
 }
+
+const tick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("runPasskeyCeremony — the DOM-free ceremony core", () => {
   it("runs an authentication end to end and navigates to the guarded redirect target", async () => {
@@ -195,8 +209,6 @@ describe("runPasskeyCeremony — the DOM-free ceremony core", () => {
     const { realm, requests, calls } = fakeRealm({ supported: false });
 
     expect(await runPasskeyCeremony(CEREMONY, realm)).toEqual({ mode: "authentication", reason: "unsupported" });
-    // The whole point of checking first: a challenge is single-use, and one spent here is one the
-    // visitor's next attempt no longer has.
     expect(requests).toEqual([]);
     expect(calls).toEqual([]);
   });
@@ -287,7 +299,6 @@ describe("encodeCredential / ceremonyReason", () => {
   });
 });
 
-/** A scope root carrying the full contract, plus the refs the controller addresses, beside an `<Announcer />`'s regions. */
 function fixture(overrides: Record<string, string> = {}): {
   root: FakeElement;
   win: FakeWindow;
@@ -533,7 +544,6 @@ afterEach(() => {
   for (const dispose of prfDisposers.splice(0)) dispose();
 });
 
-/** A ceremony whose options and verification both answer, with `answer` as the credential. */
 function answering(options: unknown, answer: unknown, verifyStatus = 200) {
   return fakeRealm({ replies: { [OPTIONS_PATH]: { body: options }, [VERIFY_PATH]: { status: verifyStatus, body: { ok: true } } }, answer });
 }
@@ -789,5 +799,241 @@ describe("mountPasskey — the PRF output stays in the page", () => {
     expect(posted).not.toContain(base64urlEncode(secret));
     expect(posted).not.toContain("ab".repeat(32));
     expect(posted).not.toContain(JSON.stringify(Array.from(secret)).slice(1, -1));
+  });
+});
+
+describe("runPasskeyCeremony — deadlines and cancellation", () => {
+  it("reports options-failed when the options request outlives its deadline, and prompts for nothing", async () => {
+    const { realm, calls, navigations } = fakeRealm({ hang: [OPTIONS_PATH], answer: ASSERTION, requestTimeoutMs: 5 });
+
+    expect(await runPasskeyCeremony(CEREMONY, realm)).toEqual({ mode: "authentication", reason: "options-failed" });
+    expect({ calls, navigations }).toEqual({ calls: [], navigations: [] });
+  });
+
+  it("reports verification-failed when the verification request outlives its deadline, and does not navigate", async () => {
+    const { realm, requests, navigations } = fakeRealm({
+      replies: { [OPTIONS_PATH]: { body: REQUEST_OPTIONS } },
+      hang: [VERIFY_PATH],
+      answer: ASSERTION,
+      requestTimeoutMs: 5,
+    });
+
+    expect(await runPasskeyCeremony(CEREMONY, realm)).toEqual({ mode: "authentication", reason: "verification-failed" });
+    expect({ posted: requests.map((r) => r.url), navigations }).toEqual({ posted: [OPTIONS_PATH, VERIFY_PATH], navigations: [] });
+  });
+
+  it("still holds a request to its deadline when the caller passed a signal that never aborts", async () => {
+    const caller = new AbortController();
+    const { realm } = fakeRealm({ hang: [OPTIONS_PATH], requestTimeoutMs: 5 });
+
+    expect(await runPasskeyCeremony(CEREMONY, realm, undefined, caller.signal)).toEqual({ mode: "authentication", reason: "options-failed" });
+  });
+
+  it("gives both requests a signal, and hands the authenticator the caller's own", async () => {
+    const caller = new AbortController();
+    const { realm, fetchSignals, calls } = fakeRealm({
+      replies: { [OPTIONS_PATH]: { body: REQUEST_OPTIONS }, [VERIFY_PATH]: { body: { ok: true } } },
+      answer: ASSERTION,
+    });
+
+    await runPasskeyCeremony(CEREMONY, realm, undefined, caller.signal);
+
+    expect(fetchSignals.map((signal) => signal instanceof AbortSignal)).toEqual([true, true]);
+    expect(calls.map((call) => call.signal)).toEqual([caller.signal]);
+  });
+
+  it("hands `create` the caller's signal on a registration", async () => {
+    const caller = new AbortController();
+    const { realm, calls } = answering(CREATION_OPTIONS, ATTESTATION);
+
+    await runPasskeyCeremony(REGISTRATION, realm, undefined, caller.signal);
+
+    expect(calls.map((call) => [call.method, call.signal])).toEqual([["create", caller.signal]]);
+  });
+
+  const abortPoints: Array<{ label: string; realm: () => ReturnType<typeof fakeRealm>; posted: string[]; prompted: number }> = [
+    { label: "the options request", realm: () => fakeRealm({ hang: [OPTIONS_PATH], answer: ASSERTION }), posted: [OPTIONS_PATH], prompted: 0 },
+    {
+      label: "the authenticator prompt",
+      realm: () => fakeRealm({ replies: { [OPTIONS_PATH]: { body: REQUEST_OPTIONS } }, pendingCredential: true }),
+      posted: [OPTIONS_PATH],
+      prompted: 1,
+    },
+    {
+      label: "the verification request",
+      realm: () => fakeRealm({ replies: { [OPTIONS_PATH]: { body: REQUEST_OPTIONS } }, hang: [VERIFY_PATH], answer: ASSERTION }),
+      posted: [OPTIONS_PATH, VERIFY_PATH],
+      prompted: 1,
+    },
+  ];
+
+  for (const point of abortPoints) {
+    it(`rejects with the caller's reason when the caller aborts during ${point.label}, and navigates nowhere`, async () => {
+      const caller = new AbortController();
+      const reason = new Error("the island was swapped out");
+      const { realm, requests, calls, navigations } = point.realm();
+
+      const running = runPasskeyCeremony(CEREMONY, realm, undefined, caller.signal);
+      await tick();
+      caller.abort(reason);
+
+      await expect(running).rejects.toBe(reason);
+      expect({ posted: requests.map((r) => r.url), prompted: calls.length, navigations }).toEqual({
+        posted: point.posted,
+        prompted: point.prompted,
+        navigations: [],
+      });
+    });
+  }
+
+  it("rejects rather than reporting declined when the caller's abort cancels the prompt", async () => {
+    const caller = new AbortController();
+    const declinedShaped = new DOMException("The operation either timed out or was not allowed.", "NotAllowedError");
+    const { realm } = fakeRealm({ replies: { [OPTIONS_PATH]: { body: REQUEST_OPTIONS } }, pendingCredential: true });
+
+    const running = runPasskeyCeremony(CEREMONY, realm, undefined, caller.signal);
+    await tick();
+    caller.abort(declinedShaped);
+
+    await expect(running).rejects.toBe(declinedShaped);
+  });
+
+  it("does not navigate when the caller aborts while the PRF handler runs", async () => {
+    const caller = new AbortController();
+    const reason = new Error("disposed mid-handler");
+    const { realm, navigations } = answering(PRF_REQUEST_OPTIONS, ASSERTION);
+    handlePrf(() => {
+      caller.abort(reason);
+    });
+
+    await expect(runPasskeyCeremony(CEREMONY, realm, undefined, caller.signal)).rejects.toBe(reason);
+    expect(navigations).toEqual([]);
+  });
+});
+
+describe("mountPasskey — disposal and the request deadline", () => {
+  const spoken = (region: FakeElement): string[] => region.children.map((node) => node.textContent);
+
+  function outcomes(root: FakeElement): PasskeyOutcomeDetail[] {
+    const seen: PasskeyOutcomeDetail[] = [];
+    root.addEventListener(PASSKEY_OUTCOME_EVENT, (event) => seen.push((event as unknown as CustomEvent<PasskeyOutcomeDetail>).detail));
+    return seen;
+  }
+
+  it("aborts the request in flight when disposed mid-ceremony, and reports nothing", async () => {
+    const { root, win, trigger, polite, assertive } = fixture();
+    win.replies.set(OPTIONS_PATH, { hang: true });
+    const fetchSignals: Array<AbortSignal | undefined> = [];
+    const realFetch = win.fetch.bind(win);
+    win.fetch = (url, init) => {
+      fetchSignals.push(init?.signal);
+      return realFetch(url, init);
+    };
+    const seen = outcomes(root);
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await tick();
+    const busyWhileRunning = trigger.getAttribute("aria-busy");
+    dispose();
+    await tick();
+    win.flush();
+
+    expect({
+      busyWhileRunning,
+      aborted: fetchSignals.map((signal) => signal?.aborted),
+      seen,
+      spoken: [...spoken(polite), ...spoken(assertive)],
+      status: root.querySelector(`[data-ref='${PASSKEY.status}']`)?.textContent,
+      navigations: win.navigations,
+      busy: trigger.hasAttribute("aria-busy"),
+    }).toEqual({ busyWhileRunning: "true", aborted: [true], seen: [], spoken: [], status: "", navigations: [], busy: false });
+  });
+
+  it("neither verifies, navigates nor reports when the prompt settles after dispose", async () => {
+    const { root, win, trigger, polite, assertive } = fixture();
+    win.replies.set(OPTIONS_PATH, { body: REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { body: { ok: true } });
+    let settlePrompt: (credential: unknown) => void = () => {};
+    win.credentials.get = () =>
+      new Promise((resolve) => {
+        settlePrompt = resolve;
+      });
+    const seen = outcomes(root);
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    trigger.dispatchEvent(new FakeEvent("click"));
+    await tick();
+    dispose();
+    settlePrompt(ASSERTION);
+    await tick();
+    win.flush();
+
+    expect({
+      posted: win.requests.map((r) => r.url),
+      navigations: win.navigations,
+      seen,
+      spoken: [...spoken(polite), ...spoken(assertive)],
+    }).toEqual({ posted: [OPTIONS_PATH], navigations: [], seen: [], spoken: [] });
+  });
+
+  it("reports options-failed and clears the busy state when the options request reaches its 15-second deadline", async () => {
+    const { root, win, trigger } = fixture();
+    win.replies.set(OPTIONS_PATH, { hang: true });
+    const deadline = new AbortController();
+    const asked: number[] = [];
+    const timeout = spyOn(AbortSignal, "timeout").mockImplementation((ms: number) => {
+      asked.push(ms);
+      return deadline.signal;
+    });
+    const seen = outcomes(root);
+
+    try {
+      const dispose = mountPasskey(root as unknown as HTMLElement);
+      trigger.dispatchEvent(new FakeEvent("click"));
+      await tick();
+      const busyWhileRunning = trigger.getAttribute("aria-busy");
+      deadline.abort(new DOMException("signal timed out", "TimeoutError"));
+      await tick();
+      dispose();
+
+      expect({ asked, busyWhileRunning, seen, busy: trigger.hasAttribute("aria-busy") }).toEqual({
+        asked: [15_000],
+        busyWhileRunning: "true",
+        seen: [{ mode: "authentication", reason: "options-failed" }],
+        busy: false,
+      });
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+
+  it("drives a ceremony from a scope root that is itself the trigger", async () => {
+    const { doc, el } = fakeTree();
+    const root = el("BUTTON", {
+      "data-scope": "passkey",
+      "data-ref": PASSKEY.trigger,
+      [PASSKEY_MODE_ATTR]: "authentication",
+      [PASSKEY_OPTIONS_PATH_ATTR]: OPTIONS_PATH,
+      [PASSKEY_VERIFY_PATH_ATTR]: VERIFY_PATH,
+      [PASSKEY_OPTIONS_TOKEN_ATTR]: OPTIONS_TOKEN,
+      [PASSKEY_VERIFY_TOKEN_ATTR]: VERIFY_TOKEN,
+      [PASSKEY_REDIRECT_ATTR]: "/account",
+    });
+    doc.body.append(root);
+    const win = doc.defaultView;
+    win.credentials.answer = ASSERTION;
+    win.replies.set(OPTIONS_PATH, { body: REQUEST_OPTIONS });
+    win.replies.set(VERIFY_PATH, { body: { ok: true } });
+
+    const dispose = mountPasskey(root as unknown as HTMLElement);
+    root.dispatchEvent(new FakeEvent("click"));
+    await tick();
+    dispose();
+
+    expect({ posted: win.requests.map((r) => r.url), navigations: win.navigations }).toEqual({
+      posted: [OPTIONS_PATH, VERIFY_PATH],
+      navigations: ["/account"],
+    });
   });
 });

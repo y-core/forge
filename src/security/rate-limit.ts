@@ -3,6 +3,7 @@ import type { Middleware } from "@remix-run/fetch-router";
 import type { AppContext } from "../context/types";
 import { getAppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
+import { serializeError } from "../logging/serialize-error";
 import type { RateLimitOptions } from "./types";
 
 const DEFAULT_MESSAGE = "Too many requests. Please try again later.";
@@ -52,11 +53,17 @@ export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimit
     try {
       resolvedKey = key(c);
     } catch (error) {
-      logger.warn("Rate limit key resolution failed — refusing the request", { error: String(error) });
+      logger.warn("Rate limit key resolution failed — refusing the request", { error: serializeError(error) });
       return new Response("Service unavailable", { status: 503 });
     }
-    const { success } = await binding.limit({ key: resolvedKey });
-    if (!success) {
+    let outcome: { success: boolean };
+    try {
+      outcome = await binding.limit({ key: resolvedKey });
+    } catch (error) {
+      logger.error("Rate limiter binding failed — refusing the request", { error: serializeError(error) });
+      return new Response("Service unavailable", { status: 503 });
+    }
+    if (!outcome.success) {
       return onLimit(c);
     }
     return next();

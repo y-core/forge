@@ -12,7 +12,7 @@ export type { HelpOptions } from "./types";
 export { formatHelp, formatUsage } from "./help";
 export { scopeLogger } from "./log";
 export { collectFlags, parseArgs } from "./parse";
-export { capture, hasTool, insertPath, probeOk, requireTools, run } from "./proc";
+export { capture, captureStreams, hasTool, insertPath, probeOk, requireTools, run } from "./proc";
 export { suggest } from "./suggest";
 export type { ArgToken, TokenKind } from "./types";
 export { tokenize } from "./tokenize";
@@ -30,6 +30,7 @@ export type {
   FlagDefs,
   ResolvedFlags,
   ScopedLogger,
+  StreamCapture,
   StringFlagDef,
   ToolHints,
 } from "./types";

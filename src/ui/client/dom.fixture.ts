@@ -77,7 +77,6 @@ export class FakeElement {
     this.parent = null;
   }
 
-  // Every parent in this tree is an element, so `parentElement` and `parentNode` agree here.
   get parentElement(): FakeElement | null {
     return this.parent;
   }
@@ -183,13 +182,16 @@ export class FakeElement {
     return this.querySelectorAll(selector)[0] ?? null;
   }
 
-  addEventListener(type: string, listener: Listener): void {
+  addEventListener(type: string, listener: Listener, options?: boolean | AddEventListenerOptions): void {
+    const signal = typeof options === "object" ? options.signal : undefined;
+    if (signal?.aborted) return;
     const list = this.listeners.get(type) ?? [];
     list.push(listener);
     this.listeners.set(type, list);
+    signal?.addEventListener("abort", () => this.removeEventListener(type, listener), { once: true });
   }
 
-  removeEventListener(type: string, listener: Listener): void {
+  removeEventListener(type: string, listener: Listener, _options?: boolean | EventListenerOptions): void {
     const list = this.listeners.get(type) ?? [];
     const at = list.indexOf(listener);
     if (at >= 0) list.splice(at, 1);
@@ -202,7 +204,6 @@ export class FakeElement {
     for (let node: FakeElement | null = this; node; node = node.parent) {
       for (const listener of [...(node.listeners.get(event.type) ?? [])]) listener(event as FakeEvent);
     }
-    // Then the document, which is where the delegated scope runtime listens.
     if (event instanceof FakeEvent) this.ownerDocument?.dispatchEvent(event);
   }
 
@@ -241,14 +242,16 @@ export class FakeDocument {
 
   readonly listeners = new Map<string, Array<(event: FakeEvent) => void>>();
 
-  /** Document-level listeners, which is where `resume()` installs its whole delegation. */
-  addEventListener(type: string, listener: (event: FakeEvent) => void): void {
+  addEventListener(type: string, listener: (event: FakeEvent) => void, options?: boolean | AddEventListenerOptions): void {
+    const signal = typeof options === "object" ? options.signal : undefined;
+    if (signal?.aborted) return;
     const list = this.listeners.get(type) ?? [];
     list.push(listener);
     this.listeners.set(type, list);
+    signal?.addEventListener("abort", () => this.removeEventListener(type, listener), { once: true });
   }
 
-  removeEventListener(type: string, listener: (event: FakeEvent) => void): void {
+  removeEventListener(type: string, listener: (event: FakeEvent) => void, _options?: boolean | EventListenerOptions): void {
     const list = this.listeners.get(type) ?? [];
     const at = list.indexOf(listener);
     if (at >= 0) list.splice(at, 1);
@@ -355,8 +358,8 @@ export class FakeWindow {
   /** Every request `fetch` was given, in order. */
   readonly requests: FakeRequest[] = [];
 
-  /** What `fetch` answers, by URL — `null` rejects, as a network failure does; an absent URL is 404. */
-  readonly replies = new Map<string, { status?: number; body?: unknown } | null>();
+  /** What `fetch` answers, by URL — `null` rejects, as a network failure does; an absent URL is 404; `hang` settles only on abort. */
+  readonly replies = new Map<string, { status?: number; body?: unknown; hang?: boolean } | null>();
 
   /** Where `location.assign` was sent, in order. */
   readonly navigations: string[] = [];
@@ -367,7 +370,10 @@ export class FakeWindow {
     },
   };
 
-  fetch(url: string, init: { method?: string; headers?: Record<string, string>; body?: string; keepalive?: boolean } = {}): Promise<Response> {
+  fetch(
+    url: string,
+    init: { method?: string; headers?: Record<string, string>; body?: string; keepalive?: boolean; signal?: AbortSignal } = {},
+  ): Promise<Response> {
     const raw = init.body;
     let body: unknown = raw;
     try {
@@ -379,7 +385,12 @@ export class FakeWindow {
     if (init.keepalive !== undefined) request.keepalive = init.keepalive;
     this.requests.push(request);
 
+    const signal = init.signal;
+    if (signal?.aborted) return Promise.reject(signal.reason);
     const reply = this.replies.get(url);
+    if (reply?.hang) {
+      return new Promise((_, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }));
+    }
     if (reply === null) return Promise.reject(new Error("network error"));
     if (reply === undefined) return Promise.resolve(new Response("", { status: 404 }));
     return Promise.resolve(new Response(JSON.stringify(reply.body ?? {}), { status: reply.status ?? 200 }));

@@ -115,8 +115,6 @@ export const TURNSTILE_FOCUS_GUARD_MS = 5_000;
 export function restoreFocus(container: HTMLElement, previous: Element | null): boolean {
   const current = activeElement(container);
   if (current === previous) return false;
-  // The widget dropping focus lands on `body` or on nothing; focus the user moved to a real element
-  // elsewhere is theirs, and is left alone.
   const widgetHasFocus = contains(container, current) || current === null || current === ownerDocument(container).body;
   if (!widgetHasFocus) return false;
   const target = previous as HTMLElement | null;
@@ -139,8 +137,6 @@ function replaySubmission(elt: HTMLElement, pressed: HTMLElement): void {
 /** Mounts a resilient Cloudflare Turnstile controller for a `<Turnstile>` widget and returns a cleanup function. */
 export function mountTurnstile(root: HTMLElement): () => void {
   const doc = ownerDocument(root);
-  // Both misses report rather than throw: the caller pointed at this tree expecting a widget in it,
-  // so a miss is an authoring error, not a page that simply has no CAPTCHA.
   const container = findWidget(root);
   if (!container) {
     console.warn(`[turnstile] no [data-ref="${TURNSTILE.widget}"] under the mount root; the widget will not mount`);
@@ -181,18 +177,15 @@ export function mountTurnstile(root: HTMLElement): () => void {
     );
   }
   let widgetId: string | undefined;
-  // Whether a press can be held: a widget that never rendered, or whose challenge errored, has no
-  // token to wait for, and holding one would only spend the execute timeout before failing.
   let state: "unmounted" | "ready" | "dead" = "unmounted";
   let loadStarted = false;
-  let disposed = false;
+  const lifetime = new AbortController();
   let pollId = 0;
   let pollTimeoutId = 0;
   let scriptTimeoutId = 0;
   let guardWindowId = 0;
   let guardSettleId = 0;
   let executeTimeoutId = 0;
-  // One record, so the request and the control it was pressed on can never answer for each other.
   let held: Hold | null = null;
   let interactive = false;
   let tokenIssued = false;
@@ -207,7 +200,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
   };
 
   const reveal = (name: string, shown: boolean) => {
-    if (disposed) return;
+    if (lifetime.signal.aborted) return;
     const message = ref(name, container);
     if (!message) return;
     const revealed = shown && message.hidden;
@@ -260,8 +253,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
   const abandonHeld = (reason: TurnstileAbandonReason) => {
     const lost = held;
     releaseHeld();
-    // Un-busied by `releaseHeld` first, so a handler that focuses the control finds a live target.
-    if (disposed || lost === null) return;
+    if (lifetime.signal.aborted || lost === null) return;
     const detail: TurnstileAbandonedDetail = { reason, submitter: lost.submitter };
     form.dispatchEvent(new CustomEvent(TURNSTILE_ABANDONED_EVENT, { bubbles: true, detail }));
   };
@@ -273,8 +265,6 @@ export function mountTurnstile(root: HTMLElement): () => void {
     resetWidget();
   };
 
-  // Busy state and budget together, both read off `interactive`, so a press arriving mid-interaction
-  // inherits the human-scale ceiling rather than the 15s one.
   const armHold = () => {
     setBusy(held?.submitter ?? null, !interactive);
     clearExecuteTimeout();
@@ -289,7 +279,6 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (held) abandonHeld("superseded");
     held = next;
     armHold();
-    // One press is one challenge: a displacement rides the challenge already in flight.
     if (running) return;
     try {
       win.turnstile?.execute(container);
@@ -342,16 +331,15 @@ export function mountTurnstile(root: HTMLElement): () => void {
     // One settle tick, because the element focus actually moved to is only readable after the event.
     guardSettleId = win.setTimeout(() => {
       guardSettleId = 0;
-      if (disposed || guardWindowId === 0) return;
+      if (lifetime.signal.aborted || guardWindowId === 0) return;
       if (restoreFocus(container, from)) disarmGuard();
     }, 0);
   };
 
-  // Not part of `clearTimers`: the poll-success path clears the timers immediately before rendering.
   const armGuard = () => {
     win.clearTimeout(guardWindowId);
     guardWindowId = win.setTimeout(disarmGuard, TURNSTILE_FOCUS_GUARD_MS);
-    form.addEventListener("focusout", onGuardFocusout);
+    form.addEventListener("focusout", onGuardFocusout, { signal: lifetime.signal });
   };
 
   const disarmGuard = () => {
@@ -367,7 +355,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const observer = new Observer(() => {
       // A solved token is never discarded to re-theme the widget: the visitor would pay for a
       // second challenge to look at a colour, and in submit mode lose the one they just passed.
-      if (disposed || tokenIssued || state !== "ready" || renderedTheme === currentTheme()) return;
+      if (lifetime.signal.aborted || tokenIssued || state !== "ready" || renderedTheme === currentTheme()) return;
       removeWidget();
       renderWidget();
     });
@@ -378,7 +366,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
   const renderWidget = () => {
     // A late script `load` or poll hit must not render into a container the app has already swapped
     // out; the widget would mount on a detached node nothing can reach to remove it again.
-    if (disposed) return;
+    if (lifetime.signal.aborted) return;
     if (!hasTurnstileApi(win)) {
       showFallback();
       return;
@@ -392,7 +380,6 @@ export function mountTurnstile(root: HTMLElement): () => void {
       sitekey,
       size,
       theme,
-      // The token is auto-written to the hidden `cf-turnstile-response` input inside the container.
       callback: onToken,
       "error-callback": onErrorCallback,
       "unsupported-callback": onUnsupported,
@@ -446,8 +433,6 @@ export function mountTurnstile(root: HTMLElement): () => void {
           renderWidget();
         }
       }, 100);
-      // Giving up on the poll is a load failure like any other, so a pre-existing script that hangs
-      // still leaves the user with a message rather than a dead widget.
       pollTimeoutId = win.setTimeout(() => {
         win.clearInterval(pollId);
         showFallback();
@@ -466,22 +451,30 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const nonce = doc.querySelector<HTMLScriptElement>("script[nonce]")?.nonce ?? "";
     if (nonce) script.setAttribute("nonce", nonce);
     scriptTimeoutId = win.setTimeout(showFallback, TURNSTILE_SCRIPT_TIMEOUT_MS);
-    script.addEventListener("load", () => {
-      win.clearTimeout(scriptTimeoutId);
-      // The async script's load event means the API is initialised, so this renders directly rather
-      // than through `turnstile.ready()`, which throws for a script loaded async or defer.
-      renderWidget();
-    });
-    script.addEventListener("error", () => {
-      win.clearTimeout(scriptTimeoutId);
-      showFallback();
-    });
+    script.addEventListener(
+      "load",
+      () => {
+        win.clearTimeout(scriptTimeoutId);
+        // The async script's load event means the API is initialised, so this renders directly rather
+        // than through `turnstile.ready()`, which throws for a script loaded async or defer.
+        renderWidget();
+      },
+      { signal: lifetime.signal },
+    );
+    script.addEventListener(
+      "error",
+      () => {
+        win.clearTimeout(scriptTimeoutId);
+        showFallback();
+      },
+      { signal: lifetime.signal },
+    );
     doc.head.appendChild(script);
   };
 
   // `focusin`, not `focus`, so one delegated listener covers every field in the form. Retained
   // under `load="eager"`, where `loadStarted` has already made it a no-op.
-  form.addEventListener("focusin", loadScript, { once: true });
+  form.addEventListener("focusin", loadScript, { once: true, signal: lifetime.signal });
   if (eager) loadScript();
 
   // By the issuing element, not the answered URL: a descendant field's own htmx request bubbles to
@@ -501,7 +494,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const status = ctx?.response?.status ?? 0;
     if (status >= 200 && status < 300) form.reset();
   };
-  form.addEventListener("htmx:finally:request", onFinallyRequest);
+  form.addEventListener("htmx:finally:request", onFinallyRequest, { signal: lifetime.signal });
 
   // Whatever `responseFieldName` renames it to, the response input Cloudflare writes is the only named one in the container.
   const hasToken = (): boolean => (container.querySelector<HTMLInputElement>("input[name]")?.value ?? "") !== "";
@@ -511,26 +504,21 @@ export function mountTurnstile(root: HTMLElement): () => void {
     const elt = asElement(ctx?.sourceElement);
     if (elt === null || !isOwnSubmission(elt)) return;
     if (hasToken()) return;
-    // No API and no widget is a page where the challenge never loaded: let the request go and let
-    // `verifyTurnstile` be the one that refuses it, as it already is for a blocked widget.
     if (!hasTurnstileApi(win) || state !== "ready") return;
     event.preventDefault();
     const pressed = asElement(ctx?.request?.submitter) ?? elt;
     takeHold({ release: () => replaySubmission(elt, pressed), submitter: pressed });
   };
-  if (submitMode) form.addEventListener("htmx:config:request", onConfigRequest);
+  if (submitMode) form.addEventListener("htmx:config:request", onConfigRequest, { signal: lifetime.signal });
 
   const cleanup = () => {
-    disposed = true;
+    lifetime.abort();
     clearTimers();
     // Silently: teardown normally runs mid-swap, and an abandonment dispatched from a form htmx is
     // removing would reach a listener whose page is already gone.
     interactive = false;
     releaseHeld();
     disarmGuard();
-    form.removeEventListener("focusin", loadScript);
-    form.removeEventListener("htmx:finally:request", onFinallyRequest);
-    form.removeEventListener("htmx:config:request", onConfigRequest);
     themeObserver?.disconnect();
     themeObserver = undefined;
     removeWidget();

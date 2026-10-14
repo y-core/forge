@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 
 import type { KeyRing } from "../../crypto/keyring/types";
+import { createLogger } from "../../logging/logger";
+import type { LogRecord } from "../../logging/types";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { uuidv7 } from "../../storage/db/uuid";
@@ -38,7 +40,6 @@ interface FactorSpy {
   verdict?: Result<AuthFactorVerified, AuthFactorReason>;
 }
 
-/** The lifetime the primary factor enforces, which is now the only source of a reported expiry. */
 const OTP_TTL_MS = 600_000;
 
 function implicitFactor(
@@ -88,7 +89,6 @@ function totpFactor(spy: FactorSpy): EnrollableFactorService<"totp-app"> {
   };
 }
 
-/** The optional `recovery-code` offer the registry demands beside `totp-app`; nothing here presents a code. */
 const RECOVERY_OFFER: AuthFactorOffer = {
   service: {
     kind: "recovery-code",
@@ -164,8 +164,6 @@ function fakeUsers(rows: readonly AuthUser[]) {
   return { store, verifiedAt, reads };
 }
 
-/** The two ephemeral stores the decoy spends, recording nothing but that they were reachable. */
-/** The decoy's own stores, with the one call that tells a test the decoy branch ran. */
 function decoyStores(counted: string[] = []): { state: OtpStateStore; nonces: NonceStore } {
   return {
     state: {
@@ -182,6 +180,14 @@ function decoyStores(counted: string[] = []): { state: OtpStateStore; nonces: No
   };
 }
 
+function capturingLogger() {
+  const records: { level: string; message: string; data: Record<string, unknown> | undefined }[] = [];
+  const logger = createLogger("auth/flows", {
+    channels: [{ write: (record: LogRecord) => void records.push({ level: record.level, message: record.message, data: record.data }) }],
+  });
+  return { logger, records };
+}
+
 function fakeDeferral() {
   const scheduled: Promise<AuthIssueOutcome>[] = [];
   return { defer: (work: Promise<AuthIssueOutcome>) => void scheduled.push(work), scheduled };
@@ -192,7 +198,6 @@ interface Scene {
   deferral: ReturnType<typeof fakeDeferral>;
   primary: FactorSpy;
   stepUp: FactorSpy;
-  /** Every id the decoy's `countAttempt` was called for — the one observable the decoy branch has. */
   decoyed: string[];
 }
 
@@ -245,14 +250,11 @@ function factorRow(kind: AuthFactor["kind"], confirmedAt: number | null): AuthFa
 describe("createSigninFlow — anti-enumeration on complete", () => {
   const DEACTIVATED = userRow({ deactivatedAt: 1_650_000_000_000 });
 
-  /** What one `complete` cost: the reads it made of the user store, and whether it reached the factor. */
   async function work(world: Scene, email: string) {
     const outcome = await flow(world, "none", [], err("unrecognised" as const)).complete(email, "000000", AT);
     return { reads: world.users.reads, verified: world.primary.verified.length, decoyed: world.decoyed.length > 0, outcome };
   }
 
-  // Exact lists, not the `reads.length + verified` aggregate this replaces: that folded the whole
-  // factor path into one opaque unit, where the decoy's real cost hid. `decoy.test.ts` asserts that.
   it("performs the same user-store reads on the unknown, deactivated and known branches", async () => {
     const unknown = await work(scene([]), "nobody@example.com");
     const deactivated = await work(scene([DEACTIVATED]), EMAIL);
@@ -263,8 +265,6 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
     expect(known.reads).toEqual(["findByEmailKey"]);
   });
 
-  // Deleting `verifyAuthDecoy` turns this red: without it the refusing branches return after one
-  // lookup while the known branch goes on to spend a statement and open a sealed token.
   it("reaches the decoy on both refusing branches, which is where the factor path's cost is matched", async () => {
     const unknown = await work(scene([]), "nobody@example.com");
     const known = await work(scene(), EMAIL);
@@ -302,8 +302,6 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
   });
 });
 
-// The caller is already identified here — the session names them — so a throttle tells an attacker
-// nothing they do not already have, and folding it would cost an operator the true reason for free.
 describe("createSigninFlow — the step-up path keeps the true reason", () => {
   it("answers `too-many-attempts` from stepUp rather than the primary path's folded refusal", async () => {
     const world = scene();
@@ -328,8 +326,6 @@ describe("createSigninFlow — anti-enumeration on request", () => {
     await Promise.all([...known.deferral.scheduled, ...unknown.deferral.scheduled]);
   });
 
-  // The falsifiable criterion for this unit. Deleting the "pointless" decoy branch — the one that
-  // looks like it does nothing for an address nobody has — turns this assertion red.
   it("schedules deferred work on the unknown-address branch too, and that work is the decoy", async () => {
     const unknown = scene([]);
     flow(unknown).request("nobody@example.com", AT);
@@ -343,7 +339,6 @@ describe("createSigninFlow — anti-enumeration on request", () => {
     known.deferral.scheduled.length = 0;
     flow(known).request(EMAIL, AT);
     expect(known.deferral.scheduled).toHaveLength(1);
-    // Nothing has been challenged yet: the work was handed over, not awaited.
     expect(known.primary.challenged).toEqual([]);
     expect(await (known.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("challenged");
     expect(known.primary.challenged).toEqual([USER_ID]);
@@ -362,6 +357,50 @@ describe("createSigninFlow — anti-enumeration on request", () => {
     expect(answered).toEqual({ kind: "email-otp", expiresAt: AT + 600_000 });
     expect(await (broken.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("unavailable");
   });
+});
+
+describe("createSigninFlow — a throw inside the deferred work", () => {
+  const outage = new Error("D1 connection reset");
+
+  for (const { name, seed, email, overrides } of [
+    {
+      name: "the user store rejects",
+      seed: [userRow()],
+      email: EMAIL,
+      overrides: (world: Scene): Partial<AuthSigninOptions> => ({ users: { ...world.users.store, findByEmailKey: () => Promise.reject(outage) } }),
+    },
+    {
+      name: "the primary factor rejects for a known address",
+      seed: [userRow()],
+      email: EMAIL,
+      overrides: (world: Scene): Partial<AuthSigninOptions> => ({
+        factors: createFactorRegistry(fakeFactorStore(), {
+          offered: [{ service: { ...implicitFactor(world.primary), createChallenge: () => Promise.reject(outage) }, role: "primary" }],
+        }),
+      }),
+    },
+    {
+      name: "the decoy's state store rejects for an unknown address",
+      seed: [],
+      email: "nobody@example.com",
+      overrides: (): Partial<AuthSigninOptions> => ({ state: { ...decoyStores().state, issue: () => Promise.reject(outage) } }),
+    },
+  ]) {
+    it(`settles to unavailable and logs the error when ${name}`, async () => {
+      const world = scene(seed);
+      const captured = capturingLogger();
+      const answered = flow(world, "none", [], undefined, { ...overrides(world), logger: captured.logger }).request(email, AT);
+      expect(answered).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+      expect(await Promise.all(world.deferral.scheduled)).toEqual(["unavailable"]);
+      expect(captured.records).toEqual([
+        {
+          level: "error",
+          message: "auth.signin.issue.failed",
+          data: { error: { type: "Error", detail: "D1 connection reset", stack: outage.stack } },
+        },
+      ]);
+    });
+  }
 });
 
 describe("createSigninFlow — completing a sign-in", () => {
@@ -470,7 +509,6 @@ describe("createSigninFlow — the step-up entry points", () => {
 });
 
 describe("redactSigninReason", () => {
-  // Separate in the reason union for the operator's log, identical in anything a visitor sees.
   it("folds a deactivated account onto the answer an unknown address gets", () => {
     expect(redactSigninReason("deactivated")).toBe(redactSigninReason("unrecognised"));
     expect(redactSigninReason("deactivated")).toBe("unrecognised");

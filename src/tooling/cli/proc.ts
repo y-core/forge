@@ -3,7 +3,11 @@ import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
-import type { CaptureResult, SpawnSync, ToolHints } from "./types";
+import type { CaptureResult, SpawnSync, StreamCapture, ToolHints } from "./types";
+
+function spawnDeadline(timeoutMs: number | undefined): { timeout: number; killSignal: "SIGKILL" } | Record<string, never> {
+  return timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: "SIGKILL" };
+}
 
 /** Idempotently inserts `dir` at the front of `process.env.PATH`. */
 export function insertPath(dir: string): void {
@@ -30,8 +34,8 @@ export function requireTools(tools: ToolHints, spawn: SpawnSync = spawnSync): vo
 }
 
 /** Spawns `cmd args` with inherited stdio, returning 0 or throwing naming the command and exit code. */
-export function run(cmd: string, args: string[], opts?: { cwd?: string }, spawn: SpawnSync = spawnSync): number {
-  const r = spawn(cmd, args, { stdio: "inherit", env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
+export function run(cmd: string, args: string[], opts?: { cwd?: string; timeoutMs?: number }, spawn: SpawnSync = spawnSync): number {
+  const r = spawn(cmd, args, { stdio: "inherit", env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}), ...spawnDeadline(opts?.timeoutMs) });
   if (r.status !== 0) {
     throw new Error(`\`${cmd} ${args.join(" ")}\` failed (exit ${r.status})`);
   }
@@ -42,7 +46,7 @@ export function run(cmd: string, args: string[], opts?: { cwd?: string }, spawn:
 export function capture(
   cmd: string,
   args: string[],
-  opts?: { cwd?: string; env?: typeof process.env },
+  opts?: { cwd?: string; env?: typeof process.env; timeoutMs?: number },
   spawn: SpawnSync = spawnSync,
 ): CaptureResult {
   // One temp-file fd for both streams keeps them interleaved; `stdio: "pipe"` yields two independent buffers and loses the order.
@@ -51,11 +55,35 @@ export function capture(
   const fd = openSync(file, "w");
   const started = Date.now();
   try {
-    const r = spawn(cmd, args, { stdio: ["ignore", fd, fd], env: opts?.env ?? process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}) });
+    const r = spawn(cmd, args, {
+      stdio: ["ignore", fd, fd],
+      env: opts?.env ?? process.env,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+      ...spawnDeadline(opts?.timeoutMs),
+    });
     closeSync(fd);
     const reason = r.error ? `${r.error.message}\n` : "";
     return { code: r.status ?? 1, output: readFileSync(file, "utf-8") + reason, ms: Date.now() - started };
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+}
+
+/** Spawns `cmd args` with stdout and stderr captured apart, returning the exit code without throwing. */
+export function captureStreams(
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; env?: typeof process.env; timeoutMs?: number; maxBuffer?: number },
+  spawn: SpawnSync = spawnSync,
+): StreamCapture {
+  const r = spawn(cmd, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    encoding: "utf-8",
+    env: opts.env ?? process.env,
+    ...(opts.cwd ? { cwd: opts.cwd } : {}),
+    ...(opts.maxBuffer === undefined ? {} : { maxBuffer: opts.maxBuffer }),
+    ...spawnDeadline(opts.timeoutMs),
+  });
+  const reason = r.error ? `${r.error.message}\n` : "";
+  return { code: r.status ?? 1, exited: typeof r.status === "number" && !r.error, stdout: r.stdout ?? "", stderr: `${r.stderr ?? ""}${reason}` };
 }

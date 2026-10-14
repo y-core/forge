@@ -2,6 +2,7 @@ import type { RequestContext } from "@remix-run/fetch-router";
 
 import { EnvKey } from "../../context/types";
 import { importKeyRingUnder, keyRingKeyId, lookupKeyRingKey } from "../../crypto/keyring/ring";
+import { cachePendingUntilRejected } from "../../crypto/keyring/subkey";
 import type { KeyRing, KeyRingDomain } from "../../crypto/keyring/types";
 import { assertSecretStrength } from "../../crypto/primitives/strength";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
@@ -12,7 +13,7 @@ export const AUTH_KEY_DOMAIN: KeyRingDomain = { keyIdLabel: "y-core/forge/auth/k
 
 // Nested on the env *and* the options: keyed on the env alone, two mounts with different
 // `AuthOptions` share one key ring — a token minted under one secret and read under another's.
-const servicesCache = new WeakMap<object, WeakMap<AuthOptions, AuthServices>>();
+const servicesCache = new WeakMap<object, WeakMap<AuthOptions, Promise<AuthServices>>>();
 
 /** Derives the id a key is known by — a fingerprint, so a consumer never types one. @public */
 export function authKeyId(key: Uint8Array<ArrayBuffer>): Promise<string> {
@@ -45,6 +46,15 @@ function assertRingUsable(ring: KeyRing): void {
   }
 }
 
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to key resolution
+async function buildAuthServices(context: RequestContext<any, any>, options: AuthOptions): Promise<AuthServices> {
+  const algorithms = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
+  await assertAlgorithmsAvailable(algorithms);
+  const keys = await Promise.resolve(options.ring(context));
+  assertRingUsable(keys);
+  return { algorithms, keys };
+}
+
 /** Resolves the auth capabilities for this request, caching them per `env` and failing closed on an unusable configuration. @public */
 export async function resolveAuthServices(
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to key resolution
@@ -53,22 +63,11 @@ export async function resolveAuthServices(
 ): Promise<AuthServices> {
   const envObj = context.get(EnvKey);
   const cacheKey = envObj && typeof envObj === "object" ? envObj : null;
-  const perEnv = cacheKey ? servicesCache.get(cacheKey) : undefined;
-  const hit = perEnv?.get(options);
-  if (hit) return hit;
-
-  const algorithms = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
-  // Resolving a binding throws, where a resolved store answers with a `Result`
-  // ([`FORGE_ERRORS.md`](../../docs/FORGE_ERRORS.md) §5e) — so a bad ring fails here, not at sign-in.
-  await assertAlgorithmsAvailable(algorithms);
-  const keys = await Promise.resolve(options.ring(context));
-  assertRingUsable(keys);
-
-  const services: AuthServices = { algorithms, keys };
-  if (cacheKey) {
-    const held = perEnv ?? new WeakMap<AuthOptions, AuthServices>();
-    held.set(options, services);
-    servicesCache.set(cacheKey, held);
+  if (!cacheKey) return buildAuthServices(context, options);
+  let perEnv = servicesCache.get(cacheKey);
+  if (!perEnv) {
+    perEnv = new WeakMap<AuthOptions, Promise<AuthServices>>();
+    servicesCache.set(cacheKey, perEnv);
   }
-  return services;
+  return perEnv.get(options) ?? cachePendingUntilRejected(perEnv, options, buildAuthServices(context, options));
 }

@@ -40,33 +40,25 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
     schedule(true, 0);
   };
 
-  // Filtered to `:focus-visible` so a mouse click on the trigger does not raise the tooltip, while
-  // keyboard focus still does.
   const onFocus = () => {
     if (trigger.matches(":focus-visible")) show();
   };
 
-  trigger.addEventListener("pointerenter", onPointerEnter);
-  trigger.addEventListener("pointerleave", onPointerLeave);
-  trigger.addEventListener("pointerdown", onPointerDown);
-  trigger.addEventListener("focusin", onFocus);
-  trigger.addEventListener("focusout", hide);
-  content.addEventListener("pointerenter", onPointerEnter);
-  content.addEventListener("pointerleave", onPointerLeave);
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  trigger.addEventListener("pointerenter", onPointerEnter, { signal });
+  trigger.addEventListener("pointerleave", onPointerLeave, { signal });
+  trigger.addEventListener("pointerdown", onPointerDown, { signal });
+  trigger.addEventListener("focusin", onFocus, { signal });
+  trigger.addEventListener("focusout", hide, { signal });
+  content.addEventListener("pointerenter", onPointerEnter, { signal });
+  content.addEventListener("pointerleave", onPointerLeave, { signal });
 
-  // Retires the CSS-only fallback, which exists for the no-script case and would otherwise show the
-  // tooltip instantly on hover, defeating the deliberate show delay.
   root.setAttribute(TOOLTIP_MOUNTED_ATTR, "");
 
   return () => {
+    lifetime.abort();
     win.clearTimeout(timer);
     root.removeAttribute(TOOLTIP_MOUNTED_ATTR);
-    trigger.removeEventListener("pointerenter", onPointerEnter);
-    trigger.removeEventListener("pointerleave", onPointerLeave);
-    trigger.removeEventListener("pointerdown", onPointerDown);
-    trigger.removeEventListener("focusin", onFocus);
-    trigger.removeEventListener("focusout", hide);
-    content.removeEventListener("pointerenter", onPointerEnter);
-    content.removeEventListener("pointerleave", onPointerLeave);
   };
 }

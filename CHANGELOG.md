@@ -18,7 +18,66 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`AuthNotifier.send` takes a second argument, `signal: AbortSignal`**, in `@y-core/forge/auth`. Forge aborts it once the delivery deadline
+  passes; pass it to your mailer's request. A `send` that keeps one parameter still type-checks, but is never told to stop.
+
+- **`PasskeyRealm` requires `requestTimeoutMs`, and `runPasskeyCeremony` takes a fourth argument, `signal?: AbortSignal`**, in
+  `@y-core/forge/auth/client`; both are `@internal`. Aborting the signal rejects the ceremony with its reason, and nothing navigates after it.
+
+### Added
+
+- **`healthCheck(checks, { timeoutMs })` bounds each check** in `@y-core/forge/app`, typed `HealthCheckOptions`. A check still pending after
+  `timeoutMs` — 5 s by default — counts as `false`.
+
+- **The signup, signin and email-change flows take a `logger` option** in `@y-core/forge/auth`. Deferred work that throws is logged there as
+  `error`, or to the console when it is left out.
+
+- **A scope's `setup` receives a `signal`** in `@y-core/forge/ui/client`, aborted when the scope is disposed. Hand it to `fetch` and to
+  `addEventListener` instead of tracking a disposed flag.
+
+- **`captureStreams(cmd, args, opts)` runs a tool with stdout and stderr captured apart** in `@y-core/forge/tooling/cli`, returning a
+  `StreamCapture` of `{ code, exited, stdout, stderr }`. `exited` is false on a spawn error or a kill by signal, so a caller can tell a real
+  exit 1 from a child that never answered.
+
+- **`run`, `capture` and `captureStreams` take a `timeoutMs` option** in `@y-core/forge/tooling/cli`. A child still running at the deadline is
+  killed with `SIGKILL` and reported as a non-zero exit; without the option no deadline applies.
+
+### Fixed
+
+- **Deferred auth work that throws no longer rejects the promise handed to `defer`.** A store or notifier failure inside a signup, signin or
+  email-change deferral is logged and settles as unavailable, and a rejecting `send` in the email-OTP factor gives the cooldown back.
+
+- **A health check that never settles no longer hangs the endpoint**; it answers `503` with that check `false`.
+
+- **`verifyTurnstile` returns `"timeout"` when the siteverify body stalls**, not only when the request does. The deadline now covers reading the
+  response.
+
+- **`rateLimit` answers `503` when the rate-limit binding throws**, and logs the failure as `error`, rather than failing the request with an
+  unhandled error.
+
+- **A KV log purge deletes every batch when one delete fails**, and the write then rejects naming the keys it could not delete, so the failure
+  reaches `onChannelError`. A purge whose listing fails rejects the write too, where it was silently dropped.
+
+- **A passkey request that never answers no longer leaves the button busy.** Each of the ceremony's two requests gives up after 15 s and reports
+  the ceremony as failed, and disposing `mountPasskey` mid-ceremony reports nothing and does not navigate.
+
+- **`mountTurnstile`'s disposer removes the script's `load` and `error` listeners**, which stayed attached to the injected script for the life of
+  the page.
+
+- **A failed key-ring or stand-in token resolution is retried** on the next request rather than cached, and concurrent cold requests share one
+  resolution.
+
+- **A Cloudflare API request that never answers no longer hangs the command.** Each request the `tooling/cf` client makes gives up after 30 s
+  and reports a network error, `timed out after 30000ms`.
+
+- **A remote asset download that stalls no longer hangs the build.** `fetchURL` gives the whole download, every redirect and the body included,
+  120 s by default, settable with `timeoutMs`, and then fails naming the URL.
+
+- **Waiting for the dev-server startup lock no longer spins or waits forever.** A waiter whose lock file vanished between two reads now sleeps
+  before retrying, and a waiter still blocked by a live holder gives up, naming the holder's pid, once the wait outlasts twice the lock's
+  staleness window.
 
 ---
 

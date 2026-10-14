@@ -7,6 +7,7 @@ interface DevServerLockOptions {
   path: string;
   staleAfterMs: number;
   pollMs?: number;
+  timeoutMs?: number;
   now?: () => number;
   isAlive?: (pid: number) => boolean;
 }
@@ -95,13 +96,18 @@ export async function acquireDevServerLock(options: DevServerLockOptions): Promi
   const { path } = options;
   const now = options.now ?? Date.now;
   const token = crypto.randomUUID();
+  const timeoutMs = options.timeoutMs ?? 300_000;
+  const deadline = now() + timeoutMs;
   for (;;) {
     if (createExclusive(path, JSON.stringify({ pid: process.pid, startedAt: now(), token }))) break;
     const text = readLock(path);
-    if (text === undefined) continue;
-    if (isStale(path, text, options, now())) {
+    if (text !== undefined && isStale(path, text, options, now())) {
       takeOver(path, text);
       continue;
+    }
+    if (now() >= deadline) {
+      const holder = text === undefined ? undefined : parseRecord(text)?.pid;
+      throw new Error(`dev-server lock ${path} still held by pid ${holder ?? "unknown"} after ${timeoutMs}ms`);
     }
     await new Promise((resolve) => setTimeout(resolve, options.pollMs ?? 250));
   }

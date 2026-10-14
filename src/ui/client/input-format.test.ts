@@ -6,7 +6,6 @@ import { mountInputFormat } from "./input-format";
 
 const CARD = "#### #### #### ####";
 
-/** A formatted input attached to a document, plus the tree around it. */
 function field(attrs: Record<string, string> = { "data-format": CARD }, value = "") {
   const { doc, el } = fakeTree();
   const input = el("INPUT", attrs);
@@ -17,7 +16,6 @@ function field(attrs: Record<string, string> = { "data-format": CARD }, value = 
 
 const blur = (el: FakeElement) => el.dispatchEvent(new FakeEvent("focusout"));
 
-/** Runs `fn` with `console.warn` captured, and answers what it warned. */
 function warnings(fn: () => void): unknown[] {
   const captured: unknown[] = [];
   const original = console.warn;
@@ -138,6 +136,20 @@ describe("mountInputFormat", () => {
     expect(input.value).toBe("4111 1111 1111 1111");
   });
 
+  it("leaves a newer mount registered when a stale disposer is called again", () => {
+    const { input } = field({ "data-format": CARD }, "4111111111111111");
+    const stale = mountInputFormat(input as never);
+    stale();
+    const current = mountInputFormat(input as never);
+
+    stale();
+
+    expect({ remount: mountInputFormat(input as never) === current, listeners: input.listeners.get("focusout")?.length }).toEqual({
+      remount: true,
+      listeners: 1,
+    });
+  });
+
   it("ignores a focusout from an unrelated element in the tree", () => {
     const { doc, input } = field({ "data-format": CARD }, "4111111111111111");
     const sibling = doc.createElement("INPUT");
@@ -145,8 +157,6 @@ describe("mountInputFormat", () => {
     doc.root.append(sibling);
     mountInputFormat(input as never);
 
-    // Retargeted at the sibling but delivered to the mounted root, which is what a bubbled
-    // `focusout` from a wrapper's other child looks like.
     const event = new FakeEvent("focusout");
     event.target = sibling;
     input.dispatchEvent(event);

@@ -1,5 +1,3 @@
-/** Resumability-lite client runtime: one delegated listener resumes a `[data-scope]` on the first interaction with any descendant. @public */
-
 import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { isDisabled } from "./composite";
@@ -10,7 +8,6 @@ import type { ScopeDefinition } from "./types";
 
 const scopes = new Map<string, ScopeDefinition>();
 const resumed = new WeakMap<HTMLElement, Record<string, Signal<unknown>>>();
-/** Every currently-resumed scope root, mapped to the disposer for its effects and its `setup` return. */
 const active = new Map<HTMLElement, () => void>();
 
 /** Registers a scope's setup and action handlers, keyed to a `data-scope` name. @public */
@@ -18,7 +15,6 @@ export function registerScope<A extends string = string>(name: string, def: Scop
   scopes.set(name, { ...def, on: def.on ?? {} } as ScopeDefinition);
 }
 
-/** One delegated-listener installation per document, refcounted by the live `resume()` calls holding it open. */
 interface Delegation {
   remove: () => void;
   holders: number;
@@ -26,7 +22,6 @@ interface Delegation {
 
 const delegated = new WeakMap<Document, Delegation>();
 
-/** Installs the delegated listeners on `doc`, or takes a share of the ones already there. */
 function delegate(doc: Document): Delegation {
   const existing = delegated.get(doc);
   if (existing) {
@@ -81,7 +76,6 @@ export function resume(within?: Node): () => void {
       continue;
     }
     if (!def.eager) continue;
-    // Contained per scope, so one throwing `setup` leaves every later scope resumable.
     try {
       if (!resumed.has(el)) mine.push(el);
       ensureResumed(el, def);
@@ -97,8 +91,6 @@ export function resume(within?: Node): () => void {
     for (const root of mine) disposeScope(root);
     delegation.holders -= 1;
     if (delegation.holders > 0) return;
-    // The last holder removes the listeners, so a lazily-resumed scope — in no call's `mine` — would
-    // have no reachable disposer left.
     for (const root of [...active.keys()]) {
       if (ownerDocument(root) === doc) disposeScope(root);
     }
@@ -115,8 +107,6 @@ export function scanRoot(within: Node | undefined, doc: Document): ParentNode {
 /** Every `[data-scope]` at or below `root`, descending into open shadow roots. @internal */
 export function findScopes(root: ParentNode): HTMLElement[] {
   const found: HTMLElement[] = [];
-  // Breadth-first over a growing list rather than recursion — a shadow root nested inside a shadow
-  // root is just another tree to visit, at any depth.
   const trees: ParentNode[] = [root];
   for (let i = 0; i < trees.length; i += 1) {
     const tree = trees[i];
@@ -135,18 +125,13 @@ export function findScopes(root: ParentNode): HTMLElement[] {
   return found;
 }
 
-/** Runs a scope's disposer and forgets that it was ever resumed. */
 function disposeScope(root: HTMLElement): void {
-  // Teardown is the one place a throw must not propagate: the loops above iterate every live scope,
-  // and one failing disposer would silently skip the rest.
   try {
     active.get(root)?.();
   } catch (error) {
     console.error("[resume] scope disposer threw", error);
   }
   active.delete(root);
-  // Forgetting is half the job: a root left in `resumed` is skipped as already-resumed on a later
-  // resume, and comes back inert.
   resumed.delete(root);
 }
 
@@ -166,7 +151,6 @@ export function disposeScopesIn(el: HTMLElement): void {
   }
 }
 
-/** Hydrates a scope's state into signals and runs its `setup` exactly once. */
 function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
   // A removal outside htmx gives no notice, so sweeping here too bounds `active` to live scopes without the htmx entry.
   sweepDetachedScopes();
@@ -175,18 +159,17 @@ function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, 
     const signals = hydrateState(root.dataset[ISLAND_STATE_KEY]);
     state = signals;
     resumed.set(root, signals);
+    const lifetime = new AbortController();
     try {
-      const owned = withOwner(() => def.setup?.({ root, state: signals }));
+      const owned = withOwner(() => def.setup?.({ root, state: signals, signal: lifetime.signal }));
       const setupDispose = typeof owned.result === "function" ? owned.result : null;
-      // Effects first: no reactive computation may still be alive while the author's teardown
-      // mutates DOM or removes the listener that feeds it.
       active.set(root, () => {
         owned.dispose();
+        lifetime.abort();
         setupDispose?.();
       });
     } catch (error) {
-      // `resumed` is set before `setup` runs, so a throw would otherwise leave this root marked
-      // resumed with no entry in `active` — unreachable by every disposer and inert on re-resume.
+      lifetime.abort();
       resumed.delete(root);
       throw error;
     }
@@ -200,10 +183,7 @@ export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> 
   return def ? ensureResumed(root, def) : undefined;
 }
 
-/** Walks up from `el` through `[data-scope]` ancestors and invokes the first scope whose `on` table owns `action`, resuming it on the way. */
 function runAction(action: string, el: HTMLElement, event: Event): void {
-  // Gated here and not in the two callers, because a gate on the `data-on-*` route alone would leave
-  // a `--action` command invoking the same handler on the same inert element.
   if (isDisabled(el)) return;
   // `closestAcross`, not `closest`: a trigger inside a shadow root would otherwise never find the
   // scope root that encloses its host.
@@ -237,7 +217,6 @@ function dispatch(type: string, event: Event): void {
   runAction(action, el, event);
 }
 
-/** Bridges a native `CommandEvent` to the scope handler table, routing only custom `--action` commands. */
 function dispatchCommand(event: Event): void {
   const command = (event as CommandEvent).command;
   if (command?.slice(0, 2) !== "--") return;
@@ -256,8 +235,6 @@ export function hydrateState(raw: string | undefined): Record<string, Signal<unk
   } catch (error) {
     throw new Error(`[resume] ${ISLAND_STATE_ATTR} is not valid JSON: ${raw}`, { cause: error });
   }
-  // `"5"` and `"null"` both parse cleanly and yield nothing, which is the same
-  // silent-empty failure by another route.
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error(`[resume] ${ISLAND_STATE_ATTR} must be a JSON object, got: ${raw}`);
   }

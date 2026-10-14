@@ -1,5 +1,5 @@
 import { KEY_RING_KEY_ID_LENGTH, KEY_RING_KID_BYTES } from "../../crypto/keyring/ring";
-import { resolveKeyRingKey } from "../../crypto/keyring/subkey";
+import { cachePendingUntilRejected, resolveKeyRingKey } from "../../crypto/keyring/subkey";
 import type { KeyRing } from "../../crypto/keyring/types";
 import {
   AEAD_NONCE_BYTES,
@@ -84,8 +84,6 @@ const STAND_IN_TTL_MS = 86_400_000;
 
 const standInCache = new WeakMap<KeyRing, Map<AuthTokenPurpose, Promise<string>>>();
 
-// Memoised per ring and purpose, so the seal is an isolate's one-off rather than a per-request cost
-// the branch this stands in for does not pay. What it decodes to is never read.
 /** A frame to open where a cost-constant path found no stored token to open. @internal */
 export function authStandInToken(ring: KeyRing, purpose: AuthTokenPurpose): Promise<string> {
   let perRing = standInCache.get(ring);
@@ -95,9 +93,11 @@ export function authStandInToken(ring: KeyRing, purpose: AuthTokenPurpose): Prom
   }
   const hit = perRing.get(purpose);
   if (hit) return hit;
-  const sealed = encodeAuthToken(ring, purpose, base64urlEncode(randomBytes(STAND_IN_PAYLOAD_BYTES)), STAND_IN_TTL_MS);
-  perRing.set(purpose, sealed);
-  return sealed;
+  return cachePendingUntilRejected(
+    perRing,
+    purpose,
+    encodeAuthToken(ring, purpose, base64urlEncode(randomBytes(STAND_IN_PAYLOAD_BYTES)), STAND_IN_TTL_MS),
+  );
 }
 
 function frameOf(token: string): Uint8Array<ArrayBuffer> | undefined {
@@ -153,8 +153,6 @@ export async function decodeAuthToken(
   return ok({ payload: utf8Decode(opened), issuedAt, expiresAt });
 }
 
-// No floor: the nonce store is a SQL table whose rows a purge reclaims, so a short lifetime shortens
-// only how long a consumed key is worth keeping — it never lets one be spent twice.
 /** The nonce-store lifetime covering a token of `ttlMs`, in whole seconds. @internal */
 export function authNonceTtlSeconds(ttlMs: number): number {
   return Math.max(0, Math.ceil(ttlMs / 1000));

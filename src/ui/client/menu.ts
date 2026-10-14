@@ -146,7 +146,6 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     pressingInvoker = contains(openerOf(popup), eventTarget(event) as Node | null);
   };
 
-  // A press released off the invoker with no click to follow settles the focus-out it deferred here.
   const settleInvokerPress = () => {
     if (!pressingInvoker) return;
     pressingInvoker = false;
@@ -192,27 +191,21 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
     closeMenuToward(next);
   };
 
-  popup.addEventListener("beforetoggle", onBeforeToggle);
-  popup.addEventListener("toggle", onToggle);
-  popup.addEventListener("keydown", onKeyDown);
-  popup.addEventListener("focusout", onFocusOut);
-  popup.addEventListener("click", onActivateLink);
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  popup.addEventListener("beforetoggle", onBeforeToggle, { signal });
+  popup.addEventListener("toggle", onToggle, { signal });
+  popup.addEventListener("keydown", onKeyDown, { signal });
+  popup.addEventListener("focusout", onFocusOut, { signal });
+  popup.addEventListener("click", onActivateLink, { signal });
   const doc = ownerDocument(popup);
-  doc.addEventListener("pointerdown", onPointerDown, true);
-  doc.addEventListener("pointerup", onPointerUp, true);
-  doc.addEventListener("pointercancel", settleInvokerPress, true);
-  doc.addEventListener("click", onInvokerClick, true);
+  doc.addEventListener("pointerdown", onPointerDown, { capture: true, signal });
+  doc.addEventListener("pointerup", onPointerUp, { capture: true, signal });
+  doc.addEventListener("pointercancel", settleInvokerPress, { capture: true, signal });
+  doc.addEventListener("click", onInvokerClick, { capture: true, signal });
 
   return () => {
-    popup.removeEventListener("beforetoggle", onBeforeToggle);
-    popup.removeEventListener("toggle", onToggle);
-    popup.removeEventListener("keydown", onKeyDown);
-    popup.removeEventListener("focusout", onFocusOut);
-    popup.removeEventListener("click", onActivateLink);
-    doc.removeEventListener("pointerdown", onPointerDown, true);
-    doc.removeEventListener("pointerup", onPointerUp, true);
-    doc.removeEventListener("pointercancel", settleInvokerPress, true);
-    doc.removeEventListener("click", onInvokerClick, true);
+    lifetime.abort();
     win.clearTimeout(settleTimer);
     disposeFocus();
   };

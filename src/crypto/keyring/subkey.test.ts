@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { bytesToHex } from "../primitives/mod";
 import { HMAC_DOMAIN, importKeyRing, KEY_RING_DOMAIN } from "./ring";
-import { resolveKeyRingKey, resolveKeyRingSubkey } from "./subkey";
+import { cachePendingUntilRejected, resolveKeyRingKey, resolveKeyRingSubkey } from "./subkey";
 import type { KeyRing } from "./types";
 
 const SECRET_A = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
@@ -145,5 +145,58 @@ describe("resolveKeyRingKey", () => {
     const message = new TextEncoder().encode("payload");
     const signature = await crypto.subtle.sign("HMAC", key, message);
     expect(await crypto.subtle.verify("HMAC", key, signature, message)).toBe(true);
+  });
+});
+
+describe("cachePendingUntilRejected", () => {
+  it("holds a pending promise under its key until it settles", () => {
+    const cache = new Map<string, Promise<number>>();
+    const pending = Promise.withResolvers<number>();
+    expect(cachePendingUntilRejected(cache, "k", pending.promise)).toBe(pending.promise);
+    expect(cache.get("k")).toBe(pending.promise);
+    pending.resolve(1);
+  });
+
+  it("keeps a resolved promise cached", async () => {
+    const cache = new Map<string, Promise<number>>();
+    const resolved = Promise.resolve(7);
+    expect(await cachePendingUntilRejected(cache, "k", resolved)).toBe(7);
+    expect(cache.get("k")).toBe(resolved);
+  });
+
+  it("evicts a rejected promise, so the next lookup misses and the caller can retry", async () => {
+    const cache = new Map<string, Promise<number>>();
+    const rejected = cachePendingUntilRejected(cache, "k", Promise.reject(new Error("transient")));
+    await expect(rejected).rejects.toThrow("transient");
+    expect(cache.has("k")).toBe(false);
+  });
+
+  it("still hands the rejection to the caller that cached it", async () => {
+    const cache = new Map<string, Promise<number>>();
+    const failure = new Error("transient");
+    const outcome = await cachePendingUntilRejected(cache, "k", Promise.reject(failure)).then(
+      () => "resolved",
+      (thrown: unknown) => thrown,
+    );
+    expect(outcome).toBe(failure);
+  });
+
+  it("leaves a newer entry in place when the older promise under the same key rejects", async () => {
+    const cache = new Map<string, Promise<number>>();
+    const older = Promise.withResolvers<number>();
+    const stale = cachePendingUntilRejected(cache, "k", older.promise);
+    const newer = Promise.resolve(2);
+    cache.set("k", newer);
+    older.reject(new Error("stale failure"));
+    await expect(stale).rejects.toThrow("stale failure");
+    expect(cache.get("k")).toBe(newer);
+  });
+
+  it("evicts from a WeakMap keyed on an object as it does from a Map", async () => {
+    const cache = new WeakMap<object, Promise<number>>();
+    const env = {};
+    const rejected = cachePendingUntilRejected(cache, env, Promise.reject(new Error("transient")));
+    await expect(rejected).rejects.toThrow("transient");
+    expect(cache.has(env)).toBe(false);
   });
 });
