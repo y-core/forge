@@ -149,6 +149,9 @@ export async function checkExports(config: ExportsCheckConfig): Promise<CheckRes
     exportedTargets.add(bare(rawPath));
     if (rawPath.endsWith("/mod.ts")) barrelDirs.add(dirname(resolve(root, rawPath)));
     else ownExportTargetFiles.add(resolve(root, rawPath));
+    if (typeof entry !== "string" && entry.types !== undefined && !entry.types.endsWith("/mod.ts")) {
+      ownExportTargetFiles.add(resolve(root, entry.types));
+    }
   }
 
   let checked = 0;

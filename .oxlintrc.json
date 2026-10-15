@@ -6,7 +6,13 @@
   "jsPlugins": ["./src/tooling/lint/mod.ts"],
   // The committed bundle of that same plugin, which a consumer's oxlint loads instead. `validate-lint-plugin`
   // holds it against the source; linting or formatting it would be judging esbuild's output.
-  "ignorePatterns": ["src/tooling/gate/chromium.mjs", "src/tooling/lint/plugin.mjs", "src/testing/totp.mjs", "src/tooling/cf/wrangler.mjs"],
+  "ignorePatterns": [
+    "src/tooling/gate/chromium.mjs",
+    "src/tooling/lint/plugin.mjs",
+    "src/testing/totp.mjs",
+    "src/testing/harness.mjs",
+    "src/tooling/cf/wrangler.mjs"
+  ],
   // `suspicious` stays off — see docs/FORGE_REVIEW.md
   "categories": { "correctness": "error" },
   "rules": {

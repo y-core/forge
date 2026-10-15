@@ -95,6 +95,20 @@ describe("checkPackaging()", () => {
     ).toEqual([]);
   });
 
+  it("counts a `types` target as an entry, since a bundled subpath publishes its source for the types alone", () => {
+    expect(
+      files(
+        {
+          "src/ui/mod.ts": "export const nothing = 1;",
+          "src/ui/harness.ts": "export const harness = 1;",
+          "src/ui/harness.mjs": "export const harness = 1;",
+          "src/ui/harness.test.ts": `import { harness } from "./harness";`,
+        },
+        { exports: { ...EXPORTS, "./ui/harness": { types: "./src/ui/harness.ts", import: "./src/ui/harness.mjs" } } },
+      ),
+    ).toEqual([]);
+  });
+
   it("asks nothing of a module nothing imports at all — that is the exports check's subject", () => {
     expect(files({ "src/ui/mod.ts": "export const nothing = 1;", "src/ui/orphan.ts": "export const orphan = 1;" })).toEqual([]);
   });

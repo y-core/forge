@@ -23,6 +23,12 @@ export const BUNDLES: readonly { label: string; entry: string; bundle: string; w
     watches: ["src/testing/totp.ts", "src/crypto/primitives/base32.ts", "src/crypto/primitives/hotp.ts", "src/testing/totp.mjs"],
   },
   {
+    label: "validate-harness-bundle",
+    entry: "src/testing/harness.ts",
+    bundle: "src/testing/harness.mjs",
+    watches: ["src/testing/harness.ts", "src/testing/harness.mjs"],
+  },
+  {
     label: "validate-wrangler-bundle",
     entry: "src/tooling/cf/wrangler.ts",
     bundle: "src/tooling/cf/wrangler.mjs",

@@ -277,7 +277,7 @@
     },
     "./testing/harness": {
       "types": "./src/testing/harness.ts",
-      "import": "./src/testing/harness.ts"
+      "import": "./src/testing/harness.mjs"
     },
     "./testing/node": {
       "types": "./src/testing/node.d.ts"

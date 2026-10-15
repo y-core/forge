@@ -18,7 +18,11 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **`@y-core/forge/testing/harness` now loads from a consumer's Playwright `workerd` project.** Node refused to strip types under
+  `node_modules`, so the import died with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`. The subpath is now a committed bundle,
+  `src/testing/harness.mjs`, held to its source by the new `validate-harness-bundle` row.
 
 ---
 

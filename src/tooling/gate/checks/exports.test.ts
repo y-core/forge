@@ -336,6 +336,22 @@ describe("checkExports() — @public symbols against their barrel", () => {
     expect(found.filter((message) => message.includes("missing from barrel"))).toEqual([]);
   });
 
+  it("leaves out a bundled subpath's types source its barrel never re-exports from", async () => {
+    const tree = {
+      "src/testing/mod.ts": TYPE_BARREL,
+      "src/testing/thing.ts": THING,
+      "src/testing/harness.ts": PUBLIC_ALPHA,
+      "src/testing/harness.mjs": "export const alpha = 1;\n",
+    };
+    const exports = {
+      "./testing": "./src/testing/mod.ts",
+      "./testing/harness": { types: "./src/testing/harness.ts", import: "./src/testing/harness.mjs" },
+    };
+
+    const found = await messages(tree, { exports, files: ["src"] });
+    expect(found.filter((message) => message.includes("missing from barrel"))).toEqual([]);
+  });
+
   it("does not count a commented-out re-export as naming the file", async () => {
     const tree = {
       "src/testing/mod.ts": `${TYPE_BARREL}// export { alpha } from "./snapshot";\n`,

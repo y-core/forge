@@ -59,10 +59,11 @@ export function moduleImports(root: string, file: string, present: ReadonlySet<s
 function entryModules(config: PackagingCheckConfig, present: ReadonlySet<string>): string[] {
   const out: string[] = [];
   for (const value of Object.values(config.exports)) {
-    const target = typeof value === "string" ? value : (value.import ?? value.types);
-    if (target === undefined) continue;
-    const file = target.replace(/^\.\//, "");
-    if (present.has(file)) out.push(file);
+    const targets = typeof value === "string" ? [value] : [value.import, value.types];
+    for (const target of targets) {
+      const file = target?.replace(/^\.\//, "");
+      if (file !== undefined && present.has(file) && !out.includes(file)) out.push(file);
+    }
   }
   for (const entry of config.entries ?? []) {
     const file = entry.replace(/^\.\//, "");

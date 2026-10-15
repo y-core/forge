@@ -9,7 +9,11 @@ import type { BundleCheckConfig } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 
-const DEPENDENCIES = (JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf-8")) as { dependencies: Record<string, string> }).dependencies;
+const PACKAGE = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf-8")) as Record<
+  "dependencies" | "peerDependencies",
+  Record<string, string>
+>;
+const DECLARED = { ...PACKAGE.dependencies, ...PACKAGE.peerDependencies };
 const CONFIGS: readonly BundleCheckConfig[] = BUNDLES.map(({ entry, bundle }) => ({ root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }));
 const PLUGIN_BUNDLE = "src/tooling/lint/plugin.mjs";
 const CHROMIUM_BUNDLE = "src/tooling/gate/chromium.mjs";
@@ -43,10 +47,10 @@ describe("the committed bundles", () => {
   });
 
   for (const { bundle } of BUNDLES) {
-    it(`imports only node builtins and declared dependencies in ${bundle}`, () => {
+    it(`imports only node builtins and declared dependencies or peers in ${bundle}`, () => {
       const source = readFileSync(resolve(ROOT, bundle), "utf-8");
       const specifiers = [...source.matchAll(/^\s*(?:import|export)\b[^\n]*?["']([^"']+)["']/gm)].map((match) => match[1] ?? "");
-      const undeclared = specifiers.filter((specifier) => !specifier.startsWith("node:") && !Object.hasOwn(DEPENDENCIES, specifier));
+      const undeclared = specifiers.filter((specifier) => !specifier.startsWith("node:") && !Object.hasOwn(DECLARED, specifier));
 
       expect(undeclared).toEqual([]);
     });

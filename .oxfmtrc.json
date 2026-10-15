@@ -23,6 +23,7 @@
     "warden/claude/**",
     "src/tooling/gate/chromium.mjs",
     "src/testing/totp.mjs",
+    "src/testing/harness.mjs",
     "src/tooling/lint/plugin.mjs",
     "src/tooling/cf/wrangler.mjs",
     "**/*.md"

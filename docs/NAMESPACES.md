@@ -105,7 +105,8 @@ dies at config load with the same error, and under bun a dev server playwright s
 under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So `@y-core/forge/tooling/gate/chromium` publishes a
 committed bundle of the one symbol a config needs. A consumer's browser spec loads the same way, so `@y-core/forge/testing/totp` is a committed
 bundle of `totpCodes`, which also stays on the `./testing` barrel for a suite running under bun. A config that reads `wrangler.jsonc` loads the
-same way, so `@y-core/forge/tooling/cf/wrangler` is a committed bundle of `parseWranglerConfig` alone.
+same way, so `@y-core/forge/tooling/cf/wrangler` is a committed bundle of `parseWranglerConfig` alone. A consumer's workerd spec loads
+`serveWorker` the same way, so `@y-core/forge/testing/harness` is a committed bundle whose types stay its `.ts` source.
 
 Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
 broken bundle fails here rather than there.
@@ -115,7 +116,8 @@ devDependency, and an import of its types would make every consumer of forge dep
 runtime.
 
 **A bundle keeps its package dependencies as imports instead of inlining them**, so the wrangler bundle imports `valibot` from the consumer's
-install. A bundle may therefore import only `node:` builtins and the packages forge lists under `dependencies`.
+install. A bundle may therefore import only `node:` builtins and the packages forge lists under `dependencies` or `peerDependencies` — the
+harness bundle imports `wrangler`, the optional peer a consumer installs to use it.
 
 ### 3d. A Non-Module File or an Asset Family Is Published by Subpath
 
