@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,12 @@ import { createGenEnvCommand, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS, HEADER } from "./cf-env-registry";
 import type { Entry, GenOptions } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const CHECK = '(x) => typeof x === "object" && x !== null';
 
@@ -135,7 +141,9 @@ describe("loadOptions", () => {
   });
 
   it("merges a host --config module over the defaults, inheriting unspecified fields", async () => {
-    const path = join(tmpdir(), "forge-cfgen-config.fixture.ts");
+    const dir = mkdtempSync(join(tmpdir(), "forge-cfgen-"));
+    roots.push(dir);
+    const path = join(dir, "config.fixture.ts");
     writeFileSync(path, 'export const options = { optional: new Set(["RATE_LIMITER"]), refinements: { SESSION_SECRET: { minLength: 32 } } };\n');
     const opts = await loadOptions(path);
     expect([...opts.optional]).toEqual(["RATE_LIMITER"]);

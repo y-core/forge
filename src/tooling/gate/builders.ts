@@ -163,19 +163,20 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
 }
 
 /** `bun test` over `sources`, or the whole project when none are named; defaults to `standard`, the tier that runs the code rather than judging it. @public */
-export function testStep(options: SourceStepOptions & { label?: string } = {}): CommandStep {
+export function testStep(options: SourceStepOptions & { label?: string; leavesNoTemp?: boolean } = {}): CommandStep {
   // `label` is a parameter because a suite split by the question each set answers needs one row per
   // set, and `selectSteps` refuses a duplicate label.
   return {
     label: options.label ?? "test",
     tail: 120,
     cmd: ["bun", "test", ...(options.sources ?? [])],
+    ...(options.leavesNoTemp === true ? { leavesNoTemp: true } : {}),
     ...tier(options.tier, "standard"),
     ...watching(options.watches),
   };
 }
 
-/** `playwright test` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
+/** `playwright test --project=chromium` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
 export function browserStep(options: { hint?: string } & StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
@@ -185,7 +186,7 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
     tail: 120,
     // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
     // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
-    cmd: ["playwright", "test"],
+    cmd: ["playwright", "test", "--project=chromium"],
     // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
     // present, so probing it would pass vacuously and let every spec fail at launch.
     ...prerequisite(options.requires, {
@@ -198,18 +199,18 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
   };
 }
 
-/** `bun test` over `sources` (default `tests/workerd/`), `parallel` files at once (default 2), defaulting to the `full` tier: it needs the workerd runtime installed. @public */
-export function workerdStep(options: { hint?: string; parallel?: number } & SourceStepOptions = {}): CommandStep {
-  const sources = options.sources ?? ["tests/workerd/"];
+/** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `full` tier: it needs the workerd runtime installed. @public */
+export function workerdStep(options: { hint?: string } & SourceStepOptions = {}): CommandStep {
   return {
     label: "test:workerd",
     // Defaults to `full` — it needs the workerd runtime installed — but the caller may state it, so
     // the step table can be read for which steps run in which mode without opening this file.
     ...tier(options.tier, "full"),
     tail: 120,
-    cmd: ["bun", "test", `--parallel=${options.parallel ?? 2}`, ...sources],
-    // The probe targets the runtime, not the test runner: `bun` is always present, so probing it
-    // would pass vacuously and let every spec fail at server start.
+    // Node, never bun: under bun `createTestHarness` loses the `cf` blob miniflare's own `undici` carries, and no request is ever answered.
+    cmd: ["playwright", "test", "--project=workerd", ...(options.sources ?? [])],
+    // The probe targets the runtime, not the test runner: the `playwright` CLI is a devDependency and
+    // always present, so probing it would pass vacuously and let every spec fail at harness start.
     ...prerequisite(options.requires, {
       tool: "workerd",
       probe: hasWorkerd,

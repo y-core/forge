@@ -128,6 +128,7 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
     const form = event.target as Node | null;
     if (!form || !contains(form, root)) return;
     ownerWindow(root).queueMicrotask(() => {
+      if (lifetime.signal.aborted) return;
       trees = shadowTrees(root);
       for (const field of Object.keys(signals) as Array<keyof T>) paintField(field, signals[field].value);
     });

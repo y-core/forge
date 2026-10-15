@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
@@ -14,7 +15,17 @@ const THING = "export interface Thing {\n  a: number;\n}\n";
 
 const PUBLIC_ALPHA = "/** A thing. @public */\nexport function alpha(): void {}\n";
 
-const root = (tree: Record<string, string>): string => gateFixtureRoot(tree, "forge-exports-check-");
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const dir of roots) rmSync(dir, { recursive: true, force: true });
+});
+
+const root = (tree: Record<string, string>): string => {
+  const dir = gateFixtureRoot(tree, "forge-exports-check-");
+  roots.push(dir);
+  return dir;
+};
 
 // The package name resolves to nothing, so every runtime-resolution branch is reached from a test
 // that never depends on this repository's own installed layout.

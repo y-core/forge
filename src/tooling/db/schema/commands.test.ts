@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,6 +11,12 @@ import { migrationsDigest } from "../migrate/files";
 import type { DbHostConfig, FakeDbIo } from "../types";
 import { buildSchemaSnapshot, formatSchemaSnapshot } from "./snapshot";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 const NOW = new Date("2026-09-11T10:00:00Z");
 
 const USERS_DDL = "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL) STRICT";
@@ -21,6 +27,7 @@ const SCHEMA_TEXT = `${USERS_DDL};\n`;
 /** A temp root with a real `wrangler.jsonc`, since the config is read from the filesystem either way. */
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-schema-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text, "utf-8");
   return root;

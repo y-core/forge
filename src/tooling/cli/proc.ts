@@ -3,7 +3,7 @@ import { closeSync, existsSync, mkdtempSync, openSync, readFileSync, rmSync } fr
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 
-import type { CaptureResult, SpawnSync, StreamCapture, ToolHints } from "./types";
+import type { CaptureResult, RunOutcome, SpawnSync, StreamCapture, ToolHints } from "./types";
 
 function spawnDeadline(timeoutMs: number | undefined): { timeout: number; killSignal: "SIGKILL" } | Record<string, never> {
   return timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: "SIGKILL" };
@@ -33,13 +33,20 @@ export function requireTools(tools: ToolHints, spawn: SpawnSync = spawnSync): vo
   }
 }
 
+/** Spawns `cmd args` with inherited stdio, returning how it exited without throwing. */
+export function runUnchecked(cmd: string, args: string[], opts?: { cwd?: string; timeoutMs?: number }, spawn: SpawnSync = spawnSync): RunOutcome {
+  const r = spawn(cmd, args, { stdio: "inherit", env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}), ...spawnDeadline(opts?.timeoutMs) });
+  return { code: r.status ?? 1, exited: typeof r.status === "number" && !r.error, spawnError: r.error?.message };
+}
+
 /** Spawns `cmd args` with inherited stdio, returning 0 or throwing naming the command and exit code. */
 export function run(cmd: string, args: string[], opts?: { cwd?: string; timeoutMs?: number }, spawn: SpawnSync = spawnSync): number {
-  const r = spawn(cmd, args, { stdio: "inherit", env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}), ...spawnDeadline(opts?.timeoutMs) });
-  if (r.status !== 0) {
-    throw new Error(`\`${cmd} ${args.join(" ")}\` failed (exit ${r.status})`);
+  const outcome = runUnchecked(cmd, args, opts, spawn);
+  if (outcome.code !== 0) {
+    const reason = outcome.spawnError === undefined ? "" : `: ${outcome.spawnError}`;
+    throw new Error(`\`${cmd} ${args.join(" ")}\` failed (exit ${outcome.code})${reason}`);
   }
-  return r.status;
+  return outcome.code;
 }
 
 /** Spawns `cmd args`, buffering its combined output and returning the exit code without throwing. */

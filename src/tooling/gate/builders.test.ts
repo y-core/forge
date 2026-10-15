@@ -163,6 +163,11 @@ describe("builders — the tool steps", () => {
     expect(testStep({ label: "test:seam", sources: ["tests/seam/"] }).label).toBe("test:seam");
   });
 
+  it("leaves a suite's temp leftovers unjudged unless the caller opts in", () => {
+    expect(testStep().leavesNoTemp).toBeUndefined();
+    expect(testStep({ leavesNoTemp: true }).leavesNoTemp).toBe(true);
+  });
+
   it("stays the test row when no label is named", () => {
     expect(testStep().label).toBe("test");
     expect(testStep({ sources: ["tests/"] }).label).toBe("test");
@@ -207,8 +212,8 @@ describe("browserStep()", () => {
 
   // Under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox,
   // and the prebuilt `tooling/gate/chromium` subpath is what removes the reason to prefer bun.
-  it("spawns the installed binary under node, so a config that starts its own server can reach it", () => {
-    expect(browserStep().cmd).toEqual(["playwright", "test"]);
+  it("spawns the installed binary under node over the chromium project alone, so the workerd project stays its own row", () => {
+    expect(browserStep().cmd).toEqual(["playwright", "test", "--project=chromium"]);
   });
 
   // `bunx` installs from the registry when it resolves nothing locally, which is a supply-chain
@@ -239,17 +244,19 @@ describe("workerdStep()", () => {
     expect(workerdStep().tier).toBe("full");
   });
 
-  // A spec file holds a wrangler dev server open and the compose cases spawn four more alongside it,
-  // so the file-level number multiplies against a per-file one and an unbounded fan-out starves both.
-  it("runs two spec files at once by default, since a file here carries its own concurrency", () => {
-    expect(workerdStep().cmd).toEqual(["bun", "test", "--parallel=2", "tests/workerd/"]);
+  it("runs the workerd Playwright project under node, where createTestHarness answers HTTP", () => {
+    expect(workerdStep().cmd).toEqual(["playwright", "test", "--project=workerd"]);
   });
 
-  it("lets a project whose specs are cheaper name its own file count", () => {
-    expect(workerdStep({ parallel: 4, sources: ["tests/runtime/"] }).cmd).toEqual(["bun", "test", "--parallel=4", "tests/runtime/"]);
+  it("narrows the project to the sources a caller names", () => {
+    expect(workerdStep({ sources: ["tests/runtime/"] }).cmd).toEqual(["playwright", "test", "--project=workerd", "tests/runtime/"]);
   });
 
-  it("names the runtime as the prerequisite, not the bun that is always present", () => {
+  it("never routes through a resolver that could fetch a binary from the registry", () => {
+    expect(workerdStep().cmd).not.toContain("bunx");
+  });
+
+  it("names the runtime as the prerequisite, not the playwright CLI that is always installed", () => {
     expect(workerdStep().requires?.tool).toBe("workerd");
   });
 

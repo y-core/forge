@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -8,8 +8,14 @@ import { build } from "./build";
 import { openDatabase } from "./db";
 import { advisory, freshness } from "./freshness";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function fixture(files: Record<string, string>, prefix: string): { root: string; sources: SourceDoc[] } {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   const sources = Object.entries(files).map(([path, source]) => {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });

@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -55,7 +55,8 @@ export function probe(options: ProbeOptions): string {
 
   // The table this repository's tree earns, exactly as `openIndex` and the gate resolve it.
   const aliases = aliasesFor(options.kind);
-  const db = openDatabase(resolve(mkdtempSync(resolve(tmpdir(), "warden-probe-")), "probe.sqlite"));
+  const scratch = mkdtempSync(resolve(tmpdir(), "warden-probe-"));
+  const db = openDatabase(resolve(scratch, "probe.sqlite"));
   const lines: string[] = [];
   try {
     const report = build(db, sources, canonVersion(), packageNameOf(options.root));
@@ -160,6 +161,7 @@ export function probe(options: ProbeOptions): string {
     lines.push(`${pairs.length} pairs`);
   } finally {
     db.close();
+    rmSync(scratch, { recursive: true, force: true });
   }
   return `${lines.join("\n")}\n`;
 }

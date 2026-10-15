@@ -1,9 +1,15 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { checkIccProfile, renderIccModule } from "./icc-profile";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 // A profile is built rather than read from the tree: the header fields are what the check judges,
 // and a fixture that can be made wrong on purpose is the only way to show it rejects one.
@@ -24,6 +30,7 @@ function profileOf(over: Partial<{ length: number; device: string; signature: st
 
 function checked(profile: Uint8Array, module?: string): ReturnType<typeof checkIccProfile> {
   const root = mkdtempSync(resolve(tmpdir(), "forge-icc-"));
+  roots.push(root);
   writeFileSync(resolve(root, "profile.icc"), profile);
   writeFileSync(resolve(root, "icc.ts"), module ?? renderIccModule("profile.icc", profile));
   return checkIccProfile({ root, profile: "profile.icc", module: "icc.ts" });
@@ -41,6 +48,7 @@ describe("the committed ICC module is held against the profile beside it", () =>
 
   test("fails where the module is missing altogether", () => {
     const root = mkdtempSync(resolve(tmpdir(), "forge-icc-"));
+    roots.push(root);
     writeFileSync(resolve(root, "profile.icc"), profileOf());
     expect(checkIccProfile({ root, profile: "profile.icc", module: "absent.ts" }).findings).not.toEqual([]);
   });

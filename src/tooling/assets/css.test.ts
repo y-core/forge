@@ -1,40 +1,35 @@
-import { describe, expect, it, spyOn } from "bun:test";
-import * as childProcess from "node:child_process";
+import { describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { SpawnOptions, SpawnOutcome } from "../cli/types";
 import { buildCSS } from "./css";
 
 const CSS_BUILD = { tool: "tailwindcss", input: "src/app.css", output: "css/app.css" } as const;
 
 function stubTailwind(content = "/* built css */") {
-  const spy = spyOn(childProcess, "execFileSync").mockImplementation(((_cmd: string, args: string[]) => {
-    const outPath = args[args.indexOf("-o") + 1] as string;
-    writeFileSync(outPath, content);
-    return new Uint8Array();
-  }) as never);
-  // `spyOn` hands back one mock per property, so history carries between the tests that call this.
-  spy.mockClear();
-  return spy;
+  return mock((_cmd: string, args: string[], _opts: SpawnOptions): SpawnOutcome => {
+    writeFileSync(args[args.indexOf("-o") + 1] as string, content);
+    return { status: 0 };
+  });
 }
 
 describe("buildCSS()", () => {
   it("invokes tailwindcss and writes the output file (no hashing)", () => {
     const tmpDir = join(tmpdir(), `forge-css-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(tmpDir, { recursive: true });
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      const manifest = buildCSS(CSS_BUILD, { outDir: tmpDir });
+      const manifest = buildCSS(CSS_BUILD, { outDir: tmpDir }, spawn);
 
       expect(existsSync(join(tmpDir, "css", "app.css"))).toBe(true);
       expect(manifest).toEqual({ "css/app.css": "css/app.css" });
-      expect(execSpy).toHaveBeenCalledTimes(1);
-      const [cmd, args] = execSpy.mock.calls[0]!;
+      expect(spawn).toHaveBeenCalledTimes(1);
+      const [cmd, args] = spawn.mock.calls[0]!;
       expect(cmd).toBe("tailwindcss");
       expect(args).toEqual(["-i", "src/app.css", "-o", join(tmpDir, "css", "app.css")]);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -42,13 +37,12 @@ describe("buildCSS()", () => {
   it("passes --minify when minify is enabled", () => {
     const tmpDir = join(tmpdir(), `forge-css-min-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(tmpDir, { recursive: true });
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      buildCSS(CSS_BUILD, { outDir: tmpDir, minify: true });
-      const args = execSpy.mock.calls[0]![1] as string[];
+      buildCSS(CSS_BUILD, { outDir: tmpDir, minify: true }, spawn);
+      const args = spawn.mock.calls[0]![1] as string[];
       expect(args).toEqual(["-i", "src/app.css", "-o", join(tmpDir, "css", "app.css"), "--minify"]);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -56,16 +50,15 @@ describe("buildCSS()", () => {
   it("renames output to a content-hashed filename when hash is enabled", () => {
     const tmpDir = join(tmpdir(), `forge-css-hash-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(tmpDir, { recursive: true });
-    const execSpy = stubTailwind("body{color:red}");
+    const spawn = stubTailwind("body{color:red}");
     try {
-      const manifest = buildCSS(CSS_BUILD, { outDir: tmpDir, hash: true });
+      const manifest = buildCSS(CSS_BUILD, { outDir: tmpDir, hash: true }, spawn);
 
       const hashed = manifest["css/app.css"]!;
       expect(hashed).toMatch(/^css\/app\.[0-9a-f]{8}\.css$/);
       expect(existsSync(join(tmpDir, hashed))).toBe(true);
       expect(existsSync(join(tmpDir, "css", "app.css"))).toBe(false);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -76,14 +69,13 @@ describe("buildCSS()", () => {
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, "app.oldhash.css"), "stale");
     writeFileSync(join(outDir, "keep.txt"), "not css");
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      buildCSS(CSS_BUILD, { outDir: tmpDir });
+      buildCSS(CSS_BUILD, { outDir: tmpDir }, spawn);
 
       const remaining = readdirSync(outDir).sort();
       expect(remaining).toEqual(["app.css", "keep.txt"]);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -92,10 +84,10 @@ describe("buildCSS()", () => {
     const tmpDir = join(tmpdir(), `forge-css-two-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const outDir = join(tmpDir, "css");
     mkdirSync(outDir, { recursive: true });
-    const execSpy = stubTailwind("body{color:red}");
+    const spawn = stubTailwind("body{color:red}");
     try {
-      const app = buildCSS(CSS_BUILD, { outDir: tmpDir, hash: true });
-      const print = buildCSS({ tool: "tailwindcss", input: "src/print.css", output: "css/print.css" }, { outDir: tmpDir, hash: true });
+      const app = buildCSS(CSS_BUILD, { outDir: tmpDir, hash: true }, spawn);
+      const print = buildCSS({ tool: "tailwindcss", input: "src/print.css", output: "css/print.css" }, { outDir: tmpDir, hash: true }, spawn);
 
       const appHashed = app["css/app.css"]!;
       const printHashed = print["css/print.css"]!;
@@ -103,7 +95,6 @@ describe("buildCSS()", () => {
       expect(existsSync(join(tmpDir, printHashed))).toBe(true);
       expect(readdirSync(outDir).sort()).toEqual([appHashed, printHashed].map((p) => p.slice("css/".length)).sort());
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -112,14 +103,13 @@ describe("buildCSS()", () => {
     const tmpDir = join(tmpdir(), `forge-css-two-plain-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     const outDir = join(tmpDir, "css");
     mkdirSync(outDir, { recursive: true });
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      buildCSS(CSS_BUILD, { outDir: tmpDir });
-      buildCSS({ tool: "tailwindcss", input: "src/print.css", output: "css/print.css" }, { outDir: tmpDir });
+      buildCSS(CSS_BUILD, { outDir: tmpDir }, spawn);
+      buildCSS({ tool: "tailwindcss", input: "src/print.css", output: "css/print.css" }, { outDir: tmpDir }, spawn);
 
       expect(readdirSync(outDir).sort()).toEqual(["app.css", "print.css"]);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -129,13 +119,12 @@ describe("buildCSS()", () => {
     const outDir = join(tmpDir, "css");
     mkdirSync(outDir, { recursive: true });
     writeFileSync(join(outDir, ".keep.css"), "hidden");
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      buildCSS(CSS_BUILD, { outDir: tmpDir });
+      buildCSS(CSS_BUILD, { outDir: tmpDir }, spawn);
 
       expect(readdirSync(outDir).sort()).toEqual([".keep.css", "app.css"]);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });

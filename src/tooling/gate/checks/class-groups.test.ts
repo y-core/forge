@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -17,6 +17,12 @@ const CONFIG: ClassGroupsCheckConfig = {
   stateRecipes: FORGE_STATE_RECIPES,
 };
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 describe("hasTailwind", () => {
   it("finds the optional peer this repository installs", () => {
     expect(hasTailwind()).toBe(true);
@@ -33,6 +39,7 @@ describe("checkClassGroups", () => {
 
   it("fails when the committed table has been hand-edited", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-class-groups-"));
+    roots.push(dir);
     const committed = readFileSync(resolve(ROOT, CONFIG.table), "utf-8");
     writeFileSync(resolve(dir, "edited.ts"), committed.replace('["block", "display"]', '["block", "position"]'), "utf-8");
 
@@ -43,6 +50,7 @@ describe("checkClassGroups", () => {
 
   it("passes a whitespace-only edit, which the `format` step owns rather than this one", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-class-groups-"));
+    roots.push(dir);
     const committed = readFileSync(resolve(ROOT, CONFIG.table), "utf-8");
     writeFileSync(resolve(dir, "respaced.ts"), committed.replace("const GROUPS", "\n\nconst GROUPS"), "utf-8");
 
@@ -60,6 +68,7 @@ describe("checkClassGroups", () => {
 describe("writeClassGroups", () => {
   it("writes a module the check then accepts", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-class-groups-"));
+    roots.push(dir);
     const table = resolve(dir, "written.ts");
 
     await writeClassGroups({ ...CONFIG, table });
@@ -68,6 +77,7 @@ describe("writeClassGroups", () => {
 
   it("writes the same content as the committed table, modulo the formatting `gen:class-groups` applies after it", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-class-groups-"));
+    roots.push(dir);
     const table = resolve(dir, "written.ts");
     const strip = (source: string): string => source.replace(/\s+/g, "").replace(/,([\]}])/g, "$1");
 

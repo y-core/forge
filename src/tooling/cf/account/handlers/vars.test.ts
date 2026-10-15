@@ -1,11 +1,17 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { WranglerConfig } from "../../types";
 import type { HandlerContext } from "./types";
 import { createVarsHandler } from "./vars";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
@@ -38,6 +44,7 @@ function makeFetch(remoteBindings: unknown[], patchOk = true): typeof globalThis
 // runtime rather than committed.
 function makeProject(devVars: string | null): string {
   const dir = mkdtempSync(join(tmpdir(), "forge-vars-"));
+  roots.push(dir);
   const configPath = join(dir, "wrangler.jsonc");
   writeFileSync(configPath, `{ "name": "proj" }`, "utf-8");
   if (devVars !== null) writeFileSync(join(dir, ".dev.vars"), devVars, "utf-8");

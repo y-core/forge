@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 
@@ -28,6 +28,12 @@ import { toSchemaObjects } from "../sql";
 import type { DbHostConfig, DbIo, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
 import { resolveBackupsDir, runBackup } from "./backup";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const SCHEMA_SQL = [
   "PRAGMA defer_foreign_keys=TRUE;",
@@ -84,6 +90,7 @@ const DIRECTORY_NAME = "app-db-20260911T100000Z";
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-backup-unit-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text);
   return root;
@@ -332,6 +339,7 @@ describe("runBackup", () => {
 
   it("backs up a preview database with --remote --preview", async () => {
     const root = mkdtempSync(join(tmpdir(), "forge-db-backup-unit-"));
+    roots.push(root);
     const config = minimalWranglerConfig(root, {
       d1_databases: [
         {

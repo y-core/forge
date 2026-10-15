@@ -91,7 +91,7 @@ container with no barrel of its own (§5k).
 ### 3c. A Surface Node Loads Is Published Prebuilt
 
 **Rule data that both `tooling/gate` and `tooling/lint` read lives in `tooling/lint`, because that is the direction with no cycle.** Held in
-`tooling/gate`, the rule catalogs would make the pair name each other at value, which `validateNoMutualValuePairs` rejects (§4b).
+`tooling/gate`, the rule catalogs would make the pair name each other at value, which `validateNoValueCycles` rejects (§4b).
 
 **A surface a consumer's node process loads ships as a committed bundle under its own subpath.** Node refuses to strip types from a file under
 `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), deliberately and with no opt-out flag, so a consumer's oxlint cannot load
@@ -184,6 +184,10 @@ walk that are load-bearing and not self-evident. What is local: edges are declar
 **A type-only edge is what lets two namespaces name each other.** Erased at emit, it cannot close a runtime cycle, so a mutually-naming pair is
 legal exactly while one direction stays `import type` — flipping it to a value import would close a real cycle. Kind is therefore a rule, not an
 annotation, which is why the gate checks it in both directions.
+
+**The gate fails a cycle of `value` edges of any length**, so three namespaces naming each other in a ring are held to the same rule as a pair.
+The declared graph's legal cycles are each broken by a type edge: `logging` ↔ `storage/kv`, where `logging` names `storage/kv` by type, and
+`tooling/assets` ↔ `ui/assets/build`, where `ui/assets/build` names `tooling/assets` by type.
 
 ### 4c. Foundational Primitive Namespaces — `result`, `crypto/primitives`, `context`, `validation`
 
@@ -286,10 +290,6 @@ use `resolve*`** (`resolveKVStore`, `resolveObjectStore`). **Declarative handler
 
 `ok` / `err` are the one documented exception ([`FORGE_ERRORS.md`][eh-1a] §1a).
 
-**`startDevServer` is the second, and it is a verb exception** — [`NAMESPACE_DESIGN.md`][nd-4a] §4a puts one in the owning `docs/` doc, and this is
-that entry. What `@y-core/forge/testing/workerd` returns is a live `wrangler dev` process the caller **must** `stop()`, and `create*` names a value
-that needs nothing further — a reader who believed it would leak a process group. [`TEST_RUNNERS.md`][testing-7f] §7f owns the rest.
-
 Exported option and shape types take a suffix chosen by what the type _is_:
 
 | Suffix | Meaning | Examples |
@@ -329,8 +329,8 @@ working tree to its skeleton is `tooling/curate`, a Cloudflare API call is `tool
 **None of it is ever Worker-reachable.** That is what earns every module here the build-time exemption from the Web-APIs-only rule — the exemption
 is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed here may use Node
 APIs, and a module a Worker path imports may not. Reaching for a `tooling` namespace to escape the Web-APIs rule for something a request handler
-runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/workerd` reads
-`node:child_process` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
+runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/snapshot` reads
+`node:fs` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
 
 ### 5h. auth — Identity, and Only the Domain of It
 
@@ -347,7 +347,7 @@ already carry, and it is what keeps `auth` testable with no authenticated world 
 
 **The edge is one-way: `auth/web` imports `auth`, and `auth` never names `auth/web`.** A domain rule that wants to redirect, or a store that wants
 to 404, is reaching across the split: the rule returns a reason, and the web layer alone decides what `Response` that reason becomes. The mechanism
-is `validateNoMutualValuePairs` in `src/tooling/gate/checks/namespace-graph.ts`, which fails any two namespaces that name each other at value — so
+is `validateNoValueCycles` in `src/tooling/gate/checks/namespace-graph.ts`, which fails any namespaces that name each other at value — so
 the first domain module to import the web layer fails the graph rather than waiting for a reviewer to notice. That is also why `authReturnPath`, the
 helper that reduces a `?next=` value with `safeRedirectPath`, sits in `auth/web`: in `auth` it would have created an `auth → http` edge the domain
 does not have.
@@ -523,13 +523,12 @@ second repository needs it.
 [nd-2]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2-no-sibling-barrel-import-rule
 [nd-2c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2c-granting-an-exemption
 [nd-3b]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3b-integration-namespace-rules
-[nd-4a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#4a-factory-and-accessor-verbs
 [nd-5]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5-when-to-add-a-new-namespace
 [nd-5a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5a-criteria-for-a-new-namespace
 [ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
-[testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel
 [ucr-2]: ./UI_CLIENT_RUNTIME.md#2-mount-controllers
 [usc]: ./UI_SSR_COMPONENTS.md
 [warden-readme]: ../warden/README.md

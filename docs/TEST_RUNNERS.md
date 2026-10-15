@@ -22,7 +22,7 @@ audience: consumer
 - §1c The Browser Set: real Chromium behind its own verb
 - §1d Waiting on an htmx Swap: `htmx:after:swap` on `document`, once the new markup is live
 - §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
-- §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, and the published helper that starts it
+- §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, on `createTestHarness` under node
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -43,9 +43,9 @@ audience: consumer
 - §7c render() — SSR Render-to-String: the assertion entry point
 - §7d buildRequest() — Request Builder: options and body helpers
 - §7e mapHandler() and TestAction: single-route registrar
-- §7f A Subpath That Is Not on the Barrel: why `@y-core/forge/testing/workerd` is imported by name
+- §7f Subpaths That Are Not on the Barrel: why `@y-core/forge/testing/snapshot` and `@y-core/forge/testing/harness` are imported by name
 - §7g elementOf() and the Markup Readers: the exact assertion on one element of a whole page
-- §7h matchTextSnapshot() — The Second Off-Barrel Subpath: what it writes, what it refuses, and what it never reads
+- §7h matchTextSnapshot() — Text Against a Committed Fixture: what it writes, what it refuses, and what it never reads
 - §7i The Expected Coverage Set: the components a consumer's coverage manifest must declare, read off the barrels
 
 ---
@@ -82,10 +82,10 @@ must be rejected.
 **A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`.** `playwright.config.ts` owns the discovery pattern, the
 project list and the parallelism — cite it, never restate it here.
 
-**The set runs the installed binary under node — `playwright test`, in the script and in `browserStep`'s argv alike — and the config imports the
-committed `./tooling/gate/chromium` bundle, because under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox.**
-[`NAMESPACES.md`][namespaces-3c] §3c is that ruling's single home. The bare name is resolved off the runner's `binDir`, as every command step's is —
-a gate never reaches a registry to find what it runs.
+**The set runs the installed binary under node — `playwright test --project=chromium`, in the script and in `browserStep`'s argv alike — and the
+config imports the committed `./tooling/gate/chromium` bundle, because under bun a dev server playwright spawns itself is unreachable from the
+browser in a sandbox.** [`NAMESPACES.md`][namespaces-3c] §3c is that ruling's single home. The bare name is resolved off the runner's `binDir`, as
+every command step's is — a gate never reaches a registry to find what it runs.
 
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost.** It needs a browser binary, and a prerequisite is the only
 legitimate ground for holding a step back. Cost never is. It runs under `bun run verify:full`, the release gate, which is permitted to carry one
@@ -177,43 +177,28 @@ default suite drives an app through `app.request` under Bun, and Bun's `Request`
 decoding above all — the default suite is green **by construction**, whatever the deployed app does. Forge is a Workers library, so that blind spot
 is the one worth paying a runtime for.
 
-**Each spec starts `wrangler dev` over a fixture in `tests/fixtures/`, under node.** Not `createTestHarness`: it starts under bun but never answers
-a request, and the wrangler CLI refuses bun outright. Spawning the CLI as a child keeps `bun test` the only test runner in this repository
-(`CLAUDE.md`'s toolchain table), while the code under test still executes in workerd. **This paragraph is the single home of that rationale** — the
-helper's source states neither half of it.
+**Every runtime suite starts its Worker with wrangler's `createTestHarness`, under Playwright on node — the `workerd` project beside `chromium`.**
+Under bun the harness starts and never answers a request: bun replaces the `undici` miniflare ships with, the replacement drops the `cf` blob a
+request carries, the harness's proxy never receives the message that tells it to forward, and every request queues forever. Under node it answers,
+bundles a TypeScript `main`, starts harnesses side by side with no lock, and captures the Worker's console through `getLogs()`. Playwright is
+already forge's node runner (§1c), so the set gains no runner. **This paragraph is the single home of that rationale.** The project's discovery
+pattern in `playwright.config.ts` is one `bun test` never collects, and the auth journey (`src/auth/journey.browser.ts`) reaches the same harness
+from the `chromium` project.
 
-**The helper itself is published, and forge's specs import it the way a consumer does.** `startDevServer` lives in `src/testing/workerd.ts` and is
-reached as `@y-core/forge/testing/workerd`; there is no copy under `tests/`. A spec here imports the published specifier rather than a relative
-path, so what forge exercises is the module a consumer loads — including its wrangler resolution, which walks the _consumer's_ `node_modules` and
-would be wrong if it were computed from this file's own location. §7f owns why that subpath is off the `./testing` barrel.
+**`serveWorker` in `@y-core/forge/testing/harness` is the one start, for forge and its consumers alike.** It serves a config's Worker, or an
+`entry` in place of its `main` under the same bindings, and sets `SITE_ORIGIN` to the origin it answers on, over any caller var of that name. An
+inline harness config has no `secrets` of its own, so under `entry` they reach the Worker as vars. `siteHost: "localhost"` is for a WebAuthn
+journey, which refuses an IP address as an RP ID. Forge's specs reach it through `tests/workerd/harness.fixture.ts`, whose `harnessTest(options)`
+returns a Playwright `test` with a worker-scoped `served` fixture, closed when the worker ends. That wrapper stays unpublished, because publishing
+it would make `@playwright/test` a forge peer.
+The project runs a file's tests in one worker, so every test in a file shares one Worker and files run side by side.
+
+**The harness keeps no storage between runs**, so a spec starts on an empty database. `db-migrate.workerd.ts` needs the state `forge db migrate`
+wrote under `--persist-to`, which the harness cannot read, so it serves no Worker: it opens the same miniflare D1 engine through `getPlatformProxy`
+(`tests/workerd/d1.ts`) and calls `checkSchemaHealth` on that binding directly.
 
 **The compose cases run four at a time.** Each case is a dozen wrangler spawns of roughly 250MB apiece, so running every case at once peaked near
 4GB and the OOM killer took the gate down; four in flight keeps most of the wall-clock win and holds the peak near a gigabyte.
-
-**The spec files themselves run two at a time, and the number is small because it multiplies against that one.** `bun test` runs files in one
-process by default, which left the set serial behind its longest file. `--parallel=2` fits the cheap files into the compose file's slack and cut the
-set by about a third. The next value up does not: at `--parallel` with no number — one worker per core — a `wrangler dev` under `startDevServer`
-never answered inside its 180s readiness budget, because every spec file at once, plus the compose file's own cases already in flight, is more
-processes than the machine has cores. A file here carries its own concurrency, so the file-level number is the multiplier, not the total. The flag
-shipped in Bun 1.3.13, which is what `package.json`'s `engines.bun` floor records for a consumer building a gate out of `workerdStep`.
-
-**`startDevServer` serialises startup across processes through a lock file in the system temp directory, and never serialises serving.** Beside
-the `--port` the helper reserves, wrangler binds a port of its own choosing while it starts, so two servers starting together can collide on it,
-and the loser's workerd exits with `Address already in use` — reserving the inspector port as well does not prevent it. The lock is held from
-before the port is reserved until the server answers, so two spec files under `--parallel=2` start one after the other and then run side by side.
-A holder whose process is gone, or that has held the lock past the readiness budget, is taken over. The lock is `src/testing/dev-server-lock.ts`,
-which `src/testing/dev-server-start.ts` alone imports.
-
-**A start that does not answer is abandoned and started again on a fresh port.** A `wrangler dev` whose runtime is up can still hold every request
-to its `--port` indefinitely: its proxy queues requests until it is told to forward them, and once, under a gate running at twice its usual time,
-that message never came — the runtime was up a second after spawn and the probe went unanswered for the whole budget. Waiting does not recover
-that process and a new one does, so each attempt gets 60s of the 180s budget. A process that exits ends its attempt at once rather than being
-waited out, which is how a port lost to another process between reservation and bind presents.
-
-**`stop()` kills the process group, not the CLI.** wrangler spawns workerd and esbuild as its own children, so a signal to the CLI alone leaves a
-`workerd` pair reparented to PID 1, ignoring `SIGTERM` and holding a core each. The helper spawns `detached`, kills `-pid` with `SIGKILL`, and binds
-that same kill to the runner's `exit`, `SIGINT`, `SIGTERM` and `SIGHUP` — the interrupted run never reaches `afterAll`, and that is the path an
-orphan actually escapes through.
 
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same ground the browser set is held back on (§1c).
 `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
@@ -415,12 +400,17 @@ path list bounds what they read: both typechecks and `lint:types` read the whole
 reads every barrel the exports map points at. `validate-exports` and `validate-namespace-graph` judge the whole surface the exports map declares.
 `config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.
 
+**Each spawned step runs under its own `TMPDIR`, which the gate removes with whatever the step left in it.** A failed step's full log is the one
+thing a run keeps, for its reader to open afterwards. **`test` also fails when its suite leaves anything there**, naming each entry, because it is
+built with `leavesNoTemp`: a spec removes every temp directory it creates, in an `afterAll` over a file-level `roots` array, so a bare `bun test`
+off the gate leaves none either.
+
 ---
 
 ## 7. Testing Namespace Utilities (`@y-core/forge/testing`)
 
 The `testing` namespace ships the fixtures every consumer suite would otherwise hand-roll. **Import them from the barrel** — consumer test code sits
-outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f, §7h and §7i are the stated exceptions, and
+outside the source tree, so the concrete-file rule in [`TESTING.md`][testing-2c] §2c does not apply. §7f and §7i are the stated exceptions, and
 each is a published subpath of its own rather than a file reached past a barrel. `src/testing/README.md` teaches the fixtures by the task each
 one serves.
 
@@ -482,48 +472,39 @@ cannot express.
 **Use `mapHandler` for a namespace's own unit tests; use a full `route()` / `createController` map (§5a) when the test must exercise the production
 registration path itself.**
 
-### 7f. A Subpath That Is Not on the Barrel — `@y-core/forge/testing/workerd`
+### 7f. Subpaths That Are Not on the Barrel
 
-`@y-core/forge/testing/workerd` publishes `startDevServer`, `DevServer` and `DevServerOptions`, and it is **a stated exception to §7's opening
-line.** Import it by its own subpath; it is not re-exported from `src/testing/mod.ts` and will not be.
+`@y-core/forge/testing/snapshot` publishes `matchTextSnapshot` (§7h), and it is **a stated exception to §7's opening line.** Import it by its own
+subpath; it is not re-exported from `src/testing/mod.ts` and will not be.
 
-**The reason is what the module reads.** It runs `wrangler dev` as a child process, so it imports `node:child_process`, `node:fs`, `node:net`,
-`node:os`, `node:path` and `node:url`. A Worker-side test program compiles under `"types": []` against the Workers and DOM lib set, and none of
-those modules exists there — putting the symbol on the barrel would make every `import … from "@y-core/forge/testing"` in a Worker-typed suite pull
-a module its own program cannot type. Off the barrel, the only way to reach it is to ask for it by name, which is a decision the importing file
-makes visibly. `checkExports` supports this directly: a non-`mod.ts` export target its barrel never re-exports from is left out of that barrel's
-`@public` coverage walk, so "published but off the barrel" is a shape the gate holds rather than one it tolerates.
+**The reason is what `snapshot.ts` reads.** It imports `node:fs` and `node:path`. A Worker-side test program compiles under `"types": []`
+against the Workers and DOM lib set, and neither module exists there — putting the symbol on the barrel would make every
+`import … from "@y-core/forge/testing"` in a Worker-typed suite pull a module its own program cannot type. Off the barrel, the only way to
+reach it is to ask for it by name, which is a decision the importing file makes visibly. `checkExports` supports this directly: a non-`mod.ts`
+export target its barrel never re-exports from is left out of that barrel's `@public` coverage walk, so "published but off the barrel" is a shape
+the gate holds rather than one it tolerates.
 
-**A suite that imports it references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a types-only subpath declaring exactly
-the node surface `startDevServer` reaches — the `node:*` modules above, plus `Buffer` and the `process` members it calls. One line at the top of the
-file that reaches `startDevServer`:
+**A suite that imports `@y-core/forge/testing/snapshot` references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a
+types-only subpath declaring exactly the node surface `matchTextSnapshot` reaches. One line at the top of the file that imports it:
 
 ```ts
 /// <reference types="@y-core/forge/testing/node" />
 ```
 
-A type reference directive is resolved per file, so the Worker half of the same program keeps an empty `types` array and sees none of it. This is
-the supported way to put `tests/workerd/**` in a consumer's type program; dropping the directory from `include`, or adding `node` to `types`, is
-not. Forge exercises it from `tests/fixtures/workers-consumer/workerd-suite.ts`, which compiles under `"types": []` the way a consumer's does.
+A type reference directive is resolved per file, so the Worker half of the same program keeps an empty `types` array and sees none of it; dropping
+the file from `include`, or adding `node` to `types`, is not the supported way. Forge holds the shim's sufficiency from
+`tests/fixtures/workers-consumer/snapshot-suite.ts`, which compiles under `"types": []` the way a consumer's does.
 
-**It reaches ambient Node globals too, not only the `node:` imports above.** `process.env`, `process.kill`, `process.once` and `process.exit`, and
-Node's `Buffer`. They arrive without an import statement, so a grep for `node:` does not find them; `@y-core/forge/testing/node` declares them for
-the same reason it declares the modules.
+**`@y-core/forge/testing/harness` is off the barrel for the same reason, and needs no shim.** `src/testing/harness.ts` imports `wrangler` and
+`node:path`, and `serveWorker` (§1f) runs only under node. The file that imports it is a node-run Playwright spec, never part of a Worker program,
+so there is no Worker-typed program for a shim to serve.
 
-**What makes the file legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that checks for a
-non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the Workers lib set,
-where `node:child_process` does not resolve. `src/testing` stays out of a Worker by reachability instead: it is one of `devBoundaryStep`'s
-`devOnlyDirs`, so no deployed file may import it, and `importBoundaryStep`'s `guarded` pointedly leaves it out. A new file that wants Node
-earns it the same way or not at all — the question to answer is whether anything shipped can reach it, and "it is only used in tests" is not that
-answer unless a boundary step says so.
-
-**`wrangler` is an optional peer dependency**, declared because the module resolves the CLI out of the importing package's own tree —
-`import.meta.resolve("wrangler/package.json")`, never a path relative to forge's checkout. A consumer that imports this subpath installs `wrangler`;
-one that does not, never loads the module and never needs it.
-
-**Everything the process leaves behind is removed by `stop()`** — the process group (§1f) and the temp directory holding the `--env-file` it was
-started with. The env file is written per start into a fresh `mkdtemp` directory rather than under a per-port name, because the OS reuses a port and
-successive runs would then share a file; one recursive remove is the whole cleanup.
+**What makes either file legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that checks
+for a non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the Workers
+lib set, where `node:fs` does not resolve. `src/testing` stays out of a Worker by reachability instead: it is one of `devBoundaryStep`'s
+`devOnlyDirs`, so no deployed file may import it, and `importBoundaryStep`'s `guarded` pointedly leaves it out. A new file that wants Node earns it
+the same way or not at all — the question to answer is whether anything shipped can reach it, and "it is only used in tests" is not that answer
+unless a boundary step says so.
 
 ### 7g. elementOf() and the Markup Readers — One Element of a Whole Page
 
@@ -534,11 +515,9 @@ so `elementOf(html, tag, selector?)` cuts the whole first element of a tag — o
 consumer's seam suite and forge's own component specs (§3c) reach the same shape rather than a private copy per file. Each answers `""` or an
 empty record for an element the page never rendered; the `toBe` against the expected markup is what makes that a failure.
 
-### 7h. matchTextSnapshot() — The Second Off-Barrel Subpath
+### 7h. matchTextSnapshot() — Text Against a Committed Fixture
 
-`@y-core/forge/testing/snapshot` publishes `matchTextSnapshot`, which compares text against a committed fixture on disk. It reads `node:fs` and
-`node:path`, so it is off the `./testing` barrel for the reason §7f gives, declares its surface in the same `src/testing/node.d.ts` shim, and is
-held to that shim's sufficiency by `tests/fixtures/workers-consumer/snapshot-suite.ts`.
+`matchTextSnapshot` compares text against a committed fixture on disk, and is reached off the barrel (§7f).
 
 **It is format-agnostic, and depends on no other namespace.** It takes a string. It is what `formatPdfLayout` ([`README.md`][pdf-readme]) was
 built to feed, and it knows nothing about PDF, about layout or about forge's own output — a consumer comparing rendered markup, a generated SQL

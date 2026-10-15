@@ -43,25 +43,6 @@ function messageOf(thrown: unknown): string {
   return thrown instanceof Error ? thrown.message : String(thrown);
 }
 
-// `wrangler dev` persists this database, so `CREATE TABLE IF NOT EXISTS` would silently keep an
-// earlier run's columns and a new index over a new one would fail.
-async function resetSchema(db: D1Database): Promise<Response> {
-  const tables = [
-    "probe_owned",
-    "auth_access_tokens",
-    "auth_nonces",
-    "auth_challenges",
-    "auth_otp_state",
-    "auth_identity_links",
-    "auth_credentials",
-    "auth_recovery_codes",
-    "auth_factors",
-    "auth_users",
-  ];
-  for (const table of tables) await db.prepare(`DROP TABLE IF EXISTS ${table}`).run();
-  return json({ dropped: tables });
-}
-
 async function applySchema(db: D1Database, ddl: string): Promise<Response> {
   const outcomes: StatementOutcome[] = [];
   for (const statement of statementsOf(ddl)) {
@@ -609,7 +590,6 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const { pathname } = new URL(request.url);
     try {
-      if (pathname === "/reset" && request.method === "POST") return await resetSchema(env.DB);
       if (pathname === "/apply" && request.method === "POST") return await applySchema(env.DB, await request.text());
       if (pathname === "/strict") return await probeStrict(env.DB);
       if (pathname === "/batch") return await probeBatch(env.DB);

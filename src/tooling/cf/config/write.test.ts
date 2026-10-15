@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,10 +9,17 @@ import { kvHandler } from "../account/handlers/kv";
 import type { WranglerConfig } from "../types";
 import { loadWranglerConfig, writeWranglerConfig } from "./parse";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
 function project(source: string): string {
   const dir = mkdtempSync(join(tmpdir(), "forge-write-"));
+  roots.push(dir);
   const path = join(dir, "wrangler.jsonc");
   writeFileSync(path, source, "utf-8");
   return path;

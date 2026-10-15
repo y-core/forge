@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -161,8 +161,14 @@ describe("the coordinate space the artifact is drawn out of", () => {
 });
 
 describe("what the build step writes", () => {
+  const roots: string[] = [];
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+
   test("converts each configured SVG into an artifact under the asset root", () => {
     const out = mkdtempSync(join(tmpdir(), "forge-marks-"));
+    roots.push(out);
     buildMarks([{ from: "tests/fixtures/mark/mark.svg", to: "marks/letterhead.json" }], ROOT, out);
     const written = JSON.parse(readFileSync(join(out, "marks/letterhead.json"), "utf-8")) as MarkData;
     expect(written.paths.length).toBeGreaterThan(0);

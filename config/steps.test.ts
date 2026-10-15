@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -31,28 +31,28 @@ describe("the gate's step table", () => {
     expect(selectSteps(STEPS, { mode: "full" }).ok).toBe(true);
   });
 
+  it("fails the test row when the suite leaves anything in its TMPDIR", () => {
+    expect(STEPS.find((step) => step.label === "test")).toMatchObject({ leavesNoTemp: true });
+  });
+
   it("runs the suite of the directory this file lives in, so an assertion here can redden the gate", () => {
     const row = STEPS.find((step) => step.label === "test");
     expect((row?.cmd ?? []).join(" ")).toContain("config/");
   });
 
-  // The number is tuned against this machine's cores and against `db-compose.test.ts`, which already
-  // runs four cases at once; the script is how it is run by hand, and the two disagreeing is a trap.
-  it("runs the workerd row at the same file parallelism the package script does", () => {
-    const row = STEPS.find((step) => step.label === "test:workerd");
+  // The script is how a row is run by hand, and the two disagreeing is a trap.
+  it("runs each Playwright row with the same command its package script does", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
-    const flag = (command: readonly string[] | string) =>
-      /--parallel=(\d+)/.exec(typeof command === "string" ? command : command.join(" "))?.[1] ?? null;
-
-    expect(flag(row?.cmd ?? [])).toBe("2");
-    expect(flag(scripts["test:workerd"] ?? "")).toBe(flag(row?.cmd ?? []));
+    for (const label of ["test:workerd", "test:browser"]) {
+      expect(STEPS.find((step) => step.label === label)?.cmd?.join(" ")).toBe(scripts[label]);
+    }
   });
 
   it("holds every tracked TypeScript file to the comment budget, root config files included", () => {
     const tracked = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"], { cwd: ROOT })
       .stdout.toString()
       .split("\n")
-      .filter((file) => file !== "");
+      .filter((file) => file !== "" && existsSync(join(ROOT, file)));
     const scanned = new Set(resolveSources(ROOT, COMMENT_BUDGET_SOURCES, (name) => name.endsWith(".ts") || name.endsWith(".tsx")));
 
     expect(tracked).toContain("playwright.config.ts");

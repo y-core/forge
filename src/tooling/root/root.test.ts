@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -10,9 +10,15 @@ import { createRootCommand } from "./root";
 const FIRST_PARTY = ["verify", "release", "curate", "cf", "assets", "db"];
 const KERNEL = resolve(import.meta.dir, "../cli/command.ts");
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A throwaway project root, optionally carrying a `config/commands.ts` declaring one command. */
 function project(name: string | null): string {
   const root = mkdtempSync(join(tmpdir(), "forge-root-"));
+  roots.push(root);
   if (name !== null) {
     mkdirSync(join(root, "config"));
     const source = `import { createCommand } from "${KERNEL}";\nexport default [createCommand({ name: "${name}" })];\n`;

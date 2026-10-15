@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -21,6 +21,12 @@ import type { BackupManifest, DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlag
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 import { executeReset, findVerifiedBackup, prepareReset } from "./reset";
 import type { ResetOptions, ResetOutcome } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const STATE = ["v3", "d1", "miniflare-D1DatabaseObject"];
 
@@ -100,6 +106,7 @@ function manifest(database: string, over: Partial<BackupManifest> = {}): BackupM
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-reset-unit-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text);
   return root;

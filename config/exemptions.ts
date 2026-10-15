@@ -54,10 +54,12 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/form/constants.ts", "declared data — the parsers that read the constants are tested"],
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
   ["warden/src/cli/flags.ts", "declared flag tables — the command tree that shares them is dispatched in `commands.test.ts`"],
-  ["src/testing/workerd.ts", "test infrastructure — `tests/workerd/`'s specs are what exercise it, in the `full` tier"],
   [
     "src/render/markdown/editor/client/theme.ts",
     "a declared CodeMirror theme — the classes it styles are drawn and asserted by `decorations.test.ts` and `mount.browser.ts`",
   ],
-  ["src/testing/node.d.ts", "a declaration file — it defines nothing to run, and `typecheck` is what holds it against `dev-server-start.ts`"],
+  [
+    "src/testing/node.d.ts",
+    "a declaration file — it defines nothing to run, and `typecheck:workers-consumer` is what holds it against `snapshot.ts`",
+  ],
 ]);

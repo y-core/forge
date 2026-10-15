@@ -171,7 +171,7 @@ These surfaces build on the read:
 ### 1g. Transactions — batch() Is the Boundary
 
 **One `batch()` is one SQL transaction.** D1 runs the statements in order inside a single implicit transaction; when a later one fails, every
-earlier write is undone and the call rejects — proved on workerd by `tests/workerd/auth-schema.test.ts`. Each entry of the resolved
+earlier write is undone and the call rejects — proved on workerd by `tests/workerd/auth-schema.workerd.ts`. Each entry of the resolved
 `D1BatchResult[]` carries its statement's rows and the same `rowsWritten` that `execute` reports. There is no second verb: a `transaction()` wrapper
 would name the same thing twice.
 

@@ -1,13 +1,19 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CliError } from "../../../src/tooling/cli/errors";
 import { readKind, resolveKind, resolveKindSource } from "./kind";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function repoWith(manifest: string | null): string {
   const root = mkdtempSync(join(tmpdir(), "warden-kind-"));
+  roots.push(root);
   if (manifest !== null) writeFileSync(join(root, "package.json"), manifest, "utf-8");
   return root;
 }

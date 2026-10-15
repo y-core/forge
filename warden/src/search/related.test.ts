@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -7,6 +7,11 @@ import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
 import { related, unresolved } from "./related";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
 
 function write(root: string, path: string, source: string): string {
   const file = join(root, path);
@@ -20,6 +25,7 @@ function doc(title: string, header: string, body: string): string {
 }
 
 const root = mkdtempSync(join(tmpdir(), "warden-related-"));
+roots.push(root);
 const sources: SourceDoc[] = [
   {
     corpus: "canon",

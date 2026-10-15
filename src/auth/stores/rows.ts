@@ -27,7 +27,7 @@ export function pageLimit(limit: number | undefined): number {
   return Math.min(MAX_PAGE_LIMIT, Math.max(1, Math.trunc(limit)));
 }
 
-// `tests/workerd/auth-schema.test.ts` measures a plain number array from the D1 workerd answers
+// `tests/workerd/auth-schema.workerd.ts` measures a plain number array from the D1 workerd answers
 // with; the `Uint8Array` and `ArrayBuffer` branches are what a binding that answers otherwise needs.
 /** Reads a BLOB column back as bytes whichever shape the binding handed over. @internal */
 export function blobBytes(value: unknown): Uint8Array<ArrayBuffer> {

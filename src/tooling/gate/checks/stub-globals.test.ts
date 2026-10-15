@@ -1,7 +1,20 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkStubGlobals, declaredStubGlobals, findStubGlobalReferences } from "./stub-globals";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function fixtureRoot(...args: Parameters<typeof gateFixtureRoot>): string {
+  const root = gateFixtureRoot(...args);
+  roots.push(root);
+  return root;
+}
 
 const STUB = `interface NodeStdioStream { write(data: string): boolean; }
 declare const process: { readonly stdout: NodeStdioStream };
@@ -30,7 +43,7 @@ describe("findStubGlobalReferences", () => {
 
 describe("checkStubGlobals", () => {
   it("fails a shipped module naming a global only a stub declares", () => {
-    const root = gateFixtureRoot({ ".types/node.d.ts": STUB, "src/cli/types.ts": "export interface Io { stdout: NodeStdioStream }" });
+    const root = fixtureRoot({ ".types/node.d.ts": STUB, "src/cli/types.ts": "export interface Io { stdout: NodeStdioStream }" });
     const outcome = checkStubGlobals(config(root));
     expect({ ok: outcome.ok, first: outcome.findings[0] }).toEqual({
       ok: false,
@@ -44,15 +57,12 @@ describe("checkStubGlobals", () => {
   });
 
   it("fails a shipped module naming a global a module-form stub declares inside `declare global`", () => {
-    const root = gateFixtureRoot({
-      ".types/leak.d.ts": "export {};\ndeclare global { interface Leak { a: 1 } }",
-      "src/a.ts": "export type A = Leak;",
-    });
+    const root = fixtureRoot({ ".types/leak.d.ts": "export {};\ndeclare global { interface Leak { a: 1 } }", "src/a.ts": "export type A = Leak;" });
     expect(checkStubGlobals({ ...config(root), shared: [] }).ok).toBe(false);
   });
 
   it("passes a global the real runtime types declare too, and a test file naming a stub-only one", () => {
-    const root = gateFixtureRoot({
+    const root = fixtureRoot({
       ".types/node.d.ts": STUB,
       "src/exit.ts": "export const exit = () => process.exit(1);",
       "src/exit.test.ts": "type Out = NodeStdioStream;",
@@ -61,14 +71,14 @@ describe("checkStubGlobals", () => {
   });
 
   it("fails a `shared` entry no stub declares, so the list cannot outlive its stub", () => {
-    const root = gateFixtureRoot({ ".types/node.d.ts": STUB, "src/a.ts": "export const a = 1;" });
+    const root = fixtureRoot({ ".types/node.d.ts": STUB, "src/a.ts": "export const a = 1;" });
     expect(checkStubGlobals({ ...config(root), shared: ["process", "Deno"] }).findings.map((finding) => finding.message)).toEqual([
       "`shared` entry `Deno` names no global a stub declares",
     ]);
   });
 
   it("refuses to report green when no declaration file was found", () => {
-    const root = gateFixtureRoot({ "src/a.ts": "export const a = 1;" });
+    const root = fixtureRoot({ "src/a.ts": "export const a = 1;" });
     expect(checkStubGlobals(config(root)).findings[0]?.message).toBe(
       "`.types` matched no declaration file — refusing to report a green stub-globals gate that scanned nothing",
     );

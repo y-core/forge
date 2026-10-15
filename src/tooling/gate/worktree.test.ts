@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -6,6 +6,24 @@ import { basename, dirname, join } from "node:path";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { worktreeChanges, worktreeGitEnv, worktreeGitPath, worktreeHash } from "./worktree";
 import { worktreeFixture } from "./worktree.fixture";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function fixtureRoot(...args: Parameters<typeof gateFixtureRoot>): string {
+  const root = gateFixtureRoot(...args);
+  roots.push(root);
+  return root;
+}
+
+function worktreeRoot(...args: Parameters<typeof worktreeFixture>): string {
+  const root = worktreeFixture(...args);
+  roots.push(root);
+  return root;
+}
 
 const FILES = { ".gitignore": "ignored.log\n", "a.txt": "alpha\n", "src/b.txt": "beta\n" };
 
@@ -36,13 +54,13 @@ function withGitEnv<T>(vars: Record<string, string>, run: () => T): T {
 
 describe("worktreeHash()", () => {
   it("equals the tree of HEAD on a clean checkout", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
 
     expect(worktreeHash(root)).toBe(headTree(root));
   });
 
   it("ignores a file the repository ignores", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const clean = worktreeHash(root);
     writeFileSync(join(root, "ignored.log"), "noise\n");
 
@@ -50,7 +68,7 @@ describe("worktreeHash()", () => {
   });
 
   it("changes on an edit, an untracked file and a deletion, and returns once each is reverted", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const clean = worktreeHash(root);
 
     writeFileSync(join(root, "a.txt"), "edited\n");
@@ -70,7 +88,7 @@ describe("worktreeHash()", () => {
   });
 
   it("leaves the real index byte-identical on a dirty tree", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "a.txt"), "edited\n");
     writeFileSync(join(root, "new.txt"), "new\n");
     const before = readFileSync(join(root, ".git/index"));
@@ -80,7 +98,7 @@ describe("worktreeHash()", () => {
   });
 
   it("hashes a nested repository as its HEAD commit, so an uncommitted edit inside it leaves the hash unchanged", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const outer = worktreeHash(root);
     const nested = join(root, "vendor/inner");
     mkdirSync(nested, { recursive: true });
@@ -96,13 +114,13 @@ describe("worktreeHash()", () => {
   });
 
   it("is undefined outside a git work tree", () => {
-    expect(worktreeHash(gateFixtureRoot())).toBeUndefined();
+    expect(worktreeHash(fixtureRoot())).toBeUndefined();
   });
 });
 
 describe("worktreeGitPath()", () => {
   it("resolves a name under .git from the root and from a subdirectory", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     mkdirSync(join(root, "src/deep"), { recursive: true });
     const gitDir = realpathSync(join(root, ".git"));
     const fromRoot = worktreeGitPath(root, "forge-verify-receipt.json") ?? "";
@@ -115,17 +133,17 @@ describe("worktreeGitPath()", () => {
   });
 
   it("is undefined outside a git work tree", () => {
-    expect(worktreeGitPath(gateFixtureRoot(), "index")).toBeUndefined();
+    expect(worktreeGitPath(fixtureRoot(), "index")).toBeUndefined();
   });
 });
 
 describe("worktreeChanges()", () => {
   it("is empty on a clean tree", () => {
-    expect(worktreeChanges(worktreeFixture(FILES))).toEqual([]);
+    expect(worktreeChanges(worktreeRoot(FILES))).toEqual([]);
   });
 
   it("lists an edited, a staged, an untracked and a deleted file, and omits an ignored one", () => {
-    const root = worktreeFixture({ ...FILES, "c.txt": "gamma\n", "d.txt": "delta\n" });
+    const root = worktreeRoot({ ...FILES, "c.txt": "gamma\n", "d.txt": "delta\n" });
     writeFileSync(join(root, "a.txt"), "edited\n");
     writeFileSync(join(root, "c.txt"), "staged\n");
     gitIn(root, ["add", "c.txt"]);
@@ -137,14 +155,14 @@ describe("worktreeChanges()", () => {
   });
 
   it("lists both halves of a rename", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     gitIn(root, ["mv", "a.txt", "moved.txt"]);
 
     expect(worktreeChanges(root)).toEqual(["a.txt", "moved.txt"]);
   });
 
   it("reports paths relative to a subdirectory cwd, an outside change as ../", () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "src/b.txt"), "edited\n");
     writeFileSync(join(root, "a.txt"), "edited\n");
 
@@ -152,14 +170,14 @@ describe("worktreeChanges()", () => {
   });
 
   it("lists every file in a repository with no commit yet", () => {
-    const root = gateFixtureRoot(FILES, "forge-worktree-");
+    const root = fixtureRoot(FILES, "forge-worktree-");
     gitIn(root, ["init", "-q"]);
 
     expect(worktreeChanges(root)).toEqual([".gitignore", "a.txt", "src/b.txt"]);
   });
 
   it("is undefined outside a git work tree", () => {
-    expect(worktreeChanges(gateFixtureRoot())).toBeUndefined();
+    expect(worktreeChanges(fixtureRoot())).toBeUndefined();
   });
 });
 
@@ -176,8 +194,8 @@ describe("worktreeGitEnv()", () => {
 
 describe("under a hook's GIT_DIR and GIT_INDEX_FILE", () => {
   it("answers for the cwd's repository and leaves the named one untouched", () => {
-    const root = worktreeFixture(FILES);
-    const other = worktreeFixture({ "z.txt": "zeta\n" });
+    const root = worktreeRoot(FILES);
+    const other = worktreeRoot({ "z.txt": "zeta\n" });
     writeFileSync(join(root, "new.txt"), "new\n");
     const otherIndex = readFileSync(join(other, ".git/index"));
     const otherTree = headTree(other);

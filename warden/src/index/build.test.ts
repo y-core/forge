@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -7,12 +7,18 @@ import type { SourceDoc } from "../types";
 import { build, load } from "./build";
 import { openDatabase } from "./db";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function doc(title: string, body: string): string {
   return `---\ntitle: ${title}\ndescription: "One sentence."\n---\n\n## 0. Quick Reference\n\n- §1 One: what it decides\n\n## 1. One\n\n${body}\n`;
 }
 
 function fixture(files: Record<string, string>, prefix: string): SourceDoc[] {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   return Object.entries(files).map(([path, source]) => {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });

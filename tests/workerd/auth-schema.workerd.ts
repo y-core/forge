@@ -1,33 +1,19 @@
 // `fakeD1` answers what it is told to answer, so these questions stay open until real D1 is asked;
 // `src/auth/schema.sql` is posted rather than imported, so what runs is the build a consumer takes.
-import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { type DevServer, startDevServer } from "@y-core/forge/testing/workerd";
+import { expect, harnessTest } from "./harness.fixture";
 
-const CONFIG = new URL("../fixtures/auth-d1/wrangler.jsonc", import.meta.url).pathname;
+const test = harnessTest({ config: new URL("../fixtures/auth-d1/wrangler.jsonc", import.meta.url).pathname });
 const SCHEMA = readFileSync(new URL("../../src/auth/schema.sql", import.meta.url).pathname, "utf8");
 
-let server: DevServer;
-
-beforeAll(async () => {
-  server = await startDevServer({ config: CONFIG, readyPath: "/guards" });
-  // The fixture's database outlives the run that made it, so a table from an older migration
-  // would answer `IF NOT EXISTS` with its old columns and fail the index over a new one.
-  await fetch(`${server.origin}/reset`, { method: "POST" });
-}, 200_000);
-
-afterAll(() => {
-  server?.stop();
-});
-
-function get(path: string): Promise<Record<string, unknown>> {
-  return fetch(`${server.origin}${path}`).then((res) => res.json() as Promise<Record<string, unknown>>);
+function get(origin: string, path: string): Promise<Record<string, unknown>> {
+  return fetch(`${origin}${path}`).then((res) => res.json() as Promise<Record<string, unknown>>);
 }
 
-describe("src/auth/schema.sql against real D1", () => {
-  it("applies every statement in the shipped DDL without one failure", async () => {
-    const applied = (await fetch(`${server.origin}/apply`, { method: "POST", body: SCHEMA }).then((res) => res.json())) as {
+test.describe("src/auth/schema.sql against real D1", () => {
+  test("applies every statement in the shipped DDL without one failure", async ({ served }) => {
+    const applied = (await fetch(`${served.origin}/apply`, { method: "POST", body: SCHEMA }).then((res) => res.json())) as {
       failures: number;
       outcomes: { statement: string; error: string | null }[];
     };
@@ -35,24 +21,24 @@ describe("src/auth/schema.sql against real D1", () => {
     expect(applied.failures).toBe(0);
   });
 
-  it("is idempotent, because every statement is IF NOT EXISTS", async () => {
-    const again = (await fetch(`${server.origin}/apply`, { method: "POST", body: SCHEMA }).then((res) => res.json())) as { failures: number };
+  test("is idempotent, because every statement is IF NOT EXISTS", async ({ served }) => {
+    const again = (await fetch(`${served.origin}/apply`, { method: "POST", body: SCHEMA }).then((res) => res.json())) as { failures: number };
     expect(again.failures).toBe(0);
   });
 });
 
-describe("D1 open question — STRICT tables", () => {
-  it("accepts the STRICT keyword and enforces the column types it declares", async () => {
-    const probe = await get("/strict");
+test.describe("D1 open question — STRICT tables", () => {
+  test("accepts the STRICT keyword and enforces the column types it declares", async ({ served }) => {
+    const probe = await get(served.origin, "/strict");
     expect(probe.createError).toBeNull();
     // A `STRICT` table rejects a TEXT value in an INTEGER column; a plain one would store it.
     expect(probe.typeMismatchError).toEqual(expect.stringContaining("cannot store TEXT value in INTEGER column"));
   });
 });
 
-describe("D1 open question — batch() under a mid-batch failure", () => {
-  it("rolls the whole batch back, so a later statement's failure undoes an earlier statement's write", async () => {
-    const probe = await get("/batch");
+test.describe("D1 open question — batch() under a mid-batch failure", () => {
+  test("rolls the whole batch back, so a later statement's failure undoes an earlier statement's write", async ({ served }) => {
+    const probe = await get(served.origin, "/batch");
     // Held exactly, because `storeError`'s regex is built around this text: the index name ends at
     // the colon before `SQLITE_CONSTRAINT`, which is what the fixture messages in the store specs copy.
     expect(probe.batchError).toBe("D1_ERROR: UNIQUE constraint failed: probe_batch.id: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_PRIMARYKEY)");
@@ -64,9 +50,12 @@ describe("D1 open question — batch() under a mid-batch failure", () => {
 
 // Every guard in `src/auth/stores/` decides on `rowsWritten > 0`, so a matched write reporting zero
 // would invert each one and refuse the write it should have allowed.
-describe("D1 open question — which field a write reports rows-affected in", () => {
-  it("populates both fields, and agrees between them, so the client's fallback never has to choose", async () => {
-    const probe = (await get("/rows-written")) as Record<string, { rows_written: number | null; changes: number | null; resolved: number }>;
+test.describe("D1 open question — which field a write reports rows-affected in", () => {
+  test("populates both fields, and agrees between them, so the client's fallback never has to choose", async ({ served }) => {
+    const probe = (await get(served.origin, "/rows-written")) as Record<
+      string,
+      { rows_written: number | null; changes: number | null; resolved: number }
+    >;
     for (const [name, outcome] of Object.entries(probe)) {
       expect(`${name}: rows_written=${outcome.rows_written} changes=${outcome.changes}`).toBe(
         `${name}: rows_written=${outcome.changes} changes=${outcome.changes}`,
@@ -75,8 +64,8 @@ describe("D1 open question — which field a write reports rows-affected in", ()
     }
   });
 
-  it("reports one for a write that matched and zero for one that did not, which is what every guard reads", async () => {
-    const probe = (await get("/rows-written")) as Record<string, { resolved: number }>;
+  test("reports one for a write that matched and zero for one that did not, which is what every guard reads", async ({ served }) => {
+    const probe = (await get(served.origin, "/rows-written")) as Record<string, { resolved: number }>;
     expect({
       updateMatched: probe.updateMatched?.resolved,
       updateUnmatched: probe.updateUnmatched?.resolved,
@@ -86,32 +75,32 @@ describe("D1 open question — which field a write reports rows-affected in", ()
     }).toEqual({ updateMatched: 1, updateUnmatched: 0, updateGuardRefused: 0, deleteMatched: 1, deleteUnmatched: 0 });
   });
 
-  it("counts a matched row whose value did not change, so re-stamping a state is `changed` and not a refusal", async () => {
+  test("counts a matched row whose value did not change, so re-stamping a state is `changed` and not a refusal", async ({ served }) => {
     // `setDeactivated` on an already-deactivated user, and `setAdmin(false)` on a non-admin, both
     // rest on this: the row matched the guard, so the write was allowed, whatever it wrote.
-    const probe = (await get("/rows-written")) as Record<string, { resolved: number }>;
+    const probe = (await get(served.origin, "/rows-written")) as Record<string, { resolved: number }>;
     expect(probe.updateNoOp?.resolved).toBe(1);
   });
 });
 
 // `src/auth/stores/*.test.ts` proves each statement's text against a fake; this proves the statement,
 // so mutating `NOT_LAST_ADMIN` turns these red where a fake's would stay green.
-describe("the shipped store adapters against real D1", () => {
+test.describe("the shipped store adapters against real D1", () => {
   let guards: Record<string, Record<string, unknown>>;
 
-  beforeAll(async () => {
-    guards = (await get("/guards")) as Record<string, Record<string, unknown>>;
-  }, 60_000);
+  test.beforeAll(async ({ served }) => {
+    guards = (await get(served.origin, "/guards")) as Record<string, Record<string, unknown>>;
+  });
 
-  it("lets exactly one of two concurrent demotions of the last two admins through", () => {
+  test("lets exactly one of two concurrent demotions of the last two admins through", () => {
     expect(guards.lastAdmin).toEqual({ demotions: ["changed", "last-admin-demote"], adminsLeft: 1 });
   });
 
-  it("lets exactly one of two concurrent first-admin claims through against an empty deployment", () => {
+  test("lets exactly one of two concurrent first-admin claims through against an empty deployment", () => {
     expect(guards.firstAdmin).toEqual({ claims: ["admin-exists", "changed"], adminsAfter: 1 });
   });
 
-  it("demotes and deletes a deactivated admin, while still refusing the last one who could sign in", () => {
+  test("demotes and deletes a deactivated admin, while still refusing the last one who could sign in", () => {
     expect(guards.deactivatedAdmin).toEqual({
       deactivateDave: "changed",
       deactivateGina: "changed",
@@ -122,7 +111,7 @@ describe("the shipped store adapters against real D1", () => {
     });
   });
 
-  it("scopes every factor and credential write to its owner, spends the TOTP budget, refuses a replayed step, and clears every child table", () => {
+  test("scopes every factor and credential write to its owner, spends the TOTP budget, refuses a replayed step, and clears every child table", () => {
     expect(guards.ownership).toEqual({
       removeByStranger: false,
       removeByOwner: true,
@@ -163,7 +152,7 @@ describe("the shipped store adapters against real D1", () => {
     });
   });
 
-  it("refuses a duplicate hash, throttles a use stamp to its interval, scopes revocation to the owner, and hides a deactivated owner's token", () => {
+  test("refuses a duplicate hash, throttles a use stamp to its interval, scopes revocation to the owner, and hides a deactivated owner's token", () => {
     expect(guards.accessTokens).toEqual({
       duplicate: { code: "conflict", constraint: "auth_access_tokens.token_hash" },
       useFirst: true,
@@ -177,7 +166,7 @@ describe("the shipped store adapters against real D1", () => {
     });
   });
 
-  it("spends a live code once, never a staged or a stranger's, swaps sets on commit, and leaves no code behind a removed factor or a reset", () => {
+  test("spends a live code once, never a staged or a stranger's, swaps sets on commit, and leaves no code behind a removed factor or a reset", () => {
     expect(guards.recoveryCodes).toEqual({
       confirmedAt: 1_700_000_000_002,
       consumeFirst: true,
@@ -202,14 +191,14 @@ describe("the shipped store adapters against real D1", () => {
     });
   });
 
-  it("revokes at the reset instant every token the user still held, keeps an earlier revocation's instant, and leaves another user's tokens live", () => {
+  test("revokes at the reset instant every token the user still held, keeps an earlier revocation's instant, and leaves another user's tokens live", () => {
     expect(guards.resetTokens?.revokedAt).toEqual({
       rae: { cli: 1_700_000_000_020, ci: 1_700_000_000_020, retired: 1_700_000_000_001 },
       sam: { "sam-cli": null },
     });
   });
 
-  it("has requireBearer refuse a token it admitted before its owner's factor reset, while another user's token still passes", () => {
+  test("has requireBearer refuse a token it admitted before its owner's factor reset, while another user's token still passes", () => {
     expect({
       resetFactors: guards.resetTokens?.resetFactors,
       before: guards.resetTokens?.bearerBeforeReset,
@@ -218,7 +207,7 @@ describe("the shipped store adapters against real D1", () => {
     }).toEqual({ resetFactors: "changed", before: "200 null", after: '401 Bearer error="invalid_token"', stranger: "200 null" });
   });
 
-  it("refuses to delete a user an app table still references, keeping every child row, and deletes once the reference is cleared", () => {
+  test("refuses to delete a user an app table still references, keeping every child row, and deletes once the reference is cleared", () => {
     expect(guards.referenced).toEqual({
       refused: "referenced",
       userKept: 1,
@@ -231,14 +220,14 @@ describe("the shipped store adapters against real D1", () => {
 
 // The whole reason the challenge and nonce stores left KV. A fake settles neither: both rest on the
 // database serialising writers, which is exactly what a fake stands in for.
-describe("the ephemeral stores against real D1", () => {
+test.describe("the ephemeral stores against real D1", () => {
   let guards: Record<string, Record<string, unknown>>;
 
-  beforeAll(async () => {
-    guards = (await get("/guards")) as Record<string, Record<string, unknown>>;
-  }, 60_000);
+  test.beforeAll(async ({ served }) => {
+    guards = (await get(served.origin, "/guards")) as Record<string, Record<string, unknown>>;
+  });
 
-  it("hands one challenge to exactly one of three concurrent takes, and lets exactly one consume a nonce", () => {
+  test("hands one challenge to exactly one of three concurrent takes, and lets exactly one consume a nonce", () => {
     expect(guards.ephemera).toEqual({
       challengesTaken: 1,
       challengeValue: { challenge: "Y2hhbGxlbmdl", sessionId: "sess-1" },
@@ -252,44 +241,44 @@ describe("the ephemeral stores against real D1", () => {
     });
   });
 
-  it("refuses an over-long address at the CHECK, and calls it the caller's fault rather than an outage", () => {
+  test("refuses an over-long address at the CHECK, and calls it the caller's fault rather than an outage", () => {
     expect(guards.emailLength).toEqual({ refusedCode: "invalid", acceptedOk: true, rows: 1 });
   });
 });
 
 // A guarded `UPDATE` matching nothing commits the batch; an appended fragment can abort it only if
 // `changes()` carries between statements and an expression can raise outside a trigger.
-describe("D1 open question — a rows-written guard inside batch()", () => {
+test.describe("D1 open question — a rows-written guard inside batch()", () => {
   let probe: Record<string, unknown>;
 
-  beforeAll(async () => {
-    probe = await get("/changes");
-  }, 60_000);
+  test.beforeAll(async ({ served }) => {
+    probe = await get(served.origin, "/changes");
+  });
 
-  it("reports the previous statement's count through changes() in the next statement of the batch", () => {
+  test("reports the previous statement's count through changes() in the next statement of the batch", () => {
     expect({ matched: probe.changesAfterMatched, unmatched: probe.changesAfterUnmatched }).toEqual({ matched: 1, unmatched: 0 });
   });
 
-  it("raises a runtime error from abs() of the minimum int64, the one scalar that can fail outside a trigger", () => {
+  test("raises a runtime error from abs() of the minimum int64, the one scalar that can fail outside a trigger", () => {
     expect(probe.overflowError).toBe("D1_ERROR: integer overflow: SQLITE_ERROR");
   });
 
-  it("aborts and rolls back the whole batch when the guard sees zero rows written", () => {
+  test("aborts and rolls back the whole batch when the guard sees zero rows written", () => {
     expect(probe.guardAbortError).toBe("D1_ERROR: integer overflow: SQLITE_ERROR");
     expect(probe.afterAbort).toEqual([1]);
   });
 
-  it("lets the batch commit when the guarded write matched", () => {
+  test("lets the batch commit when the guarded write matched", () => {
     expect(probe.guardPassError).toBeNull();
     expect(probe.afterPass).toEqual([1, 3]);
   });
 });
 
-describe("D1 open question — the JavaScript shape of a BLOB column", () => {
-  it("reads a BLOB back as a plain Array of byte values, with the bytes intact", async () => {
+test.describe("D1 open question — the JavaScript shape of a BLOB column", () => {
+  test("reads a BLOB back as a plain Array of byte values, with the bytes intact", async ({ served }) => {
     // Exact, not one-of-three: `blobBytes` claims this is what the runtime measured, and a claim
     // held by an `||` over every branch it might take is not a measurement.
-    const probe = await get("/blob");
+    const probe = await get(served.origin, "/blob");
     expect({ constructorName: probe.constructorName, isArray: probe.isArray, isArrayBuffer: probe.isArrayBuffer }).toEqual({
       constructorName: "Array",
       isArray: true,

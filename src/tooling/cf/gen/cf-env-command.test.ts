@@ -1,20 +1,29 @@
-import { afterEach, describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, describe, expect, it, mock } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { execute } from "../../cli/execute";
+import type { SpawnOptions, SpawnOutcome } from "../../cli/types";
 import { parseWranglerConfig } from "../config/parse";
 import { createGenEnvCommand, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 // The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
 // so it reaches whatever loads `node:child_process` after this file and decides by load order.
-const mockSpawnSync = mock((_cmd: string, _args: string[], _opts: { stdio: "inherit"; cwd: string }): { status: number | null } => ({ status: 0 }));
+const mockSpawnSync = mock((_cmd: string, _args: string[], _opts: SpawnOptions): SpawnOutcome => ({ status: 0 }));
 
 function tempDir(): string {
-  return mkdtempSync(join(tmpdir(), "cfgen-"));
+  const dir = mkdtempSync(join(tmpdir(), "cfgen-"));
+  roots.push(dir);
+  return dir;
 }
 
 describe("loadOptions — error paths", () => {
@@ -165,7 +174,6 @@ describe("createGenEnv — an oxfmt that never formatted", () => {
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
     writeFileSync(wranglerPath, `{ "name": "app" }`);
-    // A non-zero exit with no `error`: oxfmt ran and refused the file, which is not a spawn failure.
     mockSpawnSync.mockImplementation(() => ({ status: 1 }));
     mockSpawnSync.mockClear();
     const err: string[] = [];

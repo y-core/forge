@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
@@ -10,6 +10,11 @@ import { CLAUDE_ROOT } from "../paths";
 import { syncTrees, walk } from "../sync/sync";
 import { createWardenCommands } from "./commands";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 interface Dispatch {
   readonly out: string[];
@@ -42,6 +47,7 @@ async function warden(...argv: string[]): Promise<Dispatch> {
 
 function emptyRepo(): string {
   const root = mkdtempSync(join(tmpdir(), "warden-cli-"));
+  roots.push(root);
   mkdirSync(join(root, "warden"), { recursive: true });
   return root;
 }

@@ -1,11 +1,17 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { parseWranglerConfig } from "./config/parse";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const BUNDLE_URL = pathToFileURL(resolve(import.meta.dir, "wrangler.mjs")).href;
 
@@ -22,7 +28,9 @@ const JSONC_FIXTURE = `{
 `;
 
 function writeFixture(source: string): string {
-  const path = resolve(mkdtempSync(resolve(tmpdir(), "forge-wrangler-")), "wrangler.jsonc");
+  const dir = mkdtempSync(resolve(tmpdir(), "forge-wrangler-"));
+  roots.push(dir);
+  const path = resolve(dir, "wrangler.jsonc");
   writeFileSync(path, source, "utf-8");
   return path;
 }

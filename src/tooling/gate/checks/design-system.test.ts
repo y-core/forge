@@ -1,13 +1,20 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { canonical, fileURLToPathish, hasTailwind, isBareSpecifier, loadDesignSystem } from "./design-system";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A throwaway root holding each `name: contents` pair, and the absolute path of `entry` within it. */
 function stylesheet(files: Record<string, string>, entry: string): string {
   const dir = mkdtempSync(resolve(tmpdir(), "forge-design-system-"));
+  roots.push(dir);
   for (const [name, contents] of Object.entries(files)) writeFileSync(resolve(dir, name), contents, "utf-8");
   return resolve(dir, entry);
 }

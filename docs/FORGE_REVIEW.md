@@ -131,18 +131,16 @@ excludes the one legitimate class — a published-surface assertion importing a 
 
 ```bash
 rg -n '\bBun\.|from "node:' src/ \
-  --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/dev-server-start.ts' \
-  --glob '!src/testing/dev-server-lock.ts' --glob '!src/testing/snapshot.ts' \
-  --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
+  --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/snapshot.ts' \
+  --glob '!src/testing/harness.ts' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
   --glob '!**/*.fixture.ts'
 ```
 
 _Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption ([`NAMESPACES.md`][namespaces-4a] §4a) — and `ui/assets/build`
-is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/dev-server-start.ts` starts the runtime a
-spec runs against, from a test runner, and `src/testing/snapshot.ts` reads a fixture off the disk; each is reached only through a subpath of its
-own (`./testing/workerd` and `./testing/snapshot`) and never from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f and
-[`TEST_RUNNERS.md`][testing-7h] §7h) — so reachability exempts them ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the globs name the files, not
-the namespace around them. Tests and
+is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/snapshot.ts` reads a fixture off the disk
+and `src/testing/harness.ts` starts workerd under node, and each is reached only through a subpath of its own and never from the `./testing` barrel
+([`TEST_RUNNERS.md`][testing-7f] §7f) — so reachability exempts them ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the glob names the files, not the
+namespace around them. Tests and
 `.browser.ts` specs run under Bun or Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker
 does. **Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a genuine
 runtime-portability break.
@@ -266,8 +264,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
 | `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |
-| `node:child_process` / `node:fs` / `node:net` in `src/testing/dev-server-start.ts`, or `node:fs` in `src/testing/dev-server-lock.ts` | A node-only module of a mixed namespace, never Worker-reachable and deliberately off the `./testing` barrel; the lock is imported by `dev-server-start.ts` alone and published under no subpath — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
-| `node:fs` / `node:path` in `src/testing/snapshot.ts` | The same shape for the same reason: a fixture comparison reads the disk, and the module is off the `./testing` barrel so no Worker-typed program can reach it — [`TEST_RUNNERS.md`][testing-7h] §7h |
+| `node:fs` / `node:path` in `src/testing/snapshot.ts` or `src/testing/harness.ts` | A node-only module of a mixed namespace: a fixture comparison reads the disk and a harness starts workerd, and each module is off the `./testing` barrel so no Worker-typed program can reach it — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a |
@@ -405,8 +402,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [testing-3b]: ./TEST_RUNNERS.md#3b-exact-match--never-substring-matching
 [testing-5a]: ./TEST_RUNNERS.md#5a-both-pass-and-fail-cases-required
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
-[testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
-[testing-7h]: ./TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath
+[testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
 [ucr-2b]: ./UI_CLIENT_RUNTIME.md#2b-theme-controller-and-fouc-prevention
 [ucr-2d]: ./UI_CLIENT_RUNTIME.md#2d-the-disposer-contract

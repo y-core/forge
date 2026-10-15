@@ -178,8 +178,19 @@ describe("kvLogChannel — write", () => {
     await channel.write(makeRecord({ message: "\u0001".repeat(256), prefix: "\u0001".repeat(128), data: { requestId: "\u0001".repeat(64) } }));
 
     const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
-    expect(JSON.stringify(meta).length).toBeLessThanOrEqual(1024);
+    expect(new TextEncoder().encode(JSON.stringify(meta)).length).toBeLessThanOrEqual(1024);
     expect(meta.message?.length ?? 0).toBeLessThan(256);
+  });
+
+  it("keeps an oversized timestamp to its first 64 code points, never splitting an astral character", async () => {
+    const stub = makeKvStub();
+    const channel = kvLogChannel(stub, { prefix: "logs", purgeProbability: 0 });
+
+    await channel.write(makeRecord({ timestamp: "😀a".repeat(1000) }));
+
+    const meta = [...stub._store.values()][0]!.metadata as KvLogMetadata;
+    expect(new TextEncoder().encode(JSON.stringify(meta)).length).toBeLessThanOrEqual(1024);
+    expect(meta.timestamp).toBe("😀a".repeat(32));
   });
 
   it("omits requestId from metadata when absent in record.data", async () => {

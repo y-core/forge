@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 
@@ -11,9 +11,16 @@ const CLASSES = 'export const cls = "flex gap-2";\n';
 
 const SCAN_ALL = '@source "../ui";\n';
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const dir of roots) rmSync(dir, { recursive: true, force: true });
+});
+
 /** A throwaway root holding each `path: contents` pair, directories created as needed. */
 function root(tree: Record<string, string>): string {
   const dir = mkdtempSync(resolve(tmpdir(), "forge-css-sources-"));
+  roots.push(dir);
   for (const [path, contents] of Object.entries(tree)) {
     const abs = resolve(dir, path);
     mkdirSync(dirname(abs), { recursive: true });

@@ -1,5 +1,6 @@
-import { describe, expect, it } from "bun:test";
-import { existsSync, rmSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { CliContext } from "../cli/types";
@@ -8,9 +9,27 @@ import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
 import { readReceipt, recordReceipt } from "./receipt";
-import type { Step } from "./types";
+import type { CommandStep, Step } from "./types";
 import { worktreeHash } from "./worktree";
 import { worktreeFixture } from "./worktree.fixture";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function fixtureRoot(...args: Parameters<typeof gateFixtureRoot>): string {
+  const root = gateFixtureRoot(...args);
+  roots.push(root);
+  return root;
+}
+
+function worktreeRoot(...args: Parameters<typeof worktreeFixture>): string {
+  const root = worktreeFixture(...args);
+  roots.push(root);
+  return root;
+}
 
 // The fake exit throws so the run stops exactly where the real process would; `node:process` is
 // deliberately not mocked, since it is process-global and imported across the CLI.
@@ -61,7 +80,7 @@ async function run(
 ): Promise<{ logs: string[]; code: number | undefined }> {
   const { ctx, logs } = context();
   const command = createGateCommand({
-    cwd: opts.cwd ?? gateFixtureRoot(),
+    cwd: opts.cwd ?? fixtureRoot(),
     steps,
     ...(opts.gateInputs === undefined ? {} : { gateInputs: opts.gateInputs }),
   });
@@ -340,7 +359,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   }
 
   async function recorded(): Promise<{ root: string; calls: string[]; steps: Step[] }> {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const { calls, step } = counting();
     const steps = [step("alpha"), step("beta")];
     await run(steps, {}, { cwd: root });
@@ -349,7 +368,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   }
 
   it("records the tree, mode and labels of an unscoped pass", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const { step } = counting();
     const { code } = await run([step("alpha"), step("beta")], {}, { cwd: root });
 
@@ -409,7 +428,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
       [[passing("alpha"), passing("beta", absent)], {}],
     ];
     for (const [steps, flags] of cases) {
-      const root = worktreeFixture(FILES);
+      const root = worktreeRoot(FILES);
       await run(steps, flags, { cwd: root });
 
       expect(readReceipt(root)).toBeUndefined();
@@ -424,7 +443,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   });
 
   it("lets a full receipt answer a standard --reuse, and refuses a quality one", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const tree = worktreeHash(root) ?? "";
     const { calls, step } = counting();
     const steps = [step("alpha")];
@@ -456,7 +475,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   });
 
   it("withholds the receipt when a step changes the tree during the run", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const writer: Step = {
       label: "writer",
       run: () => {
@@ -471,7 +490,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   });
 
   it("records nothing outside a git work tree, and --reuse there says so and runs", async () => {
-    const root = gateFixtureRoot();
+    const root = fixtureRoot();
     const { calls, step } = counting();
     await run([step("alpha")], {}, { cwd: root });
     const { logs, code } = await run([step("alpha")], { reuse: true }, { cwd: root });
@@ -490,7 +509,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
       [{ affected: true }, "affected"],
     ];
     for (const [flags, name] of cases) {
-      const { logs, code } = await run([passing("alpha")], { reuse: true, ...flags }, { cwd: worktreeFixture(FILES) });
+      const { logs, code } = await run([passing("alpha")], { reuse: true, ...flags }, { cwd: worktreeRoot(FILES) });
 
       expect(logs).toEqual([`--reuse stands in for a whole gate run, so it takes no --${name}.`]);
       expect(code).toBe(1);
@@ -522,7 +541,7 @@ describe("createGateCommand() — --affected", () => {
   }
 
   it("runs only the step whose watches match the edit, and an undeclared step too", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "src/ui/a.tsx"), "edited\n");
     const { calls, steps } = table();
     const { code } = await run(steps, { affected: true }, { cwd: root });
@@ -532,7 +551,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("runs every step when a gate-wide input changes", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "package.json"), '{"name":"x"}\n');
     const { calls, steps } = table();
     await run(steps, { affected: true }, { cwd: root });
@@ -541,7 +560,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("runs every step when a changed path matches a gateInputs glob", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "gen.ts"), "gen\n");
     const { calls, steps } = table();
     await run(steps, { affected: true }, { cwd: root, gateInputs: ["gen.ts"] });
@@ -550,7 +569,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("calls no step on a clean tree, says so under the scoped banner, and exits normally", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     const { calls, steps } = table();
     const { logs, code } = await run(steps, { affected: true }, { cwd: root });
 
@@ -560,7 +579,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("says how many changed paths touch no step, calls none, and exits normally", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "notes.txt"), "notes\n");
     const { calls, steps } = table();
     const declared = steps.filter((step) => step.watches !== undefined);
@@ -572,7 +591,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("runs only the affected steps' fixers under --fix", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "docs/A.md"), "edited\n");
     const fixed: string[] = [];
     const fixable = (label: string, watches: readonly string[]): Step => ({
@@ -590,7 +609,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("names the flag in the summary and brands the run scoped even when every step ran", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "package.json"), '{"name":"x"}\n');
     const { steps } = table();
     const { logs } = await run(steps, { affected: true, mode: "full" }, { cwd: root });
@@ -600,7 +619,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("intersects --only with the affected selection", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "src/ui/a.tsx"), "edited\n");
     const { calls, steps } = table();
     await run(steps, { affected: true, only: ["ui", "docs"] }, { cwd: root });
@@ -609,7 +628,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("lists the affected selection under --list, running nothing", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "docs/A.md"), "edited\n");
     const { calls, steps } = table();
     const { logs } = await run(steps, { affected: true, list: true }, { cwd: root });
@@ -619,7 +638,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("writes no receipt for an --affected pass", async () => {
-    const root = worktreeFixture(FILES);
+    const root = worktreeRoot(FILES);
     writeFileSync(join(root, "src/ui/a.tsx"), "edited\n");
     const { steps } = table();
     await run(steps, { affected: true }, { cwd: root });
@@ -634,5 +653,95 @@ describe("createGateCommand() — --affected", () => {
     expect(calls).toEqual([]);
     expect(logs).toEqual(["--affected reads its changes from git, and this is not a git work tree."]);
     expect(code).toBe(1);
+  });
+});
+
+describe("createGateCommand() — a spawned step's temp dir", () => {
+  const saved = process.env.TMPDIR;
+  let systemTmp = "";
+
+  beforeEach(() => {
+    systemTmp = mkdtempSync(join(tmpdir(), "forge-system-tmp-"));
+    process.env.TMPDIR = systemTmp;
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+    rmSync(systemTmp, { recursive: true, force: true });
+  });
+
+  const recording = (label: string, record: string): CommandStep => {
+    const script = `mkdir "$TMPDIR/left-behind" && printf '%s' "$TMPDIR" > "${record}"`;
+    return { label, tail: 5, cmd: ["sh", "-c", script], fix: ["sh", "-c", script] };
+  };
+  const seen = (record: string): { stepTmp: string } => ({ stepTmp: readFileSync(record, "utf-8") });
+
+  it("gives the step its own TMPDIR and removes it, with what the step left there, when the step exits", async () => {
+    const root = fixtureRoot();
+    const record = join(root, "step-tmpdir");
+    const { code } = await run([recording("leaves", record)], {}, { cwd: root });
+
+    const { stepTmp } = seen(record);
+    expect(code).toBeUndefined();
+    expect(stepTmp).not.toBe(systemTmp);
+    expect(existsSync(stepTmp)).toBe(false);
+  });
+
+  it("fails a step that opts into leavesNoTemp and leaves something behind, naming the entry", async () => {
+    const root = fixtureRoot();
+    const record = join(root, "strict");
+    const { logs, code } = await run([{ ...recording("strict", record), leavesNoTemp: true }], {}, { cwd: root });
+
+    expect(code).toBe(1);
+    expect(logs.some((line) => line.includes("left in its TMPDIR: left-behind"))).toBe(true);
+    expect(existsSync(seen(record).stepTmp)).toBe(false);
+  });
+
+  it("passes a step that opts into leavesNoTemp and leaves nothing", async () => {
+    const root = fixtureRoot();
+    const { code } = await run(
+      [{ label: "tidy", tail: 5, cmd: ["sh", "-c", 'mkdir "$TMPDIR/x" && rmdir "$TMPDIR/x"'], leavesNoTemp: true }],
+      {},
+      { cwd: root },
+    );
+
+    expect(code).toBeUndefined();
+  });
+
+  it("removes a fixer's TMPDIR the same way", async () => {
+    const root = fixtureRoot();
+    const record = join(root, "fix-tmpdir");
+    await run([recording("leaves", record)], { fix: true }, { cwd: root });
+
+    const { stepTmp } = seen(record);
+    expect(stepTmp).not.toBe(systemTmp);
+    expect(existsSync(stepTmp)).toBe(false);
+  });
+
+  it("gives each step a TMPDIR of its own", async () => {
+    const root = fixtureRoot();
+    const records = [join(root, "first"), join(root, "second")];
+    await run([recording("first", records[0]!), recording("second", records[1]!)], {}, { cwd: root });
+
+    const [first, second] = records.map(seen);
+    expect(first?.stepTmp).not.toBe(second?.stepTmp);
+  });
+
+  it("keeps a failed step's full log on disk at the path it reports", async () => {
+    const root = fixtureRoot();
+    const { logs, code } = await run([{ label: "test:broken", tail: 5, cmd: ["sh", "-c", "echo the whole story; exit 3"] }], {}, { cwd: root });
+
+    const reported = logs.find((line) => line.startsWith("    full log at "))?.slice("    full log at ".length) ?? "";
+    expect(code).toBe(1);
+    expect(reported.startsWith(join(systemTmp, "forge-gate-"))).toBe(true);
+    expect(readFileSync(reported, "utf-8")).toBe("the whole story\n");
+  });
+
+  it("writes no log for a step that passes, so a green run adds nothing to the system temp directory", async () => {
+    const root = fixtureRoot();
+    await run([recording("passes", join(root, "passes"))], {}, { cwd: root });
+
+    expect(readdirSync(systemTmp).filter((entry) => join(systemTmp, entry) !== root)).toEqual([]);
   });
 });

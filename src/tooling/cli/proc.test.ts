@@ -3,8 +3,8 @@ import { readdirSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter } from "node:path";
 
-import { capture, captureStreams, hasTool, insertPath, probeOk, requireTools, run } from "./proc";
-import type { SpawnOptions, SpawnOutcome } from "./types";
+import { capture, captureStreams, hasTool, insertPath, probeOk, requireTools, run, runUnchecked } from "./proc";
+import type { SpawnOptions, SpawnOutcome, SpawnSync } from "./types";
 
 // The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
 // so it reaches whatever loads `node:child_process` after this file and decides by load order.
@@ -42,6 +42,42 @@ describe("run()", () => {
 
     run("ls", ["-la"], undefined, mockSpawnSync);
     expect((mockSpawnSync.mock.calls[0]![2] as { cwd?: string }).cwd).toBeUndefined();
+  });
+});
+
+const exitsWith =
+  (outcome: SpawnOutcome): SpawnSync =>
+  () =>
+    outcome;
+const missingExecutable = exitsWith({ status: null, error: new Error("spawnSync forge-no-such-tool ENOENT") });
+
+describe("runUnchecked()", () => {
+  it("reports a zero exit as exited with code 0", () => {
+    expect(runUnchecked("true", [], undefined, exitsWith({ status: 0 }))).toEqual({ code: 0, exited: true });
+  });
+
+  it("returns a non-zero exit as exited with that code, without throwing", () => {
+    expect(runUnchecked("false", [], undefined, exitsWith({ status: 3 }))).toEqual({ code: 3, exited: true });
+  });
+
+  it("reports a child that never started as not exited, carrying the spawner's message, without throwing", () => {
+    expect(runUnchecked("forge-no-such-tool", [], undefined, missingExecutable)).toEqual({
+      code: 1,
+      exited: false,
+      spawnError: "spawnSync forge-no-such-tool ENOENT",
+    });
+  });
+});
+
+describe("run() — on an outcome runUnchecked does not throw for", () => {
+  it("throws naming the spawner's own failure when the child never started", () => {
+    expect(() => run("forge-no-such-tool", ["--x"], undefined, missingExecutable)).toThrow(
+      "`forge-no-such-tool --x` failed (exit 1): spawnSync forge-no-such-tool ENOENT",
+    );
+  });
+
+  it("still throws for a child that exited non-zero", () => {
+    expect(() => run("false", ["--x"], undefined, exitsWith({ status: 3 }))).toThrow("`false --x` failed (exit 3)");
   });
 });
 

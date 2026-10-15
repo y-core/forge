@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,6 +23,12 @@ import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import type { BackupManifest, FakeDbIo } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const SCHEMA_SQL = [
   "PRAGMA defer_foreign_keys=TRUE;",
@@ -59,6 +65,7 @@ const ROWS: Readonly<Record<string, Record<string, unknown>[]>> = {
 /** A temp root holding a real `wrangler.jsonc`, which `resolveDbConfig` reads from the real filesystem. */
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-backup-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text);
   return root;
@@ -363,6 +370,7 @@ describe("forge db reset", () => {
 
   it("refuses a local reset when the config declares more than one database", async () => {
     const root = mkdtempSync(join(tmpdir(), "forge-db-backup-"));
+    roots.push(root);
     const config = minimalWranglerConfig(root, {
       d1_databases: [
         { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" },

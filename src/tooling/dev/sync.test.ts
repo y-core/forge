@@ -1,18 +1,23 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { SpawnOptions, SpawnOutcome } from "../cli/types";
 import { syncForge } from "./sync";
-import type { SpawnOutcome } from "./types";
 
 // The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
 // so it reaches whatever loads `node:child_process` after this file and decides by load order.
-const spawn = mock((_command: string, _args: string[], _cwd: string): SpawnOutcome => ({ status: 0 }));
+const spawn = mock((_command: string, _args: string[], _options: SpawnOptions): SpawnOutcome => ({ status: 0 }));
 
-/** A throwaway consumer root, optionally carrying the installed package the sync replaces. */
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function consumer(installed: boolean): string {
   const root = mkdtempSync(join(tmpdir(), "forge-sync-"));
+  roots.push(root);
   if (installed) {
     const dir = join(root, "node_modules", "@y-core", "forge");
     mkdirSync(dir, { recursive: true });
@@ -21,7 +26,6 @@ function consumer(installed: boolean): string {
   return root;
 }
 
-/** The argv of the one call to `command`, so an assertion names the flag rather than an index. */
 function invocation(command: string): string[] {
   const call = spawn.mock.calls.find(([cmd]) => cmd === command);
   if (!call) throw new Error(`${command} was never spawned`);
@@ -58,11 +62,14 @@ describe("syncForge()", () => {
     expect(existsSync(join(root, "node_modules", "@y-core", "forge", "stale.ts"))).toBe(false);
   });
 
-  // The pack runs against this checkout and the untar against the consumer, so a failure in either
-  // must name which command exited and carry its stderr — the only thing the caller can act on.
   it("throws with the command and its stderr when a step exits non-zero", () => {
     spawn.mockImplementation(() => ({ status: 1, stderr: "pack refused" }));
     expect(() => syncForge(consumer(true), spawn)).toThrow(/bun pm pack .* exited 1[\s\S]*pack refused/);
+  });
+
+  it("treats the null status a signalled process reports as a failure, never as the zero it is not", () => {
+    spawn.mockImplementation(() => ({ status: null }));
+    expect(() => syncForge(consumer(true), spawn)).toThrow(/bun pm pack .* exited 1/);
   });
 
   it("defaults to a real spawner, so the command path is not one only a test supplies", () => {

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,11 @@ import { CliError } from "../../../src/tooling/cli/errors";
 import { execute } from "../../../src/tooling/cli/execute";
 import type { CallableCommand, CliIO, CommandBase } from "../../../src/tooling/cli/types";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 function tree(): CommandBase {
   const root = createCommand({ name: "warden" });
@@ -24,7 +29,9 @@ function catalogueCommand(): CallableCommand {
 }
 
 function repoAt(...segments: string[]): string {
-  const root = join(mkdtempSync(join(tmpdir(), "warden-catalogue-")), ...segments);
+  const base = mkdtempSync(join(tmpdir(), "warden-catalogue-"));
+  roots.push(base);
+  const root = join(base, ...segments);
   mkdirSync(join(root, "warden"), { recursive: true });
   return root;
 }

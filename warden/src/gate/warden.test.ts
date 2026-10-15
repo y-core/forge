@@ -1,10 +1,15 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { openDatabase } from "../index/db";
 import { checkWarden } from "./warden";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const DOC =
   '---\ntitle: Rules\ndescription: "Six rules."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nThe comment budget is a ceiling.\n';
@@ -29,6 +34,7 @@ Generated — run \`warden catalogue --write\` after adding, removing or re-desc
 
 function repo(prefix: string, options: { catalogue?: string; docA?: string } = {}): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   for (const [path, source] of [
     ["docs/A.md", options.docA ?? DOC],
     ["warden/canon/shared/CODE_RULES.md", DOC],
@@ -149,6 +155,7 @@ describe("checkWarden()", () => {
 
   it("says it measured nothing rather than passing when discovery finds no document", () => {
     const empty = mkdtempSync(join(tmpdir(), "warden-gate-empty-"));
+    roots.push(empty);
 
     expect(run(empty).findings.map((finding) => finding.message)).toContain(
       "discovery found no document to index — the corpus roots are wrong — refusing to report a green warden gate that read nothing",

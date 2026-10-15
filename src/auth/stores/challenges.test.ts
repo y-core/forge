@@ -55,7 +55,7 @@ describe("createChallengeStore — put", () => {
 
 describe("createChallengeStore — take", () => {
   // The whole reason this store left KV: a read then a delete lets two requests be handed one
-  // challenge. `tests/workerd/auth-schema.test.ts` proves the statement itself admits only one.
+  // challenge. `tests/workerd/auth-schema.workerd.ts` proves the statement itself admits only one.
   it("reads and spends in the one statement, holding the row against the clock", async () => {
     const [client, db] = clientOf(() => [{ value: JSON.stringify(CHALLENGE) }]);
     expect(await createChallengeStore(client, { prefix: "p" }).take("k1")).toEqual({ ok: true, data: CHALLENGE });

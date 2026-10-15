@@ -1,11 +1,16 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { changelogSectionDigest, parseChangelog, promoteUnreleased } from "../../../src/tooling/gate/changelog";
 import type { ChangelogDocument, VersionHeading } from "../../../src/tooling/gate/types";
 import { checkChangelog, validateChangelog } from "./changelog";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
 
 const VALID = [
   "# Changelog",
@@ -34,6 +39,7 @@ const VALID = [
 /** A throwaway root carrying `source` as its changelog, or no changelog when `source` is undefined. */
 function root(source?: string): string {
   const dir = mkdtempSync(resolve(tmpdir(), "forge-changelog-check-"));
+  roots.push(dir);
   if (source !== undefined) writeFileSync(resolve(dir, "CHANGELOG.md"), source, "utf-8");
   return dir;
 }
@@ -162,6 +168,7 @@ describe("checkChangelog()", () => {
 
   it("reads the configured file and title instead of the defaults", () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-changelog-check-"));
+    roots.push(dir);
     writeFileSync(resolve(dir, "HISTORY.md"), VALID.replace("# Changelog", "# History"), "utf-8");
 
     const result = checkChangelog({ root: dir, packageVersion: "1.2.0", file: "HISTORY.md", title: "# History" });

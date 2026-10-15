@@ -1,11 +1,22 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkModernCss } from "./modern-css";
 import type { ModernCssCheckConfig } from "./types";
 import type { DeferredFinding } from "./types";
 
-const fixtureRoot = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-modern-css-check-");
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+const fixtureRoot = (files: Record<string, string>): string => {
+  const root = gateFixtureRoot(files, "forge-modern-css-check-");
+  roots.push(root);
+  return root;
+};
 
 function run(root: string, extra: Partial<ModernCssCheckConfig> = {}) {
   return checkModernCss({ root, sources: ["src/ui"], deferred: [], ...extra });

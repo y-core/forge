@@ -1,9 +1,9 @@
-import { expect, test as base } from "@playwright/test";
+import { expect } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { harnessTest } from "../../tests/workerd/harness.fixture";
+import type { ServedWorker } from "../testing/harness";
 import { totpCodes } from "../testing/totp";
-import { startDevServer } from "../testing/workerd";
-import type { DevServer } from "../testing/workerd";
 import { bundleModules } from "../ui/client/browser.fixture";
 import { addVirtualAuthenticator } from "./client/authenticator.fixture";
 import { JOURNEY_NOTICE, JOURNEY_RESET, JOURNEY_SCRIPT } from "./journey.fixture";
@@ -14,28 +14,21 @@ const CONFIG = new URL("../../tests/fixtures/auth-web/wrangler.jsonc", import.me
 
 const secret = (): string => Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
 
-// `localhost` rather than the loopback address wrangler binds: WebAuthn refuses an IP address as an RP ID.
-const test = base.extend<object, { server: DevServer }>({
-  server: [
-    // oxlint-disable-next-line no-empty-pattern -- playwright reads a fixture's dependencies off this pattern, and this one has none
-    async ({}, use) => {
-      const server = await startDevServer({
-        config: CONFIG,
-        capture: true,
-        readyPath: "/auth/signin",
-        vars: { AUTH_KEY_RING: secret(), SESSION_SECRET: secret(), CSRF_SECRET: secret() },
-      });
-      try {
-        const reset = await fetch(`${server.origin}${JOURNEY_RESET}`, { method: "POST" });
-        if (!reset.ok) throw new Error(`journey: schema reset answered ${reset.status}`);
-        await use(server);
-      } finally {
-        server.stop();
-      }
+// `localhost` rather than the loopback address the harness binds: WebAuthn refuses an IP address as an RP ID.
+const test = harnessTest({
+  config: CONFIG,
+  siteHost: "localhost",
+  secrets: { AUTH_KEY_RING: secret(), SESSION_SECRET: secret(), CSRF_SECRET: secret() },
+}).extend<object, { schema: undefined }>({
+  schema: [
+    async ({ served }, use) => {
+      const reset = await fetch(`${served.origin}${JOURNEY_RESET}`, { method: "POST" });
+      if (!reset.ok) throw new Error(`journey: schema reset answered ${reset.status}`);
+      await use(undefined);
     },
-    { scope: "worker", timeout: 200_000 },
+    { scope: "worker", auto: true },
   ],
-  baseURL: async ({ server }, use) => use(server.origin.replace("127.0.0.1", "localhost")),
+  baseURL: async ({ served }, use) => use(served.origin),
   page: async ({ page }, use) => {
     const bundle = await bundleModules({ forgeAuthClient: "./auth/client/mod.ts", forgeResume: "./ui/client/resume.ts" });
     await page.route(`**${JOURNEY_SCRIPT}`, (route) =>
@@ -46,11 +39,11 @@ const test = base.extend<object, { server: DevServer }>({
 });
 
 /** The `nth` one-time code the fixture's notifier printed for `email`, polled until it appears. */
-async function emailedCode(server: DevServer, email: string, nth: number): Promise<string> {
+async function emailedCode(served: ServedWorker, email: string, nth: number): Promise<string> {
   for (let attempt = 0; attempt < 50; attempt += 1) {
-    const codes = server
-      .logs()
-      .split("\n")
+    const codes = served.harness
+      .getLogs()
+      .map((log) => log.message)
       .filter((line) => line.startsWith(JOURNEY_NOTICE))
       .map((line) => JSON.parse(line.slice(JOURNEY_NOTICE.length)) as { kind: string; to: string; code?: string })
       .filter((notice) => notice.kind === "otp" && notice.to === email)
@@ -67,7 +60,7 @@ async function confirmCode(page: Page, label: string, code: string): Promise<voi
   await page.getByRole("button", { name: "Confirm" }).click();
 }
 
-test("signs up with an authenticator app, adds a passkey, signs out, and signs back in with the passkey", async ({ page, server }) => {
+test("signs up with an authenticator app, adds a passkey, signs out, and signs back in with the passkey", async ({ page, served }) => {
   test.slow();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -79,7 +72,7 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Sign up" }).click();
   await expect(page).toHaveURL(/\/auth\/verify$/);
-  await confirmCode(page, "Verification code", await emailedCode(server, email, 1));
+  await confirmCode(page, "Verification code", await emailedCode(served, email, 1));
   await expect(page).toHaveURL(/\/auth\/enrol\/totp$/);
 
   // Enrolling on the previous step's code, inside the server's one-step drift window, leaves the current step unspent for the step-up.
@@ -106,7 +99,7 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/auth\/verify$/);
-  await confirmCode(page, "Verification code", await emailedCode(server, email, 2));
+  await confirmCode(page, "Verification code", await emailedCode(served, email, 2));
   await expect(page).toHaveURL(/\/auth\/verify$/);
   await page.getByRole("link", { name: "Use a passkey instead" }).click();
   await expect(page).toHaveURL(/\/auth\/verify\?factor=passkey$/);

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -23,6 +23,12 @@ import type { BackupManifest, DbRunContext, FakeDbIo, SharedDbFlags } from "../t
 import { appSchemaDigestInput, BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 import { executeRestore, prepareRestore, readBackupManifest } from "./restore";
 import type { RestoreOptions, RestoreOutcome } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
@@ -65,6 +71,7 @@ function manifest(database: string, over: Partial<BackupManifest> = {}): BackupM
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-restore-unit-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text);
   return root;

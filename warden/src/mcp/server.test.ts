@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -8,11 +8,17 @@ import type { Knowledge } from "../index/open";
 import { search } from "../search/search";
 import { handle, serve, type Transport } from "./server";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 const DOC =
   '---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nThe comment budget is a ceiling.\n';
 
 function served(): { index: Knowledge; root: string } {
   const root = mkdtempSync(join(tmpdir(), "warden-mcp-"));
+  roots.push(root);
   const canonRoot = join(root, "canon");
   for (const path of [join(root, "docs/A.md"), join(canonRoot, "libs/CODE_RULES.md"), join(canonRoot, "shared/AGENT_GUIDE.md")]) {
     mkdirSync(dirname(path), { recursive: true });

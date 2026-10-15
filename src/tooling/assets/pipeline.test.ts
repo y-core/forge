@@ -1,5 +1,4 @@
-import { describe, expect, it, mock, spyOn } from "bun:test";
-import * as childProcess from "node:child_process";
+import { describe, expect, it, mock } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -8,6 +7,7 @@ import { createPdfFontSet, readPdfFontPack } from "../../render/pdf/fonts/mod";
 import type { PdfFontPackData } from "../../render/pdf/fonts/types";
 import { createPdfRenderer } from "../../render/pdf/mod";
 import type { PdfArtwork, PdfLetterhead } from "../../render/pdf/types";
+import type { SpawnOptions, SpawnOutcome } from "../cli/types";
 import { buildAll, generateAssetsTypes, readEmittedManifest, structuralSignature } from "./pipeline";
 import type { ResolvedConfig } from "./types";
 
@@ -43,12 +43,10 @@ const headerRule = (path: string, cache: string): string => `${[path, `  Cache-C
 const DATA_BLOCK = "const DATA: Record<string, string> = {";
 
 function stubTailwind(css = "/* built css */") {
-  const spy = spyOn(childProcess, "execFileSync").mockImplementation(((_cmd: string, args: string[]) => {
+  return mock((_cmd: string, args: string[], _opts: SpawnOptions): SpawnOutcome => {
     writeFileSync(args[args.indexOf("-o") + 1] as string, css);
-    return new Uint8Array();
-  }) as never);
-  spy.mockClear();
-  return spy;
+    return { status: 0 };
+  });
 }
 
 describe("buildAll() — emitHeaders", () => {
@@ -544,11 +542,10 @@ describe("buildAll() — the service worker", () => {
       { tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "css/main.css" },
     ]);
     const build = async (css: string) => {
-      const execSpy = stubTailwind(css);
+      const spawn = stubTailwind(css);
       try {
-        await buildAll(config, { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") });
+        await buildAll(config, { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") }, spawn);
       } finally {
-        execSpy.mockRestore();
       }
       return { source: readFileSync(worker, "utf-8"), seen: runWorker(worker) };
     };
@@ -573,12 +570,12 @@ describe("buildAll() — the service worker", () => {
     const config = workerConfig(tmpDir, publicDir, { bundles: [], serviceWorker: { entry: join(tmpDir, "src", "sw.ts") } }, [
       { tool: "tailwindcss", input: join(tmpDir, "app.css"), output: "css/main.css" },
     ]);
-    const execSpy = stubTailwind("a{color:#000}");
+    const spawn = stubTailwind("a{color:#000}");
 
     try {
       const builds: string[] = [];
       for (let run = 0; run < 3; run++) {
-        await buildAll(config, { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") });
+        await buildAll(config, { minify: false, assetsPath: join(tmpDir, ".forge", "assets.ts") }, spawn);
         builds.push(readFileSync(worker, "utf-8"));
       }
 
@@ -586,7 +583,6 @@ describe("buildAll() — the service worker", () => {
       expect(builds[1]).toBe(builds[0] as string);
       expect(builds[2]).toBe(builds[0] as string);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -670,7 +666,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
     mkdirSync(svgDir, { recursive: true });
     mkdirSync(publicDir, { recursive: true });
 
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
       writeFileSync(join(svgDir, "arrow-right.svg"), `<svg viewBox="0 0 16 16"><path d="M0 0h4v4H0z"/></svg>`);
       writeFileSync(join(svgDir, "x-mark.svg"), `<svg viewBox="0 0 20 20"><path d="M0 0h4v4H0z"/></svg>`);
@@ -695,7 +691,7 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
         securityHeaders: {},
       } satisfies ResolvedConfig;
 
-      await buildAll(config, { minify: true, assetsPath: builtModule });
+      await buildAll(config, { minify: true, assetsPath: builtModule }, spawn);
       await generateAssetsTypes(config, { assetsPath: typesModule });
 
       const built = readFileSync(builtModule, "utf-8");
@@ -735,7 +731,6 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       expect(built).not.toContain("TYPES ONLY");
       expect(structuralSignature(built)).toBe(structuralSignature(types));
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -776,40 +771,38 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
 
   it("keeps the hashed build artifact byte-for-byte when both commands share one path", async () => {
     const { tmpDir, config, assetsPath } = scaffold("hashed");
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      await buildAll(config, { minify: true, assetsPath });
+      await buildAll(config, { minify: true, assetsPath }, spawn);
       const built = readFileSync(assetsPath, "utf-8");
       expect(parseEmittedObject(built, DATA_BLOCK)["js/main.js"]).toMatch(/^js\/main-[A-Z0-9]+\.js$/);
 
       expect(await generateAssetsTypes(config, { assetsPath })).toBe("kept-build-artifact");
       expect(readFileSync(assetsPath, "utf-8")).toBe(built);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
   it("keeps an unhashed build artifact too", async () => {
     const { tmpDir, config, assetsPath } = scaffold("unhashed");
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      await buildAll(config, { minify: false, assetsPath });
+      await buildAll(config, { minify: false, assetsPath }, spawn);
       const built = readFileSync(assetsPath, "utf-8");
 
       expect(await generateAssetsTypes(config, { assetsPath })).toBe("kept-build-artifact");
       expect(readFileSync(assetsPath, "utf-8")).toBe(built);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
   it("rewrites a build artifact whose shape no longer fits the config", async () => {
     const { tmpDir, config, assetsPath } = scaffold("stale");
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      await buildAll(config, { minify: true, assetsPath });
+      await buildAll(config, { minify: true, assetsPath }, spawn);
       writeFileSync(join(tmpDir, "src", "admin.ts"), `export const y = 2;\n`);
       const grown: ResolvedConfig = {
         ...config,
@@ -821,7 +814,6 @@ describe("generateAssetsTypes() — never clobbers a build artifact", () => {
       expect(rewritten.startsWith("// AUTO-GENERATED by `forge assets gen types`")).toBe(true);
       expect(parseEmittedObject(rewritten, DATA_BLOCK)["js/admin.js"]).toBe("js/admin.js");
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -908,15 +900,14 @@ describe("readEmittedManifest()", () => {
 
   it("reports a build artifact as not types-only, with its hashed values", async () => {
     const { tmpDir, config, assetsPath } = scaffold("build");
-    const execSpy = stubTailwind();
+    const spawn = stubTailwind();
     try {
-      await buildAll(config, { minify: true, assetsPath });
+      await buildAll(config, { minify: true, assetsPath }, spawn);
       const read = readEmittedManifest(readFileSync(assetsPath, "utf-8"));
 
       expect(read.typesOnly).toBe(false);
       expect(read.data?.["js/main.js"]).toMatch(/^js\/main-[A-Z0-9]+\.js$/);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });
@@ -1091,7 +1082,6 @@ describe("generateAssetsTypes() — derives from config alone", () => {
     const typesModule = join(tmpDir, "assets.ts");
     mkdirSync(tmpDir, { recursive: true });
 
-    const execSpy = stubTailwind();
     try {
       const config = {
         root: tmpDir,
@@ -1135,10 +1125,8 @@ describe("generateAssetsTypes() — derives from config alone", () => {
       expect(source).toContain(`"light": "",`);
       expect(source).toContain(`"dark": "",`);
 
-      expect(execSpy).not.toHaveBeenCalled();
       expect(existsSync(publicDir)).toBe(false);
     } finally {
-      execSpy.mockRestore();
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });

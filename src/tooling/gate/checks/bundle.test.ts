@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -14,6 +14,12 @@ const CONFIGS: readonly BundleCheckConfig[] = BUNDLES.map(({ entry, bundle }) =>
 const PLUGIN_BUNDLE = "src/tooling/lint/plugin.mjs";
 const CHROMIUM_BUNDLE = "src/tooling/gate/chromium.mjs";
 const WRANGLER_BUNDLE = "src/tooling/cf/wrangler.mjs";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 // The whole point of committing a bundle is that node loads it where it refuses the source, so the
 // properties that make that true are asserted on the committed files themselves.
@@ -80,6 +86,7 @@ describe("checkBundle()", () => {
 
     it.skipIf(!hasEsbuild())(`fails when ${config.bundle} has been hand-edited`, async () => {
       const dir = mkdtempSync(resolve(tmpdir(), "forge-bundle-"));
+      roots.push(dir);
       const committed = readFileSync(resolve(ROOT, config.bundle), "utf-8");
       writeFileSync(resolve(dir, "edited.mjs"), `${committed}\n// hand edit\n`, "utf-8");
 

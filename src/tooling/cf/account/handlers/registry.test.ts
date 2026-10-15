@@ -1,11 +1,17 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { ResourceType, WranglerConfig } from "../../types";
 import { buildHandlers, defaultHandlers, findHandler } from "./registry";
 import type { ResourceHandler } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 describe("defaultHandlers", () => {
   it("contains at least one handler per resource-creating type", () => {
@@ -58,6 +64,7 @@ describe("buildHandlers()", () => {
 
   it("threads configPath into the secrets handler's .dev.vars lookup", async () => {
     const dir = mkdtempSync(join(tmpdir(), "forge-registry-"));
+    roots.push(dir);
     writeFileSync(join(dir, ".dev.vars"), "# forge:push\nFROM_THAT_DIR=1\n", "utf-8");
 
     const handlers = buildHandlers({ configPath: join(dir, "wrangler.jsonc") });
@@ -67,6 +74,7 @@ describe("buildHandlers()", () => {
 
   it("threads configPath into the vars handler too, so it can see the override", async () => {
     const dir = mkdtempSync(join(tmpdir(), "forge-registry-vars-"));
+    roots.push(dir);
     writeFileSync(join(dir, ".dev.vars"), "BASE_URL=http://localhost:8787\n", "utf-8");
 
     const handlers = buildHandlers({ configPath: join(dir, "wrangler.jsonc") });

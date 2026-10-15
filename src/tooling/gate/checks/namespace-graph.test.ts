@@ -1,9 +1,22 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { fail } from "../finding";
 import { gateFixtureRoot } from "./gate.fixture";
-import { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./namespace-graph";
+import { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoValueCycles } from "./namespace-graph";
 import type { DeclaredGraph, EdgeKind, ExportsMap } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function fixtureRoot(...args: Parameters<typeof gateFixtureRoot>): string {
+  const root = gateFixtureRoot(...args);
+  roots.push(root);
+  return root;
+}
 
 const DOC = "docs/NAMESPACES.md";
 
@@ -53,30 +66,49 @@ describe("resolveNamespaces() — the namespace set is derived, never listed", (
   });
 });
 
-describe("validateNoMutualValuePairs()", () => {
+describe("validateNoValueCycles()", () => {
   const edges = (value: Record<string, Record<string, EdgeKind>>) => value;
 
   it("passes a pair whose one direction is type-only", () => {
-    expect(validateNoMutualValuePairs(edges({ logging: { "storage/kv": "type" }, "storage/kv": { logging: "value" } }))).toEqual([]);
+    expect(validateNoValueCycles(edges({ logging: { "storage/kv": "type" }, "storage/kv": { logging: "value" } }))).toEqual([]);
   });
 
   it("fails a pair carrying a value edge in both directions", () => {
-    const findings = validateNoMutualValuePairs(edges({ a: { b: "value" }, b: { a: "value" } }));
+    const findings = validateNoValueCycles(edges({ a: { b: "value" }, b: { a: "value" } }));
 
     expect(findings).toHaveLength(1);
     expect(findings[0]?.level).toBe("fail");
-    expect(findings[0]?.message).toContain("`a` → `b` and `b` → `a` are both `value` edges");
+    expect(findings[0]?.message).toContain("`a` → `b` → `a` is a cycle of `value` edges");
   });
 
   it("reports an offending pair once, naming the alphabetically first namespace first", () => {
-    const findings = validateNoMutualValuePairs(edges({ zed: { alpha: "value" }, alpha: { zed: "value" } }));
+    const findings = validateNoValueCycles(edges({ zed: { alpha: "value" }, alpha: { zed: "value" } }));
 
     expect(findings).toHaveLength(1);
-    expect(findings[0]?.file).toBe("edges alpha ↔ zed");
+    expect(findings[0]?.file).toBe("edges alpha → zed → alpha");
   });
 
   it("passes a graph with no mutual naming at all", () => {
-    expect(validateNoMutualValuePairs(edges({ a: { b: "value" }, b: { c: "value" } }))).toEqual([]);
+    expect(validateNoValueCycles(edges({ a: { b: "value" }, b: { c: "value" } }))).toEqual([]);
+  });
+
+  const threeCycleListings = [
+    { listedFirst: "a", graph: edges({ a: { b: "value" }, b: { c: "value" }, c: { a: "value" } }) },
+    { listedFirst: "b", graph: edges({ b: { c: "value" }, c: { a: "value" }, a: { b: "value" } }) },
+    { listedFirst: "c", graph: edges({ c: { a: "value" }, a: { b: "value" }, b: { c: "value" } }) },
+  ];
+
+  for (const { listedFirst, graph } of threeCycleListings) {
+    it(`reports a three-namespace value cycle once, from its alphabetically first namespace, when ${listedFirst} is listed first`, () => {
+      const findings = validateNoValueCycles(graph);
+
+      expect(findings.map((finding) => [finding.level, finding.file])).toEqual([["fail", "edges a → b → c → a"]]);
+      expect(findings[0]?.message).toContain("`a` → `b` → `c` → `a` is a cycle of `value` edges");
+    });
+  }
+
+  it("passes a three-namespace cycle in which one edge is type-only", () => {
+    expect(validateNoValueCycles(edges({ a: { b: "value" }, b: { c: "type" }, c: { a: "value" } }))).toEqual([]);
   });
 });
 
@@ -127,7 +159,7 @@ describe("checkNamespaceGraph() — the vacuity refusal", () => {
   });
 
   it("refuses a walk that matched no source, even where the export map names namespaces", () => {
-    const root = gateFixtureRoot({ "src/alpha/README.md": "# alpha\n", "README.md": "# forge\n" });
+    const root = fixtureRoot({ "src/alpha/README.md": "# alpha\n", "README.md": "# forge\n" });
     const result = checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH });
 
     expect(result.ok).toBe(false);
@@ -138,7 +170,7 @@ describe("checkNamespaceGraph() — the vacuity refusal", () => {
 
 describe("checkNamespaceGraph() — the walk over a tree carrying a real violation", () => {
   it("reports an undeclared cross-namespace edge against the importing file and its specifier's line", () => {
-    const root = gateFixtureRoot({
+    const root = fixtureRoot({
       "src/alpha/mod.ts": 'export { a } from "./a";\n',
       "src/alpha/a.ts": ["export const a = 1;", 'import { b } from "../beta/b";', "export const c = b;"].join("\n"),
       "src/beta/mod.ts": 'export { b } from "./b";\n',
@@ -153,7 +185,7 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
   });
 
   it("passes the same tree once the edge is declared with the kind the import has", () => {
-    const root = gateFixtureRoot({
+    const root = fixtureRoot({
       "src/alpha/mod.ts": 'export { a } from "./a";\n',
       "src/alpha/a.ts": 'import { b } from "../beta/b";\nexport const a = b;\n',
       "src/beta/mod.ts": 'export { b } from "./b";\n',
@@ -167,7 +199,7 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
   });
 
   it("finds a violating file nested below the namespace directory, so the walk must recurse", () => {
-    const root = gateFixtureRoot({
+    const root = fixtureRoot({
       "src/alpha/mod.ts": "export const m = 1;\n",
       "src/alpha/deep/nested/a.ts": 'import { b } from "../../../beta/b";\nexport const a = b;\n',
       "src/beta/mod.ts": "export const m = 2;\n",
@@ -180,7 +212,7 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
   });
 
   it("raises no edge for the same import written in a test file, which ships to nobody", () => {
-    const root = gateFixtureRoot({
+    const root = fixtureRoot({
       "src/alpha/mod.ts": "export const m = 1;\n",
       "src/alpha/a.test.ts": 'import { b } from "../beta/b";\nexport const a = b;\n',
       "src/beta/mod.ts": "export const m = 2;\n",
@@ -193,7 +225,7 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
 
 describe("checkNamespaceGraph() — the document guarded against a returning catalogue", () => {
   const tree = (doc: string) =>
-    gateFixtureRoot({ "src/alpha/mod.ts": "export const m = 1;\n", "src/beta/mod.ts": "export const m = 2;\n", [DOC]: doc });
+    fixtureRoot({ "src/alpha/mod.ts": "export const m = 1;\n", "src/beta/mod.ts": "export const m = 2;\n", [DOC]: doc });
 
   it("fails a document whose table names a namespace's barrel, at that row", () => {
     const root = tree("# Namespaces\n\n| Barrel |\n| `src/alpha/mod.ts` |\n");

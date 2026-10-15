@@ -206,7 +206,7 @@ describe("createAdminUserStore — the last-admin guard", () => {
   });
 
   it("exempts a deactivated admin from every guarded write, since one who cannot sign in cannot be the last standing", async () => {
-    // Only the SQL is provable against a fake; `tests/workerd/auth-schema.test.ts` runs the same
+    // Only the SQL is provable against a fake; `tests/workerd/auth-schema.workerd.ts` runs the same
     // clause against real D1 with a deactivated admin in the table.
     const [client, db] = writerOf(() => 1);
     const admins = createAdminUserStore(client);

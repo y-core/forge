@@ -1,4 +1,5 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { fail } from "../finding";
 import { gateFixtureRoot } from "./gate.fixture";
@@ -126,7 +127,17 @@ describe("clientSubpaths", () => {
 });
 
 describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
-  const fixtureRoot = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-ssr-boundary-");
+  const roots: string[] = [];
+
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+
+  const fixtureRoot = (files: Record<string, string>): string => {
+    const root = gateFixtureRoot(files, "forge-ssr-boundary-");
+    roots.push(root);
+    return root;
+  };
 
   const config = (root: string) => ({ root, sources: ["src/ui"], clientDirs: ["src/ui/client"], entryPoints: ["client.ts"] });
 

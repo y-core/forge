@@ -31,24 +31,49 @@ function resolveSources(root: string, sourceDir: string): SourceFile[] {
     .map((path) => ({ path, source: readFileSync(resolve(root, path), "utf-8") }));
 }
 
-/** Fails once per unordered pair whose two declared directions are both `value`. @public */
-export function validateNoMutualValuePairs(edges: DeclaredGraph["edges"]): Finding[] {
-  const findings: Finding[] = [];
-  for (const a of Object.keys(edges).sort()) {
-    const targets = edges[a];
-    if (targets === undefined) continue;
-    for (const b of Object.keys(targets).sort()) {
-      if (a >= b) continue;
-      if (targets[b] !== "value" || edges[b]?.[a] !== "value") continue;
-      findings.push(
-        fail(
-          `\`${a}\` → \`${b}\` and \`${b}\` → \`${a}\` are both \`value\` edges — a mutually-naming pair is legal only while one direction is erased at emit; make one direction \`import type\` and declare it \`"type"\`, or move the shared symbol into a namespace both may depend on and delete the edge`,
-          { file: `edges ${a} ↔ ${b}` },
-        ),
-      );
-    }
+function valueTargets(edges: DeclaredGraph["edges"], from: string): string[] {
+  return Object.entries(edges[from] ?? {})
+    .filter(([, kind]) => kind === "value")
+    .map(([to]) => to)
+    .sort();
+}
+
+function reachersAbove(edges: DeclaredGraph["edges"], start: string): Set<string> {
+  const reachers = new Set<string>();
+  const candidates = Object.keys(edges).filter((name) => name > start);
+  let grew = true;
+  while (grew) {
+    const added = candidates.filter((name) => !reachers.has(name) && valueTargets(edges, name).some((to) => to === start || reachers.has(to)));
+    for (const name of added) reachers.add(name);
+    grew = added.length > 0;
   }
-  return findings;
+  return reachers;
+}
+
+function cyclesFrom(edges: DeclaredGraph["edges"], start: string): string[][] {
+  const reachers = reachersAbove(edges, start);
+  const cycles: string[][] = [];
+  const walk = (from: string, path: readonly string[]): void => {
+    for (const to of valueTargets(edges, from)) {
+      if (to === start) cycles.push([...path, start]);
+      else if (reachers.has(to) && !path.includes(to)) walk(to, [...path, to]);
+    }
+  };
+  walk(start, [start]);
+  return cycles;
+}
+
+/** Fails once per cycle of declared `value` edges, of any length, naming it from its alphabetically first namespace. @public */
+export function validateNoValueCycles(edges: DeclaredGraph["edges"]): Finding[] {
+  return Object.keys(edges)
+    .sort()
+    .flatMap((start) => cyclesFrom(edges, start))
+    .map((cycle) =>
+      fail(
+        `${cycle.map((name) => `\`${name}\``).join(" → ")} is a cycle of \`value\` edges — a cycle of namespaces naming each other is legal only while one edge in it is erased at emit; make one direction \`import type\` and declare it \`"type"\`, or move the shared symbol into a namespace both may depend on and delete the edge`,
+        { file: `edges ${cycle.join(" → ")}` },
+      ),
+    );
 }
 
 /** The failure text each enumeration finding produces, in the order `findEnumerations` reports them. @public */
@@ -101,7 +126,7 @@ export function checkNamespaceGraph(config: NamespaceGraphCheckConfig): CheckRes
     return fail(finding.detail, finding.line === undefined ? { file: finding.file } : { file: finding.file, line: finding.line });
   });
 
-  findings.push(...validateNoMutualValuePairs(config.graph.edges));
+  findings.push(...validateNoValueCycles(config.graph.edges));
 
   if (config.enumerationDoc !== undefined) {
     const path = resolve(config.root, config.enumerationDoc);

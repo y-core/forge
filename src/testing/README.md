@@ -10,9 +10,8 @@ Every suite for a forge app needs the same handful of fixtures: a request contex
 way the real ones do, a CSRF token that actually verifies, and a way to turn a component into the string you assert against. This namespace ships
 them.
 
-Import it from test files only. Everything is reached from the barrel except three helpers — the `wrangler dev` server and the fixture comparison,
-which are node-only, and the expected coverage set, which loads every UI barrel. Each has its own subpath and is deliberately not re-exported
-([`TEST_RUNNERS.md`][testing-7f] §7f).
+Import it from test files only. Everything is reached from the barrel except the fixture comparison, which is node-only, and the expected
+coverage set, which loads every UI barrel. Each has its own subpath and is deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 ---
 
@@ -250,49 +249,39 @@ selector rather than reaching for the outer.
 
 ## Running a suite in the real Workers runtime
 
-`@y-core/forge/testing/workerd` starts `wrangler dev` over a fixture, so a spec can drive forge inside workerd instead of Bun. It is node-only: a
-suite reaches it by name, references the types shim in the file that imports it, and needs no `exclude` and no `node` entry in its `types` array
-([`TEST_RUNNERS.md`][testing-7f] §7f). `wrangler` is an optional peer dependency, resolved from your own tree — a suite that imports this subpath
-installs it.
+`@y-core/forge/testing/harness` starts a Worker under wrangler's `createTestHarness` (`wrangler` `>=4.99.0`, an optional peer of forge). Run that
+suite under node — Playwright or `node --test`, never `bun test`, under which the harness answers no request ([`TEST_RUNNERS.md`][testing-1f] §1f).
+It is off the `./testing` barrel, so import it by name ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 ```ts
-/// <reference types="@y-core/forge/testing/node" />
-import { afterAll, beforeAll } from "bun:test";
-import { type DevServer, startDevServer } from "@y-core/forge/testing/workerd";
+import { serveWorker } from "@y-core/forge/testing/harness";
 
-let server: DevServer;
-
-beforeAll(async () => {
-  server = await startDevServer({ entry: "src/worker.dev.ts", readyPath: "/api/health", capture: true });
-}, 200_000);
-
-afterAll(() => server?.stop());
+const { harness, origin } = await serveWorker({ config: "./wrangler.jsonc", secrets: { SESSION_SECRET: "…" } });
+const res = await fetch(`${origin}/api/health`);
+await harness.close();
 ```
 
-Every option is optional. `entry` and `config` say what to serve. `vars` are written to a temp env file, which
-replaces `.dev.vars` discovery rather than adding to it, so name every secret the fixture needs. `readyPath` is what the readiness probe fetches —
-any answer counts, a 404 included, so point it at something cheap. `capture` keeps stdout and stderr for `server.logs()` and folds them into the
-error when the server never comes up; without it they are discarded.
+To serve a test-only Worker instead of the app's, pass `entry`. It runs in place of the config's `main`, under the same bindings:
 
-Give the `beforeAll` a generous timeout: a cold `wrangler dev` start is measured in tens of seconds.
+```ts
+const served = await serveWorker({ config: "./wrangler.jsonc", entry: "./tests/workerd/probe.ts", vars: { MODE: "test" } });
+```
 
-**Send requests to `server.origin`; hand the app `server.siteOrigin`.** The two differ by scheme, and that is not cosmetic — the dev server stamps
-`https` onto origin-bearing headers before the Worker sees them, so an app told the http origin refuses its own suite at the origin guard.
-`SITE_ORIGIN` is written to the env file as `siteOrigin` for you, and your `vars` are merged over it.
+Under `entry`, secrets reach the Worker as vars, because an inline harness config has none of its own.
 
-**Every start begins with empty local state by default.** Durable Objects, KV, D1 and alarms persist to a directory of that start's own, so
-nothing carries over from an earlier start and two servers running at once never share a database. A spec that prepares state before starting —
-after `forge db migrate --target local`, say — passes that directory as `persistTo`. It is the caller's: the server neither empties nor removes it.
+The Worker reads its own origin as `SITE_ORIGIN`, which is set to `origin` over any var of that name, so an `Origin` check passes for requests a
+test sends. Pass `siteHost: "localhost"` for a WebAuthn test, which refuses an IP address as an RP ID.
 
-`stop()` takes down the whole process tree and removes the temp files, the default local state included. The same kill is bound to the runner's
-exit and signals, so an interrupted run leaves nothing behind ([`TEST_RUNNERS.md`][testing-1f] §1f).
+Storage starts empty on every start. To run the config's D1 migrations, call `await harness.getWorker().applyD1Migrations("DB")` before the first
+request. `harness.getLogs()` returns what the Worker logged, and `harness.close()` stops the runtime.
 
 ---
 
 ## Comparing text against a committed fixture
 
-`@y-core/forge/testing/snapshot` compares a string against a file on disk and reports the lines they disagree on. It is node-only and reached the
-same way as the dev server above — by name, with the types shim referenced in the importing file ([`TEST_RUNNERS.md`][testing-7h] §7h). It takes a
+`@y-core/forge/testing/snapshot` compares a string against a file on disk and reports the lines they disagree on. It is node-only: a suite reaches
+it by name, references the types shim in the file that imports it, and needs no `exclude` and no `node` entry in its `types` array
+([`TEST_RUNNERS.md`][testing-7f] §7f). It takes a
 string and nothing else, so anything that renders to text can use it: a PDF layout description, a generated schema, a CLI transcript.
 
 ```ts
@@ -379,6 +368,5 @@ to survive a round trip through an unmodelled table hands the code its own store
 [testing-7b]: ../../docs/TEST_RUNNERS.md#7b-in-memory-storage-fakes--fakekv-faked1-faker2
 [testing-7d]: ../../docs/TEST_RUNNERS.md#7d-buildrequest--request-builder
 [testing-7e]: ../../docs/TEST_RUNNERS.md#7e-maphandler-and-testaction--single-route-registrar
-[testing-7f]: ../../docs/TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
-[testing-7h]: ../../docs/TEST_RUNNERS.md#7h-matchtextsnapshot--the-second-off-barrel-subpath
+[testing-7f]: ../../docs/TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel
 [testing-7i]: ../../docs/TEST_RUNNERS.md#7i-the-expected-coverage-set--y-coreforgetestingcoverage

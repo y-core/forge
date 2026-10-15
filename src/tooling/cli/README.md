@@ -148,6 +148,7 @@ The primitive to reach for follows from what you intend to do with the outcome:
 | You want to | Reach for |
 | --- | --- |
 | Run a tool, let its output reach the terminal, and abort the script on failure | `run(cmd, args, { cwd? })` |
+| Run a tool, let its output reach the terminal, and read the exit status rather than abort | `runUnchecked(cmd, args, { cwd? })` |
 | Run a tool, keep its output, and report the failure rather than abort | `capture(cmd, args, { cwd? })` |
 | Run a tool and read stdout and stderr separately, e.g. to parse JSON from stdout | `captureStreams(cmd, args, { cwd?, env? })` |
 | Assert several tools up front, each with its own install hint | `requireTools({ cmd: hint })` |

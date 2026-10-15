@@ -1,12 +1,12 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
-import { exit } from "node:process";
+import { env, exit } from "node:process";
 
 import { createCommand } from "../cli/command";
 import { loadConfigModule } from "../cli/config-module";
 import { capture, hasTool, insertPath } from "../cli/proc";
-import type { Command } from "../cli/types";
+import type { CaptureResult, Command } from "../cli/types";
 import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
 import { clearReceipt, readReceipt, receiptCovers, recordReceipt } from "./receipt";
@@ -15,6 +15,7 @@ import {
   formatFindingBlock,
   formatFixSummary,
   formatFullLogPath,
+  formatLeftInTemp,
   formatList,
   formatMissingRequirement,
   formatNothingAffected,
@@ -65,6 +66,19 @@ function writeFullLog(label: string, output: string): string | undefined {
     return file;
   } catch {
     return undefined;
+  }
+}
+
+// One TMPDIR per step, removed when it exits.
+function captureStep(bin: string, args: string[], cwd: string, leavesNoTemp: boolean): CaptureResult {
+  const dir = mkdtempSync(join(tmpdir(), "forge-step-"));
+  try {
+    const result = capture(bin, args, { cwd, env: { ...env, TMPDIR: dir } });
+    const left = leavesNoTemp ? readdirSync(dir).sort() : [];
+    if (left.length === 0) return result;
+    return { ...result, code: result.code === 0 ? 1 : result.code, output: `${result.output}\n${formatLeftInTemp(left)}` };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 }
 
@@ -224,7 +238,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             continue;
           }
           const [bin, ...args] = step.fix;
-          const result = capture(bin, args, { cwd });
+          const result = captureStep(bin, args, cwd, step.leavesNoTemp === true);
           console.log(formatStepLine(`fix:${step.label}`, result.code === 0, result.ms, style));
           if (result.code === 0) {
             fixed++;
@@ -282,7 +296,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         const [bin, ...args] = step.cmd;
-        const result = capture(bin, args, { cwd });
+        const result = captureStep(bin, args, cwd, step.leavesNoTemp === true);
         console.log(formatStepLine(step.label, result.code === 0, result.ms, style));
         if (result.code !== 0) {
           reportFailure(step.label, result.output, step.tail);

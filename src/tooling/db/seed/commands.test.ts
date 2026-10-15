@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,11 +11,18 @@ import { sha256 } from "../digest";
 import type { FakeDbIo, SeedRecord } from "../types";
 import { createSeedCommands } from "./commands";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 const USERS = "INSERT INTO users (email) VALUES ('ada@example.com');";
 const POSTS = "INSERT INTO posts (title) VALUES ('hello');";
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-seed-commands-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text);
   return root;

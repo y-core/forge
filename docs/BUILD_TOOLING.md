@@ -35,6 +35,7 @@ audience: internal
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
 - §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:full` alone, and where component coverage is checked
+- §2m The Bun Floor Is the Bun the Gate Runs On: why `engines.bun` equals `packageManager`, and what raising it takes
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
 - §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
 
@@ -99,7 +100,7 @@ invariance is discharged.
 **The two project verbs are two namespaces, and `tooling/release` sits on top of `tooling/gate`.** The gate is the lower layer: besides its own
 command factory, steps and checks, it owns the changelog parser, the semver arithmetic and the barrel parser, because the release workflow and the
 gate's own changelog and export-surface checks both read them. Declaring the dependency the other way made the two namespaces name each other at
-value, which `validateNoMutualValuePairs` rejects.
+value, which `validateNoValueCycles` rejects.
 
 **What the barrel publishes is decided by one question: would a consuming app plausibly call this itself?** A symbol that exists only to serve the
 command factories stays out of `mod.ts` — the git and `package.json` helpers in `src/tooling/release/` (§2c), the gate's formatters (§2f). The
@@ -458,6 +459,12 @@ dependency inverted.
 **A check that every published component is demonstrated belongs to the demonstrator.** Its own gate runs the coverage spec against the forge it
 installs, so a release that publishes a new component turns the demonstrator red on upgrade, and the demo or its excuse lands there. To check ahead
 of a release, the demonstrator runs that spec after `forge dev sync` (§2k).
+
+### 2m. The Bun Floor Is the Bun the Gate Runs On
+
+**`engines.bun`'s floor is `packageManager`'s version**, and `.github/workflows/release.yml` installs that version through `bun-version-file:
+package.json`, so the release gate (§2a) runs on exactly the floor. Nothing older is gated, so nothing older is claimed: a lower floor would promise
+support for a Bun no run has tested. Raising one means raising the other in the same change, and `config/release.test.ts` fails while they differ.
 
 ---
 

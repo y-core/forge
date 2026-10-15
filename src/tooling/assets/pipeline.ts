@@ -6,6 +6,7 @@ import { CacheControl } from "../../http/headers";
 import { assetSecurityHeaders } from "../../security/headers";
 import type { SecurityHeadersOptions } from "../../security/types";
 import { buildCursors } from "../../ui/assets/build/cursors";
+import type { SpawnSync } from "../cli/types";
 import { assertIconPrefixOutsideAssets } from "./config";
 import { copyAssets } from "./copy";
 import { buildCSS } from "./css";
@@ -24,7 +25,7 @@ import type { AssetsTypesOutcome, BuildOptions, FontPackData, IconsConfig, Sprit
 import type { ResolvedConfig } from "./types";
 
 /** Runs every configured build step and writes the generated assets module; `minify` also enables content-hashed filenames. @public */
-export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Promise<void> {
+export async function buildAll(config: ResolvedConfig, opts?: BuildOptions, spawn?: SpawnSync): Promise<void> {
   const { publicDir, publicPrefix } = config.paths;
   const shouldHash = opts?.minify ?? false;
   if (config.js.serviceWorker !== null && assetUrlBase(publicPrefix) === "") {
@@ -42,7 +43,7 @@ export async function buildAll(config: ResolvedConfig, opts?: BuildOptions): Pro
   const minifyOpts = opts?.minify !== undefined ? { minify: opts.minify } : {};
 
   for (const css of config.css) {
-    const mapping = buildCSS(css, { outDir: publicDir, ...minifyOpts, hash: shouldHash });
+    const mapping = buildCSS(css, { outDir: publicDir, ...minifyOpts, hash: shouldHash }, spawn);
     Object.assign(manifest, mapping);
   }
 

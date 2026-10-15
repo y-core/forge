@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -8,12 +8,18 @@ import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
 import { corpusLabel, search } from "./search";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
+
 function doc(title: string, body: string): string {
   return `---\ntitle: ${title}\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: what it decides\n\n## 1. One\n\n${body}\n`;
 }
 
 const CORPUS: Array<[SourceDoc, string]> = [];
 const root = mkdtempSync(join(tmpdir(), "warden-search-"));
+roots.push(root);
 for (const [path, entry] of [
   ["CODE_RULES.md", { corpus: "canon", tree: "libs", weight: 1.3, body: "The comment budget is a ceiling." }],
   ["AGENT_GUIDE.md", { corpus: "canon", tree: "shared", weight: 1.3, body: "A document is numbered." }],
@@ -116,6 +122,7 @@ const glossless = openDatabase(":memory:");
 {
   const sources: SourceDoc[] = [];
   const bare = mkdtempSync(join(tmpdir(), "warden-excerpt-"));
+  roots.push(bare);
   for (const [path, weight, body] of [
     ["CODE_RULES.md", 1.3, "The comment budget is a ceiling."],
     ["docs/NAMESPACES.md", 1.2, "The comment budget is cited here."],

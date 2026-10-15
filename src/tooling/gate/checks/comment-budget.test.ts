@@ -1,10 +1,21 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { fail } from "../finding";
 import { checkCommentBudget } from "./comment-budget";
 import { gateFixtureRoot } from "./gate.fixture";
 
-const fixtureRoot = (files: Record<string, string> = {}): string => gateFixtureRoot(files, "forge-comment-budget-");
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+const fixtureRoot = (files: Record<string, string> = {}): string => {
+  const root = gateFixtureRoot(files, "forge-comment-budget-");
+  roots.push(root);
+  return root;
+};
 
 const messages = (files: Record<string, string>, licences: ReadonlyMap<string, string> = new Map()): string[] =>
   checkCommentBudget({ root: fixtureRoot(files), sources: ["src"], licences }).findings.map((finding) => finding.message);

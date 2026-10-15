@@ -1,14 +1,21 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { checkPackaging, fixtureName, moduleImports } from "./packaging";
 import type { ExportsMap, PackagingCheckConfig } from "./types";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A throwaway root holding exactly the files given, each mapped to its contents. */
 function fixtureRoot(tree: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "forge-packaging-"));
+  roots.push(root);
   for (const [path, contents] of Object.entries(tree)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), contents, "utf-8");

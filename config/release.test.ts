@@ -37,4 +37,12 @@ describe("the gate a release runs", () => {
     expect(RELEASE_ONLY.every((label) => labels("full").includes(label))).toBe(true);
     expect(RELEASE_ONLY.filter((label) => labels("standard").includes(label))).toEqual([]);
   });
+
+  // BUILD_TOOLING.md §2m.
+  it("claims a Bun floor equal to the Bun the release workflow installs from packageManager", () => {
+    const manifest = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { packageManager: string; engines: { bun: string } };
+
+    expect(manifest.packageManager).toMatch(/^bun@\d+\.\d+\.\d+$/);
+    expect(manifest.engines.bun).toBe(`>=${manifest.packageManager.slice("bun@".length)}`);
+  });
 });

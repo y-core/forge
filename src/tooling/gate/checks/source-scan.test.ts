@@ -1,4 +1,4 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -16,6 +16,12 @@ import {
   resolveSources,
   unresolvedSourceEntries,
 } from "./source-scan";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 describe("balancedSpan() — the bracket it closes", () => {
   const balanced: { source: string; label: string }[] = [
@@ -134,6 +140,7 @@ describe("blankSourceComments() — what it blanks", () => {
 
 describe("collectFiles() — the order and spelling a finding inherits", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-collect-"));
+  roots.push(root);
 
   beforeAll(() => {
     mkdirSync(join(root, "src/b/deep"), { recursive: true });
@@ -186,6 +193,7 @@ describe("excludedBy() — the prefix boundary", () => {
 
 describe("resolveSources() — the walk a `!` entry narrows", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-resolve-"));
+  roots.push(root);
 
   beforeAll(() => {
     for (const path of ["src/a.ts", "src/skip/b.ts", "src/skipper/c.ts", "src/d.md"]) {
@@ -229,6 +237,7 @@ describe("resolveSources() — the walk a `!` entry narrows", () => {
 
 describe("unresolvedSourceEntries() — the entry a walk would skip silently", () => {
   const root = mkdtempSync(join(tmpdir(), "forge-unresolved-"));
+  roots.push(root);
   const named = (sources: readonly string[], admits?: "directory" | "file or directory"): string[] =>
     unresolvedSourceEntries(root, sources, admits).map((finding) => finding.message);
 

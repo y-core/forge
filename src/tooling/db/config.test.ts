@@ -211,6 +211,7 @@ describe("resolveDbConfig()", () => {
 describe("resolveDbConfig() — standby", () => {
   it("reads standby:<name> as the standby database's name, not as a config entry", () => {
     const root = mkdtempSync(join(tmpdir(), "forge-db-config-"));
+    roots.push(root);
     const { path, text } = minimalWranglerConfig(root);
     writeFileSync(path, text);
     const resolved = resolveDbConfig({ root, config: "wrangler.jsonc", target: "standby:ledger-copy" });

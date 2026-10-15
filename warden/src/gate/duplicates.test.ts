@@ -1,9 +1,14 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { checkDuplicates, duplicatePairs } from "./duplicates";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 function doc(gloss: string, body: string): string {
   return `---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: ${gloss}\n\n## 1. One\n\n${body}\n`;
@@ -11,6 +16,7 @@ function doc(gloss: string, body: string): string {
 
 function repo(prefix: string, files: readonly (readonly [string, string])[]): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   for (const [path, source] of files) {
     const file = join(root, path);
     mkdirSync(dirname(file), { recursive: true });

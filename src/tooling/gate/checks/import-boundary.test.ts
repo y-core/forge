@@ -1,9 +1,22 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import type { FeatureManifest } from "../../curate/types";
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkImportBoundary, guardedSubpaths, isGuarded } from "./import-boundary";
 import type { ImportBoundaryCheckConfig } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+function fixtureRoot(...args: Parameters<typeof gateFixtureRoot>): string {
+  const root = gateFixtureRoot(...args);
+  roots.push(root);
+  return root;
+}
 
 const BUILD_DIRS = ["src/tooling", "src/ui/assets/build"] as const;
 
@@ -19,7 +32,7 @@ const GUARDED_TREES = Object.fromEntries(BUILD_DIRS.map((dir) => [`${dir}/.keep`
 
 function project(files: Record<string, string>): ImportBoundaryCheckConfig {
   return {
-    root: gateFixtureRoot({ ...GUARDED_TREES, ...files }, "forge-ib-"),
+    root: fixtureRoot({ ...GUARDED_TREES, ...files }, "forge-ib-"),
     packageName: "@y-core/forge",
     exports: EXPORTS,
     guarded: BUILD_DIRS,
@@ -29,7 +42,7 @@ function project(files: Record<string, string>): ImportBoundaryCheckConfig {
 
 // A starter-shaped app: a showcase slice the skeleton may not reach, save through its composition root.
 function app(files: Record<string, string>, crossings?: readonly string[]): ImportBoundaryCheckConfig {
-  return { root: gateFixtureRoot(files, "forge-ib-app-"), guarded: ["src/showcase"], ...(crossings === undefined ? {} : { crossings }) };
+  return { root: fixtureRoot(files, "forge-ib-app-"), guarded: ["src/showcase"], ...(crossings === undefined ? {} : { crossings }) };
 }
 
 const SHOWCASE = { "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n" };
@@ -443,7 +456,7 @@ describe("checkImportBoundary — a guarded entry that would guard nothing", () 
   };
 
   function guarding(guarded: readonly string[]): ImportBoundaryCheckConfig {
-    return { root: gateFixtureRoot(VIEW_IMPORTS_SHOWCASE, "forge-ib-guard-"), guarded };
+    return { root: fixtureRoot(VIEW_IMPORTS_SHOWCASE, "forge-ib-guard-"), guarded };
   }
 
   const SPELLING = ["a guarded path must be root-relative, spelled as the walk reports it — no leading `./`, no trailing `/`, no `..`"];
@@ -539,7 +552,7 @@ describe("checkImportBoundary — a guarded top-level source file", () => {
   const ROUTER = { "src/router.tsx": 'import { layout } from "./views/layout";\nexport const router = layout;\n' };
 
   function guardingRouter(files: Record<string, string>): ImportBoundaryCheckConfig {
-    return { root: gateFixtureRoot(files, "forge-ib-file-"), guarded: ["src/router.tsx"] };
+    return { root: fixtureRoot(files, "forge-ib-file-"), guarded: ["src/router.tsx"] };
   }
 
   it("accepts an existing source file as a guarded entry, naming it in the summary", () => {
@@ -558,7 +571,7 @@ describe("checkImportBoundary — a guarded top-level source file", () => {
 
   for (const { name, guarded, files } of NOT_A_SOURCE_FILE) {
     it(`fails a guarded entry naming ${name}`, () => {
-      const result = checkImportBoundary({ root: gateFixtureRoot(files, "forge-ib-file-"), guarded: [guarded] });
+      const result = checkImportBoundary({ root: fixtureRoot(files, "forge-ib-file-"), guarded: [guarded] });
 
       expect(result.ok).toBe(false);
       expect(result.findings).toEqual([
@@ -608,7 +621,7 @@ describe("checkImportBoundary — feature slices under the feature graph", () =>
   }
 
   function sliced(files: Record<string, string>, features: FeatureManifest, guarded: readonly string[] = []): ImportBoundaryCheckConfig {
-    return { root: gateFixtureRoot(files, "forge-ib-slice-"), guarded, features };
+    return { root: fixtureRoot(files, "forge-ib-slice-"), guarded, features };
   }
 
   const CONTACT_IMPORTS_EMAIL = { ...EMAIL, "src/contact/form.ts": 'import { send } from "../email/send";\nexport const form = send;\n' };

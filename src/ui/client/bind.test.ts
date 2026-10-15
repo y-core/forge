@@ -321,6 +321,18 @@ describe("bindControls — mounting and disposing", () => {
 
     expect(input.value).toBe("");
   });
+
+  it("drops a repaint a reset queued before a synchronous dispose, so a disposed binding never writes", async () => {
+    const { doc, form, root, input } = scope();
+    const dispose = bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
+    input.value = "";
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: form }));
+    dispose();
+    await Promise.resolve();
+
+    expect(input.value).toBe("");
+  });
 });
 
 describe("bindControls — one field at a time", () => {

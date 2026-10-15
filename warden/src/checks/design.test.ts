@@ -1,11 +1,16 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { fail } from "../../../src/tooling/gate/finding";
 import plugin from "../../../src/tooling/lint/plugin";
 import { checkDesign } from "./design";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
 
 /** Every rule the plugin registers, turned on — so nothing but the parse itself can fail the config. */
 function oxlintConfig(trailing: string): string {
@@ -18,6 +23,7 @@ function oxlintConfig(trailing: string): string {
 /** A throwaway root carrying only the oxlint config the check reads. */
 function root(config: string): string {
   const dir = mkdtempSync(join(tmpdir(), "forge-design-check-"));
+  roots.push(dir);
   mkdirSync(join(dir, "design"), { recursive: true });
   mkdirSync(join(dir, "css"), { recursive: true });
   mkdirSync(join(dir, "src"), { recursive: true });
@@ -61,6 +67,7 @@ describe("checkDesign() — the two vacuity refusals", () => {
   /** The same throwaway root, minus whichever half the case is about. */
   function tree(options: { corpus: boolean; sources: boolean }): string {
     const dir = mkdtempSync(join(tmpdir(), "forge-design-vacuity-"));
+    roots.push(dir);
     mkdirSync(join(dir, "design"), { recursive: true });
     mkdirSync(join(dir, "css"), { recursive: true });
     mkdirSync(join(dir, "src"), { recursive: true });

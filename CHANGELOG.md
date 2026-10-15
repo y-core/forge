@@ -26,6 +26,18 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`PasskeyRealm` requires `requestTimeoutMs`, and `runPasskeyCeremony` takes a fourth argument, `signal?: AbortSignal`**, in
   `@y-core/forge/auth/client`; both are `@internal`. Aborting the signal rejects the ceremony with its reason, and nothing navigates after it.
 
+- **`validateNoMutualValuePairs` is now `validateNoValueCycles`** in `@y-core/forge/tooling/gate`, and fails a cycle of `value` edges of any
+  length rather than only a pair. Each finding's `file` reads `edges a → b → a`, starting from the alphabetically first namespace.
+
+- **`@y-core/forge/testing/workerd` is removed, with `startDevServer`, `DevServer` and `DevServerOptions`.** Start a Worker under test with
+  `serveWorker` from `@y-core/forge/testing/harness` and run that suite under node; under bun the harness answers no request. `@y-core/forge/testing/node` now
+  declares only what `@y-core/forge/testing/snapshot` reaches.
+
+- **`workerdStep` runs `playwright test --project=workerd`** in `@y-core/forge/tooling/gate`, and its `parallel` option is gone. Declare a
+  `workerd` project in your `playwright.config.ts`; `sources`, when given, narrow it. `browserStep` now runs `--project=chromium`.
+
+- **The optional `wrangler` peer floor rises from `>=4.0.0` to `>=4.99.0`**, the first release with `createTestHarness`.
+
 ### Added
 
 - **`healthCheck(checks, { timeoutMs })` bounds each check** in `@y-core/forge/app`, typed `HealthCheckOptions`. A check still pending after
@@ -44,7 +56,26 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`run`, `capture` and `captureStreams` take a `timeoutMs` option** in `@y-core/forge/tooling/cli`. A child still running at the deadline is
   killed with `SIGKILL` and reported as a non-zero exit; without the option no deadline applies.
 
+- **`runUnchecked(cmd, args, opts)` runs a tool with inherited stdio and returns how it exited instead of throwing** in
+  `@y-core/forge/tooling/cli`, as a `RunOutcome` of `{ code, exited, spawnError? }`. The barrel also exports the `SpawnSync`, `SpawnOptions`
+  and `SpawnOutcome` types every spawning helper takes as its seam.
+
+- **`serveWorker(options)` starts a Worker under wrangler's `createTestHarness`** in the new node-only subpath `@y-core/forge/testing/harness`,
+  and resolves to `{ harness, origin }` once it answers. `entry` serves a test-only module in place of the config's `main` under the same
+  bindings, and the Worker reads `origin` as `SITE_ORIGIN`. It replaces `startDevServer`'s `entry` and `siteOrigin`.
+
+### Changed
+
+- **`engines.bun` stays `>=1.4.0`, and its reason is now the Bun the release gate runs on**, which is `packageManager`'s version. It no longer
+  rests on `bun test --parallel`, which `workerdStep` stopped running. The two versions now move together (`BUILD_TOOLING.md` §2m).
+
 ### Fixed
+
+- **The apps canon's `TESTING.md` names `createTestHarness` as what takes a per-run server's port.** It still credited a library dev-server
+  helper, which forge no longer ships.
+
+- **A gate run no longer leaves its steps' temp files behind.** `createGateCommand` in `@y-core/forge/tooling/gate` runs each spawned step and
+  fixer with `TMPDIR` set to a directory of its own and removes it when the step exits. A failed step's full log is still kept.
 
 - **Deferred auth work that throws no longer rejects the promise handed to `defer`.** A store or notifier failure inside a signup, signin or
   email-change deferral is logged and settles as unavailable, and a rejecting `send` in the email-OTP factor gives the cooldown back.

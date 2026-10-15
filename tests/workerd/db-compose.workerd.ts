@@ -1,8 +1,10 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { expect, test } from "@playwright/test";
 
 import { type D1Handle, openD1 } from "./d1";
 
@@ -36,10 +38,13 @@ interface Step {
   readonly stderr: string;
 }
 
-async function forgeDb(root: string, args: string[]): Promise<Step> {
-  const proc = Bun.spawn(["bun", "run", BIN, "db", ...args, "--root", root], { cwd: FORGE, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
-  return { code, stdout, stderr };
+function forgeDb(root: string, args: string[]): Promise<Step> {
+  const child = spawn("bun", ["run", BIN, "db", ...args, "--root", root], { cwd: FORGE });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf-8")));
+  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf-8")));
+  return new Promise((resolve) => child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr })));
 }
 
 function freshRoot(): string {
@@ -170,59 +175,62 @@ async function pooled<T, R>(items: readonly T[], limit: number, work: (item: T) 
   return results;
 }
 
-beforeAll(async () => {
+test.beforeAll(async () => {
+  test.setTimeout(900_000);
   const results = await pooled(cases, CASE_CONCURRENCY, (name) => runCase(join(FIXTURE, "cases", name), specs.get(name) as Case));
   for (const [i, name] of cases.entries()) observed.set(name, results[i] as Observed);
-}, 900_000);
-
-describe.each(cases)("compose case %s", (name) => {
-  const spec = specs.get(name) as Case;
-  const seen = () => observed.get(name) as Observed;
-
-  it("composes and migrates the before state, then the after state over seeded rows", () => {
-    const o = seen();
-    expect(o.first.stderr).toBe("");
-    expect(o.first.code).toBe(0);
-    expect(o.firstWritten).toBe(true);
-    expect(o.migrated[0].code).toBe(0);
-    if (spec.composeRefused !== undefined) {
-      expect(o.second.code).toBe(1);
-      expect(o.second.stderr.includes(spec.composeRefused)).toBe(true);
-      expect(o.written).toBe("");
-      return;
-    }
-    if (spec.refusedWithout !== undefined) {
-      expect(o.refused?.code).toBe(1);
-      expect(o.refused?.stderr.includes(spec.refusedWithout)).toBe(true);
-      expect(o.refusedWritten).toBe(false);
-    }
-    expect(o.second.stderr).toBe("");
-    expect(o.second.code).toBe(0);
-    if (spec.expectNoMigration === true) expect(o.written).toBe("");
-    for (const fragment of spec.expectSql ?? []) expect(o.written.includes(fragment)).toBe(true);
-    for (const fragment of spec.expectStdout ?? []) expect(o.second.stdout.includes(fragment)).toBe(true);
-    if (spec.migrateFails === undefined) {
-      expect(o.migrated[1]?.code).toBe(0);
-    } else {
-      expect(o.migrated[1]?.code).toBe(1);
-      expect(o.migrated[1]?.stderr.includes(spec.migrateFails)).toBe(true);
-    }
-  });
-
-  it("leaves the desired state, its snapshot and the migrations in step", () => {
-    const o = seen();
-    if (spec.composeRefused !== undefined) {
-      expect(o.check).toBe(null);
-      return;
-    }
-    expect(o.check?.stderr).toBe("");
-    expect(o.check?.code).toBe(0);
-    expect(o.status?.code).toBe(spec.migrateFails === undefined ? 0 : 1);
-    expect(o.again?.stdout.includes("no changes")).toBe(true);
-    expect(o.againWritten).toBe(false);
-  });
-
-  it("holds the rows D1 reads back to what the case expects", () => {
-    expect(seen().rows).toEqual(spec.rows);
-  });
 });
+
+for (const name of cases) {
+  test.describe(`compose case ${name}`, () => {
+    const spec = specs.get(name) as Case;
+    const seen = () => observed.get(name) as Observed;
+
+    test("composes and migrates the before state, then the after state over seeded rows", () => {
+      const o = seen();
+      expect(o.first.stderr).toBe("");
+      expect(o.first.code).toBe(0);
+      expect(o.firstWritten).toBe(true);
+      expect(o.migrated[0].code).toBe(0);
+      if (spec.composeRefused !== undefined) {
+        expect(o.second.code).toBe(1);
+        expect(o.second.stderr.includes(spec.composeRefused)).toBe(true);
+        expect(o.written).toBe("");
+        return;
+      }
+      if (spec.refusedWithout !== undefined) {
+        expect(o.refused?.code).toBe(1);
+        expect(o.refused?.stderr.includes(spec.refusedWithout)).toBe(true);
+        expect(o.refusedWritten).toBe(false);
+      }
+      expect(o.second.stderr).toBe("");
+      expect(o.second.code).toBe(0);
+      if (spec.expectNoMigration === true) expect(o.written).toBe("");
+      for (const fragment of spec.expectSql ?? []) expect(o.written.includes(fragment)).toBe(true);
+      for (const fragment of spec.expectStdout ?? []) expect(o.second.stdout.includes(fragment)).toBe(true);
+      if (spec.migrateFails === undefined) {
+        expect(o.migrated[1]?.code).toBe(0);
+      } else {
+        expect(o.migrated[1]?.code).toBe(1);
+        expect(o.migrated[1]?.stderr.includes(spec.migrateFails)).toBe(true);
+      }
+    });
+
+    test("leaves the desired state, its snapshot and the migrations in step", () => {
+      const o = seen();
+      if (spec.composeRefused !== undefined) {
+        expect(o.check).toBe(null);
+        return;
+      }
+      expect(o.check?.stderr).toBe("");
+      expect(o.check?.code).toBe(0);
+      expect(o.status?.code).toBe(spec.migrateFails === undefined ? 0 : 1);
+      expect(o.again?.stdout.includes("no changes")).toBe(true);
+      expect(o.againWritten).toBe(false);
+    });
+
+    test("holds the rows D1 reads back to what the case expects", () => {
+      expect(seen().rows).toEqual(spec.rows);
+    });
+  });
+}

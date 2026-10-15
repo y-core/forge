@@ -1,13 +1,18 @@
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 
+import { run } from "../cli/proc";
+import type { SpawnSync } from "../cli/types";
 import { hashFile } from "./hash";
 import { safeJoin } from "./paths";
 import type { CssBuild } from "./types";
 
 /** Builds a Tailwind CSS bundle and writes it to `opts.outDir`. */
-export function buildCSS(cssBuild: CssBuild, opts: { outDir: string; minify?: boolean; hash?: boolean }): Record<string, string> {
+export function buildCSS(
+  cssBuild: CssBuild,
+  opts: { outDir: string; minify?: boolean; hash?: boolean },
+  spawn?: SpawnSync,
+): Record<string, string> {
   const output = safeJoin(opts.outDir, cssBuild.output);
   const outDirPath = dirname(output);
   const shouldHash = opts.hash ?? false;
@@ -26,16 +31,14 @@ export function buildCSS(cssBuild: CssBuild, opts: { outDir: string; minify?: bo
         rmSync(join(outDirPath, entry.name));
       }
     }
-  } catch {
-    /* dir may not exist yet */
-  }
+  } catch {}
 
   mkdirSync(outDirPath, { recursive: true });
 
   const args = ["-i", cssBuild.input, "-o", output];
   if (opts.minify) args.push("--minify");
 
-  execFileSync("tailwindcss", args, { stdio: "inherit" });
+  run("tailwindcss", args, undefined, spawn);
 
   if (!shouldHash) {
     return { [cssBuild.output]: cssBuild.output };

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -9,9 +9,16 @@ import { checkJsx, resolveJsxSources, validateJsxSource } from "./jsx";
 const PRAGMAS = ["@jsxRuntime automatic", "@jsxImportSource @y-core/forge/render/jsx"];
 const HEADER = `/** @jsxRuntime automatic */\n/** @jsxImportSource @y-core/forge/render/jsx */\n`;
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A throwaway repository root holding exactly the files given. */
 function fixtureRoot(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "forge-jsx-check-"));
+  roots.push(root);
   for (const [path, source] of Object.entries(files)) {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });

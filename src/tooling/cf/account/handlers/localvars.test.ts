@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,8 +8,15 @@ import { GENERATE_MARKER, PUSH_MARKER } from "./devvars";
 import { createLocalVarsHandler } from "./localvars";
 import type { HandlerContext } from "./types";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function makeProject(devVars: string | null): string {
   const dir = mkdtempSync(join(tmpdir(), "forge-localvars-"));
+  roots.push(dir);
   const configPath = join(dir, "wrangler.jsonc");
   writeFileSync(configPath, `{ "name": "proj" }`, "utf-8");
   if (devVars !== null) writeFileSync(join(dir, ".dev.vars"), devVars, "utf-8");

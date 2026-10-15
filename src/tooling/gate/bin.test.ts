@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CliContext } from "../cli/types";
@@ -7,6 +7,12 @@ import { createReleaseBinCommand } from "../release/release";
 import { PLAIN } from "../term/color";
 import { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 import { worktreeFixture } from "./worktree.fixture";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const GATE = createGateBinCommand();
 const RELEASE = createReleaseBinCommand();
@@ -118,6 +124,7 @@ describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
 
   it("runs every step when a change matches a glob the table module adds", async () => {
     const root = worktreeFixture({ "gate/steps.ts": table('["assets/**"]'), "src/a.ts": "a\n", "assets/logo.svg": "<svg/>\n" });
+    roots.push(root);
     writeFileSync(join(root, "assets/logo.svg"), "<svg></svg>\n");
     const { logs, code } = await runBin(root);
 
@@ -127,6 +134,7 @@ describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
 
   it("treats the table module itself as a gate-wide input", async () => {
     const root = worktreeFixture({ "gate/steps.ts": table("[]"), "src/a.ts": "a\n" });
+    roots.push(root);
     mkdirSync(join(root, "gate"), { recursive: true });
     writeFileSync(join(root, "gate/steps.ts"), table("[]") + "\n");
     const { logs } = await runBin(root);
@@ -136,6 +144,7 @@ describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
 
   it("refuses a GATE_INPUTS that is not an array of glob strings", async () => {
     const root = worktreeFixture({ "gate/steps.ts": table('"assets/**"'), "src/a.ts": "a\n" });
+    roots.push(root);
     const { logs, code } = await runBin(root);
 
     expect(code).toBe(1);

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,6 +19,12 @@ import {
   summariseCommit,
 } from "./commands";
 import { GENERATE_MARKER } from "./handlers/devvars";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 // A grid line, by the characters the `single` border draws: a rule corner, a junction, or a
 // vertical. Named once so switching border presets is one edit rather than nine.
@@ -533,6 +539,7 @@ describe("--rotate and --local", () => {
 
   function makeProject(devVars: string): string {
     const dir = mkdtempSync(join(tmpdir(), "forge-cli-"));
+    roots.push(dir);
     writeFileSync(join(dir, "wrangler.jsonc"), `{ "name": "proj" }`, "utf-8");
     writeFileSync(join(dir, ".dev.vars"), devVars, "utf-8");
     return join(dir, "wrangler.jsonc");

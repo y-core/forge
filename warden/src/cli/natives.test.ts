@@ -1,12 +1,18 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { bindings, declaredVersion, executables, installedVersion } from "./natives";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function tree(files: Record<string, string>, prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   for (const [path, source] of Object.entries(files)) {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });
@@ -50,7 +56,9 @@ describe("declaredVersion()", () => {
   });
 
   it("refuses a directory that is not a repository root", () => {
-    expect(() => declaredVersion(mkdtempSync(join(tmpdir(), "warden-noroot-")), "oxlint")).toThrow("run this from a repository root");
+    const noRoot = mkdtempSync(join(tmpdir(), "warden-noroot-"));
+    roots.push(noRoot);
+    expect(() => declaredVersion(noRoot, "oxlint")).toThrow("run this from a repository root");
   });
 });
 

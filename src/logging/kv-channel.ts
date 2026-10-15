@@ -30,6 +30,7 @@ const METADATA_BYTE_LIMIT = 1024;
 const MESSAGE_CODE_POINTS_MAX = 256;
 const PREFIX_CODE_POINTS_MAX = 128;
 const REQUEST_ID_CODE_POINTS_MAX = 64;
+const TIMESTAMP_CODE_POINTS_MAX = 64;
 
 function truncateCodePoints(value: string, max: number): string {
   return [...value].slice(0, max).join("");
@@ -52,12 +53,13 @@ function largestFitting(build: (count: number) => KvLogMetadata, max: number): n
 
 function boundMetadata(record: LogRecord): KvLogMetadata {
   const requestId = truncateCodePoints(record.data?.requestId != null ? String(record.data.requestId) : "", REQUEST_ID_CODE_POINTS_MAX);
+  const timestamp = truncateCodePoints(record.timestamp, TIMESTAMP_CODE_POINTS_MAX);
 
   const build = (messageCount: number, prefixCount: number, withRequestId: boolean): KvLogMetadata => ({
     level: record.level,
     prefix: truncateCodePoints(record.prefix, prefixCount),
     message: truncateCodePoints(record.message, messageCount),
-    timestamp: record.timestamp,
+    timestamp,
     ...(withRequestId && requestId ? { requestId } : {}),
   });
 
@@ -72,7 +74,7 @@ function boundMetadata(record: LogRecord): KvLogMetadata {
   const shrunkPrefix = build(0, prefixCount, true);
   if (serializedBytes(shrunkPrefix) <= METADATA_BYTE_LIMIT) return shrunkPrefix;
 
-  return { level: record.level, timestamp: record.timestamp };
+  return { level: record.level, timestamp };
 }
 
 /** Log channel that writes records to Cloudflare KV under time-ordered keys and reads them back. @public */

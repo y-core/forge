@@ -1,15 +1,15 @@
-import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { createCommand } from "../../cli/command";
 import { scopeLogger } from "../../cli/log";
-import type { CommandBase } from "../../cli/types";
+import { runUnchecked } from "../../cli/proc";
+import type { CommandBase, SpawnSync } from "../../cli/types";
 import { loadWranglerConfig } from "../config/parse";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
-import type { GenOptions, SpawnSync } from "./types";
+import type { GenOptions } from "./types";
 
 /** Loads a `--config` module's `Partial<GenOptions>` merged over `DEFAULT_OPTIONS`, or the defaults when no path is given. @public */
 export async function loadOptions(configPath?: string): Promise<GenOptions> {
@@ -18,15 +18,13 @@ export async function loadOptions(configPath?: string): Promise<GenOptions> {
   return { ...DEFAULT_OPTIONS, ...(mod.options ?? mod.default) };
 }
 
-function formatGenerated(outPath: string, cwd: string, spawn: SpawnSync): boolean {
-  const oxfmt = spawn("oxfmt", [outPath], { stdio: "inherit", cwd });
-  if (oxfmt.status === 0) return true;
-  const local = spawn(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { stdio: "inherit", cwd });
-  return local.status === 0;
+function formatGenerated(outPath: string, cwd: string, spawn?: SpawnSync): boolean {
+  if (runUnchecked("oxfmt", [outPath], { cwd }, spawn).code === 0) return true;
+  return runUnchecked(resolve(cwd, "node_modules/.bin/oxfmt"), [outPath], { cwd }, spawn).code === 0;
 }
 
 /** Builds the env-schema generator command: read wrangler+dev-vars → collect → emit → format. @public */
-export function createGenEnvCommand(spawn: SpawnSync = spawnSync): CommandBase {
+export function createGenEnvCommand(spawn?: SpawnSync): CommandBase {
   const log = scopeLogger("cf gen env");
 
   return createCommand({

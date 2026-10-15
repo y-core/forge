@@ -444,7 +444,7 @@ nothing to do with the code under test.
 moving the number the application declares moves the application.
 
 **A fixed port is for a server a human starts or attaches to. A server a spec starts per run takes an ephemeral port and never a number** — the
-library's dev-server helper reserves a free one from the OS on `127.0.0.1`, which is why a per-run set has no port problem to solve. A fixed 8788
+`listen()` of wrangler's `createTestHarness` takes a free one from the OS, which is why a per-run set has no port problem to solve. A fixed 8788
 still collides when two repositories' browser sets run at once; an environment-variable override covers that in one line.
 
 **`reuseExistingServer` is `false`.** The dev command builds the stylesheet as it boots, so a reused server serves the CSS the source had at boot

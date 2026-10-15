@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
@@ -12,9 +12,16 @@ const STYLESHEET = "src/ui/assets/css/tailwind.css";
 const CHECKED = "[[data-slot~=switch-input]:checked~[data-slot~=switch-track]_&]:";
 const SWITCH_SOURCE = `const CHECKED = "${CHECKED}";\nconst THUMB = \`size-4 \${CHECKED}translate-x-4\`;`;
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A throwaway repository root holding exactly the files given. */
 function fixtureRoot(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "forge-class-tokens-check-"));
+  roots.push(root);
   for (const [path, source] of Object.entries(files)) {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });

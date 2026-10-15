@@ -99,6 +99,11 @@ export function formatFullLogPath(path: string): string {
   return `    full log at ${path}`;
 }
 
+/** Formats the entries a step left in its TMPDIR, appended to its output so the excerpt carries them. */
+export function formatLeftInTemp(entries: readonly string[]): string {
+  return `left in its TMPDIR: ${entries.join(", ")}`;
+}
+
 /** Formats the verdict of a `--reuse` run answered by a recorded receipt, naming the mode and tree it stands on. */
 export function formatReused(gate: string, receipt: GateReceipt, style: Colorize = PLAIN): string {
   return `${style.green("✓")} ${gate} — reused the passing ${receipt.mode} run of tree ${receipt.tree}; no step ran`;

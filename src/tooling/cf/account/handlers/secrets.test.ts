@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,6 +8,12 @@ import { syncBindings } from "../engine";
 import { GENERATE_MARKER, PUSH_MARKER, RING_MARKER } from "./devvars";
 import { createRotatableSecretsHandler, createSecretsHandler } from "./secrets";
 import type { HandlerContext } from "./types";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const AUTH = { apiToken: "tok", accountId: "acc" };
 
@@ -35,6 +41,7 @@ const remote = (...names: string[]) => names.map((name) => ({ name, type: "secre
 // runtime rather than committed.
 function makeProject(devVars: string | null, { subdir = false } = {}): { configPath: string; dir: string } {
   const root = mkdtempSync(join(tmpdir(), "forge-secrets-"));
+  roots.push(root);
   const dir = subdir ? join(root, "nested", "deep") : root;
   if (subdir) mkdirSync(dir, { recursive: true });
   const configPath = join(dir, "wrangler.jsonc");

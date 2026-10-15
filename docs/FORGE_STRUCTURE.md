@@ -207,9 +207,10 @@ two into one statement means every reader asking what a file costs at runtime ha
 `types.ts`; `forge/type-import-separation` reports a `type` specifier riding inside a value import. Both are scoped to `src/` in `.oxlintrc.json`,
 with the declaration rule off for `types.ts` itself and for specs — a fixture type is local by definition.
 
-**A file that is itself a published subpath is its own `types.ts`.** `src/testing/workerd.ts` is `@y-core/forge/testing/workerd`, deliberately
-off the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f); moving `DevServer` and `DevServerOptions` into `src/testing/types.ts` would put
-them on that barrel, which is the one place they must not be. The exemption is one `overrides` entry naming the file, not a general escape —
+**A file that is itself a published subpath is its own `types.ts`.** `src/testing/snapshot.ts` and `src/testing/harness.ts` are
+`@y-core/forge/testing/snapshot` and `@y-core/forge/testing/harness`, deliberately off the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f]
+§7f); moving their option and outcome types into `src/testing/types.ts` would put them on that barrel, which is the one place they must not be. The
+exemption is one `overrides` entry naming the files, not a general escape —
 every other file in the namespace obeys the rule.
 
 Neither half is available off the shelf. `oxfmt` is a formatter and judges no structure at all; oxlint's builtin
@@ -259,4 +260,4 @@ the JSX pragma check skips one, because the pragma pair exists for a file compil
 [testing-1b]: ./TEST_RUNNERS.md#1b-custom-buntest-stub--no-bun-types
 [testing-2]: ./TEST_RUNNERS.md#2-co-located-test-files
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
-[testing-7f]: ./TEST_RUNNERS.md#7f-a-subpath-that-is-not-on-the-barrel--y-coreforgetestingworkerd
+[testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel

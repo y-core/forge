@@ -8,6 +8,7 @@ import {
   formatFindingBlock,
   formatFixSummary,
   formatFullLogPath,
+  formatLeftInTemp,
   formatList,
   formatMissingRequirement,
   formatNothingAffected,
@@ -70,6 +71,12 @@ describe("formatFailureExcerpt()", () => {
 
     expect(excerpt.includes("(fail) parses a nested spread")).toBe(false);
     expect(excerpt.split("\n").length).toBe(120);
+  });
+});
+
+describe("formatLeftInTemp()", () => {
+  it("names every entry, in the order given", () => {
+    expect(formatLeftInTemp(["forge-a", "forge-b"])).toBe("left in its TMPDIR: forge-a, forge-b");
   });
 });
 

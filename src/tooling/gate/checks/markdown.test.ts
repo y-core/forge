@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { chmodSync, readFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { chmodSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import { gateFixtureRoot } from "./gate.fixture";
@@ -8,7 +8,17 @@ import { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./markdown";
 const CLEAN = "# Title\n\nProse with **strong** and _em_.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n";
 const PADDED = "# Title\n\n| A   | B |\n| --- | --- |\n| 1   | 2 |\n";
 
-const fixture = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-markdown-");
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+const fixture = (files: Record<string, string>): string => {
+  const root = gateFixtureRoot(files, "forge-markdown-");
+  roots.push(root);
+  return root;
+};
 
 describe("resolveMarkdownFiles()", () => {
   it("walks a directory and accepts a single file, deduped and sorted", () => {

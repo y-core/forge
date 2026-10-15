@@ -102,8 +102,9 @@ that match rules your repository actually holds; the label in each row is its `-
 | `bundleStep(label, …)` → the `label` you give it | A committed bundle a node process loads matches a fresh build of its TypeScript source |
 
 The tool rows carry no check and simply spawn: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep`
-(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Others spawn something a machine may not have —
-`browserStep` (`test:browser`), `workerdStep` (`test:workerd`) and `dbSchemaStep`, which returns the **pair** `db:schema:digests` and `db:schema`.
+(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite; `leavesNoTemp: true` fails it when the suite leaves
+anything in the `TMPDIR` the gate gives it). Others spawn something a machine may not have — `browserStep` (`test:browser`), `workerdStep`
+(`test:workerd`) and `dbSchemaStep`, which returns the **pair** `db:schema:digests` and `db:schema`.
 
 **The documentation, changelog, design and knowledge-index rows are warden's, not this namespace's.** `docsStep` (`validate-docs`), `changelogStep`
 (`validate-changelog`), `designStep` (`validate-design`), `wardenStep` (`warden:index`), `wardenQueriesStep` (`warden:queries`) and `duplicatesStep`
@@ -368,9 +369,10 @@ absence**: below the `full` tier the step is skipped, and a full run fails it.
 the **thing**, not the CLI that uses it — `hasChromium` resolves `CHROME_PATH` first and Playwright's own download second, and `hasWorkerd` answers
 for the runtime rather than for `bun`. Probing the CLI instead would pass vacuously and let every spec fail at launch.
 
-**`browserStep` spawns `playwright test` — the installed binary off `binDir`, whose shebang is node.** Not `bunx`, which installs from the registry
-when it resolves nothing locally, and not under bun, where a `webServer` playwright spawns binds somewhere a sandboxed browser cannot reach. Match
-your own `test:browser` script to the same command so the two cannot diverge.
+**`browserStep` spawns `playwright test --project=chromium` and `workerdStep` spawns `playwright test --project=workerd` — the installed binary
+off `binDir`, whose shebang is node.** Not `bunx`, which installs from the registry when it resolves nothing locally, and not under bun, where a
+`webServer` playwright spawns binds somewhere a sandboxed browser cannot reach and `createTestHarness` answers no request. Your
+`playwright.config.ts` declares both projects, and your `test:browser` and `test:workerd` scripts match the same commands so the two cannot diverge.
 
 ---
 

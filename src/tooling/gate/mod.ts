@@ -179,7 +179,7 @@ export {
 } from "./checks/modern-css-parse";
 export { findModernCssSourceViolations } from "./checks/modern-css-source-parse";
 export type { NamespaceGraphCheckConfig } from "./checks/types";
-export { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoMutualValuePairs } from "./checks/namespace-graph";
+export { checkNamespaceGraph, resolveNamespaces, validateNoEnumeration, validateNoValueCycles } from "./checks/namespace-graph";
 export type {
   DeclaredGraph,
   EdgeKind,

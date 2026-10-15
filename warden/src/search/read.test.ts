@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -7,6 +7,11 @@ import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
 import { outline, readDocument, readSection } from "./read";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
 
 const SOURCE = [
   "---",
@@ -53,6 +58,7 @@ const SOURCE = [
 ].join("\n");
 
 const root = mkdtempSync(join(tmpdir(), "warden-read-"));
+roots.push(root);
 const file = join(root, "RULES.md");
 writeFileSync(file, SOURCE, "utf-8");
 const doc: SourceDoc = { corpus: "project", path: "docs/RULES.md", file, weight: 1.2 };

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -24,6 +24,12 @@ interface FixtureOptions {
   pairs?: readonly ContrastPairInput[];
 }
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A stylesheet directory holding one token file, for the check to read. */
 function fixture(light: string, options: FixtureOptions = {}): ContrastCheckConfig {
   const css = [
@@ -36,6 +42,7 @@ function fixture(light: string, options: FixtureOptions = {}): ContrastCheckConf
     options.extra ?? "",
   ].join("\n");
   const dir = mkdtempSync(resolve(tmpdir(), "forge-contrast-"));
+  roots.push(dir);
   writeFileSync(resolve(dir, "theme.css"), css, "utf-8");
   if (options.mapping !== undefined) writeFileSync(resolve(dir, "mapping.css"), options.mapping, "utf-8");
   for (const [name, source] of Object.entries(options.files ?? {})) writeFileSync(resolve(dir, name), source, "utf-8");

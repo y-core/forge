@@ -1,9 +1,20 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
 
 import { checkClassOrder, droppedToken, validateClassOrder } from "./class-order";
 import { gateFixtureRoot } from "./gate.fixture";
 
-const fixtureRoot = (files: Record<string, string>): string => gateFixtureRoot(files, "forge-class-order-check-");
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
+const fixtureRoot = (files: Record<string, string>): string => {
+  const root = gateFixtureRoot(files, "forge-class-order-check-");
+  roots.push(root);
+  return root;
+};
 
 describe("droppedToken", () => {
   it("returns null for a literal no token of which conflicts", () => {

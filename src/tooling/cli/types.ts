@@ -244,5 +244,15 @@ export interface StreamCapture {
   readonly stderr: string;
 }
 
+/** Outcome of a child process spawned by `runUnchecked`, its output already sent to the terminal. */
+export interface RunOutcome {
+  /** The exit status, or 1 when the child never exited on its own. */
+  readonly code: number;
+  /** False on a spawn error or a kill by signal, where `code` is a stand-in rather than the child's answer. */
+  readonly exited: boolean;
+  /** The spawner's own failure, such as a missing executable or a passed deadline, when there was one. */
+  readonly spawnError?: string | undefined;
+}
+
 /** Runs a command to completion; the seam this namespace's spawning helpers take. */
 export type SpawnSync = (command: string, args: string[], options: SpawnOptions) => SpawnOutcome;

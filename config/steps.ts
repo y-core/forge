@@ -78,7 +78,7 @@ export const STEPS: readonly Step[] = [
   // oxfmt ignores `**/*.md`, so this step is what holds markdown to a house layout.
   markdownStep({ root: ROOT, ...MARKDOWN }),
   typeAwareLintStep({ sources: ["src/", "config/", "warden/"] }),
-  testStep({ sources: ["src/", "config/", "warden/src/"] }),
+  testStep({ sources: ["src/", "config/", "warden/src/"], leavesNoTemp: true }),
   exportsStep({
     root: ROOT,
     packageName: pkg.name,

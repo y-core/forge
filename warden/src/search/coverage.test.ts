@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,11 +8,17 @@ import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
 import { coverage, documentFrequency, idf } from "./coverage";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
+
 function doc(body: string): string {
   return `---\ntitle: Doc\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: what it decides\n\n## 1. One\n\n${body}\n`;
 }
 
 const root = mkdtempSync(join(tmpdir(), "warden-coverage-"));
+roots.push(root);
 const CORPUS: SourceDoc[] = [];
 for (const [path, body] of [
   ["docs/A.md", "The comment budget is a ceiling on prose."],

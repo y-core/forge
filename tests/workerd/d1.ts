@@ -5,6 +5,7 @@ import { getPlatformProxy, unstable_splitSqlQuery } from "wrangler";
 
 /** A D1 binding over the state a `--persist-to` run wrote, and the workerd process behind it. */
 export interface D1Handle {
+  binding: D1Database;
   exec(sql: string): Promise<void>;
   rows<T>(sql: string): Promise<T[]>;
   dispose(): Promise<void>;
@@ -30,6 +31,7 @@ export async function openD1(root: string, persistPath: string = join(root, ".wr
   live.add(dispose);
   sweepOnSignal();
   return {
+    binding: proxy.env.DB,
     // Each statement runs on its own and in order, never through `batch()`: `prepare` throws on a
     // multi-statement string, and a batch is one transaction where `d1 execute --command` is not.
     exec: async (sql) => {
@@ -42,7 +44,7 @@ export async function openD1(root: string, persistPath: string = join(root, ".wr
 
 const live = new Set<() => Promise<void>>();
 
-// The handler ends the run itself: a listener suppresses bun's default termination, and a run that
+// The handler ends the run itself: a listener suppresses the runtime's default termination, and a run that
 // carries on past one meets the handles this disposed.
 let bound = false;
 function sweepOnSignal(): void {

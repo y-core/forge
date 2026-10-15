@@ -1,10 +1,15 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { openDatabase } from "../index/db";
 import { checkGoldenQueries } from "./queries";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 function doc(gloss: string, body: string): string {
   return `---\ntitle: Rules\ndescription: "One."\n---\n\n## 0. Quick Reference\n\n- §1 One: ${gloss}\n\n## 1. One\n\n${body}\n`;
@@ -12,6 +17,7 @@ function doc(gloss: string, body: string): string {
 
 function repo(prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   for (const [path, source] of [
     ["docs/A.md", doc("honeypots", "A honeypot field is never rendered visibly.")],
     ["warden/canon/shared/CODE_RULES.md", doc("the comment budget", "The comment budget is a ceiling on prose.")],

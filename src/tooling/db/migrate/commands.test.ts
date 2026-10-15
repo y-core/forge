@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -12,6 +12,12 @@ import type { DbHostConfig, FakeDbIo, Spawned } from "../types";
 import { RECORDED_CHECKSUM_SELECT } from "./checksum";
 import { migrationChecksum, migrationsDigest } from "./files";
 import { schemaFingerprint } from "./fingerprint";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const NOW = new Date("2026-09-11T10:00:00Z");
 const INIT = composed("CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;");
@@ -28,6 +34,7 @@ const isInventorySelect = (a: readonly string[]) => isJsonQuery(a) && (a.at(-1) 
 /** A temp root with a real `wrangler.jsonc`, since the config is read from the filesystem either way. */
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-migrate-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root);
   writeFileSync(config.path, config.text, "utf-8");
   return root;
@@ -36,6 +43,7 @@ function appRoot(): string {
 /** A temp root whose config carries a preview id too, so every deployed place resolves. */
 function deployableRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-migrate-"));
+  roots.push(root);
   const config = minimalWranglerConfig(root, {
     d1_databases: [
       {

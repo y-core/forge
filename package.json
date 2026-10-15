@@ -24,10 +24,10 @@
       "./dev",
       "./testing",
       "./testing/coverage",
+      "./testing/harness",
       "./testing/node",
       "./testing/snapshot",
       "./testing/totp",
-      "./testing/workerd",
       "./tooling/*"
     ]
   },
@@ -40,8 +40,8 @@
     "lint": "bun run src/tooling/root/bin.ts verify --only lint",
     "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
-    "test:browser": "playwright test",
-    "test:workerd": "bun test --parallel=2 tests/workerd/",
+    "test:browser": "playwright test --project=chromium",
+    "test:workerd": "playwright test --project=workerd",
     "verify": "bun run src/tooling/root/bin.ts verify",
     "verify:full": "bun run src/tooling/root/bin.ts verify --full",
     "verify:quality": "bun run src/tooling/root/bin.ts verify --mode quality",
@@ -91,7 +91,7 @@
     "harfbuzzjs": ">=1.6.0",
     "sharp": ">=0.33.0",
     "tailwindcss": ">=4.0.0",
-    "wrangler": ">=4.0.0"
+    "wrangler": ">=4.99.0"
   },
   "peerDependenciesMeta": {
     "@codemirror/commands": {
@@ -275,6 +275,10 @@
       "types": "./src/testing/coverage/mod.ts",
       "import": "./src/testing/coverage/mod.ts"
     },
+    "./testing/harness": {
+      "types": "./src/testing/harness.ts",
+      "import": "./src/testing/harness.ts"
+    },
     "./testing/node": {
       "types": "./src/testing/node.d.ts"
     },
@@ -285,10 +289,6 @@
     "./testing/totp": {
       "types": "./src/testing/totp.ts",
       "import": "./src/testing/totp.mjs"
-    },
-    "./testing/workerd": {
-      "types": "./src/testing/workerd.ts",
-      "import": "./src/testing/workerd.ts"
     },
     "./tooling/assets": {
       "types": "./src/tooling/assets/mod.ts",

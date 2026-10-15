@@ -1,11 +1,17 @@
-import { describe, expect, it, spyOn } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { resolveSiteConfig } from "../../../site/config";
 import type { SiteConfig, ZoneRule } from "../../../site/types";
 import { createSyncZoneCommand, phaseAction, planZoneRules, rulesInSync } from "./commands";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const base: SiteConfig = {
   origin: "https://example.com",
@@ -123,7 +129,9 @@ describe("phaseAction", () => {
 
 describe("sync zone --commit", () => {
   it("describes each written ruleset as managed by `forge cf sync zone`, naming the config", async () => {
-    const config = join(mkdtempSync(join(tmpdir(), "forge-zone-")), "site.ts");
+    const dir = mkdtempSync(join(tmpdir(), "forge-zone-"));
+    roots.push(dir);
+    const config = join(dir, "site.ts");
     writeFileSync(config, `export default ${JSON.stringify(base)};\n`, "utf-8");
 
     const puts: unknown[] = [];

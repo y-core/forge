@@ -272,6 +272,8 @@ export interface CommandStep extends StepBase {
   tail: number;
   /** Auto-fixing counterpart invoked by `--fix`. Steps without one are counted as having no fixer. */
   fix?: readonly [string, ...string[]];
+  /** Fails the step, naming each entry, when it exits with anything still in the TMPDIR the runner gave it. */
+  leavesNoTemp?: boolean;
   run?: never;
 }
 

@@ -197,10 +197,10 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
     expect(workerd?.requires?.tool).toBe("workerd");
   });
 
-  it("runs two spec files at once", () => {
+  it("runs the consumer's workerd Playwright project", () => {
     const row = cloudflareWorkerSteps({ workerd: true }).at(-1);
 
-    expect(row !== undefined && "cmd" in row ? row.cmd : undefined).toEqual(["bun", "test", "--parallel=2", "tests/workerd/"]);
+    expect(row !== undefined && "cmd" in row ? row.cmd : undefined).toEqual(["playwright", "test", "--project=workerd"]);
   });
 
   it("orders the workerd row after the browser row when both opt-ins are taken", () => {
@@ -401,6 +401,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
 
     expect((await crossed.run("quality")).ok).toBe(true);
     expect((await uncrossed.run("quality")).ok).toBe(false);
+    rmSync(root, { recursive: true, force: true });
   });
 
   it("reads the feature manifest when features are opted into too, so a root with none fails the row naming it", async () => {

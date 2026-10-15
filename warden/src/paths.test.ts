@@ -1,12 +1,18 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { CANON_ROOT, CLAUDE_ROOT, resolveRepoRoot, WARDEN_ROOT, walkUpToRepo } from "./paths";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function repoFixture(): { root: string; nested: string } {
   const root = mkdtempSync(join(tmpdir(), "warden-paths-"));
+  roots.push(root);
   writeFileSync(join(root, "package.json"), "{}", "utf-8");
   const nested = join(root, "src", "deep");
   mkdirSync(nested, { recursive: true });
@@ -31,6 +37,7 @@ describe("walkUpToRepo()", () => {
     // The filesystem root can hold no package.json in a fixture, so a directory under it is the
     // only reachable negative case; `tmpdir()` itself is asserted to be free of one first.
     const orphan = mkdtempSync(join(tmpdir(), "warden-orphan-"));
+    roots.push(orphan);
 
     expect(walkUpToRepo(orphan)).toBe(walkUpToRepo(tmpdir()));
   });

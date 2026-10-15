@@ -1,14 +1,21 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { fail } from "../finding";
 import { checkCoLocation } from "./co-location";
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 /** A throwaway root holding exactly the files given — a bare path is written empty. */
 function fixtureRoot(...files: (string | Record<string, string>)[]): string {
   const root = mkdtempSync(join(tmpdir(), "forge-co-location-"));
+  roots.push(root);
   const tree = Object.fromEntries(files.flatMap((entry) => (typeof entry === "string" ? [[entry, ""]] : Object.entries(entry))));
   for (const [path, contents] of Object.entries(tree)) {
     mkdirSync(dirname(join(root, path)), { recursive: true });

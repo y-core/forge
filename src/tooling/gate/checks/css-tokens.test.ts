@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
@@ -11,9 +11,16 @@ import type { CssTokensCheckConfig } from "./types";
 const ROOT = resolve(import.meta.dir, "../../../..");
 const CONFIG: CssTokensCheckConfig = { root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" };
 
+const fixtureDirs: string[] = [];
+
+afterAll(() => {
+  for (const dir of fixtureDirs) rmSync(dir, { recursive: true, force: true });
+});
+
 /** A stylesheet directory holding one file, for the check to read. */
 function fixture(css: string): string {
   const dir = mkdtempSync(resolve(tmpdir(), "forge-css-tokens-"));
+  fixtureDirs.push(dir);
   writeFileSync(resolve(dir, "theme.css"), css, "utf-8");
   return dir;
 }
@@ -94,6 +101,7 @@ describe("checkCssTokens", () => {
 
   it("refuses a green verdict when the directory holds no stylesheet", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-css-tokens-empty-"));
+    fixtureDirs.push(dir);
     const result = await checkCssTokens({ ...CONFIG, cssDir: dir });
 
     expect(result.ok).toBe(false);
@@ -103,7 +111,9 @@ describe("checkCssTokens", () => {
   });
 
   it("refuses a green verdict when the directory does not exist", async () => {
-    const dir = resolve(mkdtempSync(resolve(tmpdir(), "forge-css-tokens-gone-")), "missing");
+    const parent = mkdtempSync(resolve(tmpdir(), "forge-css-tokens-gone-"));
+    fixtureDirs.push(parent);
+    const dir = resolve(parent, "missing");
     const result = await checkCssTokens({ ...CONFIG, cssDir: dir });
 
     expect(result.ok).toBe(false);
@@ -114,6 +124,7 @@ describe("checkCssTokens", () => {
 
   it("reads a stylesheet nested below the configured directory", async () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-css-tokens-nested-"));
+    fixtureDirs.push(dir);
     mkdirSync(resolve(dir, "theme"));
     writeFileSync(resolve(dir, "theme/hero.css"), "@theme {\n  --text-hero: 3rem;\n}\n", "utf-8");
     const result = await checkCssTokens({ ...CONFIG, cssDir: dir });

@@ -1,10 +1,16 @@
-import { describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { GENERATE_MARKER, parseDevVars, RING_MARKER } from "./devvars";
 import { describeRefusal, planRotation, randomSecret, rotateSecrets } from "./rotate";
+
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 const SAMPLE = `${GENERATE_MARKER}
 INTERNAL_API_TOKEN=old-token
@@ -13,7 +19,9 @@ STRIPE_KEY=sk_live_x
 `;
 
 function makeFile(content = SAMPLE): string {
-  const path = join(mkdtempSync(join(tmpdir(), "forge-rotate-")), ".dev.vars");
+  const dir = mkdtempSync(join(tmpdir(), "forge-rotate-"));
+  roots.push(dir);
+  const path = join(dir, ".dev.vars");
   writeFileSync(path, content, "utf-8");
   return path;
 }

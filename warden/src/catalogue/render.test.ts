@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -8,11 +8,17 @@ import { openDatabase } from "../index/db";
 import type { Corpus, SourceDoc } from "../types";
 import { renderCanon, renderCatalogue } from "./render";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
+
 function doc(title: string, description: string): string {
   return `---\ntitle: ${title}\ndescription: "${description}"\n---\n\n## 0. Quick Reference\n\n- §1 One: what it decides\n\n## 1. One\n\nBody.\n`;
 }
 
 const root = mkdtempSync(join(tmpdir(), "warden-catalogue-"));
+roots.push(root);
 const sources: SourceDoc[] = [
   ["canon", "libs", "CODE_RULES.md", "Six rules every source file obeys."],
   ["canon", "shared", "AGENT_GUIDE.md", "How a governing document is written."],
@@ -82,6 +88,7 @@ describe("renderCatalogue() — the corpus a row is filed under", () => {
 
 describe("renderCanon()", () => {
   const canon = mkdtempSync(join(tmpdir(), "warden-canon-"));
+  roots.push(canon);
   for (const [tree, name, description] of [
     ["shared", "CODE_RULES.md", "Seven rules every source file obeys."],
     ["libs", "NAMESPACE_DESIGN.md", "Barrel discipline and the leaf split."],

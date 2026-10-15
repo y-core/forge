@@ -1,13 +1,19 @@
-import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { WARDEN_ROOT } from "../paths";
 import { copyTree, identical, sync, syncTrees, walk } from "./sync";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function tree(files: Record<string, string>, prefix: string): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
+  roots.push(root);
   for (const [path, source] of Object.entries(files)) {
     const full = join(root, path);
     mkdirSync(dirname(full), { recursive: true });
@@ -69,7 +75,9 @@ describe("identical()", () => {
 describe("copyTree()", () => {
   it("reproduces the whole tree, nested directories included", () => {
     const from = tree({ "a.md": "a", "nested/b.md": "b" }, "warden-copy-from-");
-    const to = join(mkdtempSync(join(tmpdir(), "warden-copy-to-")), "out");
+    const toRoot = mkdtempSync(join(tmpdir(), "warden-copy-to-"));
+    roots.push(toRoot);
+    const to = join(toRoot, "out");
 
     copyTree(from, to);
 

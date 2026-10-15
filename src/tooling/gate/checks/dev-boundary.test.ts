@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -9,8 +9,16 @@ import type { DevBoundaryCheckConfig } from "./types";
 
 const WRANGLER = '{\n  "name": "app",\n  // the production entry\n  "main": "src/worker.ts",\n}\n';
 
+const roots: string[] = [];
+
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 function project(files: Record<string, string>, config: Partial<DevBoundaryCheckConfig> = {}): DevBoundaryCheckConfig {
-  return { root: gateFixtureRoot(files, "forge-dev-"), sources: ["src"], devOnlyDirs: ["src/dev"], ...config };
+  const root = gateFixtureRoot(files, "forge-dev-");
+  roots.push(root);
+  return { root, sources: ["src"], devOnlyDirs: ["src/dev"], ...config };
 }
 
 describe("isDevEntry", () => {
@@ -32,6 +40,7 @@ describe("isDevEntry", () => {
 describe("devOnlySpecifiers", () => {
   it("spells each declared subpath as a consumer would import it", () => {
     const root = mkdtempSync(join(tmpdir(), "forge-dev-"));
+    roots.push(root);
     mkdirSync(join(root, "node_modules", "@y-core", "forge"), { recursive: true });
     writeFileSync(join(root, "node_modules", "@y-core", "forge", "package.json"), JSON.stringify({ forge: { devOnly: ["./dev", "./testing"] } }));
 
@@ -40,6 +49,7 @@ describe("devOnlySpecifiers", () => {
 
   it("returns null for a dependency that is absent or declares nothing", () => {
     const root = mkdtempSync(join(tmpdir(), "forge-dev-"));
+    roots.push(root);
     mkdirSync(join(root, "node_modules", "silent"), { recursive: true });
     writeFileSync(join(root, "node_modules", "silent", "package.json"), JSON.stringify({ name: "silent" }));
 
@@ -98,6 +108,7 @@ describe("checkDevBoundary — rule A, `main` is not a dev entry", () => {
 
   it("fails loudly on a config that names no Worker, as one it cannot parse", () => {
     const root = gateFixtureRoot({ "wrangler.jsonc": '{ "main": "src/worker.ts" }\n', "src/worker.ts": "export default {};\n" }, "forge-dev-");
+    roots.push(root);
     const result = checkDevBoundary({ root, sources: ["src"], devOnlyDirs: ["src/dev"], workerConfig: "wrangler.jsonc" });
 
     expect([result.ok, result.findings.length]).toEqual([false, 1]);
@@ -271,6 +282,7 @@ describe("checkDevBoundary — the negative fixture", () => {
   it("reports exactly one finding per rule against a Worker that breaks all three", () => {
     const fixture = resolve(import.meta.dir, "../../../../tests/fixtures/dev-boundary-consumer");
     const root = mkdtempSync(join(tmpdir(), "forge-dev-fixture-"));
+    roots.push(root);
     cpSync(fixture, root, { recursive: true });
     mkdirSync(join(root, "node_modules", "@y-core", "forge"), { recursive: true });
     writeFileSync(

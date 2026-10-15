@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -8,11 +8,17 @@ import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
 import { impact } from "./impact";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
+
 const PKG = { name: "@y-core/forge", exports: { "./http": { import: "./src/http/mod.ts" }, "./router": "./src/router/mod.ts" } };
 
 /** A repository holding the given documents, with its index already built. */
 function fixture(files: Record<string, string>): { root: string; db: ReturnType<typeof openDatabase>; sources: SourceDoc[] } {
   const root = mkdtempSync(join(tmpdir(), "warden-impact-"));
+  roots.push(root);
   writeFileSync(join(root, "package.json"), JSON.stringify(PKG), "utf-8");
 
   const sources = Object.entries(files).map(([path, source]) => {
@@ -128,7 +134,9 @@ describe("impact()", () => {
   // `node_modules`; this exists so a refactor cannot start emitting `../../node_modules/…` ids.
   it("never names an installed library's document, whatever a diff touched", () => {
     const { root, db, sources } = fixture(files);
-    const library = join(mkdtempSync(join(tmpdir(), "warden-impact-library-")), "UI.md");
+    const libraryRoot = mkdtempSync(join(tmpdir(), "warden-impact-library-"));
+    roots.push(libraryRoot);
+    const library = join(libraryRoot, "UI.md");
     mkdirSync(dirname(library), { recursive: true });
     writeFileSync(library, OWNER, "utf-8");
     const withLibrary = [...sources, { corpus: "dependency" as const, path: "forge/UI.md", file: library, weight: 0.95 }];

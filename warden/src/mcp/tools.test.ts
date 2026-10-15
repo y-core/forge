@@ -1,5 +1,5 @@
-import { describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -7,10 +7,16 @@ import { openIndex } from "../index/open";
 import { CORPORA } from "../types";
 import { callTool, knowledgeTools } from "./tools";
 
+const roots: string[] = [];
+afterAll(() => {
+  for (const tempRoot of roots) rmSync(tempRoot, { recursive: true, force: true });
+});
+
 const DOC =
   '---\ntitle: Rules\ndescription: "One."\n---\n\n> Defers to: `AGENT_GUIDE.md` §1 for the form.\n\n## 0. Quick Reference\n\n- §1 One: the comment budget\n\n## 1. One\n\nThe comment budget is a ceiling.\n';
 
 const root = mkdtempSync(join(tmpdir(), "warden-tools-"));
+roots.push(root);
 const canonRoot = join(root, "canon");
 for (const path of [join(root, "docs/A.md"), join(canonRoot, "libs/CODE_RULES.md"), join(canonRoot, "shared/AGENT_GUIDE.md")]) {
   mkdirSync(dirname(path), { recursive: true });

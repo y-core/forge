@@ -25,7 +25,7 @@
 -- Every FOREIGN KEY here is documentation. D1 does not guarantee `PRAGMA foreign_keys` is on, so
 -- the adapters delete children explicitly in a `batch()` and correctness never rests on the pragma.
 --
--- `tests/workerd/auth-schema.test.ts` applies this file to a real D1 and holds the facts it depends
+-- `tests/workerd/auth-schema.workerd.ts` applies this file to a real D1 and holds the facts it depends
 -- on: STRICT is accepted and enforced, `batch()` rolls back whole on a mid-batch failure, a BLOB
 -- column reads back with its bytes intact, and the shipped adapters' guards decide as they claim to
 -- when their SQL is the thing being executed.

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
+import { rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,20 +15,13 @@ describe("fetchURL()", () => {
   let dest: string;
   let savedFetch: typeof globalThis.fetch | undefined;
 
-  afterEach(async () => {
+  afterEach(() => {
     if (savedFetch) {
       globalThis.fetch = savedFetch;
       savedFetch = undefined;
     }
     if (dest) {
-      const file = Bun.file(dest);
-      if (await file.exists()) {
-        try {
-          await Bun.write(dest, ""); // truncate to allow collection
-        } catch {
-          /* ignore */
-        }
-      }
+      rmSync(dest, { recursive: true, force: true });
       dest = "";
     }
   });

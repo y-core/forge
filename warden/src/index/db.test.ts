@@ -1,9 +1,14 @@
-import { describe, expect, it } from "bun:test";
-import { existsSync, mkdtempSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { gateIndexPath, indexPath, openDatabase, readMeta, stampVersions, versionsMatch, writeMeta } from "./db";
+
+const roots: string[] = [];
+afterAll(() => {
+  for (const root of roots) rmSync(root, { recursive: true, force: true });
+});
 
 describe("indexPath() and gateIndexPath()", () => {
   it("put both under `.forge/`, which is already a gitignored build artifact", () => {
@@ -18,7 +23,9 @@ describe("indexPath() and gateIndexPath()", () => {
 
 describe("openDatabase()", () => {
   it("creates the schema on a new file and leaves an existing one alone", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "warden-db-")), "nested", "index.sqlite");
+    const dir = mkdtempSync(join(tmpdir(), "warden-db-"));
+    roots.push(dir);
+    const path = join(dir, "nested", "index.sqlite");
 
     const first = openDatabase(path);
     writeMeta(first, "probe", "kept");
@@ -32,7 +39,9 @@ describe("openDatabase()", () => {
   });
 
   it("replaces the tables when the stored schema version is not this one", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "warden-db-schema-")), "index.sqlite");
+    const dir = mkdtempSync(join(tmpdir(), "warden-db-schema-"));
+    roots.push(dir);
+    const path = join(dir, "index.sqlite");
 
     const first = openDatabase(path);
     writeMeta(first, "schema_version", "0");
@@ -50,7 +59,9 @@ describe("openDatabase()", () => {
   });
 
   it("removes a column the current schema has dropped, not only restores one it added", () => {
-    const path = join(mkdtempSync(join(tmpdir(), "warden-db-dropped-")), "index.sqlite");
+    const dir = mkdtempSync(join(tmpdir(), "warden-db-dropped-"));
+    roots.push(dir);
+    const path = join(dir, "index.sqlite");
 
     const first = openDatabase(path);
     writeMeta(first, "schema_version", "0");
@@ -66,7 +77,9 @@ describe("openDatabase()", () => {
   });
 
   it("types `query` as bun-types does, so a call a consumer's tsc rejects fails this repository's too", () => {
-    const db = openDatabase(join(mkdtempSync(join(tmpdir(), "warden-db-")), "index.sqlite"));
+    const dir = mkdtempSync(join(tmpdir(), "warden-db-"));
+    roots.push(dir);
+    const db = openDatabase(join(dir, "index.sqlite"));
     // @ts-expect-error -- bun-types gives `query`'s `ParamsType` no default, so one type argument is an error
     const statement = db.query<{ n: number }>("SELECT 1 AS n");
     expect(statement.get()).toEqual({ n: 1 });
