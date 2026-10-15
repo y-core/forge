@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.2] — 2026-10-15
+
 ### Breaking Changes
 
 - **`AuthNotifier.send` takes a second argument, `signal: AbortSignal`**, in `@y-core/forge/auth`. Forge aborts it once the delivery deadline
@@ -5810,6 +5816,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.2]: https://github.com/y-core/forge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/y-core/forge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/y-core/forge/compare/v0.4.4...v0.5.0
 [0.4.4]: https://github.com/y-core/forge/compare/v0.4.3...v0.4.4
