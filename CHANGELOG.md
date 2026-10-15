@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.3] — 2026-10-15
+
 ### Fixed
 
 - **`@y-core/forge/testing/harness` now loads from a consumer's Playwright `workerd` project.** Node refused to strip types under
@@ -5820,6 +5826,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.3]: https://github.com/y-core/forge/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/y-core/forge/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/y-core/forge/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/y-core/forge/compare/v0.4.4...v0.5.0
