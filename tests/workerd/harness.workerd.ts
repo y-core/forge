@@ -118,3 +118,62 @@ test("applies the config's D1 migrations under an entry, reading migrations_dir 
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+/** A throwaway app whose config declares required secrets and https, beside a `.dev.vars` naming the same keys. */
+function devVarsApp(): string {
+  const root = mkdtempSync(join(tmpdir(), "forge-harness-dev-vars-"));
+  writeFileSync(
+    join(root, "wrangler.jsonc"),
+    JSON.stringify({
+      name: "harness-dev-vars",
+      main: ENTRY,
+      compatibility_date: "2026-01-01",
+      d1_databases: [{ binding: "DB", database_name: "harness-dev-vars", database_id: "harness-dev-vars-local" }],
+      secrets: { required: ["SITE_ORIGIN", "MODE"] },
+      dev: { local_protocol: "https" },
+    }),
+  );
+  writeFileSync(join(root, ".dev.vars"), "SITE_ORIGIN=https://dev-vars.test\nMODE=dev-vars\n");
+  return root;
+}
+
+const derivedFiles = (root: string): string[] => readdirSync(root).filter((name) => name.startsWith(".wrangler-harness-"));
+
+for (const entry of [undefined, ENTRY]) {
+  const mode = entry === undefined ? "the config's own main" : "an entry";
+
+  test(`serves ${mode} over http, its served origin and the caller's secret binding over .dev.vars`, async () => {
+    const root = devVarsApp();
+    try {
+      const { harness, origin } = await serveWorker({
+        config: join(root, "wrangler.jsonc"),
+        ...(entry ? { entry } : {}),
+        secrets: { MODE: "secret" },
+      });
+      try {
+        const answer = await fetch(origin);
+        expect([new URL(origin).protocol, answer.status, await answer.json()]).toEqual([
+          "http:",
+          200,
+          { answer: "from-entry", siteOrigin: origin, mode: "secret" },
+        ]);
+      } finally {
+        await harness.close();
+      }
+      expect(derivedFiles(root)).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("removes the derived config when the Worker fails to start", async () => {
+  const root = devVarsApp();
+  try {
+    const started = serveWorker({ config: join(root, "wrangler.jsonc"), entry: join(root, "missing.ts") });
+    await expect(started).rejects.toThrow();
+    expect(derivedFiles(root)).toEqual([]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

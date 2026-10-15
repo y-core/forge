@@ -18,7 +18,21 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **`serveWorker` always serves plain http.** A config's `dev.local_protocol: "https"` made the origin https on a self-signed certificate
+  that `fetch` refuses; it is now ignored, so drop any `ignoreHTTPSErrors` a harness test carried for it.
+- **`serveWorker` writes a copy of the config beside it, `.wrangler-harness-<uuid>.json`, and `harness.close()` deletes it.** A run killed
+  before `close()` leaves one behind: add `.wrangler-harness-*.json` to `.gitignore`.
+
+### Fixed
+
+- **`serveWorker` with `entry` now starts under a config that declares `secrets.required`.** wrangler refused it with `assigned to
+  Environment Variable and Secret bindings`, because the inline config kept the declaration while every secret, and `SITE_ORIGIN`, arrived
+  as a var.
+- **`vars`, `secrets` and `SITE_ORIGIN` now bind over `.dev.vars` under `entry`.** The app's `.dev.vars` was read for the inline config and
+  replaced each value of the same name, so a test ran on the developer's local secrets and the served origin was not the Worker's
+  `SITE_ORIGIN`.
 
 ---
 

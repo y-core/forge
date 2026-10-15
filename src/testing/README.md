@@ -267,7 +267,13 @@ To serve a test-only Worker instead of the app's, pass `entry`. It runs in place
 const served = await serveWorker({ config: "./wrangler.jsonc", entry: "./tests/workerd/probe.ts", vars: { MODE: "test" } });
 ```
 
-Under `entry`, secrets reach the Worker as vars, because an inline harness config has none of its own.
+`vars` and `secrets` bind over the config's own vars and over `.dev.vars`, with `entry` or without it, so a test never runs on a developer's
+local value for a name it passes. A name it does not pass still loads from `.dev.vars`, as under `wrangler dev`.
+
+The origin is always plain http: the config's `dev.local_protocol` is ignored, so a `fetch` needs no certificate handling.
+
+The harness serves a copy of the config written beside it, `.wrangler-harness-<uuid>.json`, and `harness.close()` deletes it. A run killed
+before `close()` leaves one behind, so add `.wrangler-harness-*.json` to `.gitignore`.
 
 The Worker reads its own origin as `SITE_ORIGIN`, which is set to `origin` over any var of that name, so an `Origin` check passes for requests a
 test sends. Pass `siteHost: "localhost"` for a WebAuthn test, which refuses an IP address as an RP ID.

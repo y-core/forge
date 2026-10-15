@@ -1,4 +1,5 @@
-import { dirname, resolve } from "node:path";
+import { rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 
 import { createTestHarness, experimental_readRawConfig } from "wrangler";
 import type { TestHarness, TestHarnessOptions } from "wrangler";
@@ -22,39 +23,46 @@ export interface ServedWorker {
   origin: string;
 }
 
-type RawConfig = Record<string, unknown> & { vars?: Record<string, unknown> };
+type RawConfig = Record<string, unknown> & { dev?: Record<string, unknown> };
 
-/** The harness input `options` serve; `raw` is the config file's own contents, read only when `entry` replaces its `main`. @internal */
-export function harnessInput(options: ServeWorkerOptions, raw: RawConfig | null): TestHarnessOptions {
+/** `raw` as the harness serves it: `main` replaced by `entry` where one is given, and over plain http. @internal */
+export function derivedConfig(raw: RawConfig, entry?: string): RawConfig {
+  // A test reaches the origin with a plain `fetch`, which refuses the self-signed certificate wrangler serves https on.
+  const { local_protocol: _protocol, ...dev } = raw.dev ?? {};
+  const { dev: _dev, ...rest } = raw;
+  return { ...rest, ...(entry === undefined ? {} : { main: resolve(entry) }), ...(Object.keys(dev).length > 0 ? { dev } : {}) };
+}
+
+/** The harness input serving the config file at `configPath`, the caller's vars and secrets bound over its own. @internal */
+export function harnessInput(options: ServeWorkerOptions, configPath: string): TestHarnessOptions {
   const vars = options.vars ?? {};
-  if (options.entry === undefined || raw === null) {
-    return {
-      workers: [
-        { configPath: options.config, ...(Object.keys(vars).length > 0 ? { vars } : {}), ...(options.secrets ? { secrets: options.secrets } : {}) },
-      ],
-    };
-  }
-  const root = dirname(resolve(options.config));
-  const { env: _env, ...inline } = raw;
-  return { root, workers: [{ config: { ...inline, main: resolve(options.entry), vars: { ...raw.vars, ...vars, ...options.secrets } } }] };
+  return { workers: [{ configPath, ...(Object.keys(vars).length > 0 ? { vars } : {}), ...(options.secrets ? { secrets: options.secrets } : {}) }] };
 }
 
 /** `input` with `SITE_ORIGIN` set to `origin` on its primary Worker, over every other var. @internal */
 export function withSiteOrigin(input: TestHarnessOptions, origin: string): TestHarnessOptions {
   const [primary, ...rest] = input.workers;
-  if (primary === undefined) return input;
-  const site =
-    "config" in primary
-      ? { config: { ...primary.config, vars: { ...primary.config.vars, SITE_ORIGIN: origin } } }
-      : { ...primary, vars: { ...primary.vars, SITE_ORIGIN: origin } };
-  return { ...input, workers: [site, ...rest] };
+  if (primary === undefined || "config" in primary) return input;
+  return { ...input, workers: [{ ...primary, vars: { ...primary.vars, SITE_ORIGIN: origin } }, ...rest] };
 }
 
 /** Starts a Worker under wrangler's `createTestHarness`, its origin known to it as `SITE_ORIGIN`, and resolves once it answers. @public */
 export async function serveWorker(options: ServeWorkerOptions): Promise<ServedWorker> {
-  const raw = options.entry === undefined ? null : (experimental_readRawConfig({ config: options.config }).rawConfig as RawConfig);
-  const input = harnessInput(options, raw);
+  // Beside the original, so every relative path and `.dev.vars` resolve as they do for it. Served by path rather than inline,
+  // because only a path input takes vars and secrets that bind over `.dev.vars`.
+  const derived = join(dirname(resolve(options.config)), `.wrangler-harness-${crypto.randomUUID()}.json`);
+  const raw = experimental_readRawConfig({ config: options.config }).rawConfig as RawConfig;
+  writeFileSync(derived, JSON.stringify(derivedConfig(raw, options.entry)));
+  const input = harnessInput(options, derived);
   const harness = createTestHarness(input);
+  const close = harness.close.bind(harness);
+  harness.close = async () => {
+    try {
+      await close();
+    } finally {
+      rmSync(derived, { force: true });
+    }
+  };
   try {
     const { url } = await harness.listen();
     url.hostname = options.siteHost ?? "127.0.0.1";
