@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.5] — 2026-10-16
+
 ### Added
 
 - **`--elevation`, a ninth shape token.** Every length in `--shadow-2xs` through `--shadow-2xl` is multiplied by it, so a shape file's
@@ -5860,6 +5866,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.5]: https://github.com/y-core/forge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/y-core/forge/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/y-core/forge/compare/v0.5.2...v0.5.3
 [0.5.2]: https://github.com/y-core/forge/compare/v0.5.1...v0.5.2
