@@ -24,6 +24,7 @@ export {
   formatStep,
   jsxStep,
   menuNamingStep,
+  nodeExportsStep,
   iccProfileStep,
   importBoundaryStep,
   lintStep,
@@ -126,8 +127,8 @@ export type { MenuNamingCheckConfig } from "./checks/types";
 export { checkMenuNaming, triggeredPopupIds, triggerTargets, validateMenuNaming } from "./checks/menu-naming";
 export type { StubGlobalsCheckConfig } from "./checks/types";
 export { checkStubGlobals, declaredStubGlobals, findStubGlobalReferences } from "./checks/stub-globals";
-export type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
-export { bundleSource, checkBundle, hasEsbuild, writeBundle } from "./checks/bundle";
+export type { BundleCheckConfig, IccProfileCheckConfig, NodeBundle, NodeExportsCheckConfig, NodeManifest } from "./checks/types";
+export { bundleSource, checkBundle, checkNodeExports, hasEsbuild, nodeBundles, writeBundle } from "./checks/bundle";
 export { checkIccProfile, renderIccModule } from "./checks/icc-profile";
 export type { MarkdownCheckConfig } from "./checks/types";
 export { checkMarkdown, fixMarkdown, resolveMarkdownFiles } from "./checks/markdown";

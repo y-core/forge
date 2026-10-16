@@ -495,7 +495,8 @@ exist, which is what lets `tsc` run on a clean checkout — so `validate-asset-m
 `full`, where passing on an artifact nobody built is exactly the 404 the check exists to prevent.
 
 **Import `resolveChromiumPath` from `@y-core/forge/tooling/gate/chromium`, not from the barrel.** Node refuses to strip types from a file under
-`node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a `playwright.config.ts` must load the prebuilt `.mjs` at that subpath.
+`node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), so a `playwright.config.ts` must load the prebuilt `.mjs` at that subpath. Your
+own package's Node-reached subpaths follow the same rule, and `nodeExportsStep` holds them to it ([`BUILD_TOOLING.md`][bt-2n] §2n).
 
 **A value your table imports from outside `config/` is an input no builder can see.** `--affected` reads a builder's `watches` from its config
 paths, so an allowlist or rule table imported from `src/…` is invisible to it, and an edit there skips the step. State `watches` on that row
@@ -519,6 +520,7 @@ and reading it as "select no steps" would refuse every unscoped run.
 [bt-2]: ../../../docs/BUILD_TOOLING.md#2-toolinggate-and-toolingrelease--project-tooling
 [bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
+[bt-2n]: ../../../docs/BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
 [cli-readme]: ../cli/README.md
 [cr-5a]: ../../../warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
 [lint-readme]: ../lint/README.md

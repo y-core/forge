@@ -85,7 +85,7 @@ export function createReleaseCommand(
           throw new ReleaseError(
             "history-rewritten",
             `${result.previous} is no longer an ancestor of HEAD — published history was rewritten.\n` +
-              `Consumers fetch a codeload tarball at ${result.previous}, so the commits they already hold no longer match the tag, ` +
+              `Consumers installed the tarball released at ${result.previous}, so the tag no longer names what they hold, ` +
               "and no version change signals it. Recover the rewritten commits with `git reflog` and rebuild HEAD on top of the tag.",
           );
         }

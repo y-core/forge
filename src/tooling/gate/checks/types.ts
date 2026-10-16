@@ -756,6 +756,34 @@ export interface SsrBoundaryCheckConfig {
   exports?: ExportsMap;
 }
 
+/** A `package.json` reduced to what the Node-reached exports are derived from. @public */
+export interface NodeManifest {
+  exports: ExportsMap;
+  /** The forge declarations; `node` lists every subpath a Node process imports rather than a Worker or Bun. */
+  forge?: { node?: readonly string[] };
+}
+
+/** One generated bundle derived from a `forge.node` export. @public */
+export interface NodeBundle {
+  /** The gate row that rebuilds it. */
+  label: string;
+  /** The export's `types` source, relative to the root. */
+  entry: string;
+  /** The export's `import` target, relative to the root. */
+  bundle: string;
+  /** Every file whose edit can change the bundle: the entry's relative-import closure and the bundle itself. */
+  watches: readonly string[];
+}
+
+/** What the node-exports check needs to know about the package. @public */
+export interface NodeExportsCheckConfig {
+  exports: ExportsMap;
+  /** The `forge.node` declaration, verbatim. */
+  node: readonly string[];
+  /** The command that regenerates every bundle, named in each finding it fixes. */
+  fixer: string;
+}
+
 /** Where the committed ICC module and the profile it is generated from live. @public */
 export interface IccProfileCheckConfig {
   root: string;

@@ -281,6 +281,20 @@ test sends. Pass `siteHost: "localhost"` for a WebAuthn test, which refuses an I
 Storage starts empty on every start. To run the config's D1 migrations, call `await harness.getWorker().applyD1Migrations("DB")` before the first
 request. `harness.getLogs()` returns what the Worker logged, and `harness.close()` stops the runtime.
 
+**Submitting a form** needs a CSRF token, and `@y-core/forge/testing/form` carries `mintTestCsrfToken` with the form defaults a spec posts
+against:
+
+```ts
+import { CSRF_HEADER_DEFAULT, mintTestCsrfToken } from "@y-core/forge/testing/form";
+
+const token = await mintTestCsrfToken(CSRF_SECRET, "/api/contact");
+const res = await fetch(`${origin}/api/contact`, { method: "POST", headers: { [CSRF_HEADER_DEFAULT]: token }, body: new FormData() });
+```
+
+Node refuses forge's TypeScript source under `node_modules`, so a workerd spec may import only forge's node subpaths — `testing/harness`,
+`testing/form` and `testing/totp` — and modules of its own that import nothing else from forge. A shared helper that imports
+`@y-core/forge/testing` stops every spec that imports it from loading.
+
 ---
 
 ## Comparing text against a committed fixture

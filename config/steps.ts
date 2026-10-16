@@ -29,6 +29,7 @@ import {
   markdownStep,
   modernCssStep,
   namespaceGraphStep,
+  nodeExportsStep,
   packagingStep,
   ssrBoundaryStep,
   stubGlobalsStep,
@@ -180,6 +181,7 @@ export const STEPS: readonly Step[] = [
   }),
   designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
   iccProfileStep({ root: ROOT, profile: "src/render/pdf/sRGB2014.icc", module: "src/render/pdf/icc.ts" }),
+  nodeExportsStep({ exports: EXPORTS, node: pkg.forge.node, fixer: BUNDLE_FIXER }),
   ...BUNDLES.map(({ label, entry, bundle, watches }) => bundleStep(label, { root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }, { watches })),
   contrastStep(
     {

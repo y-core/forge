@@ -18,7 +18,32 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`@y-core/forge/testing/form`, a node-loadable bundle of what a workerd spec submits a form with.** It carries `mintTestCsrfToken`,
+  `CSRF_FIELD_DEFAULT`, `CSRF_HEADER_DEFAULT` and `FORM_MAX_BYTES_DEFAULT`; `mintTestCsrfToken` stays on the `./testing` barrel too.
+- **`forge.node` in `package.json` declares every subpath a Node process imports, and the gate holds the export map to it.** The new
+  `validate-node-exports` row (`nodeExportsStep`, `checkNodeExports`) fails a listed subpath whose `import` is not a generated `.mjs`, naming it and
+  `bun run gen:bundles`, and an `.mjs` export the list leaves out. `nodeBundles` derives each bundle row and its watched files from the list, so
+  adding a Node-reached export needs no edit to `config/bundles.ts` ([`BUILD_TOOLING.md`](docs/BUILD_TOOLING.md) §2n).
+
+### Fixed
+
+- **A consumer's workerd spec could load nothing from forge but `serveWorker`.** Every other surface it needed was TypeScript source, which node
+  refuses under `node_modules` with `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`, so the spec never ran. Forge's workerd suite now installs the
+  tarball `bun pm pack` makes and loads every `forge.node` subpath under node, so a surface left unbundled fails in forge. **Migration:** import the CSRF
+  helpers and the form defaults in a workerd spec from `@y-core/forge/testing/form`, and keep any helper a spec imports free of
+  `@y-core/forge/testing`.
+
+### Changed
+
+- **The consumer pin form has one home, `FORGE_CONSUMPTION.md` §4c:** the released tarball by URL. Forge's
+  other mentions cite it, and the ones that described a `codeload` tarball are corrected.
+- **The bundle drift rows are renamed to `validate-<subpath>-bundle`**, derived from the subpath: `validate-lint-plugin` is
+  `validate-tooling-lint-plugin-bundle`, and `validate-chromium-bundle`, `validate-totp-bundle`, `validate-harness-bundle` and
+  `validate-wrangler-bundle` gain their full subpath. A `verify --only` naming an old label must use the new one.
+- **`./tooling/lint/plugin` and `./tooling/gate/chromium` gain a `types` condition**, the `.ts` entry each bundle is built from; the `import`
+  target is unchanged.
 
 ---
 

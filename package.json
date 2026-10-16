@@ -24,11 +24,20 @@
       "./dev",
       "./testing",
       "./testing/coverage",
+      "./testing/form",
       "./testing/harness",
       "./testing/node",
       "./testing/snapshot",
       "./testing/totp",
       "./tooling/*"
+    ],
+    "node": [
+      "./testing/form",
+      "./testing/harness",
+      "./testing/totp",
+      "./tooling/cf/wrangler",
+      "./tooling/gate/chromium",
+      "./tooling/lint/plugin"
     ]
   },
   "scripts": {
@@ -275,6 +284,10 @@
       "types": "./src/testing/coverage/mod.ts",
       "import": "./src/testing/coverage/mod.ts"
     },
+    "./testing/form": {
+      "types": "./src/testing/form.ts",
+      "import": "./src/testing/form.mjs"
+    },
     "./testing/harness": {
       "types": "./src/testing/harness.ts",
       "import": "./src/testing/harness.mjs"
@@ -318,7 +331,10 @@
       "types": "./src/tooling/gate/mod.ts",
       "import": "./src/tooling/gate/mod.ts"
     },
-    "./tooling/gate/chromium": "./src/tooling/gate/chromium.mjs",
+    "./tooling/gate/chromium": {
+      "types": "./src/tooling/gate/checks/chromium.ts",
+      "import": "./src/tooling/gate/chromium.mjs"
+    },
     "./tooling/gate/types": {
       "types": "./src/tooling/gate/types.ts",
       "import": "./src/tooling/gate/types.ts"
@@ -327,7 +343,10 @@
       "types": "./src/tooling/lint/mod.ts",
       "import": "./src/tooling/lint/mod.ts"
     },
-    "./tooling/lint/plugin": "./src/tooling/lint/plugin.mjs",
+    "./tooling/lint/plugin": {
+      "types": "./src/tooling/lint/mod.ts",
+      "import": "./src/tooling/lint/plugin.mjs"
+    },
     "./tooling/release": {
       "types": "./src/tooling/release/mod.ts",
       "import": "./src/tooling/release/mod.ts"

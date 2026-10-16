@@ -36,6 +36,7 @@ audience: internal
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
 - §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:full` alone, and where component coverage is checked
 - §2m The Bun Floor Is the Bun the Gate Runs On: why `engines.bun` equals `packageManager`, and what raising it takes
+- §2n A Node-Reached Export Is Declared Under `forge.node`: the one list every bundle, drift row and check is derived from
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
 - §3a What the Check Reads, and the Trap It Exists For: why every `env.*` block is judged on its own
 
@@ -414,8 +415,9 @@ container: `git stash`, fresh branches and worktree removal have each broken her
 fit to the machinery that works, not a preference about workflow.
 
 **The invariant that replaces the discipline a branch would have provided is the amend floor.** `git describe --tags --abbrev=0` marks it. **Above
-the floor, history is private** — amend, reword and reorder freely. **At or below it, history is published**: consumers pin codeload tarballs at a
-tag, so a consumer has already fetched those commits, and rewriting them changes what they got without changing the version they asked for.
+the floor, history is private** — amend, reword and reorder freely. **At or below it, history is published**: a consumer has installed the tarball
+released at that tag ([`FORGE_CONSUMPTION.md`][fc-4c] §4c), so rewriting those commits changes what the tag names without changing the version
+they asked for.
 
 **`forge release` enforces the floor rather than trusting it**, in a preflight that runs before anything is written: it refuses when the previous
 tag is not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`) — an
@@ -466,6 +468,21 @@ of a release, the demonstrator runs that spec after `forge dev sync` (§2k).
 package.json`, so the release gate (§2a) runs on exactly the floor. Nothing older is gated, so nothing older is claimed: a lower floor would promise
 support for a Bun no run has tested. Raising one means raising the other in the same change, and `config/release.test.ts` fails while they differ.
 
+### 2n. A Node-Reached Export Is Declared Under `forge.node`
+
+**A subpath a Node process imports is listed under `forge.node` in `package.json`, and its export points `import` at a generated `.mjs`** beside a
+`types` naming the `.ts` entry. `bun run gen:bundles` writes the `.mjs`; nothing else is edited. Node refuses to strip types under `node_modules`,
+and forge's extensionless imports do not resolve under Node ESM, so a `.ts` target there breaks the consumer rather than forge
+([`NAMESPACES.md`][namespaces-3c] §3c).
+
+**Everything else is derived from that list.** `nodeBundles` turns each entry into a bundle row — the `validate-<subpath>-bundle` drift check,
+watching the entry's relative-import closure — and `gen:bundles` writes the same rows. `validate-node-exports` fails a listed subpath whose export
+is missing or does not point `import` at a `.mjs`, and an `.mjs` export the list leaves out. `tests/workerd/harness-consumer.workerd.ts` loads every
+listed subpath under node from the packed tarball.
+
+**An export nobody lists still passes.** Nothing infers which exports Node reaches, so the declaration is the claim and the checks hold the export
+map to it.
+
 ---
 
 ## 3. The Compatibility-Flag Posture Every Forge App States
@@ -507,6 +524,7 @@ different posture; forge itself ships the step rather than running it, having no
 
 [ap]: ./ASSET_PIPELINE.md
 [canon-testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
+[fc-4c]: ../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules

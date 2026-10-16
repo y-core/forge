@@ -95,10 +95,11 @@ container with no barrel of its own (§5k).
 
 **A surface a consumer's node process loads ships as a committed bundle under its own subpath.** Node refuses to strip types from a file under
 `node_modules` (`ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING`), deliberately and with no opt-out flag, so a consumer's oxlint cannot load
-`@y-core/forge/tooling/lint` from source however forge is installed; `@y-core/forge/tooling/lint/plugin` is the bundle it names instead. Forge is
-consumed as a git tarball, so there is no publish step that could build the bundle and no `prepare` hook a consumer runs: committing the artifact is
-the only form that reaches a consumer without the consumer building it. The cost is that a generated file can drift from its source, so a drift
-check rebuilds each bundle on every gate run and fails on any difference — one step per row of `config/bundles.ts`, which names each step.
+`@y-core/forge/tooling/lint` from source however forge is installed; `@y-core/forge/tooling/lint/plugin` is the bundle it names instead. The release
+asset is a `bun pm pack` of the committed tree with no build step, and a consumer runs no `prepare` hook: committing the artifact is the only form
+that reaches a consumer without the consumer building it. The cost is that a generated file can drift from its source, so a drift
+check rebuilds each bundle on every gate run and fails on any difference. Which subpaths are bundled is the `forge.node` declaration
+([`BUILD_TOOLING.md`][bt-2n] §2n).
 
 **Playwright is the second such host, and forge cannot choose bun on the consumer's behalf.** A `playwright.config.ts` importing a forge subpath
 dies at config load with the same error, and under bun a dev server playwright spawns binds where the browser cannot reach it — specs that pass
@@ -106,7 +107,10 @@ under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun play
 committed bundle of the one symbol a config needs. A consumer's browser spec loads the same way, so `@y-core/forge/testing/totp` is a committed
 bundle of `totpCodes`, which also stays on the `./testing` barrel for a suite running under bun. A config that reads `wrangler.jsonc` loads the
 same way, so `@y-core/forge/tooling/cf/wrangler` is a committed bundle of `parseWranglerConfig` alone. A consumer's workerd spec loads
-`serveWorker` the same way, so `@y-core/forge/testing/harness` is a committed bundle whose types stay its `.ts` source.
+`serveWorker` the same way, so `@y-core/forge/testing/harness` is a committed bundle whose types stay its `.ts` source. A workerd spec that
+submits a form needs a token and the form defaults, so `@y-core/forge/testing/form` bundles `mintTestCsrfToken` and the constants a spec posts
+against, and `mintTestCsrfToken` stays on the `./testing` barrel too. `tests/workerd/harness-consumer.workerd.ts` installs the tarball `bun pm pack`
+makes and loads every `forge.node` subpath under node, so a surface a spec needs and forge never bundled fails in forge first.
 
 Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
 broken bundle fails here rather than there.
@@ -512,6 +516,7 @@ second repository needs it.
 [boundaries-2b]: ../warden/canon/libs/BOUNDARIES.md#2b-what-does-not
 [boundaries-2c]: ../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
 [bt-2i]: ./BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
+[bt-2n]: ./BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
 [cr]: ../warden/canon/shared/CODE_RULES.md
 [cr-7]: ../warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
 [dev-readme]: ../src/dev/README.md

@@ -147,7 +147,8 @@ tags allowed to deploy — under the repository's Settings → Environments. A c
 `gh attestation verify y-core-forge-<version>.tgz --repo <owner>/<repo>`.
 
 **The gate that decides the release runs here, before the tag exists.** CI's run is a backstop on a different machine: by the time it fails, the tag
-is already public and consumers resolving it get a codeload snapshot of whatever it points at, with no asset attached and no version left to reuse.
+is already public with no asset attached, so a consumer pinning that version ([`FORGE_CONSUMPTION.md`][fc-4c] §4c) has nothing to install and
+no version is left to reuse.
 
 The gate is `bun run verify` unless the release config names another, so a project whose script is called something else says so once:
 
@@ -165,15 +166,7 @@ and by `git remote set-head`, so a repository created locally and pushed has non
 **A detached HEAD is refused either way.** Releasing from one commits to no branch: the printed `git push` would push nothing while
 `git push --tags` published a tag no branch carries.
 
-A consumer then depends on the artifact by URL:
-
-```json
-{
-  "dependencies": {
-    "@y-core/forge": "https://github.com/y-core/forge/releases/download/v0.1.12/y-core-forge-0.1.12.tgz"
-  }
-}
-```
+A consumer then depends on that tarball by URL, in the form [`FORGE_CONSUMPTION.md`][fc-4c] §4c names.
 
 ---
 
@@ -244,4 +237,5 @@ have to clean up.
 [bt-2d]: ../../../docs/BUILD_TOOLING.md#2d-changelog-promotion--the-unreleased-contract
 [bt-2j]: ../../../docs/BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
 [cli-readme]: ../cli/README.md
+[fc-4c]: ../../../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
 [gate-readme]: ../gate/README.md

@@ -1,7 +1,7 @@
 import { checkAssetManifest } from "./checks/asset-manifest";
 import { checkAssetRoot } from "./checks/asset-root";
 import { hasChromium } from "./checks/browser";
-import { checkBundle, hasEsbuild } from "./checks/bundle";
+import { checkBundle, checkNodeExports, hasEsbuild } from "./checks/bundle";
 import { checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder } from "./checks/class-order";
 import { checkClassTokens } from "./checks/class-tokens";
@@ -29,7 +29,7 @@ import { checkSsrBoundary } from "./checks/ssr-boundary";
 import { checkStubGlobals } from "./checks/stub-globals";
 import type { AssetManifestCheckConfig } from "./checks/types";
 import type { AssetRootCheckConfig } from "./checks/types";
-import type { BundleCheckConfig, IccProfileCheckConfig } from "./checks/types";
+import type { BundleCheckConfig, IccProfileCheckConfig, NodeExportsCheckConfig } from "./checks/types";
 import type { ClassGroupsCheckConfig } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ClassTokensCheckConfig } from "./checks/types";
@@ -372,6 +372,11 @@ export function iccProfileStep(config: IccProfileCheckConfig, options: StepOptio
 /** Rebuilds a committed bundle under `label` and fails on any drift from its TypeScript source. @public */
 export function bundleStep(label: string, config: BundleCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep(label, () => checkBundle(config), options, { requires: esbuildRequired() });
+}
+
+/** Checks every `forge.node` export points `import` at a generated `.mjs`, and every `.mjs` export is listed there. @public */
+export function nodeExportsStep(config: NodeExportsCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-node-exports", () => checkNodeExports(config), options, { watches: ["package.json"] });
 }
 
 /** Checks every class literal is a fixed point of `cn`, so sorting one cannot change what it renders. @public */

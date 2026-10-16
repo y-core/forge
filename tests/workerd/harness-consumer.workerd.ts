@@ -1,45 +1,92 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "./harness.fixture";
 
 const FORGE = fileURLToPath(new URL("../../", import.meta.url));
 const CONFIG = fileURLToPath(new URL("../fixtures/workers-form/wrangler.jsonc", import.meta.url));
+const CSRF_SECRET = /"CSRF_SECRET": "([0-9a-f]+)"/.exec(readFileSync(CONFIG, "utf-8"))?.[1] ?? "";
 
-const SPEC = `
+const MANIFEST = JSON.parse(readFileSync(join(FORGE, "package.json"), "utf-8")) as {
+  dependencies: Record<string, string>;
+  forge: { node: readonly string[] };
+};
+const NODE_SUBPATHS = MANIFEST.forge.node.map((subpath) => `@y-core/forge${subpath.slice(1)}`);
+
+const ROUND_TRIP = `
 const { serveWorker } = await import("@y-core/forge/testing/harness");
+const { CSRF_HEADER_DEFAULT, mintTestCsrfToken } = await import("@y-core/forge/testing/form");
 const { harness, origin } = await serveWorker({ config: ${JSON.stringify(CONFIG)} });
+const post = (headers) =>
+  fetch(origin + "/api/contact", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", ...headers },
+    body: new URLSearchParams({ name: "Jane", email: "jane@example.com", message: "Hello." }).toString(),
+  }).then((res) => res.status);
 try {
-  console.log(JSON.stringify({ status: (await fetch(origin + "/api/contact")).status }));
+  const token = await mintTestCsrfToken(${JSON.stringify(CSRF_SECRET)}, "/api/contact");
+  console.log(JSON.stringify({ minted: await post({ [CSRF_HEADER_DEFAULT]: token }), missing: await post({}) }));
 } finally {
   await harness.close();
 }
 `;
 
-/** A consumer whose `node_modules` holds forge as an install does — copied, so node sees it under `node_modules` — and wrangler beside it. */
+/** A consumer whose `node_modules` holds the tarball `bun pm pack` makes of forge, as the release ships it, with forge's dependencies and wrangler beside it. */
 function consumerRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-harness-consumer-"));
   const installed = join(root, "node_modules", "@y-core", "forge");
   mkdirSync(installed, { recursive: true });
-  cpSync(join(FORGE, "package.json"), join(installed, "package.json"));
-  cpSync(join(FORGE, "src", "testing"), join(installed, "src", "testing"), { recursive: true });
-  symlinkSync(join(FORGE, "node_modules", "wrangler"), join(root, "node_modules", "wrangler"));
-  writeFileSync(join(root, "spec.mjs"), SPEC);
+  const pack = spawnSync("bun", ["pm", "pack", "--destination", root, "--quiet"], { cwd: FORGE, encoding: "utf-8" });
+  if (pack.status !== 0) throw new Error(`bun pm pack failed: ${pack.stderr}`);
+  const tarball = resolve(root, pack.stdout.trim().split("\n").at(-1) ?? "");
+  const extract = spawnSync("tar", ["-xzf", tarball, "-C", installed, "--strip-components=1"], { encoding: "utf-8" });
+  if (extract.status !== 0) throw new Error(`tar failed: ${extract.stderr}`);
+  for (const name of [...Object.keys(MANIFEST.dependencies), "wrangler"]) {
+    mkdirSync(dirname(join(root, "node_modules", name)), { recursive: true });
+    symlinkSync(join(FORGE, "node_modules", name), join(root, "node_modules", name));
+  }
   return root;
 }
 
-test("serves a Worker under node through @y-core/forge/testing/harness from a consumer's node_modules", () => {
-  const root = consumerRoot();
-  try {
-    const run = spawnSync("node", ["spec.mjs"], { cwd: root, encoding: "utf-8", timeout: 120_000 });
+/** Runs `source` as an ES module under node from `root`, where `@y-core/forge` resolves to the installed tarball. */
+function runNode(root: string, source: string) {
+  writeFileSync(join(root, "spec.mjs"), source);
+  return spawnSync("node", ["spec.mjs"], { cwd: root, encoding: "utf-8", timeout: 120_000 });
+}
+
+test.describe("forge installed from its packed tarball", () => {
+  let root = "";
+
+  test.beforeAll(() => {
+    root = consumerRoot();
+  });
+
+  test.afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  test("reads testing/form among the node subpaths from the `forge.node` declaration", () => {
+    expect(NODE_SUBPATHS).toContain("@y-core/forge/testing/form");
+  });
+
+  for (const subpath of NODE_SUBPATHS) {
+    test(`loads ${subpath} under node`, () => {
+      const run = runNode(root, `console.log(String(Object.keys(await import(${JSON.stringify(subpath)})).length));`);
+
+      expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+      expect(run.status).toBe(0);
+      expect(Number(run.stdout.trim())).toBeGreaterThan(0);
+    });
+  }
+
+  test("submits a form through a Worker served by testing/harness with a token minted by testing/form", () => {
+    const run = runNode(root, ROUND_TRIP);
 
     expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
     expect(run.status).toBe(0);
-    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ status: 200 });
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ minted: 200, missing: 403 });
+  });
 });

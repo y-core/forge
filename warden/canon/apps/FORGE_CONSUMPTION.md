@@ -191,12 +191,16 @@ unspecified iteration, is a dependency on an internal by another route.
 
 ### 4c. Upgrading the Library
 
+**The dependency is the released tarball by URL**, `https://pkg-forge.ysite.workers.dev/v<version>/y-core-forge-<version>.tgz`. It is the GitHub
+Release asset that forge's `release` workflow packs with `bun pm pack`, relayed at the same path, so forge's `files` field decides what arrives and
+the lock carries its `sha512`. **Never pin a `codeload.github.com` URL**: it serves a git snapshot that honours no manifest.
+
 **A library upgrade is its own change, with nothing else in it.** Bundling an upgrade with a feature makes a bisect useless: when something breaks,
 there is no commit that isolates the cause, and the reviewer is asked to judge two unrelated risks at once.
 
 The sequence is fixed:
 
-1. **Bump the dependency alone**, and run the full gate ([`TESTING.md`][testing-6] §6).
+1. **Bump the dependency alone** — the version in that URL — and run the full gate ([`TESTING.md`][testing-6] §6).
 2. **Fix only what the upgrade broke** — a renamed symbol, a changed signature, a moved subpath. Resist the adjacent cleanup the diff makes
    tempting.
 3. **Delete any workaround the upgrade obsoletes** (§3b), naming it in the same commit message so the record of the gap closes with it.

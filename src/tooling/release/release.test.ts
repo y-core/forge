@@ -559,7 +559,7 @@ describe("createReleaseCommand() — amend floor preflight", () => {
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     expect(() => cmd.run?.([], FLAGS)).toThrow(
       "v1.0.0 is no longer an ancestor of HEAD — published history was rewritten.\n" +
-        "Consumers fetch a codeload tarball at v1.0.0, so the commits they already hold no longer match the tag, " +
+        "Consumers installed the tarball released at v1.0.0, so the tag no longer names what they hold, " +
         "and no version change signals it. Recover the rewritten commits with `git reflog` and rebuild HEAD on top of the tag.",
     );
   });

@@ -160,8 +160,9 @@ version number exists to avoid. The shim therefore does not defer the break; it 
 stopped warning anybody.
 
 **What ships instead is the signal.** A commit altering or removing a published export carries the `minor:` subject prefix, so the version number
-moves and the surface guard is answered rather than silenced ([`BUILD_TOOLING.md`][bt-2j] §2j). Consumers pin codeload tarballs at a tag, so nobody
-is upgraded without choosing to; the changelog entry written in the same commit is what tells them what changed.
+moves and the surface guard is answered rather than silenced ([`BUILD_TOOLING.md`][bt-2j] §2j). Consumers pin a released tarball by version
+([`FORGE_CONSUMPTION.md`][fc-4c] §4c), so nobody is upgraded without choosing to; the changelog entry written in the same commit is what tells
+them what changed.
 
 **This expires at 1.0.0, and not before.** After that the same rule reads differently — a breaking change becomes a `major:` and the question of a
 migration path is open on its own merits. Until then, the absence of shims is what keeps the surface small enough to reach 1.0 at all.
@@ -248,6 +249,7 @@ the JSX pragma check skips one, because the pragma pair exists for a file compil
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
 [bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
 [cr]: ../warden/canon/shared/CODE_RULES.md
+[fc-4c]: ../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
 [la-1]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1-core-architectural-principles
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-3d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#3d-asset-scanning-stops-at-the-component-tier
