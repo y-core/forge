@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.6] — 2026-10-16
+
 ### Added
 
 - **`@y-core/forge/testing/form`, a node-loadable bundle of what a workerd spec submits a form with.** It carries `mintTestCsrfToken`,
@@ -5891,6 +5897,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.6]: https://github.com/y-core/forge/compare/v0.5.5...v0.5.6
 [0.5.5]: https://github.com/y-core/forge/compare/v0.5.4...v0.5.5
 [0.5.4]: https://github.com/y-core/forge/compare/v0.5.3...v0.5.4
 [0.5.3]: https://github.com/y-core/forge/compare/v0.5.2...v0.5.3
