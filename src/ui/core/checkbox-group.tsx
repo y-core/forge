@@ -99,7 +99,7 @@ const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
         name={name}
         value={value}
         class={cn(
-          "state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary",
+          "state-busy state-disabled shrink-0 appearance-none rounded-sm border state-invalid border-input bg-background focus-ring-outset checked:bg-primary",
           FIELD_ITEM_SIZE[size],
         )}
         {...rest}

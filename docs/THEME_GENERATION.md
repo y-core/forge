@@ -96,9 +96,14 @@ source of truth:
 ### 1d. Shape Tokens Are Not a Scheme
 
 **Shape lives in `theme-base.css`, and a scheme file never declares it.** The shape tokens — `--radius`, `--radius-field`, `--radius-box`,
-`--radius-selector`, `--control-h-sm`, `--control-h-md`, `--control-h-lg` and `--border-width` — are declared once beside the semantic colour
-mapping, and every component reads them through the bridged utilities (`rounded-field`, `rounded-box`, `rounded-selector`, `h-control-*`,
-`border-field`) rather than through a raw Tailwind size.
+`--radius-selector`, `--control-h-sm`, `--control-h-md`, `--control-h-lg`, `--border-width` and `--elevation` — are declared once beside the
+semantic colour mapping, and every component reads them through the bridged utilities (`rounded-field`, `rounded-box`, `rounded-selector`,
+`h-control-*`, `border-field`) rather than through a raw Tailwind size. `rounded-sm` through `rounded-xl` are bridged to `--radius` too; bare
+`rounded`, `rounded-xs` and `rounded-2xl` are not, and a unit test refuses any of them in a `ui` source.
+
+**`--elevation` multiplies every length in the `--shadow-*` scale**, so `:root { --elevation: 0 }` in a shape file paints no elevation at all
+and `1` is the default geometry. The scale itself stays in `@theme inline`, where a `:root` copy would never reach a utility; the multiplier is
+what lets a shape file reach it. The focus ring is an `inset-ring`, outside that scale, so a flat shape keeps it.
 
 **Why not a scheme file.** A scheme is the file a consumer replaces, and the contrast audit walks every `theme-*.css` that is not a declared token
 file, on the assumption that it holds colour steps and nothing else (§3a). Putting a radius in one would either make every shipped scheme restate a
@@ -116,8 +121,9 @@ application's own shape file follows the same shape: one `:root` block, those to
 **The shape dials in `DIALS` drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is one custom property, with no
 scale behind it. `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH` writes
 `--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it. Every dialled property but `--radius` is named by
-`SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector` and `--border-width` are not dialled: a pill is a pill at every
-radius, and a hairline that moves with a slider is a different decision from a corner that does.
+`SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector`, `--border-width` and `--elevation` are not dialled: a pill is a pill at
+every radius, a hairline that moves with a slider is a different decision from a corner that does, and elevation is a look a shape file
+chooses rather than a quantity a generated theme derives.
 
 ---
 

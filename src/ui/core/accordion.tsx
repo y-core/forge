@@ -51,7 +51,7 @@ const AccordionTrigger = <N extends string = string>({
   <summary
     data-slot={slotToken("accordion-trigger", inherited)}
     class={cn(
-      "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40",
+      "flex cursor-pointer list-none items-center gap-2 rounded-sm px-1 py-2 text-sm font-medium focus-ring select-none hover:bg-muted/40",
       cls,
     )}
     {...rest}>

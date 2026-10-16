@@ -18,7 +18,21 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`--elevation`, a ninth shape token.** Every length in `--shadow-2xs` through `--shadow-2xl` is multiplied by it, so a shape file's
+  `:root { --elevation: 0; }` flattens every recipe without restating the seven shadows in `@theme inline`. It defaults to `1`, which renders
+  exactly as before; the focus ring is an `inset-ring` and is unaffected. An application's own shape file must now declare it too.
+
+### Fixed
+
+- **`Accordion`, `Collapsible`, `CheckboxGroup` and the `Toast` and `Alert` close buttons ignored the shape radius.** They carried bare
+  `rounded`, a literal `0.25rem`, so a square shape kept a 4px corner on them. A unit test now refuses any radius utility in a `ui` source
+  that does not compile to a shape token.
+
+### Changed
+
+- **Those five corners are now `rounded-sm`, `calc(var(--radius) - 4px)`** — 6px at the default `--radius` rather than 4px.
 
 ---
 

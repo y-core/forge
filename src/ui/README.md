@@ -89,10 +89,11 @@ it — `theme-stone.css` (warm), `theme-gray.css` (cool) and `theme-slate.css` (
 Tailwind's ramp named `gray` is blue-tinted, so `theme-gray.css` is the cool scheme and `theme-neutral.css` the achromatic one; the names invite the
 opposite reading.
 
-**Shape is a second, independent set.** `theme-base.css` declares the shape tokens once — the radii, the control heights and the border width — and
-the components read them through `rounded-field` / `rounded-box` / `rounded-selector`, `h-control-*` and `border-field`. A colour scheme never
-declares one, so any scheme composes with any shape; `shape-compact.css` ships as the one alternate, imported after `forge.css` exactly as a scheme
-is. The ruling is [`THEME_GENERATION.md`][tg-1d] §1d.
+**Shape is a second, independent set.** `theme-base.css` declares the shape tokens once — the radii, the control heights, the border width and the
+elevation — and the components read them through `rounded-field` / `rounded-box` / `rounded-selector`, `h-control-*`, `border-field` and the
+`shadow-*` scale. A flat theme is one line in a shape file, `:root { --elevation: 0; }`; the focus ring is not a shadow and survives it. A colour
+scheme never declares one, so any scheme composes with any shape; `shape-compact.css` ships as the one alternate, imported after `forge.css` exactly
+as a scheme is. The ruling is [`THEME_GENERATION.md`][tg-1d] §1d.
 
 ### Write a scheme of your own, or re-point one token
 

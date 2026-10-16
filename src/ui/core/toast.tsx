@@ -89,7 +89,7 @@ const ToastRoot: FC<ToastProps> = ({
           data-slot='toast-close'
           aria-label={dismissLabel}
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
+          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded-sm opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>

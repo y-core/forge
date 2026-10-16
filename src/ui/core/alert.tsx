@@ -47,7 +47,7 @@ const AlertRoot: FC<AlertProps> = ({
         data-slot='alert-dismiss'
         aria-label={dismissLabel}
         {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-        class='absolute end-2 top-2 rounded opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
+        class='absolute end-2 top-2 rounded-sm opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
         <span aria-hidden='true' class='text-base leading-none'>
           ×
         </span>

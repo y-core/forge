@@ -10,7 +10,7 @@ const GROUP_CLASS = "state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-c
 const ITEM_CLASS = "inline-flex items-center gap-2 text-sm text-foreground";
 
 const INPUT_CLASS =
-  "state-busy state-disabled shrink-0 appearance-none rounded border state-invalid border-input " +
+  "state-busy state-disabled shrink-0 appearance-none rounded-sm border state-invalid border-input " +
   "bg-background focus-ring-outset checked:bg-primary size-4";
 
 const GROUP_OPEN = `<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="${GROUP_CLASS}">`;

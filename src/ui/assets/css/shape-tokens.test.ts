@@ -25,7 +25,7 @@ describe("the shape tokens `theme-base.css` owns", () => {
     expect(SHAPE_TOKENS.length).toBeGreaterThan(0);
   });
 
-  it("is exactly the eight the docs count", () => {
+  it("is exactly the nine the docs count", () => {
     expect(SHAPE_TOKENS).toEqual([
       "--radius",
       "--radius-field",
@@ -35,6 +35,7 @@ describe("the shape tokens `theme-base.css` owns", () => {
       "--control-h-md",
       "--control-h-lg",
       "--border-width",
+      "--elevation",
     ]);
   });
 
@@ -56,7 +57,7 @@ describe("every shipped shape file re-declares that set exactly", () => {
   });
 
   for (const name of shapeFiles) {
-    it(`${name} declares neither more nor less than the eight`, () => {
+    it(`${name} declares neither more nor less than the nine`, () => {
       const declared = declaredProperties(readFileSync(resolve(CSS_DIR, name), "utf-8"));
 
       expect([...declared].sort()).toEqual([...SHAPE_TOKENS].sort());

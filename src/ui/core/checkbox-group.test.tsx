@@ -28,7 +28,7 @@ describe("CheckboxGroup", () => {
     ).toBe(
       '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox"' +
         ' data-slot="checkbox-group-input" id="field-toppings-cheese" name="toppings" value="cheese" class="state-busy state-disabled' +
-        ' shrink-0 appearance-none rounded border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
+        ' shrink-0 appearance-none rounded-sm border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
         ' data-note="R&amp;D&#39;s">Cheese &amp; &quot;extra&quot; &lt;x&gt;</label>',
     );
   });

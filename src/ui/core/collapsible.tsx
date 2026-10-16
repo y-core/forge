@@ -29,7 +29,7 @@ const CollapsibleTrigger: FC<CollapsibleTriggerProps> = ({ icon: Icon, class: cl
   <summary
     data-slot={slotToken("collapsible-trigger", inherited)}
     class={cn(
-      "flex cursor-pointer list-none items-center gap-2 rounded px-1 py-2 text-sm font-medium select-none",
+      "flex cursor-pointer list-none items-center gap-2 rounded-sm px-1 py-2 text-sm font-medium select-none",
       "focus-ring hover:bg-muted/40",
       cls,
     )}
