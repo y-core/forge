@@ -15,6 +15,9 @@ export const AUTH_RECOVERED_PARAM = "recovered";
 /** The query parameter naming which confirmed factor the verify page asks for. @internal */
 export const AUTH_FACTOR_PARAM = "factor";
 
+/** The query parameter carrying the return-to path onto the approval prompt and back off it. @internal */
+export const APPROVAL_RETURN_PARAM = "next";
+
 /** `path` with `name=value` added to whatever query it already carries. @internal */
 export function authWithQuery(path: string, name: string, value: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}${new URLSearchParams({ [name]: value }).toString()}`;

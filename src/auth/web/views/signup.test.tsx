@@ -12,6 +12,7 @@ import {
   attrsOf,
   authFactorGrid,
   elementOf,
+  elementsOf,
   factorChoices,
   HOSTILE_TEXT,
   HOSTILE_TEXT_ESCAPED,
@@ -32,7 +33,7 @@ describe("SignupView", () => {
   it("posts one address field to the sign-up path, with the CSRF token merged into `hx-headers`", async () => {
     expect(tagOf(await signup(), 'data-slot="form"')).toBe(
       '<form data-slot="form" method="post" hx-headers="{&quot;X-CSRF-Token&quot;:&quot;csrf-1&quot;}" class="flex flex-col gap-6" ' +
-        'action="/auth/signup">',
+        'action="/auth/signup" hx-post="/auth/signup" hx-target="#auth-signup" hx-swap="outerHTML">',
     );
   });
 
@@ -105,4 +106,59 @@ describe("SignupView across the factor matrix", () => {
     expect(tagOf(html, `data-scope="${PASSKEY_SCOPE}"`)).toBe("");
     expect(/passkey|authenticator/.test(textOf(html, "div", 'data-slot="card-content"'))).toBe(false);
   });
+});
+
+describe("SignupView and its Turnstile challenge", () => {
+  const WIDGET = { siteKey: "site-key", action: "auth-signup" };
+  const challengeOf = (html: string) => {
+    const attrs = attrsOf(html, 'data-scope="turnstile"');
+    return {
+      scope: attrs["data-scope"],
+      sitekey: attrs["data-sitekey"],
+      action: attrs["data-action"],
+      challenge: attrs["data-challenge"],
+      appearance: attrs["data-appearance"],
+    };
+  };
+
+  it("renders the widget bound to the auth-signup action, held to the press and shown only for an interaction", async () => {
+    expect(challengeOf(await signup({ turnstile: WIDGET }))).toEqual({
+      scope: "turnstile",
+      sitekey: "site-key",
+      action: "auth-signup",
+      challenge: "submit",
+      appearance: "interaction-only",
+    });
+  });
+
+  it("places the widget immediately before the submit button", async () => {
+    const form = elementOf(await signup({ turnstile: WIDGET }), "form", 'action="/auth/signup"');
+    const widget = elementOf(form, "div", 'data-scope="turnstile"');
+    const submit = elementOf(form, "button", 'type="submit"');
+    expect({ follows: form.indexOf(widget) + widget.length === form.indexOf(submit), label: textOf(submit, "button", 'type="submit"') }).toEqual({
+      follows: true,
+      label: "Sign up",
+    });
+  });
+
+  it("renders no widget when the deployment guards no such form", async () => {
+    expect(elementsOf(await signup(), "div", 'data-scope="turnstile"')).toEqual([]);
+  });
+
+  for (const [label, props] of [
+    ["with a widget", { turnstile: WIDGET }],
+    ["without one", {}],
+  ] as const) {
+    it(`submits over htmx into its own card, keeping the native action, ${label}`, async () => {
+      const html = await signup(props);
+      const form = attrsOf(html, 'data-slot="form"');
+      expect({
+        action: form.action,
+        post: form["hx-post"],
+        target: form["hx-target"],
+        swap: form["hx-swap"],
+        card: attrsOf(html, 'data-slot="card"').id,
+      }).toEqual({ action: "/auth/signup", post: "/auth/signup", target: "#auth-signup", swap: "outerHTML", card: "auth-signup" });
+    });
+  }
 });

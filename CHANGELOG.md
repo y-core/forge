@@ -18,7 +18,24 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`AuthWebOptions.bootstrapSecret` is removed**, in `@y-core/forge/auth/web`. The first-admin claim is now gated by an administrator approval:
+  the `admin.elevate` group in `AUTH_ROUTE_GROUPS`, and `AUTH_VIEW_GUARDS.adminElevate`, end with the new `"require-approval"` guard.
+  **Migration:** define the approval with `defineApproval`, reading the code you held as the bootstrap secret, and pass it to `createAuthGuards`
+  as `approval`. Mount its prompt with `registerApproval`. Without an approval, both elevate routes answer 404, as they did with no secret
+  ([`AUTH_MOUNTING.md`](docs/AUTH_MOUNTING.md) §3).
+
+- **`authAdminElevateSchema` is `{ confirm: "yes" }` alone, losing `secret`**, and `AdminElevateView` no longer renders a secret field.
+  `AdminElevateViewProps.fieldError` is removed. A `views.adminElevate` override that rendered either must drop it.
+
+### Added
+
+- **Administrator approval in `@y-core/forge/auth/web`: `defineApproval`, `requireApproval` and `registerApproval`.** `requireApproval` holds
+  any route until the session has presented a configured code inside the approval's window, and sends it to the prompt `registerApproval`
+  mounts. With the code unset, every approved route and the prompt answer 404. The prompt is `ApprovalView` over `approvalSchema`, with types
+  `Approval`, `ApprovalOptions` and `ApprovalViewProps`. The window defaults to `APPROVAL_TTL_MS`, exported from `@y-core/forge/auth`. Signing
+  in or out clears the approval ([`src/auth/README.md`](src/auth/README.md) section "Requiring administrator approval on a route").
 
 ---
 

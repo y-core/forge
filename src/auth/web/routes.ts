@@ -15,7 +15,7 @@ export const AUTH_ROUTE_GROUPS: readonly AuthRouteGroup[] = [
   { path: ["account", "passkeyCeremony"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "json" },
   { path: ["admin"], guards: [], medium: "html" },
   { path: ["admin", "users"], guards: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"], medium: "html" },
-  { path: ["admin", "elevate"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up"], medium: "html" },
+  { path: ["admin", "elevate"], guards: ["require-auth", "require-enrolment", "require-fresh-step-up", "require-approval"], medium: "html" },
 ];
 
 /** Builds the unauthenticated sign-in, sign-up and enrolment routes under `basePath`. @public */

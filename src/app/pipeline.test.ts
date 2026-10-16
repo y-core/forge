@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
+import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
+import { firstDeclaredField, screenTurnstile } from "./pipeline";
 
 const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
@@ -280,4 +282,127 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
     expect(res.status).toBe(422);
     expect(await res.text()).toBe("Name required.");
   });
+});
+
+/** The Turnstile lines a run logged, each parsed and stripped of its timestamp and prefix. */
+function botGuardLines(lines: readonly string[]): unknown[] {
+  return lines
+    .map((line) => JSON.parse(line) as Record<string, unknown>)
+    .filter((record) => record.message === "Submission refused by a bot guard")
+    .map(({ timestamp: _timestamp, prefix: _prefix, ...record }) => record);
+}
+
+function tokenForm(fields: Record<string, string>): FormData {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(fields)) form.set(name, value);
+  return form;
+}
+
+describe("screenTurnstile", () => {
+  it("refuses a form carrying no token as missing-token, logging the guard and the reason at warn", async () => {
+    const c = createTestContext(new Request("http://test/submit", { method: "POST" }));
+    let result: unknown;
+
+    const logs = await captureLogs(async () => {
+      result = await screenTurnstile(c, tokenForm({ name: "Jane" }), "test-secret", {
+        expectedHostname: "localhost",
+        tokenField: "cf-turnstile-response",
+      });
+    });
+
+    expect({ result, logged: botGuardLines(logs) }).toEqual({
+      result: { ok: false, error: "missing-token" },
+      logged: [{ level: "warn", message: "Submission refused by a bot guard", guard: "turnstile", reason: "missing-token" }],
+    });
+  });
+
+  it("admits a token siteverify accepts and logs nothing about it", async () => {
+    fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
+    const c = createTestContext(new Request("http://test/submit", { method: "POST" }));
+    let result: unknown;
+
+    const logs = await captureLogs(async () => {
+      result = await screenTurnstile(c, tokenForm({ "cf-turnstile-response": "solved" }), "test-secret", {
+        expectedHostname: "localhost",
+        tokenField: "cf-turnstile-response",
+      });
+    });
+
+    expect({ result, logged: botGuardLines(logs) }).toEqual({ result: { ok: true, data: undefined }, logged: [] });
+  });
+
+  it("reads the token from the field it is given, not from the default one", async () => {
+    const sent: unknown[] = [];
+    fakeSiteverify(async (init) => {
+      sent.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ success: true, hostname: "localhost" }));
+    });
+    const c = createTestContext(new Request("http://test/submit", { method: "POST" }));
+    const form = tokenForm({ "cf-turnstile-response": "default-field-token", "bot-check": "named-field-token" });
+
+    const named = await screenTurnstile(c, form, "test-secret", { expectedHostname: "localhost", tokenField: "bot-check" });
+
+    expect({ named, sent }).toEqual({ named: { ok: true, data: undefined }, sent: [{ secret: "test-secret", response: "named-field-token" }] });
+  });
+
+  it("forwards the request's own signal to siteverify", async () => {
+    const reasons: unknown[] = [];
+    fakeSiteverify(async (init) => {
+      reasons.push(init?.signal?.aborted === true ? init.signal.reason : "live");
+      return new Response(JSON.stringify({ success: true, hostname: "localhost" }));
+    });
+    const request = new AbortController();
+    request.abort("request-gone");
+    const c = createTestContext(new Request("http://test/submit", { method: "POST", signal: request.signal }));
+
+    await screenTurnstile(c, tokenForm({ "cf-turnstile-response": "solved" }), "test-secret", {
+      expectedHostname: "localhost",
+      tokenField: "cf-turnstile-response",
+    });
+
+    expect(reasons).toEqual(["request-gone"]);
+  });
+
+  it("lets a caller-supplied signal replace the request's, so the request's abort no longer reaches siteverify", async () => {
+    const reasons: unknown[] = [];
+    fakeSiteverify(async (init) => {
+      reasons.push(init?.signal?.aborted === true ? init.signal.reason : "live");
+      return new Response(JSON.stringify({ success: true, hostname: "localhost" }));
+    });
+    const request = new AbortController();
+    request.abort("request-gone");
+    const c = createTestContext(new Request("http://test/submit", { method: "POST", signal: request.signal }));
+    const form = tokenForm({ "cf-turnstile-response": "solved" });
+
+    await screenTurnstile(c, form, "test-secret", {
+      expectedHostname: "localhost",
+      tokenField: "cf-turnstile-response",
+      signal: new AbortController().signal,
+    });
+    const caller = new AbortController();
+    caller.abort("caller-gone");
+    await screenTurnstile(c, form, "test-secret", {
+      expectedHostname: "localhost",
+      tokenField: "cf-turnstile-response",
+      signal: caller.signal,
+    }).catch(() => undefined);
+
+    expect(reasons).toEqual(["live", "caller-gone"]);
+  });
+});
+
+describe("firstDeclaredField", () => {
+  for (const { label, schema, expected } of [
+    {
+      label: "the first key in declaration order, not alphabetical order",
+      schema: v.strictObject({ zeta: v.string(), alpha: v.string() }),
+      expected: "zeta",
+    },
+    { label: "undefined for an object schema declaring no field", schema: v.strictObject({}), expected: undefined },
+    { label: "undefined for a schema that is not an object at all", schema: v.string(), expected: undefined },
+  ]) {
+    it(`returns ${label}`, () => {
+      expect(firstDeclaredField(schema)).toBe(expected);
+    });
+  }
 });

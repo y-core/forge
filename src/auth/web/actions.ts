@@ -1,8 +1,9 @@
 import type { Session } from "@remix-run/session";
 
+import { firstDeclaredField, screenTurnstile } from "../../app/pipeline";
 import { getAppContext } from "../../context/types";
 import type { AppContext, RequestHandler } from "../../context/types";
-import { timingSafeEqual } from "../../crypto/primitives/timing";
+import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { isFormCapConflict, parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
@@ -41,7 +42,7 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import { authEnrollable, authNow, authReturnPath, authReturnQuery, authServices, authSettledPath } from "./options";
+import { authEnrollable, authNow, authReturnPath, authReturnQuery, authServices, authSettledPath, authTurnstileCheck } from "./options";
 import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import {
@@ -64,6 +65,7 @@ import {
   authVerifySchema,
 } from "./schemas";
 import type { AuthIdentity } from "./types";
+import type { AuthTurnstileCheck } from "./types";
 import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types";
 
 const NO_SESSION =
@@ -80,9 +82,7 @@ const FIELD_REFUSAL: Readonly<Record<string, string>> = {
   email: "Enter an email address in the form name@example.com.",
   code: "That code is not the shape we sent. Enter the digits exactly as they appear.",
   label: "Use a shorter name for this passkey.",
-  confirm: "Confirm the claim before submitting it.",
   role: "Pick a role from the list.",
-  secret: "That is not the bootstrap secret this deployment was configured with.",
   status: "Pick a status from the list.",
 };
 
@@ -118,9 +118,11 @@ interface AuthSubmissionRefusal {
   readonly values: Readonly<Record<string, string>>;
 }
 
-async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
+/** Reads a form submission against `schema`, behind `check` when one is given, dropping the CSRF and Turnstile fields. @internal */
+export async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
   c: AppContext<Bindings>,
   schema: schema,
+  check?: AuthTurnstileCheck,
 ): Promise<Result<v.InferOutput<schema>, AuthSubmissionRefusal>> {
   let form: ReadonlyFormData;
   try {
@@ -131,10 +133,19 @@ async function readAuthSubmission<schema extends v.GenericSchema, Bindings>(
     return err({ field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
   }
   const csrfField = csrfFieldCtx.getOptional(c);
-  const body = formToObject(form, csrfField === undefined ? {} : { drop: new Set([csrfField]) });
+  const drop = [...(csrfField === undefined ? [] : [csrfField]), ...(check === undefined ? [] : [TURNSTILE_FIELD_DEFAULT])];
+  const body = formToObject(form, drop.length === 0 ? {} : { drop: new Set(drop) });
   const values: Record<string, string> = {};
   for (const [name, value] of Object.entries(body)) {
     if (typeof value === "string") values[name] = value;
+  }
+
+  if (check !== undefined) {
+    const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
+    if (!verification.ok) {
+      const field = firstDeclaredField(schema) ?? "";
+      return err({ field, message: refusalFor(schema, field), values });
+    }
   }
 
   const parsed = v.safeParse(schema, body, { abortEarly: true });
@@ -231,7 +242,7 @@ export function createSigninActions<Bindings>(options: AuthWebOptions<Bindings>)
       const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
 
-      const parsed = await readAuthSubmission(c, authSigninSchema());
+      const parsed = await readAuthSubmission(c, authSigninSchema(), await authTurnstileCheck(c, options, "signin"));
       if (!parsed.ok) return loadSignin(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
 
       // The address is on the session and not in the redirect: `complete` needs it back, and a query
@@ -251,7 +262,7 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
       const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
 
-      const parsed = await readAuthSubmission(c, authSignupSchema());
+      const parsed = await readAuthSubmission(c, authSignupSchema(), await authTurnstileCheck(c, options, "signup"));
       if (!parsed.ok) return loadSignup(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
 
       services.signup.request(parsed.data.email, authNow(options));
@@ -259,6 +270,20 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
       return createAuthRedirect(c, authReturnQuery(c, options, options.paths.auth.verify.show()));
     },
   };
+}
+
+async function admitsResend<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<boolean> {
+  const check = await authTurnstileCheck(c, options, "resend");
+  if (check === undefined) return true;
+  let form: ReadonlyFormData;
+  try {
+    form = await parseFormData(c);
+  } catch (error) {
+    if (isFormCapConflict(error)) throw error;
+    return false;
+  }
+  const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
+  return verification.ok;
 }
 
 /** The POSTs of the verification page: presenting the code, and asking for another. @public */
@@ -281,7 +306,8 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const detour = authVerifyDetour(c, options, demand);
       if (detour !== null) return detour;
 
-      const parsed = await readAuthSubmission(c, authVerifySchema(demand.factor, demand.digits ?? undefined));
+      const check = await authTurnstileCheck(c, options, "verify");
+      const parsed = await readAuthSubmission(c, authVerifySchema(demand.factor, demand.digits ?? undefined), check);
       if (!parsed.ok) {
         const fieldError = demand.factor === "recovery-code" ? RECOVERY_CODE_UNREADABLE : parsed.error.message;
         return loadVerify(c, options, { fieldError, status: 422 });
@@ -331,12 +357,14 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       if (detour !== null) return detour;
 
       if (demand.identity !== null) {
+        if (!(await admitsResend(c, options))) return createAuthRedirect(c, resent);
         await services.signin.requestStepUp(demand.identity.userId, demand.factor, at);
         return createAuthRedirect(c, resent);
       }
 
       const pending = resolveAuthSigninPending(session);
       if (pending === null) return createAuthRedirect(c, options.paths.auth.signin());
+      if (!(await admitsResend(c, options))) return createAuthRedirect(c, resent);
       // Synchronous by design: `request` reads nothing about the address before returning, so a
       // registered one and an unknown one differ in neither shape nor time. There is nothing to await.
       services.signin.request(pending, at);
@@ -816,16 +844,8 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
       const identity = resolveAuthViewer(c);
       if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
 
-      // Fails closed: the claim grants the role to whoever posts first, so a deployment with no
-      // configured secret has no claim endpoint rather than an open one.
-      const expected = options.bootstrapSecret?.(c);
-      if (expected === undefined || expected === "") return notFound();
-
       const parsed = await readAuthSubmission(c, authAdminElevateSchema());
-      if (!parsed.ok) return loadAdminElevate(c, options, { fieldError: parsed.error.message, status: 422 });
-      if (!timingSafeEqual(parsed.data.secret, expected)) {
-        return loadAdminElevate(c, options, { fieldError: FIELD_REFUSAL.secret ?? FIELD_REFUSAL_DEFAULT, status: 422 });
-      }
+      if (!parsed.ok) return loadAdminElevate(c, options, { status: 422 });
 
       const claimed = await services.admin.claimFirst(identity.userId, authNow(options));
       if (!claimed.ok) return unavailable();

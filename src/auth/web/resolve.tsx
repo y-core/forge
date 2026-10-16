@@ -21,6 +21,7 @@ import {
   authReturnQuery,
   authServices,
   authSettledPath,
+  authTurnstileWidget,
 } from "./options";
 import { AUTH_FACTOR_PARAM, AUTH_RECOVERED_PARAM, AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
 import { createAuthRedirect } from "./redirect";
@@ -226,6 +227,7 @@ async function resolveSignin<Bindings>(
 ): Promise<Result<AuthViewProps["signin"], Response>> {
   const { auth } = options.paths;
   const submitPath = auth.signinSubmit();
+  const turnstile = await authTurnstileWidget(c, options, "signin");
 
   return ok({
     // The action carries the return-to and the token is minted without it: `csrfProtection` binds a
@@ -237,6 +239,7 @@ async function resolveSignin<Bindings>(
     email: state.email,
     fieldError: state.fieldError,
     error: state.error,
+    ...(turnstile === undefined ? {} : { turnstile }),
     icon: options.icon,
   });
 }
@@ -256,6 +259,7 @@ async function resolveSignup<Bindings>(
   const { auth } = options.paths;
   const submitPath = auth.signupSubmit();
   const enrols = signupEnrols(services);
+  const turnstile = await authTurnstileWidget(c, options, "signup");
 
   return ok({
     submitPath: authReturnQuery(c, options, submitPath),
@@ -266,6 +270,7 @@ async function resolveSignup<Bindings>(
     email: state.email,
     fieldError: state.fieldError,
     error: state.error,
+    ...(turnstile === undefined ? {} : { turnstile }),
     icon: options.icon,
   });
 }
@@ -285,6 +290,8 @@ async function resolveVerify<Bindings>(
   const usesPasskey = demand.factor === "passkey";
   const resendPath = demand.factor === "email-otp" ? auth.verify.resend() : undefined;
   const reissueAfterMs = services.factors.find(demand.factor)?.reissueAfterMs ?? null;
+  const turnstile = await authTurnstileWidget(c, options, "verify");
+  const resendTurnstile = resendPath === undefined ? undefined : await authTurnstileWidget(c, options, "resend");
   // Always the step-up pair, including for the second half of a sign-in: a passkey never starts one.
   const ceremony = auth.verify.ceremony.begin();
   const ceremonyFinish = auth.verify.ceremony.finish();
@@ -316,6 +323,8 @@ async function resolveVerify<Bindings>(
     email: state.email,
     fieldError: state.fieldError,
     error: state.error,
+    ...(turnstile === undefined ? {} : { turnstile }),
+    ...(resendTurnstile === undefined ? {} : { resendTurnstile }),
     icon: options.icon,
   });
 }
@@ -700,13 +709,8 @@ async function resolveAdminElevate<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   _viewer: AuthIdentity | null,
-  state: AuthPageState,
+  _state: AuthPageState,
 ): Promise<Result<AuthViewProps["adminElevate"], Response>> {
-  // The same 404 `admin.elevate.submit` gives: a deployment with no configured secret has no claim
-  // endpoint, so rendering an enabled form here offers a POST that cannot succeed.
-  const configured = options.bootstrapSecret?.(c);
-  if (configured === undefined || configured === "") return err(notFound());
-
   const services = await authServices(c, options);
   const { admin } = options.paths;
   const counted = await services.admin.countAdmins();
@@ -717,7 +721,6 @@ async function resolveAdminElevate<Bindings>(
     paths: admin,
     csrfToken: await mintCsrf(c, admin.elevate.submit()),
     ...authCsrfHeader(c),
-    fieldError: state.fieldError,
     icon: options.icon,
   });
 }
@@ -766,7 +769,7 @@ export const AUTH_VIEW_GUARDS = {
   adminUser: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminUserEdit: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminUserFactors: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
-  adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up"],
+  adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up", "require-approval"],
 } as const satisfies { readonly [Name in AuthViewName]: readonly AuthGuardName[] };
 
 // `require-auth` and `require-admin` are observable here and re-checked rather than trusted; the enrolment

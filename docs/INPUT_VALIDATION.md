@@ -275,6 +275,9 @@ The split inside that option is deliberate: `tokenField` is fixed when the route
 verification ever reaches the network, while the secret and the verification constraints resolve per request, because a secret lives in a binding
 and the hostname a token must have been minted on is usually the request's own.
 
+**`auth`'s anonymous forms reach the same verification step through `AuthWebOptions.turnstile`**, which binds each form's action and token field
+itself ([`AUTH_MOUNTING.md`][am-8] §8).
+
 **Always pass `expectedHostname` in production.** Without it the token's origin hostname is not checked, so a token minted on an attacker-controlled
 site can be replayed against this one. A runtime warning is logged when it is omitted.
 
@@ -341,6 +344,7 @@ at first form submission.
 See [`BOUNDARIES.md`][boundaries-3] §3 for the validate-at-boundary rule and the ordered validation steps. This document owns only the concrete
 surface each step calls.
 
+[am-8]: ./AUTH_MOUNTING.md#8-turnstile-on-the-anonymous-forms
 [boundaries-3]: ../warden/canon/libs/BOUNDARIES.md#3-validate-at-the-boundary
 [boundaries-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
 [dev-readme]: ../src/dev/README.md

@@ -1,8 +1,9 @@
-import { beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
+import { devAllowance } from "../../dev/allowance";
 import { csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
@@ -38,7 +39,7 @@ import {
 import { requireFreshStepUp } from "./guards";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
 import { authEnrolmentPaths } from "./paths";
-import type { AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
 import {
   attrOf,
   elementOf,
@@ -49,6 +50,7 @@ import {
   fakeAuthEmailChangeFlow,
   fakeAuthServices,
   fakeAuthSigninFlow,
+  fakeAuthSignupFlow,
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
@@ -1953,29 +1955,21 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
 });
 
 describe("createAdminElevateActions", () => {
-  const SECRET = "bootstrap-s3cret";
-
-  /** `optionsWith`, plus the bootstrap-secret resolver every claim is now held to. `null` configures none. */
-  function elevateOptions(overrides: Partial<AuthRequestServices>, bootstrapSecret: string | null = SECRET): AuthWebOptions {
-    const services = fakeAuthServices(overrides);
-    return fakeAuthWebOptions({ resolveServices: () => services, bootstrapSecret: () => bootstrapSecret ?? undefined });
-  }
-
   it("grants the claim while the deployment has no administrator", async () => {
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/admin/users");
   });
 
   it("refuses the claim at 409 once an administrator exists", async () => {
     const admin = fakeAuthUser({ id: "u1", isAdmin: true });
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([admin]) });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([admin]) });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(409);
   });
 
@@ -1991,12 +1985,12 @@ describe("createAdminElevateActions", () => {
     });
     // One service across both requests: `optionsWith` builds a fresh one per call, and two services
     // would each hold their own count, which is the race rather than a test of it.
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: service });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     const statuses = await Promise.all([
-      app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET })),
-      app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET })),
+      app.request("/admin/elevate", formBody({ confirm: "yes" })),
+      app.request("/admin/elevate", formBody({ confirm: "yes" })),
     ]).then((responses) => responses.map((res) => res.status).sort());
 
     expect(statuses).toEqual([303, 409]);
@@ -2005,30 +1999,13 @@ describe("createAdminElevateActions", () => {
 
   it("reports a session naming a row that is gone as unavailable, rather than redirecting on it", async () => {
     const service = fakeAdminUserStore([signedIn], { claimFirstAdmin: async () => ok("not-found" as const) });
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: service });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    expect((await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }))).status).toBe(503);
+    expect((await app.request("/admin/elevate", formBody({ confirm: "yes" }))).status).toBe(503);
   });
 
-  // The claim grants the role to whoever posts first, so the secret is what stands between a fresh
-  // sign-up and an administrator. Without one configured the endpoint does not exist at all.
-  it("answers 404 when the deployment configured no bootstrap secret, rather than an open claim", async () => {
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) }, null);
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
-
-    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
-    expect(res.status).toBe(404);
-  });
-
-  it("answers 404 for an empty configured secret too, which is a secret nobody has to guess", async () => {
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) }, "");
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
-
-    expect((await app.request("/admin/elevate", formBody({ confirm: "yes", secret: "" }))).status).toBe(404);
-  });
-
-  it("refuses a wrong secret at 422 without writing, and refuses a missing one at the schema", async () => {
+  it("refuses a claim without the explicit confirmation at 422, without writing", async () => {
     let claims = 0;
     const admin = fakeAdminUserStore([signedIn], {
       claimFirstAdmin: async () => {
@@ -2036,20 +2013,437 @@ describe("createAdminElevateActions", () => {
         return ok("changed" as const);
       },
     });
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    expect((await app.request("/admin/elevate", formBody({ confirm: "yes", secret: "wrong" }))).status).toBe(422);
-    expect((await app.request("/admin/elevate", formBody({ confirm: "yes" }))).status).toBe(422);
+    expect((await app.request("/admin/elevate", formBody({ confirm: "on" }))).status).toBe(422);
     expect(claims).toBe(0);
   });
 
-  it("redirects an anonymous claim to sign-in, whatever secret it carries", async () => {
-    const options = elevateOptions({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
+  it("redirects an anonymous claim to sign-in", async () => {
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
     const app = mounted(actionApp(), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
-    const res = await app.request("/admin/elevate", formBody({ confirm: "yes", secret: SECRET }));
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/signin");
+  });
+});
+
+describe("the Turnstile guard on the anonymous forms", () => {
+  const HOST = "app.example";
+  const KEYS = { siteKey: "site-key", secretKey: "secret-key" };
+
+  let savedFetch: typeof globalThis.fetch | undefined;
+
+  afterEach(() => {
+    if (savedFetch !== undefined) globalThis.fetch = savedFetch;
+    savedFetch = undefined;
+  });
+
+  /** Answers siteverify with `answer`, or rejects as an unreachable network would; hands back every body it was sent. */
+  function siteverify(answer: Record<string, unknown> | "unreachable"): unknown[] {
+    const sent: unknown[] = [];
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: URL | RequestInfo, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init?.body)));
+      if (answer === "unreachable") throw new TypeError("fetch failed");
+      return new Response(JSON.stringify(answer));
+    }) as typeof globalThis.fetch;
+    return sent;
+  }
+
+  const solvedFor = (action: string) => ({ success: true, hostname: HOST, action });
+
+  function guarded(services: Partial<AuthRequestServices> = {}, turnstile: Partial<AuthTurnstileOptions> = {}): AuthWebOptions {
+    const resolved = fakeAuthServices(services);
+    return fakeAuthWebOptions({
+      resolveServices: () => resolved,
+      turnstile: { keys: () => KEYS, verify: () => ({ expectedHostname: HOST }), ...turnstile },
+    });
+  }
+
+  /** Mounts `action` behind the session, recording the pending sign-in the session holds once it answers. */
+  function sessionApp(route: string, action: TestAction, seed: Seed = {}): { app: Forge; pending: unknown[] } {
+    const pending: unknown[] = [];
+    const app = actionApp(seed);
+    app.use("*", async (context, next) => {
+      const response = await next();
+      pending.push(sessionCtx.get(context).get(AUTH_PENDING_SIGNIN_SESSION_KEY) ?? null);
+      return response;
+    });
+    return { app: mounted(app, "POST", route, action), pending };
+  }
+
+  async function answered(res: Response) {
+    const html = await res.text();
+    return { status: res.status, location: res.headers.get("location"), html };
+  }
+
+  describe("on sign-in", () => {
+    function signin(options: AuthWebOptions) {
+      return sessionApp("/auth/signin", createSigninActions(options).signinSubmit);
+    }
+
+    function recordingSignin(requested: string[]) {
+      return fakeAuthSigninFlow({
+        request: (email, at) => {
+          requested.push(email);
+          return { kind: "email-otp", expiresAt: at };
+        },
+      });
+    }
+
+    it("refuses a body with no token in the words and status a malformed address gets, keeping the address and asking for nothing", async () => {
+      const sent = siteverify(solvedFor("auth-signin"));
+      const requested: string[] = [];
+      const malformed = await answered(await signin(fakeAuthWebOptions()).app.request("/auth/signin", formBody({ email: "not-an-address" })));
+      const { app, pending } = signin(guarded({ signin: recordingSignin(requested) }));
+
+      const refused = await answered(await app.request("/auth/signin", formBody({ email: "ada@example.com" })));
+
+      expect({
+        status: refused.status,
+        error: elementOf(refused.html, "p", 'id="field-email-error"'),
+        kept: attrOf(refused.html, 'id="field-email"', "value"),
+        requested,
+        pending,
+        sent,
+      }).toEqual({
+        status: malformed.status,
+        error: elementOf(malformed.html, "p", 'id="field-email-error"'),
+        kept: "ada@example.com",
+        requested: [],
+        pending: [null],
+        sent: [],
+      });
+      expect(malformed.status).toBe(422);
+      expect(textOf(malformed.html, "p", 'id="field-email-error"')).toBe("Enter an email address in the form name@example.com.");
+    });
+
+    it("admits a solved token, dropping its field before the strict schema reads the body", async () => {
+      const sent = siteverify(solvedFor("auth-signin"));
+      const requested: string[] = [];
+      const { app, pending } = signin(guarded({ signin: recordingSignin(requested) }));
+
+      const res = await app.request(
+        "/auth/signin",
+        formBody({ _csrf: "csrf-for:/auth/signin", email: "ada@example.com", "cf-turnstile-response": "solved" }),
+      );
+
+      expect({ status: res.status, location: res.headers.get("location"), requested, pending, sent }).toEqual({
+        status: 303,
+        location: "/auth/verify",
+        requested: ["ada@example.com"],
+        pending: ["ada@example.com"],
+        sent: [{ secret: "secret-key", response: "solved" }],
+      });
+    });
+
+    for (const { refusal, answer } of [
+      { refusal: "a token solved for the sign-up form", answer: solvedFor("auth-signup") },
+      { refusal: "a token siteverify could not be reached to check", answer: "unreachable" as const },
+      { refusal: "a token siteverify rejected", answer: { success: false } },
+    ]) {
+      it(`refuses ${refusal} at 422 without asking for a code`, async () => {
+        siteverify(answer);
+        const requested: string[] = [];
+        const { app } = signin(guarded({ signin: recordingSignin(requested) }));
+
+        const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "solved" }));
+        expect({ status: res.status, requested }).toEqual({ status: 422, requested: [] });
+      });
+    }
+
+    it("logs a refusal at warn with its reason, which is all that separates it from a mistyped address", async () => {
+      siteverify(solvedFor("auth-signup"));
+      const { app } = signin(guarded());
+      const lines: string[] = [];
+      const original = console.log;
+      console.log = (line: string) => void lines.push(line);
+      try {
+        await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "solved" }));
+      } finally {
+        console.log = original;
+      }
+
+      const logged = lines
+        .map((line) => JSON.parse(line) as Record<string, unknown>)
+        .filter((record) => record.message === "Submission refused by a bot guard")
+        .map(({ level, message, guard, reason }) => ({ level, message, guard, reason }));
+      expect(logged).toEqual([{ level: "warn", message: "Submission refused by a bot guard", guard: "turnstile", reason: "action-mismatch" }]);
+    });
+
+    it("leaves the strict schema refusing a token field when the deployment configured no turnstile, and verifies nothing", async () => {
+      const sent = siteverify(solvedFor("auth-signin"));
+      const { app } = signin(fakeAuthWebOptions());
+
+      const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "solved" }));
+      expect({ status: res.status, sent }).toEqual({ status: 422, sent: [] });
+    });
+
+    it("admits a testing secret's fixed hostname only under a dev grant for testing secrets", async () => {
+      const testing = { siteKey: "1x00000000000000000000AA", secretKey: "1x0000000000000000000000000000000AA" };
+      const answer = { success: true, hostname: "example.com", action: "auth-signin" };
+      const status = async (turnstile: Partial<AuthTurnstileOptions>) => {
+        siteverify(answer);
+        const { app } = signin(guarded({}, { keys: () => testing, ...turnstile }));
+        const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "XXXX.DUMMY.TOKEN.XXXX" }));
+        globalThis.fetch = savedFetch as typeof globalThis.fetch;
+        return res.status;
+      };
+
+      expect({
+        granted: await status({ verify: () => ({ expectedHostname: HOST, dev: devAllowance({ turnstileTestingSecrets: true }) }) }),
+        ungranted: await status({}),
+      }).toEqual({ granted: 303, ungranted: 422 });
+    });
+  });
+
+  describe("on sign-up", () => {
+    function signup(options: AuthWebOptions) {
+      return mounted(actionApp(), "POST", "/auth/signup", createSignupActions(options).signupSubmit);
+    }
+
+    it("refuses a body with no token exactly as it refuses an invalid address, without starting an account", async () => {
+      siteverify(solvedFor("auth-signup"));
+      const requested: string[] = [];
+      const recording = fakeAuthSignupFlow({
+        request: (email, at) => {
+          requested.push(email);
+          return { kind: "email-otp", expiresAt: at };
+        },
+      });
+      const invalid = await answered(await signup(fakeAuthWebOptions()).request("/auth/signup", formBody({ email: "not-an-address" })));
+
+      const refused = await answered(await signup(guarded({ signup: recording })).request("/auth/signup", formBody({ email: "ada@example.com" })));
+
+      expect({ status: refused.status, error: elementOf(refused.html, "p", 'id="field-email-error"'), requested }).toEqual({
+        status: invalid.status,
+        error: elementOf(invalid.html, "p", 'id="field-email-error"'),
+        requested: [],
+      });
+      expect(invalid.status).toBe(422);
+    });
+
+    it("admits a token solved for the sign-up form and starts the account", async () => {
+      const sent = siteverify(solvedFor("auth-signup"));
+      const requested: string[] = [];
+      const recording = fakeAuthSignupFlow({
+        request: (email, at) => {
+          requested.push(email);
+          return { kind: "email-otp", expiresAt: at };
+        },
+      });
+
+      const res = await signup(guarded({ signup: recording })).request(
+        "/auth/signup",
+        formBody({ _csrf: "csrf-for:/auth/signup", email: "ada@example.com", "cf-turnstile-response": "solved" }),
+      );
+
+      expect({ status: res.status, location: res.headers.get("location"), requested, sent }).toEqual({
+        status: 303,
+        location: "/auth/verify",
+        requested: ["ada@example.com"],
+        sent: [{ secret: "secret-key", response: "solved" }],
+      });
+    });
+
+    it("guards only the flows named in `flows`", async () => {
+      siteverify(solvedFor("auth-signup"));
+      const options = guarded({}, { flows: ["signup"] });
+      const signinApp = mounted(actionApp(), "POST", "/auth/signin", createSigninActions(options).signinSubmit);
+
+      expect({
+        signin: (await signinApp.request("/auth/signin", formBody({ email: "ada@example.com" }))).status,
+        signup: (await signup(options).request("/auth/signup", formBody({ email: "ada@example.com" }))).status,
+      }).toEqual({ signin: 303, signup: 422 });
+    });
+  });
+
+  describe("on the verification page", () => {
+    const holdingBoth: Partial<AuthRequestServices> = {
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+          recoveryOffer(),
+        ],
+      }),
+    };
+
+    function recordingFlow(calls: string[]) {
+      return fakeAuthSigninFlow({
+        request: (email, at) => {
+          calls.push(`request:${email}`);
+          return { kind: "email-otp", expiresAt: at };
+        },
+        complete: async () => {
+          calls.push("complete");
+          return ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" as const } });
+        },
+        requestStepUp: async () => {
+          calls.push("requestStepUp");
+          return err("not-enrolled" as const);
+        },
+        stepUp: async (userId, kind, _code, at) => {
+          calls.push("stepUp");
+          return ok({ kind, userId, verifiedAt: at });
+        },
+      });
+    }
+
+    it("refuses a code with no token at 422 in the words a malformed code gets, without completing the sign-in", async () => {
+      siteverify(solvedFor("auth-verify"));
+      const calls: string[] = [];
+      const submit = (options: AuthWebOptions, code: string) =>
+        mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit).request(
+          "/auth/verify",
+          formBody({ code }),
+        );
+      const malformed = await answered(await submit(fakeAuthWebOptions(), "12"));
+
+      const refused = await answered(await submit(guarded({ signin: recordingFlow(calls) }), "123456"));
+
+      expect({ status: refused.status, error: textOf(refused.html, "p", 'id="field-code-error"'), calls }).toEqual({
+        status: malformed.status,
+        error: textOf(malformed.html, "p", 'id="field-code-error"'),
+        calls: [],
+      });
+      expect({ status: malformed.status, error: textOf(malformed.html, "p", 'id="field-code-error"') }).toEqual({
+        status: 422,
+        error: "That code is not the shape we sent. Enter the digits exactly as they appear.",
+      });
+    });
+
+    it("refuses a recovery code with no token in a recovery code's words, without stepping up", async () => {
+      siteverify(solvedFor("auth-verify"));
+      const calls: string[] = [];
+      const app = mounted(
+        actionApp({ userId: "u9" }),
+        "POST",
+        "/auth/verify",
+        createVerifyActions(guarded({ ...holdingBoth, signin: recordingFlow(calls) })).submit,
+      );
+
+      const res = await app.request("/auth/verify?factor=recovery-code", formBody({ code: "ABCD-EFGH" }));
+      expect({ status: res.status, error: textOf(await res.text(), "p", 'id="field-code-error"'), calls }).toEqual({
+        status: 422,
+        error: "That is not a recovery code. Enter one exactly as you saved it.",
+        calls: [],
+      });
+    });
+
+    it("admits a token solved for the verification form and completes the sign-in", async () => {
+      const sent = siteverify(solvedFor("auth-verify"));
+      const calls: string[] = [];
+      const app = mounted(
+        actionApp({ pendingEmail: "grace@example.com" }),
+        "POST",
+        "/auth/verify",
+        createVerifyActions(guarded({ signin: recordingFlow(calls) })).submit,
+      );
+
+      const res = await app.request("/auth/verify?next=%2Fapp", formBody({ code: "123456", "cf-turnstile-response": "solved" }));
+      expect({ status: res.status, location: res.headers.get("location"), calls, sent }).toEqual({
+        status: 303,
+        location: "/app",
+        calls: ["complete"],
+        sent: [{ secret: "secret-key", response: "solved" }],
+      });
+    });
+
+    it("admits a token solved for the verification form and steps up a signed-in session by app code", async () => {
+      const sent = siteverify(solvedFor("auth-verify"));
+      const calls: string[] = [];
+      const app = mounted(
+        actionApp({ userId: "u9" }),
+        "POST",
+        "/auth/verify",
+        createVerifyActions(guarded({ ...holdingBoth, signin: recordingFlow(calls) })).submit,
+      );
+
+      const res = await app.request("/auth/verify?factor=totp-app&next=%2Fapp", formBody({ code: "123456", "cf-turnstile-response": "solved" }));
+      expect({ status: res.status, location: res.headers.get("location"), calls, sent }).toEqual({
+        status: 303,
+        location: "/app",
+        calls: ["stepUp"],
+        sent: [{ secret: "secret-key", response: "solved" }],
+      });
+    });
+
+    it("answers a refused resend with the redirect an admitted one gets, issuing no code", async () => {
+      const resend = async (body: Record<string, string>) => {
+        const calls: string[] = [];
+        const options = guarded({ signin: recordingFlow(calls) });
+        const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify/resend", createVerifyActions(options).resend);
+        const res = await app.request("/auth/verify/resend", formBody(body));
+        return { status: res.status, location: res.headers.get("location"), body: await res.text(), calls };
+      };
+      siteverify(solvedFor("auth-resend"));
+
+      const admitted = await resend({ "cf-turnstile-response": "solved" });
+      const refused = await resend({});
+
+      expect({ admitted, refused }).toEqual({
+        admitted: { status: 303, location: "/auth/verify?resent", body: "", calls: ["request:grace@example.com"] },
+        refused: { status: 303, location: "/auth/verify?resent", body: "", calls: [] },
+      });
+    });
+
+    it("answers a refused step-up resend with the same redirect, asking for no step-up code", async () => {
+      siteverify(solvedFor("auth-resend"));
+      const calls: string[] = [];
+      const options = guarded({ ...holdingBoth, signin: recordingFlow(calls) });
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify/resend", createVerifyActions(options).resend);
+
+      const res = await app.request("/auth/verify/resend", formBody({}));
+      const refused = { status: res.status, location: res.headers.get("location"), calls: [...calls] };
+      const admittedRes = await app.request("/auth/verify/resend", formBody({ "cf-turnstile-response": "solved" }));
+
+      expect({ refused, admitted: { status: admittedRes.status, location: admittedRes.headers.get("location"), calls } }).toEqual({
+        refused: { status: 303, location: "/auth/verify?resent", calls: [] },
+        admitted: { status: 303, location: "/auth/verify?resent", calls: ["requestStepUp"] },
+      });
+    });
+
+    it("still sends a resend with no started sign-in back to sign-in", async () => {
+      const sent = siteverify(solvedFor("auth-resend"));
+      const app = mounted(actionApp(), "POST", "/auth/verify/resend", createVerifyActions(guarded()).resend);
+
+      const res = await app.request("/auth/verify/resend", formBody({}));
+      expect({ status: res.status, location: res.headers.get("location"), sent }).toEqual({ status: 303, location: "/auth/signin", sent: [] });
+    });
+  });
+
+  describe("on the passkey ceremonies", () => {
+    it("spends no siteverify call on a step-up begin or finish", async () => {
+      const sent = siteverify(solvedFor("auth-verify"));
+      const passkey = {
+        ...fakeFactorService("passkey"),
+        createChallenge: async () => ok({ kind: "passkey" as const, expiresAt: 1_000, options: { challenge: "c" } }),
+        verifyChallenge: async (userId: string, _presented: string, at: number) => ok({ kind: "passkey" as const, userId, verifiedAt: at }),
+      } as AuthFactorService;
+      const options = guarded({
+        users: fakeAuthUserStore([signedIn]),
+        factors: createFactorRegistry(fakeFactorStore(["passkey"]), {
+          offered: [
+            { service: fakeFactorService("email-otp"), role: "primary" },
+            { service: passkey, role: "second", requirement: "optional" },
+            recoveryOffer(),
+          ],
+        }),
+      });
+      const actions = createPasskeyStepUpActions(options);
+      const app = actionApp({ userId: "u9" });
+      mounted(app, "POST", "/auth/verify/passkey/begin", actions.begin);
+      mounted(app, "POST", "/auth/verify/passkey/finish", actions.finish);
+
+      const begin = await app.request("/auth/verify/passkey/begin", jsonBody({}));
+      const finish = await app.request("/auth/verify/passkey/finish", jsonBody({ credential: { id: "cred-1" } }));
+
+      expect({ begin: begin.status, finish: finish.status, sent }).toEqual({ begin: 200, finish: 200, sent: [] });
+    });
   });
 });

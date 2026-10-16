@@ -1,6 +1,9 @@
+import type { Middleware } from "@remix-run/fetch-router";
+
 import { importKeyRing } from "../../crypto/keyring/ring";
 import { err, ok } from "../../result/result";
 import { createSignedCookie } from "../../session/cookie";
+import { sessionCtx } from "../../session/session";
 import type { ForgeIcon } from "../../ui/core/types";
 import { AUTH_ADMIN_ROLE, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
 import { authIdentifies, createFactorRegistry } from "../factors/registry";
@@ -26,9 +29,11 @@ import type {
   RecoveryCodeStore,
   UserStore,
 } from "../types";
+import { defineApproval } from "./approval";
+import { markApproval } from "./identity";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import type { AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
+import type { Approval, ApprovalOptions, AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
 import type { AuthFactorAssignment, AuthFactorCell, AuthFactorChoices, AuthFactorOffering } from "./types";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
@@ -443,20 +448,24 @@ export function fakeAuthServices(overrides: Partial<AuthRequestServices> = {}): 
   };
 }
 
-/** The first-admin claim secret a test deployment is configured with. @internal */
-export const FAKE_BOOTSTRAP_SECRET = "bootstrap-secret";
-
 /** The options every loader, action factory and `register*` is called with in a test. @internal */
 export function fakeAuthWebOptions(overrides: Partial<AuthWebOptions> = {}): AuthWebOptions {
   const services = fakeAuthServices();
-  return {
-    resolveServices: () => services,
-    paths: fakeAuthWebPaths(),
-    icon: fakeAuthIcon,
-    now: () => 1_000,
-    // Configured, because both halves of the claim page 404 without one — a test wanting that case
-    // overrides this with a function answering `undefined`.
-    bootstrapSecret: () => FAKE_BOOTSTRAP_SECRET,
-    ...overrides,
+  return { resolveServices: () => services, paths: fakeAuthWebPaths(), icon: fakeAuthIcon, now: () => 1_000, ...overrides };
+}
+
+/** The administrator code a test approval is configured with. @internal */
+export const FAKE_APPROVAL_CODE = "administrator-code";
+
+/** An approval at `/approve` reading `FAKE_APPROVAL_CODE`, its origin policy admitting `https://app.example`. @internal */
+export function fakeApproval(overrides: Partial<ApprovalOptions> = {}): Approval {
+  return defineApproval({ path: "/approve", code: () => FAKE_APPROVAL_CODE, origin: { allowedOrigins: ["https://app.example"] }, ...overrides });
+}
+
+/** Middleware stamping every request's session as approved at `at`, which defaults to now. @internal */
+export function approvedSession(at?: number): Middleware {
+  return (context, next) => {
+    markApproval(sessionCtx.get(context), at ?? Date.now());
+    return next();
   };
 }

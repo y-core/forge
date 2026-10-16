@@ -29,6 +29,9 @@ export const AUTH_PENDING_SIGNIN_SESSION_KEY = "auth.pendingSignin";
 /** The session key a sign-out leaves set while the browser still owes the storage half of its `Clear-Site-Data`. @public */
 export const AUTH_SITE_DATA_OWED_SESSION_KEY = "auth.siteDataOwed";
 
+/** The session key recording when this session last presented the administrator code. @internal */
+export const APPROVAL_SESSION_KEY = "approval.at";
+
 /** Per-request accessor for the identity `requireAuth` or `resolveAuth` establishes. @public */
 export const authCtx = contextVar<AuthIdentity>("auth.identity");
 
@@ -50,6 +53,7 @@ export function establishAuthSession(session: Session, userId: string, at: numbe
   session.unset(AUTH_STEP_UP_SESSION_KEY);
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);
   session.unset(AUTH_SITE_DATA_OWED_SESSION_KEY);
+  session.unset(APPROVAL_SESSION_KEY);
   session.regenerateId(true);
 }
 
@@ -80,6 +84,18 @@ export function markAuthStepUp(session: Session, at: number, now: number): void 
   session.set(AUTH_STEP_UP_SESSION_KEY, Math.min(at, now));
 }
 
+/** Records on `session` that the administrator code was presented at `at`, rotating the session id. @internal */
+export function markApproval(session: Session, at: number): void {
+  session.set(APPROVAL_SESSION_KEY, at);
+  // A privilege change on a session no sign-in may have rotated: a fixated id must not inherit it.
+  session.regenerateId(true);
+}
+
+/** When `session` last presented the administrator code, or `null` when it has not. @internal */
+export function resolveApprovalAt(session: Session): number | null {
+  return readStamp(session, APPROVAL_SESSION_KEY);
+}
+
 /** Drops every auth key from `session`, leaving the session id alone. @internal */
 function revokeAuthSession(session: Session): void {
   session.unset(AUTH_SESSION_KEY);
@@ -87,6 +103,7 @@ function revokeAuthSession(session: Session): void {
   session.unset(AUTH_SURVIVED_SESSION_KEY);
   session.unset(AUTH_STEP_UP_SESSION_KEY);
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);
+  session.unset(APPROVAL_SESSION_KEY);
 }
 
 /** Drops the signed-in user and the step-up mark from `session`, rotating the session id. @public */

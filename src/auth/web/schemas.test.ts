@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { describeValidationIssue, v } from "../../validation/mod";
 import {
+  approvalSchema,
   authAdminElevateSchema,
   authAdminSearchSchema,
   authAdminUserSchema,
@@ -164,26 +165,34 @@ describe("authAdminUserSchema", () => {
 });
 
 describe("authAdminElevateSchema", () => {
-  it("accepts the explicit confirmation carrying the bootstrap secret", () => {
-    expect(output(authAdminElevateSchema(), { confirm: "yes", secret: "s3cret" })).toEqual({ confirm: "yes", secret: "s3cret" });
+  it("accepts the explicit confirmation", () => {
+    expect(output(authAdminElevateSchema(), { confirm: "yes" })).toEqual({ confirm: "yes" });
   });
 
   it("rejects any other value, so a stray submit cannot mint an administrator", () => {
-    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "on", secret: "s3cret" })).toEqual(["confirm"]);
-  });
-
-  // Required, not optional: the claim grants the role to whoever posts first, so a submission with
-  // no secret must never reach the write.
-  it("rejects a claim carrying no secret at all", () => {
-    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "yes" })).toEqual(["secret"]);
-  });
-
-  it("rejects a secret longer than the field's bound, rather than reading it", () => {
-    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "yes", secret: "x".repeat(513) })).toEqual(["secret"]);
+    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "on" })).toEqual(["confirm"]);
   });
 
   it("rejects a missing confirmation", () => {
-    expect(fieldsRejected(authAdminElevateSchema(), { secret: "s3cret" })).toEqual(["confirm"]);
+    expect(fieldsRejected(authAdminElevateSchema(), {})).toEqual(["confirm"]);
+  });
+
+  it("rejects a leftover secret field, so a form still carrying one is refused rather than half-read", () => {
+    expect(fieldsRejected(authAdminElevateSchema(), { confirm: "yes", secret: "s3cret" })).toEqual(["secret"]);
+  });
+});
+
+describe("approvalSchema", () => {
+  it("accepts a code and trims it", () => {
+    expect(output(approvalSchema(), { code: "  administrator-code  " })).toEqual({ code: "administrator-code" });
+  });
+
+  it("rejects a submission carrying no code", () => {
+    expect(fieldsRejected(approvalSchema(), {})).toEqual(["code"]);
+  });
+
+  it("rejects a code longer than the field's bound, rather than reading it", () => {
+    expect(fieldsRejected(approvalSchema(), { code: "x".repeat(513) })).toEqual(["code"]);
   });
 });
 

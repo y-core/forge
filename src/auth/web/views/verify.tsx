@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
 
+import { hxAttrs } from "../../../render/htmx/htmx-attrs";
 import type { FC } from "../../../render/jsx/types";
 import { Alert } from "../../../ui/core/alert";
 import { Button } from "../../../ui/core/button";
@@ -9,6 +10,7 @@ import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
 import { Link } from "../../../ui/core/link";
 import { OtpInput } from "../../../ui/core/otp-input";
+import { Turnstile } from "../../../ui/core/turnstile";
 import { cn } from "../../../ui/core/utils/cn";
 import { AUTH_OTP_DIGITS } from "../../config";
 import { PASSKEY } from "../../passkey-contract";
@@ -16,6 +18,9 @@ import type { AuthFactorKind } from "../../types";
 import { AuthPasskeyScope, AuthPasskeyStatus } from "./passkey-enrol";
 import { RecoveryCodeField } from "./recovery-codes";
 import type { VerifyViewProps } from "./types";
+
+/** The id on the verify view's root, which its code and resend forms swap the re-rendered view into. @public */
+export const AUTH_VERIFY_ID = "auth-verify";
 
 const SECOND_MS = 1000;
 const MINUTE_SECONDS = 60;
@@ -71,6 +76,8 @@ export const VerifyView: FC<VerifyViewProps> = ({
   email,
   fieldError,
   error,
+  turnstile,
+  resendTurnstile,
   icon: AppIcon,
   class: cls,
   level,
@@ -78,7 +85,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
   const Heading = `h${level ?? 1}` as "h1";
   const digits = codeDigits ?? AUTH_OTP_DIGITS;
   return (
-    <Card class={cn("mx-auto w-full max-w-md", cls)}>
+    <Card id={AUTH_VERIFY_ID} class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Confirm it&#39;s you</Heading>
@@ -105,7 +112,12 @@ export const VerifyView: FC<VerifyViewProps> = ({
             <AuthPasskeyStatus unsupported='This browser cannot use passkeys. Open this page in a current Chrome, Edge, Firefox or Safari.' />
           </AuthPasskeyScope>
         ) : (
-          <Form action={submitPath} csrfToken={csrfToken} csrfHeader={csrfHeader} class='flex flex-col gap-6'>
+          <Form
+            action={submitPath}
+            csrfToken={csrfToken}
+            csrfHeader={csrfHeader}
+            {...hxAttrs({ post: submitPath, target: `#${AUTH_VERIFY_ID}`, swap: "outerHTML" })}
+            class='flex flex-col gap-6'>
             {factor === "recovery-code" ? (
               <RecoveryCodeField fieldError={fieldError} icon={AppIcon} />
             ) : (
@@ -125,6 +137,9 @@ export const VerifyView: FC<VerifyViewProps> = ({
                   </FormField.Error>
                 )}
               </FormField>
+            )}
+            {turnstile === undefined ? null : (
+              <Turnstile siteKey={turnstile.siteKey} action={turnstile.action} challenge='submit' appearance='interaction-only' />
             )}
             <Button type='submit'>Confirm</Button>
           </Form>
@@ -150,7 +165,14 @@ export const VerifyView: FC<VerifyViewProps> = ({
                 <Alert.Description>{resentNotice(reissueAfterMs)}</Alert.Description>
               </Alert>
             )}
-            <Form action={resendPath} csrfToken={resendToken} csrfHeader={csrfHeader}>
+            <Form
+              action={resendPath}
+              csrfToken={resendToken}
+              csrfHeader={csrfHeader}
+              {...hxAttrs({ post: resendPath, target: `#${AUTH_VERIFY_ID}`, swap: "outerHTML" })}>
+              {resendTurnstile === undefined ? null : (
+                <Turnstile siteKey={resendTurnstile.siteKey} action={resendTurnstile.action} challenge='submit' appearance='interaction-only' />
+              )}
               <Button type='submit' tone='neutral' appearance='ghost' class='w-full' disabled={resent} data-ref='verify-resend'>
                 <AppIcon name='mail' class='size-4' />
                 Send another code

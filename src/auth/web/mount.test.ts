@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import { applyMiddlewareChain } from "../../app/middleware-chain";
@@ -108,7 +108,7 @@ const options: AuthWebOptions<MountEnv> = { resolveServices, paths, icon: fakeAu
 const guardEnvs: MountEnv[] = [];
 
 /** The whole mount, in the order AUTH_MOUNTING.md §1 gives it. */
-function mount(): Forge<MountEnv> {
+function mount(mounted: AuthWebOptions<MountEnv> = options): Forge<MountEnv> {
   const app = new Forge<MountEnv>(nullLogger);
   app.setShell(pageShell({ stylesheet: "/assets/app.css", script: "/assets/auth.js" }));
 
@@ -139,9 +139,9 @@ function mount(): Forge<MountEnv> {
     }),
   });
 
-  registerAuth(app, authMap, options);
-  registerAccount(app, accountMap, options);
-  registerAdmin(app, adminMap, options);
+  registerAuth(app, authMap, mounted);
+  registerAccount(app, accountMap, mounted);
+  registerAdmin(app, adminMap, mounted);
   return app;
 }
 
@@ -729,5 +729,69 @@ describe("adding a passkey from the account pages, driven through the mount", ()
 
     const refused = await ada.get("/account/passkeys/new");
     expect({ status: refused.status, location: refused.headers.get("location") }).toEqual({ status: 303, location: "/auth/enrol/passkey" });
+  });
+});
+
+describe("the mount with Turnstile on the sign-in form", () => {
+  const guarded: AuthWebOptions<MountEnv> = {
+    ...options,
+    turnstile: {
+      keys: () => ({ siteKey: "site-key-public", secretKey: "secret-key-private" }),
+      verify: () => ({ expectedHostname: "localhost" }),
+      flows: ["signin"],
+    },
+  };
+
+  let savedFetch: typeof globalThis.fetch | undefined;
+
+  afterEach(() => {
+    if (savedFetch !== undefined) globalThis.fetch = savedFetch;
+    savedFetch = undefined;
+  });
+
+  it("shows the widget, refuses a POST without a token at 422, and admits a solved one", async () => {
+    const sent: unknown[] = [];
+    savedFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: URL | RequestInfo, init?: RequestInit) => {
+      sent.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ success: true, hostname: "localhost", action: "auth-signin" }));
+    }) as typeof globalThis.fetch;
+    const app = mount(guarded);
+    const bindings = env();
+
+    const page = await app.request("/auth/signin", {}, bindings);
+    const html = await page.text();
+    const token = attrOf(html, 'name="_csrf"', "value");
+    const cookie =
+      page.headers
+        .getSetCookie()
+        .find((c) => c.startsWith("__Host-session="))
+        ?.split(";")[0] ?? "";
+    const post = (fields: Record<string, string>) =>
+      app.request(
+        "/auth/signin",
+        {
+          method: "POST",
+          headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie },
+          body: new URLSearchParams({ email: "ada@example.com", _csrf: token, ...fields }).toString(),
+        },
+        bindings,
+      );
+    const widget = attrsOf(html, 'data-scope="turnstile"');
+
+    const refused = await post({});
+    const admitted = await post({ "cf-turnstile-response": "solved" });
+
+    expect({
+      widget: { sitekey: widget["data-sitekey"], action: widget["data-action"] },
+      refused: refused.status,
+      admitted: { status: admitted.status, location: admitted.headers.get("location") },
+      sent,
+    }).toEqual({
+      widget: { sitekey: "site-key-public", action: "auth-signin" },
+      refused: 422,
+      admitted: { status: 303, location: "/auth/verify" },
+      sent: [{ secret: "secret-key-private", response: "solved" }],
+    });
   });
 });

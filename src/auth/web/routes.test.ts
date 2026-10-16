@@ -59,9 +59,9 @@ describe("AUTH_ROUTE_GROUPS", () => {
     expect(groupAt(["auth", "passkey"])).toBeUndefined();
   });
 
-  it("leaves `admin.elevate` un-admin-gated, because it creates the first admin", () => {
+  it("leaves `admin.elevate` un-admin-gated, because it creates the first admin, and holds it to an administrator approval instead", () => {
     expect(groupAt(["admin", "users"])?.guards).toEqual(["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"]);
-    expect(groupAt(["admin", "elevate"])?.guards).toEqual(["require-auth", "require-enrolment", "require-fresh-step-up"]);
+    expect(groupAt(["admin", "elevate"])?.guards).toEqual(["require-auth", "require-enrolment", "require-fresh-step-up", "require-approval"]);
   });
 
   it("admits `auth.enrol` only on an owed enrolment, so the group that makes the factor is not reachable without owing one", () => {

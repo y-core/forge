@@ -1,9 +1,10 @@
+import type { AppContext } from "../context/types";
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { csrfFieldCtx } from "../form/csrf-context";
 import { isFormCapConflict, parseFormData } from "../form/parse-form-data";
 import { formToObject } from "../form/to-object";
 import { verifyTurnstile } from "../form/turnstile";
-import type { ParseFormDataOptions, ReadonlyFormData } from "../form/types";
+import type { ParseFormDataOptions, ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "../form/types";
 import { fragmentResponse } from "../http/response";
 import { createLogger } from "../logging/logger";
 import { renderError, renderValidationErrors } from "../render/htmx/fragment";
@@ -22,10 +23,27 @@ function refuseSubmission(messages: readonly string[]): Response {
   return fragmentResponse(renderValidationErrors(messages), 422);
 }
 
-/** The first field a schema declares, or `undefined` for a schema that declares none. */
-function firstDeclaredField(schema: v.GenericSchema): string | undefined {
+/** The first field a schema declares, or `undefined` for a schema that declares none. @internal */
+export function firstDeclaredField(schema: v.GenericSchema): string | undefined {
   const { entries } = schema as { entries?: Record<string, unknown> };
   return entries === undefined ? undefined : Object.keys(entries)[0];
+}
+
+/** Verifies a submission's Turnstile token, logging the reason a refused one carries. @internal */
+export async function screenTurnstile<Bindings>(
+  c: AppContext<Bindings>,
+  formData: ReadonlyFormData,
+  secretKey: string,
+  options: Omit<TurnstileVerifyOptions, "tokenField"> & { readonly tokenField: string },
+): Promise<TurnstileResult> {
+  // Signal first, so a route that resolves its own still wins.
+  const verification = await verifyTurnstile(formData, secretKey, { signal: c.request.signal, ...options });
+  if (!verification.ok) {
+    // The refusal is deliberately a validation refusal naming the first declared field, so this
+    // line is the only thing separating an unpassable CAPTCHA from a wrong first field.
+    logger.warn("Submission refused by a bot guard", { guard: "turnstile", reason: verification.error });
+  }
+  return verification;
 }
 
 /** Builds the read → guard → validate sequence both mutation builders run before their own terminal step. @internal */
@@ -58,16 +76,8 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
 
     if (def.turnstile !== undefined && turnstileField !== undefined) {
       const secretKey = await def.turnstile.secretKey(c, config);
-      // Signal first, so a route that resolves its own still wins.
-      const verification = await verifyTurnstile(formData, secretKey, {
-        signal: c.request.signal,
-        ...def.turnstile.verify(c, config),
-        tokenField: turnstileField,
-      });
+      const verification = await screenTurnstile(c, formData, secretKey, { ...def.turnstile.verify(c, config), tokenField: turnstileField });
       if (!verification.ok) {
-        // The refusal is deliberately a validation refusal naming the first declared field, so this
-        // line is the only thing separating an unpassable CAPTCHA from a wrong first field.
-        logger.warn("Submission refused by a bot guard", { guard: "turnstile", reason: verification.error });
         return err(
           def.onBotDetected
             ? await def.onBotDetected({ guard: "turnstile", reason: verification.error }, c)

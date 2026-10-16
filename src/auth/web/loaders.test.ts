@@ -31,7 +31,7 @@ import {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
+import type { AuthPageState, AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
 import {
   attrOf,
   attrsOf,
@@ -487,16 +487,6 @@ describe("loadAdminElevate", () => {
 
     expect(elementsOf(html, "div", 'data-ref="elevate-taken"')).toHaveLength(1);
   });
-
-  // The POST answers 404 without a configured secret, so a page that still rendered an enabled form
-  // would be offering a claim that cannot be made — which is what its own help text says.
-  it("answers 404 when the deployment configured no bootstrap secret, as the claim POST does", async () => {
-    const services = fakeAuthServices({ admin: fakeAdminUserStore([fakeAuthUser()]) });
-    const options = fakeAuthWebOptions({ resolveServices: () => services, bootstrapSecret: () => undefined });
-    const res = await loaderApp(loadAdminElevate, options, "/page", "u9").request("/page");
-
-    expect(res.status).toBe(404);
-  });
 });
 
 describe("the icon a page draws from", () => {
@@ -595,5 +585,64 @@ describe("every token a page renders is bound to the path its own control submit
     const html = await page(loaderApp(loadAdminElevate, options, "/page", "u9", realMinter));
 
     await boundTo(html, 'data-slot="form-csrf"', "value", "/admin/elevate");
+  });
+});
+
+describe("the loaders' Turnstile widgets", () => {
+  const KEYS = { siteKey: "site-key-public", secretKey: "secret-key-private" };
+
+  function guarded(flows?: AuthTurnstileOptions["flows"]): AuthWebOptions {
+    return fakeAuthWebOptions({
+      turnstile: { keys: () => KEYS, verify: () => ({ expectedHostname: "localhost" }), ...(flows === undefined ? {} : { flows }) },
+    });
+  }
+
+  const widgetsOf = (html: string) =>
+    elementsOf(html, "div", 'data-scope="turnstile"').map((widget) => {
+      const attrs = attrsOf(widget, 'data-scope="turnstile"');
+      return { sitekey: attrs["data-sitekey"], action: attrs["data-action"] };
+    });
+
+  for (const { name, load, widgets } of [
+    { name: "loadSignin", load: loadSignin, widgets: [{ sitekey: "site-key-public", action: "auth-signin" }] },
+    { name: "loadSignup", load: loadSignup, widgets: [{ sitekey: "site-key-public", action: "auth-signup" }] },
+    {
+      name: "loadVerify",
+      load: loadVerify,
+      widgets: [
+        { sitekey: "site-key-public", action: "auth-verify" },
+        { sitekey: "site-key-public", action: "auth-resend" },
+      ],
+    },
+  ]) {
+    it(`${name} renders the site key the keys resolver gave, and the secret nowhere in the response`, async () => {
+      const res = await loaderApp(load as Loader, guarded()).request("/page");
+      const html = await res.text();
+      expect({ widgets: widgetsOf(html), secret: html.includes(KEYS.secretKey) }).toEqual({ widgets, secret: false });
+    });
+  }
+
+  it("renders a widget only on the forms `flows` names", async () => {
+    const options = guarded(["resend"]);
+    expect({
+      signin: widgetsOf(await page(loaderApp(loadSignin, options))),
+      signup: widgetsOf(await page(loaderApp(loadSignup, options))),
+      verify: widgetsOf(await page(loaderApp(loadVerify, options))),
+    }).toEqual({ signin: [], signup: [], verify: [{ sitekey: "site-key-public", action: "auth-resend" }] });
+  });
+
+  it("renders no resend widget on a verify page that offers no resend, whatever `flows` says", async () => {
+    const services = fakeAuthServices({
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
+          recoveryOffer(),
+        ],
+      }),
+    });
+    const options = { ...guarded(), resolveServices: () => services };
+    expect(widgetsOf(await page(loaderApp(loadVerify, options, "/page", "u9")))).toEqual([{ sitekey: "site-key-public", action: "auth-verify" }]);
   });
 });

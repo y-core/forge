@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
 
+import { hxAttrs } from "../../../render/htmx/htmx-attrs";
 import type { FC } from "../../../render/jsx/types";
 import { Alert } from "../../../ui/core/alert";
 import { Button } from "../../../ui/core/button";
@@ -9,9 +10,13 @@ import { FormField } from "../../../ui/core/field-layout";
 import { Form } from "../../../ui/core/form";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
+import { Turnstile } from "../../../ui/core/turnstile";
 import { cn } from "../../../ui/core/utils/cn";
 import type { AuthFactorKind } from "../../types";
 import type { SignupViewProps } from "./types";
+
+/** The id on the sign-up view's root, which its form swaps the re-rendered view into. @public */
+export const AUTH_SIGNUP_ID = "auth-signup";
 
 /** What signing up involves, which is the emailed code plus whatever the deployment demands after it. */
 function signupSteps(enrols: AuthFactorKind | undefined): string {
@@ -33,13 +38,14 @@ export const SignupView: FC<SignupViewProps> = ({
   fieldError,
   error,
   enrols,
+  turnstile,
   icon: AppIcon,
   class: cls,
   level,
 }) => {
   const Heading = `h${level ?? 1}` as "h1";
   return (
-    <Card class={cn("mx-auto w-full max-w-md", cls)}>
+    <Card id={AUTH_SIGNUP_ID} class={cn("mx-auto w-full max-w-md", cls)}>
       <Card.Header>
         <Card.Title>
           <Heading class='text-xl'>Create an account</Heading>
@@ -47,7 +53,12 @@ export const SignupView: FC<SignupViewProps> = ({
         <Card.Description>{signupSteps(enrols)}</Card.Description>
       </Card.Header>
       <Card.Content>
-        <Form action={submitPath} csrfToken={csrfToken} csrfHeader={csrfHeader} class='flex flex-col gap-6'>
+        <Form
+          action={submitPath}
+          csrfToken={csrfToken}
+          csrfHeader={csrfHeader}
+          {...hxAttrs({ post: submitPath, target: `#${AUTH_SIGNUP_ID}`, swap: "outerHTML" })}
+          class='flex flex-col gap-6'>
           {error === undefined ? null : (
             <Alert tone='destructive'>
               <AppIcon name='alert' class='size-4' />
@@ -73,6 +84,9 @@ export const SignupView: FC<SignupViewProps> = ({
               </FormField.Error>
             )}
           </FormField>
+          {turnstile === undefined ? null : (
+            <Turnstile siteKey={turnstile.siteKey} action={turnstile.action} challenge='submit' appearance='interaction-only' />
+          )}
           <Button type='submit'>Sign up</Button>
         </Form>
       </Card.Content>

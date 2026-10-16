@@ -10,6 +10,7 @@ import type { AuthCredential, AuthUser } from "../../types";
 import { authPaths } from "../paths";
 import { adminRoutes } from "../routes";
 import {
+  approvalSchema,
   authAdminElevateSchema,
   authAdminUserSchema,
   authEmailChangeSchema,
@@ -22,6 +23,7 @@ import {
 import { valuesOf } from "../web.fixture";
 import { AdminElevateView } from "./admin-elevate";
 import { AdminUserEditView } from "./admin-user-edit";
+import { ApprovalView } from "./approval";
 import { EmailChangeView } from "./email-change";
 import { PasskeyEditView } from "./passkey-edit";
 import { SigninView } from "./signin";
@@ -137,6 +139,7 @@ const SUBMITTING_VIEWS = [
     schema: authAdminElevateSchema(),
     html: () => render(<AdminElevateView adminCount={0} paths={ADMIN} csrfToken='csrf-1' icon={AppIcon} />),
   },
+  { view: "ApprovalView", schema: approvalSchema(), html: () => render(<ApprovalView submitPath='/approve' csrfToken='csrf-1' />) },
   {
     view: "AdminUserEditView",
     schema: authAdminUserSchema(),

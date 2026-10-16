@@ -9,7 +9,7 @@ import type { PageMeta } from "../../app/types";
 import { fragmentResponse } from "../../http/response";
 import { isPartial } from "../../render/htmx/htmx-headers";
 import { renderToString } from "../../render/jsx/render-to-string";
-import type { FC } from "../../render/jsx/types";
+import type { FC, JSXNode } from "../../render/jsx/types";
 import type { AuthPageOptions, AuthViewName, AuthViewProps } from "./types";
 import { AdminElevateView } from "./views/admin-elevate";
 import { AdminUserEditView } from "./views/admin-user-edit";
@@ -99,8 +99,30 @@ export async function renderAuthPage<Name extends AuthViewName>(
         <AuthSiteData {...siteData} />
       </>
     );
-  const status = options.status ?? 200;
-  const headers = withNoStore(options.headers);
+  return renderAuthDocument(c, content, {
+    page: options.name,
+    title: AUTH_PAGE_TITLES[options.name],
+    meta: options.meta,
+    status: options.status,
+    headers: options.headers,
+  });
+}
+
+/** Renders `content` as a full `noindex`, `no-store` document in the auth mount, or as an htmx fragment. @internal */
+export async function renderAuthDocument(
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings and params are irrelevant to the medium decision
+  c: RequestContext<any, any>,
+  content: JSXNode,
+  page: {
+    readonly page: string;
+    readonly title: string;
+    readonly meta?: Partial<PageMeta> | undefined;
+    readonly status?: number | undefined;
+    readonly headers?: Record<string, string> | undefined;
+  },
+): Promise<Response> {
+  const status = page.status ?? 200;
+  const headers = withNoStore(page.headers);
 
   if (isPartial(c)) {
     return fragmentResponse(await renderToString(content), status, headers);
@@ -108,7 +130,7 @@ export async function renderAuthPage<Name extends AuthViewName>(
 
   // Every auth page is `noindex`: a sign-in, an account page and an admin page each say who a
   // deployment's users are, and none of them is a page a search result should land on.
-  const own: PageMeta = { title: AUTH_PAGE_TITLES[options.name], robots: "noindex" };
-  const slot = { mount: "auth", page: options.name, meta: options.meta === undefined ? own : mergeMeta(own, options.meta) };
+  const own: PageMeta = { title: page.title, robots: "noindex" };
+  const slot = { mount: "auth", page: page.page, meta: page.meta === undefined ? own : mergeMeta(own, page.meta) };
   return renderShell(c, content, slot, { status, headers });
 }

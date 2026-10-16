@@ -7,10 +7,13 @@ import type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import type { PageMeta } from "../../app/types";
 import type { AppContext } from "../../context/types";
+import type { TurnstileConfigSchema } from "../../form/config";
 import type { CsrfRingResolver } from "../../form/types";
+import type { TurnstileVerifyOptions } from "../../form/types";
 import type { FC } from "../../render/jsx/types";
 import type { JSXNode } from "../../render/jsx/types";
 import type { ForgeIcon } from "../../ui/core/types";
+import type { v } from "../../validation/validation";
 import type { AdminUserService } from "../admin/types";
 import type { AuthFactorRegistry } from "../factors/types";
 import type { AuthFactorRequirement } from "../factors/types";
@@ -31,6 +34,7 @@ import type { authRoutes } from "./routes";
 import type { AdminElevateViewProps } from "./views/types";
 import type { AdminUserEditViewProps } from "./views/types";
 import type { AdminUsersViewProps } from "./views/types";
+import type { ApprovalViewProps } from "./views/types";
 import type { AuthFactorsViewProps } from "./views/types";
 import type { AuthSignoutProps } from "./views/types";
 import type { AuthSiteDataProps } from "./views/types";
@@ -123,6 +127,31 @@ export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   readonly origin: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
   /** Rate limits per group, keyed by `path.join(".")` — `"auth"`, `"auth.verify"`, `"account"`. Forge picks no numbers. */
   readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>>>;
+  /** What a group listing `require-approval` holds its requests to; without it every such group answers 404. */
+  readonly approval?: Approval<Bindings> | undefined;
+}
+
+/** What `defineApproval` needs to set up the one administrator approval a deployment's guarded routes share. @public */
+export interface ApprovalOptions<Bindings = Record<string, unknown>> {
+  /** Where `registerApproval` mounts the prompt page and where `requireApproval` sends a request to it. */
+  readonly path: string;
+  /** Read per request, because a Worker holds no secret until a request carries its bindings; `undefined` or `""` answers 404 on every approved route. */
+  readonly code: (c: AppContext<Bindings>) => string | undefined;
+  /** How long a presented code holds on the session, in milliseconds. Defaults to `APPROVAL_TTL_MS`. */
+  readonly ttlMs?: number | undefined;
+  /** Origin/Referer allowlist for the prompt's POST, which forge cannot pick for you. */
+  readonly origin: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
+  /** A limit on both methods of the prompt page. Forge picks no numbers. */
+  readonly rateLimit?: NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]> | undefined;
+  /** A challenge on the prompt, read as the auth forms read theirs; omit it and the prompt renders and verifies none. */
+  readonly turnstile?: Pick<AuthTurnstileOptions<Bindings>, "keys" | "verify"> | undefined;
+  /** Markup for the prompt in place of `ApprovalView`, receiving exactly the props it does. */
+  readonly view?: FC<ApprovalViewProps> | undefined;
+}
+
+/** One administrator approval as `defineApproval` built it, and the only thing a guarded route or the prompt mount is given. @public */
+export interface Approval<Bindings = Record<string, unknown>> extends Omit<ApprovalOptions<Bindings>, "ttlMs"> {
+  readonly ttlMs: number;
 }
 
 /** Who the request is, established from the session and re-read from the user store every request. @public */
@@ -181,12 +210,29 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   readonly returnParam?: string | undefined;
   /** The clock every flow call is made against. Defaults to `Date.now`. */
   readonly now?: (() => number) | undefined;
-  // Read off `env` per request, because a Worker has no secret until one is carrying bindings. A
-  // deployment that configures none has no claim endpoint at all, rather than an open one.
-  /** The secret a first-admin claim must present; without it `admin.elevate.submit` answers 404. */
-  readonly bootstrapSecret?: ((c: AppContext<Bindings>) => string | undefined) | undefined;
   /** Wipes the origin's HTTP cache on the sign-out response and its storage from the next auth page. Defaults to off. */
   readonly signoutClearsSiteData?: boolean | undefined;
+  /** A challenge on the anonymous forms; omit it and no form renders or verifies one. */
+  readonly turnstile?: AuthTurnstileOptions<Bindings> | undefined;
+}
+
+/** An anonymous auth form a Turnstile widget can guard; `resend` is the verify page's ask for another code. @public */
+export type AuthTurnstileFlow = "signin" | "signup" | "verify" | "resend";
+
+/** Where the auth forms read their Turnstile keys and token constraints, and which forms carry a widget. @public */
+export interface AuthTurnstileOptions<Bindings = Record<string, unknown>> {
+  /** Read per request, because a Worker holds no secret until a request carries its bindings. */
+  readonly keys: (c: AppContext<Bindings>) => v.InferOutput<typeof TurnstileConfigSchema> | Promise<v.InferOutput<typeof TurnstileConfigSchema>>;
+  /** What siteverify's answer must match; forge binds the action per form itself. */
+  readonly verify: (c: AppContext<Bindings>) => Omit<TurnstileVerifyOptions, "tokenField" | "expectedAction" | "expectedCData">;
+  /** The forms guarded. Defaults to every one. */
+  readonly flows?: readonly AuthTurnstileFlow[] | undefined;
+}
+
+/** The secret and constraints one guarded submission is verified against. @internal */
+export interface AuthTurnstileCheck {
+  readonly secretKey: string;
+  readonly verify: Omit<TurnstileVerifyOptions, "tokenField"> & { readonly tokenField: string };
 }
 
 /** Refusal copy and kept input one page render carries; the view owns everything else it says. @public */
@@ -319,7 +365,8 @@ export type AuthGuardName =
   | "require-admin"
   | "require-enrolment"
   | "require-pending-enrolment"
-  | "require-fresh-step-up";
+  | "require-fresh-step-up"
+  | "require-approval";
 
 /** One middleware group of a built auth route map. @public */
 export interface AuthRouteGroup {

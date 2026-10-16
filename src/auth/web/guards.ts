@@ -15,11 +15,11 @@ import { authFactorContext } from "../factors/registry";
 import type { AuthFactorResolution } from "../factors/types";
 import { authLimit } from "../limits";
 import type { AuthAccessToken, AuthFactorKind } from "../types";
-import { authCtx, resolveAuthIdentity } from "./identity";
-import { authEnrolTarget } from "./paths";
+import { authCtx, resolveApprovalAt, resolveAuthIdentity } from "./identity";
+import { APPROVAL_RETURN_PARAM, authEnrolTarget } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import { AUTH_ROUTE_GROUPS } from "./routes";
-import type { AccessTokenGuardOptions, AuthIdentity } from "./types";
+import type { AccessTokenGuardOptions, Approval, AuthIdentity } from "./types";
 import type { AuthGuardName, AuthMedium, AuthRouteGroup } from "./types";
 import type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthRouteMaps } from "./types";
 
@@ -33,6 +33,8 @@ const STEP_UP_STALE = "This change needs a fresh verification.";
 
 const NOTHING_OWED = "This account owes no factor enrolment.";
 const UNAVAILABLE = "Service Unavailable";
+const NOT_FOUND = "Not Found";
+const APPROVAL_OWED = "This needs an administrator's approval.";
 
 const MIN_STEP_UP_MAX_AGE_MS = 1_000;
 
@@ -65,7 +67,7 @@ function replayableMethod(context: Parameters<Middleware>[0]): boolean {
 
 // An htmx request's own URL is a fragment endpoint, not a page, so the return-to is the page it was
 // sent from; a mutation's URL has no GET handler to arrive back at.
-function signinReturnPath(context: Parameters<Middleware>[0]): string | null {
+function returnToPath(context: Parameters<Middleware>[0]): string | null {
   if (!isHxRequest(context)) {
     return replayableMethod(context) ? safeRedirectPath(`${context.url.pathname}${context.url.search}`, "/") : null;
   }
@@ -76,6 +78,17 @@ function signinReturnPath(context: Parameters<Middleware>[0]): string | null {
   return safeRedirectPath(`${page.pathname}${page.search}`, "/");
 }
 
+function redirectWithReturn(context: Parameters<Middleware>[0], path: string, returnParam: string): Response {
+  const target = new URL(path, context.url);
+  const returnTo = returnToPath(context);
+  if (returnTo !== null) target.searchParams.set(returnParam, returnTo);
+  return createAuthRedirect(context, `${target.pathname}${target.search}`, replayableMethod(context) ? 302 : 303);
+}
+
+function notFound(medium: AuthMedium | undefined): Response {
+  return refuse(medium, NOT_FOUND, 404, () => new Response(NOT_FOUND, { status: 404 }));
+}
+
 /** Establishes the request's identity from the session, sending an anonymous request to sign-in. @public */
 export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGuardOptions<Bindings>): Middleware {
   assertStepUpMaxAge("requireAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
@@ -83,12 +96,7 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
   return async (context, next) => {
     const identity = await establishIdentity<Bindings>(context, options);
     if (identity === null) {
-      return refuse(options.medium, NOT_SIGNED_IN, 401, () => {
-        const target = new URL(options.signinPath, context.url);
-        const returnTo = signinReturnPath(context);
-        if (returnTo !== null) target.searchParams.set(returnParam, returnTo);
-        return createAuthRedirect(context, `${target.pathname}${target.search}`, replayableMethod(context) ? 302 : 303);
-      });
+      return refuse(options.medium, NOT_SIGNED_IN, 401, () => redirectWithReturn(context, options.signinPath, returnParam));
     }
 
     establish(context, identity, options);
@@ -140,6 +148,29 @@ export function requireAdmin(): Middleware {
     const identity = establishedIdentity(context, "requireAdmin");
     if (!identity.isAdmin) return new Response("Forbidden", { status: 403 });
     return next();
+  };
+}
+
+/** The administrator code `approval` reads for this request, or `undefined` when none is configured. @internal */
+export function approvalCode<Bindings>(context: Parameters<Middleware>[0], approval: Approval<Bindings>): string | undefined {
+  const code = approval.code(getAppContext<Bindings>(context));
+  return code === undefined || code === "" ? undefined : code;
+}
+
+/** Admits a request only while its session holds an administrator approval inside `approval`'s window, sending it to the prompt otherwise. @public */
+export function requireApproval<Bindings = Record<string, unknown>>(
+  approval: Approval<Bindings>,
+  options: { readonly medium?: AuthMedium } = {},
+): Middleware {
+  return (context, next) => {
+    // Fails closed: an approval lets a request past a check nothing else makes, so a deployment
+    // with no code configured has no approved route at all rather than an open one.
+    if (approvalCode(context, approval) === undefined) return notFound(options.medium);
+
+    const session = sessionCtx.getOptional(context);
+    if (session === undefined) throw new Error(NO_SESSION);
+    if (stepUpHolds(resolveApprovalAt(session), approval.ttlMs, Date.now())) return next();
+    return refuse(options.medium, APPROVAL_OWED, 403, () => redirectWithReturn(context, approval.path, APPROVAL_RETURN_PARAM));
   };
 }
 
@@ -372,7 +403,7 @@ function mutates(routes: readonly Route[]): boolean {
 function assertGuardOrder(group: AuthRouteGroup): void {
   const auth = group.guards.indexOf("require-auth");
   for (const [index, guard] of group.guards.entries()) {
-    if (guard === "require-auth" || guard === "resolve-auth" || (auth !== -1 && auth < index)) continue;
+    if (guard === "require-auth" || guard === "resolve-auth" || guard === "require-approval" || (auth !== -1 && auth < index)) continue;
     throw new Error(
       `createAuthGuards: group \`${group.path.join(".")}\` lists \`${guard}\` without \`require-auth\` before it — that guard reads the identity \`requireAuth\` establishes, so in this order every request to the group fails instead of being authorised.`,
     );
@@ -381,7 +412,7 @@ function assertGuardOrder(group: AuthRouteGroup): void {
 
 function guardMiddleware<Bindings>(
   name: AuthGuardName,
-  options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment">,
+  options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment" | "approval">,
   group: AuthRouteGroup,
 ): Middleware {
   const medium = group.medium;
@@ -403,6 +434,10 @@ function guardMiddleware<Bindings>(
   if (name === "require-admin") return requireAdmin();
   if (name === "require-pending-enrolment") return requirePendingEnrolment({ ...options.enrolment, medium });
   if (name === "require-fresh-step-up") return requireFreshStepUp({ ...options.enrolment, medium });
+  if (name === "require-approval") {
+    const { approval } = options;
+    return approval === undefined ? () => notFound(medium) : requireApproval(approval, { medium });
+  }
   return requireEnrolment({ ...options.enrolment, medium });
 }
 

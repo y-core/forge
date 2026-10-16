@@ -14,6 +14,8 @@ export {
   createTotpManageActions,
   createVerifyActions,
 } from "./actions";
+export type { Approval, ApprovalOptions } from "./types";
+export { defineApproval, registerApproval } from "./approval";
 export type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthGuardResolver, AuthRouteMaps } from "./types";
 export type { AccessTokenGuardOptions } from "./types";
 export {
@@ -24,6 +26,7 @@ export {
   requireBearer,
   requireEnrolment,
   requireFreshStepUp,
+  requireApproval,
   requirePendingEnrolment,
   resolveAuth,
 } from "./guards";
@@ -66,7 +69,15 @@ export {
   loadTotpEnrol,
   loadVerify,
 } from "./loaders";
-export type { AuthIconName, AuthPageState, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
+export type {
+  AuthIconName,
+  AuthPageState,
+  AuthRequestServices,
+  AuthTurnstileFlow,
+  AuthTurnstileOptions,
+  AuthWebOptions,
+  AuthWebPaths,
+} from "./types";
 export type { AuthAccountPaths, AuthAdminPaths, AuthEntryPaths, AuthPathMap } from "./types";
 export { authEnrolmentPaths, authPaths } from "./paths";
 export { registerAccount, registerAdmin, registerAuth } from "./register";
@@ -79,6 +90,7 @@ export { accountRoutes, adminRoutes, authRoutes, AUTH_ROUTE_GROUPS } from "./rou
 export {
   authAdminElevateSchema,
   authAdminSearchSchema,
+  approvalSchema,
   authAdminUserSchema,
   authEmailChangeSchema,
   authPasskeyLabelSchema,
@@ -88,6 +100,7 @@ export {
   authVerifySchema,
 } from "./schemas";
 export type { AuthViewChrome } from "./views/types";
+export type { AuthTurnstileWidget } from "./views/types";
 export type { EmailChangeViewProps } from "./views/types";
 export { EmailChangeView } from "./views/email-change";
 export type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./views/types";
@@ -97,13 +110,15 @@ export { AuthSignout } from "./views/signout";
 export type { AuthSiteDataProps } from "./views/types";
 export { AuthSiteData } from "./views/site-data";
 export type { SigninViewProps } from "./views/types";
-export { SigninView } from "./views/signin";
+export { AUTH_SIGNIN_ID, SigninView } from "./views/signin";
 export type { SignupViewProps } from "./views/types";
-export { SignupView } from "./views/signup";
+export { AUTH_SIGNUP_ID, SignupView } from "./views/signup";
 export type { VerifyChoice, VerifyViewProps } from "./views/types";
-export { VerifyView } from "./views/verify";
+export { AUTH_VERIFY_ID, VerifyView } from "./views/verify";
 export type { AuthFactorRow, AuthFactorState, AuthFactorsResetForm, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./views/types";
 export { AuthFactorsTrigger, AuthFactorsView } from "./views/factors";
+export type { ApprovalViewProps } from "./views/types";
+export { ApprovalView } from "./views/approval";
 export type { AdminElevateViewProps } from "./views/types";
 export { AdminElevateView } from "./views/admin-elevate";
 export type { AdminUserEditViewProps } from "./views/types";

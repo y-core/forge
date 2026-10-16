@@ -45,6 +45,9 @@ export const AUTH_SESSION_MAX_MS = 604_800_000;
 /** How recent a step-up a state-changing request must carry, in milliseconds, unless a mount says otherwise. @public */
 export const AUTH_FRESH_STEP_UP_MS = 900_000;
 
+/** How long an administrator approval holds on a session, in milliseconds, unless its definition says otherwise. @public */
+export const APPROVAL_TTL_MS = 900_000;
+
 /** Bytes of entropy in a WebAuthn ceremony challenge — 32, twice the specification's floor. @public */
 export const AUTH_PASSKEY_CHALLENGE_BYTES = 32;
 

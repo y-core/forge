@@ -1,6 +1,6 @@
 import { contextVar } from "../../context/accessor";
 import type { AppContext } from "../../context/types";
-import { CSRF_HEADER_DEFAULT } from "../../form/constants";
+import { CSRF_HEADER_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import { mintCsrf } from "../../form/csrf";
 import { csrfHeaderCtx } from "../../form/csrf-context";
 import { safeRedirectPath } from "../../http/redirect-path";
@@ -10,8 +10,8 @@ import { createAdminUserService } from "../admin/service";
 import type { EnrollableFactorService } from "../factors/types";
 import { PASSKEY_CSRF_HEADER_DEFAULT } from "../passkey-contract";
 import type { AuthFactorKind, PasskeyMode } from "../types";
-import type { AuthRequestSurface, AuthWebOptions } from "./types";
-import type { AuthPasskeyContract } from "./views/types";
+import type { AuthRequestSurface, AuthTurnstileCheck, AuthTurnstileFlow, AuthTurnstileOptions, AuthWebOptions } from "./types";
+import type { AuthPasskeyContract, AuthTurnstileWidget } from "./views/types";
 
 // One request runs a guard, a loader and often an action, each asking for these services. The
 // promise is memoised rather than the value, so two parallel callers share one build.
@@ -92,4 +92,58 @@ export async function authPasskeyContract<Bindings>(
     // Omitted when it matches the controller's own default, so the attribute stays absent in the common case.
     ...(csrfHeader !== undefined && csrfHeader !== PASSKEY_CSRF_HEADER_DEFAULT ? { csrfHeader } : {}),
   };
+}
+
+/** The Turnstile action each guarded form is bound to, so a token solved for one form cannot pass another. @internal */
+export const AUTH_TURNSTILE_ACTIONS: Readonly<Record<AuthTurnstileFlow, string>> = {
+  signin: "auth-signin",
+  signup: "auth-signup",
+  verify: "auth-verify",
+  resend: "auth-resend",
+};
+
+function authTurnstileCovers<Bindings>(options: AuthWebOptions<Bindings>, flow: AuthTurnstileFlow): AuthTurnstileOptions<Bindings> | undefined {
+  const { turnstile } = options;
+  if (turnstile === undefined) return undefined;
+  return turnstile.flows === undefined || turnstile.flows.includes(flow) ? turnstile : undefined;
+}
+
+/** The widget a form guarded by `turnstile` renders under `action`. @internal */
+export async function turnstileWidgetFor<Bindings>(
+  c: AppContext<Bindings>,
+  turnstile: Pick<AuthTurnstileOptions<Bindings>, "keys">,
+  action: string,
+): Promise<AuthTurnstileWidget> {
+  const { siteKey } = await turnstile.keys(c);
+  return { siteKey, action };
+}
+
+/** The check a submission guarded by `turnstile` must pass under `action`. @internal */
+export async function turnstileCheckFor<Bindings>(
+  c: AppContext<Bindings>,
+  turnstile: Pick<AuthTurnstileOptions<Bindings>, "keys" | "verify">,
+  action: string,
+): Promise<AuthTurnstileCheck> {
+  const { secretKey } = await turnstile.keys(c);
+  return { secretKey, verify: { ...turnstile.verify(c), expectedAction: action, tokenField: TURNSTILE_FIELD_DEFAULT } };
+}
+
+/** The widget `flow`'s form renders, or `undefined` when the deployment guards no such form. @internal */
+export async function authTurnstileWidget<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  flow: AuthTurnstileFlow,
+): Promise<AuthTurnstileWidget | undefined> {
+  const turnstile = authTurnstileCovers(options, flow);
+  return turnstile === undefined ? undefined : turnstileWidgetFor(c, turnstile, AUTH_TURNSTILE_ACTIONS[flow]);
+}
+
+/** The check `flow`'s submission must pass, or `undefined` when the deployment guards no such form. @internal */
+export async function authTurnstileCheck<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  flow: AuthTurnstileFlow,
+): Promise<AuthTurnstileCheck | undefined> {
+  const turnstile = authTurnstileCovers(options, flow);
+  return turnstile === undefined ? undefined : turnstileCheckFor(c, turnstile, AUTH_TURNSTILE_ACTIONS[flow]);
 }

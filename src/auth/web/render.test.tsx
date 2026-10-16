@@ -8,7 +8,7 @@ import { RequestContext } from "@remix-run/fetch-router";
 import { pageShell, shellCtx } from "../../app/shell";
 import type { PageShell } from "../../app/types";
 import type { FC } from "../../render/jsx/types";
-import { renderAuthPage } from "./render";
+import { renderAuthDocument, renderAuthPage } from "./render";
 import type { AuthViews } from "./types";
 import { PasskeyListView } from "./views/passkey-list";
 import type { AuthSiteDataProps } from "./views/types";
@@ -193,6 +193,23 @@ describe("renderAuthPage shell slot", () => {
     });
     expect(asked).toBe(0);
     expect(await res.text()).toBe('<p data-view="forge">ada@example.com</p>');
+  });
+});
+
+describe("renderAuthDocument", () => {
+  it("renders content that is no auth page name into the auth mount, noindex and no-store, under the title and status it is given", async () => {
+    const seen: unknown[] = [];
+    const capture: PageShell = (_c, content, slot) => {
+      seen.push(slot);
+      return <html lang='en'>{content}</html>;
+    };
+    const res = await renderAuthDocument(context({}, capture), <p>prompt</p>, { page: "approval", title: "Administrator approval", status: 422 });
+
+    expect({ status: res.status, cache: res.headers.get("cache-control"), seen }).toEqual({
+      status: 422,
+      cache: "no-store",
+      seen: [{ mount: "auth", page: "approval", meta: { title: "Administrator approval", robots: "noindex" } }],
+    });
   });
 });
 

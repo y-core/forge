@@ -25,9 +25,20 @@ export type AdminElevateViewProps = AuthViewChrome & {
   readonly csrfToken: string;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
-  /** A refused bootstrap secret, in the web layer's words. */
-  readonly fieldError?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
+};
+
+/** What the administrator approval prompt renders. @public */
+export type ApprovalViewProps = AuthViewChrome & {
+  /** The prompt's own path, carrying the return-to the request arrived with. */
+  readonly submitPath: string;
+  readonly csrfToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
+  /** A refused code, in the web layer's words — a wrong code and a failed challenge read alike. */
+  readonly fieldError?: string | undefined;
+  /** The challenge rendered before the submit button, absent when the approval guards none. */
+  readonly turnstile?: AuthTurnstileWidget | undefined;
 };
 
 /** What the administrative account page renders. @public */
@@ -193,6 +204,9 @@ export type RecoveryCodesViewProps = AuthViewChrome & {
 /** One factor the verify page may be switched to, and the page asking for it. @public */
 export type VerifyChoice = { readonly kind: AuthFactorKind; readonly href: string };
 
+/** The public half of a Turnstile challenge a form renders: the site key and the action it is bound to. @public */
+export type AuthTurnstileWidget = { readonly siteKey: string; readonly action: string };
+
 /** What the sign-in page renders. @public */
 export type SigninViewProps = AuthViewChrome & {
   readonly submitPath: string;
@@ -206,6 +220,8 @@ export type SigninViewProps = AuthViewChrome & {
   readonly fieldError?: string | undefined;
   /** A refusal about the attempt as a whole: a rate limit, a refused code. */
   readonly error?: string | undefined;
+  /** The challenge rendered before the submit button, absent when the deployment guards no sign-in. */
+  readonly turnstile?: AuthTurnstileWidget | undefined;
   readonly icon: ForgeIcon<"alert" | "mail">;
 };
 
@@ -222,6 +238,8 @@ export type SignupViewProps = AuthViewChrome & {
   readonly error?: string | undefined;
   /** The factor the visitor enrols after confirming the address, absent when none is demanded. */
   readonly enrols?: AuthFactorKind | undefined;
+  /** The challenge rendered before the submit button, absent when the deployment guards no sign-up. */
+  readonly turnstile?: AuthTurnstileWidget | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
 
@@ -309,5 +327,9 @@ export type VerifyViewProps = AuthViewChrome & {
   readonly fieldError?: string | undefined;
   /** A refusal about the attempt as a whole: too many tries, an expired sign-in. */
   readonly error?: string | undefined;
+  /** The challenge on the code form, absent when the deployment guards no verification. */
+  readonly turnstile?: AuthTurnstileWidget | undefined;
+  /** The challenge on the resend form, absent when the deployment guards no resend. */
+  readonly resendTurnstile?: AuthTurnstileWidget | undefined;
   readonly icon: ForgeIcon<"alert" | "key" | "mail">;
 };

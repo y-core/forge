@@ -248,12 +248,7 @@ Every write answers an `AdminUserOutcome` rather than a boolean, so a refusal sa
 `self`, `referenced`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. What each refusal means to a visitor, the
 prefix-only search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
 
-**The first-admin claim needs `AuthWebOptions.bootstrapSecret`, and both halves answer 404 without one** — no secret, no claim endpoint and no
-page. Give it a resolver reading the secret off `c.env` per request, and the claim form then asks for it alongside the confirmation.
-
-```ts
-const options: AuthWebOptions<Env> = { ...rest, bootstrapSecret: (c) => c.env.ADMIN_BOOTSTRAP_SECRET };
-```
+**The first-admin claim needs an administrator approval, and both halves answer 404 without one.** Setting it up is the next section.
 
 **Deactivation takes effect on the next request, not the next sign-in.** `resolveAuthIdentity` re-reads the user every request and answers `null`
 for a deactivated one, dropping that session's auth keys as it does — so reactivating the account does not revive the cookies issued before it,
@@ -262,6 +257,46 @@ and the visitor signs in again. A store outage denies without clearing.
 **Delete an account your own tables point at by clearing those rows first.** When an app table has a foreign key to `auth_users(id)`, `remove`
 answers `referenced` and deletes nothing — the account's factors and credentials included — and the admin page shows it as a 409 refusal. Where
 your app deletes accounts, delete or transfer the rows that reference the user, then call `remove`.
+
+---
+
+## Requiring administrator approval on a route
+
+An approval holds a route until the visitor's session has presented a code you configured, such as an administrator code kept as a Worker
+secret. Define one per deployment at module scope, then hand that same value to every place that uses it:
+
+```ts
+import { createAuthGuards, defineApproval, registerApproval, requireApproval } from "@y-core/forge/auth/web";
+
+const approval = defineApproval<Env>({
+  path: "/approve",
+  code: (c) => c.env.ADMIN_APPROVAL_CODE,
+  origin: { allowedOrigins: ["https://app.example"] },
+});
+
+registerApproval(app, approval);
+app.use("/reports/*", requireApproval(approval));
+const groups = createAuthGuards<Env>({ ...guardOptions, approval });
+```
+
+**`registerApproval` mounts the prompt page.** Without it, `requireApproval` sends visitors to a path that answers nothing. Mount it after the
+session middleware, as you would any route that writes the session. A correct code sends the visitor back to the page they were stopped on.
+
+**Read `code` off `c.env` on every request.** If it returns `undefined` or `""`, every approved route and the prompt itself answer 404. A
+deployment that has no code configured therefore has no approved routes, rather than open ones.
+
+**Passing `approval` to `createAuthGuards` is what turns the first-admin claim on.** The `admin.elevate` group ends with `require-approval`, so
+the visitor presents the code and then confirms the claim. If you leave `approval` out, both elevate routes answer 404. Any group of your own can
+also list `require-approval`, and it does not need `require-auth` before it.
+
+**Decide the window and the bot defence when you define the approval.** `ttlMs` is how long a presented code holds; leave it out and the window
+is `APPROVAL_TTL_MS`. Pass `rateLimit` to cap guesses on the prompt. Pass `turnstile` to challenge it: it takes the same `keys` and `verify` as
+`AuthWebOptions.turnstile`, but no `flows`. `view` replaces the prompt's markup with your own component, which receives `ApprovalViewProps`.
+
+**A route that answers JSON gets a 403 instead of a redirect.** Pass `requireApproval(approval, { medium: "json" })` for it.
+
+**Signing in or out clears the approval.** A visitor who presented the code before signing in is asked for it again afterwards
+([`AUTH_FLOWS.md`][af-6] §6).
 
 ---
 
@@ -821,6 +856,67 @@ protection as every other auth `POST`.
 
 ---
 
+## Challenging bots on the sign-in and sign-up forms
+
+Set `turnstile` and the sign-in, sign-up and verify pages carry an invisible Cloudflare Turnstile challenge, and refuse a submission that arrives
+without a solved token:
+
+```ts
+import type { AuthWebOptions } from "@y-core/forge/auth/web";
+
+const options: AuthWebOptions<Env> = {
+  ...rest,
+  turnstile: {
+    keys: (c) => ({ siteKey: c.env.TURNSTILE_SITE_KEY, secretKey: c.env.TURNSTILE_SECRET_KEY }),
+    verify: (c) => ({ expectedHostname: c.url.hostname }),
+  },
+};
+```
+
+Both are read per request, because the secret is a binding. Always pass `expectedHostname` ([`INPUT_VALIDATION.md`][iv-4a] §4a); forge picks
+each form's action and token field itself. The page needs the client imports and the CSP in [`AUTH_MOUNTING.md`][am-3] §3, or every guarded form is
+refused.
+
+**Guard fewer forms by naming the ones you want.** Leave `flows` out and every form it can cover is guarded:
+
+```ts
+turnstile: { keys, verify, flows: ["signup", "resend"] },
+```
+
+**Grant `turnstileTestingSecrets` in the development entry to run against Cloudflare's testing keys.** Those keys answer a fixed hostname, so
+`expectedHostname` refuses every local submission without the grant. Thread the `DevAllowance` into `verify`:
+
+```ts
+// src/worker-factory.ts
+import type { AuthTurnstileOptions } from "@y-core/forge/auth/web";
+import type { DevAllowance } from "@y-core/forge/dev";
+
+export function authTurnstile(dev?: DevAllowance): AuthTurnstileOptions<Env> {
+  return {
+    keys: (c) => ({ siteKey: c.env.TURNSTILE_SITE_KEY, secretKey: c.env.TURNSTILE_SECRET_KEY }),
+    verify: (c) => ({ expectedHostname: c.url.hostname, ...(dev === undefined ? {} : { dev }) }),
+  };
+}
+```
+
+```ts
+// src/worker.dev.ts
+import { devAllowance } from "@y-core/forge/dev";
+
+import { createWorker } from "./worker-factory";
+
+export default createWorker({ dev: devAllowance({ turnstileTestingSecrets: true }) });
+```
+
+`createWorker` sets `turnstile: authTurnstile(dev)` from the allowance it is given. The production entry passes none, and the grant skips the
+hostname check only under one of the testing secrets ([`src/dev/README.md`][dev-readme]).
+
+**A view you replace through `views` renders the widget itself.** Its props carry `turnstile`, and on the verify page `resendTurnstile`, whenever
+that form is guarded. A replacement whose forms swap a refusal into the view the way the shipped ones do gives its root `AUTH_SIGNIN_ID`,
+`AUTH_SIGNUP_ID` or `AUTH_VERIFY_ID`. Which forms can be guarded, and what a refusal answers, is [`AUTH_MOUNTING.md`][am-8] §8.
+
+---
+
 ## Security
 
 **Never render a reason a flow or a store hands back.** `redactSigninReason` is required at the rendering boundary, and `AuthEmailChangeReason`,
@@ -901,12 +997,15 @@ go beyond `isAdmin`.
 [am-3]: ../../docs/AUTH_MOUNTING.md#3-what-forge-does-not-ship
 [am-6]: ../../docs/AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
 [am-7]: ../../docs/AUTH_MOUNTING.md#7-rotating-the-key-ring
+[am-8]: ../../docs/AUTH_MOUNTING.md#8-turnstile-on-the-anonymous-forms
 [boundaries-2c]: ../../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
 [crypto-readme]: ../crypto/README.md
+[dev-readme]: ../dev/README.md
 [dm]: ../../docs/DATABASE_MANAGEMENT.md
 [eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../form/README.md
+[iv-4a]: ../../docs/INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [keyring-readme]: ../crypto/keyring/README.md
 [namespaces-5h]: ../../docs/NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell

@@ -8,13 +8,14 @@ audience: consumer
 
 > Owns what a consumer does to stand forge's identity capability up: the route builders and the order they go up in, the guard table every
 > group is cut from, the seams forge deliberately ships no implementation for, what mounting costs, how to place a single auth view inside a
-> page you own, and the standing obligation to rotate the key ring.
+> page you own, the standing obligation to rotate the key ring, and the Turnstile challenge on the anonymous forms.
 >
 > Owns the mount, not the flows. What each flow does once mounted is [`AUTH_FLOWS.md`][af], which also owns the limits this release carries.
 >
 > Defers to: [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
 > [`src/auth/README.md`][auth-readme] for how each of these is called, task by task; [`FORGE_ERRORS.md`][eh-5e] §5e for why resolution throws and
-> operations return a `Result`; [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c for `resume()` and scope registration.
+> operations return a `Result`; [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c for `resume()` and scope registration; and
+> [`INPUT_VALIDATION.md`][iv-4a] §4a for Turnstile verification itself.
 
 ---
 
@@ -27,6 +28,8 @@ audience: consumer
 - §5 What Mounting Costs You: the bindings, the fixtures they break, and the pre-release caveat
 - §6 Embedding an Auth View in Your Own Page: `resolveAuthView`, the `guarded` claim, and the chrome props
 - §7 Rotating the Key Ring: the per-key seal bound, what crossing it costs, the cadence, and what dropping a retired secret early costs
+- §8 Turnstile on the Anonymous Forms: which forms it covers, why it is an `AuthWebOptions` field, who names the actions, what a refusal answers,
+  and why the forms submit over htmx
 
 ---
 
@@ -113,7 +116,9 @@ session posting to `auth.enrol.ceremony` gets `401 {"error": "Not signed in."}` 
 ceremony response. On a JSON group `requireAuth` answers 401 and the enrolment guards 403.
 
 **The elevation pair carries no `require-admin`, and that is the point** — it is the first-admin bootstrap, and re-reads the count at write time
-rather than trusting the page. **`auth.verify` admits an anonymous visitor and a signed-in one alike**, which is why it carries `resolve-auth`
+rather than trusting the page. **It ends with `require-approval` instead**, so the claim belongs to whoever holds the administrator code rather than
+to whoever posts first. That guard reads the session, not the identity, so `createAuthGuards` accepts it in a group with no `require-auth` before
+it. **`auth.verify` admits an anonymous visitor and a signed-in one alike**, which is why it carries `resolve-auth`
 rather than `require-auth`. The page serves two ceremonies that look the same — the second half of a sign-in, and a step-up a live session owes —
 and only the identity tells them apart; `resolve-auth` establishes it when the session carries one and admits an anonymous request unchanged.
 Without it every request there reads as a sign-in, `markAuthStepUp` never runs, and a deployment offering a second
@@ -160,12 +165,13 @@ Every item here is a seam with a contract and no implementation, and each is req
 | A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
 | A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
 | A key ring | Hex root secrets, newest first, each held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
-| `AuthWebOptions.bootstrapSecret`, if this deployment claims its first admin through the page | The claim grants the administrator role to whoever posts first, so it fails closed: with no secret configured, both routes under `adminRoutes`' `elevate` answer **404** rather than offering an open endpoint. Read it off `c.env` per request, because a Worker has no secret until a request carries bindings. |
+| An `Approval` passed to `createAuthGuards` as `approval`, and mounted with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` answer **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
 | Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
+| With `AuthWebOptions.turnstile` set: `import "@y-core/forge/ui/client/htmx"` and `import "@y-core/forge/ui/core/client"` before `resume()`, and a CSP that admits Cloudflare's challenge | Without both imports nothing mounts the widget or holds the press, so no token reaches the server and every guarded form is refused (§8). The CSP takes either `NONCE` with `'strict-dynamic'` in `scriptSrc`, or `TURNSTILE_CSP` there, and `TURNSTILE_CSP` in `frameSrc` and `connectSrc` either way — [`src/security/README.md`][security-readme] section “Widening the policy for a third-party origin”. Where Trusted Types are enforced, the `trusted-types` directive lists `TURNSTILE_TRUSTED_TYPES_POLICY` beside `HTMX_TRUSTED_TYPES_POLICY` ([`SECURITY_HARDENING.md`][sh-2g] §2g). |
 | An `@source` line covering the installed package's `src/auth/` directory | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The exact directive is in [`src/auth/README.md`][auth-readme]. |
 | A `ForgeIcon<AuthIconName>` covering every name in that union | The views draw from **your** sprite, not a bundled one — forge's own ships `chevron-right` and nothing else, so the rest have to come from somewhere else. Build it with `createIcon`, documented at [`src/ui/README.md`][ui-readme] section “Icons”. Lucide covers the whole union, but names one glyph differently: its file is `triangle-alert.svg`, so map it to `alert` when you assemble the sprite. |
 
@@ -240,8 +246,10 @@ mistake, not a request to refuse, so it 500s rather than rendering. An unguarded
 **`require-auth` and `require-admin` are re-checked here and are not taken on trust.** `require-auth` reads the identity off `authCtx` and nowhere
 else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin` off that identity and
 answers the same 403 `requireAdmin` does. The rest — `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` —
-need a factor-registry round trip that would cost one per render, so for those `guarded` is the whole check. That is why it is a claim a reviewer
-can check, and why a lie about it is a lie about your own route.
+need a factor-registry round trip that would cost one per render, so for those `guarded` is the whole check. `require-approval` is not re-checked
+either, because the view is never handed the approval. An `adminElevate` embed on a route that skips `requireApproval` shows the claim form to a
+visitor who never presented the code; the claim still posts to `admin.elevate`, whose group asks for it. That is why it is a claim a reviewer can
+check, and why a lie about it is a lie about your own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
 the action path — `authRoutes`' `signinSubmit` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a
@@ -303,6 +311,49 @@ Worker isolate is stateless and the ring is resolved per request, so any count f
 much budget is left is worse than none at all. A deployment that wants the bound enforced counts seals in a store of its own, where the count
 survives.
 
+---
+
+## 8. Turnstile on the Anonymous Forms
+
+**`AuthWebOptions.turnstile` puts a Cloudflare Turnstile challenge on the forms an anonymous visitor posts, and leaving it out puts one on none.**
+With the option omitted, no form renders a widget and no action verifies a token. How to set it is [`src/auth/README.md`][auth-readme] section
+“Challenging bots on the sign-in and sign-up forms”; what the page around the forms must supply is §3.
+
+**It covers sign-in, sign-up, and the verify page's code form and resend form — the members of `AuthTurnstileFlow`.** `flows` narrows the
+challenge to the forms it names, and an omitted `flows` covers every member. The union in `src/auth/web/types.ts` is the list. Exempt, and not
+nameable in `flows`:
+
+- **Sign-out**, which issues no credential and sends no mail.
+- **Every passkey JSON ceremony**, because WebAuthn's own user-presence check already proves a person at an authenticator.
+- **Every page behind `require-auth`**, because only a signed-in session reaches one. `account.emailChangeSubmit`, which sends mail to an address
+  the visitor types, sits behind `require-enrolment` and `require-fresh-step-up` as well (§2).
+
+**The option is a field of `AuthWebOptions` because that one object reaches both halves of a guarded form.** The loader renders the widget with the
+site key and the action verifies the token with the secret, and both read the same options, so they cannot disagree about which forms are guarded.
+A view embedded through `resolveAuthView` (§6) resolves through those options too, and renders the widget wherever the forge route would. **It is
+not middleware**, because a Turnstile token is a field of the form, and a guard that decides from the body is not expressible as middleware
+([`INPUT_VALIDATION.md`][iv-1d] §1d). **It is not on the route builders**, because they declare paths and receive no options, so a flag there
+would reach neither the loader nor the action.
+
+**Forge names each form's Turnstile action and the token field, and the consumer names neither.** A widget's `action` and the server's
+`expectedAction` work only as a pair, and set apart they let a token solved on one form verify at another ([`INPUT_VALIDATION.md`][iv-4a] §4a).
+Forge renders the widget and runs the check, so it sets both halves of each pair itself: `AUTH_TURNSTILE_ACTIONS` in `src/auth/web/options.ts`
+binds one action per flow, and the token is read from `TURNSTILE_FIELD_DEFAULT`. That is why `AuthTurnstileOptions.verify` leaves out
+`tokenField`, `expectedAction` and `expectedCData`. The token field is dropped before the schema runs only on a request the check ran on, the rule
+[`INPUT_VALIDATION.md`][iv-1d] §1d states for every guard.
+
+**A refused token is the flow's ordinary failure, and it never reaches the flow.** Sign-in, sign-up and the code form answer `422` naming the
+schema's first declared field, the shape every guard refusal takes; the residual oracle that leaves is [`INPUT_VALIDATION.md`][iv-4b] §4b's. A
+refused resend answers the same `resent` redirect an admitted one does, and issues no code. The check runs before the flow is called, so a refusal
+spends no verification attempt and starts no cooldown. The reason is logged at `warn` and is sent nowhere else.
+
+**The covered forms always submit over htmx, whether or not `turnstile` is set.** The widget runs with `challenge="submit"`, which holds the press
+at an htmx request and needs an htmx form to hold it on ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c); making the submission depend on the option would
+give each form two ways to post. Each form keeps its native `action`, so it still posts without JavaScript. A success answers `204` with
+`HX-Redirect`, so htmx navigates rather than swapping the next page into the form. A refusal answers the re-rendered view as a fragment, which
+replaces the card: each form targets its view's root, whose id is `AUTH_SIGNIN_ID`, `AUTH_SIGNUP_ID` or `AUTH_VERIFY_ID`, and a `422` of HTML
+swaps by [`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a.
+
 [af]: ./AUTH_FLOWS.md
 [af-3a]: ./AUTH_FLOWS.md#3a-enrolment
 [af-5]: ./AUTH_FLOWS.md#5-email-change
@@ -312,10 +363,17 @@ survives.
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../src/form/README.md
+[iv-1d]: ./INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
+[iv-4a]: ./INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
+[iv-4b]: ./INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
+[security-readme]: ../src/security/README.md
 [session-readme]: ../src/session/README.md
+[sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2d]: ./SOURCE_OF_TRUTH.md#2d-ui-contracts-and-data-tables
+[ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
+[ucr-4a]: ./UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
 [ui-readme]: ../src/ui/README.md

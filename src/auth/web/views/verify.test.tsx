@@ -252,3 +252,84 @@ describe("VerifyView's step-up picker", () => {
     }).toEqual({ name: "code", type: "text", autocomplete: "off", inputmode: undefined, maxlength: undefined });
   });
 });
+
+describe("VerifyView and its Turnstile challenges", () => {
+  const CODE_WIDGET = { siteKey: "site-key", action: "auth-verify" };
+  const RESEND_WIDGET = { siteKey: "site-key", action: "auth-resend" };
+  const challengeOf = (form: string) => {
+    const attrs = attrsOf(form, 'data-scope="turnstile"');
+    return {
+      sitekey: attrs["data-sitekey"],
+      action: attrs["data-action"],
+      challenge: attrs["data-challenge"],
+      appearance: attrs["data-appearance"],
+    };
+  };
+  const formOf = (html: string, action: string) => elementOf(html, "form", `action="${action}"`);
+  const widgetsIn = (html: string) =>
+    elementsOf(html, "div", 'data-scope="turnstile"').map((widget) => attrOf(widget, 'data-scope="turnstile"', "data-action"));
+
+  it("renders each form's own widget, held to the press and shown only for an interaction", async () => {
+    const html = await verify({ turnstile: CODE_WIDGET, resendTurnstile: RESEND_WIDGET });
+    expect({ code: challengeOf(formOf(html, "/auth/verify")), resend: challengeOf(formOf(html, "/auth/verify/resend")) }).toEqual({
+      code: { sitekey: "site-key", action: "auth-verify", challenge: "submit", appearance: "interaction-only" },
+      resend: { sitekey: "site-key", action: "auth-resend", challenge: "submit", appearance: "interaction-only" },
+    });
+  });
+
+  it("places each widget immediately before its form's submit button", async () => {
+    const html = await verify({ turnstile: CODE_WIDGET, resendTurnstile: RESEND_WIDGET });
+    const follows = (form: string) => {
+      const widget = elementOf(form, "div", 'data-scope="turnstile"');
+      const submit = elementOf(form, "button", 'type="submit"');
+      return form.indexOf(widget) + widget.length === form.indexOf(submit);
+    };
+    expect({ code: follows(formOf(html, "/auth/verify")), resend: follows(formOf(html, "/auth/verify/resend")) }).toEqual({
+      code: true,
+      resend: true,
+    });
+  });
+
+  it("renders no widget on either form when the deployment guards neither", async () => {
+    expect(widgetsIn(await verify())).toEqual([]);
+  });
+
+  it("renders no widget beside a passkey ceremony, which posts no form", async () => {
+    expect(
+      widgetsIn(await verify({ factor: "passkey", passkey: PASSKEY_CONTRACT, turnstile: CODE_WIDGET, resendTurnstile: RESEND_WIDGET })),
+    ).toEqual([]);
+  });
+
+  it("renders no resend widget when the loader gave no resend path", async () => {
+    const html = await render(
+      <VerifyView
+        factor='email-otp'
+        submitPath='/auth/verify'
+        signinPath='/auth/signin'
+        csrfToken='csrf-1'
+        turnstile={CODE_WIDGET}
+        resendTurnstile={RESEND_WIDGET}
+        icon={AppIcon}
+      />,
+    );
+    expect(widgetsIn(html)).toEqual(["auth-verify"]);
+  });
+
+  for (const [label, props] of [
+    ["with widgets", { turnstile: CODE_WIDGET, resendTurnstile: RESEND_WIDGET }],
+    ["without them", {}],
+  ] as const) {
+    it(`submits both forms over htmx into its own card, keeping each native action, ${label}`, async () => {
+      const html = await verify(props);
+      const routing = (action: string) => {
+        const form = attrsOf(formOf(html, action), 'data-slot="form"');
+        return { action: form.action, post: form["hx-post"], target: form["hx-target"], swap: form["hx-swap"] };
+      };
+      expect({ code: routing("/auth/verify"), resend: routing("/auth/verify/resend"), card: attrsOf(html, 'data-slot="card"').id }).toEqual({
+        code: { action: "/auth/verify", post: "/auth/verify", target: "#auth-verify", swap: "outerHTML" },
+        resend: { action: "/auth/verify/resend", post: "/auth/verify/resend", target: "#auth-verify", swap: "outerHTML" },
+        card: "auth-verify",
+      });
+    });
+  }
+});

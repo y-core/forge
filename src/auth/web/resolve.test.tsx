@@ -715,13 +715,13 @@ describe("AuthViewChrome", () => {
 
   it("leaves the root and the heading exactly as they are when the host passes neither", async () => {
     const html = await chromed({});
-    expect(tagOf(html, 'data-slot="card"')).toBe(`<div data-slot="card" class="${CARD} mx-auto w-full max-w-md">`);
+    expect(tagOf(html, 'data-slot="card"')).toBe(`<div data-slot="card" class="${CARD} mx-auto w-full max-w-md" id="auth-signin">`);
     expect(elementOf(html, "h1", 'class="text-xl"')).toBe('<h1 class="text-xl">Sign in</h1>');
   });
 
   it("lets the host's own width win over the view's, and demotes the heading it asked to demote", async () => {
     const html = await chromed({ class: "max-w-none", level: 2 });
-    expect(tagOf(html, 'data-slot="card"')).toBe(`<div data-slot="card" class="${CARD} mx-auto w-full max-w-none">`);
+    expect(tagOf(html, 'data-slot="card"')).toBe(`<div data-slot="card" class="${CARD} mx-auto w-full max-w-none" id="auth-signin">`);
     expect(elementOf(html, "h2", 'class="text-xl"')).toBe('<h2 class="text-xl">Sign in</h2>');
     expect(elementsOf(html, "h1", 'class="text-xl"')).toEqual([]);
   });

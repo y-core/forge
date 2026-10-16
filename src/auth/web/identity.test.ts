@@ -6,6 +6,7 @@ import { ok } from "../../result/result";
 import { AUTH_SESSION_MAX_MS } from "../config";
 import type { AuthUser, UserStore } from "../types";
 import {
+  APPROVAL_SESSION_KEY,
   AUTH_PENDING_SIGNIN_SESSION_KEY,
   AUTH_SESSION_KEY,
   AUTH_SIGNED_IN_SESSION_KEY,
@@ -14,8 +15,10 @@ import {
   AUTH_SURVIVED_SESSION_KEY,
   clearAuthSession,
   establishAuthSession,
+  markApproval,
   markAuthStepUp,
   renewAuthSession,
+  resolveApprovalAt,
   resolveAuthIdentity,
 } from "./identity";
 
@@ -221,6 +224,13 @@ describe("establishAuthSession", () => {
     establishAuthSession(session, "u1", NOW, Date.now());
     expect(session.get(AUTH_SITE_DATA_OWED_SESSION_KEY)).toBeUndefined();
   });
+
+  it("clears an administrator approval, so a sign-in never inherits one given before it, anonymously or to another user", () => {
+    const session = createSession("sid-1");
+    markApproval(session, Date.now());
+    establishAuthSession(session, "u1", NOW, Date.now());
+    expect(resolveApprovalAt(session)).toBeNull();
+  });
 });
 
 // The actor raising a revocation barrier has to survive it, and one stamp cannot mean both "when
@@ -312,9 +322,37 @@ describe("clearAuthSession", () => {
     expect(session.id).not.toBe("sid-1");
   });
 
+  it("drops an administrator approval, so a sign-out leaves nothing approved behind", () => {
+    const session = signedInSession("u1");
+    markApproval(session, Date.now());
+    clearAuthSession(session);
+    expect(resolveApprovalAt(session)).toBeNull();
+  });
+
   it("leaves a resolved identity anonymous afterwards", async () => {
     const session = signedInSession("u1");
     clearAuthSession(session);
     expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
+  });
+});
+
+describe("markApproval and resolveApprovalAt", () => {
+  it("rotates the session id when the approval is recorded, so a fixated id cannot inherit it", () => {
+    const session = createSession("sid-1");
+    markApproval(session, NOW);
+    expect(session.id).not.toBe("sid-1");
+  });
+
+  it("read back the moment the code was presented, under the approval's own key", () => {
+    const session = createSession("sid-1");
+    markApproval(session, NOW);
+    expect({ at: resolveApprovalAt(session), stored: session.get(APPROVAL_SESSION_KEY) }).toEqual({ at: NOW, stored: NOW });
+  });
+
+  it("read no approval off a session that holds none, or one that holds something other than a finite stamp", () => {
+    const session = createSession("sid-1");
+    const unset = resolveApprovalAt(session);
+    session.set(APPROVAL_SESSION_KEY, "yesterday");
+    expect([unset, resolveApprovalAt(session)]).toEqual([null, null]);
   });
 });
