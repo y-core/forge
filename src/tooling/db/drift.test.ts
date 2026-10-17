@@ -1,13 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { INVENTORY_SELECT } from "../../storage/db/schema";
 import type { WranglerConfig } from "../cf/types";
 import { CliError } from "../cli/errors";
 import { PLAIN } from "../term/color";
 import { fakeDbIo } from "./db.fixture";
-import { readDrift, refuseSchemaDrift, schemaDrift } from "./drift";
+import { refuseSchemaDrift, schemaDrift } from "./drift";
 import { appHome } from "./home";
-import { RECORDED_CHECKSUM_SELECT } from "./migrate/checksum";
 import { schemaFingerprint } from "./migrate/fingerprint";
 import type { DbConfig, DbRunContext, FakeDbIo, RecordedChecksum, SchemaObject } from "./types";
 
@@ -68,58 +66,25 @@ describe("schemaDrift()", () => {
   });
 });
 
-describe("readDrift()", () => {
-  const noTable = () => {
-    throw new Error("no such table: _forge_migrations");
-  };
-
-  function wire(io: FakeDbIo, history: Record<string, unknown>[] | (() => never)): void {
-    io.d1Rules.push(
-      { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: history },
-      { match: (statement) => statement === INVENTORY_SELECT, reply: [{ type: "table", name: "users", tbl_name: "users", sql: USERS_SQL }] },
-    );
-  }
-
-  it("reads both sides itself, for a verb holding neither", async () => {
-    const { run, io } = context();
-    wire(io, [{ name: "0001_init", sha256: "a".repeat(64), applied_at: 1, fingerprint: ACTUAL }]);
-
-    expect(await readDrift(run.io, run.home)).toEqual({ state: "match", recorded: ACTUAL, actual: ACTUAL });
-  });
-
-  it("is unavailable rather than a throw when the history table is absent", async () => {
-    const { run, io } = context();
-    wire(io, noTable);
-
-    expect((await readDrift(run.io, run.home)).state).toBe("unavailable");
-  });
-});
-
 describe("refuseSchemaDrift()", () => {
   const mismatch = { state: "mismatch" as const, recorded: OTHER, actual: ACTUAL };
 
-  it("names both fingerprints, both causes and the remedy this verb offers", () => {
+  it("names both fingerprints, both causes and the restore that resolves it, offering no way past", () => {
     const { run } = context();
 
-    expect(() => refuseSchemaDrift(run, mismatch, false, "pass --allow-drift to seed anyway.")).toThrow(
+    expect(() => refuseSchemaDrift(run, mismatch)).toThrow(
       new CliError(
         "invalid-args",
-        `app-db (local) schema fingerprint ${ACTUAL} is not the ${OTHER} the last apply certified — either the schema was changed outside the migrations, or an earlier batch part-applied and is being resumed. Inspect with \`forge db migrate status\`, then pass --allow-drift to seed anyway.`,
+        `app-db (local) schema fingerprint ${ACTUAL} is not the ${OTHER} the last apply certified — either the schema was changed outside the migrations, or an earlier batch part-applied and is being resumed. Inspect with \`forge db migrate status\`, then restore the database to the schema its migrations describe — \`forge db bookmark restore\` on a deployed one, \`forge db reset\` and \`forge db restore\` on a local one — and run again; nothing passes this check.`,
       ),
     );
-  });
-
-  it("lets a mismatch the run allowed through", () => {
-    const { run } = context();
-
-    expect(() => refuseSchemaDrift(run, mismatch, true, "pass --allow-drift.")).not.toThrow();
   });
 
   it("refuses nothing on a state that is not a mismatch", () => {
     const { run } = context();
 
     for (const state of ["match", "unrecorded", "unavailable"] as const) {
-      expect(() => refuseSchemaDrift(run, { state, recorded: null, actual: ACTUAL }, false, "pass --allow-drift.")).not.toThrow();
+      expect(() => refuseSchemaDrift(run, { state, recorded: null, actual: ACTUAL })).not.toThrow();
     }
   });
 });

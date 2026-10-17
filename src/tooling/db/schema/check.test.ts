@@ -14,7 +14,7 @@ const ROOT = "/app";
 const MIGRATIONS = `${ROOT}/config/migrations`;
 const SCHEMA = "config/schema.sql";
 const LIB = "node_modules/acme/schema.sql";
-const SNAPSHOT = `${ROOT}/schema.snapshot.json`;
+const SNAPSHOT = `${ROOT}/config/db/schema.snapshot.json`;
 const BASELINE_STATE = `${ROOT}/.forge/scratch/compose/baseline/.wrangler/state`;
 
 const INIT = "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL) STRICT;\n";

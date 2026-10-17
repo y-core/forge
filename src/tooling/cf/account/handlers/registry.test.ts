@@ -62,6 +62,26 @@ describe("buildHandlers()", () => {
     expect(built.map((h) => h.type)).toEqual(defaultHandlers.map((h) => h.type));
   });
 
+  it("builds a D1 handler that sends no POST on --commit for a database the account already holds", async () => {
+    const sent: string[] = [];
+    const fetch: typeof globalThis.fetch = async (input, init) => {
+      sent.push(`${init?.method ?? "GET"} ${new URL(String(input)).pathname}`);
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: [{ uuid: "db-1", name: "app-db" }] }));
+    };
+    const d1 = buildHandlers({ configPath: "wrangler.jsonc" }).find((h) => h.type === "d1_databases") as ResourceHandler<unknown>;
+
+    await d1.reconcile([{ binding: "DB", database_id: "db-1" }], {
+      auth: { apiToken: "tok", accountId: "acc" },
+      scriptName: "worker",
+      prefix: "",
+      dryRun: false,
+      rotate: new Set<string>(),
+      fetch,
+    });
+
+    expect(sent).toEqual(["GET /client/v4/accounts/acc/d1/database"]);
+  });
+
   it("threads configPath into the secrets handler's .dev.vars lookup", async () => {
     const dir = mkdtempSync(join(tmpdir(), "forge-registry-"));
     roots.push(dir);

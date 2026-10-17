@@ -19,28 +19,32 @@ same pair of functions. Reach for it whenever a Worker has to read or write some
 
 ## Getting started
 
-The same beats for D1, KV and R2: register a binding check once at app level, resolve a client inside the handler, branch on `result.ok`.
+Declare each binding once at app level, reach a client inside the handler, and branch on `result.ok`. For D1, `defineD1Binding` hands back every
+piece the app mounts — the binding check, the schema-health monitor, the health checks and the client
+([Mounting a D1 database](#mounting-a-d1-database)):
 
 ```ts
-import { resolveD1Client, sql, validateD1Binding } from "@y-core/forge/storage/db";
+import { applyMiddlewareChain } from "@y-core/forge/app";
+import { bindingSetSchema } from "@y-core/forge/context";
+import { defineD1Binding, sql } from "@y-core/forge/storage/db";
 
-app.use("*", validateD1Binding("DB")); // once, ahead of every route
+const db = defineD1Binding<Bindings>({ name: "DB" });
+applyMiddlewareChain(app, { securityHeaders, bindings: bindingSetSchema([db.spec]), globals: [...db.globals] });
 
 // Inside a handler:
-const db = resolveD1Client(c, { binding: (c) => c.env.DB })!;
-const found = await db.queryOne<{ id: string; email: string }>(sql`SELECT id, email FROM users WHERE id = ${userId}`);
+const found = await db.client(c).queryOne<{ id: string; email: string }>(sql`SELECT id, email FROM users WHERE id = ${userId}`);
 
 if (!found.ok) return new Response("Storage unavailable", { status: 503 });
 if (found.data === null) return new Response("Not found", { status: 404 });
 return Response.json(found.data);
 ```
 
-The `| null` in a resolver's return type belongs to `required: false` alone; under the default the resolver **throws** when the binding is
-absent, so the non-null assertion is the honest spelling at a call site that did not ask for the `null`. Resolution throws and operations return
-`Result` because a missing binding is a deployment defect while a failed read is not — [`FORGE_ERRORS.md`][eh-5e] §5e owns that split, and
-[`STORAGE_BINDINGS.md`][sb-4a] §4a owns the lifecycle and the fact that `validateXBinding` is a shape check, not a presence check.
+`db.client(c)` **throws** when the binding is absent, while every query returns a `Result`, because a missing binding is a deployment defect while
+a failed read is not — [`FORGE_ERRORS.md`][eh-5e] §5e owns that split, and [`STORAGE_BINDINGS.md`][sb-4a] §4a owns the lifecycle and the fact
+that the binding check is a shape check, not a presence check.
 
-KV and R2 take the same two steps, with the store's own options passed through:
+KV and R2 take two steps — a binding check at app level and a resolver in the handler — with the store's own options passed through. The `| null`
+in a resolver's return type belongs to `required: false` alone; under the default it throws, so the non-null assertion is the honest spelling:
 
 ```ts
 import { jsonCodec, resolveKVStore, validateKVBinding } from "@y-core/forge/storage/kv";
@@ -80,9 +84,87 @@ Because the client accepts a `SqlFragment` and nothing else, a concatenated stri
 brand does and does not cover — notably an identifier such as a column name, which no bind parameter can carry — is [`STORAGE_BINDINGS.md`][sb-1b]
 §1b's. In a generic helper that receives `unknown` and must reject look-alikes, `isSqlFragment(value)` is the runtime guard.
 
-Query logging is off by default: pass `{ logger }` as `createD1Client`'s second argument, or as `resolveD1Client`'s `client` option, to log every
-statement at `debug` — and read [`STORAGE_BINDINGS.md`][sb-1a] §1a before you do, because the text and every bound value land on whatever channel
-that logger writes to.
+`execute` resolves to `{ rowsWritten, lastRowId? }`, where `rowsWritten` is the number of rows the statement changed, so a single write needs no
+`batch` to learn whether it matched. Every outcome's `meta` also says what D1 billed and where the call ran:
+
+```ts
+const read = await db.query(sql`SELECT id FROM users WHERE status = ${status}`);
+read.meta.cost; // { rowsRead, rowsWritten, durationMs }, as D1 reported it
+read.meta.servedBy; // { region, primary }
+```
+
+Query logging is off by default: pass `{ logger }` as `createD1Client`'s second argument, or as `resolveD1Client`'s `client` option, to log one
+`d1.query` record per call with the SQL text, cost and placement, and `slowQueryMs` to raise a slow one to `warn`. The record never carries a bound
+value; why that matters is [`STORAGE_BINDINGS.md`][sb-1a] §1a's.
+
+---
+
+## Handling a failed query
+
+A failed call carries a `D1Failure`. Branch on its `kind`, never on the message text:
+
+```ts
+const created = await db.execute(sql`INSERT INTO users (id, email) VALUES (${id}, ${email})`);
+if (!created.ok) {
+  const { kind, constraint } = created.error;
+  if (kind === "constraint" && constraint?.rule === "unique") return conflict("that email is taken");
+  if (kind === "overloaded" || kind === "transient") return new Response("Try again shortly", { status: 503 });
+  throw created.error;
+}
+```
+
+A write that is safe to run twice can be retried for you. Mark it, and a `transient` failure is tried again with a jittered backoff; no other kind
+ever is:
+
+```ts
+await db.execute(sql`UPDATE users SET last_seen = ${now} WHERE id = ${id}`, { idempotent: true });
+```
+
+The kinds, what makes a write idempotent, and the retry policy are [`STORAGE_BINDINGS.md`][sb-1g] §1g's.
+
+---
+
+## Reading your own writes from a replica
+
+With read replication on, a read can land on a replica that has not yet seen the request's own write. Mount `d1Sessions` and every query the
+request makes goes through one session, and the response hands the client a bookmark that keeps its next request no further behind:
+
+```ts
+import { d1Sessions } from "@y-core/forge/storage/db";
+
+app.use("*", d1Sessions<Bindings>({ binding: (c) => c.env.DB, bookmark: { cookie: "d1b" } }));
+```
+
+A write starts on the primary; a read starts from the bookmark the client sent, or from any replica when it sent none. **Without a `bookmark`
+carrier, every session starts on the primary**, so mounting `d1Sessions` alone never reads a replica. The cookie carries the bookmark across a form
+post and its redirect. `bookmark: { header: "x-d1-bookmark" }` is for a client that echoes the header, such as a `fetch` from your own script: a
+browser following a redirect sends no custom header, so a POST → 303 → GET journey needs the cookie. Without read replication on the database,
+every query reaches the primary anyway and the middleware changes nothing; when it pays off is [`STORAGE_BINDINGS.md`][sb-1g] §1g's.
+
+---
+
+## Querying with a long list of values
+
+D1 binds at most 100 parameters per statement, and the client refuses a statement with more before sending it. So bind a list as **one** JSON
+parameter and read it with `json_each`:
+
+```ts
+import { sql } from "@y-core/forge/storage/db";
+
+const read = await db.query<User>(
+  sql`SELECT id, email FROM users WHERE email IN (SELECT value FROM json_each(${JSON.stringify(emails)}))`,
+);
+```
+
+A BLOB UUID key, such as forge's own, takes its UUID strings through `unhex(value, '-')`:
+
+```ts
+const read = await db.query<User>(
+  sql`SELECT id, email FROM auth_users WHERE id IN (SELECT unhex(value, '-') FROM json_each(${JSON.stringify(ids)}))`,
+);
+```
+
+An empty list reads no rows. The limits, and how a bulk write stays under the per-invocation query cap, are [`STORAGE_BINDINGS.md`][sb-1h] §1h's.
 
 ---
 
@@ -149,24 +231,35 @@ when JavaScript has to reproduce an `ORDER BY` it did not run.
 
 ---
 
-## Reporting schema drift from a Worker
+## Mounting a D1 database
 
-A Worker can read whether the schema it serves is the one `forge db migrate` certified, and say so. `checkSchemaHealth(db)` is the raw read,
-resolving to `{ state, recorded, actual }`; the surfaces below build on it.
+Declare the database once. `defineD1Binding` hands back each piece for the seam that mounts it: the binding check, the schema-health monitor, the
+health checks and a client.
 
 ```ts
-import { healthCheck } from "@y-core/forge/app";
-import { schemaHealthCheck, schemaHealthMonitor } from "@y-core/forge/storage/db";
+import { applyMiddlewareChain, healthCheck } from "@y-core/forge/app";
+import { bindingSetSchema } from "@y-core/forge/context";
+import { defineD1Binding, sql } from "@y-core/forge/storage/db";
 
-// Once per isolate: one `d1.schema.health` record; always calls next().
-app.use("*", schemaHealthMonitor({ binding: (c) => c.env.DB }));
+const db = defineD1Binding<Bindings>({ name: "DB" });
 
-// A named predicate for a health route, mounted like any other handler.
-const health = healthCheck<Bindings>({ schema: schemaHealthCheck((c) => c.env.DB) });
+applyMiddlewareChain(app, { securityHeaders, bindings: bindingSetSchema([db.spec]), globals: [...db.globals] });
+const health = healthCheck<Bindings>({ ...db.health }); // checks `DB` and `DB:schema`; map it to a route like any handler
+
+// Inside a handler:
+const found = await db.client(c).query(sql`SELECT id FROM users`);
 ```
 
-Which states a schema report can be in, which of them fail the health check, what the monitor logs and at which level, and why the report never
-repairs anything are [`STORAGE_BINDINGS.md`][sb-1f] §1f's. The repair is `forge db migrate` on the CLI ([`DATABASE_MANAGEMENT.md`][dm]).
+The boot check refuses every request while `DB` is missing or is not a D1 binding. The monitor logs one `d1.schema.health` record per isolate,
+and another each time `recheckMs` has passed (60 s by default). The health route answers 503 while the schema differs from the one
+`forge db migrate` certified, and re-reads it on the same interval, so drift that starts mid-isolate shows up within a minute. Every part reads the
+binding by `name`; pass `client` for the client's options and `logger` for the monitor's. The monitor and the health route share that read, so
+polling the health route adds no D1 reads while the schema matches.
+
+Which schema states fail the check, what the monitor logs at which level, and why nothing here ever repairs the schema are
+[`STORAGE_BINDINGS.md`][sb-1f] §1f's. The repair is `forge db migrate` on the CLI ([`DATABASE_MANAGEMENT.md`][dm]). `defineD1Binding` is built
+from low-level pieces that are exported too — `validateD1Binding`, `resolveD1Client`, `checkSchemaHealth`, `schemaHealthCheck` and
+`schemaHealthMonitor`.
 
 ---
 
@@ -392,6 +485,7 @@ reserved `||` separator, an empty-string `prefix` on `createKVStore` (it would s
 [sb-1e]: ../../docs/STORAGE_BINDINGS.md#1e-uuidv7--time-ordered-primary-keys
 [sb-1f]: ../../docs/STORAGE_BINDINGS.md#1f-schema-health
 [sb-1g]: ../../docs/STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
+[sb-1h]: ../../docs/STORAGE_BINDINGS.md#1h-d1s-limits-and-long-lists
 [sb-2b]: ../../docs/STORAGE_BINDINGS.md#2b-codecs--jsoncodec-textcodec-bytescodec
 [sb-2c]: ../../docs/STORAGE_BINDINGS.md#2c-kvstore-operations
 [sb-3b]: ../../docs/STORAGE_BINDINGS.md#3b-serveobject--direct-response-from-a-backend

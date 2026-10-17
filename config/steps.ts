@@ -16,7 +16,7 @@ import {
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
-  dbSchemaStep,
+  dbSteps,
   designScaleStep,
   devBoundaryStep,
   exportsStep,
@@ -45,7 +45,15 @@ import { ACCEPTED_CONTRAST } from "../src/ui/contracts/theme/contrast-accepted";
 import { CONTRAST_PAIRS, CRITERION } from "../src/ui/contracts/theme/contrast-pairs";
 import { changelogStep, designStep, docsStep, duplicatesStep, wardenQueriesStep, wardenStep } from "../warden/src/steps";
 import { BUNDLE_FIXER, BUNDLES } from "./bundles";
-import { BROWSER_ONLY, CN_FIXTURE_SPECS, CO_LOCATION_EXEMPT, DESIGN_CORPUS_EXCLUDED, LICENCE_HEADERS, SEALED_INTERNAL } from "./exemptions";
+import {
+  BROWSER_ONLY,
+  CN_FIXTURE_SPECS,
+  CO_LOCATION_EXEMPT,
+  DESIGN_CORPUS_EXCLUDED,
+  LICENCE_HEADERS,
+  SEALED_INTERNAL,
+  TOOLING_CROSSINGS,
+} from "./exemptions";
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
 
@@ -123,6 +131,7 @@ export const STEPS: readonly Step[] = [
     exports: EXPORTS,
     guarded: ["src/tooling", "src/ui/assets/build", "warden"],
     sources: ["src"],
+    crossings: TOOLING_CROSSINGS,
   }),
   devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/dev", "src/testing"] }),
   stubGlobalsStep({
@@ -215,8 +224,8 @@ export const STEPS: readonly Step[] = [
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
   browserStep({ tier: "full", watches: ["src/**", "tests/fixtures/**", "playwright.config.ts"] }),
-  workerdStep({ tier: "full", watches: ["src/**", "tests/**"] }),
-  ...dbSchemaStep({
+  workerdStep({ tier: "full", watches: ["src/**", "tests/**"], leavesNoTemp: true }),
+  ...dbSteps({
     root: "tests/fixtures/db-schema",
     forge: ["bun", "run", "src/tooling/root/bin.ts"],
     watches: ["src/**", "tests/fixtures/db-schema/**"],

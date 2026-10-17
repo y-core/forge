@@ -6,11 +6,13 @@ import { PLAIN } from "../../term/color";
 import { argvHas, fakeDbIo, schemaModelRows } from "../db.fixture";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
-import { migrationChecksum, migrationsDigest } from "../migrate/files";
+import { refuseUncomposed } from "../migrate/apply";
+import { discoverMigrations, migrationChecksum, migrationsDigest } from "../migrate/files";
+import { lintMigration } from "../migrate/lint";
 import type { DbConfig, DbHostConfig, DbRunContext, FakeDbIo } from "../types";
-import { composeMigration } from "./compose";
+import { composeMigration, refuseWideTables } from "./compose";
 import { destructivePlanDigest } from "./diff";
-import { formatComposeHeader, formatCustomHeader, parseMigrationHeader } from "./header";
+import { formatComposeHeader, parseMigrationHeader } from "./header";
 import { buildSchemaSnapshot, formatSchemaSnapshot } from "./snapshot";
 import type { ComposeOptions, SchemaDiff } from "./types";
 
@@ -26,10 +28,13 @@ const DROPS_NICKNAME: SchemaDiff = {
   dropDependents: [],
 };
 
+const NICKNAME_LINE = '-- forge:drops column "users"."nickname"';
+const NICKNAME_DIGEST = destructivePlanDigest(DROPS_NICKNAME, [], [NICKNAME_LINE]);
+
 const ROOT = "/app";
-const MIGRATIONS = `${ROOT}/migrations`;
+const MIGRATIONS = `${ROOT}/config/db/migrations`;
 const SCHEMA = `${ROOT}/schema.sql`;
-const SNAPSHOT = `${ROOT}/schema.snapshot.json`;
+const SNAPSHOT = `${ROOT}/config/db/schema.snapshot.json`;
 const BASELINE_STATE = `${ROOT}/.forge/scratch/compose/baseline/.wrangler/state`;
 const DESIRED_STATE = `${ROOT}/.forge/scratch/compose/desired/.wrangler/state`;
 
@@ -116,7 +121,7 @@ function context(
   return { run, io, out };
 }
 
-const OPTIONS: ComposeOptions = { custom: false, dryRun: false, renames: [], cache: true };
+const OPTIONS: ComposeOptions = { dryRun: false, renames: [], cache: true };
 
 function introspect(shapes: readonly Shape[], extra: Unowned = {}): (statement: string) => Record<string, unknown>[] {
   return (statement) => {
@@ -144,21 +149,56 @@ function wire(
     baselineExtra?: readonly Record<string, unknown>[];
     baselineColumns?: readonly Record<string, unknown>[];
     baselineForeignKeys?: readonly Record<string, unknown>[];
+    renamed?: readonly Shape[];
+    seedRefusal?: Error;
+    lost?: Lost;
   },
 ): void {
   io.rules.push({ match: (a) => argvHas(a, "--version"), reply: { code: 0, stdout: "4.0.0\n", stderr: "" } });
-  const proved = () => io.d1Calls.some((call) => call.source?.endsWith("proof.sql") === true);
+  const ran = (file: string) => io.d1Calls.some((call) => call.source?.endsWith(file) === true);
+  const seeding = () => io.d1Calls.at(-1)?.source?.endsWith("seed.sql") === true;
+  io.d1Rules.push({
+    match: (statement, home) => home.persistTo === BASELINE_STATE && seeding() && statement.startsWith("INSERT"),
+    reply: () => {
+      if (sides.seedRefusal !== undefined) throw sides.seedRefusal;
+      return [];
+    },
+  });
+  io.d1Rules.push({
+    match: (statement, home) =>
+      home.persistTo === BASELINE_STATE && (statement.startsWith("SELECT quote(") || statement.startsWith('SELECT NULL AS "row"')),
+    reply: (statement) => survivalReply(statement, ran("proof.sql") ? (sides.lost ?? {}) : {}),
+  });
   io.d1Rules.push({
     match: (_statement, home) => home.persistTo === BASELINE_STATE,
-    reply: (statement) =>
-      proved()
-        ? introspect(sides.after ?? sides.desired)(statement)
-        : introspect(sides.baseline, { inventory: sides.baselineExtra, columns: sides.baselineColumns, foreignKeys: sides.baselineForeignKeys })(
-            statement,
-          ),
+    reply: (statement) => {
+      if (ran("proof.sql")) return introspect(sides.after ?? sides.desired)(statement);
+      if (sides.renamed !== undefined && ran("renames.sql")) return introspect(sides.renamed)(statement);
+      return introspect(sides.baseline, { inventory: sides.baselineExtra, columns: sides.baselineColumns, foreignKeys: sides.baselineForeignKeys })(
+        statement,
+      );
+    },
   });
   io.d1Rules.push({ match: (_statement, home) => home.persistTo === DESIRED_STATE, reply: introspect(sides.desired) });
 }
+
+/** Each seeded value the migration lost, as `quote()` reads it after the proof, by table and column; every other value reads `'forge-seed'` before and after. */
+type Lost = Readonly<Record<string, Readonly<Record<string, string>>>>;
+
+function survivalReply(statement: string, lost: Lost): Record<string, unknown>[] {
+  const table = (/FROM "((?:[^"]|"")+)"$/.exec(statement)?.[1] ?? "").replaceAll('""', '"');
+  return [
+    Object.fromEntries(
+      [...statement.matchAll(/ AS "((?:[^"]|"")+)"/g)].map(([, quoted = ""]) => {
+        const column = quoted.replaceAll('""', '"');
+        return [column, lost[table]?.[column] ?? "'forge-seed'"];
+      }),
+    ),
+  ];
+}
+
+const seedStatements = (io: FakeDbIo) =>
+  io.d1Calls.filter((call) => call.source?.endsWith("/seed.sql") === true).flatMap((call) => call.statements);
 
 const pragmaReads = (io: FakeDbIo) => io.d1Calls.flatMap((call) => call.statements).filter((statement) => statement.includes("pragma_")).length;
 
@@ -185,7 +225,7 @@ describe("composeMigration()", () => {
   describe("refuses an empty `schemas` over history, which composing nothing would drop", () => {
     const guidance =
       "config/db.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
-      '  export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] } satisfies DbHostConfig;\n' +
+      '  export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] } satisfies DbHostConfig;\n' +
       "Each entry is a file of plain `CREATE TABLE` text stating that schema once — write it, then compose.";
     const snapshot = formatSchemaSnapshot(buildSchemaSnapshot({ desired: { "schema.sql": "old" }, declared: {}, migrationsDigest: "old" }));
     const refusal = async (files: Record<string, string>) => {
@@ -218,25 +258,6 @@ describe("composeMigration()", () => {
         `${SNAPSHOT} exists and the migrations reach 0001_init — there is history to hold in step, so composing from no schema is refused:\n${guidance}`,
       );
     });
-  });
-
-  it("writes a named custom migration with the custom header and nothing else", async () => {
-    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
-
-    const outcome = await composeMigration(run, { ...OPTIONS, custom: true, name: "backfill emails" });
-
-    expect(outcome.path).toBe(`${MIGRATIONS}/0002_backfill_emails.sql`);
-    expect(outcome.plan).toEqual(["custom migration 0002_backfill_emails.sql"]);
-    expect(io.files.get(`${MIGRATIONS}/0002_backfill_emails.sql`)).toBe(`${formatCustomHeader()}\n`);
-    expect(io.calls).toEqual([]);
-  });
-
-  it("refuses a custom migration with no name", async () => {
-    const { run } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
-
-    await expect(composeMigration(run, { ...OPTIONS, custom: true })).rejects.toThrow(
-      "a custom migration needs a name — `forge db migrate compose --custom <name>`",
-    );
   });
 
   it("writes the snapshot and no migration when the migrations already produce the desired state", async () => {
@@ -279,7 +300,7 @@ describe("composeMigration()", () => {
 
     const written = io.files.get(path) ?? "";
     const header = parseMigrationHeader(written);
-    expect(header.origin).toBe("generated");
+    expect(lintMigration(path, written)).toEqual([]);
     expect(header.stamp).toEqual({
       desired: { "schema.sql": sha256(desiredText) },
       baseline: migrationsDigest([{ name: "0001_init", sha256: migrationChecksum(INIT) }]),
@@ -297,6 +318,27 @@ describe("composeMigration()", () => {
     );
   });
 
+  it("refuses a column added to a 100-column table, which D1 would refuse at apply, and writes nothing", async () => {
+    const wide = (n: number): Shape => ({
+      name: "wide",
+      columns: [["id", "INTEGER PRIMARY KEY"], ...Array.from({ length: n - 1 }, (_, i): [string, string] => [`c${i}`, "TEXT"])],
+    });
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, wide(101)]) });
+    wire(io, { baseline: [USERS, wide(100)], desired: [USERS, wide(101)] });
+    const written = () => [...io.files.keys()].filter((path) => path.startsWith(`${MIGRATIONS}/0002`));
+
+    await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
+      "wide declares 101 columns — D1 refuses a table of more than 100, so nothing was composed; split it into tables joined on its key",
+    );
+    expect(written()).toEqual([]);
+  });
+
+  it("composes a table of exactly 100 columns", () => {
+    expect(() =>
+      refuseWideTables({ tables: [{ name: "t", columns: Array.from({ length: 100 }) }], indexes: [], triggers: [], views: [] } as never),
+    ).not.toThrow();
+  });
+
   it("writes nothing under --dry-run and hands back the SQL it would have written", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, NOTES]) });
     wire(io, { baseline: [USERS], desired: [USERS, NOTES] });
@@ -312,41 +354,177 @@ describe("composeMigration()", () => {
     expect(io.files.has(SNAPSHOT)).toBe(false);
   });
 
-  it("refuses a diff that discards data, printing the digest of the drop set", async () => {
+  it("refuses a diff that discards data, printing the digest of the plan and the line it would write", async () => {
     const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) };
     const refused = context(files);
     wire(refused.io, { baseline: [USERS_WITH_NICKNAME], desired: [USERS] });
-    const digest = destructivePlanDigest(DROPS_NICKNAME);
 
     await expect(composeMigration(refused.run, OPTIONS)).rejects.toThrow(
-      `the change discards data:\n  users: drops column nickname\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
+      `the change discards data:\n  users: drops column nickname\nthe migration carries one approval line per drop and rename:\n  ${NICKNAME_LINE}\nRead the plan above, then pass --allow-destructive ${NICKNAME_DIGEST} to compose exactly this plan.`,
     );
     expect(refused.out).toEqual(["  drop column users.nickname"]);
     expect(refused.io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
   });
 
-  it("composes the drop once --allow-destructive carries that plan's digest", async () => {
+  it("composes the drop once --allow-destructive carries that plan's digest, writing its line directly under the stamp", async () => {
     const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) };
     const allowed = context(files);
     wire(allowed.io, { baseline: [USERS_WITH_NICKNAME], desired: [USERS], after: [USERS] });
 
-    const outcome = await composeMigration(allowed.run, { ...OPTIONS, allowDestructive: destructivePlanDigest(DROPS_NICKNAME) });
+    const outcome = await composeMigration(allowed.run, { ...OPTIONS, allowDestructive: NICKNAME_DIGEST });
 
-    expect(outcome.path).toBe(`${MIGRATIONS}/0002_schema.sql`);
-    expect(allowed.io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(true);
+    const path = `${MIGRATIONS}/0002_schema.sql`;
+    const written = allowed.io.files.get(path) ?? "";
+    expect(outcome.path).toBe(path);
+    expect(parseMigrationHeader(written).body.startsWith(`${NICKNAME_LINE}\nPRAGMA defer_foreign_keys = true;\n`)).toBe(true);
+    expect(lintMigration(path, written).filter((finding) => finding.rule === "generated-edited")).toEqual([]);
   });
 
-  it("refuses a stale digest, naming the drop set as it now stands", async () => {
+  it("writes one approval line per dropped object when the plan drops a table and a column together", async () => {
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) };
+    const refused = context(files);
+    wire(refused.io, { baseline: [USERS_WITH_NICKNAME, NOTES], desired: [USERS] });
+    const refusal = await composeMigration(refused.run, OPTIONS).then(
+      () => "",
+      (error: unknown) => (error instanceof Error ? error.message : ""),
+    );
+    const digest = /--allow-destructive ([0-9a-f]{12})/.exec(refusal)?.[1];
+    const allowed = context(files);
+    wire(allowed.io, { baseline: [USERS_WITH_NICKNAME, NOTES], desired: [USERS], after: [USERS] });
+
+    await composeMigration(allowed.run, { ...OPTIONS, allowDestructive: digest ?? "" });
+
+    const path = `${MIGRATIONS}/0002_schema.sql`;
+    const written = allowed.io.files.get(path) ?? "";
+    const { body } = parseMigrationHeader(written);
+    const lines = body.split("\n");
+    const head = lines.slice(
+      0,
+      lines.findIndex((line) => !line.startsWith("-- forge:")),
+    );
+    expect(head.toSorted()).toEqual(['-- forge:drops column "users"."nickname"', '-- forge:drops table "notes"']);
+    expect(lintMigration(path, written).filter((finding) => finding.rule === "generated-edited")).toEqual([]);
+  });
+
+  it("refuses a stale digest, naming the plan as it now stands", async () => {
     const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) };
     const stale = context(files);
     wire(stale.io, { baseline: [USERS_WITH_NICKNAME], desired: [USERS] });
-    const digest = destructivePlanDigest(DROPS_NICKNAME);
 
     await expect(composeMigration(stale.run, { ...OPTIONS, allowDestructive: "000000000000" })).rejects.toThrow(
-      `--allow-destructive 000000000000 is not the plan you approved — the destructive set is now (${digest}):\n  users: drops column nickname\nRead it again, then pass --allow-destructive ${digest}.`,
+      `--allow-destructive 000000000000 is not the plan you approved — the plan is now (${NICKNAME_DIGEST}):\nthe change discards data:\n  users: drops column nickname\nthe migration carries one approval line per drop and rename:\n  ${NICKNAME_LINE}\nRead it again, then pass --allow-destructive ${NICKNAME_DIGEST}.`,
     );
     expect(stale.out).toEqual(["  drop column users.nickname"]);
     expect(stale.io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+  });
+
+  it("refuses a hand-added approval line under the stamp: lint reports generated-edited and apply refuses the file", async () => {
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) };
+    const allowed = context(files);
+    wire(allowed.io, { baseline: [USERS_WITH_NICKNAME], desired: [USERS], after: [USERS] });
+    await composeMigration(allowed.run, { ...OPTIONS, allowDestructive: NICKNAME_DIGEST });
+    const path = `${MIGRATIONS}/0002_schema.sql`;
+    const written = allowed.io.files.get(path) ?? "";
+    const { body } = parseMigrationHeader(written);
+    const edited = `${written.slice(0, written.length - body.length)}-- forge:drops table "x"\n${body}`;
+
+    expect(lintMigration(path, edited).map((finding) => finding.rule)).toContain("generated-edited");
+    const [migration] = discoverMigrations([{ name: "0002_schema.sql", path, sql: edited }]);
+    expect(() => refuseUncomposed(allowed.run, migration === undefined ? [] : [migration])).toThrow(
+      "pending migration(s) compose did not write, or that were edited after it wrote them, so nothing was applied",
+    );
+  });
+
+  describe("a rename, which needs the digest as a drop does", () => {
+    const POSTS_BODY: Shape = {
+      name: "posts",
+      columns: [
+        ["id", "INTEGER PRIMARY KEY"],
+        ["body", "TEXT"],
+      ],
+    };
+    const POSTS_CONTENT: Shape = {
+      name: "posts",
+      columns: [
+        ["id", "INTEGER PRIMARY KEY"],
+        ["content", "TEXT"],
+      ],
+    };
+    const RENAME_LINE = '-- forge:renames column "posts"."body" "content"';
+    const RENAMES = { ...OPTIONS, renames: ["posts.body:content"] };
+    const NO_CHANGE: SchemaDiff = { ...DROPS_NICKNAME, tables: [] };
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([POSTS_CONTENT]) };
+
+    it("refuses a --rename-only plan without the digest, printing the line", async () => {
+      const { run, io } = context(files);
+      wire(io, { baseline: [POSTS_BODY], renamed: [POSTS_CONTENT], desired: [POSTS_CONTENT] });
+      const digest = destructivePlanDigest(NO_CHANGE, [], [RENAME_LINE]);
+
+      await expect(composeMigration(run, RENAMES)).rejects.toThrow(
+        `the migration carries one approval line per drop and rename:\n  ${RENAME_LINE}\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
+      );
+      expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+    });
+
+    it("writes the forge:renames line and the rename under the digest", async () => {
+      const { run, io } = context(files);
+      wire(io, { baseline: [POSTS_BODY], renamed: [POSTS_CONTENT], desired: [POSTS_CONTENT] });
+
+      await composeMigration(run, { ...RENAMES, allowDestructive: destructivePlanDigest(NO_CHANGE, [], [RENAME_LINE]) });
+
+      const { body } = parseMigrationHeader(io.files.get(`${MIGRATIONS}/0002_schema.sql`) ?? "");
+      expect(body.startsWith(`${RENAME_LINE}\n`)).toBe(true);
+      expect(body).toContain('RENAME COLUMN "body" TO "content"');
+    });
+
+    it("seeds the baseline under its old name and proves the value under the new one", async () => {
+      const { run, io } = context(files);
+      wire(io, { baseline: [POSTS_BODY], renamed: [POSTS_CONTENT], desired: [POSTS_CONTENT], lost: { posts: { content: "NULL" } } });
+
+      await expect(composeMigration(run, { ...RENAMES, allowDestructive: destructivePlanDigest(NO_CHANGE, [], [RENAME_LINE]) })).rejects.toThrow(
+        "the composed migration does not keep the rows it was proven over — this is a forge bug, and the file was not written:\n  posts.content was seeded 'forge-seed' and reads NULL",
+      );
+      expect(seedStatements(io)).toEqual(["PRAGMA defer_foreign_keys = true", `INSERT INTO "posts" ("id","body") VALUES (1,'forge-seed')`]);
+    });
+  });
+
+  describe("a dropped view, which needs the digest though it discards no rows", () => {
+    const VIEW = { type: "view", name: "user_emails", tbl_name: "user_emails", sql: "CREATE VIEW user_emails AS SELECT email FROM users" };
+    const VIEW_LINE = '-- forge:drops view "user_emails"';
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) };
+    const DROPS_VIEW: SchemaDiff = { ...DROPS_NICKNAME, tables: [], views: { created: [], dropped: ["user_emails"], changed: [] } };
+
+    it("refuses without the digest, naming no discarded data", async () => {
+      const { run, io } = context(files);
+      wire(io, { baseline: [USERS], baselineExtra: [VIEW], desired: [USERS] });
+      const digest = destructivePlanDigest(DROPS_VIEW, [], [VIEW_LINE]);
+
+      await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
+        new CliError(
+          "invalid-args",
+          `the migration carries one approval line per drop and rename:\n  ${VIEW_LINE}\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
+        ),
+      );
+    });
+
+    it("writes the forge:drops view line under the digest", async () => {
+      const { run, io } = context(files);
+      wire(io, { baseline: [USERS], baselineExtra: [VIEW], desired: [USERS], after: [USERS] });
+
+      await composeMigration(run, { ...OPTIONS, allowDestructive: destructivePlanDigest(DROPS_VIEW, [], [VIEW_LINE]) });
+
+      const { body } = parseMigrationHeader(io.files.get(`${MIGRATIONS}/0002_schema.sql`) ?? "");
+      expect(body.startsWith(`${VIEW_LINE}\n`)).toBe(true);
+    });
+  });
+
+  it("asks for no digest and writes no approval line for a plan that drops and renames nothing", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, NOTES]) });
+    wire(io, { baseline: [USERS], desired: [USERS, NOTES] });
+
+    await composeMigration(run, OPTIONS);
+
+    expect(parseMigrationHeader(io.files.get(`${MIGRATIONS}/0002_schema.sql`) ?? "").body).not.toContain("-- forge:");
   });
 
   it("warns, with the plan, when a rebuild depends on the rows already there", async () => {
@@ -378,12 +556,48 @@ describe("composeMigration()", () => {
     expect(dry.out).toEqual([`would write ${MIGRATIONS}/0002_schema.sql:`, "  rebuild table users (column-changed)", NICK_WARNING]);
   });
 
+  it("adds the proof's fallback warning to the outcome and prints it after the plan's, writing the file", async () => {
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS_NICK_REQUIRED]) };
+    const { run, io, out } = context(files);
+    const seedRefusal = new Error("D1_ERROR: UNIQUE constraint failed: users.email: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)");
+    wire(io, { baseline: [USERS_WITH_NICKNAME], desired: [USERS_NICK_REQUIRED], after: [USERS_NICK_REQUIRED], seedRefusal });
+    const fallback = "warning: the proof ran without rows — seeding users failed: UNIQUE users.email";
+
+    const outcome = await composeMigration(run, OPTIONS);
+
+    expect(outcome.warnings).toEqual([NICK_WARNING, fallback]);
+    expect(out).toEqual([`wrote ${MIGRATIONS}/0002_schema.sql`, "  rebuild table users (column-changed)", NICK_WARNING, fallback]);
+    expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(true);
+  });
+
+  it("commits one seeded row per baseline table before the proof, none of it a pragma_ read", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, NOTES]) });
+    wire(io, { baseline: [USERS], desired: [USERS, NOTES] });
+
+    await composeMigration(run, OPTIONS);
+
+    expect(seedStatements(io)).toEqual(["PRAGMA defer_foreign_keys = true", `INSERT INTO "users" ("id","email") VALUES (1,'forge-seed')`]);
+    expect(seedStatements(io).filter((statement) => statement.includes("pragma_"))).toEqual([]);
+  });
+
+  it("writes no file when a seeded value does not survive the proof", async () => {
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS_NICK_REQUIRED]) };
+    const { run, io } = context(files);
+    wire(io, { baseline: [USERS_WITH_NICKNAME], desired: [USERS_NICK_REQUIRED], after: [USERS_NICK_REQUIRED], lost: { users: { email: "NULL" } } });
+
+    await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
+      "the composed migration does not keep the rows it was proven over — this is a forge bug, and the file was not written:\n  users.email was seeded 'forge-seed' and reads NULL",
+    );
+    expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+    expect(io.files.has(SNAPSHOT)).toBe(false);
+  });
+
   it("throws the diff's refusals, which no migration can express", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, NOTES_WITH_AUTHOR]) });
     wire(io, { baseline: [USERS, NOTES], desired: [USERS, NOTES_WITH_AUTHOR] });
 
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
-      "notes.author is NOT NULL with no DEFAULT on a table that already exists — give it a DEFAULT, or add it in a `--custom` migration that fills it",
+      "notes.author is NOT NULL with no DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it NOT NULL in a later compose",
     );
   });
 
@@ -495,6 +709,7 @@ describe("await composeMigration() — a drop whose declaring file config/db.ts 
     dropDependents: [],
   };
   const CAUSE = `posts was declared by ${LIB}, which config/db.ts no longer declares or whose file is absent — nothing declares it now`;
+  const POSTS_LINE = '-- forge:drops table "posts"';
 
   const files = (declared: Record<string, string[]>): Record<string, string> => ({
     [`${MIGRATIONS}/0001_init.sql`]: INIT,
@@ -513,10 +728,10 @@ describe("await composeMigration() — a drop whose declaring file config/db.ts 
   it("refuses the drop naming the file that declared it, and digests the plan with that reason", async () => {
     const { run, io, out } = context(files(DEPARTED));
     wire(io, { baseline: [USERS, POSTS], desired: [USERS] });
-    const digest = destructivePlanDigest(DROPS_POSTS, [CAUSE]);
+    const digest = destructivePlanDigest(DROPS_POSTS, [CAUSE], [POSTS_LINE]);
 
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
-      `the change discards data:\n  posts: drops the table\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
+      `the change discards data:\n  posts: drops the table\nthe migration carries one approval line per drop and rename:\n  ${POSTS_LINE}\nRead the plan above, then pass --allow-destructive ${digest} to compose exactly this plan.`,
     );
     expect(out).toEqual(["  drop table posts", CAUSE]);
     expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
@@ -525,10 +740,10 @@ describe("await composeMigration() — a drop whose declaring file config/db.ts 
   it("digests the same drop differently when the file that declared it is still declared", async () => {
     const { run, io, out } = context(files(DELETED));
     wire(io, { baseline: [USERS, POSTS], desired: [USERS] });
-    const digest = destructivePlanDigest(DROPS_POSTS);
+    const digest = destructivePlanDigest(DROPS_POSTS, [], [POSTS_LINE]);
 
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow(`pass --allow-destructive ${digest} to compose exactly this plan.`);
-    expect(digest).not.toBe(destructivePlanDigest(DROPS_POSTS, [CAUSE]));
+    expect(digest).not.toBe(destructivePlanDigest(DROPS_POSTS, [CAUSE], [POSTS_LINE]));
     expect(out).toEqual(["  drop table posts"]);
   });
 
@@ -536,7 +751,7 @@ describe("await composeMigration() — a drop whose declaring file config/db.ts 
     const { run, io, out } = context(files(DEPARTED));
     wire(io, { baseline: [USERS, POSTS], desired: [USERS], after: [USERS] });
 
-    const outcome = await composeMigration(run, { ...OPTIONS, allowDestructive: destructivePlanDigest(DROPS_POSTS, [CAUSE]) });
+    const outcome = await composeMigration(run, { ...OPTIONS, allowDestructive: destructivePlanDigest(DROPS_POSTS, [CAUSE], [POSTS_LINE]) });
 
     expect(outcome.path).toBe(`${MIGRATIONS}/0002_schema.sql`);
     expect(outcome.causes).toEqual([CAUSE]);
@@ -661,29 +876,21 @@ describe("await composeMigration() --restamp", () => {
     expect(out).toEqual(["would have restamped 0002_schema"]);
   });
 
-  it("refuses an unstamped migration, a custom one, an edited body, and an unknown name", async () => {
+  it("refuses an unstamped migration, an edited body, and an unknown name", async () => {
     const edited = `${generated(NEXT_BODY, "wrong")}-- edited\n`;
-    const files = {
-      [`${MIGRATIONS}/0001_init.sql`]: INIT,
-      [`${MIGRATIONS}/0002_custom.sql`]: `${formatCustomHeader()}INSERT INTO users (email) VALUES ('x');\n`,
-      [`${MIGRATIONS}/0003_edited.sql`]: edited,
-      [SCHEMA]: desiredText,
-    };
+    const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_edited.sql`]: edited, [SCHEMA]: desiredText };
     const { run, io } = context(files);
 
     await expect(composeMigration(run, restamp("0001_init"))).rejects.toThrow(
-      "0001_init is a custom migration with no compose stamp — only a generated migration can be restamped",
+      "0001_init has no compose stamp — only a composed migration can be restamped; compose again instead",
     );
-    await expect(composeMigration(run, restamp("0002_custom"))).rejects.toThrow(
-      "0002_custom is a custom migration with no compose stamp — only a generated migration can be restamped",
-    );
-    await expect(composeMigration(run, restamp("0003_edited"))).rejects.toThrow(
-      "0003_edited was edited since it was composed — restamp would certify an unproven file; compose again instead",
+    await expect(composeMigration(run, restamp("0002_edited"))).rejects.toThrow(
+      "0002_edited was edited since it was composed — restamp would certify an unproven file; compose again instead",
     );
     await expect(composeMigration(run, restamp("0004_nope"))).rejects.toThrow(
-      "--restamp 0004_nope names no migration — on disk: 0001_init, 0002_custom, 0003_edited",
+      "--restamp 0004_nope names no migration — on disk: 0001_init, 0002_edited",
     );
-    expect(io.files.get(`${MIGRATIONS}/0003_edited.sql`)).toBe(edited);
+    expect(io.files.get(`${MIGRATIONS}/0002_edited.sql`)).toBe(edited);
     expect(io.calls).toEqual([]);
   });
 });

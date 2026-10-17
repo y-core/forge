@@ -21,12 +21,12 @@ audience: consumer
 - §1 How a Migration Is Composed: the desired-state files, the one sequence the app composes, and the real SQLite in the loop
 - §2 The Desired-State File: where it is looked for, and a directory of files
 - §3 Ownership: which file declares which object, what nothing declares, and how a drop names the file that declared it
-- §4 What Compose Emits: alter in place, or rebuild through a copy — why a rebuild takes every referencing table with it, a rebuild that depends on
-  the rows warned, and a drop approved by digest, not by flag
+- §4 What Compose Emits: alter in place, or rebuild through a copy — why a rebuild takes every referencing table with it, the proof over one seeded
+  row per table, a rebuild that depends on particular values warned, and a drop approved by digest, not by flag
 - §5 Renames: `--rename`, explicit and never inferred
 - §6 The Stamp, the Snapshot and the Two Checks: what a composed file carries, what `schema.snapshot.json` holds, how a library upgrade is caught,
   and the merge procedure with `compose --restamp`
-- §7 Custom Migrations and the Scratch Cache
+- §7 The Scratch Cache: where compose runs, what it caches, and what it never reads
 
 ---
 
@@ -36,9 +36,10 @@ audience: consumer
 of truth a reader opens to learn what the schema is; a migration is the mechanical step from the migrations before it to what those files declare.
 `forge db migrate compose` writes the step into the app's own directory — there is one composer, and nothing about it is guessed: the migrations
 on disk are replayed through wrangler into a throwaway local D1, the desired file is loaded into another, both are read back through `sqlite_master`
-and the `pragma_*` table-valued functions, the two models are diffed, the emitted SQL is applied to the replay and the result must equal the desired
-model before the file is written. There is no SQL parser in the loop — a real SQLite decides what every statement means — and the one tokenizer
-forge keeps is for masking prose, normalizing DDL text for comparison, and splitting a `CREATE TABLE` body at its commas.
+and the `pragma_*` table-valued functions, the two models are diffed, and the emitted SQL is applied to a replay seeded with one row per table (§4).
+The file is written only when the result equals the desired model and every seeded value is still there. There is no SQL parser in the loop — a
+real SQLite decides what every statement means — and the one tokenizer forge keeps is for masking prose, normalizing DDL text for comparison, and
+splitting a `CREATE TABLE` body at its commas.
 
 Normalization drops comments, collapses whitespace, upper-cases keywords, spells every identifier one way whatever it was quoted with —
 `"Two Words"` and `"two words"` are one name, as SQLite resolves them — and drops `IF NOT EXISTS` and the trailing `;`. A double-quoted token is an
@@ -72,10 +73,9 @@ one declared schema is refused, naming both **by path**; an index or trigger bel
 same rule. There is no prefix rule, and no namespace.
 
 **Nothing exists in the database that a declaration did not put there, so there is no third category.** Every object the migrations build came from
-a composed migration, and a composed migration emits only what a desired file declares — `custom-ddl` is an **error**, so a custom migration carries
-data and never a table's shape ([`DATABASE_MANAGEMENT.md`][dm-5] §5). An object in the replay that no desired file declares is therefore a
-_deletion_ and nothing else: compose drops it. There is no "unowned" set to exclude from the diff, and no rebuild that could take a stranger with
-it.
+a composed migration, and a composed migration emits only what a desired file declares, and a migration compose did not write is refused before it
+runs ([`DATABASE_MANAGEMENT.md`][dm-9b] §9b). An object in the replay that no desired file declares is therefore a _deletion_ and nothing else:
+compose drops it. There is no "unowned" set to exclude from the diff, and no rebuild that could take a stranger with it.
 
 **An object becomes undeclared two ways, and the second one says so by name.** You delete it from a file the host config still names — or the file
 itself leaves the host config's `schemas`: a library dropped from it, a path renamed, a file moved. The second edits no desired file at all, so the
@@ -125,24 +125,44 @@ app owns every file it emits, so the whole closure is inside one migration of it
 but the engine refuses to commit a violation at all — a deferred one resets the database to its last good state — so on D1 it can only ever return
 nothing (measured on local D1, wrangler 4.129).
 
-**A rebuild that depends on the rows is warned, not refused.** The proof replays the composed file on an empty database, so it cannot see a rebuild
-that copies every row as it is and fails on one: a column that becomes `NOT NULL` (a `DEFAULT` does not fill an existing `NULL` in), a `CHECK` added
-to a column or a table, and a table that becomes `STRICT` or changes a column's type under `STRICT`. Compose prints one `warning:` line per such
-step, naming the column, after the plan; it is advisory, and the file is written. The proof against real rows is a rehearsal on `standby`
+**The proof runs over one row per table, so a migration that loses a row is refused.** Before the composed file runs, the replay commits one
+synthetic row into each baseline table it can seed, in a transaction of its own. Each column holds a constant chosen by its type affinity, with
+these exceptions: a generated column is left out, a column with a non-`NULL` `DEFAULT` that is neither a key nor a foreign key keeps that default,
+and a foreign-key column copies its parent's value, so every row satisfies its references. Once the schema matches, every seeded table must hold the
+rows it held when the seed committed, a row a baseline trigger wrote during seeding included, with each kept column's value unchanged. A column
+renamed with `--rename` is read under its new name, and a column whose declared type changed is not compared. A vanished row or a changed value is
+refused as a forge bug, and the file is not written. This catches a failure that needs some row but no particular value: a parent rebuild that
+leaves a deferred foreign-key counter stale, a cascade or trigger that empties or rewrites a kept table, and a value the rebuild's copy loses.
+
+**When a constraint refuses the seed itself, the proof runs without rows.** A baseline `CHECK` the constant breaks, a trigger that aborts the
+insert, or a type the column refuses each make compose fall back to an empty replay and print one advisory line —
+`warning: the proof ran without rows — seeding <table> failed: <constraint>` — after the plan. Compose never refuses a migration because the seed
+failed, and the file is written once the empty proof passes.
+
+**A rebuild that depends on particular values is warned, not refused.** The seeded row has to be valid under both schemas, so it cannot show a step
+that one schema accepts and the other refuses. A table that gains a `CHECK`, on a column or on the table, becomes `STRICT`, or changes a column's
+type under `STRICT` is left out of the seed, as is every table whose required reference points at it. A column that becomes `NOT NULL` is proven
+only with a non-`NULL` value, and a `DEFAULT` does not fill an existing `NULL` in. Compose prints one `warning:` line per such step, naming the
+column, after the plan; it is advisory, and the file is written. The proof against real rows is a rehearsal on `standby`
 (`DATABASE_MANAGEMENT.md` §2a).
 
 **Identifier case is not a change**: SQLite resolves `Email` and `email` as one name and so does every comparison compose makes, so a schema
 differing only in an identifier's case composes nothing. Renaming for real is `--rename` (§5).
 
-Every composed file opens with `PRAGMA defer_foreign_keys = true;`, and every emitted statement is one the linter (`DATABASE_MANAGEMENT.md` §5)
-accepts; the rebuild's `DROP TABLE` deliberately has no `IF EXISTS`, since the table was read a statement earlier.
+Every composed file opens with `PRAGMA defer_foreign_keys = true;`. A file that creates or changes an index ends with `PRAGMA optimize;`, which
+refreshes the planner's statistics in `sqlite_stat1`; that table is outside the schema fingerprint and outside a backup. Every emitted statement
+is one the linter (`DATABASE_MANAGEMENT.md` §5) accepts; the rebuild's `DROP TABLE` deliberately has no `IF EXISTS`, since the table was read a
+statement earlier.
 
-**A drop is refused until it is allowed.** A table drop or a column drop is destructive; compose prints the plan and stops with a twelve-character
-digest of the drop set, and `--allow-destructive <digest>` on the next run says that plan, and no other, was read: if the drop set has changed since
-— a schema edit, a snapshot change, a library upgrade — the digest does not match and compose refuses again with the current set. The digest covers
-the plan _and_ the reason lines §3 prints, so an approval carries to that plan for that cause and no other. A `NOT NULL`
-column with no `DEFAULT` on a table that already exists is refused outright, whichever route would add it — give it a default, or write the fill as
-a custom migration.
+**A drop or a rename is refused until it is allowed.** A table drop or a column drop is destructive, and a view drop or a rename breaks what the
+Worker still deployed reads; compose prints the plan and stops with a twelve-character digest of it, and `--allow-destructive <digest>` on the next
+run says that plan, and no other, was read: if the plan has changed since — a schema edit, a snapshot change, a library upgrade — the digest does
+not match and compose refuses again with the current one. The digest covers the plan, the reason lines §3 prints _and_ the approval lines, so an
+approval carries to that plan for that cause and no other. Once it matches, compose writes one `-- forge:drops` or `-- forge:renames` line per
+change directly under the header, inside the body the stamp covers, and every verb that applies the file pairs those lines with what the file does
+([`DATABASE_MANAGEMENT.md`][dm-9b] §9b). A `NOT NULL` column with no `DEFAULT` on
+a table that already exists is refused outright, whichever route would add it — give it a constant default, or add it nullable, fill it with a seed,
+and make it `NOT NULL` in a later compose ([`DATABASE_MANAGEMENT.md`][dm-7a] §7a).
 
 ## 5. Renames
 
@@ -150,8 +170,7 @@ A rename is never inferred from a diff; a dropped-and-added pair is exactly that
 column, each repeatable, and each is transient by construction: once the migration is written the old name is gone from the baseline, and a repeat
 of the flag is refused with "already renamed — drop the flag". The rename runs on the replay first, so a real SQLite rewrites every index, trigger,
 view and `REFERENCES` that names the old name, and the diff is taken from there; the emitted file starts with the `ALTER TABLE … RENAME` statements.
-The `rename` lint warning (`DATABASE_MANAGEMENT.md` §5) still fires on it, because a deployed Worker reads the old name between the migrate step and
-the deploy step whatever wrote the migration.
+A rename needs `--allow-destructive <digest>` as a drop does, and compose writes it as a `-- forge:renames` line under the header (§4).
 
 ## 6. The Stamp, the Snapshot and the Two Checks
 
@@ -178,7 +197,7 @@ Every compose rewrites the snapshot, a no-change compose included, so the record
 left in the formatter's path, the two rewrite each other on alternate runs. `"ignorePatterns": ["**/*.snapshot.json"]` in `.oxfmtrc.json` is the
 line.
 
-**`forge db schema check`** reads files only and takes no wrangler — sub-second, and the `db:schema:digests` gate row. It fails when:
+**`forge db schema check`** reads files only and takes no wrangler — the `db:schema:digests` gate row. It fails when:
 
 - **a declared schema hashes differently from what the snapshot recorded for it** — "`<path>` moved since the last compose". One rule covers both a
   file of the app's own edited and never composed, and an installed library upgraded under it: a library bump stops the build until the migration it
@@ -200,28 +219,23 @@ one on disk — the files before it include the other branch's. `forge db migrat
 
 - **Unapplied everywhere:** delete it and compose again. The recompose reads the merged history and proves the result on a replay, which is the only
   proof there is.
-- **Already applied on some target:** `forge db migrate compose --restamp <name>`. It rewrites the named migration's stamp line to the history
-  now on disk and nothing else. A migration's identity — the checksum `_forge_migrations` holds, the migrations digest, every later baseline and the
+- **Already applied on some target:** `forge db migrate compose --restamp <name>`. It rewrites the named migration's stamp line to the history now
+  on disk and nothing else. A migration's identity — the checksum `_forge_migrations` holds, the migrations digest, every later baseline and the
   snapshot's digest — is its bytes with the stamp's JSON blanked, so a restamp moves no checksum and cascades to nothing. It makes no wrangler call,
-  and it refuses a custom file, a file edited since it was composed, and a name not on disk. `--dry-run` prints what it would restamp and writes
-  nothing.
+  and it refuses a file with no compose stamp, a file edited since it was composed, and a name not on disk. `--dry-run` prints what it would restamp
+  and writes nothing.
 
 Restamp certifies a file that was proven against a different baseline, and proves nothing about it against this one. It is for the
 merged-and-already-applied case only, where the alternative is a history that can never be applied again; anywhere the file has not run, recompose.
 
-## 7. Custom Migrations and the Scratch Cache
-
-`forge db migrate compose --custom <name>` writes the next numbered file with a `forge:custom` stamp and nothing else — for a data move, a
-backfill, a step compose cannot express (`DATABASE_MANAGEMENT.md` §7a). Its DDL warns under `custom-ddl`, because a table's shape belongs in
-`schema.sql`; a file carrying neither stamp is read as custom too, and warns the same way. There is no verb that writes an empty migration.
+## 7. The Scratch Cache
 
 Compose runs entirely in `.forge/scratch/compose/`, from a copy of the run's config forced to `local`, so `--target remote` can never aim it at
-Cloudflare. Every wrangler spawn costs about a second, so a side is two of them — the load, and the introspection reads batched into one
-`--command` — and the **model** is cached, never the database, under `<side>/cache/<key>/model.json`, keyed on the model version, the wrangler
-version and a digest of that side's inputs. A hit is zero spawns, one model is kept per side, the proof's own replay is cached as the next baseline,
-and `--no-cache` replays regardless. A cold compose is under ten seconds; a warm `--check --replay` is under two. A baseline whose migrations do not
-apply to an empty database, and a desired file that does not execute against one, are each refused naming the file; pending migrations on some
-database are not a refusal, because compose reads files and never a database of yours.
+Cloudflare. A side is two wrangler spawns — the load, and the introspection reads batched into one `--command` — and the **model** is cached, never
+the database, under `<side>/cache/<key>/model.json`, keyed on the model version, the wrangler version and a digest of that side's inputs. A hit is
+zero spawns, one model is kept per side, the proof's own replay is cached as the next baseline, and `--no-cache` replays regardless. A baseline
+whose migrations do not apply to an empty database, and a desired file that does not execute against one, are each refused naming the file; pending
+migrations on some database are not a refusal, because compose reads files and never a database of yours.
 
 **Nothing here is checked against a deployed database, by design for now.** Compose's baseline is always the replay of the checked-in migrations, so
 a view or trigger that exists only in a deployed database and in no migration is invisible to it: `refuseUnownedDependents` cannot see it by
@@ -231,6 +245,7 @@ answer would take, and no task is filed for one until the local cycle is settled
 
 [db-readme]: ../src/tooling/db/README.md
 [dm-4]: ./DATABASE_MANAGEMENT.md#4-the-companion-tables
-[dm-5]: ./DATABASE_MANAGEMENT.md#5-the-migration-lint-rules
+[dm-7a]: ./DATABASE_MANAGEMENT.md#7a-migration-or-seed
 [dm-8]: ./DATABASE_MANAGEMENT.md#8-every-position-is-declared
+[dm-9b]: ./DATABASE_MANAGEMENT.md#9b-the-migration-contract
 [namespaces-5g]: ./NAMESPACES.md#5g-tooling--where-a-developer-facing-tool-belongs

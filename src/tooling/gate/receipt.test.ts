@@ -7,7 +7,7 @@ import { gateFixtureRoot } from "./checks/gate.fixture";
 import { clearReceipt, readReceipt, receiptCovers, recordReceipt } from "./receipt";
 import type { GateReceipt } from "./types";
 import { worktreeHash } from "./worktree";
-import { worktreeFixture } from "./worktree.fixture";
+import { cloneWorktree, worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
 
@@ -27,6 +27,14 @@ function worktreeRoot(...args: Parameters<typeof worktreeFixture>): string {
   return root;
 }
 
+const TEMPLATE = worktreeRoot();
+
+function worktreeClone(): string {
+  const root = cloneWorktree(TEMPLATE);
+  roots.push(root);
+  return root;
+}
+
 const TREE = "a".repeat(40);
 const OTHER = "b".repeat(40);
 const RECEIPT_PATH = ".git/forge-verify-receipt.json";
@@ -41,7 +49,7 @@ function status(root: string): string {
 
 describe("readReceipt()", () => {
   it("is undefined when nothing was recorded", () => {
-    expect(readReceipt(worktreeRoot())).toBeUndefined();
+    expect(readReceipt(worktreeClone())).toBeUndefined();
   });
 
   it("is undefined outside a git work tree", () => {
@@ -49,7 +57,7 @@ describe("readReceipt()", () => {
   });
 
   it("reads back what recordReceipt wrote", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     recordReceipt(root, receipt());
 
     expect(readReceipt(root)).toEqual(receipt());
@@ -63,7 +71,7 @@ describe("readReceipt()", () => {
   ];
   for (const [name, contents] of malformed) {
     it(`reads ${name} as no receipt`, () => {
-      const root = worktreeRoot();
+      const root = worktreeClone();
       writeFileSync(join(root, RECEIPT_PATH), contents);
 
       expect(readReceipt(root)).toBeUndefined();
@@ -71,7 +79,7 @@ describe("readReceipt()", () => {
   }
 
   it("accepts a 64-hex tree, as a SHA-256 repository writes", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     recordReceipt(root, receipt({ tree: "c".repeat(64) }));
 
     expect(readReceipt(root)?.tree).toBe("c".repeat(64));
@@ -80,7 +88,7 @@ describe("readReceipt()", () => {
 
 describe("recordReceipt()", () => {
   it("keeps a higher-mode receipt for the same tree over a lower-mode one", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     recordReceipt(root, receipt({ mode: "full" }));
     recordReceipt(root, receipt({ mode: "quality" }));
 
@@ -88,7 +96,7 @@ describe("recordReceipt()", () => {
   });
 
   it("replaces a receipt for a different tree, whatever its mode", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     recordReceipt(root, receipt({ mode: "full" }));
     recordReceipt(root, receipt({ tree: OTHER, mode: "quality" }));
 
@@ -96,7 +104,7 @@ describe("recordReceipt()", () => {
   });
 
   it("replaces a receipt for the same tree with a higher-mode one", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     recordReceipt(root, receipt({ mode: "quality" }));
     recordReceipt(root, receipt({ mode: "full" }));
 
@@ -114,7 +122,7 @@ describe("recordReceipt()", () => {
   });
 
   it("adds only the receipt to the git directory, leaving no temporary file behind", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     const before = readdirSync(join(root, ".git"));
     recordReceipt(root, receipt());
 
@@ -131,7 +139,7 @@ describe("recordReceipt()", () => {
 
 describe("clearReceipt()", () => {
   it("removes a recorded receipt", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
     recordReceipt(root, receipt());
     clearReceipt(root);
 
@@ -139,7 +147,7 @@ describe("clearReceipt()", () => {
   });
 
   it("does nothing when there is no receipt", () => {
-    const root = worktreeRoot();
+    const root = worktreeClone();
 
     expect(() => clearReceipt(root)).not.toThrow();
     expect(() => clearReceipt(fixtureRoot())).not.toThrow();

@@ -1,7 +1,7 @@
 import type { AssetsFetcher } from "../app/types";
 import { bytesToHex } from "../crypto/primitives/mod";
 import { ROWS_WRITTEN_GUARD } from "../storage/db/sql";
-import type { D1DatabaseLike, D1PreparedStatement, D1Result } from "../storage/db/types";
+import type { D1DatabaseLike, D1DatabaseSession, D1PreparedStatement, D1Result } from "../storage/db/types";
 import type { KVListOptions, KVListResult, KVNamespace, KVPutOptions } from "../storage/kv/types";
 import { UnsatisfiableRangeError } from "../storage/r2/errors";
 import type { R2BucketLike, R2ListLike, R2ObjectBodyLike, R2ObjectLike, R2PutLike } from "../storage/r2/types";
@@ -329,8 +329,9 @@ interface FakeD1Statement extends D1PreparedStatement {
 export function fakeD1(
   query: (sql: string, params: unknown[]) => unknown[] = () => [],
   options?: FakeD1Options,
-): D1DatabaseLike & { calls: { sql: string; params: unknown[] }[] } {
+): D1DatabaseLike & { calls: { sql: string; params: unknown[] }[]; sessions: string[] } {
   const calls: { sql: string; params: unknown[] }[] = [];
+  const sessions: string[] = [];
 
   function failIfInjected(sql: string, params: unknown[]): void {
     const failure = options?.failOn?.(sql, params);
@@ -370,21 +371,30 @@ export function fakeD1(
     };
   }
 
+  const prepare = (sql: string): D1PreparedStatement => statement(sql, []);
+  const batch = async <T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> => {
+    // `changes()` reports on the last *write*, so a guard behind a non-write reads straight through
+    // it — and with no write behind it at all there is nothing for the guard to fail on.
+    let changed: number | undefined;
+    return statements.map((s) => {
+      const fs = s as FakeD1Statement;
+      failIfInjected(fs.sql, fs.params);
+      if (fs.sql === ROWS_WRITTEN_GUARD && changed === 0) throw new Error("D1_ERROR: integer overflow");
+      const written = options?.rowsWritten?.(fs.sql, fs.params) ?? 0;
+      if (D1_WRITE.test(fs.sql)) changed = written;
+      return { results: query(fs.sql, fs.params) as T[], success: true, meta: { duration: 0, rows_written: written, changes: written } };
+    });
+  };
+
   return {
     calls,
-    prepare: (sql: string): D1PreparedStatement => statement(sql, []),
-    batch: async <T = unknown>(statements: D1PreparedStatement[]): Promise<D1Result<T>[]> => {
-      // `changes()` reports on the last *write*, so a guard behind a non-write reads straight through
-      // it — and with no write behind it at all there is nothing for the guard to fail on.
-      let changed: number | undefined;
-      return statements.map((s) => {
-        const fs = s as FakeD1Statement;
-        failIfInjected(fs.sql, fs.params);
-        if (fs.sql === ROWS_WRITTEN_GUARD && changed === 0) throw new Error("D1_ERROR: integer overflow");
-        const written = options?.rowsWritten?.(fs.sql, fs.params) ?? 0;
-        if (D1_WRITE.test(fs.sql)) changed = written;
-        return { results: query(fs.sql, fs.params) as T[], success: true, meta: { duration: 0, rows_written: written, changes: written } };
-      });
+    sessions,
+    prepare,
+    batch,
+    withSession: (constraint: string): D1DatabaseSession => {
+      sessions.push(constraint);
+      const bookmark = `00000000-${sessions.length.toString(16).padStart(8, "0")}-00000000-${"0".repeat(32)}`;
+      return { prepare, batch, getBookmark: () => bookmark };
     },
     exec: async (sql: string): Promise<{ count: number; duration: number }> => {
       failIfInjected(sql, []);

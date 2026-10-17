@@ -13,7 +13,7 @@ import {
   compatibilityStep,
   contrastStep,
   cssTokensStep,
-  dbSchemaStep,
+  dbSteps,
   devBoundaryStep,
   exportsStep,
   exposureStep,
@@ -206,7 +206,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   steps.push(devBoundaryStep({ root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] }));
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
-  if (options.db) steps.push(...dbSchemaStep({ root }));
+  if (options.db) steps.push(...dbSteps({ root }));
   if (options.browser) steps.push(browserStep({ tier: "full" }));
   if (options.workerd) steps.push(workerdStep({ tier: "full" }));
   if (options.features !== undefined) {

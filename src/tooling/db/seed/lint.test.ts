@@ -4,9 +4,9 @@ import type { Seed } from "../types";
 import { lintSeed, lintSeeds, SEED_MIGRATION_RULES } from "./lint";
 
 describe("lintSeed()", () => {
-  it("warns on a bare INSERT, by line", () => {
+  it("reports a bare INSERT, by line", () => {
     const sql = "INSERT OR IGNORE INTO a (id) VALUES (1);\nINSERT INTO b (id)\n  VALUES (2);";
-    expect(lintSeed("s.sql", sql).map((f) => [f.rule, f.level, f.line])).toEqual([["seed-insert-not-idempotent", "warning", 2]]);
+    expect(lintSeed("s.sql", sql).map((f) => [f.rule, f.line])).toEqual([["seed-insert-not-idempotent", 2]]);
   });
 
   const clean = [
@@ -23,42 +23,34 @@ describe("lintSeed()", () => {
   }
 });
 
-describe("lintSeed() — the destructive migration rules, at warning level", () => {
-  it("names the four rules a seed is held to", () => {
-    expect(SEED_MIGRATION_RULES).toEqual(["unbounded-update", "unbounded-delete", "drop-no-if-exists", "attach-database"]);
+describe("lintSeed() — the migration rules a seed is held to", () => {
+  it("names the rules a seed is held to, leaving drops to the schema check", () => {
+    expect(SEED_MIGRATION_RULES).toEqual(["unbounded-update", "unbounded-delete", "attach-database"]);
   });
 
-  it("warns on an UPDATE with no WHERE", () => {
+  it("reports an UPDATE with no WHERE", () => {
     expect(lintSeed("s.sql", "UPDATE users SET active = 0;")).toEqual([
-      { rule: "unbounded-update", level: "warning", file: "s.sql", line: 1, message: "UPDATE with no WHERE rewrites every row in the table" },
+      { rule: "unbounded-update", file: "s.sql", line: 1, message: "UPDATE with no WHERE rewrites every row in the table" },
     ]);
   });
 
-  it("warns on a DELETE with no WHERE", () => {
+  it("reports a DELETE with no WHERE", () => {
     expect(lintSeed("s.sql", "DELETE FROM users;")).toEqual([
-      { rule: "unbounded-delete", level: "warning", file: "s.sql", line: 1, message: "DELETE with no WHERE empties the table" },
+      { rule: "unbounded-delete", file: "s.sql", line: 1, message: "DELETE with no WHERE empties the table" },
     ]);
   });
 
-  it("warns on a DROP without IF EXISTS", () => {
-    expect(lintSeed("s.sql", "DROP TABLE users;")).toEqual([
-      {
-        rule: "drop-no-if-exists",
-        level: "warning",
-        file: "s.sql",
-        line: 1,
-        message: "DROP without IF EXISTS fails the whole migration when the object is already gone — write DROP … IF EXISTS",
-      },
-    ]);
+  it("says nothing about a DROP without IF EXISTS, which the schema check refuses", () => {
+    expect(lintSeed("s.sql", "DROP TABLE users;")).toEqual([]);
   });
 
-  it("warns on ATTACH", () => {
+  it("reports ATTACH", () => {
     expect(lintSeed("s.sql", "ATTACH DATABASE 'x' AS y;")).toEqual([
-      { rule: "attach-database", level: "warning", file: "s.sql", line: 1, message: "D1 is one database — ATTACH and DETACH are not supported" },
+      { rule: "attach-database", file: "s.sql", line: 1, message: "D1 is one database — ATTACH and DETACH are not supported" },
     ]);
   });
 
-  it("says nothing about a bounded DELETE, a DROP IF EXISTS, or a rule outside the four", () => {
+  it("says nothing about a bounded DELETE, a DROP IF EXISTS, or a rule outside the set", () => {
     expect(lintSeed("s.sql", "DELETE FROM users WHERE id = 1;")).toEqual([]);
     expect(lintSeed("s.sql", "DROP TABLE IF EXISTS users;")).toEqual([]);
     expect(lintSeed("s.sql", "PRAGMA foreign_keys = OFF;\nCREATE VIRTUAL TABLE f USING fts5(a);")).toEqual([]);

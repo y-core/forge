@@ -102,6 +102,41 @@ A project name is not an identifier, so every character that is not a word chara
 
 ---
 
+## Placing a D1 database
+
+Declare where a database lives in `config/cf.ts`, keyed by its binding. Wrangler has no key for any of this, and warns on one it does not know, so
+it stays out of `wrangler.jsonc`:
+
+```ts
+// config/cf.ts
+import type { CfHostConfig } from "@y-core/forge/tooling/cf";
+
+export default {
+  d1: { DB: { jurisdiction: "eu", readReplication: "auto", preview: true } },
+} satisfies CfHostConfig;
+```
+
+`cf sync` creates the database with that placement, sending the same body `wrangler d1 create --jurisdiction --location` does. After that, each run
+holds the database to it:
+
+| Declared | When the database differs | On `--commit` |
+| --- | --- | --- |
+| `jurisdiction` (`eu`, `fedramp`, `us`) | `refused` | Nothing. A jurisdiction is set only at creation, so a mismatch needs a new database and a data move |
+| `readReplication` (`auto`, `disabled`) | `drift` | Set with a `PUT`, reported `updated` |
+| `location` (`wnam`, `enam`, `weur`, `eeur`, `apac`, `oc`) | Never compared | Sent at creation only. Cloudflare reports no region to compare against |
+| `preview: true` | A `<name>-preview` database is offered | Created with the same placement, its id written back as `preview_database_id` |
+
+**Each environment restates its D1 entries, because wrangler gives an `env.<name>` block no binding it does not declare itself.** `cf sync` reports
+as `drift` an environment with no `d1_databases`, one missing a binding the top level declares, and an entry whose `database_id` and `database_name`
+name two different databases. Which database an environment should use is yours to choose, so it is never written for you. What it does fix on
+`--commit` is an id it can resolve without guessing: a missing or stale `database_id` from the entry's own `database_name`, and a stale
+`preview_database_id` from a `<name>-preview` database. An id that resolves to nothing is reported `unavailable`.
+
+**A jurisdiction restricts where the database runs and stores data, not who can reach it.** A Worker anywhere in the world can still query a
+database in `eu`. Under a jurisdiction the location hint is ignored, and replicas stay inside it.
+
+---
+
 ## Pushing secrets
 
 Secrets are read from `.dev.vars` beside the config and pushed by `--commit` — a deploy does not carry them. The rules governing the push:

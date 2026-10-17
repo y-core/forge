@@ -6,6 +6,8 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
 import { getAppContext } from "../../context/types";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import type { KeyRing } from "../../crypto/keyring/types";
 import { bytesToHex } from "../../crypto/primitives/mod";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
@@ -32,15 +34,25 @@ import {
   requireFreshStepUp,
   requirePendingEnrolment,
   resolveAuth,
+  signApprovalCode,
   stepUpHolds,
 } from "./guards";
-import { authCtx, AUTH_SESSION_KEY, AUTH_SIGNED_IN_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY } from "./identity";
+import {
+  APPROVAL_CODE_SESSION_KEY,
+  APPROVAL_SESSION_KEY,
+  authCtx,
+  AUTH_SESSION_KEY,
+  AUTH_SIGNED_IN_SESSION_KEY,
+  AUTH_STEP_UP_SESSION_KEY,
+  markApproval,
+} from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthGuardChainOptions, AuthIdentity } from "./types";
 import {
   approvedSession,
   AUTH_FACTOR_ASSIGNMENTS,
+  FAKE_APPROVAL_CODE,
   fakeApproval,
   fakeFactorService,
   fakeFactorStore,
@@ -841,6 +853,17 @@ describe("approvalCode", () => {
   });
 });
 
+const retiredSecret = "2e67c1fc3d0ec0a327d703be18be360021907809c836f6e5a6b543791c711e40";
+const activeSecret = "e81cf59a0a3c12928819f5ddc4b0c634547b5f2de5fdb12d8153d69ab79b3b14";
+const retiredRing = await importKeyRing([retiredSecret]);
+
+function approvedUnder(ring: KeyRing): Parameters<Forge["use"]>[1] {
+  return async (context, next) => {
+    markApproval(sessionCtx.get(context), { at: Date.now(), digest: await signApprovalCode(ring, FAKE_APPROVAL_CODE) });
+    return next();
+  };
+}
+
 describe("requireApproval", () => {
   it("answers 404 on every method while no code is configured, an empty one included", async () => {
     const statuses = [];
@@ -888,6 +911,43 @@ describe("requireApproval", () => {
   it("refuses an approval dated into the future, which would otherwise outlast every window", async () => {
     const app = guardedApp([approvedSession(Date.now() + 60_000), requireApproval(fakeApproval())]);
     expect((await app.request("/admin/users")).status).toBe(302);
+  });
+
+  it("admits an approval signed under a key the ring has rotated off active but still holds", async () => {
+    const rotated = await importKeyRing([activeSecret, retiredSecret]);
+    const app = guardedApp([approvedUnder(retiredRing), requireApproval(fakeApproval({ ring: () => rotated }))]);
+    expect(await (await app.request("/admin/users")).text()).toBe("users");
+  });
+
+  it("refuses an approval signed under a key the ring no longer holds", async () => {
+    const dropped = await importKeyRing([activeSecret]);
+    const app = guardedApp([approvedUnder(retiredRing), requireApproval(fakeApproval({ ring: () => dropped }))]);
+    expect(locationOf(await app.request("/admin/users"))).toEqual({ status: 302, location: "/approve?next=%2Fadmin%2Fusers" });
+  });
+
+  it("refuses a session whose approval digest is malformed, sending it to the prompt rather than failing", async () => {
+    const valid = await signApprovalCode(retiredRing, FAKE_APPROVAL_CODE);
+    const [kid = "", mac = ""] = valid.split(".");
+    const malformed = [
+      "no-separator",
+      `.${mac}`,
+      `${kid}.`,
+      // `!` is outside the base64url alphabet, so the MAC never decodes.
+      `${kid}.!!!!`,
+      `${kid}.${mac.slice(0, -4)}`,
+      `${kid}.${mac}.${mac}`,
+    ];
+    const answers = [];
+    for (const digest of malformed) {
+      const stamp: Parameters<Forge["use"]>[1] = (context, next) => {
+        sessionCtx.get(context).set(APPROVAL_SESSION_KEY, Date.now());
+        sessionCtx.get(context).set(APPROVAL_CODE_SESSION_KEY, digest);
+        return next();
+      };
+      const app = guardedApp([stamp, requireApproval(fakeApproval({ ring: () => retiredRing }))]);
+      answers.push(locationOf(await app.request("/admin/users")));
+    }
+    expect(answers).toEqual(malformed.map(() => ({ status: 302, location: "/approve?next=%2Fadmin%2Fusers" })));
   });
 });
 
@@ -1136,23 +1196,30 @@ describe("createAuthGuards", () => {
     expect(groups.map((group) => group.guards?.length)).toEqual([1]);
   });
 
-  /** An app running every stack `options` wires, over a session signed in as `u1` and approved when asked. */
-  function elevateApp(options: Partial<AuthGuardChainOptions>, approved = false): Forge {
+  /** An app running every stack `options` wires, over a session signed in as `u1` unless anonymous, and approved when asked. */
+  function elevateApp(options: Partial<AuthGuardChainOptions>, seed: { readonly approved?: boolean; readonly anonymous?: boolean } = {}): Forge {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
     app.use("*", (context, next) => {
-      sessionCtx.get(context).set(AUTH_SESSION_KEY, "u1");
-      sessionCtx.get(context).set(AUTH_SIGNED_IN_SESSION_KEY, Date.now());
+      if (seed.anonymous !== true) {
+        sessionCtx.get(context).set(AUTH_SESSION_KEY, "u1");
+        sessionCtx.get(context).set(AUTH_SIGNED_IN_SESSION_KEY, Date.now());
+      }
       return next();
     });
-    if (approved) app.use("*", approvedSession());
+    if (seed.approved === true) app.use("*", approvedSession());
     for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
     mapHandler(app, "GET", "/admin/elevate", () => new Response("elevate"));
     return app;
   }
 
-  it("answers 404 on `admin.elevate` when no approval was passed, so the first-admin claim is closed rather than open", async () => {
-    expect((await elevateApp({}).request("/admin/elevate")).status).toBe(404);
+  it("closes `admin.elevate` when no approval was passed: an anonymous visitor goes to sign-in, a signed-in one gets 404", async () => {
+    const anonymous = await elevateApp({}, { anonymous: true }).request("/admin/elevate");
+    const signedIn = await elevateApp({}).request("/admin/elevate");
+    expect([locationOf(anonymous), { status: signedIn.status, body: await signedIn.text() }]).toEqual([
+      { status: 302, location: "/auth/signin?next=%2Fadmin%2Felevate" },
+      { status: 404, body: "Not Found" },
+    ]);
   });
 
   it("holds `admin.elevate` to the approval it was passed: the prompt first, the claim once approved", async () => {
@@ -1160,7 +1227,7 @@ describe("createAuthGuards", () => {
       status: 302,
       location: "/approve?next=%2Fadmin%2Felevate",
     });
-    expect(await (await elevateApp({ approval: fakeApproval() }, true).request("/admin/elevate")).text()).toBe("elevate");
+    expect(await (await elevateApp({ approval: fakeApproval() }, { approved: true }).request("/admin/elevate")).text()).toBe("elevate");
   });
 
   it("throws for every guard that reads the identity, not only `require-admin`", () => {

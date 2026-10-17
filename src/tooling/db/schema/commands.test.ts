@@ -42,12 +42,20 @@ interface Paths {
 
 function paths(root: string): Paths {
   const lib = join(root, "node_modules", "acme-lib");
-  return { root, schema: join(root, "schema.sql"), snapshot: join(root, "schema.snapshot.json"), libSchema: join(lib, "schema.sql") };
+  return {
+    root,
+    schema: join(root, "schema.sql"),
+    snapshot: join(root, "config", "db", "schema.snapshot.json"),
+    libSchema: join(lib, "schema.sql"),
+  };
 }
 
 /** An app that declares a library's schema and its own, with one composed migration on disk. */
 function twoSchemaFiles(root: string): Record<string, string> {
-  return { [join(root, "node_modules", "acme-lib", "schema.sql")]: LIB_SCHEMA_TEXT, [join(root, "migrations", "0001_init.sql")]: APP_MIGRATION };
+  return {
+    [join(root, "node_modules", "acme-lib", "schema.sql")]: LIB_SCHEMA_TEXT,
+    [join(root, "config", "db", "migrations", "0001_init.sql")]: APP_MIGRATION,
+  };
 }
 
 const LIB_DECLARED = join("node_modules", "acme-lib", "schema.sql");

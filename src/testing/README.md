@@ -127,6 +127,56 @@ reasoning, and [`TESTING.md`][canon-testing-4] §4 has the standing ban on mock 
 
 ---
 
+## Running queries against real D1 in tests
+
+`fakeD1` runs no SQL: it is for injecting a failure and recording the calls. When the test is about what your SQL does to your schema — a
+constraint, a cascade, a batch rolling back — open a real database instead. `openTestD1` starts wrangler's local D1 and applies every migration in
+the order wrangler would, read from the directory `config/db.ts` names:
+
+```ts
+import { expect, test } from "@playwright/test";
+import { createD1Client, sql } from "@y-core/forge/storage/db";
+import { openTestD1, type TestD1 } from "@y-core/forge/testing/d1";
+
+let db: TestD1;
+test.beforeAll(async () => (db = await openTestD1()));
+test.afterAll(() => db.dispose());
+test.beforeEach(() => db.reset());
+
+test("deleting a user removes their posts", async () => {
+  const client = createD1Client(db.binding);
+  await client.batch([sql`INSERT INTO users (id) VALUES (${1})`, sql`INSERT INTO posts (id, user_id) VALUES (${1}, ${1})`]);
+  await client.execute(sql`DELETE FROM users WHERE id = ${1}`);
+  expect(await db.rows("SELECT id FROM posts")).toEqual([]);
+});
+```
+
+Open one handle per test file and `reset()` it between cases: `reset` drops everything the migrations made and applies them again on the running
+process, which is far cheaper than a new handle. Each handle has its own database, so files running side by side never share one. `root`,
+`hostConfig` and `migrations` point it elsewhere than the current directory's `config/db.ts`, and the host config is loaded and refused exactly
+as `forge db` loads it.
+
+It runs under node, so the file belongs to the Playwright workerd set, not `bun test` ([`TEST_RUNNERS.md`][testing-7f] §7f).
+
+### Asserting that a query uses its index
+
+`explainPlan` asks the test database how it would run a fragment. Assert on the plan, and a query that loses its index fails a test instead of
+showing up later as rows read on the bill:
+
+```ts
+import { explainPlan, scansTable, usesIndex } from "@y-core/forge/testing/d1";
+
+const plan = await explainPlan(db, sql`SELECT id FROM posts WHERE user_id = ${userId} ORDER BY id`);
+expect(usesIndex(plan, "posts_user")).toBe(true);
+expect(scansTable(plan, "posts")).toBe(false);
+```
+
+`usesIndex` matches a search or scan through the named index, covering or not. `scansTable` matches a step that reads every row of a table with no
+index to narrow it. Pass it the name the query reads the table by: for `FROM users AS u` that is `u`, because D1's plan names the alias and
+nothing else. Each step's `detail` is SQLite's own text, for anything the two do not cover.
+
+---
+
 ## Asserting an expiry without waiting for one
 
 `fakeKV` judges every write's expiry against the clock you give it, so a TTL test costs no wall-clock time. Advance the clock; do not sleep.

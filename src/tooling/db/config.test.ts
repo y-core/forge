@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
-import { resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry } from "./config";
+import { resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry, wranglerHistoryTable } from "./config";
 import { minimalWranglerConfig } from "./db.fixture";
 
 const roots: string[] = [];
@@ -216,5 +216,23 @@ describe("resolveDbConfig() — standby", () => {
     writeFileSync(path, text);
     const resolved = resolveDbConfig({ root, config: "wrangler.jsonc", target: "standby:ledger-copy" });
     expect([resolved.entry.binding, resolved.target]).toEqual(["DB", { place: "standby", database: "ledger-copy" }]);
+  });
+});
+
+describe("wranglerHistoryTable()", () => {
+  const entry = { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" };
+
+  it("is d1_migrations when the entry names no migrations_table", () => {
+    expect(wranglerHistoryTable(resolveDbConfig({ root: appRoot(), config: "wrangler.jsonc", target: "local" }))).toBe("d1_migrations");
+  });
+
+  it("is the entry's own migrations_table when it names one", () => {
+    const root = appRoot({ d1_databases: [{ ...entry, migrations_table: "schema_history" }] });
+    expect(wranglerHistoryTable(resolveDbConfig({ root, config: "wrangler.jsonc", target: "local" }))).toBe("schema_history");
+  });
+
+  it("reads the environment's entry under --env", () => {
+    const root = appRoot({ d1_databases: [entry], env: { staging: { d1_databases: [{ ...entry, migrations_table: "staging_history" }] } } });
+    expect(wranglerHistoryTable(resolveDbConfig({ root, config: "wrangler.jsonc", env: "staging", target: "local" }))).toBe("staging_history");
   });
 });

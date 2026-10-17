@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 import { checkSchemaHealth } from "../../src/storage/db/health";
+import { formatComposeHeader } from "../../src/tooling/db/schema/header";
 import { type D1Handle, openD1 } from "./d1";
 import { wrangler } from "./wrangler";
 
@@ -38,7 +39,7 @@ test.describe.configure({ timeout: 240_000 });
 test.beforeAll(async () => {
   test.setTimeout(240_000);
   root = mkdtempSync(join(tmpdir(), "forge-db-migrate-"));
-  migrations = join(root, "migrations");
+  migrations = join(root, "config", "db", "migrations");
   cpSync(join(FIXTURE, "wrangler.jsonc"), join(root, "wrangler.jsonc"));
   mkdirSync(join(root, "config"));
   writeFileSync(join(root, "config", "db.ts"), `export default { schemas: ${JSON.stringify([join(FORGE, "src", "auth", "schema.sql")])} };\n`);
@@ -118,7 +119,7 @@ test.describe("forge db migrate --target local against real D1", () => {
   test("makes status --check exit 1 when an applied migration's file has been edited", () => {
     const tampered = mkdtempSync(join(tmpdir(), "forge-db-tampered-"));
     cpSync(root, tampered, { recursive: true });
-    const file = join(tampered, "migrations", "0001_init.sql");
+    const file = join(tampered, "config", "db", "migrations", "0001_init.sql");
     writeFileSync(file, `${readFileSync(file, "utf-8")}\n-- edited after apply\n`);
     try {
       const status = spawnSync("bun", ["run", BIN, "db", "migrate", "status", "--check", "--target", "local", "--root", tampered], {
@@ -135,7 +136,7 @@ test.describe("forge db migrate --target local against real D1", () => {
   test("makes migrate refuse the edited history, naming the file and the repair", () => {
     const tampered = mkdtempSync(join(tmpdir(), "forge-db-tampered-"));
     cpSync(root, tampered, { recursive: true });
-    const file = join(tampered, "migrations", "0001_init.sql");
+    const file = join(tampered, "config", "db", "migrations", "0001_init.sql");
     writeFileSync(file, `${readFileSync(file, "utf-8")}\n-- edited after apply\n`);
     try {
       const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--root", tampered], {
@@ -183,7 +184,11 @@ test.describe("forge db migrate --target local against real D1", () => {
 
     const rehearsed = mkdtempSync(join(tmpdir(), "forge-db-rehearse-"));
     cpSync(root, rehearsed, { recursive: true });
-    writeFileSync(join(rehearsed, "migrations", "0002_email_unique.sql"), "CREATE UNIQUE INDEX auth_users_email ON auth_users (email);\n");
+    const body = "CREATE UNIQUE INDEX auth_users_email ON auth_users (email);\n";
+    writeFileSync(
+      join(rehearsed, "config", "db", "migrations", "0002_email_unique.sql"),
+      `${formatComposeHeader({ desired: {}, baseline: "", forge: "0.0.0" }, body)}${body}`,
+    );
     let copy: D1Handle | null = null;
     try {
       const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--rehearse", "--root", rehearsed], {
@@ -199,6 +204,68 @@ test.describe("forge db migrate --target local against real D1", () => {
     } finally {
       await copy?.dispose();
       rmSync(rehearsed, { recursive: true, force: true });
+    }
+  });
+
+  test("backs up through wrangler d1 export, and restores the artifact through forge db restore", async () => {
+    const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--json", "--out", join(root, "exports")]);
+    expect(backup.code, `export backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
+    const { directory, manifest } = JSON.parse(backup.stdout.trim().split("\n").at(-1) ?? "{}") as {
+      directory: string;
+      manifest: { via: string; bookmark: string | null; tables: { name: string; rows: number }[]; verified: { divergent: number }[] };
+    };
+    expect([manifest.via, manifest.bookmark, manifest.verified.map((route) => route.divergent)]).toEqual(["export", null, [0, 0]]);
+    expect(manifest.tables.find((table) => table.name === "auth_users")?.rows).toBe(2);
+
+    const restore = forgeDb(["restore", "--target", "standby", "--artifact", directory, "--route", "full", "--yes"]);
+    expect(restore.code, `restore failed\n${restore.stdout}\n${restore.stderr}`).toBe(0);
+    expect(restore.stdout).toContain("✓ auth_users — 2 rows");
+  });
+
+  test("refuses --via export, naming each column, for every value wrangler's dumper would not reproduce", async () => {
+    await withD1((db) =>
+      db.exec(
+        "CREATE TABLE probe_hazard (id INTEGER PRIMARY KEY, crlf, lflf, plain, num);" +
+          "INSERT INTO probe_hazard VALUES (1, 'a\\ry' || char(13), 'a\\ny' || char(10), 'a\\ny', 1.0);",
+      ),
+    );
+    try {
+      const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--out", join(root, "refused")]);
+      expect(backup.code).toBe(1);
+      const named = ["crlf", "lflf", "plain", "num"].filter((column) => backup.stderr.includes(`probe_hazard.${column}:`));
+      expect(named).toEqual(["crlf", "lflf", "num"]);
+    } finally {
+      await withD1((db) => db.exec("DROP TABLE probe_hazard"));
+    }
+  });
+
+  test("exports a backslash-n with no real newline byte for byte, past the sqlite_stat1 rows ANALYZE leaves", async () => {
+    const row = "X'04040404040404040404040404040404'";
+    await withD1((db) =>
+      db.exec(
+        `INSERT INTO auth_users (id, email, email_key, is_admin, created_at, updated_at) VALUES (${row}, 'a\\ny@example.com', 'k4', 0, 1, 1);ANALYZE;`,
+      ),
+    );
+    const standby = join(root, ".forge", "standby", "probe");
+    let copy: D1Handle | null = null;
+    try {
+      const stats = await withD1((db) => db.rows<{ n: number }>("SELECT count(*) AS n FROM sqlite_stat1"));
+      expect(stats[0]?.n).toBeGreaterThan(0);
+
+      const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--json", "--out", join(root, "plain")]);
+      expect(backup.code, `export backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
+      const { directory } = JSON.parse(backup.stdout.trim().split("\n").at(-1) ?? "{}") as { directory: string };
+      const restore = forgeDb(["restore", "--target", "standby:probe", "--artifact", directory, "--route", "full", "--yes"]);
+      expect(restore.code, `restore failed\n${restore.stdout}\n${restore.stderr}`).toBe(0);
+
+      const read = `SELECT hex(email) AS email, typeof(email) AS kind FROM auth_users WHERE id = ${row}`;
+      const source = await withD1((db) => db.rows(read));
+      copy = await openD1(standby, join(standby, ".wrangler", "state", "v3"));
+      expect(await copy.rows(read)).toEqual(source);
+      expect(source).toEqual([{ email: "615C6E79406578616D706C652E636F6D", kind: "text" }]);
+    } finally {
+      await copy?.dispose();
+      await withD1((db) => db.exec(`DELETE FROM auth_users WHERE id = ${row}`));
     }
   });
 

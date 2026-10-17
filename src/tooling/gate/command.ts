@@ -1,6 +1,7 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { join, matchesGlob, relative, resolve, sep } from "node:path";
 import { env, exit } from "node:process";
 
 import { createCommand } from "../cli/command";
@@ -28,7 +29,7 @@ import {
 } from "./report";
 import { isCheckStep, selectSteps } from "./steps";
 import { GATE_MODES } from "./types";
-import type { CheckStep, GateMode, Step, StepRequirement } from "./types";
+import type { CheckStep, CommandStep, GateMode, Step, StepRequirement } from "./types";
 import type { GateCommandConfig } from "./types";
 import { worktreeChanges, worktreeHash } from "./worktree";
 
@@ -57,9 +58,10 @@ const binFlags = {
 
 // A filesystem refusal is swallowed: the gate's verdict must be reported even when the log cannot
 // be written.
-function writeFullLog(label: string, output: string): string | undefined {
+function writeFullLog(label: string, output: string, cwd: string): string | undefined {
   try {
-    const dir = mkdtempSync(join(tmpdir(), "forge-gate-"));
+    const dir = join(tmpdir(), "forge-gate-logs", createHash("sha256").update(resolve(cwd)).digest("hex").slice(0, 12));
+    mkdirSync(dir, { recursive: true });
     // `test:browser` carries a colon, which is not a portable filename character.
     const file = join(dir, `${label.replace(/[^a-z0-9]+/gi, "-")}.log`);
     writeFileSync(file, output, "utf-8");
@@ -70,11 +72,17 @@ function writeFullLog(label: string, output: string): string | undefined {
 }
 
 // One TMPDIR per step, removed when it exits.
-function captureStep(bin: string, args: string[], cwd: string, leavesNoTemp: boolean): CaptureResult {
+function captureStep(bin: string, args: string[], cwd: string, step: Pick<CommandStep, "leavesNoTemp" | "tempCaches">): CaptureResult {
   const dir = mkdtempSync(join(tmpdir(), "forge-step-"));
   try {
     const result = capture(bin, args, { cwd, env: { ...env, TMPDIR: dir } });
-    const left = leavesNoTemp ? readdirSync(dir).sort() : [];
+    const kept = step.tempCaches ?? [];
+    const left =
+      step.leavesNoTemp === true
+        ? readdirSync(dir)
+            .filter((entry) => !kept.some((glob) => matchesGlob(entry, glob)))
+            .sort()
+        : [];
     if (left.length === 0) return result;
     return { ...result, code: result.code === 0 ? 1 : result.code, output: `${result.output}\n${formatLeftInTemp(left)}` };
   } finally {
@@ -104,9 +112,9 @@ function resolveMode(flags: { mode: string | undefined; full: boolean | undefine
   return { ok: true, mode: named };
 }
 
-function reportFailure(label: string, output: string, tail: number): void {
+function reportFailure(label: string, output: string, tail: number, cwd: string): void {
   console.log(formatFailureExcerpt(output, tail));
-  const path = writeFullLog(label, output);
+  const path = writeFullLog(label, output, cwd);
   if (path !== undefined) console.log(formatFullLogPath(path));
 }
 
@@ -238,12 +246,12 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             continue;
           }
           const [bin, ...args] = step.fix;
-          const result = captureStep(bin, args, cwd, step.leavesNoTemp === true);
+          const result = captureStep(bin, args, cwd, step);
           console.log(formatStepLine(`fix:${step.label}`, result.code === 0, result.ms, style));
           if (result.code === 0) {
             fixed++;
           } else {
-            reportFailure(step.label, result.output, step.tail);
+            reportFailure(step.label, result.output, step.tail, cwd);
             broke = true;
           }
         }
@@ -296,10 +304,10 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         const [bin, ...args] = step.cmd;
-        const result = captureStep(bin, args, cwd, step.leavesNoTemp === true);
+        const result = captureStep(bin, args, cwd, step);
         console.log(formatStepLine(step.label, result.code === 0, result.ms, style));
         if (result.code !== 0) {
-          reportFailure(step.label, result.output, step.tail);
+          reportFailure(step.label, result.output, step.tail, cwd);
           failedAt = { label: step.label, at: index + 1 };
           break;
         }

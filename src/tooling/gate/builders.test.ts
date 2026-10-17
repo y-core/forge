@@ -14,7 +14,7 @@ import {
   contrastStep,
   cssSourcesStep,
   cssTokensStep,
-  dbSchemaStep,
+  dbSteps,
   designScaleStep,
   devBoundaryStep,
   exportsStep,
@@ -263,6 +263,15 @@ describe("workerdStep()", () => {
   it("probes for the runtime itself rather than spawning a command that could pass vacuously", () => {
     expect(workerdStep().requires?.probe).toBe(hasWorkerd);
   });
+
+  it("leaves a run's temp leftovers unjudged unless the caller opts in", () => {
+    expect(workerdStep().leavesNoTemp).toBeUndefined();
+    expect(workerdStep({ leavesNoTemp: true }).leavesNoTemp).toBe(true);
+  });
+
+  it("declares Playwright's transform cache as a temp entry it keeps by design", () => {
+    expect(workerdStep().tempCaches).toEqual(["playwright-transform-cache-*"]);
+  });
 });
 
 describe("featuresStep()", () => {
@@ -478,8 +487,24 @@ describe("builders — derived watches", () => {
     expect(contrastStep(CONTRAST, { watches: ["css/**"] }).watches).toEqual(["css/**"]);
   });
 
-  it("applies dbSchemaStep's watches to both rows, and none by default", () => {
-    expect(dbSchemaStep({ watches: ["db/**"] }).map((step) => step.watches)).toEqual([["db/**"], ["db/**"]]);
-    expect(dbSchemaStep().map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false]);
+  it("applies dbSteps's watches to every row, and none by default", () => {
+    expect(dbSteps({ watches: ["db/**"] }).map((step) => step.watches)).toEqual([["db/**"], ["db/**"], ["db/**"]]);
+    expect(dbSteps().map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
+  });
+
+  it("puts the lint and the replay in full behind workerd, and the digests in quality", () => {
+    expect(dbSteps().map((step) => [step.label, step.tier, step.requires?.tool])).toEqual([
+      ["db:schema:digests", undefined, undefined],
+      ["db:lint", "full", "workerd"],
+      ["db:schema", "full", "workerd"],
+    ]);
+  });
+
+  it("passes --root and the forge command to every row", () => {
+    expect(dbSteps({ root: "app", forge: ["bun", "x"] }).map((step) => step.cmd.join(" "))).toEqual([
+      "bun x db schema check --root app",
+      "bun x db lint --root app",
+      "bun x db schema check --replay --root app",
+    ]);
   });
 });

@@ -6,10 +6,11 @@ import { join } from "node:path";
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
-import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK } from "../db.fixture";
+import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK, onStdin, schemaModelRows } from "../db.fixture";
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { schemaFingerprint } from "../migrate/fingerprint";
+import { schemaModelSelects } from "../schema/introspect";
 import type { FakeDbIo, SeedRecord } from "../types";
 
 const roots: string[] = [];
@@ -18,8 +19,8 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-const USERS = "INSERT INTO users (email) VALUES ('${ADMIN:-admin@example.com}');";
-const POSTS = "INSERT INTO posts (title) VALUES ('hello');";
+const USERS = "INSERT OR IGNORE INTO users (email) VALUES ('${ADMIN:-admin@example.com}');";
+const POSTS = "INSERT OR IGNORE INTO posts (title) VALUES ('hello');";
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-seed-"));
@@ -50,7 +51,7 @@ function record(name: string, hash: string): SeedRecord {
   return { source: "seeds", name, sha256: hash, appliedAt: 1 };
 }
 
-const SECRET_SEED = "INSERT INTO users (email) VALUES ('${SECRET}');";
+const SECRET_SEED = "INSERT OR IGNORE INTO users (email) VALUES ('${SECRET}');";
 
 /** What each load read from the scratch file at the moment it ran, since the file is gone afterwards. */
 function recordLoads(io: FakeDbIo): (string | undefined)[] {
@@ -68,13 +69,14 @@ function recordLoads(io: FakeDbIo): (string | undefined)[] {
 
 // A deployed run reaches the database only by spawning and a local one only in process, so the two
 // recorders never interleave and concatenating them is the order the run made them in.
-/** The statements the run put to the database, and the files it loaded. */
+/** The statements the run put to the database, and the files it loaded, leaving out the seed check's scratch copy. */
 function sent(io: FakeDbIo, flag: "--command" | "--file"): string[] {
   const spawned = io.calls.filter((call) => call.includes(flag)).map((call) => call[call.indexOf(flag) + 1] ?? "");
+  const target = io.d1Calls.filter((call) => !call.home.startsWith("scratch:"));
   const local =
     flag === "--file"
-      ? io.d1Calls.flatMap((call) => (call.source === null ? [] : [call.source]))
-      : io.d1Calls.filter((call) => call.source === null).flatMap((call) => call.statements);
+      ? target.flatMap((call) => (call.source === null ? [] : [call.source]))
+      : target.filter((call) => call.source === null).flatMap((call) => call.statements);
   return [...spawned, ...local];
 }
 
@@ -101,7 +103,7 @@ describe("db seed apply", () => {
       join(root, ".forge", "scratch", "seed", "seeds", "002_posts.sql"),
     ]);
     expect(loaded).toEqual([
-      `INSERT INTO users (email) VALUES ('admin@example.com');\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
+      `INSERT OR IGNORE INTO users (email) VALUES ('admin@example.com');\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
       `${POSTS}\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '002_posts', '${sha256(POSTS)}', 1789120800000);`,
     ]);
     expect([...io.files.keys()].filter((path) => path.includes("/.forge/scratch/seed/"))).toEqual([]);
@@ -165,7 +167,7 @@ describe("db seed apply", () => {
     expect(cli.code).toBe(null);
     expect(sent(io, "--file")).toEqual([file]);
     expect(loaded).toEqual([
-      `INSERT INTO users (email) VALUES ('ada@example.com');\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
+      `INSERT OR IGNORE INTO users (email) VALUES ('ada@example.com');\nINSERT OR REPLACE INTO _forge_seed_history (source, name, sha256, applied_at) VALUES ('seeds', '001_users', '${sha256(USERS)}', 1789120800000);`,
     ]);
     expect(io.files.has(file)).toBe(false);
   });
@@ -219,7 +221,7 @@ describe("db seed apply --target remote", () => {
   it("refuses without --yes and no terminal, before touching the database", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote"]);
+    const { value: cli } = await onStdin(false, "", () => run(io, ["seed", "apply", "--root", root, "--target", "remote"]));
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(
@@ -285,44 +287,42 @@ describe("db seed apply --target remote", () => {
     ]);
   });
 
-  it("refuses a lint warning against a deployed database until --allow-warnings says so", async () => {
+  const BARE_FINDING = (root: string) =>
+    `1 lint finding(s) in the seeds, so nothing was seeded:\n${join(root, "seeds", "001_bare.sql")}:2 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`;
+
+  it("refuses a non-idempotent INSERT on a deployed database, before the bookmark", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_bare.sql": REMOTE_BARE }));
     const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
 
     expect(cli.code).toBe(1);
-    expect(cli.err.join("\n")).toContain(
-      `1 lint warning(s) against remote. Read them, then pass --allow-warnings to seed anyway:\nwarning ${join(root, "seeds", "001_bare.sql")}:2 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`,
-    );
+    expect(cli.err.join("\n")).toContain(BARE_FINDING(root));
     expect(sent(io, "--file")).toEqual([]);
     expect(timeTravelCalls(io)).toEqual([]);
-
-    const allowed = withTimeTravel(seedIo(root, [], { "001_bare.sql": REMOTE_BARE }));
-    const ok = await run(allowed, ["seed", "apply", "--root", root, "--target", "remote", "--yes", "--allow-warnings"]);
-
-    expect(ok.code).toBe(null);
-    expect(allowed.logs).toEqual([
-      `warning ${join(root, "seeds", "001_bare.sql")}:2 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`,
-    ]);
-    expect(sent(allowed, "--file")).toEqual([join(root, ".forge", "scratch", "seed", "seeds", "001_bare.sql")]);
   });
 
-  it("refuses an unbounded DELETE against a deployed database until --allow-warnings says so", async () => {
+  for (const flag of ["--allow-warnings", "--allow-pending", "--allow-drift"]) {
+    it(`rejects ${flag} as an unknown flag, seeding nothing`, async () => {
+      const root = appRoot();
+      const io = withTimeTravel(seedIo(root, [], { "001_bare.sql": REMOTE_BARE }));
+      const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes", flag]);
+
+      expect(cli.code).toBe(1);
+      expect(cli.err[0]?.startsWith(`Error: Unknown flag: ${flag}.`)).toBe(true);
+      expect(sent(io, "--file")).toEqual([]);
+    });
+  }
+
+  it("refuses an unbounded DELETE on a deployed database", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_wipe.sql": "-- forge:places remote\nDELETE FROM users;" }));
     const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(
-      `1 lint warning(s) against remote. Read them, then pass --allow-warnings to seed anyway:\nwarning ${join(root, "seeds", "001_wipe.sql")}:2 unbounded-delete — DELETE with no WHERE empties the table`,
+      `1 lint finding(s) in the seeds, so nothing was seeded:\n${join(root, "seeds", "001_wipe.sql")}:2 unbounded-delete — DELETE with no WHERE empties the table`,
     );
     expect(sent(io, "--file")).toEqual([]);
-
-    const allowed = withTimeTravel(seedIo(root, [], { "001_wipe.sql": "-- forge:places remote\nDELETE FROM users;" }));
-    const ok = await run(allowed, ["seed", "apply", "--root", root, "--target", "remote", "--yes", "--allow-warnings"]);
-
-    expect(ok.code).toBe(null);
-    expect(sent(allowed, "--file")).toEqual([join(root, ".forge", "scratch", "seed", "seeds", "001_wipe.sql")]);
   });
 
   it("refuses an unbounded UPDATE the environment expands into, which the seed as written does not show", async () => {
@@ -334,7 +334,7 @@ describe("db seed apply --target remote", () => {
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(
-      `1 lint warning(s) against remote. Read them, then pass --allow-warnings to seed anyway:\nwarning ${join(root, "seeds", "001_scope.sql")}:2 unbounded-update — UPDATE with no WHERE rewrites every row in the table`,
+      `1 lint finding(s) in the seeds, so nothing was seeded:\n${join(root, "seeds", "001_scope.sql")}:2 unbounded-update — UPDATE with no WHERE rewrites every row in the table`,
     );
     expect(sent(io, "--file")).toEqual([]);
     expect(timeTravelCalls(io)).toEqual([]);
@@ -387,29 +387,90 @@ describe("db seed apply --target remote", () => {
 describe("db seed apply with a migration pending", () => {
   const INIT = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;";
 
-  it("refuses to seed an older schema, naming the pending migration and the way past it", async () => {
+  it("refuses to seed an older schema, naming the pending migration and sending the developer to migrate", async () => {
     const root = appRoot();
     const io = seedIo(root, []);
-    io.files.set(join(root, "migrations", "0001_init.sql"), INIT);
+    io.files.set(join(root, "config", "db", "migrations", "0001_init.sql"), INIT);
     const cli = await run(io, ["seed", "apply", "--root", root]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain("pending migration(s)");
-    expect(cli.err.join("\n")).toContain(
-      "app-db (local) has 1 pending migration(s): 0001_init. Run `forge db migrate` first, or pass --allow-pending to seed the older schema anyway.",
-    );
+    expect(cli.err.join("\n")).toContain("app-db (local) has 1 pending migration(s): 0001_init. Run `forge db migrate` first.");
     expect(sent(io, "--file")).toEqual([]);
   });
 
-  it("seeds the older schema under --allow-pending, re-running nothing that is already in", async () => {
+  it("refuses an older schema even when every seed is already in", async () => {
     const root = appRoot();
-    const io = seedIo(root, [record("001_users", sha256(USERS))]);
-    io.files.set(join(root, "migrations", "0001_init.sql"), INIT);
-    const cli = await run(io, ["seed", "apply", "--root", root, "--allow-pending"]);
+    const io = seedIo(root, [record("001_users", sha256(USERS)), record("002_posts", sha256(POSTS))]);
+    io.files.set(join(root, "config", "db", "migrations", "0001_init.sql"), INIT);
+    const cli = await run(io, ["seed", "apply", "--root", root]);
+
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain("app-db (local) has 1 pending migration(s): 0001_init. Run `forge db migrate` first.");
+  });
+});
+
+describe("db seed apply — a seed that changes the schema", () => {
+  const INDEX_SEED = "-- forge:places local,remote\nCREATE INDEX users_email ON users (email);";
+  const selects: string[] = Object.values(schemaModelSelects());
+
+  /** Answers the seed check's copy from a model that gains an index once the copy runs the seed's `CREATE INDEX`. */
+  function indexOnCopy(io: FakeDbIo): void {
+    const inventory: Record<string, unknown>[] = [];
+    io.d1Rules.unshift({
+      match: (_statement, home) => home.label === "scratch:compose-seed",
+      reply: (statement) => {
+        if (selects.includes(statement)) return schemaModelRows(statement, { inventory });
+        if (statement.includes("CREATE INDEX users_email"))
+          inventory.push({ type: "index", name: "users_email", tbl_name: "users", sql: statement });
+        return [];
+      },
+    });
+  }
+
+  const onTarget = (io: FakeDbIo) => io.d1Calls.filter((call) => !call.home.startsWith("scratch:"));
+
+  it("refuses a CREATE INDEX seed before any target write, naming it and staging no seed file", async () => {
+    const root = appRoot();
+    const io = seedIo(root, [], { "001_index.sql": INDEX_SEED, "002_posts.sql": POSTS });
+    indexOnCopy(io);
+    const cli = await run(io, ["seed", "apply", "--root", root]);
+
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain(
+      "seeds:001_index changes the schema of app-db (local), and only a composed migration may — no seed was applied:\n  index users_email: in the schema after it, not in the schema before it",
+    );
+    expect(sent(io, "--file")).toEqual([]);
+    const written = onTarget(io)
+      .flatMap((call) => call.statements)
+      .filter((statement) => !statement.startsWith("SELECT"));
+    expect(written).toEqual([]);
+    expect([...io.files.keys()].filter((path) => path.includes("/.forge/scratch/seed/"))).toEqual([]);
+  });
+
+  it("refuses a deployed target's schema-changing seed before the confirmation and before any bookmark", async () => {
+    const root = appRoot();
+    const io = seedIo(root, [], { "001_index.sql": INDEX_SEED });
+    io.rules.unshift({ match: (args) => argvHas(args, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } });
+    indexOnCopy(io);
+    const { value: cli } = await onStdin(false, "", () => run(io, ["seed", "apply", "--root", root, "--target", "remote"]));
+
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain("seeds:001_index changes the schema of app-db (remote)");
+    expect(cli.err.join("\n")).not.toContain("without a terminal to confirm at");
+    expect(io.calls.filter((call) => argvHas(call.slice(1), "time-travel", "info") || call.includes("--file"))).toEqual([]);
+  });
+
+  it("reads the target's history and inventory once a run", async () => {
+    const root = appRoot();
+    const io = seedIo(root, []);
+    const cli = await run(io, ["seed", "apply", "--root", root]);
 
     expect(cli.code).toBe(null);
-    expect(sent(io, "--file")).toEqual([join(root, ".forge", "scratch", "seed", "seeds", "002_posts.sql")]);
-    expect(cli.out).toEqual(["applied seeds:002_posts", "1 applied, 1 already in"]);
+    const statements = onTarget(io).flatMap((call) => call.statements);
+    expect([INVENTORY_SELECT, RECORDED_CHECKSUM_SELECT].map((select) => statements.filter((statement) => statement === select).length)).toEqual([
+      1, 1,
+    ]);
   });
 });
 
@@ -428,7 +489,7 @@ describe("db seed apply against a schema nothing certified", () => {
     );
   }
 
-  it("refuses with nothing written, naming both fingerprints and what a seed cannot do about them", async () => {
+  it("refuses with nothing written, naming both fingerprints and the restore that resolves it", async () => {
     const root = appRoot();
     const io = seedIo(root, []);
     drifted(io);
@@ -438,23 +499,8 @@ describe("db seed apply against a schema nothing certified", () => {
     expect(cli.err.join("\n")).toContain(
       `app-db (local) schema fingerprint ${schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: USERS_SQL }])} is not the ${CERTIFIED} the last apply certified`,
     );
-    expect(cli.err.join("\n")).toContain(
-      "pass --allow-drift to seed anyway; a seed certifies no fingerprint, so `forge db migrate` goes on refusing until an apply explains the schema.",
-    );
+    expect(cli.err.join("\n")).toContain("and run again; nothing passes this check.");
     expect(sent(io, "--file")).toEqual([]);
-  });
-
-  it("seeds it under --allow-drift", async () => {
-    const root = appRoot();
-    const io = seedIo(root, []);
-    drifted(io);
-    const cli = await run(io, ["seed", "apply", "--root", root, "--allow-drift"]);
-
-    expect(cli.code).toBe(null);
-    expect(sent(io, "--file")).toEqual([
-      join(root, ".forge", "scratch", "seed", "seeds", "001_users.sql"),
-      join(root, ".forge", "scratch", "seed", "seeds", "002_posts.sql"),
-    ]);
   });
 });
 
@@ -462,20 +508,17 @@ describe("db seed apply linting", () => {
   const BARE = "INSERT INTO tags (name) VALUES ('x');";
   const SAFE = "INSERT OR IGNORE INTO tags (name) VALUES ('y');";
 
-  it("warns on a non-idempotent INSERT through the log, and applies the seed regardless", async () => {
+  it("refuses a non-idempotent INSERT on local too, seeding none of the set", async () => {
     const root = appRoot();
     const io = seedIo(root, [], { "001_bare.sql": BARE, "002_safe.sql": SAFE });
     const cli = await run(io, ["seed", "apply", "--root", root]);
 
-    expect(cli.code).toBe(null);
-    expect(io.logs).toEqual([
-      `warning ${join(root, "seeds", "001_bare.sql")}:1 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`,
-    ]);
-    expect(sent(io, "--file")).toEqual([
-      join(root, ".forge", "scratch", "seed", "seeds", "001_bare.sql"),
-      join(root, ".forge", "scratch", "seed", "seeds", "002_safe.sql"),
-    ]);
-    expect(cli.out).toEqual(["applied seeds:001_bare", "applied seeds:002_safe", "2 applied, 0 already in"]);
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain(
+      `1 lint finding(s) in the seeds, so nothing was seeded:\n${join(root, "seeds", "001_bare.sql")}:1 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`,
+    );
+    expect(sent(io, "--file")).toEqual([]);
+    expect(cli.out).toEqual([]);
   });
 
   it("says nothing about a seed that is already recorded, since only a pending seed is linted", async () => {
@@ -500,7 +543,9 @@ describe("db seed apply locking", () => {
     const io = seedIo(root, []);
     const heldWhileLoading: boolean[] = [];
     io.d1Rules.unshift({
-      match: (statement) => statement.startsWith("INSERT INTO users") || statement.startsWith("INSERT INTO posts"),
+      match: (statement, home) =>
+        !home.label.startsWith("scratch:") &&
+        (statement.startsWith("INSERT OR IGNORE INTO users") || statement.startsWith("INSERT OR IGNORE INTO posts")),
       reply: () => {
         heldWhileLoading.push(io.files.has(lockPath(root)));
         return [];

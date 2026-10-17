@@ -1,7 +1,17 @@
 import { CliError } from "../../cli/errors";
 import { sha256 } from "../digest";
 import { mentionsSqlIdentifier, sqlIdentifierEquals, sqlIdentifierKey } from "./normalize";
-import type { NamedChanges, RebuildReason, SchemaColumn, SchemaDiff, SchemaModel, SchemaRename, SchemaTable, TableChange } from "./types";
+import type {
+  DataDependentStep,
+  NamedChanges,
+  RebuildReason,
+  SchemaColumn,
+  SchemaDiff,
+  SchemaModel,
+  SchemaRename,
+  SchemaTable,
+  TableChange,
+} from "./types";
 
 const RENAME = /^([^.:]+)(?:\.([^.:]+))?:([^.:]+)$/;
 
@@ -108,41 +118,50 @@ function checksOf(definition: string): string[] {
   return out;
 }
 
-const typeKey = (type: string) => type.toUpperCase().replace(/\s+/g, " ").trim();
+/** A declared column type with case and runs of whitespace folded, so two spellings of one type compare equal. @internal */
+export const columnTypeKey = (type: string): string => type.toUpperCase().replace(/\s+/g, " ").trim();
 
-/** What a rebuild of this table asks of the rows already in it, which the proof on an empty replay cannot see. */
-function dataDependentLines(baseline: SchemaTable, desired: SchemaTable, common: readonly string[]): string[] {
+/** What a rebuild of this table asks of the rows already in it. */
+function dataDependentSteps(baseline: SchemaTable, desired: SchemaTable, common: readonly string[]): DataDependentStep[] {
   const before = new Map(baseline.columns.map((column) => [sqlIdentifierKey(column.name), column]));
   const after = new Map(desired.columns.map((column) => [sqlIdentifierKey(column.name), column]));
   const table = desired.name;
-  const lines: string[] = [];
+  const steps: DataDependentStep[] = [];
   for (const key of common) {
     const b = before.get(key);
     const a = after.get(key);
     if (b === undefined || a === undefined || a.hidden !== 0) continue;
-    if (!b.notnull && a.notnull) {
-      const filled = a.defaultExpr === null ? "" : " (the DEFAULT does not fill it in)";
-      lines.push(
-        `${table}.${a.name} becomes NOT NULL — the rebuild copies existing rows as they are, so one holding NULL fails it${filled}; ${REHEARSE}`,
-      );
-    }
+    if (!b.notnull && a.notnull) steps.push({ kind: "not-null", table, column: a.name, defaulted: a.defaultExpr !== null });
     const had = checksOf(b.definition);
     for (const check of checksOf(a.definition)) {
-      if (!had.includes(check)) lines.push(`${table}.${a.name} gains ${check} — every existing value must already satisfy it; ${REHEARSE}`);
+      if (!had.includes(check)) steps.push({ kind: "column-check", table, column: a.name, check });
     }
-    if (desired.strict && typeKey(b.type) !== typeKey(a.type)) {
-      lines.push(
-        `${table}.${a.name} changes type from ${b.type} to ${a.type} on a STRICT table — every existing value must already be ${a.type}; ${REHEARSE}`,
-      );
-    }
+    if (desired.strict && columnTypeKey(b.type) !== columnTypeKey(a.type))
+      steps.push({ kind: "strict-type", table, column: a.name, from: b.type, to: a.type });
   }
   for (const check of desired.constraints.filter((c) => TABLE_CHECK.test(c) && !baseline.constraints.includes(c))) {
-    lines.push(`${table} gains ${check} — every existing row must already satisfy it; ${REHEARSE}`);
+    steps.push({ kind: "table-check", table, column: null, check });
   }
-  if (!baseline.strict && desired.strict) {
-    lines.push(`${table} becomes STRICT — every existing value must already match its column's declared type; ${REHEARSE}`);
+  if (!baseline.strict && desired.strict) steps.push({ kind: "becomes-strict", table, column: null });
+  return steps;
+}
+
+/** One row-dependent step as the advisory line compose prints for it. @internal */
+export function formatDataDependentStep(step: DataDependentStep): string {
+  switch (step.kind) {
+    case "not-null": {
+      const filled = step.defaulted ? " (the DEFAULT does not fill it in)" : "";
+      return `${step.table}.${step.column} becomes NOT NULL — the rebuild copies existing rows as they are, so one holding NULL fails it${filled}; ${REHEARSE}`;
+    }
+    case "column-check":
+      return `${step.table}.${step.column} gains ${step.check} — every existing value must already satisfy it; ${REHEARSE}`;
+    case "strict-type":
+      return `${step.table}.${step.column} changes type from ${step.from} to ${step.to} on a STRICT table — every existing value must already be ${step.to}; ${REHEARSE}`;
+    case "table-check":
+      return `${step.table} gains ${step.check} — every existing row must already satisfy it; ${REHEARSE}`;
+    case "becomes-strict":
+      return `${step.table} becomes STRICT — every existing value must already match its column's declared type; ${REHEARSE}`;
   }
-  return lines;
 }
 
 function compareTable(
@@ -150,7 +169,7 @@ function compareTable(
   desired: SchemaTable,
   baselineModel: SchemaModel,
   refusals: string[],
-  dataDependent: string[],
+  dataDependent: DataDependentStep[],
 ): TableChange | null {
   const before = new Map(baseline.columns.map((column) => [sqlIdentifierKey(column.name), column]));
   const after = new Map(desired.columns.map((column) => [sqlIdentifierKey(column.name), column]));
@@ -173,14 +192,14 @@ function compareTable(
   for (const column of added) {
     if (/\bNOT NULL\b/.test(column.definition) && !/\bDEFAULT\b/.test(column.definition) && column.hidden === 0) {
       refusals.push(
-        `${desired.name}.${column.name} is NOT NULL with no DEFAULT on a table that already exists — give it a DEFAULT, or add it in a \`--custom\` migration that fills it`,
+        `${desired.name}.${column.name} is NOT NULL with no DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it NOT NULL in a later compose`,
       );
     }
   }
 
   if (reasons.length === 0 && added.length === 0 && dropped.length === 0) return null;
   if (reasons.length === 0) return { kind: "alter", name: desired.name, added, dropped };
-  dataDependent.push(...dataDependentLines(baseline, desired, common));
+  dataDependent.push(...dataDependentSteps(baseline, desired, common));
   return { kind: "rebuild", name: desired.name, reasons, dropped };
 }
 
@@ -191,7 +210,7 @@ export function diffSchemaModels(baseline: SchemaModel, desired: SchemaModel): S
   const tables: TableChange[] = [];
   const refusals: string[] = [];
   const destructive: string[] = [];
-  const dataDependent: string[] = [];
+  const dataDependent: DataDependentStep[] = [];
 
   for (const table of desired.tables) {
     const was = before.get(sqlIdentifierKey(table.name));
@@ -258,9 +277,9 @@ export function droppedObjectNames(diff: SchemaDiff): string[] {
   ];
 }
 
-/** Twelve hex characters naming one whole plan and why it drops what it drops, so an approval is for exactly that plan and no other. @internal */
-export function destructivePlanDigest(diff: SchemaDiff, causes: readonly string[] = []): string {
-  return sha256([...describeSchemaDiff(diff), ...causes].join("\n")).slice(0, 12);
+/** Twelve hex characters naming one whole plan, why it drops what it drops, and the approval lines it writes, renames included. @internal */
+export function destructivePlanDigest(diff: SchemaDiff, causes: readonly string[], approvals: readonly string[]): string {
+  return sha256([...describeSchemaDiff(diff), ...causes, ...approvals].join("\n")).slice(0, 12);
 }
 
 /** The diff as the lines a plan prints, one per change. @internal */

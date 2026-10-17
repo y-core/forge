@@ -267,11 +267,14 @@ secret. Define one per deployment at module scope, then hand that same value to 
 
 ```ts
 import { createAuthGuards, defineApproval, registerApproval, requireApproval } from "@y-core/forge/auth/web";
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 
 const approval = defineApproval<Env>({
   path: "/approve",
   code: (c) => c.env.ADMIN_APPROVAL_CODE,
   origin: { allowedOrigins: ["https://app.example"] },
+  rateLimit: { limiter: (c) => c.env.APPROVAL_LIMITER, trustCfHeaders: true },
+  ring: (c) => importKeyRing(parseKeyRingSecrets(c.env.CSRF_SECRET)),
 });
 
 registerApproval(app, approval);
@@ -283,15 +286,18 @@ const groups = createAuthGuards<Env>({ ...guardOptions, approval });
 session middleware, as you would any route that writes the session. A correct code sends the visitor back to the page they were stopped on.
 
 **Read `code` off `c.env` on every request.** If it returns `undefined` or `""`, every approved route and the prompt itself answer 404. A
-deployment that has no code configured therefore has no approved routes, rather than open ones.
+deployment that has no code configured therefore has no approved routes, rather than open ones. Changing the code ends every approval granted
+under the old one: the session holds a digest of the code signed with `ring`, never the code itself.
 
-**Passing `approval` to `createAuthGuards` is what turns the first-admin claim on.** The `admin.elevate` group ends with `require-approval`, so
-the visitor presents the code and then confirms the claim. If you leave `approval` out, both elevate routes answer 404. Any group of your own can
-also list `require-approval`, and it does not need `require-auth` before it.
+**Passing `approval` to `createAuthGuards` is what turns the first-admin claim on.** The `admin.elevate` group ends with `require-approval`, so the
+visitor presents the code and then confirms the claim. If you leave `approval` out, a signed-in visitor gets 404 from both elevate routes.
+`createAdminElevateActions` and `loadAdminElevate` also answer 404 on a route you mount yourself unless `requireApproval` runs ahead of them. Any
+group of your own can also list `require-approval`, and it does not need `require-auth` before it.
 
-**Decide the window and the bot defence when you define the approval.** `ttlMs` is how long a presented code holds; leave it out and the window
-is `APPROVAL_TTL_MS`. Pass `rateLimit` to cap guesses on the prompt. Pass `turnstile` to challenge it: it takes the same `keys` and `verify` as
-`AuthWebOptions.turnstile`, but no `flows`. `view` replaces the prompt's markup with your own component, which receives `ApprovalViewProps`.
+**Decide the window and the bot defence when you define the approval.** `ttlMs` is how long a presented code holds; leave it out and the window is
+`APPROVAL_TTL_MS`. `rateLimit` is required, because the prompt is open to anyone and answers guesses at a shared code; forge picks no numbers. Pass
+`turnstile` to challenge it: it takes the same `keys` and `verify` as `AuthWebOptions.turnstile`, but no `flows`. `view` replaces the prompt's
+markup with your own component, which receives `ApprovalViewProps`.
 
 **A route that answers JSON gets a 403 instead of a redirect.** Pass `requireApproval(approval, { medium: "json" })` for it.
 
@@ -623,11 +629,13 @@ A value you store rather than send belongs in [`@y-core/forge/crypto/keyring`][k
 ## Applying the auth schema to your database
 
 `src/auth/schema.sql` is the **desired state**. **This library ships no SQL that runs**, and nothing is generated beside it. Your app names the
-file by path in its own host config, alongside its own:
+file in its own host config with `forgeSchema`, alongside its own:
 
 ```ts
 // config/db.ts
-export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] };
+import { forgeSchema } from "@y-core/forge/tooling/db";
+
+export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] };
 ```
 
 Then compose the migration from every file named there, and apply it:
@@ -638,7 +646,7 @@ forge db migrate
 ```
 
 The forward-only policy, what the snapshot records, and the undo for each target are [`DATABASE_MANAGEMENT.md`][dm]'s. A change here that needs a
-backfill is announced in forge's `CHANGELOG.md`, and you write it as `forge db migrate compose --custom <name>`.
+backfill is announced in forge's `CHANGELOG.md` with the fill your seed or app writes, in the order [`DATABASE_MANAGEMENT.md`][dm] §7a gives.
 
 **An upgrade that adds a table reaches your database only through a migration you compose**: run `forge db migrate compose` after upgrading,
 and apply it before you deploy. Forge's `CHANGELOG.md` names each table an upgrade adds.
@@ -951,8 +959,8 @@ is the one shape with no in-band answer of that kind, so a malformed owner id co
 
 **`list` and `search` clamp `limit` in the adapter.**
 
-**Deleting a user removes its children in one batch, and the batch rolls back whole.** The `ON DELETE CASCADE` clauses in the schema are
-documentation: D1 does not guarantee `PRAGMA foreign_keys` is on.
+**Deleting a user removes its children in one batch, and the batch rolls back whole.** D1 always enforces foreign keys, so the schema's
+`ON DELETE CASCADE` clauses fire as well.
 
 **`AuthFactorService` is a union discriminated on `enrolment`, at the top level.** Write `if (service.enrolment === "explicit")` to reach
 `beginEnrolment` and `completeEnrolment`.

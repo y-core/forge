@@ -73,8 +73,8 @@ than resolved to the first. `standby` reads the two parts differently: `:databas
 Edit `schema.sql` — the desired state is the only SQL you author — then compose, check and apply:
 
 ```bash
-forge db migrate compose add_sessions   # writes migrations/0005_add_sessions.sql and schema.snapshot.json
-forge db lint --strict                  # before committing it
+forge db migrate compose add_sessions   # writes config/db/migrations/0005_add_sessions.sql and config/db/schema.snapshot.json
+forge db lint                           # the stamp, the rules and every drop or rename, against the local database
 forge db migrate --dry-run              # the plan and the SQL, writing nothing
 forge db migrate                        # run it
 forge db schema check                   # file, snapshot and migrations agree
@@ -83,19 +83,27 @@ forge db schema check                   # file, snapshot and migrations agree
 | `compose` flag | What it is for |
 | --- | --- |
 | `--dry-run` | Print the plan and the SQL; write nothing |
-| `--custom` | Write a hand-edited stub instead, for a data move compose cannot express. Takes the name positionally, as compose always does |
-| `--allow-destructive <digest>` | Approve the drop set whose digest the refusal printed, and no other |
+| `--allow-destructive <digest>` | Approve the plan whose digest the refusal printed — its drops and renames — and no other |
 | `--rename old:new` | Rename rather than drop and create; `table.old:new` for a column. Repeatable, never inferred |
 | `--restamp <name>` | Rewrite a generated migration's stamp to the history now on disk, body untouched |
 | `--no-cache` | Replay into the scratch database even when a cached model matches |
 
-**A drop is refused until you name the plan.** The refusal prints the drop set and a digest of it; `--allow-destructive` accepts that digest alone,
-so an approval cannot survive the plan changing underneath it. A rename is `--rename` or it is a drop — nothing here infers one. Why the emitted SQL
+**A drop or a rename is refused until you name the plan.** The refusal prints the plan and a digest covering its table, column and view drops and
+its renames; `--allow-destructive` accepts that digest alone, so an approval cannot survive the plan changing underneath it. Once it matches,
+compose writes one approval line per change directly under the header, and every verb that applies the file refuses a change no line approves
+([`DATABASE_MANAGEMENT.md`][dm-9b] §9b):
+
+```sql
+-- forge:drops table "legacy_events"
+-- forge:drops column "posts"."summary"
+-- forge:drops view "post_counts"
+-- forge:renames table "users" "accounts"
+-- forge:renames column "posts"."body" "content"
+```
+
+A rename is `--rename` or it is a drop — nothing here infers one. Why the emitted SQL
 alters in place or rebuilds through a copy, and what a rebuild takes with it, is [`SCHEMA_COMPOSITION.md`][sc-4] §4; renames are [§5][sc-5], and the
 stamp and snapshot [§6][sc-6].
-
-A migration you filled in by hand after `--custom` is still linted and still stamped, so it joins the same sequence
-([`SCHEMA_COMPOSITION.md`][sc-7] §7).
 
 ---
 
@@ -111,15 +119,12 @@ forge db migrate --dry-run              # what would run
 | --- | --- |
 | `--dry-run` | Report what would be applied and change nothing |
 | `--to <NNNN\|name>` | Stop after that migration |
-| `--no-lint` | Apply without the lint pass |
-| `--allow-warnings` | Apply to a deployed database despite lint warnings, which otherwise abort |
-| `--allow-drift` | Apply although the schema moved outside the migrations; the apply re-records the fingerprint |
 | `--no-bookmark` | Skip the Time Travel bookmark a deployed apply captures |
 | `--rehearse` | Apply to a copy restored from a backup first, and report, before touching the target |
 | `--artifact <dir>` | The artifact `--rehearse` restores; implies `--rehearse` |
 
-**A lint error aborts any apply; a warning aborts a deployed one.** `--allow-warnings` is what lets a deployed apply proceed past a warning that has
-been read. What each rule matches, and why it sits at the level it does, is [`DATABASE_MANAGEMENT.md`][dm-5] §5.
+**Every lint rule is an error and aborts any apply**, and then the analysis refuses a drop or rename the file's own lines do not approve, on every
+target ([`DATABASE_MANAGEMENT.md`][dm-9b] §9b). What each rule matches is [§5][dm-5].
 
 **Rehearsing runs the pending migrations against real rows first.** `--rehearse` restores the most recent verified backup into a scratch database,
 applies there, and reports — then touches the target. Worth it for a migration that rebuilds a table ([`DATABASE_MANAGEMENT.md`][dm-6f] §6f).
@@ -127,9 +132,9 @@ applies there, and reports — then touches the target. Worth it for a migration
 Lint the SQL on its own at any time:
 
 ```bash
-forge db lint                    # every migration in the migrations directory
-forge db lint migrations/0005_add_sessions.sql
-forge db lint --seeds --strict   # the seeds instead, failing on warnings too
+forge db lint                   # the migrations the local database does not hold yet
+forge db lint --target remote   # the ones the deployed database does not hold yet
+forge db lint --seeds           # the seeds instead
 ```
 
 ---
@@ -160,15 +165,14 @@ forge db seed reset                     # forget the history; the rows the seeds
 | `--dir <path>` | Run just this directory, instead of every one `config/db.ts` names |
 | `--only <name>` | Run one seed, as `<dir>:<name>` or a name no two directories share |
 | `--rerun` | Run a seed that already ran, including one whose file changed since |
-| `--allow-pending` | Seed although a migration is pending, onto the older schema |
-| `--allow-drift` | Seed although the schema moved outside the migrations |
-| `--allow-warnings` | Seed a deployed database despite lint warnings |
 | `--no-bookmark` | Skip the Time Travel bookmark a deployed seed captures |
 
-**Each thing that refuses a seed run has its own way past.** A file that changed since it ran needs `--rerun`; a pending migration needs
-`--allow-pending`; a schema that moved since the last apply certified it needs `--allow-drift`. All are checked before the lint, the
-confirmation and the first load, so a refusal leaves nothing written. The contract behind them is [`DATABASE_MANAGEMENT.md`][dm-7] §7, and where a
-row belongs — migration or seed — is [§7a][dm-7a].
+**A seed run refuses before anything is written** when a migration is pending (run `forge db migrate` first), when the schema moved since the last
+apply certified it (restore the database), on any lint finding (write each `INSERT` as `OR IGNORE` or `ON CONFLICT`), and on a seed that changes
+the schema — a `CREATE INDEX`, a `DROP VIEW`, an `ALTER TABLE` — because each pending seed first runs on a copy of the target's schema
+([`DATABASE_MANAGEMENT.md`][dm-7a] §7a). No flag passes any of them. A seed whose file changed since it ran is left out and the run exits
+non-zero; `--rerun` runs it again, which is a choice about that seed rather than a way past a check. The contract behind them is
+[`DATABASE_MANAGEMENT.md`][dm-7] §7, and where a row belongs — migration or seed — is [§7a][dm-7a].
 
 Rows you hold in memory can be emitted as a seed file instead of typed, proved against the declared schema before the file is written
 ([`DATABASE_MANAGEMENT.md`][dm-7b] §7b).
@@ -238,30 +242,35 @@ forge db standby reset             # empty it, apply every migration, then every
 forge db standby reset --no-seed   # stop after the migrations
 ```
 
-`--target` defaults to `standby` here and the verb refuses every other place. `--dir` seeds one directory, `--no-lint` skips the lint pass. What the
-standby database is for, and why nothing it does can reach the local database's state, is [`DATABASE_MANAGEMENT.md`][dm-2a] §2a.
+`--target` defaults to `standby` here and the verb refuses every other place. `--dir` seeds one directory. What the standby database is for, and
+why nothing it does can reach the local database's state, is [`DATABASE_MANAGEMENT.md`][dm-2a] §2a.
 
 ---
 
 ## Declaring what forge reads
 
-An optional `config/db.ts` default-exports a `DbHostConfig`. Every field is optional and every one is a path relative to the root:
+An optional `config/db.ts` default-exports a `DbHostConfig`. Every field is optional. Each is a path relative to the root, or a package
+specifier such as the one `forgeSchema` returns:
 
 ```ts
-import type { DbHostConfig } from "@y-core/forge/tooling/db";
+import { forgeSchema, type DbHostConfig } from "@y-core/forge/tooling/db";
 
 export default {
   // Loaded in this order, so a file with a FOREIGN KEY comes after the file declaring its target.
-  schemas: ["node_modules/@acme/auth/schema.sql", "config/schema.sql"],
-  seeds: ["config/seeds"],
-  migrations: "migrations",
-  snapshot: "config/schema.snapshot.json",
-  backupsDir: ".forge/backups",
+  schemas: [forgeSchema("auth"), "config/db/schema.sql"],
+  seeds: ["config/db/seeds"],
 } satisfies DbHostConfig;
 ```
 
-An entry in `schemas` may be a file or a directory of `.sql` files. `migrations` defaults to `migrations` and is both where migrations are read from
-and where compose writes; `snapshot` defaults to `schema.snapshot.json` at the root.
+The default layout keeps everything under `config/db/`: `migrations` defaults to `config/db/migrations`, which is both where migrations are read
+from and where compose writes, and `snapshot` defaults to `config/db/schema.snapshot.json`. `backupsDir` defaults to `.forge/backups`. An entry in
+`schemas` may be a file or a directory of `.sql` files. Name forge's own schema with `forgeSchema`, never by a `node_modules` path: the
+specifier resolves wherever forge is installed, and it is the key the snapshot records, so the snapshot reads the same on every machine.
+
+**Point wrangler at the same directory.** Every `forge db` verb refuses a `d1_databases` entry whose `migrations_dir` is not the directory forge
+applies from, and names the key to set. `migrations_dir` is resolved from the wrangler config's directory, so a config outside the root names the
+path from there. Wrangler's own default is `migrations`, so under the default layout each entry carries `"migrations_dir": "config/db/migrations"`.
+A `migrations_pattern` other than `<migrations_dir>/*.sql` is refused too, since forge applies only the directory's top-level `.sql` files.
 
 **Nothing is read that this file does not name**, a dependency's schema included — [`DATABASE_MANAGEMENT.md`][dm-8] §8. The ownership rules that
 follow from it are [`SCHEMA_COMPOSITION.md`][sc-3] §3.
@@ -270,31 +279,43 @@ follow from it are [`SCHEMA_COMPOSITION.md`][sc-3] §3.
 
 ## Wiring it into scripts and CI
 
-The verbs are long enough to be worth a script apiece:
+Every app runs the same lifecycle, so the scripts are the same in each. Copy the ones you use into `package.json`:
 
-```json
-{
-  "scripts": {
-    "db:migrate": "forge db migrate",
-    "db:migrate:remote": "forge db migrate --target remote",
-    "db:status": "forge db migrate status",
-    "db:backup": "forge db backup",
-    "db:restore": "forge db restore",
-    "db:reset": "forge db reset",
-    "db:lint": "forge db lint --strict",
-    "db:compose": "forge db migrate compose",
-    "db:schema:check": "forge db schema check"
-  }
-}
-```
+| Script | Command | What it does |
+| --- | --- | --- |
+| `dev` | `forge db migrate && wrangler dev` | Applies pending migrations to the local database before the dev server starts |
+| `db:status` | `forge db migrate status` | Which migrations are applied and pending, and where the files and the database disagree |
+| `db:lint` | `forge db lint` | Checks the migrations the local database does not hold yet: the stamp, the lint rules, and every drop or rename |
+| `db:compose` | `forge db migrate compose` | Writes the next migration from the declared schema |
+| `db:schema:check` | `forge db schema check` | Confirms the schema files, the snapshot and the migrations agree |
+| `db:migrate` | `forge db migrate` | Applies pending migrations to the local database |
+| `db:migrate:remote` | `forge db migrate --target remote` | Applies pending migrations to the deployed database, under a bookmark |
+| `db:deploy` | `forge db deploy` | Checks the deployed database, applies its pending migrations, then runs `wrangler deploy` |
+| `db:standby` | `forge db standby reset` | Rebuilds the standby database from the migrations and the seeds |
+| `db:backup` | `forge db backup` | Writes a verified backup of a database |
+| `db:restore` | `forge db restore` | Restores a database from a backup |
+| `db:reset` | `forge db reset` | Removes the local database's state files, so a restore has an empty target |
 
 Which lines belong in CI, and why neither covers the other, is [`DATABASE_MANAGEMENT.md`][dm-9] §9:
 
 ```bash
 forge db schema check                             # the files agree with each other
 forge db migrate status --check --target remote   # the database agrees with the files
-forge db migrate --target remote --yes            # in the deploy step itself
 ```
+
+The deploy step itself is one verb. Make it the Workers Builds deploy command:
+
+```bash
+forge db deploy --yes          # CI has no terminal: --yes confirms the pending migrations
+forge db deploy --check-only   # the checks alone; exits 1 while a migration is pending
+```
+
+Deploy asks before applying, exactly as `forge db migrate --target remote` does, and a non-interactive run without `--yes` is refused before
+anything is applied or deployed.
+
+It refuses a database that moved outside the migrations, a token without `Account → D1 → Edit`, and a pending drop or rename its migration's
+lines do not approve. If `wrangler deploy` fails after the apply, it prints the command that restores the schema. Why a migration has to keep
+the previous Worker working, and what approves a drop, is [`DATABASE_MANAGEMENT.md`][dm-9b] §9b.
 
 `schema check --replay` goes further than digests: it replays the migrations and loads every declared schema, then compares both to the snapshot.
 Exactly what makes `status --check` fail is [§6c][dm-6c].
@@ -331,7 +352,7 @@ const outcome = await withDbRun(
   { target: "local", db: undefined, config: "wrangler.jsonc", env: undefined, root: undefined, json: false, yes: true },
   undefined,
   {},
-  (run) => runMigrate(run, { dryRun: true, lint: true, allowWarnings: false, allowDrift: false, bookmark: true, rehearse: false }),
+  (run) => runMigrate(run, { dryRun: true, bookmark: true, rehearse: false }),
 );
 ```
 
@@ -346,9 +367,10 @@ and reached by file, not from the barrel.
 
 ## Gotchas
 
-**Forge keeps the migration history, not wrangler.** No verb runs `wrangler d1 migrations apply`, and `d1_migrations` is never read or written. A
-`migrations_dir` or `migrations_table` in a `d1_databases` entry is not read at all. The two `_forge_*` tables and what each one catches are
-[`DATABASE_MANAGEMENT.md`][dm-4] §4.
+**Forge keeps the migration history, not wrangler.** No verb runs `wrangler d1 migrations apply` or writes wrangler's history table. `deploy` is the
+one reader: it reads the table an entry's `migrations_table` names, `d1_migrations` by default, and refuses a migration recorded there that forge
+never applied. `migrations_dir` and `migrations_pattern` are read only to check they name forge's files. The two
+`_forge_*` tables and what each one catches are [`DATABASE_MANAGEMENT.md`][dm-4] §4.
 
 **A `--target remote` run needs a real `database_id`.** A missing one, or the placeholder, refuses the run and points at
 [`forge cf sync --commit`][cf-readme] rather than guessing.
@@ -394,10 +416,10 @@ home.
 [dm-7b]: ../../../docs/DATABASE_MANAGEMENT.md#7b-a-generated-fixture-seed
 [dm-8]: ../../../docs/DATABASE_MANAGEMENT.md#8-every-position-is-declared
 [dm-9]: ../../../docs/DATABASE_MANAGEMENT.md#9-the-ci-gate
+[dm-9b]: ../../../docs/DATABASE_MANAGEMENT.md#9b-the-migration-contract
 [sb-1]: ../../../docs/STORAGE_BINDINGS.md#1-storagedb--d1-database-client
 [sc]: ../../../docs/SCHEMA_COMPOSITION.md
 [sc-3]: ../../../docs/SCHEMA_COMPOSITION.md#3-ownership
 [sc-4]: ../../../docs/SCHEMA_COMPOSITION.md#4-what-compose-emits
 [sc-5]: ../../../docs/SCHEMA_COMPOSITION.md#5-renames
 [sc-6]: ../../../docs/SCHEMA_COMPOSITION.md#6-the-stamp-the-snapshot-and-the-two-checks
-[sc-7]: ../../../docs/SCHEMA_COMPOSITION.md#7-custom-migrations-and-the-scratch-cache

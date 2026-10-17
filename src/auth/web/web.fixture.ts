@@ -30,6 +30,7 @@ import type {
   UserStore,
 } from "../types";
 import { defineApproval } from "./approval";
+import { signApprovalCode } from "./guards";
 import { markApproval } from "./identity";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
@@ -108,11 +109,11 @@ export const HOSTILE_TEXT = `Ada & "Bob" <script>'x'`;
 /** `HOSTILE_TEXT` exactly as the renderer emits it in a text node or an attribute value. @internal */
 export const HOSTILE_TEXT_ESCAPED = "Ada &amp; &quot;Bob&quot; &lt;script&gt;&#39;x&#39;";
 
+/** The key ring every web unit signs its session cookie and its approvals with. @internal */
+export const fakeWebRing = await importKeyRing(["3e8f0241998536b82050a9b2cdb21c47ee4215e1bd4ec7a04ec2ad348757f370"]);
+
 /** The session cookie every web unit mounts `sessionMiddleware` with. @internal */
-export const fakeSessionCookie = createSignedCookie("__session", {
-  path: "/",
-  ring: await importKeyRing(["3e8f0241998536b82050a9b2cdb21c47ee4215e1bd4ec7a04ec2ad348757f370"]),
-});
+export const fakeSessionCookie = createSignedCookie("__session", { path: "/", ring: fakeWebRing });
 
 /** Which kinds carry an enrolment row; email-OTP's enrolment is a verified email, so it has none. @internal */
 export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "recovery-code", "totp-app"];
@@ -457,15 +458,22 @@ export function fakeAuthWebOptions(overrides: Partial<AuthWebOptions> = {}): Aut
 /** The administrator code a test approval is configured with. @internal */
 export const FAKE_APPROVAL_CODE = "administrator-code";
 
-/** An approval at `/approve` reading `FAKE_APPROVAL_CODE`, its origin policy admitting `https://app.example`. @internal */
+/** An approval at `/approve` reading `FAKE_APPROVAL_CODE` under `fakeWebRing`, admitting `https://app.example` and every request its limit counts. @internal */
 export function fakeApproval(overrides: Partial<ApprovalOptions> = {}): Approval {
-  return defineApproval({ path: "/approve", code: () => FAKE_APPROVAL_CODE, origin: { allowedOrigins: ["https://app.example"] }, ...overrides });
+  return defineApproval({
+    path: "/approve",
+    code: () => FAKE_APPROVAL_CODE,
+    origin: { allowedOrigins: ["https://app.example"] },
+    rateLimit: { limiter: () => ({ limit: async () => ({ success: true }) }), key: () => "visitor" },
+    ring: () => fakeWebRing,
+    ...overrides,
+  });
 }
 
-/** Middleware stamping every request's session as approved at `at`, which defaults to now. @internal */
-export function approvedSession(at?: number): Middleware {
-  return (context, next) => {
-    markApproval(sessionCtx.get(context), at ?? Date.now());
+/** Middleware stamping every request's session as approved under `code` at `at`, which default to `FAKE_APPROVAL_CODE` and now. @internal */
+export function approvedSession(at?: number, code: string = FAKE_APPROVAL_CODE): Middleware {
+  return async (context, next) => {
+    markApproval(sessionCtx.get(context), { at: at ?? Date.now(), digest: await signApprovalCode(fakeWebRing, code) });
     return next();
   };
 }

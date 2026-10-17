@@ -3,17 +3,17 @@ import { describe, expect, it } from "bun:test";
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
-import { OK, argvHas, composed, fakeDbIo, jsonRows } from "../db.fixture";
+import { OK, argvHas, composed, fakeDbIo, jsonRows, onStdin, schemaModelRows } from "../db.fixture";
 import { appHome } from "../home";
 import { formatComposeHeader } from "../schema/header";
 import type { DbConfig, DbRunContext, FakeDbIo, Place, Spawned } from "../types";
-import { runMigrate } from "./apply";
+import { lintPendingMigrations, runMigrate } from "./apply";
 import { RECORDED_CHECKSUM_SELECT, recordMigrationSql } from "./checksum";
 import { migrationChecksum, migrationsDigest } from "./files";
 import { schemaFingerprint } from "./fingerprint";
 
 const NOW = new Date("2026-09-11T10:00:00Z");
-const MIGRATIONS = "/app/migrations";
+const MIGRATIONS = "/app/config/db/migrations";
 const LOCK = "/app/.forge/db-apply.lock";
 
 const INIT = composed("CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;");
@@ -55,7 +55,7 @@ function context(files: Record<string, string>, place: Place = "local"): { run: 
   return { run, io, out };
 }
 
-const OPTIONS = { dryRun: false, lint: true, allowWarnings: false, allowDrift: false, bookmark: true, rehearse: false };
+const OPTIONS = { dryRun: false, bookmark: true, rehearse: false };
 
 const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table: _forge_migrations" };
 const INVENTORY = [{ type: "table", name: "users", tbl_name: "users", sql: INIT }];
@@ -93,6 +93,8 @@ function wire(io: FakeDbIo, recorded: Record<string, unknown>[] | null = null): 
   );
 }
 
+const targetCalls = (io: FakeDbIo) => io.d1Calls.filter((call) => !call.home.startsWith("scratch:"));
+
 /** What one group of statements did, named as the trace names it. */
 function verbOf(statements: readonly string[], source: string | null): string {
   if (source !== null) return `stage:${source.split("/").at(-1)}`;
@@ -114,12 +116,14 @@ function trace(io: FakeDbIo): string[] {
     if (isWrite(args)) return "write";
     return args.join(" ");
   });
-  return [...spawned, ...io.d1Calls.map((call) => verbOf(call.statements, call.source))];
+  return [...spawned, ...targetCalls(io).map((call) => verbOf(call.statements, call.source))];
 }
 
 const writes = (io: FakeDbIo) => [
   ...io.calls.filter((call) => isWrite(call.slice(1))).map((call) => call.at(-1) ?? ""),
-  ...io.d1Calls.filter((call) => verbOf(call.statements, call.source) === "write").map((call) => call.statements.join("\n")),
+  ...targetCalls(io)
+    .filter((call) => verbOf(call.statements, call.source) === "write")
+    .map((call) => call.statements.join("\n")),
 ];
 
 describe("runMigrate()", () => {
@@ -151,15 +155,7 @@ describe("runMigrate()", () => {
 
     await runMigrate(run, OPTIONS);
 
-    const migration = {
-      name: "0001_init",
-      version: 1,
-      path: "",
-      sha256: migrationChecksum(INIT),
-      sql: INIT,
-      origin: "custom" as const,
-      stamp: null,
-    };
+    const migration = { name: "0001_init", version: 1, path: "", sha256: migrationChecksum(INIT), sql: INIT, stamp: null };
     expect(io.files.get("/app/.forge/scratch/migrate/0001_init.sql")).toBe(`${INIT.trimEnd()}\n${recordMigrationSql(migration, NOW.getTime())}`);
   });
 
@@ -180,10 +176,10 @@ describe("runMigrate()", () => {
 
     await runMigrate(run, OPTIONS);
 
-    const [companions, extra] = writes(io);
+    const [companions] = writes(io);
     expect((companions ?? "").includes("CREATE TABLE IF NOT EXISTS _forge_migrations")).toBe(true);
     expect((companions ?? "").includes("CREATE TABLE IF NOT EXISTS _forge_seed_history")).toBe(true);
-    expect(extra?.startsWith("UPDATE _forge_migrations SET fingerprint")).toBe(true);
+    expect(writes(io).at(-1)?.startsWith("UPDATE _forge_migrations SET fingerprint")).toBe(true);
   });
 
   it("reads the applied names out of _forge_migrations when it exists", async () => {
@@ -216,15 +212,17 @@ describe("runMigrate()", () => {
     expect(io.files.has(LOCK)).toBe(false);
   });
 
-  it("aborts on a lint error before it writes anything", async () => {
-    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: DROP });
-    wire(io);
+  for (const place of ["local", "standby", "remote", "preview"] as const) {
+    it(`refuses a lint finding on ${place} before it writes anything, with no option that passes it`, async () => {
+      const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: DROP }, place);
+      wire(io);
 
-    await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
-      "1 lint error(s) in the migrations:\nerror /app/migrations/0001_init.sql:3 drop-no-if-exists — DROP without IF EXISTS fails the whole migration when the object is already gone — write DROP … IF EXISTS",
-    );
-    expect(trace(io)).toEqual(["read-recorded", "read-inventory"]);
-  });
+      await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+        "1 lint finding(s) in the pending migrations, so nothing was applied:\n/app/config/db/migrations/0001_init.sql:3 drop-no-if-exists — DROP without IF EXISTS fails the whole migration when the object is already gone — write DROP … IF EXISTS",
+      );
+      expect(trace(io)).toEqual(["read-recorded", "read-inventory"]);
+    });
+  }
 
   it("lints only the pending files, so a rule added since cannot abort an apply over an applied one", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: DROP, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
@@ -233,48 +231,37 @@ describe("runMigrate()", () => {
     expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
 
-  it("logs a lint warning against a local database and applies anyway", async () => {
-    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: composed("ALTER TABLE users DROP COLUMN nickname;") });
-    wire(io);
+  const uncomposed: [string, string][] = [
+    ["with no compose stamp", "CREATE TABLE strays (id INTEGER PRIMARY KEY) STRICT;\n"],
+    ["whose body digest fails", `${INIT}SELECT 1;\n`],
+  ];
+  for (const [what, sql] of uncomposed) {
+    it(`refuses a pending migration ${what} before anything is staged`, async () => {
+      const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: sql });
+      wire(io);
 
-    await runMigrate(run, OPTIONS);
+      const refusal = runMigrate(run, OPTIONS);
+      await expect(refusal).rejects.toThrow("app-db (local) has 1 pending migration(s) compose did not write");
+      await expect(refusal).rejects.toThrow(/\/app\/config\/db\/migrations\/0001_init\.sql:\d generated-edited — .*compose/);
+      expect(trace(io).filter((step) => step.startsWith("stage:"))).toEqual([]);
+    });
+  }
 
-    expect(io.logs).toEqual([
-      "warning /app/migrations/0001_init.sql:3 drop-column — DROP COLUMN discards the column's data, and a migration is forward-only",
-    ]);
-    expect(trace(io)).toContain("stage:0001_init.sql");
+  it("applies over an unstamped migration the target already holds, judging it by its recorded checksum", async () => {
+    const raw = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;\n";
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: raw, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
+    wire(io, [{ name: "0001_init", sha256: migrationChecksum(raw), applied_at: 1, fingerprint: null }]);
+
+    expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
 
-  it("refuses a lint warning against a deployed database until --allow-warnings says so", async () => {
-    const sql = composed("ALTER TABLE users DROP COLUMN nickname;");
-    const refused = context({ [`${MIGRATIONS}/0001_init.sql`]: sql }, "remote");
-    wire(refused.io);
-    await expect(runMigrate(refused.run, OPTIONS)).rejects.toThrow(
-      [
-        "1 lint warning(s) against remote. Read them, then pass --allow-warnings to apply anyway:",
-        "warning /app/migrations/0001_init.sql:3 drop-column — DROP COLUMN discards the column's data, and a migration is forward-only",
-      ].join("\n"),
-    );
-
-    const allowed = context({ [`${MIGRATIONS}/0001_init.sql`]: sql }, "remote");
-    wire(allowed.io);
-    expect((await runMigrate(allowed.run, { ...OPTIONS, allowWarnings: true })).applied).toEqual(["0001_init"]);
-  });
-
-  it("does not lint at all when the run said not to", async () => {
-    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: DROP });
+  it("refuses the same unstamped migration on a fresh target, with no exemption for an early file", async () => {
+    const raw = "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;\n";
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: raw, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
     wire(io);
 
-    expect((await runMigrate(run, { ...OPTIONS, lint: false })).applied).toEqual(["0001_init"]);
-    expect(io.logs).toEqual([]);
-  });
-
-  it("refuses unstamped DDL even under --no-lint, since a table no schema.sql declares would read as a deletion later", async () => {
-    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: "CREATE TABLE strays (id INTEGER PRIMARY KEY) STRICT;" });
-    wire(io);
-
-    await expect(runMigrate(run, { ...OPTIONS, lint: false })).rejects.toThrow("custom-ddl");
-    expect(trace(io)).not.toContain("stage:0001_init.sql");
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow("0001_init.sql:1 generated-edited");
+    expect(trace(io).filter((step) => step.startsWith("stage:"))).toEqual([]);
   });
 
   it("refuses to apply over an applied migration whose file is gone, naming it", async () => {
@@ -295,30 +282,37 @@ describe("runMigrate()", () => {
     expect(io.files.has(LOCK)).toBe(false);
   });
 
-  it("refuses a schema fingerprint that moved since the last apply certified it, until --allow-drift says so", async () => {
-    const recorded = [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }];
+  const STALE = [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }];
+  const DRIFT_REFUSAL = (place: Place) =>
+    `app-db (${place}) schema fingerprint ${ACTUAL_FINGERPRINT} is not the stale the last apply certified — either the schema was changed outside the migrations, or an earlier batch part-applied and is being resumed. Inspect with \`forge db migrate status\`, then restore the database to the schema its migrations describe — \`forge db bookmark restore\` on a deployed one, \`forge db reset\` and \`forge db restore\` on a local one — and run again; nothing passes this check.`;
 
-    const refused = context({ [`${MIGRATIONS}/0001_init.sql`]: composed("CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT;") }, "local");
-    wire(refused.io, recorded);
-    await expect(runMigrate(refused.run, OPTIONS)).rejects.toThrow(
-      `app-db (local) schema fingerprint ${ACTUAL_FINGERPRINT} is not the stale the last apply certified — either the schema was changed outside the migrations, or an earlier batch part-applied and is being resumed. Inspect with \`forge db migrate status\`, then pass --allow-drift to apply anyway; the apply certifies the fingerprint again.`,
-    );
-    expect(trace(refused.io)).not.toContain("stage:0001_init.sql");
+  for (const place of ["local", "remote"] as const) {
+    it(`refuses a schema fingerprint that moved since the last apply certified it on ${place}, with a migration pending or not`, async () => {
+      for (const files of [
+        { [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT },
+        { [`${MIGRATIONS}/0001_init.sql`]: INIT },
+      ]) {
+        const { run, io } = context(files, place);
+        wire(io, STALE);
 
-    const allowed = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT }, "local");
-    wire(allowed.io, recorded);
-    expect((await runMigrate(allowed.run, { ...OPTIONS, allowDrift: true })).applied).toEqual(["0002_next"]);
+        await expect(runMigrate(run, OPTIONS)).rejects.toThrow(DRIFT_REFUSAL(place));
+        expect(trace(io).filter((step) => step === "write" || step.startsWith("stage:"))).toEqual([]);
+      }
+    });
+  }
 
-    const matching = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT }, "local");
-    wire(matching.io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]);
-    expect((await runMigrate(matching.run, OPTIONS)).applied).toEqual(["0002_next"]);
+  it("applies over a fingerprint that matches the last one certified", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT });
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]);
+
+    expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
   });
 
-  it("certifies a moved fingerprint under --allow-drift when there is nothing to apply", async () => {
+  it("certifies a fingerprint never certified before when there is nothing to apply", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
-    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: "stale" }]);
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]);
 
-    const outcome = await runMigrate(run, { ...OPTIONS, allowDrift: true });
+    const outcome = await runMigrate(run, OPTIONS);
 
     expect(outcome).toEqual({ applied: [], skipped: [], dryRun: false });
     expect(writes(io).at(-1)).toBe(
@@ -327,18 +321,16 @@ describe("runMigrate()", () => {
     expect(out).toEqual([`certified the schema fingerprint as ${ACTUAL_FINGERPRINT}`, "app-db (local) is up to date — 1 migration(s) applied"]);
   });
 
-  it("does not certify a moved fingerprint under --allow-drift when nothing is applied yet", async () => {
+  it("certifies nothing when no migration is applied, since the fingerprint rides on the last one", async () => {
     const { run, io, out } = context({}, "local");
     io.mkdir(MIGRATIONS);
     wire(io, []);
 
-    const outcome = await runMigrate(run, { ...OPTIONS, allowDrift: true });
+    const outcome = await runMigrate(run, OPTIONS);
 
     expect(outcome).toEqual({ applied: [], skipped: [], dryRun: false });
-    expect(out).toEqual([
-      `${ACTUAL_FINGERPRINT} was not certified — no migration is applied, and the fingerprint rides on the last one`,
-      "app-db (local) is up to date — 0 migration(s) applied",
-    ]);
+    expect(writes(io).filter((sql) => sql.includes("SET fingerprint"))).toEqual([]);
+    expect(out).toEqual(["app-db (local) is up to date — 0 migration(s) applied"]);
   });
 
   it("passes the fingerprint check when none was ever certified", async () => {
@@ -360,10 +352,9 @@ describe("runMigrate()", () => {
     expect(trace(io)).not.toContain("stage:0002_schema.sql");
   });
 
-  it("applies a generated migration stamped against the history on disk, one with no baseline, and a custom one", async () => {
+  it("applies a generated migration stamped against the history on disk, and one with no baseline", async () => {
     const digest = migrationsDigest([{ name: "0001_init", sha256: INIT_SHA }]);
-    // A custom migration moves data and never carries DDL, which `custom-ddl` refuses outright.
-    for (const sql of [stamped(NEXT, digest), stamped(NEXT, ""), "-- custom\n-- forge:custom {}\nINSERT INTO users (id) VALUES (1);\n"]) {
+    for (const sql of [stamped(NEXT, digest), stamped(NEXT, "")]) {
       const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_schema.sql`]: sql });
       wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null }]);
 
@@ -441,7 +432,7 @@ describe("runMigrate()", () => {
       bookmark: "bm-1",
       restoreCommand: "forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'",
     });
-    expect(trace(io)).toEqual(["read-recorded", "read-inventory", "bookmark", "write", "stage:0001_init.sql", "read-inventory", "write"]);
+    expect(trace(io)).toEqual(["read-recorded", "read-inventory", "write", "bookmark", "stage:0001_init.sql", "read-inventory", "write"]);
     expect(out).toEqual(["undo: forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'"]);
   });
 
@@ -483,6 +474,48 @@ describe("runMigrate()", () => {
     ]);
   });
 
+  it("prints no part-migrated line when the companion tables are refused, since the bookmark is not yet taken", async () => {
+    const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
+    io.rules.push(
+      { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
+      { match: isRecordedSelect, reply: NO_TABLE },
+      { match: isInventorySelect, reply: jsonRows(INVENTORY) },
+      { match: isWrite, reply: { code: 1, stdout: "", stderr: "Authentication error [code: 10000]" } },
+      { match: isFileApply, reply: OK },
+    );
+
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+      "the API token cannot write D1 — add Account → D1 → Edit to it, then run again. Nothing was applied.",
+    );
+    expect(trace(io)).toEqual(["read-recorded", "read-inventory", "write"]);
+    expect(out).toEqual([]);
+    expect(io.files.has(LOCK)).toBe(false);
+  });
+
+  it("repeats the undo when a later migration fails after an earlier one applied under the bookmark", async () => {
+    const { run, io, out } = context(
+      { [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT, [`${MIGRATIONS}/0002_next.sql`]: stamped(NEXT, "") },
+      "remote",
+    );
+    io.rules.push(
+      { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
+      { match: isRecordedSelect, reply: NO_TABLE },
+      { match: isInventorySelect, reply: jsonRows(INVENTORY) },
+      { match: isWrite, reply: OK },
+      { match: (a) => isFileApply(a) && (a.at(-1) ?? "").endsWith("0002_next.sql"), reply: { code: 1, stdout: "", stderr: "boom" } },
+      { match: isFileApply, reply: OK },
+    );
+
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+      "loading /app/.forge/scratch/migrate/0002_next.sql against remote (app-db) failed (exit 1)",
+    );
+    expect(trace(io)).toContain("stage:0001_init.sql");
+    expect(out).toEqual([
+      "undo: forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'",
+      "the database may be part-migrated — undo with: forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'",
+    ]);
+  });
+
   it("refuses to start while another apply holds the lock", async () => {
     const held = JSON.stringify({ pid: 4242, startedAt: NOW.getTime() });
     const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [LOCK]: held });
@@ -507,7 +540,7 @@ describe("runMigrate()", () => {
     run.yes = false;
     wire(io);
 
-    await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+    await expect(onStdin(false, "", () => runMigrate(run, OPTIONS))).rejects.toThrow(
       "Refusing to migrate app-db (remote) without a terminal to confirm at: 0001_init.\nMigrations are forward-only; the undo is `forge db bookmark restore`. Pass --yes to say so deliberately.",
     );
   });
@@ -517,7 +550,7 @@ describe("runMigrate()", () => {
     run.yes = false;
     wire(io);
 
-    await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+    await expect(onStdin(false, "", () => runMigrate(run, OPTIONS))).rejects.toThrow(
       "Refusing to migrate app-db (standby) without a terminal to confirm at: 0001_init.\nMigrations are forward-only; the undo is `forge db reset` and `forge db restore`. Pass --yes to say so deliberately.",
     );
   });
@@ -527,7 +560,9 @@ describe("runMigrate()", () => {
     run.yes = false;
     wire(io);
 
-    await expect(runMigrate(run, OPTIONS)).rejects.toThrow("Refusing to migrate app-db (remote) without a terminal to confirm at: 0001_init.");
+    await expect(onStdin(false, "", () => runMigrate(run, OPTIONS))).rejects.toThrow(
+      "Refusing to migrate app-db (remote) without a terminal to confirm at: 0001_init.",
+    );
     expect(writes(io)).toEqual([]);
     expect(trace(io)).not.toContain("stage:0001_init.sql");
     expect(trace(io)).not.toContain("bookmark");
@@ -552,22 +587,12 @@ describe("runMigrate()", () => {
     expect(io.files.has(LOCK)).toBe(false);
   });
 
-  it("refuses --no-lint against a deployed target before anything is read, naming the flag that accepts warnings there", async () => {
-    for (const place of ["remote", "preview"] as const) {
-      const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT }, place);
-      await expect(runMigrate(run, { ...OPTIONS, lint: false })).rejects.toThrow(
-        "--no-lint is local-only; on a deployed target use --allow-warnings to accept warnings.",
-      );
-      expect(io.calls).toEqual([]);
-    }
-  });
-
-  it("refuses a generated migration edited since compose even under --no-lint, which judges only the SQL", async () => {
+  it("refuses a generated migration edited since compose, naming the file", async () => {
     const { run, io } = context({ [`${MIGRATIONS}/0001_schema.sql`]: `${stamped(INIT, "")}SELECT 1;` });
     wire(io);
 
-    await expect(runMigrate(run, { ...OPTIONS, lint: false })).rejects.toThrow(
-      "1 lint error(s) in the migrations:\nerror /app/migrations/0001_schema.sql:2 generated-edited — a generated migration was edited after compose wrote it — edit schema.sql and compose again",
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+      "app-db (local) has 1 pending migration(s) compose did not write, or that were edited after it wrote them, so nothing was applied:\n/app/config/db/migrations/0001_schema.sql:2 generated-edited — a generated migration was edited after compose wrote it — edit schema.sql and compose again",
     );
     expect(trace(io)).not.toContain("stage:0001_schema.sql");
   });
@@ -577,6 +602,199 @@ describe("runMigrate()", () => {
     run.yes = false;
     wire(io);
 
-    expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0001_init"]);
+    expect((await onStdin(false, "", () => runMigrate(run, OPTIONS))).value.applied).toEqual(["0001_init"]);
+  });
+});
+
+const ANALYSIS = "scratch:compose-analysis";
+const APPLIED_INIT = { name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: null };
+const DROP_USERS = "DROP TABLE IF EXISTS users;";
+const REBUILD_USERS = [
+  'CREATE TABLE "_forge_new_users" (id INTEGER PRIMARY KEY) STRICT;',
+  'INSERT INTO "_forge_new_users" (id) SELECT id FROM "users";',
+  'DROP TABLE "users";',
+  'ALTER TABLE "_forge_new_users" RENAME TO "users";',
+].join("\n");
+
+function usersRows(columns: readonly string[]) {
+  return {
+    inventory: [
+      {
+        type: "table",
+        name: "users",
+        tbl_name: "users",
+        sql: `CREATE TABLE users (${columns.map((name) => `${name} ${name === "id" ? "INTEGER PRIMARY KEY" : "TEXT"}`).join(", ")}) STRICT`,
+      },
+    ],
+    columns: columns.map((name, cid) => ({
+      tbl: "users",
+      cid,
+      name,
+      type: name === "id" ? "INTEGER" : "TEXT",
+      notnull: 0,
+      dflt_value: null,
+      pk: name === "id" ? 1 : 0,
+      hidden: 0,
+    })),
+  };
+}
+
+/** Answers the analysis copy's model reads: `before` until a statement holding `marker` is staged into it, `after` from then on. */
+function analysedAs(io: FakeDbIo, marker: string, before: ReturnType<typeof usersRows> | null, after: ReturnType<typeof usersRows> | null): void {
+  const staged = () => io.d1Calls.some((call) => call.home === ANALYSIS && call.statements.some((statement) => statement.includes(marker)));
+  io.d1Rules.unshift({
+    match: (_statement, home) => home.label === ANALYSIS,
+    reply: (statement) => schemaModelRows(statement, (staged() ? after : before) ?? {}),
+  });
+}
+
+const stagedForApply = (io: FakeDbIo) => [...io.files.keys()].filter((path) => path.startsWith("/app/.forge/scratch/migrate/"));
+
+describe("runMigrate() — the migration analysis", () => {
+  const files = (next: string) => ({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: next });
+  const unapproved = "0002_next does not match the lines compose wrote for it on app-db";
+
+  for (const place of ["local", "remote"] as const) {
+    it(`refuses a drop no line approves on ${place}, before any bookmark, staged migration or history row`, async () => {
+      const { run, io } = context(files(composed(DROP_USERS)), place);
+      wire(io, [APPLIED_INIT]);
+      analysedAs(io, DROP_USERS.slice(0, -1), usersRows(["id"]), null);
+
+      await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
+        `${unapproved} (${place}), so nothing was applied:\n  drops table "users" — no \`-- forge:drops table "users"\` line approves it`,
+      );
+      expect(trace(io)).toEqual(["read-recorded", "read-inventory"]);
+      expect(io.calls.some((call) => argvHas(call, "time-travel"))).toBe(false);
+      expect(stagedForApply(io)).toEqual([]);
+    });
+
+    it(`applies the same drop on ${place} once its line approves it`, async () => {
+      const { run, io } = context(files(composed(`-- forge:drops table "users"\n${DROP_USERS}`)), place);
+      wire(io, [APPLIED_INIT]);
+      analysedAs(io, DROP_USERS.slice(0, -1), usersRows(["id"]), null);
+
+      expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
+    });
+  }
+
+  for (const place of ["local", "remote"] as const) {
+    it(`refuses a rebuild that drops a column with no line on ${place}, and applies it with one`, async () => {
+      const refused = context(files(composed(REBUILD_USERS)), place);
+      wire(refused.io, [APPLIED_INIT]);
+      analysedAs(refused.io, "_forge_new_users", usersRows(["id", "nickname"]), usersRows(["id"]));
+      await expect(runMigrate(refused.run, OPTIONS)).rejects.toThrow(
+        `${unapproved} (${place}), so nothing was applied:\n  drops column "users"."nickname" — no \`-- forge:drops column "users"."nickname"\` line approves it`,
+      );
+      expect(trace(refused.io)).toEqual(["read-recorded", "read-inventory"]);
+      expect(stagedForApply(refused.io)).toEqual([]);
+
+      const approved = context(files(composed(`-- forge:drops column "users"."nickname"\n${REBUILD_USERS}`)), place);
+      wire(approved.io, [APPLIED_INIT]);
+      analysedAs(approved.io, "_forge_new_users", usersRows(["id", "nickname"]), usersRows(["id"]));
+      expect((await runMigrate(approved.run, OPTIONS)).applied).toEqual(["0002_next"]);
+    });
+  }
+
+  it("lists each pending file in the deployed confirmation with the approved drops it makes, and a file that makes none by name alone", async () => {
+    const { run, io } = context(
+      { ...files(composed(`-- forge:drops table "users"\n${DROP_USERS}`)), [`${MIGRATIONS}/0003_notes.sql`]: NEXT },
+      "remote",
+    );
+    run.yes = false;
+    wire(io, [APPLIED_INIT]);
+    analysedAs(io, DROP_USERS.slice(0, -1), usersRows(["id"]), null);
+
+    await expect(onStdin(false, "", () => runMigrate(run, OPTIONS))).rejects.toThrow(
+      'Refusing to migrate app-db (remote) without a terminal to confirm at: 0002_next (drops table "users"), 0003_notes.\nMigrations are forward-only; the undo is `forge db bookmark restore`. Pass --yes to say so deliberately.',
+    );
+    expect(stagedForApply(io)).toEqual([]);
+    expect(io.calls.some((call) => argvHas(call, "time-travel"))).toBe(false);
+  });
+
+  it("refuses the same unapproved drop under --dry-run, as the real run would", async () => {
+    const { run, io } = context(files(composed(DROP_USERS)));
+    wire(io, [APPLIED_INIT]);
+    analysedAs(io, DROP_USERS.slice(0, -1), usersRows(["id"]), null);
+
+    await expect(runMigrate(run, { ...OPTIONS, dryRun: true })).rejects.toThrow(`${unapproved} (local), so nothing was applied`);
+  });
+
+  it("builds no copy when nothing is pending", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
+    wire(io, [APPLIED_INIT]);
+
+    await runMigrate(run, OPTIONS);
+
+    expect(io.d1Calls.some((call) => call.home === ANALYSIS)).toBe(false);
+  });
+
+  it("refuses a remote target whose inventory wrangler cannot read, with wrangler's error, building no copy", async () => {
+    const { run, io } = context(files(composed(DROP_USERS)), "remote");
+    io.rules.push(
+      { match: isRecordedSelect, reply: jsonRows([APPLIED_INIT]) },
+      { match: isInventorySelect, reply: { code: 1, stdout: "", stderr: "Authentication error [code: 10000]" } },
+    );
+
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow("Authentication error [code: 10000]");
+    expect(io.d1Calls.some((call) => call.home === ANALYSIS)).toBe(false);
+  });
+
+  it("refuses a local target it cannot open, with the open error, building no copy", async () => {
+    const { run, io } = context(files(composed(DROP_USERS)));
+    io.d1 = () => Promise.reject(new Error("SQLITE_CANTOPEN: unable to open database file"));
+
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow("SQLITE_CANTOPEN");
+    expect(stagedForApply(io)).toEqual([]);
+  });
+});
+
+describe("lintPendingMigrations()", () => {
+  const files = (next: string) => ({ [`${MIGRATIONS}/0001_init.sql`]: composed("DELETE FROM users;"), [`${MIGRATIONS}/0002_next.sql`]: next });
+
+  it("judges only the files the target does not hold, so an applied one a rule now fails is not reported", async () => {
+    const { run, io } = context(files(NEXT));
+    wire(io, [{ ...APPLIED_INIT, sha256: migrationChecksum(composed("DELETE FROM users;")) }]);
+
+    expect(await lintPendingMigrations(run)).toEqual({ pending: ["0002_next"], findings: [], approved: [] });
+  });
+
+  it("returns the lint findings without analysing", async () => {
+    const { run, io } = context(files(composed("UPDATE users SET id = 1;")));
+    wire(io, [APPLIED_INIT]);
+
+    const outcome = await lintPendingMigrations(run);
+
+    expect(outcome.findings.map((finding) => finding.rule)).toEqual(["unbounded-update"]);
+    expect(outcome.approved).toEqual([]);
+    expect(io.d1Calls.some((call) => call.home === ANALYSIS)).toBe(false);
+  });
+
+  it("refuses a drop no line approves", async () => {
+    const { run, io } = context(files(composed(DROP_USERS)));
+    wire(io, [APPLIED_INIT]);
+    analysedAs(io, DROP_USERS.slice(0, -1), usersRows(["id"]), null);
+
+    await expect(lintPendingMigrations(run)).rejects.toThrow("0002_next does not match the lines compose wrote for it on app-db (local)");
+  });
+
+  it("hands back each finding its line approves", async () => {
+    const { run, io } = context(files(composed(`-- forge:drops table "users"\n${DROP_USERS}`)));
+    wire(io, [APPLIED_INIT]);
+    analysedAs(io, DROP_USERS.slice(0, -1), usersRows(["id"]), null);
+
+    expect(await lintPendingMigrations(run)).toEqual({
+      pending: ["0002_next"],
+      findings: [],
+      approved: [{ migration: "0002_next", severity: "destructive", change: { action: "drops", object: { type: "table", name: "users" } } }],
+    });
+  });
+
+  it("runs while another apply holds the lock, since it writes only the analysis scratch", async () => {
+    const held = JSON.stringify({ pid: 4242, startedAt: NOW.getTime() });
+    const { run, io } = context({ ...files(NEXT), [LOCK]: held });
+    wire(io, [APPLIED_INIT]);
+
+    expect((await lintPendingMigrations(run)).pending).toEqual(["0002_next"]);
+    expect(io.files.get(LOCK)).toBe(held);
   });
 });

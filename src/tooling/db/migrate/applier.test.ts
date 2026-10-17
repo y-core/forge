@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import { fakeDbIo } from "../db.fixture";
 import type { DbConfig, DbRunContext, FakeDbIo, Home, Migration } from "../types";
 import { applyMigrations } from "./applier";
-import { FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL } from "./companions";
 
 const NOW = new Date("2026-09-11T10:00:00Z");
 
@@ -20,15 +19,7 @@ const HOME: Home = {
 };
 
 function migration(name: string, sql: string): Migration {
-  return {
-    name,
-    version: Number(name.slice(0, 4)),
-    path: `/app/migrations/${name}.sql`,
-    sha256: `${name}-hash`,
-    sql,
-    origin: "custom",
-    stamp: null,
-  };
+  return { name, version: Number(name.slice(0, 4)), path: `/app/config/db/migrations/${name}.sql`, sha256: `${name}-hash`, sql, stamp: null };
 }
 
 const THREE = [
@@ -58,13 +49,10 @@ describe("applyMigrations()", () => {
     ]);
   });
 
-  it("creates both companion tables before the first migration is loaded when recording", async () => {
+  it("leaves the companion tables to its caller, so a recorded apply sends no DDL of its own", async () => {
     const io = ready(fakeDbIo({}, { now: NOW }));
     await applyMigrations(context(io), HOME, THREE, { label: "migrate", record: true });
-    const declared = [FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL].join("\n");
-    expect(io.d1Calls[0]?.source).toBe(null);
-    expect(io.d1Calls[0]?.statements.every((statement) => declared.includes(statement))).toBe(true);
-    expect(io.d1Calls[1]?.source).toBe("/app/.forge/scratch/migrate/0001_init.sql");
+    expect(io.d1Calls[0]?.source).toBe("/app/.forge/scratch/migrate/0001_init.sql");
   });
 
   it("stages a plain INSERT under each body, which a duplicate name is refused by", async () => {

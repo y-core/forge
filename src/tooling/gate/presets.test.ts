@@ -1,14 +1,18 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "../curate/curate.fixture";
+import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
 import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
 import type { CheckResult, Step } from "./types";
+
+afterAll(() => {
+  rmSync(curateFixtureTemplate(), { recursive: true, force: true });
+});
 
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);
@@ -265,28 +269,40 @@ describe("cloudflareWorkerSteps() — the features row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the db rows", () => {
-  it("emits the digests row on quality and the replay row in full, behind the installed runtime", () => {
-    const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:schema"));
+  it("emits the digests row on quality, and the lint and replay rows in full, behind the installed runtime", () => {
+    const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:"));
 
-    expect(rows.map((step) => [step.label, step.tier])).toEqual([
-      ["db:schema:digests", undefined],
-      ["db:schema", "full"],
+    expect(rows.map((step) => [step.label, step.tier, step.requires?.tool])).toEqual([
+      ["db:schema:digests", undefined, undefined],
+      ["db:lint", "full", "workerd"],
+      ["db:schema", "full", "workerd"],
     ]);
-    expect(rows.at(-1)?.requires?.tool).toBe("workerd");
+  });
+
+  it("runs forge db lint", () => {
+    const step = cloudflareWorkerSteps({ db: true }).find((candidate) => candidate.label === "db:lint");
+    expect(step !== undefined && "cmd" in step ? step.cmd : null).toEqual(["forge", "db", "lint", "--root", process.cwd()]);
+  });
+
+  // A fresh checkout has no local database, so a status row would read every migration as pending and fail;
+  // the replay row is what proves the migrations apply.
+  it("emits no row that reads a local database's status", () => {
+    expect(labelsOf(cloudflareWorkerSteps({ db: true })).filter((label) => label.includes("status"))).toEqual([]);
   });
 
   it("orders the db rows before the browser and workerd rows", () => {
-    expect(labelsOf(cloudflareWorkerSteps({ db: true, browser: true, workerd: true })).slice(-4)).toEqual([
+    expect(labelsOf(cloudflareWorkerSteps({ db: true, browser: true, workerd: true })).slice(-5)).toEqual([
       "db:schema:digests",
+      "db:lint",
       "db:schema",
       "test:browser",
       "test:workerd",
     ]);
   });
 
-  it("omits both rows for an app with no database", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("db:schema:digests");
-    expect(labelsOf(cloudflareWorkerSteps({ db: false }))).not.toContain("db:schema");
+  it("omits every db row for an app with no database", () => {
+    expect(labelsOf(cloudflareWorkerSteps()).filter((label) => label.startsWith("db:"))).toEqual([]);
+    expect(labelsOf(cloudflareWorkerSteps({ db: false })).filter((label) => label.startsWith("db:"))).toEqual([]);
   });
 });
 
@@ -922,6 +938,7 @@ describe("cloudflareWorkerSteps() — watches", () => {
       "validate-contrast",
       "validate-asset-root",
       "db:schema:digests",
+      "db:lint",
       "db:schema",
       "test:browser",
       "test:workerd",

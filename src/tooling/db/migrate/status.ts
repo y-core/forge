@@ -1,6 +1,11 @@
 import { renderTable } from "../../cf/table";
 import type { Colorize } from "../../term/types";
-import type { StatusReport, StatusRow } from "../types";
+import { schemaDrift } from "../drift";
+import { formatTarget } from "../target";
+import type { DbRunContext, StatusReport, StatusRow } from "../types";
+import { readTargetFacts } from "./apply";
+import { compareChecksums } from "./checksum";
+import { readMigrations } from "./files";
 import type { StatusRowsRequest } from "./types";
 
 /** One line per migration on disk, then one per applied name that is no longer there. @internal */
@@ -70,4 +75,26 @@ export function formatStatus(report: StatusReport, style: Colorize): string {
       : renderTable(report.rows.map((row) => ({ Migration: row.name, State: stateCell(row.state, style), Applied: row.appliedAt ?? "" })));
   const notes = anomalies(report);
   return [heading, body, ...(notes.length === 0 ? ["up to date"] : notes)].join("\n");
+}
+
+/** Measures the target database against the migrations on disk. @internal */
+export async function readStatusReport(run: DbRunContext): Promise<StatusReport> {
+  const { config, home, io } = run;
+  const discovered = readMigrations(run);
+  const { recorded, inventory } = await readTargetFacts(io, home);
+  const drift = schemaDrift(recorded, inventory);
+
+  const applied = recorded.map((record) => ({ name: record.appliedName, appliedAt: new Date(record.appliedAt).toISOString() }));
+  const mismatched = compareChecksums(recorded, discovered);
+  const all = statusRows({ discovered, applied, mismatched });
+
+  return {
+    target: formatTarget(config.target),
+    database: home.database,
+    rows: all,
+    pending: all.filter((row) => row.state === "pending").length,
+    checksums: { mismatched },
+    drift: all.filter((row) => row.state === "drift").map((row) => row.name),
+    fingerprint: { recorded: drift.recorded, actual: drift.actual, matches: drift.state !== "mismatch" },
+  };
 }

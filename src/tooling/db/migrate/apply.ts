@@ -1,3 +1,5 @@
+import { D1_WRITE_PERMISSION } from "../../cf/api/endpoints";
+import { wranglerAuthRefused } from "../../cf/api/errors";
 import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
@@ -7,6 +9,7 @@ import { INVENTORY_SELECT, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { ApplyPlan, Bookmark, DbIo, DbRunContext, Home, LintFinding, Migration } from "../types";
 import { executeSql, queryRows, queryRowsIfTable } from "../wrangler";
+import { analyseMigrations, formatMigrationChange } from "./analysis";
 import { applyMigrations } from "./applier";
 import { certifyFingerprintSql, compareChecksums, RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "./checksum";
 import { ensureCompanionTables } from "./companions";
@@ -16,34 +19,31 @@ import { formatLintFinding, lintMigrations } from "./lint";
 import { acquireApplyLock } from "./lock";
 import { planApply } from "./plan";
 import { rehearseMigrations } from "./rehearse";
-import type { MigrateOptions, MigrateOutcome, RehearsalOutcome, TargetFacts } from "./types";
+import type { MigrateOptions, MigrateOutcome, MigrationFinding, PendingLintOutcome, RehearsalOutcome, TargetFacts } from "./types";
 
-/** Aborts on a lint error, and on a warning against a deployed database that was not allowed through. */
-function enforceLint(run: DbRunContext, findings: readonly LintFinding[], allowWarnings: boolean): void {
-  const errors = findings.filter((f) => f.level === "error");
-  if (errors.length > 0) {
-    throw new CliError("invalid-args", `${errors.length} lint error(s) in the migrations:\n${errors.map(formatLintFinding).join("\n")}`);
-  }
-  const warnings = findings.filter((f) => f.level === "warning");
-  if (warnings.length === 0) return;
-  if (isRemotePlace(run.config.target.place) && !allowWarnings) {
-    throw new CliError(
-      "invalid-args",
-      `${warnings.length} lint warning(s) against ${run.config.target.place}. Read them, then pass --allow-warnings to apply anyway:\n${warnings.map(formatLintFinding).join("\n")}`,
-    );
-  }
-  for (const warning of warnings) run.io.log(formatLintFinding(warning));
+/** Aborts on any lint finding: every rule is an error. */
+function enforceLint(run: DbRunContext, findings: readonly LintFinding[]): void {
+  if (findings.length === 0) return;
+  throw new CliError(
+    "invalid-args",
+    `${findings.length} lint finding(s) in the pending migrations, so nothing was applied:\n${findings.map(formatLintFinding).join("\n")}`,
+  );
 }
 
 /** Asks before migrating anything but the developer's own local database. */
-async function confirmApply(run: DbRunContext, plan: ApplyPlan, bookmarked: boolean): Promise<void> {
+async function confirmApply(run: DbRunContext, plan: ApplyPlan, bookmarked: boolean, findings: readonly MigrationFinding[]): Promise<void> {
   const place = run.config.target.place;
   if (place === "local") return;
   const undo = isRemotePlace(place) && bookmarked ? "`forge db bookmark restore`" : "`forge db reset` and `forge db restore`";
   await confirm({
     verb: "migrate",
     what: `${run.home.database} (${place})`,
-    detail: plan.pending.map((m) => m.name).join(", "),
+    detail: plan.pending
+      .map((m) => {
+        const own = findings.filter((f) => f.migration === m.name);
+        return own.length === 0 ? m.name : `${m.name} (${own.map((f) => formatMigrationChange(f.change)).join("; ")})`;
+      })
+      .join(", "),
     consequence: `Migrations are forward-only; the undo is ${undo}.`,
     yes: run.yes,
     print: confirmPrinter(run),
@@ -68,12 +68,22 @@ function refuseEditedHistory(run: DbRunContext, mismatched: readonly string[]): 
   );
 }
 
+/** Refuses a pending migration compose did not write, or one edited since it did, before anything is applied. @internal */
+export function refuseUncomposed(run: DbRunContext, pending: readonly Migration[]): void {
+  const found = lintMigrations(pending).filter((f) => f.rule === "generated-edited");
+  if (found.length === 0) return;
+  throw new CliError(
+    "invalid-args",
+    `${run.home.database} (${run.config.target.place}) has ${found.length} pending migration(s) compose did not write, or that were edited after it wrote them, so nothing was applied:\n${found.map(formatLintFinding).join("\n")}`,
+  );
+}
+
 /** Refuses a pending generated migration whose stamp names a different history than the files before it; one already applied only warns. */
 function checkStamps(run: DbRunContext, discovered: readonly Migration[], pending: readonly Migration[], applied: ReadonlySet<string>): void {
   const pendingNames = new Set(pending.map((m) => m.name));
   const refused: { name: string; detail: string }[] = [];
   discovered.forEach((migration, index) => {
-    if (migration.origin !== "generated" || migration.stamp === null || migration.stamp.baseline === "") return;
+    if (migration.stamp === null || migration.stamp.baseline === "") return;
     const digest = migrationsDigest(discovered.slice(0, index));
     if (digest === migration.stamp.baseline) return;
     const detail = `${migration.name} (stamped ${migration.stamp.baseline.slice(0, 12)}, on disk ${digest.slice(0, 12)})`;
@@ -98,13 +108,20 @@ export async function readTargetFacts(io: DbIo, home: Home): Promise<TargetFacts
   };
 }
 
+/** What `forge db lint` judges: the migrations the target does not hold yet, by the rules and then by the analysis. @internal */
+export async function lintPendingMigrations(run: DbRunContext): Promise<PendingLintOutcome> {
+  const facts = await readTargetFacts(run.io, run.home);
+  const plan = planApply({ discovered: readMigrations(run), applied: facts.recorded.map((record) => record.appliedName) });
+  const pending = plan.pending.map((migration) => migration.name);
+  const findings = lintMigrations(plan.pending);
+  if (findings.length > 0) return { pending, findings, approved: [] };
+  return { pending, findings: [], approved: await analyseMigrations(run, plan.pending, facts.inventory) };
+}
+
 /** Checks the history against what forge recorded and applies every pending migration under a lock, each with its own history row. @public */
 export async function runMigrate(run: DbRunContext, options: MigrateOptions): Promise<MigrateOutcome> {
   const { config, home, io } = run;
   const remote = isRemotePlace(config.target.place);
-  if (!options.lint && remote) {
-    throw new CliError("invalid-args", "--no-lint is local-only; on a deployed target use --allow-warnings to accept warnings.");
-  }
   const say = (line: string) => {
     if (!run.json) run.print(line);
   };
@@ -121,16 +138,13 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     const plan = planApply({ discovered, applied, ...(options.to === undefined ? {} : { to: options.to }) });
     if (plan.drift.length > 0) refuseDrift(run, plan.drift);
     refuseEditedHistory(run, compareChecksums(facts.recorded, discovered));
+    refuseUncomposed(run, plan.pending);
     const drift = schemaDrift(facts.recorded, facts.inventory);
-    const actualFingerprint = drift.actual;
-    refuseSchemaDrift(run, drift, options.allowDrift, "pass --allow-drift to apply anyway; the apply certifies the fingerprint again.");
+    refuseSchemaDrift(run, drift);
     checkStamps(run, discovered, plan.pending, new Set(applied));
 
-    // `generated-edited` and `custom-ddl` judge the file rather than the SQL, so `--no-lint` cannot skip
-    // them: an object no schema.sql declares would reach the database, and a later compose reads that as a deletion.
-    const unskippable = new Set(["generated-edited", "custom-ddl"]);
-    const findings = lintMigrations(plan.pending);
-    enforceLint(run, options.lint ? findings : findings.filter((f) => unskippable.has(f.rule)), options.allowWarnings);
+    enforceLint(run, lintMigrations(plan.pending));
+    const findings = await analyseMigrations(run, plan.pending, facts.inventory);
 
     const skipped = plan.skipped.map((m) => m.name);
     const names = plan.pending.map((m) => m.name);
@@ -155,20 +169,19 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
 
     if (plan.pending.length === 0) {
       await ensureCompanionTables(io, home);
-      if (options.allowDrift && drift.recorded !== actualFingerprint) {
-        // The fingerprint rides on the last applied row, so with none applied there is nothing to certify it on.
-        if (applied.length === 0)
-          say(`${actualFingerprint} was not certified — no migration is applied, and the fingerprint rides on the last one`);
-        else {
-          await executeSql(io, home, certifyFingerprintSql(actualFingerprint));
-          say(`certified the schema fingerprint as ${actualFingerprint}`);
-        }
+      // Never a mismatch: certifying one here would pass the drift refusal with no migration to explain it.
+      if (drift.state === "unrecorded" && applied.length > 0) {
+        await executeSql(io, home, certifyFingerprintSql(drift.actual));
+        say(`certified the schema fingerprint as ${drift.actual}`);
       }
       say(`${home.database} (${config.target.place}) is up to date — ${applied.length} migration(s) applied`);
       return { applied: [], skipped, dryRun: false };
     }
 
-    await confirmApply(run, plan, remote && options.bookmark);
+    await confirmApply(run, plan, remote && options.bookmark, findings);
+    await ensureCompanionTables(io, home).catch((error: unknown) => {
+      throw refusedWrite(error, "Nothing was applied.");
+    });
 
     let bookmark: Bookmark | undefined;
     try {
@@ -191,9 +204,17 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
       };
     } catch (error) {
       if (bookmark !== undefined) say(`the database may be part-migrated — undo with: ${bookmark.restoreCommand}`);
-      throw error;
+      throw refusedWrite(error, "The migrations before the refused write may be applied.");
     }
   } finally {
     release();
   }
+}
+
+/** A wrangler auth refusal restated as the missing token permission, with what the run had applied by then; any other error unchanged. */
+function refusedWrite(error: unknown, applied: string): unknown {
+  if (!(error instanceof CliError) || !wranglerAuthRefused(error.message)) return error;
+  return new CliError("invalid-args", `the API token cannot write D1 — add ${D1_WRITE_PERMISSION} to it, then run again. ${applied}`, {
+    cause: error,
+  });
 }

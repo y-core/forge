@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { isSqlFragment, requireRowsWritten, ROWS_WRITTEN_GUARD, SQL_PLACEHOLDER, sql } from "./sql";
+import { isSqlFragment, requireRowsWritten, ROWS_WRITTEN_GUARD, sql, SQL_PLACEHOLDER } from "./sql";
 
 describe("sql tagged template — injection prevention", () => {
   it("puts interpolated values in params, never in text", () => {

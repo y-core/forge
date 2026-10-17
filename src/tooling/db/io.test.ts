@@ -181,7 +181,7 @@ let holdOpen: ((error: Error) => void) | null = null;
 
 // One registration for the file: `mock.module` re-registered later does not reach an import another
 // module already made.
-void mock.module("wrangler", () => ({ getPlatformProxy: platformProxy, unstable_splitSqlQuery: (sql: string) => [sql] }));
+void mock.module("wrangler", () => ({ getPlatformProxy: platformProxy, unstable_splitSqlQuery: (sql: string) => sql.split(";") }));
 
 function platformProxy(options: Record<string, unknown>) {
   opened.push(options);
@@ -323,6 +323,35 @@ describe("realDbIo() — the local D1 port", () => {
     await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
     );
+  });
+});
+
+describe("realDbIo() — splitD1", () => {
+  it("answers wrangler's split over the home's handle, with blank statements dropped", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    expect(await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);  ;\nDROP VIEW v;")).toEqual(["INSERT INTO t VALUES (1)", "\nDROP VIEW v"]);
+    await io.closeD1(null);
+  });
+
+  it("opens one handle for a split and a batch against the same state", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    const [opened0, batched0] = [opens, batches.length];
+    const [statement = ""] = await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);");
+    await io.d1(localHome(root), [statement]);
+    expect([opens - opened0, batches.slice(batched0)]).toEqual([1, [["INSERT INTO t VALUES (1)"]]]);
+    await io.closeD1(null);
+  });
+
+  it("refuses a deployed home with the words d1 refuses it in", async () => {
+    const root = tempRoot();
+    const io = realDbIo(root);
+    const opened0 = opens;
+    await expect(io.splitD1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, "SELECT 1;")).rejects.toThrow(
+      "remote (app-db) is deployed, and nothing reaches a deployed database in process",
+    );
+    expect(opens - opened0).toBe(0);
   });
 });
 

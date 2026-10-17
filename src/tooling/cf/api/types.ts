@@ -33,6 +33,8 @@ export interface CfD1Database {
   name: string;
   created_at?: string;
   version?: string;
+  jurisdiction?: string;
+  read_replication?: { mode: "auto" | "disabled" };
 }
 
 // R2 Bucket

@@ -2,7 +2,7 @@ import type { SchemaHealthState } from "../../storage/db/types";
 import { v } from "../../validation/mod";
 import type { WranglerConfig } from "../cf/types";
 import type { Colorize } from "../term/types";
-import type { ComposeStamp, MigrationOrigin } from "./schema/types";
+import type { ComposeStamp } from "./schema/types";
 
 export type { SchemaHealthState, SchemaObject } from "../../storage/db/types";
 
@@ -48,6 +48,8 @@ export interface DbIo {
   spawn(cmd: string, args: readonly string[], opts: { cwd: string }): Spawned;
   /** Statements against a local home's own state, in one transaction, each answered with its own rows. */
   d1(home: Home, sql: readonly string[]): Promise<Record<string, unknown>[][]>;
+  /** The statements a local home's own handle cuts `sql` into — the cut `d1` makes before it runs them. */
+  splitD1(home: Home, sql: string): Promise<string[]>;
   /** Releases the handle over `home`'s state — which anything about to delete or to spawn against that state must do first — or every handle when `home` is null. */
   closeD1(home: Home | null): Promise<void>;
   exists(path: string): boolean;
@@ -106,9 +108,7 @@ export interface Migration {
   readonly path: string;
   readonly sha256: string;
   readonly sql: string;
-  /** Composed from a desired state, or hand-written. */
-  readonly origin: MigrationOrigin;
-  /** The compose stamp, for a generated migration. */
+  /** The compose stamp, or null when the file carries none — which every verb refuses while it is pending. */
   readonly stamp: ComposeStamp | null;
 }
 
@@ -119,10 +119,7 @@ export interface MigrationFile {
   readonly sql: string;
 }
 
-/** How serious a lint finding is: an `error` aborts an apply, a `warning` aborts a remote apply unless allowed. @public */
-export type LintLevel = "error" | "warning";
-
-/** The lint rules, each named so `--no-lint` output and the docs can refer to one. @public */
+/** The lint rules, each named so a finding and the docs can refer to one. @public */
 export type LintRule =
   | "drop-no-if-exists"
   | "unbounded-update"
@@ -135,13 +132,9 @@ export type LintRule =
   | "add-column-non-constant-default"
   | "add-column-constrained"
   | "alter-column-unsupported"
-  | "drop-column"
-  | "rename"
-  | "unique-index-on-existing-table"
-  | "table-rebuild"
-  | "pragma-ignored"
+  | "pragma-unsupported"
+  | "table-too-wide"
   | "generated-edited"
-  | "custom-ddl"
   | "seed-insert-not-idempotent";
 
 /** One statement as the linter sees it: masked for matching, raw for a name, and where it starts. @internal */
@@ -154,7 +147,6 @@ export interface SqlStatement {
 /** One thing the linter has to say about a migration. @public */
 export interface LintFinding {
   readonly rule: LintRule;
-  readonly level: LintLevel;
   readonly file: string;
   readonly line: number;
   readonly message: string;
@@ -196,6 +188,9 @@ export interface ColumnInfo {
   readonly dfltValue: string | null;
   readonly pk: number;
 }
+
+/** The affinity SQLite gives a column, by its declared-type rules. @internal */
+export type SqlAffinity = "INTEGER" | "TEXT" | "BLOB" | "REAL" | "NUMERIC";
 
 /** Who owns a table: the app, the toolchain, or the engine. @internal */
 export type TableClass = "app" | "managed" | "system";
@@ -272,7 +267,6 @@ export interface StandbyResetOptions {
   /** Seed just this directory, instead of every one `config/db.ts` names. */
   readonly dir?: string | undefined;
   readonly seed: boolean;
-  readonly lint: boolean;
 }
 
 /** What one `forge db standby reset` run rebuilt, by migration and seed name. @public */
@@ -312,15 +306,18 @@ export interface DeclaredPath {
   readonly declared: string;
 }
 
+/** A schema forge ships, which `forgeSchema` names for `DbHostConfig.schemas`. @public */
+export type ForgeSchemaName = "auth";
+
 /** The `config/db.ts` default export: every position `forge db` reads, each named on purpose. @public */
 export interface DbHostConfig {
   /** Every desired-state file or directory the app composes from, in load order — its own and each library's. Nothing is read that is not named here. */
   readonly schemas?: readonly string[];
   /** Every seeds directory, in run order. */
   readonly seeds?: readonly string[];
-  /** Where the migrations live, relative to the root. Defaults to `migrations`. */
+  /** Where the migrations live, relative to the root. Defaults to `config/db/migrations`. */
   readonly migrations?: string;
-  /** Where the composed snapshot lives. Defaults to `schema.snapshot.json` under the root. */
+  /** Where the composed snapshot lives. Defaults to `config/db/schema.snapshot.json` under the root. */
   readonly snapshot?: string;
   /** Where backups go, relative to the root. Defaults to `.forge/backups`. */
   readonly backupsDir?: string;
@@ -349,6 +346,10 @@ export interface BackupManifest {
   readonly createdAt: string;
   readonly label: string | null;
   readonly dumper: { readonly tool: string; readonly version: string };
+  /** How the rows were taken: read through queries, or exported by `wrangler d1 export`. */
+  readonly via: BackupVia;
+  /** The Time Travel bookmark of a deployed database, captured before an export; `null` for a local one and a read. */
+  readonly bookmark: string | null;
   readonly database: { readonly name: string; readonly id: string | null; readonly target: string; readonly persistPath: string | null };
   readonly schema: SchemaFacts;
   /** How the source stood against its own certified fingerprint when this was taken; `mismatch` means every digest here describes a schema no migration built. */
@@ -370,6 +371,9 @@ export interface SchemaFacts {
   readonly digest: string;
   readonly migrationsDigest: string;
 }
+
+/** How `forge db backup` takes the rows: `read` queries them in pages, `export` has `wrangler d1 export` write them, for a database too large to read. @public */
+export type BackupVia = "read" | "export";
 
 /** `full` loads a whole database; `migrations` applies the migrations dir and then loads data into it. @public */
 export type RestoreRoute = "full" | "migrations";
@@ -411,6 +415,21 @@ export interface Bookmark {
   readonly bookmark: string;
   /** The command that restores the database to this point. */
   readonly restoreCommand: string;
+}
+
+/** Options for `runDeploy`: `checkOnly` stops after the checks, applying and deploying nothing. @public */
+export interface DeployOptions {
+  readonly checkOnly: boolean;
+}
+
+/** What a deploy did: the migrations it found pending and applied, the undo it captured, and whether `wrangler deploy` ran. @public */
+export interface DeployOutcome {
+  readonly target: string;
+  readonly database: string;
+  readonly pending: readonly string[];
+  readonly applied: readonly string[];
+  readonly bookmark?: Bookmark;
+  readonly deployed: boolean;
 }
 
 /** What a verb runs with: the resolved config and home, the I/O port, and how to print. @public */
@@ -464,10 +483,4 @@ export interface FakeDbIo extends DbIo {
   d1Rules: FakeD1Rule[];
   /** Persist paths in close order, which is what pins the obligations to close before a delete and before a spawn. */
   closed: string[];
-}
-
-/** How often a failure that clears on its own is attempted, and the wait before the first retry, which doubles after each. @internal */
-export interface BackoffPolicy {
-  readonly attempts: number;
-  readonly firstDelayMs: number;
 }

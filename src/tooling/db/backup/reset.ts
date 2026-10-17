@@ -2,7 +2,6 @@ import { join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { sharedD1Databases } from "../config";
-import { sha256 } from "../digest";
 import { persistRoot } from "../home";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
@@ -10,7 +9,7 @@ import type { BackupManifest, DbRunContext } from "../types";
 import { queryBatches, queryRows } from "../wrangler";
 import { classifyTable, isVerifiedBackupOf, validateManifest, verifyBackupArtifact } from "./artifact";
 import { resolveBackupsDir } from "./backup";
-import { describeTables, readWholeTable } from "./read";
+import { describeTables, digestWholeTable } from "./read";
 import { readBackupManifest } from "./restore";
 import type { ResetOptions, ResetOutcome, ResetPlan } from "./types";
 
@@ -125,9 +124,9 @@ export async function prepareReset(run: DbRunContext, options: ResetOptions): Pr
     if (stale.length === 0) {
       const digests = new Map(selected.manifest.tables.map((table) => [table.name, table.digest]));
       for (const table of await describeTables(io, home, [...counts.keys()].sort())) {
-        const read = await readWholeTable(io, home, table);
-        if (digests.get(table.name) !== sha256(read.rows.map((row) => row.canonical).join("\n"))) {
-          stale.push(`${table.name}: ${read.rows.length} row(s) in both, and their contents differ`);
+        const read = await digestWholeTable(io, home, table);
+        if (digests.get(table.name) !== read.digest) {
+          stale.push(`${table.name}: ${read.rows} row(s) in both, and their contents differ`);
         }
       }
     }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
 import { fakeDbIo } from "./db.fixture";
-import { appHome, clearLocalState, resolveHome, scratchHome, standbyHome, synthesizeHome } from "./home";
+import { appHome, clearLocalState, resolveHome, scratchHome, standbyHome, standbyStatePath, synthesizeHome } from "./home";
 import type { D1Entry, DbConfig } from "./types";
 
 const ENTRY: D1Entry = { binding: "DB", databaseName: "app-db", databaseId: null, previewDatabaseId: null };
@@ -158,6 +158,15 @@ describe("standbyHome()", () => {
     const io = fakeDbIo();
     const home = standbyHome(dbConfig({ target: { place: "standby", database: "rehearsal" } }), io);
     expect([home.database, home.dir]).toEqual(["rehearsal", "/app/.forge/standby/rehearsal"]);
+  });
+});
+
+describe("standbyStatePath()", () => {
+  it("is the persist directory the standby home writes to, without writing anything", () => {
+    const io = fakeDbIo();
+    const config = dbConfig({ target: { place: "standby", database: null } });
+    expect(standbyStatePath(config)).toBe("/app/.forge/standby/app-db-standby/.wrangler/state");
+    expect(standbyHome(config, io).persistTo).toBe(standbyStatePath(config));
   });
 });
 

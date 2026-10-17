@@ -36,9 +36,9 @@ function waitFor(ms: number): string {
 // "If another code was due" and never "we sent one": a page that reported the difference would be
 // telling an anonymous visitor whether the address it just named has an account here.
 /** What the page says after a resend — the policy, never what became of this particular request. */
-function resentNotice(reissueAfterMs: number | undefined): string {
+function resentNotice(resendWaitMs: number | undefined): string {
   const asked = "If another code was due, it is on its way — check your inbox.";
-  return reissueAfterMs === undefined ? asked : `${asked} You can ask again in ${waitFor(reissueAfterMs)}.`;
+  return resendWaitMs === undefined ? asked : `${asked} You can ask again in ${waitFor(resendWaitMs)}.`;
 }
 
 /** How the page names the factor it is asking the visitor to present. */
@@ -71,7 +71,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
   csrfToken,
   resendToken,
   resent,
-  reissueAfterMs,
+  resendWaitMs,
   csrfHeader,
   email,
   fieldError,
@@ -162,7 +162,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
             {!resent ? null : (
               <Alert tone='info' data-ref='verify-resent'>
                 <AppIcon name='mail' class='size-4' />
-                <Alert.Description>{resentNotice(reissueAfterMs)}</Alert.Description>
+                <Alert.Description>{resentNotice(resendWaitMs)}</Alert.Description>
               </Alert>
             )}
             <Form
@@ -173,7 +173,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
               {resendTurnstile === undefined ? null : (
                 <Turnstile siteKey={resendTurnstile.siteKey} action={resendTurnstile.action} challenge='submit' appearance='interaction-only' />
               )}
-              <Button type='submit' tone='neutral' appearance='ghost' class='w-full' disabled={resent} data-ref='verify-resend'>
+              <Button type='submit' tone='neutral' appearance='ghost' class='w-full' disabled={resendWaitMs !== undefined} data-ref='verify-resend'>
                 <AppIcon name='mail' class='size-4' />
                 Send another code
               </Button>

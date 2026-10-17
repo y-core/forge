@@ -26,10 +26,17 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
       },
       "no-verify": { type: "boolean" as const, description: "Skip the rebuild proof. The artifact records that nothing about it was proven" },
       label: { type: "string" as const, description: "A note recorded in the manifest, for saying what this backup was taken before" },
+      via: {
+        type: "string" as const,
+        description:
+          "How the rows are taken: read (default) queries them; export has wrangler d1 export write them, for a database too large to read",
+      },
     },
     run: async (_args, flags, ctx?: CliContext) => {
       return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
-        const outcome = await runBackup(run, { out: flags.out ?? null, verify: flags["no-verify"] !== true, label: flags.label ?? null });
+        const via = flags.via ?? "read";
+        if (via !== "read" && via !== "export") throw new CliError("invalid-args", `--via takes read or export, not ${via}`);
+        const outcome = await runBackup(run, { out: flags.out ?? null, verify: flags["no-verify"] !== true, label: flags.label ?? null, via });
         if (run.json) run.print(JSON.stringify({ directory: outcome.directory, manifest: outcome.manifest }));
         else {
           run.print(`✓ ${outcome.directory}`);

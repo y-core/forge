@@ -314,11 +314,11 @@ export type VerifyViewProps = AuthViewChrome & {
   /** The token for `resendPath`, required whenever that path is given. */
   readonly resendToken?: string | undefined;
   // Deliberately "a code was asked for", never "a code was sent": only a registered address can be
-  // inside the reissue window, so reporting what actually happened would bin an address list.
+  // inside the reissue window, so reporting what an admitted resend did would bin an address list.
   /** Whether this render follows a press of the resend control. */
   readonly resent?: boolean | undefined;
-  /** The wait the factor enforces between codes, read off the factor rather than named in copy. */
-  readonly reissueAfterMs?: number | undefined;
+  /** How long until another code can be asked for, absent once the factor's reissue window has passed. */
+  readonly resendWaitMs?: number | undefined;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   /** The address the code went to, so the visitor can see they are watching the right inbox. */

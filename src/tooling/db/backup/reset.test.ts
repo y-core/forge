@@ -87,6 +87,8 @@ function artifactFiles(directory: string): Record<string, string> {
 function manifest(database: string, over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
+    via: "read" as const,
+    bookmark: null,
     drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
@@ -331,12 +333,17 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
         env: {
           staging: {
             d1_databases: [
-              { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "migrations" },
+              {
+                binding: "DB",
+                database_name: "app-db",
+                database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+                migrations_dir: "config/db/migrations",
+              },
               {
                 binding: "REPORTS",
                 database_name: "reports-db",
                 database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-                migrations_dir: "migrations",
+                migrations_dir: "config/db/migrations",
               },
             ],
           },
@@ -361,7 +368,12 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
         env: {
           staging: {
             d1_databases: [
-              { binding: "DB", database_name: "app-db-staging", database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "migrations" },
+              {
+                binding: "DB",
+                database_name: "app-db-staging",
+                database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+                migrations_dir: "config/db/migrations",
+              },
             ],
           },
         },

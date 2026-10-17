@@ -10,7 +10,7 @@ import { v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
 import type { AuthFactorService, RecoveryCodeFactorService, TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
-import { authFreshStepUpWindow, authStepUpOwed, authStepUpWindow } from "./guards";
+import { approvalCtx, authFreshStepUpWindow, authStepUpOwed, authStepUpWindow } from "./guards";
 import { authCtx } from "./identity";
 import {
   authNow,
@@ -275,6 +275,14 @@ async function resolveSignup<Bindings>(
   });
 }
 
+const RESENT_STAMP = /^\d{1,15}$/;
+
+function resendWaitFor(stamp: string | null, reissueAfterMs: number | null, now: number): number | undefined {
+  if (reissueAfterMs === null || stamp === null || !RESENT_STAMP.test(stamp)) return undefined;
+  const remaining = Math.min(Number(stamp), now) + reissueAfterMs - now;
+  return remaining > 0 ? remaining : undefined;
+}
+
 async function resolveVerify<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -290,6 +298,7 @@ async function resolveVerify<Bindings>(
   const usesPasskey = demand.factor === "passkey";
   const resendPath = demand.factor === "email-otp" ? auth.verify.resend() : undefined;
   const reissueAfterMs = services.factors.find(demand.factor)?.reissueAfterMs ?? null;
+  const resendWaitMs = resendWaitFor(c.url.searchParams.get(AUTH_RESENT_PARAM), reissueAfterMs, authNow(options));
   const turnstile = await authTurnstileWidget(c, options, "verify");
   const resendTurnstile = resendPath === undefined ? undefined : await authTurnstileWidget(c, options, "resend");
   // Always the step-up pair, including for the second half of a sign-in: a passkey never starts one.
@@ -318,7 +327,7 @@ async function resolveVerify<Bindings>(
     ...(resendPath === undefined ? {} : { resendToken: await mintCsrf(c, resendPath) }),
     resent: c.url.searchParams.has(AUTH_RESENT_PARAM),
     // The factor's own number, so the page cannot promise a wait it does not enforce.
-    ...(reissueAfterMs === null ? {} : { reissueAfterMs }),
+    ...(resendWaitMs === undefined ? {} : { resendWaitMs }),
     ...authCsrfHeader(c),
     email: state.email,
     fieldError: state.fieldError,
@@ -772,17 +781,17 @@ export const AUTH_VIEW_GUARDS = {
   adminElevate: ["require-auth", "require-enrolment", "require-fresh-step-up", "require-approval"],
 } as const satisfies { readonly [Name in AuthViewName]: readonly AuthGuardName[] };
 
-// `require-auth` and `require-admin` are observable here and re-checked rather than trusted; the enrolment
-// pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.
+// `require-auth`, `require-admin` and `require-approval` are observable here and re-checked rather than trusted; the
+// enrolment pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.
 function refuseUnguarded<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   guards: readonly AuthGuardName[],
 ): Result<AuthIdentity | null, Response> {
   const viewer = resolveAuthViewer(c);
-  if (!guards.includes("require-auth")) return ok(viewer);
-  if (viewer === null) return err(createAuthRedirect(c, options.paths.auth.signin(), 302));
-  if (guards.includes("require-admin") && !viewer.isAdmin) return err(forbidden());
+  if (guards.includes("require-auth") && viewer === null) return err(createAuthRedirect(c, options.paths.auth.signin(), 302));
+  if (guards.includes("require-admin") && viewer?.isAdmin !== true) return err(forbidden());
+  if (guards.includes("require-approval") && approvalCtx.getOptional(c) === undefined) return err(notFound());
   return ok(viewer);
 }
 

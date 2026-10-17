@@ -10,14 +10,17 @@ import {
   tableSqlAsked,
   tableSqlReply,
 } from "../db.fixture";
+import { sha256 } from "../digest";
 import { toColumnInfo, toSchemaObjects } from "../sql";
 import type { FakeDbIo, Home } from "../types";
 import { SqlReal } from "./artifact";
 import {
+  compareHomes,
   compareTable,
   dependencyOrder,
   describeTable,
   describeTables,
+  digestWholeTable,
   discoverAppTables,
   keyCollation,
   readColumns,
@@ -761,4 +764,81 @@ describe("compareTable()", () => {
 
     expect(comparison.divergences).toEqual([{ kind: "value", key: ["S:2:t0"], column: "lane", source: "S:4:todo", target: "S:5:doing" }]);
   });
+});
+
+describe("digestWholeTable()", () => {
+  const cases = [
+    { name: "across two pages", rows: taskRows(300) },
+    { name: "for an empty table", rows: [] },
+  ];
+
+  for (const { name, rows } of cases) {
+    it(`gives the row count and the digest of a whole read's canonical rows joined by newlines, ${name}`, async () => {
+      const io = fakeDatabase({ tasks: rows });
+      const read = await readWholeTable(io, HOME, TASKS);
+
+      expect(await digestWholeTable(io, HOME, TASKS)).toEqual({
+        rows: rows.length,
+        digest: sha256(read.rows.map((row) => row.canonical).join("\n")),
+      });
+    });
+  }
+});
+
+const SCRATCH: Home = { ...HOME, database: "app-db-scratch" };
+
+function twoHomes(source: Record<string, unknown>[], target: Record<string, unknown>[]): FakeDbIo {
+  const io = fakeDbIo();
+  io.d1Rules.push({
+    match: () => true,
+    reply: (statement, home) => keysetPageReply(statement, { tasks: home.database === SCRATCH.database ? target : source }) ?? [],
+  });
+  return io;
+}
+
+describe("compareHomes()", () => {
+  const cases = [
+    {
+      name: "finds nothing between two equal tables of two pages",
+      target: taskRows(300),
+      expected: { divergent: 0, divergences: [], targetRows: 300 },
+    },
+    {
+      name: "names a value that differs on the second page",
+      target: taskRows(300).map((row) => (row.uuid === "t0290" ? { ...row, lane: "doing" } : row)),
+      expected: {
+        divergent: 1,
+        divergences: [{ kind: "value", key: ["S:5:t0290"], column: "lane", source: "S:4:todo", target: "S:5:doing" }],
+        targetRows: 300,
+      },
+    },
+    {
+      name: "pairs rows by key when a row missing from the first page shifts every later page",
+      target: taskRows(300).filter((row) => row.uuid !== "t0010"),
+      expected: { divergent: 1, divergences: [{ kind: "only-in-source", key: ["S:5:t0010"] }], targetRows: 299 },
+    },
+    {
+      name: "names the rows only the target holds once the source runs out",
+      target: taskRows(302),
+      expected: {
+        divergent: 2,
+        divergences: [
+          { kind: "only-in-target", key: ["S:5:t0300"] },
+          { kind: "only-in-target", key: ["S:5:t0301"] },
+        ],
+        targetRows: 302,
+      },
+    },
+  ];
+
+  for (const { name, target, expected } of cases) {
+    it(name, async () => {
+      expect(await compareHomes(twoHomes(taskRows(300), target), TASKS, HOME, SCRATCH)).toEqual({
+        table: "tasks",
+        truncated: false,
+        sourceRows: 300,
+        ...expected,
+      });
+    });
+  }
 });

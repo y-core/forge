@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { Forge } from "../../app/forge-app";
 import type { AppContext } from "../../context/types";
 import { mapHandler } from "../../testing/route";
-import { resolveD1Client, validateD1Binding } from "./bindings";
+import { d1BindingSpec, resolveD1Client, validateD1Binding } from "./bindings";
 import type { D1BindingOptions, D1Database, D1DatabaseLike, D1PreparedStatement, D1Result } from "./types";
 
 const stubDb: D1Database = {
@@ -80,11 +80,16 @@ interface CfD1PreparedStatement {
   all<T = Record<string, unknown>>(): Promise<CfD1Result<T>>;
   raw<T = unknown[]>(options?: { columnNames?: boolean }): Promise<T[]>;
 }
+interface CfD1DatabaseSession {
+  prepare(query: string): CfD1PreparedStatement;
+  batch<T = unknown>(statements: CfD1PreparedStatement[]): Promise<CfD1Result<T>[]>;
+  getBookmark(): string | null;
+}
 interface CfD1Database {
   prepare(query: string): CfD1PreparedStatement;
   batch<T = unknown>(statements: CfD1PreparedStatement[]): Promise<CfD1Result<T>[]>;
   exec(query: string): Promise<{ count: number; duration: number }>;
-  withSession(constraintOrBookmark?: string): unknown;
+  withSession(constraintOrBookmark?: string): CfD1DatabaseSession;
   dump(): Promise<ArrayBuffer>;
 }
 
@@ -134,5 +139,11 @@ describe("validateD1Binding", () => {
     mapHandler(app, "GET", "/", () => new Response("ok"));
     const res = await app.request("/", {}, { DB: { batch: () => Promise.resolve([]) } } as never);
     expect(res.status).toBe(500);
+  });
+});
+
+describe("d1BindingSpec", () => {
+  it("holds the named binding to carrying prepare", () => {
+    expect(d1BindingSpec("DB")).toEqual({ name: "DB", methods: ["prepare"], label: "a D1 database binding" });
   });
 });

@@ -31,6 +31,13 @@ export function d1Entries(config: WranglerConfig, env: string | null, configPath
   return checkD1Entries(config.d1_databases ?? [], configPath, "d1_databases");
 }
 
+/** The table wrangler records its own applied migrations in for the run's entry: its `migrations_table`, else `d1_migrations`. @internal */
+export function wranglerHistoryTable(config: DbConfig): string {
+  return (
+    d1Entries(config.config, config.env, config.configPath).find((c) => c.binding === config.entry.binding)?.migrations_table ?? "d1_migrations"
+  );
+}
+
 /** Every distinct database name the config declares across the top level and every environment — what one local state directory holds. @internal */
 export function sharedD1Databases(config: WranglerConfig): string[] {
   const envs = (config.env ?? {}) as Record<string, { d1_databases?: D1DatabaseConfig[] } | undefined>;

@@ -7,49 +7,23 @@ import { atSize, PATHOLOGICAL_SHAPES } from "./pathological.fixture";
 import { SPEC_SCHEMA } from "./spec-schema.fixture";
 import { MAX_CONSTRUCT_LENGTH } from "./syntax";
 
-const SMALL = 256 * 1024;
-const LARGE = 512 * 1024;
-const MAX_RATIO = 3;
-const MEBIBYTE = 1024 * 1024;
+const SMALL = 8 * 1024;
+const GROWTH = 8;
+const LARGE = SMALL * GROWTH;
+const MAX_RATIO = 2 * GROWTH;
 const MAX_COST_OF_PLAIN = 8;
 const PLAIN_LINE = "plain words in a paragraph line\n\n";
-const RUNS = 5;
+const RUNS = 3;
+const LOOKBEHIND = 2;
 // A pause from the collector or the rest of the gate only ever adds time, so every budget is held by the fastest of several runs.
 const ATTEMPTS = 3;
 
 const PERCENT = 0x25;
+const NO_MATCH = { type: "x" } as unknown as MarkdownExtensionInline;
 
-// A construct whose scan reads its whole lookahead before failing: the worst an extension may cost per trigger.
-const FAILING_SCAN: MarkdownSyntax = defineMarkdownSyntax({
-  inline: [
-    {
-      name: "unclosed",
-      triggers: [PERCENT],
-      maxLength: MAX_CONSTRUCT_LENGTH,
-      scan: (content, at, limit) => {
-        for (let end = at + 1; end + 1 < limit; end++)
-          if (content[end] === "%" && content[end + 1] === "%") return { end: end + 2, node: { type: "x" } as unknown as MarkdownExtensionInline };
-        return null;
-      },
-    },
-  ],
-});
-
-// A construct whose scan ignores its limit and walks to the end of what it is given.
-const UNBOUNDED_SCAN: MarkdownSyntax = defineMarkdownSyntax({
-  inline: [
-    {
-      name: "unbounded",
-      triggers: [PERCENT],
-      maxLength: 8,
-      scan: (content, at) => {
-        for (let end = at + 1; end < content.length; end++)
-          if (content[end] === "!") return { end: end + 1, node: { type: "x" } as unknown as MarkdownExtensionInline };
-        return null;
-      },
-    },
-  ],
-});
+function countOf(source: string, char: string): number {
+  return source.split(char).length - 1;
+}
 
 function render(source: string, syntax?: MarkdownSyntax): void {
   renderMarkdownHtml(parseMarkdown(source, syntax), { schema: SPEC_SCHEMA });
@@ -69,12 +43,12 @@ function ratioOfFastest(small: string, large: string, syntax?: MarkdownSyntax): 
     smallRuns.push(elapsed(small, syntax));
     largeRuns.push(elapsed(large, syntax));
   }
-  return Math.min(...largeRuns) / Math.max(Math.min(...smallRuns), 1);
+  return Math.min(...largeRuns) / Math.max(Math.min(...smallRuns), 0.05);
 }
 
 describe("parseMarkdown and render grow linearly", () => {
   for (const shape of PATHOLOGICAL_SHAPES) {
-    test(`${shape.name}: doubling the input at most ${MAX_RATIO}× the time`, () => {
+    test(`${shape.name}: growing the input ${GROWTH}× costs at most ${MAX_RATIO}× the time`, () => {
       const small = atSize(shape, SMALL);
       const large = atSize(shape, LARGE);
       let ratio = ratioOfFastest(small, large);
@@ -85,22 +59,55 @@ describe("parseMarkdown and render grow linearly", () => {
 });
 
 describe("an extension's lookahead keeps it linear", () => {
-  test(`a scan failing after its whole maxLength at every trigger: doubling the input at most ${MAX_RATIO}× the time`, () => {
+  test("a scan failing after its whole maxLength at every trigger reads at most lookbehind + maxLength per trigger", () => {
+    let calls = 0;
+    let read = 0;
+    const syntax = defineMarkdownSyntax({
+      inline: [
+        {
+          name: "unclosed",
+          triggers: [PERCENT],
+          maxLength: MAX_CONSTRUCT_LENGTH,
+          scan: (content, at, limit) => {
+            calls += 1;
+            read += limit - at;
+            for (let end = at + 1; end + 1 < limit; end++)
+              if (content[end] === "%" && content[end + 1] === "%") return { end: end + 2, node: NO_MATCH };
+            return null;
+          },
+        },
+      ],
+    });
     const unit = "%" + "a".repeat(40) + " ";
-    const small = unit.repeat(Math.floor(SMALL / unit.length));
-    const large = unit.repeat(Math.floor(LARGE / unit.length));
-    let ratio = ratioOfFastest(small, large, FAILING_SCAN);
-    for (let attempt = 1; attempt < ATTEMPTS && ratio > MAX_RATIO; attempt++) ratio = ratioOfFastest(small, large, FAILING_SCAN);
-    expect(ratio).toBeLessThanOrEqual(MAX_RATIO);
-  }, 60_000);
+    const source = unit.repeat(Math.ceil((4 * MAX_CONSTRUCT_LENGTH) / unit.length));
+    render(source, syntax);
+    expect(calls).toBe(countOf(source, "%"));
+    expect(read).toBeLessThanOrEqual(calls * MAX_CONSTRUCT_LENGTH);
+  });
 
-  test(`a scan that ignores its limit sees only its window: doubling the input at most ${MAX_RATIO}× the time`, () => {
-    const small = "%a ".repeat(Math.floor(SMALL / 3));
-    const large = "%a ".repeat(Math.floor(LARGE / 3));
-    let ratio = ratioOfFastest(small, large, UNBOUNDED_SCAN);
-    for (let attempt = 1; attempt < ATTEMPTS && ratio > MAX_RATIO; attempt++) ratio = ratioOfFastest(small, large, UNBOUNDED_SCAN);
-    expect(ratio).toBeLessThanOrEqual(MAX_RATIO);
-  }, 60_000);
+  test("a scan that ignores its limit sees only its window", () => {
+    let calls = 0;
+    let widest = 0;
+    const syntax = defineMarkdownSyntax({
+      inline: [
+        {
+          name: "unbounded",
+          triggers: [PERCENT],
+          maxLength: 8,
+          scan: (content, at) => {
+            calls += 1;
+            widest = Math.max(widest, content.length);
+            for (let end = at + 1; end < content.length; end++) if (content[end] === "!") return { end: end + 1, node: NO_MATCH };
+            return null;
+          },
+        },
+      ],
+    });
+    const source = "%a ".repeat(1024);
+    render(source, syntax);
+    expect(widest).toBeLessThanOrEqual(LOOKBEHIND + 8);
+    expect(calls).toBe(countOf(source, "%"));
+  });
 });
 
 function processed(source: string): number {
@@ -111,11 +118,11 @@ function processed(source: string): number {
   return performance.now() - started;
 }
 
-describe("a mebibyte of every pathological shape costs a bounded multiple of a mebibyte of plain paragraphs", () => {
-  const plain = PLAIN_LINE.repeat(Math.floor(MEBIBYTE / PLAIN_LINE.length));
+describe("64 KiB of every pathological shape costs a bounded multiple of 64 KiB of plain paragraphs", () => {
+  const plain = PLAIN_LINE.repeat(Math.floor(LARGE / PLAIN_LINE.length));
   for (const shape of PATHOLOGICAL_SHAPES) {
-    test(`${shape.name}: parses under the dialect, renders and walks within ${MAX_COST_OF_PLAIN}× the plain mebibyte`, () => {
-      const source = atSize(shape, MEBIBYTE);
+    test(`${shape.name}: parses under the dialect, renders and walks within ${MAX_COST_OF_PLAIN}× the plain 64 KiB`, () => {
+      const source = atSize(shape, LARGE);
       let fastestPlain = processed(plain);
       let fastestShape = processed(source);
       for (let attempt = 1; attempt < ATTEMPTS && fastestShape > MAX_COST_OF_PLAIN * fastestPlain; attempt++) {

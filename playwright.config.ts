@@ -13,6 +13,7 @@ export default defineConfig({
   // No `webServer`: `src/ui/client/browser.fixture.ts` bundles each module under test into `page.setContent()`
   // markup, and a spec that needs a Worker starts its own through `tests/workerd/harness.fixture.ts`.
   testIgnore: "**/.claude/**",
+  globalSetup: "./tests/workerd/tmp.setup.ts",
   // Not `"100%"`: Playwright counts `os.cpus()`, the host's cores, so a CPU-quota'd container runs more Chromiums than it may schedule.
   workers: availableParallelism(),
   reporter: "list",

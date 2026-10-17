@@ -15,7 +15,12 @@ export async function deriveScale(config: DesignScaleCheckConfig): Promise<Desig
 
 /** Regenerates the scale from the stylesheet and reports any drift from the committed module. @public */
 export async function checkDesignScale(config: DesignScaleCheckConfig): Promise<CheckResult> {
-  const expected = renderDesignScale(await deriveScale(config));
+  return compareDesignScale(config, await deriveScale(config));
+}
+
+/** Reports any drift between an already derived scale and the committed module. @public */
+export function compareDesignScale(config: DesignScaleCheckConfig, scale: DesignScale): CheckResult {
+  const expected = renderDesignScale(scale);
   const path = resolve(config.root, config.table);
 
   let actual: string;

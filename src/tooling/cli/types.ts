@@ -119,6 +119,8 @@ export interface ConfigModuleRequest {
   explicit: boolean;
   /** What the module holds, named in every error — e.g. `"step table"`. */
   what: string;
+  /** The option an explicit `path` came from, quoted when no module is there. Defaults to `--config`. */
+  option?: string;
 }
 
 /** A config module's default export beside its whole namespace, for the named exports a bin also reads. */

@@ -5,8 +5,9 @@ import { join } from "node:path";
 
 import type { CliContext } from "../cli/types";
 import { createColorize, PLAIN } from "../term/color";
-import { confirmPrinter, DEFAULT_DB_CONFIG, resolveDbContext, sharedDbFlags } from "./context";
+import { confirmPrinter, resolveDbContext, sharedDbFlags } from "./context";
 import { fakeDbIo, minimalWranglerConfig } from "./db.fixture";
+import { DEFAULT_DB_CONFIG } from "./declared";
 import type { SharedDbFlags } from "./types";
 
 const roots: string[] = [];
@@ -161,11 +162,5 @@ describe("sharedDbFlags", () => {
       "string",
       "string",
     ]);
-  });
-});
-
-describe("DEFAULT_DB_CONFIG", () => {
-  it("is the path an app puts its db host config at", () => {
-    expect(DEFAULT_DB_CONFIG).toBe("config/db.ts");
   });
 });

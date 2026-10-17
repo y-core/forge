@@ -1,4 +1,4 @@
-import type { BackupManifest, Migration, RestoreRoute, SchemaObject } from "../types";
+import type { BackupManifest, BackupVia, Migration, RestoreRoute, SchemaObject } from "../types";
 
 /** One table, with what a bounded keyset read of it needs: the columns it orders by, and how many rows a page holds. @internal */
 export interface AppTable {
@@ -85,6 +85,8 @@ export interface BackupOptions {
   readonly out: string | null;
   readonly verify: boolean;
   readonly label: string | null;
+  /** `read` where absent. */
+  readonly via?: BackupVia | undefined;
 }
 
 /** What `db restore` was asked for beyond the shared flags. @public */

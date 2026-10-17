@@ -6,7 +6,7 @@ import { planApply } from "./plan";
 
 function migration(version: number, name: string): Migration {
   const file = `${String(version).padStart(4, "0")}_${name}`;
-  return { name: file, version, path: `/m/${file}.sql`, sha256: `sha-${file}`, sql: `-- ${file}`, origin: "custom", stamp: null };
+  return { name: file, version, path: `/m/${file}.sql`, sha256: `sha-${file}`, sql: `-- ${file}`, stamp: null };
 }
 
 const discovered = [migration(1, "init"), migration(2, "users"), migration(3, "index")];

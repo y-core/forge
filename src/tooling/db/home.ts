@@ -61,10 +61,19 @@ export function synthesizeHome(config: DbConfig, io: DbIo, options: SynthesizeOp
   };
 }
 
-/** The second local database, under `.forge/standby/`, which nothing it does can reach the live state from. @internal */
-export function standbyHome(config: DbConfig, io: DbIo): Home {
+function standbyDatabase(config: DbConfig): { database: string; dir: string } {
   const database = config.target.database ?? `${config.entry.databaseName}-standby`;
-  return synthesizeHome(config, io, { label: "standby", database, dir: join(config.root, ".forge", "standby", database) });
+  return { database, dir: join(config.root, ".forge", "standby", database) };
+}
+
+/** The second local database, under `.forge/standby/`, which nothing it does can reach the live state from. @public */
+export function standbyHome(config: DbConfig, io: DbIo): Home {
+  return synthesizeHome(config, io, { label: "standby", ...standbyDatabase(config) });
+}
+
+/** The directory a standby database's state is persisted under — what `wrangler --persist-to` takes to reach it. @public */
+export function standbyStatePath(config: DbConfig): string {
+  return join(standbyDatabase(config).dir, ".wrangler", "state");
 }
 
 /** A throwaway home under `.forge/scratch/`, used to prove a restore without touching anything live. @internal */

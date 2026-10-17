@@ -20,7 +20,7 @@ import {
   validateManifest,
   verifyBackupArtifact,
 } from "./artifact";
-import { describeTables, readWholeTable } from "./read";
+import { describeTables, digestWholeTable } from "./read";
 import type { RestoreOptions, RestoreOutcome, RestorePlan, RestoreTargetState } from "./types";
 
 function refuseRemoteRestore(run: DbRunContext): void {
@@ -62,8 +62,8 @@ function discoverArtifactMigrations(run: DbRunContext, artifact: string, manifes
     if (!run.io.exists(path)) throw new CliError("invalid-args", `${path} is declared in the manifest and missing from the artifact`);
     const sql = run.io.readText(path);
     if (migrationChecksum(sql) !== entry.sha256) throw new CliError("invalid-args", `${path} does not hash to what the manifest declares for it`);
-    const { origin, stamp } = parseMigrationHeader(sql);
-    return { name: entry.name, version: Number(/^(\d+)_/.exec(entry.name)?.[1] ?? index + 1), path, sha256: entry.sha256, sql, origin, stamp };
+    const { stamp } = parseMigrationHeader(sql);
+    return { name: entry.name, version: Number(/^(\d+)_/.exec(entry.name)?.[1] ?? index + 1), path, sha256: entry.sha256, sql, stamp };
   });
 }
 
@@ -131,8 +131,8 @@ export async function executeRestore(run: DbRunContext, plan: RestorePlan): Prom
   if (plan.route === "full") {
     const problems = checkRestoreTarget("full", before.objects, before.counts, expectedTables);
     if (problems.length > 0) throw new CliError("invalid-args", `the target is not empty:\n  ${problems.join("\n  ")}`);
-    // The schema declares the tables, then the rows fill them — the repeated `PRAGMA
-    // defer_foreign_keys=TRUE;` the second file opens with is accepted and not honoured, as it is anywhere.
+    // The schema declares the tables, then the rows fill them: two files are two transactions, and the
+    // `defer_foreign_keys` each opens with lasts only until its own commit.
     await executeFile(io, home, join(artifact, "schema.sql"));
     await executeFile(io, home, join(artifact, "data.sql"));
   } else {
@@ -157,12 +157,8 @@ export async function executeRestore(run: DbRunContext, plan: RestorePlan): Prom
   const declared = new Map(manifest.tables.map((table) => [table.name, table.digest]));
   const tables: { name: string; rows: number; matches: boolean }[] = [];
   for (const table of await describeTables(io, home, expectedTables)) {
-    const read = await readWholeTable(io, home, table);
-    tables.push({
-      name: table.name,
-      rows: read.rows.length,
-      matches: declared.get(table.name) === sha256(read.rows.map((row) => row.canonical).join("\n")),
-    });
+    const { rows, digest } = await digestWholeTable(io, home, table);
+    tables.push({ name: table.name, rows, matches: declared.get(table.name) === digest });
   }
 
   for (const binding of bindings) io.log(`! ${binding}`);

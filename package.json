@@ -24,6 +24,7 @@
       "./dev",
       "./testing",
       "./testing/coverage",
+      "./testing/d1",
       "./testing/form",
       "./testing/harness",
       "./testing/node",
@@ -32,6 +33,7 @@
       "./tooling/*"
     ],
     "node": [
+      "./testing/d1",
       "./testing/form",
       "./testing/harness",
       "./testing/totp",
@@ -283,6 +285,10 @@
     "./testing/coverage": {
       "types": "./src/testing/coverage/mod.ts",
       "import": "./src/testing/coverage/mod.ts"
+    },
+    "./testing/d1": {
+      "types": "./src/testing/d1.ts",
+      "import": "./src/testing/d1.mjs"
     },
     "./testing/form": {
       "types": "./src/testing/form.ts",

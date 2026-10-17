@@ -19,7 +19,7 @@ import type { EnrollableFactorService } from "../factors/types";
 import { redactSigninReason } from "../flows/signin";
 import type { AuthSigninNotice } from "../flows/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
-import { authFreshStepUpWindow, stepUpHolds } from "./guards";
+import { approvalCtx, authFreshStepUpWindow, stepUpHolds } from "./guards";
 import {
   AUTH_SITE_DATA_OWED_SESSION_KEY,
   clearAuthSession,
@@ -280,6 +280,7 @@ async function admitsResend<Bindings>(c: AppContext<Bindings>, options: AuthWebO
     form = await parseFormData(c);
   } catch (error) {
     if (isFormCapConflict(error)) throw error;
+    requestLog.getOptional(c)?.warn("auth.resend.unreadable");
     return false;
   }
   const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
@@ -348,23 +349,22 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const services = await authServices(c, options);
       const session = sessionCtx.get(c, NO_SESSION);
       const at = authNow(options);
-      // Whether a code was actually issued is what a visitor may not learn: only a real account can
-      // be inside the reissue window, so reporting it would bin an address list.
-      const verifyPath = authReturnQuery(c, options, options.paths.auth.verify.show());
-      const resent = `${verifyPath}${verifyPath.includes("?") ? "&" : "?"}${AUTH_RESENT_PARAM}`;
+      // Every outcome that depends on the account shares this redirect: only a real account can be
+      // inside the reissue window, so reporting whether a code was issued would bin an address list.
+      const resent = authWithQuery(authReturnQuery(c, options, options.paths.auth.verify.show()), AUTH_RESENT_PARAM, String(at));
       const demand = await resolveAuthVerifyDemand(c, services, resolveAuthViewer(c));
       const detour = authVerifyDetour(c, options, demand);
       if (detour !== null) return detour;
 
       if (demand.identity !== null) {
-        if (!(await admitsResend(c, options))) return createAuthRedirect(c, resent);
+        if (!(await admitsResend(c, options))) return loadVerify(c, options, { error: FIELD_REFUSAL_DEFAULT, status: 422 });
         await services.signin.requestStepUp(demand.identity.userId, demand.factor, at);
         return createAuthRedirect(c, resent);
       }
 
       const pending = resolveAuthSigninPending(session);
       if (pending === null) return createAuthRedirect(c, options.paths.auth.signin());
-      if (!(await admitsResend(c, options))) return createAuthRedirect(c, resent);
+      if (!(await admitsResend(c, options))) return loadVerify(c, options, { email: pending, error: FIELD_REFUSAL_DEFAULT, status: 422 });
       // Synchronous by design: `request` reads nothing about the address before returning, so a
       // registered one and an unknown one differ in neither shape nor time. There is nothing to await.
       services.signin.request(pending, at);
@@ -840,6 +840,7 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
   return {
     submit: async (context) => {
       const c = getAppContext<Bindings>(context);
+      if (approvalCtx.getOptional(c) === undefined) return notFound();
       const services = await authServices(c, options);
       const identity = resolveAuthViewer(c);
       if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());

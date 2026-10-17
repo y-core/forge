@@ -22,20 +22,184 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 - **`AuthWebOptions.bootstrapSecret` is removed**, in `@y-core/forge/auth/web`. The first-admin claim is now gated by an administrator approval:
   the `admin.elevate` group in `AUTH_ROUTE_GROUPS`, and `AUTH_VIEW_GUARDS.adminElevate`, end with the new `"require-approval"` guard.
-  **Migration:** define the approval with `defineApproval`, reading the code you held as the bootstrap secret, and pass it to `createAuthGuards`
-  as `approval`. Mount its prompt with `registerApproval`. Without an approval, both elevate routes answer 404, as they did with no secret
+  `createAdminElevateActions(...).submit` and `loadAdminElevate` answer 404 unless `requireApproval` admitted the request, which it records on
+  `approvalCtx`, so a route of your own mounting them must run `requireApproval` ahead of them. **Migration:** define the approval with
+  `defineApproval`, reading the code you held as the bootstrap secret, with the `rateLimit` you want on the prompt and the key ring your
+  `csrfProtection` uses as `ring`, and pass it to `createAuthGuards` as `approval`. Mount its prompt with `registerApproval`. Without an
+  approval, both elevate routes send an anonymous visitor to sign-in and answer a signed-in one with 404, as they did with no secret
   ([`AUTH_MOUNTING.md`](docs/AUTH_MOUNTING.md) §3).
 
 - **`authAdminElevateSchema` is `{ confirm: "yes" }` alone, losing `secret`**, and `AdminElevateView` no longer renders a secret field.
   `AdminElevateViewProps.fieldError` is removed. A `views.adminElevate` override that rendered either must drop it.
 
+- **The `forge db lint` rule `pragma-ignored` is renamed `pragma-unsupported`, with no alias.** It is now an error on any `PRAGMA` outside
+  D1's supported set, which D1 refuses with `SQLITE_AUTH`, and an error too on `PRAGMA foreign_keys`, which D1 ignores because it always
+  enforces foreign keys. `PRAGMA optimize` and the inspection pragmas are no longer flagged. **Migration:** rename any reference to `pragma-ignored`, and
+  remove a refused pragma from a migration ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §5).
+
+- **`D1Client` methods fail with a `D1Failure` and carry `meta` on both branches**, in `@y-core/forge/storage/db`: each now returns
+  `D1Outcome<T>`, a `Result<T, D1Failure>` with `meta: { attempts }`. `D1Failure` extends `Error`, so `error.message` and `error.cause` still
+  read as before, but an error is no longer the thrown D1 error itself — it is that error's `cause`. **Migration:** a test comparing a whole
+  outcome with `toEqual` adds `meta`; code matching a D1 message string branches on `error.kind` instead.
+
+- **The default database layout moves under `config/db/`**, in `@y-core/forge/tooling/db`: migrations default to `config/db/migrations` and the
+  snapshot to `config/db/schema.snapshot.json`. Every `forge db` verb now refuses a `d1_databases` entry whose `migrations_dir`, resolved from
+  the wrangler config's directory, is not that directory, or whose `migrations_pattern` is not that directory's `*.sql`, naming the key to set.
+  `forge db standby reset` fails when it finds no seed, unless `--no-seed` is given. **Migration:** either move
+  `migrations/` to `config/db/migrations/` and `schema.snapshot.json` to `config/db/`, or set `migrations` and `snapshot` in `config/db.ts` to
+  where they are now. Then set `"migrations_dir"` on each `d1_databases` entry to the same directory. Replace a `node_modules/@y-core/forge/…`
+  path in `schemas` with `forgeSchema("auth")` and run `forge db migrate compose` once, so the snapshot records the new key
+  ([`src/tooling/db/README.md`](src/tooling/db/README.md) section "Declaring what forge reads").
+
+- **`dbSchemaStep` is renamed `dbSteps` and adds `db:lint`**, which runs `forge db lint` against the local database in `full`, behind the
+  installed workerd runtime, in `@y-core/forge/tooling/gate`. `cloudflareWorkerSteps({ db: true })` emits all three rows. **Migration:** rename the import
+  ([`src/tooling/gate/README.md`](src/tooling/gate/README.md)).
+
+- **`VerifyViewProps.reissueAfterMs` is replaced by `resendWaitMs`**, the time left in the reissue window, and the `resent` redirect now carries
+  when the code was asked for (`?resent=<ms>`). A `views.verify` override that read `reissueAfterMs` reads `resendWaitMs` instead, which is
+  absent once the window has passed.
+
+- **Backup artifacts are `formatVersion` 8**: the manifest gains `via` (`read` or `export`) and `bookmark`. **Migration:** take each backup
+  again; `forge db restore` refuses a version-7 artifact by name.
+
+- **`forge db migrate compose --rename` now needs `--allow-destructive <digest>`**, as a drop does. **Migration:** run the compose, read the
+  plan it prints, and pass the digest it names.
+
+- **`forge db lint` judges a target**: it reads the migrations the target (`--target`, `local` by default) does not hold yet, and takes no file
+  arguments and no `--strict`. The `drop-column`, `rename`, `table-rebuild` and `unique-index-on-existing-table` rules are removed, and every rule
+  is an error. **Migration:** drop file arguments and `--strict` from scripts; a drop or rename is approved by compose
+  ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §9b).
+
+- **Every migration must carry a valid compose stamp**, in `@y-core/forge/tooling/db`. `forge db migrate compose --custom`,
+  `ComposeOptions.custom`, `MigrationOrigin`, `Migration.origin` and the `custom-ddl` lint rule are removed. `forge db lint`,
+  `forge db migrate`, `forge db standby reset` and `forge db deploy` refuse a pending migration with no `forge:compose` stamp, or one edited
+  since compose wrote it, before anything is applied. **Migration:** change `schema.sql` and compose. A data step is a seed
+  ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7a).
+
+- **`drop-no-if-exists` no longer runs over a seed**, in `@y-core/forge/tooling/db`; the schema check refuses any drop a seed makes
+  ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7a).
+
+- **No `forge db` flag passes a migration or seed refusal**, in `@y-core/forge/tooling/db`. `--no-lint` (migrate, standby reset),
+  `--allow-warnings` (migrate, deploy, seed), `--allow-drift` (migrate, seed) and `--allow-pending` (seed) are removed, and so are
+  `MigrateOptions.lint`, `allowWarnings` and `allowDrift`, `DeployOptions.allowWarnings`, `StandbyResetOptions.lint` and the matching
+  `runSeedApply` options. Every seed rule is an error on every place, `LintLevel` and `LintFinding.level` are removed, a printed finding loses
+  its level prefix, and `forge db lint --json` drops `errors` and `warnings`. A moved fingerprint is refused until the database is restored; a
+  fingerprint never certified is still certified by a `forge db migrate` with nothing pending. **Migration:** drop the flags and fields; write a
+  seed's `INSERT` as `OR IGNORE` or `ON CONFLICT`; restore a drifted database ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §9b).
+
+- **`DbIo` gains `splitD1`**, the statements a local home's own handle cuts SQL into. **Migration:** a `DbIo` written by hand implements it.
+
 ### Added
+
+- **`forge db seed apply` refuses a seed that changes the schema**, judged by running it on a scratch copy of the target's schema one statement
+  at a time. A row-constraint failure there is passed over, and any other error refuses the seed, naming the statement. `standby reset`'s seeds
+  are held to it too ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §7a).
+
+- **`forge db lint`, `migrate`, `deploy` and `standby reset` refuse a drop or rename its file does not approve**, judged on a scratch copy of the
+  target's schema, on every target ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §9b).
+
+- **Compose writes one approval line per drop and rename**, in `@y-core/forge/tooling/db`: `forge db migrate compose --allow-destructive
+  <digest>` is asked for whenever the plan drops a table, a column or a view, or renames one, and writes `-- forge:drops` and `-- forge:renames`
+  lines under the header, inside the stamp. The analysis pairs each line with what the file does, one to one
+  ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §9b).
+
+- **`forge db backup --via export`** has `wrangler d1 export` write the rows of a database too large to read, keeping the artifact layout `forge db
+  restore` reads. It records a deployed database's Time Travel bookmark, and refuses a virtual table and each value the export would not reproduce:
+  a `\n` or `\r` escape beside its real control character, an integer past ±2^53, and an integral REAL outside REAL affinity. It reads the export
+  back a page at a time, checks each table's count taken just before the export, and refuses a schema change between its two exports even under
+  `--no-verify`; it never compares the rows' contents with the source, and pays off only for a remote one
+  ([`DATABASE_BACKUPS.md`](docs/DATABASE_BACKUPS.md) §5b).
+
+- **`forge db deploy` applies pending migrations, then runs `wrangler deploy`**, as the Workers Builds deploy command. It refuses a deployed
+  database with a migration no longer on disk, an edited one, a moved fingerprint or a row forge never applied in wrangler's history table, the entry's `migrations_table` or `d1_migrations`. A token
+  Cloudflare refuses names `Account → D1 → Edit`, in `forge db migrate` too, and says whether anything had been applied by then.
+  `--check-only` stops after the checks. A failed deploy after an apply prints the bookmark's restore command. With migrations pending it asks
+  first, as `forge db migrate --target remote` does; a Workers Builds deploy passes `--yes`. `forge cf sync --commit` notes
+  that D1 write access is unverified unless it created a database ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §9a).
+
+- **`forge cf sync` holds each `env.<name>` block's D1 entries to the account**: it reports an environment with no `d1_databases` or missing a
+  top-level binding, writes back a `database_id` its `database_name` resolves and a stale `preview_database_id` a `<name>-preview` database
+  replaces, and reports an id that resolves to nothing. A handler may now carry `reconcileConfig`, a `ConfigPass` over the whole config
+  ([`src/tooling/cf/README.md`](src/tooling/cf/README.md) section "Placing a D1 database").
+
+- **`forge cf sync` places D1 databases**, from a new `config/cf.ts` (`CfHostConfig`, in `@y-core/forge/tooling/cf`). A database is created with
+  its declared jurisdiction and location hint; a jurisdiction mismatch is `refused`, a replication mismatch is `drift` and set on `--commit`, and
+  `preview: true` provisions `<name>-preview` and writes back `preview_database_id`
+  ([`src/tooling/cf/README.md`](src/tooling/cf/README.md) section "Placing a D1 database").
+
+- **`forgeSchema`, `standbyHome` and `standbyStatePath` in `@y-core/forge/tooling/db`.** `forgeSchema("auth")` names forge's schema in
+  `DbHostConfig.schemas` by its package specifier. `standbyStatePath(config)` is the directory a standby database persists under, for a script
+  that reaches it with wrangler.
+
+- **`d1Sessions` in `@y-core/forge/storage/db` reads your own writes from a D1 replica**: one session per request, `first-primary` for a write
+  and, under a `bookmark` carrier, the incoming bookmark or `first-unconstrained` for a read, with the bookmark returned in that header or cookie;
+  without a carrier every session starts `first-primary`. It queues the bookmark for
+  Forge to merge, so a WebSocket `101` keeps its socket, and sets the cookie only when the bookmark moves, since a cookie makes a `public`
+  response `private`. `resolveD1Client` and `defineD1Binding`'s client query through the request's session. `createD1Client` now takes a `D1Queryable` — a binding or a session — and
+  `fakeD1` gains `withSession` and records each constraint on `sessions` ([`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1g).
+
+- **The opt-in lint rule `forge/sql-delete-authorised`** reports a `sql` `DELETE` with no `// row-removal-authorised-by:` comment on the line
+  before it ([`src/tooling/lint/README.md`](src/tooling/lint/README.md) section "Scoping a rule to part of the tree").
+
+- **`explainPlan`, `usesIndex` and `scansTable` in `@y-core/forge/testing/d1`** assert a query's plan on the test database, so a query that
+  loses its index fails a test ([`src/testing/README.md`](src/testing/README.md) section "Asserting that a query uses its index").
+
+- **`D1Client` reports cost and placement, and logs one `d1.query` record per call**, in `@y-core/forge/storage/db`: `meta.cost`
+  (`rowsRead`, `rowsWritten`, `durationMs`) and `meta.servedBy` (`region`, `primary`) where D1 reports them, and a record carrying the SQL text,
+  cost and placement but never a bound value, at `warn` past the new `slowQueryMs` option. A batch logs `d1.query` with `op: "batch"` rather than
+  `d1.batch` ([`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1a).
+
+- **`D1Client` refuses a statement over D1's limits before sending it**, in `@y-core/forge/storage/db`: more than 100 bound parameters or
+  100,000 bytes of UTF-8 fails with a `limit` `D1Failure` and `meta.attempts` 0, naming the `json_each` idiom, which binds a list as one
+  parameter. `D1_LIMITS` holds the limits, and `forge db lint` gains `table-too-wide` for a table of more than 100 columns
+  ([`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1h).
+
+- **`defineD1Binding` in `@y-core/forge/storage/db` wires a D1 binding in one declaration**: its `spec` for the boot binding check, the
+  schema-health monitor as `globals`, the `<name>` and `<name>:schema` checks as `health`, and a `client(c)`. `schemaHealthCheck` and
+  `schemaHealthMonitor` take `recheckMs` (60 s by default) and read the schema again after it, so drift that starts mid-isolate is seen, and its
+  monitor and schema check share one schema read per `recheckMs` window
+  ([`src/storage/README.md`](src/storage/README.md) section "Mounting a D1 database").
+
+- **`@y-core/forge/testing/d1`: `openTestD1` runs a test against wrangler's local D1 with every migration applied**, in wrangler's number order,
+  from the directory `config/db.ts` names, loaded and refused as `forge db` loads it; `hostConfig` names another module. A handle has its own
+  database; `reset()` empties it and re-applies the migrations without restarting. Node-only, off the `testing` barrel
+  ([`src/testing/README.md`](src/testing/README.md) section "Running queries against real D1 in tests").
+
+- **Typed D1 failures and retry, in `@y-core/forge/storage/db`.** `classifyD1Error` and `D1Failure` sort a D1 error into `constraint`,
+  `transient`, `overloaded`, `limit`, `timeout`, `guard` or `unavailable`. `execute` and `batch` take `{ idempotent: true }`, which retries a
+  `transient` failure with jittered backoff and never any other kind ([`STORAGE_BINDINGS.md`](docs/STORAGE_BINDINGS.md) §1g).
+
+- **`forge db compose` ends a migration that creates or changes an index with `PRAGMA optimize;`**, so the planner's statistics follow the new
+  index ([`SCHEMA_COMPOSITION.md`](docs/SCHEMA_COMPOSITION.md) §4).
 
 - **Administrator approval in `@y-core/forge/auth/web`: `defineApproval`, `requireApproval` and `registerApproval`.** `requireApproval` holds
   any route until the session has presented a configured code inside the approval's window, and sends it to the prompt `registerApproval`
   mounts. With the code unset, every approved route and the prompt answer 404. The prompt is `ApprovalView` over `approvalSchema`, with types
-  `Approval`, `ApprovalOptions` and `ApprovalViewProps`. The window defaults to `APPROVAL_TTL_MS`, exported from `@y-core/forge/auth`. Signing
-  in or out clears the approval ([`src/auth/README.md`](src/auth/README.md) section "Requiring administrator approval on a route").
+  `Approval`, `ApprovalOptions` and `ApprovalViewProps`. The window defaults to `APPROVAL_TTL_MS`, exported from `@y-core/forge/auth`.
+  `defineApproval` requires `origin`, `rateLimit` and `ring`, and throws without any of them; forge picks no numbers. The session holds a keyed
+  digest of the code under `ring`, never the code, so changing the code ends every approval made under the old one. Signing in or out clears
+  the approval ([`src/auth/README.md`](src/auth/README.md) section "Requiring administrator approval on a route").
+
+- **A Turnstile challenge on the anonymous auth forms, in `@y-core/forge/auth/web`: `AuthWebOptions.turnstile`.** It covers sign-in, sign-up,
+  and the verify page's code and resend forms (`AuthTurnstileFlow`), narrowed by `flows`, with forge naming each form's action in
+  `AUTH_TURNSTILE_ACTIONS`. A refused challenge answers `422` with the form re-rendered, the resend form included; only a resend's
+  account-dependent outcomes share the `resent` redirect. An unreadable resend body is logged at `warn` as `auth.resend.unreadable`
+  ([`AUTH_MOUNTING.md`](docs/AUTH_MOUNTING.md) §8).
+
+### Fixed
+
+- **`forge db restore` and `forge db reset` check a table without holding all its rows in memory.**
+
+- **`forge db backup` refuses a schema change made while it reads the rows, even under `--no-verify`.**
+
+- **The verify page's resend button re-enables once the reissue window has passed.** It was disabled for as long as `?resent` stayed in the
+  URL, reloads included; the server now works out the remaining wait from when the resend was asked for, and "You can ask again in" names it.
+
+- **The auth README and `src/auth/schema.sql` no longer call the schema's foreign keys documentation.** D1 always enforces them, so each
+  `ON DELETE CASCADE` fires; a workerd test now holds that with no pragma set.
+
+- **`schemaHealthCheck` keeps a newer schema check when an older one settles after it.** A check that finished on a mismatch or an error
+  cleared the cache whether or not a later check had replaced it, so the next poll read the schema a third time.
 
 ---
 

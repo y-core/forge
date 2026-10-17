@@ -17,8 +17,8 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-const USERS = "INSERT INTO users (email) VALUES ('ada@example.com');";
-const POSTS = "INSERT INTO posts (title) VALUES ('hello');";
+const USERS = "INSERT OR IGNORE INTO users (email) VALUES ('ada@example.com');";
+const POSTS = "INSERT OR IGNORE INTO posts (title) VALUES ('hello');";
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-seed-commands-"));
@@ -69,7 +69,7 @@ describe("createSeedCommands", () => {
     expect(seed?.commands.map((command) => command.parent?.name)).toEqual(["seed", "seed", "seed"]);
   });
 
-  it("gives apply --rerun and --allow-pending as two flags, with no --force", () => {
+  it("gives apply --rerun as its one way to run a seed again, with no --force and no flag that passes a refusal", () => {
     const apply = createSeedCommands()[0]?.commands[0];
 
     expect(Object.keys(apply?.flags ?? {})).toEqual([
@@ -83,9 +83,6 @@ describe("createSeedCommands", () => {
       "dir",
       "only",
       "rerun",
-      "allow-pending",
-      "allow-drift",
-      "allow-warnings",
       "no-bookmark",
     ]);
   });

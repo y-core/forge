@@ -18,7 +18,10 @@ import {
   compareManifests,
   compareSchemaObjects,
   compareTableInfo,
+  decodeReadRow,
   digestInput,
+  exportHazards,
+  exportHazardSelect,
   findVirtualTables,
   formatBackupDirectory,
   insertStatement,
@@ -29,7 +32,6 @@ import {
   sqlValueExpression,
   UnsupportedValue,
   validateManifest,
-  decodeReadRow,
   verificationSelect,
   verifyBackupArtifact,
 } from "./artifact";
@@ -1161,6 +1163,8 @@ const ON_DISK: SchemaFacts = { migrations: ["0001_init", "0002_later"], digest: 
 
 const MANIFEST: BackupManifest = {
   formatVersion: BACKUP_FORMAT_VERSION,
+  via: "read",
+  bookmark: null,
   drift: "match" as const,
   createdAt: "2026-08-06T09:07:05.123Z",
   label: null,
@@ -1194,13 +1198,13 @@ describe("validateManifest()", () => {
 
   it("refuses a formatVersion this tool does not write, including a missing one", () => {
     expect(validateManifest(manifestJson({ formatVersion: 1 }))).toEqual([
-      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
+      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
     ]);
     const value = manifestJson();
     delete value.formatVersion;
 
     expect(validateManifest(value)).toEqual([
-      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
+      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
     ]);
   });
 
@@ -1574,5 +1578,28 @@ describe("verifyBackupArtifact()", () => {
         artifact({ artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", data)] }),
       ),
     ).toThrow(/data.sql is not what a data-only artifact must be/);
+  });
+});
+
+describe("exportHazardSelect() and exportHazards()", () => {
+  const table = { name: "notes", keys: ["id"], columns: ["id", "body"], pageRows: 256 };
+
+  it("counts, per column, an escape beside its control character, a wide integer, and an integral REAL outside REAL affinity", () => {
+    const select = exportHazardSelect(table, new Set(["id"]));
+    expect(select).toContain(
+      `SUM(typeof("body") = 'text' AND ((instr("body", char(92) || 'n') > 0 AND instr("body", char(10)) > 0) OR (instr("body", char(92) || 'r') > 0 AND instr("body", char(13)) > 0))) AS "escape:body"`,
+    );
+    expect(select).toContain(`SUM(typeof("body") = 'real' AND "body" = CAST("body" AS INTEGER)) AS "real:body"`);
+    expect(select).not.toContain('"real:id"');
+    expect(select.endsWith(' FROM "notes"')).toBe(true);
+  });
+
+  it("names each column with a hazard and how many values it holds, and nothing for counts of zero or none", () => {
+    expect(exportHazards(table, { "escape:id": 0, "integer:id": 2, "escape:body": 3, "real:body": 1 })).toEqual([
+      "notes.id: 2 integer(s) past ±2^53, which wrangler's dumper rounds",
+      "notes.body: 3 text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which wrangler's dumper doubles",
+      "notes.body: 1 REAL(s) with no fraction in a column without REAL affinity, which wrangler's dumper restores as INTEGER",
+    ]);
+    expect(exportHazards(table, undefined)).toEqual([]);
   });
 });

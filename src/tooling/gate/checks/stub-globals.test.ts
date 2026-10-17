@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { rmSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkStubGlobals, declaredStubGlobals, findStubGlobalReferences } from "./stub-globals";
@@ -92,5 +93,21 @@ describe("checkStubGlobals", () => {
       sources: ["src", "warden/src", "!src/tooling/dev"],
     });
     expect(outcome.findings).toEqual([]);
+  });
+});
+
+describe("the test suite's temp-directory discipline", () => {
+  it("builds no path under a hard-coded `/tmp`, which the gate's per-step TMPDIR would never see", () => {
+    const src = resolve(import.meta.dir, "../../..");
+    const hardCoded = /\b(?:join|resolve|mkdtempSync|mkdirSync|writeFileSync|cpSync|rmSync|mkdtemp|writeFile|mkdir)\(\s*["'`]\/tmp(?:\/|["'`])/;
+    const offenders = readdirSync(src, { recursive: true })
+      .filter((path) => /\.test\.tsx?$/.test(path))
+      .flatMap((path) =>
+        readFileSync(join(src, path), "utf-8")
+          .split("\n")
+          .flatMap((line, index) => (hardCoded.test(line) ? [`${path}:${index + 1}`] : [])),
+      );
+
+    expect(offenders).toEqual([]);
   });
 });

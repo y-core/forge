@@ -11,17 +11,17 @@ describe("read and write", () => {
       declared: { "config/schema.sql": ["notes"], "node_modules/lib/schema.sql": ["posts", "posts_user"] },
       migrationsDigest: "m",
     });
-    writeSchemaSnapshot(io, "/app/schema.snapshot.json", snapshot);
-    const first = io.files.get("/app/schema.snapshot.json");
-    writeSchemaSnapshot(io, "/app/schema.snapshot.json", snapshot);
-    expect(io.files.get("/app/schema.snapshot.json")).toBe(first);
-    expect(readSchemaSnapshot(io, "/app/schema.snapshot.json")).toEqual({
+    writeSchemaSnapshot(io, "/app/config/db/schema.snapshot.json", snapshot);
+    const first = io.files.get("/app/config/db/schema.snapshot.json");
+    writeSchemaSnapshot(io, "/app/config/db/schema.snapshot.json", snapshot);
+    expect(io.files.get("/app/config/db/schema.snapshot.json")).toBe(first);
+    expect(readSchemaSnapshot(io, "/app/config/db/schema.snapshot.json")).toEqual({
       version: SCHEMA_SNAPSHOT_VERSION,
       desired: { "config/schema.sql": "d", "node_modules/lib/schema.sql": "a" },
       declared: { "config/schema.sql": ["notes"], "node_modules/lib/schema.sql": ["posts", "posts_user"] },
       migrationsDigest: "m",
     });
-    expect(io.files.get("/app/schema.snapshot.json")?.endsWith("\n")).toBe(true);
+    expect(io.files.get("/app/config/db/schema.snapshot.json")?.endsWith("\n")).toBe(true);
   });
 
   it("is null when absent, and refuses another version or a broken file", () => {

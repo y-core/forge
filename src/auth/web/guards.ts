@@ -5,6 +5,9 @@ import type { RouteMap } from "@remix-run/fetch-router/routes";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import { contextVar } from "../../context/accessor";
 import { getAppContext } from "../../context/types";
+import { signWithKeyRing, verifyWithKeyRing } from "../../crypto/keyring/sign";
+import type { KeyRing } from "../../crypto/keyring/types";
+import { base64urlDecodeOrNull, base64urlEncode } from "../../crypto/primitives/base64";
 import { safeRedirectPath } from "../../http/redirect-path";
 import { jsonResponse } from "../../http/response";
 import { hxCurrentUrl } from "../../render/htmx/htmx-headers";
@@ -15,7 +18,7 @@ import { authFactorContext } from "../factors/registry";
 import type { AuthFactorResolution } from "../factors/types";
 import { authLimit } from "../limits";
 import type { AuthAccessToken, AuthFactorKind } from "../types";
-import { authCtx, resolveApprovalAt, resolveAuthIdentity } from "./identity";
+import { authCtx, resolveApprovalMark, resolveAuthIdentity } from "./identity";
 import { APPROVAL_RETURN_PARAM, authEnrolTarget } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import { AUTH_ROUTE_GROUPS } from "./routes";
@@ -157,19 +160,47 @@ export function approvalCode<Bindings>(context: Parameters<Middleware>[0], appro
   return code === undefined || code === "" ? undefined : code;
 }
 
-/** Admits a request only while its session holds an administrator approval inside `approval`'s window, sending it to the prompt otherwise. @public */
+const APPROVAL_PURPOSE = "approval";
+
+/** The keyed digest a session holds in place of the administrator code `code`, as `kid.mac` under `ring`. @internal */
+export async function signApprovalCode(ring: KeyRing, code: string): Promise<string> {
+  const { kid, mac } = await signWithKeyRing("signApprovalCode", ring, APPROVAL_PURPOSE, code);
+  return `${kid}.${base64urlEncode(mac)}`;
+}
+
+/** Whether `digest` is `ring`'s MAC of `code`, under any key still on the ring. @internal */
+export async function approvalCodeMatches(ring: KeyRing, digest: string, code: string): Promise<boolean> {
+  const split = digest.lastIndexOf(".");
+  if (split <= 0) return false;
+  const mac = base64urlDecodeOrNull(digest.slice(split + 1));
+  return (await verifyWithKeyRing("requireApproval", ring, APPROVAL_PURPOSE, digest.slice(0, split), code, mac)) === "verified";
+}
+
+/** When the administrator approval `requireApproval` admitted this request with was presented. @public */
+export const approvalCtx = contextVar<number>("auth.approval");
+
+/** Admits a request only while its session holds an approval for the current administrator code inside `approval`'s window, sending it to the prompt otherwise. @public */
 export function requireApproval<Bindings = Record<string, unknown>>(
   approval: Approval<Bindings>,
   options: { readonly medium?: AuthMedium } = {},
 ): Middleware {
-  return (context, next) => {
+  return async (context, next) => {
     // Fails closed: an approval lets a request past a check nothing else makes, so a deployment
     // with no code configured has no approved route at all rather than an open one.
-    if (approvalCode(context, approval) === undefined) return notFound(options.medium);
+    const code = approvalCode(context, approval);
+    if (code === undefined) return notFound(options.medium);
 
     const session = sessionCtx.getOptional(context);
     if (session === undefined) throw new Error(NO_SESSION);
-    if (stepUpHolds(resolveApprovalAt(session), approval.ttlMs, Date.now())) return next();
+    const mark = resolveApprovalMark(session);
+    if (
+      mark !== null &&
+      stepUpHolds(mark.at, approval.ttlMs, Date.now()) &&
+      (await approvalCodeMatches(await approval.ring(context), mark.digest, code))
+    ) {
+      approvalCtx.set(context, mark.at);
+      return next();
+    }
     return refuse(options.medium, APPROVAL_OWED, 403, () => redirectWithReturn(context, approval.path, APPROVAL_RETURN_PARAM));
   };
 }

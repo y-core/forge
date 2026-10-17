@@ -1,20 +1,25 @@
 export { timeTravelInfo, timeTravelRestore } from "./bookmark";
 export { createDbCommands } from "./commands";
 export { confirmPrinter, resolveDbContext, withDbRun } from "./context";
+export { runDeploy } from "./deploy";
+export { forgeSchema } from "./declared";
 export type {
   ApplyPlan,
   BackupManifest,
+  BackupVia,
   Bookmark,
   D1Entry,
   DbConfig,
   DbContextOverrides,
   DbHostConfig,
+  DeployOptions,
+  DeployOutcome,
+  ForgeSchemaName,
   DbIo,
   DbRunContext,
   DbTarget,
   Home,
   LintFinding,
-  LintLevel,
   LintRule,
   Migration,
   Place,
@@ -56,8 +61,9 @@ export { readSeeds } from "./seed/apply";
 export { composeSeedFixture } from "./seed/fixture";
 export { lintSeeds } from "./seed/lint";
 
+export { standbyHome, standbyStatePath } from "./home";
 export { runStandbyReset } from "./standby";
 
 export { checkSchema } from "./schema/check";
 export { composeMigration } from "./schema/compose";
-export type { ComposeOptions, ComposeOutcome, ComposeStamp, MigrationOrigin, SchemaCheckReport } from "./schema/types";
+export type { ComposeOptions, ComposeOutcome, ComposeStamp, SchemaCheckReport } from "./schema/types";

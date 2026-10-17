@@ -2,10 +2,10 @@ import { lintStatements, splitSqlStatements } from "../migrate/lint";
 import { sqlLineAt } from "../sql";
 import type { LintFinding, LintRule, Seed } from "../types";
 
-/** The migration rules a seed is also held to, at warning level: the ones that empty, drop or reach outside the database. @internal */
-export const SEED_MIGRATION_RULES: readonly LintRule[] = ["unbounded-update", "unbounded-delete", "drop-no-if-exists", "attach-database"];
+/** The migration rules a seed is also held to: the ones that empty a table or reach outside the database. @internal */
+export const SEED_MIGRATION_RULES: readonly LintRule[] = ["unbounded-update", "unbounded-delete", "attach-database"];
 
-/** Warns on an INSERT with no `OR IGNORE`, `OR REPLACE` or `ON CONFLICT`, which a second run would duplicate or refuse, and on the destructive migration rules. @internal */
+/** Reports an INSERT with no `OR IGNORE`, `OR REPLACE` or `ON CONFLICT`, which a second run would duplicate or refuse, and the migration rules a seed is held to. @internal */
 export function lintSeed(file: string, sql: string): LintFinding[] {
   const findings: LintFinding[] = [];
   for (const statement of splitSqlStatements(sql)) {
@@ -13,13 +13,12 @@ export function lintSeed(file: string, sql: string): LintFinding[] {
     if (at === -1 || /\bON\s+CONFLICT\b/i.test(statement.masked)) continue;
     findings.push({
       rule: "seed-insert-not-idempotent",
-      level: "warning",
       file,
       line: sqlLineAt(sql, statement.offset + at),
       message: "INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key",
     });
   }
-  findings.push(...lintStatements(file, sql, { rules: SEED_MIGRATION_RULES, level: "warning" }));
+  findings.push(...lintStatements(file, sql, SEED_MIGRATION_RULES));
   return findings.sort((left, right) => left.line - right.line || left.rule.localeCompare(right.rule));
 }
 

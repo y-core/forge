@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -67,13 +67,24 @@ function write(root: string, files: Record<string, string>): void {
   }
 }
 
-/** A git working tree holding tracked, untracked and ignored files, plus one tracked file since deleted from disk; `manifest` adds an untracked `config/features.ts`. */
-export function curateFixtureRepo(manifest?: string): string {
-  const root = mkdtempSync(join(tmpdir(), "forge-curate-repo-"));
+let template: string | undefined;
+
+/** The git working tree every `curateFixtureRepo` copies, built on first use and again once a caller has removed it. */
+export function curateFixtureTemplate(): string {
+  if (template !== undefined && existsSync(template)) return template;
+  const root = mkdtempSync(join(tmpdir(), "forge-curate-template-"));
   write(root, TRACKED);
   spawnSync("git", ["init", "-q"], { cwd: root });
   spawnSync("git", ["add", ...Object.keys(TRACKED)], { cwd: root });
   rmSync(join(root, "gone.ts"));
+  template = root;
+  return root;
+}
+
+/** A git working tree holding tracked, untracked and ignored files, plus one tracked file since deleted from disk; `manifest` adds an untracked `config/features.ts`. */
+export function curateFixtureRepo(manifest?: string): string {
+  const root = mkdtempSync(join(tmpdir(), "forge-curate-repo-"));
+  cpSync(curateFixtureTemplate(), root, { recursive: true });
   write(root, manifest === undefined ? UNTRACKED : { ...UNTRACKED, "config/features.ts": manifest });
   return root;
 }

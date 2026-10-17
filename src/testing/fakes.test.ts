@@ -359,8 +359,16 @@ describe("fakeD1", () => {
   it("never fails when no failure injector is configured", async () => {
     const db = fakeD1(() => [{ id: 1 }]);
     const client = createD1Client(db, { logger: nullLogger });
-    expect(await client.query(sql`SELECT 1`)).toEqual({ ok: true, data: [{ id: 1 }] });
-    expect(await client.execute(sql`INSERT INTO t VALUES (${1})`)).toEqual({ ok: true, data: { rowsWritten: 0, lastRowId: 0 } });
+    expect(await client.query(sql`SELECT 1`)).toEqual({
+      ok: true,
+      data: [{ id: 1 }],
+      meta: { attempts: 1, cost: { rowsRead: 1, rowsWritten: 0, durationMs: 0 } },
+    });
+    expect(await client.execute(sql`INSERT INTO t VALUES (${1})`)).toEqual({
+      ok: true,
+      data: { rowsWritten: 0, lastRowId: 0 },
+      meta: { attempts: 1, cost: { rowsRead: 0, rowsWritten: 0, durationMs: 0 } },
+    });
   });
 
   it("drives a client's error branch through failOn", async () => {
@@ -369,10 +377,10 @@ describe("fakeD1", () => {
     const client = createD1Client(db, { logger: nullLogger });
 
     const failed = await client.query(sql`SELECT * FROM users`);
-    expect(failed).toEqual({ ok: false, error: failure });
+    expect(failed.ok ? null : failed.error.cause).toBe(failure);
 
     const passed = await client.query(sql`SELECT * FROM sessions`);
-    expect(passed).toEqual({ ok: true, data: [] });
+    expect(passed).toEqual({ ok: true, data: [], meta: { attempts: 1, cost: { rowsRead: 0, rowsWritten: 0, durationMs: 0 } } });
   });
 
   it("injects failures into execute, queryOne, batch and exec", async () => {
@@ -380,9 +388,12 @@ describe("fakeD1", () => {
     const db = fakeD1(() => [{ id: 1 }], { failOn: () => failure });
     const client = createD1Client(db, { logger: nullLogger });
 
-    expect(await client.execute(sql`INSERT INTO t VALUES (${1})`)).toEqual({ ok: false, error: failure });
-    expect(await client.queryOne(sql`SELECT 1`)).toEqual({ ok: false, error: failure });
-    expect(await client.batch([sql`SELECT 1`])).toEqual({ ok: false, error: failure });
+    const causes = await Promise.all([
+      client.execute(sql`INSERT INTO t VALUES (${1})`),
+      client.queryOne(sql`SELECT 1`),
+      client.batch([sql`SELECT 1`]),
+    ]).then((outcomes) => outcomes.map((outcome) => (outcome.ok ? null : outcome.error.cause)));
+    expect(causes).toEqual([failure, failure, failure]);
     const thrownByExec = await db.exec("VACUUM").then(
       () => null,
       (e: unknown) => e,

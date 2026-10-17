@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -59,6 +59,29 @@ describe("createDbCommands()", () => {
   });
 });
 
+describe("a wrangler entry whose migrations_dir is not forge's directory", () => {
+  for (const [what, entry] of [
+    ["unset", {}],
+    ["naming another directory", { migrations_dir: "migrations" }],
+  ] as const) {
+    it(`refuses every verb when migrations_dir is ${what}, naming the key, before wrangler is run`, async () => {
+      const root = mkdtempSync(join(tmpdir(), "forge-db-commands-"));
+      roots.push(root);
+      const { path, text } = minimalWranglerConfig(root, {
+        d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", ...entry }],
+      });
+      writeFileSync(path, text, "utf-8");
+      const io = fakeDbIo();
+
+      const cli = await runDb(io, ["migrate", "status", "--root", root]);
+
+      expect(cli.code).toBe(1);
+      expect(cli.err.join("\n")).toContain('set "migrations_dir": "config/db/migrations" on that entry');
+      expect(io.calls).toEqual([]);
+    });
+  }
+});
+
 describe("forge db standby reset", () => {
   it("defaults --target to standby, so the bare verb builds the second database", () => {
     const reset = subcommand(subcommand(createDbCommands(), "standby") as CommandBase, "reset");
@@ -78,9 +101,37 @@ describe("forge db standby reset", () => {
       { match: (args) => args.includes("--yes"), reply: OK },
     );
 
-    const cli = await runDb(io, ["standby", "reset", "--root", root, "--yes", "--json"]);
+    const cli = await runDb(io, ["standby", "reset", "--root", root, "--no-seed", "--yes", "--json"]);
 
     expect(cli.out).toEqual([`{"target":"standby","database":"app-db-standby","applied":[],"seeded":[],"excluded":[]}`]);
+  });
+});
+
+describe("forge db standby reset --no-lint", () => {
+  it("rejects the flag, before anything is removed or run", async () => {
+    const io = fakeDbIo();
+    const cli = await runDb(io, ["standby", "reset", "--root", appRoot(), "--yes", "--no-lint"]);
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain("Unknown flag: --no-lint.");
+    expect([io.calls, io.d1Calls]).toEqual([[], []]);
+  });
+});
+
+describe("forge db deploy", () => {
+  it("rejects --allow-warnings as a flag it does not have, before wrangler is run", async () => {
+    const io = fakeDbIo();
+    const cli = await runDb(io, ["deploy", "--root", appRoot(), "--yes", "--allow-warnings"]);
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain("Unknown flag: --allow-warnings.");
+    expect(io.calls).toEqual([]);
+  });
+
+  it("rejects --contract as a flag it does not have, before wrangler is run", async () => {
+    const io = fakeDbIo();
+    const cli = await runDb(io, ["deploy", "--root", appRoot(), "--contract"]);
+    expect(cli.code).toBe(1);
+    expect(cli.err.join("\n")).toContain("Unknown flag: --contract.");
+    expect(io.calls).toEqual([]);
   });
 });
 
@@ -185,4 +236,40 @@ describe("forge db bookmark restore", () => {
     ]);
     expect([cli.code, io.calls]).toEqual([1, []]);
   });
+});
+
+describe("the README's script table", () => {
+  const table = readFileSync(join(import.meta.dir, "README.md"), "utf-8")
+    .split("\n")
+    .filter((line) => /^\| `(dev|db:[^`]+)` \|/.test(line));
+  const commands = table.map((line) => (/^\| `[^`]+` \| `([^`]+)`/.exec(line)?.[1] ?? "").split("&&")[0]?.trim() ?? "");
+
+  it("lists the lifecycle every app runs: the dev hook, status, lint, both migrates, deploy, backup, restore and reset", () => {
+    const scripts = table.map((line) => /^\| `([^`]+)`/.exec(line)?.[1]);
+    for (const script of ["dev", "db:status", "db:lint", "db:migrate", "db:migrate:remote", "db:deploy", "db:backup", "db:restore", "db:reset"]) {
+      expect(scripts).toContain(script);
+    }
+  });
+
+  /** The verb a row's command resolves to, and the flags it passes. */
+  function resolveRow(command: string): { verb: CommandBase | undefined; words: string[]; flags: string[] } {
+    const rest = command.split(" ").slice(2);
+    const first = rest.findIndex((word) => word.startsWith("-"));
+    const words = first === -1 ? rest : rest.slice(0, first);
+    let verb: CommandBase | undefined = createDbCommands();
+    for (const word of words) verb = verb?.commands.find((c) => c.name === word);
+    return { verb, words, flags: rest.filter((word) => word.startsWith("-")) };
+  }
+
+  for (const command of commands) {
+    it(`names \`${command}\`, a verb in the forge db tree with every flag it passes`, () => {
+      const { verb, words, flags } = resolveRow(command);
+      expect(command.startsWith("forge db ")).toBe(true);
+      expect(verb?.name).toBe(words.at(-1) ?? "db");
+      const declared = new Set(
+        Object.entries(verb?.flags ?? {}).flatMap(([name, def]) => [`--${name}`, ...(def.short === undefined ? [] : [`-${def.short}`])]),
+      );
+      expect(flags.filter((flag) => !declared.has(flag))).toEqual([]);
+    });
+  }
 });

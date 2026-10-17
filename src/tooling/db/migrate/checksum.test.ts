@@ -12,7 +12,7 @@ import {
 
 function migration(name: string, sha256: string): Migration {
   const version = Number(name.slice(0, 4));
-  return { name, version, path: `/m/${name}.sql`, sha256, sql: "", origin: "custom", stamp: null };
+  return { name, version, path: `/m/${name}.sql`, sha256, sql: "", stamp: null };
 }
 
 function recorded(appliedName: string, sha256: string, fingerprint: string | null = null): RecordedChecksum {

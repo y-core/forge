@@ -36,15 +36,17 @@ import {
   createTotpManageActions,
   createVerifyActions,
 } from "./actions";
-import { requireFreshStepUp } from "./guards";
+import { requireApproval, requireFreshStepUp } from "./guards";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
 import { authEnrolmentPaths } from "./paths";
 import type { AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
 import {
+  approvedSession,
   attrOf,
   elementOf,
   HOSTILE_TEXT,
   fakeAdminUserStore,
+  fakeApproval,
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthEmailChangeFlow,
@@ -113,6 +115,11 @@ function actionApp(seed: Seed = {}): Forge {
 
 function mounted(app: Forge, method: "POST" | "PATCH" | "DELETE", pattern: string, action: TestAction): Forge {
   mapHandler(app, method, pattern, action);
+  return app;
+}
+
+function approved(app: Forge): Forge {
+  app.use("*", approvedSession(), requireApproval(fakeApproval()));
   return app;
 }
 
@@ -482,7 +489,7 @@ describe("createVerifyActions on a step-up", () => {
 
     const res = await app.request("/auth/verify/resend", formBody({}));
     expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/auth/verify?resent");
+    expect(res.headers.get("location")).toBe("/auth/verify?resent=1000");
   });
 
   // The mark says a code was asked for, never that one was sent. Only a registered address can be
@@ -1957,7 +1964,7 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
 describe("createAdminElevateActions", () => {
   it("grants the claim while the deployment has no administrator", async () => {
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+    const app = mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(303);
@@ -1967,7 +1974,7 @@ describe("createAdminElevateActions", () => {
   it("refuses the claim at 409 once an administrator exists", async () => {
     const admin = fakeAuthUser({ id: "u1", isAdmin: true });
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([admin]) });
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+    const app = mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(409);
@@ -1986,7 +1993,7 @@ describe("createAdminElevateActions", () => {
     // One service across both requests: `optionsWith` builds a fresh one per call, and two services
     // would each hold their own count, which is the race rather than a test of it.
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+    const app = mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     const statuses = await Promise.all([
       app.request("/admin/elevate", formBody({ confirm: "yes" })),
@@ -2000,7 +2007,7 @@ describe("createAdminElevateActions", () => {
   it("reports a session naming a row that is gone as unavailable, rather than redirecting on it", async () => {
     const service = fakeAdminUserStore([signedIn], { claimFirstAdmin: async () => ok("not-found" as const) });
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: service });
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+    const app = mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     expect((await app.request("/admin/elevate", formBody({ confirm: "yes" }))).status).toBe(503);
   });
@@ -2014,7 +2021,7 @@ describe("createAdminElevateActions", () => {
       },
     });
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin });
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+    const app = mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     expect((await app.request("/admin/elevate", formBody({ confirm: "on" }))).status).toBe(422);
     expect(claims).toBe(0);
@@ -2022,11 +2029,55 @@ describe("createAdminElevateActions", () => {
 
   it("redirects an anonymous claim to sign-in", async () => {
     const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]) });
-    const app = mounted(actionApp(), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+    const app = mounted(approved(actionApp()), "POST", "/admin/elevate", createAdminElevateActions(options).submit);
 
     const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/signin");
+  });
+
+  function countingClaims() {
+    const claimed: string[] = [];
+    const admin = fakeAdminUserStore([signedIn], {
+      countAdmins: async () => ok(claimed.length),
+      claimFirstAdmin: async (id) => {
+        claimed.push(id);
+        return ok("changed" as const);
+      },
+    });
+    return { claimed, admin, options: optionsWith({ users: fakeAuthUserStore([signedIn]), admin }) };
+  }
+
+  const UNADMITTED: readonly { readonly label: string; readonly wire: (app: Forge) => void }[] = [
+    { label: "mounted with nothing ahead of it", wire: () => undefined },
+    { label: "behind an approved session that no `requireApproval` checked", wire: (app) => app.use("*", approvedSession()) },
+  ];
+
+  for (const { label, wire } of UNADMITTED) {
+    it(`answers 404 to a signed-in claim on an empty deployment, and claims nothing, ${label}`, async () => {
+      const { claimed, admin, options } = countingClaims();
+      const app = actionApp({ userId: "u9" });
+      wire(app);
+      mounted(app, "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+      const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
+      expect({ status: res.status, body: await res.text(), claimed, admins: await admin.countAdmins() }).toEqual({
+        status: 404,
+        body: "Not Found",
+        claimed: [],
+        admins: ok(0),
+      });
+    });
+  }
+
+  it("sends a claim to the prompt when `requireApproval` stands ahead of it over an unapproved session, and claims nothing", async () => {
+    const { claimed, options } = countingClaims();
+    const app = actionApp({ userId: "u9" });
+    app.use("*", requireApproval(fakeApproval()));
+    mounted(app, "POST", "/admin/elevate", createAdminElevateActions(options).submit);
+
+    const res = await app.request("/admin/elevate", formBody({ confirm: "yes" }));
+    expect({ status: res.status, location: res.headers.get("location"), claimed }).toEqual({ status: 303, location: "/approve", claimed: [] });
   });
 });
 
@@ -2373,13 +2424,20 @@ describe("the Turnstile guard on the anonymous forms", () => {
       });
     });
 
-    it("answers a refused resend with the redirect an admitted one gets, issuing no code", async () => {
+    it("answers a refused resend with a 422 re-render rather than the redirect an admitted one gets, issuing no code", async () => {
       const resend = async (body: Record<string, string>) => {
         const calls: string[] = [];
         const options = guarded({ signin: recordingFlow(calls) });
         const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify/resend", createVerifyActions(options).resend);
         const res = await app.request("/auth/verify/resend", formBody(body));
-        return { status: res.status, location: res.headers.get("location"), body: await res.text(), calls };
+        const html = await res.text();
+        return {
+          status: res.status,
+          location: res.headers.get("location"),
+          calls,
+          refusal: textOf(html, "div", 'data-slot="alert-description"'),
+          resentNotice: html.includes('data-ref="verify-resent"'),
+        };
       };
       siteverify(solvedFor("auth-resend"));
 
@@ -2387,24 +2445,70 @@ describe("the Turnstile guard on the anonymous forms", () => {
       const refused = await resend({});
 
       expect({ admitted, refused }).toEqual({
-        admitted: { status: 303, location: "/auth/verify?resent", body: "", calls: ["request:grace@example.com"] },
-        refused: { status: 303, location: "/auth/verify?resent", body: "", calls: [] },
+        admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["request:grace@example.com"], refusal: "", resentNotice: false },
+        refused: {
+          status: 422,
+          location: null,
+          calls: [],
+          refusal: "We could not read that. Please check the form and try again.",
+          resentNotice: false,
+        },
       });
     });
 
-    it("answers a refused step-up resend with the same redirect, asking for no step-up code", async () => {
+    it("warns the operator when a resend body cannot be read at all, and refuses it without issuing a code", async () => {
+      const sent = siteverify(solvedFor("auth-resend"));
+      const calls: string[] = [];
+      const warnings: unknown[] = [];
+      const app = actionApp({ pendingEmail: "grace@example.com" });
+      app.use("*", (context, next) => {
+        requestLog.set(context, { ...nullLogger, warn: (message: string, data?: Record<string, unknown>) => void warnings.push([message, data]) });
+        return next();
+      });
+      mounted(app, "POST", "/auth/verify/resend", createVerifyActions(guarded({ signin: recordingFlow(calls) })).resend);
+
+      // A multipart content type whose body carries no boundary-delimited part, so no form can be parsed out of it.
+      const res = await app.request("/auth/verify/resend", {
+        method: "POST",
+        body: "not a form",
+        headers: { "content-type": "multipart/form-data; boundary=x" },
+      });
+
+      expect({ status: res.status, location: res.headers.get("location"), warnings, calls, sent }).toEqual({
+        status: 422,
+        location: null,
+        warnings: [["auth.resend.unreadable", undefined]],
+        calls: [],
+        sent: [],
+      });
+    });
+
+    it("answers a refused step-up resend with a 422 re-render, asking for no step-up code", async () => {
       siteverify(solvedFor("auth-resend"));
       const calls: string[] = [];
       const options = guarded({ ...holdingBoth, signin: recordingFlow(calls) });
       const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify/resend", createVerifyActions(options).resend);
 
       const res = await app.request("/auth/verify/resend", formBody({}));
-      const refused = { status: res.status, location: res.headers.get("location"), calls: [...calls] };
+      const html = await res.text();
+      const refused = {
+        status: res.status,
+        location: res.headers.get("location"),
+        calls: [...calls],
+        refusal: textOf(html, "div", 'data-slot="alert-description"'),
+        resentNotice: html.includes('data-ref="verify-resent"'),
+      };
       const admittedRes = await app.request("/auth/verify/resend", formBody({ "cf-turnstile-response": "solved" }));
 
       expect({ refused, admitted: { status: admittedRes.status, location: admittedRes.headers.get("location"), calls } }).toEqual({
-        refused: { status: 303, location: "/auth/verify?resent", calls: [] },
-        admitted: { status: 303, location: "/auth/verify?resent", calls: ["requestStepUp"] },
+        refused: {
+          status: 422,
+          location: null,
+          calls: [],
+          refusal: "We could not read that. Please check the form and try again.",
+          resentNotice: false,
+        },
+        admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["requestStepUp"] },
       });
     });
 

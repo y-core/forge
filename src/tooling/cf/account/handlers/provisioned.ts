@@ -15,7 +15,7 @@ export function createProvisionedHandler<TLocal extends { binding: string }>(spe
       if (entries.length === 0) return { entries: [], results: [] };
 
       const client = createCfClient(ctx.auth, ctx.fetch);
-      const listResult = await spec.list(client, ctx.auth.accountId);
+      const listResult = await spec.list(client, ctx.auth.accountId, ctx);
 
       const updated: TLocal[] = [];
       const results: SyncResult[] = [];
@@ -50,12 +50,13 @@ export function createProvisionedHandler<TLocal extends { binding: string }>(spe
         }
 
         if (ctx.dryRun) {
-          results.push({ ...row, remoteName, action: "would-create", remote: false, detail: stale });
+          const detail = [spec.describeCreate?.(entry), stale].filter((part) => part !== undefined).join("; ");
+          results.push({ ...row, remoteName, action: "would-create", remote: false, detail: detail === "" ? undefined : detail });
           updated.push(entry);
           continue;
         }
 
-        const createResult = await spec.create(client, ctx.auth.accountId, remoteName);
+        const createResult = await spec.create(client, ctx.auth.accountId, remoteName, entry, ctx);
         if (!createResult.ok) {
           results.push(...failureRows(spec.type, [{ binding: entry.binding, remoteName }], createResult.error, ctx));
           updated.push(entry);

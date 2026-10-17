@@ -15,7 +15,7 @@ import { sessionCtx } from "../../session/session";
 import { APPROVAL_TTL_MS } from "../config";
 import { authLimit } from "../limits";
 import { readAuthSubmission } from "./actions";
-import { approvalCode } from "./guards";
+import { approvalCode, signApprovalCode } from "./guards";
 import { markApproval } from "./identity";
 import { authCsrfHeader, turnstileCheckFor, turnstileWidgetFor } from "./options";
 import { APPROVAL_RETURN_PARAM, authWithQuery } from "./paths";
@@ -40,6 +40,16 @@ export function defineApproval<Bindings = Record<string, unknown>>(options: Appr
   if (options.origin === undefined) {
     throw new Error(
       "defineApproval: no `origin` policy was passed — the prompt answers a POST, so pass one and a cross-site submission to it is refused.",
+    );
+  }
+  if (options.rateLimit === undefined) {
+    throw new Error(
+      "defineApproval: no `rateLimit` was passed — the prompt is open to anyone and answers guesses at a shared code, so pass a limit; forge picks no numbers.",
+    );
+  }
+  if (options.ring === undefined) {
+    throw new Error(
+      "defineApproval: no `ring` was passed — a session holds a digest of the code it was approved under, so pass the app's key ring and a changed code ends the approval.",
     );
   }
   const ttlMs = authLimit("defineApproval", "ttlMs", options.ttlMs, {
@@ -86,20 +96,13 @@ async function submitPrompt<Bindings>(c: AppContext<Bindings>, approval: Approva
     return renderPrompt(c, approval, CODE_REFUSED, 422);
   }
 
-  markApproval(session, Date.now());
+  markApproval(session, { at: Date.now(), digest: await signApprovalCode(await approval.ring(c), expected) });
   return createAuthRedirect(c, safeRedirectPath(c.url.searchParams.get(APPROVAL_RETURN_PARAM), "/"));
 }
 
 /** Mounts `approval`'s prompt page at its path, behind its origin policy and rate limit. @public */
 export function registerApproval<Bindings extends object>(app: Forge<Bindings>, approval: Approval<Bindings>): void {
-  app.use(
-    approval.path,
-    ...buildGuardChain<Bindings>({
-      paths: [approval.path],
-      origin: approval.origin,
-      ...(approval.rateLimit === undefined ? {} : { rateLimit: approval.rateLimit }),
-    }),
-  );
+  app.use(approval.path, ...buildGuardChain<Bindings>({ paths: [approval.path], origin: approval.origin, rateLimit: approval.rateLimit }));
   const show: RequestHandler = (context) => {
     const c = getAppContext<Bindings>(context);
     return approvalCode(c, approval) === undefined ? notFound() : renderPrompt(c, approval);

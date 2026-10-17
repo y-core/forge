@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
+import type { DbRunContext } from "../../src/tooling/db/types";
 import { type D1Handle, openD1 } from "./d1";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
@@ -26,7 +27,7 @@ interface Case {
   expectStdout?: string[];
   /** When set, the second compose must write no migration. */
   expectNoMigration?: boolean;
-  /** When set, the second migrate must fail on the seeded rows with this text; the proof never sees them. */
+  /** When set, the second migrate must fail on the seeded rows with this text, which hold a value the proof's own seeded row does not. */
   migrateFails?: string;
   query: string;
   rows: Record<string, unknown>[];
@@ -60,6 +61,11 @@ function declare(root: string, schemas: readonly string[]): void {
 }
 
 const DIGEST = /--allow-destructive ([0-9a-f]{12})/;
+
+function withoutApproval(args: readonly string[]): string[] {
+  const at = args.indexOf("--allow-destructive");
+  return at === -1 ? [...args] : [...args.slice(0, at), ...args.slice(at + 2)];
+}
 
 function composeArgs(spec: Case, refused: Step | null): string[] {
   return (spec.args ?? []).map((arg) => {
@@ -99,15 +105,16 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
       declare(root, ["lib.sql", "schema.sql"]);
     }
     const first = await forgeDb(root, ["migrate", "compose", "init"]);
-    const firstWritten = existsSync(join(root, "migrations", "0001_init.sql"));
+    const firstWritten = existsSync(join(root, "config", "db", "migrations", "0001_init.sql"));
     const migratedFirst = await forgeDb(root, ["migrate", "--yes"]);
     db = await openD1(root);
     await db.exec(spec.seed);
 
-    const changeFile = join(root, "migrations", numbered(2, "change"));
+    const changeFile = join(root, "config", "db", "migrations", numbered(2, "change"));
     writeFileSync(join(root, "schema.sql"), readFileSync(join(dir, "after.sql")));
     if (spec.lib !== undefined) declare(root, ["schema.sql"]);
-    const refused = spec.refusedWithout === undefined ? null : await forgeDb(root, ["migrate", "compose", "change"]);
+    const refused =
+      spec.refusedWithout === undefined ? null : await forgeDb(root, ["migrate", "compose", "change", ...withoutApproval(spec.args ?? [])]);
     const refusedWritten = existsSync(changeFile);
     const second = await forgeDb(root, ["migrate", "compose", "change", ...composeArgs(spec, refused)]);
     const written = existsSync(changeFile) ? readFileSync(changeFile, "utf-8") : "";
@@ -133,7 +140,7 @@ async function runCase(dir: string, spec: Case): Promise<Observed> {
     const check = await forgeDb(root, ["schema", "check", "--replay"]);
     const status = await forgeDb(root, ["migrate", "status", "--check"]);
     const again = await forgeDb(root, ["migrate", "compose", "again", "--dry-run"]);
-    const againWritten = existsSync(join(root, "migrations", numbered(3, "again")));
+    const againWritten = existsSync(join(root, "config", "db", "migrations", numbered(3, "again")));
     const read = await db.rows(spec.query);
     return {
       first,
@@ -234,3 +241,217 @@ for (const name of cases) {
     });
   });
 }
+
+async function loadForge() {
+  const [context, compose, diff, proof] = await Promise.all([
+    import("../../src/tooling/db/context"),
+    import("../../src/tooling/db/schema/compose"),
+    import("../../src/tooling/db/schema/diff"),
+    import("../../src/tooling/db/schema/proof"),
+  ]);
+  return {
+    withDbRun: context.withDbRun,
+    composeMigration: compose.composeMigration,
+    readSchemaInputs: compose.readSchemaInputs,
+    baselineSchemaModel: compose.baselineSchemaModel,
+    desiredSchemaModel: compose.desiredSchemaModel,
+    diffSchemaModels: diff.diffSchemaModels,
+    parseSchemaRename: diff.parseSchemaRename,
+    proveComposed: proof.proveComposed,
+  };
+}
+
+test.describe("the proof over one seeded row per table", () => {
+  let forge: Awaited<ReturnType<typeof loadForge>>;
+  test.beforeAll(async () => {
+    forge = await loadForge();
+  });
+
+  const inRun = <T>(root: string, body: (run: DbRunContext) => Promise<T>): Promise<T> =>
+    forge.withDbRun(
+      { root, target: "local", db: undefined, config: "wrangler.jsonc", env: undefined, json: true, yes: true },
+      undefined,
+      { host: { schemas: ["schema.sql"] } },
+      body,
+    );
+  const failure = (pending: Promise<unknown>) =>
+    pending.then(
+      () => null,
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+
+  async function compose(run: DbRunContext, name: string, renames: readonly string[], dryRun: boolean) {
+    const options = { name, dryRun, renames, cache: true };
+    const refused = await failure(forge.composeMigration(run, options));
+    const digest = refused === null ? undefined : DIGEST.exec(refused)?.[1];
+    if (refused !== null && digest === undefined) throw new Error(refused);
+    return forge.composeMigration(run, digest === undefined ? options : { ...options, allowDestructive: digest });
+  }
+
+  async function proving(before: string, after: string, body: (run: DbRunContext) => Promise<void>) {
+    const root = freshRoot();
+    try {
+      writeFileSync(join(root, "schema.sql"), before);
+      await inRun(root, async (run) => {
+        await forge.composeMigration(run, { name: "init", dryRun: false, renames: [], cache: true });
+      });
+      writeFileSync(join(root, "schema.sql"), after);
+      await inRun(root, body);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  async function proofInput(run: DbRunContext, sql: string, renames: readonly string[]) {
+    const inputs = forge.readSchemaInputs(run);
+    const baseline = await forge.baselineSchemaModel(run, inputs, true);
+    const desired = await forge.desiredSchemaModel(run, inputs, true);
+    const steps = forge.diffSchemaModels(baseline, desired).dataDependent;
+    return { inputs, proof: { sql, baseline, desired, renames: renames.map(forge.parseSchemaRename), steps } };
+  }
+
+  const PARENT_CHILD =
+    'CREATE TABLE "parent" ("id" INTEGER PRIMARY KEY, "a" INTEGER);\n' +
+    'CREATE TABLE "child" ("id" INTEGER PRIMARY KEY, "parent_id" INTEGER REFERENCES "parent" ("id"));\n';
+  const DROP_CHILD = 'DROP TABLE IF EXISTS "child";\n';
+  const RENAME_IN = /^ALTER TABLE "_forge_new_[^\n]* RENAME TO [^\n]*\n/gm;
+
+  /** The bug-261018-02 order: the dropped child goes after the renames instead of before them. */
+  function oldEmitOrder(sql: string): string {
+    const without = sql.replace(DROP_CHILD, "");
+    const last = [...without.matchAll(RENAME_IN)].at(-1);
+    if (without === sql || last === undefined) throw new Error(`not the emitted shape the mutation moves:\n${sql}`);
+    const at = last.index + last[0].length;
+    return `${without.slice(0, at)}${DROP_CHILD}${without.slice(at)}`;
+  }
+
+  const variants = [
+    { name: "a NOT NULL DEFAULT 0", after: 'CREATE TABLE "parent" ("id" INTEGER PRIMARY KEY, "a" INTEGER NOT NULL DEFAULT 0);\n' },
+    { name: "a UNIQUE", after: 'CREATE TABLE "parent" ("id" INTEGER PRIMARY KEY, "a" INTEGER UNIQUE);\n' },
+  ];
+
+  for (const { name, after } of variants) {
+    test(`refuses the bug-261018-02 counterexample in the old emit order, and proves the real one: parent gains ${name}`, async () => {
+      test.setTimeout(120_000);
+      await proving(PARENT_CHILD, after, async (run) => {
+        const { sql } = await compose(run, "change", [], true);
+        const { inputs, proof } = await proofInput(run, sql, []);
+        const old = oldEmitOrder(sql);
+
+        expect((await forge.proveComposed(run, inputs, proof)).warnings).toEqual([]);
+        expect(await failure(forge.proveComposed(run, inputs, { ...proof, sql: old }))).toMatch(
+          /^the composed migration does not apply to the baseline — this is a forge bug, and the file was not written:\n[^]*FOREIGN KEY constraint failed/,
+        );
+        const unseeded = { ...proof, sql: old, baseline: { tables: [], indexes: [], triggers: [], views: [] } };
+        expect((await forge.proveComposed(run, inputs, unseeded)).warnings).toEqual([]);
+      });
+    });
+  }
+
+  const BEFORE_VALID =
+    'CREATE TABLE "parent" ("id" INTEGER PRIMARY KEY, "a" INTEGER, "note" TEXT);\n' +
+    'CREATE TABLE "child" ("id" INTEGER PRIMARY KEY, "parent_id" INTEGER NOT NULL REFERENCES "parent" ("id"), "label" TEXT);\n';
+  const AFTER_VALID =
+    'CREATE TABLE "parent" ("id" INTEGER PRIMARY KEY, "a" INTEGER NOT NULL DEFAULT 0, "memo" TEXT);\n' +
+    'CREATE TABLE "child" ("id" INTEGER PRIMARY KEY, "parent_id" INTEGER NOT NULL REFERENCES "parent" ("id"), "label" TEXT);\n';
+  const RENAMES = ["parent.note:memo"];
+
+  test("composes a parent rebuild with a child, a column rename and a NOT NULL tightening over its seeded rows, warning only of the tightening", async () => {
+    test.setTimeout(120_000);
+    await proving(BEFORE_VALID, AFTER_VALID, async (run) => {
+      const outcome = await compose(run, "change", RENAMES, false);
+
+      expect(outcome.path).toBe(join(run.config.root, "config", "db", "migrations", "0002_change.sql"));
+      expect(outcome.warnings).toEqual([
+        "warning: parent.a becomes NOT NULL — the rebuild copies existing rows as they are, so one holding NULL fails it (the DEFAULT does not fill it in); rehearse it on `standby` first",
+      ]);
+      await run.io.closeD1(null);
+      const scratch = await openD1(join(run.config.root, ".forge", "scratch", "compose", "baseline"));
+      try {
+        expect({
+          parent: await scratch.rows('SELECT "id", "a", "memo" FROM "parent"'),
+          child: await scratch.rows('SELECT "id", "parent_id", "label" FROM "child"'),
+        }).toEqual({ parent: [{ id: 1, a: 1, memo: "forge-seed" }], child: [{ id: 1, parent_id: 1, label: "forge-seed" }] });
+      } finally {
+        await scratch.dispose();
+      }
+    });
+  });
+
+  test("refuses, on local D1, a rebuild that leaves a renamed column out of its copy", async () => {
+    test.setTimeout(120_000);
+    await proving(BEFORE_VALID, AFTER_VALID, async (run) => {
+      const { sql } = await compose(run, "change", RENAMES, true);
+      const copy = 'INSERT INTO "_forge_new_parent" ("id", "a", "memo") SELECT "id", "a", "memo" FROM "parent";';
+      const sabotaged = sql.replace(copy, 'INSERT INTO "_forge_new_parent" ("id", "a") SELECT "id", "a" FROM "parent";');
+      expect(sabotaged).not.toBe(sql);
+      const { inputs, proof } = await proofInput(run, sabotaged, RENAMES);
+
+      expect(await failure(forge.proveComposed(run, inputs, proof))).toBe(
+        "the composed migration does not keep the rows it was proven over — this is a forge bug, and the file was not written:\n  parent.memo was seeded 'forge-seed' and reads NULL",
+      );
+    });
+  });
+
+  const TAGS_BEFORE = 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY);\n';
+  const TAGS_AFTER = 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY, "label" TEXT);\n';
+  const triggered = [
+    {
+      name: "an AFTER INSERT trigger on orders inserts into audit, which is seeded first",
+      schema:
+        'CREATE TABLE "audit" ("id" INTEGER PRIMARY KEY, "action" TEXT);\n' +
+        'CREATE TABLE "orders" ("id" INTEGER PRIMARY KEY, "note" TEXT);\n' +
+        'CREATE TRIGGER "orders_audit" AFTER INSERT ON "orders" BEGIN INSERT INTO "audit" ("action") VALUES (\'created\'); END;\n',
+      read: 'SELECT "id", "action" FROM "audit" ORDER BY "id"',
+      held: [
+        { id: 1, action: "forge-seed" },
+        { id: 2, action: "created" },
+      ],
+      loses: 'DELETE FROM "audit" WHERE "id" = 1;\n',
+      refusal: "a row seeded into audit is gone: id = 1, action = 'forge-seed'",
+    },
+    {
+      name: "an AFTER INSERT trigger on orders increments users.order_count, a seeded column with no DEFAULT",
+      schema:
+        'CREATE TABLE "users" ("id" INTEGER PRIMARY KEY, "order_count" INTEGER);\n' +
+        'CREATE TABLE "orders" ("id" INTEGER PRIMARY KEY, "user_id" INTEGER REFERENCES "users" ("id"));\n' +
+        'CREATE TRIGGER "orders_count" AFTER INSERT ON "orders" BEGIN UPDATE "users" SET "order_count" = "order_count" + 1 WHERE "id" = NEW."user_id"; END;\n',
+      read: 'SELECT "id", "order_count" FROM "users"',
+      held: [{ id: 1, order_count: 2 }],
+      loses: 'UPDATE "users" SET "order_count" = 0;\n',
+      refusal: "users.order_count was seeded 2 and reads 0",
+    },
+  ];
+
+  for (const { name, schema, read, held, loses, refusal } of triggered) {
+    test(`composes and writes an unrelated ADD COLUMN over a baseline where ${name}`, async () => {
+      test.setTimeout(120_000);
+      await proving(schema + TAGS_BEFORE, schema + TAGS_AFTER, async (run) => {
+        const outcome = await forge.composeMigration(run, { name: "change", dryRun: false, renames: [], cache: true });
+
+        expect(outcome.path).toBe(join(run.config.root, "config", "db", "migrations", "0002_change.sql"));
+        expect(existsSync(outcome.path ?? "")).toBe(true);
+        expect(outcome.warnings).toEqual([]);
+        await run.io.closeD1(null);
+        const scratch = await openD1(join(run.config.root, ".forge", "scratch", "compose", "baseline"));
+        try {
+          expect(await scratch.rows(read)).toEqual(held);
+        } finally {
+          await scratch.dispose();
+        }
+      });
+    });
+
+    test(`still refuses a migration that loses what the seed left, where ${name}`, async () => {
+      test.setTimeout(120_000);
+      await proving(schema + TAGS_BEFORE, schema + TAGS_AFTER, async (run) => {
+        const { sql } = await compose(run, "change", [], true);
+        const { inputs, proof } = await proofInput(run, sql + loses, []);
+
+        expect(await failure(forge.proveComposed(run, inputs, proof))).toBe(
+          `the composed migration does not keep the rows it was proven over — this is a forge bug, and the file was not written:\n  ${refusal}`,
+        );
+      });
+    });
+  }
+});

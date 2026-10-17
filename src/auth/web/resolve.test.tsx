@@ -17,7 +17,7 @@ import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
 import { PASSKEY_OPTIONS_PATH_ATTR, PASSKEY_REDIRECT_ATTR, PASSKEY_SCOPE, PASSKEY_VERIFY_PATH_ATTR } from "../passkey-contract";
 import type { AuthFactor, AuthFactorKind } from "../types";
-import { requireFreshStepUp, resolveAuth } from "./guards";
+import { approvalCtx, requireFreshStepUp, resolveAuth } from "./guards";
 import { authCtx } from "./identity";
 import {
   loadAccountFactors,
@@ -61,6 +61,7 @@ import {
   fakeFactorService,
   fakeFactorStore,
   attrOf,
+  attrsOf,
   elementOf,
   elementsOf,
   tagOf,
@@ -91,7 +92,10 @@ function guardedApp(
   const app = new Forge();
   app.use("*", (context, next) => {
     csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
-    if (identity !== null) authCtx.set(context, identity);
+    if (identity !== null) {
+      authCtx.set(context, identity);
+      approvalCtx.set(context, Date.now());
+    }
     return next();
   });
   for (const guard of guards) app.use("*", guard);
@@ -441,6 +445,16 @@ describe("resolveAuthView refusals", () => {
       { status: 204, location: null, redirect: "/auth/signin" },
       { status: 302, location: "/auth/signin", redirect: null },
     ]);
+  });
+
+  it("answers 404 on the elevate page to a signed-in viewer that no `requireApproval` admitted", async () => {
+    const identified: Middleware = (context, next) => {
+      authCtx.set(context, member);
+      return next();
+    };
+    const options = optionsWith({ admin: fakeAdminUserStore([viewer]) });
+    const res = await guardedApp((c) => loadAdminElevate(c as never, options), null, "/page", [identified]).request("/page");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 404, body: "Not Found" });
   });
 
   // Swapped, an anonymous prober learns from the status whether this deployment offers passkeys.
@@ -929,6 +943,61 @@ describe("the verify page's recovery-standing lookup", () => {
       expect(reads).toBeGreaterThan(0);
     });
   }
+});
+
+describe("the verify page's resend control after a `?resent` stamp", () => {
+  const NOW = 10_000_000;
+  const WINDOW_MS = 45_000;
+  const ASKED = "If another code was due, it is on its way — check your inbox.";
+
+  function signinWith(reissueAfterMs: number | null): AuthWebOptions {
+    const primary = { ...fakeFactorService("email-otp"), reissueAfterMs };
+    const services = fakeAuthServices({ factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: primary, role: "primary" }] }) });
+    return fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
+  }
+
+  async function resendControl(query: string, reissueAfterMs: number | null = WINDOW_MS) {
+    const html = await (await loaderApp(loadVerify, signinWith(reissueAfterMs), null).request(`/page${query}`)).text();
+    return { notice: textOf(html, "div", 'data-slot="alert-description"'), disabled: attrsOf(html, 'data-ref="verify-resend"')["disabled"] };
+  }
+
+  const STAMPS = [
+    {
+      label: "holds the control inside the window and names the wait still left",
+      query: `?resent=${NOW - 15_000}`,
+      expected: { notice: `${ASKED} You can ask again in 30 seconds.`, disabled: "" },
+    },
+    {
+      label: "re-opens the control once the window has fully elapsed",
+      query: `?resent=${NOW - WINDOW_MS}`,
+      expected: { notice: ASKED, disabled: undefined },
+    },
+    { label: "re-opens the control long after the window", query: `?resent=${NOW - 3_600_000}`, expected: { notice: ASKED, disabled: undefined } },
+    {
+      label: "reads a stamp dated into the future as now, holding the control for one whole window",
+      query: `?resent=${NOW + 3_600_000}`,
+      expected: { notice: `${ASKED} You can ask again in 45 seconds.`, disabled: "" },
+    },
+    {
+      label: "shows the notice with the control live for an unparseable stamp",
+      query: "?resent=soon",
+      expected: { notice: ASKED, disabled: undefined },
+    },
+    // A negative number, which the digits-only stamp refuses rather than reading as long ago.
+    { label: "shows the notice with the control live for a signed stamp", query: "?resent=-5", expected: { notice: ASKED, disabled: undefined } },
+    { label: "shows the notice with the control live for a bare `?resent`", query: "?resent", expected: { notice: ASKED, disabled: undefined } },
+    { label: "says nothing and leaves the control live with no `?resent` at all", query: "", expected: { notice: "", disabled: undefined } },
+  ] as const;
+
+  for (const { label, query, expected } of STAMPS) {
+    it(label, async () => {
+      expect(await resendControl(query)).toEqual(expected);
+    });
+  }
+
+  it("leaves the control live inside what would be a window when the factor enforces no reissue wait", async () => {
+    expect(await resendControl(`?resent=${NOW - 1_000}`, null)).toEqual({ notice: ASKED, disabled: undefined });
+  });
 });
 
 describe("the verify page for a session that owes nothing", () => {

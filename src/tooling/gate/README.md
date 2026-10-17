@@ -102,9 +102,15 @@ that match rules your repository actually holds; the label in each row is its `-
 | `bundleStep(label, …)` → the `label` you give it | A committed bundle a node process loads matches a fresh build of its TypeScript source |
 
 The tool rows carry no check and simply spawn: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep`
-(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite; `leavesNoTemp: true` fails it when the suite leaves
-anything in the `TMPDIR` the gate gives it). Others spawn something a machine may not have — `browserStep` (`test:browser`), `workerdStep`
-(`test:workerd`) and `dbSchemaStep`, which returns the **pair** `db:schema:digests` and `db:schema`.
+(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Others spawn something a machine may not have —
+`browserStep` (`test:browser`), `workerdStep` (`test:workerd`) and `dbSteps`, which returns `db:schema:digests` in `quality`, and `db:lint`
+(`forge db lint`, which reads the local database) and `db:schema` (the replay) in `full`. Lint reads the local database's history to pick the
+pending files, and no row gates on its status: a fresh checkout has none, so every file is pending there, and the replay is what proves the
+migrations apply.
+
+**`leavesNoTemp: true` fails a spawned step that exits with anything in the `TMPDIR` the gate gives it**, naming each entry. `testStep` and
+`workerdStep` take it. A step's `tempCaches` globs name the entries it keeps by design, and the check skips only those: `workerdStep` declares
+`playwright-transform-cache-*`, which the Playwright runner writes before any test starts, so a `miniflare-*` scratch directory is still reported.
 
 **The documentation, changelog, design and knowledge-index rows are warden's, not this namespace's.** `docsStep` (`validate-docs`), `changelogStep`
 (`validate-changelog`), `designStep` (`validate-design`), `wardenStep` (`warden:index`), `wardenQueriesStep` (`warden:queries`) and `duplicatesStep`
@@ -248,13 +254,14 @@ Output is one line per step, then one verdict line:
 ✓ typecheck (0.9s)
 ✗ lint (0.8s)
     src/app/routes.ts:14:3 lint/style/useConst ...
-    full log at /tmp/forge-gate-a1b2c3/lint.log
+    full log at /tmp/forge-gate-logs/3f9a1c0b2e4d/lint.log
 ✗ verify — failed at `lint` (step 2 of 5, 1.7s)
 ```
 
 **The verdict is the summary line**, not the raw tool output beneath it. A failing step exits 1, so `prepublishOnly: "bun run verify:full"` blocks a
-red gate. A failing step's untruncated output is written to a temp file and its path printed under the excerpt, so a signal outside the `tail`
-window is still recoverable. A narrowed run brands its summary as scoped, so a scoped green never reads as a green gate.
+red gate. A failing step's untruncated output is written to one log per repository and step, overwritten by its next failure, and its path is
+printed under the excerpt, so a signal outside the `tail` window is still recoverable. A narrowed run brands its summary as scoped, so a scoped
+green never reads as a green gate.
 
 **`--only` and `--fix` are the two halves of a dev loop, and they are not the same verb.** `--only lint` runs the check and writes nothing; `--fix`
 writes and checks nothing, and closes by naming the run that confirms it. Script them as `lint` and `fix` so the distinction shows at the call site.

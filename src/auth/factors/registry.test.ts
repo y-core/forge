@@ -388,7 +388,7 @@ describe("createFactorRegistry — the query count", () => {
       offered: recoverable([primary(EMAIL_OTP), second(PASSKEY, "mandatory"), second(TOTP_APP, "mandatory")]),
     }).resolve(USER_ID);
     expect(db.calls).toHaveLength(1);
-    expect(db.calls[0]?.sql).toContain("kind IN (?, ?, ?)");
+    expect(db.calls[0]?.sql).toContain("kind IN (SELECT value FROM json_each(?))");
   });
 
   it("asks the store only about the explicit kinds, because an implicit one has no row to find", async () => {
@@ -396,7 +396,7 @@ describe("createFactorRegistry — the query count", () => {
     const store = createFactorStore(createD1Client(db as unknown as D1Database, { logger: nullLogger }));
     await createFactorRegistry(store, { offered: recoverable([primary(EMAIL_OTP), second(IMPLICIT_PASSKEY), second(TOTP_APP)]) }).resolve(USER_ID);
     expect(db.calls).toHaveLength(1);
-    expect(db.calls[0]?.params.slice(1)).toEqual(["totp-app", "recovery-code"]);
+    expect(db.calls[0]?.params.slice(1)).toEqual(['["totp-app","recovery-code"]']);
   });
 });
 

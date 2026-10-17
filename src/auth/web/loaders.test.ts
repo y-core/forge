@@ -15,6 +15,7 @@ import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
 import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
 import { SITE_DATA_CSRF_HEADER_ATTR, SITE_DATA_PATH_ATTR, SITE_DATA_SCOPE, SITE_DATA_TOKEN_ATTR } from "../site-data-contract";
+import { approvalCtx } from "./guards";
 import { AUTH_SESSION_KEY, AUTH_SITE_DATA_OWED_SESSION_KEY, authCtx } from "./identity";
 import {
   loadAccountPasskeyEnrol,
@@ -75,6 +76,7 @@ function loaderApp(load: Loader, options: AuthWebOptions, pattern = "/page", use
     if (userId !== undefined) {
       sessionCtx.get(context).set(AUTH_SESSION_KEY, userId);
       authCtx.set(context, { userId, email: signedIn.email, isAdmin: admin, stepUpAt: null });
+      approvalCtx.set(context, Date.now());
     }
     csrfMinterCtx.set(context, minter);
     return next();

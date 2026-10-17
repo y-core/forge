@@ -39,8 +39,8 @@ describe("createFactorStore", () => {
     const [client, db] = clientOf(() => []);
     await createFactorStore(client).findEnrolled(USER_ID, ["email-otp", "passkey", "totp-app"]);
     expect(db.calls).toHaveLength(1);
-    expect(db.calls[0]?.sql).toContain("kind IN (?, ?, ?)");
-    expect(db.calls[0]?.params).toEqual([uuidToBytes(USER_ID), "email-otp", "passkey", "totp-app"]);
+    expect(db.calls[0]?.sql).toContain("kind IN (SELECT value FROM json_each(?))");
+    expect(db.calls[0]?.params).toEqual([uuidToBytes(USER_ID), '["email-otp","passkey","totp-app"]']);
   });
 
   it("issues no statement at all for an empty kind list", async () => {
@@ -268,7 +268,8 @@ describe("createFactorStore", () => {
 
 describe("createFactorStore — remove", () => {
   const flat = (sql: string) => sql.replace(/\s+/g, " ").trim();
-  const HOLDS_ANOTHER = "EXISTS (SELECT 1 FROM auth_factors WHERE user_id = ? AND kind IN (?, ?) AND confirmed_at IS NOT NULL)";
+  const HOLDS_ANOTHER =
+    "EXISTS (SELECT 1 FROM auth_factors WHERE user_id = ? AND kind IN (SELECT value FROM json_each(?)) AND confirmed_at IS NOT NULL)";
 
   it("drops the factor, then the codes and the recovery-code row only where no confirmed totp-app or passkey remains, in one batch", async () => {
     const [client, db] = writerOf(() => 1);
@@ -276,10 +277,10 @@ describe("createFactorStore — remove", () => {
     const owner = uuidToBytes(USER_ID);
     expect(db.calls.map((call) => ({ sql: flat(call.sql), params: call.params }))).toEqual([
       { sql: "DELETE FROM auth_factors WHERE id = ? AND user_id = ?", params: [uuidToBytes(OTHER_ID), owner] },
-      { sql: `DELETE FROM auth_recovery_codes WHERE user_id = ? AND NOT ${HOLDS_ANOTHER}`, params: [owner, owner, "totp-app", "passkey"] },
+      { sql: `DELETE FROM auth_recovery_codes WHERE user_id = ? AND NOT ${HOLDS_ANOTHER}`, params: [owner, owner, '["totp-app","passkey"]'] },
       {
         sql: `DELETE FROM auth_factors WHERE user_id = ? AND kind = ? AND NOT ${HOLDS_ANOTHER}`,
-        params: [owner, "recovery-code", owner, "totp-app", "passkey"],
+        params: [owner, "recovery-code", owner, '["totp-app","passkey"]'],
       },
     ]);
   });

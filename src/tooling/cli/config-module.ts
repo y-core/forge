@@ -6,11 +6,11 @@ import type { ConfigModuleRequest, LoadedConfigModule } from "./types";
 
 /** Imports a config module with its default export, or `undefined` when a non-explicit default path is absent. */
 export async function loadConfigModule<T>(request: ConfigModuleRequest): Promise<LoadedConfigModule<T> | undefined> {
-  const { root, path, explicit, what } = request;
+  const { root, path, explicit, what, option = "--config" } = request;
   const resolved = resolve(root, path);
 
   if (!existsSync(resolved)) {
-    if (explicit) throw new Error(`No ${what} at \`${path}\` — --config names a module that does not exist.`);
+    if (explicit) throw new Error(`No ${what} at \`${path}\` — ${option} names a module that does not exist.`);
     return undefined;
   }
 

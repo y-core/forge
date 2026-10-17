@@ -613,7 +613,7 @@ describe("a second factor, driven through the mount", () => {
     expect(started.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard");
 
     const resent = await returning.form(started.headers.get("location") ?? "", {}, "/auth/verify/resend");
-    expect(resent.headers.get("location")).toBe("/auth/verify?next=%2Fapp%2Fdashboard&resent");
+    expect(resent.headers.get("location")).toMatch(/^\/auth\/verify\?next=%2Fapp%2Fdashboard&resent=\d+$/);
 
     const signedIn = await returning.form(resent.headers.get("location") ?? "", { code: CODE });
     const stepped = await returning.form(signedIn.headers.get("location") ?? "", { code: CODE });

@@ -4,9 +4,9 @@ import type { RouteMap } from "@remix-run/fetch-router/routes";
 import type { AuthFactorKind } from "../types";
 import type { AuthEntryPaths, AuthPathMap } from "./types";
 
-// A bare flag and never the outcome: it records that the visitor pressed the control, which they
-// already know, so it is safe on a URL a shoulder or a log can read.
-/** The query flag the resend action redirects with, so the verify page can say a code was asked for. @internal */
+// When the control was pressed and never the outcome: the visitor already knows the one, so it is
+// safe on a URL a shoulder or a log can read, and the other would bin an address list.
+/** The query parameter the resend redirect carries: when a code was asked for, so the verify page can time the reissue window. @internal */
 export const AUTH_RESENT_PARAM = "resent";
 
 /** The query flag a step-up by recovery code lands on the factors page with, so it can say what to repair. @internal */

@@ -20,24 +20,13 @@ const applyFlags = {
     type: "boolean" as const,
     description: "Run a seed that already ran, including one whose file changed since — with `--only` to name it",
   },
-  "allow-pending": { type: "boolean" as const, description: "Seed although a migration is pending, onto the older schema" },
-  "allow-drift": { type: "boolean" as const, description: "Seed although the schema was changed outside the migrations" },
-  "allow-warnings": { type: "boolean" as const, description: "Seed a deployed database despite lint warnings, which otherwise abort" },
   "no-bookmark": { type: "boolean" as const, description: "Skip the Time Travel bookmark a deployed seed captures as its undo" },
 };
 
 /** What `db seed apply` does, which the bare `db seed` runs too. */
 async function applySeeds(flags: ResolvedFlags<typeof applyFlags>, ctx: CliContext | undefined, overrides: DbContextOverrides): Promise<void> {
   return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
-    const outcome = await runSeedApply(run, {
-      dir: flags.dir,
-      only: flags.only,
-      rerun: Boolean(flags.rerun),
-      allowPending: Boolean(flags["allow-pending"]),
-      allowDrift: Boolean(flags["allow-drift"]),
-      allowWarnings: Boolean(flags["allow-warnings"]),
-      bookmark: !flags["no-bookmark"],
-    });
+    const outcome = await runSeedApply(run, { dir: flags.dir, only: flags.only, rerun: Boolean(flags.rerun), bookmark: !flags["no-bookmark"] });
     if (run.json) {
       run.print(JSON.stringify({ ...where(run), ...outcome }));
       return;

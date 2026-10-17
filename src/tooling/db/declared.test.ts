@@ -1,13 +1,26 @@
 import { describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { WranglerConfig } from "../cf/types";
 import { PLAIN } from "../term/color";
 import { fakeDbIo } from "./db.fixture";
-import { declaredMigrations, declaredPath, declaredSchemas, declaredSeeds, snapshotPath } from "./declared";
+import {
+  DEFAULT_DB_CONFIG,
+  declaredMigrations,
+  declaredPath,
+  declaredSchemas,
+  declaredSeeds,
+  forgeSchema,
+  migrationsDirRefusal,
+  snapshotPath,
+} from "./declared";
 import { appHome } from "./home";
 import type { DbConfig, DbHostConfig, DbRunContext } from "./types";
 
-function dbConfig(): DbConfig {
+function dbConfig(over: Partial<DbConfig> = {}): DbConfig {
   return {
     root: "/app",
     configPath: "/app/wrangler.jsonc",
@@ -19,11 +32,12 @@ function dbConfig(): DbConfig {
     env: null,
     entry: { binding: "DB", databaseName: "app-db", databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", previewDatabaseId: null },
     target: { place: "local", database: null },
+    ...over,
   };
 }
 
-function context(host: DbHostConfig = {}): DbRunContext {
-  const config = dbConfig();
+function context(host: DbHostConfig = {}, over: Partial<DbConfig> = {}): DbRunContext {
+  const config = dbConfig(over);
   return { config, home: appHome(config), io: fakeDbIo(), host, json: false, yes: true, style: PLAIN, print: () => {} };
 }
 
@@ -56,8 +70,8 @@ describe("declaredSeeds()", () => {
 });
 
 describe("snapshotPath()", () => {
-  it("defaults to schema.snapshot.json under the root", () => {
-    expect(snapshotPath(context())).toBe("/app/schema.snapshot.json");
+  it("defaults to config/db/schema.snapshot.json under the root", () => {
+    expect(snapshotPath(context())).toBe("/app/config/db/schema.snapshot.json");
   });
 
   it("takes the host config's own position when it names one", () => {
@@ -66,8 +80,8 @@ describe("snapshotPath()", () => {
 });
 
 describe("declaredMigrations()", () => {
-  it("defaults to migrations under the root when the host config names none", () => {
-    expect(declaredMigrations(context())).toEqual({ path: "/app/migrations", declared: "migrations" });
+  it("defaults to config/db/migrations under the root when the host config names none", () => {
+    expect(declaredMigrations(context())).toEqual({ path: "/app/config/db/migrations", declared: "config/db/migrations" });
   });
 
   it("resolves a relative host value against the root", () => {
@@ -79,5 +93,99 @@ describe("declaredMigrations()", () => {
       path: "/elsewhere/migrations",
       declared: "/elsewhere/migrations",
     });
+  });
+});
+
+describe("forgeSchema()", () => {
+  const FORGE_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+
+  it("names forge's schema by package specifier, so the declared text carries no node_modules segment", () => {
+    expect(forgeSchema("auth")).toBe("@y-core/forge/auth/schema.sql");
+  });
+
+  it("resolves through the package's exports from the app root, keeping the specifier as the declared text", () => {
+    expect(declaredPath(FORGE_ROOT, forgeSchema("auth"))).toEqual({
+      path: fileURLToPath(new URL("../../auth/schema.sql", import.meta.url)),
+      declared: "@y-core/forge/auth/schema.sql",
+    });
+  });
+
+  it("keeps the specifier as the schema's key in what compose records", () => {
+    const run = context({ schemas: [forgeSchema("auth"), "config/db/schema.sql"] });
+    const keys = declaredSchemas({ ...run, config: { ...run.config, root: FORGE_ROOT } }).map((source) => source.declared);
+    expect([keys, keys.some((key) => key.includes("node_modules"))]).toEqual([["@y-core/forge/auth/schema.sql", "config/db/schema.sql"], false]);
+  });
+});
+
+describe("declaredPath() — a package specifier", () => {
+  it("resolves a package the app installed, through its exports, from the app root rather than from forge", () => {
+    const root = mkdtempSync(join(tmpdir(), "forge-declared-"));
+    try {
+      const pkg = join(root, "node_modules", "@acme", "auth");
+      mkdirSync(pkg, { recursive: true });
+      writeFileSync(join(pkg, "package.json"), JSON.stringify({ name: "@acme/auth", exports: { "./schema.sql": "./ddl/schema.sql" } }));
+      mkdirSync(join(pkg, "ddl"));
+      writeFileSync(join(pkg, "ddl", "schema.sql"), "CREATE TABLE a (id INTEGER);");
+      writeFileSync(join(root, "package.json"), "{}");
+      expect(realpathSync(declaredPath(root, "@acme/auth/schema.sql").path)).toBe(realpathSync(join(pkg, "ddl", "schema.sql")));
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a specifier nothing under the root exports, naming config/db.ts and the entry", () => {
+    expect(() => declaredPath("/app", "@acme/missing/schema.sql")).toThrow(
+      "@acme/missing/schema.sql names a module which no package installed under /app exports — install the package, or name the file by its path",
+    );
+  });
+});
+
+describe("migrationsDirRefusal()", () => {
+  it("accepts a wrangler migrations_dir naming the directory forge applies from", () => {
+    expect(migrationsDirRefusal(context(), "config/db/migrations")).toBeNull();
+    expect(migrationsDirRefusal(context({ migrations: "db/m" }), "./db/m")).toBeNull();
+  });
+
+  it("refuses an unset migrations_dir, which wrangler reads as migrations, naming the key to set", () => {
+    expect(migrationsDirRefusal(context(), undefined)).toBe(
+      '/app/wrangler.jsonc: the DB entry\'s migrations_dir is unset, so wrangler reads `migrations`, but forge applies from config/db/migrations — set "migrations_dir": "config/db/migrations" on that entry, so `wrangler d1 migrations` and forge read one directory',
+    );
+  });
+
+  it("refuses a migrations_dir that names another directory", () => {
+    expect(migrationsDirRefusal(context(), "migrations")).toContain('migrations_dir is "migrations", but forge applies from config/db/migrations');
+  });
+
+  it("suggests a migrations_dir from a nested config's directory, which wrangler then accepts", () => {
+    const nested = context({}, { configPath: "/app/apps/api/wrangler.jsonc" });
+    expect(migrationsDirRefusal(nested, "config/db/migrations")).toBe(
+      '/app/apps/api/wrangler.jsonc: the DB entry\'s migrations_dir is "config/db/migrations", but forge applies from config/db/migrations — set "migrations_dir": "../../config/db/migrations" on that entry, so `wrangler d1 migrations` and forge read one directory',
+    );
+    expect(migrationsDirRefusal(nested, "../../config/db/migrations")).toBeNull();
+  });
+
+  it("suggests a relative migrations_dir under a filesystem-root project, which wrangler then accepts", () => {
+    const atRoot = context({}, { root: "/", configPath: "/wrangler.jsonc" });
+    expect(migrationsDirRefusal(atRoot, undefined)).toBe(
+      '/wrangler.jsonc: the DB entry\'s migrations_dir is unset, so wrangler reads `migrations`, but forge applies from config/db/migrations — set "migrations_dir": "config/db/migrations" on that entry, so `wrangler d1 migrations` and forge read one directory',
+    );
+    expect(migrationsDirRefusal(atRoot, "config/db/migrations")).toBeNull();
+  });
+
+  it("accepts an absent migrations_pattern, and one selecting the migrations_dir's top-level .sql files", () => {
+    expect(migrationsDirRefusal(context(), "config/db/migrations", undefined)).toBeNull();
+    expect(migrationsDirRefusal(context(), "config/db/migrations", "config/db/migrations/*.sql")).toBeNull();
+  });
+
+  it("refuses a migrations_pattern reaching below the directory, naming the key and the pattern that agrees", () => {
+    expect(migrationsDirRefusal(context(), "config/db/migrations", "config/db/migrations/**/*.sql")).toBe(
+      '/app/wrangler.jsonc: the DB entry\'s migrations_pattern is "config/db/migrations/**/*.sql", but forge applies only the top-level .sql files of config/db/migrations — remove "migrations_pattern" from that entry, or set it to "config/db/migrations/*.sql", so `wrangler d1 migrations` and forge apply one set of files',
+    );
+  });
+});
+
+describe("DEFAULT_DB_CONFIG", () => {
+  it("is the path an app puts its db host config at", () => {
+    expect(DEFAULT_DB_CONFIG).toBe("config/db.ts");
   });
 });

@@ -3,16 +3,16 @@
 -- This file is what the schema *is*, and this library ships no SQL that runs. Change a table here,
 -- and `bun run verify --mode full` loads it into a real database to prove it executes.
 --
--- A consumer reaches this file by naming it in its own `config/db.ts`, by path — nothing here is
+-- A consumer reaches this file by naming it in its own `config/db.ts`, with `forgeSchema` — nothing here is
 -- discovered, so an app that does not ask for this schema does not get it:
---   export default { schemas: ["node_modules/@y-core/forge/src/auth/schema.sql", "config/schema.sql"] }
+--   export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] }
 -- `forge db migrate compose` then diffs every file it names against that app's own migrations and
 -- writes the difference into that app's own directory. A database that will never be migrated can
 -- take this file in one shot:
 --   wrangler d1 execute <DB> --file node_modules/@y-core/forge/src/auth/schema.sql
 --
--- A change here that needs a backfill is documented in CHANGELOG.md; the consumer writes it as
--- `forge db migrate compose --custom <name>`.
+-- A change here that needs a backfill is documented in CHANGELOG.md; the consumer fills it with a
+-- seed between the compose that adds the shape and the one that tightens it.
 --
 -- The `auth_` prefix is fixed. Making it configurable would need raw identifier concatenation,
 -- which is the one thing `src/storage/db/sql.ts` exists to forbid and offers no escape hatch for.
@@ -22,8 +22,7 @@
 --
 -- Timestamps are epoch milliseconds as INTEGER.
 --
--- Every FOREIGN KEY here is documentation. D1 does not guarantee `PRAGMA foreign_keys` is on, so
--- the adapters delete children explicitly in a `batch()` and correctness never rests on the pragma.
+-- D1 always enforces every FOREIGN KEY here, and each `ON DELETE CASCADE` fires.
 --
 -- `tests/workerd/auth-schema.workerd.ts` applies this file to a real D1 and holds the facts it depends
 -- on: STRICT is accepted and enforced, `batch()` rolls back whole on a mid-batch failure, a BLOB

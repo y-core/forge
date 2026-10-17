@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
+import process from "node:process";
+import { createInterface } from "node:readline/promises";
 
 import { SqlReal } from "./backup/artifact";
-import { argvHas, fakeDbIo, jsonRows, keysetPageReply, minimalWranglerConfig, OK, routedReply } from "./db.fixture";
+import { argvHas, fakeDbIo, jsonRows, keysetPageReply, minimalWranglerConfig, OK, onStdin, routedReply, splitStatements } from "./db.fixture";
+import type { Home } from "./types";
 
 describe("argvHas()", () => {
   it("finds words in order without requiring them to be adjacent", () => {
@@ -64,6 +67,26 @@ describe("fakeDbIo()", () => {
       stdout: "",
       stderr: "fake wrangler: no rule matches wrangler d1 export app-db",
     });
+  });
+
+  it("splits through splitD1 exactly as splitStatements does, recording no in-process call", async () => {
+    const io = fakeDbIo();
+    const sql = "INSERT INTO t (a) VALUES ('x;y');\n\nDROP VIEW v;";
+    const home: Home = {
+      label: "local",
+      database: "app-db",
+      binding: "DB",
+      dir: "/app",
+      configPath: "/app/wrangler.jsonc",
+      persistTo: "/app/.wrangler/state",
+      place: "local",
+      env: null,
+      synthesized: false,
+    };
+    const split = await io.splitD1(home, sql);
+    expect(split).toEqual(splitStatements(sql));
+    expect(split).toEqual(["INSERT INTO t (a) VALUES ('x;y')", "DROP VIEW v"]);
+    expect(io.d1Calls).toEqual([]);
   });
 
   it("collects log lines and defaults the clock and the environment", () => {
@@ -197,7 +220,8 @@ describe("minimalWranglerConfig()", () => {
     {
       "binding": "DB",
       "database_name": "app-db",
-      "database_id": "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a"
+      "database_id": "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+      "migrations_dir": "config/db/migrations"
     }
   ]
 }
@@ -210,8 +234,40 @@ describe("minimalWranglerConfig()", () => {
     expect(JSON.parse(text)).toEqual({
       name: "other",
       compatibility_date: "2026-01-01",
-      d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }],
+      d1_databases: [
+        { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "config/db/migrations" },
+      ],
       env: { staging: {} },
     });
+  });
+});
+
+describe("onStdin()", () => {
+  const readLine = async () => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      return await rl.question("");
+    } finally {
+      rl.close();
+    }
+  };
+
+  for (const tty of [true, false]) {
+    it(`hands the body a stdin ${tty ? "that is" : "that is not"} a terminal, holding the answer, and returns what it wrote to stdout`, async () => {
+      const { prompted, value } = await onStdin(tty, "y", async () => {
+        process.stdout.write("Continue? [y/N] ");
+        return [process.stdin.isTTY, await readLine()];
+      });
+
+      expect([value, prompted]).toEqual([[tty, "y"], "Continue? [y/N] "]);
+    });
+  }
+
+  it("puts the real streams back after the body, a body that throws included", async () => {
+    const [stdin, stdout] = [process.stdin, process.stdout];
+
+    await expect(onStdin(true, "", () => Promise.reject(new Error("body failed")))).rejects.toThrow("body failed");
+
+    expect([process.stdin === stdin, process.stdout === stdout]).toEqual([true, true]);
   });
 });

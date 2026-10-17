@@ -5,7 +5,7 @@ import { basename, dirname, join } from "node:path";
 
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { worktreeChanges, worktreeGitEnv, worktreeGitPath, worktreeHash } from "./worktree";
-import { worktreeFixture } from "./worktree.fixture";
+import { cloneWorktree, worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
 
@@ -26,6 +26,13 @@ function worktreeRoot(...args: Parameters<typeof worktreeFixture>): string {
 }
 
 const FILES = { ".gitignore": "ignored.log\n", "a.txt": "alpha\n", "src/b.txt": "beta\n" };
+const TEMPLATE = worktreeRoot(FILES);
+
+function worktreeClone(): string {
+  const root = cloneWorktree(TEMPLATE);
+  roots.push(root);
+  return root;
+}
 
 function gitIn(root: string, args: string[]): void {
   spawnSync("git", args, { cwd: root, stdio: "ignore" });
@@ -54,13 +61,13 @@ function withGitEnv<T>(vars: Record<string, string>, run: () => T): T {
 
 describe("worktreeHash()", () => {
   it("equals the tree of HEAD on a clean checkout", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
 
     expect(worktreeHash(root)).toBe(headTree(root));
   });
 
   it("ignores a file the repository ignores", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const clean = worktreeHash(root);
     writeFileSync(join(root, "ignored.log"), "noise\n");
 
@@ -68,7 +75,7 @@ describe("worktreeHash()", () => {
   });
 
   it("changes on an edit, an untracked file and a deletion, and returns once each is reverted", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const clean = worktreeHash(root);
 
     writeFileSync(join(root, "a.txt"), "edited\n");
@@ -88,7 +95,7 @@ describe("worktreeHash()", () => {
   });
 
   it("leaves the real index byte-identical on a dirty tree", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "a.txt"), "edited\n");
     writeFileSync(join(root, "new.txt"), "new\n");
     const before = readFileSync(join(root, ".git/index"));
@@ -98,7 +105,7 @@ describe("worktreeHash()", () => {
   });
 
   it("hashes a nested repository as its HEAD commit, so an uncommitted edit inside it leaves the hash unchanged", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const outer = worktreeHash(root);
     const nested = join(root, "vendor/inner");
     mkdirSync(nested, { recursive: true });
@@ -120,7 +127,7 @@ describe("worktreeHash()", () => {
 
 describe("worktreeGitPath()", () => {
   it("resolves a name under .git from the root and from a subdirectory", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     mkdirSync(join(root, "src/deep"), { recursive: true });
     const gitDir = realpathSync(join(root, ".git"));
     const fromRoot = worktreeGitPath(root, "forge-verify-receipt.json") ?? "";
@@ -139,7 +146,7 @@ describe("worktreeGitPath()", () => {
 
 describe("worktreeChanges()", () => {
   it("is empty on a clean tree", () => {
-    expect(worktreeChanges(worktreeRoot(FILES))).toEqual([]);
+    expect(worktreeChanges(worktreeClone())).toEqual([]);
   });
 
   it("lists an edited, a staged, an untracked and a deleted file, and omits an ignored one", () => {
@@ -155,14 +162,14 @@ describe("worktreeChanges()", () => {
   });
 
   it("lists both halves of a rename", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     gitIn(root, ["mv", "a.txt", "moved.txt"]);
 
     expect(worktreeChanges(root)).toEqual(["a.txt", "moved.txt"]);
   });
 
   it("reports paths relative to a subdirectory cwd, an outside change as ../", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "src/b.txt"), "edited\n");
     writeFileSync(join(root, "a.txt"), "edited\n");
 
@@ -194,7 +201,7 @@ describe("worktreeGitEnv()", () => {
 
 describe("under a hook's GIT_DIR and GIT_INDEX_FILE", () => {
   it("answers for the cwd's repository and leaves the named one untouched", () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const other = worktreeRoot({ "z.txt": "zeta\n" });
     writeFileSync(join(root, "new.txt"), "new\n");
     const otherIndex = readFileSync(join(other, ".git/index"));

@@ -142,9 +142,9 @@ function respond(
     const found = owner();
     return found ? factorRows(found).filter((row) => row.kind === params[1]) : [];
   }
-  if (/^SELECT \* FROM auth_factors WHERE user_id = \? AND kind IN \((\?, )*\?\) ORDER BY id$/.test(sql)) {
+  if (sql === "SELECT * FROM auth_factors WHERE user_id = ? AND kind IN (SELECT value FROM json_each(?)) ORDER BY id") {
     const found = owner();
-    const kinds = params.slice(1);
+    const kinds: unknown[] = JSON.parse(String(params[1]));
     return found ? factorRows(found).filter((row) => kinds.includes(row.kind)) : [];
   }
   // The one read that spends what it reads, which is the whole of the store's single-statement

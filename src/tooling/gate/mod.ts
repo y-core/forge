@@ -38,7 +38,7 @@ export {
   testStep,
   typeAwareLintStep,
   checkStep,
-  dbSchemaStep,
+  dbSteps,
   typecheckStep,
   workerdStep,
 } from "./builders";
@@ -61,7 +61,7 @@ export { hasWorkerd } from "./checks/workerd";
 export type { ImportBoundaryCheckConfig } from "./checks/types";
 export { checkImportBoundary, guardedSubpaths, isGuarded } from "./checks/import-boundary";
 export type { ClassGroupsCheckConfig } from "./checks/types";
-export { checkClassGroups, deriveTable, FORGE_STATE_RECIPES, writeClassGroups } from "./checks/class-groups";
+export { checkClassGroups, compareClassGroups, deriveTable, FORGE_STATE_RECIPES, writeClassGroups } from "./checks/class-groups";
 export type { ClassGroupTable, RootRow } from "./checks/types";
 export { deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./checks/class-groups-parse";
 export type { CssNode, DesignSystem } from "./checks/types";
@@ -96,9 +96,9 @@ export { findClassDeclarations, findSourceDirectives, isClassAnchor } from "./ch
 export type { CssSourcesCheckConfig } from "./checks/types";
 export { checkCssSources } from "./checks/css-sources";
 export type { CssTokensCheckConfig } from "./checks/types";
-export { checkCssTokens, findThemeTokens, overloadedRoots } from "./checks/css-tokens";
+export { checkCssTokens, findThemeTokens, overloadedRoots, scanCssTokens } from "./checks/css-tokens";
 export type { DesignScaleCheckConfig } from "./checks/types";
-export { checkDesignScale, deriveScale, writeDesignScale } from "./checks/design-scale";
+export { checkDesignScale, compareDesignScale, deriveScale, writeDesignScale } from "./checks/design-scale";
 export type { DesignScale } from "./checks/types";
 export { deriveDesignScale, renderDesignScale } from "./checks/design-scale-parse";
 export type { BarrelImport, ClassLiteral, CustomPropertyCitation, RuleMarker } from "./checks/types";

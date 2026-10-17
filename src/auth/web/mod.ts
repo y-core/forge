@@ -20,6 +20,7 @@ export type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions
 export type { AccessTokenGuardOptions } from "./types";
 export {
   accessTokenCtx,
+  approvalCtx,
   createAuthGuards,
   requireAdmin,
   requireAuth,

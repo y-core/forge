@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
-import { OK, argvHas, bufferedIO, composed, fakeDbIo, jsonRows, minimalWranglerConfig } from "../db.fixture";
+import { OK, argvHas, bufferedIO, composed, fakeDbIo, jsonRows, minimalWranglerConfig, schemaModelRows } from "../db.fixture";
 import { formatComposeHeader } from "../schema/header";
 import type { DbHostConfig, FakeDbIo, Spawned } from "../types";
 import { RECORDED_CHECKSUM_SELECT } from "./checksum";
@@ -36,24 +36,6 @@ function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-migrate-"));
   roots.push(root);
   const config = minimalWranglerConfig(root);
-  writeFileSync(config.path, config.text, "utf-8");
-  return root;
-}
-
-/** A temp root whose config carries a preview id too, so every deployed place resolves. */
-function deployableRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), "forge-db-migrate-"));
-  roots.push(root);
-  const config = minimalWranglerConfig(root, {
-    d1_databases: [
-      {
-        binding: "DB",
-        database_name: "app-db",
-        database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-        preview_database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5b",
-      },
-    ],
-  });
   writeFileSync(config.path, config.text, "utf-8");
   return root;
 }
@@ -98,7 +80,7 @@ describe("forge db migrate", () => {
 
   it("applies the pending migrations and names them", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "apply", "--root", root, "--yes"]);
@@ -109,7 +91,7 @@ describe("forge db migrate", () => {
 
   it("applies from the bare verb too, which is `migrate apply` under another name", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "--root", root, "--yes"]);
@@ -120,7 +102,7 @@ describe("forge db migrate", () => {
 
   it("prints one JSON document and nothing else under --json", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "--root", root, "--yes", "--json"]);
@@ -131,7 +113,7 @@ describe("forge db migrate", () => {
 
   it("changes nothing under --dry-run", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "--root", root, "--yes", "--dry-run"]);
@@ -143,7 +125,10 @@ describe("forge db migrate", () => {
   it("reports what a --to cut left behind", async () => {
     const root = appRoot();
     const io = fakeDbIo(
-      { [join(root, "migrations", "0001_init.sql")]: INIT, [join(root, "migrations", "0002_next.sql")]: "CREATE TABLE notes (id) STRICT;" },
+      {
+        [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT,
+        [join(root, "config", "db", "migrations", "0002_next.sql")]: "CREATE TABLE notes (id) STRICT;",
+      },
       { now: NOW },
     );
     wire(io);
@@ -155,61 +140,76 @@ describe("forge db migrate", () => {
 
   it("exits 1 and says why when a migration will not lint", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: composed("DROP TABLE users;") }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: composed("DROP TABLE users;") }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "--root", root, "--yes"]);
 
     expect(result.code).toBe(1);
-    expect(result.err[0]?.startsWith("Error: 1 lint error(s) in the migrations:")).toBe(true);
+    expect(result.err[0]?.startsWith("Error: 1 lint finding(s) in the pending migrations, so nothing was applied:")).toBe(true);
   });
 
-  it("applies it anyway under --no-lint", async () => {
-    const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: composed("DROP TABLE users;") }, { now: NOW });
-    wire(io);
-
-    const result = await drive(io, ["migrate", "--root", root, "--yes", "--no-lint"]);
-
-    expect(result.out).toEqual(["applied 1: 0001_init"]);
-  });
-
-  it("refuses --no-lint against a deployed target, naming the flag that accepts warnings there", async () => {
-    for (const place of ["remote", "preview"]) {
-      const root = deployableRoot();
-      const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+  for (const flag of ["--no-lint", "--allow-warnings", "--allow-drift"]) {
+    it(`rejects ${flag} as an unknown flag, applying nothing`, async () => {
+      const root = appRoot();
+      const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: composed("DROP TABLE users;") }, { now: NOW });
       wire(io);
 
-      const result = await drive(io, ["migrate", "--root", root, "--yes", "--no-lint", "--target", place]);
+      const result = await drive(io, ["migrate", "--root", root, "--yes", flag]);
 
-      expect(result.err).toEqual(["Error: --no-lint is local-only; on a deployed target use --allow-warnings to accept warnings."]);
       expect(result.code).toBe(1);
-      expect(io.calls.some((call) => argvHas(call.slice(1), "execute", "--yes", "--file"))).toBe(false);
-    }
-  });
+      expect(result.err[0]?.startsWith(`Error: Unknown flag: ${flag}.`)).toBe(true);
+      expect(result.out).toEqual([]);
+      expect(io.d1Calls).toEqual([]);
+    });
+  }
+
+  const unresolvable: [string, Record<string, unknown>[], string[], string][] = [
+    [
+      "a config declaring two databases when the run names neither",
+      [
+        { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "config/db/migrations" },
+        { binding: "REPORTS", database_name: "reports-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5c" },
+      ],
+      [],
+      "declares 2 d1_databases — name one with --db <binding|database_name>",
+    ],
+    [
+      "--target remote while the database_id is a placeholder",
+      [{ binding: "DB", database_name: "app-db", database_id: "app-db-local", migrations_dir: "config/db/migrations" }],
+      ["--target", "remote"],
+      "remote is refused while wrangler.jsonc's database_id is the placeholder app-db-local",
+    ],
+  ];
+  for (const [what, databases, extra, reason] of unresolvable) {
+    it(`refuses ${what}, reading and applying nothing`, async () => {
+      const root = appRoot();
+      const config = minimalWranglerConfig(root, { d1_databases: databases });
+      writeFileSync(config.path, config.text, "utf-8");
+      const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+      wire(io);
+
+      const result = await drive(io, ["migrate", "--root", root, "--yes", ...extra]);
+
+      expect(result.code).toBe(1);
+      expect(result.err.join("\n")).toContain(reason);
+      expect(io.d1Calls).toEqual([]);
+      expect(io.calls).toEqual([]);
+    });
+  }
 });
 
-describe("forge db migrate compose --custom", () => {
-  it("allocates the next number from the migrations directory and writes the custom stamp", async () => {
+describe("forge db migrate compose", () => {
+  it("refuses --custom as a flag it does not know, writing nothing", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0003_earlier.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "compose", "add_notes", "--custom", "--root", root]);
 
-    expect(result.out).toEqual([`wrote ${join(root, "migrations", "0004_add_notes.sql")} — fill it in, then \`forge db lint\``]);
-    expect(io.files.get(join(root, "migrations", "0004_add_notes.sql"))).toBe(
-      "-- Custom migration, hand-written: a data move or a step compose cannot express.\n-- forge:custom {}\n\n",
-    );
-  });
-
-  it("refuses --custom without a name", async () => {
-    const root = appRoot();
-    const io = fakeDbIo({}, { now: NOW });
-    wire(io);
-    const result = await drive(io, ["migrate", "compose", "--custom", "--root", root]);
     expect(result.code).toBe(1);
-    expect(result.err).toEqual(["Error: a custom migration needs a name — `forge db migrate compose --custom <name>`"]);
+    expect(result.err.join("\n")).toContain("--custom");
+    expect(io.files.has(join(root, "config", "db", "migrations", "0002_add_notes.sql"))).toBe(false);
   });
 
   it("takes --allow-destructive as a digest, and refuses the bare flag", async () => {
@@ -258,7 +258,7 @@ describe("forge db migrate compose --custom", () => {
 
   it("exits 1 when config/db.ts names no schemas and a migration is on disk", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
     const result = await drive(io, ["migrate", "compose", "--root", root], {});
     expect(result.code).toBe(1);
@@ -271,7 +271,7 @@ describe("forge db migrate compose --custom", () => {
 describe("forge db migrate status", () => {
   it("reports a pending migration and exits 0 without --check", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "status", "--root", root]);
@@ -282,7 +282,7 @@ describe("forge db migrate status", () => {
 
   it("exits 1 under --check while anything is pending", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
@@ -293,7 +293,7 @@ describe("forge db migrate status", () => {
 
   it("exits 0 under --check when every migration is applied and its fingerprint certified", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io, { recorded: [{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: FINGERPRINT }] });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
@@ -304,7 +304,7 @@ describe("forge db migrate status", () => {
 
   it("exits 1 under --check when the schema fingerprint has moved since it was certified", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io, { recorded: [{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: "ff" }] });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
@@ -314,7 +314,7 @@ describe("forge db migrate status", () => {
 
   it("exits 1 under --check when an applied file was edited since", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io, { recorded: [{ name: "0001_init", sha256: "stale-hash", applied_at: 1, fingerprint: FINGERPRINT }] });
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
@@ -324,7 +324,7 @@ describe("forge db migrate status", () => {
 
   it("prints the report as one JSON document under --json", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["migrate", "status", "--root", root, "--json"]);
@@ -340,57 +340,168 @@ describe("forge db migrate status", () => {
 });
 
 describe("forge db lint", () => {
-  it("lints the whole migrations directory when no file is named", async () => {
+  const migration = (root: string, name: string) => join(root, "config", "db", "migrations", `${name}.sql`);
+  const APPLIED_INIT = { name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: null };
+
+  it("lints the migrations the local database does not hold yet, failing on a finding", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: "DELETE FROM users;" }, { now: NOW });
+    const io = fakeDbIo({ [migration(root, "0001_init")]: composed("DELETE FROM users;") }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["lint", "--root", root]);
 
-    expect(result.out).toEqual([`error ${join(root, "migrations", "0001_init.sql")}:1 unbounded-delete — DELETE with no WHERE empties the table`]);
+    expect(result.out).toEqual([`${migration(root, "0001_init")}:3 unbounded-delete — DELETE with no WHERE empties the table`]);
     expect(result.code).toBe(1);
-    expect(result.err).toEqual(["Error: lint found 1 error(s) and 0 warning(s)."]);
+    expect(result.err).toEqual(["Error: lint found 1 finding(s) in the migrations app-db (local) does not hold yet."]);
   });
 
-  it("lints only the files it was given", async () => {
+  it("judges only the files absent from the target's history", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "sql", "one.sql")]: "DROP TABLE users;", [join(root, "migrations", "0001_init.sql")]: INIT }, { now: NOW });
-    wire(io);
+    const applied = composed("DELETE FROM users;");
+    const io = fakeDbIo({ [migration(root, "0001_init")]: applied, [migration(root, "0002_next")]: GENERATED_INIT }, { now: NOW });
+    wire(io, { recorded: [{ ...APPLIED_INIT, sha256: migrationChecksum(applied) }] });
 
-    const result = await drive(io, ["lint", "sql/one.sql", "--root", root]);
+    const result = await drive(io, ["lint", "--root", root]);
 
-    expect(result.out.every((line) => line.includes(join(root, "sql", "one.sql")))).toBe(true);
-    expect(result.out.some((line) => line.includes("drop-no-if-exists"))).toBe(true);
+    expect([result.code, result.out]).toEqual([null, ["1 pending migration(s) on app-db (local) — no findings"]]);
   });
 
-  it("says so and exits 0 when there is nothing to report", async () => {
+  const uncomposed: [string, string][] = [
+    ["with no compose stamp", "CREATE TABLE strays (id INTEGER PRIMARY KEY) STRICT;\n"],
+    ["whose body digest fails", `${INIT}SELECT 1;\n`],
+  ];
+  for (const [what, sql] of uncomposed) {
+    it(`fails on a migration ${what}, naming the file and telling the developer to compose it`, async () => {
+      const root = appRoot();
+      const path = migration(root, "0001_init");
+      const io = fakeDbIo({ [path]: sql }, { now: NOW });
+      wire(io);
+
+      const result = await drive(io, ["lint", "--root", root]);
+
+      expect(result.code).toBe(1);
+      expect(result.out).toHaveLength(1);
+      expect(result.out[0]).toStartWith(`${path}:`);
+      expect(result.out[0]).toContain(" generated-edited — ");
+      expect(result.out[0]).toContain("compose");
+    });
+  }
+
+  for (const [what, extra] of [
+    ["a file argument", ["sql/one.sql"]],
+    ["--strict", ["--strict"]],
+  ] as const) {
+    it(`refuses ${what}, as the CLI refuses any input a verb does not take, reading nothing`, async () => {
+      const root = appRoot();
+      const io = fakeDbIo({ [migration(root, "0001_init")]: INIT }, { now: NOW });
+      wire(io);
+
+      const result = await drive(io, ["lint", ...extra, "--root", root]);
+
+      expect(result.code).toBe(1);
+      expect(result.err.join("\n")).toStartWith("Error: ");
+      expect(io.d1Calls).toEqual([]);
+      expect(io.calls).toEqual([]);
+    });
+  }
+
+  it("refuses a config declaring two databases when the run names neither", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: GENERATED_INIT }, { now: NOW });
+    const config = minimalWranglerConfig(root, {
+      d1_databases: [
+        { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "config/db/migrations" },
+        { binding: "REPORTS", database_name: "reports-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5c" },
+      ],
+    });
+    writeFileSync(config.path, config.text, "utf-8");
+    const io = fakeDbIo({ [migration(root, "0001_init")]: INIT }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["lint", "--root", root]);
 
-    expect(result.out).toEqual(["no findings"]);
-    expect(result.code).toBe(null);
+    expect(result.code).toBe(1);
+    expect(result.err.join("\n")).toContain("declares 2 d1_databases — name one with --db <binding|database_name>");
+    expect(io.d1Calls).toEqual([]);
   });
 
-  it("passes a warning by default and fails on it under --strict", async () => {
+  it("refuses --target remote while the database_id is a placeholder", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: composed("ALTER TABLE users DROP COLUMN nickname;") }, { now: NOW });
+    const config = minimalWranglerConfig(root, {
+      d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "app-db-local", migrations_dir: "config/db/migrations" }],
+    });
+    writeFileSync(config.path, config.text, "utf-8");
+    const io = fakeDbIo({ [migration(root, "0001_init")]: INIT }, { now: NOW });
     wire(io);
 
-    expect((await drive(io, ["lint", "--root", root])).code).toBe(null);
+    const result = await drive(io, ["lint", "--root", root, "--target", "remote"]);
 
-    const strict = await drive(io, ["lint", "--root", root, "--strict"]);
-    expect(strict.code).toBe(1);
-    expect(strict.err).toEqual(["Error: lint found 0 error(s) and 1 warning(s), and --strict fails on both."]);
+    expect(result.code).toBe(1);
+    expect(result.err.join("\n")).toContain("remote is refused while wrangler.jsonc's database_id is the placeholder app-db-local");
+    expect(io.calls).toEqual([]);
   });
 
-  it("checks the seeds instead of the migrations under --seeds", async () => {
+  it("reads a remote target through wrangler", async () => {
+    const root = appRoot();
+    const io = fakeDbIo({ [migration(root, "0001_init")]: GENERATED_INIT }, { now: NOW });
+    wire(io);
+
+    const result = await drive(io, ["lint", "--root", root, "--target", "remote"]);
+
+    expect([result.code, result.out]).toEqual([null, ["1 pending migration(s) on app-db (remote) — no findings"]]);
+    expect(io.calls.some((call) => isInventorySelect(call.slice(1)) && call.includes("--remote"))).toBe(true);
+  });
+
+  it("refuses a drop its file does not approve, and names each one it does", async () => {
+    const root = appRoot();
+    const drop = "DROP TABLE IF EXISTS users;";
+    const users = {
+      inventory: [{ type: "table", name: "users", tbl_name: "users", sql: "CREATE TABLE users (id INTEGER PRIMARY KEY) STRICT" }],
+      columns: [{ tbl: "users", cid: 0, name: "id", type: "INTEGER", notnull: 0, dflt_value: null, pk: 1, hidden: 0 }],
+    };
+    const lintWith = async (sql: string) => {
+      const io = fakeDbIo({ [migration(root, "0001_init")]: INIT, [migration(root, "0002_drop")]: sql }, { now: NOW });
+      wire(io, { recorded: [APPLIED_INIT] });
+      const staged = () =>
+        io.d1Calls.some(
+          (call) => call.home === "scratch:compose-analysis" && call.statements.some((statement) => statement.includes(drop.slice(0, -1))),
+        );
+      io.d1Rules.unshift({
+        match: (_statement, home) => home.label === "scratch:compose-analysis",
+        reply: (statement) => schemaModelRows(statement, staged() ? {} : users),
+      });
+      return drive(io, ["lint", "--root", root]);
+    };
+
+    const refused = await lintWith(composed(drop));
+    expect(refused.code).toBe(1);
+    expect(refused.err.join("\n")).toContain("0002_drop does not match the lines compose wrote for it on app-db (local), so nothing was applied");
+
+    const approved = await lintWith(composed(`-- forge:drops table "users"\n${drop}`));
+    expect([approved.code, approved.out]).toEqual([
+      null,
+      ["1 pending migration(s) on app-db (local) — no findings", 'approved 0002_drop: drops table "users"'],
+    ]);
+  });
+
+  it("prints one JSON document naming the target, the pending files, the findings and the approved ones", async () => {
+    const root = appRoot();
+    const io = fakeDbIo({ [migration(root, "0001_init")]: composed("DELETE FROM users;") }, { now: NOW });
+    wire(io);
+
+    const result = await drive(io, ["lint", "--root", root, "--json"]);
+
+    expect(result.out.length).toBe(1);
+    const outcome = JSON.parse(result.out[0] ?? "") as Record<string, unknown>;
+    expect(Object.keys(outcome)).toEqual(["target", "database", "pending", "findings", "approved"]);
+    expect(outcome).toMatchObject({ target: "local", database: "app-db", pending: ["0001_init"], approved: [] });
+    expect(result.code).toBe(1);
+  });
+
+  it("checks the seeds instead of the migrations under --seeds, and exits 1 on a finding", async () => {
     const root = appRoot();
     const io = fakeDbIo(
       {
-        [join(root, "migrations", "0001_init.sql")]: "DELETE FROM users;",
+        [join(root, "config", "db", "migrations", "0001_init.sql")]: "DELETE FROM users;",
         [join(root, "seeds", "0001_users.sql")]: "INSERT INTO users (id) VALUES (1);",
       },
       { now: NOW },
@@ -400,33 +511,32 @@ describe("forge db lint", () => {
     const result = await drive(io, ["lint", "--root", root, "--seeds"]);
 
     expect(result.out).toEqual([
-      `warning ${join(root, "seeds", "0001_users.sql")}:1 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`,
+      `${join(root, "seeds", "0001_users.sql")}:1 seed-insert-not-idempotent — INSERT without OR IGNORE, OR REPLACE or ON CONFLICT is not safe to run twice — a re-run duplicates the row or fails on its key`,
     ]);
-    expect(result.code).toBe(null);
+    expect(result.err).toEqual(["Error: lint found 1 finding(s) in the seeds."]);
+    expect(result.code).toBe(1);
   });
 
-  it("warns on an unbounded DELETE in a seed, and fails it under --strict", async () => {
+  it("refuses an unbounded DELETE in a seed, and prints one JSON document holding only the findings", async () => {
     const root = appRoot();
-    const io = fakeDbIo(
-      { [join(root, "migrations", "0001_init.sql")]: INIT, [join(root, "seeds", "0001_wipe.sql")]: "DELETE FROM users;" },
-      { now: NOW },
-    );
+    const io = fakeDbIo({ [migration(root, "0001_init")]: INIT, [join(root, "seeds", "0001_wipe.sql")]: "DELETE FROM users;" }, { now: NOW });
     wire(io);
 
     const result = await drive(io, ["lint", "--root", root, "--seeds"]);
-    expect(result.out).toEqual([`warning ${join(root, "seeds", "0001_wipe.sql")}:1 unbounded-delete — DELETE with no WHERE empties the table`]);
-    expect(result.code).toBe(null);
+    expect(result.out).toEqual([`${join(root, "seeds", "0001_wipe.sql")}:1 unbounded-delete — DELETE with no WHERE empties the table`]);
+    expect(result.code).toBe(1);
 
-    const strict = await drive(io, ["lint", "--root", root, "--seeds", "--strict"]);
-    expect(strict.code).toBe(1);
-    expect(strict.err).toEqual(["Error: lint found 0 error(s) and 1 warning(s), and --strict fails on both."]);
+    const json = await drive(io, ["lint", "--root", root, "--seeds", "--json"]);
+    const outcome = JSON.parse(json.out[0] ?? "") as Record<string, unknown>;
+    expect(Object.keys(outcome)).toEqual(["findings"]);
+    expect(json.code).toBe(1);
   });
 
   it("lints a seed holding an unset variable with no environment at all", async () => {
     const root = appRoot();
     const io = fakeDbIo(
       {
-        [join(root, "migrations", "0001_init.sql")]: INIT,
+        [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT,
         [join(root, "seeds", "0001_users.sql")]: "INSERT OR IGNORE INTO users (id, email) VALUES (1, '${UNSET}');",
       },
       { now: NOW },
@@ -443,7 +553,7 @@ describe("forge db lint", () => {
     const root = appRoot();
     const io = fakeDbIo(
       {
-        [join(root, "migrations", "0001_init.sql")]: INIT,
+        [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT,
         [join(root, "seeds", "0001_users.sql")]: "INSERT INTO users (id) VALUES (1) ON CONFLICT DO NOTHING;",
       },
       { now: NOW },
@@ -454,16 +564,5 @@ describe("forge db lint", () => {
 
     expect(result.out).toEqual(["no findings"]);
     expect(result.code).toBe(null);
-  });
-
-  it("prints the findings as one JSON document under --json", async () => {
-    const root = appRoot();
-    const io = fakeDbIo({ [join(root, "migrations", "0001_init.sql")]: "DELETE FROM users;" }, { now: NOW });
-    wire(io);
-
-    const result = await drive(io, ["lint", "--root", root, "--json"]);
-
-    expect(result.out.length).toBe(1);
-    expect(JSON.parse(result.out[0] ?? "").errors).toBe(1);
   });
 });

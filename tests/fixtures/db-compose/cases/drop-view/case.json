@@ -1,0 +1,8 @@
+{
+  "seed": "INSERT INTO users (id, role) VALUES (1, 'admin');",
+  "refusedWithout": "--allow-destructive",
+  "args": ["--allow-destructive", "<digest>"],
+  "expectSql": ["-- forge:drops view \"admins\"", "DROP VIEW IF EXISTS \"admins\";"],
+  "query": "SELECT name FROM sqlite_master WHERE type = 'view'",
+  "rows": []
+}

@@ -71,6 +71,7 @@ can load; both spellings export the plugin as `lintPlugin` and as the default ex
 | `platform-text-pretty` | `forge-ui-platform-text-pretty` | Orphan control in place of `text-wrap: pretty` |
 | `reduced-motion` | `forge-ui-reduced-motion` | Authored motion with no `motion-safe:` / `motion-reduce:` pair |
 | `spacing-scale-only` | `forge-ui-spacing-scale-only` | A spacing value off the declared design scale |
+| `sql-delete-authorised` | — | A `sql` DELETE with no `// row-removal-authorised-by:` on the line before it. Opt-in |
 | `sql-explicit-transaction` | — | A runtime `sql` fragment opening or closing a transaction — `batch()` is the boundary |
 | `suppression-needs-reason` | — | An `oxlint-disable*` comment that gives no reason |
 | `type-import-external` | — | An exported interface or type alias declared outside its directory's `types.ts` |
@@ -99,6 +100,20 @@ Forge scopes these that way rather than turning them on everywhere: `optional-pr
 for, `catalog-wrong-raw-input` to the log viewer and the auth views, `exact-markup-assertion` to `src/ui`'s test files, and
 `sql-explicit-transaction` everywhere except `src/tooling` and the specs. Read `.oxlintrc.json` for the current scoping — it is the file the gate
 holds the register against.
+
+`sql-delete-authorised` is opt-in, and forge does not turn it on for itself. An app that wants every row removal to name who authorised it enables
+the rule over its runtime source, and annotates each `DELETE` on the line before its `sql` fragment:
+
+```jsonc
+{ "overrides": [{ "files": ["src/**/*.ts"], "rules": { "forge/sql-delete-authorised": "error" } }] }
+```
+
+```ts
+// row-removal-authorised-by: session expiry, which the privacy notice states
+await db.execute(sql`DELETE FROM sessions WHERE expires_at < ${now}`);
+```
+
+The rule reads past a `WITH` clause to the statement it feeds, and an empty annotation does not count.
 
 ---
 

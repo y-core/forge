@@ -3,13 +3,14 @@ import { delimiter, dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
+import { retryWithBackoff } from "../../storage/db/retry";
 import type { D1DatabaseLike } from "../../storage/db/types";
+import type { D1RetryPolicy } from "../../storage/db/types";
 import { CliError } from "../cli/errors";
 import { captureStreams } from "../cli/proc";
 import { persistRoot } from "./home";
-import { retryWithBackoff } from "./retry";
 import { isReadOnlyBatch } from "./sql";
-import type { BackoffPolicy, DbIo, Home, Spawned } from "./types";
+import type { DbIo, Home, Spawned } from "./types";
 
 function binDirs(from: string): string[] {
   const found: string[] = [];
@@ -24,6 +25,14 @@ interface LocalD1 {
   readonly db: D1DatabaseLike;
   readonly split: (sql: string) => string[];
   readonly dispose: () => Promise<void>;
+}
+
+function splitLocal(handle: LocalD1, sql: string): string[] {
+  return handle.split(sql).filter((statement) => statement.trim() !== "");
+}
+
+function refuseDeployedHome(home: Home): CliError {
+  return new CliError("invalid-args", `${home.label} (${home.database}) is deployed, and nothing reaches a deployed database in process`);
 }
 
 function handleKey(home: Home): string {
@@ -45,8 +54,8 @@ export function missingWranglerExport(module: { getPlatformProxy?: unknown; unst
   return null;
 }
 
-/** Five tries of a refused batch, 100 ms before the second and doubling to 800 ms before the fifth. @internal */
-export const D1_BUSY_BACKOFF: BackoffPolicy = { attempts: 5, firstDelayMs: 100 };
+/** Five tries of a refused batch, each wait a random share of 100 ms doubling up to 800 ms. @internal */
+export const D1_BUSY_BACKOFF: D1RetryPolicy = { attempts: 5, baseDelayMs: 100, maxDelayMs: 800 };
 
 // workerd logs the SQLITE_BUSY behind this to its own stderr alone; what reaches this process is
 // D1's opaque internal error, with no cause naming the lock.
@@ -117,9 +126,7 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
       return captureStreams(cmd, [...args], { cwd: opts.cwd, env, maxBuffer: 256 * 1024 * 1024 });
     },
     async d1(home, sql): Promise<Record<string, unknown>[][]> {
-      if (home.persistTo === null) {
-        throw new CliError("invalid-args", `${home.label} (${home.database}) is deployed, and nothing reaches a deployed database in process`);
-      }
+      if (home.persistTo === null) throw refuseDeployedHome(home);
       const key = handleKey(home);
       const fresh = !answered.has(key);
       let readOnly = false;
@@ -128,7 +135,7 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
           // Nothing says workerd's D1 object reopens a database it failed to open, so a retry starts a new one.
           if (tried > 1) await release(key);
           const handle = await reach(home, key);
-          const statements = sql.flatMap((text) => handle.split(text)).filter((statement) => statement.trim() !== "");
+          const statements = sql.flatMap((text) => splitLocal(handle, text));
           if (statements.length === 0) return [];
           readOnly = isReadOnlyBatch(statements);
           const batch = handle.db.batch<Record<string, unknown>>(statements.map((statement) => handle.db.prepare(statement)));
@@ -144,6 +151,10 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
         D1_BUSY_BACKOFF,
       );
       return answers.map((answer) => answer.results);
+    },
+    async splitD1(home, sql): Promise<string[]> {
+      if (home.persistTo === null) throw refuseDeployedHome(home);
+      return splitLocal(await reach(home, handleKey(home)), sql);
     },
     async closeD1(home): Promise<void> {
       for (const key of home === null ? [...handles.keys()] : [handleKey(home)]) await release(key);

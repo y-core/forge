@@ -1,6 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
-import { CF_ERROR_CODES, WORKER_PERMISSION, workerSecrets, workerSettings, ZONE_PHASES, zoneRulesetEntrypoint } from "./endpoints";
+import {
+  CF_ERROR_CODES,
+  D1_WRITE_PERMISSION,
+  WORKER_PERMISSION,
+  workerSecrets,
+  workerSettings,
+  ZONE_PHASES,
+  zoneRulesetEntrypoint,
+} from "./endpoints";
 
 describe("workerSettings", () => {
   it("builds the settings path", () => {
@@ -67,6 +75,10 @@ describe("the constant tables", () => {
 
   it("names the permission the Worker surface needs", () => {
     expect(WORKER_PERMISSION).toBe("Workers Scripts");
+  });
+
+  it("names the permission a D1 write needs as the dashboard spells it", () => {
+    expect(D1_WRITE_PERMISSION).toBe("Account → D1 → Edit");
   });
 
   it("keeps the two failure classes disjoint, so classification cannot depend on which is tested first", () => {

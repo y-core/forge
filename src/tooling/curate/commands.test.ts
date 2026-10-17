@@ -19,7 +19,7 @@ import { CliError } from "../cli/errors";
 import { execute } from "../cli/execute";
 import type { CaptureResult, CliIO } from "../cli/types";
 import { createCurateCommand, curateTree, listWorkingTree } from "./commands";
-import { CURATE_FIXTURE_FEATURES, CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "./curate.fixture";
+import { CURATE_FIXTURE_FEATURES, CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "./curate.fixture";
 import type { CurateRequest, CurateRunner, FeatureManifest } from "./types";
 
 const scratch: string[] = [];
@@ -30,7 +30,9 @@ function tracked<T extends string>(path: T): T {
 }
 
 function repo(manifest?: string): string {
-  return tracked(curateFixtureRepo(manifest));
+  const root = tracked(curateFixtureRepo(manifest));
+  tracked(curateFixtureTemplate());
+  return root;
 }
 
 /** A path in a fresh parent that does not exist yet. */

@@ -1765,15 +1765,60 @@ var spacingScaleOnly = {
   }
 };
 
+// src/tooling/lint/rules/sql-text.ts
+var LEADING_NOISE = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/;
+function sqlTemplateText(node) {
+  const tagged = node;
+  if (tagged.tag?.type !== "Identifier" || tagged.tag.name !== "sql") return void 0;
+  return tagged.quasi.quasis.map((quasi) => quasi.value.cooked ?? quasi.value.raw).join("?").replace(LEADING_NOISE, "");
+}
+var STATEMENT_KEYWORD = /^(SELECT|INSERT|REPLACE|UPDATE|DELETE|VALUES)\b/i;
+var PROSE = /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g;
+function sqlStatementVerb(sql) {
+  const text = sql.replace(PROSE, (match) => " ".repeat(match.length));
+  if (!/^WITH\b/i.test(text)) return /^(\w+)/.exec(text)?.[1]?.toUpperCase();
+  let depth = 0;
+  for (let i = 4; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === "(") depth += 1;
+    else if (char === ")") depth -= 1;
+    else if (depth === 0 && /\w/.test(char ?? "") && !/\w/.test(text[i - 1] ?? "")) {
+      const verb = STATEMENT_KEYWORD.exec(text.slice(i))?.[1];
+      if (verb !== void 0) return verb.toUpperCase();
+    }
+  }
+  return void 0;
+}
+
+// src/tooling/lint/rules/sql-delete-authorised.ts
+var AUTHORISATION = /^\s*row-removal-authorised-by:\s*\S/;
+var sqlDeleteAuthorised = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "An application DELETE removes rows for good, so each one names who authorised it on the line before the `sql` fragment that runs it."
+    }
+  },
+  create(context) {
+    const authorisedLines = new Set(
+      (context.sourceCode.getAllComments?.() ?? []).filter((comment) => comment.type === "Line" && AUTHORISATION.test(comment.value)).map((comment) => comment.loc.end.line)
+    );
+    return {
+      TaggedTemplateExpression(node) {
+        const text = sqlTemplateText(node);
+        if (text === void 0 || sqlStatementVerb(text) !== "DELETE") return;
+        if (authorisedLines.has(node.loc.start.line - 1)) return;
+        context.report({
+          message: "a `sql` DELETE removes rows for good \u2014 say who authorised it in a `// row-removal-authorised-by: <who or why>` comment on the line before the fragment.",
+          loc: node.loc
+        });
+      }
+    };
+  }
+};
+
 // src/tooling/lint/rules/sql-explicit-transaction.ts
 var TRANSACTION_KEYWORD = /^(BEGIN|COMMIT|ROLLBACK|END|SAVEPOINT|RELEASE)\b/i;
-var LEADING_NOISE = /^(?:\s+|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)+/;
-function transactionKeywordOf(node) {
-  const first = node.quasi.quasis[0];
-  if (first === void 0) return void 0;
-  const text = (first.value.cooked ?? first.value.raw).replace(LEADING_NOISE, "");
-  return TRANSACTION_KEYWORD.exec(text)?.[1]?.toUpperCase();
-}
 var sqlExplicitTransaction = {
   meta: {
     type: "problem",
@@ -1784,9 +1829,8 @@ var sqlExplicitTransaction = {
   create(context) {
     return {
       TaggedTemplateExpression(node) {
-        const tagged = node;
-        if (tagged.tag.type !== "Identifier" || tagged.tag.name !== "sql") return;
-        const keyword = transactionKeywordOf(tagged);
+        const text = sqlTemplateText(node);
+        const keyword = text === void 0 ? void 0 : TRANSACTION_KEYWORD.exec(text)?.[1]?.toUpperCase();
         if (keyword === void 0) return;
         context.report({
           message: `\`sql\`${keyword} \u2026\`\` opens an explicit transaction, which D1 refuses inside the implicit one it already holds \u2014 put the statements in one \`batch()\` instead (docs/STORAGE_BINDINGS.md \xA71g).`,
@@ -1896,6 +1940,7 @@ var lintPlugin = {
     "platform-text-pretty": platformTextPretty,
     "reduced-motion": reducedMotion,
     "spacing-scale-only": spacingScaleOnly,
+    "sql-delete-authorised": sqlDeleteAuthorised,
     "sql-explicit-transaction": sqlExplicitTransaction,
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,

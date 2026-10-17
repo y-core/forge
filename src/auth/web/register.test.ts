@@ -21,6 +21,7 @@ import {
   PASSKEY_SCOPE,
 } from "../passkey-contract";
 import { createSigninActions } from "./actions";
+import { approvalCtx } from "./guards";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, authCtx } from "./identity";
 import { loadSignin } from "./loaders";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
@@ -69,6 +70,7 @@ function authApp(seed: AppSeed = {}): Forge {
     if (seed.userId !== undefined) {
       session.set(AUTH_SESSION_KEY, seed.userId);
       authCtx.set(context, { userId: seed.userId, email: "ada@example.com", isAdmin: seed.admin === true, stepUpAt: null });
+      approvalCtx.set(context, Date.now());
     }
     if (seed.pendingEmail !== undefined) session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, seed.pendingEmail);
     const writes = seed.identityWrites;

@@ -338,6 +338,10 @@ APIs, and a module a Worker path imports may not. Reaching for a `tooling` names
 runs is the one way to get this wrong, and the step fails it. **The converse does not hold:** `@y-core/forge/testing/snapshot` reads
 `node:fs` and is never Worker-reachable, and still belongs to `testing` — a test fixture is none of the artifacts above.
 
+**`src/testing/d1.ts` is the one source outside `tooling` that imports it at value**, a ruling `TOOLING_CROSSINGS` in `config/exemptions.ts`
+holds. It is Node-only and off the `testing` barrel, and it loads the host config through `tooling/db`'s loader so a test and `forge db` apply the
+same migrations. Nothing else outside `tooling` may.
+
 ### 5h. auth — Identity, and Only the Domain of It
 
 **`auth` owns identity: who a user is, which credentials prove it, and what a session may then do.** Authentication (passwordless email

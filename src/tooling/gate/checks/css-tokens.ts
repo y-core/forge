@@ -63,11 +63,15 @@ function rootOf(table: ClassGroupTable, utility: string): { root: string; value:
 
 /** Reports every `@theme` token forge declares in an overloaded namespace. @public */
 export async function checkCssTokens(config: CssTokensCheckConfig): Promise<CheckResult> {
+  return scanCssTokens(config, deriveClassGroups(await loadDesignSystem(resolve(config.root, config.stylesheet))));
+}
+
+/** Reports every `@theme` token in an overloaded namespace of an already derived table. @public */
+export function scanCssTokens(config: CssTokensCheckConfig, table: ClassGroupTable): CheckResult {
   const dir = resolve(config.root, config.cssDir);
   const files = collectFiles(dir, ".", (name) => name.endsWith(".css"));
   if (files.length === 0) return scannedNothing(`\`${config.cssDir}\` matched no stylesheet`, "css-tokens");
 
-  const table = deriveClassGroups(await loadDesignSystem(resolve(config.root, config.stylesheet)));
   const overloaded = overloadedRoots(table);
   const findings: Finding[] = [];
 

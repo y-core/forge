@@ -6,6 +6,7 @@ import { ok } from "../../result/result";
 import { AUTH_SESSION_MAX_MS } from "../config";
 import type { AuthUser, UserStore } from "../types";
 import {
+  APPROVAL_CODE_SESSION_KEY,
   APPROVAL_SESSION_KEY,
   AUTH_PENDING_SIGNIN_SESSION_KEY,
   AUTH_SESSION_KEY,
@@ -18,7 +19,7 @@ import {
   markApproval,
   markAuthStepUp,
   renewAuthSession,
-  resolveApprovalAt,
+  resolveApprovalMark,
   resolveAuthIdentity,
 } from "./identity";
 
@@ -227,9 +228,9 @@ describe("establishAuthSession", () => {
 
   it("clears an administrator approval, so a sign-in never inherits one given before it, anonymously or to another user", () => {
     const session = createSession("sid-1");
-    markApproval(session, Date.now());
+    markApproval(session, { at: Date.now(), digest: "k.mac" });
     establishAuthSession(session, "u1", NOW, Date.now());
-    expect(resolveApprovalAt(session)).toBeNull();
+    expect([resolveApprovalMark(session), session.get(APPROVAL_CODE_SESSION_KEY)]).toEqual([null, undefined]);
   });
 });
 
@@ -324,9 +325,9 @@ describe("clearAuthSession", () => {
 
   it("drops an administrator approval, so a sign-out leaves nothing approved behind", () => {
     const session = signedInSession("u1");
-    markApproval(session, Date.now());
+    markApproval(session, { at: Date.now(), digest: "k.mac" });
     clearAuthSession(session);
-    expect(resolveApprovalAt(session)).toBeNull();
+    expect([resolveApprovalMark(session), session.get(APPROVAL_CODE_SESSION_KEY)]).toEqual([null, undefined]);
   });
 
   it("leaves a resolved identity anonymous afterwards", async () => {
@@ -336,23 +337,27 @@ describe("clearAuthSession", () => {
   });
 });
 
-describe("markApproval and resolveApprovalAt", () => {
+describe("markApproval and resolveApprovalMark", () => {
   it("rotates the session id when the approval is recorded, so a fixated id cannot inherit it", () => {
     const session = createSession("sid-1");
-    markApproval(session, NOW);
+    markApproval(session, { at: NOW, digest: "k.mac" });
     expect(session.id).not.toBe("sid-1");
   });
 
   it("read back the moment the code was presented, under the approval's own key", () => {
     const session = createSession("sid-1");
-    markApproval(session, NOW);
-    expect({ at: resolveApprovalAt(session), stored: session.get(APPROVAL_SESSION_KEY) }).toEqual({ at: NOW, stored: NOW });
+    markApproval(session, { at: NOW, digest: "k.mac" });
+    expect({ mark: resolveApprovalMark(session), stored: session.get(APPROVAL_SESSION_KEY) }).toEqual({
+      mark: { at: NOW, digest: "k.mac" },
+      stored: NOW,
+    });
   });
 
   it("read no approval off a session that holds none, or one that holds something other than a finite stamp", () => {
     const session = createSession("sid-1");
-    const unset = resolveApprovalAt(session);
+    const unset = resolveApprovalMark(session);
+    session.set(APPROVAL_CODE_SESSION_KEY, "k.mac");
     session.set(APPROVAL_SESSION_KEY, "yesterday");
-    expect([unset, resolveApprovalAt(session)]).toEqual([null, null]);
+    expect([unset, resolveApprovalMark(session)]).toEqual([null, null]);
   });
 });

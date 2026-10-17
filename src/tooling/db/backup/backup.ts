@@ -1,6 +1,7 @@
 import { isAbsolute, join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
+import { timeTravelInfo } from "../bookmark";
 import { sha256 } from "../digest";
 import { schemaDrift } from "../drift";
 import { clearLocalState, scratchHome } from "../home";
@@ -10,7 +11,7 @@ import { COMPANION_TABLES, ensureCompanionTables } from "../migrate/companions";
 import { discoverMigrations, migrationsDigest, readMigrationFiles, readMigrations } from "../migrate/files";
 import { acquireApplyLock } from "../migrate/lock";
 import { localScratchConfig } from "../schema/scratch";
-import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
+import { INVENTORY_SELECT, rowCountSelect, sqlColumnAffinity, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbIo, DbRunContext, Home, RestoreRoute, SchemaFacts } from "../types";
 import { executeFile, exportSql, queryBatches, queryRows, queryRowsIfTable, wranglerVersion } from "../wrangler";
@@ -20,19 +21,29 @@ import {
   checkDataArtifact,
   checkInventory,
   checkSchemaArtifact,
+  declaredTypesSelect,
+  exportHazards,
+  exportHazardSelect,
   formatBackupDirectory,
   insertStatement,
   manifestSelfDigest,
   UnsupportedValue,
 } from "./artifact";
 import { formatDivergence } from "./compare";
-import { compareTable, describeTables, discoverAppTables, readWholeTable } from "./read";
-import type { BackupOptions, BackupOutcome, SourceTable } from "./types";
+import { compareHomes, compareTable, describeTables, digestWholeTable, discoverAppTables, readWholeTable } from "./read";
+import type { BackupOptions, BackupOutcome, SourceTable, TableComparison } from "./types";
 
 const DATA_PREAMBLE = "PRAGMA defer_foreign_keys=TRUE;";
 
 // Load order: route `full` declares the tables from the first and fills them from the second.
-const ARTIFACT_FILES = ["schema.sql", "data.sql"];
+const ARTIFACT_FILES = ["schema.sql", "data.sql"] as const;
+
+/** An export's data without the `sqlite_stat*` rows `ANALYZE` and `PRAGMA optimize` leave, which describe no app data and are outside every backup. @internal */
+export function withoutPlannerStatistics(dump: string): string {
+  return dump
+    .replace(/\n[^\S\n]*INSERT[^\S\n]+INTO[^\S\n]+"?sqlite_stat\d"?(?:[^\S\n]|\()[^\n]*/gi, "")
+    .replace(/^[^\S\n]*INSERT[^\S\n]+INTO[^\S\n]+"?sqlite_stat\d"?(?:[^\S\n]|\()[^\n]*\n?/i, "");
+}
 
 /** Where backups go: the host config's `backupsDir`, or `.forge/backups`, resolved against the root. @internal */
 export function resolveBackupsDir(run: DbRunContext, out: string | null = null): string {
@@ -59,8 +70,8 @@ function tableInserts(source: SourceTable): string[] {
 
 async function restoreInto(run: DbRunContext, scratch: Home, directory: string, route: RestoreRoute, name: string): Promise<void> {
   if (route === "full") {
-    // D1 accepts `PRAGMA defer_foreign_keys=TRUE` without honouring it, so the order below is what
-    // carries the foreign keys instead.
+    // `defer_foreign_keys` lasts only until its transaction commits, and two files are two transactions,
+    // so the order below is what carries the foreign keys.
     await executeFile(run.io, scratch, join(directory, "schema.sql"));
     await executeFile(run.io, scratch, join(directory, "data.sql"));
     return;
@@ -88,31 +99,47 @@ export async function restoreScratch(run: DbRunContext, directory: string, name:
   return scratch;
 }
 
-async function proveRoute(
+type ProveTable = (scratch: Home) => Promise<TableComparison>;
+
+async function appDigestOf(io: DbIo, home: Home): Promise<string> {
+  return sha256(appSchemaDigestInput(toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT))));
+}
+
+async function proveRestored(
   run: DbRunContext,
-  directory: string,
+  scratch: Home,
   route: RestoreRoute,
-  sources: readonly SourceTable[],
+  tables: readonly ProveTable[],
   appDigest: string,
 ): Promise<number> {
-  const scratch = await restoreScratch(run, directory, `verify-${route}`, route);
-
   let divergent = 0;
   run.io.log(`  route ${route}:`);
-  const restored = sha256(appSchemaDigestInput(toSchemaObjects(await queryRows(run.io, scratch, INVENTORY_SELECT))));
+  const restored = await appDigestOf(run.io, scratch);
   if (restored !== appDigest) {
     divergent += 1;
     run.io.log(`    ✗ schema — the app objects digest ${appDigest} at the source and ${restored} once restored`);
   }
-  for (const source of sources) {
-    const comparison = await compareTable(run.io, source, scratch);
+  for (const prove of tables) {
+    const comparison = await prove(scratch);
     divergent += comparison.divergent;
     run.io.log(
-      `    ${comparison.divergent === 0 ? "✓" : "✗"} ${source.table.name} — ${comparison.sourceRows} rows, ${comparison.divergent} divergent`,
+      `    ${comparison.divergent === 0 ? "✓" : "✗"} ${comparison.table} — ${comparison.sourceRows} rows, ${comparison.divergent} divergent`,
     );
     for (const divergence of comparison.divergences) run.io.log(`        ${formatDivergence(divergence, 60)}`);
     if (comparison.truncated) run.io.log(`        … ${comparison.divergent - comparison.divergences.length} further divergences not shown`);
   }
+  return divergent;
+}
+
+async function proveRoute(
+  run: DbRunContext,
+  directory: string,
+  route: RestoreRoute,
+  tables: readonly ProveTable[],
+  appDigest: string,
+): Promise<number> {
+  const scratch = await restoreScratch(run, directory, `verify-${route}`, route);
+  const divergent = await proveRestored(run, scratch, route, tables, appDigest);
   await clearLocalState(run.io, scratch);
   return divergent;
 }
@@ -161,26 +188,72 @@ async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<Ba
     migrationsDigest: migrationsDigest(onDisk),
   };
 
+  const via = options.via ?? "read";
+  const companionTables = await describeTables(io, home, companionNames);
+  const tables = [...appTables, ...companionTables];
   const sources: SourceTable[] = [];
-  for (const table of appTables) sources.push(await readWholeTable(io, home, table));
-  const companions: SourceTable[] = [];
-  for (const table of await describeTables(io, home, companionNames)) companions.push(await readWholeTable(io, home, table));
-  io.log(`read ✓ ${sources.reduce((total, source) => total + source.rows.length, 0)} rows across ${sources.length} tables`);
+  if (via === "read") {
+    for (const table of tables) sources.push(await readWholeTable(io, home, table));
+    const app = sources.slice(0, appTables.length);
+    io.log(`read ✓ ${app.reduce((total, source) => total + source.rows.length, 0)} rows across ${app.length} tables`);
+  }
+  let exportedCounts = new Map<string, number>();
+  if (via === "export") {
+    const types = await queryBatches(io, home, tables.map(declaredTypesSelect));
+    const real = (index: number) =>
+      new Set((types[index] ?? []).filter((row) => sqlColumnAffinity(String(row.type ?? "")) === "REAL").map((row) => String(row.name ?? "")));
+    const counted = await queryBatches(io, home, [
+      ...tables.map((table, index) => exportHazardSelect(table, real(index))),
+      ...tables.map((table) => rowCountSelect(table.name)),
+    ]);
+    const hazards = tables.flatMap((table, index) => exportHazards(table, counted[index]?.[0]));
+    if (hazards.length > 0) {
+      throw new CliError(
+        "invalid-args",
+        `${home.database} holds values wrangler d1 export would not reproduce, so --via export is refused — back it up without --via:\n  ${hazards.join("\n  ")}`,
+      );
+    }
+    exportedCounts = new Map(tables.map((table, index) => [table.name, Number(counted[tables.length + index]?.[0]?.rows ?? 0)]));
+  }
+  const bookmark = via === "export" && isRemotePlace(config.target.place) ? timeTravelInfo(io, home, undefined, config).bookmark : null;
 
   const directory = join(resolveBackupsDir(run, options.out), formatBackupDirectory(home.database, io.now()));
   if (io.exists(directory)) {
     throw new CliError("invalid-args", `${directory} already exists — a backup a second ago took this name; wait a second and take it again`);
   }
   io.mkdir(directory);
+  const incomplete = `${directory} is incomplete and holds no manifest, so no verb will read it.`;
   const schemaExport = join(directory, "schema.export.sql");
   await exportSql(io, home, schemaExport, ["--no-data"]);
   const schemaSql = io.readText(schemaExport);
   writeArtifactFile(io, join(directory, "schema.sql"), schemaSql);
   io.remove(schemaExport);
 
-  const rows = [...sources.flatMap(tableInserts), ...companions.flatMap(tableInserts)];
-  const dataSql = `${DATA_PREAMBLE}\n${rows.join("\n")}\n`;
+  let dataSql: string;
+  if (via === "read") {
+    const exportedDigest = await appDigestOf(io, home);
+    if (exportedDigest !== appDigest) {
+      throw new CliError(
+        "invalid-args",
+        `${home.database}'s schema changed between reading the rows and exporting the schema: its app objects digest ${appDigest} before and ${exportedDigest} after, so schema.sql and data.sql need not describe one schema.\nStop whatever is changing it and take the backup again — ${incomplete}`,
+      );
+    }
+    dataSql = `${DATA_PREAMBLE}\n${sources.flatMap(tableInserts).join("\n")}\n`;
+  } else {
+    const dataExport = join(directory, "data.export.sql");
+    await exportSql(io, home, dataExport, ["--no-schema"]);
+    dataSql = withoutPlannerStatistics(io.readText(dataExport));
+    io.remove(dataExport);
+    const exportedDigest = await appDigestOf(io, home);
+    if (exportedDigest !== appDigest) {
+      throw new CliError(
+        "invalid-args",
+        `${home.database}'s schema changed between the schema export and the data export: its app objects digest ${appDigest} before and ${exportedDigest} after, so schema.sql and data.sql need not describe one schema.\nStop whatever is changing it and take the backup again — ${incomplete}`,
+      );
+    }
+  }
   writeArtifactFile(io, join(directory, "data.sql"), dataSql);
+  const written: Record<(typeof ARTIFACT_FILES)[number], string> = { "schema.sql": schemaSql, "data.sql": dataSql };
 
   const schemaFaults = checkSchemaArtifact(schemaSql);
   if (schemaFaults.length > 0) {
@@ -202,29 +275,62 @@ async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<Ba
   io.mkdir(migrationsDir);
   for (const migration of onDisk) io.writeText(join(migrationsDir, `${migration.name}.sql`), migration.sql);
 
-  const routes: readonly RestoreRoute[] = ["full", "migrations"];
-  const proved = [...sources, ...companions];
-  const verified: { route: RestoreRoute; divergent: number }[] = [];
-  if (options.verify) {
-    for (const route of routes) verified.push({ route, divergent: await proveRoute(run, directory, route, proved, appDigest) });
-  }
-
-  // Counted after the reads and after the proof, which is the widest window a concurrent write can
-  // be caught in: the manifest records the rows the artifact holds, and this says they are all of them.
-  const counted = await queryBatches(
-    io,
-    home,
-    proved.map((source) => rowCountSelect(source.table.name)),
-  );
-  const counts = new Map<string, number>(proved.map((source, index) => [source.table.name, Number(counted[index]?.[0]?.rows ?? 0)]));
-  const torn = proved
-    .filter((source) => counts.get(source.table.name) !== source.rows.length)
-    .map((source) => `${source.table.name}: ${source.rows.length} rows read and ${counts.get(source.table.name) ?? 0} now in the table`);
-  if (torn.length > 0) {
-    throw new CliError(
+  const torn = (lines: readonly string[], activity: string) =>
+    new CliError(
       "invalid-args",
-      `${home.database} changed while it was being read, so this artifact is not a snapshot of any one instant:\n  ${torn.join("\n  ")}\nStop whatever is writing to it and take the backup again — ${directory} is incomplete and holds no manifest, so no verb will read it.`,
+      `${home.database} changed while it was being ${activity}, so this artifact is not a snapshot of any one instant:\n  ${lines.join("\n  ")}\nStop whatever is writing to it and take the backup again — ${incomplete}`,
     );
+  const verified: { route: RestoreRoute; divergent: number }[] = [];
+  let tableDigests: { name: string; rows: number; digest: string }[];
+  if (via === "read") {
+    const routes: readonly RestoreRoute[] = ["full", "migrations"];
+    const proofs = sources.map(
+      (source): ProveTable =>
+        (scratch) =>
+          compareTable(io, source, scratch),
+    );
+    if (options.verify) {
+      for (const route of routes) verified.push({ route, divergent: await proveRoute(run, directory, route, proofs, appDigest) });
+    }
+    // Counted after the reads and after the proof, which is the widest window a concurrent write can
+    // be caught in: the manifest records the rows the artifact holds, and this says they are all of them.
+    const counted = await queryBatches(
+      io,
+      home,
+      sources.map((source) => rowCountSelect(source.table.name)),
+    );
+    const changed = sources.flatMap((source, index) => {
+      const now = Number(counted[index]?.[0]?.rows ?? 0);
+      return now === source.rows.length ? [] : [`${source.table.name}: ${source.rows.length} rows read and ${now} now in the table`];
+    });
+    if (changed.length > 0) throw torn(changed, "read");
+    tableDigests = sources
+      .slice(0, appTables.length)
+      .map((source) => ({ name: source.table.name, rows: source.rows.length, digest: sha256(source.rows.map((row) => row.canonical).join("\n")) }));
+  } else {
+    const reference = await restoreScratch(run, directory, "export-read", "full");
+    try {
+      const digested: { name: string; rows: number; digest: string }[] = [];
+      for (const table of tables) digested.push({ name: table.name, ...(await digestWholeTable(io, reference, table)) });
+      const app = digested.slice(0, appTables.length);
+      io.log(`read ✓ ${app.reduce((total, table) => total + table.rows, 0)} rows across ${app.length} tables, from the export`);
+      const changed = digested
+        .filter((table) => exportedCounts.get(table.name) !== table.rows)
+        .map((table) => `${table.name}: ${exportedCounts.get(table.name) ?? 0} rows counted just before the export and ${table.rows} in it`);
+      if (changed.length > 0) throw torn(changed, "exported");
+      if (options.verify) {
+        verified.push({ route: "full", divergent: await proveRestored(run, reference, "full", [], appDigest) });
+        const proofs = tables.map(
+          (table): ProveTable =>
+            (scratch) =>
+              compareHomes(io, table, reference, scratch),
+        );
+        verified.push({ route: "migrations", divergent: await proveRoute(run, directory, "migrations", proofs, appDigest) });
+      }
+      tableDigests = app;
+    } finally {
+      await clearLocalState(io, reference);
+    }
   }
   const failed = verified.filter((route) => route.divergent > 0);
   if (failed.length > 0) {
@@ -235,18 +341,19 @@ async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<Ba
     formatVersion: BACKUP_FORMAT_VERSION,
     createdAt: io.now().toISOString(),
     label: options.label,
-    dumper: { tool: "forge db backup (schema via wrangler d1 export --no-data)", version: wranglerVersion(io, home) },
+    dumper: {
+      tool: via === "read" ? "forge db backup (schema via wrangler d1 export --no-data)" : "forge db backup --via export (wrangler d1 export)",
+      version: wranglerVersion(io, home),
+    },
+    via,
+    bookmark,
     database: { name: home.database, id: config.entry.databaseId, target: config.target.place, persistPath: home.persistTo },
     schema,
     drift: drift.state,
     migrations: onDisk.map((migration) => ({ name: migration.name, sha256: migration.sha256 })),
-    tables: sources.map((source) => ({
-      name: source.table.name,
-      rows: source.rows.length,
-      digest: sha256(source.rows.map((row) => row.canonical).join("\n")),
-    })),
+    tables: tableDigests,
     artifacts: ARTIFACT_FILES.map((file) => {
-      const text = io.readText(join(directory, file));
+      const text = written[file];
       return { file, bytes: new TextEncoder().encode(text).length, sha256: sha256(text) };
     }),
     warnings: [

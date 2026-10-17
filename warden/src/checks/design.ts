@@ -28,6 +28,7 @@ const STATES_NO_CORPUS_RULE = new Set([
   "suppression-needs-reason",
   "data-slot-before-spread",
   "exact-markup-assertion",
+  "sql-delete-authorised",
   "sql-explicit-transaction",
   "type-import-external",
   "type-import-separation",

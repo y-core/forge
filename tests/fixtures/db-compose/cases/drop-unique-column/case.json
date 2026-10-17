@@ -2,7 +2,7 @@
   "seed": "INSERT INTO t (id, code, note) VALUES (1, 'a', 'x'), (2, 'b', 'y');",
   "refusedWithout": "t: drops column code",
   "args": ["--allow-destructive", "<digest>"],
-  "expectSql": ["CREATE TABLE \"_forge_new_t\"", "RENAME TO \"t\""],
+  "expectSql": ["-- forge:drops column \"t\".\"code\"", "CREATE TABLE \"_forge_new_t\"", "RENAME TO \"t\""],
   "expectStdout": ["rebuild table t (drop-column-unsupported)"],
   "query": "SELECT id, note FROM t ORDER BY id",
   "rows": [

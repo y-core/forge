@@ -23,6 +23,7 @@ import { platformTextBalance } from "./rules/platform-text-balance.ts";
 import { platformTextPretty } from "./rules/platform-text-pretty.ts";
 import { reducedMotion } from "./rules/reduced-motion.ts";
 import { spacingScaleOnly } from "./rules/spacing-scale-only.ts";
+import { sqlDeleteAuthorised } from "./rules/sql-delete-authorised.ts";
 import { sqlExplicitTransaction } from "./rules/sql-explicit-transaction.ts";
 import { suppressionNeedsReason } from "./rules/suppression-needs-reason.ts";
 import { typeImportExternal } from "./rules/type-import-external.ts";
@@ -56,6 +57,7 @@ export const lintPlugin: LintPlugin = {
     "platform-text-pretty": platformTextPretty,
     "reduced-motion": reducedMotion,
     "spacing-scale-only": spacingScaleOnly,
+    "sql-delete-authorised": sqlDeleteAuthorised,
     "sql-explicit-transaction": sqlExplicitTransaction,
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,

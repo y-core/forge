@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { CliError } from "../../cli/errors";
 import { scanSql, splitCreateTableBody, sqlIdentifierEquals, unquoteSqlIdentifier } from "../schema/normalize";
 import type { SqlToken } from "../schema/types";
@@ -175,8 +177,8 @@ export function referencedTables(tableSql: string): string[] {
 
 /** Reorders table names so every parent precedes the children that reference it. @internal */
 export function dependencyOrder(names: readonly string[], edges: readonly { readonly child: string; readonly parent: string }[]): string[] {
-  // A load split across transactions violates a foreign key at the first commit, and D1 accepts
-  // `defer_foreign_keys` without honouring it, so the load order is what has to carry the constraint.
+  // A load split across transactions violates a foreign key at the first commit, and `defer_foreign_keys`
+  // lasts only until a commit, so the load order is what has to carry the constraint.
   const present = new Set(names);
   const parents = new Map<string, Set<string>>(names.map((name) => [name, new Set<string>()]));
   for (const edge of edges) {
@@ -237,9 +239,13 @@ function advanced(table: AppTable, previous: ReadCursor, next: ReadCursor): Read
   );
 }
 
+function projectedColumns(table: AppTable): string[] {
+  return [...table.keys.filter((key) => !table.columns.includes(key)), ...table.columns];
+}
+
 /** Every row of one table, read a page at a time. @internal */
 export async function readWholeTable(io: DbIo, home: Home, table: AppTable): Promise<SourceTable> {
-  const columns = [...table.keys.filter((key) => !table.columns.includes(key)), ...table.columns];
+  const columns = projectedColumns(table);
   const rows: CanonicalRow[] = [];
   const raw: Record<string, unknown>[] = [];
   let cursor: ReadCursor = null;
@@ -264,4 +270,38 @@ export async function compareTable(io: DbIo, source: SourceTable, target: Home):
     cursor = advanced(source.table, cursor, page.cursor);
   }
   return finishComparison(source.table.name, state);
+}
+
+/** One table's row count and the digest a whole read's canonical rows give, hashed a page at a time so no page outlives its read. @internal */
+export async function digestWholeTable(io: DbIo, home: Home, table: AppTable): Promise<{ rows: number; digest: string }> {
+  const columns = projectedColumns(table);
+  const hash = createHash("sha256");
+  let rows = 0;
+  let cursor: ReadCursor = null;
+  for (;;) {
+    const page = await readPage(io, home, table, columns, cursor);
+    for (const row of page.rows) {
+      hash.update(rows === 0 ? row.canonical : `\n${row.canonical}`);
+      rows += 1;
+    }
+    if (page.exhausted) break;
+    cursor = advanced(table, cursor, page.cursor);
+  }
+  return { rows, digest: hash.digest("hex") };
+}
+
+/** One table on two homes, both read a page at a time, so neither side is ever held whole. @internal */
+export async function compareHomes(io: DbIo, table: AppTable, source: Home, target: Home): Promise<TableComparison> {
+  const columns = projectedColumns(table);
+  let state = emptyComparison();
+  let sourceCursor: ReadCursor = null;
+  let targetCursor: ReadCursor = null;
+  while (!state.sourceExhausted || !state.targetExhausted) {
+    const left = state.sourceExhausted ? null : await readPage(io, source, table, columns, sourceCursor);
+    const right = state.targetExhausted ? null : await readPage(io, target, table, columns, targetCursor);
+    state = mergeRowPage(state, left?.rows ?? [], right?.rows ?? [], { source: left?.exhausted ?? true, target: right?.exhausted ?? true });
+    if (left !== null && !left.exhausted) sourceCursor = advanced(table, sourceCursor, left.cursor);
+    if (right !== null && !right.exhausted) targetCursor = advanced(table, targetCursor, right.cursor);
+  }
+  return finishComparison(table.name, state);
 }

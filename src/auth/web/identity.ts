@@ -3,7 +3,7 @@ import type { Session } from "@remix-run/session";
 import { contextVar } from "../../context/accessor";
 import { AUTH_SESSION_MAX_MS } from "../config";
 import type { UserStore } from "../types";
-import type { AuthIdentity } from "./types";
+import type { ApprovalMark, AuthIdentity } from "./types";
 
 /** The session key the signed-in user's id is stored under. @public */
 export const AUTH_SESSION_KEY = "auth.userId";
@@ -32,6 +32,9 @@ export const AUTH_SITE_DATA_OWED_SESSION_KEY = "auth.siteDataOwed";
 /** The session key recording when this session last presented the administrator code. @internal */
 export const APPROVAL_SESSION_KEY = "approval.at";
 
+/** The session key holding the keyed digest of the administrator code that approval was presented under, never the code. @internal */
+export const APPROVAL_CODE_SESSION_KEY = "approval.code";
+
 /** Per-request accessor for the identity `requireAuth` or `resolveAuth` establishes. @public */
 export const authCtx = contextVar<AuthIdentity>("auth.identity");
 
@@ -54,6 +57,7 @@ export function establishAuthSession(session: Session, userId: string, at: numbe
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);
   session.unset(AUTH_SITE_DATA_OWED_SESSION_KEY);
   session.unset(APPROVAL_SESSION_KEY);
+  session.unset(APPROVAL_CODE_SESSION_KEY);
   session.regenerateId(true);
 }
 
@@ -84,16 +88,19 @@ export function markAuthStepUp(session: Session, at: number, now: number): void 
   session.set(AUTH_STEP_UP_SESSION_KEY, Math.min(at, now));
 }
 
-/** Records on `session` that the administrator code was presented at `at`, rotating the session id. @internal */
-export function markApproval(session: Session, at: number): void {
-  session.set(APPROVAL_SESSION_KEY, at);
+/** Records on `session` that the administrator code `mark.digest` names was presented at `mark.at`, rotating the session id. @internal */
+export function markApproval(session: Session, mark: ApprovalMark): void {
+  session.set(APPROVAL_SESSION_KEY, mark.at);
+  session.set(APPROVAL_CODE_SESSION_KEY, mark.digest);
   // A privilege change on a session no sign-in may have rotated: a fixated id must not inherit it.
   session.regenerateId(true);
 }
 
-/** When `session` last presented the administrator code, or `null` when it has not. @internal */
-export function resolveApprovalAt(session: Session): number | null {
-  return readStamp(session, APPROVAL_SESSION_KEY);
+/** The administrator approval `session` holds, or `null` when it holds none. @internal */
+export function resolveApprovalMark(session: Session): ApprovalMark | null {
+  const at = readStamp(session, APPROVAL_SESSION_KEY);
+  const digest = session.get(APPROVAL_CODE_SESSION_KEY);
+  return at === null || typeof digest !== "string" || digest.length === 0 ? null : { at, digest };
 }
 
 /** Drops every auth key from `session`, leaving the session id alone. @internal */
@@ -104,6 +111,7 @@ function revokeAuthSession(session: Session): void {
   session.unset(AUTH_STEP_UP_SESSION_KEY);
   session.unset(AUTH_PENDING_SIGNIN_SESSION_KEY);
   session.unset(APPROVAL_SESSION_KEY);
+  session.unset(APPROVAL_CODE_SESSION_KEY);
 }
 
 /** Drops the signed-in user and the step-up mark from `session`, rotating the session id. @public */

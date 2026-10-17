@@ -41,6 +41,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "auth/web": {
     app: "value",
     auth: "value",
+    "crypto/keyring": "value",
     form: "value",
     http: "value",
     logging: "value",
@@ -81,6 +82,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "storage/db": "value",
     "storage/kv": "type",
     "storage/r2": "value",
+    "tooling/db": "value",
   },
   "testing/coverage": { "ui/chrome": "value", "ui/controls": "value", "ui/core": "value", "ui/server": "value" },
   "tooling/assets": { assets: "type", http: "value", security: "value", site: "value", "tooling/cli": "value", "ui/assets/build": "value" },

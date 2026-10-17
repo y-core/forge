@@ -200,7 +200,7 @@ export function browserStep(options: { hint?: string } & StepOptions = {}): Comm
 }
 
 /** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `full` tier: it needs the workerd runtime installed. @public */
-export function workerdStep(options: { hint?: string } & SourceStepOptions = {}): CommandStep {
+export function workerdStep(options: { hint?: string; leavesNoTemp?: boolean } & SourceStepOptions = {}): CommandStep {
   return {
     label: "test:workerd",
     // Defaults to `full` — it needs the workerd runtime installed — but the caller may state it, so
@@ -209,6 +209,8 @@ export function workerdStep(options: { hint?: string } & SourceStepOptions = {})
     tail: 120,
     // Node, never bun: under bun `createTestHarness` loses the `cf` blob miniflare's own `undici` carries, and no request is ever answered.
     cmd: ["playwright", "test", "--project=workerd", ...(options.sources ?? [])],
+    ...(options.leavesNoTemp === true ? { leavesNoTemp: true } : {}),
+    tempCaches: ["playwright-transform-cache-*"],
     // The probe targets the runtime, not the test runner: the `playwright` CLI is a devDependency and
     // always present, so probing it would pass vacuously and let every spec fail at harness start.
     ...prerequisite(options.requires, {
@@ -225,23 +227,22 @@ export function featuresStep(config: FeaturesCheckConfig, options: Omit<StepOpti
   return checkStep("validate-features", () => checkFeatures(config), { ...options, tier: "full" });
 }
 
-/** The two `forge db schema check` rows: digests in `quality`, the replay in `full`. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
-export function dbSchemaStep(
+/** The `forge db` rows: the schema digests in `quality`; the lint, which reads the local database, and the schema replay in `full`, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
+export function dbSteps(
   options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string; watches?: readonly string[] } = {},
-): [CommandStep, CommandStep] {
+): [CommandStep, CommandStep, CommandStep] {
   const forge = options.forge ?? ["forge"];
   const root = options.root === undefined ? [] : ["--root", options.root];
   const watches = watching(options.watches);
+  const requires = {
+    tool: "workerd",
+    probe: hasWorkerd,
+    hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
+  };
   return [
     { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root], ...watches },
-    {
-      label: "db:schema",
-      tier: "full",
-      tail: 60,
-      cmd: [...forge, "db", "schema", "check", "--replay", ...root],
-      requires: { tool: "workerd", probe: hasWorkerd, hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it" },
-      ...watches,
-    },
+    { label: "db:lint", tier: "full", tail: 40, cmd: [...forge, "db", "lint", ...root], requires, ...watches },
+    { label: "db:schema", tier: "full", tail: 60, cmd: [...forge, "db", "schema", "check", "--replay", ...root], requires, ...watches },
   ];
 }
 

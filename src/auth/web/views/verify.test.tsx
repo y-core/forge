@@ -168,7 +168,7 @@ describe("VerifyView per factor", () => {
   // The wait comes from the factor, so a deployment that configures a different one is not
   // contradicted by copy — and the notice states the policy, never what became of this request.
   it("marks a requested resend with the factor's own wait, and holds the control for it", async () => {
-    const html = await verify({ resent: true, reissueAfterMs: 60_000 });
+    const html = await verify({ resent: true, resendWaitMs: 60_000 });
     expect(textOf(html, "div", 'data-slot="alert-description"')).toBe(
       "If another code was due, it is on its way — check your inbox. You can ask again in a minute.",
     );
@@ -176,15 +176,23 @@ describe("VerifyView per factor", () => {
   });
 
   it("names a sub-minute wait in seconds rather than rounding it away", async () => {
-    const html = await verify({ resent: true, reissueAfterMs: 30_000 });
+    const html = await verify({ resent: true, resendWaitMs: 30_000 });
     expect(textOf(html, "div", 'data-slot="alert-description"')).toBe(
       "If another code was due, it is on its way — check your inbox. You can ask again in 30 seconds.",
     );
   });
 
-  it("promises no wait when the factor enforces none", async () => {
+  it("holds the control for a sub-minute wait too", async () => {
+    const html = await verify({ resent: true, resendWaitMs: 30_000 });
+    expect(attrsOf(html, 'data-ref="verify-resend"')["disabled"]).toBe("");
+  });
+
+  it("promises no wait and leaves the control live after a resend whose window has elapsed", async () => {
     const html = await verify({ resent: true });
-    expect(textOf(html, "div", 'data-slot="alert-description"')).toBe("If another code was due, it is on its way — check your inbox.");
+    expect({
+      notice: textOf(html, "div", 'data-slot="alert-description"'),
+      disabled: attrsOf(html, 'data-ref="verify-resend"')["disabled"],
+    }).toEqual({ notice: "If another code was due, it is on its way — check your inbox.", disabled: undefined });
   });
 
   it("drops the resend affordance when a path arrived without its token, rather than rendering a guaranteed 403", async () => {

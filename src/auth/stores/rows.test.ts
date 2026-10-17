@@ -18,7 +18,7 @@ import { createIdentityLinkStore } from "./identity-links";
 import { createNonceStore } from "./nonces";
 import { createOtpStateStore } from "./otp-state";
 import { createRecoveryCodeStore } from "./recovery-codes";
-import { blobBytes, inList, MAX_PAGE_LIMIT, storeError } from "./rows";
+import { blobBytes, MAX_PAGE_LIMIT, storeError } from "./rows";
 import { createUserStore } from "./users";
 
 const USER_ID = uuidv7();
@@ -46,20 +46,6 @@ describe("blobBytes", () => {
 
   it("refuses any other shape rather than reading it as empty bytes", () => {
     expect(() => blobBytes("010203")).toThrow(TypeError);
-  });
-});
-
-describe("inList", () => {
-  it("binds each value as a parameter, comma-separated and without parentheses of its own", () => {
-    const fragment = inList(["a", "b"]);
-    expect(fragment.text).toBe("?, ?");
-    expect(fragment.params).toEqual(["a", "b"]);
-  });
-
-  it("returns an empty fragment for an empty list rather than throwing or emitting a stray comma", () => {
-    const fragment = inList([]);
-    expect(fragment.text).toBe("");
-    expect(fragment.params).toEqual([]);
   });
 });
 
@@ -330,7 +316,8 @@ describe("schema drift", () => {
     for (const table of named) for (const column of TABLES.get(table) ?? []) allowed.add(column);
     const missing: string[] = [];
     // An `AS` alias names a result column, not a stored one, so it is not the schema's to declare.
-    for (const match of statement.replace(/\bAS\s+\w+/gi, "").matchAll(/[a-z_][a-z0-9_]*/g)) {
+    const scanned = statement.replace(/\bAS\s+\w+/gi, "").replaceAll("(SELECT value FROM json_each(?))", "(?)");
+    for (const match of scanned.matchAll(/[a-z_][a-z0-9_]*/g)) {
       const word = match[0];
       if (KEYWORDS.has(word.toUpperCase()) || word.startsWith("auth_") || allowed.has(word)) continue;
       missing.push(word);

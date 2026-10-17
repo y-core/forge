@@ -43,7 +43,7 @@ audience: consumer
 - §7c render() — SSR Render-to-String: the assertion entry point
 - §7d buildRequest() — Request Builder: options and body helpers
 - §7e mapHandler() and TestAction: single-route registrar
-- §7f Subpaths That Are Not on the Barrel: why `@y-core/forge/testing/snapshot` and `@y-core/forge/testing/harness` are imported by name
+- §7f Subpaths That Are Not on the Barrel: why `@y-core/forge/testing/snapshot`, `/harness` and `/d1` are imported by name
 - §7g elementOf() and the Markup Readers: the exact assertion on one element of a whole page
 - §7h matchTextSnapshot() — Text Against a Committed Fixture: what it writes, what it refuses, and what it never reads
 - §7i The Expected Coverage Set: the components a consumer's coverage manifest must declare, read off the barrels
@@ -384,7 +384,7 @@ why `config/steps.ts` carries a `tier` key only on the rows that are not. `test`
 
 The table is not the running order: the selector sorts by tier after filtering, so every `quality` row runs before `test` and both before `full`,
 with declared order preserved inside each tier. This is what makes a wrap or comment-budget failure surface in seconds rather than after the suite —
-and `browserStep` sitting above `dbSchemaStep` in the file does not put Chromium ahead of the digest check.
+and `browserStep` sitting above `dbSteps` in the file does not put Chromium ahead of the digest check.
 
 **The reviewer's baseline is a reuse run, and the developer's closing run is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the reviewer run
 the gate with `--reuse`. `cc-tester` closes a task on `verify:full`, which records a receipt for the tree it judged, so a reviewer who reaches the
@@ -499,9 +499,15 @@ the file from `include`, or adding `node` to `types`, is not the supported way. 
 `node:path`, and `serveWorker` (§1f) runs only under node. The file that imports it is a node-run Playwright spec, never part of a Worker program,
 so there is no Worker-typed program for a shim to serve.
 
-**What makes either file legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that checks
-for a non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the Workers
-lib set, where `node:fs` does not resolve. `src/testing` stays out of a Worker by reachability instead: it is one of `devBoundaryStep`'s
+**`@y-core/forge/testing/d1` is off the barrel for the same reason as the harness.** `openTestD1` imports `wrangler` and `node:fs`, starts
+wrangler's local D1 through `getPlatformProxy`, and is bundled to `d1.mjs` for node like `./testing/harness`. `getPlatformProxy` does answer under
+`bun test`, but a spec that starts it stays in the workerd set (§1f), because workerd is the prerequisite that set is held back on. Its co-located
+`d1.test.ts` covers the pure helpers and the refusals that come before a process starts; `tests/workerd/test-d1.workerd.ts` covers the engine.
+Forge's own workerd specs open D1 through its `openPlatformD1` (`tests/workerd/d1.ts`).
+
+**What makes any of these files legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that
+checks for a non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the
+Workers lib set, where `node:fs` does not resolve. `src/testing` stays out of a Worker by reachability instead: it is one of `devBoundaryStep`'s
 `devOnlyDirs`, so no deployed file may import it, and `importBoundaryStep`'s `guarded` pointedly leaves it out. A new file that wants Node earns it
 the same way or not at all — the question to answer is whether anything shipped can reach it, and "it is only used in tests" is not that answer
 unless a boundary step says so.

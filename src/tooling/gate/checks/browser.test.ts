@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { chromium } from "@playwright/test";
 
@@ -28,6 +29,12 @@ describe("hasChromium()", () => {
     setChromePath(undefined);
 
     expect(hasChromium()).toBe(existsSync(chromium.executablePath()));
+  });
+
+  it("loads playwright only on the fallback, so every importer of the gate's step builders skips it", () => {
+    const source = readFileSync(join(import.meta.dir, "browser.ts"), "utf-8");
+
+    expect(source.match(/^import\s+(?!type\b)[^;]*from\s+"@playwright\/test"/m)).toBeNull();
   });
 
   it("reads a stale or absent download as absent, never as present", () => {

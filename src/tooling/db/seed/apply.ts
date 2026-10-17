@@ -5,8 +5,8 @@ import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
 import { confirmPrinter } from "../context";
 import { declaredPath, declaredSeeds } from "../declared";
-import { readDrift, refuseSchemaDrift } from "../drift";
-import { RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "../migrate/checksum";
+import { refuseSchemaDrift, schemaDrift } from "../drift";
+import { readTargetFacts } from "../migrate/apply";
 import { ensureCompanionTables } from "../migrate/companions";
 import { readMigrations } from "../migrate/files";
 import { formatLintFinding } from "../migrate/lint";
@@ -15,8 +15,9 @@ import { planApply } from "../migrate/plan";
 import { applyRecordedSql } from "../recorded";
 import { quoteSqlLiteral } from "../sql";
 import { isRemotePlace } from "../target";
-import type { Bookmark, DbRunContext, LintFinding, Seed, SeedOutcome, SeedPlan, SeedRecord } from "../types";
+import type { Bookmark, DbRunContext, LintFinding, RecordedChecksum, Seed, SeedOutcome, SeedPlan, SeedRecord } from "../types";
 import { executeSql, queryRowsIfTable } from "../wrangler";
+import { refuseSchemaChangingSeeds, seedName } from "./effect";
 import { discoverSeeds, expandSeedEnv } from "./files";
 import { lintSeed, lintSeeds } from "./lint";
 import { planSeeds, recordSeedSql } from "./plan";
@@ -38,17 +39,14 @@ export function readSeeds(run: DbRunContext, dir?: string | undefined): readonly
   return sources.flatMap((source) => discoverSeeds(run.io, source));
 }
 
-async function refusePendingMigrations(run: DbRunContext): Promise<void> {
-  const recorded = toRecordedChecksums((await queryRowsIfTable(run.io, run.home, RECORDED_CHECKSUM_SELECT)) ?? []);
+function refusePendingMigrations(run: DbRunContext, recorded: readonly RecordedChecksum[]): void {
   const plan = planApply({ discovered: readMigrations(run), applied: recorded.map((record) => record.appliedName) });
   if (plan.pending.length === 0) return;
   throw new CliError(
     "invalid-args",
-    `${run.home.database} (${run.config.target.place}) has ${plan.pending.length} pending migration(s): ${plan.pending.map((m) => m.name).join(", ")}. Run \`forge db migrate\` first, or pass --allow-pending to seed the older schema anyway.`,
+    `${run.home.database} (${run.config.target.place}) has ${plan.pending.length} pending migration(s): ${plan.pending.map((m) => m.name).join(", ")}. Run \`forge db migrate\` first.`,
   );
 }
-
-const seedName = (seed: Seed) => `${seed.source}:${seed.name}`;
 
 const findingKey = (finding: LintFinding) => `${finding.file}:${finding.line}:${finding.rule}`;
 
@@ -59,16 +57,12 @@ function seedFindings(seeds: readonly Seed[], expanded: ReadonlyMap<Seed, string
   return [...written, ...substituted.filter((finding) => !seen.has(findingKey(finding)))];
 }
 
-function enforceSeedLint(run: DbRunContext, findings: readonly LintFinding[], allowWarnings: boolean): void {
-  const warnings = findings.filter((f) => f.level === "warning");
-  if (warnings.length === 0) return;
-  if (isRemotePlace(run.config.target.place) && !allowWarnings) {
-    throw new CliError(
-      "invalid-args",
-      `${warnings.length} lint warning(s) against ${run.config.target.place}. Read them, then pass --allow-warnings to seed anyway:\n${warnings.map(formatLintFinding).join("\n")}`,
-    );
-  }
-  for (const warning of warnings) run.io.log(formatLintFinding(warning));
+function enforceSeedLint(run: DbRunContext, findings: readonly LintFinding[]): void {
+  if (findings.length === 0) return;
+  throw new CliError(
+    "invalid-args",
+    `${findings.length} lint finding(s) in the seeds, so nothing was seeded:\n${findings.map(formatLintFinding).join("\n")}`,
+  );
 }
 
 async function confirmSeed(run: DbRunContext, plan: SeedPlan): Promise<void> {
@@ -84,28 +78,16 @@ async function confirmSeed(run: DbRunContext, plan: SeedPlan): Promise<void> {
   });
 }
 
-/** Applies every seed that has not run, records each one, and refuses a changed seed unless `rerun` said so; a deployed run confirms, bookmarks, and refuses lint warnings. @internal */
+/** Applies every seed that has not run, records each one, refuses any lint finding and a seed that changes the schema, and refuses a changed seed unless `rerun` said so; a deployed run confirms and bookmarks. @internal */
 export async function runSeedApply(
   run: DbRunContext,
-  options: {
-    dir?: string | undefined;
-    only?: string | undefined;
-    rerun: boolean;
-    allowPending: boolean;
-    allowDrift: boolean;
-    allowWarnings: boolean;
-    bookmark: boolean;
-  },
+  options: { dir?: string | undefined; only?: string | undefined; rerun: boolean; bookmark: boolean },
 ): Promise<SeedOutcome> {
-  if (!options.allowPending) await refusePendingMigrations(run);
+  const facts = await readTargetFacts(run.io, run.home);
+  refusePendingMigrations(run, facts.recorded);
   // A seed writes rows into whatever schema is there. Held before the lint and the confirmation, so a
   // schema nothing explains stops the run with nothing written rather than halfway through the set.
-  refuseSchemaDrift(
-    run,
-    await readDrift(run.io, run.home),
-    options.allowDrift,
-    "pass --allow-drift to seed anyway; a seed certifies no fingerprint, so `forge db migrate` goes on refusing until an apply explains the schema.",
-  );
+  refuseSchemaDrift(run, schemaDrift(facts.recorded, facts.inventory));
   const remote = isRemotePlace(run.config.target.place);
   const say = run.json ? (line: string) => run.io.log(line) : run.print;
   const seeds = readSeeds(run, options.dir);
@@ -118,7 +100,8 @@ export async function runSeedApply(
   // Every seed is expanded before anything is linted, asked, bookmarked or loaded, so a missing
   // variable refuses with nothing run and the rules see the SQL that will reach the database.
   const expanded = new Map(plan.apply.map((seed) => [seed, expandSeedEnv(seed.sql, run.io.env)]));
-  enforceSeedLint(run, seedFindings(plan.apply, expanded), options.allowWarnings);
+  enforceSeedLint(run, seedFindings(plan.apply, expanded));
+  await refuseSchemaChangingSeeds(run, plan.apply, expanded, facts.inventory);
   if (remote && plan.apply.length > 0) await confirmSeed(run, plan);
 
   // Taken for every place, as `migrate` does: both verbs contend on one file under the checkout, and

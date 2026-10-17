@@ -1,5 +1,6 @@
-import { describe, expect, it } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { parseWranglerConfig, stripJsonc } from "./parse";
@@ -73,10 +74,20 @@ describe("stripJsonc()", () => {
 });
 
 describe("parseWranglerConfig()", () => {
+  let dir = "";
   let counter = 0;
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "forge-wrangler-"));
+  });
+
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   function writeTemp(contents: string): string {
     counter += 1;
-    const path = join("/tmp", `forge-wrangler-${counter}.jsonc`);
+    const path = join(dir, `${counter}.jsonc`);
     writeFileSync(path, contents, "utf-8");
     return path;
   }
@@ -121,6 +132,6 @@ describe("parseWranglerConfig()", () => {
   });
 
   it("throws when the file does not exist", () => {
-    expect(() => parseWranglerConfig(join("/tmp", "forge-wrangler-absent.jsonc"))).toThrow();
+    expect(() => parseWranglerConfig(join(dir, "absent.jsonc"))).toThrow();
   });
 });

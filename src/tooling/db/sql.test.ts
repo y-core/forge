@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { isReadOnlyBatch, quoteSqlIdentifier, quoteSqlLiteral, rowCountSelect, tableInfoSelect, toColumnInfo } from "./sql";
+import { isReadOnlyBatch, quoteSqlIdentifier, quoteSqlLiteral, rowCountSelect, sqlColumnAffinity, tableInfoSelect, toColumnInfo } from "./sql";
 
 describe("quoteSqlLiteral()", () => {
   it("wraps a string in single quotes and doubles the ones inside it", () => {
@@ -63,6 +63,32 @@ describe("toColumnInfo()", () => {
 describe("rowCountSelect()", () => {
   it("quotes the table as an identifier", () => {
     expect(rowCountSelect("users")).toBe('SELECT COUNT(*) AS rows FROM "users"');
+  });
+});
+
+describe("sqlColumnAffinity()", () => {
+  it("follows SQLite's affinity rules, INT and the text types first", () => {
+    expect(["REAL", "DOUBLE PRECISION", "FLOAT", "INTEGER", "FLOATING POINT", "TEXT", "", "ANY", "NUMERIC", "BLOB"].map(sqlColumnAffinity)).toEqual(
+      ["REAL", "REAL", "REAL", "INTEGER", "INTEGER", "TEXT", "BLOB", "NUMERIC", "NUMERIC", "BLOB"],
+    );
+  });
+
+  it("matches a substring anywhere in the declared type, in any case, ignoring a length", () => {
+    const cases: [string, string][] = [
+      ["VARCHAR(10)", "TEXT"],
+      ["NATIVE CHARACTER(70)", "TEXT"],
+      ["CLOB", "TEXT"],
+      ["CHARINT", "INTEGER"],
+      ["UNSIGNED BIG INT", "INTEGER"],
+      ["varchar", "TEXT"],
+      ["double", "REAL"],
+      ["bigint", "INTEGER"],
+      ["  ", "BLOB"],
+      ["DECIMAL(10,5)", "NUMERIC"],
+      ["BOOLEAN", "NUMERIC"],
+      ["DATETIME", "NUMERIC"],
+    ];
+    for (const [declared, expected] of cases) expect([declared, sqlColumnAffinity(declared)]).toEqual([declared, expected]);
   });
 });
 

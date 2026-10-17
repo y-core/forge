@@ -1,5 +1,5 @@
 import { maskSqlProse } from "./schema/normalize";
-import type { ColumnInfo } from "./types";
+import type { ColumnInfo, SqlAffinity } from "./types";
 
 export { INVENTORY_SELECT, toSchemaObjects } from "../../storage/db/schema";
 
@@ -28,6 +28,16 @@ export function quoteSqlIdentifier(name: string): string {
   if (name === "") throw new Error("an empty string is not a SQL identifier");
   if (name.includes("\0")) throw new Error("a NUL byte cannot appear in a SQL identifier");
   return `"${name.replaceAll('"', '""')}"`;
+}
+
+/** The affinity SQLite gives a column from its declared type. @internal */
+export function sqlColumnAffinity(declared: string): SqlAffinity {
+  const type = declared.toUpperCase();
+  if (type.includes("INT")) return "INTEGER";
+  if (/CHAR|CLOB|TEXT/.test(type)) return "TEXT";
+  if (type.includes("BLOB") || type.trim() === "") return "BLOB";
+  if (/REAL|FLOA|DOUB/.test(type)) return "REAL";
+  return "NUMERIC";
 }
 
 /** The statement that reads one table's columns, in declaration order. @internal */

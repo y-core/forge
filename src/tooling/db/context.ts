@@ -1,19 +1,14 @@
 import { resolve } from "node:path";
 import process from "node:process";
 
-import { v } from "../../validation/mod";
-import { loadConfigModule } from "../cli/config-module";
 import { CliError } from "../cli/errors";
 import type { CliContext } from "../cli/types";
 import { PLAIN } from "../term/color";
-import { resolveDbConfig } from "./config";
+import { d1Entries, resolveDbConfig } from "./config";
+import { DEFAULT_DB_CONFIG, loadHostConfig, migrationsDirRefusal } from "./declared";
 import { resolveHome } from "./home";
 import { realDbIo } from "./io";
-import { DbHostConfigSchema } from "./types";
-import type { DbContextOverrides, DbHostConfig, DbRunContext, SharedDbFlags } from "./types";
-
-/** Where `forge db` looks for an application's optional host config. @internal */
-export const DEFAULT_DB_CONFIG = "config/db.ts";
+import type { DbContextOverrides, DbRunContext, SharedDbFlags } from "./types";
 
 /** The flags every `forge db` verb declares, spelled once. @internal */
 export const sharedDbFlags = {
@@ -31,15 +26,6 @@ export const sharedDbFlags = {
   yes: { type: "boolean" as const, description: "Skip the confirmation a destructive verb asks. Required in a non-interactive run" },
 };
 
-/** The host config `config/db.ts` exports, held to `DbHostConfigSchema` and refused by field. */
-async function loadHostConfig(root: string): Promise<DbHostConfig> {
-  const loaded = (await loadConfigModule<unknown>({ root, path: DEFAULT_DB_CONFIG, explicit: false, what: "db host config" }))?.value ?? {};
-  const result = v.safeParse(DbHostConfigSchema, loaded);
-  if (result.success) return loaded as DbHostConfig;
-  const detail = result.issues.map((issue) => `${v.getDotPath(issue) ?? "(root)"}: ${issue.message}`).join("; ");
-  throw new CliError("invalid-args", `${DEFAULT_DB_CONFIG}: ${detail}`);
-}
-
 /** Resolves the shared flags into a run context. @public */
 export async function resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, overrides: DbContextOverrides = {}): Promise<DbRunContext> {
   const root = resolve(flags.root ?? process.cwd());
@@ -48,8 +34,12 @@ export async function resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, o
   const io = overrides.io ?? realDbIo(root, (line) => (ctx?.io.stderr ?? console.error)(line));
   const config = resolveDbConfig({ root, config: flags.config, db: flags.db, env: flags.env, target: flags.target });
   const home = resolveHome(config, io);
-  const host = overrides.host ?? (await loadHostConfig(root));
-  return { config, home, io, host, json, yes: Boolean(flags.yes), style: json ? PLAIN : (ctx?.out ?? PLAIN), print };
+  const host = overrides.host ?? (await loadHostConfig(root, DEFAULT_DB_CONFIG, false));
+  const run: DbRunContext = { config, home, io, host, json, yes: Boolean(flags.yes), style: json ? PLAIN : (ctx?.out ?? PLAIN), print };
+  const entry = d1Entries(config.config, config.env, config.configPath).find((candidate) => candidate.binding === config.entry.binding);
+  const refusal = migrationsDirRefusal(run, entry?.migrations_dir, entry?.migrations_pattern);
+  if (refusal !== null) throw new CliError("invalid-args", refusal);
+  return run;
 }
 
 /** The lifetime of one `forge db` verb: every handle it opened over local state is released before it returns, since an open one keeps a workerd process alive and the process would never exit. @public */

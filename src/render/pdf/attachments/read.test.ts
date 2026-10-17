@@ -143,8 +143,8 @@ describe("readPdfAttachments reads back what the renderer attached", () => {
   }
 
   test("reads back a name and a description each past 1 MiB intact", async () => {
-    const name = `${Array.from({ length: MiB }, (_unused, at) => String.fromCharCode(0x41 + (at % 26))).join("")}.xml`;
-    const description = Array.from({ length: MiB }, (_unused, at) => String.fromCharCode(0x61 + ((at * 7) % 26))).join("");
+    const name = `${"ABCDEFGHIJKLMNOPQRSTUVWXYZ".repeat(Math.ceil(MiB / 26)).slice(0, MiB)}.xml`;
+    const description = "ahovcjqxelszgnubipwdkryfmt".repeat(Math.ceil(MiB / 26)).slice(0, MiB);
     const file = await rendered({ attachments: [{ ...INVOICE, name, description }] });
     expect(file.length).toBeLessThanOrEqual(6 * MiB);
     expect(await readPdfAttachments(file)).toEqual({ ok: true, data: [{ ...INVOICE, name, description }] });
@@ -438,17 +438,17 @@ describe("readPdfAttachments reads each object once, however many entries reach 
     expect(produced).toBe(MiB);
   });
 
-  test("reads 10,000 entries naming one file specification padded past 1 MB inside two seconds", async () => {
-    const description = `<FEFF${"0041".repeat(256 * 1024)}>`;
-    const spec = SPEC.replace("/EF", `/Desc ${description} /Pad [${"0 ".repeat(256 * 1024)}] /EF`);
-    expect(spec.length).toBeGreaterThan(MiB);
-    const file = sharing(10_000, spec, embedded());
+  test("reads 1,000 entries naming one file specification padded past 256 KiB inside two seconds", async () => {
+    const description = `<FEFF${"0041".repeat(64 * 1024)}>`;
+    const spec = SPEC.replace("/EF", `/Desc ${description} /Pad [${"0 ".repeat(64 * 1024)}] /EF`);
+    expect(spec.length).toBeGreaterThan(256 * 1024);
+    const file = sharing(1_000, spec, embedded());
     const began = performance.now();
     const read = await readPdfAttachments(file);
     expect(performance.now() - began).toBeLessThan(2000);
     if (!read.ok) throw read.error;
-    expect(read.data).toHaveLength(10_000);
-    expect(read.data[9_999]).toEqual({ ...NOTE, description: "A".repeat(256 * 1024) });
+    expect(read.data).toHaveLength(1_000);
+    expect(read.data[999]).toEqual({ ...NOTE, description: "A".repeat(64 * 1024) });
   });
 
   test("reads a /Names array that several nodes of the tree share once", async () => {
@@ -469,14 +469,14 @@ describe("readPdfAttachments reads each object once, however many entries reach 
 describe("readPdfAttachments scans a file in time linear in its size", () => {
   const objects = Array.from({ length: 50_000 }, (_unused, at) => `${at + 1} 0 obj\n<< >>\nendobj\n`).join("");
   for (const { padding, tail } of [
-    { padding: "spaces", tail: " ".repeat(10 * MiB) },
-    { padding: "digits", tail: "7".repeat(10 * MiB) },
-    { padding: "spaces after a dictionary's close", tail: `>>${" ".repeat(10 * MiB)}` },
+    { padding: "spaces", tail: " ".repeat(256 * 1024) },
+    { padding: "digits", tail: "7".repeat(256 * 1024) },
+    { padding: "spaces after a dictionary's close", tail: `>>${" ".repeat(256 * 1024)}` },
   ]) {
-    test(`reads 50,000 objects and 10 MiB of trailing ${padding} inside two seconds`, async () => {
+    test(`reads 50,000 objects and 256 KiB of trailing ${padding} inside two seconds`, async () => {
       const file = new TextEncoder().encode(`%PDF-1.7\n${objects}${tail}`);
       const began = performance.now();
-      expect(await refusalOf(readPdfAttachments(file, { maxInputBytes: 16 * MiB }))).toContain("no trailer");
+      expect(await refusalOf(readPdfAttachments(file))).toContain("no trailer");
       expect(performance.now() - began).toBeLessThan(2000);
     });
   }

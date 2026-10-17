@@ -45,14 +45,19 @@ export async function syncBindings(
     const entries = handler.extract(updatedConfig);
     // A handler that opts into `reportsEmpty` still runs on an empty extract, so it
     // can say "looked, found nothing" rather than vanishing from the output.
-    if (entries.length === 0 && !handler.reportsEmpty) continue;
+    if (entries.length > 0 || handler.reportsEmpty) {
+      const { entries: reconciled, results, notes } = await (handler as ResourceHandler<unknown>).reconcile(entries, ctx);
+      allResults.push(...results);
+      for (const message of notes ?? []) allNotes.push({ resourceType: handler.type as ResourceType, message });
 
-    const { entries: reconciled, results, notes } = await (handler as ResourceHandler<unknown>).reconcile(entries, ctx);
-    allResults.push(...results);
-    for (const message of notes ?? []) allNotes.push({ resourceType: handler.type as ResourceType, message });
-
-    // Merge reconciled entries back — only update the specific binding array
-    updatedConfig = mergeEntries(updatedConfig, handler.type as ResourceType, reconciled);
+      // Merge reconciled entries back — only update the specific binding array
+      updatedConfig = mergeEntries(updatedConfig, handler.type as ResourceType, reconciled);
+    }
+    if (handler.reconcileConfig !== undefined) {
+      const pass = await handler.reconcileConfig(updatedConfig, ctx);
+      allResults.push(...pass.results);
+      updatedConfig = pass.config;
+    }
   }
 
   return { results: allResults, notes: allNotes, updatedConfig, configChanged: configChanged(config, updatedConfig), scriptName, prefix };

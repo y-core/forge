@@ -7,6 +7,7 @@ import {
   destructivePlanDigest,
   diffSchemaModels,
   droppedObjectNames,
+  formatDataDependentStep,
   parseSchemaRename,
   refuseAddColumn,
   refuseDropColumn,
@@ -136,7 +137,7 @@ describe("diffSchemaModels()", () => {
   it("names each rebuild step whose success depends on the rows already there", () => {
     const id = column("id", "id INTEGER PRIMARY KEY", { pk: 1 });
     const rehearse = "rehearse it on `standby` first";
-    const lines = (wanted: SchemaModel) => diffSchemaModels(base, wanted).dataDependent;
+    const lines = (wanted: SchemaModel) => diffSchemaModels(base, wanted).dataDependent.map(formatDataDependentStep);
 
     expect(lines(model([table("t", [id, column("a", "a TEXT NOT NULL")])]))).toEqual([
       `t.a becomes NOT NULL — the rebuild copies existing rows as they are, so one holding NULL fails it; ${rehearse}`,
@@ -156,12 +157,72 @@ describe("diffSchemaModels()", () => {
 
     const strictBase = model([table("t", [id, column("a", "a TEXT")], { strict: true })]);
     const retyped = model([table("t", [id, column("a", "a INTEGER", { type: "INTEGER" })], { strict: true })]);
-    expect(diffSchemaModels(strictBase, retyped).dataDependent).toEqual([
+    expect(diffSchemaModels(strictBase, retyped).dataDependent.map(formatDataDependentStep)).toEqual([
       `t.a changes type from TEXT to INTEGER on a STRICT table — every existing value must already be INTEGER; ${rehearse}`,
     ]);
     expect(lines(model([table("t", [id, column("a", "a INTEGER", { type: "INTEGER" })])]))).toEqual([]);
     expect(lines(model([table("t", [id, column("a", "a TEXT"), column("b", "b TEXT DEFAULT 'x'")])]))).toEqual([]);
     expect(lines(model([table("t", [id, column("b", "b TEXT"), column("a", "a TEXT")])]))).toEqual([]);
+  });
+
+  describe("names each row-dependent step by kind, on the desired table and column", () => {
+    const id = column("id", "id INTEGER PRIMARY KEY", { pk: 1 });
+    const steps = (from: SchemaModel, wanted: SchemaModel) => diffSchemaModels(from, wanted).dataDependent;
+
+    const cases: { name: string; from: SchemaModel; wanted: SchemaModel; expected: unknown[] }[] = [
+      {
+        name: "not-null, spelled as the desired table and column spell themselves",
+        from: base,
+        wanted: model([table("T", [id, column("A", "A TEXT NOT NULL")])]),
+        expected: [{ kind: "not-null", table: "T", column: "A", defaulted: false }],
+      },
+      {
+        name: "not-null over a DEFAULT",
+        from: base,
+        wanted: model([table("t", [id, column("a", "a TEXT NOT NULL DEFAULT ''", { defaultExpr: "''" })])]),
+        expected: [{ kind: "not-null", table: "t", column: "a", defaulted: true }],
+      },
+      {
+        name: "column-check",
+        from: base,
+        wanted: model([table("t", [id, column("a", "a TEXT CHECK(length(a) < 9)")])]),
+        expected: [{ kind: "column-check", table: "t", column: "a", check: "CHECK(LENGTH(A) < 9)" }],
+      },
+      {
+        name: "table-check",
+        from: base,
+        wanted: model([table("t", [id, column("a", "a TEXT")], { constraints: ["CHECK(A <> '')"] })]),
+        expected: [{ kind: "table-check", table: "t", column: null, check: "CHECK(A <> '')" }],
+      },
+      {
+        name: "becomes-strict",
+        from: base,
+        wanted: model([table("t", [id, column("a", "a TEXT")], { strict: true })]),
+        expected: [{ kind: "becomes-strict", table: "t", column: null }],
+      },
+      {
+        name: "strict-type",
+        from: model([table("t", [id, column("a", "a TEXT")], { strict: true })]),
+        wanted: model([table("t", [id, column("a", "a INTEGER", { type: "INTEGER" })], { strict: true })]),
+        expected: [{ kind: "strict-type", table: "t", column: "a", from: "TEXT", to: "INTEGER" }],
+      },
+      {
+        name: "every step one rebuild raises, in one list",
+        from: base,
+        wanted: model([table("t", [id, column("a", "a TEXT NOT NULL CHECK(a <> 'x')")], { strict: true })]),
+        expected: [
+          { kind: "not-null", table: "t", column: "a", defaulted: false },
+          { kind: "column-check", table: "t", column: "a", check: "CHECK(A <> 'X')" },
+          { kind: "becomes-strict", table: "t", column: null },
+        ],
+      },
+    ];
+
+    for (const { name, from, wanted, expected } of cases) {
+      it(name, () => {
+        expect(steps(from, wanted)).toEqual(expected);
+      });
+    }
   });
 
   it("is empty when only a table's identifier case changed, which SQLite resolves as the same name", () => {
@@ -301,7 +362,7 @@ describe("diffSchemaModels()", () => {
   it("refuses a NOT NULL column with no DEFAULT on an existing table, whichever route would add it", () => {
     const wanted = model([table("t", [column("id", "id INTEGER PRIMARY KEY", { pk: 1 }), column("a", "a TEXT"), column("b", "b TEXT NOT NULL")])]);
     expect(diffSchemaModels(base, wanted).refusals).toEqual([
-      "t.b is NOT NULL with no DEFAULT on a table that already exists — give it a DEFAULT, or add it in a `--custom` migration that fills it",
+      "t.b is NOT NULL with no DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it NOT NULL in a later compose",
     ]);
   });
 
@@ -341,17 +402,17 @@ describe("destructivePlanDigest()", () => {
   const DROP_AUDIT: TableChange = { kind: "drop", name: "audit" };
 
   it("is twelve lowercase hex characters, and changes with a line or with the order", () => {
-    const one = destructivePlanDigest(planOf([DROP_USERS, DROP_AUDIT]));
+    const one = destructivePlanDigest(planOf([DROP_USERS, DROP_AUDIT]), [], []);
     expect(one).toMatch(/^[0-9a-f]{12}$/);
-    expect(destructivePlanDigest(planOf([DROP_USERS, DROP_AUDIT]))).toBe(one);
-    expect(destructivePlanDigest(planOf([DROP_USERS, DROP_AUDIT, { kind: "drop", name: "x" }]))).not.toBe(one);
-    expect(destructivePlanDigest(planOf([DROP_AUDIT, DROP_USERS]))).not.toBe(one);
+    expect(destructivePlanDigest(planOf([DROP_USERS, DROP_AUDIT]), [], [])).toBe(one);
+    expect(destructivePlanDigest(planOf([DROP_USERS, DROP_AUDIT, { kind: "drop", name: "x" }]), [], [])).not.toBe(one);
+    expect(destructivePlanDigest(planOf([DROP_AUDIT, DROP_USERS]), [], [])).not.toBe(one);
   });
 
   it("changes when a non-destructive change joins the plan, so an approval cannot carry to a different one", () => {
-    const one = destructivePlanDigest(planOf([DROP_AUDIT]));
-    const withCreate = destructivePlanDigest({ ...planOf([DROP_AUDIT, { kind: "create", name: "notes" }]) });
-    const withIndex = destructivePlanDigest({ ...planOf([DROP_AUDIT]), indexes: { created: ["notes_body"], dropped: [], changed: [] } });
+    const one = destructivePlanDigest(planOf([DROP_AUDIT]), [], []);
+    const withCreate = destructivePlanDigest({ ...planOf([DROP_AUDIT, { kind: "create", name: "notes" }]) }, [], []);
+    const withIndex = destructivePlanDigest({ ...planOf([DROP_AUDIT]), indexes: { created: ["notes_body"], dropped: [], changed: [] } }, [], []);
 
     expect(withCreate).not.toBe(one);
     expect(withIndex).not.toBe(one);
@@ -362,10 +423,18 @@ describe("destructivePlanDigest()", () => {
     const plan = planOf([DROP_AUDIT]);
     const cause = "audit was declared by node_modules/acme/schema.sql";
 
-    expect(destructivePlanDigest(plan, [])).toBe(destructivePlanDigest(plan));
-    expect(destructivePlanDigest(plan, [cause])).toBe(destructivePlanDigest(plan, [cause]));
-    expect(destructivePlanDigest(plan, [cause])).not.toBe(destructivePlanDigest(plan));
-    expect(destructivePlanDigest(plan, [cause])).not.toBe(destructivePlanDigest(plan, [`${cause} — nothing declares it now`]));
+    expect(destructivePlanDigest(plan, [cause], [])).toBe(destructivePlanDigest(plan, [cause], []));
+    expect(destructivePlanDigest(plan, [cause], [])).not.toBe(destructivePlanDigest(plan, [], []));
+    expect(destructivePlanDigest(plan, [cause], [])).not.toBe(destructivePlanDigest(plan, [`${cause} — nothing declares it now`], []));
+  });
+
+  it("changes with the approval lines alone and holds still for the same ones, so a rename is inside the approval", () => {
+    const plan = planOf([]);
+    const rename = '-- forge:renames column "posts"."body" "content"';
+
+    expect(destructivePlanDigest(plan, [], [rename])).toBe(destructivePlanDigest(plan, [], [rename]));
+    expect(destructivePlanDigest(plan, [], [rename])).not.toBe(destructivePlanDigest(plan, [], []));
+    expect(destructivePlanDigest(plan, [], [rename])).not.toBe(destructivePlanDigest(plan, [], ['-- forge:renames column "posts"."body" "text"']));
   });
 });
 

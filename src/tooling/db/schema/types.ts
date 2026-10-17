@@ -144,6 +144,14 @@ export interface NamedChanges {
   readonly changed: readonly string[];
 }
 
+/** One rebuild step whose success depends on the rows already there, on the desired table and column it touches. @internal */
+export type DataDependentStep =
+  | { readonly kind: "not-null"; readonly table: string; readonly column: string; readonly defaulted: boolean }
+  | { readonly kind: "column-check"; readonly table: string; readonly column: string; readonly check: string }
+  | { readonly kind: "strict-type"; readonly table: string; readonly column: string; readonly from: string; readonly to: string }
+  | { readonly kind: "table-check"; readonly table: string; readonly column: null; readonly check: string }
+  | { readonly kind: "becomes-strict"; readonly table: string; readonly column: null };
+
 /** Everything that separates a baseline model from a desired one. @internal */
 export interface SchemaDiff {
   readonly tables: readonly TableChange[];
@@ -155,13 +163,13 @@ export interface SchemaDiff {
   /** Each thing no migration can express, with the remedy. Non-empty means nothing may be emitted. */
   readonly refusals: readonly string[];
   /** Each rebuild step whose success depends on the rows already there; advisory. */
-  readonly dataDependent: readonly string[];
+  readonly dataDependent: readonly DataDependentStep[];
   /** Baseline tables whose FOREIGN KEY points at a dropped table; each is rebuilt before the drop, so no ON DELETE action fires into it. */
   readonly dropDependents: readonly string[];
 }
 
-/** Which scratch database a step uses: the replayed migrations, the desired files loaded fresh, or a fixture's own, kept apart so composing one cannot wipe a cached model's database. @internal */
-export type ScratchSide = "baseline" | "desired" | "fixture";
+/** Which scratch database a step uses — the replayed migrations, the desired files, a fixture's own, or the target's schema copied for the migration analysis — each kept apart so one cannot wipe another's. @internal */
+export type ScratchSide = "baseline" | "desired" | "fixture" | "analysis" | "seed";
 
 /** Everything the schema verbs read from disk before any database is touched. @internal */
 export interface SchemaInputs {
@@ -173,6 +181,27 @@ export interface SchemaInputs {
   readonly snapshotPath: string;
   readonly snapshot: SchemaSnapshot | null;
   readonly claims: readonly OwnershipClaim[];
+}
+
+/** What compose hands its proof: the emitted SQL, the models before the renames and after the migration, and the plan's renames and row-dependent steps. @internal */
+export interface ComposeProofInput {
+  readonly sql: string;
+  readonly baseline: SchemaModel;
+  readonly desired: SchemaModel;
+  readonly renames: readonly SchemaRename[];
+  readonly steps: readonly DataDependentStep[];
+}
+
+/** What a passing proof leaves: the model its replay holds after the migration, and any advisory line it adds. @internal */
+export interface ComposeProof {
+  readonly model: SchemaModel;
+  readonly warnings: readonly string[];
+}
+
+/** The rows the proof commits before the migration runs, as the statements that insert them and the baseline tables they go into. @internal */
+export interface RowSeed {
+  readonly statements: readonly string[];
+  readonly tables: readonly string[];
 }
 
 /** One declared schema's DDL as read from disk. @internal */
@@ -207,16 +236,12 @@ export interface ComposeStamp {
   readonly forge: string;
 }
 
-/** How a migration file came to be: composed under a `forge:compose` stamp, or hand-written. @public */
-export type MigrationOrigin = "generated" | "custom";
-
 /** What one `forge db migrate compose` run was asked to do. @public */
 export interface ComposeOptions {
   /** The `<name>` part of `<NNNN>_<name>.sql`. */
   name?: string | undefined;
-  custom: boolean;
   dryRun: boolean;
-  /** The digest the destructive refusal printed, which approves that plan alone. */
+  /** The digest the refusal printed, which approves that plan's drops and renames alone. */
   allowDestructive?: string | undefined;
   renames: readonly string[];
   cache: boolean;
@@ -230,7 +255,7 @@ export interface ComposeOutcome {
   readonly path: string | null;
   readonly snapshotPath: string | null;
   readonly plan: readonly string[];
-  /** Each rebuild step whose success depends on the rows already there, printed with the plan and never aborting. */
+  /** Each advisory line printed with the plan, none of which aborts the compose. */
   readonly warnings: readonly string[];
   /** Each dropped object the plan can attribute to a file `config/db.ts` no longer declares, one line per file. */
   readonly causes: readonly string[];

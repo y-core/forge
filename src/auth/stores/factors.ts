@@ -8,11 +8,12 @@ import type { AuthFactorRequirement } from "../factors/types";
 import { assertAuthKeyId } from "../keys/token";
 import { authLimit } from "../limits";
 import type { AuthFactorKind, AuthStoreResult, FactorStore } from "../types";
-import { inList, readFactor, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
+import { readFactor, readMaybe, readRow, storeError, unknownOwner, uuidKey } from "./rows";
 import type { FactorRow, TotpSecretPurgeOptions } from "./types";
 
 const MIN_IDLE_MS = 86_400_000;
 const RECOVERABLE_KINDS: readonly AuthFactorKind[] = ["totp-app", "passkey"];
+const RECOVERABLE_IN = sql`SELECT value FROM json_each(${JSON.stringify(RECOVERABLE_KINDS)})`;
 const MAX_IDLE_MS = 31_536_000_000;
 
 /** Why a purge is refused where the deployment does not demand the factor it would drop. */
@@ -72,7 +73,8 @@ export function createFactorStore(db: D1Client): FactorStore {
       // factor against enrolments in this single query.
       const key = uuidKey(userId);
       if (kinds.length === 0 || !key) return ok([]);
-      const outcome = await db.query<FactorRow>(sql`SELECT * FROM auth_factors WHERE user_id = ${key} AND kind IN (${inList(kinds)}) ORDER BY id`);
+      const kindsIn = sql`SELECT value FROM json_each(${JSON.stringify([...new Set(kinds)])})`;
+      const outcome = await db.query<FactorRow>(sql`SELECT * FROM auth_factors WHERE user_id = ${key} AND kind IN (${kindsIn}) ORDER BY id`);
       return outcome.ok
         ? readRow("factors.findEnrolled", () => outcome.data.map(readFactor))
         : err(storeError("factors.findEnrolled", outcome.error));
@@ -159,7 +161,7 @@ export function createFactorStore(db: D1Client): FactorStore {
       const owner = uuidKey(userId);
       if (!key || !owner) return ok(false);
       const holdsAnother = sql`EXISTS (SELECT 1 FROM auth_factors
-        WHERE user_id = ${owner} AND kind IN (${inList(RECOVERABLE_KINDS)}) AND confirmed_at IS NOT NULL)`;
+        WHERE user_id = ${owner} AND kind IN (${RECOVERABLE_IN}) AND confirmed_at IS NOT NULL)`;
       const outcome = await db.batch([
         sql`DELETE FROM auth_factors WHERE id = ${key} AND user_id = ${owner}`,
         sql`DELETE FROM auth_recovery_codes WHERE user_id = ${owner} AND NOT ${holdsAnother}`,

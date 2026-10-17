@@ -75,7 +75,10 @@ export interface DisableDirective {
 /** What a rule is handed for the file under lint. */
 export interface RuleContext {
   report: (diagnostic: { message: string; node?: unknown; loc?: SourceLocation }) => void;
-  sourceCode: { getDisableDirectives: () => { directives: readonly DisableDirective[] } };
+  sourceCode: {
+    getDisableDirectives: () => { directives: readonly DisableDirective[] };
+    getAllComments?: () => readonly { type: string; value: string; loc: SourceLocation }[];
+  };
 }
 
 /** The node handlers a rule returns, keyed by node type or `<type>:exit`. */

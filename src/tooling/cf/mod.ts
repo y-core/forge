@@ -32,7 +32,7 @@ export { describeRefusal, planRotation, randomSecret, rotateSecrets } from "./ac
 export type { FailureRowOptions, RowIdentity } from "./account/handlers/types";
 export { failureRows, staleIdDetail } from "./account/handlers/rows";
 export { createRotatableSecretsHandler, createSecretsHandler } from "./account/handlers/secrets";
-export type { HandlerContext, ReconcileResult, ResourceHandler } from "./account/handlers/types";
+export type { ConfigPass, HandlerContext, ReconcileResult, ResourceHandler } from "./account/handlers/types";
 export { createVarsHandler } from "./account/handlers/vars";
 export { createCfClient } from "./api/client";
 export type { CfFailureKind } from "./api/types";
@@ -51,6 +51,10 @@ export { renderSections, renderTable } from "./table";
 export { refusePagesConfig } from "./target";
 export type {
   CfAuth,
+  CfHostConfig,
+  D1Jurisdiction,
+  D1LocationHint,
+  D1Placement,
   PrefixStrategy,
   ResourceType,
   SyncAction,

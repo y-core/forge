@@ -7,7 +7,7 @@ import { migrationStatusExitCode, formatStatus, statusRows } from "./status";
 
 function migration(name: string): Migration {
   const version = Number(name.slice(0, 4));
-  return { name, version, path: `/m/${name}.sql`, sha256: `sha-${name}`, sql: "", origin: "custom", stamp: null };
+  return { name, version, path: `/m/${name}.sql`, sha256: `sha-${name}`, sql: "", stamp: null };
 }
 
 const discovered = [migration("0001_init"), migration("0002_next")];

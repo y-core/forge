@@ -19,7 +19,7 @@ import {
 } from "./scratch";
 import type { DesiredState, SchemaModel } from "./types";
 
-const MIGRATIONS = "/app/migrations";
+const MIGRATIONS = "/app/config/db/migrations";
 const COMPOSE = "/app/.forge/scratch/compose";
 
 function wranglerConfig(): WranglerConfig {
@@ -49,7 +49,7 @@ function context(files: Record<string, string> = {}): { run: DbRunContext; io: F
 }
 
 function migration(appliedName: string, sql: string): Migration {
-  return { name: appliedName, version: 1, path: `${MIGRATIONS}/${appliedName}.sql`, sha256: "0".repeat(64), sql, origin: "custom", stamp: null };
+  return { name: appliedName, version: 1, path: `${MIGRATIONS}/${appliedName}.sql`, sha256: "0".repeat(64), sql, stamp: null };
 }
 
 function desired(source: string, text: string): DesiredState {

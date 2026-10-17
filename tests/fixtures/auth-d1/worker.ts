@@ -94,6 +94,38 @@ async function probeBatch(db: D1Database): Promise<Response> {
   return json({ batchError, survivingRows: rows.results.map((row) => row.id) });
 }
 
+async function probeForeignKeys(db: D1Database): Promise<Response> {
+  await db.prepare("DROP TABLE IF EXISTS probe_child").run();
+  await db.prepare("DROP TABLE IF EXISTS probe_parent").run();
+  await db.prepare("CREATE TABLE probe_parent (id INTEGER PRIMARY KEY NOT NULL)").run();
+  await db
+    .prepare("CREATE TABLE probe_child (id INTEGER PRIMARY KEY NOT NULL, parent INTEGER NOT NULL REFERENCES probe_parent (id) ON DELETE CASCADE)")
+    .run();
+
+  const orphan = async (): Promise<string | null> => {
+    try {
+      await db.prepare("INSERT INTO probe_child (id, parent) VALUES (1, 99)").run();
+      return null;
+    } catch (thrown) {
+      return messageOf(thrown);
+    }
+  };
+  const orphanError = await orphan();
+  await db.prepare("PRAGMA foreign_keys = OFF").run();
+  const orphanAfterOffError = await orphan();
+  const pragmaAfterOff = await db.prepare("PRAGMA foreign_keys").first<{ foreign_keys: number }>();
+
+  await db.batch([db.prepare("INSERT INTO probe_parent (id) VALUES (1)"), db.prepare("INSERT INTO probe_child (id, parent) VALUES (2, 1)")]);
+  await db.prepare("DELETE FROM probe_parent WHERE id = 1").run();
+  const cascaded = await db.prepare("SELECT id FROM probe_child").all<{ id: number }>();
+  return json({
+    orphanError,
+    orphanAfterOffError,
+    foreignKeysAfterOff: pragmaAfterOff?.foreign_keys ?? null,
+    childrenLeft: cascaded.results.length,
+  });
+}
+
 // The shipped fragment rather than a copy, so what `requireRowsWritten()` mints is what is proved.
 const GUARD = requireRowsWritten().text;
 
@@ -593,6 +625,7 @@ export default {
       if (pathname === "/apply" && request.method === "POST") return await applySchema(env.DB, await request.text());
       if (pathname === "/strict") return await probeStrict(env.DB);
       if (pathname === "/batch") return await probeBatch(env.DB);
+      if (pathname === "/foreign-keys") return await probeForeignKeys(env.DB);
       if (pathname === "/blob") return await probeBlob(env.DB);
       if (pathname === "/changes") return await probeChanges(env.DB);
       if (pathname === "/rows-written") return await probeRowsWritten(env.DB);

@@ -114,37 +114,38 @@ export function emitMigrationSql(diff: SchemaDiff, baseline: SchemaModel, desire
     for (const column of change.added) out.push(`ALTER TABLE ${quoteSqlIdentifier(change.name)} ADD COLUMN ${column.definitionSource};`);
   }
 
-  if (rebuilding) {
-    const ordered = orderTablesByForeignKeys(
-      closure.map((name) => desiredTable.get(sqlIdentifierKey(name))).filter((found): found is SchemaTable => found !== undefined),
-    );
-    for (const table of ordered) {
-      const parts = splitCreateTableBody(table.sql);
-      const replacement = quoteSqlIdentifier(`${REBUILD_TABLE_PREFIX}${table.name}`);
-      out.push(createStatement(`CREATE TABLE ${replacement} ${repointReferences(table.sql.slice(parts.open), rebuilt)}`));
-      const was = baselineTable.get(sqlIdentifierKey(table.name));
-      const before = new Set((was?.columns ?? []).filter((column) => column.hidden === 0).map((column) => sqlIdentifierKey(column.name)));
-      const columns = table.columns
-        .filter((column) => column.hidden === 0 && before.has(sqlIdentifierKey(column.name)))
-        .map((column) => quoteSqlIdentifier(column.name));
-      if (columns.length > 0)
-        out.push(`INSERT INTO ${replacement} (${columns.join(", ")}) SELECT ${columns.join(", ")} FROM ${quoteSqlIdentifier(table.name)};`);
-    }
-    // Children first: a table with no remaining referrer is dropped without a FOREIGN KEY action firing into anything.
-    for (const table of [...ordered].reverse()) out.push(`DROP TABLE ${quoteSqlIdentifier(table.name)};`);
-    for (const table of ordered)
-      out.push(`ALTER TABLE ${quoteSqlIdentifier(`${REBUILD_TABLE_PREFIX}${table.name}`)} RENAME TO ${quoteSqlIdentifier(table.name)};`);
+  const ordered = orderTablesByForeignKeys(
+    closure.map((name) => desiredTable.get(sqlIdentifierKey(name))).filter((found): found is SchemaTable => found !== undefined),
+  );
+  for (const table of ordered) {
+    const parts = splitCreateTableBody(table.sql);
+    const replacement = quoteSqlIdentifier(`${REBUILD_TABLE_PREFIX}${table.name}`);
+    out.push(createStatement(`CREATE TABLE ${replacement} ${repointReferences(table.sql.slice(parts.open), rebuilt)}`));
+    const was = baselineTable.get(sqlIdentifierKey(table.name));
+    const before = new Set((was?.columns ?? []).filter((column) => column.hidden === 0).map((column) => sqlIdentifierKey(column.name)));
+    const columns = table.columns
+      .filter((column) => column.hidden === 0 && before.has(sqlIdentifierKey(column.name)))
+      .map((column) => quoteSqlIdentifier(column.name));
+    if (columns.length > 0)
+      out.push(`INSERT INTO ${replacement} (${columns.join(", ")}) SELECT ${columns.join(", ")} FROM ${quoteSqlIdentifier(table.name)};`);
   }
-
-  // After the rebuilds, so nothing still references a dropped table when its rows go; children first among the dropped themselves.
+  // Children first: a table with no remaining referrer is dropped without a FOREIGN KEY action firing into anything.
+  for (const table of [...ordered].reverse()) out.push(`DROP TABLE ${quoteSqlIdentifier(table.name)};`);
+  // After the old tables, so no ON DELETE fires into a kept row; before the renames, as a dropped child clears the
+  // deferred FOREIGN KEY count its rebuilt parent's DROP raised only while that parent's name is absent.
   for (const table of orderTablesByForeignKeys(baseline.tables.filter((candidate) => dropped.has(sqlIdentifierKey(candidate.name)))).reverse())
     out.push(`DROP TABLE IF EXISTS ${quoteSqlIdentifier(table.name)};`);
+  for (const table of ordered)
+    out.push(`ALTER TABLE ${quoteSqlIdentifier(`${REBUILD_TABLE_PREFIX}${table.name}`)} RENAME TO ${quoteSqlIdentifier(table.name)};`);
 
   const wantIndex = new Set([...diff.indexes.created, ...diff.indexes.changed].map(sqlIdentifierKey));
+  let indexed = false;
   for (const index of desired.indexes) {
     const want =
       wantIndex.has(sqlIdentifierKey(index.name)) || created.has(sqlIdentifierKey(index.table)) || rebuilt.has(sqlIdentifierKey(index.table));
-    if (want) out.push(createStatement(index.sql));
+    if (!want) continue;
+    out.push(createStatement(index.sql));
+    indexed = true;
   }
   const wantTrigger = new Set(
     (rebuilding ? desired.triggers.map((trigger) => trigger.name) : [...diff.triggers.created, ...diff.triggers.changed]).map(sqlIdentifierKey),
@@ -158,5 +159,7 @@ export function emitMigrationSql(diff: SchemaDiff, baseline: SchemaModel, desire
   for (const view of desired.views) if (wantView.has(sqlIdentifierKey(view.name))) out.push(createStatement(view.sql));
 
   if (out.length === 0) return "";
+  // The planner reads `sqlite_stat1`, which nothing refreshes after a new index but `optimize`.
+  if (indexed) out.push("PRAGMA optimize;");
   return `PRAGMA defer_foreign_keys = true;\n\n${out.join("\n\n")}\n`;
 }

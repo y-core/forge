@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { cpSync } from "node:fs";
 
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { worktreeGitEnv } from "./worktree";
@@ -26,5 +27,12 @@ export function worktreeFixture(files: Record<string, string> = {}): string {
     "-m",
     "fixture",
   ]);
+  return root;
+}
+
+/** A fresh copy of a `worktreeFixture` repository, history included, without spawning git. */
+export function cloneWorktree(template: string): string {
+  const root = gateFixtureRoot({}, "forge-worktree-");
+  cpSync(template, root, { recursive: true });
   return root;
 }

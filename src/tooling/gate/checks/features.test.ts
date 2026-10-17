@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { capture } from "../../cli/proc";
 import type { CaptureResult } from "../../cli/types";
-import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo } from "../../curate/curate.fixture";
+import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../../curate/curate.fixture";
 import type { CurateRunner } from "../../curate/types";
 import { checkFeatures, defaultFeatureProfiles } from "./features";
 
@@ -14,7 +14,7 @@ const roots: string[] = [];
 
 function demonstrator(manifest: string | null = CURATE_FIXTURE_MANIFEST): string {
   const root = curateFixtureRepo(manifest ?? undefined);
-  roots.push(root);
+  roots.push(root, curateFixtureTemplate());
   return root;
 }
 

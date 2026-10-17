@@ -113,6 +113,13 @@ async function runCli(io: FakeDbIo, argv: string[]): Promise<{ out: string[]; er
 }
 
 describe("forge db backup", () => {
+  it("refuses a --via other than read or export, before reading anything", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    const buffer = await runCli(io, ["backup", "--root", root, "--yes", "--via", "dump"]);
+    expect([buffer.code, buffer.err, io.calls]).toEqual([1, ["Error: --via takes read or export, not dump"], []]);
+  });
+
   it("writes the three artifact files and a manifest naming what it proved", async () => {
     const root = appRoot();
     const io = fakeWrangler();
@@ -212,6 +219,8 @@ function written(manifest: BackupManifest): BackupManifest {
 
 const MANIFEST: BackupManifest = {
   formatVersion: BACKUP_FORMAT_VERSION,
+  via: "read",
+  bookmark: null,
   drift: "match" as const,
   createdAt: "2026-09-11T10:00:00.000Z",
   label: null,
@@ -373,7 +382,7 @@ describe("forge db reset", () => {
     roots.push(root);
     const config = minimalWranglerConfig(root, {
       d1_databases: [
-        { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" },
+        { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "config/db/migrations" },
         { binding: "LOGS", database_name: "log-db", database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" },
       ],
     });

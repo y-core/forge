@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { CliError } from "../../cli/errors";
 import { fakeDbIo } from "../db.fixture";
 import { sha256 } from "../digest";
-import { formatComposeHeader, formatCustomHeader, parseMigrationHeader } from "../schema/header";
+import { formatComposeHeader, parseMigrationHeader } from "../schema/header";
 import { discoverMigrations, migrationChecksum, migrationFileName, migrationsDigest, nextMigrationNumber, readMigrationFiles } from "./files";
 
 const ADD_INDEX = { name: "0002_add_index.sql", path: "/m/0002_add_index.sql", sql: "CREATE INDEX i ON t (a);" };
@@ -49,26 +49,18 @@ describe("discoverMigrations()", () => {
   });
 });
 
-describe("discoverMigrations() origins", () => {
+describe("discoverMigrations() stamps", () => {
   const body = "CREATE TABLE t (a);";
 
-  it("reads a compose header as a generated migration, with the stamp it carries", () => {
+  it("reads a compose header as the stamp it carries", () => {
     const desired = { "config/schema.sql": "d1" };
     const sql = `${formatComposeHeader({ desired, baseline: "b1", forge: "0.1.10" }, body)}${body}`;
     const found = discoverMigrations([{ name: "0001_init.sql", path: "/m/0001_init.sql", sql }]);
-    expect(found[0]?.origin).toBe("generated");
     expect(found[0]?.stamp).toEqual({ desired, baseline: "b1", body: sha256(parseMigrationHeader(sql).covered), forge: "0.1.10" });
   });
 
-  it("reads a custom header as a hand-written migration, which carries no stamp", () => {
-    const found = discoverMigrations([{ name: "0001_init.sql", path: "/m/0001_init.sql", sql: `${formatCustomHeader()}${body}` }]);
-    expect(found[0]?.origin).toBe("custom");
-    expect(found[0]?.stamp).toBe(null);
-  });
-
-  it("reads a file with neither header as custom", () => {
+  it("reads a file with no compose stamp as carrying none", () => {
     const found = discoverMigrations([{ name: "0001_init.sql", path: "/m/0001_init.sql", sql: `-- a note\n${body}` }]);
-    expect(found[0]?.origin).toBe("custom");
     expect(found[0]?.stamp).toBe(null);
   });
 });
@@ -108,7 +100,7 @@ describe("migrationChecksum() — the stamp is not part of a migration's identit
     expect(migrationsDigest(discoverMigrations([INIT, edited]))).not.toBe(migrationsDigest(discoverMigrations([INIT, one])));
   });
 
-  it("is the whole file's hash for a custom migration, which carries no stamp to blank", () => {
+  it("is the whole file's hash for a file with no stamp to blank", () => {
     expect(migrationChecksum(INIT.sql)).toBe(sha256(INIT.sql));
   });
 });

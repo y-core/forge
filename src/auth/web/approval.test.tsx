@@ -82,6 +82,16 @@ describe("defineApproval", () => {
     const untyped = { path: "/approve", code: () => FAKE_APPROVAL_CODE } as unknown as Parameters<typeof defineApproval>[0];
     expect(() => defineApproval(untyped)).toThrow("defineApproval: no `origin` policy was passed");
   });
+
+  it("refuses a definition with no rate limit, since the prompt answers anyone's guess at a shared code", () => {
+    const { rateLimit: _, ...untyped } = fakeApproval();
+    expect(() => defineApproval(untyped as Parameters<typeof defineApproval>[0])).toThrow("defineApproval: no `rateLimit` was passed");
+  });
+
+  it("refuses a definition with no key ring, which the approval's digest of the code is signed under", () => {
+    const { ring: _, ...untyped } = fakeApproval();
+    expect(() => defineApproval(untyped as Parameters<typeof defineApproval>[0])).toThrow("defineApproval: no `ring` was passed");
+  });
 });
 
 describe("registerApproval — the prompt page", () => {
@@ -138,6 +148,26 @@ describe("registerApproval — presenting the code", () => {
 
     const admitted = await app.request("/admin/users", { headers: { cookie: sessionCookie(accepted) } });
     expect(await admitted.text()).toBe("users");
+  });
+
+  it("ends an approval when the code changes, sending the next request back to the prompt", async () => {
+    let code = "code-A";
+    const app = approvalApp(fakeApproval({ code: () => code }));
+    const cookie = sessionCookie(await app.request("/approve?next=%2Fadmin%2Fusers", presented({ code: "code-A" })));
+    const underA = await (await app.request("/admin/users", { headers: { cookie } })).text();
+
+    code = "code-B";
+    const underB = await app.request("/admin/users", { headers: { cookie } });
+    expect({ underA, underB: { status: underB.status, location: underB.headers.get("location") } }).toEqual({
+      underA: "users",
+      underB: { status: 302, location: "/approve?next=%2Fadmin%2Fusers" },
+    });
+  });
+
+  it("keeps a digest of the code on the session, never the code itself", async () => {
+    const pair = sessionCookie(await approvalApp().request("/approve", presented({ code: FAKE_APPROVAL_CODE })));
+    const stored = JSON.stringify(JSON.parse((await fakeSessionCookie.parse(pair)) ?? "null"));
+    expect({ approved: stored.includes('"approval.at"'), leaked: stored.includes(FAKE_APPROVAL_CODE) }).toEqual({ approved: true, leaked: false });
   });
 
   it("rotates the session id on a correct code and keeps it on a wrong one", async () => {

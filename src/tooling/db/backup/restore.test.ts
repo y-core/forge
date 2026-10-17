@@ -52,6 +52,8 @@ function declares(file: string, text: string): { file: string; bytes: number; sh
 function manifest(database: string, over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
+    via: "read" as const,
+    bookmark: null,
     drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
@@ -150,7 +152,7 @@ describe("readBackupManifest", () => {
     const run = await context(root, io);
 
     expect((await refusal(() => readBackupManifest(run, artifact))).message).toBe(
-      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
+      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
     );
   });
 
@@ -167,7 +169,7 @@ describe("readBackupManifest", () => {
 
     expect(await refusal(() => readBackupManifest(run, artifact))).toEqual({
       kind: "invalid-args",
-      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql\n  schema.digest is not a 64-character hex SHA-256`,
+      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark\n  schema.digest is not a 64-character hex SHA-256`,
     });
   });
 });
@@ -348,7 +350,7 @@ describe("prepareRestore + executeRestore — the pair the CLI confirms between"
         [join(artifact, "schema.sql")]: SCHEMA_SQL,
         [join(artifact, "migrations", "0001_init.sql")]: taken,
         // What the installed package holds now, which a restore must not reach for.
-        [join(root, "migrations", "0001_init.sql")]: "CREATE TABLE moved (id TEXT);",
+        [join(root, "config", "db", "migrations", "0001_init.sql")]: "CREATE TABLE moved (id TEXT);",
       },
       0,
     );

@@ -1,11 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
+import { composed } from "../db.fixture";
 import { sha256 } from "../digest";
-import { formatComposeHeader, formatCustomHeader, parseMigrationHeader } from "../schema/header";
+import { formatComposeHeader, parseMigrationHeader } from "../schema/header";
 import type { LintFinding, Migration } from "../types";
 import { formatLintFinding, lintMigration, lintMigrations, lintStatements, splitSqlStatements } from "./lint";
 
-const brief = (findings: readonly LintFinding[]) => findings.map((f) => [f.rule, f.level, f.line]);
+const brief = (findings: readonly LintFinding[]) => findings.map((f) => [f.rule, f.line]);
 
 describe("splitSqlStatements()", () => {
   it("consumes a trigger body as one statement", () => {
@@ -30,47 +31,54 @@ describe("splitSqlStatements()", () => {
 });
 
 describe("lintMigration() — flagged", () => {
-  const flagged: [string, string, [string, string, number][]][] = [
-    ["drop-no-if-exists on a table", "DROP TABLE users;", [["drop-no-if-exists", "error", 1]]],
-    ["drop-no-if-exists on an index", "DROP INDEX users_email;", [["drop-no-if-exists", "error", 1]]],
-    ["drop-no-if-exists on a view", "DROP VIEW v;", [["drop-no-if-exists", "error", 1]]],
-    ["drop-no-if-exists on a trigger", "DROP TRIGGER t;", [["drop-no-if-exists", "error", 1]]],
-    ["unbounded-update", "UPDATE users SET active = 0;", [["unbounded-update", "error", 1]]],
-    ["unbounded-delete", "DELETE FROM users;", [["unbounded-delete", "error", 1]]],
-    ["unbounded-update behind a CTE's WHERE", "WITH x AS (SELECT 1 WHERE 1) UPDATE users SET flag = 1;", [["unbounded-update", "error", 1]]],
-    ["unbounded-delete behind a CTE's WHERE", "WITH x AS (SELECT 1 WHERE 1) DELETE FROM users;", [["unbounded-delete", "error", 1]]],
-    ["virtual-table", "CREATE VIRTUAL TABLE docs USING fts5(body);", [["virtual-table", "error", 1]]],
-    ["autoincrement", "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT);", [["autoincrement", "error", 1]]],
+  const flagged: [string, string, [string, number][]][] = [
+    ["drop-no-if-exists on a table", "DROP TABLE users;", [["drop-no-if-exists", 3]]],
+    ["drop-no-if-exists on an index", "DROP INDEX users_email;", [["drop-no-if-exists", 3]]],
+    ["drop-no-if-exists on a view", "DROP VIEW v;", [["drop-no-if-exists", 3]]],
+    ["drop-no-if-exists on a trigger", "DROP TRIGGER t;", [["drop-no-if-exists", 3]]],
+    ["unbounded-update", "UPDATE users SET active = 0;", [["unbounded-update", 3]]],
+    ["unbounded-delete", "DELETE FROM users;", [["unbounded-delete", 3]]],
+    ["unbounded-update behind a CTE's WHERE", "WITH x AS (SELECT 1 WHERE 1) UPDATE users SET flag = 1;", [["unbounded-update", 3]]],
+    ["unbounded-delete behind a CTE's WHERE", "WITH x AS (SELECT 1 WHERE 1) DELETE FROM users;", [["unbounded-delete", 3]]],
+    ["virtual-table", "CREATE VIRTUAL TABLE docs USING fts5(body);", [["virtual-table", 3]]],
+    ["autoincrement", "CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT);", [["autoincrement", 3]]],
     [
       "explicit-transaction",
       "BEGIN;\nSELECT 1;\nCOMMIT;",
       [
-        ["explicit-transaction", "error", 1],
-        ["explicit-transaction", "error", 3],
+        ["explicit-transaction", 3],
+        ["explicit-transaction", 5],
       ],
     ],
-    ["attach-database", "ATTACH DATABASE 'x' AS y;", [["attach-database", "error", 1]]],
-    ["add-column-not-null-no-default", "ALTER TABLE users ADD COLUMN email TEXT NOT NULL;", [["add-column-not-null-no-default", "error", 1]]],
+    ["attach-database", "ATTACH DATABASE 'x' AS y;", [["attach-database", 3]]],
+    ["add-column-not-null-no-default", "ALTER TABLE users ADD COLUMN email TEXT NOT NULL;", [["add-column-not-null-no-default", 3]]],
     [
       "add-column-non-constant-default",
       "ALTER TABLE users ADD COLUMN at INTEGER DEFAULT CURRENT_TIMESTAMP;",
-      [["add-column-non-constant-default", "error", 1]],
+      [["add-column-non-constant-default", 3]],
     ],
     [
       "add-column-non-constant-default (expression)",
       "ALTER TABLE users ADD COLUMN at INTEGER DEFAULT (unixepoch());",
-      [["add-column-non-constant-default", "error", 1]],
+      [["add-column-non-constant-default", 3]],
     ],
-    ["add-column-constrained", "ALTER TABLE users ADD COLUMN code TEXT UNIQUE;", [["add-column-constrained", "error", 1]]],
-    ["alter-column-unsupported", "ALTER TABLE users ALTER COLUMN age TYPE TEXT;", [["alter-column-unsupported", "error", 1]]],
-    ["drop-column", "ALTER TABLE users DROP COLUMN nickname;", [["drop-column", "warning", 1]]],
-    ["rename", "ALTER TABLE users RENAME TO people;", [["rename", "warning", 1]]],
-    ["rename column", "ALTER TABLE users RENAME COLUMN a TO b;", [["rename", "warning", 1]]],
-    ["unique-index-on-existing-table", "CREATE UNIQUE INDEX users_email ON users (email);", [["unique-index-on-existing-table", "warning", 1]]],
-    ["table-rebuild", 'CREATE TABLE "_forge_new_users" (id INTEGER);', [["table-rebuild", "warning", 1]]],
-    ["pragma-ignored", "PRAGMA foreign_keys = OFF;", [["pragma-ignored", "warning", 1]]],
+    ["add-column-constrained", "ALTER TABLE users ADD COLUMN code TEXT UNIQUE;", [["add-column-constrained", 3]]],
+    ["alter-column-unsupported", "ALTER TABLE users ALTER COLUMN age TYPE TEXT;", [["alter-column-unsupported", 3]]],
+  ];
+
+  for (const [name, sql, expected] of flagged) {
+    it(`reports ${name}`, () => {
+      expect(brief(lintMigration("m.sql", composed(sql)))).toEqual(expected);
+    });
+  }
+
+  const judgedByEffect: [string, string][] = [
+    ["a DROP COLUMN", "ALTER TABLE users DROP COLUMN nickname;"],
+    ["a table rename", "ALTER TABLE users RENAME TO people;"],
+    ["a column rename", "ALTER TABLE users RENAME COLUMN a TO b;"],
+    ["a UNIQUE index on a table that already exists", "CREATE UNIQUE INDEX users_email ON users (email);"],
     [
-      "unique-index-on-existing-table for a table this file rebuilds with its rows copied back",
+      "a rebuild that copies its rows back and indexes them UNIQUE",
       [
         'CREATE TABLE "_forge_new_users" (id INTEGER PRIMARY KEY, email TEXT);',
         'INSERT INTO "_forge_new_users" (id, email) SELECT id, email FROM "users";',
@@ -78,32 +86,38 @@ describe("lintMigration() — flagged", () => {
         'ALTER TABLE "_forge_new_users" RENAME TO "users";',
         "CREATE UNIQUE INDEX users_email ON users (email);",
       ].join("\n"),
-      [
-        ["table-rebuild", "warning", 1],
-        ["unique-index-on-existing-table", "warning", 5],
-      ],
     ],
   ];
 
-  for (const [name, sql, expected] of flagged) {
-    it(`reports ${name}`, () => {
-      expect(brief(lintMigration("m.sql", sql).filter((f) => f.rule !== "custom-ddl"))).toEqual(expected);
+  for (const [name, sql] of judgedByEffect) {
+    it(`reports nothing for ${name}, which the analysis or a rehearsal judges instead`, () => {
+      expect(lintMigration("m.sql", composed(sql))).toEqual([]);
     });
   }
 
-  it("reports custom-ddl under a forge:custom stamp and in a file carrying no stamp", () => {
-    const ddl = "CREATE TABLE t (id INTEGER PRIMARY KEY);";
-    expect(brief(lintMigration("m.sql", `${formatCustomHeader()}${ddl}`))).toEqual([["custom-ddl", "error", 3]]);
-    expect(brief(lintMigration("m.sql", ddl))).toEqual([["custom-ddl", "error", 1]]);
+  const unstamped: [string, string][] = [
+    ["DDL", "CREATE TABLE t (id INTEGER PRIMARY KEY);"],
+    ["a data-only INSERT", "INSERT INTO t (id) VALUES (1);"],
+    ["a first line of prose", "-- Migration 0001: the users table\nCREATE TABLE t (id INTEGER PRIMARY KEY);"],
+    ["nothing at all", ""],
+  ];
+
+  for (const [name, sql] of unstamped) {
+    it(`reports generated-edited on line 1 for a file with no compose stamp holding ${name}, and nothing once it is composed`, () => {
+      expect(brief(lintMigration("m.sql", sql))).toEqual([["generated-edited", 1]]);
+      expect(lintMigration("m.sql", composed(sql))).toEqual([]);
+    });
+  }
+
+  it("tells the developer to compose a file with no stamp", () => {
+    expect(lintMigration("m.sql", "SELECT 1;")[0]?.message).toContain("`forge db migrate compose` writes every migration");
   });
 
   it("reports generated-edited when the body no longer hashes to the stamp", () => {
     const header = formatComposeHeader({ desired: { app: "d" }, baseline: "b", forge: "0" }, "SELECT 1;");
-    expect(brief(lintMigration("m.sql", `${header}SELECT 2;`))).toEqual([["generated-edited", "error", 2]]);
+    expect(brief(lintMigration("m.sql", `${header}SELECT 2;`))).toEqual([["generated-edited", 2]]);
     expect(lintMigration("m.sql", `${header}SELECT 1;`)).toEqual([]);
-    expect(brief(lintMigration("m.sql", `-- edited notice\n${header.split("\n")[1] ?? ""}\nSELECT 1;`))).toEqual([
-      ["generated-edited", "error", 2],
-    ]);
+    expect(brief(lintMigration("m.sql", `-- edited notice\n${header.split("\n")[1] ?? ""}\nSELECT 1;`))).toEqual([["generated-edited", 2]]);
     expect(sha256(`${header.split("\n")[0] ?? ""}\n-- forge:compose \nSELECT 1;`)).toContain(header.split('"body":"')[1]?.slice(0, 64));
   });
 
@@ -111,32 +125,21 @@ describe("lintMigration() — flagged", () => {
     const header = formatComposeHeader({ desired: { app: "d" }, baseline: "b", forge: "0" }, "SELECT 1;");
     const sql = `${header.split("\n")[1] ?? ""}\nSELECT 1;`;
 
-    expect(parseMigrationHeader(sql).origin).toBe("generated");
-    expect(brief(lintMigration("m.sql", sql))).toEqual([["generated-edited", "error", 2]]);
+    expect(parseMigrationHeader(sql).stamp).not.toBe(null);
+    expect(brief(lintMigration("m.sql", sql))).toEqual([["generated-edited", 2]]);
   });
 
   it("reports generated-edited for a single byte appended after the body", () => {
     const header = formatComposeHeader({ desired: { app: "d" }, baseline: "b", forge: "0" }, "SELECT 1;");
-    expect(brief(lintMigration("m.sql", `${header}SELECT 1;\n`))).toEqual([["generated-edited", "error", 2]]);
+    expect(brief(lintMigration("m.sql", `${header}SELECT 1;\n`))).toEqual([["generated-edited", 2]]);
   });
 
   it("treats __new_ as an ordinary table name and only _forge_new_ as a rebuild", () => {
     const rebuild = (prefix: string) =>
       [`CREATE TABLE ${prefix}users (id INTEGER);`, "DROP TABLE users;", `ALTER TABLE ${prefix}users RENAME TO users;`].join("\n");
 
-    expect(brief(lintMigration("m.sql", rebuild("__new_")))).toEqual([
-      ["custom-ddl", "error", 1],
-      ["drop-no-if-exists", "error", 2],
-      ["custom-ddl", "error", 2],
-      ["rename", "warning", 3],
-      ["custom-ddl", "error", 3],
-    ]);
-    expect(brief(lintMigration("m.sql", rebuild("_forge_new_")))).toEqual([
-      ["table-rebuild", "warning", 1],
-      ["custom-ddl", "error", 1],
-      ["custom-ddl", "error", 2],
-      ["custom-ddl", "error", 3],
-    ]);
+    expect(brief(lintMigration("m.sql", composed(rebuild("__new_"))))).toEqual([["drop-no-if-exists", 4]]);
+    expect(lintMigration("m.sql", composed(rebuild("_forge_new_")))).toEqual([]);
   });
 });
 
@@ -172,7 +175,6 @@ describe("lintMigration() — clean", () => {
         '-- rebuild\nCREATE TABLE "_forge_new_users"',
       ),
     ],
-    ["PRAGMA defer_foreign_keys", "PRAGMA defer_foreign_keys = true;"],
     [
       "a rebuild's DROP TABLE and RENAME",
       'CREATE TABLE "_forge_new_users" (id INTEGER);\nDROP TABLE "users";\nALTER TABLE "_forge_new_users" RENAME TO "users";',
@@ -182,8 +184,7 @@ describe("lintMigration() — clean", () => {
 
   for (const [name, sql] of clean) {
     it(`says nothing about ${name}`, () => {
-      const findings = lintMigration("m.sql", sql).filter((f) => f.rule !== "table-rebuild" && f.rule !== "custom-ddl");
-      expect(findings).toEqual([]);
+      expect(lintMigration("m.sql", composed(sql))).toEqual([]);
     });
   }
 
@@ -195,80 +196,152 @@ describe("lintMigration() — clean", () => {
       "INSERT INTO notes (body) VALUES ('DROP TABLE users');",
       'SELECT "delete from" FROM t;',
     ].join("\n");
-    expect(lintMigration("m.sql", sql)).toEqual([]);
+    expect(lintMigration("m.sql", composed(sql))).toEqual([]);
   });
 
   it("numbers a finding by its line in the original file, comments included", () => {
     const sql = ["-- a note", "", "/* two", "   lines */", "DROP INDEX users_email;"].join("\n");
-    expect(brief(lintMigration("m.sql", sql))).toEqual([["drop-no-if-exists", "error", 5]]);
+    expect(brief(lintMigration("m.sql", composed(sql)))).toEqual([["drop-no-if-exists", 7]]);
   });
 
   it("keeps a WHERE in one statement from excusing an unbounded one in the next", () => {
     const sql = "DELETE FROM users WHERE id = 1;\nDELETE FROM sessions;";
-    expect(brief(lintMigration("m.sql", sql))).toEqual([["unbounded-delete", "error", 2]]);
+    expect(brief(lintMigration("m.sql", composed(sql)))).toEqual([["unbounded-delete", 4]]);
   });
 
   it("sees a statement spread over several lines and names the offending line", () => {
     const sql = ["UPDATE users", "   SET active = 0;"].join("\n");
-    expect(brief(lintMigration("m.sql", sql))).toEqual([["unbounded-update", "error", 1]]);
+    expect(brief(lintMigration("m.sql", composed(sql)))).toEqual([["unbounded-update", 3]]);
   });
 
   it("does not read an escaped quote as the end of a literal", () => {
-    expect(lintMigration("m.sql", "INSERT INTO notes (body) VALUES ('it''s DROP TABLE users');")).toEqual([]);
+    expect(lintMigration("m.sql", composed("INSERT INTO notes (body) VALUES ('it''s DROP TABLE users');"))).toEqual([]);
   });
 
   it("reports every rule one statement breaks, in rule order", () => {
     const sql = "ALTER TABLE users DROP COLUMN a, ADD COLUMN b TEXT NOT NULL, ALTER COLUMN c;";
-    expect(brief(lintMigration("m.sql", sql))).toEqual([
-      ["add-column-not-null-no-default", "error", 1],
-      ["alter-column-unsupported", "error", 1],
-      ["drop-column", "warning", 1],
-      ["custom-ddl", "error", 1],
+    expect(brief(lintMigration("m.sql", composed(sql)))).toEqual([
+      ["add-column-not-null-no-default", 3],
+      ["alter-column-unsupported", 3],
     ]);
   });
 
   it("carries the file it was given into every finding", () => {
-    expect(lintMigration("/m/0001_init.sql", "DROP INDEX users_email;")).toEqual([
+    expect(lintMigration("/m/0001_init.sql", composed("DROP INDEX users_email;"))).toEqual([
       {
         rule: "drop-no-if-exists",
-        level: "error",
         file: "/m/0001_init.sql",
-        line: 1,
+        line: 3,
         message: "DROP without IF EXISTS fails the whole migration when the object is already gone — write DROP … IF EXISTS",
       },
     ]);
   });
 
-  it("finds nothing in an empty file", () => {
-    expect(lintMigration("m.sql", "")).toEqual([]);
+  it("finds nothing in an empty composed file, and refuses an empty file with no stamp", () => {
+    expect(lintMigration("m.sql", composed(""))).toEqual([]);
+    expect(brief(lintMigration("m.sql", ""))).toEqual([["generated-edited", 1]]);
+  });
+});
+
+describe("lintMigration() — pragma-unsupported", () => {
+  const honoured = [
+    "table_list",
+    "table_info(users)",
+    "table_xinfo(users)",
+    "index_list(users)",
+    "index_info(users_email)",
+    "index_xinfo(users_email)",
+    "quick_check",
+    "foreign_key_check",
+    "foreign_key_list(users)",
+    "case_sensitive_like = true",
+    "ignore_check_constraints = false",
+    "legacy_alter_table = false",
+    "recursive_triggers = true",
+    "reverse_unordered_selects = false",
+    "optimize",
+    "defer_foreign_keys = true",
+    "main.table_info(users)",
+  ];
+  for (const pragma of honoured) {
+    it(`allows PRAGMA ${pragma}`, () => {
+      expect(lintMigration("m.sql", composed(`PRAGMA ${pragma};`))).toEqual([]);
+    });
+  }
+
+  for (const pragma of ["foreign_keys = OFF", "foreign_keys = ON", "foreign_keys", "FOREIGN_KEYS=0"]) {
+    it(`refuses PRAGMA ${pragma}, which D1 ignores`, () => {
+      const findings = lintMigration("m.sql", composed(`PRAGMA ${pragma};`));
+      expect(brief(findings)).toEqual([["pragma-unsupported", 3]]);
+      expect(findings[0]?.message).toContain("always enforces foreign keys");
+    });
+  }
+
+  const refused = [
+    "journal_mode = WAL",
+    "synchronous = OFF",
+    "cache_size = 100",
+    "user_version = 3",
+    "integrity_check",
+    "busy_timeout = 100",
+    "temp_store = MEMORY",
+    "mmap_size",
+    "schema_version",
+    "application_id",
+    "wal_checkpoint",
+    "analysis_limit = 100",
+  ];
+  for (const pragma of refused) {
+    it(`refuses PRAGMA ${pragma}`, () => {
+      expect(brief(lintMigration("m.sql", composed(`PRAGMA ${pragma};`)))).toEqual([["pragma-unsupported", 3]]);
+    });
+  }
+});
+
+describe("lintMigration() — table-too-wide", () => {
+  const table = (columns: number, extra = "") =>
+    `CREATE TABLE wide (${Array.from({ length: columns }, (_, i) => `c${i} INTEGER`).join(", ")}${extra});`;
+  const wide = (sql: string) => brief(lintMigration("m.sql", sql).filter((f) => f.rule === "table-too-wide"));
+
+  it("passes a table of exactly 100 columns, and does not count a table constraint as one", () => {
+    expect(wide(table(100))).toEqual([]);
+    expect(wide(table(100, ", PRIMARY KEY (c0), CHECK (c1 > 0)"))).toEqual([]);
+  });
+
+  it("refuses a table of 101 columns, on the line its CREATE starts", () => {
+    expect(wide(`-- wide\n${table(101)}`)).toEqual([["table-too-wide", 2]]);
+  });
+
+  it("says nothing about a table created AS SELECT, whose columns it cannot count", () => {
+    expect(wide("CREATE TABLE copy AS SELECT * FROM users;")).toEqual([]);
   });
 });
 
 describe("lintStatements()", () => {
-  it("runs only the named rules, at the level it is given", () => {
+  it("runs only the named rules", () => {
     const sql = "PRAGMA foreign_keys = OFF;\nDELETE FROM users;\nUPDATE users SET x = 1;";
-    expect(lintStatements("s.sql", sql, { rules: ["unbounded-delete"], level: "warning" })).toEqual([
-      { rule: "unbounded-delete", level: "warning", file: "s.sql", line: 2, message: "DELETE with no WHERE empties the table" },
+    expect(lintStatements("s.sql", sql, ["unbounded-delete"])).toEqual([
+      { rule: "unbounded-delete", file: "s.sql", line: 2, message: "DELETE with no WHERE empties the table" },
     ]);
   });
 
   it("numbers a finding by its line exactly as lintMigration does", () => {
     const sql = "-- a comment\n\nSELECT 1;\nUPDATE users\n  SET x = 1;";
-    const subset = lintStatements("s.sql", sql, { rules: ["unbounded-update"], level: "error" });
+    const subset = lintStatements("s.sql", sql, ["unbounded-update"]);
     expect(subset.map((f) => f.line)).toEqual([4]);
     expect(subset).toEqual(lintMigration("s.sql", sql).filter((f) => f.rule === "unbounded-update"));
   });
 
   it("finds nothing when no rule is named", () => {
-    expect(lintStatements("s.sql", "DELETE FROM users;", { rules: [], level: "error" })).toEqual([]);
+    expect(lintStatements("s.sql", "DELETE FROM users;", [])).toEqual([]);
   });
 });
 
 describe("lintMigrations()", () => {
   it("names each finding by the migration's path, in migration order", () => {
     const migrations = [
-      { name: "0001_init", version: 1, path: "/m/0001_init.sql", sha256: "a", sql: "DROP INDEX users_email;" },
-      { name: "0002_next", version: 2, path: "/m/0002_next.sql", sha256: "b", sql: "DELETE FROM users;" },
+      { name: "0001_init", version: 1, path: "/m/0001_init.sql", sha256: "a", sql: composed("DROP INDEX users_email;") },
+      { name: "0002_next", version: 2, path: "/m/0002_next.sql", sha256: "b", sql: composed("DELETE FROM users;") },
     ] as Migration[];
     expect(lintMigrations(migrations).map((f) => [f.file, f.rule])).toEqual([
       ["/m/0001_init.sql", "drop-no-if-exists"],
@@ -282,9 +355,7 @@ describe("lintMigrations()", () => {
 });
 
 describe("formatLintFinding()", () => {
-  it("is one line: level, file:line, rule, message", () => {
-    expect(formatLintFinding({ rule: "drop-column", level: "warning", file: "m.sql", line: 3, message: "x" })).toBe(
-      "warning m.sql:3 drop-column — x",
-    );
+  it("is one line: file:line, rule, message", () => {
+    expect(formatLintFinding({ rule: "autoincrement", file: "m.sql", line: 3, message: "x" })).toBe("m.sql:3 autoincrement — x");
   });
 });

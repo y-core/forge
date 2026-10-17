@@ -25,6 +25,46 @@ export function findVirtualTables(objects: readonly SchemaObject[]): readonly st
   return objects.filter((object) => /^\s*CREATE\s+VIRTUAL\s+TABLE\b/i.test(object.sql ?? "")).map((object) => object.name);
 }
 
+/** The statement reading each column's declared type, for the affinity check `exportHazardSelect` is given. @internal */
+export function declaredTypesSelect(table: AppTable): string {
+  return `SELECT name, type FROM pragma_table_info(${quoteSqlLiteral(table.name)})`;
+}
+
+/** One statement per table counting, per column, the values `wrangler d1 export` would not reproduce, as `exportHazards` names them. @internal */
+export function exportHazardSelect(table: AppTable, realAffinity: ReadonlySet<string>): string {
+  const SAFE = "9007199254740991";
+  const counts = table.columns.flatMap((column) => {
+    const c = quoteSqlIdentifier(column);
+    const escape = `(instr(${c}, char(92) || 'n') > 0 AND instr(${c}, char(10)) > 0) OR (instr(${c}, char(92) || 'r') > 0 AND instr(${c}, char(13)) > 0)`;
+    return [
+      `SUM(typeof(${c}) = 'text' AND (${escape})) AS ${quoteSqlIdentifier(`escape:${column}`)}`,
+      `SUM(typeof(${c}) = 'integer' AND (${c} > ${SAFE} OR ${c} < -${SAFE})) AS ${quoteSqlIdentifier(`integer:${column}`)}`,
+      realAffinity.has(column) ? "0" : `SUM(typeof(${c}) = 'real' AND ${c} = CAST(${c} AS INTEGER)) AS ${quoteSqlIdentifier(`real:${column}`)}`,
+    ].filter((count) => count !== "0");
+  });
+  return `SELECT ${counts.join(", ")} FROM ${quoteSqlIdentifier(table.name)}`;
+}
+
+/** The refusals one table's hazard counts add up to, naming each column and how many values in it would not survive the export. @internal */
+export function exportHazards(table: AppTable, counts: Record<string, unknown> | undefined): string[] {
+  const count = (kind: string, column: string) => Number(counts?.[`${kind}:${column}`] ?? 0);
+  return table.columns.flatMap((column) => [
+    ...(count("escape", column) > 0
+      ? [
+          `${table.name}.${column}: ${count("escape", column)} text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which wrangler's dumper doubles`,
+        ]
+      : []),
+    ...(count("integer", column) > 0
+      ? [`${table.name}.${column}: ${count("integer", column)} integer(s) past ±2^53, which wrangler's dumper rounds`]
+      : []),
+    ...(count("real", column) > 0
+      ? [
+          `${table.name}.${column}: ${count("real", column)} REAL(s) with no fraction in a column without REAL affinity, which wrangler's dumper restores as INTEGER`,
+        ]
+      : []),
+  ]);
+}
+
 /** What this schema must still look like for a backup of it to mean anything, one problem per entry. @internal */
 export function checkInventory(objects: readonly SchemaObject[]): readonly string[] {
   const problems: string[] = [];
@@ -451,7 +491,7 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
 }
 
 /** Bumped when a manifest field changes meaning, so an old artifact is refused rather than misread. @internal */
-export const BACKUP_FORMAT_VERSION = 7;
+export const BACKUP_FORMAT_VERSION = 8;
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -480,7 +520,7 @@ export function validateManifest(value: unknown): readonly string[] {
 
   if (manifest.formatVersion !== BACKUP_FORMAT_VERSION) {
     problems.push(
-      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since full.sql is gone and route full now loads schema.sql then data.sql`,
+      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
     );
   }
   if (typeof manifest.createdAt !== "string" || Number.isNaN(Date.parse(manifest.createdAt))) {
@@ -506,6 +546,10 @@ export function validateManifest(value: unknown): readonly string[] {
     }
   }
 
+  if (manifest.via !== "read" && manifest.via !== "export") problems.push(`via is ${JSON.stringify(manifest.via)} and not one of read, export`);
+  if (manifest.bookmark !== null && (typeof manifest.bookmark !== "string" || manifest.bookmark === "")) {
+    problems.push("bookmark is neither null nor a Time Travel bookmark");
+  }
   if (!DRIFT_STATES.includes(manifest.drift as string)) {
     problems.push(`drift is ${JSON.stringify(manifest.drift)} and not one of ${DRIFT_STATES.join(", ")}`);
   }

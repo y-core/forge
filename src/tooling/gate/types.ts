@@ -274,6 +274,8 @@ export interface CommandStep extends StepBase {
   fix?: readonly [string, ...string[]];
   /** Fails the step, naming each entry, when it exits with anything still in the TMPDIR the runner gave it. */
   leavesNoTemp?: boolean;
+  /** Globs naming the TMPDIR entries the step keeps by design, which `leavesNoTemp` never reports. */
+  tempCaches?: readonly string[];
   run?: never;
 }
 

@@ -14,6 +14,9 @@ export const CN_FIXTURE_SPECS: readonly string[] = [
   "!src/ui/core/form.test.tsx",
 ];
 
+/** Sources outside `src/tooling` allowed to import it at value: `testing/d1` is node-only and loads the host config the way `forge db` does. */
+export const TOOLING_CROSSINGS: readonly string[] = ["src/testing/d1.ts"];
+
 /** Subpaths withheld from the runtime import beyond the ones the `client` segment derives. */
 export const BROWSER_ONLY: readonly string[] = [];
 

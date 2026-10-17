@@ -35,3 +35,6 @@ export const CF_ERROR_CODES = {
 
 /** The API-token permission a Worker's settings and secrets need. */
 export const WORKER_PERMISSION = "Workers Scripts";
+
+/** The API-token permission a D1 write needs, as the dashboard names it. */
+export const D1_WRITE_PERMISSION = "Account → D1 → Edit";

@@ -20,6 +20,7 @@ audience: consumer
 - §4 Self-Contained and Bound: the embedded migrations, the facts the manifest binds to, and the manifest's own digest
 - §5 The Data Format: why forge writes the rows itself, what the format carries, and the limits that follow
 - §5a What a Backup Costs: the page size, the spawn per page, the whole-database memory bound, and what `--no-verify` skips
+- §5b Backing Up Through `wrangler d1 export`: the route for a database too large to read, what it refuses, and what it blocks
 - §6 Restore and Reset: an empty target only, the whole artifact checked first, and what a reset relies on
 
 ---
@@ -51,8 +52,9 @@ directory whose proof passed. The schema comparison covers app objects only, sin
 
 **A backup is a snapshot, and says so.** On a local target it holds the apply lock (`.forge/db-apply.lock`) for the whole run, so a concurrent
 `migrate` cannot write underneath the read, and a second verb refuses while it is held naming `backup`. `tables[].rows` is the number of rows the
-artifact holds; every table is counted again after the reads and the proof, and a count disagreeing with the rows read refuses the backup naming the
-table and both numbers — something outside forge wrote during the read. The incomplete directory holds no `manifest.json`, so no verb will read it.
+artifact holds; every table is counted again after the reads and the proof (just before the export, under `--via export`, §5b), and a count
+disagreeing with the rows read refuses the backup naming the table and both numbers — something outside forge wrote during the read. The
+incomplete directory holds no `manifest.json`, so no verb will read it.
 
 ---
 
@@ -154,7 +156,37 @@ where that stops.
 - **A verified backup reads every row again, once per route.** The proof replays `migrations` and `full` into a scratch and compares row by row
   (§2), which is two further passes at the same spawn cost. `--no-verify` skips both, at the cost §2 states.
 
-At tens of thousands of rows this is seconds. At millions it is not the right tool, and Time Travel or a D1 export is.
+At tens of thousands of rows this is seconds. At millions it is not the right tool: take it `--via export` (§5b), or rely on Time Travel. The
+export holds no rows in memory beyond the `data.sql` text, but it pays off only for a remote source: the scratch it reads back is local whatever the
+target, so a local database pays the same paged reads plus an export and a load. Nor does it compare the rows' contents with the source — only
+their counts and the schema.
+
+### 5b. Backing Up Through `wrangler d1 export`
+
+**`forge db backup --via export` has `wrangler d1 export` write the rows** instead of reading them a page at a time. Schema comes from the same
+`--no-data` export, data from `--no-schema`, so the artifact keeps its layout and `forge db restore` reads it unchanged. The manifest records
+`via: "export"`, and for a deployed database the Time Travel `bookmark` taken just before the export. It is near the exported rows rather than
+their instant: a write landing between the bookmark and the data export is in `data.sql` and not at the bookmark.
+
+**The table digests come from a scratch restore of the export**, read a page at a time and never held whole. Route `migrations` is proven against
+that scratch with both sides paged. Route `full` is proven on the scratch itself, already a route-`full` load, by its schema digest alone. **The
+rows' contents are never compared with the source.** Each table's count, taken just before the export, must equal the rows the export holds, and
+the app schema is read again after the data export and must still match — a check `--no-verify` keeps, because a schema change between the two
+exports leaves `schema.sql` and `data.sql` describing different schemas. The read path checks the schema again after its own `--no-data` export,
+so both paths refuse a schema change made during the backup, even under `--no-verify`. A value the export changed in place passes, so the export
+is refused up front wherever wrangler's dumper is known not to reproduce one:
+
+- **Text holding a `\n` escape beside a real newline, or a `\r` escape beside a real carriage return.** The dumper wraps such a value in a
+  `replace()` that turns the escape into a second control character. A `\n` with no real newline beside it comes through intact.
+- **An integer past ±2^53**, which it rounds to a JavaScript number.
+- **A REAL with no fraction in a column without REAL affinity**, which it writes as an integer — a declared `REAL` column restores it as REAL.
+- **A virtual table**, which the dumper cannot write at all.
+
+One counting query per table finds the first three on the database itself, before anything is exported; the refusal names each column. The
+`sqlite_stat1` rows `ANALYZE` and `PRAGMA optimize` leave are dropped from the export, as they are from every backup.
+
+**An export blocks the database while it runs.** Every other request waits behind it, so take one when traffic allows. Time Travel still covers the
+last 30 days (7 on the free plan) without blocking anything; the export is for a copy that outlives that window or leaves Cloudflare.
 
 ---
 

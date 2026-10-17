@@ -5,6 +5,7 @@ import type { CliContext, CommandBase } from "../cli/types";
 import { createBackupCommands } from "./backup/commands";
 import { timeTravelInfo, timeTravelRestore } from "./bookmark";
 import { confirmPrinter, sharedDbFlags, withDbRun } from "./context";
+import { runDeploy } from "./deploy";
 import { createMigrateCommands } from "./migrate/commands";
 import { createSchemaCommands } from "./schema/commands";
 import { createSeedCommands } from "./seed/commands";
@@ -95,7 +96,6 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
         target: { ...sharedDbFlags.target, default: "standby" },
         dir: { type: "string" as const, description: "Seed just this directory, instead of every one `config/db.ts` names" },
         "no-seed": { type: "boolean" as const, description: "Stop after the migrations, leaving every table empty" },
-        "no-lint": { type: "boolean" as const, description: "Apply without checking the pending migrations for destructive SQL first" },
       },
       run: async (_args, flags, ctx?: CliContext) => {
         return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
@@ -107,7 +107,7 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
             print: confirmPrinter(run),
             cancelMessage: "Reset cancelled; the standby database is unchanged.",
           });
-          const outcome = await runStandbyReset(run, { dir: flags.dir, seed: !flags["no-seed"], lint: !flags["no-lint"] });
+          const outcome = await runStandbyReset(run, { dir: flags.dir, seed: !flags["no-seed"] });
           if (run.json) run.print(JSON.stringify({ ...where(run), ...outcome }));
           else run.print(`${outcome.database}: ${outcome.applied.length} migration(s), ${outcome.seeded.length} seed(s)`);
         });
@@ -118,7 +118,31 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
   return standby;
 }
 
-/** The `forge db` command tree: migrate, lint, schema, backup, restore, reset, seed, standby and bookmark. @public */
+/** The `forge db deploy` verb: check the deployed database, apply its pending migrations, then `wrangler deploy`. */
+function createDeployCommand(overrides: DbContextOverrides): CommandBase {
+  return createCommand({
+    name: "deploy",
+    description: "Refuse a drifted or mismatched deployed database, apply its pending migrations with an undo bookmark, then run wrangler deploy",
+    flags: {
+      ...sharedDbFlags,
+      // A local database has nothing to deploy beside it, so the shared `local` default would only ever be a mistake.
+      target: { ...sharedDbFlags.target, default: "remote" },
+      "check-only": {
+        type: "boolean" as const,
+        description: "Stop after the checks: exit 1 when a migration is pending, and apply and deploy nothing",
+      },
+    },
+    run: async (_args, flags, ctx?: CliContext) => {
+      return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+        const outcome = await runDeploy(run, { checkOnly: Boolean(flags["check-only"]) });
+        if (run.json) run.print(JSON.stringify(outcome));
+        else if (outcome.deployed) run.print(`${outcome.database}: ${outcome.applied.length} migration(s) applied, then deployed`);
+      });
+    },
+  });
+}
+
+/** The `forge db` command tree: migrate, lint, schema, backup, restore, reset, seed, standby, bookmark and deploy. @public */
 export function createDbCommands(overrides: DbContextOverrides = {}): CommandBase {
   const db = createCommand({
     name: "db",
@@ -130,5 +154,6 @@ export function createDbCommands(overrides: DbContextOverrides = {}): CommandBas
   for (const command of createSeedCommands(overrides)) addCommand(db, command);
   addCommand(db, createStandbyCommands(overrides));
   addCommand(db, createBookmarkCommands(overrides));
+  addCommand(db, createDeployCommand(overrides));
   return db;
 }

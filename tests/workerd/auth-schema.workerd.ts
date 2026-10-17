@@ -48,6 +48,16 @@ test.describe("D1 open question — batch() under a mid-batch failure", () => {
   });
 });
 
+test.describe("D1 open question — foreign keys with no PRAGMA set", () => {
+  test("refuses an orphan, ignores PRAGMA foreign_keys = OFF, and fires ON DELETE CASCADE", async ({ served }) => {
+    const probe = await get(served.origin, "/foreign-keys");
+    expect(probe.orphanError).toEqual(expect.stringContaining("FOREIGN KEY constraint failed"));
+    expect(probe.orphanAfterOffError).toEqual(expect.stringContaining("FOREIGN KEY constraint failed"));
+    expect(probe.foreignKeysAfterOff).toBe(1);
+    expect(probe.childrenLeft).toBe(0);
+  });
+});
+
 // Every guard in `src/auth/stores/` decides on `rowsWritten > 0`, so a matched write reporting zero
 // would invert each one and refuse the write it should have allowed.
 test.describe("D1 open question — which field a write reports rows-affected in", () => {

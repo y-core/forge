@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -24,10 +24,11 @@ import { sha256 } from "../digest";
 import { realDbIo } from "../io";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { schemaFingerprint } from "../migrate/fingerprint";
-import { toSchemaObjects } from "../sql";
+import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import type { DbHostConfig, DbIo, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
-import { resolveBackupsDir, runBackup } from "./backup";
+import { resolveBackupsDir, runBackup, withoutPlannerStatistics } from "./backup";
+import * as read from "./read";
 
 const roots: string[] = [];
 
@@ -235,8 +236,8 @@ describe("runBackup", () => {
 
   it("writes every artifact file readable by the owner alone, even the export wrangler created 0644", async () => {
     const root = appRoot();
-    mkdirSync(join(root, "migrations"));
-    writeFileSync(join(root, "migrations", "0001_init.sql"), composed("CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);"));
+    mkdirSync(join(root, "config", "db", "migrations"), { recursive: true });
+    writeFileSync(join(root, "config", "db", "migrations", "0001_init.sql"), composed("CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);"));
     const fake = fakeWrangler();
     const io: DbIo = {
       ...realDbIo(root, () => {}),
@@ -347,7 +348,7 @@ describe("runBackup", () => {
           database_name: "app-db",
           database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
           preview_database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5b",
-          migrations_dir: "migrations",
+          migrations_dir: "config/db/migrations",
         },
       ],
     });
@@ -548,7 +549,7 @@ describe("runBackup", () => {
     const io = fakeWrangler();
     await runBackup(await context(root, io), { out: null, verify: true, label: null });
 
-    expect(io.d1Calls.length).toBe(20);
+    expect(io.d1Calls.length).toBe(21);
     expect(io.calls.filter((call) => call[1] === "d1").length).toBe(1);
     expect(io.calls[0]?.[2]).toBe("export");
   });
@@ -599,5 +600,267 @@ describe("runBackup", () => {
       message: `Another backup holds ${lock} (pid 4242, since 2026-09-11T09:59:00.000Z). Wait for it to finish, or delete that file if the process is gone.`,
     });
     expect(io.calls).toEqual([]);
+  });
+});
+
+describe("runBackup --via export", () => {
+  const DATA_SQL = [
+    "PRAGMA defer_foreign_keys=TRUE;",
+    `INSERT INTO "tasks" VALUES('t1','todo');`,
+    `INSERT INTO "tasks" VALUES('t2','doing');`,
+    `INSERT INTO "_forge_migrations" VALUES('0001_init','ab');`,
+    "",
+  ].join("\n");
+
+  /** The fake, with an export that writes the schema for --no-data and the rows for --no-schema. */
+  function exporting(over: FakeDatabase = {}): FakeDbIo {
+    const io = fakeWrangler(over);
+    io.rules.unshift(
+      {
+        match: (args) => argvHas(args, "export", "--no-schema"),
+        reply: (args) => {
+          io.writeText(args[args.indexOf("--output") + 1] ?? "", DATA_SQL);
+          return OK;
+        },
+      },
+      { match: (args) => argvHas(args, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-7"}', stderr: "" } },
+    );
+    return io;
+  }
+
+  it("has wrangler export the rows, writes them as data.sql, and records the route and the deployed database's bookmark", async () => {
+    const root = appRoot();
+    const io = exporting();
+    const outcome = await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: true, label: null, via: "export" });
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+
+    const exports = io.calls.filter((call) => call[2] === "export").map((call) => call.at(-1));
+    expect(exports).toEqual(["--no-data", "--no-schema"]);
+    expect(io.readText(join(directory, "data.sql"))).toBe(DATA_SQL);
+    expect([outcome.manifest.via, outcome.manifest.bookmark, outcome.manifest.dumper.tool]).toEqual([
+      "export",
+      "bm-7",
+      "forge db backup --via export (wrangler d1 export)",
+    ]);
+    expect(outcome.manifest.tables.map((table) => [table.name, table.rows])).toEqual([["tasks", 2]]);
+    expect(outcome.manifest.verified).toEqual([
+      { route: "full", divergent: 0 },
+      { route: "migrations", divergent: 0 },
+    ]);
+  });
+
+  it("records no bookmark for a local database, which has no Time Travel", async () => {
+    const root = appRoot();
+    const io = exporting();
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null, via: "export" });
+    expect([outcome.manifest.via, outcome.manifest.bookmark, io.calls.some((call) => call[2] === "time-travel")]).toEqual(["export", null, false]);
+  });
+
+  it("refuses a database holding a virtual table before anything is exported", async () => {
+    const root = appRoot();
+    const io = exporting({
+      inventory: [...INVENTORY, { type: "table", name: "docs", tbl_name: "docs", sql: "CREATE VIRTUAL TABLE docs USING fts5(body)" }],
+    });
+    const refused = await refusal(async () => runBackup(await context(root, io), { out: null, verify: true, label: null, via: "export" }));
+    expect(refused.message).toContain("docs is a virtual table");
+    expect(io.calls.some((call) => call[2] === "export")).toBe(false);
+  });
+
+  it("refuses a database holding a value the dumper would not reproduce, naming the column, before anything is exported", async () => {
+    const root = appRoot();
+    const io = exporting();
+    io.d1Rules.unshift({
+      match: (statement) => statement.includes("char(92)") && statement.endsWith('FROM "tasks"'),
+      reply: () => [{ "escape:lane": 1 }],
+    });
+    const refused = await refusal(async () => runBackup(await context(root, io), { out: null, verify: true, label: null, via: "export" }));
+    expect(refused.message).toBe(
+      "app-db holds values wrangler d1 export would not reproduce, so --via export is refused — back it up without --via:\n  tasks.lane: 1 text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which wrangler's dumper doubles",
+    );
+    expect(io.calls.some((call) => call[2] === "export")).toBe(false);
+  });
+
+  it("captures the bookmark before either export, never after one", async () => {
+    const root = appRoot();
+    const io = exporting();
+    await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: false, label: null, via: "export" });
+    const order = io.calls
+      .filter((call) => call[2] === "time-travel" || call[2] === "export")
+      .map((call) => (call[2] === "export" ? call.at(-1) : call[2]));
+    expect(order).toEqual(["time-travel", "--no-data", "--no-schema"]);
+  });
+
+  function writtenToOnceExported(io: FakeDbIo): FakeDbIo {
+    io.d1Rules.unshift({
+      match: (statement, home) => statement === rowCountSelect("tasks") && home.database === "app-db",
+      reply: () => [{ rows: io.calls.some((call) => call[2] === "export") ? 3 : 2 }],
+    });
+    return io;
+  }
+
+  it("records the rows counted just before the export, whatever is written to the table after it", async () => {
+    const root = appRoot();
+    const io = writtenToOnceExported(exporting());
+    const outcome = await runBackup(await context(root, io), { out: null, verify: true, label: null, via: "export" });
+
+    expect(outcome.manifest.tables.map((table) => [table.name, table.rows])).toEqual([["tasks", 2]]);
+  });
+
+  it("still refuses a read backup of the same table, whose rows a write after the export tore", async () => {
+    const root = appRoot();
+    const io = writtenToOnceExported(fakeWrangler());
+    const run = await context(root, io);
+
+    expect((await refusal(() => runBackup(run, { out: null, verify: true, label: null }))).message).toBe(
+      `app-db changed while it was being read, so this artifact is not a snapshot of any one instant:\n  tasks: 2 rows read and 3 now in the table\nStop whatever is writing to it and take the backup again — ${join(root, ".forge/backups", DIRECTORY_NAME)} is incomplete and holds no manifest, so no verb will read it.`,
+    );
+  });
+
+  it("refuses an export holding other than the rows counted just before it, naming the table and writing no manifest", async () => {
+    const root = appRoot();
+    const io = exporting({ counts: { tasks: 3 } });
+    const run = await context(root, io);
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+
+    expect(await refusal(() => runBackup(run, { out: null, verify: false, label: null, via: "export" }))).toEqual({
+      kind: "invalid-args",
+      message: `app-db changed while it was being exported, so this artifact is not a snapshot of any one instant:\n  tasks: 3 rows counted just before the export and 2 in it\nStop whatever is writing to it and take the backup again — ${directory} is incomplete and holds no manifest, so no verb will read it.`,
+    });
+    expect(io.files.has(join(directory, "manifest.json"))).toBe(false);
+  });
+
+  it("proves a verified export without reading the restore whole, and records the digests a read backup of the same rows records", async () => {
+    const members = Array.from({ length: 300 }, (_, index) => ({ team: `team-${index % 2}`, person: `p${String(index).padStart(3, "0")}` }));
+    const database = { ...COMPOSITE, rows: { ...ROWS, members } };
+    const wholeReads = spyOn(read, "readWholeTable");
+    try {
+      const exported = await runBackup(await context(appRoot(), exporting(database)), { out: null, verify: true, label: null, via: "export" });
+      const exportedWholeReads = wholeReads.mock.calls.length;
+      const readBackup = await runBackup(await context(appRoot(), fakeWrangler(database)), { out: null, verify: true, label: null });
+
+      expect({ export: exportedWholeReads, read: wholeReads.mock.calls.length }).toEqual({ export: 0, read: 3 });
+      expect(exported.manifest.verified).toEqual([
+        { route: "full", divergent: 0 },
+        { route: "migrations", divergent: 0 },
+      ]);
+      expect(exported.manifest.tables).toEqual(readBackup.manifest.tables);
+    } finally {
+      wholeReads.mockRestore();
+    }
+  });
+
+  it("passes an export whose rows differ in content from the source's, since it never compares them with the source", async () => {
+    const restored = {
+      ...ROWS,
+      tasks: [
+        { uuid: "t1", lane: "doing" },
+        { uuid: "t2", lane: "doing" },
+      ],
+    };
+    const io = exporting();
+    io.d1Rules.unshift({
+      match: (statement, home) => home.database !== "app-db" && keysetPageReply(statement, {}) !== null,
+      reply: (statement) => keysetPageReply(statement, restored) ?? [],
+    });
+    const exported = await runBackup(await context(appRoot(), io), { out: null, verify: true, label: null, via: "export" });
+    const readOfRestored = await runBackup(await context(appRoot(), fakeWrangler({ rows: restored })), { out: null, verify: false, label: null });
+
+    expect(exported.manifest.verified).toEqual([
+      { route: "full", divergent: 0 },
+      { route: "migrations", divergent: 0 },
+    ]);
+    expect(exported.manifest.tables).toEqual(readOfRestored.manifest.tables);
+  });
+
+  it("refuses an export whose schema changed between the schema and the data export, even unverified, and writes no data.sql", async () => {
+    const root = appRoot();
+    const altered = [
+      { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT, note TEXT)" },
+      ...INVENTORY.slice(1),
+    ];
+    const io = exporting();
+    io.d1Rules.unshift({
+      match: (statement, home) =>
+        statement === INVENTORY_SELECT && home.database === "app-db" && io.calls.some((call) => argvHas(call, "export", "--no-schema")),
+      reply: altered,
+    });
+    const run = await context(root, io);
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+    const before = sha256(appSchemaDigestInput(toSchemaObjects(INVENTORY)));
+    const after = sha256(appSchemaDigestInput(toSchemaObjects(altered)));
+
+    expect(await refusal(() => runBackup(run, { out: null, verify: false, label: null, via: "export" }))).toEqual({
+      kind: "invalid-args",
+      message: `app-db's schema changed between the schema export and the data export: its app objects digest ${before} before and ${after} after, so schema.sql and data.sql need not describe one schema.\nStop whatever is changing it and take the backup again — ${directory} is incomplete and holds no manifest, so no verb will read it.`,
+    });
+    expect(io.readDir(directory)).toEqual(["schema.sql"]);
+  });
+
+  it("refuses a read whose schema changed between reading the rows and the schema export, even unverified, and writes no data.sql", async () => {
+    const root = appRoot();
+    const altered = [
+      { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT, note TEXT)" },
+      ...INVENTORY.slice(1),
+    ];
+    const io = fakeWrangler();
+    io.d1Rules.unshift({
+      match: (statement, home) =>
+        statement === INVENTORY_SELECT && home.database === "app-db" && io.calls.some((call) => argvHas(call, "export", "--no-data")),
+      reply: altered,
+    });
+    const run = await context(root, io);
+    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
+    const before = sha256(appSchemaDigestInput(toSchemaObjects(INVENTORY)));
+    const after = sha256(appSchemaDigestInput(toSchemaObjects(altered)));
+
+    expect(await refusal(() => runBackup(run, { out: null, verify: false, label: null, via: "read" }))).toEqual({
+      kind: "invalid-args",
+      message: `app-db's schema changed between reading the rows and exporting the schema: its app objects digest ${before} before and ${after} after, so schema.sql and data.sql need not describe one schema.\nStop whatever is changing it and take the backup again — ${directory} is incomplete and holds no manifest, so no verb will read it.`,
+    });
+    expect(io.readDir(directory)).toEqual(["schema.sql"]);
+  });
+
+  it("re-reads the schema once after the schema export of an unverified read, and writes the backup when it is unchanged", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    let rereads = 0;
+    io.d1Rules.unshift({
+      match: (statement, home) =>
+        statement === INVENTORY_SELECT && home.database === "app-db" && io.calls.some((call) => argvHas(call, "export", "--no-data")),
+      reply: () => {
+        rereads += 1;
+        return INVENTORY;
+      },
+    });
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null, via: "read" });
+
+    expect({ rereads, files: io.readDir(outcome.directory).sort() }).toEqual({
+      rereads: 1,
+      files: ["data.sql", "manifest.json", "migrations", "schema.sql"],
+    });
+  });
+
+  it("records via read on the default route", async () => {
+    const root = appRoot();
+    const outcome = await runBackup(await context(root, fakeWrangler()), { out: null, verify: false, label: null });
+    expect([outcome.manifest.via, outcome.manifest.bookmark]).toEqual(["read", null]);
+  });
+});
+
+describe("withoutPlannerStatistics()", () => {
+  it("drops the sqlite_stat rows ANALYZE leaves, and keeps every other line", () => {
+    const dump = [
+      "PRAGMA defer_foreign_keys=TRUE;",
+      `INSERT INTO "tasks" VALUES('t1','todo');`,
+      `INSERT INTO "sqlite_stat1" VALUES('tasks','tasks_lane','2 1');`,
+      `INSERT INTO sqlite_stat4 VALUES('tasks','i',1,1,1,X'00');`,
+      `INSERT INTO "tasks_sqlite_stat1" VALUES('kept');`,
+      "",
+    ].join("\n");
+    expect(withoutPlannerStatistics(dump)).toBe(
+      ["PRAGMA defer_foreign_keys=TRUE;", `INSERT INTO "tasks" VALUES('t1','todo');`, `INSERT INTO "tasks_sqlite_stat1" VALUES('kept');`, ""].join(
+        "\n",
+      ),
+    );
   });
 });

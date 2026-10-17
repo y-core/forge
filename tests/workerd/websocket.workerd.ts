@@ -69,4 +69,17 @@ test.describe("a 101 behind forge's response rebuilds", () => {
     expect(head).toMatch(/^http\/1\.1 101/);
     expect(head).toContain("\r\nx-page: live");
   });
+
+  test("opens the socket and echoes a frame behind d1Sessions", async ({ served }) => {
+    expect(await echo(served.origin, "/d1-live")).toBe("echo:ping");
+  });
+
+  test("carries the d1Sessions bookmark cookie on the handshake", async ({ served }) => {
+    const head = await handshakeHead(served.origin, "/d1-live");
+
+    expect(head).toMatch(/^http\/1\.1 101/);
+    expect(head).toMatch(
+      /\r\nset-cookie: d1b=[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{16,64}; path=\/; httponly; secure; samesite=lax(\r\n|$)/,
+    );
+  });
 });

@@ -11,7 +11,7 @@ import { checkResult, fail } from "./finding";
 import { readReceipt, recordReceipt } from "./receipt";
 import type { CommandStep, Step } from "./types";
 import { worktreeHash } from "./worktree";
-import { worktreeFixture } from "./worktree.fixture";
+import { cloneWorktree, worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
 
@@ -343,6 +343,13 @@ describe("createGateCommand() — --list", () => {
 
 describe("createGateCommand() — the receipt a passing run records", () => {
   const FILES = { ".gitignore": "ignored.log\n", "a.txt": "alpha\n", "b.txt": "beta\n" };
+  const TEMPLATE = worktreeRoot(FILES);
+
+  function worktreeClone(): string {
+    const root = cloneWorktree(TEMPLATE);
+    roots.push(root);
+    return root;
+  }
 
   function counting(): { calls: string[]; step: (label: string) => Step } {
     const calls: string[] = [];
@@ -359,7 +366,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   }
 
   async function recorded(): Promise<{ root: string; calls: string[]; steps: Step[] }> {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const { calls, step } = counting();
     const steps = [step("alpha"), step("beta")];
     await run(steps, {}, { cwd: root });
@@ -368,7 +375,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   }
 
   it("records the tree, mode and labels of an unscoped pass", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const { step } = counting();
     const { code } = await run([step("alpha"), step("beta")], {}, { cwd: root });
 
@@ -428,7 +435,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
       [[passing("alpha"), passing("beta", absent)], {}],
     ];
     for (const [steps, flags] of cases) {
-      const root = worktreeRoot(FILES);
+      const root = worktreeClone();
       await run(steps, flags, { cwd: root });
 
       expect(readReceipt(root)).toBeUndefined();
@@ -443,7 +450,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   });
 
   it("lets a full receipt answer a standard --reuse, and refuses a quality one", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const tree = worktreeHash(root) ?? "";
     const { calls, step } = counting();
     const steps = [step("alpha")];
@@ -475,7 +482,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
   });
 
   it("withholds the receipt when a step changes the tree during the run", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const writer: Step = {
       label: "writer",
       run: () => {
@@ -509,7 +516,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
       [{ affected: true }, "affected"],
     ];
     for (const [flags, name] of cases) {
-      const { logs, code } = await run([passing("alpha")], { reuse: true, ...flags }, { cwd: worktreeRoot(FILES) });
+      const { logs, code } = await run([passing("alpha")], { reuse: true, ...flags }, { cwd: worktreeClone() });
 
       expect(logs).toEqual([`--reuse stands in for a whole gate run, so it takes no --${name}.`]);
       expect(code).toBe(1);
@@ -519,6 +526,13 @@ describe("createGateCommand() — the receipt a passing run records", () => {
 
 describe("createGateCommand() — --affected", () => {
   const FILES = { "package.json": "{}\n", "src/ui/a.tsx": "a\n", "docs/A.md": "a\n" };
+  const TEMPLATE = worktreeRoot(FILES);
+
+  function worktreeClone(): string {
+    const root = cloneWorktree(TEMPLATE);
+    roots.push(root);
+    return root;
+  }
 
   function counting(): { calls: string[]; step: (label: string, watches?: readonly string[]) => Step } {
     const calls: string[] = [];
@@ -541,7 +555,7 @@ describe("createGateCommand() — --affected", () => {
   }
 
   it("runs only the step whose watches match the edit, and an undeclared step too", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "src/ui/a.tsx"), "edited\n");
     const { calls, steps } = table();
     const { code } = await run(steps, { affected: true }, { cwd: root });
@@ -551,7 +565,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("runs every step when a gate-wide input changes", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "package.json"), '{"name":"x"}\n');
     const { calls, steps } = table();
     await run(steps, { affected: true }, { cwd: root });
@@ -560,7 +574,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("runs every step when a changed path matches a gateInputs glob", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "gen.ts"), "gen\n");
     const { calls, steps } = table();
     await run(steps, { affected: true }, { cwd: root, gateInputs: ["gen.ts"] });
@@ -569,7 +583,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("calls no step on a clean tree, says so under the scoped banner, and exits normally", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     const { calls, steps } = table();
     const { logs, code } = await run(steps, { affected: true }, { cwd: root });
 
@@ -579,7 +593,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("says how many changed paths touch no step, calls none, and exits normally", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "notes.txt"), "notes\n");
     const { calls, steps } = table();
     const declared = steps.filter((step) => step.watches !== undefined);
@@ -591,7 +605,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("runs only the affected steps' fixers under --fix", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "docs/A.md"), "edited\n");
     const fixed: string[] = [];
     const fixable = (label: string, watches: readonly string[]): Step => ({
@@ -609,7 +623,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("names the flag in the summary and brands the run scoped even when every step ran", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "package.json"), '{"name":"x"}\n');
     const { steps } = table();
     const { logs } = await run(steps, { affected: true, mode: "full" }, { cwd: root });
@@ -619,7 +633,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("intersects --only with the affected selection", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "src/ui/a.tsx"), "edited\n");
     const { calls, steps } = table();
     await run(steps, { affected: true, only: ["ui", "docs"] }, { cwd: root });
@@ -628,7 +642,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("lists the affected selection under --list, running nothing", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "docs/A.md"), "edited\n");
     const { calls, steps } = table();
     const { logs } = await run(steps, { affected: true, list: true }, { cwd: root });
@@ -638,7 +652,7 @@ describe("createGateCommand() — --affected", () => {
   });
 
   it("writes no receipt for an --affected pass", async () => {
-    const root = worktreeRoot(FILES);
+    const root = worktreeClone();
     writeFileSync(join(root, "src/ui/a.tsx"), "edited\n");
     const { steps } = table();
     await run(steps, { affected: true }, { cwd: root });
@@ -698,6 +712,17 @@ describe("createGateCommand() — a spawned step's temp dir", () => {
     expect(existsSync(seen(record).stepTmp)).toBe(false);
   });
 
+  it("reports an undeclared leftover and never a declared cache, both left by the same step", async () => {
+    const root = fixtureRoot();
+    const script = 'mkdir "$TMPDIR/transform-cache-1000" "$TMPDIR/stray"';
+    const step: CommandStep = { label: "cached", tail: 5, cmd: ["sh", "-c", script], leavesNoTemp: true, tempCaches: ["transform-cache-*"] };
+    const { logs, code } = await run([step], {}, { cwd: root });
+
+    expect(code).toBe(1);
+    expect(logs.some((line) => line.includes("left in its TMPDIR: stray"))).toBe(true);
+    expect(logs.some((line) => line.includes("transform-cache-1000"))).toBe(false);
+  });
+
   it("passes a step that opts into leavesNoTemp and leaves nothing", async () => {
     const root = fixtureRoot();
     const { code } = await run(
@@ -734,8 +759,20 @@ describe("createGateCommand() — a spawned step's temp dir", () => {
 
     const reported = logs.find((line) => line.startsWith("    full log at "))?.slice("    full log at ".length) ?? "";
     expect(code).toBe(1);
-    expect(reported.startsWith(join(systemTmp, "forge-gate-"))).toBe(true);
+    expect(reported.startsWith(join(systemTmp, "forge-gate-logs"))).toBe(true);
     expect(readFileSync(reported, "utf-8")).toBe("the whole story\n");
+  });
+
+  it("overwrites one log per repository and step, however often the step fails", async () => {
+    const [first, second] = [fixtureRoot(), fixtureRoot()];
+    const broken: Step = { label: "test:broken", tail: 5, cmd: ["sh", "-c", "exit 3"] };
+    await run([broken], {}, { cwd: first });
+    await run([broken], {}, { cwd: first });
+    await run([broken], {}, { cwd: second });
+
+    const logs = readdirSync(join(systemTmp, "forge-gate-logs"), { recursive: true }).filter((entry) => entry.endsWith(".log"));
+    expect(logs).toHaveLength(2);
+    expect(new Set(logs.map((entry) => entry.split("/")[0])).size).toBe(2);
   });
 
   it("writes no log for a step that passes, so a green run adds nothing to the system temp directory", async () => {

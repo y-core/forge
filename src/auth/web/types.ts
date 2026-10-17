@@ -141,8 +141,10 @@ export interface ApprovalOptions<Bindings = Record<string, unknown>> {
   readonly ttlMs?: number | undefined;
   /** Origin/Referer allowlist for the prompt's POST, which forge cannot pick for you. */
   readonly origin: NonNullable<MiddlewareGuardGroup<Bindings>["origin"]>;
-  /** A limit on both methods of the prompt page. Forge picks no numbers. */
-  readonly rateLimit?: NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]> | undefined;
+  /** A limit on both methods of the prompt page, which answers guesses at a shared code. Forge picks no numbers. */
+  readonly rateLimit: NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>;
+  /** The ring a session's approval is signed with, so it holds a digest of the code rather than the code and ends when the code changes. */
+  readonly ring: CsrfRingResolver;
   /** A challenge on the prompt, read as the auth forms read theirs; omit it and the prompt renders and verifies none. */
   readonly turnstile?: Pick<AuthTurnstileOptions<Bindings>, "keys" | "verify"> | undefined;
   /** Markup for the prompt in place of `ApprovalView`, receiving exactly the props it does. */
@@ -152,6 +154,14 @@ export interface ApprovalOptions<Bindings = Record<string, unknown>> {
 /** One administrator approval as `defineApproval` built it, and the only thing a guarded route or the prompt mount is given. @public */
 export interface Approval<Bindings = Record<string, unknown>> extends Omit<ApprovalOptions<Bindings>, "ttlMs"> {
   readonly ttlMs: number;
+}
+
+/** One administrator approval as a session holds it. @internal */
+export interface ApprovalMark {
+  /** When the code was presented. */
+  readonly at: number;
+  /** The key ring's MAC of the presented code, as `kid.mac`. */
+  readonly digest: string;
 }
 
 /** Who the request is, established from the session and re-read from the user store every request. @public */

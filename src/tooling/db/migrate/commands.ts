@@ -1,31 +1,21 @@
-import { resolve } from "node:path";
-
 import { addCommand, createCommand } from "../../cli/command";
 import { CliError } from "../../cli/errors";
 import type { CliContext, CommandBase, ResolvedFlags } from "../../cli/types";
 import { sharedDbFlags, withDbRun } from "../context";
-import { schemaDrift } from "../drift";
 import { composeMigration } from "../schema/compose";
 import { readSeeds } from "../seed/apply";
 import { lintSeeds } from "../seed/lint";
 import { formatTarget } from "../target";
-import type { DbContextOverrides, DbRunContext, LintFinding, SharedDbFlags, StatusReport } from "../types";
-import { readTargetFacts, runMigrate } from "./apply";
-import { compareChecksums } from "./checksum";
-import { readMigrations } from "./files";
-import { formatLintFinding, lintMigration, lintMigrations } from "./lint";
-import { migrationStatusExitCode, formatStatus, statusRows } from "./status";
+import type { DbContextOverrides, LintFinding, SharedDbFlags } from "../types";
+import { formatMigrationChange } from "./analysis";
+import { lintPendingMigrations, runMigrate } from "./apply";
+import { formatLintFinding } from "./lint";
+import { formatStatus, migrationStatusExitCode, readStatusReport } from "./status";
 
 const migrateFlags = {
   ...sharedDbFlags,
   "dry-run": { type: "boolean" as const, description: "Report what would be applied and change nothing" },
   to: { type: "string" as const, description: "Stop after this migration, named as its number or its full name" },
-  "no-lint": { type: "boolean" as const, description: "Apply without checking the pending migrations for destructive SQL first" },
-  "allow-warnings": { type: "boolean" as const, description: "Apply to a deployed database despite lint warnings, which otherwise abort" },
-  "allow-drift": {
-    type: "boolean" as const,
-    description: "Apply although the schema was changed outside the migrations; the apply re-records the fingerprint",
-  },
   "no-bookmark": { type: "boolean" as const, description: "Skip the Time Travel bookmark a deployed apply captures as its undo" },
   rehearse: {
     type: "boolean" as const,
@@ -47,9 +37,6 @@ async function applyMigrations(
     const outcome = await runMigrate(run, {
       dryRun: Boolean(flags["dry-run"]),
       ...(flags.to === undefined ? {} : { to: flags.to }),
-      lint: !flags["no-lint"],
-      allowWarnings: Boolean(flags["allow-warnings"]),
-      allowDrift: Boolean(flags["allow-drift"]),
       bookmark: !flags["no-bookmark"],
       rehearse: Boolean(flags.rehearse) || flags.artifact !== undefined,
       ...(flags.artifact === undefined ? {} : { artifact: flags.artifact }),
@@ -77,7 +64,7 @@ function createApplyCommand(overrides: DbContextOverrides): CommandBase {
   });
 }
 
-/** The `forge db migrate compose` verb, which writes the next file: composed from the desired state, or a custom stub. */
+/** The `forge db migrate compose` verb, which writes the next file composed from the desired state. */
 function createComposeCommand(overrides: DbContextOverrides): CommandBase {
   return createCommand({
     name: "compose",
@@ -86,14 +73,11 @@ function createComposeCommand(overrides: DbContextOverrides): CommandBase {
     args: { kind: "max", max: 1 },
     flags: {
       ...sharedDbFlags,
-      custom: {
-        type: "boolean" as const,
-        description: "Write a hand-edited migration stub instead — for a data move compose cannot express. Needs a name",
-      },
       "dry-run": { type: "boolean" as const, description: "Print the plan and the SQL, and write nothing" },
       "allow-destructive": {
         type: "string" as const,
-        description: "Compose a change that drops a table or a column: the digest the refusal printed, so the approval is for that plan alone",
+        description:
+          "Compose a change that drops a table, a column or a view, or renames one: the digest the refusal printed, so the approval is for that plan alone",
       },
       rename: {
         type: "string" as const,
@@ -110,7 +94,6 @@ function createComposeCommand(overrides: DbContextOverrides): CommandBase {
       return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
         const outcome = await composeMigration(run, {
           name: args[0],
-          custom: Boolean(flags.custom),
           dryRun: Boolean(flags["dry-run"]),
           allowDestructive: flags["allow-destructive"],
           renames: flags.rename ?? [],
@@ -119,33 +102,9 @@ function createComposeCommand(overrides: DbContextOverrides): CommandBase {
         });
         if (run.json) run.print(JSON.stringify(outcome));
         else if (outcome.dryRun && outcome.sql !== "") run.print(outcome.sql);
-        else if (outcome.path !== null && outcome.plan[0]?.startsWith("custom migration"))
-          run.print(`wrote ${outcome.path} — fill it in, then \`forge db lint\``);
       });
     },
   });
-}
-
-/** Measures the target database against the migrations on disk. */
-async function readStatusReport(run: DbRunContext): Promise<StatusReport> {
-  const { config, home, io } = run;
-  const discovered = readMigrations(run);
-  const { recorded, inventory } = await readTargetFacts(io, home);
-  const drift = schemaDrift(recorded, inventory);
-
-  const applied = recorded.map((record) => ({ name: record.appliedName, appliedAt: new Date(record.appliedAt).toISOString() }));
-  const mismatched = compareChecksums(recorded, discovered);
-  const all = statusRows({ discovered, applied, mismatched });
-
-  return {
-    target: formatTarget(config.target),
-    database: home.database,
-    rows: all,
-    pending: all.filter((row) => row.state === "pending").length,
-    checksums: { mismatched },
-    drift: all.filter((row) => row.state === "drift").map((row) => row.name),
-    fingerprint: { recorded: drift.recorded, actual: drift.actual, matches: drift.state !== "mismatch" },
-  };
 }
 
 /** The `forge db migrate status` verb, whose `--check` is the CI gate. */
@@ -166,45 +125,45 @@ function createStatusCommand(overrides: DbContextOverrides): CommandBase {
   });
 }
 
-/** The `forge db lint` verb, over named files or over the migrations directory. */
+/** The `forge db lint` verb, over the migrations the target does not hold yet, or over the seeds. */
 function createLintCommand(overrides: DbContextOverrides): CommandBase {
   return createCommand({
     name: "lint",
-    description: "Check migrations for SQL that is destructive, unbounded, unbackupable, or that D1 refuses",
-    args: { kind: "min", min: 0 },
+    description:
+      "Check the migrations the target does not hold yet — the stamp, the lint rules, and every drop or rename against the target's schema — or, with --seeds, the seeds",
     flags: {
       ...sharedDbFlags,
-      strict: { type: "boolean" as const, description: "Fail on a warning as well as on an error" },
       dir: { type: "string" as const, description: "With --seeds: check just this directory's seeds" },
       seeds: {
         type: "boolean" as const,
-        description: "Check the seeds instead: an INSERT that is not safe to run twice, and the destructive rules at warning level",
+        description: "Check the seeds instead: an INSERT that is not safe to run twice, and the destructive rules",
       },
     },
-    run: async (args, flags, ctx?: CliContext) => {
+    run: async (_args, flags, ctx?: CliContext) => {
       return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
-        const wanted = flags.dir;
-        const findings: LintFinding[] =
-          args.length > 0
-            ? args.flatMap((file) => {
-                const path = resolve(run.config.root, file);
-                return lintMigration(path, run.io.readText(path));
-              })
-            : flags.seeds
-              ? lintSeeds(readSeeds(run, wanted))
-              : lintMigrations(readMigrations(run));
+        if (flags.seeds) {
+          const findings: LintFinding[] = lintSeeds(readSeeds(run, flags.dir));
+          if (run.json) run.print(JSON.stringify({ findings }));
+          else if (findings.length === 0) run.print("no findings");
+          else for (const finding of findings) run.print(formatLintFinding(finding));
+          if (findings.length > 0) throw new CliError("invalid-args", `lint found ${findings.length} finding(s) in the seeds.`);
+          return;
+        }
 
-        const errors = findings.filter((f) => f.level === "error").length;
-        const warnings = findings.length - errors;
-
-        if (run.json) run.print(JSON.stringify({ findings, errors, warnings }));
-        else if (findings.length === 0) run.print("no findings");
-        else for (const finding of findings) run.print(formatLintFinding(finding));
-
-        if (errors > 0 || (Boolean(flags.strict) && warnings > 0)) {
+        const { database } = run.home;
+        const place = run.config.target.place;
+        const { pending, findings, approved } = await lintPendingMigrations(run);
+        if (run.json) {
+          run.print(JSON.stringify({ target: formatTarget(run.config.target), database, pending, findings, approved }));
+        } else {
+          if (findings.length === 0) run.print(`${pending.length} pending migration(s) on ${database} (${place}) — no findings`);
+          else for (const finding of findings) run.print(formatLintFinding(finding));
+          for (const finding of approved) run.print(`approved ${finding.migration}: ${formatMigrationChange(finding.change)}`);
+        }
+        if (findings.length > 0) {
           throw new CliError(
             "invalid-args",
-            `lint found ${errors} error(s) and ${warnings} warning(s)${flags.strict ? ", and --strict fails on both" : ""}.`,
+            `lint found ${findings.length} finding(s) in the migrations ${database} (${place}) does not hold yet.`,
           );
         }
       });

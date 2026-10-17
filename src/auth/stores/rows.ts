@@ -1,4 +1,5 @@
 import { err, ok } from "../../result/result";
+import { classifyD1Error } from "../../storage/db/failure";
 import { sql } from "../../storage/db/sql";
 import type { D1Client, SqlFragment } from "../../storage/db/types";
 import { uuidFromBytes, uuidToBytes } from "../../storage/db/uuid";
@@ -76,15 +77,14 @@ function toUuid(value: unknown): string {
 
 /** Folds a backend failure into the one `AuthStoreError`, naming the index when the backend says which. @internal */
 export function storeError(operation: string, cause: unknown): AuthStoreError {
-  const message = cause instanceof Error ? cause.message : String(cause);
-  // D1 reports `UNIQUE constraint failed: auth_users.email_key: SQLITE_CONSTRAINT (extended: …)`,
-  // so the colon has to end the capture or the index name comes back with one stuck to it.
-  const constraint = /UNIQUE constraint failed:\s*([^\s:)]+)/i.exec(message)?.[1];
-  if (constraint) return new AuthStoreError("conflict", operation, { constraint, cause });
+  const constraint = classifyD1Error(cause).constraint;
+  if (constraint?.rule === "unique" && constraint.name !== null) {
+    return new AuthStoreError("conflict", operation, { constraint: constraint.name, cause });
+  }
   // A CHECK is the schema refusing the caller's value — an over-long address, say. Folding it into
   // `unavailable` would render a client's own mistake to them as this deployment being down.
-  if (/CHECK constraint failed/i.test(message)) return new AuthStoreError("invalid", operation, { cause });
-  if (/FOREIGN KEY constraint failed/i.test(message)) return new AuthStoreError("reference", operation, { cause });
+  if (constraint?.rule === "check") return new AuthStoreError("invalid", operation, { cause });
+  if (constraint?.rule === "foreign-key") return new AuthStoreError("reference", operation, { cause });
   return new AuthStoreError("unavailable", operation, { cause });
 }
 
@@ -181,14 +181,6 @@ export function readAccessToken(row: AccessTokenRow): AuthAccessToken {
     revokedAt: row.revoked_at,
     createdAt: row.created_at,
   };
-}
-
-/** Joins values into a comma-separated list, each still a bind parameter; the caller supplies the parentheses. @internal */
-export function inList(values: readonly unknown[]): SqlFragment {
-  // `reduce` with no seed throws on an empty array, and a seed would emit a leading comma. The
-  // caller still has to skip the query: `IN ()` is a syntax error, not an empty match.
-  if (values.length === 0) return sql``;
-  return values.map((value) => sql`${value}`).reduce((left, right) => sql`${left}, ${right}`);
 }
 
 /** Matches a row unless it is the only admin who could still sign in — a deactivated one cannot recover a deployment. @internal */

@@ -18,6 +18,11 @@ export function classifyCfError(e: CfApiClientError): CfFailureKind {
   return "other";
 }
 
+/** Whether wrangler's printed output carries a Cloudflare auth error code, as `[code: <n>]`. */
+export function wranglerAuthRefused(output: string): boolean {
+  return [...output.matchAll(/\[code: (\d+)\]/g)].some((match) => (CF_ERROR_CODES.auth as readonly number[]).includes(Number(match[1])));
+}
+
 /** A detail string for a failed call against the Worker `scriptName`. */
 export function describeCfFailure(e: CfApiClientError, scriptName: string, options: DescribeCfFailureOptions = {}): string {
   const kind = classifyCfError(e);

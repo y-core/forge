@@ -20,7 +20,12 @@ export async function deriveTable(config: ClassGroupsCheckConfig): Promise<Class
 
 /** Regenerates the table from the stylesheet and reports any drift from the committed module. @public */
 export async function checkClassGroups(config: ClassGroupsCheckConfig): Promise<CheckResult> {
-  const expected = renderClassGroups(await deriveTable(config));
+  return compareClassGroups(config, await deriveTable(config));
+}
+
+/** Reports any drift between an already derived table and the committed module. @public */
+export function compareClassGroups(config: ClassGroupsCheckConfig, table: ClassGroupTable): CheckResult {
+  const expected = renderClassGroups(table);
   const path = resolve(config.root, config.table);
 
   let actual: string;

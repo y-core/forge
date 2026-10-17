@@ -1,5 +1,5 @@
 import type { ResourceType } from "../../types";
-import { d1Handler } from "./d1";
+import { createD1Handler } from "./d1";
 import {
   aiHandler,
   analyticsEngineHandler,
@@ -28,7 +28,7 @@ import { createVarsHandler } from "./vars";
 export function buildHandlers(opts: HandlerBuildOptions): ResourceHandler[] {
   return [
     kvHandler,
-    d1Handler,
+    createD1Handler(opts.placement?.d1),
     r2Handler,
     queuesHandler,
     createLocalVarsHandler(opts.configPath),

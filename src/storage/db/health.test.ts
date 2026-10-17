@@ -7,7 +7,14 @@ import type { LogRecord } from "../../logging/types";
 import { collectExecutionContext } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import { mapHandler } from "../../testing/route";
-import { checkSchemaHealth, schemaHealthCheck, schemaHealthMonitor } from "./health";
+import {
+  checkSchemaHealth,
+  createSchemaHealthMemo,
+  schemaHealthCheck,
+  schemaHealthCheckFrom,
+  schemaHealthMonitor,
+  schemaHealthMonitorFrom,
+} from "./health";
 import { INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT } from "./schema";
 import type { D1DatabaseLike } from "./types";
 
@@ -35,6 +42,27 @@ function db(rows: Record<string, unknown>[] | null, inventory: Record<string, un
     },
   );
   return Object.assign(database, { reads });
+}
+
+function heldOpen(database: D1DatabaseLike) {
+  const prepared: string[] = [];
+  let release = (): void => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const gated: D1DatabaseLike = {
+    ...database,
+    prepare: (query) => {
+      prepared.push(query);
+      const statement = database.prepare(query);
+      return { ...statement, all: async <T>() => gate.then(() => statement.all<T>()) };
+    },
+  };
+  return { db: gated, prepared, release };
+}
+
+function locked() {
+  return fakeD1(() => [], { failOn: () => new Error("D1_ERROR: database is locked") });
 }
 
 function capturingLogger() {
@@ -168,6 +196,204 @@ describe("schemaHealthCheck()", () => {
     await expect(retried(env)).rejects.toThrow("D1_ERROR: database is locked");
     expect(await retried(env)).toBe(true);
     expect(reads).toEqual([RECORDED_FINGERPRINT_SELECT, RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+  });
+
+  it("keeps the newer check cached when an older one settles on a mismatch, so no third check starts", async () => {
+    const interleaved = schemaHealthCheck<Env>((c) => c.env.DB);
+    const older = heldOpen(db([{ fingerprint: EMPTY_FINGERPRINT }]));
+    const newer = heldOpen(db([{ fingerprint: USERS_FINGERPRINT }]));
+    const newerEnv = context(newer.db);
+
+    const first = interleaved(context(older.db));
+    const second = interleaved(newerEnv);
+    older.release();
+    expect(await first).toBe(false);
+
+    const third = interleaved(newerEnv);
+    newer.release();
+    expect([await second, await third]).toEqual([true, true]);
+    expect([older.prepared, newer.prepared]).toEqual([
+      [RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT],
+      [RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT],
+    ]);
+  });
+
+  it("keeps the newer check cached when an older one rejects, so no third check starts", async () => {
+    const interleaved = schemaHealthCheck<Env>((c) => c.env.DB);
+    const older = heldOpen(locked());
+    const newer = heldOpen(db([{ fingerprint: USERS_FINGERPRINT }]));
+    const newerEnv = context(newer.db);
+
+    const first = interleaved(context(older.db));
+    const second = interleaved(newerEnv);
+    older.release();
+    await expect(first).rejects.toThrow("D1_ERROR: database is locked");
+
+    const third = interleaved(newerEnv);
+    newer.release();
+    expect([await second, await third]).toEqual([true, true]);
+    expect([older.prepared, newer.prepared]).toEqual([[RECORDED_FINGERPRINT_SELECT], [RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]]);
+  });
+});
+
+describe("createSchemaHealthMemo()", () => {
+  const fingerprintReads = (reads: string[]) => reads.filter((read) => read === RECORDED_FINGERPRINT_SELECT).length;
+
+  it("reuses a settled match under the same env until recheckMs has passed, and reads again at exactly recheckMs or on an env change", async () => {
+    for (const reuseMismatch of [true, false]) {
+      const database = db([{ fingerprint: USERS_FINGERPRINT }]);
+      const memo = createSchemaHealthMemo(100);
+      const [a, b] = [{}, {}];
+      const after: number[] = [];
+      for (const [env, at] of [
+        [a, 0],
+        [a, 99],
+        [a, 100],
+        [a, 199],
+        [b, 199],
+      ] as const) {
+        await memo.read(database, env, at, reuseMismatch);
+        after.push(fingerprintReads(database.reads));
+      }
+      expect([reuseMismatch, after]).toEqual([reuseMismatch, [1, 1, 2, 2, 3]]);
+    }
+  });
+
+  it("reuses a cached mismatch only for a caller that accepts one, and then serves both callers the new read", async () => {
+    let recorded = EMPTY_FINGERPRINT;
+    const reads: string[] = [];
+    const database = fakeD1((sql) => {
+      reads.push(sql);
+      return sql === RECORDED_FINGERPRINT_SELECT ? [{ fingerprint: recorded }] : [USERS_ROW];
+    });
+    const memo = createSchemaHealthMemo(100);
+    const env = {};
+
+    const mismatch = memo.read(database, env, 0, true);
+    expect((await mismatch).state).toBe("mismatch");
+    expect(memo.read(database, env, 1, true)).toBe(mismatch);
+    expect(fingerprintReads(reads)).toBe(1);
+
+    recorded = USERS_FINGERPRINT;
+    const reread = memo.read(database, env, 2, false);
+    expect([reread === mismatch, (await reread).state, fingerprintReads(reads)]).toEqual([false, "match", 2]);
+    expect([memo.read(database, env, 3, true), memo.read(database, env, 3, false)]).toEqual([reread, reread]);
+    expect(fingerprintReads(reads)).toBe(2);
+  });
+
+  it("reuses a pending read for both kinds of caller", async () => {
+    const pending = heldOpen(db([{ fingerprint: EMPTY_FINGERPRINT }]));
+    const memo = createSchemaHealthMemo(100);
+    const env = {};
+
+    const tolerant = memo.read(pending.db, env, 0, true);
+    const strict = memo.read(pending.db, env, 0, false);
+    expect([strict === tolerant, pending.prepared]).toEqual([true, [RECORDED_FINGERPRINT_SELECT]]);
+    pending.release();
+    expect((await strict).state).toBe("mismatch");
+  });
+
+  it("keeps a newer read when an older one under another env rejects after it started", async () => {
+    const older = heldOpen(locked());
+    const newer = heldOpen(db([{ fingerprint: USERS_FINGERPRINT }]));
+    const memo = createSchemaHealthMemo(100);
+    const newerEnv = {};
+
+    const first = memo.read(older.db, {}, 0, false);
+    const second = memo.read(newer.db, newerEnv, 0, false);
+    older.release();
+    await expect(first).rejects.toThrow("D1_ERROR: database is locked");
+
+    expect(memo.read(newer.db, newerEnv, 1, false)).toBe(second);
+    newer.release();
+    expect([(await second).state, newer.prepared]).toEqual(["match", [RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]]);
+  });
+
+  it("keeps a newer read reusable when an older one under another env settles on a mismatch after it started", async () => {
+    const older = heldOpen(db([{ fingerprint: EMPTY_FINGERPRINT }]));
+    const newer = heldOpen(db([{ fingerprint: USERS_FINGERPRINT }]));
+    const memo = createSchemaHealthMemo(100);
+    const newerEnv = {};
+
+    const first = memo.read(older.db, {}, 0, false);
+    const second = memo.read(newer.db, newerEnv, 0, false);
+    older.release();
+    expect((await first).state).toBe("mismatch");
+
+    expect(memo.read(newer.db, newerEnv, 1, false)).toBe(second);
+    newer.release();
+    expect([(await second).state, newer.prepared]).toEqual(["match", [RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]]);
+  });
+
+  it("forgets a lone rejected read, so the next one under the same env reads again", async () => {
+    const reads: string[] = [];
+    let failures = 1;
+    const database = fakeD1(
+      (sql) => {
+        reads.push(sql);
+        return sql === RECORDED_FINGERPRINT_SELECT ? [{ fingerprint: USERS_FINGERPRINT }] : [USERS_ROW];
+      },
+      {
+        failOn: (sql) => {
+          if (sql !== RECORDED_FINGERPRINT_SELECT || failures === 0) return null;
+          failures -= 1;
+          reads.push(sql);
+          return new Error("D1_ERROR: database is locked");
+        },
+      },
+    );
+    const memo = createSchemaHealthMemo(100);
+    const env = {};
+
+    await expect(memo.read(database, env, 0, true)).rejects.toThrow("D1_ERROR: database is locked");
+    expect((await memo.read(database, env, 1, true)).state).toBe("match");
+    expect(reads).toEqual([RECORDED_FINGERPRINT_SELECT, RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+  });
+});
+
+describe("schemaHealthCheckFrom() and schemaHealthMonitorFrom() over one memo", () => {
+  function shared(now: () => number) {
+    const { logger, records } = capturingLogger();
+    const memo = createSchemaHealthMemo(100);
+    const forge = new Forge<Env>();
+    forge.use("*", schemaHealthMonitorFrom<Env>({ binding: (c) => c.env.DB, logger, now, recheckMs: 100 }, memo));
+    mapHandler(forge, "GET", "/", () => new Response("ok"));
+    return { forge, records, check: schemaHealthCheckFrom<Env>((c) => c.env.DB, memo, now) };
+  }
+
+  it("answers the check from the monitor's read, timed by the clock each caller read", async () => {
+    let clock = 1_000;
+    const { forge, records, check } = shared(() => clock);
+    const database = db([{ fingerprint: USERS_FINGERPRINT }]);
+    const env = { DB: database };
+    const c = { env } as unknown as AppContext<Env>;
+
+    expect((await forge.request("/", {}, env)).status).toBe(200);
+    clock = 1_099;
+    expect(await check(c)).toBe(true);
+    expect(database.reads).toEqual([RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+
+    clock = 1_100;
+    expect(await check(c)).toBe(true);
+    expect(database.reads).toEqual([RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT, RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+    expect(records.map((record) => `${record.level} ${String(record.data?.state)}`)).toEqual(["info match"]);
+  });
+
+  it("logs the verdict of a read the check started, once per window, without reading again", async () => {
+    const { forge, records, check } = shared(() => 1_000);
+    const database = db([{ fingerprint: USERS_FINGERPRINT }]);
+    const env = { DB: database };
+
+    expect(await check({ env } as unknown as AppContext<Env>)).toBe(true);
+    await forge.request("/", {}, env);
+    await forge.request("/", {}, env);
+    expect(database.reads).toEqual([RECORDED_FINGERPRINT_SELECT, INVENTORY_SELECT]);
+    expect(records.map((record) => `${record.level} ${String(record.data?.state)}`)).toEqual(["info match"]);
+  });
+
+  it("fails the check without reading when the binding is absent", async () => {
+    const { check } = shared(() => 1_000);
+    expect(await check({ env: {} } as unknown as AppContext<Env>)).toBe(false);
   });
 });
 

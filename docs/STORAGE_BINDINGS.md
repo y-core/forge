@@ -24,6 +24,8 @@ audience: consumer
 - §1e uuidv7 — Time-Ordered Primary Keys: the monotonic counter, the frozen Workers clock, and the TEXT-versus-BLOB trade
 - §1f Schema Health: detect and report, never heal
 - §1g Transactions — batch() Is the Boundary: one batch, one transaction; the zero-rows trap and `requireRowsWritten()`
+- §1h D1's Limits and Long Lists: what the client refuses before sending, binding a long list as one parameter, and keeping a bulk write
+  under the caps
 - §2 storage/kv — KV Store: codec-aware key-value access
 - §2a createKVStore Factory: the required codec option
 - §2b Codecs — jsonCodec, textCodec, bytesCodec: selection rules
@@ -54,8 +56,18 @@ rather than keeping its own.
 
 ### 1a. createD1Client Factory
 
-`createD1Client` wraps a raw `D1Database` with a typed client, taking the binding directly from `c.env`. Query logging is opt-in and off by default
-— a client that logged every statement would put query text, and whatever a bound parameter carried, onto a channel with no PII posture of its own.
+`createD1Client` wraps a raw `D1Database` with a typed client, taking the binding directly from `c.env`. Query logging is opt-in and off by default.
+With a `logger`, each call writes one `d1.query` record: the operation, the SQL text, the attempts, a failure's kind, and the cost and placement D1
+reported. It is at `debug`, or at `warn` once D1's duration passes `slowQueryMs`.
+
+**A bound value never reaches the record, and that is the PII rule for SQL text.** The `sql` tag keeps every value a parameter, so the text holds
+only `?`. D1's own query insights keep that text as well — a value spliced into it would sit in Cloudflare's dashboard — so a value belongs in a
+binding, never in the SQL. `wrangler d1 insights` lists the top queries by time, reads or writes; forge does not wrap it, since the command is
+experimental and would only pass through.
+
+**Every outcome's `meta` carries the call's attempts, and, where D1 reported them, `cost` and `servedBy`.** `cost` is what D1 bills on, summed over
+a batch: `rowsRead`, `rowsWritten` and `durationMs`. Its `rowsWritten` counts index rows too, so it is not the change count; `execute` returns that
+as `rowsWritten` on the data, from `meta.changes`. `servedBy` names the region and whether the primary or a read replica answered.
 
 ### 1b. `sql` Tagged Template for Queries
 
@@ -141,9 +153,8 @@ rules `forge db migrate status --check` applies, and reports the state. The repo
 | `unrecorded` | The table is there with no rows, **or** its last row's `fingerprint` is `NULL` — applied, never certified |
 | `match` / `mismatch` | A fingerprint is certified, and it is or is not the schema as it now stands |
 
-**None of these functions takes an options argument**: `checkSchemaHealth(db)`, `schemaHealthCheck(binding)` and
-`schemaHealthMonitor({ binding, logger? })` are the whole surface, and which table the history lives in is not configurable. There is no
-`SchemaHealthOptions` type and no `DEFAULT_MIGRATIONS_TABLE` constant.
+**Which table the history lives in is not configurable**: `checkSchemaHealth(db)`, `schemaHealthCheck(binding, { recheckMs?, now? })` and
+`schemaHealthMonitor({ binding, logger?, recheckMs?, now? })` take how often to read, never where. There is no `DEFAULT_MIGRATIONS_TABLE` constant.
 
 **The read is defined only against a `_forge_migrations` table.** A Worker pointed at a database forge has not migrated on a matching version reads
 `unavailable` on every request — a loud but truthful report, since the fingerprint it would compare against does not exist. The fix is a
@@ -155,18 +166,20 @@ migrations needs files, wrangler, the apply lock and the undo, and refusing to s
 
 These surfaces build on the read:
 
-- `schemaHealthMonitor({ binding })` is middleware that observes once per isolate, keyed on the env object the way `validateBindings` is, and logs
-  one `d1.schema.health` record — `warn` on `mismatch` and on `unavailable`, `info` otherwise — with `{ state, recorded, actual }`. An absent
-  binding logs `d1.schema.health.skipped`, a thrown read logs `d1.schema.health.failed`; every path calls `next()`. **The observation is handed to
-  `executionCtx.waitUntil` and the request is never held for it**, so the record may land after the response — it gates nothing, and the first
-  request of an isolate must not pay for two D1 reads and a hash. Read the log as "this isolate saw this", not as a fact about one request.
-  **Drift beginning after that observation is invisible until the isolate recycles:** it reads once, so a `CREATE INDEX` run against the database
-  mid-life is never seen by an isolate that already logged `match`, however long that isolate lives. A deployment is the reliable boundary, not an
-  interval.
+- `schemaHealthMonitor({ binding })` is middleware that observes once per isolate and again once `recheckMs` (60 s by default) has passed, keyed on
+  the env object the way `validateBindings` is, and logs one `d1.schema.health` record per observation — `warn` on `mismatch` and on `unavailable`,
+  `info` otherwise — with `{ state, recorded, actual }`. An absent binding logs `d1.schema.health.skipped`, a thrown read logs
+  `d1.schema.health.failed`; every path calls `next()`. **The observation is handed to `executionCtx.waitUntil` and the request is never held for
+  it**, so the record may land after the response — it gates nothing, and the first request of an isolate must not pay for two D1 reads and a hash.
+  Read the log as "this isolate saw this", not as a fact about one request. **Drift beginning after an observation is seen at the next one:** a
+  `CREATE INDEX` run against the database mid-life is logged within `recheckMs` by every isolate that keeps serving. Between observations a request
+  costs one clock comparison.
 - `schemaHealthCheck(binding)` is a `healthCheck` predicate that fails only on `mismatch`; `unrecorded` and `unavailable` pass, mirroring the
-  `status --check` clause ([`DATABASE_MANAGEMENT.md`][dm-6c] §6c). It keeps its own per-isolate cache and inherits that limitation in one direction
-  only: a healthy verdict is held for the isolate's life, so later drift is invisible there; a `mismatch` is never cached, so a repair lands on the
-  next poll rather than shedding traffic until the isolate recycles.
+  `status --check` clause ([`DATABASE_MANAGEMENT.md`][dm-6c] §6c). A healthy verdict is held for `recheckMs` and then read again, so later drift
+  fails the check within that window; a `mismatch` is never cached, so a repair lands on the next poll.
+- `defineD1Binding({ name })` assembles both, with the binding check and a client, for one database bound under `name`. Its health checks are
+  `<name>` (the binding is present) and `<name>:schema`. Its monitor and its `<name>:schema` check share one read per binding: the monitor reuses
+  any verdict for `recheckMs`, and the check reuses only a healthy one, so it reads again on the next poll after a `mismatch`.
 
 ### 1g. Transactions — batch() Is the Boundary
 
@@ -193,14 +206,78 @@ aborts the batch. valibot validates the input and words the error for the caller
 in order of preference: a `CHECK` such as `quantity >= 0`, so the write itself fails; and `requireRowsWritten()` appended directly after the write
 it protects, for an invariant the schema cannot express or a consumer cannot change. The guard reads `changes()`, which reports the statement
 immediately before it, so it is one guard per protected write and a guard after a non-write is a bug. When a guard fires the batch rolls back and
-the client rejects with `a guarded statement in this batch wrote no row, so the batch was rolled back`, the D1 error as its `cause`; D1 does not say
-which statement failed, so neither does forge.
+the call fails with a `D1Failure` of kind `guard`, the D1 error as its `cause`; D1 does not say which statement failed, so neither does forge.
+
+**Every failure carries a kind, and only a `transient` one is retried.** D1 errors carry message text and no code, so `classifyD1Error` is the one
+place forge reads that text, and every `D1Client` call fails with a `D1Failure` whose `kind` a caller branches on:
+
+| Kind | What D1 said | Retried |
+| --- | --- | --- |
+| `constraint` | A `UNIQUE`, `NOT NULL`, `CHECK` or foreign key refused the write; `constraint` names the rule and, where D1 gives it, the column, index or expression | Never |
+| `transient` | A lost connection, a reset storage object, a code update, a replica cut off from its primary | Only on a call marked `{ idempotent: true }` |
+| `overloaded` | The database's request queue is full or too slow | Never — retrying adds load |
+| `limit` | A memory, CPU, size, parameter, statement-length or compound-`SELECT` limit | Never |
+| `timeout` | A storage operation ran past its time | Never |
+| `guard` | A `requireRowsWritten()` guard fired | Never |
+| `unavailable` | Anything else, an unknown message included | Never |
+
+**`{ idempotent: true }` is the caller's promise that running the call twice does no harm** — an upsert, or an update to a fixed value. Only
+`execute` and `batch` take it; a read is retried by D1 itself, up to twice. A marked call that fails `transient` is tried again up to five times,
+each wait a random share of a ceiling that starts at 100 ms and doubles to a 2 s cap (`D1ClientOptions.retry` changes the policy). An
+`INSERT` of a fresh row is not idempotent: a retry after a commit whose answer was lost writes it twice, or fails `constraint`. Every outcome's
+`meta.attempts` counts the dispatches, D1's own read retries included.
 
 **Crossing D1 is never atomic.** A Queue send, an R2 put or an email after the batch can succeed while the batch rolled back, or the reverse. Write
 an outbox row in the same batch and let a scheduled handler drain it; a few lines a consumer owns, not a forge helper.
 
 **`withSession()` is not a transaction.** It pins reads to a replica's bookmark for read-your-writes consistency; atomicity comes only from
 `batch()`.
+
+**`d1Sessions` opens one session per request, and it pays off only once read replication is on.** Read replication is beta and set per database (the
+`readReplication` placement `forge cf sync` holds it to, [`src/tooling/cf/README.md`][cf-readme]); without it every query reaches the primary and a
+session changes nothing. With it, a read may land on a replica that has not yet seen a write. The middleware starts a write on the primary
+(`first-primary`). Only where `bookmark` names a carrier does a read start from the bookmark the client sent back, or from any replica
+(`first-unconstrained`) when it sent none; with no carrier every session starts `first-primary`, because nothing would carry a write's bookmark to
+the next request. Every query the request makes through `resolveD1Client` or `defineD1Binding`'s client goes through that session, so a request
+reads its own writes. The session's bookmark returns in the header or cookie named in `bookmark`, so the client's next request starts no earlier
+than the point this one left — read-your-writes across requests. **The header carrier holds read-your-writes only for a client that echoes the
+header; a browser following a 303 sends none, so for navigation only the cookie carrier holds it.** A bookmark not in D1's four-hex-group shape is
+ignored rather than passed to D1. **A bookmark D1 refuses fails the request, and no query is sent again on another session**, because a write
+whose outcome is unknown must not run twice. Where every query of a resumed read failed, the response returns no bookmark and the cookie carrier
+clears its cookie, so the client's next read starts on any replica. A binding with no `withSession` — a fake, an older runtime — passes through
+untouched.
+
+**The cookie carrier costs a covered response its shared caching whenever the bookmark moves.** The middleware queues the bookmark for Forge to
+merge rather than rebuilding the response, so a WebSocket `101` keeps its socket. A cookie carries it only when the session's bookmark differs from
+the one the request sent, and an unchanged bookmark sets no cookie. When it does set one, Forge turns that response's `Cache-Control: public` into
+`private`, as it does for any response that sets a cookie. The header carrier sets no cookie and leaves `Cache-Control` alone.
+
+### 1h. D1's Limits and Long Lists
+
+**`D1_LIMITS` holds the per-statement and per-table limits forge enforces before D1 does**: 100 bound parameters and 100,000 bytes of UTF-8 per
+statement, and 100 columns per table. The client refuses a statement over either statement limit with a `D1Failure` of kind `limit` and
+`meta.attempts` of 0 — nothing is sent. `forge db lint` refuses a `CREATE TABLE` of more than 100 columns (`table-too-wide`,
+[`DATABASE_MANAGEMENT.md`][dm-5] §5), and `forge db migrate compose` refuses a declared table that wide, which is what catches an `ADD COLUMN`.
+
+**A list binds as one JSON parameter, whatever its length.** `json_each` reads it inside the statement, so the statement stays one statement,
+atomic, with its `ORDER BY` and `LIMIT` over the whole list:
+
+```ts
+const read = await db.query<User>(
+  sql`SELECT id, email FROM users WHERE email IN (SELECT value FROM json_each(${JSON.stringify(emails)}))`,
+);
+const users = await db.query(sql`SELECT … FROM auth_users WHERE id IN (SELECT unhex(value, '-') FROM json_each(${JSON.stringify(ids)}))`);
+```
+
+The second form is for forge's BLOB UUID keys, where `ids` are UUID strings: `unhex` with `'-'` skips the dashes, and the key's index is still used.
+`json_each` yields only TEXT, INTEGER and REAL, and `JSON.stringify` of a `Uint8Array` is an object, so a BLOB key travels as its UUID string and is
+converted by `unhex`. An empty array matches no row, so there is nothing to special-case. The client still refuses a statement over 100 bound
+parameters, with nothing sent; a list spelled out as one `?` per value is how a statement gets there.
+
+**A bulk write stays under the per-invocation query cap** — 1,000 queries per Worker invocation on a paid plan, 50 on free — by writing about 1,000
+rows per statement rather than one per row, and by spreading a large job over several invocations, such as a Queue consumer taking one chunk per
+message. A single `UPDATE` or `DELETE` over hundreds of thousands of rows exceeds D1's execution limits however it is batched; bound it with a key
+range and run it in steps.
 
 ---
 
@@ -442,9 +519,11 @@ exist before the worker reaches a serving state.
 
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
+[cf-readme]: ../src/tooling/cf/README.md
 [cr-1a]: ../warden/canon/shared/CODE_RULES.md#1a-no-module-level-mutable-variables
 [dm]: ./DATABASE_MANAGEMENT.md
 [dm-4a]: ./DATABASE_MANAGEMENT.md#4a-_forge_migrations--the-migration-history
+[dm-5]: ./DATABASE_MANAGEMENT.md#5-the-migration-lint-rules
 [dm-6c]: ./DATABASE_MANAGEMENT.md#6c-status---check-exit-conditions
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw

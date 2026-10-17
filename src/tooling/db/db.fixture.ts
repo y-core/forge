@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import process from "node:process";
+import { PassThrough } from "node:stream";
 
 import type { CliIO } from "../cli/types";
 import { SqlReal } from "./backup/artifact";
@@ -258,6 +260,7 @@ export function fakeDbIo(seed: Record<string, string> = {}, options: { now?: Dat
       io.d1Calls.push({ home: home.label, place: home.place, persistTo: persistRoot(home), statements, source });
       return Promise.resolve(statements.map((statement) => answerStatement(io, statement, home)));
     },
+    splitD1: (_home, sql) => Promise.resolve(splitStatements(sql)),
     closeD1(home) {
       io.closed.push(home === null ? "*" : persistRoot(home));
       return Promise.resolve();
@@ -332,14 +335,34 @@ export function minimalWranglerConfig(root: string, over: Record<string, unknown
   const config = {
     name: "app",
     compatibility_date: "2026-01-01",
-    d1_databases: [{ binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }],
+    d1_databases: [
+      { binding: "DB", database_name: "app-db", database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", migrations_dir: "config/db/migrations" },
+    ],
     ...over,
   };
   return { path: join(root, "wrangler.jsonc"), text: `${JSON.stringify(config, null, 2)}\n` };
 }
 
-/** A migration file as compose writes one: the DDL under a valid generated stamp, since an unstamped one carrying DDL is a lint error. @internal */
+/** A migration file as compose writes one: the body under a valid compose stamp, which every verb requires of a pending file. @internal */
 export function composed(body: string): string {
   const sql = body.endsWith("\n") ? body : `${body}\n`;
   return `${formatComposeHeader({ desired: {}, baseline: "", forge: "0.0.0" }, sql)}${sql}`;
+}
+
+/** Runs `body` with `process.stdin` a stream answering `answer`, a terminal when `tty`, and returns what the prompt wrote to stdout. */
+export async function onStdin<T>(tty: boolean, answer: string, body: () => Promise<T>): Promise<{ prompted: string; value: T }> {
+  const saved = { stdin: Object.getOwnPropertyDescriptor(process, "stdin"), stdout: Object.getOwnPropertyDescriptor(process, "stdout") };
+  const input = Object.assign(new PassThrough(), { isTTY: tty });
+  const output = new PassThrough();
+  const chunks: string[] = [];
+  output.write = (chunk: unknown) => chunks.push(String(chunk)) > 0;
+  input.write(`${answer}\n`);
+  Object.defineProperty(process, "stdin", { value: input, configurable: true });
+  Object.defineProperty(process, "stdout", { value: output, configurable: true });
+  try {
+    const value = await body();
+    return { prompted: chunks.join(""), value };
+  } finally {
+    for (const [name, descriptor] of Object.entries(saved)) if (descriptor !== undefined) Object.defineProperty(process, name, descriptor);
+  }
 }

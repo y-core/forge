@@ -22,10 +22,9 @@ const PENDING: Migration[] = [
   {
     name: "0002_email_not_null",
     version: 2,
-    path: `${ROOT}/migrations/0002_email_not_null.sql`,
+    path: `${ROOT}/config/db/migrations/0002_email_not_null.sql`,
     sha256: sha256("x"),
     sql: "CREATE TABLE _forge_new_users (id INTEGER PRIMARY KEY, email TEXT NOT NULL) STRICT;",
-    origin: "generated",
     stamp: null,
   },
 ];
@@ -33,6 +32,8 @@ const PENDING: Migration[] = [
 function manifest(over: Partial<BackupManifest> = {}): BackupManifest {
   const written = {
     formatVersion: BACKUP_FORMAT_VERSION,
+    via: "read" as const,
+    bookmark: null,
     drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
@@ -109,6 +110,18 @@ describe("rehearseMigrations()", () => {
     expect(io.files.get(`${ROOT}/.forge/scratch/rehearse-apply/0002_email_not_null.sql`)).toBe(
       `${migration.sql}\n${recordMigrationSql(migration, NOW.getTime())}`,
     );
+  });
+
+  it("creates the companion tables on the scratch before the recorded apply stages its history row", async () => {
+    const { run, io } = context(artifactFiles());
+    wire(io);
+
+    await rehearseMigrations(run, PENDING, undefined, APPLIED);
+    const sources = io.d1Calls.map((call) => call.source ?? call.statements.join("\n"));
+    const companions = sources.findIndex((source) => source.includes("CREATE TABLE IF NOT EXISTS _forge_migrations"));
+    const apply = sources.findIndex((source) => source.includes("rehearse-apply"));
+    expect(companions).toBeGreaterThan(-1);
+    expect(companions).toBeLessThan(apply);
   });
 
   it("takes the artifact it is given, resolved against the root", async () => {

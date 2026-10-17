@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { classifyCfError, describeCfFailure } from "./errors";
+import { classifyCfError, describeCfFailure, wranglerAuthRefused } from "./errors";
 import type { CfApiClientError, CfApiClientErrorKind, CfApiError } from "./types";
 import { CfApiClientError as CfError } from "./types";
 
@@ -63,6 +63,38 @@ describe("classifyCfError", () => {
   it("classifies an empty envelope error list as other", () => {
     expect(classifyCfError(fail("api", "x", { cfErrors: [] }))).toBe("other");
   });
+});
+
+describe("wranglerAuthRefused", () => {
+  it("recognises the authentication error wrangler prints for a refused D1 query", () => {
+    expect(
+      wranglerAuthRefused(
+        "✘ [ERROR] A request to the Cloudflare API (/accounts/acc/d1/database/x/query) failed.\n\n  Authentication error [code: 10000]",
+      ),
+    ).toBe(true);
+  });
+
+  for (const code of [9106, 9107, 9109, 10000]) {
+    it(`recognises auth code ${code} in wrangler's [code: n] form`, () => {
+      expect(wranglerAuthRefused(`✘ [ERROR] refused [code: ${code}]`)).toBe(true);
+    });
+  }
+
+  it("finds an auth code printed after an unrelated one", () => {
+    expect(wranglerAuthRefused("first [code: 7500]\nthen [code: 9109]")).toBe(true);
+  });
+
+  for (const { output, label } of [
+    { output: "✘ [ERROR] D1 query failed [code: 7500]", label: "a non-auth code" },
+    { output: "no such table: users", label: "a SQL error with no code" },
+    { output: "rows 10000", label: "an auth code's digits outside the bracket form" },
+    { output: "✘ [ERROR] overflow [code: 100000]", label: "a code whose digits only begin with an auth code" },
+    { output: "", label: "empty output" },
+  ]) {
+    it(`does not recognise ${label}`, () => {
+      expect(wranglerAuthRefused(output)).toBe(false);
+    });
+  }
 });
 
 describe("describeCfFailure — not-found", () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { sha256 } from "../digest";
-import { COMPOSE_STAMP, formatComposeHeader, formatCustomHeader, parseMigrationHeader } from "./header";
+import { COMPOSE_STAMP, formatComposeHeader, parseMigrationHeader } from "./header";
 
 describe("compose header", () => {
   const body = "CREATE TABLE t (id INTEGER);\n";
@@ -18,9 +18,8 @@ describe("compose header", () => {
     expect(lines.length).toBe(3);
   });
 
-  it("parses back to a generated origin whose stamp hashes the covered text", () => {
+  it("parses back to a stamp that hashes the covered text", () => {
     const parsed = parseMigrationHeader(header + body);
-    expect(parsed.origin).toBe("generated");
     expect(parsed.stamp?.body).toBe(sha256(parsed.covered));
     expect(parsed.covered).toBe(covered);
     expect(parsed.body).toBe(body);
@@ -28,7 +27,7 @@ describe("compose header", () => {
 
   it("reads a compose stamp on the first line, covering the file without its JSON", () => {
     const parsed = parseMigrationHeader(`-- forge:compose {"desired":{},"body":"x"}\n${body}`);
-    expect(parsed.origin).toBe("generated");
+    expect(parsed.stamp).toEqual({ desired: {}, baseline: "", body: "x", forge: "" });
     expect(parsed.covered).toBe(`-- forge:compose \n${body}`);
     expect(parsed.body).toBe(body);
   });
@@ -38,8 +37,6 @@ describe("compose header", () => {
     const first = parseMigrationHeader(`${COMPOSE_STAMP}${json}\n${body}`);
     const second = parseMigrationHeader(`-- a notice\n${COMPOSE_STAMP}${json}\n${body}`);
 
-    expect(first.origin).toBe("generated");
-    expect(second.origin).toBe("generated");
     expect(first.stamp).toEqual({ desired: { app: "d" }, baseline: "b", body: "c", forge: "0.1.10" });
     expect(second.stamp).toEqual(first.stamp);
     expect(first.covered).toBe(`${COMPOSE_STAMP}\n${body}`);
@@ -47,16 +44,8 @@ describe("compose header", () => {
     expect(second.body).toBe(body);
   });
 
-  it("reads a custom stamp on either line and treats no stamp as custom", () => {
-    expect(parseMigrationHeader(`${formatCustomHeader()}UPDATE t SET a = 1 WHERE id = 1;`)).toEqual({
-      origin: "custom",
-      stamp: null,
-      body: "UPDATE t SET a = 1 WHERE id = 1;",
-      covered: `${formatCustomHeader()}UPDATE t SET a = 1 WHERE id = 1;`,
-    });
-    expect(parseMigrationHeader("-- forge:custom {}\nSELECT 1;").body).toBe("SELECT 1;");
+  it("reads a file with no compose stamp as stamp null, its whole text the body and the covered text", () => {
     expect(parseMigrationHeader("-- Migration 0001\nCREATE TABLE t (id);")).toEqual({
-      origin: "custom",
       stamp: null,
       body: "-- Migration 0001\nCREATE TABLE t (id);",
       covered: "-- Migration 0001\nCREATE TABLE t (id);",
@@ -65,7 +54,6 @@ describe("compose header", () => {
 
   it("still reads a generated file whose stamp was mangled, so lint can report the edit", () => {
     const parsed = parseMigrationHeader("-- Generated\n-- forge:compose {not json\nSELECT 1;");
-    expect(parsed.origin).toBe("generated");
     expect(parsed.stamp?.body).toBe("");
   });
 });

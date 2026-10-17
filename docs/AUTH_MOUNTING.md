@@ -165,7 +165,7 @@ Every item here is a seam with a contract and no implementation, and each is req
 | A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
 | A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
 | A key ring | Hex root secrets, newest first, each held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
-| An `Approval` passed to `createAuthGuards` as `approval`, and mounted with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` answer **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
+| An `Approval` passed to `createAuthGuards` as `approval`, and mounted with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` send an anonymous visitor to sign-in and answer a signed-in one with **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
 | Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
@@ -243,13 +243,13 @@ override or forge's own view), and `status` — `undefined` for an ordinary 200.
 The compiler holds you to the exact list, in order, because `AUTH_VIEW_GUARDS` is `as const`. A guarded name with no `guarded` **throws** — a wiring
 mistake, not a request to refuse, so it 500s rather than rendering. An unguarded name types as `readonly []`, so the field stays inert there.
 
-**`require-auth` and `require-admin` are re-checked here and are not taken on trust.** `require-auth` reads the identity off `authCtx` and nowhere
-else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin` off that identity and
-answers the same 403 `requireAdmin` does. The rest — `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` —
-need a factor-registry round trip that would cost one per render, so for those `guarded` is the whole check. `require-approval` is not re-checked
-either, because the view is never handed the approval. An `adminElevate` embed on a route that skips `requireApproval` shows the claim form to a
-visitor who never presented the code; the claim still posts to `admin.elevate`, whose group asks for it. That is why it is a claim a reviewer can
-check, and why a lie about it is a lie about your own route.
+**`require-auth`, `require-admin` and `require-approval` are re-checked here and are not taken on trust.** `require-auth` reads the identity off
+`authCtx` and nowhere else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin`
+off that identity and answers the same 403 `requireAdmin` does. `require-approval` reads `approvalCtx`, which only an admitting `requireApproval`
+sets, so an `adminElevate` embed on a route that skips it answers 404 rather than showing the claim form to a visitor who never presented the code;
+the claim's own handler refuses the same way. The rest — `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and
+`require-fresh-step-up` — need a factor-registry round trip that would cost one per render, so for those `guarded` is the whole check. That is why
+it is a claim a reviewer can check, and why a lie about it is a lie about your own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
 the action path — `authRoutes`' `signinSubmit` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a
@@ -344,8 +344,10 @@ binds one action per flow, and the token is read from `TURNSTILE_FIELD_DEFAULT`.
 
 **A refused token is the flow's ordinary failure, and it never reaches the flow.** Sign-in, sign-up and the code form answer `422` naming the
 schema's first declared field, the shape every guard refusal takes; the residual oracle that leaves is [`INPUT_VALIDATION.md`][iv-4b] §4b's. A
-refused resend answers the same `resent` redirect an admitted one does, and issues no code. The check runs before the flow is called, so a refusal
-spends no verification attempt and starts no cooldown. The reason is logged at `warn` and is sent nowhere else.
+resend refused by the challenge, or sent with a body that cannot be read, answers `422` with the verify page re-rendered and issues no code. Only
+the outcomes that depend on the account share the `resent` redirect, because a challenge's result depends on the client and tells nothing about
+the address. The check runs before the flow is called, so a refusal spends no verification attempt and starts no cooldown. The reason is logged at
+`warn` and is sent nowhere else.
 
 **The covered forms always submit over htmx, whether or not `turnstile` is set.** The widget runs with `challenge="submit"`, which holds the press
 at an htmx request and needs an htmx form to hold it on ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c); making the submission depend on the option would

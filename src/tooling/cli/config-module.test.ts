@@ -47,6 +47,14 @@ describe("loadConfigModule()", () => {
     expect(loadConfigModule(request)).rejects.toThrow("No step table at `forge-no-such-config.ts` — --config names a module that does not exist.");
   });
 
+  it("names the caller's option, not --config, when the option it passed names an absent module", async () => {
+    const request = { ...REQUEST, path: "forge-no-such-config.ts", explicit: true, option: "`hostConfig`" };
+
+    expect(loadConfigModule(request)).rejects.toThrow(
+      "No step table at `forge-no-such-config.ts` — `hostConfig` names a module that does not exist.",
+    );
+  });
+
   it("refuses a module that exports everything but a default", async () => {
     const path = write("named-only.ts", "export const STEPS = [];");
 

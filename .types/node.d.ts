@@ -85,6 +85,10 @@ declare module "node:path" {
   export const posix: PathApi;
 }
 
+declare module "node:module" {
+  export function createRequire(path: string | URL): { (id: string): unknown; resolve(id: string): string };
+}
+
 declare module "node:url" {
   export function fileURLToPath(url: string | URL): string;
   export function pathToFileURL(path: string): { href: string };

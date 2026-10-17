@@ -57,8 +57,21 @@ describe("emitMigrationSql()", () => {
         "CREATE INDEX posts_user ON posts (user_id);",
         "CREATE TRIGGER trg AFTER INSERT ON posts BEGIN UPDATE posts SET body = '' WHERE id = NEW.id; END;",
         "CREATE VIEW v AS SELECT id FROM users;",
+        "PRAGMA optimize;",
       ].join("\n\n") + "\n",
     );
+  });
+
+  it("ends with PRAGMA optimize when an index is created or changed, and not when one is only dropped", () => {
+    const index = baseline.indexes[0] as SchemaModel["indexes"][number];
+    const changed: SchemaModel = {
+      ...baseline,
+      indexes: [{ ...index, sql: "CREATE INDEX posts_user ON posts (user_id, id)", normalized: `${index.normalized} changed` }],
+    };
+    const dropped: SchemaModel = { ...baseline, indexes: [] };
+
+    expect(emitMigrationSql(diffSchemaModels(baseline, changed), baseline, changed).trimEnd().endsWith("PRAGMA optimize;")).toBe(true);
+    expect(emitMigrationSql(diffSchemaModels(baseline, dropped), baseline, dropped)).not.toContain("PRAGMA optimize");
   });
 
   it("adds a column with the author's own clause and drops one by name", () => {
@@ -107,6 +120,7 @@ describe("emitMigrationSql()", () => {
         "CREATE INDEX posts_user ON posts (user_id);",
         "CREATE TRIGGER trg AFTER INSERT ON posts BEGIN UPDATE posts SET body = '' WHERE id = NEW.id; END;",
         "CREATE VIEW v AS SELECT id FROM users;",
+        "PRAGMA optimize;",
       ].join("\n\n") + "\n",
     );
   });
@@ -128,12 +142,33 @@ describe("emitMigrationSql()", () => {
     expect(diff.dropDependents).toEqual(["posts"]);
     const statements = emitMigrationSql(diff, baseline, desired).trim().split("\n\n");
 
-    const renamed = statements.indexOf('ALTER TABLE "_forge_new_posts" RENAME TO "posts";');
+    const oldChild = statements.indexOf('DROP TABLE "posts";');
     const dropped = statements.indexOf('DROP TABLE IF EXISTS "users";');
-    expect(renamed).toBeGreaterThan(-1);
-    expect(dropped).toBeGreaterThan(renamed);
+    expect(oldChild).toBeGreaterThan(-1);
+    expect(dropped).toBeGreaterThan(oldChild);
     expect(statements.includes('CREATE TABLE "_forge_new_posts" (id INTEGER PRIMARY KEY, user_id INTEGER, body TEXT);')).toBe(true);
     expect(statements.includes('INSERT INTO "_forge_new_posts" ("id", "user_id", "body") SELECT "id", "user_id", "body" FROM "posts";')).toBe(true);
+  });
+
+  it("drops a child of a rebuilt parent after the old parent and before the rename, so the deferred FOREIGN KEY count it raised clears", () => {
+    const desired: SchemaModel = {
+      tables: [{ ...users, strict: false, sql: users.sql.replace(" STRICT", "") }],
+      indexes: [],
+      triggers: [],
+      views: [],
+    };
+    const statements = emitMigrationSql(diffSchemaModels(baseline, desired), baseline, desired).trim().split("\n\n");
+    expect(statements).toEqual([
+      "PRAGMA defer_foreign_keys = true;",
+      'DROP VIEW IF EXISTS "v";',
+      'DROP TRIGGER IF EXISTS "trg";',
+      'DROP INDEX IF EXISTS "posts_user";',
+      `CREATE TABLE "_forge_new_users" ${users.sql.slice(users.sql.indexOf("(")).replace(" STRICT", "")};`,
+      'INSERT INTO "_forge_new_users" ("id", "email") SELECT "id", "email" FROM "users";',
+      'DROP TABLE "users";',
+      'DROP TABLE IF EXISTS "posts";',
+      'ALTER TABLE "_forge_new_users" RENAME TO "users";',
+    ]);
   });
 
   it("drops several tables children first, so a dropped child never cascades into a dropped parent still holding rows", () => {
