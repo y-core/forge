@@ -83,8 +83,8 @@ config declares more than one. A config declaring several databases and a run na
 | `preview` | The deployed preview database | Cloudflare | D1 |
 
 **`remote` and `preview` are refused while the id is not a real one.** A `database_id` (or `preview_database_id` for `preview`) that is missing,
-empty, or still a placeholder aborts the run with the command that provisions it — `forge cf sync --commit` — rather than letting wrangler create
-something unasked.
+empty, or still a placeholder aborts the run with the command that provisions it — `forge cf sync --commit` for a `database_id`, `wrangler d1
+create` for a preview database — rather than letting wrangler create something unasked.
 
 ### 2a. Standby — a Second Local Database
 

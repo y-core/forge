@@ -231,19 +231,18 @@ an outbox row in the same batch and let a scheduled handler drain it; a few line
 **`withSession()` is not a transaction.** It pins reads to a replica's bookmark for read-your-writes consistency; atomicity comes only from
 `batch()`.
 
-**`d1Sessions` opens one session per request, and it pays off only once read replication is on.** Read replication is beta and set per database (the
-`readReplication` placement `forge cf sync` holds it to, [`src/tooling/cf/README.md`][cf-readme]); without it every query reaches the primary and a
-session changes nothing. With it, a read may land on a replica that has not yet seen a write. The middleware starts a write on the primary
-(`first-primary`). Only where `bookmark` names a carrier does a read start from the bookmark the client sent back, or from any replica
-(`first-unconstrained`) when it sent none; with no carrier every session starts `first-primary`, because nothing would carry a write's bookmark to
-the next request. Every query the request makes through `resolveD1Client` or `defineD1Binding`'s client goes through that session, so a request
-reads its own writes. The session's bookmark returns in the header or cookie named in `bookmark`, so the client's next request starts no earlier
-than the point this one left — read-your-writes across requests. **The header carrier holds read-your-writes only for a client that echoes the
-header; a browser following a 303 sends none, so for navigation only the cookie carrier holds it.** A bookmark not in D1's four-hex-group shape is
-ignored rather than passed to D1. **A bookmark D1 refuses fails the request, and no query is sent again on another session**, because a write
-whose outcome is unknown must not run twice. Where every query of a resumed read failed, the response returns no bookmark and the cookie carrier
-clears its cookie, so the client's next read starts on any replica. A binding with no `withSession` — a fake, an older runtime — passes through
-untouched.
+**`d1Sessions` opens one session per request, and it pays off only once read replication is on.** Read replication is beta and set per database, in
+the Cloudflare dashboard or through the D1 REST API; without it every query reaches the primary and a session changes nothing. With it, a read may
+land on a replica that has not yet seen a write. The middleware starts a write on the primary (`first-primary`). Only where `bookmark` names a
+carrier does a read start from the bookmark the client sent back, or from any replica (`first-unconstrained`) when it sent none; with no carrier
+every session starts `first-primary`, because nothing would carry a write's bookmark to the next request. Every query the request makes through
+`resolveD1Client` or `defineD1Binding`'s client goes through that session, so a request reads its own writes. The session's bookmark returns in the
+header or cookie named in `bookmark`, so the client's next request starts no earlier than the point this one left — read-your-writes across
+requests. **The header carrier holds read-your-writes only for a client that echoes the header; a browser following a 303 sends none, so for
+navigation only the cookie carrier holds it.** A bookmark not in D1's four-hex-group shape is ignored rather than passed to D1. **A bookmark D1
+refuses fails the request, and no query is sent again on another session**, because a write whose outcome is unknown must not run twice. Where every
+query of a resumed read failed, the response returns no bookmark and the cookie carrier clears its cookie, so the client's next read starts on any
+replica. A binding with no `withSession` — a fake, an older runtime — passes through untouched.
 
 **The cookie carrier costs a covered response its shared caching whenever the bookmark moves.** The middleware queues the bookmark for Forge to
 merge rather than rebuilding the response, so a WebSocket `101` keeps its socket. A cookie carries it only when the session's bookmark differs from
@@ -514,7 +513,6 @@ exist before the worker reaches a serving state.
 
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
-[cf-readme]: ../src/tooling/cf/README.md
 [cr-1a]: ../warden/canon/shared/CODE_RULES.md#1a-no-module-level-mutable-variables
 [dm]: ./DATABASE_MANAGEMENT.md
 [dm-4a]: ./DATABASE_MANAGEMENT.md#4a-_forge_migrations--the-migration-history

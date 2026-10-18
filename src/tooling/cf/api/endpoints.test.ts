@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   CF_ERROR_CODES,
   D1_WRITE_PERMISSION,
+  d1Path,
   WORKER_PERMISSION,
   workerSecrets,
   workerSettings,
@@ -47,6 +48,16 @@ describe("workerSecrets", () => {
 
   it("encodes both interpolated segments", () => {
     expect(workerSecrets("a c/1", "my worker")).toBe("/accounts/a%20c%2F1/workers/scripts/my%20worker/secrets");
+  });
+});
+
+describe("d1Path", () => {
+  it("builds the account's D1 database path", () => {
+    expect(d1Path("acc-1")).toBe("/accounts/acc-1/d1/database");
+  });
+
+  it("encodes a slash in the account id, so it cannot open a second path segment", () => {
+    expect(d1Path("acc/../other")).toBe("/accounts/acc%2F..%2Fother/d1/database");
   });
 });
 

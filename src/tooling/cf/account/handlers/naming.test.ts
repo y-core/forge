@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { dnsName, prefixedName, sanitizeName } from "./naming";
+import { dnsName, prefixedName, previewName, sanitizeName } from "./naming";
 
 describe("prefixedName()", () => {
   it("joins the project prefix to the binding", () => {
@@ -14,8 +14,6 @@ describe("prefixedName()", () => {
 
 describe("dnsName()", () => {
   it("lowercases the prefix as well as the binding", () => {
-    // The old rule normalised only the binding, yielding `MY_WORKER-my-bucket` —
-    // neither naming rule, and not a legal bucket name.
     expect(dnsName("MY_WORKER", "MY_BUCKET")).toBe("my-worker-my-bucket");
   });
 
@@ -28,10 +26,22 @@ describe("dnsName()", () => {
   });
 });
 
+describe("previewName()", () => {
+  it("suffixes an explicit database_name, whatever the prefix", () => {
+    expect(previewName({ binding: "DB", database_name: "app-db" }, "APP")).toBe("app-db-preview");
+  });
+
+  it("suffixes the prefixed name when the entry has no database_name, so two Workers binding DB never share one", () => {
+    expect(previewName({ binding: "DB" }, "APP")).toBe("APP_DB-preview");
+  });
+
+  it("suffixes the bare binding when there is no prefix", () => {
+    expect(previewName({ binding: "DB" }, "")).toBe("DB-preview");
+  });
+});
+
 describe("sanitizeName()", () => {
   it("replaces every non-word character, not merely the hyphen", () => {
-    // A project name is not an identifier: `my.app` is legal, and the old rule
-    // replaced only `-`, leaving the dot in the resource name it produced.
     expect(sanitizeName("MY.APP")).toBe("MY_APP");
     expect(sanitizeName("my app")).toBe("my_app");
     expect(sanitizeName("scope/pkg")).toBe("scope_pkg");
@@ -48,7 +58,6 @@ describe("naming a project whose name is not an identifier", () => {
   });
 
   it("produces a legal DNS-shaped name from it", () => {
-    // `my.app-assets` is not a legal bucket name; the dot has to go.
     expect(dnsName("MY.APP", "ASSETS")).toBe("my-app-assets");
   });
 

@@ -42,13 +42,16 @@ describe("refuseRemote()", () => {
       "remote is refused while wrangler.jsonc has no database_id — run `forge cf sync --commit` to provision it, then retry",
     );
     expect(refuseRemote("preview", "")).toBe(
-      "preview is refused while wrangler.jsonc has no preview_database_id — run `forge cf sync --commit` to provision it, then retry",
+      "preview is refused while wrangler.jsonc has no preview_database_id — create it with `wrangler d1 create` and set its id as preview_database_id, then retry",
     );
   });
 
   it("refuses a placeholder id", () => {
     expect(refuseRemote("remote", "auth-fixture-local")).toBe(
       "remote is refused while wrangler.jsonc's database_id is the placeholder auth-fixture-local — run `forge cf sync --commit` to provision it, then retry",
+    );
+    expect(refuseRemote("preview", "app-db-preview")).toBe(
+      "preview is refused while wrangler.jsonc's preview_database_id is the placeholder app-db-preview — create it with `wrangler d1 create` and set its id as preview_database_id, then retry",
     );
   });
 

@@ -50,13 +50,12 @@ export function createProvisionedHandler<TLocal extends { binding: string }>(spe
         }
 
         if (ctx.dryRun) {
-          const detail = [spec.describeCreate?.(entry), stale].filter((part) => part !== undefined).join("; ");
-          results.push({ ...row, remoteName, action: "would-create", remote: false, detail: detail === "" ? undefined : detail });
+          results.push({ ...row, remoteName, action: "would-create", remote: false, detail: stale });
           updated.push(entry);
           continue;
         }
 
-        const createResult = await spec.create(client, ctx.auth.accountId, remoteName, entry, ctx);
+        const createResult = await spec.create(client, ctx.auth.accountId, remoteName, ctx);
         if (!createResult.ok) {
           results.push(...failureRows(spec.type, [{ binding: entry.binding, remoteName }], createResult.error, ctx));
           updated.push(entry);

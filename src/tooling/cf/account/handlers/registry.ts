@@ -28,7 +28,7 @@ import { createVarsHandler } from "./vars";
 export function buildHandlers(opts: HandlerBuildOptions): ResourceHandler[] {
   return [
     kvHandler,
-    createD1Handler(opts.placement?.d1),
+    createD1Handler(),
     r2Handler,
     queuesHandler,
     createLocalVarsHandler(opts.configPath),

@@ -190,7 +190,7 @@ describe("resolveDbConfig()", () => {
 
   it("judges a preview target by preview_database_id, which the local entry does not carry", () => {
     expect(() => resolveDbConfig({ root: appRoot(), config: "wrangler.jsonc", target: "preview" })).toThrow(
-      "preview is refused while wrangler.jsonc has no preview_database_id — run `forge cf sync --commit` to provision it, then retry",
+      "preview is refused while wrangler.jsonc has no preview_database_id — create it with `wrangler d1 create` and set its id as preview_database_id, then retry",
     );
   });
 

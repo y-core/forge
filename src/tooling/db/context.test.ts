@@ -122,7 +122,7 @@ describe("resolveDbContext()", () => {
   it("refuses a target the config cannot serve", async () => {
     const root = appRoot();
     await expect(resolveDbContext(flags({ root, target: "preview" }), undefined, { io: fakeDbIo() })).rejects.toThrow(
-      "preview is refused while wrangler.jsonc has no preview_database_id — run `forge cf sync --commit` to provision it, then retry",
+      "preview is refused while wrangler.jsonc has no preview_database_id — create it with `wrangler d1 create` and set its id as preview_database_id, then retry",
     );
   });
 });

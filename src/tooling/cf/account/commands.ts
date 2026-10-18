@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import process, { env } from "node:process";
 
 import { createCommand } from "../../cli/command";
@@ -10,7 +10,6 @@ import type { CliContext } from "../../cli/types";
 import { PLAIN } from "../../term/color";
 import type { Colorize } from "../../term/types";
 import { loadWranglerConfig, writeWranglerConfig } from "../config/parse";
-import { loadCfHostConfig } from "../host";
 import { renderSections } from "../table";
 import { refusePagesConfig, WORKER_SURFACE } from "../target";
 import type { TableOptions } from "../types";
@@ -438,7 +437,7 @@ async function runSync(flags: LooseFlags, ctx?: CliContext): Promise<void> {
     { auth, dryRun: !commit, prefix: resolvePrefixStrategy(flags), resources, rotate },
     // Rebuilt per invocation so that handlers needing the resolved --config path
     // — secrets, which finds .dev.vars beside it — actually receive it.
-    buildHandlers({ configPath, placement: await loadCfHostConfig(dirname(resolve(configPath))) }),
+    buildHandlers({ configPath }),
   );
 
   const report: JsonReport = {

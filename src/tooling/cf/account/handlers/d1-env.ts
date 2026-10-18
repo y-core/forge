@@ -1,9 +1,10 @@
 import type { Result } from "../../../../result/types";
 import { CliError } from "../../../cli/errors";
 import { createCfClient } from "../../api/client";
+import { d1Path } from "../../api/endpoints";
 import type { CfApiClientError, CfD1Database } from "../../api/types";
 import type { D1DatabaseConfig, SyncResult, WranglerConfig } from "../../types";
-import { d1Path, previewName } from "./d1-placement";
+import { previewName } from "./naming";
 import { failureRows } from "./rows";
 import type { ConfigPass, HandlerContext } from "./types";
 
@@ -90,12 +91,12 @@ function readEnvBlocks(config: WranglerConfig): EnvBlocks | undefined {
   return envs as EnvBlocks;
 }
 
-/** The pass holding every `env.<name>` block's D1 entries to the top level's bindings and to the account, since wrangler gives an environment no binding it does not restate; a top-level preview `config/cf.ts` declares is the placement pass's, not this one's. @internal */
-export function createD1EnvironmentPass(managedPreviews: ReadonlySet<string> = new Set(), listD1: D1Lister = listAccountD1): ConfigPass {
-  return (config, ctx) => reconcileEnvironments(config, ctx, managedPreviews, listD1);
+/** The pass holding every `env.<name>` block's D1 entries to the top level's bindings and to the account, since wrangler gives an environment no binding it does not restate. @internal */
+export function createD1EnvironmentPass(listD1: D1Lister = listAccountD1): ConfigPass {
+  return (config, ctx) => reconcileEnvironments(config, ctx, listD1);
 }
 
-async function reconcileEnvironments(config: WranglerConfig, ctx: HandlerContext, managedPreviews: ReadonlySet<string>, listD1: D1Lister) {
+async function reconcileEnvironments(config: WranglerConfig, ctx: HandlerContext, listD1: D1Lister) {
   const envs = readEnvBlocks(config);
   if (envs === undefined || Object.keys(envs).length === 0) return { config, results: [] };
   const top = config.d1_databases ?? [];
@@ -108,7 +109,6 @@ async function reconcileEnvironments(config: WranglerConfig, ctx: HandlerContext
   const results: SyncResult[] = [];
   // The top level's own ids are the D1 handler's; only its preview ids are held here.
   const topEntries = top.map((entry) => {
-    if (managedPreviews.has(entry.binding)) return entry;
     const resolved = resolveEntry(entry, entry.binding, listed.data, ctx, false);
     results.push(...resolved.rows);
     return resolved.entry;

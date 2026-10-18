@@ -18,7 +18,18 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`config/cf.ts` is no longer read, and `CfHostConfig`, `D1Placement`, `D1Jurisdiction` and `D1LocationHint` are removed** from
+  `@y-core/forge/tooling/cf`. `forge cf sync` creates a D1 database with its name alone, and no longer holds its jurisdiction or read replication
+  or provisions a `<name>-preview` database. **Migration:** delete `config/cf.ts`. Create a database that needs a jurisdiction or a location hint
+  before the first sync, under the name `cf sync` expects (`wrangler d1 create MYAPP_DB --jurisdiction eu`), and `cf sync` adopts it. Turn read
+  replication on in the Cloudflare dashboard, and create a preview database with `wrangler d1 create` and set `preview_database_id` yourself.
+
+### Changed
+
+- **`forge db` refusing a `preview` target with no real `preview_database_id` points at `wrangler d1 create`**, since `forge cf sync` no longer
+  provisions one.
 
 ---
 

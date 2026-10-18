@@ -8,6 +8,9 @@ export const workerSettings = (accountId: string, scriptName: string) =>
 export const workerSecrets = (accountId: string, scriptName: string) =>
   `${acct(accountId)}/workers/scripts/${encodeURIComponent(scriptName)}/secrets`;
 
+/** The account's D1 databases — GET lists them; POST creates one. */
+export const d1Path = (accountId: string) => `${acct(accountId)}/d1/database`;
+
 const zone = (zoneId: string) => `/zones/${encodeURIComponent(zoneId)}`;
 
 /** The phase entry point ruleset for a zone — GET reads the latest version, PUT replaces it. */
@@ -15,7 +18,7 @@ export const zoneRulesetEntrypoint = (zoneId: string, phase: string) => `${zone(
 
 // `http_request_dynamic_redirect` is the first application-layer request phase and runs nine phases
 // ahead of `http_request_firewall_custom`, so a terminating redirect answers before the WAF sees it.
-/** The two zone phases this tool writes. */
+/** The zone phases this tool writes. */
 export const ZONE_PHASES = {
   /** Single Redirects. First application-layer request phase. */
   redirect: "http_request_dynamic_redirect",

@@ -37,11 +37,12 @@ export function isRemotePlace(place: Place): boolean {
 export function refuseRemote(place: Place, databaseId: string | null): string | null {
   if (!isRemotePlace(place)) return null;
   const field = place === "preview" ? "preview_database_id" : "database_id";
-  if (databaseId === null || databaseId === "")
-    return `${place} is refused while wrangler.jsonc has no ${field} — run \`forge cf sync --commit\` to provision it, then retry`;
-  if (!UUID.test(databaseId)) {
-    return `${place} is refused while wrangler.jsonc's ${field} is the placeholder ${databaseId} — run \`forge cf sync --commit\` to provision it, then retry`;
-  }
+  const fix =
+    place === "preview"
+      ? `create it with \`wrangler d1 create\` and set its id as ${field}, then retry`
+      : "run `forge cf sync --commit` to provision it, then retry";
+  if (databaseId === null || databaseId === "") return `${place} is refused while wrangler.jsonc has no ${field} — ${fix}`;
+  if (!UUID.test(databaseId)) return `${place} is refused while wrangler.jsonc's ${field} is the placeholder ${databaseId} — ${fix}`;
   return null;
 }
 

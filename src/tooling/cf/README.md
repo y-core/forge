@@ -98,29 +98,24 @@ A project name is not an identifier, so every character that is not a word chara
 
 ---
 
-## Placing a D1 database
+## Setting up a D1 database
 
-Declare where a database lives in `config/cf.ts`, keyed by its binding. Wrangler has no key for any of this, and warns on one it does not know, so
-it stays out of `wrangler.jsonc`:
+`cf sync` creates a missing D1 database with its name alone. A database that has to live in a jurisdiction, or start near a region, is created with
+`wrangler d1 create` before the first sync, under the name `cf sync` would give it, and `cf sync` then adopts it as its own:
 
-```ts
-// config/cf.ts
-import type { CfHostConfig } from "@y-core/forge/tooling/cf";
-
-export default {
-  d1: { DB: { jurisdiction: "eu", readReplication: "auto", preview: true } },
-} satisfies CfHostConfig;
+```bash
+wrangler d1 create MYAPP_DB --jurisdiction eu   # MYAPP is the project prefix, DB the binding
+forge cf sync --commit                          # matches MYAPP_DB by name and writes its id back
 ```
 
-`cf sync` creates the database with that placement, sending the same body `wrangler d1 create --jurisdiction --location` does. After that, each run
-holds the database to it:
+An entry with an explicit `database_name` is matched by that name instead, so a database created under any name is adopted once `database_name`
+says it. `--location` passes a location hint the same way.
 
-| Declared | When the database differs | On `--commit` |
-| --- | --- | --- |
-| `jurisdiction` (`eu`, `fedramp`, `us`) | `refused` | Nothing. A jurisdiction is set only at creation, so a mismatch needs a new database and a data move |
-| `readReplication` (`auto`, `disabled`) | `drift` | Set with a `PUT`, reported `updated` |
-| `location` (`wnam`, `enam`, `weur`, `eeur`, `apac`, `oc`) | Never compared | Sent at creation only. Cloudflare reports no region to compare against |
-| `preview: true` | A `<name>-preview` database is offered | Created with the same placement, its id written back as `preview_database_id` |
+**A jurisdiction is fixed when the database is created.** Moving an existing database into one means a new database and a data move, which is
+yours to make; `cf sync` neither checks a jurisdiction nor changes one.
+
+**A jurisdiction restricts where the database runs and stores data, not who can reach it.** A Worker anywhere in the world can still query a
+database in `eu`. Under a jurisdiction the location hint is ignored, and replicas stay inside it.
 
 **Each environment restates its D1 entries, because wrangler gives an `env.<name>` block no binding it does not declare itself.** `cf sync` reports
 as `drift` an environment with no `d1_databases`, one missing a binding the top level declares, and an entry whose `database_id` and `database_name`
@@ -128,8 +123,7 @@ name two different databases. Which database an environment should use is yours 
 `--commit` is an id it can resolve without guessing: a missing or stale `database_id` from the entry's own `database_name`, and a stale
 `preview_database_id` from a `<name>-preview` database. An id that resolves to nothing is reported `unavailable`.
 
-**A jurisdiction restricts where the database runs and stores data, not who can reach it.** A Worker anywhere in the world can still query a
-database in `eu`. Under a jurisdiction the location hint is ignored, and replicas stay inside it.
+A preview database is never created for you: create `<name>-preview` with `wrangler d1 create` and set its id as `preview_database_id`.
 
 ---
 

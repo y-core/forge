@@ -196,15 +196,14 @@ describe("cf sync --commit over a JSONC wrangler config", () => {
   });
 });
 
-describe("createD1Handler() with a declared preview and a stale id", () => {
-  it("reports the stale preview once, from the placement pass, not again from the environment pass", async () => {
-    const top = [{ ...TOP, preview_database_id: "db-stale" }];
-    const output = await syncBindings(
-      config({ dev: { d1_databases: [TOP] } }, top),
-      { auth: AUTH, dryRun: true },
-      [createD1Handler({ DB: { preview: true } })],
-      account(),
-    );
-    expect(output.results.filter((row) => (row.detail ?? "").includes("db-stale"))).toHaveLength(1);
+describe("cf sync over a stale top-level preview_database_id", () => {
+  it("a stale top-level preview id is reported once, from the env pass", async () => {
+    const original = config({ dev: { d1_databases: [TOP] } }, [{ ...TOP, preview_database_id: "db-stale" }]);
+    const output = await syncBindings(original, { auth: AUTH, dryRun: true }, [createD1Handler()], account());
+    expect(brief(output.results)).toEqual([
+      ["DB", "in-sync", undefined],
+      ["DB", "drift", "preview_database_id db-stale names no database on this account; app-db-preview is db-preview — --commit writes it back"],
+    ]);
+    expect([output.configChanged, output.updatedConfig]).toEqual([false, original]);
   });
 });

@@ -1,7 +1,7 @@
 import type { Result } from "../../../../result/types";
 import type { CfApiClientError, CfD1Database } from "../../api/types";
 import type { CfClient } from "../../api/types";
-import type { CfAuth, CfHostConfig, ResolvedPrefix, ResourceType, SyncResult, WranglerConfig } from "../../types";
+import type { CfAuth, ResolvedPrefix, ResourceType, SyncResult, WranglerConfig } from "../../types";
 
 export interface HandlerContext {
   auth: CfAuth;
@@ -61,15 +61,13 @@ export interface ProvisionSpec<TLocal extends { binding: string }> {
   displayName: string;
   extract(config: WranglerConfig): TLocal[];
   list(client: CfClient, accountId: string, ctx: HandlerContext): Promise<Result<RemoteResource[], CfApiClientError>>;
-  create(client: CfClient, accountId: string, name: string, entry: TLocal, ctx: HandlerContext): Promise<Result<RemoteResource, CfApiClientError>>;
+  create(client: CfClient, accountId: string, name: string, ctx: HandlerContext): Promise<Result<RemoteResource, CfApiClientError>>;
   naming(prefix: ResolvedPrefix, binding: string): string;
   /** Absent when the resource has no id, so the id-match step and the stale-id note are skipped. */
   localId?(entry: TLocal): string | undefined;
   /** Absent when a config name never overrides the computed one — a KV title is always recomputed. */
   localName?(entry: TLocal): string | undefined;
   writeback(entry: TLocal, remote: RemoteResource, name: string): TLocal;
-  /** What a create would send beyond the name, for the dry run's would-create row. */
-  describeCreate?(entry: TLocal): string | undefined;
 }
 
 /** The account's D1 databases as one sync run has seen them: listed once, with each database the run creates appended. @internal */
@@ -83,8 +81,6 @@ export interface D1Inventory {
 export interface HandlerBuildOptions {
   /** Path to the wrangler config, as given on the command line. Secrets look for `.dev.vars` beside it. */
   configPath: string;
-  /** What `config/cf.ts` declares; each D1 database is created and held to the placement named for its binding. */
-  placement?: CfHostConfig | undefined;
 }
 
 /** Why a rotation was refused: names absent from `.dev.vars`, and names not marked rotatable. */

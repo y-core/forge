@@ -51,10 +51,6 @@ export { renderSections, renderTable } from "./table";
 export { refusePagesConfig } from "./target";
 export type {
   CfAuth,
-  CfHostConfig,
-  D1Jurisdiction,
-  D1LocationHint,
-  D1Placement,
   PrefixStrategy,
   ResourceType,
   SyncAction,

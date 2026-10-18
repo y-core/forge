@@ -129,26 +129,6 @@ export interface D1DatabaseConfig {
   migrations_table?: string;
 }
 
-/** A D1 jurisdiction: set only when the database is created, and never changed afterwards. @public */
-export type D1Jurisdiction = "eu" | "fedramp" | "us";
-
-/** A D1 location hint, which places the primary when the database is created and is ignored under a jurisdiction. @public */
-export type D1LocationHint = "wnam" | "enam" | "weur" | "eeur" | "apac" | "oc";
-
-/** Where one D1 database lives and replicates, declared in `config/cf.ts` under its binding. @public */
-export interface D1Placement {
-  jurisdiction?: D1Jurisdiction;
-  location?: D1LocationHint;
-  readReplication?: "auto" | "disabled";
-  /** Provision a `<name>-preview` database with the same placement, and write its id back as `preview_database_id`. */
-  preview?: boolean;
-}
-
-/** The `config/cf.ts` default export: what `forge cf sync` needs that a wrangler entry has no key for. @public */
-export interface CfHostConfig {
-  d1?: Record<string, D1Placement>;
-}
-
 export interface R2BucketConfig {
   binding: string;
   bucket_name?: string;

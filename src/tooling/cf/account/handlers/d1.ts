@@ -1,11 +1,10 @@
 import { ok } from "../../../../result/result";
 import type { Result } from "../../../../result/types";
 import { createCfClient } from "../../api/client";
-import { D1_WRITE_PERMISSION } from "../../api/endpoints";
+import { D1_WRITE_PERMISSION, d1Path } from "../../api/endpoints";
 import type { CfApiClientError, CfD1Database } from "../../api/types";
-import type { D1DatabaseConfig, D1Placement } from "../../types";
+import type { D1DatabaseConfig } from "../../types";
 import { createD1EnvironmentPass } from "./d1-env";
-import { d1CreateBody, d1Path, describePlacement, reconcileD1Placement } from "./d1-placement";
 import { prefixedName } from "./naming";
 import { createProvisionedHandler } from "./provisioned";
 import type { D1Inventory, HandlerContext, ResourceHandler } from "./types";
@@ -26,8 +25,8 @@ function createD1Inventory(ctx: HandlerContext): D1Inventory {
   };
 }
 
-/** The D1 handler, creating each database with the placement `config/cf.ts` declares for its binding. @internal */
-export function createD1Handler(placement: Readonly<Record<string, D1Placement>> = {}): ResourceHandler<D1DatabaseConfig> {
+/** The D1 handler, sharing one account listing across its reconcile and its environment pass. @internal */
+export function createD1Handler(): ResourceHandler<D1DatabaseConfig> {
   const inventories = new WeakMap<HandlerContext, D1Inventory>();
   const inventoryFor = (ctx: HandlerContext): D1Inventory => {
     const known = inventories.get(ctx);
@@ -44,8 +43,8 @@ export function createD1Handler(placement: Readonly<Record<string, D1Placement>>
       const res = await inventoryFor(ctx).list();
       return res.ok ? { ok: true, data: res.data.map((db) => ({ id: db.uuid, name: db.name })) } : res;
     },
-    create: async (client, accountId, name, entry, ctx) => {
-      const res = await client.post<CfD1Database>(d1Path(accountId), d1CreateBody(name, placement[entry.binding]));
+    create: async (client, accountId, name, ctx) => {
+      const res = await client.post<CfD1Database>(d1Path(accountId), { name });
       inventoryFor(ctx).record(res);
       return res.ok ? { ok: true, data: { id: res.data.uuid, name: res.data.name } } : res;
     },
@@ -53,24 +52,14 @@ export function createD1Handler(placement: Readonly<Record<string, D1Placement>>
     localId: (entry) => entry.database_id,
     localName: (entry) => entry.database_name,
     writeback: (entry, remote, name) => ({ ...entry, database_id: remote.id as string, database_name: name }),
-    describeCreate: (entry) => describePlacement(placement[entry.binding]),
   });
   return {
     ...provisioned,
-    reconcileConfig: createD1EnvironmentPass(
-      new Set(
-        Object.entries(placement)
-          .filter(([, declared]) => declared.preview === true)
-          .map(([binding]) => binding),
-      ),
-      (ctx) => inventoryFor(ctx).list(),
-    ),
+    reconcileConfig: createD1EnvironmentPass((ctx) => inventoryFor(ctx).list()),
     async reconcile(entries, ctx) {
       const base = await provisioned.reconcile(entries, ctx);
-      const inventory = inventoryFor(ctx);
-      const placed = Object.keys(placement).length === 0 ? base : await reconcileD1Placement(base, placement, ctx, inventory);
-      if (ctx.dryRun || entries.length === 0 || inventory.attemptedCreate()) return placed;
-      return { ...placed, notes: [...(placed.notes ?? []), D1_WRITE_UNVERIFIED] };
+      if (ctx.dryRun || entries.length === 0 || inventoryFor(ctx).attemptedCreate()) return base;
+      return { ...base, notes: [...(base.notes ?? []), D1_WRITE_UNVERIFIED] };
     },
   };
 }
