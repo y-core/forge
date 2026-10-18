@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.10] — 2026-10-18
+
 ### Breaking Changes
 
 - **`config/cf.ts` is no longer read, and `CfHostConfig`, `D1Placement`, `D1Jurisdiction` and `D1LocationHint` are removed** from
@@ -6132,6 +6138,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.10]: https://github.com/y-core/forge/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/y-core/forge/compare/v0.5.8...v0.5.9
 [0.5.8]: https://github.com/y-core/forge/compare/v0.5.7...v0.5.8
 [0.5.7]: https://github.com/y-core/forge/compare/v0.5.6...v0.5.7
