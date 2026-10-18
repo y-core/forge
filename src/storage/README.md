@@ -20,8 +20,7 @@ same pair of functions. Reach for it whenever a Worker has to read or write some
 ## Getting started
 
 Declare each binding once at app level, reach a client inside the handler, and branch on `result.ok`. For D1, `defineD1Binding` hands back every
-piece the app mounts — the binding check, the schema-health monitor, the health checks and the client
-([Mounting a D1 database](#mounting-a-d1-database)):
+piece the app mounts ([Mounting a D1 database](#mounting-a-d1-database)):
 
 ```ts
 import { applyMiddlewareChain } from "@y-core/forge/app";
@@ -84,8 +83,8 @@ Because the client accepts a `SqlFragment` and nothing else, a concatenated stri
 brand does and does not cover — notably an identifier such as a column name, which no bind parameter can carry — is [`STORAGE_BINDINGS.md`][sb-1b]
 §1b's. In a generic helper that receives `unknown` and must reject look-alikes, `isSqlFragment(value)` is the runtime guard.
 
-`execute` resolves to `{ rowsWritten, lastRowId? }`, where `rowsWritten` is the number of rows the statement changed, so a single write needs no
-`batch` to learn whether it matched. Every outcome's `meta` also says what D1 billed and where the call ran:
+`rowsWritten` is the number of rows the statement changed, so a single write needs no `batch` to learn whether it matched. Every outcome's `meta`
+also says what D1 billed and where the call ran:
 
 ```ts
 const read = await db.query(sql`SELECT id FROM users WHERE status = ${status}`);
@@ -236,30 +235,23 @@ when JavaScript has to reproduce an `ORDER BY` it did not run.
 Declare the database once. `defineD1Binding` hands back each piece for the seam that mounts it: the binding check, the schema-health monitor, the
 health checks and a client.
 
+The binding check and the monitor mount as [Getting started](#getting-started) shows; the health checks spread into a `healthCheck`:
+
 ```ts
-import { applyMiddlewareChain, healthCheck } from "@y-core/forge/app";
-import { bindingSetSchema } from "@y-core/forge/context";
-import { defineD1Binding, sql } from "@y-core/forge/storage/db";
+import { healthCheck } from "@y-core/forge/app";
 
-const db = defineD1Binding<Bindings>({ name: "DB" });
-
-applyMiddlewareChain(app, { securityHeaders, bindings: bindingSetSchema([db.spec]), globals: [...db.globals] });
 const health = healthCheck<Bindings>({ ...db.health }); // checks `DB` and `DB:schema`; map it to a route like any handler
-
-// Inside a handler:
-const found = await db.client(c).query(sql`SELECT id FROM users`);
 ```
 
-The boot check refuses every request while `DB` is missing or is not a D1 binding. The monitor logs one `d1.schema.health` record per isolate,
-and another each time `recheckMs` has passed (60 s by default). The health route answers 503 while the schema differs from the one
-`forge db migrate` certified, and re-reads it on the same interval, so drift that starts mid-isolate shows up within a minute. Every part reads the
-binding by `name`; pass `client` for the client's options and `logger` for the monitor's. The monitor and the health route share that read, so
-polling the health route adds no D1 reads while the schema matches.
+The boot check refuses every request while `DB` is missing or is not a D1 binding. The monitor logs one `d1.schema.health` record per isolate, and
+another each time `recheckMs` has passed (60 s by default). The health route answers 503 while the schema differs from the one `forge db migrate`
+certified, and re-reads it on the same interval, so drift that starts mid-isolate shows up within one interval. Every part reads the binding by
+`name`; pass `client` for the client's options and `logger` for the monitor's. The monitor and the health route share that read, so polling the
+health route adds no D1 reads while the schema matches.
 
 Which schema states fail the check, what the monitor logs at which level, and why nothing here ever repairs the schema are
-[`STORAGE_BINDINGS.md`][sb-1f] §1f's. The repair is `forge db migrate` on the CLI ([`DATABASE_MANAGEMENT.md`][dm]). `defineD1Binding` is built
-from low-level pieces that are exported too — `validateD1Binding`, `resolveD1Client`, `checkSchemaHealth`, `schemaHealthCheck` and
-`schemaHealthMonitor`.
+[`STORAGE_BINDINGS.md`][sb-1f] §1f's. The repair is `forge db migrate` on the CLI ([`DATABASE_MANAGEMENT.md`][dm]). The low-level pieces
+`defineD1Binding` is built from are exported beside it, for a mount it cannot express.
 
 ---
 
@@ -298,9 +290,8 @@ const tokens = createKVStore<string>(c.env.TOKENS, { codec: textCodec() }); // s
 const blobs = createKVStore<Uint8Array>(c.env.BLOBS, { codec: bytesCodec() }); // Uint8Array here, ArrayBuffer there
 ```
 
-`jsonCodec<T>()` is the default and the answer for records and arrays; `textCodec()` is for a value that is already a string; `bytesCodec()` is for
-bytes that must survive unmodified. Which to pick for a given namespace is [`STORAGE_BINDINGS.md`][sb-2b] §2b's, and it must match the format
-already stored there — a codec is not a migration.
+`jsonCodec<T>()` is the default, for records and arrays. Which to pick for a given namespace is [`STORAGE_BINDINGS.md`][sb-2b] §2b's, and it must
+match the format already stored there — a codec is not a migration.
 
 A custom codec is `{ type, encode, decode }`. Its `type` must name the wire form `decode` expects (`"text"` or `"arrayBuffer"`), because that is
 what the store dispatches the read on.
@@ -326,9 +317,9 @@ return served.ok ? served.data : new Response("Unavailable", { status: 503 });
 A key that starts with `/` or carries a `.` or `..` segment is rejected, and reaches the caller as `{ ok: false, error }` like any other failure —
 so an untrusted key goes to the store, never straight to the backend.
 
-**When `contentType` is omitted, `put` infers it from the key's extension** (`inferContentType`, falling back to `CONTENT_TYPE_DEFAULT`) — **except
-for the extensions a browser would execute**: `html`, `htm`, `svg`, `xml`, `js` and `mjs` all infer `application/octet-stream`, because a key is
-routinely a filename someone else chose. Pass an explicit `contentType` for an asset you trust, and it is used unchanged.
+**When `contentType` is omitted, `put` infers it from the key's extension** — **except for the extensions a browser would execute**
+(`ACTIVE_CONTENT_EXTENSIONS`), which infer `application/octet-stream` because a key is routinely a filename someone else chose
+([`STORAGE_BINDINGS.md`][sb-3b] §3b). Pass an explicit `contentType` for an asset you trust, and it is used unchanged.
 
 **Pass `sha256` to have R2 check the body before it stores it.** Give the digest you expect, as a hex string or as raw bytes; a body that does
 not match is refused, nothing is written, and `put` returns `{ ok: false, error }`:
@@ -344,8 +335,7 @@ This covers a single `put` only. R2's multipart upload accepts no checksum for a
 deliberately stored `image/svg+xml` still cannot have it rendered as a document on its own origin by a direct navigation. The rest of that posture,
 and the statuses and headers `serveObject` produces, are [`STORAGE_BINDINGS.md`][sb-3b] §3b's.
 
-The free `serveObject(backend, request, key, options?)` is the same machinery without the `Result` wrapper — a bare `Response`, already a `200`,
-`206`, `304`, `404` or `416`:
+The free `serveObject(backend, request, key, options?)` is the same machinery without the `Result` wrapper — a bare `Response`:
 
 ```ts
 import { r2Backend, serveObject } from "@y-core/forge/storage/r2";
@@ -373,9 +363,9 @@ if (!verdict.ok) return new Response("Forbidden", { status: 403 }); // log verdi
 return serveObject(r2Backend(c.env.ASSETS), c.request, verdict.data);
 ```
 
-`expiresInSeconds` defaults to `3600` and must be a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME` (seven days), or signing throws.
-A refused link answers `"invalid-format"`, `"expired"`, `"unknown-key"` or `"invalid-signature"`. What the HMAC covers, the order the checks run
-in, and why the refusal reason belongs in your logs rather than in the response are [`STORAGE_BINDINGS.md`][sb-3c] §3c's.
+`expiresInSeconds` defaults to `3600` and must be a whole number of seconds from 1 up to `MAX_SIGNED_URL_LIFETIME`, or signing throws. The
+refusal reasons, what the HMAC covers, the order the checks run in, and why the reason belongs in your logs rather than in the response are
+[`STORAGE_BINDINGS.md`][sb-3c] §3c's.
 
 **Give signed URLs a secret of their own.** Reusing the CSRF secret ties the two rotations together, and a leak of one retires both. The ring
 signs under a `signed-url` subkey, and both functions throw on the auth key ring.
@@ -392,7 +382,7 @@ SIGNED_URL_KEY_RING=9c1e…,ab3f…
 
 Links minted after the deploy carry the new secret's key id; links already handed out keep verifying against the old one.
 
-**Remove the old secret only once `MAX_SIGNED_URL_LIFETIME` (seven days) has passed since the deploy.** No link outlives that, so nothing still
+**Remove the old secret only once `MAX_SIGNED_URL_LIFETIME` has passed since the deploy.** No link outlives that, so nothing still
 valid depends on the old secret. Remove it earlier and every unexpired link it signed answers `"unknown-key"`.
 
 **A leaked secret is removed at once, not after the wait.** Every link it signed dies with it — that is the point, and the price. Re-issue the
@@ -460,8 +450,7 @@ handler reading another prefix. Gate a sensitive read in the handler.
 than an IO counter that also counts index rows.
 
 **Some inputs throw rather than returning a `Result`, because each is a programming error, not a storage failure**: a KV key containing the
-reserved `||` separator, an empty-string `prefix` on `createKVStore` (it would silently mean "no prefix"), and an R2 key with a leading `/` or a
-`.`/`..` segment — the last surfaces through the store's `Result`, since the store catches it for you.
+reserved `||` separator, and an empty-string `prefix` on `createKVStore` (it would silently mean "no prefix").
 
 ---
 

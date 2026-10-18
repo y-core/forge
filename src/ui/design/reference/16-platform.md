@@ -332,7 +332,7 @@ element down, so a transition between two descendants needs it declared above bo
 Default: let a wrapper's children join a `grid` or `flex` parent with `display: contents` rather than leaving an attribute-free `<div>` or `<span>`
 between them — unless the wrapper carries a background, border, radius or transform, every one of which disappears with the box it was painted on.
 <!-- rule:forge-ui-platform-display-contents --> `forge-ui.css` uses it for the theme-icon spans, which are wrappers around a glyph and nothing
-else. Check the accessibility role too: the box took its role with it until recently, and a wrapper that was carrying one is not a candidate.
+else. Check the accessibility role too: older engines drop the box's role with it, so a wrapper that carries one is not a candidate.
 
 ### 3d. Controls
 

@@ -71,26 +71,15 @@ be enumerated is enumerated.
 cost into every consumer bundle and again per render on the SSR path, against a general-purpose Tailwind parser almost none of which forge needs.
 The in-house table is tractable precisely because forge is a fixed set of primitives.
 
-**`cn` memoises, and the cache is cleared whole rather than evicted by age.** The resolver body is the private `resolve(joined)`; `cn` joins its
-arguments, looks the joined string up in a module `Map`, and calls `resolve` only on a miss. `CACHE_LIMIT` is 512, and a full map is **cleared
-entirely**. Measured on one machine, pre- and post-change in a single process, so the pair is internally comparable:
+**`cn` memoises, and the cache is cleared whole rather than evicted by age.** `cn` joins its arguments, looks the joined string up in a module
+`Map`, and resolves only on a miss; a full map is **cleared entirely** (`src/ui/core/utils/cn.ts` owns the limit). A hit costs a small fraction of a
+resolution and a miss costs exactly what an unmemoised call costs, while a page recomputes identical class strings on every request. Isolate
+eviction does not cancel the gain: an isolate serves many requests before it is evicted.
 
-| call | prior | memo |
-| --- | --- | --- |
-| `cn(base)` repeated, 18-token base | 8.04 µs | 0.058 µs |
-| `cn(base, "px-8")` repeated | 10.24 µs | 0.118 µs |
-| `cn(base)`, distinct keys — always a miss | 10.13 µs | 10.48 µs |
-| `cn(base, "px-8")`, distinct keys | 10.42 µs | 10.05 µs |
-
-A hit is 87–138× cheaper and the miss path is unchanged within noise. Across forge's non-test call sites, a page of ~200 elements spent on the order
-of 1.5 ms of Worker CPU in `cn` alone, recomputed identically every request. **This overturns the prior no-cache ruling**, which reasoned that
-Cloudflare evicts isolates often enough that a cold refill is paid rather than amortised: an isolate serves many requests before eviction, and a
-miss costs exactly what an unmemoised call costs.
-
-**Clear-on-full rather than LRU, because an LRU's per-hit bookkeeping is a material fraction of a 0.06–0.12 µs hit.** A whole-map reset is O(1)
-amortised and needs no ordering structure, and 512 comfortably exceeds the distinct class strings one page produces, so a full map is the rare case.
-**The key is the joined string, not the argument list**, so `cn("p-4 p-8")` and `cn("p-4", "p-8")` share one entry — sound, because `resolve` reads
-only the joined string.
+**Clear-on-full rather than LRU, because an LRU's per-hit bookkeeping is a material fraction of a sub-microsecond hit.** A whole-map reset is O(1)
+amortised and needs no ordering structure, and the limit comfortably exceeds the distinct class strings one page produces, so a full map is the rare
+case. **The key is the joined string, not the argument list**, so `cn("p-4 p-8")` and `cn("p-4", "p-8")` share one entry — sound, because resolution
+reads only the joined string.
 
 **Reconciled with [`CODE_RULES.md`][cr-1] §1, not exempted from it.** §1 forbids state that carries across requests _observably_, and nothing but
 `cn` reads this map: no enumeration path, no export, no API reporting whether a string was cached. Stated rather than left to be discovered, because
@@ -159,13 +148,13 @@ reported rather than silently absorbed, and a hand edit to the generated file fa
 resolves — skipped below the `full` tier, failed by a full run ([`TEST_RUNNERS.md`][testing-6] §6).
 
 **The class list is not authoritative for a root's named values.** `getClassList()` enumerates a value scale for `left`, `right` and `inset-s` but
-nothing for `start` and `end` beyond three statics — which is the whole reason `start-*` and `end-*` once failed to merge against each other at all.
-A root the class list leaves with no enumerated named value is therefore asked the design system directly, with `${root}-0` and `${root}-4`, **and
-gains a named group only when both probes agree.**
+nothing for `start` and `end` beyond three statics, so `start-*` and `end-*` would otherwise not merge against each other at all. A root the class
+list leaves with no enumerated named value is therefore asked the design system directly, with `${root}-0` and `${root}-4`, **and gains a named
+group only when both probes agree.**
 
-**The agreement condition is what keeps the probe honest, and it is not optional.** Deriving a named group from the statics instead handed `cursor`
-one, breaking the pinned ruling that `classGroup("cursor-brand")` stays `undefined` so a consumer's bespoke class survives (§1a). A root that
-genuinely takes a scale value answers both probes the same way; a root whose names are keywords compiles nothing for either and is left alone.
+**The agreement condition is what keeps the probe honest, and it is not optional.** Deriving a named group from the statics instead would hand
+`cursor` one, breaking the pinned ruling that `classGroup("cursor-brand")` stays `undefined` so a consumer's bespoke class survives (§1a). A root
+that genuinely takes a scale value answers both probes the same way; a root whose names are keywords compiles nothing for either and is left alone.
 
 **Groups reaching exactly the same properties are a derivation-time throw, not a silent no-edge.** Equal reach is never a legitimate table state,
 and a proper-subset check would emit no edge and leave the ambiguity invisible — surfacing later as `cn` dropping both classes at runtime depending
@@ -212,21 +201,19 @@ caller's `class` is always last under last-wins `cn`, `<Input class="ring-primar
 `aria-invalid` while looking valid; the reverse holds too, `state-busy`'s group subsuming a caller's `cursor-wait`. Neither is a real conflict — a
 recipe painting only under `&[aria-invalid]` cannot contend with one that paints unconditionally. **A state recipe therefore travels as one token of
 the base literal, never as a second `cn` argument**: slot-keyed, it contends with nothing, so its own argument buys no separation. What earns one is
-a base-scope token that does contend — `slider.tsx` and `toggle.tsx` pass `cursor-pointer` alone because `state-busy` paints `cursor: progress`.
+a base-scope token that does contend — `cursor-pointer` takes its own argument because `state-busy` paints `cursor: progress`.
 
-**The paint recipes keep their compiled signature, deliberately.** `border-field`, `field-chrome`, `otp-cells` and `otp-editor` declare their
-whole payload at base scope, so a consumer's later `rounded-lg`, `h-auto` or `w-20` should win — the override [`UI_SSR_COMPONENTS.md`][usc-1c] §1c
-promises. A **paint** recipe would still be wrong as an `@utility`: a pressed toggle's `background-color` is exactly what its resting state sets, so
-a `state-pressed` would delete the `bg-transparent` beside it. **What works there is a shared class const** passed as its own `cn` argument
-(`PRESSED_PAINT`), since each token then keeps its own scope. Every signature and scope is pinned in
-`src/tooling/gate/checks/state-recipes.test.ts`.
+**The paint recipes keep their compiled signature, deliberately.** A recipe such as `field-chrome` declares its whole payload at base scope, so a
+consumer's later `rounded-lg`, `h-auto` or `w-20` should win — the override [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises. A **paint** recipe would
+still be wrong as an `@utility`: a pressed toggle's `background-color` is exactly what its resting state sets, so a `state-pressed` would delete the
+`bg-transparent` beside it. **What works there is a shared class const** passed as its own `cn` argument (`PRESSED_PAINT`), since each token then
+keeps its own scope. Every signature and scope is pinned in `src/tooling/gate/checks/state-recipes.test.ts`.
 
-**`--tone` is a companion mechanism, not an `@utility`.** `toneVariants` in `src/ui/core/utils/tone.ts` sets the per-tone custom properties
-(`--tone`, `--tone-fg`, `--tone-text`, `--tone-soft`, `--tone-soft-fg`, `--tone-soft-border`) and one recipe per appearance reads them, so one
-recipe covers every tone. Each property is its own `cn` conflict group (`arb:--tone`), which is what lets a caller re-tone a component by passing
-`[--tone:…]` after it. Every cell is measured against the 1.4.3 floor in `tone.browser.ts`, and the `warning` tone's text property deliberately
-reads its step-11 rather than its fill because the fill does not clear it — [`THEME_GENERATION.md`][tg-3a] §3a owns the audited pairs behind each
-property.
+**`--tone` is a companion mechanism, not an `@utility`.** `toneVariants` in `src/ui/core/utils/tone.ts` sets the per-tone custom properties and one
+recipe per appearance reads them, so one recipe covers every tone. Each property is its own `cn` conflict group (`arb:--tone`), which is what lets a
+caller re-tone a component by passing `[--tone:…]` after it. Every cell is measured against the 1.4.3 floor in `tone.browser.ts`, and the `warning`
+tone's text property deliberately reads its step-11 rather than its fill because the fill does not clear it — [`THEME_GENERATION.md`][tg-3a] §3a
+owns the audited pairs behind each property.
 
 ### 1f. Which Utility Composes a Class, and In What Order
 
@@ -241,8 +228,8 @@ resolution pass over a settled string, buying the precedence the resolver alread
 
 **`cn` is for combining two or more independent sources** — a base plus a caller's class, a base plus a conditional fragment, a resolver plus a
 non-variant class — **or for resolving conflicts inside one string.** A single-argument `cn` is not a no-op: `cn("p-4 p-8")` returns `"p-8"`, so
-wrapping one string is meaningful wherever it may carry a conflict, which is why `icon.tsx` and `form.tsx` keep theirs (§1b gives the other reason a
-lone `cn` earns its place — it puts a bare const in a class position a sorter can reach).
+wrapping one string is meaningful wherever it may carry a conflict (§1b gives the other reason a lone `cn` earns its place — it puts a bare const
+in a class position a sorter can reach).
 
 **The caller's class is always the last argument**, which is the whole of the caller-wins guarantee [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises:
 `cn` keeps the last utility to claim a conflict group (§1a), and `cva` appends `class` after base, variants and compounds. Placed earlier it loses
@@ -311,8 +298,8 @@ pointed at. An app that means to change what "failed" _looks like_ re-points the
 utility follows the _operating system_ while every forge token follows the _user's choice_ — and the two disagree the moment someone picks a theme
 that is not `system`.
 
-**It reconfigures a consumer's own `dark:` utilities too, and nothing catches that**: forge has no Tailwind dependency, so no gate here ever
-compiles CSS. Stating the takeover is the obligation this section carries — the escape hatch is the cascade, since `@custom-variant` is
+**It reconfigures a consumer's own `dark:` utilities too, and nothing catches that**: no gate checks a consumer's `dark:` utilities against the
+redefined variant. Stating the takeover is the obligation this section carries — the escape hatch is the cascade, since `@custom-variant` is
 last-declaration-wins.
 
 ### 2e. A Consumer Rule Loses by Layer, Not by Selector

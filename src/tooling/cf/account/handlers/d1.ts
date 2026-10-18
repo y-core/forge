@@ -10,7 +10,7 @@ import { prefixedName } from "./naming";
 import { createProvisionedHandler } from "./provisioned";
 import type { D1Inventory, HandlerContext, ResourceHandler } from "./types";
 
-const D1_WRITE_UNVERIFIED = `D1 write access is unverified — a token without ${D1_WRITE_PERMISSION} fails the first forge db migrate or deploy`;
+const D1_WRITE_UNVERIFIED = `D1 write access is unverified — a token without ${D1_WRITE_PERMISSION} fails the first forge db migrate --target remote`;
 
 function createD1Inventory(ctx: HandlerContext): D1Inventory {
   let listing: Promise<Result<CfD1Database[], CfApiClientError>> | undefined;

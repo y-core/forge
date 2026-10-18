@@ -117,24 +117,6 @@ describe("forge db standby reset --no-lint", () => {
   });
 });
 
-describe("forge db deploy", () => {
-  it("rejects --allow-warnings as a flag it does not have, before wrangler is run", async () => {
-    const io = fakeDbIo();
-    const cli = await runDb(io, ["deploy", "--root", appRoot(), "--yes", "--allow-warnings"]);
-    expect(cli.code).toBe(1);
-    expect(cli.err.join("\n")).toContain("Unknown flag: --allow-warnings.");
-    expect(io.calls).toEqual([]);
-  });
-
-  it("rejects --contract as a flag it does not have, before wrangler is run", async () => {
-    const io = fakeDbIo();
-    const cli = await runDb(io, ["deploy", "--root", appRoot(), "--contract"]);
-    expect(cli.code).toBe(1);
-    expect(cli.err.join("\n")).toContain("Unknown flag: --contract.");
-    expect(io.calls).toEqual([]);
-  });
-});
-
 describe("forge db bookmark info", () => {
   it("prints the bookmark and the restore command as one JSON line on stdout", async () => {
     const io = timeTravelIo();
@@ -241,12 +223,12 @@ describe("forge db bookmark restore", () => {
 describe("the README's script table", () => {
   const table = readFileSync(join(import.meta.dir, "README.md"), "utf-8")
     .split("\n")
-    .filter((line) => /^\| `(dev|db:[^`]+)` \|/.test(line));
+    .filter((line) => /^\| `(dev|deploy|db:[^`]+)` \|/.test(line));
   const commands = table.map((line) => (/^\| `[^`]+` \| `([^`]+)`/.exec(line)?.[1] ?? "").split("&&")[0]?.trim() ?? "");
 
   it("lists the lifecycle every app runs: the dev hook, status, lint, both migrates, deploy, backup, restore and reset", () => {
     const scripts = table.map((line) => /^\| `([^`]+)`/.exec(line)?.[1]);
-    for (const script of ["dev", "db:status", "db:lint", "db:migrate", "db:migrate:remote", "db:deploy", "db:backup", "db:restore", "db:reset"]) {
+    for (const script of ["dev", "db:status", "db:lint", "db:migrate", "db:migrate:remote", "deploy", "db:backup", "db:restore", "db:reset"]) {
       expect(scripts).toContain(script);
     }
   });

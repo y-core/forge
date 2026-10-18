@@ -1,7 +1,6 @@
 ---
-title: Curating a Demonstrator
-description: "Copies a working tree into a fresh directory keeping the features you name and what they require, or dropping them and what requires them, and gates every skeleton a profile names."
-audience: internal
+title: Curating a Demonstrator description: "Copies a working tree into a fresh directory keeping the features you name and what they require, or
+dropping them and what requires them, and gates every skeleton a profile names." audience: internal
 ---
 
 # `@y-core/forge/tooling/curate`
@@ -38,9 +37,8 @@ export default defineFeatures({
 });
 ```
 
-A feature's `directories` are removed whole, with or without a trailing `/`. Its `seams` are the files holding its markers. The manifest is the
-whole of forge's understanding of your features: forge knows nothing about what a feature means, only which directories, files, scripts and seams it
-names.
+A feature's `directories` are removed whole, with or without a trailing `/`. Its `seams` are the files holding its markers. Forge knows nothing
+about what a feature means beyond what the manifest names.
 
 A file that must stay where a tool reads it, outside every feature's directory, goes in the feature's `files` and is left out whole. Scripts in
 `package.json`, which takes no marker, go in `scripts` by name:
@@ -144,8 +142,8 @@ forge curate out --config config/lite.ts         # a manifest other than the def
 | `--config <path>` | Manifest module, relative to the root (default: `features.ts` in `config/`) |
 | `--root <path>` | The working tree to copy (default: the working directory) |
 
-The report lists the files copied, the features kept and dropped, each feature the graph `added` and why, the directories and owned files
-removed, the scripts removed from `package.json`, the lines each seam lost, the regenerations run, and whether the manifest was left out.
+The report accounts for every removal — each feature the graph `added` and why, each directory, owned file and script removed, and the lines each
+seam lost.
 
 The copy is what git sees: tracked and untracked files, minus anything `.gitignore` excludes and anything deleted from disk. `node_modules` is
 never copied. The manifest is copied unless every feature is dropped. Every other byte of a copied file is kept, its final newline included, so a
@@ -158,7 +156,6 @@ features you drop, so the combination nobody ran is as sound as the one somebody
 
 - `--keep` and `--drop` are both given, even empty; `--list` is given with a target, `--keep` or `--drop`; or neither a target nor `--list` is
 - `--keep` or `--drop` names a feature the manifest does not
-- a feature requires a feature the manifest does not name, requires itself, or features require one another
 - a kept feature regenerates by removing a path that names nothing in the working tree, or the root has no `node_modules` to run it with
 - a directory in the manifest holds no file in the working tree
 - a seam holds no marker for its feature
@@ -167,8 +164,8 @@ features you drop, so the combination nobody ran is as sound as the one somebody
   that does not require the owner
 - a feature names scripts and the working tree holds no `package.json`, names a script `package.json` does not define, or has its scripts removed
   from a `package.json` that does not hold one script per line
-- a marker is malformed, names an unknown feature, or sits in a file that is not one of that feature's seams
-- a region nests inside another, is never closed, is closed without being opened, or closes with features its begin did not name
+- a marker is malformed, a region is never closed or is closed without being opened, or a marker, region or requirement breaks a rule stated in
+  [Marking the lines a feature owns](#marking-the-lines-a-feature-owns) or [Declaring what a feature requires](#declaring-what-a-feature-requires)
 - a file to copy or edit lies beneath a symbolic link to a directory, which a stale git index lists — the write would land outside the target
 - the working tree holds a nested repository or a submodule
 - the target is a file or already holds something
@@ -188,8 +185,7 @@ forge curate ../contact-only --keep contact  # keeps contact and email, which it
 forge curate ../bare --keep ""               # keeps nothing: every feature is dropped and the manifest left out
 ```
 
-`--keep` and `--drop` cannot be combined. Where a new feature is added to the manifest later, a `--keep` command drops it without being edited,
-and a `--drop` command keeps it.
+Where a new feature is added to the manifest later, a `--keep` command drops it without being edited, and a `--drop` command keeps it.
 
 ---
 

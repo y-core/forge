@@ -1,7 +1,6 @@
 ---
-title: The CLI Toolkit
-description: "Typed, hierarchical commands with declared flags, plus the process, PATH, JSONC-editing and scoped-logging primitives forge's own scripts run on."
-audience: internal
+title: The CLI Toolkit description: "Typed, hierarchical commands with declared flags, plus the process, PATH, JSONC-editing and scoped-logging
+primitives forge's own scripts run on." audience: internal
 ---
 
 # `@y-core/forge/tooling/cli`
@@ -19,8 +18,7 @@ import { addCommand, createCommand, execute, requireTools, run, scopeLogger } fr
 > **Node.js / Bun only.** `execute` reads `node:process`, and the process primitives use `node:child_process`, `node:fs` and `node:path`. **Do not
 > import this namespace into a Cloudflare Worker or a client bundle.**
 
-> The decisions behind the surface are [`BUILD_TOOLING.md`][bt] §1's: commands as values (§1a), the typed flag record and why number parsing is
-> absent (§1b), the kind-not-exit-code error contract (§1c), and why `CommandBase` and `Command` stay two interfaces (§1d).
+> The decisions behind the surface are [`BUILD_TOOLING.md`][bt] §1's.
 
 ---
 
@@ -104,9 +102,8 @@ On the command line, the forms the parser accepts:
 flag is refused with the nearest known name offered; an unknown short flag is refused without a guess, because with one-letter names every other
 short is one edit away.
 
-`parseArgs(argv, flagDefs)` and `collectFlags(command)` are published for driving the parser directly — `collectFlags` is what merges a command's
-own flags with its ancestors' persistent ones, and `tokenize(argv)` is the classification pass beneath both, for a tool that wants tokens rather
-than a resolved record.
+To drive the parser without `execute`, call `parseArgs` with a command's `collectFlags` — its own flags merged with its ancestors' persistent ones —
+or `tokenize` for tokens rather than a resolved record.
 
 ---
 
@@ -136,8 +133,8 @@ code** — every failure is exit 1, and a user-facing message never carries a st
 | `missing-command` | A leaf command has no handler, or a word matched no sub-command. |
 | `external` | A command this tool ran — `wrangler`, say — failed, or answered in a shape it cannot read. |
 
-The first four are thrown by the framework itself; `external` is yours. Any non-`CliError` throw still reaches stderr as `Error: <message>` and
-still exits 1, so a thrown `Error` from a spawned tool is never silently swallowed.
+The framework throws every kind but `external`, which is yours. Any non-`CliError` throw still reaches stderr as `Error: <message>` and still exits
+1, so a thrown `Error` from a spawned tool is never silently swallowed.
 
 ---
 
@@ -237,9 +234,8 @@ const consumerRoot = resolveAppRoot();
 const forgeRoot = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url)), ".."));
 ```
 
-**Nothing here walks the disk looking for a marker file** — a root is stated or derived, never discovered ([`BUILD_TOOLING.md`][bt-2h] §2h).
-`installedAppRoot()` is the derivation on its own, returning `undefined` instead of throwing, and `findAppRoot(modulePath)` is the pure string split
-beneath both.
+**Nothing here walks the disk looking for a marker file** — a root is stated or derived, never discovered ([`BUILD_TOOLING.md`][bt-2h] §2h). Call
+`installedAppRoot()` instead when an uninstalled forge should yield `undefined` rather than throw.
 
 ---
 
@@ -282,8 +278,8 @@ const io: CliIO = {
 await execute(root, ["wasm", "--profile", "dev"], io);
 ```
 
-`exit` is typed `never`, so throwing from it is how a test observes a failure path without ending the run. For the layers beneath, `parseArgs`,
-`collectFlags`, `tokenize`, `formatHelp` and `suggest` are all pure and assertable on their own.
+`exit` is typed `never`, so throwing from it is how a test observes a failure path without ending the run. The parser and help functions beneath
+`execute` are pure, so a test can assert on them directly.
 
 ---
 
@@ -311,7 +307,7 @@ the file header names the upstream, and [`@y-core/forge/tooling/term`][term-read
 
 ## See also
 
-- [`BUILD_TOOLING.md`][bt] §1 — the decisions behind this surface, and §2h for where a root comes from.
+- [`BUILD_TOOLING.md`][bt-2h] §2h — where a root comes from.
 - [`@y-core/forge/tooling/term`][term-readme] — the terminal primitives help text and colour are rendered with.
 - [`@y-core/forge/tooling/gate`][gate-readme] — the verification gate built on this framework.
 - [`@y-core/forge/result`][result-readme] — the `Result` shape the JSONC functions return.

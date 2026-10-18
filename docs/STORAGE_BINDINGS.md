@@ -82,8 +82,7 @@ const rows = await db.query(sql`SELECT * FROM users WHERE id = ${userId}`);
 
 `isSqlFragment(value)` is the type guard for generic helpers that must reject raw strings. It is a **provenance** check, not a structural one:
 `SqlFragment` carries a `unique symbol` brand that only `sql` sets and that `mod.ts` does not re-export, so a hand-built `{text, params}` literal —
-notably anything `JSON.parse` returns — is rejected and gets bound as a parameter rather than spliced into the statement text. Duck-typing this
-guard was a SQL-injection path.
+notably anything `JSON.parse` returns — is rejected and gets bound as a parameter rather than spliced into the statement text.
 
 **The brand cannot see the one shape that still needs judgement: an identifier carried as text.** A bind parameter is a _value_ position, so
 interpolating a column into `ORDER BY ${column}` yields `ORDER BY ?`, which does not name a column at all — and calling the tag directly
@@ -153,8 +152,7 @@ rules `forge db migrate status --check` applies, and reports the state. The repo
 | `unrecorded` | The table is there with no rows, **or** its last row's `fingerprint` is `NULL` — applied, never certified |
 | `match` / `mismatch` | A fingerprint is certified, and it is or is not the schema as it now stands |
 
-**Which table the history lives in is not configurable**: `checkSchemaHealth(db)`, `schemaHealthCheck(binding, { recheckMs?, now? })` and
-`schemaHealthMonitor({ binding, logger?, recheckMs?, now? })` take how often to read, never where. There is no `DEFAULT_MIGRATIONS_TABLE` constant.
+**Which table the history lives in is not configurable**: the health surfaces take how often to read, never where.
 
 **The read is defined only against a `_forge_migrations` table.** A Worker pointed at a database forge has not migrated on a matching version reads
 `unavailable` on every request — a loud but truthful report, since the fingerprint it would compare against does not exist. The fix is a
@@ -339,8 +337,6 @@ an API — and answers `416` with `bytes */<size>`, or `bytes */*` when the head
 object, so it is a `416` with **no** backend call, while an oversized last-byte-pos or suffix **clamps** to the whole object. What must never happen
 is a non-safe number reaching `R2GetOptions`, which R2 answers with a `TypeError` — a 500 for what is a client's malformed header.
 
-`ServeOptions` accepts `cacheControl` and `contentDisposition` (`"inline" | "attachment"`).
-
 **With no `contentDisposition` option, the object's stored `Content-Disposition` is used** — but only when it is printable ASCII. A stored value
 carrying a non-Latin-1 byte is dropped rather than set, for the same reason the ASCII fallback exists: `Headers.set` throws on it, turning a
 legitimate download into a 500.
@@ -376,9 +372,8 @@ What that settles:
   caller reads that as `{ ok: false, error }` — not as a bare `400` with a `null` body.
 - **A backend fault is named.** A bucket outage reaches the caller as its `Error`, so it is distinguishable from a bug in forge.
 
-**No `logger` option is added.** §3a's rule stands: `ObjectStoreOptions` is `{ prefix? }`, and a store reports a fault by returning it. This is what
-[`FORGE_ERRORS.md`][eh-5e] §5e already required of every other operation — resolving a binding throws, operating on a resolved store returns
-`Result`.
+§3a's rule stands for the bound method too — no `logger` option; a store reports a fault by returning it, as [`FORGE_ERRORS.md`][eh-5e] §5e
+requires of every operation: resolving a binding throws, operating on a resolved store returns `Result`.
 
 ### 3c. Signed URLs for Secure Object Access
 
@@ -471,7 +466,7 @@ already do at runtime (§5a). A security-critical binding is never declared opti
 
 Each storage namespace publishes _neutral_ interfaces (`R2Bucket`, `KVNamespace`, `D1Database`) so consumers do not couple to
 `@cloudflare/workers-types`. But pinning a binding selector to the exact neutral type conflates what the resolver **accepts** (the platform binding
-off `c.env.X`) with what the adapter **exposes**, which forced an `as unknown as R2Bucket` cast at every R2 call site.
+off `c.env.X`) with what the adapter **exposes**, and would force an `as unknown as R2Bucket` cast at every R2 call site.
 
 **The fix is a structural contract typed to exactly the consumed surface, paired with a generic resolver constrained to it.** Each namespace
 publishes one — `D1DatabaseLike`, `KVNamespaceLike`, `R2BucketLike` and R2's object and list satellites — and each resolver is generic in its

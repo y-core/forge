@@ -62,9 +62,8 @@ See [`ERROR_HANDLING.md`][eh-1b] §1b for the guard shape, the early-return rule
 
 ### 1c. `GuardResult` and `ValidationResult` Domain Aliases
 
-Both are plain aliases of §1a. The discriminant stays `ok`; the failure channel stays `error`.
-`ValidationResult<T>` narrows `E` to a readonly string list, `GuardResult<R>` narrows the success type to `void`; both are declared in
-`src/result/mod.ts`, and `ValidationResult` is re-exported from `@y-core/forge/validation`.
+Both are plain aliases of §1a, declared in `src/result/mod.ts`. The discriminant stays `ok`; the failure channel stays `error`.
+`ValidationResult` is re-exported from `@y-core/forge/validation`.
 
 **`ValidationResult<T>` carries the per-field message list in `error`.** A flat list of already-formatted messages (`"Email is required"`). Do not
 collapse the issues into a single `Error` — the list feeds `renderValidationErrors` (§2c) so every failing field surfaces at once.
@@ -101,7 +100,7 @@ Renders the flat message list as a `<ul>`. Pass the `error` list from a `Validat
 
 ### 2d. Fragment Options and Escaping
 
-`FragmentOptions` controls presentation only — `class`, `successAttr`, `ulClass`.
+`FragmentOptions` controls presentation only.
 
 **Every option _class_ value is HTML-escaped before interpolation**, so a hostile class string cannot break out of the attribute.
 
@@ -145,10 +144,9 @@ Test assertions against rendered HTML must match the encoded form — [`TEST_RUN
 
 ### 3d. Who Answers in What — Guards in Plain Text, Handlers in Markup
 
-**A guard refuses in plain text; a handler refuses in a fragment or a page.** Every transport guard answers with a bare string body — `Forbidden`
-(403) from `crossOriginProtection`, `originProtection` and `originGuard`, `Too many requests. Please try again later.` (429) and
-`Service unavailable` (503) from `rateLimit`, `Unsupported Media Type` (415) from the content-type guard. The handler tiers answer in markup: a
-fragment renderer (§2) for `defineAction`, a full page for `definePage` and the boundary (§5b).
+**A guard refuses in plain text; a handler refuses in a fragment or a page.** Every transport guard under `src/security/` answers with a bare
+string body — `Forbidden` for a 403, and the status's own phrase or a short sentence for the rest. The handler tiers answer in markup: a fragment
+renderer (§2) for `defineAction`, a full page for `definePage` and the boundary (§5b).
 
 **Why: a guard has no page context.** It runs before any handler, so it knows neither the shell nor the route's render mode, and it must be equally
 correct in front of an API route and an HTML one. Rendering a document there would be a guess.
@@ -212,9 +210,9 @@ The paths carry different header guarantees, and one entry below is not an error
   ([`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e) — so a consumer's queued policy set-overwrites the baseline on each.
 
 **Both error pages quote the request id when there is one to quote.** The default page and `createErrorPage` render a short `Reference: <id>` line
-from `requestIdCtx`, escaped — the opaque internal identifier canon §3b permits, and what a user can paste into a support ticket. **Neither
-generates one:** without the `requestId` middleware there is no id, and the line is omitted. On the out-of-chain path no middleware ran, so a throw
-before `requestId` carries neither the line nor the header.
+from `requestIdCtx`, escaped — the opaque internal identifier [`ERROR_HANDLING.md`][eh-3b] §3b permits, and what a user can paste into a support
+ticket. **Neither generates one:** without the `requestId` middleware there is no id, and the line is omitted. On the out-of-chain path no
+middleware ran, so a throw before `requestId` carries neither the line nor the header.
 
 - **Cancellation** (the client disconnected before the handler finished) — **not an error.** `@remix-run/fetch-router` races every handler against
   `request.signal` and rejects with the signal's reason, which reaches the boundary like any throw. The boundary checks `request.signal.aborted`
@@ -309,6 +307,7 @@ parameter and never supply their own (`passkeyTtlSeconds(operation, requested)`)
 [boundaries-5]: ../warden/canon/libs/BOUNDARIES.md#5-fail-closed
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [eh-1b]: ../warden/canon/libs/ERROR_HANDLING.md#1b-narrowing-a-result
+[eh-3b]: ../warden/canon/libs/ERROR_HANDLING.md#3b-what-a-client-never-receives
 [eh-5a]: ../warden/canon/libs/ERROR_HANDLING.md#5a-expected-errors--return-result
 [eh-5c]: ../warden/canon/libs/ERROR_HANDLING.md#5c-infrastructure-errors--log-and-fail-closed
 [iv]: ./INPUT_VALIDATION.md

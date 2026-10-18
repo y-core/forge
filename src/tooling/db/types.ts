@@ -202,6 +202,12 @@ export interface StatusRow {
   readonly appliedAt: string | null;
 }
 
+/** The entry's wrangler history table, and the migrations it records that forge never applied. @internal */
+export interface WranglerHistory {
+  readonly table: string;
+  readonly unapplied: readonly string[];
+}
+
 /** What `db migrate status` measured, from which the exit code is derived. @internal */
 export interface StatusReport {
   readonly target: string;
@@ -211,6 +217,7 @@ export interface StatusReport {
   readonly checksums: { readonly mismatched: readonly string[] };
   readonly drift: readonly string[];
   readonly fingerprint: { readonly recorded: string | null; readonly actual: string; readonly matches: boolean };
+  readonly wranglerHistory: WranglerHistory;
 }
 
 /** One seed file: the directory it was declared under and its name are its identity, its hash is what decides whether it re-runs. @public */
@@ -415,21 +422,6 @@ export interface Bookmark {
   readonly bookmark: string;
   /** The command that restores the database to this point. */
   readonly restoreCommand: string;
-}
-
-/** Options for `runDeploy`: `checkOnly` stops after the checks, applying and deploying nothing. @public */
-export interface DeployOptions {
-  readonly checkOnly: boolean;
-}
-
-/** What a deploy did: the migrations it found pending and applied, the undo it captured, and whether `wrangler deploy` ran. @public */
-export interface DeployOutcome {
-  readonly target: string;
-  readonly database: string;
-  readonly pending: readonly string[];
-  readonly applied: readonly string[];
-  readonly bookmark?: Bookmark;
-  readonly deployed: boolean;
 }
 
 /** What a verb runs with: the resolved config and home, the I/O port, and how to print. @public */

@@ -87,12 +87,11 @@ chain expands into middleware**: a consumer who spreads `group.guards` alone mou
 **`origin` is required, and omitting it throws.** `createAuthGuards` refuses to return at all once any group it is wiring answers a state-changing
 method with no allowlist behind it — the throw names the group, and it happens inside `app.use(…)`, which is isolate startup on a Worker. Forge
 cannot pick your origins and an absent allowlist is not an opt-out, so the alternative would be mounting the sign-in, sign-up and sign-out POSTs
-with no cross-origin defence at all and telling nobody. (`["admin"]` declares no guards and has no direct leaves of its own — only nested groups,
-which register their own stacks — so it is never emitted, and never reaches this check.)
+with no cross-origin defence at all and telling nobody. `admin` never reaches this check, because it is never emitted (§2).
 
 **`rateLimit` is keyed by the group's own dotted path** — the `path.join(".")` of each `AUTH_ROUTE_GROUPS` entry. Forge picks no numbers and ships
-no binding, since a window right for the sign-in POST is wrong for the admin console. A group nothing is named for is emitted as before, and a
-guard-less group named for one is emitted for the limit alone. Do not instead match the returned array by path and mutate it: that is the second
+no binding, since a window right for the sign-in POST is wrong for the admin console. A group nothing is named for gets no limit, and a guard-less
+group named for one is emitted for the limit alone. Do not instead match the returned array by path and mutate it: that is the second
 copy of the group table this design exists to prevent.
 
 **`Forge` builds its dispatching router once, lazily, on the first request**, so an `app.use` after that request is silently ignored — everything
@@ -129,14 +128,14 @@ clears the mark a step-up writes. **`auth.enrol` carries a page per enrollable k
 it actually owes and `require-enrolment` refuses the `account` group while that enrolment is outstanding.
 
 **`account.passkeyCeremony` is the settled user's passkey enrolment, nested under `account` for its JSON medium alone.** A nested group inherits
-nothing from its parent, so it names all three `account` guards again, and its POSTs get the origin check like every mutating leaf. Its
+nothing from its parent, so it names every `account` guard again, and its POSTs get the origin check like every mutating leaf. Its
 rate-limit key is `account.passkeyCeremony`, apart from `account`'s, so a limit set for the account pages does not reach the ceremony. Where its
 `require-fresh-step-up` refusal sits in the flow is [`AUTH_FLOWS.md`][af-3a] §3a.
 
 **`require-fresh-step-up` gates only what changes something, and it is on unless you turn it off.** Every `POST`, `PATCH` or `DELETE` in a group
 that carries it needs a step-up inside the window — what stands between a long-lived session and stripping the second factor, removing a passkey,
 moving the address, or changing somebody's role. A `GET` is always admitted: reading the page that offers an action is not the action. Omit
-`freshStepUpMaxAgeMs` and the window is `AUTH_FRESH_STEP_UP_MS`, fifteen minutes; pass `null`, which is the only opt-out, and the guard demands
+`freshStepUpMaxAgeMs` and the window is `AUTH_FRESH_STEP_UP_MS`; pass `null`, which is the only opt-out, and the guard demands
 nothing.
 
 **It asks per user, so a deployment with no second factor is not locked out of its own admin pages.** The guard resolves the same offered factors
@@ -162,18 +161,18 @@ Every item here is a seam with a contract and no implementation, and each is req
 | An `AuthDeferral` — `executionCtx.waitUntil` in a Worker | Both signup and sign-in return before the credential is issued. Doing the work inline reopens the timing oracle the decoy exists to close. |
 | The email-change **confirm route** | Forge mounts no route that calls `AuthEmailChangeFlow.confirm`; see [`AUTH_FLOWS.md`][af-5] §5. |
 | A D1 binding and the applied auth schema | Every auth store — the durable ones and the ephemeral ceremony pair, challenges and one-shot nonces. The package publishes `src/auth/schema.sql` and no SQL that runs: the app names that file by path in its own `forge db` host config, composes it into a migration of its own with `forge db migrate compose`, then applies it with `forge db migrate`. How that database is migrated, backed up and seeded is [`DATABASE_MANAGEMENT.md`][dm]. |
-| A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row; KV did not. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
+| A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row until something deletes it. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
 | A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
 | A key ring | Hex root secrets, newest first, each held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
 | An `Approval` passed to `createAuthGuards` as `approval`, and mounted with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` send an anonymous visitor to sign-in and answer a signed-in one with **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
-| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which now throws. |
+| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which throws. |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | With `AuthWebOptions.turnstile` set: `import "@y-core/forge/ui/client/htmx"` and `import "@y-core/forge/ui/core/client"` before `resume()`, and a CSP that admits Cloudflare's challenge | Without both imports nothing mounts the widget or holds the press, so no token reaches the server and every guarded form is refused (§8). The CSP takes either `NONCE` with `'strict-dynamic'` in `scriptSrc`, or `TURNSTILE_CSP` there, and `TURNSTILE_CSP` in `frameSrc` and `connectSrc` either way — [`src/security/README.md`][security-readme] section “Widening the policy for a third-party origin”. Where Trusted Types are enforced, the `trusted-types` directive lists `TURNSTILE_TRUSTED_TYPES_POLICY` beside `HTMX_TRUSTED_TYPES_POLICY` ([`SECURITY_HARDENING.md`][sh-2g] §2g). |
 | An `@source` line covering the installed package's `src/auth/` directory | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The exact directive is in [`src/auth/README.md`][auth-readme]. |
-| A `ForgeIcon<AuthIconName>` covering every name in that union | The views draw from **your** sprite, not a bundled one — forge's own ships `chevron-right` and nothing else, so the rest have to come from somewhere else. Build it with `createIcon`, documented at [`src/ui/README.md`][ui-readme] section “Icons”. Lucide covers the whole union, but names one glyph differently: its file is `triangle-alert.svg`, so map it to `alert` when you assemble the sprite. |
+| A `ForgeIcon<AuthIconName>` covering every name in that union | The views draw from **your** sprite, not a bundled one. Build it with `createIcon`, documented at [`src/ui/README.md`][ui-readme] section “Bind the icon sprite once”. Lucide covers the whole union, but names one glyph differently: its file is `triangle-alert.svg`, so map it to `alert` when you assemble the sprite. |
 
 **`AuthIconName` owns its own membership.** The type in `src/auth/web/types.ts` is the machine-checked source and the register names it
 ([`SOURCE_OF_TRUTH.md`][sot-2d] §2d); read the union there rather than any prose, here or in [`src/auth/README.md`][auth-readme] — a second copy of
@@ -207,10 +206,9 @@ them. Every test fixture that builds an env or a config **object literal** stops
 but because a literal must now name fields it did not before. Expect to touch every such fixture in one pass. Building fixtures through a factory
 with defaults rather than as bare literals is what makes the next binding cost one line instead of one edit per fixture.
 
-**Every signed-in visitor signs in again within seven days.** `AUTH_SESSION_MAX_MS` is an absolute lifetime measured from the moment the session was
+**Every signed-in visitor signs in again within `AUTH_SESSION_MAX_MS`.** It is an absolute lifetime measured from the moment the session was
 established, not a window activity extends: a session an attacker took is otherwise one they can keep alive forever. A session carrying no
-established-at stamp — one issued before this field existed — is over rather than unbounded, so the mount that adds this signs its live population
-out once.
+established-at stamp is over rather than unbounded.
 
 **A stylesheet rebuild.** The `@source` line in §3 changes what Tailwind scans, so your CSS build depends on the installed package's contents as
 well as on your lockfile.

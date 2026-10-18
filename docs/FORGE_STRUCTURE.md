@@ -21,7 +21,7 @@ audience: internal
 - §3 Runtime-Only Library Constraints: what shipping raw TS requires
 - §3a No Build Step in the Gate: the library is always consumed as source
 - §3b TypeScript Configuration Constraints: what source and test files see
-- §3c Peer Dependencies for Build Tools: esbuild and sharp are optional, and a peer-only subpath may import its peer statically
+- §3c Peer Dependencies for Build Tools: the build tools are optional, and a peer-only subpath may import its peer statically
 - §3d CSS Source Scanning Stops at `ui/`: what a consumer's Tailwind build must be told
 - §4 Facade Pattern Implementation: how a facade namespace is written
 - §4a Re-export Rules for Facade Namespaces: expose what consumers need
@@ -66,7 +66,7 @@ reach `bun:test` through a hand-written stub instead of a package — [`TEST_RUN
 
 ### 3c. Peer Dependencies for Build Tools
 
-`esbuild`, `harfbuzzjs`, `sharp` and `tailwindcss` are **optional peer dependencies** for the `tooling/assets` pipeline. None is in the main
+The packages the `tooling/assets` pipeline needs are **optional peer dependencies** (`package.json`'s `peerDependenciesMeta`). None is in the main
 dependency tree — only apps that build assets need them, and none is ever imported by runtime source, so none reaches a Worker bundle.
 
 **An optional peer is reached lazily or it is not optional.** `src/tooling/assets/peers.ts` is the one door: `peer()` dynamic-imports the module
@@ -118,7 +118,7 @@ When a namespace wraps a third-party package:
 - **Never re-export the entire third-party namespace.**
 - **Name exports by forge convention**, not the third party's naming quirks.
 
-`src/validation/mod.ts` exposes exactly two symbols — `v` and the `ValidationResult` type — never the raw valibot surface.
+`src/validation/mod.ts` reaches valibot only through `v`, beside forge's own helpers — never as the raw valibot surface spread across the barrel.
 
 These facades are deliberately **thin pass-throughs**:
 
@@ -226,8 +226,8 @@ and it accepts the inline specifier this rule exists to forbid. The lint plugin 
 **A module that exists only for tests carries `.fixture` before its extension** — `coverage.fixture.ts`, `dom.fixture.ts`. The suffix is the
 whole convention: a reader knows from the name that nothing a consumer imports reaches it, and the tarball excludes the class rather than the file.
 
-**The `files` array names the class, never a path.** Its negations are `*.test.ts`, `*.test.tsx`, `*.browser.ts`, `*.browser.tsx`, `*.fixture.ts`
-and `*.fixture.tsx`, plus `src/tooling/dev/` — the tree of commands for developing forge itself, which a consumer has no use for. A per-file
+**The `files` array names the class, never a path.** Its negations are suffix classes, plus `src/tooling/dev/` — the tree of commands for
+developing forge itself, which a consumer has no use for. A per-file
 exclusion is what the convention exists to make unnecessary: the list stops growing, and nothing has to be remembered when a fixture is added.
 
 **A fixture is not a place to put production code.** It is reached by tests and by nothing else, so a helper the library itself needs belongs in a

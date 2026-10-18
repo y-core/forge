@@ -84,8 +84,8 @@ rather than hidden:** the correction lands when the app's client entry runs, so 
 which the disclosure shows what the server rendered.
 
 **The theme preference is held per document, not per scope.** A navbar toggle beside a settings toggle is a legitimate composition, and each scope
-hydrating its own preference left the other advancing from a stale value. Disposing one toggle therefore leaves the painting running for any other
-still live in the same document.
+hydrating its own preference would leave the other advancing from a stale value. Disposing one toggle therefore leaves the painting running for any
+other still live in the same document.
 
 **`isDark` is a stable binding over the live documents, not a slot**, so it can be captured before `resume()` runs and still report the truth
 afterwards, and it reads `false` once no document holds a theme scope. A single slot fails both ways — a second document silently takes the export
@@ -125,8 +125,8 @@ Its deliberate behaviours:
   collide with `ui/client`'s `lazy()`, which means an IntersectionObserver. **It never calls `turnstile.ready()`**, which throws under an async
   load.
 - **The post-render focus guard is armed unconditionally; the restore acts only on a focus the reader held.** Turnstile steals focus a beat after
-  `render` returns, by which time an eagerly rendered page's reader has clicked the first field — so arming on a held focus alone left that page
-  undefended, while a restore needs somewhere to restore _to_. A `focusout` from inside the container is ignored, so tabbing between fields is
+  `render` returns, by which time an eagerly rendered page's reader has clicked the first field — so arming on a held focus alone would leave that
+  page undefended, while a restore needs somewhere to restore _to_. A `focusout` from inside the container is ignored, so tabbing between fields is
   unaffected. **The accepted hazard is a click-yank** within `TURNSTILE_FOCUS_GUARD_MS`: from the event, a steal and a deliberate click are the same
   thing, and the steal is far commoner.
 - **The injected script carries the page's own CSP nonce**, copied from an already-nonced `<script>` and read off the **property**, because the
@@ -145,7 +145,7 @@ Its deliberate behaviours:
   structural because the answered URL cannot bear it**: a redirect leaves `responseURL` naming a URL the form never declared.
 - **Self-healing token, with expiry and timeout left to Cloudflare.** The token resets whenever one of the form's own requests ends — a success, an
   error status or a network failure; the form clears only on a 2xx. No `expired-callback` or `timeout-callback` is wired — `refresh-expired` and
-  `refresh-timeout` both default to `auto`, so a `reset()` of forge's own was redundant at best and a second challenge at worst.
+  `refresh-timeout` both default to `auto`, so a `reset()` of forge's own would be redundant at best and a second challenge at worst.
 - **Fails visible, and the message comes back down.** Two message slots, each overridable by prop: the general one (`children`) and an `unsupported`
   sibling for the one cause the general text misleads on — a browser Turnstile cannot run, where "disable your ad blocker" is advice the visitor
   cannot act on. **Those slots, and not one per cause**, because the text is the app's and the controller cannot invent English of its own. `retry`
@@ -325,10 +325,9 @@ The regions are not `aria-atomic`, so an addition is read alone and a message st
 out of a browse-mode reader's path.
 
 **An app message uses a channel of its own, never one forge speaks on.** Sharing one would let the app's `announce()` cancel or replace forge's
-message. `ui`'s channels are the `ANNOUNCE_*_CHANNEL` constants in `src/ui/contracts/announcer-contract.ts`; the passkey ceremony in
-`auth/client` speaks on one of its own. **The toast channel is the one that never
-drops a message**: a later toast joins the pending ones instead of replacing them, so two toasts from separate swaps inside one settle are both
-spoken.
+message. `ui`'s channels are the `ANNOUNCE_*_CHANNEL` constants in `src/ui/contracts/announcer-contract.ts`; the passkey ceremony in `auth/client`
+speaks on one of its own. **The toast channel is the one that never drops a message**: a later toast joins the pending ones instead of replacing
+them, so two toasts from separate swaps inside one settle are both spoken.
 
 **The busy channel exists for its cancel.** The htmx entry sends it empty text when a request ends, so a request answered inside the settle is
 never announced: the reader hears the spinner's label only for a wait long enough to notice. **The cancel rides `htmx:after:request` and
@@ -413,8 +412,8 @@ document — a lazily-resumed scope belongs to no call's set and would otherwise
 
 **One scope's `setup` cannot take the page down.** A throw from an eager `setup` is reported against the scope's name and the loop continues, so
 later scopes still resume and a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_ on malformed `data-state`
-rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` produced a scope whose every signal
-was missing.
+rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` would produce a scope whose every
+signal is missing.
 
 **A removal is not a resume, so the htmx entry sweeps after every swap.** Detached scopes are otherwise swept only as something else resumes, so a
 swap that removes scoped markup and introduces none never reaches the sweep — and a retained scope keeps its document-level listeners alive. That
@@ -425,10 +424,10 @@ subtree inside a swapped container carries none.
 **`disposeScopesIn` is for an app's own removals.** It disposes the scope at an element and every scope below it before the app detaches them — a
 removal htmx did not make raises no swap event, so nothing else would dispose those scopes until the next resume.
 
-**The delegated event vocabulary is `click`, `input`, `change`, `submit`. There is no `keydown`, by decision.** Composite controllers own `keydown`
-at their **own widget root**, where arrow keys and typeahead belong: a page-level keydown delegation would have to decide, for every keystroke,
-which of several live widgets it was meant for — a question the widget's own root answers by construction. The vocabulary is declared once and
-shared by the runtime's listeners and the server's emitted `data-on-*` attributes, so adding an event changes every attribute the server writes.
+**The delegated event vocabulary, `src/ui/contracts/scope-events.ts`, carries no `keydown`, by decision.** Composite controllers own `keydown` at
+their **own widget root**, where arrow keys and typeahead belong: a page-level keydown delegation would have to decide, for every keystroke, which
+of several live widgets it was meant for — a question the widget's own root answers by construction. The vocabulary is declared once and shared by
+the runtime's listeners and the server's emitted `data-on-*` attributes, so adding an event changes every attribute the server writes.
 
 **One further delegated listener bridges native Invoker Commands, and it is not another entry in that vocabulary.** It routes **only custom
 commands** — those whose name begins with `--` — and leaves the platform's built-ins entirely to the platform, which is what the markup-only menu of

@@ -13,13 +13,6 @@ a generated module that maps each logical name to the path it was actually writt
 Cloudflare Worker or a client bundle — the two request-time lookups the generated module calls live in [`@y-core/forge/assets`][assets-readme],
 which imports no Node built-in at all.
 
-```bash
-forge assets build              # every stage, and write .forge/assets.ts
-forge assets build --minify     # production: minified, content-hashed, immutable _headers
-forge assets build css          # one stage alone
-forge assets gen types          # the generated module from config alone — no toolchain, no network
-```
-
 The architecture, the stage order and the artifact contract are [`ASSET_PIPELINE.md`][ap-1]'s; this file teaches the use.
 
 ---
@@ -58,21 +51,9 @@ checkout.
 
 ## Declaring what to build
 
-Every top-level block is optional, and each one you add is a stage the build runs. A malformed config fails at the command, not at the stage that
-reads it.
-
-| Block | Add it when you want |
-| --- | --- |
-| `css` | A Tailwind CLI build per entry |
-| `js.bundles` | esbuild bundles, compiled with `@y-core/forge/render/jsx` as the JSX source |
-| `js.serviceWorker` | A service worker at `/sw.js`, with the app shell to precache and a version to name its cache by |
-| `sprites` | SVG sheets, plus a typed icon component per group |
-| `icons` | Favicon, PWA icons and a web-app manifest rasterised from one master SVG |
-| `fonts.downloads` | Remote fonts fetched into the public directory and cached on disk |
-| `copy` | Static files copied verbatim |
-| `rasters` | SVG-to-PNG output for a surface that cannot render a vector |
-| `cursors` | CSS `cursor` values baked per theme |
-| `site` | `robots.txt` and `sitemap.xml`, rendered from a [`@y-core/forge/site`][site-readme] config |
+Every top-level block is optional, and each one you add is a stage the build runs; `AssetsConfigSchema` in `src/tooling/assets/types.ts` is the
+whole shape. A malformed config fails at the command, not at the stage that reads it. The `site` block renders `robots.txt` and `sitemap.xml` from a
+[`@y-core/forge/site`][site-readme] config.
 
 Choices worth making deliberately:
 
@@ -193,30 +174,15 @@ decides between them, and declaring `conditions` replaces esbuild's default `mod
 ## Running the build
 
 ```bash
-forge assets build            # everything, and write .forge/assets.ts
-forge assets build --minify   # production: minified, content-hashed, immutable _headers
+forge assets build              # every stage, and write .forge/assets.ts
+forge assets build --minify     # production: minified, content-hashed, immutable _headers
+forge assets build css          # one stage alone
+forge assets sprites            # the sprite sheets alone — a sibling of build, not a stage under it
+forge assets gen types          # the generated module from config alone — no toolchain, no network
 ```
 
-| Command | Builds |
-| --- | --- |
-| `forge assets build` | The full pipeline and the generated module — identical to `build all` |
-| `forge assets build all` | The same run, named explicitly |
-| `forge assets build css` | Tailwind CSS only |
-| `forge assets build js` | esbuild bundles only |
-| `forge assets build fonts` | Font downloads only |
-| `forge assets build icons` | Favicon and PWA icons only |
-| `forge assets build rasters` | Configured SVG-to-PNG rasters only |
-| `forge assets sprites` | SVG sprite sheets only |
-| `forge assets gen types` | Nothing — derives the generated module from config alone |
-
-| Flag | Type | Accepted by | Effect |
-| --- | --- | --- | --- |
-| `--minify` | boolean | `build`, `build all`, `build css`, `build js`, `sprites` | Minify output; on `build`, `build all` and `sprites` it also turns on content-hashed filenames |
-| `--config` | string | every command | Path to the config module, relative to the resolved root (default `assets.config.ts`) |
-| `--root` | string | every command | Application root; also read from `FORGE_APP_ROOT`, else derived from forge's install path |
-| `--out` | string | `build`, `build all`, `gen types` | Where to write the generated module (default `.forge/assets.ts`) |
-
-`--help` works at every level, e.g. `forge assets build --help`.
+`--help` at any level lists the stages and the flags each one takes. `--root` falls back to `FORGE_APP_ROOT`, then to the root derived from forge's
+install path.
 
 **Hashing is what `--minify` really switches.** Without it every emitted file keeps its logical name, the manifest maps each key to itself, and the
 `_headers` rule is `no-cache`. With it each file gets an 8-character stem — `styles.abc12345.css` — and the rule becomes immutable. Use it for
@@ -316,8 +282,8 @@ A font download pins its bytes the same way, under the same rules:
 fonts: { downloads: [{ url: "https://fonts.example.com/inter.woff2", to: "fonts/inter.woff2", sha256: "06df…c9b3" }] }
 ```
 
-Each source SVG is normalised on the way in, so an icon set authored at mixed origins still lines up: a non-zero `viewBox` origin is recentred, and
-root presentation attributes (`fill`, `stroke`, `stroke-width`, `stroke-linecap`, `stroke-linejoin`) move to a wrapping `<g>` a child can override.
+Each source SVG is normalised on the way in, so an icon set authored at mixed origins still lines up, and a root presentation attribute such as
+`fill` or `stroke` becomes one a child can override.
 
 ### Choosing which SVGs to trust
 
@@ -481,12 +447,13 @@ to `process.env`, so a caller states what the build may see.
 or raster `from`, and a local sprite or cursor source are resolved against `root`, so a build run from a subdirectory reads the tree `--root` names
 rather than its own working directory; an already-absolute path — what `forgeUiSpriteSources()` returns — and a remote sprite source are left alone.
 
-Each stage is also exported on its own — `buildCSS`, `buildJS`, `buildServiceWorker`, `buildSprites`, `buildIcons`, `buildFonts`, `buildRasters`,
-`buildSite`, `copyAssets` — and each takes its own slice of the config plus an output directory rather than the whole config
+Each stage is also exported on its own, taking its own slice of the config rather than the whole config
 ([`ASSET_PIPELINE.md`][ap-2a] §2a). `createAssetsCommands` returns the `forge assets` subtree, for registering inside a CLI of your own.
 
 For a watch loop, `hashFile` plus `loadState`/`hasChanged`/`markBuilt`/`saveState` track per-file hashes against a state file **you** name. Nothing
 in the pipeline calls them and forge writes no build state of its own ([`ASSET_PIPELINE.md`][ap-2b] §2b).
+
+---
 
 ## Serving assets without the Worker
 
@@ -551,7 +518,7 @@ build rather than trusted because a file of that name is already cached.
 - [`@y-core/forge/assets`][assets-readme] — the two request-time lookups the generated module calls, and the only asset code a Worker may import
 - [`@y-core/forge/tooling/cli`][cli-readme] — the command framework `createAssetsCommands` builds on
 - [`src/ui/README.md`][ui-readme] — `forgeUiSpriteSources`, `buildCursors` and the rest of the compute half this namespace orchestrates
-- [`ASSET_PIPELINE.md`][ap-1] §1, §2 and §4 — the config contract, the pipeline and its change detection, and the generated module's ordered stages
+- [`ASSET_PIPELINE.md`][ap-1] §1, §2 and §4 — the rulings behind the config, the pipeline and the generated module
 
 [ap-1]: ../../../docs/ASSET_PIPELINE.md#1-assets-config
 [ap-2a]: ../../../docs/ASSET_PIPELINE.md#2a-build-functions--orchestration

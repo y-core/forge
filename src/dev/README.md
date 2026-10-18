@@ -79,8 +79,8 @@ anywhere else satisfies it — minting one means importing `devAllowance`, which
 **This namespace holds no development behaviour** — a token and an option shape, and nothing else. Each relaxation lives in the namespace owning
 its concern (`security`, `app`, `form`) ([`NAMESPACES.md`][namespaces-5i] §5i).
 
-**It is not the only dev-only subpath.** `@y-core/forge/testing` and `@y-core/forge/tooling/*` are declared dev-only beside it, and the same check
-forbids the same import.
+**It is not the only dev-only subpath.** The others are declared beside it in `package.json`'s `forge.devOnly`, and the same check forbids the same
+import.
 
 **It is not a substitute for a deliberate production opt-out.** Where a relaxation is legitimate in production it stays an explicit literal a grep
 finds, in the idiom `csrfProtection({ subject: false })` uses ([`INPUT_VALIDATION.md`][iv-3a] §3a). The token is for the ones that are not.

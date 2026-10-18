@@ -91,8 +91,8 @@ call site or the build fails.
 
 ### 1f. Hit Target and Reduced Motion
 
-**Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target --> `sm` is the floor of the size scale (`sm` /
-`md` / `lg`), which `shape` squares off rather than resizes. A control does not shrink below it to make a layout fit; the layout gives way.
+**Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target --> `sm` is the floor of the size scale, which
+`shape` squares off rather than resizes. A control does not shrink below it to make a layout fit; the layout gives way.
 
 **Honour `prefers-reduced-motion` on every authored motion.** <!-- rule:forge-ui-reduced-motion --> Applies to `motion-safe:` / `motion-reduce:`
 classes and to every declarative state transition — `starting:`, `open:`, `not-open:`, `transition-discrete` — alike.
@@ -132,11 +132,9 @@ level other than the compound's default.
 ### 2a. Colour Tokens, Never Literals
 
 **Never write a raw color literal in a `class`.** <!-- rule:forge-ui-color-token-only --> No `#hex`, no `rgb()`, no `hsl()`, no `oklch()`. Use the
-semantic tokens — `--background` `--foreground` `--card` `--card-foreground` `--popover` `--popover-foreground` `--primary` `--primary-foreground`
-`--secondary` `--secondary-foreground` `--muted` `--muted-foreground` `--accent` `--accent-foreground` `--destructive` `--destructive-foreground`
-`--success` `--success-foreground` `--warning` `--warning-foreground` `--border` `--input` `--track` `--ring` — plus the `--status-*` roles, each
-intent (`danger`, `warning`, `success`, `info`) crossed with each role (`-subtle`, `-subtle-foreground`, `-strong`, `-strong-foreground`,
-`-border`), which is how a status surface gets a fixed hue without a fixed value.
+semantic tokens `theme-base.css` declares — `--background`, `--card`, `--primary`, `--muted`, `--border`, `--ring` and the rest, each surface with
+its `*-foreground` partner — plus the `--status-*` roles, each intent crossed with a `-subtle`, `-strong` or `-border` role, which is how a status
+surface gets a fixed hue without a fixed value.
 
 Each of them resolves through a numbered step of the scale — `--gray-1` … `--gray-12`, their alpha siblings, and the fixed status hues — and each
 step holds one literal value covering both modes, declared by `theme-neutral.css` (or whichever scheme file is imported after it) and, for the hues,
@@ -185,14 +183,10 @@ the inner regions with `Separator`, or promote them to siblings of the outer `Ca
 
 ### 2e. Foreground Pairing
 
-**Use every background token with its paired `*-foreground`.** <!-- rule:forge-ui-foreground-pairing --> `bg-card`/`text-card-foreground`,
-`bg-primary`/`text-primary-foreground`, `bg-muted`/`text-muted-foreground`, `bg-popover`/`text-popover-foreground`,
-`bg-accent`/`text-accent-foreground`, `bg-secondary`/`text-secondary-foreground`, `bg-success`/`text-success-foreground`,
-`bg-warning`/`text-warning-foreground`, `bg-destructive`/`text-destructive-foreground`,
-`bg-status-danger-subtle`/`text-status-danger-subtle-foreground`, `bg-status-danger-strong`/`text-status-danger-strong-foreground` and the same two
-pairs for the `warning`, `success` and `info` intents. Never `text-white/70` on a colored surface — an opacity guess is how a pairing quietly drops
-under `forge-ui-contrast-floor`. `--destructive` reads three ways — as text, as a border, and as a fill — and only the fill needs the partner;
-`text-destructive` and `border-destructive` stand alone.
+**Use every background token with its paired `*-foreground`.** <!-- rule:forge-ui-foreground-pairing --> `bg-card` with `text-card-foreground`,
+`bg-status-danger-subtle` with `text-status-danger-subtle-foreground`, and so on for every surface token and every status tier. Never
+`text-white/70` on a colored surface — an opacity guess is how a pairing quietly drops under `forge-ui-contrast-floor`. `--destructive` reads three
+ways — as text, as a border, and as a fill — and only the fill needs the partner; `text-destructive` and `border-destructive` stand alone.
 
 Pair within a tier, never across one: a `-strong` surface takes the `-strong-foreground`, and each of those pairs is measured on its own surface.
 `Alert`, `Toast` and `Badge` already hold the right pair inside each tone, so passing a `tone` is the shorter route to the same thing.
@@ -220,7 +214,3 @@ const AppIcon = createIcon("/assets/icons.svg");
 
 **Never invent data.** <!-- rule:forge-ui-no-fabricated-data --> No metrics, no testimonials, no placeholder identities — not "John Doe", not "Acme
 Inc", not "+312%". Render the real value, or render the empty state that `forge-ui-empty-state` requires.
-
----
-
-Defaults and the catalogue of AI tells live in `tells.md` and `reference/`; the countable self-audit lives in `preflight.md`.

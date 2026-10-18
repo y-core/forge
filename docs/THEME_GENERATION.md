@@ -37,7 +37,7 @@ audience: consumer
 - §4 A Status Hue Holds Its Fill: the accent ramp's shape applied to the status intents
 - §4a One Value Cannot Be Both a Fill and Text: the defect the hold fixes, and what flips instead
 - §4b Three Tokens Per Intent: the naming that follows, and the rows the audit gains
-- §4c Success Unifies on Emerald: one hue per intent, and the steps that retire
+- §4c Success Unifies on Emerald: one hue per intent
 
 ---
 
@@ -52,7 +52,7 @@ That is the argument [`STATE_ATTRIBUTES.md`][sa-1] §1 makes for state attribute
 rather than by re-declaring it.
 
 **Nothing in this document enumerates a dial, a pair, or a ramp.** The declaring modules named in the blockquote above are authoritative over any
-prose here, and they are registered as such in [`AGENT_GUIDE.md`][ag-8] §8.
+prose here; [`SOURCE_OF_TRUTH.md`][sot-2d] §2d registers the dial contract and the contrast pairs and exemptions among them.
 
 ### 1a. The Dial Declaration and Its Units
 
@@ -95,11 +95,10 @@ source of truth:
 
 ### 1d. Shape Tokens Are Not a Scheme
 
-**Shape lives in `theme-base.css`, and a scheme file never declares it.** The shape tokens — `--radius`, `--radius-field`, `--radius-box`,
-`--radius-selector`, `--control-h-sm`, `--control-h-md`, `--control-h-lg`, `--border-width` and `--elevation` — are declared once beside the
-semantic colour mapping, and every component reads them through the bridged utilities (`rounded-field`, `rounded-box`, `rounded-selector`,
-`h-control-*`, `border-field`) rather than through a raw Tailwind size. `rounded-sm` through `rounded-xl` are bridged to `--radius` too; bare
-`rounded`, `rounded-xs` and `rounded-2xl` are not, and a unit test refuses any of them in a `ui` source.
+**Shape lives in `theme-base.css`, and a scheme file never declares it.** The shape tokens — the radii, the control heights, `--border-width` and
+`--elevation` — are declared once beside the semantic colour mapping, and every component reads them through the bridged utilities (`rounded-field`,
+`h-control-*`, `border-field` and their kin) rather than through a raw Tailwind size. `rounded-sm` through `rounded-xl` are bridged to `--radius`
+too; bare `rounded`, `rounded-xs` and `rounded-2xl` are not, and a unit test refuses any of them in a `ui` source.
 
 **`--elevation` multiplies every length in the `--shadow-*` scale**, so `:root { --elevation: 0 }` in a shape file paints no elevation at all
 and `1` is the default geometry. The scale itself stays in `@theme inline`, where a `:root` copy would never reach a utility; the multiplier is
@@ -118,12 +117,10 @@ application's own shape file follows the same shape: one `:root` block, those to
 [`UI_CLASS_COMPOSITION.md`][ucc-2f] §2f names as overloaded between colour and width, so the width recipe is declared as a static utility in
 `forge-ui.css` where `cn` reads its compiled signature unambiguously.
 
-**The shape dials in `DIALS` drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is one custom property, with no
-scale behind it. `radius` writes `--radius`, `radiusField` writes `--radius-field`, `radiusBox` writes `--radius-box`, and `controlH` writes
-`--control-h-md` with `--control-h-sm` and `--control-h-lg` 8px either side of it. Every dialled property but `--radius` is named by
-`SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector`, `--border-width` and `--elevation` are not dialled: a pill is a pill at
-every radius, a hairline that moves with a slider is a different decision from a corner that does, and elevation is a look a shape file
-chooses rather than a quantity a generated theme derives.
+**The shape dials in `DIALS` drive these tokens directly**, as `--radius` is (§2c): a dial whose whole output is a custom property, with no scale
+behind it. Every dialled property but `--radius` is named by `SHAPE_PROPERTIES` and valued by `shapeVars`. `--radius-selector`, `--border-width` and
+`--elevation` are not dialled: a pill is a pill at every radius, a hairline that moves with a slider is a different decision from a corner that
+does, and elevation is a look a shape file chooses rather than a quantity a generated theme derives.
 
 ---
 
@@ -143,8 +140,8 @@ in, because that is the colour a reader is actually shown. Deriving one from the
 
 ### 2b. The OKLab Conversion Has One Home, Two Gamut Policies
 
-**`src/ui/contracts/theme/color.ts` owns the arithmetic** — the twelve-coefficient `oklabToLinearSrgb` and the `srgbGamma` transfer function, both
-`@public`. `src/ui/assets/build/color.ts` and the gate's `cli/pkg/gate/checks/color.ts` import them; a third copy is where the three would drift
+**`src/ui/contracts/theme/color.ts` owns the arithmetic** — `oklabToLinearSrgb` and the `srgbGamma` transfer function, both `@public`.
+`src/ui/assets/build/color.ts` and the gate's `src/tooling/gate/checks/color.ts` import them; a third copy is where the three would drift
 apart while every test kept passing.
 
 **The direction is forced, not chosen.** `ui/contracts/theme` is a LEAF namespace, and LEAF constrains _outgoing_ edges only — so it may be imported
@@ -155,8 +152,8 @@ a route or anything that would give the subpath an outgoing edge.
 **Both gamut policies exist, and only one of them is a policy of its own.** Reducing chroma at constant lightness and hue, as CSS Color 4 specifies,
 is what any emitted coordinate needs, so it lives once in `toSrgbGamut` beside the arithmetic; `ui/assets/build`'s `oklchToSrgb` composes over it
 and converts the mapped coordinate rather than restating the bisection. The gate's `oklchToPaintedHex` **clips per channel**, because a browser
-clips and a conformance measurement must match what is painted — that is the one genuinely separate policy. `color.test.ts` pins both: the two agree
-to twelve decimals on the conversion, and `oklchToPaintedHex(0.505, 0.213, 27.518)` is asserted to be `#c10007` and explicitly _not_ the
+clips and a conformance measurement must match what is painted — that is the one genuinely separate policy. `src/tooling/gate/checks/color.test.ts`
+pins both: the two agree on the conversion, and `oklchToPaintedHex(0.505, 0.213, 27.518)` is asserted to be `#c10007` and explicitly _not_ the
 chroma-reduced `#bf000f`.
 
 ### 2c. Emission Contract
@@ -193,7 +190,7 @@ are declared beside it.
 
 **The gate consumes that list rather than restating it.** `config/steps.ts` imports the pairs, the criteria and the exemptions and hands them to the
 contrast step, which resolves each token through the stylesheets and measures it. What the check asserts, in what order, with what message, is the
-check's own — [`AGENT_GUIDE.md`][ag-8] §8 names the files, and this section names no assertion.
+check's own — [`SOURCE_OF_TRUTH.md`][sot-2b] §2b names the files, and this section names no assertion.
 
 **A gate that measured nothing is a failure rather than a pass**: an empty pair list is refused, so deleting the audit cannot be mistaken for
 satisfying it.
@@ -221,8 +218,8 @@ everywhere except at the boundary that matters.
 **A side names the family it is a step of, and may name a step per mode.** Both families are generated, so a side resolves as
 `theme[family][mode].solid[sideStep(side, mode)]` and nothing else reads `.step`. The per-mode form exists for exactly one side —
 `--accent-contrast`, which is `--gray-1` in light and `--gray-12` in dark — and that asymmetry is why dark carries less headroom than light at any
-given step 9. `ACCENT_RAMP.dark.lightness[8]` is 0.5075 rather than the light ramp's 0.52, and `--accent-9` is the one accent step the shipped
-scheme declares per mode.
+given step 9. `ACCENT_RAMP.dark.lightness[8]` sits just below the light ramp's, and `--accent-9` is the one accent step the shipped scheme declares
+per mode.
 
 **Only the pairs whose two sides are both steps of a generated scale can be measured live**, and that boundary is in the data rather than in a
 comment: a pair resolving through a fixed token has no generated value to measure, because `buildTheme` generates scales and not the semantic layer
@@ -236,7 +233,7 @@ value on first paint and the value after a drag can never disagree in format.
 
 **The audit measures `--ring` against `--muted`**, which is the surface an untoned control's focus ring is read against. `focus-ring` draws the ring
 _inside_ the element ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e), so on a solid fill the ring is read against that fill instead — and the gray step
-does not clear it: **`--ring` measures 1.03 against `--primary` in light.**
+does not clear it: **`--ring` against `--primary` in light is far below any floor.**
 
 **The remedy is per-appearance rather than a second audited row.** Every appearance recipe in `src/ui/core/utils/tone.ts` names its own
 `--focus-ring` — `--tone-fg` on the solid fill, `--ring` on the appearances that paint none — so none inherits a solid ancestor's choice. No row is
@@ -251,8 +248,8 @@ is a per-appearance token rather than a step the audit can name.
 palette step in both modes, and the near-white that clears them is written `light-dark(var(--gray-1), var(--gray-12))` — the same shape
 `--accent-contrast` already has.
 
-**The accent ramp is the precedent, not a new idea.** `--accent-9` is effectively held — `ACCENT_RAMP.dark.lightness[8]` is 0.5075 against light's
-0.52, a contrast nudge rather than an inversion (§3c) — while `--accent-11` flips, and `--accent-contrast` is near-white in both modes because the
+**The accent ramp is the precedent, not a new idea.** `--accent-9` is effectively held — `ACCENT_RAMP.dark.lightness[8]` differs from light's by a
+contrast nudge rather than an inversion (§3c) — while `--accent-11` flips, and `--accent-contrast` is near-white in both modes because the
 gray ramp's first step in light and last in dark are both near-white.
 
 A per-mode nudge on a held fill is allowed; an inversion is not. A held value is chosen by running the contrast step and taking the step that clears
@@ -284,12 +281,13 @@ every status side is fixed — so the contrast step is the sole detector of a re
 
 ### 4c. Success Unifies on Emerald
 
-Success is one hue: the emerald ramp carries the subtle, strong and border steps alongside the fill and its contrast step, and `--green-9` and
-`--green-contrast` are retired.
+Success is one hue: the emerald ramp carries the subtle, strong and border steps alongside the fill and its contrast step, and no green step
+serves a status.
 
-[ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [sa-1]: ./STATE_ATTRIBUTES.md#1-state-attribute-contract
+[sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
+[sot-2d]: ./SOURCE_OF_TRUTH.md#2d-ui-contracts-and-data-tables
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
 [ucc-2]: ./UI_CLASS_COMPOSITION.md#2-colour-scheme-declaration-contract
 [ucc-2a]: ./UI_CLASS_COMPOSITION.md#2a-oklch-solids

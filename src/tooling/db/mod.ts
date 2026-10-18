@@ -1,7 +1,6 @@
 export { timeTravelInfo, timeTravelRestore } from "./bookmark";
 export { createDbCommands } from "./commands";
 export { confirmPrinter, resolveDbContext, withDbRun } from "./context";
-export { runDeploy } from "./deploy";
 export { forgeSchema } from "./declared";
 export type {
   ApplyPlan,
@@ -12,8 +11,6 @@ export type {
   DbConfig,
   DbContextOverrides,
   DbHostConfig,
-  DeployOptions,
-  DeployOutcome,
   ForgeSchemaName,
   DbIo,
   DbRunContext,

@@ -10,11 +10,8 @@ Source-distributed UI primitives for forge apps. Every component is a thin wrapp
 prop pass-through, and explicit composition.
 
 Which component to reach for, and what good looks like once it is composed, is the design corpus's question — see
-[`@y-core/forge/ui/design/*.md`](#y-coreforgeuidesignmd). The SSR-vs-client split, the island pattern, field binding and the colour-scheme contract
-are rulings owned by [`UI_SSR_COMPONENTS.md`][usc], [`UI_CLASS_COMPOSITION.md`][ucc], [`UI_CLIENT_RUNTIME.md`][ucr] and
-[`THEME_GENERATION.md`][tg].
-
-**The inventory of what a subpath exports is its own `mod.ts`.**
+[`@y-core/forge/ui/design/*.md`](#y-coreforgeuidesignmd). The rulings behind the surface are the documents under [See also](#see-also). What a
+subpath exports is its own `mod.ts`.
 
 | Sub-path | What it is |
 | --- | --- |
@@ -29,8 +26,8 @@ are rulings owned by [`UI_SSR_COMPONENTS.md`][usc], [`UI_CLASS_COMPOSITION.md`][
 | [`ui/assets/css/*.css`](#y-coreforgeuiassetscsscss) | The entry stylesheet and the optional themes (a subpath **pattern**) |
 | [`ui/client`](#y-coreforgeuiclient) | Browser controllers, signals, and the island runtime |
 | [`ui/client/htmx`](#y-coreforgeuiclienthtmx) | The pinned HTMX bundle (side-effect import) |
-| [`ui/server`](#y-coreforgeuiserver) | SSR-only Flash and Resumable |
-| [`ui/chrome`](#y-coreforgeuichrome) | SSR Navbar, Dock, Toolbar, ThemeToggle + theme constants |
+| [`ui/server`](#y-coreforgeuiserver) | SSR-only flash messages and island roots |
+| [`ui/chrome`](#y-coreforgeuichrome) | SSR navigation chrome and the theme toggle |
 | [`ui/chrome/client`](#y-coreforgeuichromeclient) | The chrome scopes island (side-effect import) |
 | [`ui/design/*.md`](#y-coreforgeuidesignmd) | The design corpus as markdown (a subpath **pattern**) |
 
@@ -75,9 +72,8 @@ emits preflight twice.
 
 ### Tell Tailwind which directories to scan
 
-Tailwind v4's content scan ignores `node_modules`, so `forge.css` carries an `@source` path for every directory under `src/ui/` whose files declare
-a utility class — resolved relative to itself, the only form that survives pnpm, a workspace, a git dependency and a monorepo alike. Read
-`forge.css` for the current list; the gate's `validate-css-sources` step enforces that scope in both directions.
+Tailwind v4's content scan ignores `node_modules`, so `forge.css` carries its own `@source` paths for `src/ui/`, resolved relative to itself —
+nothing is required of you for the `ui` components.
 
 **`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup whose classes are the app's to scan; each says so in its
 own README where it applies.
@@ -89,15 +85,13 @@ it — `theme-stone.css` (warm), `theme-gray.css` (cool) and `theme-slate.css` (
 Tailwind's ramp named `gray` is blue-tinted, so `theme-gray.css` is the cool scheme and `theme-neutral.css` the achromatic one; the names invite the
 opposite reading.
 
-**Shape is a second, independent set.** `theme-base.css` declares the shape tokens once — the radii, the control heights, the border width and the
-elevation — and the components read them through `rounded-field` / `rounded-box` / `rounded-selector`, `h-control-*`, `border-field` and the
-`shadow-*` scale. A flat theme is one line in a shape file, `:root { --elevation: 0; }`; the focus ring is not a shadow and survives it. A colour
-scheme never declares one, so any scheme composes with any shape; `shape-compact.css` ships as the one alternate, imported after `forge.css` exactly
-as a scheme is. The ruling is [`THEME_GENERATION.md`][tg-1d] §1d.
+**Shape is a second, independent set**, declared in `theme-base.css`. A colour scheme never declares a shape token, so any scheme composes with any
+shape; `shape-compact.css` is the alternate, imported after `forge.css` exactly as a scheme is. A flat theme is one line in a shape file,
+`:root { --elevation: 0; }`; the focus ring is not a shadow and survives it. The ruling is [`THEME_GENERATION.md`][tg-1d] §1d.
 
 ### Write a scheme of your own, or re-point one token
 
-A scheme file re-declares the gray scale's twelve steps in one `:root` block and **nothing else** — every semantic token resolves through those
+A scheme file re-declares the gray scale's steps in one `:root` block and **nothing else** — every semantic token resolves through those
 steps. A step whose value differs by mode is written with `light-dark()` and the branch is selected by `color-scheme`, which `theme-base.css` sets;
 a step that is the same colour in both modes is written bare. Author your own the same way, after the forge imports.
 
@@ -453,12 +447,8 @@ resume();
 `console.warn`s about the unregistered `data-scope` — silent in the markup, loud only in the console. The rule is
 [`UI_SSR_COMPONENTS.md`][usc-2d] §2d.
 
-One module registers every scope `ui/core` markup names — the keyboard layers, the overlay bookkeeping, the dismissals, the `Input` regrouping and
-the CAPTCHA controller. `src/ui/core/client.ts` is the list; what each one does is [`UI_CLIENT_RUNTIME.md`][ucr-2] §2's.
-
-**Almost every scope here is eager, and out of necessity rather than preference.** Its markup carries no `data-on-*` action, so a lazy scope would
-have nothing that could ever resume it ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). The lazy ones are `alert` and `slider`, which do carry one; and
-`toast` is eager despite carrying one too, because its auto-dismiss timer must be armed before anybody interacts with it.
+One import registers every scope `ui/core` markup names; `src/ui/core/client.ts` is the list, and what each one does is
+[`UI_CLIENT_RUNTIME.md`][ucr-2] §2's.
 
 A `Toast` you render yourself carries its auto-dismiss delay as island state under the key `ui/contracts` publishes; a positive value schedules
 removal on the toast's own realm clock.
@@ -650,17 +640,15 @@ Every glyph forge's own chrome needs ships in `forgeUiSpriteSources()`, so a `Fo
 
 **Build-time only.** Reaches `node:fs`, `node:path` and `node:url`; never import it from a Worker-executed file.
 
-The computation behind the artifacts `ui/assets` owns — glyph source paths, SVG symbol assembly, OKLCh-to-sRGB conversion, theme-token extraction
-and cursor baking. Why it lives beside the artifact rather than in the asset pipeline is [`ASSET_PIPELINE.md`][ap-2c] §2c's.
+The build-time computation behind the artifacts `ui/assets` owns. Why it lives beside the artifact rather than in the asset pipeline is
+[`ASSET_PIPELINE.md`][ap-2c] §2c's.
 
 ### Assemble a sprite, read a theme token, bake a cursor
 
-Reach here from a build script, not from a route. `svgToSymbol` converts an SVG document into a sanitized `<symbol>` and `sanitizeSVG` is the
-sanitizer it applies — a tokenizer and an allowlist serializer, so a construct it does not recognise is dropped rather than carried through. That
-makes an SVG from a designer safe to inline; it is defence in depth for a source you already trust, not a substitute for a DOM sanitizer on one you
-do not. `extractViewBoxes` maps each `<symbol>` id in assembled sprite markup to its viewBox. `readThemeTokens` pulls per-theme custom properties
-out of compiled CSS and `resolveToken` follows a `var()` chain to a literal, which is what `buildCursors` needs to bake each cursor × theme into a
-CSS `cursor` value carrying an inline data-URI SVG.
+Reach here from a build script, not from a route. **`sanitizeSVG`, which `svgToSymbol` applies, drops any construct it does not recognise** rather
+than carrying it through. That makes an SVG from a designer safe to inline; it is defence in depth for a source you already trust, not a substitute
+for a DOM sanitizer on one you do not. To bake a themed cursor, `readThemeTokens` reads the per-theme custom properties out of compiled CSS,
+`resolveToken` follows a `var()` chain to a literal, and `buildCursors` turns each cursor × theme into a CSS `cursor` value.
 
 ---
 
@@ -793,8 +781,8 @@ after its markup was replaced wholesale ([`UI_SSR_COMPONENTS.md`][usc-2a] §2a).
 **`bindAttr` sanitizes exactly as the renderer does**, because a signal is seeded from `data-island-state` and so is as reachable as a request
 parameter. A value bound to `href`, `src`, `data` or any other URL attribute has a scheme outside http/https/mailto/tel collapsed to `"#"`; a bare
 `on*` name, `srcdoc`, or `style` — which the renderer drops under the shipped `style-src 'self'` — is refused outright, reported and skipped.
-`bindAttrAttr` throws on those names instead, since it runs at author time. No
-`hx-*` attribute is sanitized, for the reason [`HTMX.md`][htmx-7a] §7a gives.
+`bindAttrAttr` from `ui/contracts`, which stamps the binding at render time, throws on those names instead. No `hx-*` attribute is sanitized,
+for the reason [`HTMX.md`][htmx-7a] §7a gives.
 
 ### Write a controller that survives an iframe, a shadow root or a foreign realm
 
@@ -847,9 +835,7 @@ mountViewportCollapse({ selector: "#app-rail" }); // width-driven disclosure
 mountRovingFocus(rail, { items: "[data-slot~='rail-item']", orientation: "vertical" });
 ```
 
-Each option type's fields and defaults are declared beside its controller, in [`client/scroll-spy.ts`](./client/scroll-spy.ts),
-[`client/carousel.ts`](./client/carousel.ts), [`client/viewport-collapse.ts`](./client/viewport-collapse.ts),
-[`client/composite.ts`](./client/composite.ts) and [`client/drawer.ts`](./client/drawer.ts).
+Each option type's fields and defaults are declared beside its controller under [`client/`](./client/).
 
 `mountScrollSpy` stamps `aria-current="location"` — never `"page"`, since the page did not change — on exactly one link, and emits no `data-*`
 state, so the visible cue is the stylesheet's alone. `mountCarouselDots` marks the current dot the same way, for the same reason: a dot is a
@@ -867,11 +853,11 @@ is absent or is not a disclosure, and **reports** when the realm has no `matchMe
 `<details>` its modal behaviour — Escape, scroll lock, focus trap — for as long as its media query matches.
 
 `mountRovingFocus` makes a composite you render one tab stop, and resolves its **items live on every interaction**, so a composite whose items are
-swapped, filtered or reordered needs no re-registration. The ring's rules, each present because omitting it produces a bug: arrow keys inside a text
-field belong to the caret until its edge; direction is read from the element, so an RTL island inside an LTR page navigates as RTL; items present
-but not rendered are out of the ring; a nested composite keeps the key it consumed; `disabled` leaves the ring while `aria-disabled` stays in it,
-focusable but inert. Mark the initial tab stop with the attribute `ui/contracts` publishes for it. Forge's own composites mount it through their
-scopes, and a `RadioGroup` has the whole contract from the platform, so this is for a composite **you** render.
+swapped, filtered or reordered needs no re-registration. The ring's rules: arrow keys inside a text field belong to the caret until its edge;
+direction is read from the element, so an RTL island inside an LTR page navigates as RTL; items present but not rendered are out of the ring; a
+nested composite keeps the key it consumed; `disabled` leaves the ring while `aria-disabled` stays in it, focusable but inert. Mark the initial tab
+stop with the attribute `ui/contracts` publishes for it. Forge's own composites mount it through their scopes, and a `RadioGroup` has the whole
+contract from the platform, so this is for a composite **you** render.
 
 ### Defer a module until it scrolls into view
 
@@ -1003,9 +989,8 @@ const nav: NavDefinition = {
 
 ### Describe a navigation bar as data
 
-A `NavDefinition` is `{ sections }`; a section is `{ items }`; an item is a link (`label`, `href`, `current?`, `filters?`), a menu (`label`, `items`
-— recurses), a mega menu (`label`, `groups`, `align?`, `filters?`), a slot (`slot`, `label?`, `filters?`), or a group. Sibling sections spread
-across the bar via `justify-between`.
+A `NavDefinition` is a list of sections, each a list of items; an item is a link, a menu (which recurses), a mega menu, a slot, or a group. Sibling
+sections spread across the bar via `justify-between`.
 
 The type does not express these rules, and both bite silently:
 
@@ -1028,7 +1013,8 @@ it degrades to a submenu of groups. Its `align` is `Popover`'s physical alignmen
 the viewport.
 
 **`filters` shows an item only when one of its tokens is in the active set.** `activeFilters` seeds the set server-side for a flash-free paint, and
-at runtime the app dispatches the navbar filters event with the new tokens as `detail`. Dispatched on `document`, it re-syncs every bar. Dispatched
+at runtime the app dispatches `NAVBAR_FILTERS_EVENT` (from `ui/contracts`) with the new tokens, a `string[]`, as `detail` — any other `detail` is
+ignored. Dispatched on `document`, it re-syncs every bar. Dispatched
 on a bar, or on anything inside one, it re-syncs that bar only, so a demo or a preview never repaints the site's own navigation. `Dock` takes the
 same prop but is server-hidden only: there is no runtime re-sync for it.
 
@@ -1061,9 +1047,8 @@ markup only — no scope, no controller.
 
 ### Describe a toolbar as data
 
-A `ToolbarDefinition<A, G>` is `{ groups }`, and a separator is auto-emitted between sibling groups. An item is an action (`icon`, `label`,
-`action`, with optional `dispatch`, `ref`, `data`, `active`, `size`), a popover (`icon`, `label`, `content`, with optional `ref`, `compact`,
-`titleAction`), a separator, or a slot.
+A `ToolbarDefinition<A, G>` is a list of groups, and a separator is auto-emitted between sibling groups. An item is an action, a popover, a
+separator, or a slot.
 
 **Both generics are the point of the type.** `A` is the app's action-name union, shared with `registerScope<A>`; `G` is the app's glyph-name union,
 shared with the `icon` prop — so a typo in either is a compile error rather than a dead button or an empty `<use>`.
@@ -1108,9 +1093,7 @@ because chrome's markup names the `menu` and `toolbar` scopes and a component wh
 it in the client entry **before** `resume()`, since the eager pass only hydrates scopes registered by then; registration is idempotent, so importing
 both entries is harmless.
 
-Both scopes here are eager, for the reason `ui/core/client` states above. `theme` carries the preference as state and one action cycling
-`light → dark → system → light`. `navbar` carries the active filter tokens, and **its work is all in `setup`** — syncing `hidden` on every filtered
-descendant, listening for the filters event, and driving the bar's collapse and drawer behaviour.
+The theme toggle cycles `light → dark → system → light`.
 
 ### Read the resolved theme from your own code
 

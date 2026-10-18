@@ -19,24 +19,24 @@ Where a command is given, run the command. Scope it to the files you changed.
 ## 0. Quick Reference
 
 - §1 Block 1 — Floor: non-negotiable items, each a count or a grep with an expected result
-- §1a Design Read, Measure and Contrast: items 1–3
-- §1b Status, Focus, Hit Target and Motion: items 4–7
-- §1c Empty States, Names and Heading Order: items 8–10
-- §1d Tokens, Inline Style, Scale and Viewport Units: items 11–14
-- §1e Cards, Foreground Pairing, Colour Budget and Radius: items 15–18
-- §1f Icons, Invented Data, Affordances and Class Restatement: items 19–22
+- §1a Design Read, Measure and Contrast: the three-part read, capped copy, and every pair's measured ratio
+- §1b Status, Focus, Hit Target and Motion: colour-only status, the replacement ring, the `sm` box, and gated motion
+- §1c Empty States, Names and Heading Order: one empty state per collection, a name per control, no skipped level
+- §1d Tokens, Inline Style, Scale and Viewport Units: the greps for literals, `style=`, arbitrary values and `h-screen`
+- §1e Cards, Foreground Pairing, Colour Budget and Radius: nesting, partners, two text colours, one radius family
+- §1f Icons, Invented Data, Affordances and Class Restatement: sprite glyphs, sourced values, replaced suppressions, the difference only
 - §2 Block 2 — Defaults: rebuttable items; where you depart, name the brief line beside the count
-- §2a Hierarchy and Component Choice: items 23–29
-- §2b Layout, Spacing and Density: items 30–37
-- §2c Type: items 38–43
-- §2d Colour: items 44–47
-- §2e Media: items 48–51
-- §2f Depth: items 52–53
-- §2g Forms: items 54–57
-- §2h States and Swaps: items 58–63
-- §2i Interaction and Announcement: items 64–68
-- §2j Tells: items 69–72
-- §2k Platform: items 73–79, the platform rules checked on every surface
+- §2a Hierarchy and Component Choice: one primary, severity claims, and the overlay, badge and card tests
+- §2b Layout, Spacing and Density: spacing steps and their ratio, measure, separators, bounded regions, the stated dials
+- §2c Type: steps, weights, the body-size floor, viewport-scaled display steps, tracking, label classes
+- §2d Colour: raw palette utilities, the muted pair, an authored scale's audit, opacity tints
+- §2e Media: scrims, `alt`, controlled crops, glyph sizes
+- §2f Depth: stacked shadows, and one elevation step at a time
+- §2g Forms: the field wrapper, id helpers, the invalid triple, one barrel per name
+- §2h States and Swaps: the four states, one indicator, retry, reserved and focus-safe swap targets
+- §2i Interaction and Announcement: one live region, ARIA beside `data-*`, `focus-visible`, one moment, transform and opacity
+- §2j Tells: gradient text, glass, three-card rows, eyebrows
+- §2k Platform: the platform rules checked on every surface
 - §3 Reporting: the output is the counts, and what an unanswerable item counts as
 
 ---
@@ -74,8 +74,7 @@ Non-negotiable, no overrides, and a failure here outranks everything in Block 2.
 11. **Grep** `rg 'bg-\[#|text-\[#|border-\[#|rgb\(|hsl\(|oklch\('`. Expect 0 hits. `forge-ui-color-token-only`
 12. **Grep** `rg 'style='`. Expect 0 hits — forge's SSR renderer drops the attribute silently. `forge-ui-no-inline-style`
 13. **Grep** `rg -o '\b[a-z]+-\[[0-9]' | wc -l` for arbitrary sizing and spacing values. Expect 0. `forge-ui-spacing-scale-only`
-14. **Grep** `rg 'h-screen|w-screen'`. Expect 0 hits; `min-h-dvh` is the replacement — a Floor rule that carries no id, because two class names are
-    a restriction list rather than a rule.
+14. **Grep** `rg 'h-screen|w-screen'`. Expect 0 hits; `min-h-dvh` is the replacement — a Floor rule that carries no id.
 
 ### 1e. Cards, Foreground Pairing, Colour Budget and Radius
 

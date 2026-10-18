@@ -103,14 +103,11 @@ check rebuilds each bundle on every gate run and fails on any difference. Which 
 
 **Playwright is the second such host, and forge cannot choose bun on the consumer's behalf.** A `playwright.config.ts` importing a forge subpath
 dies at config load with the same error, and under bun a dev server playwright spawns binds where the browser cannot reach it — specs that pass
-under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So `@y-core/forge/tooling/gate/chromium` publishes a
-committed bundle of the one symbol a config needs. A consumer's browser spec loads the same way, so `@y-core/forge/testing/totp` is a committed
-bundle of `totpCodes`, which also stays on the `./testing` barrel for a suite running under bun. A config that reads `wrangler.jsonc` loads the
-same way, so `@y-core/forge/tooling/cf/wrangler` is a committed bundle of `parseWranglerConfig` alone. A consumer's workerd spec loads
-`serveWorker` the same way, so `@y-core/forge/testing/harness` is a committed bundle whose types stay its `.ts` source. A workerd spec that
-submits a form needs a token and the form defaults, so `@y-core/forge/testing/form` bundles `mintTestCsrfToken` and the constants a spec posts
-against, and `mintTestCsrfToken` stays on the `./testing` barrel too. `tests/workerd/harness-consumer.workerd.ts` installs the tarball `bun pm pack`
-makes and loads every `forge.node` subpath under node, so a surface a spec needs and forge never bundled fails in forge first.
+under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So a Playwright config, and a consumer's browser or
+workerd spec, loads forge through committed bundles too — `@y-core/forge/tooling/gate/chromium` is the one symbol a config needs. A bundle carries
+only what such a host needs, and a symbol a bun suite also wants stays on its barrel as well. `tests/workerd/harness-consumer.workerd.ts` installs
+the tarball `bun pm pack` makes and loads every `forge.node` subpath under node, so a surface a spec needs and forge never bundled fails in forge
+first.
 
 Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
 broken bundle fails here rather than there.
@@ -192,8 +189,7 @@ legal exactly while one direction stays `import type` — flipping it to a value
 annotation, which is why the gate checks it in both directions.
 
 **The gate fails a cycle of `value` edges of any length**, so three namespaces naming each other in a ring are held to the same rule as a pair.
-The declared graph's legal cycles are each broken by a type edge: `logging` ↔ `storage/kv`, where `logging` names `storage/kv` by type, and
-`tooling/assets` ↔ `ui/assets/build`, where `ui/assets/build` names `tooling/assets` by type.
+Every legal cycle in the declared graph is broken by a type edge.
 
 ### 4c. Foundational Primitive Namespaces — `result`, `crypto/primitives`, `context`, `validation`
 
@@ -245,8 +241,8 @@ This is forge's map of the concerns [`BOUNDARIES.md`][boundaries-2b] §2b routes
 `ui/core` contains SSR JSX components; client behaviour lives in `ui/client`. If the component count exceeds ~25, introduce sub-barrels
 (`ui/core/form/mod.ts`) but keep the export path stable.
 
-**`ui/controls` intentionally shadows the `ui/core` control names** — `Input`, `Textarea`, `Select`, `Slider`, `Switch`, `ToggleGroup` are exported
-from both, unbound from `ui/core` and bound from `ui/controls`. **The collision is by design; do not rename either side.**
+**`ui/controls` intentionally shadows the `ui/core` control names** — `Input` and its siblings are exported from both, unbound from `ui/core` and
+bound from `ui/controls`. **The collision is by design; do not rename either side.**
 
 **Rule: a module must import a given control name from exactly one of those barrels, never both.** The mechanism is in
 [`UI_SSR_COMPONENTS.md`][usc].
@@ -441,7 +437,7 @@ option, so an app's constructs reach it without forge knowing them. CodeMirror i
 third-party token, any credential a row carries: the consumer names the purpose and binds the row as context, and the namespace owns the ring, the
 subkey derivation and the frame. It does not route to `auth`, because none of it is identity (§5h).
 
-**`crypto` is a container, like `storage` and `render`: it has no barrel and no export entry, and holds one published child and one sealed one.**
+**`crypto` is a container, like `storage` and `render`: it has no barrel and no export entry, and holds a published child and a sealed one.**
 `crypto/keyring` is the published child; `crypto/primitives` is the sealed one (§3b). Code that serves one other namespace's concern lives in that
 namespace instead — the UUIDv7 set in `storage/db`, the WebAuthn wire formats in `auth/passkey`.
 
@@ -470,8 +466,8 @@ it.** A webhook signature authenticates the whole message and is a transport art
 
 ### 5m. `html` — Safe-Markup Primitives
 
-**`@y-core/forge/html` holds the primitives that keep rendered markup safe:** `escapeHtml`, `safeUrl`, the `html` tag, `rawHtml`, `isSafeHtml`,
-`scriptJson`, `styleText`, and the `SafeHtml` type they agree on. A primitive takes a value and returns markup or a verdict on it. Rendering a
+**`@y-core/forge/html` holds the primitives that keep rendered markup safe** — escaping, URL scheme checks, the `html` tag, and the `SafeHtml`
+type they agree on; `src/html/mod.ts` is the list. A primitive takes a value and returns markup or a verdict on it. Rendering a
 component, building a fragment and answering a request are `render/*`'s and `http`'s.
 
 **`html` is a leaf, and sits below both of its consumers.** `render/jsx` escapes through it and `http` types an HTML body with its `SafeHtml`, so
@@ -506,8 +502,7 @@ never gave ([`AGENT_GUIDE.md`][ag-5c] §5c).
 already in the prose and the `exports` map, which is why it cannot fall out of date with either — the same reason `AGENT_GUIDE.md` §5c refuses to
 register the documents it governs at all: a list disagrees with the directory it describes, and then a reader has two answers and no way to pick.
 
-`validate-docs` **fails** on an unbound subpath. It warned while that backlog was being worked down — a check that fails a build over a backlog gets
-exempted wholesale instead — and was promoted the moment the list reached empty. A new subpath is bound before it ships, or it does not ship.
+`validate-docs` **fails** on an unbound subpath. A new subpath is bound before it ships, or it does not ship.
 
 **This rule lives here rather than in the canon, and that placement is deliberate.** It is about a repository with an `exports` map, so
 `canon/libs/` is where it would be portable to — but it has been measured against exactly one corpus, forge's. It is promoted to the canon when a

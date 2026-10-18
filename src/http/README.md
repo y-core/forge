@@ -35,7 +35,7 @@ The second argument is the status (`200` by default), the third is extra headers
 
 **`pdfResponse` takes bytes and nothing more.** Whatever rendered them — [`@y-core/forge/render/pdf`][pdf-readme] or a byte array you built yourself
 — is this namespace's business only as a `BufferSource`, which is what keeps the dependency one-way. A download filename is a header rather than an
-option of its own: build it with `ContentDisposition` (§7) and pass it through `headers`.
+option of its own: build it with `ContentDisposition` ([Setting a header][header-section]) and pass it through `headers`.
 
 ```ts
 import { ContentDisposition, pdfResponse } from "@y-core/forge/http";
@@ -100,8 +100,8 @@ The fallback is returned verbatim and never checked, so make it a literal in you
 
 ## Setting a header other than `content-type`
 
-`ContentType`, `CacheControl`, `SetCookie`, `Accept`, `Vary`, `ContentDisposition`, `ContentRange` and `Range` build a header **value** from a typed
-object instead of a hand-written string. Construct one with `new`, then stringify it:
+The header classes — `CacheControl`, `ContentDisposition`, `Vary` and the rest the barrel exports — build a header **value** from a typed object
+instead of a hand-written string. Construct one with `new`, then stringify it:
 
 ```ts
 import { CacheControl, fragmentResponse } from "@y-core/forge/http";
@@ -164,7 +164,7 @@ that genuinely contains a space must arrive percent-encoded.
 
 ## See also
 
-- [`docs/FORGE_ERRORS.md`][eh] — where a fragment's status goes (§2) and the `htmlResponse` render path (§3a)
+- [`docs/FORGE_ERRORS.md`][eh] — where a fragment's status goes, and the `htmlResponse` render path
 - [`docs/NAMESPACES.md`][namespaces-5d] §5d — why every HTTP output concern lands here rather than in `@remix-run/headers`, and escaping does not
 - [`src/html/README.md`][html-readme] — the escaping primitives and the `SafeHtml` type the body builders take
 - [`src/render/htmx/README.md`][htmx-readme] — the status banners and `HX-*` directives a fragment response carries
@@ -172,6 +172,7 @@ that genuinely contains a space must arrive percent-encoded.
 - [`src/session/README.md`][session-readme] — signed and unsigned cookies, preferred over the raw `SetCookie` builder
 
 [eh]: ../../docs/FORGE_ERRORS.md
+[header-section]: #setting-a-header-other-than-content-type
 [html-readme]: ../html/README.md
 [htmx-readme]: ../render/htmx/README.md
 [jsx-readme]: ../render/jsx/README.md

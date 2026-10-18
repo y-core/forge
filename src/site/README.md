@@ -99,12 +99,12 @@ since the rule is deployed to the apex's own zone, and a source equal to the ape
 
 **The apex host clause in `buildAllowRule` is defence in depth, not load-bearing for the `www` redirect.** It scopes the expression to
 `surface.apex` because that is the only host whose surface was enumerated. `http_request_dynamic_redirect` is the first application-layer phase and
-`http_request_firewall_custom` runs nine phases later, so a `www` request is answered with its 301 and never reaches the WAF.
+`http_request_firewall_custom` runs several phases later, so a `www` request is answered with its 301 and never reaches the WAF.
 
 **Expression length is the ceiling that binds first.** Cloudflare caps a rule expression at 4096 characters on every plan, failing the write with
 error 20127 rather than truncating. `buildAllowExpression` checks this before the request and names the ways out — collapse exact paths into a
-prefix, or move the surface into a Cloudflare list. Rule _count_ (5 on Free, 20 on Pro, 100 on Business) is not the binding limit, since a generated
-allow-list is a single rule.
+prefix, or move the surface into a Cloudflare list. Rule _count_ is not the binding limit, since a generated allow-list is a single
+rule.
 
 ---
 

@@ -47,41 +47,13 @@ can load; both spellings export the plugin as `lintPlugin` and as the default ex
 
 ## Choosing which rules to turn on
 
-| Rule key | Corpus id | Reports |
-| --- | --- | --- |
-| `a11y-aria-beside-data` | `forge-ui-a11y-aria-beside-data` | An `aria-*` state hook written by hand rather than emitted through `stateAttrs` |
-| `a11y-heading-size-by-class` | `forge-ui-a11y-heading-size-by-class` | A heading whose level was picked for its size rather than for the outline |
-| `a11y-label-association` | `forge-ui-a11y-label-association` | A `<label>` with neither a `for` nor a wrapped control |
-| `a11y-live-politeness` | `forge-ui-a11y-live-politeness` | An `aria-live` that is not `polite`, or an `assertive` that states no reason |
-| `a11y-no-aria-readonly-on-button` | `forge-ui-a11y-no-aria-readonly-on-button` | `aria-readonly` on a role that carries no such state |
-| `a11y-one-live-region` | `forge-ui-a11y-one-live-region` | An `aria-live`, or a `role` of `alert`, `status` or `log`, beside the page's one `<Announcer />` |
-| `catalog-wrong-raw-input` | `forge-ui-catalog-wrong-raw-input` | A raw control in composed markup where the component wrapping it belongs |
-| `color-theme-no-raw-utility` | `forge-ui-color-theme-no-raw-utility` | A raw palette utility with no `dark:` counterpart in the same class list |
-| `color-token-only` | `forge-ui-color-token-only` | A colour utility naming a raw palette value instead of a theme token |
-| `data-slot-before-spread` | — | A literal `data-slot` written before a bare-identifier spread that clobbers it |
-| `exact-markup-assertion` | — | `toContain`, `toMatch` or `.includes` on markup a render produced |
-| `focus-ring` | `forge-ui-focus-ring` | An outline suppressed on a pointer target with no `focus-visible:` ring replacing it |
-| `interaction-focus-visible` | `forge-ui-interaction-focus-visible` | A bare `focus:` variant, which paints on a pointer press too |
-| `no-inline-style` | `forge-ui-no-inline-style` | An inline `style=` attribute, which the renderer drops |
-| `no-nested-card` | `forge-ui-no-nested-card` | A `<Card>` opened inside a `<Card.Content>` |
-| `optional-prop-undefined` | `forge-ui-optional-prop-undefined` | A bare `?:` on a consumer-constructed type under `exactOptionalPropertyTypes` |
-| `platform-entry-motion` | `forge-ui-platform-entry-motion` | A class added on the next frame where `@starting-style` expresses the entry |
-| `platform-logical-spacing` | `forge-ui-platform-logical-spacing` | Physical inline-axis spacing where the logical pair exists |
-| `platform-text-balance` | `forge-ui-platform-text-balance` | Manual line balancing in place of `text-wrap: balance` |
-| `platform-text-pretty` | `forge-ui-platform-text-pretty` | Orphan control in place of `text-wrap: pretty` |
-| `reduced-motion` | `forge-ui-reduced-motion` | Authored motion with no `motion-safe:` / `motion-reduce:` pair |
-| `spacing-scale-only` | `forge-ui-spacing-scale-only` | A spacing value off the declared design scale |
-| `sql-delete-authorised` | — | A `sql` DELETE with no `// row-removal-authorised-by:` on the line before it. Opt-in |
-| `sql-explicit-transaction` | — | A runtime `sql` fragment opening or closing a transaction — `batch()` is the boundary |
-| `suppression-needs-reason` | — | An `oxlint-disable*` comment that gives no reason |
-| `type-import-external` | — | An exported interface or type alias declared outside its directory's `types.ts` |
-| `type-import-separation` | — | A `type` specifier riding inside a value import rather than its own `import type` line |
-
-A rule with no corpus id states no design rule, so the register names none of it. Most of those are rulings from elsewhere in forge's
-governance: `exact-markup-assertion` is [`TEST_RUNNERS.md`][testing-3e] §3e's, `sql-explicit-transaction` is [`STORAGE_BINDINGS.md`][sb-1g] §1g's
-rule for runtime code, and `type-import-external` and `type-import-separation` are the halves of [`FORGE_STRUCTURE.md`][la-8] §8.
-`data-slot-before-spread` is the ordering half of the JSX contract, and `suppression-needs-reason` covers every rule rather than only the design
-ones — `oxlint --type-aware` already fails a stale suppression, and this one asks a live suppression to say why it is one.
+Each rule is a file under `src/tooling/lint/rules/`, named for its key, and its `meta.docs.description` says what it reports. A rule whose key
+matches a design-corpus id enforces that design rule (see [Citing the rule behind a finding](#citing-the-rule-behind-a-finding)). A rule with no
+corpus id states no design rule, so the register names none of it; most carry rulings from elsewhere in forge's governance: `exact-markup-assertion`
+is [`TEST_RUNNERS.md`][testing-3e] §3e's, `sql-explicit-transaction` is [`STORAGE_BINDINGS.md`][sb-1g] §1g's rule for runtime code, and
+`type-import-external` and `type-import-separation` are the halves of [`FORGE_STRUCTURE.md`][la-8] §8. `data-slot-before-spread` is the ordering
+half of the JSX contract, and `suppression-needs-reason` covers every rule rather than only the design ones — `oxlint --type-aware` already fails a
+stale suppression, and this one asks a live suppression to say why it is one.
 
 `color-token-only` and `spacing-scale-only` read their vocabularies from `src/tooling/lint/data/design-scale.ts`, a generated file. Regenerate it
 with `bun run gen:design-scale`; the gate's `validate-design-scale` step fails on any drift from the compiled stylesheet.
@@ -96,10 +68,7 @@ Some rules are local to a slice of the tree rather than universal, and an `overr
 { "overrides": [{ "files": ["src/ui/core/*.tsx"], "rules": { "forge/optional-prop-undefined": "error" } }] }
 ```
 
-Forge scopes these that way rather than turning them on everywhere: `optional-prop-undefined` to the components a consumer constructs prop values
-for, `catalog-wrong-raw-input` to the log viewer and the auth views, `exact-markup-assertion` to `src/ui`'s test files, and
-`sql-explicit-transaction` everywhere except `src/tooling` and the specs. Read `.oxlintrc.json` for the current scoping — it is the file the gate
-holds the register against.
+Forge's own `.oxlintrc.json` is a worked example of this scoping, and it is the file the gate holds the register against.
 
 `sql-delete-authorised` is opt-in, and forge does not turn it on for itself. An app that wants every row removal to name who authorised it enables
 the rule over its runtime source, and annotates each `DELETE` on the line before its `sql` fragment:

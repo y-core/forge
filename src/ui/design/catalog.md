@@ -64,13 +64,13 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
 | Show one of several peer views in one region | `Tabs` | `@y-core/forge/ui/core` |
 | Let several independent sections expand | `Accordion` | `@y-core/forge/ui/core` |
 | Hide one optional block behind a disclosure | `Collapsible` | `@y-core/forge/ui/core` |
-| Open a panel from an edge, blocking the page behind it | `Drawer` (`side`; `.Trigger` `.Close` `.Title` `.Content`) | `@y-core/forge/ui/core` |
+| Open a panel from an edge, blocking the page behind it | `Drawer` (`side`) | `@y-core/forge/ui/core` |
 
 ### 1c. Containers and Separation
 
 | The job | Reach for | Subpath |
 | --- | --- | --- |
-| Group content that has its own title and action | `Card` (`.Header` `.Title` `.Description` `.Action` `.Content` `.Footer`) | `@y-core/forge/ui/core` |
+| Group content that has its own title and action | `Card` | `@y-core/forge/ui/core` |
 | Divide regions inside one container | `Separator` | `@y-core/forge/ui/core` |
 | Bound a long list to a fixed height | `ScrollArea` | `@y-core/forge/ui/core` |
 | Group adjacent controls into one shape | `Join` | `@y-core/forge/ui/core` |
@@ -93,7 +93,7 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
 | The job | Reach for | Subpath |
 | --- | --- | --- |
 | Submit data to a route | `Form` | `@y-core/forge/ui/core` |
-| Wire a validated field's label, error, and `aria-*` | `FormField` (`.Label` `.Description` `.Error`) | `@y-core/forge/ui/core` |
+| Wire a validated field's label, error, and `aria-*` | `FormField` | `@y-core/forge/ui/core` |
 | Lay out a settings row that is not validated | `Field` | `@y-core/forge/ui/core` |
 | Name a standalone control | `Label` | `@y-core/forge/ui/core` |
 | Take one line of text | `Input` | `@y-core/forge/ui/core` |
@@ -115,8 +115,8 @@ Every import names a subpath; the `ui` namespace publishes no bare barrel of its
 | The job | Reach for | Subpath |
 | --- | --- | --- |
 | Show rows of a record set with columns that align | `Table` | `@y-core/forge/ui/core` |
-| Say what to do when a list or table is empty | `EmptyState` (`.Figure` `.Title` `.Description` `.Actions`) | `@y-core/forge/ui/core` |
-| Lead with a single headline number | `Stat` (`.Label` `.Value` `.Description` `.Figure` `.Actions`) | `@y-core/forge/ui/core` |
+| Say what to do when a list or table is empty | `EmptyState` | `@y-core/forge/ui/core` |
+| Lead with a single headline number | `Stat` | `@y-core/forge/ui/core` |
 | Show how far through a known sequence of steps the user is | `Steps` (`.Step` takes `state`) | `@y-core/forge/ui/core` |
 | Show a dated record of events that already happened | `Timeline` (`.Item` takes `state`) | `@y-core/forge/ui/core` |
 | Send the reader somewhere else | `Link` | `@y-core/forge/ui/core` |
@@ -189,23 +189,14 @@ five, use `Select`. <!-- rule:forge-ui-catalog-choice-count --> Override when th
 the chevron goes, and the control fills its wrapper rather than taking a token height. Override when the choice is one of a short, stable set the
 user compares side by side — a filter panel, a column picker — where opening a popup to read four fixed options costs a click for nothing.
 
-**`Select` does not take the DOM's `size`.** The prop named `size` is forge's own scale token (`sm` `md` `lg`), as it is on every other control,
-and the native `size` attribute is spelled `rows`. A caller spreading a wider object onto `Select` will not silently set a row count through
-`size` — the type removes it.
+**`Select` does not take the DOM's `size`.** The prop named `size` is forge's own scale token, as it is on every other control, and the native
+`size` attribute is spelled `rows`. A caller spreading a wider object onto `Select` will not silently set a row count through `size` — the type
+removes it.
 
 **Default:** wrap every validated input in `FormField` with `FormField.Label` and `FormField.Error`. <!-- rule:forge-ui-catalog-field-wrapper -->
 `FormField` derives the `id`, the `for`, the `aria-describedby`, and the `aria-invalid` from one `name`, which is how `forge-ui-accessible-name` and
 `forge-ui-not-color-alone` are satisfied without hand-wiring. Override with `Field` for a settings row that has no validation and no error slot.
-
-```tsx
-import { FormField, Input } from "@y-core/forge/ui/core";
-
-<FormField name='email' invalid={Boolean(error)}>
-  <FormField.Label name='email'>Email</FormField.Label>
-  <Input name='email' type='email' field={{ name: "email", invalid: Boolean(error) }} />
-  <FormField.Error name='email'>{error}</FormField.Error>
-</FormField>;
-```
+`../README.md` carries the worked wiring.
 
 **Default:** import a control from `@y-core/forge/ui/core` unless it needs a client signal, and from `@y-core/forge/ui/controls` when it does.
 <!-- rule:forge-ui-catalog-bound-controls --> The two barrels publish the same names deliberately; the `ui/controls` variant adds `bind` and

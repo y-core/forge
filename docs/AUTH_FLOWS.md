@@ -50,8 +50,9 @@ kept in the session — never in the URL, which lands in history, `Referer` and 
 to give, and a code delivered to the address's real owner is harmless. So both branches issue a real challenge, both render the same page, and the
 timing is the same because the issue is deferred either way.
 
-The credential itself depends on the primary factor. With email-OTP primary — the shipped case — the visitor is emailed a six-digit code valid for
-five minutes, and the code is never stored: what the OTP state holds is the sealed token the code is checked against.
+The credential itself depends on the primary factor. With email-OTP primary — the shipped case — the visitor is emailed a short-lived code
+(`AUTH_OTP_DIGITS` and `AUTH_OTP_TTL_MS` in `src/auth/config.ts`), and the code is never stored: what the OTP state holds is the sealed token the
+code is checked against.
 
 ---
 
@@ -216,16 +217,16 @@ for one, and drawing it is yours. Submitting the code (`enrol.totpEnrol` or `tot
 either way and advancing the stored counter so a code cannot be replayed inside its own step.
 
 **A wrong code costs a guess, spent before it is compared.** `failed_attempts` is incremented by the statement that admits the guess, so parallel
-attempts each spend one rather than all comparing against a count none has written; past `maxAttempts` (5 by default, 1–20) even a correct code is
-refused.
+attempts each spend one rather than all comparing against a count none has written; past `maxAttempts` even a correct code is refused.
+`src/auth/factors/totp-app.ts` owns its default and bounds, and `lockoutMs`' below.
 
 **A spent budget reopens on its own, and the window is why a run of typos is not a permanent lock.** An accepted code clears the count, and so does
 the first guess made more than `lockoutMs` after the one that hit the cap — the same `UPDATE` that admits it resets the count to 1. The default is
-`AUTH_TOTP_LOCKOUT_MS`, fifteen minutes, configurable on `TotpAppFactorOptions` between one minute and one day. A refused guess writes nothing, so
+`AUTH_TOTP_LOCKOUT_MS`, configurable on `TotpAppFactorOptions` up to a day, because a longer window is the permanent lock this exists to prevent. A
+refused guess writes nothing, so
 the window runs from the moment the cap was hit rather than from the last attempt, and hammering the factor cannot hold it shut. Without the window
 a user who mistypes `maxAttempts` times loses the factor for good, and where that factor is the deployment's one `"mandatory"` second factor, that
-is the whole account. The ceiling holds on the enrolment ceremony too, which answers the same secret. **The code width follows the factor**:
-`digits` is 6–8 on both code factors, and the verify page sizes its field and its schema off whichever it is presenting.
+is the whole account. The ceiling holds on the enrolment ceremony too, which answers the same secret.
 
 The secret is stored sealed under a per-purpose subkey with the user's own identity as associated data, so a secret lifted from one row cannot be
 replanted on another.
@@ -234,14 +235,14 @@ replanted on another.
 secret would hand back one the visitor's authenticator does not hold — a ceremony that could never be finished. The row is rebuilt only when the
 stored secret will not open, which is a rotated key rather than an abandoned attempt.
 
-**The page states the factor's own width and step**, read off `codeDigits` and `codePeriodSeconds` rather than assuming six digits every thirty
-seconds, so a configured `digits` or `period` is what the visitor is told and what the `otpauth://` URI carries.
+**The code width and step follow the factor**, read off `codeDigits` and `codePeriodSeconds` rather than assumed, so a configured `digits` or
+`period` is what the enrolment page states, what the `otpauth://` URI carries, and what the verify page sizes its field and schema to.
 
 ---
 
 ## 5. Email Change
 
-**A change of address takes two links, and only the second one moves the account.** `accountRoutes`' `emailChangeSubmit` mints a sealed, one-hour
+**A change of address takes two links, and only the second one moves the account.** `accountRoutes`' `emailChangeSubmit` mints a sealed, short-lived
 token and defers delivery of a link built by your `confirmUrl`. The page then says a confirmation has been sent — a 200 with a notice, not a
 redirect, because nothing has changed yet.
 
@@ -288,17 +289,7 @@ interstitial unless you want the extra click: the nonce store already carries th
 
 **The route renders two success pages, and the failure arm needs `instanceof`.** The success value `confirm` answers is a union discriminated on
 `status`, and its error is a union of a string literal and the `AuthStoreError` class, so those two arms are told apart by type rather than by
-value.
-
-```ts
-const outcome = await services.emailChange.confirm(token, Date.now());
-if (!outcome.ok) {
-  if (outcome.error instanceof AuthStoreError) return unavailablePage();  // the store is down
-  return refusalPage(outcome.error);                                       // "expired" | "consumed" | …
-}
-if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sentTo);  // one link left
-return changedPage(outcome.data.user);                                                // the move is done
-```
+value. The handler is [`src/auth/README.md`][auth-readme]'s.
 
 **A `forwarded` answer is not a finished change, and the page has to say so.** The visitor has approved the move and nothing has changed yet; what
 clears it is the link now sitting in the new inbox. Render `sentTo` and the fact that one step is left, or the visitor reads approval as completion
@@ -379,8 +370,8 @@ credential outright is right for a high-assurance tenant and wrong for a consume
 **A new set of recovery codes has no print view.** The user copies the set from the codes page, the only place it is shown, before confirming one
 of the codes. That it is never offered as a download is a ruling rather than a limit (§8c).
 
-**Federated identity is not here.** The OIDC relying party and the OAuth2 provider are a separate effort, and they will publish their own subpaths
-under the same one-way rule ([`NAMESPACES.md`][namespaces-5h] §5h).
+**Federated identity is not here.** An OIDC relying party or OAuth2 provider is a subpath of its own under the same one-way rule
+([`NAMESPACES.md`][namespaces-5h] §5h).
 
 ---
 

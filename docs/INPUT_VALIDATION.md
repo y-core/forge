@@ -11,8 +11,6 @@ audience: consumer
 >
 > Defers to: [`FORGE_ERRORS.md`][eh-1c] §1c for `ValidationResult` and §2c for rendering its message list; [`SECURITY_HARDENING.md`][sh] for the
 > transport-layer guards that sit in front of these; [`TEST_RUNNERS.md`][testing-3a] §3a for the HTML-entity assertion rule.
->
-> The request context is `AppContext<Bindings>` (`c.request`, `c.env`, `c.url`); parse bodies with `parseFormData(c)`.
 
 ---
 
@@ -22,7 +20,6 @@ audience: consumer
 - §1a v Namespace — Complete valibot Re-Export: the facade rule, and what the namespace exports beside `v`
 - §1b v.safeParse with abortEarly: the form-validation default, which formatter a caller may read, and `safeCheck` — the one env message an author
   may vouch for
-- §1c ValidationResult Type: the domain alias, owned elsewhere
 - §1d defineAction — The Schema Contract: the only way to reach a handler, what its guards consume, and the failure modes
 - §2 Form Namespace — Body Parsing: FormData in, with a byte cap
 - §2c parseFormData — Body Read with Size Limit: the two-way byte cap and 413
@@ -69,33 +66,27 @@ each a disclosure: `issue.message` embeds the rejected value, `issue.expected` c
 `issue.input` is the submission itself.
 
 **No forge renderer reproduces `issue.message` on any channel.** There is no operator-facing counterpart that does, because a log is not a safe home
-for a rejected value either ([`BOUNDARIES.md`][boundaries-4a] §4a): the env validator's throw reached the app logger, the KV log channel and the
-debug `500` body, so a malformed secret was persisted verbatim on every request. Env validation renders `field: reason` from `issue.type` (`missing`
-for an absent binding) — a closed valibot vocabulary that can carry neither caller text nor schema text. `issue.expected` stays out for the same
-reason it does in a caller-facing refusal: it can be a `v.regex` source.
+for a rejected value either ([`BOUNDARIES.md`][boundaries-4a] §4a): the env validator's throw reaches the app logger, the KV log channel and the
+debug `500` body, so a message carrying the value would persist a malformed secret verbatim on every request. Env validation renders `field: reason`
+from `issue.type` (`missing` for an absent binding) — a closed valibot vocabulary that can carry neither caller text nor schema text.
+`issue.expected` stays out for the same reason it does in a caller-facing refusal: it can be a `v.regex` source.
 
 **`safeCheck` is the one message that survives, and only because its author vouched for it.** Every `v.check` in a schema shares the single issue
-type `check`, so the type alone tells an operator nothing: a rule whose sentence was written for a deployer reads as `site.url: check`, and the
-narrowing that kept the rejected value out took the static, author-written sentence with it. `safeCheck(requirement, message)` registers `message`
-against the requirement function, and `describeEnvIssue` surfaces a registered one verbatim; a plain `v.check` still renders as `check`. Nothing can
-decide statically whether a message interpolates its input, so the author states it — and the default is the safe one, which makes adoption one rule
-at a time and forgetting it cost detail rather than disclosure. **A vouched message names the requirement, never an env key**: the schema validates
-a value, and which key supplies it is the consuming app's choice, so `BASE_URL must use https` sends an operator whose repo maps `SITE_ORIGIN` to a
-variable that does not exist. The `<field>:` prefix already locates it.
+type `check`, so the type alone tells an operator nothing: a rule whose sentence was written for a deployer reads as `site.url: check`.
+`safeCheck(requirement, message)` registers `message` against the requirement function, and `describeEnvIssue` surfaces a registered one verbatim; a
+plain `v.check` still renders as `check`. Nothing can decide statically whether a message interpolates its input, so the author states it — and the
+default is the safe one, so forgetting it costs detail rather than disclosure. **A vouched message names the requirement, never an env key**: the
+schema validates a value, and which key supplies it is the consuming app's choice, so `BASE_URL must use https` sends an operator whose repo maps
+`SITE_ORIGIN` to a variable that does not exist. The `<field>:` prefix already locates it.
 
 **Omit `abortEarly` (default `false`) when the response must enumerate every failing field** — an API response rather than a progressive form. An
 enumerating refusal is one a caller can lengthen by adding fields, so choose it deliberately rather than by omission.
-
-### 1c. `ValidationResult` Type
-
-`ValidationResult<T>` is the standard return type for a service function that validates its own input. [`FORGE_ERRORS.md`][eh-1c] §1c owns the
-type; it is exported from `@y-core/forge/result` and re-exported from `@y-core/forge/validation`.
 
 ### 1d. `defineAction` — The Schema Contract
 
 `defineAction` (from `@y-core/forge/app`) wires a POST handler that reads the body, runs the route's body-content guards, validates against a
 declared schema, and delegates to `handle`, returning a structured fragment for each failure mode. `ActionDefinition` (`src/app/types.ts`) is
-authoritative for the option list, and `src/app/README.md` documents each option with its type.
+authoritative for the option list.
 
 **The schema is the only way in.** `handle` is unreachable except through a passing `v.safeParse` of `schema`, and it receives the schema's
 _output_, so a transform arrives as the type it actually is. A `parse`/`validate` pair of arbitrary callbacks is the shape this refuses: such a pair
@@ -122,13 +113,13 @@ them, nested inside a `v.object` and behind a `v.union` alike. `src/validation/v
 so trimming there would mean one special case for a `File` and another for the array a repeated key produces. `" "` has to stay representable, or a
 schema that wants to refuse whitespace-only input cannot — by the time it runs, an all-spaces submission and a well-formed one would be
 indistinguishable. A normalization the schema cannot see makes the parsed output differ from the declared input for reasons written down nowhere in
-the schema, which is the defect the old named-field reader had. And line-ending folding is right for a `<textarea>` and wrong for an `<input>`, a
+the schema. And line-ending folding is right for a `<textarea>` and wrong for an `<input>`, a
 distinction the reader cannot make, because it sees a name and a value and never the control that produced them.
 
 **`formMultilineText()` folds CRLF, and that is what makes a length check mean one thing:** under `v.pipe(formMultilineText(), v.maxLength(500))`
 each line break counts once, so the limit means the same whether the newline arrived as LF or CRLF rather than silently halving the budget. The
 benefit belongs to the fold's _presence_, not to where it sits relative to the trim — that position is not observable from anywhere, including from
-a check the caller appends, and `src/validation/form-text.ts` records why so the justification is not invented a third time.
+a check the caller appends, and `src/validation/form-text.ts` records why.
 
 **`formDigits()` removes every non-digit, for the same reason and with a sharper edge:** under `v.pipe(formDigits(), v.length(16))` a card number
 means one string however the user grouped it, so the length counts digits rather than the separators a rendering happened to carry. It only
@@ -184,7 +175,7 @@ readable once, so a stricter caller gets its own `413` off the shared parse rath
 raises `defineAction`'s `maxBytes` must raise `csrfProtection`'s to match, because the guard parses first and would otherwise reject before the
 handler runs.
 
-Forgetting that rule now reports itself. When the cached parse **rejected** at a smaller cap and a later caller asks for a larger one, the stream is
+Forgetting that rule reports itself. When the cached parse **rejected** at a smaller cap and a later caller asks for a larger one, the stream is
 already gone and no cap can serve it — so `parseFormData` throws a distinct wiring error naming both caps and the remedy, rather than replaying the
 `413` as though the uploader had sent too much. `isFormCapConflict(error)` identifies it, and `csrfProtection`, the submission pipeline and
 `readAuthSubmission` each rethrow it instead of collapsing it into a `403`, a `400` fragment or a field refusal; it reaches the error boundary as a
@@ -219,10 +210,10 @@ other, so this composition lives in the consuming app — forge does not auto-wi
 
 **A resolver returning `undefined` is a refusal.** The mutation answers `403` and the middleware logs one `[csrf]` warning naming the likely cause
 (session middleware absent, or registered after the guard). It does not degrade to a path-only token: silently dropping the binding is exactly the
-fixation risk above, and a wiring error must not buy an attacker the opt-out. `subject: false` is the only way to be unbound.
+fixation risk above, and a wiring error must not buy an attacker the opt-out.
 
-**Path-only opt-out — `subject: false`.** For routes with no session identity to bind to, pass the literal `false`. It is the explicit, greppable
-opt-out that makes "this route accepts path-only CSRF tokens" auditable — grep `subject: false` to review every deliberately unbound guard.
+**`subject: false` is the only path-only opt-out**, for a route with no session identity to bind to. Being a literal makes every deliberately
+unbound guard greppable and so auditable.
 
 **Attach the guard through the controller action's `middleware` array**, not inline in the handler.
 
@@ -266,9 +257,8 @@ alias with the reason code in `error`. **Inspect `result.ok`; never echo `result
 
 ### 4a. `verifyTurnstile` — Cloudflare Turnstile CAPTCHA
 
-`verifyTurnstile(formData, secretKey, options)` calls the siteverify API and returns a `TurnstileResult`. It reads the token field itself; **the
-token field and connecting IP live inside the options object** — `options.tokenField`, defaulting to `TURNSTILE_FIELD_DEFAULT`
-(`src/form/constants.ts`, which owns the name the Cloudflare widget writes), and `options.remoteIp`.
+`verifyTurnstile` calls the siteverify API and reads the token field itself. **The token field and connecting IP live inside the options object**,
+not beside it: `tokenField` defaults to `TURNSTILE_FIELD_DEFAULT` (`src/form/constants.ts`, which owns the name the Cloudflare widget writes).
 
 **A `defineAction` route does not call it — it names `turnstile`,** and the pipeline verifies the token and drops the token field in one step (§1d).
 The split inside that option is deliberate: `tokenField` is fixed when the route is defined, because the field is dropped whether or not
@@ -286,12 +276,12 @@ passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make s
 an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Passing
 `dev`, a [`DevAllowance`][dev-readme] granting `turnstileTestingSecrets`, skips the hostname comparison **only when `secretKey` is one of those
 literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret without the token is
-compared as before. Every other check, `expectedHostname`'s fail-closed guard included, is unchanged.
+compared normally. Every other check, `expectedHostname`'s fail-closed guard included, is unchanged.
 
-**There is no env var, and now no way to write one.** Minting the token means importing `@y-core/forge/dev` at value, and `validate-dev-boundary`
-fails that import from anything but a `*.dev.ts` entry — so the production bundle holds no module that can set it. That is the containment shape
-`extraOrigins` has ([`SECURITY_HARDENING.md`][sh-3f] §3f), made checkable: a relaxation computed from an env check in the shared path is what
-[`SECURITY_HARDENING.md`][sh-3f] §3f rules out, and the token cannot be reached from that path at all.
+**There is no env var, and no way to write one.** Minting the token means importing `@y-core/forge/dev` at value, and `validate-dev-boundary`
+fails that import from anything but a `*.dev.ts` entry — so the production bundle holds no module that can set it. It is the containment
+`extraOrigins` has ([`SECURITY_HARDENING.md`][sh-3f] §3f): a relaxation computed from an env check in the shared path is ruled out, and the token
+cannot be reached from that path at all.
 
 **`expectedAction` is only usable when the widget minted the token with one.** The action rides on the token, so `<Turnstile action='…'>`
 ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c) is the other half of this option — set one without the other and every token is either refused or unscoped,
@@ -317,10 +307,9 @@ second, richer signal; forge takes the narrower residual. An app that needs the 
 `onBotDetected` and renders its own response.
 
 **Every trip is logged at `warn`, naming the guard and, for Turnstile, the reason.** The refusal is deliberately indistinguishable from a validation
-failure to the caller, so without the log line it is indistinguishable to the operator too — and a CAPTCHA that cannot pass in a given environment
-then reads as every submission getting its first field wrong. That is not hypothetical: it is what a consuming app saw under a local dev server
-whose widget issued no token, and diagnosing it took a Workers-runtime spec ([`TEST_RUNNERS.md`][testing-1f] §1f) to rule the body parse out. The
-response the caller sees is unchanged; only the server-side record is.
+failure to the caller, so without the log line it is indistinguishable to the operator too — and a CAPTCHA that cannot pass in a given environment,
+such as a local dev server whose widget issues no token, then reads as every submission getting its first field wrong. The response the caller sees
+is unchanged; only the server-side record is.
 
 ---
 
@@ -353,6 +342,5 @@ surface each step calls.
 [sh]: ./SECURITY_HARDENING.md
 [sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
-[testing-1f]: ./TEST_RUNNERS.md#1f-the-workerd-set
 [testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
 [ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller

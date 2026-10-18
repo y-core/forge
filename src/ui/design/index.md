@@ -123,8 +123,8 @@ its findings.
 The design principles these rules rest on are argued in _Refactoring UI_ by Adam Wathan and Steve Schoger. Every rule in this corpus was re-derived
 against forge's own components, tokens, and utilities, and is stated in forge's terms rather than reproduced.
 
-Where a single file rests on a source of its own, it credits it in its own `## Sources` footer — [`reference/04-color.md`][color] is the one that
-does, for the palettes forge's scheme files resample.
+Where a single file rests on a source of its own — a palette forge's scheme files resample, a curation it adopts — it credits it in its own
+`## Sources` footer.
 
 [accessibility]: ./reference/10-accessibility.md
 [ca]: ./reference/04-color-authoring.md

@@ -114,11 +114,10 @@ difference ([`NAMESPACES.md`][namespaces-3c] §3c).
 
 **`createReleaseCommand` takes a config object, not a program**, and its dependencies are injected so the command is testable.
 
-It builds a `release` subcommand that, in order: refuses a dirty working tree, resolves the next version, reaches a verdict on the changelog and
-promotes it in memory (§2d), prints the previous and next versions with the tag and what the promotion would write, refuses to re-tag, refuses a
-branch the remote does not publish from, runs the verification gate, updates `package.json`, writes the promoted changelog, commits, and creates the
-tag. **It is the only blessed way to cut a forge release**, and **every place a version lives is computed here** — the git tag, the `package.json`
-field, the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that says so.
+It builds a `release` subcommand whose step order is `src/tooling/release/release.ts`'s; the ordering rule this section holds it to is that every
+guard and the gate come before the first write. **It is the only blessed way to cut a forge release**, and **every place a version lives is computed
+here** — the git tag, the `package.json` field, the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that
+says so.
 
 **It never pushes.** The last thing it prints is the push command for a human to run, so the irreversible step — publishing a tag to a remote —
 stays a deliberate act.
@@ -261,23 +260,16 @@ forge's in `config/steps.ts` (see [`TESTING.md`][testing-6a] §6a).
 `createGateCommand`, so a project needs no binding file of its own. The factory stays published for the case the bin cannot serve — a table
 assembled at run time, or a gate embedded in a larger CLI.
 
-**One command, three modes — not three commands.** `verify` runs the `standard` tier, the run a task closes on; `verify --mode quality` is the
-writing loop — every row that judges the source without running it — and `verify --full` (sugar for `--mode full`) adds everything, including the
-steps needing a machine prerequisite. Verbs sharing every flag and differing only in a membership filter are a mode by definition, and modelling
-them as separate verbs costs a duplicated binding file per repo, a `gate` config field, and a superset invariant that must be _tested_ rather than
-being true by construction. **A bare `verify` means `standard`** because `verify` is "the gate": the cheap run is the one that has to be asked for.
+**The modes are [`TESTING.md`][testing-6a] §6a's, as one command.** Modelling them as separate verbs would cost a duplicated binding file per
+repo, a `gate` config field, and a superset invariant that must be _tested_ rather than being true by construction.
 
-**A dependency's absence is answered by the mode, not the table.** A step carries one `requires` — tool, probe, install hint — and the runner asks
-the probe once: a `quality` or `standard` run reports the step skipped, a full run fails it with the hint. That is what lets the design-system steps
-run on every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips, because it is the
-release gate `prepublishOnly` blocks on — a verdict hardcoded in the table could state only one of them. `--list` words a step's dependency per
-mode: conditional, or required.
+**A dependency's absence is answered by the mode, not the table** ([`TESTING.md`][testing-6a] §6a). That is what lets the design-system steps run on
+every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips — a verdict hardcoded in the
+table could state only one of them. `--list` words a step's dependency per mode: conditional, or required.
 
-**`GateMode` is a closed union derived from the ordered `GATE_MODES` tuple, and `Step.tier` names the lowest mode a step runs in.** Together they
-carry the invariant [`TESTING.md`][testing-6c] §6c exists to settle. The tier is ordered rather than a _set_ of modes, so selection is a rank
-comparison and a table cannot express a step a lower mode has and a higher one does not — `quality ⊆ standard ⊆ full` by construction. The
-prerequisite question stays binary regardless of how many tiers there are: only a full run fails on an absent one. Neither is a restriction the
-runner enforces at runtime — both are shapes that make the wrong thing unsayable.
+**`GateMode` is derived from the ordered `GATE_MODES` tuple, and `Step.tier` names the lowest mode a step runs in** — the rank
+[`TESTING.md`][testing-6c] §6c requires, so `quality ⊆ standard ⊆ full` is a shape the types make unsayable to break rather than a restriction the
+runner enforces at runtime.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
 different prefix, and one config field is cheaper than a fork of the runner per app. The temp-directory prefix behind the full-log file stays
@@ -289,10 +281,8 @@ across every repository that runs it, and would hand the next one the parts to b
 **`selectSteps` _is_ published**, because it is pure — an app unit-tests its own table against it at zero step cost, the same argument that makes
 forge's `steps.test.ts` worth having.
 
-**Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent.** The published surface is exactly `--only`,
-`--list`, `--fix`, `--reuse`, `--affected` with each step's `watches`, fail-fast, the `requires` probe with its mode-decided verdict — skip below
-the `full` tier, failure in a full run, and a red summary when every selected step was skipped — and the full-log file. Narrowing a run means
-enumerating labels or letting `--affected` read the change; a streamed run is `--list` and then the step's own command.
+**Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent**; the flags are [`TESTING.md`][testing-6a] §6a's
+table. Narrowing a run means enumerating labels or letting `--affected` read the change; a streamed run is `--list` and then the step's own command.
 
 **The `--reuse` receipt lives in the git directory, not in the working tree.** A working-tree path would need every consumer's `.gitignore` to
 name it, and until one did, the receipt would sit inside the tree hash it records — so writing it would invalidate it. Resolving the path with
@@ -504,9 +494,8 @@ remedy is to drop the dependency or find its Workers-native equivalent, not to a
 predates that acquires the whole Node surface the moment somebody bumps it. Stating the two `no_*` flags is accepted and inert on the earlier side
 of that threshold, so it lands at an app's existing date and makes the later bump safe by construction rather than by memory.
 
-**`new_module_registry` is adopted for its semantics, and no claim is made about speed.** It brings URL-shaped specifiers, `import.meta` resolution,
-validated import attributes, the `require(esm)` rules, uniform module error classes and Wasm source-phase imports. It is an independent opt-in with
-no default-on date of its own. It changes the class a module error is raised as, so a test asserting the old message text is the one thing expected
+**`new_module_registry` is adopted for its module semantics, and no claim is made about speed.** It is an independent opt-in with no default-on
+date of its own. It changes the class a module error is raised as, so a test asserting the old message text is the one thing expected
 to break when it goes on.
 
 ### 3a. What the Check Reads, and the Trap It Exists For

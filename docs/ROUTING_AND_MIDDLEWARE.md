@@ -36,7 +36,6 @@ audience: consumer
 - §3e applyMiddlewareChain Canonical Chain Builder: the encoded order
 - §4 Context Namespace: the public typed-accessor surface
 - §4a contextVar Typed Accessor: building a namespace's own accessor, and the published ones
-- §4b Context Variable Typing: one accessor per slot, never a raw key
 - §5 Route Lifecycle: loader, action, and view shapes
 - §5a Loader — definePage GET Data Source: data or a short-circuit Response
 - §5b Action — the Mutation Terminal Step: both builders' shapes and the validate-before-side-effect rule
@@ -175,14 +174,12 @@ default `422` fragment and receives the issues themselves.
 one-off response publicly cacheable. `headers` is still applied last and still wins, which is the escape hatch for a route that does want to
 overwrite. The header is computed once when the page is defined, not per request.
 
-**`data` comes last because that is where this family already puts its payload** — `view(c, config, state)` does the same — and because a data-first
-shape could not have been additive: an existing `(c, config)` action would have silently retyped `c` as the body and still compiled.
+**`data` comes last because that is where this family already puts its payload** — `view(c, config, state)` does the same.
 
-**A page that declares no `schema` behaves exactly as it did without one.** `action` receives the unparsed context, `data` is `undefined`, and
+**A page that declares no `schema` runs no pipeline.** `action` receives the unparsed context, `data` is `undefined`, and
 validating at its own boundary is that action's own obligation ([`BOUNDARIES.md`][boundaries-3a] §3a).
 
-**The view returns a `Response`, not a bare JSX element.** Its signature is `(c, config, state) => Response | Promise<Response>`, where `state` is
-`{ data, actionData, method }`.
+**The view returns a `Response`, not a bare JSX element.**
 
 **`definePage` does not accept a `middleware` field** — route middleware belongs in the controller action (§1b).
 
@@ -192,8 +189,7 @@ validating at its own boundary is that action's own obligation ([`BOUNDARIES.md`
 output. **`handle` is unreachable except through a passing `v.safeParse`**, so a route cannot accept a body nothing checked. Guard refusals,
 validation failures, and oversized bodies produce structured fragment responses automatically. That sequence is not this builder's own — it is the
 shared pipeline `definePage` also runs (§2d), and `handle` is simply its terminal step. `ActionDefinition` (`src/app/types.ts`) is authoritative for
-the options and `src/app/README.md` documents each one with its type; the schema contract and the failure statuses belong to
-[`INPUT_VALIDATION.md`][iv-1d] §1d.
+the options; the schema contract and the failure statuses belong to [`INPUT_VALIDATION.md`][iv-1d] §1d.
 
 **`handle` returns a `Response` directly and never delegates to a view.** A plain `(c) => Response` action is equally valid when the pipeline is not
 needed. **Like `definePage`, it does not accept a `middleware` field** — transport guards belong in the controller action (§1b), and the pipeline's
@@ -244,10 +240,10 @@ fragment (`handle`) or a page (`action` → `loader` → `view`) — never by wh
 
 **`schema` is the one member a page states for itself, and only because its optionality differs.** An action must declare a schema; a page may, and
 a page that declares none is not a submission route at all. Everything else is inherited rather than restated, because a second hand-maintained list
-is how the two builders diverged the first time.
+is how two builders diverge.
 
 **A pipeline option without a `schema` is refused, at the type level and at registration.** Without a schema there is no pipeline to configure, so
-`turnstile` and the rest were accepted and silently ignored — a page could declare a bot guard that never ran. `PageDefinition` is a union of a
+accepting `turnstile` or the rest would ignore it silently — a page could declare a bot guard that never ran. `PageDefinition` is a union of a
 `{ schema: S }` arm carrying the pipeline options and a `{ schema?: never }` arm forbidding each of them, the forbidding arm being a **mapped type
 over the same projection**, so a member added to the pipeline extends both arms at once. `definePage` also **throws at registration** naming the
 stated keys, because a union's own diagnostic ("not assignable to either arm") is not what a developer can act on. The key list lives once, as
@@ -279,8 +275,6 @@ is what produces it, so a consumer never writes it out. A hand-written chain mus
 
 ### 3b. Middleware Handler Type
 
-`Middleware` is `(context, next) => Response | Promise<Response>`.
-
 **A middleware must either call `next()` to continue or return a `Response` to short-circuit.** Doing neither hangs the request.
 
 ### 3c. Route Middleware Array Ordering
@@ -307,14 +301,13 @@ normative statement of that order; every other page defers here rather than rest
       → validateBindings(bindings) → session → globals[] → per-path guards (origin → rateLimit → guards[])
 
 **`validateBindings` sits after `createSecurityHeaders` because a shape refusal throws**, and a throw that precedes the header factory strips the
-error page of every header it would have set — measured on a wrong-shaped KV binding, the 500 lost `Strict-Transport-Security`, COOP, CORP,
-`X-Frame-Options` and `X-Request-Id`, and kept them all once the order was the one above. The natural reading, "validate first", is the wrong one
-([`FORGE_ERRORS.md`][eh-5b] §5b).
+error page of every header it would have set, `Strict-Transport-Security` and `X-Request-Id` among them. The natural reading, "validate first", is
+the wrong one ([`FORGE_ERRORS.md`][eh-5b] §5b).
 
 **A guard group registers its whole chain once, for all of its `paths` at once** — the group's paths compile into one matcher, which
 `app.use(paths, ...chain)` accepts. Registering per path would instantiate one `rateLimit` per path, so two overlapping patterns (`/api/*` and
-`/api/users`) spent a request's budget twice and halved the effective limit. Registration is therefore group-major, not path-major, which is the
-only order that exists once there is one instance per guard.
+`/api/users`) would spend a request's budget twice and halve the effective limit. Registration is therefore group-major, not path-major, which is
+the only order that exists once there is one instance per guard.
 
 **Every slot except `securityHeaders` is optional**; omitted slots are skipped without disturbing the relative order of the rest. `session`,
 `before[]`, `globals[]` and per-path `guards[]` accept prebuilt `Middleware` values, which keeps `app` free of `session`- and route-specific
@@ -348,13 +341,6 @@ over fetch-router's `RequestContext`. It is also the canonical home of `validate
 every early return in the guard, so it is present on every request the guard ran on — the `GET` that mints, the mutation that passes, and the
 mutation it refuses alike. **Read it with `.getOptional`, never `.get`: absence is meaningful rather than an error.** It is the honest answer that
 no guard ran on this request, and §2b is the rule that depends on the distinction.
-
-### 4b. Context Variable Typing
-
-`contextVar<T>(name)` creates a typed accessor backed by a fresh `createContextKey<T>()`. The generic prevents reading a slot with the wrong
-expected type.
-
-**Each `contextVar` instance is the sole read/write point for its slot** — no raw `c.get(key)` calls in consumer code.
 
 ---
 
@@ -399,9 +385,8 @@ never raw keys.**
 
 ## 6. The Page Shell
 
-**Every page forge mounts renders into one shell the app registers, resolved per request.** The type is `PageShell` —
-`(c, content, slot) => JSXNode | Promise<JSXNode>` — and `src/app/shell.tsx` is authoritative for it, alongside `ShellSlot`, `ShellDocument` and
-`pageShell`.
+**Every page forge mounts renders into one shell the app registers, resolved per request.** The type is `PageShell`, and `src/app/shell.tsx` is
+authoritative for it and its neighbours.
 
 This is the same inversion `Config` already has. `definePage` does not take config as an option: it reads `ConfigKey` off the request context, which
 `Forge` provisions from a store attached at registration (§5d). A document shell is the same kind of fact — one app-wide decision, needed per
@@ -414,11 +399,7 @@ replaces an earlier one. The shell is provisioned onto the request context besid
 anywhere.
 
 A shell is a closure, which is what keeps forge's surface free of it: **the app's own per-request context and layout stay inside it**, and forge
-sees only `JSXNode` in and `JSXNode` out.
-
-```ts
-createApp({ shell: async (c, content, slot) => <Layout ctx={await renderContext(c, config)}>{content}</Layout> });
-```
+sees only `JSXNode` in and `JSXNode` out. Writing one is [`src/app/README.md`][app-readme]'s.
 
 **`pageShell({ stylesheet, script, lang })` is the form for a deployment whose whole chrome is a stylesheet**, so reaching for the shell does not
 mean writing a layout component. Titles come from `slot.title` either way.
@@ -482,6 +463,7 @@ What the descriptor deliberately does not do:
   ([`SECURITY_HARDENING.md`][sh-2d] §2d) — which `metaTags` is handed in `options`, and which an `extra` entry has no way to receive. Given none, it
   renders nothing rather than an element the policy would refuse.
 
+[app-readme]: ../src/app/README.md#wrapping-pages-in-a-document-shell
 [boundaries-3a]: ../warden/canon/libs/BOUNDARIES.md#3a-the-boundary-rule
 [eh-2]: ./FORGE_ERRORS.md#2-fragment-renderers-renderhtmx-namespace
 [eh-5b]: ./FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary

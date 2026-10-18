@@ -1,6 +1,6 @@
 ---
 title: Runtime Asset Lookup
-description: "Two pure helpers that resolve a logical asset or sprite name to its content-hashed public URL, against a mapping baked in at build time."
+description: "Pure helpers that resolve a logical asset or sprite name to its content-hashed public URL, against a mapping baked in at build time."
 audience: consumer
 ---
 
@@ -72,7 +72,7 @@ worker that uses both, is [`@y-core/forge/tooling/assets`][tooling-assets-readme
 
 ## See also
 
-- [`@y-core/forge/tooling/assets`][tooling-assets-readme] — authoring `assets.config.ts`, running the build, and the generated module these two
+- [`@y-core/forge/tooling/assets`][tooling-assets-readme] — authoring `assets.config.ts`, running the build, and the generated module these
   functions are called from
 - [`ASSET_PIPELINE.md`][ap-3] §3 — the runtime lookup contract as a ruling
 

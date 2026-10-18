@@ -134,7 +134,7 @@ const mintSignout = csrfMinter({
 const token = await mintSignout(c, "/auth/signout");
 ```
 
-**Pass the same `secret` and `subject` the guard on the target path was given** — that is the whole contract. A `subject` resolver that returns
+**Pass the same `ring` and `subject` the guard on the target path was given** — that is the whole contract. A `subject` resolver that returns
 `undefined` throws here rather than minting a token that could only be refused. The key ring is cached per `env`, so a control on every page costs
 one key import per isolate, not one per render.
 
@@ -148,9 +148,9 @@ An `hx-delete`, or a passkey ceremony, sends no body, so the token travels as a 
 `csrfHeaderCtx`:
 
 ```ts
-import { csrfHeaderCtx, csrfTokenCtx } from "@y-core/forge/form";
+import { CSRF_HEADER_DEFAULT, csrfHeaderCtx } from "@y-core/forge/form";
 
-const header = csrfHeaderCtx.getOptional(c) ?? "X-CSRF-Token";
+const header = csrfHeaderCtx.getOptional(c) ?? CSRF_HEADER_DEFAULT;
 ```
 
 Pass that name to `<Form>`'s `csrfHeader` prop where the app renamed it. A renamed header nobody propagated is a `403` with nothing on the page
@@ -211,7 +211,8 @@ than last-wins, a `File` survives, and the result has no prototype — so reach 
 `undefined` and calling it throws. Text normalization is the schema's job, via
 `formText()`, `formMultilineText()` and `formDigits()` ([`INPUT_VALIDATION.md`][iv-1d] §1d).
 
-`parseFormData` defaults to a 100 KB cap and takes `{ maxBytes }` to raise it; an oversized body rejects with an `Error` carrying `{ status: 413 }`.
+`parseFormData` caps the body at `FORM_MAX_BYTES_DEFAULT` and takes `{ maxBytes }` to raise it; an oversized body rejects with an `Error`
+carrying `{ status: 413 }`.
 
 ---
 
@@ -234,7 +235,7 @@ if (!result.ok) return new Response("Verification failed", { status: 403 });
 The choice you are making in that options bag is **how tightly the token is pinned**. `expectedHostname` is required and is the anti-replay pin: a
 token solved on an attacker's page carries their hostname and is refused. `expectedAction` and `expectedCData` narrow it further, to one form and to
 one server-supplied payload, and each is worth setting when a site has more than one widget. Omitting `expectedHostname` fails closed — the network
-call is never made. `timeoutMs` (default 5 s) bounds how long a submission waits on Cloudflare; `remoteIp` and `tokenField` are wiring rather than
+call is never made. `timeoutMs` bounds how long a submission waits on Cloudflare; `remoteIp` and `tokenField` are wiring rather than
 policy, the latter matching whatever field the widget writes.
 
 `signal` is caller cancellation, and an abort on it **rejects** rather than resolving to a result. `defineAction` threads `c.request.signal` in by
@@ -273,16 +274,11 @@ token per render and never cache one across requests.
 **The `ring` resolver runs once per distinct `env` object, not once per request.** The ring is cached against it, so a secret change is picked up
 when a fresh isolate starts rather than mid-life.
 
-**`formToObject` returns a prototype-less object.** `body.hasOwnProperty(name)` is `undefined`, and calling it throws.
-
-**`CsrfProtectionOptions` is exported**, so a guard defined away from its `csrfProtection(…)` call can still be typed.
-
 ---
 
 ## See also
 
-- [`docs/INPUT_VALIDATION.md`][iv] — the rulings this README defers to: the CSRF guard contract (§3), Turnstile (§4), the byte cap (§2c), and the
-  schema contract `defineAction` enforces (§1d)
+- [`docs/INPUT_VALIDATION.md`][iv] — the rulings this README defers to: the CSRF guard, Turnstile, the byte cap, and the schema contract
 - [`src/session/README.md`][session-readme] — the sessions whose id the `subject` resolver above reads
 - [`src/app/README.md`][app-readme] — `defineAction` and its options, which is the path most routes take instead of this one
 

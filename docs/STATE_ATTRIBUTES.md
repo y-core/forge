@@ -69,9 +69,8 @@ the styling breaks with it.
 **Writing the pair is the controller's own step, and deliberately not one function's.** `applyStateAttrs` reconciles the `data-` half; the
 controller writes the ARIA half beside it, in the same statement. A single helper would have to know which ARIA attribute a state maps to, and that
 is the widget's question rather than the table's: `selected` is `aria-selected` on a tab and `aria-current` on a carousel dot, which is a link that
-was never selectable. Pairing them by hand is what lets each controller answer it. **Every client repaint is pinned by a test that reads both
-halves** — `client/tabs.test.ts`, `client/menu.test.ts`, `client/bind.test.ts` and `client/carousel.test.ts` — so a repaint that wrote one and not
-the other fails there rather than in a consumer's page.
+was never selectable. Pairing them by hand is what lets each controller answer it. **Every client repaint is pinned by its controller's co-located
+test reading both halves**, so a repaint that wrote one and not the other fails there rather than in a consumer's page.
 
 **The pairing is a licence to emit the hook, not a licence to emit it unreconciled.** A `data-` attribute no controller ever updates and no
 stylesheet ever reads is not a hook at all — it is a claim the markup makes once and cannot keep, so it is deleted rather than kept for symmetry.
@@ -106,7 +105,7 @@ only stamp what it can keep true ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h); the ru
 ## 2. Presentational Attributes Are Declared Too
 
 **The enum half of the vocabulary is declared beside the state half, and is emitted through `presentationAttrs()` rather than hand-written at each
-call site.** `data-tone`, `data-appearance`, `data-size` and `data-state` are the styling hooks that carry a _choice_ rather than a flag, and
+call site.** These are the styling hooks that carry a _choice_ rather than a flag — `data-tone` and `data-state` among them — and
 spelling one as a string literal in the component that emits it is the same two-places-that-cannot-see-each-other problem §1 solves for the boolean
 states, with the same silent failure mode: a stylesheet is written against a name, and nothing holds a literal to a declaration.
 
@@ -119,10 +118,9 @@ in every consumer bundle, so the attribute names are reached as frozen module-sc
 
 ## 3. The Island Payload Is Not a Presentational Enum
 
-**A serialized island payload is written to `data-island-state` and never to `data-state`.** One attribute name carried two grammars — a
-presentational enum on `Steps`, `Timeline` and `Meter`, and a JSON object on the resumable island wrapper and `Toast` — and the reader could not
-tell them apart: `hydrateState` throws unless the value parses to a JSON object, so a component spreading `...rest` onto an element that also
-carries an enum made `resume()` throw from markup that type-checked.
+**A serialized island payload is written to `data-island-state` and never to `data-state`.** One shared name would carry two grammars — a
+presentational enum and a JSON object — that the reader cannot tell apart: `hydrateState` throws unless the value parses to a JSON object, so a
+component spreading `...rest` onto an element that also carries an enum would make `resume()` throw from markup that type-checks.
 
 **The split is by name, not by a parse-and-guess.** A tolerant reader that treated an unparseable value as "no state" would swallow a genuinely
 corrupt payload, which is the failure `resume()` exists to report. Giving the payload its own name makes the throw unreachable from a presentational
@@ -145,8 +143,8 @@ read by tests only, for §1's frozen-hook reason. Each sweep declares its own ex
 **A name nothing emits fails, so the list can only shrink.** That assertion belongs to the source scan alone: only it can tell "unused" from "not
 rendered here".
 
-**Wiring versus enum decides where a name goes.** A name driving a `cva` variant is presentational and belongs in §2's declared table; a few sit in
-wiring today, each recorded where it is declared.
+**Wiring versus enum decides where a name goes.** A name driving a `cva` variant is presentational and belongs in §2's declared table; a name
+kept in wiring records its reason where it is declared.
 
 **The probe renders each component twice — once bare, once with every boolean state prop set.** A component emits a boolean state hook only when
 the corresponding prop is true, so a sweep over a default render reaches none of them and the hooks the contract exists for are exactly the ones it
@@ -161,10 +159,10 @@ demands.
 **Every forge element a caller may need to reach carries a `data-slot`, and a root composes its own token with an inherited one rather than
 hardcoding it** — `slotToken(own, inherited)`, so a component nested inside another stays addressable as both.
 
-**Some components render their `data-slot` on an inner element rather than the root, and that is declared rather than silent.** A `Switch`,
-`Toggle`, `Select` or `OtpInput` root is a wrapper whose interesting element is the control inside it, so the token names the control; the
-conformance sweep carries one entry per split with the reason it is a split, in place of the unexplained per-component overrides that made the
-exceptions invisible. It holds the pair both ways: a `classSlot` with no reason beside it fails, and a reason with no split to explain fails too.
+**Some components render their `data-slot` on an inner element rather than the root, and that is declared rather than silent.** A root such as
+`Switch`'s is a wrapper whose interesting element is the control inside it, so the token names the control; §4's conformance sweep carries one entry
+per split with the reason it is a split. It holds the pair both ways: a `classSlot` with no reason beside it fails, and a reason with no split to
+explain fails too.
 
 **`forge/data-slot-before-spread` does not catch this and is not extended to.** It enforces the _ordering_ of a slot attribute against the forwarded
 props, never its _placement_ on the element tree, so an inner-element token is outside what it can see. Naming the splits in the sweep's table is

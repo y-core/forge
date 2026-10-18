@@ -136,8 +136,8 @@ client inactive for the whole window.
 SESSION_SECRET=9c1e…
 ```
 
-`createAnonymousSession` takes its ring from the `ring` resolver, so the same variable rotates it. Each secret is held to
-[`SECURITY_HARDENING.md`][sh-8] §8's strength rule; `openssl rand -hex 32` gives one that passes.
+`createAnonymousSession` takes its ring from the `ring` resolver, so the same variable rotates it. Generate each new secret as
+[Security](#security) describes.
 
 **Each cookie name signs under a subkey of its own.** `createSignedCookie` derives a `signed-cookie/<name>` subkey from the ring, so a value minted
 for one cookie never verifies as another, nor as a CSRF token signed under the same ring. It refuses the auth key ring, which `importKeyRing` did
@@ -296,9 +296,6 @@ would hash to one slot and share **one KV namespace** — tenant B reading and w
 
 **The `ring` resolver is called once per isolate, not per request.** A secret change ships as a deploy, which starts fresh isolates, so a rotation
 is picked up when the isolate is rather than mid-life.
-
-**The serialized cookie is queued on the per-request pending-header channel**, flushed by the app's single `applyHeaders` pass — this middleware
-does not rebuild the response.
 
 ---
 

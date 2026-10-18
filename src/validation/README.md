@@ -13,8 +13,8 @@ app and in the library is built from here, test files included ([`CODE_RULES.md`
 import { describeValidationIssue, formMultilineText, formText, v, type ValidationResult } from "@y-core/forge/validation";
 ```
 
-**What is not prefixed is not valibot.** `formText`, `formMultilineText`, `formDigits`, `safeCheck` and `describeValidationIssue` sit beside `v`,
-never inside it. Everything else you reach for, `v.strictObject` included, is valibot's own.
+**What is not prefixed is not valibot.** Every name exported beside `v` is forge's own, and never inside it. Everything under `v`, `v.strictObject`
+included, is valibot's.
 
 ---
 
@@ -118,8 +118,8 @@ message, and vouching the same predicate twice replaces the first message.
 
 ## See also
 
-- [`docs/INPUT_VALIDATION.md`][iv] — the governing doctrine: the facade and what sits beside `v` (§1a), `abortEarly`, issue formatting and
-  `safeCheck` (§1b), and the `defineAction` schema contract (§1d)
+- [`docs/INPUT_VALIDATION.md`][iv] — the governing doctrine: the facade, `abortEarly`, issue formatting, `safeCheck`, and the `defineAction`
+  schema contract
 - [`src/result/README.md`][result-readme] — the `Result` primitive `ValidationResult` narrows
 - [`src/tooling/cf/README.md`][cf-readme] — `forge cf gen env`, which emits the env schema this namespace's `v` then types
 

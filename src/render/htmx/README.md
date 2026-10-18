@@ -137,7 +137,7 @@ Each pattern returns the same attribute map `hxAttrs` does, with the defaults fo
 passing the matching prop:
 
 - `formSubmit({ post, target })` — a submitting form; disables the form itself while the request is in flight.
-- `liveSearch({ get, target })` — an input that searches as it is typed, debounced by 300ms and swapping inner HTML.
+- `liveSearch({ get, target })` — an input that searches as it is typed, debounced, swapping inner HTML.
 - `inlineValidation({ get, target })` — a field validated on change and blur, aborting its own inflight request.
 - `infiniteScroll({ get, target })` — appends the next page when the element is revealed.
 - `paginatedTableLink({ get, target, page })` — a pagination link; builds `?page=N` onto the URL, keeping any query string it already has.
@@ -273,9 +273,8 @@ path and query.
 - [`src/http/README.md`][http-readme] — `fragmentResponse`, `htmlResponse` and the redirect builders these headers and banners ride on
 - [`src/render/jsx/README.md`][jsx-readme] — the SSR renderer these attributes are spread into
 - [`src/security/README.md`][security-readme] — origin protection, CSP headers and `TURNSTILE_CSP`
-- [`docs/FORGE_ERRORS.md`][eh] — the banner renderers' contract and where the status goes (§2), and the option-escaping split (§2d)
-- [`docs/HTMX.md`][htmx] — the trust posture on emitted values (§7, §7a, §7b), the `isHxRequest` not-a-boundary ruling (§7), the
-  form-independent `sync` default (§8), explicit inheritance (§9), and why `isPartial` reads `HX-Request-Type` (§10)
+- [`docs/FORGE_ERRORS.md`][eh] — the banner renderers' contract and the option-escaping split
+- [`docs/HTMX.md`][htmx] — the trust posture on emitted values, and the rulings behind `isPartial`, the `sync` default and explicit inheritance
 
 [eh]: ../../../docs/FORGE_ERRORS.md
 [eh-2]: ../../../docs/FORGE_ERRORS.md#2-fragment-renderers-renderhtmx-namespace

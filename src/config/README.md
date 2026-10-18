@@ -38,8 +38,6 @@ const { apiKey, fromAddress } = emailConfig.get(c.env);
 `env("RESEND_API_KEY")` is a reference, not a read — it resolves to `rawEnv.RESEND_API_KEY` when `get` runs. A bare string in the mapping is used
 verbatim, which is how a literal default sits beside a binding.
 
-**Build every holder through `createConfig`.** The `Config` constructor is private, so `new Config(…)` is not available.
-
 ---
 
 ## Choosing where a value belongs
@@ -105,8 +103,8 @@ The choice you are making is which keys make the integration _viable_: `required
 rest. A key that is neither required nor defaulted is still validated — declare it `v.optional(…)` if it may legitimately be absent, and make sure
 each `defaults` value satisfies its own entry schema.
 
-**A blank value is an absent one.** `""` an unset Workers secret and an empty `.dev.vars` are both empty. `0` and `false` are values, and stay
-present.
+**A blank value is an absent one.** An unset Workers secret and an empty `.dev.vars` entry both arrive as `""`, and both count as absent. `0` and
+`false` are values, and stay present.
 
 ---
 

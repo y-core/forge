@@ -10,8 +10,8 @@ Every suite for a forge app needs the same handful of fixtures: a request contex
 way the real ones do, a CSRF token that actually verifies, and a way to turn a component into the string you assert against. This namespace ships
 them.
 
-Import it from test files only. Everything is reached from the barrel except the fixture comparison, which is node-only, and the expected
-coverage set, which loads every UI barrel. Each has its own subpath and is deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
+Import it from test files only. A fixture that runs under node, or that loads every UI barrel, has its own subpath, named in the section that
+uses it, and is deliberately not re-exported ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
 ---
 
@@ -42,9 +42,8 @@ const res = await settingsHandler(c);
 
 ## Exercising one handler or middleware
 
-`createTestContext` takes the request and, optionally, whatever else the router injects. Every one you leave out gets an inert
-stand-in: an empty `env`, an `ExecutionContext` whose members do nothing, no config, and `nullLogger`. Pass a field only when the assertion touches
-it.
+`createTestContext` takes the request and, optionally, whatever else the router injects. Whatever you leave out gets an inert stand-in: an
+empty `env`, an `ExecutionContext` whose members do nothing, no config, and `nullLogger`. Pass a field only when the assertion touches it.
 
 ```ts
 const c = createTestContext(buildRequest("/settings", { formData: { theme: "dark" } }), { env: { SETTINGS_KV: fakeKV() } });
@@ -100,7 +99,7 @@ const TEST_ENV = {
 };
 ```
 
-`fakeD1` is the one that does two jobs. Its first argument answers the rows for a statement, and every bound statement is recorded on `calls`, so
+`fakeD1` does two jobs. Its first argument answers the rows for a statement, and every bound statement is recorded on `calls`, so
 one fake covers the arrange and the assert:
 
 ```ts
@@ -299,7 +298,7 @@ selector rather than reaching for the outer.
 
 ## Running a suite in the real Workers runtime
 
-`@y-core/forge/testing/harness` starts a Worker under wrangler's `createTestHarness` (`wrangler` `>=4.99.0`, an optional peer of forge). Run that
+`@y-core/forge/testing/harness` starts a Worker under wrangler's `createTestHarness` (`wrangler` is an optional peer of forge). Run that
 suite under node — Playwright or `node --test`, never `bun test`, under which the harness answers no request ([`TEST_RUNNERS.md`][testing-1f] §1f).
 It is off the `./testing` barrel, so import it by name ([`TEST_RUNNERS.md`][testing-7f] §7f).
 
@@ -351,8 +350,8 @@ Node refuses forge's TypeScript source under `node_modules`, so a workerd spec m
 
 `@y-core/forge/testing/snapshot` compares a string against a file on disk and reports the lines they disagree on. It is node-only: a suite reaches
 it by name, references the types shim in the file that imports it, and needs no `exclude` and no `node` entry in its `types` array
-([`TEST_RUNNERS.md`][testing-7f] §7f). It takes a
-string and nothing else, so anything that renders to text can use it: a PDF layout description, a generated schema, a CLI transcript.
+([`TEST_RUNNERS.md`][testing-7f] §7f). It takes a string, so anything that renders to text can use it: a PDF layout description, a generated
+schema, a CLI transcript.
 
 ```ts
 /// <reference types="@y-core/forge/testing/node" />
@@ -380,10 +379,12 @@ or unwritable path is a `reason` with the original `Error` as `cause` — a brok
 **Assert on the report, not on `ok`.** `expect(outcome.ok).toBe(true)` tells a reviewer that something differed; the shape above puts the differing
 lines in the failure message.
 
+---
+
 ## Checking that every component is demonstrated
 
-`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`: every component the `ui/core`, `ui/controls`, `ui/chrome` and `ui/server`
-barrels export, each with a `key` of the form `core/Button`. Compare your catalog's own list against it, and a component a forge upgrade adds fails
+`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`: every component forge's UI barrels export, each with a `key` of the form
+`core/Button`. Compare your catalog's own list against it, and a component a forge upgrade adds fails
 the test until you demonstrate it ([`TEST_RUNNERS.md`][testing-7i] §7i).
 
 ```ts

@@ -138,23 +138,21 @@ What the format carries, and the limits that follow from it — each refused up 
 ### 5a. What a Backup Costs, and the Size It Stops Suiting
 
 **This is a documented limit, not a defect.** The reader is shaped for a database a `wrangler` CLI can be driven against, and it is worth knowing
-where that stops.
+where that stops. A local database, and every scratch the proof restores into, is read in process; a deployed one is read by spawning wrangler.
 
-- **A spawn costs about 1.3 seconds, whatever it carries.** Loading a 2,754-byte `schema.sql` was measured at 1.34s and a 4.2 MB `data.sql` at 8.4s,
-  so every count below converts to seconds at roughly that rate — the process spawn dominates the query, and reducing spawns is the only thing that
-  moves the wall clock.
-- **One `wrangler d1 execute` spawn per 256 rows.** The page size is a bound on bytes rather than on rows — one page's worst case has to fit in a
-  single `--json` result — so a 100k-row table is roughly 400 spawns for one pass over it.
-- **Every other read is batched.** The inventory, each table's shape, each key probe and each row count go out as one `--command` carrying many
-  statements, so describing N tables costs two spawns rather than 2N; a batch is split only when it would exceed the kernel's 128 KiB cap on one
-  argv string.
-- **A route-`full` load is two spawns.** `schema.sql` then `data.sql`, each loaded whole with `--file`. It is two rather than one because wrangler
-  cannot prepare a payload declaring schema statement by statement, and hands it to miniflare's `exec`, which refuses over 102,400 bytes.
+- **Against a deployed database, a spawn costs about 1.3 seconds, whatever it carries.** The process spawn dominates the query, so reducing spawns
+  is the only thing that moves the wall clock.
+- **One read per 256 rows.** The page size is set so one page's worst case fits a single `--json` result; against a deployed database a 100k-row
+  table is roughly 400 spawns for one pass over it.
+- **Every other read is batched.** The inventory, each table's shape, each key probe and each row count go out as one request carrying many
+  statements, so describing N tables costs two reads rather than 2N; against a deployed database a batch is split only to keep one `--command`
+  under the kernel's cap on a single argv string.
+- **A route-`full` load is two loads**, `schema.sql` then `data.sql`, each whole.
 - **The whole database is held in memory at once.** Every table is read whole before anything is written, and each is held twice: the canonical rows
-  the artifact is emitted from, and the raw `--json` rows the verification compares against. Peak memory therefore tracks the database's size, not
-  the largest table's.
+  the artifact is emitted from, and the raw rows the verification compares against. Peak memory therefore tracks the database's size, not the
+  largest table's.
 - **A verified backup reads every row again, once per route.** The proof replays `migrations` and `full` into a scratch and compares row by row
-  (§2), which is two further passes at the same spawn cost. `--no-verify` skips both, at the cost §2 states.
+  (§2). `--no-verify` skips both, at the cost §2 states.
 
 At tens of thousands of rows this is seconds. At millions it is not the right tool: take it `--via export` (§5b), or rely on Time Travel. The
 export holds no rows in memory beyond the `data.sql` text, but it pays off only for a remote source: the scratch it reads back is local whatever the

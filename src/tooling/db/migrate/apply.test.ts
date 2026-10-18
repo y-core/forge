@@ -6,11 +6,12 @@ import { PLAIN } from "../../term/color";
 import { OK, argvHas, composed, fakeDbIo, jsonRows, onStdin, schemaModelRows } from "../db.fixture";
 import { appHome } from "../home";
 import { formatComposeHeader } from "../schema/header";
-import type { DbConfig, DbRunContext, FakeDbIo, Place, Spawned } from "../types";
-import { lintPendingMigrations, runMigrate } from "./apply";
+import type { DbConfig, DbRunContext, FakeDbIo, Home, Place, SchemaObject, Spawned } from "../types";
+import { lintPendingMigrations, readWranglerHistory, runMigrate } from "./apply";
 import { RECORDED_CHECKSUM_SELECT, recordMigrationSql } from "./checksum";
 import { migrationChecksum, migrationsDigest } from "./files";
 import { schemaFingerprint } from "./fingerprint";
+import type { TargetFacts } from "./types";
 
 const NOW = new Date("2026-09-11T10:00:00Z");
 const MIGRATIONS = "/app/config/db/migrations";
@@ -100,6 +101,7 @@ function verbOf(statements: readonly string[], source: string | null): string {
   if (source !== null) return `stage:${source.split("/").at(-1)}`;
   if (statements[0] === RECORDED_CHECKSUM_SELECT) return "read-recorded";
   if (statements[0] === INVENTORY_SELECT) return "read-inventory";
+  if (statements[0]?.startsWith("SELECT name FROM ")) return "read-history";
   return "write";
 }
 
@@ -113,6 +115,7 @@ function trace(io: FakeDbIo): string[] {
     if (argvHas(args, "time-travel", "info")) return "bookmark";
     if (isRecordedSelect(args)) return "read-recorded";
     if (isInventorySelect(args)) return "read-inventory";
+    if (command(args).startsWith("SELECT name FROM ")) return "read-history";
     if (isWrite(args)) return "write";
     return args.join(" ");
   });
@@ -269,6 +272,7 @@ describe("runMigrate()", () => {
     wire(io, [{ name: "0001_init", sha256: DROP_SHA, applied_at: 1, fingerprint: null }]);
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow("app-db (local) has applied migrations that are no longer on disk:\n  0001_init");
+    expect(trace(io).filter((step) => step === "write" || step.startsWith("stage:"))).toEqual([]);
   });
 
   it("refuses an applied migration whose file was edited since, before the lock and the apply", async () => {
@@ -796,5 +800,277 @@ describe("lintPendingMigrations()", () => {
 
     expect((await lintPendingMigrations(run)).pending).toEqual(["0002_next"]);
     expect(io.files.get(LOCK)).toBe(held);
+  });
+});
+
+const HISTORY_SELECT = (table: string) => `SELECT name FROM "${table}" ORDER BY id`;
+const HISTORY_ROW = {
+  type: "table",
+  name: "d1_migrations",
+  tbl_name: "d1_migrations",
+  sql: "CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL)",
+};
+const WITH_HISTORY = [...INVENTORY, HISTORY_ROW];
+const DROP_FIX = (table: string) => `Drop ${table} before bringing the database under forge`;
+const RESTORE_FIX: Record<Place, string> = {
+  local: "Restore the database to a point before that run with `forge db reset` and `forge db restore`",
+  standby: "Restore the database to a point before that run with `forge db reset` and `forge db restore`",
+  remote: "Restore the database to a point before that run with `forge db bookmark restore`",
+  preview: "Restore the database to a point before that run with `forge db bookmark restore`",
+};
+
+function historyRefusal(place: Place, table: string, names: readonly string[], fix: string): string {
+  return `app-db (${place}) has migrations ${table} records that forge never applied — \`wrangler d1 migrations apply\` ran against it:\n  ${names.join("\n  ")}\n${fix}; forge will not apply over a history it did not write.`;
+}
+
+const isTarget = (home: Home) => !home.label.startsWith("scratch:");
+
+/** Answers the target's inventory with `inventory`, and each wrangler history table named in `history` with those names, ahead of `wire`. */
+function withHistory(io: FakeDbIo, inventory: readonly Record<string, unknown>[], history: Record<string, readonly string[]>): void {
+  for (const [table, names] of Object.entries(history)) {
+    const rows = names.map((name) => ({ name }));
+    io.d1Rules.unshift({ match: (statement, home) => isTarget(home) && statement === HISTORY_SELECT(table), reply: rows });
+    io.rules.unshift({ match: (a) => command(a) === HISTORY_SELECT(table), reply: jsonRows(rows) });
+  }
+  io.d1Rules.unshift({ match: (statement, home) => isTarget(home) && statement === INVENTORY_SELECT, reply: [...inventory] });
+  io.rules.unshift({ match: isInventorySelect, reply: jsonRows([...inventory]) });
+}
+
+function withMigrationsTable(run: DbRunContext, table: string): void {
+  const [entry] = wranglerConfig().d1_databases ?? [];
+  run.config = { ...run.config, config: { ...wranglerConfig(), d1_databases: [{ ...entry, migrations_table: table }] } as WranglerConfig };
+}
+
+const rejection = (pending: Promise<unknown>) =>
+  pending.then(
+    () => "resolved",
+    (error: unknown) => (error instanceof Error ? error.message : String(error)),
+  );
+
+describe("runMigrate() — a history wrangler wrote", () => {
+  const files = { [`${MIGRATIONS}/0001_init.sql`]: INIT, [`${MIGRATIONS}/0002_next.sql`]: NEXT };
+
+  for (const place of ["local", "remote"] as const) {
+    it(`refuses on ${place} a migration wrangler recorded into a database forge never migrated, naming the drop, before anything is written`, async () => {
+      const { run, io } = context(files, place);
+      wire(io);
+      withHistory(io, WITH_HISTORY, { d1_migrations: ["0001_init.sql"] });
+
+      expect(await rejection(runMigrate(run, OPTIONS))).toBe(historyRefusal(place, "d1_migrations", ["0001_init"], DROP_FIX("d1_migrations")));
+      expect(trace(io)).toEqual(["read-recorded", "read-inventory", "read-history"]);
+      expect(io.files.has(LOCK)).toBe(false);
+    });
+  }
+
+  for (const place of ["local", "standby", "remote", "preview"] as const) {
+    it(`refuses on ${place} a migration wrangler recorded over forge's history, a pending one included, naming that place's restore`, async () => {
+      const { run, io } = context(files, place);
+      wire(io, [APPLIED_INIT]);
+      withHistory(io, WITH_HISTORY, { d1_migrations: ["0001_init.sql", "0002_next.sql"] });
+
+      expect(await rejection(runMigrate(run, OPTIONS))).toBe(historyRefusal(place, "d1_migrations", ["0002_next"], RESTORE_FIX[place]));
+      expect(trace(io)).toEqual(["read-recorded", "read-inventory", "read-history"]);
+      expect(io.files.has(LOCK)).toBe(false);
+    });
+  }
+
+  it("predicts the wrangler-history refusal under --dry-run, as the real run would, printing no plan", async () => {
+    const { run, io, out } = context(files);
+    wire(io, [APPLIED_INIT]);
+    withHistory(io, WITH_HISTORY, { d1_migrations: ["0001_init.sql", "0002_next.sql"] });
+
+    expect(await rejection(runMigrate(run, { ...OPTIONS, dryRun: true }))).toBe(
+      historyRefusal("local", "d1_migrations", ["0002_next"], RESTORE_FIX.local),
+    );
+    expect(trace(io)).toEqual(["read-recorded", "read-inventory", "read-history"]);
+    expect(out).toEqual([]);
+  });
+
+  it("applies when wrangler's history names only migrations forge applied, matching them without their .sql suffix", async () => {
+    const { run, io } = context(files);
+    wire(io, [APPLIED_INIT]);
+    withHistory(io, WITH_HISTORY, { d1_migrations: ["0001_init.sql"] });
+
+    expect((await runMigrate(run, OPTIONS)).applied).toEqual(["0002_next"]);
+    expect(trace(io).slice(0, 3)).toEqual(["read-recorded", "read-inventory", "read-history"]);
+  });
+
+  it("reads the history from the entry's migrations_table, refusing a migration it records even with no certified fingerprint", async () => {
+    const { run, io } = context(files);
+    withMigrationsTable(run, "schema_migrations");
+    wire(io);
+    const schemaMigrations = {
+      type: "table",
+      name: "schema_migrations",
+      tbl_name: "schema_migrations",
+      sql: "CREATE TABLE schema_migrations(id INTEGER PRIMARY KEY, name TEXT)",
+    };
+    withHistory(io, [...WITH_HISTORY, schemaMigrations], { schema_migrations: ["0001_init.sql"], d1_migrations: [] });
+
+    expect(await rejection(runMigrate(run, OPTIONS))).toBe(
+      historyRefusal("local", "schema_migrations", ["0001_init"], DROP_FIX("schema_migrations")),
+    );
+    expect(io.d1Calls.flatMap((call) => call.statements).filter((statement) => statement.includes('"d1_migrations"'))).toEqual([]);
+  });
+
+  it("names wrangler's history rather than the moved fingerprint when a hand-applied migration moved both", async () => {
+    const hand = { type: "table", name: "hand", tbl_name: "hand", sql: "CREATE TABLE hand (id INTEGER PRIMARY KEY)" };
+    const handApplied = [...WITH_HISTORY, hand];
+    const moved = schemaFingerprint(handApplied.map(({ type, name, tbl_name, sql }) => ({ type, name, tblName: tbl_name, sql })));
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
+    wire(io, [{ ...APPLIED_INIT, fingerprint: ACTUAL_FINGERPRINT }]);
+    withHistory(io, handApplied, { d1_migrations: ["0001_init.sql", "0002_hand.sql"] });
+
+    expect(moved).not.toBe(ACTUAL_FINGERPRINT);
+    expect(await rejection(runMigrate(run, OPTIONS))).toBe(historyRefusal("local", "d1_migrations", ["0002_hand"], RESTORE_FIX.local));
+  });
+});
+
+describe("runMigrate() — a deployed write that fails", () => {
+  const undo = "forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'";
+
+  it("names the D1 permission without claiming nothing was applied when the token is refused on a later file", async () => {
+    const { run, io, out } = context(
+      { [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT, [`${MIGRATIONS}/0002_next.sql`]: stamped(NEXT, "") },
+      "remote",
+    );
+    io.rules.push({
+      match: (a) => isFileApply(a) && (a.at(-1) ?? "").endsWith("0002_next.sql"),
+      reply: { code: 1, stdout: "", stderr: "Authentication error [code: 10000]" },
+    });
+    wire(io);
+
+    expect(await rejection(runMigrate(run, OPTIONS))).toBe(
+      "the API token cannot write D1 — add Account → D1 → Edit to it, then run again. The migrations before the refused write may be applied.",
+    );
+    expect(trace(io)).toEqual(["read-recorded", "read-inventory", "write", "bookmark", "stage:0001_init.sql", "stage:0002_next.sql"]);
+    expect(out).toEqual([`undo: ${undo}`, `the database may be part-migrated — undo with: ${undo}`]);
+    expect(io.files.has(LOCK)).toBe(false);
+  });
+
+  it("keeps a companion-table write failure's own message when it carries no auth code, naming no D1 permission", async () => {
+    const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
+    io.rules.push({ match: isWrite, reply: { code: 1, stdout: "", stderr: "D1_ERROR: database is locked" } });
+    wire(io);
+
+    const message = await rejection(runMigrate(run, OPTIONS));
+
+    expect(message).toMatch(
+      /^execute `CREATE TABLE IF NOT EXISTS _forge_migrations[^`]*` against remote \(app-db\) failed \(exit 1\):\nD1_ERROR: database is locked$/,
+    );
+    expect(message).not.toContain("D1 → Edit");
+    expect([trace(io), out]).toEqual([["read-recorded", "read-inventory", "write"], []]);
+  });
+});
+
+describe("runMigrate() — the deployed confirmation", () => {
+  const pending = () => {
+    const ctx = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
+    ctx.run.yes = false;
+    wire(ctx.io);
+    return ctx;
+  };
+
+  it("asks at a terminal, and applies on y", async () => {
+    const { run, out } = pending();
+
+    const { prompted, value } = await onStdin(true, "y", () => runMigrate(run, OPTIONS));
+
+    expect(value.applied).toEqual(["0001_init"]);
+    expect(out).toContain("About to migrate app-db (remote): 0001_init");
+    expect(prompted).toBe("Continue? [y/N] ");
+  });
+
+  it("cancels on n before any bookmark, staged migration or write, and releases the lock", async () => {
+    const { run, io } = pending();
+
+    const { prompted, value } = await onStdin(true, "n", () => rejection(runMigrate(run, OPTIONS)));
+
+    expect([value, prompted]).toEqual(["Migration cancelled; the database is unchanged.", "Continue? [y/N] "]);
+    expect(writes(io)).toEqual([]);
+    expect(trace(io)).toEqual(["read-recorded", "read-inventory"]);
+    expect(io.files.has(LOCK)).toBe(false);
+  });
+
+  it("asks nothing when nothing is pending, even without --yes or a terminal", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
+    run.yes = false;
+    wire(io, [{ ...APPLIED_INIT, sha256: migrationChecksum(STAMPED_INIT), fingerprint: ACTUAL_FINGERPRINT }]);
+
+    const { prompted, value } = await onStdin(false, "", () => runMigrate(run, OPTIONS));
+
+    expect([value, prompted]).toEqual([{ applied: [], skipped: [], dryRun: false }, ""]);
+  });
+
+  it("never asks under --dry-run, even at a terminal that would decline", async () => {
+    const { run, out } = pending();
+
+    const { prompted, value } = await onStdin(true, "n", () => runMigrate(run, { ...OPTIONS, dryRun: true }));
+
+    expect([value, prompted, out]).toEqual([{ applied: [], skipped: [], dryRun: true }, "", ["would apply 1 to app-db (remote): 0001_init"]]);
+  });
+});
+
+describe("runMigrate() — a dry run with nothing pending", () => {
+  it("says the database is up to date, reading only", async () => {
+    const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
+    wire(io, [{ name: "0001_init", sha256: INIT_SHA, applied_at: 1, fingerprint: ACTUAL_FINGERPRINT }]);
+
+    expect(await runMigrate(run, { ...OPTIONS, dryRun: true })).toEqual({ applied: [], skipped: [], dryRun: true });
+    expect([out, trace(io)]).toEqual([["app-db (local) is up to date"], ["read-recorded", "read-inventory"]]);
+  });
+});
+
+describe("readWranglerHistory()", () => {
+  const table = (name: string, type = "table"): SchemaObject => ({ type, name, tblName: name, sql: null });
+  const facts = (inventory: SchemaObject[], applied: readonly string[] = []): TargetFacts => ({
+    recorded: applied.map((appliedName) => ({ appliedName, sha256: "", appliedAt: 1, fingerprint: null })),
+    inventory,
+  });
+  const answering = (rows: Record<string, readonly string[]>) => {
+    const ctx = context({});
+    for (const [name, names] of Object.entries(rows)) {
+      ctx.io.d1Rules.push({ match: (statement) => statement === HISTORY_SELECT(name), reply: names.map((n) => ({ name: n })) });
+    }
+    return ctx;
+  };
+
+  const unread: [string, SchemaObject[]][] = [
+    ["holds no history table", [table("users")]],
+    ["holds only a view by the history table's name", [table("users"), table("d1_migrations", "view")]],
+  ];
+  for (const [what, inventory] of unread) {
+    it(`finds nothing and reads nothing when the target ${what}`, async () => {
+      const { run, io } = answering({ d1_migrations: ["0001_init.sql"] });
+
+      expect(await readWranglerHistory(run, facts(inventory))).toEqual({ table: "d1_migrations", unapplied: [] });
+      expect(io.d1Calls).toEqual([]);
+    });
+  }
+
+  it("keeps the names forge never applied in wrangler's order, each without its .sql suffix", async () => {
+    const { run, io } = answering({ d1_migrations: ["0001_init.sql", "0003_late.sql", "0002_early"] });
+
+    expect(await readWranglerHistory(run, facts([table("d1_migrations")], ["0001_init"]))).toEqual({
+      table: "d1_migrations",
+      unapplied: ["0003_late", "0002_early"],
+    });
+    expect(io.d1Calls.map((call) => call.statements)).toEqual([['SELECT name FROM "d1_migrations" ORDER BY id']]);
+  });
+
+  it("finds the history table whatever case the inventory spells it in, as SQLite does", async () => {
+    const { run } = answering({ d1_migrations: ["0001_init.sql"] });
+
+    expect(await readWranglerHistory(run, facts([table("D1_Migrations")]))).toEqual({ table: "d1_migrations", unapplied: ["0001_init"] });
+  });
+
+  it("reads the entry's migrations_table in place of d1_migrations", async () => {
+    const { run } = answering({ d1_migrations: ["0009_other.sql"], schema_migrations: ["0001_init.sql"] });
+    withMigrationsTable(run, "schema_migrations");
+
+    expect(await readWranglerHistory(run, facts([table("d1_migrations"), table("schema_migrations")]))).toEqual({
+      table: "schema_migrations",
+      unapplied: ["0001_init"],
+    });
   });
 });

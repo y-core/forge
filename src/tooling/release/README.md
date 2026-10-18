@@ -1,7 +1,6 @@
 ---
-title: The Release Workflow
-description: "Resolves the next version from git history, guards the public export surface against a silent shrink, promotes the changelog, commits and tags."
-audience: internal
+title: The Release Workflow description: "Resolves the next version from git history, guards the public export surface against a silent shrink,
+promotes the changelog, commits and tags." audience: internal
 ---
 
 # `@y-core/forge/tooling/release`
@@ -37,18 +36,8 @@ bun run release --dry
 bun run release
 ```
 
-| Flag | Short | Effect |
-| --- | --- | --- |
-| `--dry` | `-n` | Print the resolution and the promotion that would happen, then stop. Skips the clean-tree check, the branch check and the gate |
-| `--allow-dirty` | — | Release with uncommitted changes in the tree |
-| `--allow-empty-changelog` | — | Release although `[Unreleased]` carries no entry |
-| `--allow-semver` | — | Release a patch although the public export surface shrank |
-| `--allow-branch` | — | Release from a branch other than the one the remote publishes from |
-| `--allow-unverified` | — | Tag without running the gate first |
-| `--config <path>` | — | Config module; the default `config/release.ts` is optional, a named one is not |
-| `--root <path>` | — | The repository to release, supplied as `cwd` (default: the working directory) |
-
-A single optional positional argument forces the version: `bun run release 2.1.0`.
+`forge release --help` lists the flags. Each `--allow-*` flag gets past one refusal, and [Getting past a refusal](#getting-past-a-refusal) says
+when that is right.
 
 **Commit before you dry-run.** The resolution reads `<latest-tag>..HEAD`, so a preview taken with the work still uncommitted reports "nothing to
 release" rather than the version a real release would produce.
@@ -111,6 +100,13 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 previewing. Those three are skipped because a dry run writes nothing for them to protect. A remote that cannot be reached at all is reported and
 non-fatal.
 
+**A gate that could not be run is refused differently from a gate that failed**, because every package runner reports a missing script the same way
+a failing one exits. The refusal names `gateCommand` rather than telling you to fix what nothing reported.
+
+**The branch check reports rather than refuses when the remote names no publishing branch.** `refs/remotes/origin/HEAD` is written by `git clone`
+and by `git remote set-head`, so a repository created locally and pushed has none. **A detached HEAD is refused either way**: the printed
+`git push` would push nothing while `git push --tags` published a tag no branch carries.
+
 The surface guard compares the exports the previous tag published against the working tree's and names each entry that has gone. It runs only on an
 auto-patch with a previous tag — an explicit version and a `minor:`/`major:` bump have already said what they are
 ([`BUILD_TOOLING.md`][bt-2b] §2b). The ancestry and push checks are the amend floor's ([`BUILD_TOOLING.md`][bt-2j] §2j).
@@ -157,15 +153,6 @@ The gate is `bun run verify` unless the release config names another, so a proje
 export default { gateCommand: ["bun", "run", "check"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
 ```
 
-**A gate that could not be run is refused differently from a gate that failed**, because every package runner reports a missing script the same way
-a failing one exits. The refusal names `gateCommand` rather than telling you to fix what nothing reported.
-
-**The branch check reports rather than refuses when the remote names no publishing branch.** `refs/remotes/origin/HEAD` is written by `git clone`
-and by `git remote set-head`, so a repository created locally and pushed has none.
-
-**A detached HEAD is refused either way.** Releasing from one commits to no branch: the printed `git push` would push nothing while
-`git push --tags` published a tag no branch carries.
-
 A consumer then depends on that tarball by URL, in the form [`FORGE_CONSUMPTION.md`][fc-4c] §4c names.
 
 ---
@@ -202,8 +189,7 @@ try {
 ```
 
 To register a release inside a CLI of your own, `createReleaseCommand({ cwd })` returns the `Command` — the same one `forge release` runs, minus the
-config-module lookup. `createReleaseBinCommand()` is the wrapper that adds `--config` and `--root`, and `DEFAULT_RELEASE_CONFIG` is the path it
-looks in.
+config-module lookup and the `--config` and `--root` flags.
 
 ---
 
@@ -212,9 +198,8 @@ looks in.
 **A refusal throws; it does not exit.** `execute` renders the error and exits 1, so the operator sees the same output while the guard stays
 reachable from a test that mocks no process.
 
-**The changelog parser and the semver primitives are imported from [`@y-core/forge/tooling/gate`][gate-readme], not from here.** `parseChangelog`,
-`promoteUnreleased`, `formatReleaseDate` and the `SemVer` functions all live there, because the gate's own changelog and export-surface checks read
-them too. This namespace depends on the gate and never the reverse.
+**The changelog parser and the semver primitives are imported from [`@y-core/forge/tooling/gate`][gate-readme], not from here**, because the gate's
+own changelog and export-surface checks read them too.
 
 **The git and `package.json` helpers are deliberately unpublished** ([`BUILD_TOOLING.md`][bt-2c] §2c). What forge publishes is the release command
 itself.
@@ -228,8 +213,7 @@ have to clean up.
 
 - [`@y-core/forge/tooling/gate`][gate-readme] — the changelog parser, the semver primitives and the barrel parser this namespace builds on
 - [`@y-core/forge/tooling/cli`][cli-readme] — the command framework `createReleaseCommand` returns a `Command` of
-- [`BUILD_TOOLING.md`][bt-2a] §2a–§2e — the release workflow, the compared surface, the git and manifest internals, the unreleased contract, and the
-  changelog gate invariants
+- [`BUILD_TOOLING.md`][bt-2a] §2a–§2e — the rulings behind the release workflow
 
 [bt-2a]: ../../../docs/BUILD_TOOLING.md#2a-createreleasecommand--automated-release-workflow
 [bt-2b]: ../../../docs/BUILD_TOOLING.md#2b-the-export-surface-a-release-compares

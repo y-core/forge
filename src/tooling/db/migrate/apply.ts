@@ -3,11 +3,13 @@ import { wranglerAuthRefused } from "../../cf/api/errors";
 import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
+import { wranglerHistoryTable } from "../config";
 import { confirmPrinter } from "../context";
 import { refuseSchemaDrift, schemaDrift } from "../drift";
-import { INVENTORY_SELECT, toSchemaObjects } from "../sql";
+import { sqlIdentifierEquals } from "../schema/normalize";
+import { INVENTORY_SELECT, quoteSqlIdentifier, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
-import type { ApplyPlan, Bookmark, DbIo, DbRunContext, Home, LintFinding, Migration } from "../types";
+import type { ApplyPlan, Bookmark, DbIo, DbRunContext, Home, LintFinding, Migration, WranglerHistory } from "../types";
 import { executeSql, queryRows, queryRowsIfTable } from "../wrangler";
 import { analyseMigrations, formatMigrationChange } from "./analysis";
 import { applyMigrations } from "./applier";
@@ -68,6 +70,20 @@ function refuseEditedHistory(run: DbRunContext, mismatched: readonly string[]): 
   );
 }
 
+/** Refuses a migration wrangler recorded against the target that forge never applied, naming the one fix the target's state allows. */
+function refuseWranglerHistory(run: DbRunContext, history: WranglerHistory, forgeApplied: boolean): void {
+  if (history.unapplied.length === 0) return;
+  const place = run.config.target.place;
+  const restore = isRemotePlace(place) ? "`forge db bookmark restore`" : "`forge db reset` and `forge db restore`";
+  const fix = forgeApplied
+    ? `Restore the database to a point before that run with ${restore}`
+    : `Drop ${history.table} before bringing the database under forge`;
+  throw new CliError(
+    "invalid-args",
+    `${run.home.database} (${place}) has migrations ${history.table} records that forge never applied — \`wrangler d1 migrations apply\` ran against it:\n  ${history.unapplied.join("\n  ")}\n${fix}; forge will not apply over a history it did not write.`,
+  );
+}
+
 /** Refuses a pending migration compose did not write, or one edited since it did, before anything is applied. @internal */
 export function refuseUncomposed(run: DbRunContext, pending: readonly Migration[]): void {
   const found = lintMigrations(pending).filter((f) => f.rule === "generated-edited");
@@ -108,6 +124,17 @@ export async function readTargetFacts(io: DbIo, home: Home): Promise<TargetFacts
   };
 }
 
+/** The migrations the entry's wrangler history table records that forge never applied; read only when the target holds that table. @internal */
+export async function readWranglerHistory(run: DbRunContext, facts: TargetFacts): Promise<WranglerHistory> {
+  const table = wranglerHistoryTable(run.config);
+  const held = facts.inventory.some((object) => object.type === "table" && sqlIdentifierEquals(object.name, table));
+  if (!held) return { table, unapplied: [] };
+  const rows = await queryRows(run.io, run.home, `SELECT name FROM ${quoteSqlIdentifier(table)} ORDER BY id`);
+  const applied = new Set(facts.recorded.map((record) => record.appliedName));
+  const unapplied = rows.map((row) => String(row.name ?? "").replace(/\.sql$/, "")).filter((name) => !applied.has(name));
+  return { table, unapplied };
+}
+
 /** What `forge db lint` judges: the migrations the target does not hold yet, by the rules and then by the analysis. @internal */
 export async function lintPendingMigrations(run: DbRunContext): Promise<PendingLintOutcome> {
   const facts = await readTargetFacts(run.io, run.home);
@@ -138,6 +165,7 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     const plan = planApply({ discovered, applied, ...(options.to === undefined ? {} : { to: options.to }) });
     if (plan.drift.length > 0) refuseDrift(run, plan.drift);
     refuseEditedHistory(run, compareChecksums(facts.recorded, discovered));
+    refuseWranglerHistory(run, await readWranglerHistory(run, facts), applied.length > 0);
     refuseUncomposed(run, plan.pending);
     const drift = schemaDrift(facts.recorded, facts.inventory);
     refuseSchemaDrift(run, drift);

@@ -21,6 +21,7 @@ function report(over: Partial<StatusReport> = {}): StatusReport {
     checksums: { mismatched: [] },
     drift: [],
     fingerprint: { recorded: "ff", actual: "ff", matches: true },
+    wranglerHistory: { table: "d1_migrations", unapplied: [] },
     ...over,
   };
 }
@@ -62,6 +63,7 @@ describe("migrationStatusExitCode()", () => {
     ["a pending migration", { pending: 1 }],
     ["a mismatched checksum", { checksums: { mismatched: ["0001_init"] } }],
     ["drift", { drift: ["0009_gone"] }],
+    ["a migration only wrangler's history records", { wranglerHistory: { table: "d1_migrations", unapplied: ["0002_hand"] } }],
     ["a fingerprint that moved", { fingerprint: { recorded: "ff", actual: "gg", matches: false } }],
   ];
 
@@ -101,14 +103,28 @@ describe("formatStatus()", () => {
       pending: 1,
       checksums: { mismatched: ["0001_init"] },
       drift: ["0009_gone"],
+      wranglerHistory: { table: "d1_migrations", unapplied: ["0002_hand"] },
       fingerprint: { recorded: "ff", actual: "gg", matches: false },
     });
-    expect(formatStatus(outcome, PLAIN).split("\n").slice(-4)).toEqual([
+    expect(formatStatus(outcome, PLAIN).split("\n").slice(-5)).toEqual([
       "1 pending — apply with `forge db migrate`",
       "edited since it was applied: 0001_init",
       "applied but no longer on disk: 0009_gone",
+      "d1_migrations records 0002_hand, which forge never applied — `wrangler d1 migrations apply` ran against this database",
       "schema fingerprint gg does not match the certified ff",
     ]);
+  });
+
+  it("names the wrangler history table and every migration it records that forge never applied", () => {
+    const rows = [{ name: "0001_init", state: "applied" as const, appliedAt: "2026-01-01" }];
+    const outcome = report({ rows, wranglerHistory: { table: "schema_migrations", unapplied: ["0002_hand", "0003_more"] } });
+    expect(formatStatus(outcome, PLAIN)).toBe(
+      [
+        "app-db (local)",
+        renderTable([{ Migration: "0001_init", State: "applied", Applied: "2026-01-01" }]),
+        "schema_migrations records 0002_hand, 0003_more, which forge never applied — `wrangler d1 migrations apply` ran against this database",
+      ].join("\n"),
+    );
   });
 
   it("says nothing about a fingerprint that was never recorded when nothing is applied", () => {

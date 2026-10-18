@@ -61,14 +61,14 @@ concept. `as const` needs no import and loses nothing: a new `StepState` member 
 
 **The `Navbar` landmark is carved out and holds no key.** An unnamed `<nav>` already announces as "navigation", so a constant default replaces a
 correct platform default with a guess — and gives two Navbars on one page the same name, which the demonstrator's catalog spec (forge-starter
-`tests/unit/showcase/components.test.tsx`) catches under "gives every navigation landmark on every page a label, and no two the same".
+`tests/unit/showcase/components.test.tsx`) catches.
 `aria-label` / `aria-labelledby` stay the consumer's, passed through. A key with no default would translate into a string forge never emits.
 
-**`Navbar`'s name is also deliberately not required at the type level, unlike every other container forge names.** `Tabs.List`, `ToggleGroup`,
-`Toolbar`, `Filter.Group` and `Popover.Content` all refuse to compile unnamed, because each renders a role that takes no name from its contents
-and is anonymous without one. A `<nav>` is the opposite case: one on a page is correctly named by its role alone, so requiring a name would make
-every single-nav page invent one — the same guess the paragraph above rejects, moved from forge to the consumer. The obligation is therefore a
-documented one, owed only by a page rendering more than one bar, and forge's own pages are held to it by that test rather than by the compiler.
+**`Navbar`'s name is also deliberately not required at the type level, unlike every other container forge names.** Those refuse to compile unnamed,
+because each renders a role that takes no name from its contents and is anonymous without one. A `<nav>` is the opposite case: one on a page is
+correctly named by its role alone, so requiring a name would make every single-nav page invent one — the same guess the paragraph above rejects,
+moved from forge to the consumer. The obligation is therefore a documented one, owed only by a page rendering more than one bar, and forge's own
+pages are held to it by that test rather than by the compiler.
 
 **Import `../contracts/labels` at each call site, never `../contracts/mod`** — that is what keeps the barrel from pulling every contract table into
 the Worker graph. Reference the table as `LABEL_DEFAULTS.x` rather than re-spelling the literal. `state-attrs.ts` and `vocabulary.ts` spell
@@ -113,8 +113,8 @@ element: it receives the compound's `disabled` as a prop only where the compound
 the caller's, then the child's own, then a default — and its own render decides what they become. The default is `"button"` for a `<button>`, and
 for a component only the `defaultType` its compound declares. `cloneAsChild` cannot see what a component renders, so it treats one carrying an
 `href` as a link, and a component carrying `href` never receives the compound's default. A compound forwards its caller's
-`type` as `type` and never passes its own default there, where it would overwrite a child's `type="submit"`.
-Erasing or translating them beforehand stripped `disabled` from a `Toolbar.Button` before it could resolve it into its own `aria-disabled`.
+`type` as `type` and never passes its own default there, where it would overwrite a child's `type="submit"`. Erasing or translating them
+beforehand would strip `disabled` from a `Toolbar.Button` before it could resolve it into its own `aria-disabled`.
 
 **Destructure the inherited `"data-slot"` out of props and rewrite the literal in place** as `data-slot={slotToken("own-token", inherited)}`, own
 token first (`slotToken` is owned by `src/ui/core/utils/as-child.ts`). A bare literal loses the compound's own token to any caller that passes
@@ -222,17 +222,15 @@ logical type: splitting it would let a caller hold a value the attribute cannot 
 **Resolve direction with physical declarations selected by `:dir()`, never with logical CSS** (`src/ui/assets/css/forge-ui.css`). Both shorter
 spellings are wrong and both are tempting. `anchor(inline-end)` is outright invalid — `<anchor-side>` has no logical keywords. And
 `inset-inline-start: anchor(start)` parses but resolves against the **containing block's** writing mode; a top-layer popup's containing block is the
-viewport, whose direction is the root element's, so a `dir="rtl"` subtree inside an LTR document resolves to the LTR answer — the original bug
-reintroduced through its own fix. `:dir()` asks the _tree_, which is the only thing that knows. `position-try-fallbacks` needs nothing added:
-`flip-inline` transforms _used_ declarations after the cascade settles, so `:dir()` selection happens first. Only the inline axis mirrors, so only
-the rows resolving on it are `:dir()`-keyed.
+viewport, whose direction is the root element's, so a `dir="rtl"` subtree inside an LTR document resolves to the LTR answer. `:dir()` asks the
+_tree_, which is the only thing that knows. `position-try-fallbacks` needs nothing added: `flip-inline` transforms _used_ declarations after the
+cascade settles, so `:dir()` selection happens first. Only the inline axis mirrors, so only the rows resolving on it are `:dir()`-keyed.
 
 **Name every `Popover.Content`, and never forward a `role` to it.** `role="dialog"` is `nameFrom: author`, so the type requires `label` or
 `labelledby` — one of them, not neither — and a nameless panel is a compile error rather than an `aria-dialog-name` failure in a consumer's axe run.
 `role` is not forwardable for the matching reason: `Popover.Trigger` emits a fixed `aria-haspopup="dialog"` and has no way to say otherwise, so a
-re-roled panel would leave the pair disagreeing. Reach for `Menu.Popup` for a menu-role popup — it brings a trigger that agrees with it. Both are
-breaking and land before v1.0.0 deliberately ([`FORGE_STRUCTURE.md`][la-7] §7): an optional name would have left every consumer's panel nameless by
-default, which is the defect rather than a lesser form of it.
+re-roled panel would leave the pair disagreeing. Reach for `Menu.Popup` for a menu-role popup — it brings a trigger that agrees with it. An
+optional name would leave every consumer's panel nameless by default, which is the defect rather than a lesser form of it.
 
 **Never emit a derived reference a rendered page might not resolve — make the caller assert the element it points at.** `Dialog` and `Drawer` take
 `titled`, and `Menu.Popup` takes `triggered`; each is the caller saying the `.Title` or the forge trigger exists, and each is the only route to the
@@ -253,14 +251,13 @@ IDREF.
 
 **Give a `<dialog>` root the caller's name where there is one, and the derived reference only on their word** (`contracts/dialog-contract.ts`).
 `Dialog` and `Drawer` take `label`, `labelledby` or `titled`, and `label` and `labelledby` suppress the `${id}-title` reference: a derived reference
-emitted beside a caller's own would name a heading they never wrote. The requirement is breaking and lands before v1.0.0 deliberately
-([`FORGE_STRUCTURE.md`][la-7] §7). **Point a deliberately titleless drawer's `labelledby` at its own trigger's id**: that is React Aria's fallback,
-and `Drawer.Trigger`'s `commandfor` already proves the relationship exists, in the direction SSR cannot invert. **Emit `aria-describedby` only on
-the same assertion the name takes** — the description computation _is_ a precedence table a UA must not look past, so a dangling one suppresses
-`aria-description` and `title`. `Dialog`'s `described` is that assertion, and `Dialog.Description` is the element it points at, derived
-`${id}-description` from the one id the caller wrote. `alert` renders the root `role="alertdialog"`, which is APG's Alert and Message Dialog: a
-message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel" hears the
-consequence and not the button alone.
+emitted beside a caller's own would name a heading they never wrote. **Point a deliberately titleless drawer's `labelledby` at its own trigger's
+id**: that is React Aria's fallback, and `Drawer.Trigger`'s `commandfor` already proves the relationship exists, in the direction SSR cannot invert.
+**Emit `aria-describedby` only on the same assertion the name takes** — the description computation _is_ a precedence table a UA must not look past,
+so a dangling one suppresses `aria-description` and `title`. `Dialog`'s `described` is that assertion, and `Dialog.Description` is the element it
+points at, derived `${id}-description` from the one id the caller wrote. `alert` renders the root `role="alertdialog"`, which is APG's Alert and
+Message Dialog: a message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel"
+hears the consequence and not the button alone.
 
 **Project only the subset the stylesheet can render**, so an unrenderable value is unrepresentable rather than silently unstyled: `Popover.Content`
 and `Tooltip.Content` take `PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the projection tracks the value
@@ -268,12 +265,13 @@ space it is cut from.
 
 **A `Table.Row`'s `selected` paints and does not announce, and a wide table is a named tab stop.** `aria-selected` is a supported state of role
 `row`, but it is only _meaningful_ inside a `grid` or `treegrid`; a `<tr>` in a plain `<table>` is a `row` in a `table`, which has no selection
-model to report it to, so the attribute was inert while `data-selected` painted. APG's Table pattern is non-interactive by design and selectable
-rows are the Grid pattern, which brings a whole keyboard contract forge does not implement — so the state is a visual one and says so. **A caller
-who needs the selection announced puts a control in the row**: a checkbox in the first cell is announced natively, is operable, and is what a reader
-can act on, where an `aria-selected` on the row is neither. The scroll wrapper takes the shape `ScrollArea.Viewport` has — a named `<section>` that
-is an unconditional tab stop — because a browser makes an overflowing scroller focusable only when it holds nothing focusable, and Safari not at
-all, so a wide table of plain text was unscrollable from the keyboard (WCAG 2.1.1). That is why `Table` requires `label`.
+model to report it to, so the attribute would be inert while `data-selected` painted. APG's Table pattern is non-interactive by design and
+selectable rows are the Grid pattern, which brings a whole keyboard contract forge does not implement — so the state is a visual one and says so.
+**A caller who needs the selection announced puts a control in the row**: a checkbox in the first cell is announced natively, is operable, and is
+what a reader can act on, where an `aria-selected` on the row is neither. The scroll wrapper takes the shape `ScrollArea.Viewport` has — a named
+`<section>` that is an unconditional tab stop — because a browser makes an overflowing scroller focusable only when it holds nothing focusable, and
+Safari not at all, so a wide table of plain text would otherwise be unscrollable from the keyboard (WCAG 2.1.1). That is why `Table` requires
+`label`.
 
 ### 1i. Native-Input Primitive Decisions
 
@@ -317,8 +315,6 @@ avoid colliding with, so falling back would re-create the cross-wiring the prop 
 **The rule governs references forge emits, not ids it merely declares.** An id that is declared and never named by any IDREF stays outside the rule
 and round-trips a `value` verbatim. Give any such id a reference and it must route through the same gate first.
 
----
-
 ### 1k. One Consumption Path, Not Two
 
 **JSX is the only component surface, and that is terminal** — there is no Custom Element mirror and none will be added. A consumer without the forge
@@ -330,10 +326,9 @@ a form-associated element would hand-maintain `setFormValue` and `setValidity` t
 
 **Rejected — Custom Elements as a second path.** Each of these costs is sufficient alone: the spec's mandated hyphenated name moves the namespace
 out of the import and into every consumer's markup as a vendor prefix; the registry is process-global and early-binding, reintroducing global
-mutable state
-([`CODE_RULES.md`][cr-1] §1) plus collision and FOUC failure modes late-binding delegation does not have; and the audience does not exist under the
-no-build-step constraint ([`FORGE_STRUCTURE.md`][la-2] §2), since a consumer able to load the registering module already runs the bundler that
-compiles the JSX. **Form-associated elements for the form controls alone** are rejected for the narrower version of the same reason.
+mutable state ([`CODE_RULES.md`][cr-1] §1) plus collision and FOUC failure modes late-binding delegation does not have; and the audience does not
+exist under the no-build-step constraint ([`FORGE_STRUCTURE.md`][la-2] §2), since a consumer able to load the registering module already runs the
+bundler that compiles the JSX. **Form-associated elements for the form controls alone** are rejected for the narrower version of the same reason.
 
 ### 1l. Chrome Navigation Announces Only What It Implements
 
@@ -362,17 +357,16 @@ values; `src/ui/README.md` maps prop to component.
 | `invalid` | the control holds a validation error | `StateAttrsProps` |
 | `busy` | the component is waiting on work | `StateAttrsProps` |
 
-**Never declare a prop named `variant`.** One name answering two questions — which colour, and how much emphasis — is what let `secondary` mean an
-outlined button and a filled chip at once. Asked separately the pair reads identically everywhere, and `toneVariants`
+**Never declare a prop named `variant`.** One name answering two questions — which colour, and how much emphasis — is what would let `secondary`
+mean an outlined button and a filled chip at once. Asked separately the pair reads identically everywhere, and `toneVariants`
 ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e) paints both.
 
 **`orientation` carries the two layout axes and nothing else**, because a stylesheet matches `data-orientation` on exactly that: `Switch`'s label
 side is `labelPlacement` (§1i), and `FormField`'s width-driven collapse a separate `responsive` boolean.
 
-**Some props sit outside the table.** `Turnstile`'s `size` is Cloudflare's, verbatim (§1f). `level` picks the heading tag on `EmptyState.Title`
-(default `3`) and `Dialog`/`Drawer.Title` (default `2`), and nothing else — `data-slot`, the class and the derived `id` are identical at every
-level, so `aria-labelledby` still resolves. It is the tool `forge-ui-heading-order` needed. Not `as`, which already names a type scale on
-`FormField.Legend`.
+**Some props sit outside the table.** `Turnstile`'s `size` is Cloudflare's, verbatim (§1f). `level` picks the heading tag on `EmptyState.Title` and
+`Dialog`/`Drawer.Title`, and nothing else — `data-slot`, the class and the derived `id` are identical at every level, so `aria-labelledby` still
+resolves. It is the tool `forge-ui-heading-order` needed. Not `as`, which already names a type scale on `FormField.Legend`.
 
 **Where a native attribute collides with the vocabulary, the vocabulary wins and the native one is renamed.** `Select` omits the DOM's `size` and
 takes `rows` for the visible option count, because `size` on every other control is the `Size` token and one name meaning a height token here and a
@@ -381,8 +375,8 @@ name `<textarea>` already uses for the same idea; one prop over a separate `List
 whether the popup collapses — a second component would double the surface to express a boolean; and the shadowing is safe rather than a trap,
 because `Omit` makes a spread carrying a numeric `size` a type error at the call site rather than a silent resize.
 
-**`conformance.test.tsx` enforces these rules** by scanning `ui/core`, `ui/chrome` and `ui/controls`, carrying each exemption with its reason — so
-adding one is visible, not a quiet edit.
+**`conformance.test.tsx` enforces these rules** by scanning the component namespaces, carrying each exemption with its reason — so adding one is
+visible, not a quiet edit.
 
 ### 1n. Optional Input Props Carry an Explicit `| undefined`
 
@@ -391,12 +385,12 @@ every `*Props` in `src/ui`. **Keep the bare `?:` for internal data structures an
 actually for. **Ask "does a consumer construct a value of this type", not "is it named `*Props`"**: a definition object handed to a component —
 `NavSlot`, `NavMegaMenu`, `ToolbarPopover` — is a consumer input as much as an attribute bag is, and the suffix reading lets such a type drift.
 
-**The second of these reasons is a correctness one.** `renderToString` skips a null or undefined attribute value
-(`src/render/jsx/render-to-string.ts`), so absent and `undefined` are the same state at runtime and the flag would guard a distinction the renderer
-does not have. And without the union a caller under the flag writes `{...(x !== undefined ? { "aria-label": x } : {})}` rather than `aria-label={x}`
-— a spread, which `jsx-a11y` cannot see as an attribute, leaving every such site unlinted. `@types/react` writes `className?: string | undefined`
-for the same reason. **Never fix such an error at a forge call site with a guard-form spread; widen the declaration instead.** What stays is the
-**truthiness** spread, `{...(open ? { open: true } : {})}`, an omit-when-false HTML semantic.
+**The union is a correctness rule, not a style.** `renderToString` skips a null or undefined attribute value (`src/render/jsx/render-to-string.ts`),
+so absent and `undefined` are the same state at runtime and the flag would guard a distinction the renderer does not have. And without the union a
+caller under the flag writes `{...(x !== undefined ? { "aria-label": x } : {})}` rather than `aria-label={x}` — a spread, which `jsx-a11y` cannot
+see as an attribute, leaving every such site unlinted. `@types/react` writes `className?: string | undefined` for the same reason. **Never fix such
+an error at a forge call site with a guard-form spread; widen the declaration instead.** What stays is the **truthiness** spread, `{...(open ? {
+open: true } : {})}`, an omit-when-false HTML semantic.
 
 ### 1o. `Announcer` — The One Live Region
 
@@ -462,7 +456,6 @@ warning as a missing client-entry import or a scope-name typo — never as an ex
 [eh-5a]: ../warden/canon/libs/ERROR_HANDLING.md#5a-expected-errors--return-result
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [la-2]: ./FORGE_STRUCTURE.md#2-namespace-dependency-tiers
-[la-7]: ./FORGE_STRUCTURE.md#7-pre-10-api-evolution
 [namespaces-5b]: ./NAMESPACES.md#5b-uicore--ssr-components-only
 [sa]: ./STATE_ATTRIBUTES.md
 [sh-2d]: ./SECURITY_HARDENING.md#2d-getnonce-and-automatic-url-sanitization

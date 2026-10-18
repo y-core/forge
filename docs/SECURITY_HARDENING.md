@@ -21,7 +21,6 @@ audience: consumer
 - §1 What Is Not in security: the symbols routinely looked for here
 - §2 createSecurityHeaders and CSP Nonce: the header factory and its nonce contract
 - §2a createSecurityHeaders Factory Pattern: per-request nonce, queued headers
-- §2b NONCE Constant: the CSP placeholder
 - §2c mergeSecurityHeaders for Dev/Prod Split: layering the live-reload hash
 - §2d getNonce and Automatic URL Sanitization: reading the nonce; `safeUrl` at render time
 - §2e Default Header Set: which headers are emitted, which are opt-in, and which are a route concern
@@ -31,14 +30,12 @@ audience: consumer
 - §3 CORS and Origin Protection: the cross-origin guards
 - §3a cors Middleware for API Routes: scoped application and response rebuild
 - §3b originGuard — Strict Origin Allowlist: the Origin/Referer tier
-- §3c verifyOrigin — Inline Origin Check: the in-handler form
 - §3d crossOriginProtection — Fetch Metadata: the `Sec-Fetch-Site` tier
 - §3e Origin-Guard Tiering — Which Guard When: pick one, never stack
 - §3f Deriving allowedOrigins in Dev: `BASE_URL` as the source, the dev allowance's `extraOrigins` as the sole escape hatch
 - §4 Rate Limiting with Workers Binding: the limiter middleware
 - §4a rateLimit Middleware Factory: per-route application
 - §4b The Dev Allowance for a Missing Binding: the availability trade, and the key it takes
-- §4c Workers Rate Limiter Binding Configuration: wrangler and env typing
 - §4d Rate-Limit Key Selection: the default key and its trust precondition
 - §5 Request Identity: request-id generation and the CF trust boundary
 - §5a requestId Middleware: generation and placement
@@ -76,10 +73,8 @@ names the nonce, the header names the same nonce, and nothing else in the docume
 
 **Every request gets a fresh nonce** — a static nonce defeats nonce enforcement entirely.
 
-**Only the nonce is per-request.** Each CSP header is rendered once at factory time into a template holding a NUL placeholder where the nonce goes,
-the other headers are computed once and frozen, and a request does one `replaceAll` per template. The placeholder is unreachable to a caller:
-`CSP_SOURCE_TOKEN` is `/^[\x21-\x7e]+$/`, which excludes NUL. Validation still throws from the factory, before the first request, rather than from
-the render: `assertValidSecurityHeadersOptions` is the entry, and it runs `assertValidCspDirectives` once for each policy it will emit.
+**Only the nonce is per-request.** Every header is rendered once at factory time, each CSP into a template whose nonce placeholder no valid source
+token can contain, so a caller cannot reach it. Validation therefore throws from the factory, before the first request, never from a render.
 
 **Computed headers are queued on the per-request pending-header channel** and flushed once by the app's outermost `applyHeaders` pass, rather than
 each middleware rebuilding its own `Response`.
@@ -99,11 +94,6 @@ A header baked into the handler's own `Response` is resolved in the channel's fa
 after it, so a handler's CSP can only tighten the app's (§2f).
 
 **Register once at app level via `app.use("*", …)`** so every route inherits the headers.
-
-### 2b. NONCE Constant
-
-`NONCE` is the literal `"'nonce-{nonce}'"` — a `scriptSrc` placeholder that `createSecurityHeaders` replaces with the real per-request value. **Use
-the constant rather than hand-writing the placeholder** so it stays recognizable and typo-free.
 
 ### 2c. mergeSecurityHeaders for Dev/Prod Split
 
@@ -240,8 +230,7 @@ request's nonce. It is registered deeper than the app-level factory, so its queu
 - **It takes `CspOptions`, not `SecurityHeadersOptions`.** The CSP family is the only part of the header set rendered against the request's nonce,
   so it is the only part whose route variant must be built from the app's options and this request together. The rest of the set is origin-wide
   posture: HSTS, for one, is stored per hostname, so a per-route value is not one a browser can hold.
-- **The merged policy is built once per base-options object.** A `WeakMap` keyed on the options object the app passed to `createSecurityHeaders`
-  holds the rendered templates, so a request on the route pays one `replaceAll` per header, as it does at app level.
+- **The merged policy is rendered once per app options object**, so a request on the route pays what an app-level request does.
 - **An invalid merge throws at the route's first request, not at construction.** `extra` is validated alone when the middleware is built, but the
   app's options exist only on a request. A combination the validator refuses — `UNSAFE_INLINE` merged onto a backfilled nonce (§2e) — is never
   cached, so it throws on every request to the route.
@@ -315,10 +304,7 @@ same case. **The price is stated plainly:** a non-wildcard `cors()` rebuilds eve
 correct cache key, and it follows the same rebuild-rather-than-mutate ruling above. **The one exception is `origins: ["*"]` without credentials**,
 where the ACAO header is the constant `"*"`: it is the same for every caller, so `Vary` would only shred the cache key, and it is suppressed.
 
-**The allowlist compiles once.** `compileOriginMatcher(patterns)` builds an exact-match `Set` and the wildcard patterns' `RegExp`s at factory time;
-the public `matchOrigin` is now one call into it, so there is a single implementation of the matching rules (including the escaped `?` and the
-excluded delimiters, each of which fixes a real widening bug). The preflight header object, `methods.join`, `allowedHeaders.join` and
-`String(maxAge)` are likewise built once rather than per preflight.
+**`cors()` and the public `matchOrigin` share one compiled matcher**, so the origin-matching rules have a single implementation.
 
 ### 3b. originGuard — Strict Origin Allowlist
 
@@ -329,11 +315,6 @@ receiver:** a delivery is server-to-server and carries no origin signal, so this
 **It fails closed on no signal at all.** `Origin` decides where it is present; otherwise the `Referer`'s origin does; a request carrying neither is
 `"missing"` and is refused with `403` like a disallowed one. Safe methods (`GET`/`HEAD`/`OPTIONS`/`TRACE`) are exempt before the check runs, so what
 this refuses is a state-changing request that offered no origin evidence — a curl `POST`, not a same-origin navigation.
-
-### 3c. verifyOrigin — Inline Origin Check
-
-For a one-off check inside a handler rather than as middleware. Takes the standard `Request`, inspects `Origin`, and returns an `OriginResult`
-(`{ ok: boolean }`).
 
 ### 3d. crossOriginProtection — Fetch Metadata
 
@@ -383,7 +364,7 @@ by default.
 
 **The posture itself is canon.** Development is https at every hop, the dev server's local protocol is set to https, a scheme-rewriting middleware
 is never the fix, and `upgrade-insecure-requests`/HSTS/`Secure` cookies stay hardcoded: [`WORKERS_PLATFORM.md`][wp-4e] §4e rules on all of it, and a
-consuming app cites that. This section holds only what is forge's own — how `allowedOrigins` reaches the guards of §3b–§3e.
+consuming app cites that. This section holds only what is forge's own — how `allowedOrigins` reaches the guards of §3.
 
 **HSTS is on in development too, so choose the dev hostname for it.** A browser stores the policy per hostname, on every port, and with the
 default `includeSubDomains` for every name below it. Stored for bare `localhost`, it forces https on every local project that browser opens there.
@@ -399,16 +380,15 @@ the certificate was trusted at the time.
 machine with the browser at `https://localhost:8787`. Entries must be normalized origins and https-or-loopback, and throw at boot otherwise.
 `deriveAllowedOrigins(parsed, { dev })` reads them off a [`DevAllowance`][dev-readme]; there is no `extraOrigins` option and **no env var**. Minting
 the token means importing `@y-core/forge/dev` at value, which `validate-dev-boundary` permits from a `*.dev.ts` entry and from nowhere else — so the
-production bundle structurally contains no extra origin, the same containment guarantee as the live-reload CSP hash (§2c), and now a checked one.
+production bundle structurally contains no extra origin — the same containment as the live-reload CSP hash (§2c), and a checked one.
 
 Forge's own browser set serves no origin at all, so the canon's loopback-https rule for a browser suite does not reach it (`playwright.config.ts`
 owns why).
 
-**`createAnonymousSession`'s `Secure` escape hatch is gone, and this is the ruling on it.** The option served plain-http development, which
-[`WORKERS_PLATFORM.md`][wp-4e] §4e rules out: development is https at every hop, so `Secure` is correct there by construction and needs no switch.
-An in-process test harness never needed one either — `Secure` is enforced by a browser deciding whether to send a cookie back over http, and forge's
-own session suite passes identically with it on. `createSignedCookie` therefore hardcodes `Secure` as it already hardcodes `httpOnly`, and the
-failure the option made reachable — a relaxation computed from a mistyped env check, shipped silently — has no expression left.
+**A session cookie's `Secure` flag has no off switch.** `createSignedCookie` hardcodes it as it hardcodes `httpOnly`. Development is https at every
+hop ([`WORKERS_PLATFORM.md`][wp-4e] §4e), so `Secure` is correct there by construction, and an in-process test harness needs no switch either:
+`Secure` is enforced by a browser deciding whether to send a cookie back over http. An option would only make reachable a relaxation computed from a
+mistyped env check and shipped silently.
 
 ---
 
@@ -430,11 +410,6 @@ asymmetry §5b draws holds: bypassed rate limiting is an availability concern, b
 than a boolean on a production option, so no shared middleware module reached from the production entry can set it and silently disable rate
 limiting. Minting the token is an import, and `validate-dev-boundary` fails that import outside a `*.dev.ts` entry.
 
-### 4c. Workers Rate Limiter Binding Configuration
-
-Declare the binding in `wrangler.jsonc` under `ratelimits` with a `name`, `namespace_id`, and a `simple` `{ limit, period }`; then add that name to
-`AppEnv` typed as `RateLimitBinding` (exported from `@y-core/forge/security`).
-
 ### 4d. Rate-Limit Key Selection
 
 `RateLimitOptions.trustCfHeaders` (default `false`) controls whether the default key may read `CF-Connecting-IP`:
@@ -444,8 +419,8 @@ Declare the binding in `wrangler.jsonc` under `ratelimits` with a `name`, `names
 - **A custom `key` always overrides**, regardless of `trustCfHeaders`. Supply one for non-Cloudflare deployments. A throwing `key` function likewise
   fails closed with `503`.
 
-**§5c owns the trust rationale** and how `applyMiddlewareChain` threads one flag to every surface. For key-selection strategy (per-IP vs per-session
-vs route-scoped composite), see `src/security/README.md`.
+**§5c owns the trust rationale** and how `applyMiddlewareChain` threads one flag to every surface. Binding configuration and key-selection strategy
+are `src/security/README.md`'s.
 
 ---
 
@@ -482,15 +457,7 @@ Every surface it reaches defaults to `false`:
 | `RateLimitOptions.trustCfHeaders` (§4d) | Default key reads `CF-Connecting-IP` | Default keying throws → `503` unless a custom `key` is given |
 | `MiddlewareChainOptions.trustCfHeaders` | Threaded to `requestId()` and every guard group's rate-limit guard | Both distrust the CF headers |
 
-**`applyMiddlewareChain` takes a single `trustCfHeaders` and threads it to both**, so an app declares its trust posture once:
-
-```ts
-applyMiddlewareChain(app, {
-  trustCfHeaders: true, // this Worker runs behind Cloudflare
-  securityHeaders: { scriptSrc: ["'self'", NONCE] },
-  guards: [{ paths: ["/api/*"], rateLimit: { limiter: (c) => c.env.RATE_LIMITER } }],
-});
-```
+**`applyMiddlewareChain` takes a single `trustCfHeaders` and threads it to both**, so an app declares its trust posture once.
 
 **A Cloudflare-deployed app must set `trustCfHeaders: true` or pass a custom rate-limit `key`** — otherwise the default keying fails closed with
 `503`.
@@ -506,8 +473,6 @@ and ignores any `; charset=…` parameter. A wrong or missing content type is re
 
 **Apply on HTML form submission endpoints to prevent JSON-based CSRF that bypasses same-site cookie protections. Do not use on API routes that
 accept JSON.**
-
-**It is a factory — call it**: `requireFormContentType()`.
 
 ---
 
@@ -543,8 +508,8 @@ passes it, so passing proves nothing about a secret chosen by hand.
 `whsec_$(openssl rand -base64 32)`. `forge cf sync --rotate` generates 32 CSPRNG bytes of hex for a key marked `# forge:generate`; a key ring is
 marked `# forge:ring`, and `--local --rotate` prepends a fresh key to it.
 
-**`CsrfConfigSchema` checks the ring's shape.** It requires comma-separated hex secrets, each an even number of characters and at least 64
-(32 bytes), so a short or malformed CSRF secret fails when the config is parsed at startup. The variety check runs when the secret is imported.
+**`CsrfConfigSchema` checks the length half earlier**, when the config is parsed at startup ([`INPUT_VALIDATION.md`][iv-5a] §5a); the variety check
+runs when the secret is imported.
 
 [boundaries-2]: ../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [boundaries-5b]: ../warden/canon/libs/BOUNDARIES.md#5b-required-false--non-security-features-only
@@ -554,6 +519,7 @@ marked `# forge:ring`, and `--local --rotate` prepends a fresh key to it.
 [htmx-7a]: ./HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [htmx-7b]: ./HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [iv]: ./INPUT_VALIDATION.md
+[iv-5a]: ./INPUT_VALIDATION.md#5a-csrfconfigschema--csrf-secret-validation
 [namespaces-5i]: ./NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
 [ram-3d]: ./ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement

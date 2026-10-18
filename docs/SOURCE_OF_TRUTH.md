@@ -69,7 +69,7 @@ A fact that is stable and short — a naming convention, a posture, a boundary �
 | `lib` and `types` configuration | `tsconfig.json` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
 | What a namespace is and how to use it | The namespace's README, or the nearest containing one below `src/` ([`NAMESPACES.md`][namespaces-3a] §3a) |
-| The generated assets module's exports — the manifest, the per-group `viewBox` consts, the bound icon components, and the glyph-name unions | `src/tooling/assets/pipeline.ts` |
+| The generated assets module's exports | `src/tooling/assets/pipeline.ts` |
 | Declared cross-namespace dependency graph | `config/namespaces.ts` |
 | CSRF and Turnstile field names | `src/form/constants.ts` |
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
@@ -81,10 +81,9 @@ A fact that is stable and short — a naming convention, a posture, a boundary �
 
 Each of these checks **owns the rule set it enforces**. Read the check, not a prose summary of it.
 
-A check whose rule set is _derived_ rather than declared has no row here, and that is decided rather than missing: `validate-css-tokens`,
-`validate-class-order`, `validate-class-tokens`, `validate-class-groups` and `validate-design-scale` each enforce one invariant against a table
-computed from the compiled stylesheet, so there is no enumeration a prose copy could disagree with (§1b). Where such a check commits its derived
-table, the committed module is the row — `class-groups.ts` and `design-scale.ts` in §2d.
+A check whose rule set is _derived_ rather than declared has no row here, and that is decided rather than missing: a check that enforces one
+invariant against a table computed from the compiled stylesheet leaves no enumeration a prose copy could disagree with (§1b). Where such a check
+commits its derived table, the committed module is the row — `class-groups.ts` and `design-scale.ts` in §2d.
 
 | Owns | File |
 | --- | --- |
@@ -178,8 +177,7 @@ as the owner, and do not restate its rulings in a `docs/` document. Every other 
 rulings to the `docs/` document that owns them ([`AGENT_GUIDE.md`][ag-6c] §6c).
 
 **A row moves the day a `docs/` document is written for one of these namespaces**, and the README is reduced to reference in the same change. Adding
-the document without moving the row is how a second copy starts. **The move runs both ways**: retiring such a document returns the row here, which
-is how `render/pdf` arrived — its rulings were a `docs/` document whose content the README already carried.
+the document without moving the row is how a second copy starts. **The move runs both ways**: retiring such a document returns the row here.
 
 ---
 

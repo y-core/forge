@@ -164,11 +164,8 @@ its scrolling.
 
 A Floor violation — `forge-ui-heading-order`. It arrives one way almost every time: the heading needed to be smaller, so the tag was changed instead
 of the class. Default: the level comes from the section's position in the document and the size comes from a class — `text-sm font-medium` on an
-`<h3>` satisfies both. A compound that owns its heading tag takes a `level` prop for the position and never a class change for it:
-`EmptyState.Title`, `Dialog.Title` and `Drawer.Title`.
-<!-- rule:forge-ui-tell-heading-skip -->
-
-Override never; see the Floor rule.
+`<h3>` satisfies both, and a compound that owns its heading tag takes its `level` prop for the position and never a class change for it. <!--
+rule:forge-ui-tell-heading-skip --> Override never; see the Floor rule.
 
 ---
 
@@ -247,12 +244,7 @@ surrounding copy.
 A Floor violation — `forge-ui-real-icons`. It happens because an emoji is available without a sprite, a fetch, or a name — but it renders in the
 reader's platform font, so the same glyph is a different drawing on every OS, and it carries a name in the accessibility tree that nobody chose.
 Default: a glyph comes from the sprite through `Icon`, or through a `createIcon` binding typed `ForgeIcon<Name>`, both from `@y-core/forge/ui/core`.
-<!-- rule:forge-ui-tell-emoji-icon --> Override never; see the Floor rule.
-
-```tsx
-import { createIcon } from "@y-core/forge/ui/core";
-const AppIcon = createIcon("/assets/icons.svg");
-```
+<!-- rule:forge-ui-tell-emoji-icon --> Override never; see the Floor rule, which carries the binding.
 
 ### 5b. Hand-Rolled Inline SVG
 
@@ -287,9 +279,5 @@ day pays for all of it. Default: one authored motion moment per interaction, on 
 motion at all, per `forge-ui-density-motion-budget`. <!-- rule:forge-ui-tell-motion-everywhere --> Override under a brief raising the motion dial
 for a named marketing surface, where `forge-ui-marketing-motion-ceiling` still bounds it. Every moment stays subject to `forge-ui-reduced-motion`,
 which is Floor.
-
----
-
-The countable pass that catches most of the above before anyone reads the output is `preflight.md`.
 
 [floor]: ./floor.md

@@ -252,8 +252,8 @@ export const homePage = definePage({
 });
 ```
 
-Per-call generics — loader data, action data, and the action's schema — are still inferred. The standalone `definePage` and `defineAction` are
-unchanged; the factory is sugar.
+Per-call generics — loader data, action data, and the action's schema — are still inferred. The factory is sugar: the standalone `definePage` and
+`defineAction` behave identically.
 
 ---
 
@@ -283,7 +283,7 @@ createApp<Bindings>({
 });
 ```
 
-`slot` is `{ mount, page, meta }`; `mount` is an open string, so a shell that branches on it needs a default arm. `app.setShell(shell)` registers
+`slot.mount` is an open string, so a shell that branches on it needs a default arm. `app.setShell(shell)` registers
 one after construction ([`ROUTING_AND_MIDDLEWARE.md`][ram-6a] §6a).
 
 **When the whole chrome is a stylesheet and a script**, `pageShell` is the shell:
@@ -435,8 +435,6 @@ export default { fetch: (request: Request, env: Env, ctx: ExecutionContext) => a
 ---
 
 ## Gotchas
-
-**`renderPage` is not in this namespace.** It comes from `@y-core/forge/render/jsx`, and a view calls it to turn a JSX tree into a `Response`.
 
 **A `HEAD` request never reaches a handler as itself.** The app copy-constructs it into a `GET`, runs the full chain, then strips the body — so
 handlers never special-case it, and `router` ships no `head` verb ([`ROUTING_AND_MIDDLEWARE.md`][ram-1d] §1d).

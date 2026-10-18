@@ -18,7 +18,14 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`forge db deploy` is removed, with `runDeploy`, `DeployOptions` and `DeployOutcome`**, from `@y-core/forge/tooling/db`. Its one check
+  `migrate` lacked moves there: `forge db migrate` refuses a migration the entry's wrangler history table (`migrations_table`, else
+  `d1_migrations`) records and forge never applied, on every target and under `--dry-run`, and `forge db migrate status --check` exits 1 on
+  one, its `--json` report carrying `wranglerHistory`. **Migration:** set the Workers Builds deploy command to
+  `forge db migrate --target remote --yes && wrangler deploy`; a `--check-only` step becomes
+  `forge db migrate status --check --target remote` ([`DATABASE_MANAGEMENT.md`](docs/DATABASE_MANAGEMENT.md) §9a).
 
 ---
 

@@ -44,13 +44,9 @@ audience: consumer
 
 ## 1. Corpus Purpose and Composition Gap
 
-Forge's `ui` namespace publishes a large surface — server-rendered components, bound variants, an application shell, a semantic token system, the
-mount controllers. Every one of them is documented for _calling_.
-
-None of it is documented for _composing_. This is the gap the corpus at `src/ui/design/` exists to close, and it is not a hypothetical one: an agent
-handed only the API reference can wire every component correctly and still ship output that type-checks, passes its tests, and reads as a defect.
-The corpus's job is to name those patterns; `src/ui/design/floor.md` and `src/ui/design/tells.md` own the catalogue, and this document does not
-carry a second copy of it (§5a).
+Forge's `ui` namespace is documented for _calling_, not for _composing_. The corpus at `src/ui/design/` closes that gap: an agent handed only the
+API reference can wire every component correctly and still ship output that type-checks, passes its tests, and reads as a defect. The corpus names
+those patterns; `src/ui/design/floor.md` and `src/ui/design/tells.md` own the catalogue, and this document carries no second copy of it (§5a).
 
 Its job is **not** to restate design literature. Reproducing a chapter on visual hierarchy produces prose an agent cannot act on and a gate cannot
 check.
@@ -63,8 +59,8 @@ semantic token, a class utility, or a state attribute.
 "Establish a clear visual hierarchy" terminates in nothing and is therefore unactionable. "Body copy uses the muted foreground token; the surface's
 default foreground token is reserved for the primary line" terminates in two named tokens, and a reviewer can grep for the literal that violates it.
 
-This is what makes the majority of corpus rules mechanically checkable rather than merely persuasive, and it is the property the admission test in
-§3c enforces.
+This is what makes most corpus rules mechanically checkable rather than merely persuasive, and it is the property the admission test in §3c
+enforces.
 
 ---
 
@@ -181,8 +177,6 @@ forge's real exports. The split is the one described for the barrel and namespac
 indistinguishable from an amendment the first time the two disagree. A reader asking "what exactly is checked" reads the script; this section owns
 only the contract the script exists to uphold, and the fact that the corpus is subject to it.
 
-Registration of those two files in the source-of-truth register is a separate concern, owned by [`AGENT_GUIDE.md`][ag-8] §8.
-
 ### 4a. Gate Enforcement Across Both Tiers
 
 These properties of that gate step are not derivable from the contract sentence above, and a reader who assumes either one wrongly draws a
@@ -207,8 +201,6 @@ reviewable, rather than inferred or silent. `forge/suppression-needs-reason` is 
 The suppression mechanism itself is uniform across rule ids; the tiers are not encoded in it, and could not usefully be. What §2a and §2c decide is
 who may write one and on what grounds — a stated reason for a Default, and nothing at all for a Floor rule, where a suppression is a defect to
 remove rather than an override to accept.
-
-Which rules are in the enforced set and what each one matches are the plugin's, per §4's non-restatement rule.
 
 ### 4b. Two Enforcement Mechanisms
 
@@ -248,8 +240,8 @@ That guarantee is bounded by what "enabled" means: the check takes the union of 
 enabled only in an override counts — and a rule turned off in one still reads as enabled, because the question asked is whether it is on anywhere,
 not everywhere.
 
-**Which rules sit on which side is not restated here**, for the reason §4 gives: each register is one file, and a second copy in prose is
-indistinguishable from an amendment the first time the two disagree.
+**Which rules are enforced, by which mechanism, and what each matches is not restated here**, for the reason §4 gives: the plugin and each
+register own it.
 
 Some plugin rules resolve a class against the design system itself — which utility roots take a spacing value, which take a colour, and what
 steps the scale offers. Those facts are generated from the compiled stylesheet into `src/tooling/lint/data/design-scale.ts` and held there by
@@ -302,12 +294,11 @@ governing-document rule that does not belong in a consumer-facing corpus, howeve
 
 ## 6. The Corpus Is Subject to the Governing-Doc Format
 
-`warden/src/checks/docs.ts`, configured by `config/steps.ts`, scopes to `docs/`, `CLAUDE.md`, the root `README.md`, every `src/**/README.md`,
-`.claude/agents/`, the fleet canon, and the corpus at `src/ui/design/`. The last two are `extraDirs` entries marked `numbered`, which is what puts a
-tree outside `docs/` under the whole format rather than the per-line prose rules alone.
+`config/steps.ts` gives the docs check the corpus at `src/ui/design/` as an `extraDirs` entry marked `numbered`, which is what puts a tree outside
+`docs/` under the whole format rather than the per-line prose rules alone.
 
 **The corpus is fully subject to that format** — `## N.` numbered headings, a `## 0. Quick Reference` naming every one of them, the frontmatter
-fields, and the size thresholds. Exactly as this document is, and the gate enforces both.
+fields, and the size thresholds — exactly as this document is.
 
 The reason is retrieval, not house style. Warden indexes the corpus, and the Quick Reference line is where a section's **gloss** comes from: the
 one-line summary a search result prints under the heading trail, and a ranked column in its own right, weighted far above the section's body text. A
@@ -351,7 +342,7 @@ page.
 
 **A file carries its own footer only when it rests on a source of its own that the corpus-level credit does not cover** — a named third-party
 palette a forge stylesheet resamples, with its version and license, rather than an argument re-derived in forge's terms. The colour-authoring
-reference is the one file in that position, because its subject is values forge carries rather than judgements forge re-argued.
+reference is in that position, because its subject is values forge carries rather than judgements forge re-argued.
 
 **A file with no such source carries no footer, and that is the correct state rather than a gap.** A `## Sources` section listing what a page did
 not draw on credits nobody, and a corpus where every file carries one teaches a reader to skip the two that mean something. Adding a footer is

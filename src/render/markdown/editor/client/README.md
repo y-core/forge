@@ -14,8 +14,8 @@ import { createAutosave, mountMarkdownViewport } from "@y-core/forge/render/mark
 import type { ViewportController, ViewportDialect } from "@y-core/forge/render/markdown/editor/client";
 ```
 
-It runs only in the browser, and CodeMirror is an optional peer: install `@codemirror/commands`, `@codemirror/lang-markdown`,
-`@codemirror/language`, `@codemirror/state` and `@codemirror/view` in the app that mounts it.
+It runs only in the browser, and CodeMirror is an optional peer: install the `@codemirror/*` packages forge's `package.json` lists under
+`peerDependencies` in the app that mounts it.
 
 ---
 

@@ -22,7 +22,7 @@ audience: internal
 - §1b AssetsConfig Type Shape: who owns the field list, and the one field readers mis-guess
 - §1c loadConfig — Config Resolution: resolving `assets.config.ts` against cwd, and why you should pass it
 - §2 tooling/assets Pipeline: the build functions and change detection
-- §2a Build Functions — Orchestration: `buildAll`, the per-stage functions, and the absence of globs
+- §2a Build Functions — Orchestration: `buildAll`, the per-stage slice rule, and the absence of globs
 - §2b Hash and Change Detection: opt-in content hashing, and why the state helpers go unused
 - §2c The Namespace Orchestrates Builders and Is Not One: the drives-one/is-one routing rule, and where the compute half went
 - §3 assets — the Runtime Namespace: resolving logical names to hashed paths
@@ -70,18 +70,9 @@ the difference between a build whose inputs are stated and one whose inputs depe
 
 ### 2a. Build Functions — Orchestration
 
-| Function | Runs |
-| --- | --- |
-| `buildAll` | Every configured stage, in the order §4 fixes, then the generated module and `_headers` |
-| `buildCSS` | One Tailwind CLI build per `css[]` entry, purging only that entry's own prior outputs |
-| `buildJS` | One esbuild bundle per `js.bundles[]` entry, into that bundle's own `outdir` |
-| `buildServiceWorker` | The `js.serviceWorker` entry, to `sw.js` at the deploy root, with the URLs it precaches |
-| `buildSprites` | One sheet per named sprite group, from its explicit `sources[].files` list |
-| `copyAssets` | Each `copy[]` rule, `from` → `to` |
-| `buildFonts`, `buildIcons`, `buildCursors` | The font downloads, the rasterised icon outputs, the baked cursor values |
-| `buildMarks` | One `marks[]` entry per SVG, converted to the paths a renderer draws without parsing XML |
-
-None of these takes the whole config — each takes its own slice plus an output directory; `src/tooling/assets/README.md` teaches driving them.
+`buildAll` runs every configured stage in the order §4a fixes, then writes the generated module and `_headers`. **Each per-stage function takes its
+own slice of the config, never the whole config**; `src/tooling/assets/pipeline.ts` is the stage sequence and
+`src/tooling/assets/README.md` teaches driving them.
 
 **There is no glob.** A sprite group names every file it contains: a `sources[].path` (a directory or an `http(s)` base) and a `files` list of bare
 names or `{ key, file }` pairs. The consequence is the point — the symbol set is stated in the config, so the glyph-name union generated from it
@@ -101,7 +92,7 @@ subcommand, so a developer can rerun one stage alone.
 
 ### 2b. Hash and Change Detection
 
-Content hashing is one SHA-256 digest truncated to its first 8 hex characters, and it is **opt-in with `--minify`**: an unhashed build emits logical
+Content hashing (`src/tooling/assets/hash.ts`) is **opt-in with `--minify`**: an unhashed build emits logical
 filenames and the manifest maps each key to itself. Hashes are taken from the _emitted_ file, not its sources, so an output that compiles to
 identical bytes keeps its URL — and the `_headers` file `buildAll` writes claims `immutable` only when hashing was on.
 
@@ -116,7 +107,7 @@ hashes.
 
 ### 2c. The Namespace Orchestrates Builders and Is Not One
 
-**`src/assets` drives external builders; a module that computes the artifact itself does not belong to it.** The stages §2a lists are shells around
+**`src/assets` drives external builders; a module that computes the artifact itself does not belong to it.** The stages are shells around
 the Tailwind CLI, esbuild, a font download and a file copy — each one resolves config, shells out, and reports. That is the whole warrant for the
 build-time exemption [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d grants, and [`LIBRARY_ARCHITECTURE.md`][la-1e] §1e states that exemption as
 **reachability**, not as a path glob: no Worker-executed entry point reaches these modules.
@@ -143,7 +134,7 @@ namespace that owns the artifact.
 ### 3a. createManifest — Content-Hashed Paths
 
 **`createManifest(data, prefix)` reads nothing.** It takes the logical-to-emitted mapping as a plain record plus a URL prefix, and returns a
-`Manifest` whose single method is `path(key) => string`. No filesystem, no directory listing — which is what makes it legal in a Worker at all: the
+`Manifest` that looks keys up. No filesystem, no directory listing — which is what makes it legal in a Worker at all: the
 mapping is baked into the generated module at build time (§4) and the runtime only looks up. That module exports one `assets` instance, so views
 import it rather than constructing a manifest of their own.
 

@@ -19,7 +19,6 @@ audience: consumer
 
 - §2 Channel Pattern: the `LogChannel` object and its wrappers
 - §2a LogChannel Object Interface: `write` required, `read` optional
-- §2b consoleChannel for Development: write-only structured JSON
 - §2c kvLogChannel for Production Persistence: symmetric read/write over KV
 - §2d Channel Selection by Environment: the canonical fallback pattern
 - §2e Redaction Is Logger-Wide and On by Default: the default policy, its controls, and `persistStack`
@@ -50,19 +49,14 @@ optional — channels that have no backing store (like `consoleChannel`) simply 
 The prefix captured at construction time is used for **both** write and read, so a `kvLogChannel` configured with `prefix: "app-logs"` always reads
 `app-logs||…` keys — never the default `logs||…` prefix.
 
-### 2b. consoleChannel for Development
-
-`consoleChannel` emits structured JSON to `console.log`. It has no `read` method. Always use in development.
-
 ### 2c. kvLogChannel for Production Persistence
 
-`kvLogChannel` writes structured JSON log records to a Workers KV namespace and exposes a `read` method for the log viewer. It requires a `LOGS_KV`
-binding. **Pair it with `consoleChannel` for dual output** — see §2d for the selection pattern.
+`kvLogChannel` writes structured JSON log records to a Workers KV namespace and exposes a `read` method for the log viewer. **Pair it with
+`consoleChannel` for dual output** — see §2d for the selection pattern.
 
-`record.data` is cloned into a JSON-faithful shape before persistence. `Date`, `Map` and `Set` carry their payload outside enumerable own
-properties, so each gets an explicit form instead of being flattened to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and
-`{ type: "Set", values: […] }`. A reference that reappears on its own path becomes `"[circular]"`, so a cyclic structure stores rather than
-overflowing the stack. `toJSON` handling and `URL` narrowing are §2h's, and hold on every channel.
+`Date`, `Map` and `Set` carry their payload outside enumerable own properties, so the clone every channel receives (§2h) gives each an explicit form
+instead of flattening it to `{}`: an ISO 8601 string, `{ type: "Map", entries: [[key, value], …] }`, and `{ type: "Set", values: […] }`. A
+reference that reappears on its own path becomes `"[circular]"`, so a cyclic structure stores rather than overflowing the stack.
 
 **The key format is §2g's**, and the viewer inherits its ordering from it.
 
@@ -146,7 +140,7 @@ configuration where console is dirtier than KV is unrepresentable, and that is t
 standard than the floor: a third-party destination, or dropping `body` on the persisting channel while console keeps it.
 
 Independently, `kvLogChannel` applies a built-in **stack-redaction default**: `KvLogChannelOptions.persistStack` is `false`, so any `stack` property
-is recursively stripped from a **cloned** `record.data` before persistence — error stacks never enter the 7-day KV retention window. The caller's
+is recursively stripped from a **cloned** `record.data` before persistence — error stacks never enter the KV retention window. The caller's
 record is never mutated, so `consoleChannel` keeps the full stack for local debugging. Set `persistStack: true` only when stacks must survive in KV
 (e.g. a short-retention debug namespace).
 
@@ -201,7 +195,7 @@ neighbours rather than at an arbitrary end.
 value.
 
 **Filtering stays per page.** `read` filters the page it listed, so an empty filtered page is not an empty result — the empty state says so
-(`"No log entries match these filters on this page. Load more to keep searching."`) rather than claiming no matches. A paging loop is the
+rather than claiming no matches. A paging loop is the
 alternative and is refused: it would issue an unbounded number of billed `kv.list` subrequests inside one invocation, and would break the cursor
 contract, since `complete` would then correspond to no single call.
 
@@ -222,9 +216,9 @@ secret, and the secret is absent from the console line _and_ from the KV record.
 exactly as `JSON.stringify` does, and then walks the result — so `persistStack: false` (§2e) still strips a `stack` the `toJSON` returned.
 
 **A `URL` narrows to `origin + pathname` — never its query or fragment.** A `URL` is the one value where honouring `toJSON` would make things worse:
-`URL.prototype.toJSON` returns the full href, so `log.info("redirecting", { to: url })` would put a `?token=…` magic link into the 7-day KV window.
-Both channels drop everything after the path instead. [`BOUNDARIES.md`][bnd-4a] §4a bans a credential on **any** channel, console included, so this
-is not a persistence-only concern. Log a query parameter you actually need as its own named field, after deciding it is not a credential.
+`URL.prototype.toJSON` returns the full href, so `log.info("redirecting", { to: url })` would put a `?token=…` magic link into the KV retention
+window. Both channels drop everything after the path instead. [`BOUNDARIES.md`][bnd-4a] §4a bans a credential on **any** channel, console included,
+so this is not a persistence-only concern. Log a query parameter you actually need as its own named field, after deciding it is not a credential.
 
 ---
 
@@ -241,10 +235,7 @@ per-request for env-dependent selection (§2d); `bindings` adds extra fields to 
 context. If ordered incorrectly, `requestId` will be undefined in every log record.
 
 `applyMiddlewareChain` produces that order, along with the rest of the chain's — see [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e, which is where the
-whole order is stated. A hand-written chain owes the same two lines:
-
-    app.use("*", requestId())
-    app.use("*", requestLogger<AppEnv>({ ... }))
+whole order is stated. A hand-written chain registers `requestId()` first and `requestLogger` after it.
 
 ---
 
@@ -272,12 +263,8 @@ mapping in §4a. Avoid enabling `debug` in production channel configs.
 `LogLevel` has no `"silent"` member and `minLevel` has no "off" value, so without `withLevels` the only way to spell "log nothing" is structural —
 `channels: () => []`, a different **shape** of config, and unreachable from a deployment variable: an env var can carry a value, not a channel list.
 
-`withLevels(channel, levels)` closes that gap. It names the accepted set rather than a floor, and **an empty set is the configured form of "off"**:
-
-    import { LOG_LEVELS, consoleChannel, parseLogLevels, withLevels } from "@y-core/forge/logging"
-
-    // LOG_LEVEL="warn,error" → failures only; "none" → silent; unset → everything.
-    channels: (c) => [withLevels(consoleChannel(), parseLogLevels(c.env.LOG_LEVEL, LOG_LEVELS))]
+`withLevels(channel, levels)` closes that gap. It names the accepted set rather than a floor, and **an empty set is the configured form of "off"**,
+which `parseLogLevels` reads from a deployment variable (`src/logging/README.md`).
 
 These properties follow from this being a **per-channel wrapper** rather than a logger-wide setting:
 

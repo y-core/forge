@@ -1,7 +1,6 @@
 ---
-title: The Verification Gate
-description: "The verify command over a declared step table, a pre-built step per check forge ships, and the changelog and semver parsers it reads version state with."
-audience: internal
+title: The Verification Gate description: "The verify command over a declared step table, a pre-built step per check forge ships, and the changelog
+and semver parsers it reads version state with." audience: internal
 ---
 
 # `@y-core/forge/tooling/gate`
@@ -18,9 +17,7 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 > **Node.js / Bun only.** This namespace shells out to your build tools via `node:child_process` and reads and writes files via `node:fs`. **Do not
 > import it into a Cloudflare Worker or a client bundle.**
 
-> The barrel rule, what stays unpublished and why, the check layering, and where a project root comes from are owned by [`BUILD_TOOLING.md`][bt-2]
-> §2 — as are the bin-versus-factory split and the modes (§2f), the fleet preset (§2g), and the general law behind the modes,
-> [`TESTING.md`][testing-6a] §6a. `tooling/release` builds on this namespace, never the reverse.
+> The rulings behind this surface are [`BUILD_TOOLING.md`][bt-2] §2's, and the general law behind the modes is [`TESTING.md`][testing-6a] §6a.
 
 ---
 
@@ -72,50 +69,22 @@ is a `--config` naming a file that does not exist, so a typo can never read as a
 ## Choosing which checks your gate runs
 
 Every validator forge runs on itself is a pre-built step you can drop into a table, and a published function you can call on its own. Pick the rows
-that match rules your repository actually holds; the label in each row is its `--only` token.
+that match rules your repository actually holds. Each builder is named for its check — `exportsStep`, `markdownStep`, `contrastStep` — and its TSDoc
+line in `src/tooling/gate/builders.ts` says what it proves; `forge verify --list` prints the label each row answers `--only` to. `bundleStep` takes
+its label from you, for a committed bundle that a node process loads.
 
-| Step | Proves |
-| --- | --- |
-| `exportsStep` → `validate-exports` | Every declared subpath resolves, every `@public` symbol is in its barrel, and every barrel, `files[]` entry and asset is reachable |
-| `namespaceGraphStep` → `validate-namespace-graph` | Every cross-namespace import is declared, with the right kind, and no mutual value pair; the named document carries no namespace catalogue, composes table or classification column |
-| `packagingStep` → `validate-packaging` | No module the tarball carries is one only a test reaches, computed from the `exports` map and `bin`; `required` fails each named file the `files` array leaves out or the disk lacks; every published namespace resolves to a README the tarball carries |
-| `coLocationStep` → `validate-co-location` | Every source module has a test beside it, so deleting one is loud |
-| `commentBudgetStep` → `validate-comment-budget` | Every comment in the files and directories your `sources` names is one [`CODE_RULES.md`][cr-5a] §5a permits, less a `!` entry's subtree — `!**/.wrangler` drops every `.wrangler` at any depth; `licences` waives the cap for one leading attribution header |
-| `jsxStep` → `validate-jsx` | Every shipped `.tsx` carries its runtime pragmas |
-| `menuNamingStep` → `validate-menu-naming` | Every **shipped** `triggered` `Menu.Popup` has the trigger it takes its accessible name from; a file naming a popup or a trigger through a value goes unjudged |
-| `ssrBoundaryStep` → `validate-ssr-boundary` | No Worker-executed module reaches the browser-only tier |
-| `importBoundaryStep` → `validate-import-boundary` | No module outside a guarded directory or source file imports it at value, save the files named as `crossings`; a guarded path naming no existing directory or non-test source file fails, as does a crossing naming no scanned file; given `features`, each feature's directory is guarded too, and imports only the features it requires |
-| `devBoundaryStep` → `validate-dev-boundary` | The Worker's `main` is not a `*.dev.ts` entry, nothing imports one, and only such an entry imports a dev-only module at value |
-| `stubGlobalsStep` → `validate-stub-globals` | No shipped module names a global only your private `.d.ts` stubs declare, which a consumer's real types cannot resolve; `shared` lists the globals the real types declare too, and an entry no stub declares fails |
-| `exposureStep` → `validate-exposure` | Every deployment the Worker config describes states `workers_dev`, `preview_urls` and its routing key; `require: "unroutable"` demands the values that keep it off the public internet |
-| `assetRootStep` → `validate-asset-root` | What the assets pipeline writes to the asset root matches the Worker's `run_worker_first` exclusions |
-| `assetManifestStep` → `validate-asset-manifest` | Every path the emitted assets manifest maps to exists under the served asset directory |
-| `markdownStep` → `validate-markdown` | Markdown holds the house conventions — compact tables, one bullet marker, tagged fences, no stray whitespace |
-| `modernCssStep` → `validate-modern-css` | Stylesheets and class literals use the platform feature that replaced each hand-written pattern |
-| `cssSourcesStep` → `validate-css-sources` | Every utility class the library emits is visible to a consumer's Tailwind scan |
-| `cssTokensStep` → `validate-css-tokens` | No `@theme` token is declared in a namespace the utility vocabulary overloads |
-| `classOrderStep` → `validate-class-order` | Every class literal is a fixed point of `cn`, so sorting one cannot change what it renders |
-| `classTokensStep` → `validate-class-tokens` | Every class token in the source resolves to CSS the design system compiles, and none ends in a variant that an interpolation completes |
-| `classGroupsStep` → `validate-class-groups` | `cn`'s conflict table matches the one regenerated from the design system |
-| `designScaleStep` → `validate-design-scale` | The design-scale data the lint plugin reads matches the one regenerated from the design system |
-| `contrastStep` → `validate-contrast` | Every audited foreground/background pair meets its contrast criterion |
-| `bundleStep(label, …)` → the `label` you give it | A committed bundle a node process loads matches a fresh build of its TypeScript source |
-
-The tool rows carry no check and simply spawn: `typecheckStep` (`typecheck`), `lintStep` (`lint`), `formatStep` (`format`), `typeAwareLintStep`
-(`lint:types`) and `testStep` (`test`, or a `label` of your own for one set of a split suite). Others spawn something a machine may not have —
-`browserStep` (`test:browser`), `workerdStep` (`test:workerd`) and `dbSteps`, which returns `db:schema:digests` in `quality`, and `db:lint`
-(`forge db lint`, which reads the local database) and `db:schema` (the replay) in `full`. Lint reads the local database's history to pick the
-pending files, and no row gates on its status: a fresh checkout has none, so every file is pending there, and the replay is what proves the
+Tool rows such as `typecheckStep` and `testStep` carry no check and simply spawn; `testStep` takes a `label` of your own for one set of a split
+suite. `browserStep`, `workerdStep` and `dbSteps` spawn something a machine may not have. `dbSteps` lints against the local database's history to
+pick the pending files, and no row gates on its status: a fresh checkout has none, so every file is pending there, and the replay is what proves the
 migrations apply.
 
 **`leavesNoTemp: true` fails a spawned step that exits with anything in the `TMPDIR` the gate gives it**, naming each entry. `testStep` and
 `workerdStep` take it. A step's `tempCaches` globs name the entries it keeps by design, and the check skips only those: `workerdStep` declares
 `playwright-transform-cache-*`, which the Playwright runner writes before any test starts, so a `miniflare-*` scratch directory is still reported.
 
-**The documentation, changelog, design and knowledge-index rows are warden's, not this namespace's.** `docsStep` (`validate-docs`), `changelogStep`
-(`validate-changelog`), `designStep` (`validate-design`), `wardenStep` (`warden:index`), `wardenQueriesStep` (`warden:queries`) and `duplicatesStep`
-(`warden:duplicates`) come from `@y-core/forge/warden/steps`, and an application appends the ones it needs through `wardenAppSteps`. No preset here
-can emit them: this namespace lives under `src/`, and nothing there may import warden. A table wanting both concatenates the two lists.
+**The documentation, changelog, design and knowledge-index rows are warden's, not this namespace's.** They come from `@y-core/forge/warden/steps`,
+and an application appends the ones it needs through `wardenAppSteps`. No preset here can emit them: this namespace lives under `src/`, and nothing
+there may import warden. A table wanting both concatenates the two lists.
 
 ---
 
@@ -153,10 +122,9 @@ that configures nothing still fails on a deployed module importing `@y-core/forg
 not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should
 inherit deferrals keyed to `src/ui/…` paths.
 
-**`forgeChecks({ root, pkg })` — a library published under an `exports` map.** In execution order: `typecheck` → `lint` → `format` → `test` →
-`validate-exports` → `validate-jsx` → `validate-class-order`. `pkg` is `{ name, version, exports, files }` verbatim from `package.json`, and
-`exports`, `jsx` and `classOrder` each merge over the config derived from it. Only checks whose config is derivable from `root` and the manifest
-live here; anything carrying project-specific policy is named alongside.
+**`forgeChecks({ root, pkg })` — a library published under an `exports` map.** `pkg` is `{ name, version, exports, files }` verbatim from
+`package.json`, and `exports`, `jsx` and `classOrder` each merge over the config derived from it. Only checks whose config is derivable from `root`
+and the manifest live here; anything carrying project-specific policy is named alongside.
 
 ---
 
@@ -196,9 +164,8 @@ markdownStep({ root: ROOT, sources: ["src", "docs", "README.md"], exclude: ["CHA
 Every rule is optional and every one accepts `"off"`, so a project opts out without forking the check. `rules.lineLength` is off by default and
 takes a `scope` of path prefixes, for the common case of a tree where part already holds a wrap column and part does not.
 
-**The fixer applies only the mechanical rules** — table padding, list markers and nested indent, emphasis delimiters, fence style and language
-aliases, hard tabs, trailing whitespace, thematic breaks, and the blank line around a block. **Some rules are report-only**: a bare fence, a bare
-URL, a second `# ` heading, and an over-long line.
+**The fixer applies only the mechanical rules**, the ones whose correct form is unambiguous — padding, markers, whitespace. A rule that needs a
+judgement, such as a bare fence or an over-long line, is report-only.
 
 ### Deferring a CSS finding you cannot fix yet
 
@@ -236,17 +203,8 @@ bun run verify --reuse             # answer at once if this exact tree already p
 bun run verify --affected          # run only the steps this change touches (branded as scoped)
 ```
 
-| Flag | Effect |
-| --- | --- |
-| `--mode <m>` | Which tier to run: `quality`, `standard` or `full`. Default `standard`; an unrecognised value is refused. |
-| `--full` | Sugar for `--mode full`. Passing both is refused rather than given a precedence. |
-| `--only <a,b>` | Run only those steps, in the run's own order. Repeatable and comma-separated; an unknown label is refused with the known ones listed. |
-| `--list` | Print the resolved selection and exit, running nothing. |
-| `--fix` | Run each selected step's fixer instead of the step. Steps without one are counted as having no fixer. |
-| `--reuse` | Exit green at once when a passing run of this exact tree is on record at this mode or above; otherwise run the gate. Takes no `--only`, `--fix`, `--list` or `--affected`. |
-| `--affected` | Run only the steps whose `watches` the working tree's changes touch. Always a scoped run; refused outside a git work tree. |
-| `--config <path>` | Step-table module, relative to `--root` or absolute. Default `config/steps.ts`. |
-| `--root <path>` | Directory every step runs in, and the base a relative `--config` resolves against. Default the working directory. |
+`forge verify --help` lists every flag. Passing `--full` beside `--mode` is refused rather than given a precedence, and an unknown `--only` label is
+refused with the known ones listed. `--root` is the directory every step runs in, and the base a relative `--config` resolves against.
 
 Output is one line per step, then one verdict line:
 
@@ -406,9 +364,7 @@ options)` wraps the function as a table row, and `run` is handed the run's mode,
 A check runs in-process: the runner prints its findings directly, so nothing is truncated to `tail` lines and warnings survive a passing step. A
 check that throws fails its own step rather than unwinding the run. Its fixer runs in-process too, and nothing is probed before it.
 
-The `parse*` / `validate*` / `resolve*` / `check*` / `format*` prefixes name the layer a function belongs to; the vocabulary and its purity rules
-are [`BUILD_TOOLING.md`][bt-2i] §2i's. The barrel parsers (`parseBarrelExports`, `findPublicSymbols` and their siblings) are published because
-`tooling/release`'s surface guard reads the same shapes.
+A published function's prefix names the layer it belongs to; the vocabulary and its purity rules are [`BUILD_TOOLING.md`][bt-2i] §2i's.
 
 ---
 
@@ -475,15 +431,12 @@ const result = promoteUnreleased(source, {
 if (result.ok) console.log(result.data);
 ```
 
-A parse fails on: no `[Unreleased]` section, more than one, an entry heading above it, an entry heading not matching `[X.Y.Z]` followed by an **em
-dash** (U+2014) and an ISO date, or a date whose shape is right but whose calendar day does not exist. `unreleased.empty` is `true` when the body
-holds only blank lines, `---` separators, or the `_Nothing yet._` placeholder.
+The heading grammar a parse holds a changelog to — the separator is an **em dash** (U+2014) — what makes `unreleased.empty` true, and the round-trip
+guarantee are [`BUILD_TOOLING.md`][bt-2d] §2d's. The compare link is omitted when `compareUrlBase` is absent or there is no earlier released
+version.
 
-`promoteUnreleased` leaves every byte below the insertion point untouched, so a document with no trailing newline round-trips exactly. The compare
-link is omitted when `compareUrlBase` is absent or there is no earlier released version.
-
-For versions on their own, `parseSemVer` returns `null` rather than throwing on leading zeros, negatives or malformed input; `formatSemVer`,
-`compareSemVer`, `isGreaterThan` and `bumpSemVer` work over the parsed `{ major, minor, patch }`, and a bump zeroes every lower component.
+For versions on their own, `parseSemVer` returns `null` rather than throwing on leading zeros, negatives or malformed input, and the other semver
+functions work over what it returns. A bump zeroes every lower component.
 
 ```ts
 formatSemVer(bumpSemVer(parseSemVer("v1.2.3")!, "minor")); // "1.3.0"
@@ -519,17 +472,16 @@ and reading it as "select no steps" would refuse every unscoped run.
 - [`@y-core/forge/tooling/release`][release-readme] — the release workflow built on this namespace's changelog and semver primitives.
 - [`@y-core/forge/tooling/lint`][lint-readme] — the oxlint plugin and the rule catalogs `validate-design` and `validate-modern-css` read.
 - [`@y-core/forge/tooling/cli`][cli-readme] — the command framework and `resolveAppRoot`.
-- [`BUILD_TOOLING.md`][bt-2f] §2f, §2g, §2h and §2i — the published gate, the fleet preset, root resolution, and why checks are functions rather
-  than scripts.
+- [`BUILD_TOOLING.md`][bt-2] §2 — the rulings behind the published gate, its presets and its checks.
 - [`TEST_RUNNERS.md`][testing-6] §6 — the gate's three modes and its flags as forge itself runs them.
 - [`TESTING.md`][testing-6a] §6a — the general law the modes and the dependency skip implement.
 
 [bt-2]: ../../../docs/BUILD_TOOLING.md#2-toolinggate-and-toolingrelease--project-tooling
+[bt-2d]: ../../../docs/BUILD_TOOLING.md#2d-changelog-promotion--the-unreleased-contract
 [bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ../../../docs/BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
 [cli-readme]: ../cli/README.md
-[cr-5a]: ../../../warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
 [lint-readme]: ../lint/README.md
 [namespaces-5i]: ../../../docs/NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
 [release-readme]: ../release/README.md

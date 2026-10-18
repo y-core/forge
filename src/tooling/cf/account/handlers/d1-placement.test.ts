@@ -220,7 +220,7 @@ describe("createD1Handler() with a declared preview database", () => {
 });
 
 describe("createD1Handler() and D1 write access", () => {
-  const UNVERIFIED = "D1 write access is unverified — a token without Account → D1 → Edit fails the first forge db migrate or deploy";
+  const UNVERIFIED = "D1 write access is unverified — a token without Account → D1 → Edit fails the first forge db migrate --target remote";
   const refusing: typeof globalThis.fetch = async (_input, init) =>
     (init?.method ?? "GET") === "POST"
       ? new Response(JSON.stringify({ success: false, errors: [{ code: 10000, message: "Authentication error" }], messages: [], result: null }), {

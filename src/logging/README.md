@@ -12,9 +12,6 @@ the call.
 
 ```ts
 import { consoleChannel, createLogger } from "@y-core/forge/logging";
-
-const log = createLogger("app", { channels: [consoleChannel()] });
-log.info("server started", { port: 8787 });
 ```
 
 ---
@@ -89,7 +86,8 @@ _guarantees_ an entry is gone.
 the default space. Apps sharing one KV namespace need a prefix each.
 
 `persistStack` is the one option whose default reverses what you might expect: it is `false`, so `stack` is stripped from a _clone_ of `record.data`
-before the put. Your record is untouched, so the console still shows the full stack — see [Keeping sensitive data out of logs][pii-section].
+before the put — a stack embeds argument values and file paths, and a persisted log outlives a console line. Your record is untouched, so the
+console still shows the full stack. Set `persistStack: true` only for a short-retention debug namespace ([`STRUCTURED_LOGGING.md`][sl-2e] §2e).
 
 The defaults for all of these live in `src/logging/kv-channel.ts`.
 
@@ -132,8 +130,8 @@ Both wrappers pass `read` and `readEntry` through untouched — writes go quiet,
 
 ## Logging every request
 
-`requestLogger(options)` builds a per-request child logger, puts it on the context, emits one summary record per request/response, and flushes
-pending writes through `executionCtx.waitUntil` so the response is never held up. `requestLog` is the accessor handlers read it back with.
+`requestLogger(options)` gives every request its own child logger and one summary record, flushing through `executionCtx.waitUntil` so the
+response is never held up. Handlers read the logger back with `requestLog`.
 
 Register `requestId()` **before** it, or the `bindings` callback has no id to read ([`STRUCTURED_LOGGING.md`][sl-3c] §3c):
 
@@ -253,9 +251,7 @@ const channels = [
 ];
 ```
 
-**`kvLogChannel` strips stacks by default**, independently of any wrapper — a stack embeds argument values and file paths, and a persisted log
-outlives a console line. Set `persistStack: true` only for a short-retention debug namespace; the posture is
-[`STRUCTURED_LOGGING.md`][sl-2e] §2e's.
+**`kvLogChannel` strips stacks by default**, independently of any wrapper ([Persisting logs to KV][kv-section]).
 
 The call-site half is yours, and it is the one no wrapper can fix — a value interpolated into the message is inside an opaque string no redaction
 pass can reach into:
@@ -371,8 +367,8 @@ Returning a promise carries obligations. **It must cover every operation the wri
 is handed and nothing else, so anything left outside it can be cancelled when the isolate suspends. And **only a failure of the record write itself
 may reject**: a maintenance failure stays inside the channel.
 
-`LogRow`, `LogQuery` and `LogReadResult` describe the read side and are exported from `@y-core/forge/logging`, not from `show`. A read lists a page,
-applies `level` and `q` to that page, and returns `complete` plus a `cursor` when more remain.
+`LogRow`, `LogQuery` and `LogReadResult` describe the read side and are exported from `@y-core/forge/logging`, not from `logging/viewer`. A read
+lists a page, applies `level` and `q` to that page, and returns `complete` plus a `cursor` when more remain.
 
 ---
 
@@ -402,13 +398,12 @@ in it.
 
 ## See also
 
-- [`docs/STRUCTURED_LOGGING.md`][sl] — the channel contract and its wrappers (§2), the flush contract (§2f), key ordering (§2g), `requestLogger` and
-  its ordering (§3), the status-to-level mapping (§4), and the viewer's ordered contract (§5)
+- [`docs/STRUCTURED_LOGGING.md`][sl] — the rulings behind channels, flushing, `requestLogger` and the viewer
 - [`BOUNDARIES.md`][boundaries-4] §4 — the no-PII rule, the prohibited field classes, and structured fields over interpolation
 - [`docs/ROUTING_AND_MIDDLEWARE.md`][ram-6] §6 — the shell the viewer renders into
 
 [boundaries-4]: ../../warden/canon/libs/BOUNDARIES.md#4-no-pii-in-logs
-[pii-section]: #keeping-sensitive-data-out-of-logs
+[kv-section]: #persisting-logs-to-kv
 [ram-6]: ../../docs/ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
 [sl]: ../../docs/STRUCTURED_LOGGING.md
 [sl-2a]: ../../docs/STRUCTURED_LOGGING.md#2a-logchannel-object-interface

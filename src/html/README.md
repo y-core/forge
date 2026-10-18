@@ -89,8 +89,6 @@ account, including why no `hx-*` attribute is covered, is [`SECURITY_HARDENING.m
 
 ---
 
----
-
 ## Gotchas
 
 **`html` renders `false` as the text `false`.** Only `null` and `undefined` become the empty string. The JSX habit of writing `${cond && markup}` to
@@ -111,7 +109,7 @@ a URL. Quote your attributes, and use `safeUrl` for URLs.
 
 ## See also
 
-- [`docs/FORGE_ERRORS.md`][eh] — the `html` / `escapeHtml` render paths and the character map (§3)
+- [`docs/FORGE_ERRORS.md`][eh] — the `html` / `escapeHtml` render paths and the character map
 - [`docs/SECURITY_HARDENING.md`][sh-2d] §2d — automatic `safeUrl` sanitization at JSX render time, and why no `hx-*` attribute is covered
 - [`docs/NAMESPACES.md`][namespaces-5m] §5m — why the primitives are a namespace of their own, below both `http` and `render`
 - [`src/http/README.md`][http-readme] — the response builders that send what these primitives build

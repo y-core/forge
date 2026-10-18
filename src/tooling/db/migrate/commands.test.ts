@@ -199,6 +199,42 @@ describe("forge db migrate", () => {
   }
 });
 
+describe("forge db migrate against the deployed database", () => {
+  /** Replaces `globalThis.fetch` with a recorder for the length of `body`, answering every request as an accepted D1 create. */
+  async function recordingGlobalFetch<T>(body: () => Promise<T>): Promise<{ sent: string[]; value: T }> {
+    const sent: string[] = [];
+    const original = globalThis.fetch;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      sent.push(`${init?.method ?? "GET"} ${String(input)}`);
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { uuid: "x", name: "" } }));
+    }) as typeof globalThis.fetch;
+    try {
+      return { sent, value: await body() };
+    } finally {
+      globalThis.fetch = original;
+    }
+  }
+
+  for (const [flag, last] of [
+    ["--yes", "applied 1: 0001_init"],
+    ["--dry-run", "would apply 1 to app-db (remote): 0001_init"],
+  ] as const) {
+    it(`sends Cloudflare no request under ${flag} with API credentials set, reaching the database only through wrangler`, async () => {
+      const root = appRoot();
+      const io = fakeDbIo(
+        { [join(root, "config", "db", "migrations", "0001_init.sql")]: GENERATED_INIT },
+        { now: NOW, env: { CLOUDFLARE_API_TOKEN: "tok", CLOUDFLARE_ACCOUNT_ID: "acc" } },
+      );
+      io.rules.push({ match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } });
+      wire(io);
+
+      const { sent, value: result } = await recordingGlobalFetch(() => drive(io, ["migrate", "--root", root, "--target", "remote", flag]));
+
+      expect([result.code, result.err, result.out.at(-1), sent]).toEqual([null, [], last, []]);
+    });
+  }
+});
+
 describe("forge db migrate compose", () => {
   it("refuses --custom as a flag it does not know, writing nothing", async () => {
     const root = appRoot();
@@ -320,6 +356,54 @@ describe("forge db migrate status", () => {
     const result = await drive(io, ["migrate", "status", "--root", root, "--check"]);
 
     expect(result.code).toBe(1);
+  });
+
+  describe("over a history wrangler wrote", () => {
+    const HISTORY_ROW = {
+      type: "table",
+      name: "d1_migrations",
+      tbl_name: "d1_migrations",
+      sql: "CREATE TABLE d1_migrations(id INTEGER PRIMARY KEY, name TEXT)",
+    };
+    const WITH_HISTORY = [...INVENTORY, HISTORY_ROW];
+    const certified = schemaFingerprint(WITH_HISTORY.map(({ type, name, tbl_name, sql }) => ({ type, name, tblName: tbl_name, sql })));
+
+    function historyIo(root: string, names: readonly string[]): FakeDbIo {
+      const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
+      wire(io, { recorded: [{ name: "0001_init", sha256: migrationChecksum(INIT), applied_at: 1, fingerprint: certified }] });
+      io.d1Rules.unshift(
+        { match: (statement) => statement === INVENTORY_SELECT, reply: WITH_HISTORY },
+        { match: (statement) => statement === 'SELECT name FROM "d1_migrations" ORDER BY id', reply: names.map((name) => ({ name })) },
+      );
+      return io;
+    }
+
+    it("exits 1 under --check when wrangler's history records a migration forge never applied, and names it in the report", async () => {
+      const root = appRoot();
+
+      const checked = await drive(historyIo(root, ["0001_init.sql", "0002_hand.sql"]), ["migrate", "status", "--root", root, "--check"]);
+      const report = JSON.parse(
+        (await drive(historyIo(root, ["0001_init.sql", "0002_hand.sql"]), ["migrate", "status", "--root", root, "--json"])).out[0] ?? "",
+      );
+
+      expect([checked.code, checked.err]).toEqual([1, ["Error: app-db (local) is not in step with its migrations — see the report above."]]);
+      expect(checked.out[0]?.split("\n").at(-1)).toBe(
+        "d1_migrations records 0002_hand, which forge never applied — `wrangler d1 migrations apply` ran against this database",
+      );
+      expect([report.pending, report.fingerprint.matches, report.wranglerHistory]).toEqual([
+        0,
+        true,
+        { table: "d1_migrations", unapplied: ["0002_hand"] },
+      ]);
+    });
+
+    it("exits 0 under --check when wrangler's history records only migrations forge applied", async () => {
+      const root = appRoot();
+
+      const checked = await drive(historyIo(root, ["0001_init.sql"]), ["migrate", "status", "--root", root, "--check"]);
+
+      expect([checked.code, checked.err]).toEqual([null, []]);
+    });
   });
 
   it("prints the report as one JSON document under --json", async () => {

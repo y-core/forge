@@ -42,8 +42,7 @@ developer-supplied** — never interpolated from raw user input:
   headers.
 - `hx-swap-oob` selectors from `oobSwap`/`oobAppend` — pick the swap target client-side.
 
-This applies to the pattern helpers too (`liveSearch`, `inlineValidation`, `formSubmit`, `infiniteScroll`, `paginatedTableLink`,
-`asyncDialogTrigger`, `dependentSelect`), which forward their `target`/`select`/`trigger` arguments verbatim into `hxAttrs`. Build these values from
+This applies to the pattern helpers too, which forward their `target`/`select`/`trigger` arguments verbatim into `hxAttrs`. Build these values from
 route definitions and static configuration, not from request data.
 
 The URL-valued props those same helpers forward — `get`, `post` and the rest — are a **disjoint set** governed by §7a, which reaches the same
@@ -55,7 +54,7 @@ attribute values nor the request hint substitute for `originProtection`/`crossOr
 
 ### 7a. URL-Valued hx Attributes Are Deliberately Unsanitized
 
-The URL-valued htmx props — `get`, `post`, `put`, `patch`, `delete`, `pushUrl` and `replaceUrl` — carry addresses rather than selectors, so §7's
+The URL-valued htmx props — the request verbs, `pushUrl` and `replaceUrl` — carry addresses rather than selectors, so §7's
 argument does not reach them: escaping a URL does not break it, and a sanitizer would not corrupt a legitimate value. They are nonetheless emitted
 verbatim. The attribute names the JSX renderer routes through `safeUrl` are owned by `src/render/jsx/render-to-string.ts`, and no `hx-*` name is
 among them. **That is a decision, not an oversight, and the reason is what `safeUrl` does on rejection.**
@@ -118,8 +117,8 @@ requires.
 
 A CSP without `'unsafe-eval'` is the **second** layer — a backstop, not a permission model. htmx compiles an `hx-on:*` body with `new Function`,
 which only `'unsafe-eval'` would permit, and forge's emitted policy carries that source in no directive by default. The **string** `'unsafe-eval'`
-is refused, case-insensitively, in every directive, so no directive list assembled from config, from an env var or from a pasted snippet can widen
-the policy into permitting it (`src/security/headers.ts`, and [`SECURITY_HARDENING.md`][sh-2e] §2e for the rule and the emitted defaults).
+is refused in every directive ([`SECURITY_HARDENING.md`][sh-2e] §2e), so no directive list assembled from config, an env var or a pasted snippet can
+widen the policy into permitting it.
 
 **A consumer that imports `UNSAFE_EVAL` removes this layer, deliberately, and that is by design.** The override is a `unique symbol` from
 `@y-core/forge/security`; naming it in `scriptSrc` is an import a reviewer reads in the diff, and an `hx-on:*` attribute in that app executes. Forge
@@ -127,8 +126,8 @@ does not own the trade — it owns that the trade be visible. So the layer is bo
 being emitted at all, since a route that never reaches `createSecurityHeaders` or `applySecurityHeaders` has no CSP from forge. The control above
 both — who wrote the attribute value — is the one that depends on neither.
 
-**htmx 4 has no switch of its own for either path, so the CSP and Trusted Types are the only layers beneath the construction rule.** htmx 2's
-`allowEval` and `allowScriptTags` are gone. Every evaluated form above compiles through the native `Function` constructor, which a policy without
+**htmx 4 has no switch of its own for either path, so the CSP and Trusted Types are the only layers beneath the construction rule.** Every
+evaluated form above compiles through the native `Function` constructor, which a policy without
 `'unsafe-eval'` refuses. Under enforced Trusted Types it is refused even when `UNSAFE_EVAL` admits eval, because `forge-htmx` gives htmx no policy
 for it ([`SECURITY_HARDENING.md`][sh-2g] §2g). A `<script>` inside swapped content is always rebuilt and run, with its text passed through the
 policy's `createScript`. The default CSP still refuses an injected one, because it permits only nonced inline script.
@@ -183,7 +182,7 @@ at the JSX call site. `src/render/htmx/htmx-attrs.test.ts` pins the emitted name
 - **A history restore.** When the reader goes back or forward, htmx 4 fetches the page with an htmx GET carrying `HX-History-Restore-Request: true`
   and no `HX-Boosted`, then replaces the whole body with the response.
 
-The htmx 2 test — `HX-Request` without `HX-Boosted` — answers a history restore with a fragment, and htmx then puts that fragment where the body
+Testing for `HX-Request` without `HX-Boosted` answers a history restore with a fragment, and htmx then puts that fragment where the body
 was. `HX-Request-Type` is htmx's own statement of what it will do with the response: `full` when the target is `<body>` or an `hx-select` will pick
 from the response, and `partial` otherwise. An `hx-select` request is therefore answered with a page, which is what it selects from.
 

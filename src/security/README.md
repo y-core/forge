@@ -307,9 +307,8 @@ const result = verifyOrigin(c.request, allowedOrigins);
 if (!result.ok) return new Response("Forbidden", { status: 403 });
 ```
 
-`checkCrossOriginProtection(request, options?)` is the Fetch-Metadata equivalent. Both answer a `GuardResult`, so the reason code is in `.error` —
-`"missing" | "disallowed"` for origins, `"missing-fetch-metadata" | "cross-site" | "same-site"` for Fetch Metadata. `same-site` is reported apart
-from `cross-site` because the two describe different attackers: a sibling subdomain you may partly control, versus an unrelated origin.
+`checkCrossOriginProtection(request, options?)` is the Fetch-Metadata equivalent. Both answer a `GuardResult`, so the reason code is in `.error`.
+`same-site` is reported apart from `cross-site`, so a handler can tell a sibling subdomain from an unrelated origin.
 
 **A WebSocket route takes the same guard.** A `GET` carrying `Upgrade: websocket` is never exempt, because the handshake opens a cookie-bearing
 channel a foreign page could otherwise hold open. List the guard in the upgrade route's controller entry like any mutating one:
@@ -337,19 +336,16 @@ app.use("/form/*", requireFormContentType());
 app.use("/api/*", cors({ origins: ["https://app.example.com", "https://*.preview.example.com"] }));
 ```
 
-`cors` answers preflights with `204` and adds the CORS headers to allowed responses, rebuilding the response rather than mutating its headers. An
-`origins` entry is either an exact origin or a single-label subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`,
-`:`, `@`, `?` and `#`, so `https://a/b.example.com` does not match `https://*.example.com`. The allowlist compiles once, at `cors()` time.
-`matchOrigin(origin, patterns)` is the same test, exported for custom origin logic.
+`cors` answers preflights with `204` and adds the CORS headers to allowed responses. An `origins` entry is either an exact origin or a
+single-label subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`, `:`, `@`, `?` and `#`, so `https://a/b.example.com` does not
+match `https://*.example.com`. `matchOrigin(origin, patterns)` is the same test, exported for custom origin logic.
 
 The rest of the options are the trade-offs you are choosing between: `methods` and `allowedHeaders` (what the preflight advertises), `maxAge` (how
 long a browser may cache that preflight, default `86400` seconds), and `credentials` (off by default, and the only one with a safety interlock).
 **`credentials: true` with a `"*"` origin throws at construction** — the CORS spec makes the two mutually exclusive.
 
-`Vary: Origin` is marked on every origin-dependent response, refusals included. The single exception is `origins: ["*"]` without credentials, where
-the constant answer varies on nothing. The cache-poisoning direction that closes is [`SECURITY_HARDENING.md`][sh-3a] §3a's.
-
-**Apply `cors` on the routes actually consumed cross-origin, never globally.**
+**Apply `cors` on the routes actually consumed cross-origin, never globally.** `Vary: Origin` is marked on every origin-dependent response,
+refusals included, except under `origins: ["*"]` without credentials; both rulings are [`SECURITY_HARDENING.md`][sh-3a] §3a's.
 
 ---
 
@@ -396,9 +392,9 @@ const perSession = rateLimit<AppEnv>({
 That import couples _your app_ to `@y-core/forge/session`; forge's own `security` namespace does not depend on it. A custom `key` always wins,
 whatever `trustCfHeaders` says.
 
-**Every failure here is closed, with `503`.** A `key` function that throws — `sessionCtx.get` before the session middleware ran, say — is refused;
-so is an absent `CF-Connecting-IP` under `trustCfHeaders: true`; so is the default keying with no `trustCfHeaders` and no custom `key` at all. Why
-the flag exists, and how `applyMiddlewareChain` threads one value to every surface that takes it, are [`SECURITY_HARDENING.md`][sh-5c] §5c's.
+**Every keying failure is closed, with `503`** — a throwing `key`, such as `sessionCtx.get` before the session middleware ran, included. Which
+failures those are is [`SECURITY_HARDENING.md`][sh-4d] §4d's; why the flag exists, and how `applyMiddlewareChain` threads one value to every surface
+that takes it, are [§5c][sh-5c]'s.
 
 ---
 
@@ -503,8 +499,7 @@ const event: unknown = JSON.parse(new TextDecoder().decode(verified.data.body));
 **`verify` consumes the request body.** `verified.data.body` is the only copy. Validate the parsed value before trusting its shape — a valid
 signature proves who sent it, not what it contains. Deduplicate on `verified.data.id`.
 
-The reason for a refusal is in `.error` — a missing header, a malformed timestamp or signature, a timestamp outside the tolerance in either
-direction, an oversized body, or a signature that matches no secret. Log it; never send it back.
+The reason for a refusal is in `.error`. Log it; never send it back.
 
 The defaults are a five-minute skew window (`toleranceSeconds: 300`) and a 1 MiB body (`maxBytes: 1_048_576`); pass either to
 `createWebhookSigning` to change it. An oversized body is refused from its `Content-Length` before any byte is read, and metered as it streams in
@@ -541,10 +536,8 @@ not a token mechanism and do not substitute for one.
 **`NONCE` is never emitted to a client.** It is a placeholder symbol the header builder resolves, not a header value; the real nonce for a request
 comes from `getNonce(c)` and from nowhere else.
 
-**What is routinely looked for here lives elsewhere:** CSRF token mint and verify in `@y-core/forge/form`, session management in
-`@y-core/forge/session`, authentication and RBAC in `@y-core/forge/auth`, and constant-time comparison in the internal
-`src/crypto/primitives/` ([`SECURITY_HARDENING.md`][sh-1] §1 has the full list). `isHxRequest` from `@y-core/forge/render/htmx` is a UX hint, not
-a security boundary.
+**What is routinely looked for here and lives elsewhere** is [`SECURITY_HARDENING.md`][sh-1] §1's list. `isHxRequest` from
+`@y-core/forge/render/htmx` is a UX hint, not a security boundary.
 
 ---
 
@@ -555,8 +548,8 @@ server speaking `http` behind a TLS-terminating proxy refuses the browser's `htt
 — the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less
 case. The posture, including why the scheme is never patched up in middleware, is [`WORKERS_PLATFORM.md`][wp-4e] §4e's.
 
-**A pure predicate is not middleware.** `matchOrigin`, `verifyOrigin`, `checkCrossOriginProtection`, `parseUrl` and `deriveAllowedOrigins` take
-plain inputs and return plain results. They reach a route only through the factory that wraps them.
+**A pure predicate is not middleware.** `matchOrigin`, `verifyOrigin` and `checkCrossOriginProtection` reach a route only through the factory that
+wraps them.
 
 **A malformed CSP source throws rather than shipping.** Every string source must be a single CSP source token — non-empty, and free of whitespace,
 `;`, `,` and control characters — because a malformed entry silently breaks the whole policy instead of one directive.
@@ -598,6 +591,7 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 [sh-3a]: ../../docs/SECURITY_HARDENING.md#3a-cors-middleware-for-api-routes
 [sh-3e]: ../../docs/SECURITY_HARDENING.md#3e-origin-guard-tiering--which-guard-when
 [sh-3f]: ../../docs/SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
+[sh-4d]: ../../docs/SECURITY_HARDENING.md#4d-rate-limit-key-selection
 [sh-5c]: ../../docs/SECURITY_HARDENING.md#5c-cloudflare-header-trust-boundary--trustcfheaders
 [sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [wp-4e]: ../../warden/canon/apps/WORKERS_PLATFORM.md#4e-development-transport-posture

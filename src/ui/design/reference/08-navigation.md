@@ -48,12 +48,12 @@ primitive the rail is built from). The one-barrel rule in `06-forms.md` applies 
 `Navbar` is built from a `NavDefinition`, not from JSX children: `NavDefinition` holds `sections`, and each `NavSection` holds `items`, typed
 `NavSectionItem` — any `NavItem`, plus `NavGroup`.
 
-| Shape | Fields | Use for |
-| --- | --- | --- |
-| `NavLink` | `label`, `href`, `filters?` | A destination. `href` is a route-map **key**, resolved through `resolveHref` |
-| `NavMenu` | `label`, `items`, `filters?` | A group of destinations behind one trigger |
-| `NavSlot` | `slot`, `label?`, `filters?` | Anything that is not a destination — identity, a search box, a `ThemeToggle` |
-| `NavGroup` | `heading`, `group`, `filters?` | A heading over destinations that stay **visible**. Section level only |
+| Shape | Use for |
+| --- | --- |
+| `NavLink` | A destination. Its `href` is a route-map **key**, resolved through `resolveHref` |
+| `NavMenu` | A group of destinations behind one trigger |
+| `NavSlot` | Anything that is not a destination — identity, a search box, a `ThemeToggle` |
+| `NavGroup` | A heading over destinations that stay **visible**. Section level only |
 
 `filters` is a visibility convenience and never a permission: every filtered item's label and `href` reach every viewer, and only its painting is
 suppressed. Reach for it to keep a bar uncluttered, never to keep a destination secret — the route needs its own guard either way. An empty list
@@ -71,8 +71,7 @@ level it is nested under, and picking one for its type size is exactly what `for
 programmatic association without asserting a level. Its children render as bar links rather than menu rows, because visible destinations are the
 whole reason to reach for a group.
 
-The bar is **not** a `role="menubar"`, and must not be given the role. A menubar owes its triggers a roving tab stop of their own, and forge ships
-no menubar controller; claiming the role without the behaviour announces a keyboard interface that is not there.
+Never give the bar `role="menubar"`: forge ships no menubar controller, so the role would announce a keyboard interface that is not there.
 
 ### 1b. One bar, built from a definition
 
@@ -96,10 +95,9 @@ zone model.
 
 ### 1c. Menus, groups and megamenus
 
-**Default: `NavMenu` nests one level.** <!-- rule:forge-ui-nav-menu-depth --> The renderer supports deeper nesting — on the desktop bar a
-submenu opens `side="inline-end"` beside its parent panel, and in the collapsed panel it nests as an indented disclosure — but a destination three
-levels deep is a destination the user will not find twice. Override for a
-reference-style application whose navigation is genuinely a tree.
+**Default: `NavMenu` nests one level.** <!-- rule:forge-ui-nav-menu-depth --> The renderer supports deeper nesting — on the desktop bar a submenu
+opens `side="inline-end"` beside its parent panel, and in the collapsed panel it nests as an indented disclosure — but a destination three levels
+deep is a destination the user will not find twice. Override for a reference-style application whose navigation is genuinely a tree.
 
 **Default: when the destinations under a heading should be scannable, reach for `NavGroup`, not `NavMenu`.**
 <!-- rule:forge-ui-nav-group-over-menu --> A dropdown is the wrong affordance for destinations the user is meant to survey: it costs a click to see
@@ -387,13 +385,13 @@ navigation.
 
 `@y-core/forge/ui/chrome` publishes the theme contract as constants so that no consumer restates it:
 
-| Constant | Value | What it names |
-| --- | --- | --- |
-| `THEME_STORAGE_KEY` | `"themePreference"` | The `localStorage` key |
-| `THEME_ATTR` | `"data-theme-preference"` | The `<html>` attribute recording the preference |
-| `DARK_CLASS` | `"dark"` | The class `<html>` carries when dark is active |
-| `DEFAULT_THEME_PREF` | `"system"` | The server-side default, resolved client-side |
-| `FOUC_SCRIPT` | inline script | Sets both before first paint |
+| Constant | What it names |
+| --- | --- |
+| `THEME_STORAGE_KEY` | The `localStorage` key |
+| `THEME_ATTR` | The `<html>` attribute recording the preference |
+| `DARK_CLASS` | The class `<html>` carries when dark is active |
+| `DEFAULT_THEME_PREF` | The server-side default, resolved client-side |
+| `FOUC_SCRIPT` | The inline script that sets both before first paint |
 
 **Default: embed `FOUC_SCRIPT` in a nonce'd `<script>` in the `<head>`.**
 <!-- rule:forge-ui-nav-fouc-script -->

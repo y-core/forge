@@ -43,9 +43,8 @@ never depends on this one.
 
 ## Composing a document
 
-A document is a list of elements. `Heading`, `Field`, `Note`, `TickList`, `OptionGroup` and `SignatureRow` are the vocabulary a printed form is
-actually written in; `Stack`, `Row`, `Box`, `Text`, `Spacer`, `Divider`, `PageBreak` and `KeepTogether` are what they are built out of. `Stack`
-puts its children one under the next and is transparent to a page break; `KeepTogether` is the one that is not.
+A document is a list of elements: form-vocabulary components such as `Heading` and `Field`, built out of layout primitives such as `Stack`, `Row`
+and `Text`. `Stack` puts its children one under the next and is transparent to a page break; `KeepTogether` is the one that is not.
 
 ```ts
 import { Field, Heading, Note, Row, Stack, Text } from "@y-core/forge/render/pdf";
@@ -97,12 +96,8 @@ the HTML runtime's requires a component to answer with a `JSXElement`; a PDF com
 `@y-core/forge/render/pdf/jsx-runtime` declares the namespace that admits one — and declares no intrinsic elements at all, so `<div>` in a document
 is a compile error rather than something that silently renders nothing.
 
-`content` takes either spelling. forge's `jsx()` builds a **descriptor** rather than calling the component, so `toPdfElements` is what lowers a
-descriptor tree — fragments, arrays and nested children included — into the elements the engine paints. `render` calls it for you; call it yourself
-only when you need the elements before then.
-
-The two spellings produce the same display list, and a test renders the document above through the engine to assert it — which is what stops the
-call shape drifting back to `Component(options, children)`, where the JSX claim would silently become false.
+`content` takes either spelling, and the two produce the same display list. `render` lowers a JSX tree for you; call `toPdfElements` yourself only
+when you need the elements before then.
 
 ---
 
@@ -121,8 +116,8 @@ createPdfRenderer({ page: { size: "letter", orientation: "landscape", margin: { 
 
 ## The page ceiling
 
-`maxPages` is a runaway guard rather than a formatting choice. It **bounds pagination itself**: the page that would cross the ceiling is never
-built, and a document that overruns produces no output at all rather than a truncated one:
+`maxPages` is a runaway guard rather than a formatting choice. It **bounds pagination itself** instead of being compared to its result: the page
+that would cross the ceiling is never built, and a document that overruns produces no bytes at all rather than a truncated file:
 
 ```ts
 const rendered = await createPdfRenderer({ maxPages: 2 }).render(longDocument);
@@ -130,9 +125,8 @@ rendered.ok; // false
 rendered.error.kind; // "max-pages"
 ```
 
-`DEFAULT_PDF_MAX_PAGES` is what a renderer takes when the caller names none. It is a runaway guard rather than a formatting choice: the ceiling
-bounds pagination instead of being compared to its result, so a document that overruns stops being laid out and produces no bytes at all rather than
-a truncated file. Raise it explicitly for a genuinely long document — the ceiling is then visible in the call rather than discovered in production.
+`DEFAULT_PDF_MAX_PAGES` is what a renderer takes when the caller names none. Raise it explicitly for a genuinely long document — the ceiling is
+then visible in the call rather than discovered in production.
 
 ---
 
@@ -172,8 +166,7 @@ Table({
 ## Where a page ends
 
 `orphans` and `widows` are applied **at the split index**, before anything is painted — a paragraph that would strand fewer than `orphans` lines at
-the foot of a page moves whole, and one that would carry fewer than `widows` onto the next carries more of them. Both default to 2. Deciding before
-painting is what keeps a placement final; a rule applied afterwards would have to undo one.
+the foot of a page moves whole, and one that would carry fewer than `widows` onto the next carries more of them. Both default to 2.
 
 **A word wider than its column overflows** rather than being cut mid-word, because in a legal document a silently broken word reads as a different
 word. `Text({ breakWord: true })` opts a run into the cut where that is the lesser evil.
@@ -182,15 +175,14 @@ word. `Text({ breakWord: true })` opts a run into the cut where that is the less
 
 ## Compression and metadata
 
-**Compression is on by default**, through `CompressionStream("deflate")`. It also settles the file's shape: the default writes a `%PDF-1.5` file
-whose dictionaries are packed into an `/ObjStm` behind a cross-reference stream, which is what makes a tagged document cost roughly what an
-untagged one does. Pass `compress: false` for a `%PDF-1.4` file with a classic `xref` table that you can read in a text editor — and note that a
-deflate stream's bytes belong to the runtime's compressor, so assert what a stream _inflates to_ rather than the stream itself.
+**Compression is on by default**, and it also settles the file's shape: the default writes a `%PDF-1.5` file with object streams behind a
+cross-reference stream, which is what makes a tagged document cost roughly what an untagged one does. Pass `compress: false` for a `%PDF-1.4` file
+with a classic `xref` table that you can read in a text editor — and note that a deflate stream's bytes belong to the runtime's compressor, so
+assert what a stream _inflates to_ rather than the stream itself.
 
 `metadata: "standard"` writes an `/Info` dictionary from `info` and an `/ID` beside the document's root — in the trailer under `compress: false`,
-and in the cross-reference stream's own dictionary otherwise. **`/ID` is derived, never random**: it is the first
-sixteen bytes of the SHA-256 of the uncompressed operators, with both halves equal, so two renders of one document are the same file and a caller
-can cache on content. Hashing the uncompressed material keeps the identity stable across a change of compressor.
+and in the cross-reference stream's own dictionary otherwise. **`/ID` is derived from the uncompressed content, never random**, so two renders of
+one document are the same file, a caller can cache on content, and the identity survives a change of compressor.
 
 ```ts
 createPdfRenderer({ metadata: "standard", info: { title: "Declaration of interest", author: "Meridian Attorneys" } });
@@ -200,8 +192,8 @@ createPdfRenderer({ metadata: "standard", info: { title: "Declaration of interes
 
 ## Tagging, so a screen reader can read the document
 
-A tagged render writes a structure tree: each run of the page marked in its content stream, a `/StructElem` per run pointing back at it, a parent
-tree, `/MarkInfo`, a document `/Lang` and `/ViewerPreferences` asking a viewer to show the title rather than the filename.
+A tagged render writes a structure tree a screen reader follows, a document language, and a request that the viewer show the title rather than the
+filename.
 
 ```ts
 createPdfRenderer({ tagged: true, lang: "en-ZA" });
@@ -211,8 +203,7 @@ createPdfRenderer({ tagged: true, lang: "en-ZA" });
 viewer substitutes, which is not a property of the file — so the default follows the one thing that decides whether the output can conform at all,
 and a caller who embeds a face gets an accessible document without asking twice. Name `tagged` to override it in either direction.
 
-**The tree is built from what every node already carries.** A node has had a structure tag since the first display list, so a heading becomes an
-`H2`, a paragraph a `P`, and a rule an artifact — outside the reading order entirely. Nothing is retrofitted through the producers.
+**The tree follows the components you wrote**: a heading becomes an `H2`, a paragraph a `P`, and a rule an artifact outside the reading order.
 
 **A drawing enters the tree only with the words a reader announces in its place.** `alt` on an image, a path or a letterhead's mark makes it a
 `/Figure`; a drawing without one is an artifact rather than a figure a reader reaches and cannot describe. A tick box says its own state.
@@ -376,9 +367,8 @@ const findings = auditPdf(doc, options);
 if (findings.length > 0) throw new Error(findings.map((finding) => finding.message).join("\n"));
 ```
 
-It reports no structure tree, a blank language, metadata that writes no dictionary, a title the printed page and the dictionary disagree on, a
-letterhead mark with no `alt`, and a tagged document set in faces the file does not carry. **Each finding says what to do as well as what is
-wrong.** It reads no bytes: it answers from the document and the options, before a render is made.
+**Each finding says what to do as well as what is wrong.** It reads no bytes: it answers from the document and the options, before a render is
+made.
 
 It reads `content`, and a container's children through it, so a `Table` or a drawing nested in a `Stack` is reported as a bare one is. It says
 nothing about `header` or `footer`: a running band is painted as a pagination artifact, and PDF/UA-1 exempts an artifact from the structure tree
@@ -388,14 +378,7 @@ and from `alt` alike — so an `alt` added there would reach no byte of the file
 
 ## Images
 
-`createPdfImage` reads the bytes and hands PDF whatever it can already read, **decoding only what it cannot**:
-
-| Source | What goes in the file |
-| --- | --- |
-| JPEG | the file's own bytes under `/DCTDecode` |
-| Opaque PNG | the file's own IDAT under `/FlateDecode` with `/Predictor 15` — PNG's filtering _is_ the predictor |
-| Palette PNG | the same, with the palette as an `/Indexed` colour space |
-| PNG with alpha | decoded once, the colour and the alpha split into an image and its `/SMask` |
+`createPdfImage` takes JPEG and PNG bytes, palette and alpha PNGs included, and answers a `Result`:
 
 ```tsx
 const logo = await createPdfImage(bytes);
@@ -454,10 +437,8 @@ import { readPdfEmbeddedFonts } from "@y-core/forge/render/pdf/fonts";
 const fonts = readPdfEmbeddedFonts(pack, (path) => bytesOf(path), (face) => (face.weight >= 700 ? "bold" : "body"));
 ```
 
-**Every metric crosses in the face's own units.** A font descriptor is written in a 1000-unit em
-whatever the face's own em square is, and `embedFont` is the single place that applies that scale —
-so an adapter that scales too is invisible on a 1000-upem face and shrinks every other one to
-`1000/unitsPerEm` of its true size.
+**Hand every metric over in the face's own units**, never pre-scaled to a 1000-unit em: the engine applies that scale itself, so an adapter that
+scales too is invisible on a 1000-upem face and shrinks every other one to `1000/unitsPerEm` of its true size.
 
 ### Making a tagged document that passes a conformance check
 
@@ -525,13 +506,8 @@ const renderer = createPdfRenderer({ fonts: [oswald] });
 const doc = { title: "Declaration", content: [Text({ children: "Declaration of interest", font: oswald })] };
 ```
 
-An embedded run is written as **glyph ids under `Identity-H`**, not as characters — so the file
-carries a `ToUnicode` CMap mapping them back, and the text of a rendered declaration stays
-selectable, searchable and copyable. For a legal document that is a requirement, not a nicety.
-
-**Measurement goes through the face's own advances and its own pair table**, so a kerned line breaks
-where the face it is actually set in says it does, and the kern reaches the page as a `TJ`
-adjustment rather than being measured and then drawn away.
+**The text of an embedded run stays selectable, searchable and copyable** — for a legal document that is a requirement, not a nicety. A kerned
+line breaks where the face it is set in says it does, and the kern reaches the page.
 
 **`font` takes a list, and a run falls back per code point.** The faces are tried in order and the
 base-14 pair is the last resort, so one glyph missing from the first face falls back for itself
@@ -607,12 +583,10 @@ rather than stamped with the moment it ran.
 **Every prohibition is refused before a byte is written**, on the `pdfa` error kind, with the remedy in the message: a run left in the base-14 pair,
 a face supplied without `sfnt`, `metadata` that writes no packet, a missing creation date, `a-2a` or `a-3a` without tagging, a link scheme an
 archive cannot follow, a CMYK image an sRGB intent cannot explain, and an attachment at a part 2 level [below](#attaching-a-file). **`auditPdf`
-reports every one of them from that same table before you render**, which is what a Worker can run; a prohibition the audit reports but the
-renderer does not refuse is a test failure rather than something to notice.
+reports every one of them before you render**, which is what a Worker can run.
 
-**What is held is forge's own rules, not the specifications.** Every claim in this section is pinned by a test reading the bytes that were actually
-written, but nothing checks the `pdfaid` and `pdfuaid` declarations against PDF/A and PDF/UA themselves. Run an external checker before you rely on
-a file being conformant.
+**What is held is forge's own rules, not the specifications.** Nothing checks the `pdfaid` and `pdfuaid` declarations against PDF/A and PDF/UA
+themselves. Run an external checker before you rely on a file being conformant.
 
 ---
 
@@ -672,10 +646,9 @@ const xml = read.data.find((file) => file.mime === "application/xml");
 **Each file comes back as the `PdfAttachment` a render takes**, so a file read from one PDF can be attached to the next. Its `name` is the
 specification's `/UF` where it has one, its `bytes` are inflated, and a `relationship` the file does not declare reads as `Unspecified`.
 
-**The read is bounded, because the bytes are hostile until proved otherwise.** It decodes only the streams it reaches — object streams and the
-attached files, never a font or a page's content — and charges each to a total as well as to its own limit, a stored stream's bytes included. It
-reads each object once however many entries reach it, so **two entries naming one embedded stream share one `bytes` array**, charged once: a write
-through either is seen through both. Pass `limits` to tighten or widen any of them:
+**The read is bounded, because the bytes are hostile until proved otherwise**: each decoded stream is charged to its own limit and to a total.
+**Entries naming the same embedded stream share one `bytes` array**, so a write through one is seen through every other. Pass `limits` to tighten or
+widen any bound:
 
 | Limit | Default | Refuses |
 | --- | --- | --- |
@@ -687,10 +660,9 @@ through either is seen through both. Pass `limits` to tighten or widen any of th
 **The defaults are sized for a Worker's 128 MB isolate**, because a read holds several times its input at its peak. A browser reading larger
 files raises `maxInputBytes`, `maxInflatedBytes` and `maxTotalDecodedBytes` together, and should expect the same multiple of whatever it allows.
 
-**Every refusal is a failed `Result`, never a throw**: a limit passed, no `%PDF-` header, a stream whose `/Length` is not a direct integer or runs
-past the end of the file, an object stream listing its offsets out of order, a corrupt deflate payload, an encrypted file, an attachment with
-no `/ModDate` or encoded with anything but `/FlateDecode`, and a file with no `/EmbeddedFiles` name tree — so a PDF with nothing attached is a
-failure too, rather than an empty list.
+**Every refusal is a failed `Result`, never a throw** — a limit passed, a malformed or encrypted file, an attachment the reader cannot decode, and
+an attachment with no valid `/ModDate` or encoded with any filter but `/FlateDecode` — and **a PDF with nothing attached is a failure too**, rather
+than an empty list.
 
 ---
 

@@ -46,9 +46,9 @@ See [`CODE_REVIEW.md`][cr-1] §1 for the review workflow, the green-baseline req
 
 These are forge's own invariants. **Any one of them blocks a merge regardless of severity argument.**
 
-**The canon's invariants bind alongside these, not underneath them.** The table below is what forge adds; the fleet's list is the canon's own §2,
-and some of its entries appear nowhere here — browser-only code imported from a Worker path, untrusted input validated at the boundary, and PII
-reaching a log record. Each still blocks a merge. Read both tables, or read the canon's and treat this one as the delta.
+**The canon's invariants bind alongside these, not underneath them.** The table below is what forge adds; the fleet's list is
+[`CODE_REVIEW.md`][cr] §2, and an entry there that appears nowhere here still blocks a merge. Read both tables, or read the canon's and treat this
+one as the delta.
 
 | Invariant | Owner |
 | --- | --- |
@@ -82,10 +82,10 @@ reaching a log record. Each still blocks a merge. Read both tables, or read the 
 | No-sibling-barrel rule (oxlint `no-restricted-imports`) | `bun run verify --only lint` |
 | Governing-doc import paths, numbering, references | `bun run verify --only validate-docs` |
 | Tailwind `@source` coverage of every `src/ui/` directory | `bun run verify --only validate-css-sources` |
-| Every corpus rule the plugin owns — the markup family (`forge-ui-a11y-*`, `-no-inline-style`, `-no-nested-card`, `-catalog-wrong-raw-input`) and the class-string family (`-spacing-scale-only`, `-color-token-only`, `-color-theme-no-raw-utility`, `-reduced-motion`, `-focus-ring`, `-interaction-focus-visible`, the `-platform-*` family) | `bun run verify --only lint` |
+| Every corpus rule the lint plugin owns — `src/tooling/lint/rules/` is the list | `bun run verify --only lint` |
 | The corpus against forge's API, and both rule registers against the plugin | `bun run verify --only validate-design` |
 | ARIA vocabulary validity — attribute names, role names, value shapes | `bun run verify --only lint` |
-| The comment budget — multi-line TSDoc, any tag but `@public`/`@internal`, `//` runs over two lines, banners, commented-out code, `TODO`. An interface field earns at most one line and earns nothing when its name and type already say it | `bun run verify --only validate-comment-budget` |
+| The comment budget ([`CODE_RULES.md`][cr-5a] §5a, [`CODE_RULES.md`][cr-5f] §5f) | `bun run verify --only validate-comment-budget` |
 | Behaviour of the changed unit | `bun test <path>` |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
@@ -234,7 +234,7 @@ re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-accessibi
 | `forge-ui-a11y-required-marker` | `Label`'s `required` prop already emits the marker, so no residual shape is left to match |
 | `forge-ui-a11y-reduced-motion-pair` | Depends on whether the settled state is already the untransitioned default |
 | `forge-ui-a11y-spinner-announces` | Scoped to "the region", a boundary source text does not delimit |
-| `forge-ui-a11y-state-attrs-source` | **A mechanical form exists** — an `aria-*` Tailwind variant naming a state `STATE_ATTRS` registers — and is unadopted only because it fires twice on `TAB_BASE` in `src/ui/core/tabs.tsx`, line 73. When that site changes, the finder lands and this line moves to §3a |
+| `forge-ui-a11y-state-attrs-source` | **A mechanical form exists** — an `aria-*` Tailwind variant naming a state `STATE_ATTRS` registers — and is unadopted only because it fires twice on `TAB_BASE` in `src/ui/core/tabs.tsx`. When that site changes, the finder lands and this line moves to §3a |
 
 ---
 
@@ -296,17 +296,16 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 moves into `suspicious` would fail the gate of every consumer app that builds its table from forge's preset, on the next install and with no
 changelog entry of forge's own. Naming rules individually makes an oxlint upgrade inert until someone reads its changelog and chooses.
 
-**It buys no Biome parity, and its volume says nothing about this codebase.** Of 357 findings measured at migration time, 312 came from three rules
-that collide with forge's own design:
+**It buys no Biome parity, and its volume says nothing about this codebase.** Most of it comes from rules that collide with forge's own design:
 
-| Rule | n | Why it is wrong here |
-| --- | --- | --- |
-| `unicorn/consistent-function-scoping` | 132 | 120 are test helpers declared inside a `describe` — the co-location idiom [`TESTING.md`][testing-2a] §2a mandates |
-| `unicorn/no-array-sort` | 95 | Nudges `toSorted()`, but many sites are `[...map.keys()].sort()` — already a fresh array, so the rewrite copies twice |
-| `eslint/no-underscore-dangle` | 85 | Flags the `__env` / `__flag` config _wire-format_ keys and valibot's `null_`; "fixing" them breaks consumer config files |
+| Rule | Why it is wrong here |
+| --- | --- |
+| `unicorn/consistent-function-scoping` | Its hits are mostly test helpers declared inside a `describe` — the co-location idiom [`TESTING.md`][testing-2a] §2a mandates |
+| `unicorn/no-array-sort` | Nudges `toSorted()`, but many sites are `[...map.keys()].sort()` — already a fresh array, so the rewrite copies twice |
+| `eslint/no-underscore-dangle` | Flags the `__env` / `__flag` config _wire-format_ keys and valibot's `null_`; "fixing" them breaks consumer config files |
+| `import/no-unassigned-import` | Flags exactly the paths listed in `package.json` `sideEffects` (§6) |
 
-`import/no-unassigned-import` (6) flags exactly the paths listed in `package.json` `sideEffects` (§6). The rest of the tail is single-digit and
-false-positive-dominated.
+The rest of the tail is false-positive-dominated.
 
 ### 7b. The two rules taken from it
 
@@ -322,8 +321,8 @@ step runs from.
 
 ### 7c. Why `jsx-a11y` is on, and what it does not see
 
-The plugin is enabled and every rule it ships runs under `correctness`. Measured over `src/` and `config/` before adoption, it produced **9
-findings and zero real defects**: six were correct ARIA the rules mis-advise, three were adversarial markup in test fixtures.
+The plugin is enabled and every rule it ships runs under `correctness`. Measured over `src/` and `config/` before adoption, it found **no real
+defect**: its findings were correct ARIA the rules mis-advise and adversarial markup in test fixtures.
 
 **Unlike §7a's default-deny, a category is the right unit here** — and the reach is narrower than §7a's argument implies. `.oxlintrc.json` is not in
 `package.json`'s `files` array, so it does not ship. A consumer inherits the _invocation_ (`lintStep` → `oxlint --deny-warnings`) and writes its own
@@ -347,7 +346,7 @@ intrinsics:
 | Blind spot | Why |
 | --- | --- |
 | `no-autofocus`, `no-access-key` | Match `autoFocus` / `accessKey`; forge writes the HTML spellings |
-| `label-has-associated-control` | Checks label _text_, not association — 0 findings across 94 labels |
+| `label-has-associated-control` | Checks label _text_, not association |
 | `click-events-have-key-events` and the other interaction rules | Key on `onClick` / `onMouseOver`, of which forge has none: behaviour lives in `*.browser.ts` |
 | Anything a consumer writes | `<Button>`, `<Field.Label>` are components, not intrinsics |
 
@@ -375,6 +374,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [cr-5b]: ../warden/canon/shared/CODE_RULES.md#5b-forbidden-outright
 [cr-5d]: ../warden/canon/shared/CODE_RULES.md#5d-tests-are-not-exempt
 [cr-5e]: ../warden/canon/shared/CODE_RULES.md#5e-a-behavioural-claim-is-an-assertion
+[cr-5f]: ../warden/canon/shared/CODE_RULES.md#5f-a-field-is-a-symbol
 [eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [floor]: ../src/ui/design/floor.md

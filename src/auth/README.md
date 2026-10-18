@@ -162,7 +162,7 @@ const notifier: AuthNotifier = {
 };
 ```
 
-`AuthMessage` carries `to`, `kind`, `expiresAt`, and then `code` on an OTP or `url` on an email change. Return `ok()` on success — not
+Branch on `message.kind`: an OTP carries a `code`, an email change a `url`. Return `ok()` on success — not
 `undefined` — and `err(new AuthStoreError("unavailable", "notifier.send"))` on failure; the flows read **any** failure as unavailable and refuse
 the attempt.
 
@@ -205,7 +205,7 @@ enrol ([`AUTH_FLOWS.md`][af-8b] §8b). `requestStepUp` and `stepUp` run the seco
 
 **Pass every sign-in refusal through `redactSigninReason` before it reaches a page.** It folds `AuthSigninReason` into the notices a
 visitor may be shown; the unredacted reason is for your logs and your branching ([`AUTH_FLOWS.md`][af-2b] §2b, [`FORGE_ERRORS.md`][eh-1c] §1c).
-`AuthEmailChangeReason` and `AuthStoreError` have no equivalent yet and must not be rendered raw.
+No other reason has a redactor; see [Security](#security).
 
 Signup is one call — `services.signup.request(email, at)` — and answers the same `AuthFlowChallenge` whether the address is new or already
 registered ([`AUTH_FLOWS.md`][af-1] §1).
@@ -244,8 +244,8 @@ surface the admin routes hold. The service is forge's, not yours to substitute.
 **`UserStore` and `AdminUserStore` are two contracts.** A sign-in service given a `UserStore` cannot delete a user or set the admin flag, because
 neither method is on the type it was given. Build the administrative one only where an administrative route needs it.
 
-Every write answers an `AdminUserOutcome` rather than a boolean, so a refusal says which guard fired: `changed`, `not-found`, `admin-exists`,
-`self`, `referenced`, or one of the last-admin refusals that `isLastAdminRefusal(outcome)` tests for. What each refusal means to a visitor, the
+Every write answers an `AdminUserOutcome` rather than a boolean, so a refusal says which guard fired; `isLastAdminRefusal(outcome)` groups the
+last-admin refusals. What each refusal means to a visitor, the
 prefix-only search, and the first-admin bootstrap are [`AUTH_FLOWS.md`][af-6] §6.
 
 **The first-admin claim needs an administrator approval, and both halves answer 404 without one.** Setting it up is the next section.
@@ -387,8 +387,7 @@ const issued = await tokensFor(c).issue({ userId, label: "Laptop CLI", scopes: [
 // issued.data.token is the plaintext — render it on this response and never again.
 ```
 
-A refusal is an `AccessTokenIssueReason` — no scope, a scope outside the list, a missing expiry, or one outside `(now, now + maxLifetimeMs]` —
-or the store's `AuthStoreError`.
+A refusal is an `AccessTokenIssueReason`, or the store's `AuthStoreError`. An `expiresAt` must fall in `(now, now + maxLifetimeMs]`.
 
 `list(userId)` answers the user's tokens for a settings page, and `revoke(id, userId, at)` carries the owner, so a token id belonging to somebody
 else revokes nothing.
@@ -474,9 +473,8 @@ const options: AuthWebOptions<Env> = {
 };
 ```
 
-`AuthViews` is keyed on `AuthViewProps`, so an entry typed for the wrong page is a **compile** error rather than a view reading `undefined`. Each
-shipped view also accepts `class` and `level` for placement. `AUTH_VIEWS` is forge's own markup per page name, and `renderAuthPage` is the seam
-that resolves a name against your override.
+An entry typed for the wrong page is a **compile** error rather than a view reading `undefined`. Each shipped view also accepts `class` and
+`level` for placement.
 
 To put one page inside a page of your own rather than replacing it, use `resolveAuthView` — the recipe, the `guarded` claim it takes, and the
 CSRF configuration your route must share are [`AUTH_MOUNTING.md`][am-6] §6.
@@ -536,9 +534,9 @@ relative to the stylesheet, and this is what it is from an `src/` beside `node_m
 @source "../node_modules/@y-core/forge/src/auth";
 ```
 
-Tailwind's scanner follows the symlink a `file:` dependency installs, so it works against a local checkout too. **Do not A/B it against your
-built stylesheet to check**: every class the auth views use is also produced today by forge's `ui/core` and `ui/chrome` scan set, so both builds
-come out the same size. The line is still required.
+Tailwind's scanner follows the symlink a `file:` dependency installs, so it works against a local checkout too. **Do not judge the line by
+comparing built stylesheets**: forge's `ui` scan set can already produce every class the auth views use, so both builds may come out the same. The
+line is still required.
 
 The views also draw their glyphs from **your** sprite rather than a bundled one. `AuthWebOptions.icon` is a `ForgeIcon<AuthIconName>`, and that
 union names every symbol it must cover; where to get them is [`AUTH_MOUNTING.md`][am-3] §3.
@@ -561,9 +559,8 @@ resume();
 The controller speaks each outcome through `announce()`, so **the page needs `<Announcer />` from `@y-core/forge/ui/core`** in its layout: a
 refusal interrupts, a success does not. Without one the ceremony still works and says nothing to a screen reader.
 
-Import the `PASSKEY_*` constants from `@y-core/forge/auth` when you render a ceremony root yourself: `PASSKEY` for the `data-ref` names,
-`PASSKEY_SCOPE`, `PASSKEY_MODE_ATTR`, the `PASSKEY_OPTIONS_*` and `PASSKEY_VERIFY_*` path and token attributes, `PASSKEY_CSRF_HEADER_ATTR` with
-its `PASSKEY_CSRF_HEADER_DEFAULT`, and `PASSKEY_REDIRECT_ATTR` with its `PASSKEY_REDIRECT_FALLBACK`.
+When you render a ceremony root yourself, take every attribute name and default from the `PASSKEY_*` constants in `@y-core/forge/auth`, never a
+literal.
 
 **A token per endpoint, never one shared** — `csrfProtection` binds a token to a path, and a ceremony spans two ([`AUTH_FLOWS.md`][af-3] §3).
 
@@ -682,8 +679,8 @@ ones rather than replacing the ring.
 everything already sealed under that key — the bound, the failure mode and the cadence to hold to are [`AUTH_MOUNTING.md`][am-7] §7.
 
 Tokens minted under the old key keep opening for as long as it stays in the list, so leave the old secret in place for at least the longest TTL a
-token of yours carries. A TOTP secret carries no TTL, so a secret that ever wrapped one stays until `authKeysRetirable` says otherwise: drop it
-early and each of those users spends a recovery code and enrols their authenticator app again. A token consumed before a rotation stays consumed
+token of yours carries. A secret that ever wrapped a TOTP secret stays until `authKeysRetirable` says otherwise; what dropping it early costs is
+[`AUTH_MOUNTING.md`][am-7] §7. A token consumed before a rotation stays consumed
 after one, because its nonce key is derived from the **token's own** key id.
 
 **Each secret is held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule**, which `importAuthKeyRing` applies and `resolveAuthServices`
@@ -742,15 +739,13 @@ const dropped = await purgeStaleTotpSecrets(createD1Client(env.DB), Date.now(), 
 });
 ```
 
-It answers how many rows it dropped. **It takes the ring, not a key id** — the statement deletes the complement of the active key, so a key id
-naming the _retiring_ one would delete the live enrolments instead; a ring whose `activeKeyId` is not the shape `importAuthKeyRing` derives is
-refused before any statement runs.
+It answers how many rows it dropped. **It takes the ring, not a key id** ([`AUTH_MOUNTING.md`][am-7] §7); a ring whose `activeKeyId` is not the
+shape `importAuthKeyRing` derives is refused before any statement runs.
 
 The window is measured from `last_verified_at` — the moment a code was last _accepted_ — or from enrolment for a row that never had one. Not from
 `updated_at`: a spent guess moves that too, so a user whose app drifted and who keeps trying wrong codes would hold their own row outside the window
 indefinitely, and they are exactly who this is for. `idleForMs` is held between a day and a year. **`requirement` is refused unless it is
-`mandatory`**: a dropped row routes the user to re-enrol only where the factor is demanded of them, and under any other requirement they lose a
-second factor with nothing asking them to replace it.
+`mandatory`**, for the reason [`AUTH_MOUNTING.md`][am-7] §7 gives.
 
 **Backfill `last_verified_at` when you add the column, or the first purge drops standing enrolments.** A row that predates the column reads NULL,
 the window falls back to `created_at`, and every confirmed factor not re-sealed since the rotation is old enough to delete. Run this once, in the
@@ -764,7 +759,7 @@ UPDATE auth_factors SET last_verified_at = <migration time>
 The `confirmed_at IS NOT NULL` half is what keeps the fallback doing its other job: an abandoned, never-confirmed ceremony stays purgeable on
 `created_at`, and without that nothing would ever let the retiring key go.
 
-Whether the key is droppable at all is `authKeysRetirable(factors, "totp-app", ring)` — see [`AUTH_MOUNTING.md`][am-7] §7.
+Whether the key is droppable at all is `authKeysRetirable(factors, "totp-app", ring)`.
 
 ---
 
@@ -824,9 +819,8 @@ An enrolment is confirmed by default; `confirmedAt: null` gives the unconfirmed 
 pending-enrolment and step-up paths are reached. A statement the fake does not model answers no rows, so a test needing a challenge to survive a
 round trip hands the ceremony a `ChallengeStore` of its own.
 
-**Build a UUID with `uuidToBytes` from [`@y-core/forge/storage/db`][storage-readme], not from `crypto`.** That subpath is where the UUIDv7 set is
-surfaced, alongside `uuidFromBytes`, `uuidv7` and `uuidv7Bytes`. `fakeAuthD1` converts for you, so you need these only when asserting against a
-bound parameter.
+**Build a UUID with `uuidToBytes` from [`@y-core/forge/storage/db`][storage-readme], not from `crypto`.** `fakeAuthD1` converts for you, so you
+need it only when asserting against a bound parameter.
 
 **A signed-in session is built, not faked.** Mount the same `createAnonymousSession` the app mounts, then write `AUTH_SESSION_KEY` — and
 `AUTH_STEP_UP_SESSION_KEY` for a session that has already stepped up — through `sessionCtx` in a middleware ahead of the guards. For an anonymous
@@ -931,11 +925,9 @@ that form is guarded. A replacement whose forms swap a refusal into the view the
 `AuthFactorReason`, `AuthTokenReason`, `AccessTokenReason` and `AuthStoreError` have no equivalent — they are for logs and branching only
 ([`FORGE_ERRORS.md`][eh-1c] §1c).
 
-**Session lifetime is absolute, and two bounds refuse one.** A session is refused once it is older than `AUTH_SESSION_MAX_MS` measured from when
-it was established and never refreshed, and again when it was established at or before the account's revocation barrier — which is how removing a
-passkey, removing the authenticator-app factor, an administrator's factor reset or completing an address change reaches sessions this request
-cannot see. A session carrying no
-established-at stamp is over rather than unbounded, so the deployment that adds this signs its live population out once.
+**Session lifetime is absolute, and two bounds refuse one.** A session is refused once it is older than `AUTH_SESSION_MAX_MS`
+([`AUTH_MOUNTING.md`][am-5] §5), and again when it was established at or before the account's revocation barrier — which is how removing a passkey,
+removing the authenticator-app factor, an administrator's factor reset or completing an address change reaches sessions this request cannot see.
 
 **The emailed code is rate-limited by a cooldown, not by a count.** **Bounding a caller's rate is a different control, and forge ships no numbers
 for it** ([`AUTH_FLOWS.md`][af-7] §7).
@@ -977,7 +969,7 @@ go beyond `isAdmin`.
 ## See also
 
 - [`docs/AUTH_MOUNTING.md`][am] — the mount: the builders, the order, the guard table, the seams forge does not ship, and embedding one view
-- [`docs/AUTH_FLOWS.md`][af] — every flow end to end, and the limits this release carries
+- [`docs/AUTH_FLOWS.md`][af] — every flow end to end, and its limits
 - [`docs/NAMESPACES.md`][namespaces-5h] §5h — the rule binding every `auth` subpath, and why identity is not `security`'s
 - [`warden/canon/libs/BOUNDARIES.md`][boundaries-2c] §2c — why identity is application-layer, and what that buys in testability
 - [`src/session/README.md`][session-readme] — the session the identity rides on, and the cookie under it
@@ -1003,6 +995,7 @@ go beyond `isAdmin`.
 [am-1]: ../../docs/AUTH_MOUNTING.md#1-the-mount-in-order
 [am-2]: ../../docs/AUTH_MOUNTING.md#2-the-route-groups-and-their-guards
 [am-3]: ../../docs/AUTH_MOUNTING.md#3-what-forge-does-not-ship
+[am-5]: ../../docs/AUTH_MOUNTING.md#5-what-mounting-costs-you
 [am-6]: ../../docs/AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
 [am-7]: ../../docs/AUTH_MOUNTING.md#7-rotating-the-key-ring
 [am-8]: ../../docs/AUTH_MOUNTING.md#8-turnstile-on-the-anonymous-forms

@@ -75,8 +75,8 @@ const lines = definitionList(
 
 ## Measuring a string yourself
 
-`stringWidth` is one linear scan: ANSI escapes skipped, East-Asian wide characters two columns, combining and zero-width marks none, a tab eight, an
-emoji sequence one cell of two. Box-drawing characters and the horizontal ellipsis stay at one, which is what lets a grid measure its own borders.
+`stringWidth` counts terminal columns: ANSI escapes and combining marks are zero, East-Asian wide characters two, a tab eight, and an emoji
+sequence one cell of two. Box-drawing characters and the horizontal ellipsis stay at one, which is what lets a grid measure its own borders.
 
 ```ts
 stringWidth("日本語"); // 6
@@ -98,8 +98,8 @@ const c = createColorize(level);
 process.stderr.write(c.red.bold("failed") + c.dim(` (${count} findings)`) + "\n");
 ```
 
-`createColorize` is chainable across 16, 256 and 24-bit colour, with `hex` and `rgb`, degrading on the level integer. `PLAIN` is the frozen level-0
-styler that returns its input — the right default for a renderer whose caller has not resolved a level.
+A style written for a richer level degrades to what `level` allows, so `hex` and `rgb` are safe to use unconditionally. `PLAIN` is the styler that
+returns its input — the right default for a renderer whose caller has not resolved a level.
 
 ---
 
@@ -118,8 +118,8 @@ reopens on each line whatever was still open when the previous one ended, for th
 
 **Grids are rectangular.** No row or column spanning, and no junction selection beyond the corners.
 
-**This namespace is a sink.** It imports `node:process` and nothing else in this repository — not `tooling/cli`, not `result`. Consumption runs
-`tooling/{cli,gate,release,cf} → tooling/term` and never the reverse.
+**This namespace is a sink.** It imports `node:process` and nothing else in this repository, so other tooling namespaces render through it and it
+never imports one of them.
 
 ---
 

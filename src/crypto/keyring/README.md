@@ -74,7 +74,7 @@ blob.
 
 **The frame carries no version byte, and it never will.** A version byte would be a second frame format for every reader to accept. A new
 derivation arrives as a new domain string inside forge instead, so a frame you store today opens under every later release. `auth` keeps its own
-domain, `y-core/forge/auth/v1`, which is why a TOTP secret sealed before this namespace existed still opens.
+domain, `y-core/forge/auth/v1`, so the TOTP secrets it seals open under the same functions.
 
 ### Re-sealing on open
 

@@ -130,8 +130,8 @@ turns a thrown plain object into the message `[object Object]`. Throw an `Error`
 
 ## See also
 
-- [`docs/FORGE_ERRORS.md`][fe] — the governing doctrine: the primitive (§1a), the narrowing guard (§1b), the aliases (§1c), and which failures are
-  expected, unexpected, or infrastructural (§5)
+- [`docs/FORGE_ERRORS.md`][fe] — the governing doctrine: the primitive, its aliases, and which failures are expected, unexpected, or
+  infrastructural
 - [`src/render/htmx/README.md`][htmx-readme] — turning a failure into a response fragment
 - [`src/validation/README.md`][validation-readme] — the schemas and issue formatting a `ValidationResult` of your own is usually built from
 

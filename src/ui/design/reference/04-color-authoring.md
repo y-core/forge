@@ -91,7 +91,7 @@ is `--accent-contrast`'s shape, and the reason step 11 exists to carry the hue a
 `--yellow-contrast` inverts instead — near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in _both_ modes: `--gray-12` in
 light, `--gray-1` in dark.
 
-The text weights forge's light mode distinguishes now sit on steps that carry a Radix role: `--primary-foreground` is `--gray-1`, and
+The text weights forge's light mode distinguishes sit on steps that carry a Radix role: `--primary-foreground` is `--gray-1`, and
 `--secondary-foreground` and `--accent-foreground` are `--gray-12`. No step is parked.
 
 ### 1d. Overriding a per-mode value on the step

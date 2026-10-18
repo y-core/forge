@@ -23,12 +23,8 @@ forge cf gen env              # emit env.schema.ts from wrangler.jsonc + .dev.va
 
 ## Getting started
 
-**Every verb here reports by default and changes nothing.** Run it bare, read the table, then decide.
-
-```bash
-forge cf sync                 # a report: what is declared, what exists, what differs
-forge cf sync --commit        # the same run, permitted to write
-```
+**Every verb here reports by default and changes nothing.** Run it bare, read the table, then decide; `--commit` is the same run, permitted to
+write.
 
 `--commit` is the single switch that permits change, and it covers **both** kinds: creating resources on Cloudflare and editing your
 `wrangler.jsonc`. No combination of other flags mutates anything — `--force` without `--commit` is an error rather than a no-op, since a flag about
@@ -288,18 +284,11 @@ is [`src/config/README.md`][config-readme]:
 3. **`validateBindings(EnvSchema)`** ([`@y-core/forge/app`][app-readme]) — registered as middleware, so the contract is enforced on the first
    request.
 
-Run it as a script:
+Run it as a script; `forge cf gen env --help` lists the flags that move each path above:
 
 ```json
 { "scripts": { "gen:env": "forge cf gen env" } }
 ```
-
-| Flag | Default | Description |
-| --- | --- | --- |
-| `--wrangler` | `wrangler.jsonc` | Path to the wrangler config. |
-| `--dev-vars` | `.dev.vars` | Path to the `.dev.vars` secrets file. |
-| `--out` | `src/app/env.schema.ts` | Output module path. |
-| `--config` | `src/app/env.config.ts` | Host-policy module exporting a `Partial<GenOptions>`; built-in `DEFAULT_OPTIONS` apply when absent. |
 
 A typical generated module:
 
@@ -344,9 +333,8 @@ The subpath exports `parseWranglerConfig` and nothing else. Why it is published 
 import { createGenEnvCommand, createSyncAccountCommand, createSyncZoneCommand } from "@y-core/forge/tooling/cf";
 ```
 
-Each `create*Command` returns the `Command` the `forge` binary attaches, ready to hand to `execute`. Beneath them the barrel publishes the engine,
-the handler registry, the Cloudflare API client and the JSONC round-trip writer, so an application can drive reconciliation without the command
-layer.
+Each `create*Command` returns the `Command` the `forge` binary attaches, ready to hand to `execute`. The barrel also publishes the reconciliation
+engine beneath them, so an application can drive it without the command layer.
 
 **Drive generation through `createGenEnvCommand`.** The generator core is `@internal` and exports nothing from the barrel — there is no supported
 way to assemble a schema from the internal pieces.

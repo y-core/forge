@@ -92,8 +92,8 @@ What settles it is that **Radix's own text-field pattern does not reach 3:1 eith
 against the page), 1.49 (border against the page) and 1.28 (border against fill) in light. Adopting that shape would buy a tint, not an identifier,
 so forge's mapping is the stricter line rather than a workaround for a defect. And the geometry closes the alternative: on a near-white page a 3:1
 identifier has to be step 10 or darker, so a compliant step 7 would land darker than Radix's step 10 and squeeze steps 7–10 into a span too narrow
-to stay perceptually even. Read the measurements and the full argument beside `--input` in `theme-base.css`, which is where the mapping and its
-reasoning live. The accepted cost is stated there too: forge's input border is visibly heavier than a Radix-based UI's.
+to stay perceptually even. `theme-base.css` holds the mapping itself. The accepted cost is that forge's input border is visibly heavier than a
+Radix-based UI's.
 
 Where a control has a fill to be identified by, none of this binds — `Switch` and `Slider` are read by their track, and `CheckboxGroup` and
 `RadioGroup` are painted so that a checked box is a filled box. It is the text field, whose interior is the page colour, that leaves its border
@@ -245,10 +245,9 @@ Note the border went away as well — see `forge-ui-layout-muted-panel` in `02-l
 `forge-ui-contrast-floor` fixes the ratios. What that Floor does not say, and what the layering makes easy to forget, is that a passing ratio is a
 property of _one scale in one mode_.
 
-**Every shipped scheme is built on one lightness ramp and differs only in hue**, so every audited ratio is the same across them to within
-**0.05** — the widest gap at any audited step is `--muted-foreground` in light, 5.17 through 5.22 — by construction rather than by coincidence,
-which is why the contract in `src/tooling/gate/checks/contrast-parse.ts` can pin one set of numbers and have them describe every scheme alike. A
-scheme swap cannot move a pair across its floor.
+**Every shipped scheme is built on one lightness ramp and differs only in hue**, so every audited ratio is the same across them to within **0.05**,
+by construction rather than by coincidence, which is why the contract in `src/tooling/gate/checks/contrast-parse.ts` can pin one set of numbers and
+have them describe every scheme alike. A scheme swap cannot move a pair across its floor.
 
 The ratios themselves are `src/tooling/gate/checks/contrast-parse.ts`'s to own.
 
@@ -315,9 +314,8 @@ a token with no consumer is a token nobody checks.
 
 `--destructive`, `--success` and `--warning` are **fills the application owns**: an app may re-point them to its brand. `--status-*` are **fixed
 status hues forge owns**, which no scheme swap and no brand re-point moves — and no shipped scheme moves anything else either, since a theme file
-re-declares the gray steps and nothing more. So `bg-destructive text-destructive-foreground` on a failure
-panel is still the wrong reach, for the reason it always was: a panel that follows the brand stops meaning "failed". The right reach is a
-`--status-*` token.
+re-declares the gray steps and nothing more. So `bg-destructive text-destructive-foreground` on a failure panel is still the wrong reach: a panel
+that follows the brand stops meaning "failed". The right reach is a `--status-*` token.
 
 Default: a status surface is expressed with the `--status-*` token for its intent and tier — or by consuming the `Alert`, `Toast` or `Badge` tone
 that already does — and never with a fixed palette utility, unless a brief calls for a signal hue outside forge's four intents, in which case it is

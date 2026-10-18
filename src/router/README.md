@@ -160,8 +160,7 @@ answers `500`. Its `details` carries the discriminant that tells the two apart, 
 
 ## See also
 
-- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the governing doctrine: routes as a map (§1a), controllers (§1b), registration order (§1c), the absent
-  `head` verb (§1d), and middleware composition (§3)
+- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the governing doctrine: routes as a map, controllers, registration order, and middleware composition
 - [`src/app/README.md`][app-readme] — `createApp`, `app.map`, and the `definePage` / `defineAction` builders that fill a controller's actions
 - [`src/context/README.md`][context-readme] — what a handler reads off the context these routes dispatch to
 

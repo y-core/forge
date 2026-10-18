@@ -1,6 +1,6 @@
 ---
 title: Testing Discipline
-description: "forge's three test runners, its browser and workerd sets, the entity encoding map, the security matrix coverage map, and the testing namespace fixtures."
+description: "forge's test runners, its browser and workerd sets, the entity encoding map, the security matrix coverage map, and the testing namespace fixtures."
 audience: consumer
 ---
 
@@ -72,7 +72,7 @@ Forge uses a hand-written stub at `.types/bun-test.d.ts` rather than the `bun-ty
 
 - `bun-types` overrides DOM's `fetch` signature with Bun-specific properties.
 - That override breaks type-checking of `fetch` in Worker code and test fakes.
-- The stub declares exactly `describe`, `it`, `expect`, `beforeAll`, `afterAll`, `beforeEach`, `afterEach`, `mock` — nothing more.
+- The stub is the list of what a suite may import from `bun:test`.
 
 **Do NOT install `@types/bun` or `bun-types`, and do not reference them in `tsconfig.json` or `package.json`.** A change that adds these packages
 must be rejected.
@@ -161,9 +161,8 @@ load-dependent rather than reproducible. `resume.browser.ts` awaits `htmx:after:
 ### 1e. Media Options and the Harness `test`
 
 **`test.use({ reducedMotion })`, `{ forcedColors }` and `{ contrast }` reach the browser, and a spec may take `test` from either module.**
-playwright 1.62 declared them in `types/test.d.ts` but built none of them into `_combinedContextOptions` (`playwright/lib/index.js`), so
-`test.use({ reducedMotion: "reduce" })` type-checked and emulated nothing at all. 1.63 builds them, so `src/ui/client/browser.fixture.ts` overrides
-nothing and re-exports `@playwright/test`'s `test` unchanged.
+`src/ui/client/browser.fixture.ts` overrides nothing and re-exports `@playwright/test`'s `test` unchanged. An option that type-checks can still
+emulate nothing, which is the failure the next paragraph guards against.
 
 **`browser.fixture.browser.ts` is what keeps that safe.** Its cases assert the emulation against the real cascade — a
 `prefers-reduced-motion: no-preference` rule leaving the page, `forced-colors: active` matching — so an option silently reverting to a no-op fails
@@ -197,8 +196,8 @@ The project runs a file's tests in one worker, so every test in a file shares on
 wrote under `--persist-to`, which the harness cannot read, so it serves no Worker: it opens the same miniflare D1 engine through `getPlatformProxy`
 (`tests/workerd/d1.ts`) and calls `checkSchemaHealth` on that binding directly.
 
-**The compose cases run four at a time.** Each case is a dozen wrangler spawns of roughly 250MB apiece, so running every case at once peaked near
-4GB and the OOM killer took the gate down; four in flight keeps most of the wall-clock win and holds the peak near a gigabyte.
+**The compose cases run on a bounded pool, `CASE_CONCURRENCY` in `tests/workerd/db-compose.workerd.ts`.** Each case spawns wrangler many times
+over, so running every case at once exhausts memory and the OOM killer takes the gate down; a small pool keeps most of the wall-clock win.
 
 **The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same ground the browser set is held back on (§1c).
 `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
@@ -373,18 +372,13 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 See [`TESTING.md`][testing-6] §6 for the one-command-three-modes gate, the flag table, the prerequisite line, and the scoped-run rule.
 `config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
-**A step sits in `quality` unless it runs the code rather than judging it.** That rule, and not a speed estimate, is what decides a new row: every
-`validate-*` check, both typechecks, `lint`, `format`, `lint:types` and the digest comparison judge source, so `quality` holds them and costs about
-thirteen seconds. `standard` adds `test`, which is over half the gate's wall time on its own. `full` adds `validate-changelog` and the runtime
-suites, `test:browser` and `test:workerd`.
+**A step's tier follows [`TESTING.md`][testing-6c] §6c's two lines, never a speed estimate**, and an omitted `tier` is `quality`. `standard` adds
+`test`; `full` adds the rows held back on a prerequisite or reserved for release, the runtime suites among them (§1c, §1f). `test` covers every
+co-located suite that judges nothing external — `src/`, `config/` and `warden/src/` — so `standard` runs those alone and the workerd set is reached
+only through its own step (§1f).
 
-**So the tier a row declares marks what it costs, not what it is**: a table read top to bottom is `quality` except where it says otherwise, which is
-why `config/steps.ts` carries a `tier` key only on the rows that are not. `test` covers every co-located suite that judges nothing external —
-`src/`, `config/` and `warden/src/` — so `standard` runs those alone and the workerd set is reached only through its own step (§1f).
-
-The table is not the running order: the selector sorts by tier after filtering, so every `quality` row runs before `test` and both before `full`,
-with declared order preserved inside each tier. This is what makes a wrap or comment-budget failure surface in seconds rather than after the suite —
-and `browserStep` sitting above `dbSteps` in the file does not put Chromium ahead of the digest check.
+The table is not the running order ([`TESTING.md`][testing-6c] §6c's tier-stable sort), so `browserStep` sitting above `dbSteps` in the file does
+not put Chromium ahead of the digest check.
 
 **The reviewer's baseline is a reuse run, and the developer's closing run is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the reviewer run
 the gate with `--reuse`. `cc-tester` closes a task on `verify:full`, which records a receipt for the tree it judged, so a reviewer who reaches the
@@ -394,11 +388,9 @@ run.
 
 **`GATE_INPUTS` in `config/steps.ts` holds the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and the
 `result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can
-change any row's verdict — so under `--affected` a change to one runs every step. **Some rows stay undeclared and run on every change**, because no
-path list bounds what they read: both typechecks and `lint:types` read the whole type program, `test` runs code whose import graph is unbounded,
-`validate-packaging` follows imports from each `bin` entry, `validate-docs` fails on any path or link target a document names, and `validate-design`
-reads every barrel the exports map points at. `validate-exports` and `validate-namespace-graph` judge the whole surface the exports map declares.
-`config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.
+change any row's verdict — so under `--affected` a change to one runs every step. **A row stays undeclared and runs on every change when no path
+list bounds what it reads** — the whole type program, an unbounded import graph, every path a document names, or the whole surface the exports map
+declares. `config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.
 
 **Each spawned step runs under its own `TMPDIR`, which the gate removes with whatever the step left in it.** A failed step's full log is the one
 thing a run keeps, for its reader to open afterwards. **`test` also fails when its suite leaves anything there**, naming each entry, because it is
@@ -452,22 +444,17 @@ unwritable.
 
 ### 7c. render() — SSR Render-to-String
 
-`render` renders a JSX element to its exact HTML string, wrapping the private `render/jsx` `renderToString` runtime and coercing the result to a
-plain string — so the render-once / assert-once convention (§3c) is a single call.
+`render` wraps the private `render/jsx` `renderToString` runtime and returns a plain string, so the render-once / assert-once convention (§3c) is
+a single call.
 
 ### 7d. buildRequest() — Request Builder
-
-`buildRequest` builds a `Request` in place of hand-rolled `new Request(...)` boilerplate, resolving a relative path against a default base so no
-test hardcodes an origin. The method is inferred from whether a body is present, and a body helper sets its own content-type unless the caller set
-one — so the common case names neither.
 
 **Supply exactly one body helper** — `formData`, `json`, or `body`. Two would silently pick one.
 
 ### 7e. mapHandler() and TestAction — Single-Route Registrar
 
-`mapHandler` registers one route on a `Forge` app, mirroring `app.map(routes, controller)` without a full route map. Its `action` is a `TestAction`
-— the same bare-handler or `{ middleware, handler }` shape a real controller accepts, so a test never exercises a registration shape production
-cannot express.
+`mapHandler`'s `action` is a `TestAction` — the same bare-handler or `{ middleware, handler }` shape a real controller accepts, so a test never
+exercises a registration shape production cannot express.
 
 **Use `mapHandler` for a namespace's own unit tests; use a full `route()` / `createController` map (§5a) when the test must exercise the production
 registration path itself.**
@@ -514,12 +501,11 @@ unless a boundary step says so.
 
 ### 7g. elementOf() and the Markup Readers — One Element of a Whole Page
 
-A page served through `app.request` cannot be asserted with one `toBe`: it is long, and its nonce differs per render. §3b does not relax for that,
-so `elementOf(html, tag, selector?)` cuts the whole first element of a tag — or the first whose opening tag carries `selector` spelled as rendered
-— out of the page for the exact assertion, children included and a void element as its opening tag. `innerOf` strips an element's own tags;
-`tagOf`, `attrOf`, `attrsOf` and `classesOf` read the opening tag, and `variantClasses` is the class diff between two renders — published so a
-consumer's seam suite and forge's own component specs (§3c) reach the same shape rather than a private copy per file. Each answers `""` or an
-empty record for an element the page never rendered; the `toBe` against the expected markup is what makes that a failure.
+A page served through `app.request` cannot be asserted with one `toBe`: it is long, and its nonce differs per render. **§3b does not relax for
+that** — `elementOf` cuts one element out of the page and the exact assertion is made on it. The readers are published so a consumer's seam suite
+and forge's own component specs (§3c) reach the same shape rather than a private copy per file. A reader answers `""` or an empty record for an
+element the page never rendered, so the `toBe` against the expected markup is what makes an absent element a failure. Usage is
+`src/testing/README.md`'s.
 
 ### 7h. matchTextSnapshot() — Text Against a Committed Fixture
 
@@ -540,7 +526,7 @@ stale script rewrites nothing.
 channel with the original `Error` as `cause`, not an exception — rethrowing is the caller's decision rather than the library's.
 
 **The diff is anchored-positional, not an LCS.** The identical run at each end is trimmed and the remaining band is paired positionally, each side
-sliced to its own length so the shorter pads with `null`. That is O(n) and about twenty lines, and it reads an insertion correctly, where a raw
+sliced to its own length so the shorter pads with `null`. That is O(n), and it reads an insertion correctly, where a raw
 positional compare would report every following line as changed. The residual case — an insertion adjacent to a change, which pairs and reads as a
 rewrite — is disclosed by the report's header carrying both files' line counts. Every rendered line is quoted, because a trailing space, a tab for
 spaces and a stray `\r` are what "files differ" is most useless about; the comparison itself is byte-exact and happens before any of that.
@@ -549,11 +535,11 @@ spaces and a stray `\r` are what "files differ" is most useless about; the compa
 
 ### 7i. The Expected Coverage Set — `@y-core/forge/testing/coverage`
 
-`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`, every component the `ui/core`, `ui/controls`, `ui/chrome` and `ui/server`
-barrels export, each as a `CoverageComponent` of `barrel`, `component` and `key`. A consumer's catalog test compares its own coverage manifest
-against it, so a component forge adds fails that test until it is demonstrated, rather than passing because nobody listed it.
+`@y-core/forge/testing/coverage` publishes `COVERAGE_COMPONENTS`, every component the UI component barrels export
+(`src/testing/coverage/components.ts` names them). A consumer's catalog test compares its own coverage manifest against it, so a component forge
+adds fails that test until it is demonstrated, rather than passing because nobody listed it.
 
-**It is off the `./testing` barrel because of what it loads.** Reading the set means importing all four UI barrels, and a suite that wants only
+**It is off the `./testing` barrel because of what it loads.** Reading the set means importing each of those barrels, and a suite that wants only
 a fake store should not pay for the whole component library. It needs no node module, so a Worker-typed suite imports it directly.
 
 **The set is read off the barrels, never listed.** A component is a capitalised function a barrel exports; constants and helpers beside it are

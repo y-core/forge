@@ -3,7 +3,7 @@ import type { Colorize } from "../../term/types";
 import { schemaDrift } from "../drift";
 import { formatTarget } from "../target";
 import type { DbRunContext, StatusReport, StatusRow } from "../types";
-import { readTargetFacts } from "./apply";
+import { readTargetFacts, readWranglerHistory } from "./apply";
 import { compareChecksums } from "./checksum";
 import { readMigrations } from "./files";
 import type { StatusRowsRequest } from "./types";
@@ -38,6 +38,7 @@ export function migrationStatusExitCode(report: StatusReport): 0 | 1 {
   if (report.pending > 0) return 1;
   if (report.checksums.mismatched.length > 0) return 1;
   if (report.drift.length > 0) return 1;
+  if (report.wranglerHistory.unapplied.length > 0) return 1;
   if (report.fingerprint.recorded !== null && !report.fingerprint.matches) return 1;
   // The note this pairs with names one remedy, `forge db migrate` — so the code says outstanding too,
   // rather than leaving a line that asks for action under an exit CI reads as nothing to do.
@@ -57,6 +58,10 @@ function anomalies(report: StatusReport): string[] {
   if (report.pending > 0) notes.push(`${report.pending} pending — apply with \`forge db migrate\``);
   if (report.checksums.mismatched.length > 0) notes.push(`edited since it was applied: ${report.checksums.mismatched.join(", ")}`);
   if (report.drift.length > 0) notes.push(`applied but no longer on disk: ${report.drift.join(", ")}`);
+  const { table, unapplied } = report.wranglerHistory;
+  if (unapplied.length > 0) {
+    notes.push(`${table} records ${unapplied.join(", ")}, which forge never applied — \`wrangler d1 migrations apply\` ran against this database`);
+  }
   if (uncertifiedSchema(report)) {
     notes.push("applied, but no schema fingerprint was ever certified — the next apply certifies one");
   }
@@ -81,8 +86,9 @@ export function formatStatus(report: StatusReport, style: Colorize): string {
 export async function readStatusReport(run: DbRunContext): Promise<StatusReport> {
   const { config, home, io } = run;
   const discovered = readMigrations(run);
-  const { recorded, inventory } = await readTargetFacts(io, home);
-  const drift = schemaDrift(recorded, inventory);
+  const facts = await readTargetFacts(io, home);
+  const { recorded } = facts;
+  const drift = schemaDrift(recorded, facts.inventory);
 
   const applied = recorded.map((record) => ({ name: record.appliedName, appliedAt: new Date(record.appliedAt).toISOString() }));
   const mismatched = compareChecksums(recorded, discovered);
@@ -96,5 +102,6 @@ export async function readStatusReport(run: DbRunContext): Promise<StatusReport>
     checksums: { mismatched },
     drift: all.filter((row) => row.state === "drift").map((row) => row.name),
     fingerprint: { recorded: drift.recorded, actual: drift.actual, matches: drift.state !== "mismatch" },
+    wranglerHistory: await readWranglerHistory(run, facts),
   };
 }
