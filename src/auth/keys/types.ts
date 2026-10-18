@@ -1,3 +1,6 @@
+import type { KeyRing, KeyRingResolver } from "../../crypto/keyring/types";
+import type { AuthAlgorithm } from "../types";
+
 /** What a token's subkey is derived for. Two purposes never share key material. @public */
 export type AuthTokenPurpose = "identity" | "nonce" | "totpWrap" | "verify";
 
@@ -14,4 +17,16 @@ export interface AuthTokenClaims {
 /** @public */
 export interface AuthTokenOptions {
   now?: number;
+}
+
+/** Behaviour configuration for the auth namespace. @public */
+export interface AuthOptions {
+  ring: KeyRingResolver;
+  algorithms?: readonly AuthAlgorithm[];
+}
+
+/** The auth capabilities resolved for one request. @public */
+export interface AuthServices {
+  readonly algorithms: readonly AuthAlgorithm[];
+  readonly keys: KeyRing;
 }

@@ -8,6 +8,7 @@ import {
   findCustomPropertyCitations,
   findRuleCitations,
   findRuleMarkers,
+  findSplitRuleMarkers,
   isValidRuleId,
   parseDeclaredCustomProperties,
 } from "../../../src/tooling/gate/checks/design-parse";
@@ -117,6 +118,14 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
   const defined = new Set<string>();
   const origin = new Map<string, string>();
   for (const [file, source] of sources) {
+    for (const { line, id } of findSplitRuleMarkers(source)) {
+      findings.push(
+        fail(`rule marker \`${id}\` is split across lines — keep \`<!-- rule:… -->\` on one line, or the id drops out of the defined set`, {
+          file,
+          line,
+        }),
+      );
+    }
     for (const { line, id } of findRuleMarkers(source)) {
       if (!isValidRuleId(id)) {
         findings.push(

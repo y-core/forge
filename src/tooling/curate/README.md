@@ -1,6 +1,7 @@
 ---
-title: Curating a Demonstrator description: "Copies a working tree into a fresh directory keeping the features you name and what they require, or
-dropping them and what requires them, and gates every skeleton a profile names." audience: internal
+title: Curating a Demonstrator
+description: "Copies a working tree into a fresh directory keeping the features you name and what they require, or dropping them and what requires them, and gates every skeleton a profile names."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/curate`

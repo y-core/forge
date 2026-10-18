@@ -347,6 +347,36 @@ describe("checkDocs() — a required frontmatter key", () => {
   });
 });
 
+describe("checkDocs() — a required frontmatter key on one file name", () => {
+  const README_AUDIENCE = [{ dir: "src", fileName: "README.md", key: "audience", values: ["consumer", "internal"] }];
+  const withRule = (root: string, extraDirs: { dir: string; numbered: boolean }[] = []) =>
+    checkDocs({ root, packageName: "@y-core/forge", exports: {}, requiredFrontmatter: README_AUDIENCE, extraDirs }).findings.map(
+      (finding) => finding.message,
+    );
+  const readme = (frontmatter: string) => fixtureRoot({ "src/http/README.md": `---\n${frontmatter}\n---\n\n# http\n\nBody.\n` });
+
+  it("accepts a source README carrying each key on its own line", () => {
+    expect(withRule(readme('title: HTTP Responses\ndescription: "One sentence."\naudience: consumer'))).toEqual([]);
+  });
+
+  // Keys collapsed onto one line read as a single `title`, so the index lists a garbage title and no description.
+  it("fails a source README whose keys are collapsed onto one line", () => {
+    expect(withRule(readme('title: HTTP Responses description: "One sentence." audience: consumer'))).toEqual([
+      "frontmatter is missing `audience` — one of `consumer` and `internal`",
+      "frontmatter is missing `description`",
+    ]);
+  });
+
+  it("leaves a numbered document of another name under the same directory to the rules it already had", () => {
+    const root = fixtureRoot({ "src/design/LAYOUT.md": doc("Layout", "Body.") });
+    expect(withRule(root, [{ dir: "src/design", numbered: true }])).toEqual([]);
+  });
+
+  it("leaves a source README unchecked where no rule names it", () => {
+    expect(messages(readme('title: HTTP Responses description: "One sentence."'))).toEqual([]);
+  });
+});
+
 describe("checkDocs() — historical phrasing", () => {
   const phrases = [
     "previously",

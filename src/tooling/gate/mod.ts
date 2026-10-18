@@ -109,6 +109,7 @@ export {
   findRuleCitations,
   findRuleMarkers,
   findSkippedClassPositions,
+  findSplitRuleMarkers,
   isValidRuleId,
   parseDeclaredCustomProperties,
 } from "./checks/design-parse";

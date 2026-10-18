@@ -1,6 +1,7 @@
 ---
-title: The CLI Toolkit description: "Typed, hierarchical commands with declared flags, plus the process, PATH, JSONC-editing and scoped-logging
-primitives forge's own scripts run on." audience: internal
+title: The CLI Toolkit
+description: "Typed, hierarchical commands with declared flags, plus the process, PATH, JSONC-editing and scoped-logging primitives forge's own scripts run on."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/cli`

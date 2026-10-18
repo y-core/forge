@@ -1,6 +1,6 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
-import type { KeyRing } from "../crypto/keyring/types";
+import type { KeyRingResolver } from "../crypto/keyring/types";
 import type { DevAllowance } from "../dev/types";
 import type { GuardResult } from "../result/types";
 
@@ -70,13 +70,9 @@ export type CsrfResult = GuardResult<
   "expired" | "future-timestamp" | "invalid-format" | "invalid-signature" | "missing-token" | "path-mismatch" | "subject-mismatch" | "unknown-key"
 >;
 
-/** A function that resolves the key ring CSRF tokens are signed under from the request context. @public */
-// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies per consumer
-export type CsrfRingResolver = (c: RequestContext<any, any>) => KeyRing | Promise<KeyRing>;
-
 /** Options for `csrfMinter`, which are `csrfProtection`'s minting half. @public */
 export interface CsrfMinterOptions {
-  ring: CsrfRingResolver;
+  ring: KeyRingResolver;
   /** Binds the token to a subject — pass the same resolver the `csrfProtection` guarding the path was given, or `false` where it opted out. */
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
@@ -84,7 +80,7 @@ export interface CsrfMinterOptions {
 
 /** Options for the `csrfProtection` middleware. @public */
 export interface CsrfProtectionOptions {
-  ring: CsrfRingResolver;
+  ring: KeyRingResolver;
   tokenField?: string;
   headerName?: string;
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies

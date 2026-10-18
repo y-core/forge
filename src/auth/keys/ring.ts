@@ -1,12 +1,14 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import { EnvKey } from "../../context/types";
+import type { AppContext } from "../../context/types";
 import { importKeyRingUnder, keyRingKeyId, lookupKeyRingKey } from "../../crypto/keyring/ring";
 import { cachePendingUntilRejected } from "../../crypto/keyring/subkey";
 import type { KeyRing, KeyRingDomain } from "../../crypto/keyring/types";
 import { assertSecretStrength } from "../../crypto/primitives/strength";
 import { AUTH_SUPPORTED_ALGORITHMS } from "../config";
-import type { AuthAlgorithm, AuthOptions, AuthServices } from "../types";
+import type { AuthAlgorithm } from "../types";
+import type { AuthOptions, AuthServices } from "./types";
 
 /** The labels every auth key id and subkey is derived under. @internal */
 export const AUTH_KEY_DOMAIN: KeyRingDomain = { keyIdLabel: "y-core/forge/auth/kid", subkeyLabel: "y-core/forge/auth/v1" };
@@ -50,7 +52,7 @@ function assertRingUsable(ring: KeyRing): void {
 async function buildAuthServices(context: RequestContext<any, any>, options: AuthOptions): Promise<AuthServices> {
   const algorithms = options.algorithms ?? AUTH_SUPPORTED_ALGORITHMS;
   await assertAlgorithmsAvailable(algorithms);
-  const keys = await Promise.resolve(options.ring(context));
+  const keys = await Promise.resolve(options.ring(context as AppContext));
   assertRingUsable(keys);
   return { algorithms, keys };
 }

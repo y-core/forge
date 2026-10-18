@@ -8,6 +8,7 @@ import { HMAC_DOMAIN, importKeyRing, importKeyRingUnder } from "../crypto/keyrin
 import { resolveKeyRingKey } from "../crypto/keyring/subkey";
 import type { KeyRing } from "../crypto/keyring/types";
 import { base64urlDecode, base64urlEncode, hmacSign, hmacVerify, utf8Decode, utf8Encode } from "../crypto/primitives/mod";
+import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { createCsrfToken, csrfMinter, csrfMinterCtx, csrfProtection, csrfTokenCtx, mintCsrf, verifyCsrfToken } from "./csrf";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
@@ -689,9 +690,7 @@ describe("csrfMinter()", () => {
   const env = { CSRF_SECRET: HEX_SECRET };
 
   function minterContext(bindings: object = env): RequestContext {
-    const context = new RequestContext(new Request("http://localhost/"));
-    Object.assign(context, { env: bindings });
-    return context;
+    return createTestContext(new Request("http://localhost/"), { env: bindings });
   }
 
   it("mints a token the guard for that path verifies, under the same subject", async () => {

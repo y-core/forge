@@ -253,13 +253,13 @@ describe("canonicaliseValue()", () => {
     expect(canonicaliseValue("weight", 1.5)).toBe("R:1.5");
   });
 
-  it("keeps a REAL that is integral apart from the INTEGER --json would make of it", () => {
+  it("keeps an integral REAL apart from the INTEGER of the same number", () => {
     expect(canonicaliseValue("weight", new SqlReal(1))).toBe("R:1");
     expect(canonicaliseValue("weight", new SqlReal(1))).not.toBe(canonicaliseValue("weight", 1));
     expect(canonicaliseValue("weight", new SqlReal(2.5))).toBe("R:2.5");
   });
 
-  it("encodes a BLOB as lowercase hex, which is the array of byte values --json returns", () => {
+  it("encodes a BLOB as lowercase hex from the array of byte values decodeReadRow returns", () => {
     expect(canonicaliseValue("id", [1, 2, 3])).toBe("B:010203");
     expect(canonicaliseValue("id", [0, 255, 16])).toBe("B:00ff10");
     expect(canonicaliseValue("id", [])).toBe("B:");
@@ -279,23 +279,21 @@ describe("canonicaliseValue()", () => {
 
     expect(error.name).toBe("UnsupportedValue");
     expect(error.column).toBe("payload");
-    expect(error.message).toBe(
-      "payload: a object cannot be encoded — a BLOB reads back from --json as an array of byte values, and this is not one",
-    );
+    expect(error.message).toBe("payload: a object cannot be encoded — a BLOB is a Uint8Array or an array of byte values, and this is not one");
   });
 
   it("refuses an array holding a number outside a byte, and a plain object", () => {
     expect((capture(() => canonicaliseValue("payload", [256])) as UnsupportedValue).message).toBe(
-      "payload: a object cannot be encoded — a BLOB reads back from --json as an array of byte values, and this is not one",
+      "payload: a object cannot be encoded — a BLOB is a Uint8Array or an array of byte values, and this is not one",
     );
     expect((capture(() => canonicaliseValue("payload", { length: 1 })) as UnsupportedValue).message).toBe(
-      "payload: a object cannot be encoded — a BLOB reads back from --json as an array of byte values, and this is not one",
+      "payload: a object cannot be encoded — a BLOB is a Uint8Array or an array of byte values, and this is not one",
     );
   });
 
   it("refuses an integer past 2^53, which JSON.parse has already rounded", () => {
     expect((capture(() => canonicaliseValue("seq", Number.MAX_SAFE_INTEGER + 2)) as UnsupportedValue).message).toBe(
-      "seq: the integer 9007199254740992 is past 2^53 and has already lost precision in JSON",
+      "seq: the integer 9007199254740992 is past 2^53 and has already lost precision in the read",
     );
   });
 
@@ -614,16 +612,16 @@ describe("sqlValueExpression() — the newline encoding", () => {
 describe("sqlValueExpression() — what it refuses", () => {
   it("refuses a boolean, a value no BLOB could be and an undefined, naming the column", () => {
     expect((capture(() => sqlValueExpression("lane", true)) as UnsupportedValue).message).toBe(
-      "lane: a boolean cannot be written to an artifact — a BLOB reads back from --json as an array of byte values, and this is not one",
+      "lane: a boolean cannot be written to an artifact — a BLOB is a Uint8Array or an array of byte values, and this is not one",
     );
     expect((capture(() => sqlValueExpression("payload", [1, "a"])) as UnsupportedValue).message).toBe(
-      "payload: a object cannot be written to an artifact — a BLOB reads back from --json as an array of byte values, and this is not one",
+      "payload: a object cannot be written to an artifact — a BLOB is a Uint8Array or an array of byte values, and this is not one",
     );
     expect((capture(() => sqlValueExpression("payload", { length: 1 })) as UnsupportedValue).message).toBe(
-      "payload: a object cannot be written to an artifact — a BLOB reads back from --json as an array of byte values, and this is not one",
+      "payload: a object cannot be written to an artifact — a BLOB is a Uint8Array or an array of byte values, and this is not one",
     );
     expect((capture(() => sqlValueExpression("closed_at", undefined)) as UnsupportedValue).message).toBe(
-      "closed_at: a undefined cannot be written to an artifact — a BLOB reads back from --json as an array of byte values, and this is not one",
+      "closed_at: a undefined cannot be written to an artifact — a BLOB is a Uint8Array or an array of byte values, and this is not one",
     );
   });
 
@@ -654,7 +652,7 @@ describe("insertStatement()", () => {
     );
   });
 
-  it("writes an integral REAL as 1.0, never as the 1 --json handed over", () => {
+  it("writes an integral REAL as 1.0, never as the INTEGER 1", () => {
     expect(insertStatement("scores", ["id", "weight"], { id: 1, weight: new SqlReal(1) })).toBe(
       `INSERT INTO "scores" ("id","weight") VALUES (1,1.0);`,
     );

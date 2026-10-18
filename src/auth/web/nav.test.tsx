@@ -3,12 +3,12 @@
 
 import { describe, expect, it } from "bun:test";
 
-import { RequestContext } from "@remix-run/fetch-router";
 import type { Session } from "@remix-run/session";
 
 import { importKeyRing } from "../../crypto/keyring/ring";
 import { verifyCsrfToken } from "../../form/csrf";
 import { sessionCtx } from "../../session/session";
+import { createTestContext } from "../../testing/context";
 import { render } from "../../testing/render";
 import { authCtx } from "./identity";
 import { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
@@ -30,8 +30,7 @@ interface NavSeed {
 
 /** A request carrying what the middleware chain would have put there by the time a page renders. */
 function navContext(seed: NavSeed = {}): AuthNavContext {
-  const context = new RequestContext(new Request("http://localhost/"));
-  Object.assign(context, { env: seed.env ?? { CSRF_SECRET: HEX_SECRET } });
+  const context = createTestContext(new Request("http://localhost/"), { env: seed.env ?? { CSRF_SECRET: HEX_SECRET } });
   sessionCtx.set(context, { id: seed.sessionId ?? "sess-1" } as Session);
   if (seed.identity !== undefined) authCtx.set(context, seed.identity);
   return context;

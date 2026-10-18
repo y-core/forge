@@ -141,7 +141,7 @@ export type {
 } from "./tokens/types";
 export { createAccessTokenService } from "./tokens/service";
 export { AUTH_TOKEN_VERSION, authNonceKey, decodeAuthToken, encodeAuthToken } from "./keys/token";
-export type { AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./keys/types";
+export type { AuthOptions, AuthServices, AuthTokenClaims, AuthTokenOptions, AuthTokenPurpose, AuthTokenReason } from "./keys/types";
 export type {
   AccessTokenStore,
   AdminUserOutcome,
@@ -159,9 +159,6 @@ export type {
   AuthIdentityLinkInput,
   AuthMessage,
   AuthNotifier,
-  AuthOptions,
-  AuthRingResolver,
-  AuthServices,
   AuthStoreResult,
   AuthUser,
   AuthUserInput,

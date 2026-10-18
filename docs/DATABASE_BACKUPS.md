@@ -113,13 +113,14 @@ one.
 
 What the format carries, and the limits that follow from it — each refused up front rather than discovered mid-restore:
 
-- **The value types the format carries** are text, finite numbers, NULL and `BLOB` — a BLOB reads back from `--json` as an array of byte values and
-  is written as `X'hex'`, which is what lets a database with 16-byte BLOB keys (forge's own auth schema) be backed up. A REAL that happens to be
-  integral is written as `1.0`, since `--json` has already dropped the point and the storage class would otherwise change under a column with no
-  affinity; the read carries `typeof` beside every value, which is what tells that `1` from an INTEGER. An integer past 2^53 is refused: it cannot
-  round-trip. A stored `±Infinity` arrives from `--json` as `null` under a `real` tag (measured), and is refused for the same reason rather than
-  restored as NULL. Text that is not well-formed UTF-8 — only `char()` in hand-run SQL can write it, since a Worker encodes a lone surrogate as
-  U+FFFD before D1 sees it — is rendered by `--json` as replacement characters and the read cannot tell; it restores changed.
+- **The value types the format carries** are text, finite numbers, NULL and `BLOB`. Both sources are read the same way — a deployed database
+  through `--json`, a local one and every scratch restore through the D1 binding in process — with `typeof` beside every value and a BLOB
+  projected as `hex()`, which is decoded and written as `X'hex'`. That is what lets a database with 16-byte BLOB keys (forge's own auth schema)
+  be backed up. A REAL that happens to be integral reaches the read without its point, so the `real` tag writes it as `1.0`; the storage class
+  would otherwise change under a column with no affinity. An integer past 2^53 is refused: it cannot round-trip. A stored `±Infinity` arrives
+  as `null` under a `real` tag from both sources (measured), and is refused for the same reason rather than restored as NULL. Text that is not
+  well-formed UTF-8 — only `char()` in hand-run SQL can write it, since a Worker encodes a lone surrogate as U+FFFD before D1 sees it — arrives
+  from both sources as replacement characters (measured) and the read cannot tell; it restores changed.
 - **No virtual tables.** `wrangler d1 export` throws on one, which is also why the linter treats `CREATE VIRTUAL TABLE` as an error
   ([`DATABASE_MANAGEMENT.md`][dm-5] §5).
 - **No `AUTOINCREMENT` on an app table.** A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried

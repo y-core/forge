@@ -9,7 +9,6 @@ export type {
   CsrfMinterOptions,
   CsrfProtectionOptions,
   CsrfResult,
-  CsrfRingResolver,
   CsrfTokenOptions,
   CsrfVerifyOptions,
   FormToObjectOptions,

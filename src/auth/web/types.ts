@@ -7,8 +7,8 @@ import type { CreateHrefArgs } from "@remix-run/route-pattern/href";
 import type { MiddlewareGuardGroup } from "../../app/types";
 import type { PageMeta } from "../../app/types";
 import type { AppContext } from "../../context/types";
+import type { KeyRing, KeyRingResolver } from "../../crypto/keyring/types";
 import type { TurnstileConfigSchema } from "../../form/config";
-import type { CsrfRingResolver } from "../../form/types";
 import type { TurnstileVerifyOptions } from "../../form/types";
 import type { FC } from "../../render/jsx/types";
 import type { JSXNode } from "../../render/jsx/types";
@@ -144,7 +144,7 @@ export interface ApprovalOptions<Bindings = Record<string, unknown>> {
   /** A limit on both methods of the prompt page, which answers guesses at a shared code. Forge picks no numbers. */
   readonly rateLimit: NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>;
   /** The ring a session's approval is signed with, so it holds a digest of the code rather than the code and ends when the code changes. */
-  readonly ring: CsrfRingResolver;
+  readonly ring: KeyRingResolver;
   /** A challenge on the prompt, read as the auth forms read theirs; omit it and the prompt renders and verifies none. */
   readonly turnstile?: Pick<AuthTurnstileOptions<Bindings>, "keys" | "verify"> | undefined;
   /** Markup for the prompt in place of `ApprovalView`, receiving exactly the props it does. */
@@ -152,7 +152,9 @@ export interface ApprovalOptions<Bindings = Record<string, unknown>> {
 }
 
 /** One administrator approval as `defineApproval` built it, and the only thing a guarded route or the prompt mount is given. @public */
-export interface Approval<Bindings = Record<string, unknown>> extends Omit<ApprovalOptions<Bindings>, "ttlMs"> {
+export interface Approval<Bindings = Record<string, unknown>> extends Omit<ApprovalOptions<Bindings>, "ring" | "ttlMs"> {
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings are irrelevant to key resolution
+  readonly ring: (c: RequestContext<any, any>) => Promise<KeyRing>;
   readonly ttlMs: number;
 }
 
@@ -437,7 +439,7 @@ export interface AuthNavOptions {
   /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */
   readonly signoutPath: string;
   /** The ring the `csrfProtection` guarding that path verifies with; the token is bound to the session, as that guard's is. */
-  readonly ring: CsrfRingResolver;
+  readonly ring: KeyRingResolver;
   /** Names the slot, for a `NavDefinition` that spells the sign-out slot differently. */
   readonly slot?: string | undefined;
   /** Composed onto the sign-out control, over the navbar-shaped defaults. */

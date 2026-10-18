@@ -115,8 +115,13 @@ so existing cookies keep working. A cookie value names the key that signed it, a
 the ring holds more than one key.
 
 ```ts
-const cookie = createSignedCookie("__Host-session", { ring: await importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET)) });
+const sessionRing = createKeyRingResolver<Env>((c) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET)));
+
+// inside a handler
+const cookie = createSignedCookie("__Host-session", { ring: await sessionRing(c) });
 ```
+
+Build the resolver at module scope, so the ring and the keys derived from it are imported once per `env`, not on every request.
 
 A rotation is two deploys, and the upgrade in between happens on its own.
 

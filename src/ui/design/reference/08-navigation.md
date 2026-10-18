@@ -200,17 +200,28 @@ from one edge, over a backdrop, leaving the content behind it exactly where it w
 **Default: a bar whose panel would displace the page on a phone takes `collapsedAs="drawer"`.**
 <!-- rule:forge-ui-nav-drawer-when -->
 
-**Default: the edge is derived from `placement`, never configured.**
+Override with `inline` for a panel of a few links, whose push down the page is shorter than a drawer's backdrop and slide are worth.
+
+**Default: the edge is derived from `placement`.**
 <!-- rule:forge-ui-nav-drawer-edge -->
+
+Override with `drawerEdge` for a top bar whose leading edge an app's own drawer already holds. A rail takes no `drawerEdge`.
 
 **Default: a rail that opens off-canvas draws `panel-open`/`panel-close`; a top bar keeps its hamburger.**
 <!-- rule:forge-ui-nav-drawer-glyphs -->
 
+Override never — the props select the glyph, so a rail drawer's `icon` must supply `panel-open` and `panel-close`.
+
 **Default: a drawer is dismissable four ways — the toggle, the backdrop, Escape, and a link inside it.**
 <!-- rule:forge-ui-nav-drawer-dismiss -->
 
+Override never — the backdrop serves a pointer, Escape a keyboard, the toggle a page with JavaScript off, and a link the reader leaving for a
+destination, so a drawer missing one traps whoever reached for it.
+
 **Default: no ancestor of the bar carries `backdrop-filter`, `filter` or `transform`.**
 <!-- rule:forge-ui-nav-drawer-containing-block -->
+
+Override for a bar whose panel stays `inline`. Only a fixed-position drawer is captured by a filtered or transformed ancestor.
 
 ```tsx
 // Wrong — the blurred header is the panel's containing block, so the drawer opens inside the header.

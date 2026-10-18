@@ -8,8 +8,8 @@ import type { PageShell } from "../app/types";
 import { contextVar } from "../context/accessor";
 import type { AppContext } from "../context/types";
 import { importKeyRing } from "../crypto/keyring/ring";
+import type { KeyRingResolver } from "../crypto/keyring/types";
 import { csrfProtection } from "../form/csrf";
-import type { CsrfRingResolver } from "../form/types";
 import { ok } from "../result/result";
 import { createAnonymousSession } from "../session/anonymous";
 import { sessionCtx } from "../session/session";
@@ -70,7 +70,7 @@ const paths = { auth: authPaths(authMap), account: authPaths(accountMap), admin:
 
 const servicesCtx = contextVar<Promise<AuthRequestServices>>("journeyAuthServices");
 
-const csrfKey: CsrfRingResolver = (context) => importKeyRing([(context as AppContext<JourneyEnv>).env.CSRF_SECRET]);
+const csrfKey: KeyRingResolver<JourneyEnv> = (context) => importKeyRing([context.env.CSRF_SECRET]);
 
 // wrangler prints a logged object across several lines, so the notice is one line of JSON instead.
 const notifier: AuthNotifier = {

@@ -164,8 +164,8 @@ its scrolling.
 
 A Floor violation — `forge-ui-heading-order`. It arrives one way almost every time: the heading needed to be smaller, so the tag was changed instead
 of the class. Default: the level comes from the section's position in the document and the size comes from a class — `text-sm font-medium` on an
-`<h3>` satisfies both, and a compound that owns its heading tag takes its `level` prop for the position and never a class change for it. <!--
-rule:forge-ui-tell-heading-skip --> Override never; see the Floor rule.
+`<h3>` satisfies both, and a compound that owns its heading tag takes its `level` prop for the position and never a class change for it.
+<!-- rule:forge-ui-tell-heading-skip --> Override never; see the Floor rule.
 
 ---
 

@@ -1,23 +1,15 @@
 import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../context/accessor";
+import { createKeyRingResolver } from "../crypto/keyring/resolver";
 import { signWithKeyRing, verifyWithKeyRing } from "../crypto/keyring/sign";
-import { cachePendingUntilRejected } from "../crypto/keyring/subkey";
 import type { KeyRing } from "../crypto/keyring/types";
 import { base64urlDecode, base64urlEncode, bytesToHex, randomBytes, utf8Decode, utf8Encode } from "../crypto/primitives/mod";
 import { err, ok } from "../result/result";
 import { CSRF_FIELD_DEFAULT, CSRF_HEADER_DEFAULT } from "./constants";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { isFormCapConflict, parseFormData } from "./parse-form-data";
-import type {
-  CsrfMinterOptions,
-  CsrfProtectionOptions,
-  CsrfResult,
-  CsrfRingResolver,
-  CsrfTokenOptions,
-  CsrfVerifyOptions,
-  ParseFormDataOptions,
-} from "./types";
+import type { CsrfMinterOptions, CsrfProtectionOptions, CsrfResult, CsrfTokenOptions, CsrfVerifyOptions, ParseFormDataOptions } from "./types";
 
 const CLOCK_SKEW_MS = 30_000;
 const CSRF_PURPOSE = "csrf";
@@ -103,33 +95,10 @@ export async function mintCsrf(context: RequestContext<any, any>, path?: string)
   return mint(path);
 }
 
-/** CSRF key-ring resolver type. @public */
-export type { CsrfRingResolver };
-
-// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-function ringResolver(resolve: CsrfRingResolver): (context: RequestContext<any, any>) => Promise<KeyRing> {
-  const ringCache = new WeakMap<object, Promise<KeyRing>>();
-  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
-  return async (context: RequestContext<any, any>): Promise<KeyRing> => {
-    // oxlint-disable-next-line typescript/no-explicit-any -- env shape varies across apps and tests
-    const envObj = (context as any).env;
-    const cacheKey = envObj && typeof envObj === "object" ? (envObj as object) : null;
-    if (!cacheKey) return resolve(context);
-    return (
-      ringCache.get(cacheKey) ??
-      cachePendingUntilRejected(
-        ringCache,
-        cacheKey,
-        Promise.resolve().then(() => resolve(context)),
-      )
-    );
-  };
-}
-
 /** Mints a token for a path this request is not on, under the subject policy that path's guard verifies with. @public */
 // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
 export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext<any, any>, path: string) => Promise<string> {
-  const resolveRing = ringResolver(options.ring);
+  const resolveRing = createKeyRingResolver(options.ring);
   const resolveSubject = options.subject === false ? null : options.subject;
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   return async (context: RequestContext<any, any>, path: string): Promise<string> => {
@@ -150,7 +119,7 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const { tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
 
-  const resolveRing = ringResolver(options.ring);
+  const resolveRing = createKeyRingResolver(options.ring);
 
   const resolveSubject = options.subject === false ? null : options.subject;
 

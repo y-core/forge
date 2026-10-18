@@ -1,28 +1,9 @@
-import type { RequestContext } from "@remix-run/fetch-router";
-
-import type { KeyRing } from "../crypto/keyring/types";
 import type { Result } from "../result/types";
 import type { AuthStoreError } from "./errors";
 import type { CoseAlgorithm } from "./passkey/types";
 
 /** A COSE algorithm identifier a passkey ceremony may advertise. @public */
 export type AuthAlgorithm = CoseAlgorithm;
-
-/** Resolves the auth key ring from the request context. @public */
-// oxlint-disable-next-line typescript/no-explicit-any -- context shape varies per consumer
-export type AuthRingResolver = (c: RequestContext<any, any>) => KeyRing | Promise<KeyRing>;
-
-/** Behaviour configuration for the auth namespace. @public */
-export interface AuthOptions {
-  ring: AuthRingResolver;
-  algorithms?: readonly AuthAlgorithm[];
-}
-
-/** The auth capabilities resolved for one request. @public */
-export interface AuthServices {
-  readonly algorithms: readonly AuthAlgorithm[];
-  readonly keys: KeyRing;
-}
 
 /** A user record as the auth domain sees it — `emailKey` is the normalized form the unique index holds. @public */
 export interface AuthUser {

@@ -113,3 +113,20 @@ describe("checkDesign() — the plugin rules that state no corpus rule", () => {
     expect(unroutedRules()).toEqual([]);
   });
 });
+
+describe("checkDesign() — rule markers", () => {
+  it("fails a marker split across lines, which the line-by-line reader would drop from the defined set", () => {
+    const dir = root(oxlintConfig(","));
+    writeFileSync(join(dir, "design", "floor.md"), "# Floor\n\nProse. <!--\nrule:forge-ui-focus-ring --> Override never.\n", "utf-8");
+    const result = checkDesign({ root: dir, packageName: "@y-core/forge", exports: {}, designDir: "design", cssDir: "css", sourceDir: "src" });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.filter((finding) => finding.file?.endsWith("floor.md")).map(({ message, line }) => ({ message, line }))).toEqual([
+      {
+        message:
+          "rule marker `forge-ui-focus-ring` is split across lines — keep `<!-- rule:… -->` on one line, or the id drops out of the defined set",
+        line: 3,
+      },
+    ]);
+  });
+});

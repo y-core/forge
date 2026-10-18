@@ -138,7 +138,7 @@ export class UnsupportedValue extends Error {
   }
 }
 
-/** A REAL read from `--json`, which drops the fraction of an integral value; the class is what keeps it from restoring as INTEGER. @internal */
+/** A REAL that a JavaScript number cannot tell from an integer, because an integral value reads back without its fraction; the class is what keeps it from restoring as INTEGER. @internal */
 export class SqlReal {
   readonly value: number;
 
@@ -147,8 +147,8 @@ export class SqlReal {
   }
 }
 
-// A BLOB reaches this module through `decodeReadRow`, which hands it over as byte values — so an
-// array of integers 0–255 is the decoder's output shape, not anything wrangler's JSON ever emits.
+// A BLOB arrives as bytes: an array of byte values from `decodeReadRow`'s hex decode, or a
+// Uint8Array from a seed row.
 function toBlobBytes(value: unknown): readonly number[] | null {
   if (value instanceof Uint8Array) return [...value];
   if (!Array.isArray(value)) return null;
@@ -160,7 +160,7 @@ function toBlobHex(bytes: readonly number[]): string {
   return bytes.map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-/** One SQLite value as a string that cannot be confused with another, restoring the type tags `--json` erased. @internal */
+/** One SQLite value as a string that cannot be confused with another, restoring the storage class a JavaScript value erases. @internal */
 export function canonicaliseValue(column: string, value: unknown): string {
   if (value === null) return "N";
   // The length prefix is what makes a row's join injective: without it `["a:b","c"]` and
@@ -174,7 +174,7 @@ export function canonicaliseValue(column: string, value: unknown): string {
     if (!Number.isFinite(value)) throw new UnsupportedValue(column, `${String(value)} is not a finite number`);
     if (Number.isInteger(value)) {
       if (!Number.isSafeInteger(value)) {
-        throw new UnsupportedValue(column, `the integer ${value} is past 2^53 and has already lost precision in JSON`);
+        throw new UnsupportedValue(column, `the integer ${value} is past 2^53 and has already lost precision in the read`);
       }
       return `I:${value}`;
     }
@@ -188,11 +188,11 @@ export function canonicaliseValue(column: string, value: unknown): string {
   if (bytes !== null) return `B:${toBlobHex(bytes)}`;
   throw new UnsupportedValue(
     column,
-    `a ${typeof value} cannot be encoded — a BLOB reads back from --json as an array of byte values, and this is not one`,
+    `a ${typeof value} cannot be encoded — a BLOB is a Uint8Array or an array of byte values, and this is not one`,
   );
 }
 
-/** A row read from `--json`, encoded; a column absent from the row throws rather than encoding as NULL. @internal */
+/** A row `decodeReadRow` decoded, encoded; a column absent from the row throws rather than encoding as NULL. @internal */
 export function canonicaliseRow(columns: readonly string[], keyColumns: readonly string[], row: Readonly<Record<string, unknown>>): CanonicalRow {
   const cells: Record<string, string> = {};
   for (const column of columns) {
@@ -273,7 +273,7 @@ export function sqlValueExpression(column: string, value: unknown): string {
     if (bytes !== null) return `X'${toBlobHex(bytes)}'`;
     throw new UnsupportedValue(
       column,
-      `a ${typeof value} cannot be written to an artifact — a BLOB reads back from --json as an array of byte values, and this is not one`,
+      `a ${typeof value} cannot be written to an artifact — a BLOB is a Uint8Array or an array of byte values, and this is not one`,
     );
   }
   if (value === "") return "''";
@@ -349,7 +349,7 @@ function fromBlobHex(column: string, hex: unknown): readonly number[] {
   return bytes;
 }
 
-// A tag the value cannot carry means the read lost the value, not the type: `--json` has no
+// A tag the value cannot carry means the read lost the value, not the type: neither read carries
 // Infinity, so a stored one arrives as null under a `real` tag and would otherwise restore as NULL.
 function decodeTaggedValue(column: string, tag: unknown, value: unknown): unknown {
   if (tag === "blob") return fromBlobHex(column, value);

@@ -16,7 +16,7 @@ import { APPROVAL_TTL_MS } from "../config";
 import { APPROVAL_TURNSTILE_ACTION, defineApproval, registerApproval } from "./approval";
 import { requireApproval } from "./guards";
 import type { Approval } from "./types";
-import { attrOf, elementOf, FAKE_APPROVAL_CODE, fakeApproval, fakeSessionCookie, textOf } from "./web.fixture";
+import { attrOf, elementOf, FAKE_APPROVAL_CODE, fakeApproval, fakeSessionCookie, fakeWebRing, textOf } from "./web.fixture";
 
 const ORIGIN = "https://app.example";
 
@@ -85,12 +85,28 @@ describe("defineApproval", () => {
 
   it("refuses a definition with no rate limit, since the prompt answers anyone's guess at a shared code", () => {
     const { rateLimit: _, ...untyped } = fakeApproval();
-    expect(() => defineApproval(untyped as Parameters<typeof defineApproval>[0])).toThrow("defineApproval: no `rateLimit` was passed");
+    expect(() => defineApproval(untyped as unknown as Parameters<typeof defineApproval>[0])).toThrow("defineApproval: no `rateLimit` was passed");
   });
 
   it("refuses a definition with no key ring, which the approval's digest of the code is signed under", () => {
     const { ring: _, ...untyped } = fakeApproval();
     expect(() => defineApproval(untyped as Parameters<typeof defineApproval>[0])).toThrow("defineApproval: no `ring` was passed");
+  });
+
+  it("resolves its key ring once across requests under one env", async () => {
+    let calls = 0;
+    const app = approvalApp(
+      fakeApproval({
+        ring: () => {
+          calls++;
+          return fakeWebRing;
+        },
+      }),
+    );
+    const env = {};
+    await app.request("/approve", presented({ code: FAKE_APPROVAL_CODE }), env);
+    await app.request("/approve", presented({ code: FAKE_APPROVAL_CODE }), env);
+    expect(calls).toBe(1);
   });
 });
 

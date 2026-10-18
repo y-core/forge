@@ -10,6 +10,7 @@ import {
   findRuleCitations,
   findRuleMarkers,
   findSkippedClassPositions,
+  findSplitRuleMarkers,
   isValidRuleId,
   parseDeclaredCustomProperties,
 } from "./design-parse";
@@ -66,6 +67,38 @@ describe("findRuleMarkers()", () => {
 
   it("finds no marker in prose that merely mentions one", () => {
     expect(findRuleMarkers("Each rule carries a `rule:` marker.")).toEqual([]);
+  });
+
+  it("reads forge-ui-tell-heading-skip from the real tells.md", () => {
+    const tells = readFileSync(resolve(ROOT, "src/ui/design/tells.md"), "utf-8");
+
+    expect(findRuleMarkers(tells).map(({ id }) => id)).toContain("forge-ui-tell-heading-skip");
+  });
+});
+
+describe("findSplitRuleMarkers()", () => {
+  it("finds a marker split after the opening `<!--`", () => {
+    expect(findSplitRuleMarkers(["Prose. <!--", "rule:forge-ui-tell-heading-skip --> Override never."].join("\n"))).toEqual([
+      { line: 1, id: "forge-ui-tell-heading-skip" },
+    ]);
+  });
+
+  it("finds a marker split before the closing `-->`", () => {
+    expect(findSplitRuleMarkers(["# Floor", "<!-- rule:forge-ui-focus-ring", "--> Prose."].join("\n"))).toEqual([
+      { line: 2, id: "forge-ui-focus-ring" },
+    ]);
+  });
+
+  it("finds a marker that never closes", () => {
+    expect(findSplitRuleMarkers("Prose. <!-- rule:forge-ui-focus-ring")).toEqual([{ line: 1, id: "forge-ui-focus-ring" }]);
+  });
+
+  it("ignores a marker on one line", () => {
+    expect(findSplitRuleMarkers(["<!-- rule:forge-ui-focus-ring --> <!-- rule:forge-ui-no-nested-card -->", "Prose."].join("\n"))).toEqual([]);
+  });
+
+  it("ignores a multi-line comment that holds no rule marker", () => {
+    expect(findSplitRuleMarkers(["<!--", "an editor's note", "-->", "<!-- rule:forge-ui-focus-ring -->"].join("\n"))).toEqual([]);
   });
 });
 

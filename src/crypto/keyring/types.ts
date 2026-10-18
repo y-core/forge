@@ -1,3 +1,5 @@
+import type { AppContext } from "../../context/types";
+
 /** Root key material for at-rest sealing — the active key id, plus every id still valid for opening. @public */
 export interface KeyRing {
   readonly activeKeyId: string;
@@ -49,3 +51,7 @@ export interface PseudonymRequest {
   readonly purpose: string;
   readonly value: string | Uint8Array<ArrayBuffer>;
 }
+
+/** Resolves the app's key ring from the request context. @public */
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings vary per consumer
+export type KeyRingResolver<Bindings = any> = (c: AppContext<Bindings>) => KeyRing | Promise<KeyRing>;

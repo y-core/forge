@@ -35,6 +35,19 @@ export function findRuleMarkers(source: string): RuleMarker[] {
   return found;
 }
 
+/** Every `<!-- rule:… -->` marker that spans a line break or never closes, which `findRuleMarkers` cannot see. */
+export function findSplitRuleMarkers(source: string): RuleMarker[] {
+  const found: RuleMarker[] = [];
+  for (let open = source.indexOf("<!--"); open !== -1;) {
+    const close = source.indexOf("-->", open + 4);
+    const body = source.slice(open + 4, close === -1 ? source.length : close);
+    const marker = /rule:\s*([^\s>]*)/.exec(body);
+    if (marker !== null && (close === -1 || body.includes("\n"))) found.push({ line: lineAt(source, open), id: marker[1] ?? "" });
+    open = close === -1 ? -1 : source.indexOf("<!--", close + 3);
+  }
+  return found;
+}
+
 /** Every rule id cited in prose — a backticked bare id. */
 export function findRuleCitations(source: string): RuleMarker[] {
   const found: RuleMarker[] = [];

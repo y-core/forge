@@ -1,5 +1,5 @@
 import type { AppContext } from "../context/types";
-import type { KeyRing } from "../crypto/keyring/types";
+import type { KeyRing, KeyRingResolver } from "../crypto/keyring/types";
 
 /** Options for `sessionMiddleware`. @public */
 export interface SessionCookieOptions {
@@ -13,7 +13,7 @@ export interface SessionCookieOptions {
 export interface AnonymousSessionOptions<Bindings = Record<string, unknown>> extends KVSessionStorageOptions, SessionCookieOptions {
   cookieName?: string;
   /** Resolves the key ring that signs the cookie from the request env; its active key signs and every key on it verifies. */
-  ring: (c: AppContext<Bindings>) => KeyRing | Promise<KeyRing>;
+  ring: KeyRingResolver<Bindings>;
   /** Resolves the KV binding that holds the session data; exactly one of this and `storage` must be given. */
   kv?: (c: AppContext<Bindings>) => SessionKVBinding;
   /** Serializes all session data into the cookie itself, accepting that it rides on every request and cannot be revoked before its expiry. */

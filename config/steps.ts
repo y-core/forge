@@ -166,7 +166,10 @@ export const STEPS: readonly Step[] = [
     ],
     citableDirs: ["warden/canon/shared", "warden/canon/libs", "warden/canon/apps"],
     agreementDirs: ["warden/canon", "src/ui/design"],
-    requiredFrontmatter: [{ dir: "docs", key: "audience", values: ["consumer", "internal"] }],
+    requiredFrontmatter: [
+      { dir: "docs", key: "audience", values: ["consumer", "internal"] },
+      { dir: "src", fileName: "README.md", key: "audience", values: ["consumer", "internal"] },
+    ],
     documentedNonExports: ["./crypto/primitives"],
     unboundSubpaths: ["./render/jsx/jsx-runtime", "./render/jsx/jsx-dev-runtime"],
   }),

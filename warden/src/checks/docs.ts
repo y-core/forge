@@ -359,6 +359,8 @@ function listOf(values: readonly string[]): string {
 export interface FrontmatterRule {
   /** Directory relative to `root`, or one `.md` document. */
   dir: string;
+  /** Narrows the rule to documents of this file name, such as `README.md`, within `dir`. */
+  fileName?: string;
   /** The key that must be present. */
   key: string;
   /** The values it may take, and nothing else. */
@@ -370,7 +372,7 @@ export function validateFrontmatter(
   file: string,
   source: string,
   descriptionMax: number,
-  required: readonly Omit<FrontmatterRule, "dir">[] = [],
+  required: readonly Omit<FrontmatterRule, "dir" | "fileName">[] = [],
 ): Finding[] {
   if (!source.startsWith("---\n")) return [fail("missing YAML frontmatter", { file })];
   const end = source.indexOf("\n---", 4);
@@ -501,9 +503,10 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
 
   // Which extra frontmatter keys this file owes, by the directory it sits in. A file under no rule
   // owes none and may carry none — the allowed-key set is closed either way.
-  const frontmatterRules = (file: string): Omit<FrontmatterRule, "dir">[] =>
+  const frontmatterRules = (file: string): Omit<FrontmatterRule, "dir" | "fileName">[] =>
     (config.requiredFrontmatter ?? [])
       .filter((rule) => file === rule.dir || file.startsWith(`${rule.dir}/`))
+      .filter((rule) => rule.fileName === undefined || file.endsWith(`/${rule.fileName}`))
       .map(({ key, values }) => ({ key, values }));
 
   const sources = new Map<string, string>();
@@ -728,9 +731,11 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       else findings.push(fail(`link definition \`[${id}]\` is never used`, { file, line: definition.line }));
     }
 
-    if (!isNumbered(file)) continue;
+    const numbered = isNumbered(file);
+    const rules = frontmatterRules(file);
+    if (numbered || rules.length > 0) findings.push(...validateFrontmatter(file, source, descriptionMax, rules));
+    if (!numbered) continue;
 
-    findings.push(...validateFrontmatter(file, source, descriptionMax, frontmatterRules(file)));
     findings.push(...validatePaths(file, stripped, root));
 
     const lineCount = source.split("\n").length;

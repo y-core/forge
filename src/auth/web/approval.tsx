@@ -7,6 +7,7 @@ import type { Forge } from "../../app/forge-app";
 import { buildGuardChain } from "../../app/middleware-chain";
 import { getAppContext } from "../../context/types";
 import type { AppContext, RequestHandler } from "../../context/types";
+import { createKeyRingResolver } from "../../crypto/keyring/resolver";
 import { timingSafeEqual } from "../../crypto/primitives/timing";
 import { mintCsrf } from "../../form/csrf";
 import { safeRedirectPath } from "../../http/redirect-path";
@@ -58,7 +59,7 @@ export function defineApproval<Bindings = Record<string, unknown>>(options: Appr
     unit: "millisecond",
     floor: "a window no approval can be inside makes every approved route prompt forever",
   });
-  return Object.freeze({ ...options, ttlMs });
+  return Object.freeze({ ...options, ring: createKeyRingResolver(options.ring), ttlMs });
 }
 
 function notFound(): Response {

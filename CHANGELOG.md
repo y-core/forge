@@ -18,7 +18,25 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`CsrfRingResolver` and `AuthRingResolver` are removed** in favour of `KeyRingResolver` from `@y-core/forge/crypto/keyring`, which takes an
+  `AppContext<Bindings>`, so a resolver reads `c.env` with no cast. **Migration:** rename the type, then drop any `(c as any).env` cast.
+
+### Added
+
+- **`createKeyRingResolver` and `KeyRingResolver`** in `@y-core/forge/crypto/keyring`. The resolver resolves a ring once per `env` object, so
+  the subkeys and imported keys cached on it survive across requests. `defineApproval` now resolves its ring this way.
+- **`FrontmatterRule.fileName`** in `@y-core/forge/warden/checks` narrows a `requiredFrontmatter` rule to documents of one file name, such as
+  `README.md`.
+- **`findSplitRuleMarkers`** in `@y-core/forge/tooling/gate` returns each `<!-- rule:… -->` marker that spans a line break or never closes.
+
+### Fixed
+
+- **A `requiredFrontmatter` rule holds every document it names**, not only numbered ones. A source README with its keys collapsed onto one line
+  passed `validate-docs` while the index read a garbage title and no description; it now fails on the missing keys.
+- **`validate-design` fails on a rule marker split across lines.** The marker reader works one line at a time, so a reflow that wrapped
+  `<!-- rule:… -->` dropped the id from the defined set without a finding. `forge-ui-tell-heading-skip` had been dropped that way.
 
 ---
 

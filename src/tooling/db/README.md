@@ -1,6 +1,7 @@
 ---
-title: D1 Database Management description: "The `forge db` command tree: migrations composed from declared schema files, applied forward-only with
-checksums and a schema fingerprint, verified backups, and idempotent seeds." audience: internal
+title: D1 Database Management
+description: "The `forge db` command tree: migrations composed from declared schema files, applied forward-only with checksums and a schema fingerprint, verified backups, and idempotent seeds."
+audience: internal
 ---
 
 # `@y-core/forge/tooling/db`

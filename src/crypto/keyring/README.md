@@ -13,6 +13,7 @@ cookies and R2 signed URLs sign under the same ring, each with a subkey of its o
 ```ts
 import {
   atRestKeyId,
+  createKeyRingResolver,
   derivePseudonym,
   importKeyRing,
   openAtRest,
@@ -35,7 +36,29 @@ Give the ring a variable of its own, such as `APP_SEAL_KEY_RING`, holding 32 ran
 const ring = await importKeyRing(parseKeyRingSecrets(c.env.APP_SEAL_KEY_RING));
 ```
 
-Import the ring once per `env` and hand the same one to everything below.
+Import the ring once per `env` and hand the same one to everything below — [Resolving the ring once per env](#resolving-the-ring-once-per-env)
+shows how.
+
+---
+
+## Resolving the ring once per env
+
+**Every subkey and imported key is cached on the ring object**, so a ring rebuilt on every request derives and imports every key again. Build a
+resolver at module scope with `createKeyRingResolver`, and call it inside the handler:
+
+```ts
+const appRing = createKeyRingResolver<Env>((c) => importKeyRing(parseKeyRingSecrets(c.env.APP_SEAL_KEY_RING)));
+
+// inside a handler
+const ring = await appRing(c);
+```
+
+The resolver keeps one ring for each `env` object, and every request a Worker isolate serves shares that object. A secret change is a new
+deployment, so it arrives with a new `env`, and a new ring is resolved for it. Calls racing on a cold `env` share one resolve, and a resolve that
+throws is retried by the next request rather than cached.
+
+Anywhere forge takes a `KeyRingResolver` — `csrfProtection`'s `ring`, `defineApproval`'s, `createAnonymousSession`'s — you can pass the plain
+function. Forge caches its ring per `env` for you.
 
 ---
 
@@ -73,8 +96,8 @@ A frame is `kid(6) ‖ nonce(12) ‖ ciphertext‖tag(16)`, so an empty plaintex
 blob.
 
 **The frame carries no version byte, and it never will.** A version byte would be a second frame format for every reader to accept. A new
-derivation arrives as a new domain string inside forge instead, so a frame you store today opens under every later release. `auth` keeps its own
-domain, `y-core/forge/auth/v1`, so the TOTP secrets it seals open under the same functions.
+derivation arrives as a new domain string inside forge instead, so a frame you store today opens under every later release. `auth` seals its TOTP
+secrets in this same frame format under its own domain, `y-core/forge/auth/v1`, so `openAtRest` never opens one.
 
 ### Re-sealing on open
 
