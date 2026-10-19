@@ -4,7 +4,7 @@ import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-// Under one of Cloudflare's published testing secrets siteverify answers a fixed `hostname` whatever origin the widget ran on.
+// Under one of Cloudflare's published testing secrets siteverify answers a fixed body: its own `hostname`, and no `action` or `cdata`.
 const TESTING_SECRETS: ReadonlySet<string> = new Set([
   "1x0000000000000000000000000000000AA",
   "2x0000000000000000000000000000000AA",
@@ -54,7 +54,9 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
   }
 
   const testingSecret = options.dev?.options.turnstileTestingSecrets === true && TESTING_SECRETS.has(secretKey);
-  if (!testingSecret && data.hostname !== options.expectedHostname) {
+  if (testingSecret) return ok();
+
+  if (data.hostname !== options.expectedHostname) {
     return err("hostname-mismatch");
   }
 

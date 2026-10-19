@@ -132,7 +132,9 @@ and a foreign-key column copies its parent's value, so every row satisfies its r
 rows it held when the seed committed, a row a baseline trigger wrote during seeding included, with each kept column's value unchanged. A column
 renamed with `--rename` is read under its new name, and a column whose declared type changed is not compared. A vanished row or a changed value is
 refused as a forge bug, and the file is not written. This catches a failure that needs some row but no particular value: a parent rebuild that
-leaves a deferred foreign-key counter stale, a cascade or trigger that empties or rewrites a kept table, and a value the rebuild's copy loses.
+leaves a deferred foreign-key counter stale, a cascade or trigger that empties or rewrites a kept table, and a value the rebuild's copy loses. When
+D1 refuses the commit on a deferred foreign key, the proof is replayed once with a check after each statement, in a replay that never commits, so
+the refusal names the table that first held a row with no parent and the statement after which it did.
 
 **When a constraint refuses the seed itself, the proof runs without rows.** A baseline `CHECK` the constant breaks, a trigger that aborts the
 insert, or a type the column refuses each make compose fall back to an empty replay and print one advisory line —

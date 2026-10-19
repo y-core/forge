@@ -84,6 +84,26 @@ describe("applyMigrations()", () => {
     expect(staged(io)).toEqual(["/app/.forge/scratch/migrate/0001_init.sql", "/app/.forge/scratch/migrate/0002_posts.sql"]);
   });
 
+  it("names the foreign key a local migration's commit was refused on, ahead of the opaque refusal", async () => {
+    const io = fakeDbIo({}, { now: NOW });
+    const orphan = migration("0002_orphan", "PRAGMA defer_foreign_keys = true;\nINSERT INTO child (id, parent_id) VALUES (1, 99);");
+    let calls = 0;
+    io.d1 = () =>
+      Promise.reject(
+        new Error(
+          ++calls === 1
+            ? "internal error; reference = unf7bq10q3mobq6tis9d5gbn"
+            : `D1_ERROR: bad JSON path: 'forge-fk 1 "child" "parent"': SQLITE_ERROR`,
+        ),
+      );
+    await expect(applyMigrations(context(io), HOME, [orphan], { label: "migrate", record: false })).rejects.toThrow(
+      "loading /app/.forge/scratch/migrate/0002_orphan.sql against local (app-db) failed:\n" +
+        "FOREIGN KEY constraint failed: child first held a row with no match in parent after `INSERT INTO child (id, parent_id) VALUES (1, 99)`\n" +
+        "internal error; reference = unf7bq10q3mobq6tis9d5gbn",
+    );
+    expect(calls).toBe(2);
+  });
+
   it("reaches the database not at all for an empty list, not even the companion tables", async () => {
     const io = ready(fakeDbIo({}, { now: NOW }));
     await applyMigrations(context(io), HOME, [], { label: "migrate", record: true });

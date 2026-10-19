@@ -30,12 +30,12 @@ describe("ApprovalView", () => {
 
   it("marks the field invalid and wires the refusal to it, only when there is one", async () => {
     const clean = await prompt();
-    const refused = await prompt({ fieldError: "That is not a valid administrator code." });
+    const refused = await prompt({ fieldError: "Approval failed. Please try again." });
     expect({
       before: attrOf(clean, 'data-ref="approval-code"', "aria-invalid"),
       after: attrOf(refused, 'data-ref="approval-code"', "aria-describedby"),
       error: textOf(refused, "p", 'id="field-code-error"'),
-    }).toEqual({ before: "", after: "field-code-error", error: "That is not a valid administrator code." });
+    }).toEqual({ before: "", after: "field-code-error", error: "Approval failed. Please try again." });
   });
 
   it("renders the challenge it is handed before the submit button, and none without one", async () => {

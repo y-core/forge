@@ -2145,31 +2145,39 @@ describe("the Turnstile guard on the anonymous forms", () => {
       });
     }
 
-    it("refuses a body with no token in the words and status a malformed address gets, keeping the address and asking for nothing", async () => {
+    it("refuses a body with no token at 422 on the address field, blaming neither the address nor the challenge, and asks for nothing", async () => {
       const sent = siteverify(solvedFor("auth-signin"));
       const requested: string[] = [];
-      const malformed = await answered(await signin(fakeAuthWebOptions()).app.request("/auth/signin", formBody({ email: "not-an-address" })));
       const { app, pending } = signin(guarded({ signin: recordingSignin(requested) }));
 
       const refused = await answered(await app.request("/auth/signin", formBody({ email: "ada@example.com" })));
 
       expect({
         status: refused.status,
-        error: elementOf(refused.html, "p", 'id="field-email-error"'),
+        error: textOf(refused.html, "p", 'id="field-email-error"'),
         kept: attrOf(refused.html, 'id="field-email"', "value"),
         requested,
         pending,
         sent,
       }).toEqual({
-        status: malformed.status,
-        error: elementOf(malformed.html, "p", 'id="field-email-error"'),
+        status: 422,
+        error: "Verification failed. Please try again.",
         kept: "ada@example.com",
         requested: [],
         pending: [null],
         sent: [],
       });
-      expect(malformed.status).toBe(422);
-      expect(textOf(malformed.html, "p", 'id="field-email-error"')).toBe("Enter an email address in the form name@example.com.");
+    });
+
+    it("keeps the address's own copy for a malformed address behind a solved token", async () => {
+      siteverify(solvedFor("auth-signin"));
+      const malformed = await answered(
+        await signin(guarded()).app.request("/auth/signin", formBody({ email: "not-an-address", "cf-turnstile-response": "solved" })),
+      );
+      expect({ status: malformed.status, error: textOf(malformed.html, "p", 'id="field-email-error"') }).toEqual({
+        status: 422,
+        error: "Enter an email address in the form name@example.com.",
+      });
     });
 
     it("admits a solved token, dropping its field before the strict schema reads the body", async () => {
@@ -2233,9 +2241,9 @@ describe("the Turnstile guard on the anonymous forms", () => {
       expect({ status: res.status, sent }).toEqual({ status: 422, sent: [] });
     });
 
-    it("admits a testing secret's fixed hostname only under a dev grant for testing secrets", async () => {
+    it("admits a testing secret's fixed hostname and missing action only under a dev grant for testing secrets", async () => {
       const testing = { siteKey: "1x00000000000000000000AA", secretKey: "1x0000000000000000000000000000000AA" };
-      const answer = { success: true, hostname: "example.com", action: "auth-signin" };
+      const answer = { success: true, hostname: "example.com", metadata: { result_with_testing_key: true } };
       const status = async (turnstile: Partial<AuthTurnstileOptions>) => {
         siteverify(answer);
         const { app } = signin(guarded({}, { keys: () => testing, ...turnstile }));
@@ -2256,7 +2264,7 @@ describe("the Turnstile guard on the anonymous forms", () => {
       return mounted(actionApp(), "POST", "/auth/signup", createSignupActions(options).signupSubmit);
     }
 
-    it("refuses a body with no token exactly as it refuses an invalid address, without starting an account", async () => {
+    it("refuses a body with no token at 422 on the address field in the non-specific copy, without starting an account", async () => {
       siteverify(solvedFor("auth-signup"));
       const requested: string[] = [];
       const recording = fakeAuthSignupFlow({
@@ -2265,16 +2273,21 @@ describe("the Turnstile guard on the anonymous forms", () => {
           return { kind: "email-otp", expiresAt: at };
         },
       });
-      const invalid = await answered(await signup(fakeAuthWebOptions()).request("/auth/signup", formBody({ email: "not-an-address" })));
+      const invalid = await answered(
+        await signup(guarded()).request("/auth/signup", formBody({ email: "not-an-address", "cf-turnstile-response": "solved" })),
+      );
 
       const refused = await answered(await signup(guarded({ signup: recording })).request("/auth/signup", formBody({ email: "ada@example.com" })));
 
-      expect({ status: refused.status, error: elementOf(refused.html, "p", 'id="field-email-error"'), requested }).toEqual({
-        status: invalid.status,
-        error: elementOf(invalid.html, "p", 'id="field-email-error"'),
+      expect({
+        refused: { status: refused.status, error: textOf(refused.html, "p", 'id="field-email-error"') },
+        invalid: { status: invalid.status, error: textOf(invalid.html, "p", 'id="field-email-error"') },
+        requested,
+      }).toEqual({
+        refused: { status: 422, error: "Verification failed. Please try again." },
+        invalid: { status: 422, error: "Enter an email address in the form name@example.com." },
         requested: [],
       });
-      expect(invalid.status).toBe(422);
     });
 
     it("admits a token solved for the sign-up form and starts the account", async () => {
@@ -2345,30 +2358,32 @@ describe("the Turnstile guard on the anonymous forms", () => {
       });
     }
 
-    it("refuses a code with no token at 422 in the words a malformed code gets, without completing the sign-in", async () => {
+    it("refuses a code with no token at 422 in the non-specific copy, keeping a malformed code's own words for a malformed code", async () => {
       siteverify(solvedFor("auth-verify"));
       const calls: string[] = [];
-      const submit = (options: AuthWebOptions, code: string) =>
-        mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit).request(
+      const submit = (body: Record<string, string>) =>
+        mounted(
+          actionApp({ pendingEmail: "grace@example.com" }),
+          "POST",
           "/auth/verify",
-          formBody({ code }),
-        );
-      const malformed = await answered(await submit(fakeAuthWebOptions(), "12"));
+          createVerifyActions(guarded({ signin: recordingFlow(calls) })).submit,
+        ).request("/auth/verify", formBody(body));
+      const malformed = await answered(await submit({ code: "12", "cf-turnstile-response": "solved" }));
 
-      const refused = await answered(await submit(guarded({ signin: recordingFlow(calls) }), "123456"));
+      const refused = await answered(await submit({ code: "123456" }));
 
-      expect({ status: refused.status, error: textOf(refused.html, "p", 'id="field-code-error"'), calls }).toEqual({
-        status: malformed.status,
-        error: textOf(malformed.html, "p", 'id="field-code-error"'),
+      expect({
+        refused: { status: refused.status, error: textOf(refused.html, "p", 'id="field-code-error"') },
+        malformed: { status: malformed.status, error: textOf(malformed.html, "p", 'id="field-code-error"') },
+        calls,
+      }).toEqual({
+        refused: { status: 422, error: "Verification failed. Please try again." },
+        malformed: { status: 422, error: "That code is not the shape we sent. Enter the digits exactly as they appear." },
         calls: [],
-      });
-      expect({ status: malformed.status, error: textOf(malformed.html, "p", 'id="field-code-error"') }).toEqual({
-        status: 422,
-        error: "That code is not the shape we sent. Enter the digits exactly as they appear.",
       });
     });
 
-    it("refuses a recovery code with no token in a recovery code's words, without stepping up", async () => {
+    it("refuses a recovery code with no token in the non-specific copy, never a recovery code's words, without stepping up", async () => {
       siteverify(solvedFor("auth-verify"));
       const calls: string[] = [];
       const app = mounted(
@@ -2379,6 +2394,24 @@ describe("the Turnstile guard on the anonymous forms", () => {
       );
 
       const res = await app.request("/auth/verify?factor=recovery-code", formBody({ code: "ABCD-EFGH" }));
+      expect({ status: res.status, error: textOf(await res.text(), "p", 'id="field-code-error"'), calls }).toEqual({
+        status: 422,
+        error: "Verification failed. Please try again.",
+        calls: [],
+      });
+    });
+
+    it("keeps a recovery code's own words for a malformed recovery code behind a solved token, without stepping up", async () => {
+      siteverify(solvedFor("auth-verify"));
+      const calls: string[] = [];
+      const app = mounted(
+        actionApp({ userId: "u9" }),
+        "POST",
+        "/auth/verify",
+        createVerifyActions(guarded({ ...holdingBoth, signin: recordingFlow(calls) })).submit,
+      );
+
+      const res = await app.request("/auth/verify?factor=recovery-code", formBody({ code: "A".repeat(65), "cf-turnstile-response": "solved" }));
       expect({ status: res.status, error: textOf(await res.text(), "p", 'id="field-code-error"'), calls }).toEqual({
         status: 422,
         error: "That is not a recovery code. Enter one exactly as you saved it.",

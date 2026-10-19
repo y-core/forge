@@ -272,11 +272,11 @@ itself ([`AUTH_MOUNTING.md`][am-8] §8).
 site can be replayed against this one. A runtime warning is logged when it is omitted.
 
 **The dev allowance is the key for Cloudflare's testing secrets, and it takes two locks to open.** Those published secrets — `1x…AA` (always
-passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` whatever origin the widget ran on, so
+passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` and no `action` or `cdata`, so
 an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Passing
-`dev`, a [`DevAllowance`][dev-readme] granting `turnstileTestingSecrets`, skips the hostname comparison **only when `secretKey` is one of those
-literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret without the token is
-compared normally. Every other check, `expectedHostname`'s fail-closed guard included, is unchanged.
+`dev`, a [`DevAllowance`][dev-readme] granting `turnstileTestingSecrets`, skips the hostname, action and cdata comparisons **only when
+`secretKey` is one of those literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret
+without the token is compared normally. The `success` check and `expectedHostname`'s fail-closed guard still run.
 
 **There is no env var, and no way to write one.** Minting the token means importing `@y-core/forge/dev` at value, and `validate-dev-boundary`
 fails that import from anything but a `*.dev.ts` entry — so the production bundle holds no module that can set it. It is the containment

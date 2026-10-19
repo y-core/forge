@@ -18,7 +18,11 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **`verifyTurnstile` no longer compares `expectedAction` or `expectedCData` under the testing-secret dev allowance**, so auth's guarded
+  forms pass under Cloudflare's testing keys. Siteverify answers those keys with no `action` or `cdata`; the `success` check and the
+  `expectedHostname` guard still run.
 
 ---
 

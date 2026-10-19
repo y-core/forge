@@ -88,6 +88,8 @@ const FIELD_REFUSAL: Readonly<Record<string, string>> = {
 
 const FIELD_REFUSAL_DEFAULT = "We could not read that. Please check the form and try again.";
 
+const CHALLENGE_REFUSAL = "Verification failed. Please try again.";
+
 const RECOVERY_CODE_REFUSAL = "That is not one of the new codes. Enter one exactly as it is shown.";
 
 const TOTP_ENROL_REFUSAL = "That code did not match. Enter the code your app shows now.";
@@ -113,6 +115,7 @@ function notFound(): Response {
 }
 
 interface AuthSubmissionRefusal {
+  readonly cause: "challenge" | "submission";
   readonly field: string;
   readonly message: string;
   readonly values: Readonly<Record<string, string>>;
@@ -130,7 +133,7 @@ export async function readAuthSubmission<schema extends v.GenericSchema, Binding
   } catch (error) {
     // The only throw here that is not about the submission: a field refusal would blame the visitor.
     if (isFormCapConflict(error)) throw error;
-    return err({ field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
+    return err({ cause: "submission", field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
   }
   const csrfField = csrfFieldCtx.getOptional(c);
   const drop = [...(csrfField === undefined ? [] : [csrfField]), ...(check === undefined ? [] : [TURNSTILE_FIELD_DEFAULT])];
@@ -143,15 +146,14 @@ export async function readAuthSubmission<schema extends v.GenericSchema, Binding
   if (check !== undefined) {
     const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
     if (!verification.ok) {
-      const field = firstDeclaredField(schema) ?? "";
-      return err({ field, message: refusalFor(schema, field), values });
+      return err({ cause: "challenge", field: firstDeclaredField(schema) ?? "", message: CHALLENGE_REFUSAL, values });
     }
   }
 
   const parsed = v.safeParse(schema, body, { abortEarly: true });
   if (parsed.success) return ok(parsed.output);
   const field = parsed.issues[0] === undefined ? "" : describeValidationIssue(parsed.issues[0]);
-  return err({ field, message: refusalFor(schema, field), values });
+  return err({ cause: "submission", field, message: refusalFor(schema, field), values });
 }
 
 function refusalFor(schema: v.GenericSchema, field: string): string {
@@ -310,7 +312,8 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const check = await authTurnstileCheck(c, options, "verify");
       const parsed = await readAuthSubmission(c, authVerifySchema(demand.factor, demand.digits ?? undefined), check);
       if (!parsed.ok) {
-        const fieldError = demand.factor === "recovery-code" ? RECOVERY_CODE_UNREADABLE : parsed.error.message;
+        const fieldError =
+          demand.factor === "recovery-code" && parsed.error.cause === "submission" ? RECOVERY_CODE_UNREADABLE : parsed.error.message;
         return loadVerify(c, options, { fieldError, status: 422 });
       }
 

@@ -332,8 +332,8 @@ stops two simultaneous visitors becoming two first admins.
 **The claim is two steps: an administrator approval, then the confirmation.** A visitor whose session holds no approval inside the window is sent
 to the approval prompt to present the administrator code, then returned to the claim page. Only after that do they confirm. The claim form asks for
 the confirmation alone, because the code is held by the approval and not by the form. On the prompt, a wrong code and a failed challenge get the
-same **422** on the code field, so a script cannot tell which of the two it has to defeat. How the approval is defined and passed to the guards is
-[`AUTH_MOUNTING.md`][am-3] §3.
+same **422** on the code field, so a script cannot tell which of the two it has to defeat, and its copy names neither, so an administrator whose
+challenge fails is not told their code is wrong. How the approval is defined and passed to the guards is [`AUTH_MOUNTING.md`][am-3] §3.
 
 **Signing in and signing out both clear the approval.** A sign-in never inherits an approval granted before it, including one granted to the
 anonymous session that became it. A visitor who presented the code during sign-up is therefore asked for it again at the claim, after they sign

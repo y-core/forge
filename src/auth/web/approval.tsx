@@ -34,7 +34,7 @@ const MIN_APPROVAL_TTL_MS = 1_000;
 /** The Turnstile action the prompt's challenge is bound to, so a token solved for an auth form cannot pass it. @internal */
 export const APPROVAL_TURNSTILE_ACTION = "approval";
 
-const CODE_REFUSED = "That is not a valid administrator code.";
+const APPROVAL_REFUSED = "Approval failed. Please try again.";
 
 /** Builds the one administrator approval a deployment's guarded routes and its prompt page share, refusing a window too short to hold. @public */
 export function defineApproval<Bindings = Record<string, unknown>>(options: ApprovalOptions<Bindings>): Approval<Bindings> {
@@ -94,7 +94,7 @@ async function submitPrompt<Bindings>(c: AppContext<Bindings>, approval: Approva
   // One refusal for both: telling a failed challenge from a wrong code tells a script which one to solve.
   if (!parsed.ok || !timingSafeEqual(parsed.data.code, expected)) {
     requestLog.getOptional(c)?.warn("auth.approval.refused", { reason: parsed.ok ? "mismatch" : "submission" });
-    return renderPrompt(c, approval, CODE_REFUSED, 422);
+    return renderPrompt(c, approval, APPROVAL_REFUSED, 422);
   }
 
   markApproval(session, { at: Date.now(), digest: await signApprovalCode(await approval.ring(c), expected) });

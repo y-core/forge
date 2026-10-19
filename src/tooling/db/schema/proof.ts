@@ -154,6 +154,7 @@ export function seedRows(baseline: SchemaModel, renames: readonly SchemaRename[]
 }
 
 const SEED_REFUSAL = /([^\n]*?):\s*SQLITE_CONSTRAINT \(extended: (SQLITE_CONSTRAINT_\w+)\)/;
+const SEED_WATCHED_REFUSAL = /^FOREIGN KEY constraint failed: (.+) first held a row with no match in /m;
 
 /** The advisory line for a seed the baseline refused, naming the table and constraint as far as the D1 error does. */
 function describeSeedRefusal(match: RegExpExecArray, baseline: SchemaModel, tables: readonly string[]): string {
@@ -181,7 +182,10 @@ async function commitSeed(run: DbRunContext, home: Home, seed: RowSeed, baseline
     await executeFile(run.io, home, file);
     return null;
   } catch (error) {
-    const match = error instanceof Error ? SEED_REFUSAL.exec(error.message) : null;
+    const message = error instanceof Error ? error.message : "";
+    const child = SEED_WATCHED_REFUSAL.exec(message)?.[1];
+    if (child !== undefined) return `warning: the proof ran without rows — seeding ${child} failed: FOREIGN KEY`;
+    const match = SEED_REFUSAL.exec(message);
     if (match === null) throw error;
     return describeSeedRefusal(match, baseline, seed.tables);
   }

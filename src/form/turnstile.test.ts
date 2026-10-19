@@ -220,11 +220,29 @@ describe("verifyTurnstile", () => {
     });
   });
 
-  it("still fails an action mismatch with both locks open", async () => {
-    mockFetch({ action: "other", hostname: "example.com", success: true });
+  it("skips the action and cdata comparisons with both locks open", async () => {
+    mockFetch({ success: true, hostname: HOSTNAME, metadata: { result_with_testing_key: true } });
     const fd = new FormData();
     fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
-    expect(await verifyTurnstile(fd, TESTING_SECRET, { expectedHostname: "localhost", expectedAction: "contact", dev: DEV })).toEqual({
+    const options = { expectedHostname: HOSTNAME, expectedAction: "contact", expectedCData: "contact-form", dev: DEV };
+    expect(await verifyTurnstile(fd, TESTING_SECRET, options)).toEqual({ ok: true });
+  });
+
+  it("still compares the action under a testing secret alone", async () => {
+    mockFetch({ success: true, hostname: HOSTNAME, metadata: { result_with_testing_key: true } });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");
+    expect(await verifyTurnstile(fd, TESTING_SECRET, { expectedHostname: HOSTNAME, expectedAction: "contact" })).toEqual({
+      ok: false,
+      error: "action-mismatch",
+    });
+  });
+
+  it("still compares the action under the allowance alone", async () => {
+    mockFetch({ success: true, hostname: HOSTNAME });
+    const fd = new FormData();
+    fd.append("cf-turnstile-response", "valid-token");
+    expect(await verifyTurnstile(fd, SECRET, { expectedHostname: HOSTNAME, expectedAction: "contact", dev: DEV })).toEqual({
       ok: false,
       error: "action-mismatch",
     });

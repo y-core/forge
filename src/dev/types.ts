@@ -16,7 +16,7 @@ export interface DevAllowanceOptions {
   missingFetchMetadata?: true;
   /** Lets the error page print the thrown message instead of a fixed sentence. */
   errorDetail?: true;
-  /** Lets `verifyTurnstile` skip the hostname comparison under one of Cloudflare's published testing secrets. */
+  /** Lets `verifyTurnstile` skip the hostname, action and cdata comparisons under one of Cloudflare's published testing secrets. */
   turnstileTestingSecrets?: true;
   /** Origins appended to the derived allowlist — a dev tunnel or a loopback port, never a production origin. */
   extraOrigins?: string[];

@@ -209,7 +209,7 @@ describe("registerApproval — presenting the code", () => {
 
     expect({ ...(await refusal(refused)), after: after.status, warnings }).toEqual({
       status: 422,
-      error: "That is not a valid administrator code.",
+      error: "Approval failed. Please try again.",
       after: 302,
       warnings: [["auth.approval.refused", { reason: "mismatch" }]],
     });
@@ -243,14 +243,18 @@ describe("registerApproval — behind a Turnstile challenge", () => {
     expect(attrOf(html, 'data-sitekey="site-key"', "data-action")).toBe(APPROVAL_TURNSTILE_ACTION);
   });
 
-  it("refuses a failed challenge with exactly the 422 a wrong code gets, even when the code is right", async () => {
+  it("refuses a failed challenge with the 422 a wrong code gets, naming neither cause, even when the code is right", async () => {
     siteverify({ success: false, "error-codes": ["invalid-input-response"] });
     const failed = await approvalApp(fakeApproval({ turnstile })).request(
       "/approve",
       presented({ code: FAKE_APPROVAL_CODE, "cf-turnstile-response": "t" }),
     );
     const wrong = await approvalApp().request("/approve", presented({ code: "wrong" }));
-    expect(await refusal(failed)).toEqual(await refusal(wrong));
+    const answer = await refusal(failed);
+    expect({ answer, wrong: await refusal(wrong) }).toEqual({
+      answer: { status: 422, error: "Approval failed. Please try again." },
+      wrong: answer,
+    });
   });
 
   it("admits the right code once the challenge is solved for the approval's action", async () => {

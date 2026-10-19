@@ -885,8 +885,8 @@ refused.
 turnstile: { keys, verify, flows: ["signup", "resend"] },
 ```
 
-**Grant `turnstileTestingSecrets` in the development entry to run against Cloudflare's testing keys.** Those keys answer a fixed hostname, so
-`expectedHostname` refuses every local submission without the grant. Thread the `DevAllowance` into `verify`:
+**Grant `turnstileTestingSecrets` in the development entry to run against Cloudflare's testing keys.** Those keys answer a fixed hostname and no
+action, so every local submission is refused without the grant. Thread the `DevAllowance` into `verify`:
 
 ```ts
 // src/worker-factory.ts
@@ -911,7 +911,7 @@ export default createWorker({ dev: devAllowance({ turnstileTestingSecrets: true 
 ```
 
 `createWorker` sets `turnstile: authTurnstile(dev)` from the allowance it is given. The production entry passes none, and the grant skips the
-hostname check only under one of the testing secrets ([`src/dev/README.md`][dev-readme]).
+hostname, action and cdata checks only under one of the testing secrets ([`src/dev/README.md`][dev-readme]).
 
 **A view you replace through `views` renders the widget itself.** Its props carry `turnstile`, and on the verify page `resendTurnstile`, whenever
 that form is guarded. A replacement whose forms swap a refusal into the view the way the shipped ones do gives its root `AUTH_SIGNIN_ID`,

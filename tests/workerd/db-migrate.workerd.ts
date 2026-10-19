@@ -207,6 +207,43 @@ test.describe("forge db migrate --target local against real D1", () => {
     }
   });
 
+  test("refuses a local migration whose deferred foreign key fails at commit, naming the child and the parent, and applies nothing", async () => {
+    const orphaned = mkdtempSync(join(tmpdir(), "forge-db-orphan-"));
+    cpSync(root, orphaned, { recursive: true });
+    const body =
+      "PRAGMA defer_foreign_keys = true;\n" +
+      "CREATE TABLE parent (id INTEGER PRIMARY KEY);\n" +
+      "CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES parent (id));\n" +
+      "INSERT INTO child (id, parent_id) VALUES (1, 99);\n";
+    writeFileSync(
+      join(orphaned, "config", "db", "migrations", "0002_orphan.sql"),
+      `${formatComposeHeader({ desired: {}, baseline: "", forge: "0.0.0" }, body)}${body}`,
+    );
+    let copy: D1Handle | null = null;
+    try {
+      const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--root", orphaned], {
+        cwd: FORGE,
+        encoding: "utf-8",
+      });
+      expect(migrate.status, migrate.stderr).toBe(1);
+      expect(migrate.stderr).toContain("FOREIGN KEY constraint failed: child first held a row with no match in parent after `INSERT INTO child");
+
+      const status = spawnSync("bun", ["run", BIN, "db", "migrate", "status", "--check", "--target", "local", "--root", orphaned], {
+        cwd: FORGE,
+        encoding: "utf-8",
+      });
+      expect(status.status).toBe(1);
+      copy = await openD1(orphaned);
+      expect({
+        applied: (await copy.rows<{ name: string }>("SELECT name FROM _forge_migrations ORDER BY id")).map((row) => row.name),
+        tables: await copy.rows("SELECT name FROM sqlite_master WHERE name IN ('parent', 'child')"),
+      }).toEqual({ applied: ["0001_init"], tables: [] });
+    } finally {
+      await copy?.dispose();
+      rmSync(orphaned, { recursive: true, force: true });
+    }
+  });
+
   test("backs up through wrangler d1 export, and restores the artifact through forge db restore", async () => {
     const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--json", "--out", join(root, "exports")]);
     expect(backup.code, `export backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);

@@ -241,8 +241,8 @@ policy, the latter matching whatever field the widget writes.
 `signal` is caller cancellation, and an abort on it **rejects** rather than resolving to a result. `defineAction` threads `c.request.signal` in by
 default, and a `verify()` returning its own `signal` wins over that.
 
-Relaxing the hostname check for local development takes a `DevAllowance` grant **and** one of Cloudflare's published testing secrets; neither half
-relaxes anything alone ([`INPUT_VALIDATION.md`][iv-4a] §4a).
+Relaxing the hostname, action and cdata checks for local development takes a `DevAllowance` grant **and** one of Cloudflare's published testing
+secrets; neither half relaxes anything alone ([`INPUT_VALIDATION.md`][iv-4a] §4a).
 
 ---
 

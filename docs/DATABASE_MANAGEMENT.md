@@ -31,7 +31,7 @@ audience: consumer
 - §6 Applying: the `--to` cut, and why only pending files are linted
 - §6a The Apply Lock: one apply per home at a time
 - §6c `status --check` Exit Conditions: exactly what makes the gate fail
-- §6d Check, then Apply: what refuses an apply, and how a migration and its history row reach the database together
+- §6d Check, then Apply: what refuses an apply, how a migration and its history row reach the database together, and naming a refused local load
 - §6e Who Else Holds the Database to Its Fingerprint: what each verb does with the drift read, and which verbs stay off the list
 - §6f Rehearsing Against Real Rows: the pending migrations applied to a copy restored from a backup, before the target is touched
 - §7 The Seed Contract: identity, hashing, variables, places, and the guards a seed run shares with a migrate
@@ -302,6 +302,13 @@ dry run's refusal is exactly the real run's.
 migration's SQL, then the `INSERT INTO _forge_migrations` that records it. Locally that file is loaded in process as one call, which is one
 transaction, so the migration and its record commit together or neither does; a deployed target loads it with `wrangler d1 execute --file`.
 Seeds take the same path with their own record statement (§7), so there is one apply mechanism here and not two.
+
+**A local load refused at commit is replayed once, to name the row that broke it.** A deferred foreign key is checked at commit, and miniflare
+reports that refusal as `internal error; reference = <id>` or as a bare `FOREIGN KEY constraint failed`, neither naming a table. Forge then runs
+the same statements again under a foreign-key watch, and the refusal names the child table, the parent it lacks a match in, and the statement
+that first left it so. The replay is local only: a deployed database is never replayed against. It never commits, because it is one batch ending
+in a statement that always fails; it runs only after the original load was rolled back, and a migrate still holds the apply lock (§6a). Naming a
+refused very large load, such as a restore's rows, takes longer, and that cost is accepted rather than capped.
 
 **Against `--remote` that file is not one transaction, and this is the one place a deployed apply can tear.** A deployed migration body can commit
 without the `INSERT` that records it; the rerun then re-applies a body that has already run and fails on whatever it created. The `INSERT` is a

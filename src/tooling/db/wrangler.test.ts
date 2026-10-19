@@ -4,7 +4,19 @@ import { CliError } from "../cli/errors";
 import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "./db.fixture";
 import type { FakeDbIo } from "./types";
 import type { Home } from "./types";
-import { executeFile, executeSql, exportSql, queryBatches, queryOne, queryRows, queryRowsIfTable, runWrangler, wranglerVersion } from "./wrangler";
+import {
+  describeForeignKeyWatch,
+  executeFile,
+  executeSql,
+  exportSql,
+  foreignKeyWatch,
+  queryBatches,
+  queryOne,
+  queryRows,
+  queryRowsIfTable,
+  runWrangler,
+  wranglerVersion,
+} from "./wrangler";
 
 function home(over: Partial<Home> = {}): Home {
   return {
@@ -351,6 +363,159 @@ describe("executeFile()", () => {
     });
     expect((await capture(() => executeFile(io, home(), "/tmp/dump.sql"))).message).toBe(
       "loading /tmp/dump.sql against local (app-db) failed:\nparse error at line 3",
+    );
+  });
+
+  describe("a local load refused at commit", () => {
+    const FILE = "/tmp/orphan.sql";
+    const SQL = "PRAGMA defer_foreign_keys = true;\nCREATE TABLE note (id INTEGER);\nINSERT INTO child (id, parent_id) VALUES (1, 99);\n";
+    const STATEMENTS = ["PRAGMA defer_foreign_keys = true", "CREATE TABLE note (id INTEGER)", "INSERT INTO child (id, parent_id) VALUES (1, 99)"];
+    const OPAQUE = "internal error; reference = unf7bq10q3mobq6tis9d5gbn";
+    const RESET =
+      "Durable Object was reset and rolled back to its last known good state because the application left the database in a state where constraints were violated: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)";
+    const MARKED_AFTER_INSERT = `D1_ERROR: bad JSON path: 'forge-fk 2 "child" "parent"': SQLITE_ERROR`;
+    const DIAGNOSIS =
+      "FOREIGN KEY constraint failed: child first held a row with no match in parent after `INSERT INTO child (id, parent_id) VALUES (1, 99)`";
+    const failure = (detail: string) => `loading ${FILE} against local (app-db) failed:\n${detail}`;
+
+    /** A local database refusing the load with `refusal`, then answering the watch call with `watch` — an error, or the rows of a watch that committed. */
+    function refusing(refusal: unknown, watch: Error | null): { io: FakeDbIo; sent: (readonly string[])[] } {
+      const io = fakeDbIo({ [FILE]: SQL });
+      const sent: (readonly string[])[] = [];
+      const d1 = io.d1.bind(io);
+      io.d1 = (target, sql) => {
+        sent.push(sql);
+        if (sent.length === 1) return Promise.reject(refusal);
+        return watch === null ? d1(target, sql) : Promise.reject(watch);
+      };
+      return { io, sent };
+    }
+
+    const diagnosed: { name: string; refusal: string }[] = [
+      { name: "the opaque internal error of workerd 1.20261019", refusal: OPAQUE },
+      { name: "the reset-and-rolled-back message of wrangler 4.136", refusal: RESET },
+    ];
+    for (const { name, refusal } of diagnosed) {
+      it(`replays the file under the foreign-key watch and names the violation ahead of ${name}`, async () => {
+        const { io, sent } = refusing(new Error(refusal), new Error(MARKED_AFTER_INSERT));
+
+        expect(await capture(() => executeFile(io, home(), FILE))).toMatchObject({
+          kind: "external",
+          message: failure(`${DIAGNOSIS}\n${refusal}`),
+        });
+        expect(sent).toEqual([[SQL], [foreignKeyWatch(STATEMENTS)]]);
+        expect(io.calls).toEqual([]);
+      });
+    }
+
+    const undiagnosed: { name: string; watch: Error | null }[] = [
+      { name: "the watch reaches its sentinel", watch: new Error("D1_ERROR: bad JSON path: 'forge-fk none': SQLITE_ERROR") },
+      { name: "the watch fails on an error it did not raise", watch: new Error("D1_ERROR: no such table: child: SQLITE_ERROR") },
+      { name: "the watch commits rather than failing", watch: null },
+    ];
+    for (const { name, watch } of undiagnosed) {
+      it(`keeps the original detail alone when ${name}`, async () => {
+        const { io, sent } = refusing(new Error(OPAQUE), watch);
+
+        expect(await capture(() => executeFile(io, home(), FILE))).toMatchObject({ kind: "external", message: failure(OPAQUE) });
+        expect(sent.length).toBe(2);
+      });
+    }
+
+    const unwatched: { name: string; refusal: string }[] = [
+      { name: "an internal error D1 prefixes, the busy shape", refusal: "D1_ERROR: internal error; reference = kd8n226n3710119qmodjhvl0" },
+      { name: "a statement error", refusal: "D1_ERROR: no such table: child: SQLITE_ERROR" },
+      { name: "an internal error with more after it on the line", refusal: "internal error; reference = abc while closing" },
+    ];
+    for (const { name, refusal } of unwatched) {
+      it(`runs no watch for ${name}, keeping the original detail`, async () => {
+        const { io, sent } = refusing(new Error(refusal), new Error(MARKED_AFTER_INSERT));
+
+        expect(await capture(() => executeFile(io, home(), FILE))).toMatchObject({ kind: "external", message: failure(refusal) });
+        expect(sent).toEqual([[SQL]]);
+      });
+    }
+
+    it("passes a refusal of the home's own configuration through unwrapped, running no watch", async () => {
+      const refusal = new CliError("invalid-args", "/app/wrangler.jsonc declares no d1_databases binding named DB");
+      const { io, sent } = refusing(refusal, new Error(MARKED_AFTER_INSERT));
+
+      expect(await capture(() => executeFile(io, home(), FILE))).toBe(refusal);
+      expect(sent).toEqual([[SQL]]);
+    });
+
+    it("runs no watch for a deployed load, whose refusal the CLI reports as it printed it", async () => {
+      const io = ioWith(() => true, { code: 1, stdout: "", stderr: `${OPAQUE}\n` });
+
+      expect(await capture(() => executeFile(io, REMOTE, FILE))).toMatchObject({
+        kind: "external",
+        message: `loading ${FILE} against remote (app-db) failed (exit 1):\n${OPAQUE}`,
+      });
+      expect(io.calls.length).toBe(1);
+      expect(io.d1Calls).toEqual([]);
+    });
+  });
+});
+
+const WATCH_MARKED = `D1_ERROR: bad JSON path: 'forge-fk 3 "child" "parent"': SQLITE_ERROR`;
+const WATCH_CLEAN = "D1_ERROR: bad JSON path: 'forge-fk none': SQLITE_ERROR";
+const PARENT_REBUILD = [
+  "PRAGMA defer_foreign_keys = true",
+  'CREATE TABLE "parent_new" (id INTEGER PRIMARY KEY, a TEXT)',
+  'INSERT INTO "parent_new" ("id", "a") SELECT "id", "a" FROM "parent"',
+  'DROP TABLE "parent"',
+  'ALTER TABLE "parent_new" RENAME TO "parent"',
+];
+
+describe("foreignKeyWatch()", () => {
+  it("follows each statement with a check that names its index, ending in the always-failing sentinel", () => {
+    expect(foreignKeyWatch(["PRAGMA defer_foreign_keys = true", 'DROP TABLE "parent"'])).toBe(
+      [
+        "PRAGMA defer_foreign_keys = true;",
+        `SELECT json_extract('{}', 'forge-fk 0 ' || json_quote("table") || ' ' || json_quote("parent")) FROM pragma_foreign_key_check LIMIT 1;`,
+        'DROP TABLE "parent";',
+        `SELECT json_extract('{}', 'forge-fk 1 ' || json_quote("table") || ' ' || json_quote("parent")) FROM pragma_foreign_key_check LIMIT 1;`,
+        "SELECT json_extract('{}', 'forge-fk none');",
+      ].join("\n"),
+    );
+  });
+
+  it("is the sentinel alone for no statements, so even an empty watch never commits", () => {
+    expect(foreignKeyWatch([])).toBe("SELECT json_extract('{}', 'forge-fk none');");
+  });
+});
+
+describe("describeForeignKeyWatch()", () => {
+  it("names the child, the parent and the statement after which the check first found a row", () => {
+    expect(describeForeignKeyWatch(WATCH_MARKED, PARENT_REBUILD.slice(0, 4))).toBe(
+      'FOREIGN KEY constraint failed: child first held a row with no match in parent after `DROP TABLE "parent"`',
+    );
+  });
+
+  it("undoes SQLite's doubled quote and the JSON escapes in a table name", () => {
+    const message = String.raw`D1_ERROR: bad JSON path: 'forge-fk 1 "we''ird \"kid\"" "parent"': SQLITE_ERROR`;
+
+    expect(describeForeignKeyWatch(message, PARENT_REBUILD)).toBe(
+      `FOREIGN KEY constraint failed: we'ird "kid" first held a row with no match in parent after \`CREATE TABLE "parent_new" (id INTEGER PRIMARY KEY, a TEXT)\``,
+    );
+  });
+
+  const unnamed: { name: string; message: string; statements: readonly string[] }[] = [
+    { name: "the sentinel, reached with no violation", message: WATCH_CLEAN, statements: PARENT_REBUILD },
+    { name: "an error the watch did not raise", message: "D1_ERROR: no such table: parent: SQLITE_ERROR", statements: PARENT_REBUILD },
+    { name: "a marker whose index is past the last statement", message: WATCH_MARKED, statements: PARENT_REBUILD.slice(0, 3) },
+  ];
+  for (const { name, message, statements } of unnamed) {
+    it(`answers null for ${name}`, () => {
+      expect(describeForeignKeyWatch(message, statements)).toBeNull();
+    });
+  }
+
+  it("quotes a long statement cut to its first 120 characters", () => {
+    const head = "A".repeat(120);
+
+    expect(describeForeignKeyWatch(WATCH_MARKED, ["", "", "", `${head}${"B".repeat(80)}`])).toBe(
+      `FOREIGN KEY constraint failed: child first held a row with no match in parent after \`${head}\``,
     );
   });
 });

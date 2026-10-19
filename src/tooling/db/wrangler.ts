@@ -147,10 +147,51 @@ export async function executeSql(io: DbIo, home: Home, statement: string): Promi
   if (run.code !== 0) throw failed(`execute \`${statement.slice(0, 120)}\``, home, run);
 }
 
+const COMMIT_REFUSAL = /FOREIGN KEY constraint failed|^internal error; reference = \w+$/m;
+const WATCH_END = "SELECT json_extract('{}', 'forge-fk none');";
+const WATCH_MARK = /forge-fk (\d+) ("(?:[^"\\]|\\.)*") ("(?:[^"\\]|\\.)*")/;
+
+/** The migration with a foreign-key check after each statement, ending in one that always fails so nothing commits. @internal */
+export function foreignKeyWatch(statements: readonly string[]): string {
+  const watch = (index: number) =>
+    `SELECT json_extract('{}', 'forge-fk ${index} ' || json_quote("table") || ' ' || json_quote("parent")) FROM pragma_foreign_key_check LIMIT 1;`;
+  return [...statements.flatMap((statement, index) => [`${statement};`, watch(index)]), WATCH_END].join("\n");
+}
+
+/** The line naming the first statement after which a row broke a foreign key, or `null` when the watch saw none. @internal */
+export function describeForeignKeyWatch(message: string, statements: readonly string[]): string | null {
+  const match = WATCH_MARK.exec(message);
+  if (match === null) return null;
+  const statement = statements[Number(match[1])];
+  if (statement === undefined) return null;
+  const child: unknown = JSON.parse((match[2] ?? "").replaceAll("''", "'"));
+  const parent: unknown = JSON.parse((match[3] ?? "").replaceAll("''", "'"));
+  return `FOREIGN KEY constraint failed: ${String(child)} first held a row with no match in ${String(parent)} after \`${statement.trim().slice(0, 120)}\``;
+}
+
+/** Replays a local load whose commit was refused under the watch, answering the line that names the violation. */
+async function watchForeignKeys(io: DbIo, home: Home, sql: string): Promise<string | null> {
+  const statements = await io.splitD1(home, sql);
+  try {
+    await io.d1(home, [foreignKeyWatch(statements)]);
+    return null;
+  } catch (error) {
+    return describeForeignKeyWatch(error instanceof Error ? error.message : String(error), statements);
+  }
+}
+
 /** Loads a `.sql` file, applying in one transaction, all or nothing. @internal */
 export async function executeFile(io: DbIo, home: Home, file: string): Promise<void> {
   if (!isRemotePlace(home.place)) {
-    await runD1(io, home, [io.readText(file)], `loading ${file}`);
+    const sql = io.readText(file);
+    try {
+      await io.d1(home, [sql]);
+    } catch (error) {
+      if (error instanceof CliError && error.kind === "invalid-args") throw error;
+      const detail = error instanceof Error ? error.message : String(error);
+      const cause = COMMIT_REFUSAL.test(detail) ? await watchForeignKeys(io, home, sql) : null;
+      throw failedInProcess(`loading ${file}`, home, cause === null ? error : `${cause}\n${detail}`);
+    }
     return;
   }
   const run = runWrangler(io, home, ["execute", home.database, ...wranglerPlaceFlags(home), "--yes", "--file", file]);

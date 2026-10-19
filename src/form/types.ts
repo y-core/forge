@@ -59,7 +59,7 @@ export interface TurnstileVerifyOptions {
   tokenField?: string;
   remoteIp?: string;
   timeoutMs?: number;
-  /** A development entry's token: with `turnstileTestingSecrets` it skips the hostname comparison, and only when `secretKey` is one of Cloudflare's published testing secrets. */
+  /** A development entry's token: with `turnstileTestingSecrets` it skips the hostname, action and cdata comparisons, and only when `secretKey` is one of Cloudflare's published testing secrets. */
   dev?: DevAllowance;
   /** Cancellation from the caller — an abort on it rejects rather than resolving to a `Result`. */
   signal?: AbortSignal;

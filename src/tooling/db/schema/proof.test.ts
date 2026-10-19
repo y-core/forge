@@ -7,6 +7,7 @@ import { PLAIN } from "../../term/color";
 import { fakeDbIo, schemaModelRows } from "../db.fixture";
 import { appHome } from "../home";
 import type { DbConfig, DbRunContext, FakeDbIo } from "../types";
+import { foreignKeyWatch } from "../wrangler";
 import { assembleSchemaModel } from "./introspect";
 import { proveComposed, seedRows } from "./proof";
 import type { DataDependentStep, SchemaColumn, SchemaForeignKey, SchemaInputs, SchemaModel, SchemaRename, SchemaTable } from "./types";
@@ -282,6 +283,19 @@ const SEED_FILE = `${BASELINE}/seed.sql`;
 const PROOF_FILE = `${BASELINE}/proof.sql`;
 const PROOF_SQL = 'CREATE INDEX "parent_a" ON "parent" ("a");\n';
 
+const WATCH_MARKED = `D1_ERROR: bad JSON path: 'forge-fk 3 "child" "parent"': SQLITE_ERROR`;
+const WATCH_CLEAN = "D1_ERROR: bad JSON path: 'forge-fk none': SQLITE_ERROR";
+const DEFERRED_FK_RESET =
+  "Durable Object was reset and rolled back to its last known good state because the application left the database in a state where constraints were violated: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)";
+const DEFERRED_FK_OPAQUE = "internal error; reference = unf7bq10q3mobq6tis9d5gbn";
+const PARENT_REBUILD = [
+  "PRAGMA defer_foreign_keys = true",
+  'CREATE TABLE "parent_new" (id INTEGER PRIMARY KEY, a TEXT)',
+  'INSERT INTO "parent_new" ("id", "a") SELECT "id", "a" FROM "parent"',
+  'DROP TABLE "parent"',
+  'ALTER TABLE "parent_new" RENAME TO "parent"',
+];
+
 function dbConfig(): DbConfig {
   return {
     root: ROOT,
@@ -405,6 +419,7 @@ function proving(sides: {
   stored?: Stored;
   seedFails?: (statement: string) => Error | null;
   proofFails?: Error;
+  watchFails?: Error;
 }): Fake {
   const io = fakeDbIo();
   const config = dbConfig();
@@ -419,11 +434,16 @@ function proving(sides: {
     return close(home);
   };
   let current: string | null = null;
+  let watching: string | null = null;
   const d1 = io.d1.bind(io);
   io.d1 = async (home, sql) => {
     current = sql.length === 1 ? ([...io.files].find(([, text]) => text === sql[0])?.[0] ?? null) : null;
-    const survival = current === null && sql.every((statement) => SURVIVAL_READ.test(statement));
-    timeline.push(current !== null ? basename(current) : survival ? "survival read" : "query");
+    watching = null;
+    for (const [path, text] of io.files) {
+      if (sql.length === 1 && sql[0] === foreignKeyWatch(await io.splitD1(home, text))) watching = path;
+    }
+    const survival = current === null && watching === null && sql.every((statement) => SURVIVAL_READ.test(statement));
+    timeline.push(current !== null ? basename(current) : watching !== null ? `watch ${basename(watching)}` : survival ? "survival read" : "query");
     if (survival) reads[state].push(...sql);
     const answer = await d1(home, sql);
     if (current === SEED_FILE) state = "seeded";
@@ -442,6 +462,7 @@ function proving(sides: {
         if (sides.proofFails !== undefined) throw sides.proofFails;
         return [];
       }
+      if (watching !== null) throw sides.watchFails ?? new Error(WATCH_CLEAN);
       if (!statement.startsWith("SELECT")) return [];
       const introspection = schemaModelRows(statement, sides.after);
       if (introspection.length > 0 || statement.includes("sqlite_master")) return introspection;
@@ -504,7 +525,7 @@ describe("proveComposed()", () => {
   });
 
   describe("a seed the baseline refuses with a row constraint", () => {
-    const cases: { name: string; error: Error; warning: string }[] = [
+    const cases: { name: string; error: Error; warning: string; watched?: true }[] = [
       {
         name: "a CHECK, owned by the table whose DDL holds its expression",
         error: constraintError("CHECK constraint failed: note <> 'forge-seed'", "SQLITE_CONSTRAINT_CHECK"),
@@ -524,6 +545,7 @@ describe("proveComposed()", () => {
         name: "a bare FOREIGN KEY, which names no table",
         error: constraintError("FOREIGN KEY constraint failed", "SQLITE_CONSTRAINT_FOREIGNKEY"),
         warning: "warning: the proof ran without rows — seeding the baseline failed: FOREIGN KEY",
+        watched: true,
       },
       {
         name: "a trigger's RAISE, which says no 'constraint failed' and is owned by the trigger's table",
@@ -543,16 +565,45 @@ describe("proveComposed()", () => {
       ],
     };
 
-    for (const { name, error, warning } of cases) {
+    for (const { name, error, warning, watched } of cases) {
       it(`falls back to an empty replay and warns once: ${name}`, async () => {
         const { run, timeline } = proving({ after: FAMILY, seedFails: (statement) => (statement.startsWith("INSERT") ? error : null) });
 
         const outcome = await proveComposed(run, INPUTS, proof(guarded, family));
 
         expect(outcome).toEqual({ model: family, warnings: [warning] });
-        expect(timeline).toEqual(["replay", "seed.sql", "replay", "proof.sql", "query"]);
+        expect(timeline).toEqual(["replay", "seed.sql", ...(watched ? ["watch seed.sql"] : []), "replay", "proof.sql", "query"]);
       });
     }
+  });
+
+  describe("a seed refused at commit on a deferred foreign key", () => {
+    const seedFails = (statement: string) => (statement.startsWith("INSERT") ? new Error(DEFERRED_FK_OPAQUE) : null);
+
+    for (const [shape, refusal] of [
+      ["opaque", DEFERRED_FK_OPAQUE],
+      ["reset", DEFERRED_FK_RESET],
+    ] as const) {
+      it(`falls back to an empty replay and warns once, naming the table the watch found the orphan in (${shape} refusal)`, async () => {
+        const watchFails = new Error(`D1_ERROR: bad JSON path: 'forge-fk 2 "audit" "parent"': SQLITE_ERROR`);
+        const refused = (statement: string) => (statement.startsWith("INSERT") ? new Error(refusal) : null);
+        const { run, timeline } = proving({ after: FAMILY, seedFails: refused, watchFails });
+
+        const outcome = await proveComposed(run, INPUTS, proof(family, family));
+
+        expect(outcome).toEqual({ model: family, warnings: ["warning: the proof ran without rows — seeding audit failed: FOREIGN KEY"] });
+        expect(timeline).toEqual(["replay", "seed.sql", "watch seed.sql", "replay", "proof.sql", "query"]);
+      });
+    }
+
+    it("rethrows the opaque refusal, applying nothing, when the watch reaches its sentinel", async () => {
+      const { run, timeline } = proving({ after: FAMILY, seedFails });
+
+      await expect(proveComposed(run, INPUTS, proof(family, family))).rejects.toThrow(
+        new CliError("external", `loading ${SEED_FILE} against scratch:compose-baseline (app-db-compose-baseline) failed:\n${DEFERRED_FK_OPAQUE}`),
+      );
+      expect(timeline).toEqual(["replay", "seed.sql", "watch seed.sql"]);
+    });
   });
 
   describe("a seed that fails other than on a row constraint", () => {
@@ -583,6 +634,51 @@ describe("proveComposed()", () => {
           `loading ${PROOF_FILE} against scratch:compose-baseline (app-db-compose-baseline) failed:\nD1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT`,
       ),
     );
+  });
+
+  describe("a commit refused on a deferred foreign key", () => {
+    const REFUSED = "the composed migration does not apply to the baseline — this is a forge bug, and the file was not written:";
+    const loading = (detail: string) => `loading ${PROOF_FILE} against scratch:compose-baseline (app-db-compose-baseline) failed:\n${detail}`;
+    const DIAGNOSIS = 'FOREIGN KEY constraint failed: child first held a row with no match in parent after `DROP TABLE "parent"`';
+    const rebuild = () => ({ ...proof(family, family), sql: `${PARENT_REBUILD.join(";\n")};\n` });
+
+    const named: { name: string; detail: string }[] = [
+      { name: "the opaque internal error of workerd 1.20261019", detail: DEFERRED_FK_OPAQUE },
+      { name: "the reset-and-rolled-back message of wrangler 4.136", detail: DEFERRED_FK_RESET },
+    ];
+    for (const { name, detail } of named) {
+      it(`replays the proof under the watch and names the violation ahead of ${name}`, async () => {
+        const { run, io, timeline } = proving({ after: FAMILY, proofFails: new Error(detail), watchFails: new Error(WATCH_MARKED) });
+
+        await expect(proveComposed(run, INPUTS, rebuild())).rejects.toThrow(
+          new CliError("invalid-args", `${REFUSED}\n${loading(`${DIAGNOSIS}\n${detail}`)}`),
+        );
+        expect(timeline).toEqual(["replay", "seed.sql", "survival read", "proof.sql", "watch proof.sql"]);
+        expect([...io.files.keys()].filter((path) => path.endsWith(".sql"))).toEqual([SEED_FILE, PROOF_FILE]);
+      });
+    }
+
+    it("keeps the original detail alone when the watch reaches its sentinel", async () => {
+      const { run, timeline } = proving({ after: FAMILY, proofFails: new Error(DEFERRED_FK_OPAQUE) });
+
+      await expect(proveComposed(run, INPUTS, rebuild())).rejects.toThrow(
+        new CliError("invalid-args", `${REFUSED}\n${loading(DEFERRED_FK_OPAQUE)}`),
+      );
+      expect(timeline).toEqual(["replay", "seed.sql", "survival read", "proof.sql", "watch proof.sql"]);
+    });
+
+    const unwatched: { name: string; detail: string }[] = [
+      { name: "a statement error", detail: "D1_ERROR: no such table: parent: SQLITE_ERROR" },
+      { name: "an internal error D1 prefixes, the busy shape", detail: "D1_ERROR: internal error; reference = abc" },
+    ];
+    for (const { name, detail } of unwatched) {
+      it(`runs no watch for ${name}, keeping the original detail`, async () => {
+        const { run, timeline } = proving({ after: FAMILY, proofFails: new Error(detail), watchFails: new Error(WATCH_MARKED) });
+
+        await expect(proveComposed(run, INPUTS, rebuild())).rejects.toThrow(new CliError("invalid-args", `${REFUSED}\n${loading(detail)}`));
+        expect(timeline).toEqual(["replay", "seed.sql", "survival read", "proof.sql"]);
+      });
+    }
   });
 
   it("refuses a migration that does not produce the declared schema", async () => {

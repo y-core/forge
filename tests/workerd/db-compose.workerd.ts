@@ -340,13 +340,30 @@ test.describe("the proof over one seeded row per table", () => {
 
         expect((await forge.proveComposed(run, inputs, proof)).warnings).toEqual([]);
         expect(await failure(forge.proveComposed(run, inputs, { ...proof, sql: old }))).toMatch(
-          /^the composed migration does not apply to the baseline — this is a forge bug, and the file was not written:\n[^]*FOREIGN KEY constraint failed/,
+          /^the composed migration does not apply to the baseline — this is a forge bug, and the file was not written:\nloading [^\n]*\/proof\.sql against scratch:compose-baseline \([^)]*\) failed:\nFOREIGN KEY constraint failed: child first held a row with no match in parent after `DROP TABLE "parent"`\n/,
         );
         const unseeded = { ...proof, sql: old, baseline: { tables: [], indexes: [], triggers: [], views: [] } };
         expect((await forge.proveComposed(run, inputs, unseeded)).warnings).toEqual([]);
       });
     });
   }
+
+  const TAGS_BEFORE = 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY);\n';
+  const TAGS_AFTER = 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY, "label" TEXT);\n';
+  const ORPHANING_TRIGGER =
+    PARENT_CHILD +
+    'CREATE TABLE "orders" ("id" INTEGER PRIMARY KEY, "note" TEXT);\n' +
+    'CREATE TRIGGER "orders_orphan" AFTER INSERT ON "orders" BEGIN INSERT INTO "child" ("id", "parent_id") VALUES (999, 999); END;\n';
+
+  test("composes over a baseline whose trigger orphans a child row on the seed's insert, warning that the proof ran without rows", async () => {
+    test.setTimeout(120_000);
+    await proving(ORPHANING_TRIGGER + TAGS_BEFORE, ORPHANING_TRIGGER + TAGS_AFTER, async (run) => {
+      const outcome = await forge.composeMigration(run, { name: "change", dryRun: false, renames: [], cache: true });
+
+      expect(outcome.warnings).toEqual(["warning: the proof ran without rows — seeding child failed: FOREIGN KEY"]);
+      expect(existsSync(outcome.path ?? "")).toBe(true);
+    });
+  });
 
   const BEFORE_VALID =
     'CREATE TABLE "parent" ("id" INTEGER PRIMARY KEY, "a" INTEGER, "note" TEXT);\n' +
@@ -393,8 +410,6 @@ test.describe("the proof over one seeded row per table", () => {
     });
   });
 
-  const TAGS_BEFORE = 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY);\n';
-  const TAGS_AFTER = 'CREATE TABLE "tags" ("id" INTEGER PRIMARY KEY, "label" TEXT);\n';
   const triggered = [
     {
       name: "an AFTER INSERT trigger on orders inserts into audit, which is seeded first",
