@@ -18,7 +18,20 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **A resend refused by the Turnstile challenge shows "Verification failed. Please try again."**, the copy the other auth forms give the same
+  refusal, rather than the submission copy that told the visitor to fix input they typed correctly. A resend whose body cannot be read keeps the
+  submission copy.
+- **Erratum for 0.5.11.** Its entry said the `expectedHostname` guard still runs under the testing-secret allowance, which reads as if the
+  siteverify `hostname` were still compared. It is not: under the allowance `verifyTurnstile` skips the hostname, action and cdata comparisons,
+  as 0.5.10 already did for the hostname. The `success` check and the fail-closed refusal of an empty `expectedHostname` still run. The 0.5.11
+  entry also left out these changes:
+  - auth forms refused by the Turnstile challenge show "Verification failed. Please try again." instead of the field's own copy, and the verify
+    page shows its recovery-code copy only for a submission it could not read;
+  - `defineApproval` refuses a wrong code with "Approval failed. Please try again." instead of "That is not a valid administrator code.";
+  - a local `forge db` load whose commit is refused replays the file under a foreign-key watch and names the first statement that left a row
+    with no parent.
 
 ---
 

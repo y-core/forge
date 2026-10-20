@@ -2479,13 +2479,7 @@ describe("the Turnstile guard on the anonymous forms", () => {
 
       expect({ admitted, refused }).toEqual({
         admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["request:grace@example.com"], refusal: "", resentNotice: false },
-        refused: {
-          status: 422,
-          location: null,
-          calls: [],
-          refusal: "We could not read that. Please check the form and try again.",
-          resentNotice: false,
-        },
+        refused: { status: 422, location: null, calls: [], refusal: "Verification failed. Please try again.", resentNotice: false },
       });
     });
 
@@ -2507,9 +2501,11 @@ describe("the Turnstile guard on the anonymous forms", () => {
         headers: { "content-type": "multipart/form-data; boundary=x" },
       });
 
-      expect({ status: res.status, location: res.headers.get("location"), warnings, calls, sent }).toEqual({
+      const refusal = textOf(await res.text(), "div", 'data-slot="alert-description"');
+      expect({ status: res.status, location: res.headers.get("location"), refusal, warnings, calls, sent }).toEqual({
         status: 422,
         location: null,
+        refusal: "We could not read that. Please check the form and try again.",
         warnings: [["auth.resend.unreadable", undefined]],
         calls: [],
         sent: [],
@@ -2534,13 +2530,7 @@ describe("the Turnstile guard on the anonymous forms", () => {
       const admittedRes = await app.request("/auth/verify/resend", formBody({ "cf-turnstile-response": "solved" }));
 
       expect({ refused, admitted: { status: admittedRes.status, location: admittedRes.headers.get("location"), calls } }).toEqual({
-        refused: {
-          status: 422,
-          location: null,
-          calls: [],
-          refusal: "We could not read that. Please check the form and try again.",
-          resentNotice: false,
-        },
+        refused: { status: 422, location: null, calls: [], refusal: "Verification failed. Please try again.", resentNotice: false },
         admitted: { status: 303, location: "/auth/verify?resent=1000", calls: ["requestStepUp"] },
       });
     });

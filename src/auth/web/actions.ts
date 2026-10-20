@@ -274,19 +274,19 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
   };
 }
 
-async function admitsResend<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<boolean> {
+async function resendRefusal<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Promise<string | null> {
   const check = await authTurnstileCheck(c, options, "resend");
-  if (check === undefined) return true;
+  if (check === undefined) return null;
   let form: ReadonlyFormData;
   try {
     form = await parseFormData(c);
   } catch (error) {
     if (isFormCapConflict(error)) throw error;
     requestLog.getOptional(c)?.warn("auth.resend.unreadable");
-    return false;
+    return FIELD_REFUSAL_DEFAULT;
   }
   const verification = await screenTurnstile(c, form, check.secretKey, check.verify);
-  return verification.ok;
+  return verification.ok ? null : CHALLENGE_REFUSAL;
 }
 
 /** The POSTs of the verification page: presenting the code, and asking for another. @public */
@@ -360,14 +360,16 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       if (detour !== null) return detour;
 
       if (demand.identity !== null) {
-        if (!(await admitsResend(c, options))) return loadVerify(c, options, { error: FIELD_REFUSAL_DEFAULT, status: 422 });
+        const refusal = await resendRefusal(c, options);
+        if (refusal !== null) return loadVerify(c, options, { error: refusal, status: 422 });
         await services.signin.requestStepUp(demand.identity.userId, demand.factor, at);
         return createAuthRedirect(c, resent);
       }
 
       const pending = resolveAuthSigninPending(session);
       if (pending === null) return createAuthRedirect(c, options.paths.auth.signin());
-      if (!(await admitsResend(c, options))) return loadVerify(c, options, { email: pending, error: FIELD_REFUSAL_DEFAULT, status: 422 });
+      const refusal = await resendRefusal(c, options);
+      if (refusal !== null) return loadVerify(c, options, { email: pending, error: refusal, status: 422 });
       // Synchronous by design: `request` reads nothing about the address before returning, so a
       // registered one and an unknown one differ in neither shape nor time. There is nothing to await.
       services.signin.request(pending, at);

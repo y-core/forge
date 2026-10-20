@@ -344,10 +344,11 @@ binds one action per flow, and the token is read from `TURNSTILE_FIELD_DEFAULT`.
 schema's first declared field, the shape every guard refusal takes; the residual oracle that leaves is [`INPUT_VALIDATION.md`][iv-4b] §4b's. The
 copy is "Verification failed. Please try again." rather than that field's own, because a visitor whose challenge fails has typed nothing wrong, and
 telling them to fix the field sends them to correct what is already correct. So the words tell a refused challenge from a malformed field, which
-that shape alone is built not to do; the status and the named field still match. A resend refused by the challenge, or sent with a body that cannot
-be read, answers `422` with the verify page re-rendered and issues no code. Only the outcomes that depend on the account share the `resent`
-redirect, because a challenge's result depends on the client and tells nothing about the address. The check runs before the flow is called, so a
-refusal spends no verification attempt and starts no cooldown. The reason is logged at `warn` and is sent nowhere else.
+that shape alone is built not to do; the status and the named field still match. A resend refused by the challenge answers `422` with the verify
+page re-rendered under the same copy, a resend whose body cannot be read answers it under the submission copy, and neither issues a code. Only
+the outcomes that depend on the account share the `resent` redirect, because a challenge's result depends on the client and tells nothing about the
+address. The check runs before the flow is called, so a refusal spends no verification attempt and starts no cooldown. The reason is logged at
+`warn` and is sent nowhere else.
 
 **The covered forms always submit over htmx, whether or not `turnstile` is set.** The widget runs with `challenge="submit"`, which holds the press
 at an htmx request and needs an htmx form to hold it on ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c); making the submission depend on the option would
