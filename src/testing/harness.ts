@@ -1,8 +1,11 @@
 import { rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import process from "node:process";
 
 import { createTestHarness, experimental_readRawConfig } from "wrangler";
 import type { TestHarness, TestHarnessOptions } from "wrangler";
+
+import { appendForgeDev } from "../tooling/cf/dev/conditions";
 
 /** The Worker a test serves, and what it is told that its wrangler config does not say. @public */
 export interface ServeWorkerOptions {
@@ -10,6 +13,8 @@ export interface ServeWorkerOptions {
   config: string;
   /** A test-only module served in place of the config's `main`, under the same bindings. */
   entry?: string;
+  /** Serve the Worker as `forge cf dev` builds it, every `#relax/*` import resolved to its development module and armed. */
+  dev?: boolean;
   /** `localhost` for a WebAuthn journey, which refuses an IP address as an RP ID; `127.0.0.1` where unset. */
   siteHost?: "127.0.0.1" | "localhost";
   secrets?: Record<string, string>;
@@ -23,14 +28,42 @@ export interface ServedWorker {
   origin: string;
 }
 
-type RawConfig = Record<string, unknown> & { dev?: Record<string, unknown> };
+type RawConfig = Record<string, unknown> & { dev?: Record<string, unknown>; define?: Record<string, string> };
 
-/** `raw` as the harness serves it: `main` replaced by `entry` where one is given, and over plain http. @internal */
-export function derivedConfig(raw: RawConfig, entry?: string): RawConfig {
+/** `raw` as the harness serves it: `main` replaced by `entry` where one is given, `__FORGE_DEV__` defined for `armed`, and over plain http. @internal */
+export function derivedConfig(raw: RawConfig, entry?: string, armed = false): RawConfig {
   // A test reaches the origin with a plain `fetch`, which refuses the self-signed certificate wrangler serves https on.
   const { local_protocol: _protocol, ...dev } = raw.dev ?? {};
   const { dev: _dev, ...rest } = raw;
-  return { ...rest, ...(entry === undefined ? {} : { main: resolve(entry) }), ...(Object.keys(dev).length > 0 ? { dev } : {}) };
+  return {
+    ...rest,
+    ...(entry === undefined ? {} : { main: resolve(entry) }),
+    ...(armed ? { define: { ...raw.define, __FORGE_DEV__: "true" } } : {}),
+    ...(Object.keys(dev).length > 0 ? { dev } : {}),
+  };
+}
+
+/** `start` run with `forge-dev` among `WRANGLER_BUILD_CONDITIONS`, the variable put back as it was however `start` ends. @internal */
+export async function withDevConditions<T>(start: () => Promise<T>): Promise<T> {
+  const previous = process.env.WRANGLER_BUILD_CONDITIONS;
+  process.env.WRANGLER_BUILD_CONDITIONS = appendForgeDev(previous);
+  try {
+    return await start();
+  } finally {
+    if (previous === undefined) delete process.env.WRANGLER_BUILD_CONDITIONS;
+    else process.env.WRANGLER_BUILD_CONDITIONS = previous;
+  }
+}
+
+// Wrangler reads the build conditions from the shared process env on every bundle, so a strict start overlapping a dev one would
+// bundle armed; starts therefore run one at a time.
+let startQueue: Promise<unknown> = Promise.resolve();
+
+/** `start` run once every start queued before it has settled. @internal */
+export function queueStart<T>(start: () => Promise<T>): Promise<T> {
+  const run = startQueue.then(start, start);
+  startQueue = run.catch(() => undefined);
+  return run;
 }
 
 /** The harness input serving the config file at `configPath`, the caller's vars and secrets bound over its own. @internal */
@@ -52,7 +85,7 @@ export async function serveWorker(options: ServeWorkerOptions): Promise<ServedWo
   // because only a path input takes vars and secrets that bind over `.dev.vars`.
   const derived = join(dirname(resolve(options.config)), `.wrangler-harness-${crypto.randomUUID()}.json`);
   const raw = experimental_readRawConfig({ config: options.config }).rawConfig as RawConfig;
-  writeFileSync(derived, JSON.stringify(derivedConfig(raw, options.entry)));
+  writeFileSync(derived, JSON.stringify(derivedConfig(raw, options.entry, options.dev === true)));
   const input = harnessInput(options, derived);
   const harness = createTestHarness(input);
   const close = harness.close.bind(harness);
@@ -63,11 +96,14 @@ export async function serveWorker(options: ServeWorkerOptions): Promise<ServedWo
       rmSync(derived, { force: true });
     }
   };
-  try {
+  const start = async (): Promise<string> => {
     const { url } = await harness.listen();
     url.hostname = options.siteHost ?? "127.0.0.1";
     await harness.update(withSiteOrigin(input, url.origin));
-    return { harness, origin: url.origin };
+    return url.origin;
+  };
+  try {
+    return { harness, origin: await queueStart(options.dev === true ? () => withDevConditions(start) : start) };
   } catch (error) {
     await harness.close();
     throw error;

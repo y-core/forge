@@ -80,6 +80,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "storage/db": "value",
     "storage/kv": "type",
     "storage/r2": "value",
+    "tooling/cf": "value",
     "tooling/db": "value",
   },
   "testing/coverage": { "ui/chrome": "value", "ui/controls": "value", "ui/core": "value", "ui/server": "value" },

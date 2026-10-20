@@ -212,12 +212,12 @@ resolver throws rather than returning a `Result` ([`ERROR_HANDLING.md`][eh-5e] �
 
 ### 5b. `required: false` — Non-Security Features Only
 
-Some middleware accepts a `required: false` option for graceful degradation. **It is scoped to non-security hardening only** — rate limiting, where
-a missing binding should not hard-fail a deployment.
+A storage resolver accepts a `required: false` option for graceful degradation. **It is scoped to non-security features only** — a log store, say,
+whose absence drops one log channel rather than any check.
 
 **Never acceptable with `required: false`:** CSRF verification, authentication middleware, origin and Referer checks, signature validation.
 
-The asymmetry is deliberate: bypassed rate limiting is an availability concern, bypassed CSRF is an integrity breach. A single option name spanning
+The asymmetry is deliberate: a dropped log channel is an observability gap, bypassed CSRF is an integrity breach. A single option name spanning
 both would make the difference invisible at the call site, which is exactly where it needs to be visible.
 
 ### 5c. Recording a Fail-Open Exception

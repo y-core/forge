@@ -325,9 +325,9 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 
 | Pattern | Why it is correct |
 | --- | --- |
-| Graceful degradation on a rate-limit binding | The one sanctioned use of the option — [`BOUNDARIES.md`][boundaries-5b] §5b, [`WORKERS_PLATFORM.md`][wp-3b] §3b |
+| A 503 from a rate-limited route when the limiter binding is absent outside `forge cf dev` | The guard fails closed by design — [`WORKERS_PLATFORM.md`][wp-3b] §3b |
 | A minimum test environment missing optional bindings | Deliberate — it is what proves degradation — [`TESTING.md`][testing-2d] §2d |
-| A separate dev entry layering a weaker policy | The dev/production split is structural, not accidental — [`APP_ARCHITECTURE.md`][aa-1c] §1c |
+| A `*.dev.ts` target behind an `imports` alias, layering a weaker policy | The dev/production split is structural, not accidental — [`APP_ARCHITECTURE.md`][aa-1c] §1c |
 | An intentionally trusted raw HTML value for an inline script | Required where the script must run before paint; it carries a nonce and no interpolation |
 | `export const X = …` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope cache in a browser-only module | Browser-only modules are exempt — [`CODE_RULES.md`][cr-1e] §1e |
@@ -342,7 +342,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 documented gap, a fail-open surface ratified under [`BOUNDARIES.md`][boundaries-5d] §5d — is recorded there with the same two columns, and a
 reviewer reads both.
 
-[aa-1c]: ./APP_ARCHITECTURE.md#1c-the-dev-and-production-entry-split
+[aa-1c]: ./APP_ARCHITECTURE.md#1c-development-relaxations-are-modules-the-build-selects
 [aa-2c]: ./APP_ARCHITECTURE.md#2c-no-layer-skipping
 [aa-2d]: ./APP_ARCHITECTURE.md#2d-views-are-pure
 [aa-3a]: ./APP_ARCHITECTURE.md#3a-typed-config-access
@@ -356,7 +356,6 @@ reviewer reads both.
 [boundaries-3c]: ./BOUNDARIES.md#3c-trust-boundaries-on-inbound-headers
 [boundaries-4]: ./BOUNDARIES.md#4-no-pii-in-logs
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
-[boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
 [boundaries-5c]: ./BOUNDARIES.md#5c-no-silent-error-swallowing
 [boundaries-5d]: ./BOUNDARIES.md#5d-recording-a-fail-open-exception
 [boundaries-6a]: ./BOUNDARIES.md#6a-a-per-visitor-response-is-never-public
@@ -381,4 +380,4 @@ reviewer reads both.
 [testing-5b]: ./TESTING.md#5b-one-test-per-rejection-path
 [testing-6]: ./TESTING.md#6-the-verification-gate
 [wp-2c]: ./WORKERS_PLATFORM.md#2c-cover-every-started-promise
-[wp-3b]: ./WORKERS_PLATFORM.md#3b-graceful-degradation-is-scoped-to-this
+[wp-3b]: ./WORKERS_PLATFORM.md#3b-an-absent-limiter-fails-closed

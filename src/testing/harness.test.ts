@@ -1,6 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import process from "node:process";
 
-import { derivedConfig, harnessInput, withSiteOrigin } from "./harness";
+import { derivedConfig, harnessInput, queueStart, withDevConditions, withSiteOrigin } from "./harness";
 
 const RAW = {
   name: "app",
@@ -26,6 +27,113 @@ describe("derivedConfig", () => {
 
   it("drops a dev block that held only local_protocol", () => {
     expect("dev" in derivedConfig({ ...RAW, dev: { local_protocol: "https" } })).toBe(false);
+  });
+
+  it("defines __FORGE_DEV__ as true for an armed Worker, as `forge cf dev` does", () => {
+    expect(derivedConfig(RAW, undefined, true)).toEqual({ ...RAW, define: { __FORGE_DEV__: "true" } });
+  });
+
+  it("adds no define for a strict Worker", () => {
+    expect("define" in derivedConfig(RAW, "/app/tests/entry.ts")).toBe(false);
+  });
+
+  it("keeps the config's own defines beside __FORGE_DEV__, and overrides a __FORGE_DEV__ it states", () => {
+    expect(derivedConfig({ ...RAW, define: { VERSION: '"1"', __FORGE_DEV__: "false" } }, undefined, true).define).toEqual({
+      VERSION: '"1"',
+      __FORGE_DEV__: "true",
+    });
+  });
+});
+
+describe("withDevConditions", () => {
+  let saved: string | undefined;
+  beforeEach(() => {
+    saved = process.env.WRANGLER_BUILD_CONDITIONS;
+  });
+  afterEach(() => {
+    if (saved === undefined) delete process.env.WRANGLER_BUILD_CONDITIONS;
+    else process.env.WRANGLER_BUILD_CONDITIONS = saved;
+  });
+
+  const seen = async (): Promise<string | undefined> => process.env.WRANGLER_BUILD_CONDITIONS;
+
+  it("starts under wrangler's default conditions plus forge-dev, and leaves the variable unset after, when none was set", async () => {
+    delete process.env.WRANGLER_BUILD_CONDITIONS;
+
+    expect(await withDevConditions(seen)).toBe("workerd,worker,browser,forge-dev");
+    expect("WRANGLER_BUILD_CONDITIONS" in process.env).toBe(false);
+  });
+
+  it("starts under the caller's conditions plus forge-dev, and puts the caller's value back after", async () => {
+    process.env.WRANGLER_BUILD_CONDITIONS = "workerd,custom";
+
+    expect(await withDevConditions(seen)).toBe("workerd,custom,forge-dev");
+    expect(process.env.WRANGLER_BUILD_CONDITIONS).toBe("workerd,custom");
+  });
+
+  it("puts the caller's value back when the start fails, and passes the failure on", async () => {
+    process.env.WRANGLER_BUILD_CONDITIONS = "workerd,custom";
+
+    await expect(withDevConditions(() => Promise.reject(new Error("no start")))).rejects.toThrow("no start");
+    expect(process.env.WRANGLER_BUILD_CONDITIONS).toBe("workerd,custom");
+  });
+
+  it("leaves the variable unset when the start fails and none was set", async () => {
+    delete process.env.WRANGLER_BUILD_CONDITIONS;
+
+    await expect(withDevConditions(() => Promise.reject(new Error("no start")))).rejects.toThrow("no start");
+    expect("WRANGLER_BUILD_CONDITIONS" in process.env).toBe(false);
+  });
+});
+
+describe("queueStart", () => {
+  it("runs a start only once the one queued before it has settled", async () => {
+    const order: string[] = [];
+    let release = (): void => {};
+    const first = queueStart(async () => {
+      order.push("first begins");
+      await new Promise<void>((resolve) => (release = resolve));
+      order.push("first ends");
+    });
+    const second = queueStart(async () => {
+      order.push("second begins");
+    });
+    await Promise.resolve();
+    release();
+    await Promise.all([first, second]);
+
+    expect(order).toEqual(["first begins", "first ends", "second begins"]);
+  });
+
+  it("lets a plain start behind two overlapping dev starts see neither's conditions, and leaves the variable as it found it", async () => {
+    const saved = process.env.WRANGLER_BUILD_CONDITIONS;
+    delete process.env.WRANGLER_BUILD_CONDITIONS;
+    try {
+      let release = (): void => {};
+      const slow = (): Promise<string | undefined> => new Promise((resolve) => (release = () => resolve(process.env.WRANGLER_BUILD_CONDITIONS)));
+      const first = queueStart(() => withDevConditions(slow));
+      const second = queueStart(() => withDevConditions(async () => process.env.WRANGLER_BUILD_CONDITIONS));
+      const plain = queueStart(async () => process.env.WRANGLER_BUILD_CONDITIONS);
+      await Promise.resolve();
+      release();
+
+      expect([await first, await second, await plain, process.env.WRANGLER_BUILD_CONDITIONS]).toEqual([
+        "workerd,worker,browser,forge-dev",
+        "workerd,worker,browser,forge-dev",
+        undefined,
+        undefined,
+      ]);
+    } finally {
+      if (saved !== undefined) process.env.WRANGLER_BUILD_CONDITIONS = saved;
+    }
+  });
+
+  it("runs the next start after one that failed, and hands each caller its own outcome", async () => {
+    const failed = queueStart(() => Promise.reject(new Error("no start")));
+    const next = queueStart(async () => "started");
+
+    await expect(failed).rejects.toThrow("no start");
+    expect(await next).toBe("started");
   });
 });
 

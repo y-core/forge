@@ -27,7 +27,7 @@ description: "The V8 isolate model and what module scope may hold, post-response
 - §2d Limits: CPU time, and when to reach for a queue
 - §3 Rate Limiting: the binding, degradation, and key selection
 - §3a The Rate Limit Binding: configuration and the response it produces
-- §3b Graceful Degradation Is Scoped to This: why the option is safe here alone
+- §3b An Absent Limiter Fails Closed: the 503 everywhere but `forge cf dev`
 - §3c Key Selection: client IP by default, identity after auth
 - §4 Deploy Safety: secrets, parity, and the pre-deploy gate
 - §4a Secrets Are Provisioned, Never Committed: the CLI path
@@ -139,14 +139,15 @@ Rate limiting is configured as a platform binding with an explicit limit and per
 exceeded. **The limit and period live in the deployment config, not in code** — they are an operational dial, and changing one should not be a code
 review.
 
-### 3b. Graceful Degradation Is Scoped to This
+### 3b. An Absent Limiter Fails Closed
 
-A rate-limit guard is registered with graceful degradation enabled: when the binding is absent — in tests, or in a local run without it — the guard
-is skipped rather than throwing.
+**When the rate-limit binding is absent, the guard answers `503`** — in tests, under plain `wrangler dev` and in production alike. The one
+exception is a build armed by `forge cf dev`, where the `#relax/rate-limit` development module skips the guard and logs a warning, so a local run
+without the binding still serves.
 
-**This is the one place that option is correct, and it is not a precedent.** Bypassed rate limiting is an availability concern; bypassed CSRF,
-origin checking, or authentication is an integrity breach. [`BOUNDARIES.md`][boundaries-5b] §5b owns the asymmetry, and [`CODE_REVIEW.md`][cr-6] §6
-records that this specific usage is not a finding.
+**No option turns the skip on, and none should be added.** A registration flag is a value a production config can carry; a module the deployed
+build never resolves is not ([`APP_ARCHITECTURE.md`][aa-1c] §1c). A test that needs the route to answer binds a limiter; a test asserting the
+`503` leaves it out, and [`CODE_REVIEW.md`][cr-6] §6 records that this `503` is not a finding.
 
 ### 3c. Key Selection
 
@@ -242,11 +243,11 @@ only appears after the first deploy.
 path-handling surface where directory traversal becomes possible. The asset pipeline has no such surface because it never takes a path from a
 request.
 
+[aa-1c]: ./APP_ARCHITECTURE.md#1c-development-relaxations-are-modules-the-build-selects
 [aa-3]: ./APP_ARCHITECTURE.md#3-dependency-injection-through-config
 [aa-3b]: ./APP_ARCHITECTURE.md#3b-environment-and-context-type-parameters
 [boundaries-3c]: ./BOUNDARIES.md#3c-trust-boundaries-on-inbound-headers
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
-[boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
 [cr-1]: ../shared/CODE_RULES.md#1-zero-global-state-rule
 [cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
 [eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--config-and-resolvers-throw

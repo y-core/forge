@@ -18,7 +18,19 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`ServeWorkerOptions.dev` serves a harness Worker as `forge cf dev` builds it**, each `#relax/*` import resolved to its development module
+  with `__FORGE_DEV__` defined, so a workerd spec driving a relaxation — Cloudflare's Turnstile testing secrets, say — can pass. Without it the
+  harness stays strict. Harness starts in one process now run one at a time, because the build conditions are read from the shared process
+  environment.
+
+### Fixed
+
+- **The app canon no longer describes the removed development model.** `APP_ARCHITECTURE.md` §1c is now _Development Relaxations Are Modules the
+  Build Selects_, in place of the separate dev entry. `WORKERS_PLATFORM.md` §3b is now _An Absent Limiter Fails Closed_: a `503` everywhere but
+  `forge cf dev`. `CODE_REVIEW.md` §6 replaces its dev-entry and rate-limit rows to match. `TESTING.md` §2d takes the log store as its optional
+  binding, and `BOUNDARIES.md` §5b, in both the app and library canon, names the storage resolver as where `required: false` lives.
 
 ---
 

@@ -18,7 +18,7 @@ description: "The composition-root factory, the layer stack and its dependency r
 - §1 The Composition Root: one factory, one place the application is assembled
 - §1a The Worker Factory: what it takes as a parameter and why
 - §1b Composition Order: the fixed sequence inside the factory
-- §1c The Dev and Production Entry Split: making an environment difference structural
+- §1c Development Relaxations Are Modules the Build Selects: making an environment difference structural
 - §2 The Layer Stack: what layers exist and what each owns
 - §2a Layer Roster: the canonical directory per layer, the `model/` ruling, and the two optional members
 - §2b Layer Dependency Rules: which layer may import which
@@ -71,19 +71,24 @@ The steps inside the factory execute in a fixed order, and the order is load-bea
 **Middleware precedes routes** so that headers and request context are established before any handler runs. **Assets are last** because that step
 catches every unmatched path; anything registered after it is unreachable.
 
-### 1c. The Dev and Production Entry Split
+### 1c. Development Relaxations Are Modules the Build Selects
 
-**Where a development environment needs a weaker policy than production, express the difference as a separate entry module — never as a runtime
-flag.**
+**Where a development environment needs a weaker policy than production, express the difference as a module the build selects — never as a
+runtime flag, and never as a second entry.** There is one entry. The weaker policy lives in a `*.dev.ts` module behind a package `imports` alias,
+whose `forge-dev` target is the development module and whose `default` target is the strict one. Both targets are annotated with one shared type,
+and the development module checks `__FORGE_DEV__` itself, so a bundle built under the condition without the define still answers strictly.
 
 The canonical case is a content-security policy: a dev server injects a live-reload script whose hash must be allowed, and that allowance must not
-exist in production. A separate dev entry that merges the extra source onto the base policy makes the guarantee **structural**: the production
-default export cannot contain the dev allowance, because it is not in that file.
+exist in production. The production build resolves the alias to the strict module, so the deployed bundle cannot contain the dev allowance,
+because no file it holds does. The guarantee is **structural**.
 
 These properties follow, and both are the reason for the shape:
 
-- A build flag can be set wrongly; a module that does not import the value cannot leak it.
-- Upgrading the tool that injects the script means editing one constant in the dev entry, with the production policy provably unaffected.
+- A build flag can be set wrongly; a module the build never resolves cannot leak its value.
+- Upgrading the tool that injects the script means editing one constant in the development module, with the production policy provably unaffected.
+
+The alias map, the shared annotation and the gate steps that hold the line are taught in the `@y-core/forge/tooling/cf` README, under _Keeping
+your own dev-only code out of the deploy_.
 
 ---
 

@@ -34,6 +34,32 @@ try {
 }
 `;
 
+const LIMITED_WORKER = `
+import { createApp } from "@y-core/forge/app";
+import { rateLimit } from "@y-core/forge/security";
+import { mapHandler } from "@y-core/forge/testing";
+
+const app = createApp({
+  middleware: (forge) => forge.use("*", rateLimit({ limiter: () => undefined })),
+  routes: (forge) => mapHandler(forge, "ANY", "/", () => new Response("ok")),
+});
+
+export default { fetch: (request, env, ctx) => app.fetch(request, env, ctx) };
+`;
+
+const ARMING = `
+const { serveWorker } = await import("@y-core/forge/testing/harness");
+const status = async (dev) => {
+  const { harness, origin } = await serveWorker({ config: ${JSON.stringify(CONFIG)}, entry: "./limited.mjs", dev });
+  try {
+    return (await fetch(origin, { method: "POST" })).status;
+  } finally {
+    await harness.close();
+  }
+};
+console.log(JSON.stringify({ dev: await status(true), strict: await status(false) }));
+`;
+
 /** A consumer whose `node_modules` holds the tarball `bun pm pack` makes of forge, as the release ships it, with forge's dependencies and wrangler beside it. */
 function consumerRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-harness-consumer-"));
@@ -88,5 +114,13 @@ test.describe("forge installed from its packed tarball", () => {
     expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
     expect(run.status).toBe(0);
     expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ minted: 200, missing: 403 });
+  });
+
+  test("serves a Worker without its rate limiter as `forge cf dev` builds it under dev, and refusing with 503 without", () => {
+    writeFileSync(join(root, "limited.mjs"), LIMITED_WORKER);
+    const run = runNode(root, ARMING);
+
+    expect(run.status).toBe(0);
+    expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ dev: 200, strict: 503 });
   });
 });

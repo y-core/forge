@@ -9,6 +9,16 @@ import { expect, test } from "./harness.fixture";
 const CONFIG = new URL("../fixtures/workers-form/wrangler.jsonc", import.meta.url).pathname;
 const D1_CONFIG = new URL("../fixtures/auth-d1/wrangler.jsonc", import.meta.url).pathname;
 const ENTRY = new URL("../fixtures/harness-entry/worker.ts", import.meta.url).pathname;
+const RELAX = new URL("../fixtures/dev-relax/worker.ts", import.meta.url).pathname;
+const RELAX_VARS = { FORGE_DEV_ORIGINS: " https://preview.example , http://localhost:8787 " };
+const ARMED = {
+  absentLimiter: true,
+  missingFetchMetadata: true,
+  extraOrigins: ["https://preview.example", "http://localhost:8787"],
+  testingSecret: true,
+  disclosed: "refused",
+};
+const STRICT = { absentLimiter: false, missingFetchMetadata: false, extraOrigins: [], testingSecret: false, disclosed: null };
 
 /** The pids of the `workerd` processes this test process spawned and has not yet reaped. */
 function ownWorkerd(): string[] {
@@ -166,6 +176,40 @@ for (const entry of [undefined, ENTRY]) {
     }
   });
 }
+
+test("serves every relaxation armed under dev, as `forge cf dev` builds the Worker", async () => {
+  const { harness, origin } = await serveWorker({ config: CONFIG, entry: RELAX, vars: RELAX_VARS, dev: true });
+  try {
+    expect(await (await fetch(origin)).json()).toEqual(ARMED);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("serves every relaxation strict without dev, and leaves no forge-dev condition behind a dev start", async () => {
+  const before = process.env.WRANGLER_BUILD_CONDITIONS;
+  const { harness, origin } = await serveWorker({ config: CONFIG, entry: RELAX, vars: RELAX_VARS });
+  try {
+    expect([await (await fetch(origin)).json(), process.env.WRANGLER_BUILD_CONDITIONS]).toEqual([STRICT, before]);
+  } finally {
+    await harness.close();
+  }
+});
+
+test("answers armed and strict from dev and plain harnesses started together, and leaves the build conditions as it found them", async () => {
+  const before = process.env.WRANGLER_BUILD_CONDITIONS;
+  const served = await Promise.all([
+    serveWorker({ config: CONFIG, entry: RELAX, vars: RELAX_VARS, dev: true }),
+    serveWorker({ config: CONFIG, entry: RELAX, vars: RELAX_VARS }),
+    serveWorker({ config: CONFIG, entry: RELAX, vars: RELAX_VARS, dev: true }),
+  ]);
+  try {
+    const answers = await Promise.all(served.map(({ origin }) => fetch(origin).then((res) => res.json())));
+    expect([answers, process.env.WRANGLER_BUILD_CONDITIONS]).toEqual([[ARMED, STRICT, ARMED], before]);
+  } finally {
+    await Promise.all(served.map(({ harness }) => harness.close()));
+  }
+});
 
 test("removes the derived config when the Worker fails to start", async () => {
   const root = devVarsApp();

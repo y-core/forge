@@ -144,8 +144,11 @@ are real and a wrong value produces a confusing failure rather than a clear one.
 
 ### 2d. Optional Bindings Are Deliberately Absent
 
-**Bindings the application degrades gracefully without are left out of the minimum fixture on purpose** — a logging store, a rate limiter. Their
-absence is what proves the degradation path works ([`BOUNDARIES.md`][boundaries-5b] §5b).
+**Bindings the application degrades gracefully without are left out of the minimum fixture on purpose** — a log store resolved with
+`required: false`, say. Their absence is what proves the degradation path works ([`BOUNDARIES.md`][boundaries-5b] §5b).
+
+A rate limiter is not one of them: outside `forge cf dev` its absence answers `503`, so leaving it out asserts the refusal rather than a
+degradation ([`WORKERS_PLATFORM.md`][wp-3b] §3b).
 
 Add such a binding only in the specific test that exercises it, never to the shared fixture. Adding it globally silently deletes the coverage.
 
@@ -458,3 +461,4 @@ the exception with its compensating control, rather than leaving the reuse undoc
 [cr-3c]: ./CODE_REVIEW.md#3c-tier-3--judgement
 [cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt
 [fc-1b]: ./FORGE_CONSUMPTION.md#1b-capability-classes-the-library-owns
+[wp-3b]: ./WORKERS_PLATFORM.md#3b-an-absent-limiter-fails-closed

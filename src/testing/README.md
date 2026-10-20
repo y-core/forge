@@ -316,6 +316,17 @@ To serve a test-only Worker instead of the app's, pass `entry`. It runs in place
 const served = await serveWorker({ config: "./wrangler.jsonc", entry: "./tests/workerd/probe.ts", vars: { MODE: "test" } });
 ```
 
+The Worker is served strict, as it deploys: every `#relax/*` import resolves to its strict module, so an absent rate limiter answers 503 and
+Turnstile refuses Cloudflare's testing secrets. A spec that drives a journey through a relaxation — a sign-in or a contact form submitted with
+the testing sitekey — passes `dev: true` to serve the Worker as `forge cf dev` builds it. Opt in per harness, only where the spec needs it:
+
+```ts
+const served = await serveWorker({ config: "./wrangler.jsonc", dev: true });
+```
+
+Harness starts within one process run one at a time, because the build conditions are read from the shared process environment, so a dev
+and a strict harness can be started together.
+
 `vars` and `secrets` bind over the config's own vars and over `.dev.vars`, with `entry` or without it, so a test never runs on a developer's
 local value for a name it passes. A name it does not pass still loads from `.dev.vars`, as under `wrangler dev`.
 

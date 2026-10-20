@@ -184,13 +184,14 @@ already forge's node runner (§1c), so the set gains no runner. **This paragraph
 pattern in `playwright.config.ts` is one `bun test` never collects, and the auth journey (`src/auth/journey.browser.ts`) reaches the same harness
 from the `chromium` project.
 
-**`serveWorker` in `@y-core/forge/testing/harness` is the one start, for forge and its consumers alike.** It serves a config's Worker, or an
-`entry` in place of its `main` under the same bindings, and sets `SITE_ORIGIN` to the origin it answers on, over any caller var of that name. An
-inline harness config has no `secrets` of its own, so under `entry` they reach the Worker as vars. `siteHost: "localhost"` is for a WebAuthn
-journey, which refuses an IP address as an RP ID. Forge's specs reach it through `tests/workerd/harness.fixture.ts`, whose `harnessTest(options)`
-returns a Playwright `test` with a worker-scoped `served` fixture, closed when the worker ends. That wrapper stays unpublished, because publishing
-it would make `@playwright/test` a forge peer.
-The project runs a file's tests in one worker, so every test in a file shares one Worker and files run side by side.
+**`serveWorker` in `@y-core/forge/testing/harness` is the one start, for forge and its consumers alike.** It serves a config's Worker, or an `entry`
+in place of its `main` under the same bindings, and sets `SITE_ORIGIN` to the origin it answers on, over any caller var of that name. An inline
+harness config has no `secrets` of its own, so under `entry` they reach the Worker as vars. `siteHost: "localhost"` is for a WebAuthn journey, which
+refuses an IP address as an RP ID. `dev: true` serves the Worker as `forge cf dev` builds it, every `#relax/*` import armed; starts in one process
+queue, because the build conditions are read from the shared process environment. Forge's specs reach it through `tests/workerd/harness.fixture.ts`,
+whose `harnessTest(options)` returns a Playwright `test` with a worker-scoped `served` fixture, closed when the worker ends. That wrapper stays
+unpublished, because publishing it would make `@playwright/test` a forge peer. The project runs a file's tests in one worker, so every test in a
+file shares one Worker and files run side by side.
 
 **The harness keeps no storage between runs**, so a spec starts on an empty database. `db-migrate.workerd.ts` needs the state `forge db migrate`
 wrote under `--persist-to`, which the harness cannot read, so it serves no Worker: it opens the same miniflare D1 engine through `getPlatformProxy`
