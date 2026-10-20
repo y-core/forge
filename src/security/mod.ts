@@ -17,7 +17,6 @@ export type {
   ApplySecurityHeadersOptions,
   BaseUrlConfig,
   CorsOptions,
-  CrossOriginProtectionOptions,
   CrossOriginResult,
   CspDirectiveOptions,
   CspOptions,

@@ -1,5 +1,4 @@
 import type { AppContext } from "../context/types";
-import type { DevAllowance } from "../dev/types";
 import type { GuardResult, Result } from "../result/types";
 import type { NONCE } from "./nonce";
 import type { UNSAFE_CSP_SOURCES } from "./unsafe";
@@ -101,18 +100,10 @@ export type OriginResult = GuardResult<"missing" | "disallowed">;
 /** Options controlling how allowed origins are derived from a base URL. @public */
 export interface DeriveAllowedOriginsOptions {
   includeWww?: boolean;
-  /** A development entry's token: its `extraOrigins` are appended to the derived set. */
-  dev?: DevAllowance;
 }
 
 /** Result of the Fetch-Metadata cross-origin check (`checkCrossOriginProtection`). @public */
 export type CrossOriginResult = GuardResult<"missing-fetch-metadata" | "cross-site" | "same-site">;
-
-/** Options for the Fetch-Metadata cross-origin protection guard. @public */
-export interface CrossOriginProtectionOptions {
-  /** A development entry's token: with `missingFetchMetadata` a request carrying no `Sec-Fetch-Site` header is accepted. Absent, the guard fails closed. */
-  dev?: DevAllowance;
-}
 
 /** Options for the Origin/Referer allowlist middleware, with per-request origin resolution. @public */
 export interface OriginProtectionOptions<Bindings = Record<string, unknown>> {
@@ -130,8 +121,6 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   limiter: (c: AppContext<Bindings>) => RateLimitBinding | undefined;
   key?: (c: AppContext<Bindings>) => string;
   onLimit?: (c: AppContext<Bindings>) => Response | Promise<Response>;
-  /** A development entry's token: with `rateLimitOptional` an absent binding is skipped instead of answering 503. */
-  dev?: DevAllowance;
   /** Opts the default keying into `CF-Connecting-IP`, trustworthy only behind Cloudflare; without it and without a `key`, keying throws. */
   trustCfHeaders?: boolean;
 }
@@ -197,3 +186,12 @@ export type WebhookRefusal =
   | "invalid-signature"
   | "body-too-large"
   | "signature-mismatch";
+
+/** Whether a request may pass a rate limiter whose binding is absent. @internal */
+export type RelaxAbsentLimiter = () => boolean;
+
+/** Whether a request without Fetch Metadata headers may pass cross-origin protection. @internal */
+export type RelaxMissingFetchMetadata = () => boolean;
+
+/** The origins, beyond the configured ones, an app's bindings admit during development. @internal */
+export type RelaxExtraOrigins = (env: unknown) => readonly string[];

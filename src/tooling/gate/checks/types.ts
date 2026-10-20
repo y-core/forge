@@ -70,9 +70,7 @@ export interface DevBoundaryCheckConfig {
   sources?: readonly string[];
   /** Worker config read for `main`. Defaults to `wrangler.jsonc`; omit the `main` rule by passing `null`. */
   workerConfig?: string | null;
-  /** Dev entries beyond the `*.dev.ts` convention; an entry restating the convention fails. */
-  devEntries?: readonly string[];
-  /** This repository's own dev-only trees, for a library that publishes them (forge: `src/dev`, `src/testing`). */
+  /** This repository's own dev-only trees, for a library that publishes them (forge: `src/testing`). */
   devOnlyDirs?: readonly string[];
   /** Dependencies whose `package.json` declares `forge.devOnly`; their subpaths become forbidden specifiers. */
   packages?: readonly string[];
@@ -402,6 +400,11 @@ export interface DesignSystem {
 
 /** A package's `exports` map as it appears in `package.json`. */
 export type ExportsMap = Record<string, { import?: string; types?: string } | string>;
+
+/** A package's `imports` map as it appears in `package.json`, each value a target or a nested conditions object. @public */
+export interface PackageImports {
+  readonly [key: string]: string | PackageImports;
+}
 
 /** What the exports check needs to know about the project. @public */
 export interface ExportsCheckConfig {
@@ -801,4 +804,26 @@ export interface FeaturesCheckConfig {
   assetOut?: string;
   /** The `--drop` lists to prove, each a skeleton of its own. Defaults to each feature alone, then every feature together. */
   profiles?: readonly (readonly string[])[];
+}
+
+/** The part of an esbuild metafile the dev-bundle check reads: each output's inputs and the bytes each contributed. @public */
+export interface BundleMetafile {
+  outputs: Record<string, { inputs: Record<string, { bytesInOutput: number }> }>;
+}
+
+/** Bundles a Worker entry, given relative to `root`, as wrangler would, and returns its metafile. @public */
+export type WorkerBundler = (root: string, entry: string) => Promise<BundleMetafile>;
+
+/** What the dev-bundle check needs to know about the project. @public */
+export interface DevBundleCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Worker config read for `main`. Defaults to `wrangler.jsonc`. */
+  workerConfig?: string;
+  /** Dependencies whose `package.json` declares `forge.devOnly`; the directories their subpaths export from are forbidden. */
+  packages?: readonly string[];
+  /** Replaces the esbuild run, so a test can judge a fixed metafile. */
+  bundler?: WorkerBundler;
+  /** The environment a deploy from this shell inherits, read for `WRANGLER_BUILD_CONDITIONS`. Defaults to `process.env`. */
+  env?: Readonly<Record<string, string | undefined>>;
 }

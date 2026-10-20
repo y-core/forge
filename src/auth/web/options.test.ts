@@ -3,8 +3,8 @@ import { describe, expect, it } from "bun:test";
 import { RequestContext } from "@remix-run/fetch-router";
 
 import type { AppContext } from "../../context/types";
-import { devAllowance } from "../../dev/allowance";
 import { csrfMinterCtx } from "../../form/csrf";
+import { createTestContext } from "../../testing/context";
 import { TURNSTILE_ACTION_PATTERN } from "../../ui/contracts/turnstile-contract";
 import {
   AUTH_TURNSTILE_ACTIONS,
@@ -153,6 +153,13 @@ const FLOWS: readonly AuthTurnstileFlow[] = ["signin", "signup", "verify", "rese
 
 const KEYS = { siteKey: "site-key-public", secretKey: "secret-key-private" };
 
+/** A request whose bindings carry both Turnstile keys. */
+function boundContext(url: string, headers: Record<string, string> = {}): AppContext {
+  return createTestContext(new Request(url, { headers }), {
+    env: { TURNSTILE_SITE_KEY: "site-from-env", TURNSTILE_SECRET_KEY: "secret-from-env" },
+  });
+}
+
 function guarded(turnstile: Partial<AuthTurnstileOptions> = {}) {
   return fakeAuthWebOptions({ turnstile: { keys: () => KEYS, verify: () => ({ expectedHostname: "app.example" }), ...turnstile } });
 }
@@ -218,15 +225,31 @@ describe("authTurnstileCheck", () => {
     expect((await authTurnstileCheck(c, options, "signin"))?.verify.expectedAction).toBe("auth-signin");
   });
 
-  it("verifies against the secret from keys, the default token field, and the consumer's hostname, remote address and dev grant", async () => {
+  it("verifies against the secret from keys, the default token field, and the consumer's hostname and remote address", async () => {
     const c = context("https://app.example/auth/signin");
-    const dev = devAllowance({ turnstileTestingSecrets: true });
-    const options = guarded({ verify: () => ({ expectedHostname: "app.example", remoteIp: "203.0.113.7", dev }) });
+    const options = guarded({ verify: () => ({ expectedHostname: "apex.example", remoteIp: "203.0.113.7" }) });
 
     expect(await authTurnstileCheck(c, options, "signin")).toEqual({
       secretKey: "secret-key-private",
-      verify: { expectedHostname: "app.example", remoteIp: "203.0.113.7", dev, expectedAction: "auth-signin", tokenField: "cf-turnstile-response" },
+      verify: { expectedHostname: "apex.example", remoteIp: "203.0.113.7", expectedAction: "auth-signin", tokenField: "cf-turnstile-response" },
     });
+  });
+
+  it("with neither keys nor verify, reads the secret off the bindings and the constraints off the request", async () => {
+    const c = boundContext("https://app.example/auth/signin", { "CF-Connecting-IP": "203.0.113.7" });
+
+    expect(await authTurnstileCheck(c, fakeAuthWebOptions({ turnstile: {} }), "signin")).toEqual({
+      secretKey: "secret-from-env",
+      verify: { expectedHostname: "app.example", remoteIp: "203.0.113.7", expectedAction: "auth-signin", tokenField: "cf-turnstile-response" },
+    });
+  });
+
+  it("refuses to build a check when the bindings carry no secret, naming the key", async () => {
+    const c = createTestContext(new Request("https://app.example/auth/signin"), { env: { TURNSTILE_SITE_KEY: "site-from-env" } });
+
+    await expect(authTurnstileCheck(c, fakeAuthWebOptions({ turnstile: {} }), "signin")).rejects.toThrow(
+      "Invalid environment: TURNSTILE_SECRET_KEY: missing",
+    );
   });
 
   it("reads the keys and constraints off the request it is asked for", async () => {
@@ -249,6 +272,12 @@ describe("authTurnstileCheck", () => {
 });
 
 describe("authTurnstileWidget", () => {
+  it("with no keys, hands the view the site key the bindings carry", async () => {
+    const widget = await authTurnstileWidget(boundContext("https://app.example/auth/signin"), fakeAuthWebOptions({ turnstile: {} }), "signin");
+
+    expect(widget).toEqual({ siteKey: "site-from-env", action: "auth-signin" });
+  });
+
   it("hands the view the site key and the action, and nothing that could carry the secret", async () => {
     const widget = await authTurnstileWidget(context("https://app.example/auth/signin"), guarded(), "signin");
 
@@ -271,6 +300,23 @@ describe("turnstileCheckFor and turnstileWidgetFor", () => {
         verify: { expectedHostname: "app.example", expectedAction: "approval", tokenField: "cf-turnstile-response" },
       },
       widget: { siteKey: "site-key-public", action: "approval" },
+    });
+  });
+
+  it("read each key from its own binding alone when no keys override is given", async () => {
+    const onlySecret = createTestContext(new Request("https://app.example/approve"), { env: { TURNSTILE_SECRET_KEY: "secret-from-env" } });
+    const onlySite = createTestContext(new Request("https://app.example/approve"), { env: { TURNSTILE_SITE_KEY: "site-from-env" } });
+    const defaults = { verify: () => ({ expectedHostname: "app.example" }) };
+
+    expect({
+      check: await turnstileCheckFor(onlySecret, defaults, "approval"),
+      widget: await turnstileWidgetFor(onlySite, {}, "approval"),
+    }).toEqual({
+      check: {
+        secretKey: "secret-from-env",
+        verify: { expectedHostname: "app.example", expectedAction: "approval", tokenField: "cf-turnstile-response" },
+      },
+      widget: { siteKey: "site-from-env", action: "approval" },
     });
   });
 });

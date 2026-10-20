@@ -1,11 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
-import { devAllowance } from "../dev/allowance";
 import { requestIdCtx } from "../security/request-id";
 import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { createApp } from "./app";
-import { createErrorPage } from "./error-page";
+import { createErrorPage, createErrorPageWith, fallbackErrorDocument } from "./error-page";
+import { discloseThrownMessage } from "./error-page.dev";
+import * as appBarrel from "./mod";
+import type { ErrorPageOptions } from "./types";
 
 // `renderError`'s banner classes, duplicated rather than imported: `render/htmx/fragment` does not export
 // them, and an exact assertion needs the literal the page actually emits.
@@ -23,7 +25,7 @@ function fragment(body: string, open: string, close: string): string {
 const banner = (body: string): string => fragment(body, `<div class="${ERROR_CLASSES}">`, "</div>");
 
 describe("createErrorPage — debug gate", () => {
-  it("hides the real error message by default, there being no allowance", async () => {
+  it("hides the real error message by default, in a build not armed for development", async () => {
     const page = createErrorPage();
     const res = page(new Error("secret db string"), createTestContext(new Request("http://test/")));
     expect(res.status).toBe(500);
@@ -32,28 +34,25 @@ describe("createErrorPage — debug gate", () => {
     expect(body).not.toContain("secret db string");
   });
 
-  it("shows the real error message under a dev allowance granting errorDetail", async () => {
-    const page = createErrorPage({ dev: devAllowance({ errorDetail: true }) });
-    const res = page(new Error("database timeout"), createTestContext(new Request("http://test/")));
-    const body = await res.text();
+  it("shows the real error message under a relaxation that discloses it", async () => {
+    const c = createTestContext(new Request("http://test/"));
+    const body = await createErrorPageWith({}, discloseThrownMessage)(new Error("database timeout"), c).text();
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>database timeout</p></div>`);
     expect(body).not.toContain("An unexpected error occurred.");
   });
 
-  it("HTML-escapes the error message in debug mode", async () => {
-    const page = createErrorPage({ dev: devAllowance({ errorDetail: true }) });
-    const res = page(new Error("<script>alert(1)</script>"), createTestContext(new Request("http://test/")));
-    const body = await res.text();
+  it("HTML-escapes the disclosed error message", async () => {
+    const c = createTestContext(new Request("http://test/"));
+    const body = await createErrorPageWith({}, discloseThrownMessage)(new Error("<script>alert(1)</script>"), c).text();
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>&lt;script&gt;alert(1)&lt;/script&gt;</p></div>`);
     expect(body).not.toContain("<script>alert(1)</script>");
   });
 
-  it("treats an allowance granting something else as production", async () => {
-    const page = createErrorPage({ dev: devAllowance({ rateLimitOptional: true }) });
-    const res = page(new Error("internal detail"), createTestContext(new Request("http://test/")));
-    const body = await res.text();
+  it("ignores a disclosure smuggled in as an option, a development build being the only path", async () => {
+    const page = createErrorPage({ dev: discloseThrownMessage } as ErrorPageOptions);
+    const body = await page(new Error("smuggled detail"), createTestContext(new Request("http://test/"))).text();
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>An unexpected error occurred.</p></div>`);
-    expect(body).not.toContain("internal detail");
+    expect(body).not.toContain("smuggled detail");
   });
 });
 
@@ -136,5 +135,31 @@ describe("createErrorPage — integration via createApp onError", () => {
     expect(fragment(body, "<title>", "</title>")).toBe("<title>App Error</title>");
     expect(banner(body)).toBe(`<div class="${ERROR_CLASSES}"><p>An unexpected error occurred.</p></div>`);
     expect(body).not.toContain("kaboom");
+  });
+});
+
+describe("fallbackErrorDocument", () => {
+  const FIXED = "<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>An unexpected error occurred.</p></body></html>";
+
+  it("renders the fixed message when the disclosure gives nothing", () => {
+    expect(fallbackErrorDocument(new Error("secret db string"), undefined, () => undefined)).toBe(FIXED);
+  });
+
+  it("renders the disclosed message, HTML-escaped, under a relaxation that discloses it", () => {
+    expect(fallbackErrorDocument(new Error("<b>kaboom</b> & 'co'"), undefined, discloseThrownMessage)).toBe(
+      "<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>&lt;b&gt;kaboom&lt;/b&gt; &amp; &#39;co&#39;</p></body></html>",
+    );
+  });
+
+  it("quotes the request id it is given, HTML-escaped", () => {
+    expect(fallbackErrorDocument(new Error("x"), "<id>", () => undefined)).toBe(
+      "<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1><p>An unexpected error occurred.</p><p>Reference: &lt;id&gt;</p></body></html>",
+    );
+  });
+});
+
+describe("the app barrel", () => {
+  it("carries neither error-page seam, so no consumer reaches the disclosure", () => {
+    expect([createErrorPageWith, fallbackErrorDocument].filter((seam) => Object.values<unknown>(appBarrel).includes(seam))).toEqual([]);
   });
 });

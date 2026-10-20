@@ -2,7 +2,6 @@ import type { Middleware } from "@remix-run/fetch-router";
 import type { Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 
 import type { AppContext } from "../context/types";
-import type { DevAllowance } from "../dev/types";
 import type { TurnstileFailure, TurnstileVerifyOptions } from "../form/types";
 import type { Logger } from "../logging/types";
 import type { RequestLoggerOptions } from "../logging/types";
@@ -23,8 +22,6 @@ export type MethodMismatch = "notFound" | "advertise";
 /** Options for `createApp`; the wiring hooks run in the order they are numbered. @public */
 export interface AppOptions<Bindings = Record<string, unknown>> {
   config?: object;
-  /** A development entry's token: with `errorDetail` the boundary's 500 page prints the thrown message. */
-  dev?: DevAllowance;
   onError?: (error: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   /** Custom logger injected into the app error handler. */
   logger?: Logger;
@@ -113,12 +110,12 @@ export type PageDefinition<
 
 /** Turnstile verification for one `defineAction` route. @public */
 export interface ActionTurnstileOptions<Bindings = Record<string, unknown>, ConfigData = unknown> {
-  /** Resolves the siteverify secret for this request. */
-  secretKey: (c: AppContext<Bindings>, config: ConfigData) => string | Promise<string>;
+  /** Replaces the siteverify secret `readTurnstileKey` reads. */
+  secretKey?: (c: AppContext<Bindings>, config: ConfigData) => string | Promise<string>;
   /** The field Cloudflare's widget writes the token into. */
   tokenField?: string;
-  /** Verification constraints for this request; `expectedHostname` is what stops a token solved elsewhere being replayed here. */
-  verify: (c: AppContext<Bindings>, config: ConfigData) => Omit<TurnstileVerifyOptions, "tokenField">;
+  /** Constraints merged over the defaults: the request's hostname and its `CF-Connecting-IP`. */
+  verify?: (c: AppContext<Bindings>, config: ConfigData) => Partial<Omit<TurnstileVerifyOptions, "tokenField">>;
 }
 
 /** Why a `defineAction` route refused a submission before it reached the schema. @public */
@@ -178,8 +175,6 @@ export type CheckFn<Bindings = Record<string, unknown>> = (c: AppContext<Binding
 
 /** Options for `createErrorPage`. @public */
 export interface ErrorPageOptions<Bindings = Record<string, unknown>> {
-  /** A development entry's token: with `errorDetail` the thrown message is printed instead of a fixed sentence. */
-  dev?: DevAllowance;
   /** Page `<title>` and heading. */
   title?: string;
   /** Stylesheet `<link>` href, static or resolved per request. */
@@ -305,3 +300,6 @@ export interface ShellDocument {
   /** `<html lang>`. Defaults to `en`. */
   readonly lang?: string;
 }
+
+/** The message an error page discloses for `error`, or `undefined` to show the fixed page. @internal */
+export type RelaxErrorDisclosure = (error: Error) => string | undefined;

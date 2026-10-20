@@ -116,10 +116,21 @@ Most rows are opt-in, and each option is a question about your repository rather
 | A demonstrator with a `config/features.ts` manifest | `features: {}` | `validate-features` — curates into a temp tree once per distinct resolved profile (default: each feature alone, then all) and runs its `standard` gate there, last in the table |
 
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's installed manifest, so an app
-that configures nothing still fails on a deployed module importing `@y-core/forge/testing` — whose fakes lose every write — or
-`@y-core/forge/dev`, whose token is what opens each dev-only relaxation ([`NAMESPACES.md`][namespaces-5i] §5i).
+that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Dev-only code of the
+app's own needs no option: name it `*.dev.ts`, and the row fails a production module importing it, a type import included, while a `*.dev.ts` may
+import another. Code the shared path does call goes behind the app's own `imports` alias instead ([`src/tooling/cf/README.md`][cf-own]); the row
+fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. The bundle row
+below still proves the built Worker.
 
-**Only `test` defaults above the `quality` tier**, to `standard`: every other row judges the source rather than running it. `design.sources` does
+**`validate-dev-bundle` follows it, on the `full` tier.** It bundles the Worker config's `main` with esbuild — from the project, or from wrangler's
+own dependency — and fails when a `*.dev.ts` module, the app's or a dependency's, or a module from a directory a `forge.devOnly` subpath is
+published from, contributes to the output. A module tree-shaking removed does not count. It also fails when the shell's
+`WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every development module; `forge cf dev` sets it in
+wrangler's child process only ([`NAMESPACES.md`][namespaces-5i] §5i). It refuses a Worker config that sets `alias`, `build`, `define` or `rules`, or
+whose `compatibility_flags` carries `nodejs_compat` or `nodejs_compat_v2`, at the top level or in an `env.*` block, since it models none of them.
+
+**Only `test` and `validate-dev-bundle` default above the `quality` tier** — `test` to `standard`, the bundle to `full`: every other row judges
+the source rather than running it. `design.sources` does
 not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should
 inherit deferrals keyed to `src/ui/…` paths.
 
@@ -482,9 +493,10 @@ and reading it as "select no steps" would refuse every unscoped run.
 [bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ../../../docs/BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
+[cf-own]: ../cf/README.md#keeping-your-own-dev-only-code-out-of-the-deploy
 [cli-readme]: ../cli/README.md
 [lint-readme]: ../lint/README.md
-[namespaces-5i]: ../../../docs/NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
+[namespaces-5i]: ../../../docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [release-readme]: ../release/README.md
 [testing-6]: ../../../docs/TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-three-modes

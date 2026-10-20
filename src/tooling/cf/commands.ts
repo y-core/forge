@@ -1,6 +1,7 @@
 import { addCommand, createCommand } from "../cli/command";
 import type { CliContext, CommandBase } from "../cli/types";
 import { createSyncAccountCommand, runSyncAccount, SYNC_ACCOUNT_DESCRIPTION, syncAccountFlags } from "./account/commands";
+import { createDevCommand } from "./dev/command";
 import { createGenEnvCommand } from "./gen/cf-env-command";
 import { createSyncZoneCommand } from "./zone/commands";
 
@@ -10,7 +11,7 @@ type LooseFlags = Record<string, string | string[] | boolean | undefined>;
 export function createCfCommands(): CommandBase {
   const cf = createCommand({
     name: "cf",
-    description: "Reconcile and generate against Cloudflare — account bindings, zone rules, and the env schema",
+    description: "Reconcile, generate and run against Cloudflare — account bindings, zone rules, the env schema, and the local dev server",
   });
 
   // The bare `cf sync` is `cf sync account`, built from the same flags and runner rather than a
@@ -28,6 +29,7 @@ export function createCfCommands(): CommandBase {
   const gen = createCommand({ name: "gen", description: "Generate a typed module from Cloudflare configuration" });
   addCommand(gen, createGenEnvCommand());
   addCommand(cf, gen);
+  addCommand(cf, createDevCommand());
 
   return cf;
 }

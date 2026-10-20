@@ -1,16 +1,20 @@
 import { describe, expect, it } from "bun:test";
 
+import { createRouter } from "@remix-run/fetch-router";
+import { createRoutes, Route } from "@remix-run/fetch-router/routes";
+
+import { createApp } from "../app/app";
 import { Forge } from "../app/forge-app";
-import { devAllowance } from "../dev/allowance";
 import { mapHandler } from "../testing/route";
-import { checkCrossOriginProtection, crossOriginProtection, originProtection } from "./cop";
+import { checkCrossOriginProtection, crossOriginProtection, crossOriginVerdict, originProtection } from "./cop";
+import * as securityBarrel from "./mod";
 import type { OriginProtectionOptions } from "./types";
 
-function makeApp(opts?: Parameters<typeof crossOriginProtection>[0]) {
-  const app = new Forge();
-  app.use("*", crossOriginProtection(opts));
-  mapHandler(app, "ANY", "/test", () => new Response("ok"));
-  return app;
+function makeApp() {
+  return createApp({
+    middleware: (app) => app.use("*", crossOriginProtection()),
+    routes: (app) => mapHandler(app, "ANY", "/test", () => new Response("ok")),
+  });
 }
 
 const ALLOWED = "https://app.example.com";
@@ -69,9 +73,24 @@ describe("checkCrossOriginProtection", () => {
     expect(checkCrossOriginProtection(req)).toEqual({ ok: false, error: "missing-fetch-metadata" });
   });
 
-  it("allows POST when Sec-Fetch-Site is absent and a dev allowance grants missingFetchMetadata", () => {
+  it("takes no options, so only a development build relaxes it", () => {
     const req = new Request("https://example.com/test", { method: "POST" });
-    expect(checkCrossOriginProtection(req, { dev: devAllowance({ missingFetchMetadata: true }) })).toEqual({ ok: true });
+    // @ts-expect-error — `checkCrossOriginProtection` takes no `dev` option
+    expect(checkCrossOriginProtection(req, { dev: true })).toEqual({ ok: false, error: "missing-fetch-metadata" });
+  });
+});
+
+describe("crossOriginVerdict under a relaxation admitting missing Fetch Metadata", () => {
+  it("allows a mutation that carries no Sec-Fetch-Site", () => {
+    expect(crossOriginVerdict(new Request("https://example.com/test", { method: "DELETE" }), true)).toEqual({ ok: true });
+  });
+
+  it("still refuses a cross-site or same-site mutation", () => {
+    const req = (site: string) => new Request("https://example.com/test", { method: "POST", headers: { "Sec-Fetch-Site": site } });
+    expect([crossOriginVerdict(req("cross-site"), true), crossOriginVerdict(req("same-site"), true)]).toEqual([
+      { ok: false, error: "cross-site" },
+      { ok: false, error: "same-site" },
+    ]);
   });
 });
 
@@ -102,10 +121,17 @@ describe("crossOriginProtection middleware", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
-  it("allows DELETE with no Sec-Fetch-Site under a dev allowance granting missingFetchMetadata", async () => {
-    const app = makeApp({ dev: devAllowance({ missingFetchMetadata: true }) });
-    const res = await app.request("/test", { method: "DELETE" });
-    expect(res.status).toBe(200);
+  it("returns 403 for DELETE with no Sec-Fetch-Site under a bare router", async () => {
+    const routes = createRoutes({ r: new Route("ANY", "/test") });
+    const router = createRouter({ middleware: [crossOriginProtection()] });
+    router.map(routes.r, () => new Response("ok"));
+    const res = await router.fetch(new Request("https://example.com/test", { method: "DELETE" }));
+    expect(res.status).toBe(403);
+  });
+
+  it("takes no options, so only a development build relaxes it", () => {
+    // @ts-expect-error — `crossOriginProtection` takes no `dev` option
+    crossOriginProtection({ dev: true });
   });
 });
 
@@ -239,5 +265,19 @@ describe("crossOriginProtection on a WebSocket upgrade", () => {
     expect(crossSite.status).toBe(403);
     const sameOrigin = await app.request("/test", { method: "GET", headers: { ...UPGRADE, "Sec-Fetch-Site": "same-origin" } });
     expect(sameOrigin.status).toBe(200);
+  });
+});
+
+describe("originProtection and `FORGE_DEV_ORIGINS`", () => {
+  it("refuses an origin the binding names, in a build not armed for development", async () => {
+    const TUNNEL = "https://tunnel.example";
+    const res = await makeOriginApp().request("/test", { method: "POST", headers: { Origin: TUNNEL } }, { FORGE_DEV_ORIGINS: TUNNEL });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("crossOriginVerdict", () => {
+  it("stays off the security barrel, so no consumer reaches the relaxation", () => {
+    expect(Object.values<unknown>(securityBarrel).includes(crossOriginVerdict)).toBe(false);
   });
 });

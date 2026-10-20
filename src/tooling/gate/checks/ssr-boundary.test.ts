@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import { fail } from "../finding";
 import { gateFixtureRoot } from "./gate.fixture";
 import { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./ssr-boundary";
+import type { PackageImports } from "./types";
 
 const CONFIG = { clientDirs: ["src/ui/client", "src/auth/client"], entryPoints: ["client.ts"] } as const;
 
@@ -112,6 +113,43 @@ describe("validateSsrBoundary — a self-import by published subpath", () => {
   });
 });
 
+describe("validateSsrBoundary — a `#` specifier through the `imports` map", () => {
+  const judge = (source: string, imports: PackageImports) => validateSsrBoundary("src/ui/core/button.tsx", source, CONFIG, imports);
+
+  it("reports a component reaching a client-owned target through a `#` specifier", () => {
+    expect(judge('import { signal } from "#client/signal";\n', { "#client/*": "./src/ui/client/*.ts" })).toEqual([
+      fail("SSR boundary crossed", {
+        file: "src/ui/core/button.tsx",
+        detail: ["a `.tsx` file renders on the server, so it may never import the browser runtime", "line 1: `#client/signal`"],
+      }),
+    ]);
+  });
+
+  it("reports a `#` specifier whose client-owned target sits only under `forge-dev`", () => {
+    const imports = { "#relax/debug": { "forge-dev": "./src/auth/client/debug.ts", default: "./src/ui/core/noop.ts" } };
+
+    expect(judge('import { debug } from "#relax/debug";\n', imports)[0]?.detail).toEqual([
+      "a `.tsx` file renders on the server, so it may never import the browser runtime",
+      "line 1: `#relax/debug`",
+    ]);
+  });
+
+  it("passes a `#` specifier whose every target stays on the server", () => {
+    const imports = { "#relax/debug": { "forge-dev": "./src/ui/core/debug.dev.ts", default: "./src/ui/core/noop.ts" } };
+
+    expect(judge('import { debug } from "#relax/debug";\n', imports)).toEqual([]);
+  });
+
+  it("passes a `#` specifier the map does not name, and one judged with no map at all", () => {
+    expect(judge('import { signal } from "#other/signal";\n', { "#client/*": "./src/ui/client/*.ts" })).toEqual([]);
+    expect(validateSsrBoundary("src/ui/core/button.tsx", 'import { signal } from "#client/signal";\n', CONFIG)).toEqual([]);
+  });
+
+  it("passes a type-only `#` import of a client-owned target", () => {
+    expect(judge('import type { Signal } from "#client/signal";\n', { "#client/*": "./src/ui/client/*.ts" })).toEqual([]);
+  });
+});
+
 describe("clientSubpaths", () => {
   it("collects a subpath inside a client directory and one whose target is a registration entry point", () => {
     const found = clientSubpaths({ ...CONFIG, packageName: "@y-core/forge", exports: EXPORTS });
@@ -189,6 +227,20 @@ describe("checkSsrBoundary() — the walk and its vacuity refusal", () => {
 
     expect(result.ok).toBe(true);
     expect(result.summary).toBe("1 files respect the src/ui/client boundary");
+  });
+
+  it("reads the root's manifest, so a server file reaching the runtime through a `#` specifier is reported", () => {
+    const root = fixtureRoot({
+      "package.json": JSON.stringify({ imports: { "#client/*": "./src/ui/client/*.ts" } }),
+      "src/ui/client/signal.ts": "export const signal = 1;\n",
+      "src/ui/server/panel.ts": 'import { signal } from "#client/signal";\nexport const panel = signal;\n',
+    });
+
+    const result = checkSsrBoundary(config(root));
+
+    expect(result.findings.map((finding) => [finding.file, finding.detail?.at(-1)])).toEqual([
+      ["src/ui/server/panel.ts", "line 1: `#client/signal`"],
+    ]);
   });
 
   it("passes the same nested file when the crossing import is type-only, which is erased at emit", () => {

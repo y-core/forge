@@ -69,7 +69,7 @@ bun run verify                 # the gate — every step must pass
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
 bun run verify:full            # the release gate — adds the steps needing a machine prerequisite
-bun run dev                    # asset build + wrangler dev
+bun run dev                    # asset build + forge cf dev
 bun run build:assets           # production asset build
 ```
 

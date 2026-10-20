@@ -6,6 +6,11 @@ import type { WranglerConfig } from "../../cf/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult } from "../types";
 
+/** Whether `value` is a plain object rather than an array or `null`. @internal */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** Reads the Worker config at `file` under `root`, or returns the not-found or unparseable finding a check reports in its place. @internal */
 export function readWorkerConfig(
   root: string,

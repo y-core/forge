@@ -41,6 +41,7 @@ export type { CfApiClientErrorKind } from "./api/types";
 export { CfApiClientError } from "./api/types";
 export { createCfCommands } from "./commands";
 export type { ConfigDiff } from "./config/types";
+export { createDevCommand } from "./dev/command";
 export { diffConfig } from "./config/diff";
 export type { LoadedWranglerConfig, WriteOutcome } from "./config/types";
 export { loadWranglerConfig, parseWranglerConfig, stripJsonc, writeWranglerConfig } from "./config/parse";

@@ -9,6 +9,7 @@ import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { v } from "../validation/validation";
 import { defineAction } from "./action";
+import { createApp } from "./app";
 import { Forge } from "./forge-app";
 
 const CSRF_HEX_KEY = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
@@ -1169,5 +1170,43 @@ describe("defineAction — a client that disconnects", () => {
 
     expect(res!.status).toBe(499);
     expect(logs).toEqual([]);
+  });
+});
+
+describe("defineAction — Turnstile under a testing secret", () => {
+  const TESTING_SECRET = "1x0000000000000000000000000000000AA";
+  // Siteverify's fixed answer under a testing secret names its own hostname and carries no action.
+  const TESTING_ANSWER = { success: true, hostname: "example.com" };
+
+  function guardedApp() {
+    return createApp({
+      routes: (app) =>
+        mapHandler(
+          app,
+          "POST",
+          "/test",
+          defineAction({
+            schema: NameSchema,
+            turnstile: { verify: () => ({ expectedAction: "contact" }) },
+            handle: (data) => new Response(data.name),
+          }),
+        ),
+    });
+  }
+
+  function postWith(app: Forge, secret: string): Promise<Response> {
+    return app.request(
+      "https://app.example/test",
+      { method: "POST", headers: FORM_HEADERS, body: `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved` },
+      { TURNSTILE_SITE_KEY: "site-key", TURNSTILE_SECRET_KEY: secret },
+    );
+  }
+
+  it("refuses a testing-secret token solved for another hostname with no action, in a build not armed for development", async () => {
+    fakeSiteverify(async () => new Response(JSON.stringify(TESTING_ANSWER)));
+
+    const res = await postWith(guardedApp(), TESTING_SECRET);
+
+    expect(res.status).toBe(422);
   });
 });

@@ -60,6 +60,19 @@ describe("runUnchecked()", () => {
     expect(runUnchecked("false", [], undefined, exitsWith({ status: 3 }))).toEqual({ code: 3, exited: true });
   });
 
+  it("hands the child the given env in place of the parent's", () => {
+    mockSpawnSync.mockClear();
+    const env = { ONLY_THIS: "1" };
+    runUnchecked("true", [], { env }, mockSpawnSync);
+    expect(mockSpawnSync.mock.calls[0]![2].env).toBe(env);
+  });
+
+  it("hands the child the parent's env when none is given", () => {
+    mockSpawnSync.mockClear();
+    runUnchecked("true", [], undefined, mockSpawnSync);
+    expect(mockSpawnSync.mock.calls[0]![2].env).toBe(process.env);
+  });
+
   it("reports a child that never started as not exited, carrying the spawner's message, without throwing", () => {
     expect(runUnchecked("forge-no-such-tool", [], undefined, missingExecutable)).toEqual({
       code: 1,

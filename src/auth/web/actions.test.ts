@@ -3,7 +3,6 @@ import { afterEach, beforeAll, describe, expect, it } from "bun:test";
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
-import { devAllowance } from "../../dev/allowance";
 import { csrfMinterCtx } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
@@ -2233,29 +2232,59 @@ describe("the Turnstile guard on the anonymous forms", () => {
       expect(logged).toEqual([{ level: "warn", message: "Submission refused by a bot guard", guard: "turnstile", reason: "action-mismatch" }]);
     });
 
+    describe("with forge's defaults", () => {
+      const TESTING_SECRET = "1x0000000000000000000000000000000AA";
+      // Siteverify's fixed answer under a testing secret names its own hostname and carries no action.
+      const TESTING_ANSWER = { success: true, hostname: "example.com" };
+
+      function defaulted(requested: string[]) {
+        const resolved = fakeAuthServices({ signin: recordingSignin(requested) });
+        return signin(fakeAuthWebOptions({ resolveServices: () => resolved, turnstile: {} })).app;
+      }
+
+      function postSignin(app: Forge, secret: string, headers: Record<string, string> = {}): Promise<Response> {
+        const init = formBody({ _csrf: "csrf-for:/auth/signin", email: "ada@example.com", "cf-turnstile-response": "solved" });
+        return app.request(
+          `https://${HOST}/auth/signin`,
+          { ...init, headers: { ...(init.headers as Record<string, string>), ...headers } },
+          { TURNSTILE_SITE_KEY: KEYS.siteKey, TURNSTILE_SECRET_KEY: secret },
+        );
+      }
+
+      it("verifies under the bindings' secret and the request's remote address, against the request's own hostname", async () => {
+        const sent = siteverify(solvedFor("auth-signin"));
+        const requested: string[] = [];
+
+        const res = await postSignin(defaulted(requested), KEYS.secretKey, { "CF-Connecting-IP": "203.0.113.7" });
+
+        expect({ status: res.status, location: res.headers.get("location"), requested, sent }).toEqual({
+          status: 303,
+          location: "/auth/verify",
+          requested: ["ada@example.com"],
+          sent: [{ secret: "secret-key", response: "solved", remoteip: "203.0.113.7" }],
+        });
+      });
+
+      it("refuses a testing-secret token solved elsewhere with no action in a build not armed for development, without asking for a code", async () => {
+        siteverify(TESTING_ANSWER);
+        const requested: string[] = [];
+
+        const res = await answered(await postSignin(defaulted(requested), TESTING_SECRET));
+
+        expect({ status: res.status, error: textOf(res.html, "p", 'id="field-email-error"'), requested }).toEqual({
+          status: 422,
+          error: "Verification failed. Please try again.",
+          requested: [],
+        });
+      });
+    });
+
     it("leaves the strict schema refusing a token field when the deployment configured no turnstile, and verifies nothing", async () => {
       const sent = siteverify(solvedFor("auth-signin"));
       const { app } = signin(fakeAuthWebOptions());
 
       const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "solved" }));
       expect({ status: res.status, sent }).toEqual({ status: 422, sent: [] });
-    });
-
-    it("admits a testing secret's fixed hostname and missing action only under a dev grant for testing secrets", async () => {
-      const testing = { siteKey: "1x00000000000000000000AA", secretKey: "1x0000000000000000000000000000000AA" };
-      const answer = { success: true, hostname: "example.com", metadata: { result_with_testing_key: true } };
-      const status = async (turnstile: Partial<AuthTurnstileOptions>) => {
-        siteverify(answer);
-        const { app } = signin(guarded({}, { keys: () => testing, ...turnstile }));
-        const res = await app.request("/auth/signin", formBody({ email: "ada@example.com", "cf-turnstile-response": "XXXX.DUMMY.TOKEN.XXXX" }));
-        globalThis.fetch = savedFetch as typeof globalThis.fetch;
-        return res.status;
-      };
-
-      expect({
-        granted: await status({ verify: () => ({ expectedHostname: HOST, dev: devAllowance({ turnstileTestingSecrets: true }) }) }),
-        ungranted: await status({}),
-      }).toEqual({ granted: 303, ungranted: 422 });
     });
   });
 

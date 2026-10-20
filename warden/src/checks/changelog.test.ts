@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -268,5 +269,81 @@ describe("a released section is not a place to write", () => {
 
   it("says nothing at all where the project keeps no manifest, so adopting it is a choice", () => {
     expect(messages(VALID)).toEqual([]);
+  });
+});
+
+describe("a released version is not deleted", () => {
+  const versions = [
+    { version: "1.2.0", date: "2026-03-01", line: 4, body: [] },
+    { version: "1.1.0", date: "2026-02-01", line: 8, body: [] },
+    { version: "1.0.0", date: "2026-01-01", line: 12, body: [] },
+  ];
+  const links = versions.map((heading) => heading.version);
+
+  function gaps(headings: VersionHeading[], released: readonly string[] | undefined): string[] {
+    return validateChangelog(document(headings, links), "1.2.0", "CHANGELOG.md", undefined, released)
+      .map((finding) => finding.message)
+      .filter((message) => message.includes("was released"));
+  }
+
+  it("refuses a version deleted from the middle, naming it", () => {
+    expect(gaps([versions[0]!, versions[2]!], ["1.0.0", "1.1.0", "1.2.0"])).toEqual([
+      "`1.1.0` was released (its tag exists) but the changelog has no section for it — only the oldest releases may be trimmed. Restore the section and its digest.",
+    ]);
+  });
+
+  it("refuses the newest released version deleted from the top", () => {
+    expect(gaps([versions[1]!, versions[2]!], ["1.0.0", "1.1.0", "1.2.0"]).join()).toContain("`1.2.0` was released");
+  });
+
+  it("passes the oldest run of releases trimmed from the bottom", () => {
+    expect(gaps(versions, ["0.1.0", "0.9.9", "1.0.0", "1.1.0", "1.2.0"])).toEqual([]);
+  });
+
+  it("says nothing where no tags could be read, or none exist", () => {
+    expect(gaps([versions[0]!], undefined)).toEqual([]);
+    expect(gaps([versions[0]!], [])).toEqual([]);
+  });
+});
+
+describe("checkChangelog() — against the repository's release tags", () => {
+  const git = (cwd: string, ...args: string[]): void => {
+    const result = spawnSync("git", args, { cwd, stdio: "ignore" });
+    if (result.status !== 0) throw new Error(`git ${args.join(" ")} failed`);
+  };
+
+  /** A repository carrying `source` as its changelog, with a lightweight tag for every version in `tags`. */
+  function repository(source: string, tags: string[]): string {
+    const dir = root(source);
+    git(dir, "init", "--quiet");
+    git(dir, "-c", "user.name=forge", "-c", "user.email=forge@example.test", "commit", "--quiet", "--allow-empty", "-m", "release");
+    for (const tag of tags) git(dir, "tag", tag);
+    return dir;
+  }
+
+  const recordedFor = (source: string): Record<string, string> => {
+    const parsed = parseChangelog(source);
+    if (!parsed.ok) throw new Error(parsed.error.join("\n"));
+    return Object.fromEntries(parsed.data.versions.map((heading) => [heading.version, changelogSectionDigest(heading.body)]));
+  };
+
+  it("refuses a released section deleted together with its digest", () => {
+    const deleted = VALID.replace("## [1.2.0] — 2026-02-01\n\nBodies are prose.\n\n---\n\n", "").replace(
+      "[1.2.0]: https://example.test/compare/v1.1.0...v1.2.0\n",
+      "",
+    );
+    const dir = repository(deleted, ["v1.1.0", "v1.2.0"]);
+    mkdirSync(resolve(dir, "config"), { recursive: true });
+    writeFileSync(resolve(dir, "config/changelog-sections.json"), JSON.stringify(recordedFor(deleted)), "utf-8");
+
+    const found = checkChangelog({ root: dir, packageVersion: "1.1.0" }).findings.map((finding) => finding.message);
+
+    expect(found).toEqual([
+      "`1.2.0` was released (its tag exists) but the changelog has no section for it — only the oldest releases may be trimmed. Restore the section and its digest.",
+    ]);
+  });
+
+  it("passes a directory that is not a repository, where no tag can be read", () => {
+    expect(checkChangelog({ root: root(VALID), packageVersion: "1.2.0" }).findings).toEqual([]);
   });
 });

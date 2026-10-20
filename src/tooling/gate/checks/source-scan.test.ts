@@ -13,6 +13,7 @@ import {
   isTestSource,
   listDirectories,
   listFiles,
+  resolveModuleFile,
   resolveSources,
   unresolvedSourceEntries,
 } from "./source-scan";
@@ -265,6 +266,44 @@ describe("unresolvedSourceEntries() — the entry a walk would skip silently", (
   it("judges no `!` exclusion, which narrows a walk rather than declaring one", () => {
     expect(named(["src", "!src/gone"])).toEqual([]);
   });
+});
+
+describe("resolveModuleFile() — the file a module path names", () => {
+  const root = mkdtempSync(join(tmpdir(), "forge-module-file-"));
+  roots.push(root);
+
+  beforeAll(() => {
+    const files = [
+      "src/a.ts",
+      "src/view.tsx",
+      "src/both.ts",
+      "src/both.tsx",
+      "src/dir/mod.ts",
+      "src/ui/mod.tsx",
+      "src/shadow.ts",
+      "src/shadow/mod.ts",
+    ];
+    for (const file of files) {
+      mkdirSync(dirname(join(root, file)), { recursive: true });
+      writeFileSync(join(root, file), "", "utf-8");
+    }
+  });
+
+  const cases: { label: string; modulePath: string; expected: string | null }[] = [
+    { label: "a `.ts` file", modulePath: "src/a", expected: "src/a.ts" },
+    { label: "a `.tsx` file", modulePath: "src/view", expected: "src/view.tsx" },
+    { label: "the `.ts` file where a `.tsx` sits beside it", modulePath: "src/both", expected: "src/both.ts" },
+    { label: "a directory's `mod.ts` barrel", modulePath: "src/dir", expected: "src/dir/mod.ts" },
+    { label: "a directory's `mod.tsx` barrel", modulePath: "src/ui", expected: "src/ui/mod.tsx" },
+    { label: "the file over a same-named directory's barrel", modulePath: "src/shadow", expected: "src/shadow.ts" },
+    { label: "nothing for a path naming no file", modulePath: "src/missing", expected: null },
+  ];
+
+  for (const { label, modulePath, expected } of cases) {
+    it(`resolves ${label}`, () => {
+      expect(resolveModuleFile(root, modulePath)).toBe(expected);
+    });
+  }
 });
 
 describe("isTestSource() — the one suffix list every check reads", () => {

@@ -7,8 +7,9 @@ import type { FeatureGraph, FeatureManifest } from "../../curate/types";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
-import type { ImportBoundaryCheckConfig } from "./types";
+import { importTargets, readPackageImports } from "./package-imports";
+import { collectFiles, isTestSource, resolveModuleFile, unresolvedSourceEntries } from "./source-scan";
+import type { ImportBoundaryCheckConfig, PackageImports } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
@@ -17,13 +18,6 @@ const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.
 /** Whether `file` is, or lives under, one of the guarded paths. @public */
 export function isGuarded(file: string, guarded: readonly string[]): boolean {
   return guarded.some((dir) => file === dir || file.startsWith(`${dir}/`));
-}
-
-// `resolveSpecifier` strips the extension, because the graph check it serves needs only the directory.
-// A finding has to name a file, so the extension — and the `mod.ts` a directory specifier means — is put back.
-function resolveModuleFile(root: string, modulePath: string): string | null {
-  const candidates = [...MODULE_EXTENSIONS.map((ext) => `${modulePath}${ext}`), ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/mod${ext}`)];
-  return candidates.find((candidate) => existsSync(resolve(root, candidate))) ?? null;
 }
 
 /** Every published subpath whose target is a guarded module, as a consumer would spell it. @public */
@@ -58,16 +52,26 @@ function checkGuardedEntry(root: string, entry: string): Finding | null {
   });
 }
 
-/** What a guarded module a source names resolves to, or `null` when the specifier stays outside every guarded tree. */
-function crossingTarget(root: string, guarded: readonly string[], file: string, specifier: string, published: Map<string, string>): string | null {
+/** What a source's specifier reaches: the guarded paths, the guarded subpaths a self-import names, and the `imports` map a `#` specifier goes through. */
+interface CrossingScope {
+  guarded: readonly string[];
+  published: Map<string, string>;
+  imports: PackageImports;
+}
+
+/** Every guarded module a source's specifier resolves to, empty when it stays outside every guarded tree. */
+function crossingTargets(root: string, scope: CrossingScope, file: string, specifier: string): string[] {
   const module = resolveSpecifier(file, specifier);
   if (module !== null) {
     const target = resolveModuleFile(root, module) ?? module;
-    return isGuarded(target, guarded) ? target : null;
+    return isGuarded(target, scope.guarded) ? [target] : [];
   }
+  const mapped = importTargets(scope.imports, specifier).filter((target) => isGuarded(target, scope.guarded));
+  if (mapped.length > 0) return mapped;
   // A self-import by package name resolves to nothing relative, so it would otherwise walk straight
   // past both the graph check and this one.
-  return published.get(specifier) ?? null;
+  const published = scope.published.get(specifier);
+  return published === undefined ? [] : [published];
 }
 
 interface FeatureDir {
@@ -92,28 +96,28 @@ function judgeSliceSource(
   feature: string,
   graph: FeatureGraph,
   dirs: readonly FeatureDir[],
-  guarded: readonly string[],
-  published: Map<string, string>,
+  scope: CrossingScope,
 ): Finding[] {
   const required = graph.closure.get(feature) ?? new Set<string>();
   return parseImports(readFileSync(resolve(root, file), "utf-8")).flatMap((ref) => {
     if (ref.kind === "type") return [];
-    const target = crossingTarget(root, guarded, file, ref.specifier, published);
-    const reached = target === null ? undefined : owningFeature(dirs, target);
-    if (target === null || reached === undefined || reached === feature || required.has(reached)) return [];
-    return [
-      fail(
-        `slice boundary crossed — \`${ref.specifier}\` resolves to \`${target}\`, inside feature \`${reached}\`, which \`${feature}\` does not require`,
-        {
-          file,
-          line: ref.line,
-          detail: [
-            "a feature's directory may import only the features it requires, directly or through another",
-            `add \`${reached}\` to \`${feature}\`'s \`requires\` in the feature manifest, or drop the import`,
-          ],
-        },
-      ),
-    ];
+    return crossingTargets(root, scope, file, ref.specifier).flatMap((target) => {
+      const reached = owningFeature(dirs, target);
+      if (reached === undefined || reached === feature || required.has(reached)) return [];
+      return [
+        fail(
+          `slice boundary crossed — \`${ref.specifier}\` resolves to \`${target}\`, inside feature \`${reached}\`, which \`${feature}\` does not require`,
+          {
+            file,
+            line: ref.line,
+            detail: [
+              "a feature's directory may import only the features it requires, directly or through another",
+              `add \`${reached}\` to \`${feature}\`'s \`requires\` in the feature manifest, or drop the import`,
+            ],
+          },
+        ),
+      ];
+    });
   });
 }
 
@@ -146,7 +150,7 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
       : guarded.flatMap((entry) => checkGuardedEntry(config.root, entry) ?? []);
   if (misconfigured.length > 0) return checkResult(misconfigured, "");
 
-  const published = guardedSubpaths({ ...config, guarded });
+  const scope: CrossingScope = { guarded, published: guardedSubpaths({ ...config, guarded }), imports: readPackageImports(config.root) };
   const dirs = guarded.map((dir) => `\`${dir}\``).join(", ");
   const named = crossings.map((crossing) => `\`${crossing}\``).join(", ");
   const findings: Finding[] = [];
@@ -156,7 +160,7 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
   for (const file of files) {
     const feature = owningFeature(slices, file);
     if (graph !== undefined && feature !== undefined) {
-      findings.push(...judgeSliceSource(config.root, file, feature, graph, slices, guarded, published));
+      findings.push(...judgeSliceSource(config.root, file, feature, graph, slices, scope));
       continue;
     }
     if (isGuarded(file, guarded)) continue;
@@ -167,18 +171,18 @@ export function checkImportBoundary(config: ImportBoundaryCheckConfig): CheckRes
       // A type import is erased at emit, so it puts nothing in a Worker's bundle. The layering it
       // still represents is `validate-namespace-graph`'s to judge, against a declared edge.
       if (ref.kind === "type") continue;
-      const target = crossingTarget(config.root, guarded, file, ref.specifier, published);
-      if (target === null) continue;
-      findings.push(
-        fail(`import boundary crossed — \`${ref.specifier}\` resolves to \`${target}\``, {
-          file,
-          line: ref.line,
-          detail: [
-            `nothing outside ${dirs}${crossings.length === 0 ? "" : `, or the named crossing(s) ${named},`} may import from inside them at value`,
-            "move the importing module inside the guarded tree, or drop the import",
-          ],
-        }),
-      );
+      for (const target of crossingTargets(config.root, scope, file, ref.specifier)) {
+        findings.push(
+          fail(`import boundary crossed — \`${ref.specifier}\` resolves to \`${target}\``, {
+            file,
+            line: ref.line,
+            detail: [
+              `nothing outside ${dirs}${crossings.length === 0 ? "" : `, or the named crossing(s) ${named},`} may import from inside them at value`,
+              "move the importing module inside the guarded tree, or drop the import",
+            ],
+          }),
+        );
+      }
     }
   }
 

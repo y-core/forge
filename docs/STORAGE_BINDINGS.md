@@ -456,7 +456,7 @@ wrappers over it. Its canonical home is `@y-core/forge/context`.
 from the same entry, so the two forms cannot diverge, and an app validates its whole env with one middleware rather than one per binding.
 
 **`optional: true` means an absent binding passes and a present one of the wrong shape still fails.** It relaxes presence, never shape — consistent
-with §4a's "a shape check, not a presence check", and the schema-side statement of what `rateLimit`'s dev allowance and the optional resolvers
+with §4a's "a shape check, not a presence check", and the schema-side statement of what `rateLimit` under `forge cf dev` and the optional resolvers
 already do at runtime (§5a). A security-critical binding is never declared optional (§5b).
 
 ---
@@ -494,7 +494,7 @@ Running tests or `wrangler dev` without a full binding configuration leaves stor
 explicitly for non-critical features:**
 
 - **KV logging** — select channels per request and fall back to console-only ([`STRUCTURED_LOGGING.md`][sl-2d] §2d).
-- **Rate limiting** — pass a `DevAllowance` granting `rateLimitOptional` so the middleware no-ops; only a development entry can mint one
+- **Rate limiting** — run the app with `forge cf dev`, under which `rateLimit` logs and skips an absent binding; every other build answers `503`
   ([`SECURITY_HARDENING.md`][sh-4b] §4b).
 - **D1** — provide in-memory fakes in tests rather than branching in production code paths.
 - **Optional resolvers** — pass `required: false` to receive `null` instead of a throw.
@@ -523,6 +523,6 @@ exist before the worker reaches a serving state.
 [iv-3b]: ./INPUT_VALIDATION.md#3b-the-csrf-key-ring--import-and-rotation
 [lint-readme]: ../src/tooling/lint/README.md
 [sh-2f]: ./SECURITY_HARDENING.md#2f-createroutesecurityheaders-and-the-handler-set-csp
-[sh-4b]: ./SECURITY_HARDENING.md#4b-the-dev-allowance-for-a-missing-binding
+[sh-4b]: ./SECURITY_HARDENING.md#4b-a-missing-binding-under-forge-cf-dev
 [sl]: ./STRUCTURED_LOGGING.md
 [sl-2d]: ./STRUCTURED_LOGGING.md#2d-channel-selection-by-environment

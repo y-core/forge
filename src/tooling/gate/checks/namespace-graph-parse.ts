@@ -1,7 +1,8 @@
 import { posix } from "node:path";
 
+import { importTargets } from "./package-imports";
 import { isTestSource, lineAt } from "./source-scan";
-import type { DeclaredGraph, EdgeKind, EnumerationFinding, GraphFinding, ImportRef, ObservedEdge, SourceFile } from "./types";
+import type { DeclaredGraph, EdgeKind, EnumerationFinding, GraphFinding, ImportRef, ObservedEdge, PackageImports, SourceFile } from "./types";
 
 /** Filler for masked comment and literal interiors: same length, never a quote, never whitespace. */
 const MASK = "\u0001";
@@ -53,8 +54,8 @@ function opensRegex(text: string, index: number): boolean {
   return REGEX_KEYWORDS.has(text.slice(start + 1, i + 1));
 }
 
-/** Blanks out comments, literal interiors, and regex literals, preserving every character position. */
-function maskSource(source: string): MaskedSource {
+/** Blanks out comments, literal interiors, and regex literals, preserving every character position. @internal */
+export function maskSource(source: string): MaskedSource {
   const out: string[] = [];
   const literals = new Map<number, string>();
   const fill = (text: string) => text.replace(/[^\n]/g, MASK);
@@ -208,7 +209,11 @@ export function resolveSpecifier(fromFile: string, specifier: string): string | 
 }
 
 /** The observed dependency graph: source namespace to target namespace to the edge between them. */
-export function buildGraph(files: readonly SourceFile[], dirs: readonly string[]): Map<string, Map<string, ObservedEdge>> {
+export function buildGraph(
+  files: readonly SourceFile[],
+  dirs: readonly string[],
+  imports: PackageImports = {},
+): Map<string, Map<string, ObservedEdge>> {
   const graph = new Map<string, Map<string, ObservedEdge>>();
 
   for (const file of files) {
@@ -218,28 +223,27 @@ export function buildGraph(files: readonly SourceFile[], dirs: readonly string[]
 
     for (const ref of parseImports(file.source)) {
       const resolved = resolveSpecifier(file.path, ref.specifier);
-      if (resolved === null) continue;
-      const to = namespaceOf(resolved, dirs);
-      if (to === null || to === from) continue;
-
-      let targets = graph.get(from);
-      if (!targets) {
-        targets = new Map<string, ObservedEdge>();
-        graph.set(from, targets);
-      }
-
-      const existing = targets.get(to);
-      if (!existing) {
-        targets.set(to, { kind: ref.kind, file: file.path, line: ref.line });
-        continue;
-      }
-      if (existing.kind === "type" && ref.kind === "value") {
-        targets.set(to, { kind: "value", file: file.path, line: ref.line });
+      const reached = resolved === null ? importTargets(imports, ref.specifier) : [resolved];
+      for (const path of reached) {
+        const to = namespaceOf(path, dirs);
+        if (to === null || to === from) continue;
+        recordEdge(graph, from, to, { kind: ref.kind, file: file.path, line: ref.line });
       }
     }
   }
 
   return graph;
+}
+
+function recordEdge(graph: Map<string, Map<string, ObservedEdge>>, from: string, to: string, edge: ObservedEdge): void {
+  let targets = graph.get(from);
+  if (!targets) {
+    targets = new Map<string, ObservedEdge>();
+    graph.set(from, targets);
+  }
+
+  const existing = targets.get(to);
+  if (!existing || (existing.kind === "type" && edge.kind === "value")) targets.set(to, edge);
 }
 
 /** Sorted keys, so a findings list is a function of the graph and not of insertion order. */

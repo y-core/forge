@@ -233,10 +233,14 @@ export type AuthTurnstileFlow = "signin" | "signup" | "verify" | "resend";
 
 /** Where the auth forms read their Turnstile keys and token constraints, and which forms carry a widget. @public */
 export interface AuthTurnstileOptions<Bindings = Record<string, unknown>> {
-  /** Read per request, because a Worker holds no secret until a request carries its bindings. */
-  readonly keys: (c: AppContext<Bindings>) => v.InferOutput<typeof TurnstileConfigSchema> | Promise<v.InferOutput<typeof TurnstileConfigSchema>>;
-  /** What siteverify's answer must match; forge binds the action per form itself. */
-  readonly verify: (c: AppContext<Bindings>) => Omit<TurnstileVerifyOptions, "tokenField" | "expectedAction" | "expectedCData">;
+  /** Replaces the keys `readTurnstileKey` reads per request. */
+  readonly keys?:
+    | ((c: AppContext<Bindings>) => v.InferOutput<typeof TurnstileConfigSchema> | Promise<v.InferOutput<typeof TurnstileConfigSchema>>)
+    | undefined;
+  /** Constraints merged over the defaults — the request's hostname and its `CF-Connecting-IP`; forge binds the action per form itself. */
+  readonly verify?:
+    | ((c: AppContext<Bindings>) => Partial<Omit<TurnstileVerifyOptions, "tokenField" | "expectedAction" | "expectedCData">>)
+    | undefined;
   /** The forms guarded. Defaults to every one. */
   readonly flows?: readonly AuthTurnstileFlow[] | undefined;
 }

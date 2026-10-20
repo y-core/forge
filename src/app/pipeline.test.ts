@@ -7,6 +7,7 @@ import { v } from "../validation/validation";
 import { defineAction } from "./action";
 import { Forge } from "./forge-app";
 import { firstDeclaredField, screenTurnstile } from "./pipeline";
+import type { ActionTurnstileOptions } from "./types";
 
 const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
@@ -405,4 +406,98 @@ describe("firstDeclaredField", () => {
       expect(firstDeclaredField(schema)).toBe(expected);
     });
   }
+});
+
+describe("createSubmissionPipeline — Turnstile defaults", () => {
+  const KEYS_ENV = { TURNSTILE_SITE_KEY: "site-key-public", TURNSTILE_SECRET_KEY: "secret-key-private" };
+
+  /** Answers siteverify with `answer`; hands back every body it was sent. */
+  function siteverify(answer: Record<string, unknown>): unknown[] {
+    const sent: unknown[] = [];
+    fakeSiteverify(async (init) => {
+      sent.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify(answer));
+    });
+    return sent;
+  }
+
+  function guardedApp(turnstile: ActionTurnstileOptions, errors: Error[] = []) {
+    return makeApp(
+      defineAction({
+        schema: NameSchema,
+        turnstile,
+        onError: (error) => {
+          errors.push(error);
+          return new Response("custom 500", { status: 500 });
+        },
+        handle: (data) => new Response(data.name),
+      }),
+    );
+  }
+
+  function postAt(app: Forge, url: string, env: Record<string, unknown>, headers: Record<string, string> = {}): Promise<Response> {
+    return app.request(url, { method: "POST", headers: { ...FORM_HEADERS, ...headers }, body: `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved` }, env);
+  }
+
+  it("verifies under the bindings' secret and the request's remote address, admitting a token solved for the request's hostname", async () => {
+    const sent = siteverify({ success: true, hostname: "app.example" });
+
+    const res = await postAt(guardedApp({}), "https://app.example/test", KEYS_ENV, { "CF-Connecting-IP": "203.0.113.7" });
+
+    expect({ status: res.status, body: await res.text(), sent }).toEqual({
+      status: 200,
+      body: "Jane",
+      sent: [{ secret: "secret-key-private", response: "solved", remoteip: "203.0.113.7" }],
+    });
+  });
+
+  it("verifies with only the secret bound, so an action never reads the site key", async () => {
+    const sent = siteverify({ success: true, hostname: "app.example" });
+
+    const res = await postAt(guardedApp({}), "https://app.example/test", { TURNSTILE_SECRET_KEY: "secret-key-private" });
+
+    expect({ status: res.status, sent }).toEqual({ status: 200, sent: [{ secret: "secret-key-private", response: "solved" }] });
+  });
+
+  it("sends no remote address when the request carries no CF-Connecting-IP", async () => {
+    const sent = siteverify({ success: true, hostname: "app.example" });
+
+    await postAt(guardedApp({}), "https://app.example/test", KEYS_ENV);
+
+    expect(sent).toEqual([{ secret: "secret-key-private", response: "solved" }]);
+  });
+
+  it("refuses a token solved for a hostname other than the request's", async () => {
+    siteverify({ success: true, hostname: "elsewhere.example" });
+
+    const res = await postAt(guardedApp({}), "https://app.example/test", KEYS_ENV);
+
+    expect(res.status).toBe(422);
+  });
+
+  for (const { name, env, message } of [
+    { name: "an absent secret key", env: { TURNSTILE_SITE_KEY: "site-key-public" }, message: "Invalid environment: TURNSTILE_SECRET_KEY: missing" },
+    { name: "a blank secret key", env: { ...KEYS_ENV, TURNSTILE_SECRET_KEY: "" }, message: "Invalid environment: TURNSTILE_SECRET_KEY: missing" },
+  ]) {
+    it(`answers 500 naming the key for ${name}, without spending a siteverify call`, async () => {
+      const sent = siteverify({ success: true, hostname: "app.example" });
+      const errors: Error[] = [];
+
+      const res = await postAt(guardedApp({}, errors), "https://app.example/test", env);
+
+      expect({ status: res.status, messages: errors.map((error) => error.message), sent }).toEqual({ status: 500, messages: [message], sent: [] });
+    });
+  }
+
+  it("lets a consumer's secret and constraints win over the defaults", async () => {
+    const sent = siteverify({ success: true, hostname: "apex.example", action: "contact" });
+
+    const res = await postAt(
+      guardedApp({ secretKey: () => "override-secret", verify: () => ({ expectedHostname: "apex.example", expectedAction: "contact" }) }),
+      "https://www.app.example/test",
+      {},
+    );
+
+    expect({ status: res.status, sent }).toEqual({ status: 200, sent: [{ secret: "override-secret", response: "solved" }] });
+  });
 });

@@ -14,6 +14,7 @@ import { checkCssTokens } from "./checks/css-tokens";
 import { checkDesignScale } from "./checks/design-scale";
 import { hasTailwind } from "./checks/design-system";
 import { checkDevBoundary } from "./checks/dev-boundary";
+import { checkDevBundle } from "./checks/dev-bundle";
 import { checkExports } from "./checks/exports";
 import { checkExposure } from "./checks/exposure";
 import { checkFeatures } from "./checks/features";
@@ -41,6 +42,7 @@ import type { CssSourcesCheckConfig } from "./checks/types";
 import type { CssTokensCheckConfig } from "./checks/types";
 import type { DesignScaleCheckConfig } from "./checks/types";
 import type { DevBoundaryCheckConfig } from "./checks/types";
+import type { DevBundleCheckConfig } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
 import type { ExposureCheckConfig } from "./checks/types";
 import type { ImportBoundaryCheckConfig } from "./checks/types";
@@ -309,6 +311,11 @@ export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOpt
   return checkStep("validate-dev-boundary", () => checkDevBoundary(config), options, {
     watches: [...sourceWatches(config.sources ?? ["src"]), ...workerConfig],
   });
+}
+
+/** Bundles the deployed `main` and checks that no module in it is development code. @public */
+export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "full" });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */

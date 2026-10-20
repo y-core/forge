@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, spyOn } from "bun:test";
 
 import { Forge } from "../app/forge-app";
-import { devAllowance } from "../dev/allowance";
 import { mapHandler } from "../testing/route";
-import { rateLimit } from "./rate-limit";
+import * as securityBarrel from "./mod";
+import { limitRequests, rateLimit } from "./rate-limit";
 import type { RateLimitBinding } from "./types";
 
 type Env = { LIMITER?: RateLimitBinding };
@@ -11,6 +11,16 @@ type Env = { LIMITER?: RateLimitBinding };
 function makeApp(opts?: Partial<Parameters<typeof rateLimit>[0]>) {
   const app = new Forge<Env>();
   app.use("*", rateLimit<Env>({ limiter: (c) => c.env.LIMITER, ...opts }));
+  mapHandler(app, "POST", "/test", () => new Response("ok"));
+  return app;
+}
+
+function makeRelaxedApp() {
+  const app = new Forge<Env>();
+  app.use(
+    "*",
+    limitRequests<Env>({ limiter: (c) => c.env.LIMITER, trustCfHeaders: true }, () => true),
+  );
   mapHandler(app, "POST", "/test", () => new Response("ok"));
   return app;
 }
@@ -72,17 +82,36 @@ describe("rateLimit middleware", () => {
     expect(res.status).toBe(503);
   });
 
-  it("returns 503 when binding is undefined, there being no allowance", async () => {
+  it("returns 503 when binding is undefined in a build not armed for development", async () => {
     const app = makeApp();
     const res = await app.request("/test", { method: "POST" });
     expect(res.status).toBe(503);
   });
 
-  it("skips when binding is undefined and a dev allowance grants rateLimitOptional", async () => {
-    const app = makeApp({ dev: devAllowance({ rateLimitOptional: true }) });
-    const res = await app.request("/test", { method: "POST" });
+  it("skips when binding is undefined under a relaxation that admits its absence", async () => {
+    const res = await makeRelaxedApp().request("/test", { method: "POST" });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
+  });
+
+  it("still enforces a present binding under a relaxation that admits an absent one", async () => {
+    const res = await makeRelaxedApp().request(
+      "/test",
+      { method: "POST", headers: { "CF-Connecting-IP": "1.2.3.4" } },
+      { LIMITER: { limit: async () => ({ success: false }) } },
+    );
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 429, body: "Too many requests. Please try again later." });
+  });
+
+  it("returns 503 when a relaxing `dev` is smuggled into the options past the type", async () => {
+    const app = makeApp({ dev: () => true } as never);
+    const res = await app.request("/test", { method: "POST" });
+    expect(res.status).toBe(503);
+  });
+
+  it("takes no `dev` option, so only a development build relaxes it", () => {
+    // @ts-expect-error — `rateLimit` takes no `dev` option
+    rateLimit<Env>({ limiter: (c) => c.env.LIMITER, dev: true });
   });
 
   it("uses custom key function regardless of trustCfHeaders", async () => {
@@ -186,5 +215,11 @@ describe("rateLimit — a failing binding or key", () => {
         error: { type: "Error", detail: "tenant header missing", stack: keyFailure.stack },
       },
     ]);
+  });
+});
+
+describe("limitRequests", () => {
+  it("stays off the security barrel, so no consumer reaches the relaxation", () => {
+    expect(Object.values<unknown>(securityBarrel).includes(limitRequests)).toBe(false);
   });
 });

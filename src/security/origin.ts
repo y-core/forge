@@ -1,8 +1,11 @@
-import type { Middleware } from "@remix-run/fetch-router";
+import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 
+import { devExtraOrigins } from "#relax/origin";
+
+import { EnvKey } from "../context/types";
 import { isWebSocketUpgrade } from "../http/upgrade";
 import { err, ok } from "../result/result";
-import type { OriginResult } from "./types";
+import type { OriginResult, RelaxExtraOrigins } from "./types";
 
 /** @internal */
 export const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
@@ -11,6 +14,12 @@ export const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 /** True when an origin guard lets the request through without looking at it. @internal */
 export function isExemptFromOriginCheck(request: Request): boolean {
   return SAFE_METHODS.has(request.method.toUpperCase()) && !isWebSocketUpgrade(request);
+}
+
+/** `allowedOrigins` with the origins `readExtra` finds in this request's bindings appended. @internal */
+export function withExtraOrigins(context: RequestContext, allowedOrigins: string[], readExtra: RelaxExtraOrigins = devExtraOrigins): string[] {
+  const extra = readExtra(context.get(EnvKey));
+  return extra.length === 0 ? allowedOrigins : [...allowedOrigins, ...extra];
 }
 
 /** Pure function: checks Origin/Referer headers against the allowed list. @public */
@@ -41,7 +50,7 @@ export function verifyOrigin(request: Request, allowedOrigins: string[]): Origin
 export function originGuard(allowedOrigins: string[]): Middleware {
   return async (context, next) => {
     if (isExemptFromOriginCheck(context.request)) return next();
-    const result = verifyOrigin(context.request, allowedOrigins);
+    const result = verifyOrigin(context.request, withExtraOrigins(context, allowedOrigins));
     if (!result.ok) return new Response("Forbidden", { status: 403 });
     return next();
   };

@@ -221,11 +221,11 @@ without you supplying anything. Optional hooks replace them one for one, and eac
 before the schema sees it — no schema declares it. CSRF, origin and rate-limit guards decide from the request envelope and belong in the
 controller's `middleware` array ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
 
+`turnstile: {}` reads the secret from `TURNSTILE_SECRET_KEY`, pins the request's own hostname and forwards `CF-Connecting-IP`; `secretKey` and
+`verify` override those defaults, `verify` merged over them:
+
 ```ts
-turnstile: {
-  secretKey: (c, config) => config.turnstile.secretKey,
-  verify: (c) => ({ remoteIp: c.request.headers.get("cf-connecting-ip") ?? undefined, expectedHostname: "example.com" }),
-},
+turnstile: { verify: () => ({ expectedHostname: "example.com" }) },
 ```
 
 ---
@@ -384,15 +384,14 @@ import { createApp, createErrorPage } from "@y-core/forge/app";
 
 export default createApp<Bindings>({
   config: appConfig,
-  dev, // minted in src/worker.dev.ts
-  onError: createErrorPage<Bindings>({ dev, stylesheetHref: "/assets/css/main.css", homeHref: "/" }),
+  onError: createErrorPage<Bindings>({ stylesheetHref: "/assets/css/main.css", homeHref: "/" }),
 });
 ```
 
 `createErrorPage` works as `definePage`'s `onError` too, and keeps the default boundary's guarantees: everything interpolated is escaped, and the
-thrown message appears **only** under a `DevAllowance` granting `errorDetail`, which only a development entry can mint
-([`@y-core/forge/dev`][dev-readme]). Passing `dev` to `createApp` does the same for the default page. A `stylesheetHref` resolver that throws yields
-the page without the link rather than no page.
+thrown message appears **only** under [`forge cf dev`][cf-dev], so you see what broke locally and a deployed Worker never says. It takes no
+option for this. A `stylesheetHref` resolver
+that throws yields the page without the link rather than no page.
 
 A `Reference: <id>` line appears when the `requestId` middleware ran, matching the `x-request-id` header for a user to quote. Neither page mints an
 id, so without that middleware the line is absent.
@@ -461,11 +460,10 @@ hooks guarantee.
 - [`docs/INPUT_VALIDATION.md`][iv] — the submission sequence, and what a refusal is allowed to say
 - [`src/config/README.md`][config-readme] — the store `createApp({ config })` resolves per request
 - [`src/router/README.md`][router-readme] — `route`, `createController`, and route-pattern syntax
-- [`src/dev/README.md`][dev-readme] — minting the `DevAllowance` that unlocks error detail
 
+[cf-dev]: ../tooling/cf/README.md#running-the-app-locally
 [cf-readme]: ../tooling/cf/README.md
 [config-readme]: ../config/README.md
-[dev-readme]: ../dev/README.md
 [eh]: ../../docs/FORGE_ERRORS.md
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw

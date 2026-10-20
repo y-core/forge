@@ -1,10 +1,12 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
+import { admitsAbsentLimiter } from "#relax/rate-limit";
+
 import type { AppContext } from "../context/types";
 import { getAppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
 import { serializeError } from "../logging/serialize-error";
-import type { RateLimitOptions } from "./types";
+import type { RateLimitOptions, RelaxAbsentLimiter } from "./types";
 
 const DEFAULT_MESSAGE = "Too many requests. Please try again later.";
 
@@ -23,8 +25,16 @@ function defaultOnLimit(): Response {
   return new Response(DEFAULT_MESSAGE, { status: 429 });
 }
 
-/** Middleware enforcing a Cloudflare rate-limit binding, returning 503 when the binding is absent unless a `DevAllowance` grants `rateLimitOptional`. @public */
+/** Middleware enforcing a Cloudflare rate-limit binding, returning 503 when the binding is absent unless a development build admits its absence. @public */
 export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimitOptions<Bindings>): Middleware {
+  return limitRequests(options, admitsAbsentLimiter);
+}
+
+/** `rateLimit` with the absent-binding relaxation passed in. @internal */
+export function limitRequests<Bindings = Record<string, unknown>>(
+  options: RateLimitOptions<Bindings>,
+  admitsAbsent: RelaxAbsentLimiter,
+): Middleware {
   const logger = createLogger("rate-limit");
   const limiter = options.limiter;
   const defaultKeyResolver: (c: AppContext<Bindings>) => string = options.trustCfHeaders
@@ -37,16 +47,12 @@ export function rateLimit<Bindings = Record<string, unknown>>(options: RateLimit
       };
   const key: (c: AppContext<Bindings>) => string = options.key ?? defaultKeyResolver;
   const onLimit: (c: AppContext<Bindings>) => Response | Promise<Response> = options.onLimit ?? defaultOnLimit;
-  const required = options.dev?.options.rateLimitOptional !== true;
 
   return async (context, next) => {
     const c = getAppContext<Bindings>(context);
     const binding = limiter(c);
     if (!binding) {
-      if (!required) {
-        logger.warn("Rate limiter binding not configured — skipping");
-        return next();
-      }
+      if (admitsAbsent()) return next();
       return new Response("Service unavailable", { status: 503 });
     }
     let resolvedKey: string;

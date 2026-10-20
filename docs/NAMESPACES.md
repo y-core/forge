@@ -39,7 +39,8 @@ audience: internal
 - §5g tooling — Where a Developer-Facing Tool Belongs: a command, a gate check, a lint rule or a release step, and why none of it is
   Worker-reachable
 - §5h auth — Identity, and Only the Domain of It: what `auth` owns, and the split that keeps a `Response` out of it
-- §5i dev — A Dev-Only Allowance, Never a Boolean on a Production Option: where a relaxation production must not hold belongs
+- §5i Dev-Only Relaxations — a `#relax` Module, Never a Boolean on a Production Option: the build condition that leaves a relaxation
+  out of the deploy, the define that arms it, and the checks that hold it
 - §5j `render` — One Namespace per Renderer: the container and its children, the call shape, the JSX edge, the `render/pdf` bare-component
   carve-out, and what `render/markdown` leaves to an app
 - §5k `crypto/keyring` — Values Signed or Sealed Under the App's Own Root Secret: the `crypto` container, what routes here rather than to
@@ -366,28 +367,48 @@ published through `./auth/client`, and reads the `PASSKEY_*` contract from `auth
 Worker-safe and the browser bundle takes only the constants. `ui/client` keeps the runtime it lends (`registerScope`, `ownerWindow`), and
 `ssrBoundaryStep` names both client directories. Nothing auth-specific goes in `ui/contracts` or `ui/client`.
 
-### 5i. dev — A Dev-Only Allowance, Never a Boolean on a Production Option
+### 5i. Dev-Only Relaxations — a `#relax` Module, Never a Boolean on a Production Option
 
-**A relaxation that must not reach production goes in `dev` as an allowance, never on the production option as a boolean.** `rateLimit`'s absent
-binding is the standing case: it takes `dev?: DevAllowance` — a token `@y-core/forge/dev` mints and nothing else can construct
-([`src/dev/README.md`][dev-readme]).
+**A relaxation that must not reach production lives in a `*.dev.ts` module a build condition selects, never on the production option as a
+boolean.** `rateLimit`'s absent binding is the standing case: only a Worker built by `forge cf dev` admits it.
 
 **The reason is where the boolean could be set from.** `rateLimit({ required: false })` sat on a production option, so a shared middleware module
-both entries import could set it, and a missing `RATE_LIMITER` binding in production then disabled rate limiting in silence. Minting an allowance is
-an _import_, and `validate-dev-boundary` fails that import from anything a `wrangler deploy` bundles — so the seam is a fact about the module graph
-rather than a promise about a call site.
+both entries import could set it, and a missing `RATE_LIMITER` binding in production then disabled rate limiting in silence. A `#relax` module is
+chosen when the Worker is bundled, so whether a deployed Worker can relax is a fact about how it was built rather than a promise about a call site.
 
-**The type and the check each hold it.** The type makes the relaxation unrepresentable without the token; rule C of the check makes the import that
-mints one a gate failure outside a `*.dev.ts` entry. The _type_ crosses freely, because it is erased at emit — which is what lets a production
-option name `DevAllowance` and still be unable to build one.
+**Each hook imports its relaxation through forge's own `imports` map, and default resolution picks the strict stub.** Every `#relax/*` entry in
+`package.json` maps the `forge-dev` condition to a `*.dev.ts` beside the hook and `default` to a `*.strict.ts` stub that always answers strict. Bun,
+`tsc`, a plain `wrangler dev` and `wrangler deploy` resolve `default`, so a deployed bundle holds no relaxation logic at all. The two targets export
+the same name under one `@internal` `Relax*` type from the namespace's `types.ts`, so they cannot drift apart in shape. The map is the list of
+relaxations; this section names none it would have to keep in step.
 
-**`dev` is a leaf, and stays one.** It owns the token and the option shape; every relaxation stays in the namespace that owns its concern
-(`security`, `app`, `form`), each of which names `dev` at type only. A development _behaviour_ — a fake binding, a dev route, a reload channel — is
-not this namespace's: fakes are `testing`'s, and a dev route is the app's own `*.dev.ts` entry.
+**The condition selects the module, and the `__FORGE_DEV__` define arms it.** A dev module answers relaxed only in a build that defines
+`__FORGE_DEV__` as `true`; `src/context/armed.dev.ts` holds that check once, and each dev module routes its behaviour through `whenArmed` with the
+strict stub's export as the other branch, so the strict answer has one home. A bundle built under `forge-dev` without the define is still strict.
+`forge cf dev` sets both, in wrangler's child process only ([`src/tooling/cf/README.md`][cf-readme]).
+
+**A hook keeps its public signature and takes no relaxation.** The relaxation enters through an `@internal` function that takes it as its last
+parameter, and it is bound where the `#relax` import is read: either the hook passes it in, as `rateLimit` does to `limitRequests`, or the function
+binds it as its own default, as `withExtraOrigins` does behind `originGuard` and `originProtection`. A public function never takes it as a default
+parameter, because that would be a relaxation path a consumer could reach. The `@internal` function need not share the hook's file: `Forge` reads
+`#relax/error-page` and passes it to `fallbackErrorDocument` in `error-page.ts`. No barrel exports the function, so no consumer can pass it a
+relaxation. Inside forge, `originProtection` passes `crossOriginVerdict` a fixed `true`, because the Origin allowlist after it is what judges a
+request without Fetch Metadata.
+
+**The check holds it in two places.** Rule B of `validate-dev-boundary` fails a production module importing a `*.dev.ts`, a type import included;
+a `*.dev.ts` may import another. Rule C fails a value import of a dev-only subpath outside a `*.dev.ts` module. Both follow a `#` specifier to its
+deploy target, and rule B fails each `imports` entry whose deploy target is a `*.dev.ts`, and every importer that reaches it. The built bundle is
+still `validate-dev-bundle`'s to prove: on the `full` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a dev-only
+directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every
+dev module.
+
+**An app's own dev-only code takes the same shape.** A route, a banner or a CSP source only development should see goes behind the app's own
+`imports` alias, and a fake binding is still `testing`'s rather than a relaxation's. The recipe is
+[`src/tooling/cf/README.md`][cf-readme-own].
 
 **Where a relaxation is legitimate in production, it stays an explicit literal.** `csrfProtection({ subject: false })` is the idiom — a grep finds
-every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). The token is for the ones that are not legitimate, and the difference must stay
-visible at the call site.
+every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). A `#relax` module is for the ones that are not legitimate, and the difference
+must stay visible at the call site.
 
 ### 5j. `render` — One Namespace per Renderer
 
@@ -516,9 +537,10 @@ second repository needs it.
 [boundaries-2c]: ../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
 [bt-2i]: ./BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ./BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
+[cf-readme]: ../src/tooling/cf/README.md#running-the-app-locally
+[cf-readme-own]: ../src/tooling/cf/README.md#keeping-your-own-dev-only-code-out-of-the-deploy
 [cr]: ../warden/canon/shared/CODE_RULES.md
 [cr-7]: ../warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
-[dev-readme]: ../src/dev/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-1]: ./FORGE_ERRORS.md#1-result-monad
 [eh-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror

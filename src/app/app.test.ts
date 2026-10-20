@@ -5,7 +5,6 @@ import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { createConfig } from "../config/config";
 import { importKeyRing } from "../crypto/keyring/ring";
-import { devAllowance } from "../dev/allowance";
 import { csrfProtection } from "../form/csrf";
 import type { SerializedError } from "../logging/types";
 import { MatcherResourceError } from "../router/mod";
@@ -128,38 +127,9 @@ describe("createApp", () => {
     expect(await res.text()).toBe("custom error");
   });
 
-  it("shows error details under a dev allowance granting errorDetail", async () => {
-    const app = createApp({ dev: devAllowance({ errorDetail: true }) });
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("database timeout");
-    });
-
-    const res = await app.request("/boom");
-    expect(res.status).toBe(500);
-    const text = await res.text();
-    expect(text).toBe(boundary("database timeout"));
-  });
-
-  it("escapes HTML in debug error messages", async () => {
-    const app = createApp({ dev: devAllowance({ errorDetail: true }) });
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("<script>alert(1)</script>");
-    });
-
-    const res = await app.request("/boom");
-    const text = await res.text();
-    expect(text).toBe(boundary("&lt;script&gt;alert(1)&lt;/script&gt;"));
-  });
-
-  it("hides error details when the allowance grants something else", async () => {
-    const app = createApp({ dev: devAllowance({ rateLimitOptional: true }) });
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("secret info");
-    });
-
-    const res = await app.request("/boom");
-    const text = await res.text();
-    expect(text).toBe(boundary(UNEXPECTED));
+  it("takes no `dev` option, so only a development build discloses error details", () => {
+    // @ts-expect-error — `AppOptions` has no `dev` field
+    createApp({ dev: true });
   });
 
   it("exposes env bindings inside route handlers", async () => {

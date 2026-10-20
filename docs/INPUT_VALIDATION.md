@@ -265,23 +265,29 @@ The split inside that option is deliberate: `tokenField` is fixed when the route
 verification ever reaches the network, while the secret and the verification constraints resolve per request, because a secret lives in a binding
 and the hostname a token must have been minted on is usually the request's own.
 
+**`turnstile: {}` is the whole opt-in, and forge supplies every per-request piece.** The secret is `readTurnstileKey(c, "secretKey")`, read from
+`TURNSTILE_SECRET_KEY` alone and failing closed as §5b states; `expectedHostname` is `c.url.hostname`; `remoteIp` is `CF-Connecting-IP` when the
+request carries one. `secretKey` and `verify` are overrides, `verify` merged over the defaults, and neither carries a relaxation: **the build is the
+only source of one**, so a relaxation is never threaded by hand and never passed by a shared path.
+
 **`auth`'s anonymous forms reach the same verification step through `AuthWebOptions.turnstile`**, which binds each form's action and token field
 itself ([`AUTH_MOUNTING.md`][am-8] §8).
 
-**Always pass `expectedHostname` in production.** Without it the token's origin hostname is not checked, so a token minted on an attacker-controlled
-site can be replayed against this one. A runtime warning is logged when it is omitted.
+**`expectedHostname` is required, and an empty one is a refusal.** It is the anti-replay pin: a token minted on an attacker-controlled site carries
+that site's hostname. Called directly with an empty `expectedHostname`, `verifyTurnstile` answers `hostname-mismatch` without calling siteverify.
 
-**The dev allowance is the key for Cloudflare's testing secrets, and it takes two locks to open.** Those published secrets — `1x…AA` (always
-passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` and no `action` or `cdata`, so
-an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Passing
-`dev`, a [`DevAllowance`][dev-readme] granting `turnstileTestingSecrets`, skips the hostname, action and cdata comparisons **only when
-`secretKey` is one of those literals**. Neither half relaxes anything alone: the token against a real secret does nothing, and a testing secret
-without the token is compared normally. The `success` check and `expectedHostname`'s fail-closed guard still run.
+**Cloudflare's testing secrets are accepted only in a Worker run by `forge cf dev`, and only those literals.** The published secrets — `1x…AA`
+(always passes), `2x…AA` (always fails) and `3x…AA` (token already spent) — make siteverify answer a fixed `hostname` and no `action` or `cdata`,
+so an app pinning its own hostname refuses **every** local submission, and by §4b that refusal is byte-identical to a validation refusal. Under
+`forge cf dev`, `verifyTurnstile` skips the hostname, action and cdata comparisons **only when `secretKey` is one of those literals**; a real secret
+is compared normally there too. Every other build — `wrangler deploy`, and a plain `wrangler dev` — compares every secret normally. The `success`
+check and `expectedHostname`'s fail-closed guard still run.
 
-**There is no env var, and no way to write one.** Minting the token means importing `@y-core/forge/dev` at value, and `validate-dev-boundary`
-fails that import from anything but a `*.dev.ts` entry — so the production bundle holds no module that can set it. It is the containment
-`extraOrigins` has ([`SECURITY_HARDENING.md`][sh-3f] §3f): a relaxation computed from an env check in the shared path is ruled out, and the token
-cannot be reached from that path at all.
+**There is no env var and no option, so nothing the deployed Worker reads can turn it on.** The testing-secret list lives in
+`src/form/turnstile.dev.ts`, which `verifyTurnstile` reaches only through the `#relax/turnstile` import; its default target refuses every testing
+secret, so a deployed bundle holds neither the list nor the skip ([`NAMESPACES.md`][namespaces-5i] §5i). It is the containment the extra origins
+have ([`SECURITY_HARDENING.md`][sh-3f] §3f): a relaxation computed from an env check in the shared path is ruled out, and the build that deploys
+cannot select the module that holds it.
 
 **`expectedAction` is only usable when the widget minted the token with one.** The action rides on the token, so `<Turnstile action='…'>`
 ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c) is the other half of this option — set one without the other and every token is either refused or unscoped,
@@ -323,8 +329,9 @@ checked at parse. **Parse environment-sourced CSRF config through it at startup 
 
 ### 5b. `TurnstileConfigSchema` — Turnstile Credentials Validation
 
-Both `secretKey` and `siteKey` must be present. **Validate through the config store at startup** so missing credentials fail on deploy rather than
-at first form submission.
+The shape an `AuthTurnstileOptions.keys` override returns. **The default reads each key per request through
+`requiredGroup`, and only where it is used**, so a missing or blank key throws `Invalid environment: <KEY>: missing` and the guarded page or
+submission answers 500 — never an unguarded form.
 
 ---
 
@@ -336,8 +343,8 @@ surface each step calls.
 [am-8]: ./AUTH_MOUNTING.md#8-turnstile-on-the-anonymous-forms
 [boundaries-3]: ../warden/canon/libs/BOUNDARIES.md#3-validate-at-the-boundary
 [boundaries-4a]: ../warden/canon/libs/BOUNDARIES.md#4a-the-prohibited-field-classes
-[dev-readme]: ../src/dev/README.md
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
+[namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [ram-2b]: ./ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [sh]: ./SECURITY_HARDENING.md
 [sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev

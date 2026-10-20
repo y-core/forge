@@ -221,9 +221,10 @@ middleware ran, so a throw before `requestId` carries neither the line nor the h
   not a defect to page anyone about. `definePage` and `defineAction` rethrow on the same condition, so neither an `onError` page nor the generic
   fragment is built for a gone client — **this is the one case `defineAction` rethrows** (§5d).
 
-The boundary logs via `createLogger("app")` and includes the escaped `err.message` only under a `DevAllowance` granting `errorDetail` — a token
-only a development entry can mint, passed to `createApp` or to `createErrorPage`. **The client never receives a stack trace.** Consumers may
-override the page with `onError` on `createApp`, `definePage`, or `defineAction`.
+The boundary logs via `createLogger("app")` and includes the escaped `err.message` only in a Worker run by `forge cf dev`, whose
+`#relax/error-page` module discloses it to both the fallback 500 and `createErrorPage` ([`NAMESPACES.md`][namespaces-5i] §5i). There is no option
+and no other switch, so every other build prints the fixed sentence. **The client never receives a stack trace.** Consumers may override the page
+with `onError` on `createApp`, `definePage`, or `defineAction`.
 
 ### 5c. Infrastructure Errors — Log and Fail Closed
 
@@ -313,6 +314,7 @@ parameter and never supply their own (`passkeyTtlSeconds(operation, requested)`)
 [iv]: ./INPUT_VALIDATION.md
 [iv-1b]: ./INPUT_VALIDATION.md#1b-vsafeparse-with-abortearly
 [namespaces-5e]: ./NAMESPACES.md#5e-exported-factory-and-type-naming-convention
+[namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [ram]: ./ROUTING_AND_MIDDLEWARE.md
 [ram-1e]: ./ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
 [sb]: ./STORAGE_BINDINGS.md

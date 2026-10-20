@@ -9,7 +9,6 @@ export const LEAF: readonly string[] = [
   "config",
   "context",
   "crypto/keyring",
-  "dev",
   "html",
   "render/markdown",
   "render/markdown/editor/client",
@@ -27,7 +26,6 @@ export const LEAF: readonly string[] = [
 export const EDGES: Record<string, Record<string, EdgeKind>> = {
   app: {
     config: "value",
-    dev: "type",
     form: "value",
     html: "value",
     http: "value",
@@ -50,7 +48,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     session: "value",
     "ui/core": "value",
   },
-  form: { "crypto/keyring": "value", dev: "type" },
+  form: { "crypto/keyring": "value" },
   http: { html: "value" },
   logging: { "storage/kv": "type" },
   "logging/viewer": {
@@ -68,7 +66,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   "render/pdf/attachments": { "render/pdf": "type" },
   "render/pdf/audit": { "render/pdf": "value" },
   "render/pdf/fonts": { "render/pdf": "type" },
-  security: { dev: "type", http: "value", logging: "value" },
+  security: { http: "value", logging: "value" },
   session: { "crypto/keyring": "value" },
   "storage/db": { logging: "value" },
   "storage/kv": { logging: "value" },

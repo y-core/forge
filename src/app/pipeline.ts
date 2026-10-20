@@ -11,6 +11,7 @@ import { renderError, renderValidationErrors } from "../render/htmx/fragment";
 import { err, ok } from "../result/result";
 import { describeValidationField, describeValidationIssue } from "../validation/format-issues";
 import { v } from "../validation/validation";
+import { readTurnstileKey, turnstileVerifyOptions } from "./turnstile";
 import type { SubmissionPipeline, SubmissionPipelineDefinition } from "./types";
 
 const logger = createLogger("pipeline");
@@ -75,8 +76,10 @@ export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = R
     }
 
     if (def.turnstile !== undefined && turnstileField !== undefined) {
-      const secretKey = await def.turnstile.secretKey(c, config);
-      const verification = await screenTurnstile(c, formData, secretKey, { ...def.turnstile.verify(c, config), tokenField: turnstileField });
+      const { secretKey: secretKeyOverride } = def.turnstile;
+      const secretKey = await readTurnstileKey(c, "secretKey", secretKeyOverride && (() => secretKeyOverride(c, config)));
+      const verify = turnstileVerifyOptions(c, def.turnstile.verify?.(c, config));
+      const verification = await screenTurnstile(c, formData, secretKey, { ...verify, tokenField: turnstileField });
       if (!verification.ok) {
         return err(
           def.onBotDetected

@@ -14,6 +14,14 @@ export function isTestSource(path: string): boolean {
   return TEST_SUFFIXES.some((suffix) => path.endsWith(suffix));
 }
 
+const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
+
+/** The source file a module path names — itself with `.ts` or `.tsx`, or the `mod` barrel of the directory it names. @internal */
+export function resolveModuleFile(root: string, modulePath: string): string | null {
+  const candidates = [...MODULE_EXTENSIONS.map((ext) => `${modulePath}${ext}`), ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/mod${ext}`)];
+  return candidates.find((candidate) => existsSync(resolve(root, candidate))) ?? null;
+}
+
 /** Every file under `dir` matching `accept`, repo-relative to `root`, posix-separated and sorted. @public */
 export function collectFiles(root: string, dir: string, accept: (name: string) => boolean): string[] {
   const base = resolve(root, dir);

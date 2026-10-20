@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { resolveNamespaces } from "./namespace-graph";
+import { importTargets, readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { PackagingCheckConfig } from "./types";
 
@@ -55,7 +56,7 @@ export function moduleImports(root: string, file: string, present: ReadonlySet<s
   return out;
 }
 
-/** The entry modules the `exports` map names, repo-relative. */
+/** The entry modules the `exports` and `imports` maps name, repo-relative. */
 function entryModules(config: PackagingCheckConfig, present: ReadonlySet<string>): string[] {
   const out: string[] = [];
   for (const value of Object.values(config.exports)) {
@@ -64,6 +65,10 @@ function entryModules(config: PackagingCheckConfig, present: ReadonlySet<string>
       const file = target?.replace(/^\.\//, "");
       if (file !== undefined && present.has(file) && !out.includes(file)) out.push(file);
     }
+  }
+  const imports = readPackageImports(config.root);
+  for (const file of Object.keys(imports).flatMap((key) => importTargets(imports, key))) {
+    if (present.has(file) && !out.includes(file)) out.push(file);
   }
   for (const entry of config.entries ?? []) {
     const file = entry.replace(/^\.\//, "");

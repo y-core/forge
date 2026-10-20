@@ -1,7 +1,6 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
 import type { KeyRingResolver } from "../crypto/keyring/types";
-import type { DevAllowance } from "../dev/types";
 import type { GuardResult } from "../result/types";
 
 /** Options for `createCsrfToken`. @public */
@@ -59,8 +58,6 @@ export interface TurnstileVerifyOptions {
   tokenField?: string;
   remoteIp?: string;
   timeoutMs?: number;
-  /** A development entry's token: with `turnstileTestingSecrets` it skips the hostname, action and cdata comparisons, and only when `secretKey` is one of Cloudflare's published testing secrets. */
-  dev?: DevAllowance;
   /** Cancellation from the caller — an abort on it rejects rather than resolving to a `Result`. */
   signal?: AbortSignal;
 }
@@ -87,3 +84,6 @@ export interface CsrfProtectionOptions {
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
   maxBytes?: number;
 }
+
+/** Whether `secretKey` may verify a Turnstile token against siteverify's fixed testing answer. @internal */
+export type RelaxTestingSecret = (secretKey: string) => boolean;

@@ -129,7 +129,8 @@ fail the release outright.
 
 **`sectionsFile` is the one exception, because it is not a project's choice.** The section manifest is forge's own write, and the gate's
 `checkChangelog` refuses a version with no recorded digest — so it is staged on every run that promotes a changelog, whether or not `stageFiles`
-names it. A run that promotes nothing neither writes it nor stages it, for the same reason the changelog is left out of that run's default.
+names it. A run that promotes nothing neither writes it nor stages it, for the same reason the changelog is left out of that run's default. A
+tagged release may be missing a section only from the bottom, below the oldest heading.
 
 **Every refusal is a guard, not a convenience.** [`src/tooling/release/README.md`][release-refusals] lists each with the flag that overrides it,
 where one does; an override defeats exactly one guard, and a malformed changelog has none (§2d).

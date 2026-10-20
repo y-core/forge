@@ -379,30 +379,8 @@ describe("Forge.setOnError", () => {
   });
 });
 
-describe("Forge.setErrorDetail", () => {
-  it("shows the error message once the detail is turned on", async () => {
-    const app = new Forge();
-    app.setErrorDetail(true);
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("connection refused");
-    });
-
-    const res = await app.request("/boom");
-    expect(await res.text()).toBe(ERROR_PAGE("connection refused"));
-  });
-
-  it("escapes the message it reveals", async () => {
-    const app = new Forge();
-    app.setErrorDetail(true);
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("<script>alert('x')</script> & co");
-    });
-
-    const res = await app.request("/boom");
-    expect(await res.text()).toBe(ERROR_PAGE("&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt; &amp; co"));
-  });
-
-  it("hides the message by default, no allowance having turned it on", async () => {
+describe("Forge — the error detail its fallback 500 discloses", () => {
+  it("hides the message by default, in a build not armed for development", async () => {
     const app = new Forge();
     mapHandler(app, "GET", "/boom", () => {
       throw new Error("connection refused");
@@ -410,18 +388,6 @@ describe("Forge.setErrorDetail", () => {
 
     const res = await app.request("/boom");
     expect(res.status).toBe(500);
-    expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
-  });
-
-  it("hides it again when the detail is turned back off", async () => {
-    const app = new Forge();
-    app.setErrorDetail(true);
-    app.setErrorDetail(false);
-    mapHandler(app, "GET", "/boom", () => {
-      throw new Error("connection refused");
-    });
-
-    const res = await app.request("/boom");
     expect(await res.text()).toBe(ERROR_PAGE("An unexpected error occurred."));
   });
 });

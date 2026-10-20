@@ -162,7 +162,7 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 | Renderer, or a construct inside one (a document format, a markdown construct, a PDF component) | a child of `render/` — never `http` | [`NAMESPACES.md`][namespaces-5j] §5j |
 | Design rule or UI anti-pattern (which component to reach for, what good looks like) | `src/ui/design/` — never `docs/` | [`UI_DESIGN_GUIDANCE.md`][udg-5a] §5a |
 | Build-time module — ask "does this drive an external builder, or is it one?" | drives one → `src/tooling/assets`; **is** one → the namespace owning the artifact | [`ASSET_PIPELINE.md`][ap-2c] §2c |
-| A relaxation production must not hold (a skipped guard, an error detail, a test credential) | `dev` as a `DevAllowance` grant — never a boolean on the production option | [`NAMESPACES.md`][namespaces-5i] §5i |
+| A relaxation production must not hold (a skipped guard, an error detail, a test credential) | a `*.dev.ts` behind a `#relax` import whose `default` target is strict, armed only by `forge cf dev` — never a boolean on the production option | [`NAMESPACES.md`][namespaces-5i] §5i |
 | App secret recoverable at rest (webhook secret, OAuth refresh token, integration key) | `crypto/keyring` — never `auth` | [`NAMESPACES.md`][namespaces-5k] §5k |
 | Developer-facing tool — a command, a gate check, a lint rule, a release step, a D1 verb | `src/tooling/{cli,term,gate,lint,release,curate,cf,assets,db}` — never Worker-reachable | [`NAMESPACES.md`][namespaces-5g] §5g |
 
@@ -189,7 +189,7 @@ Add new code in the namespace its concern belongs to; follow the recipe in the g
 [namespaces-5c]: docs/NAMESPACES.md#5c-app--bootstrap-and-pipeline-builders
 [namespaces-5d]: docs/NAMESPACES.md#5d-http--responses-headers-and-paths
 [namespaces-5g]: docs/NAMESPACES.md#5g-tooling--where-a-developer-facing-tool-belongs
-[namespaces-5i]: docs/NAMESPACES.md#5i-dev--a-dev-only-allowance-never-a-boolean-on-a-production-option
+[namespaces-5i]: docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [namespaces-5j]: docs/NAMESPACES.md#5j-render--one-namespace-per-renderer
 [namespaces-5k]: docs/NAMESPACES.md#5k-cryptokeyring--values-signed-or-sealed-under-the-apps-own-root-secret
 [namespaces-5m]: docs/NAMESPACES.md#5m-html--safe-markup-primitives

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 
-import { devAllowance } from "../dev/allowance";
 import { v } from "../validation/mod";
 import { parseEnv } from "../validation/parse-env";
 import { BaseUrlConfigSchema, deriveAllowedOrigins, parseUrl } from "./url";
@@ -72,97 +71,9 @@ describe("deriveAllowedOrigins", () => {
     expect(deriveAllowedOrigins(parsed, { includeWww: true })).toContain("https://www.example.com");
   });
 
-  it("appends a valid https extra origin after the base origin", () => {
-    const parsed = parseUrl("https://a.example");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://b.example"] }) })).toEqual([
-      "https://a.example",
-      "https://b.example",
-    ]);
-  });
-
-  it("appends https://localhost:8787 for the proxy-less dev fallback", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) })).toEqual([
-      "https://example.com",
-      "https://localhost:8787",
-    ]);
-  });
-
-  it("accepts http://localhost:8787 as a loopback extra origin", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["http://localhost:8787"] }) })).toEqual([
-      "https://example.com",
-      "http://localhost:8787",
-    ]);
-  });
-
-  it("accepts http://127.0.0.1:8787 as a loopback extra origin", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["http://127.0.0.1:8787"] }) })).toEqual([
-      "https://example.com",
-      "http://127.0.0.1:8787",
-    ]);
-  });
-
-  it("rejects an extra origin carrying a path", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://x.example/app"] }) })).toThrow(
-      "extraOrigins entry is not a normalized origin: https://x.example/app",
-    );
-  });
-
-  it("rejects an extra origin with a trailing slash", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://x.example/"] }) })).toThrow(
-      "extraOrigins entry is not a normalized origin: https://x.example/",
-    );
-  });
-
-  it("rejects an extra origin that is not a URL", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["not-a-url"] }) })).toThrow(
-      "extraOrigins entry is not a normalized origin: not-a-url",
-    );
-  });
-
-  it("rejects a plain http non-loopback extra origin", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["http://x.example"] }) })).toThrow(
-      "extraOrigins entry must use https: (http://localhost and http://127.0.0.1 are allowed for local development): http://x.example",
-    );
-  });
-
-  it("rejects a ws:// loopback extra origin", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["ws://localhost:8787"] }) })).toThrow(
-      "extraOrigins entry must use https: (http://localhost and http://127.0.0.1 are allowed for local development): ws://localhost:8787",
-    );
-  });
-
-  it("rejects an ftp:// loopback extra origin", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(() => deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["ftp://localhost"] }) })).toThrow(
-      "extraOrigins entry must use https: (http://localhost and http://127.0.0.1 are allowed for local development): ftp://localhost",
-    );
-  });
-
-  it("de-dupes an extra origin equal to the base origin", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: ["https://example.com"] }) })).toHaveLength(1);
-  });
-
-  it("orders base, www variant, then extras when composed with includeWww", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { includeWww: true, dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) })).toEqual([
-      "https://example.com",
-      "https://www.example.com",
-      "https://localhost:8787",
-    ]);
-  });
-
-  it("returns only the base origin for an empty extraOrigins array", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { dev: devAllowance({ extraOrigins: [] }) })).toEqual(["https://example.com"]);
+  it("takes no `dev` option, so extra origins are admitted by the origin guards alone", () => {
+    // @ts-expect-error — `deriveAllowedOrigins` takes no `dev` option
+    deriveAllowedOrigins(parseUrl("https://example.com"), { dev: ["https://b.example"] });
   });
 
   it("preserves a non-default port in the www variant", () => {
@@ -173,23 +84,6 @@ describe("deriveAllowedOrigins", () => {
   it("omits a default port from the www variant", () => {
     const parsed = parseUrl("https://example.com:443");
     expect(deriveAllowedOrigins(parsed, { includeWww: true })).toEqual(["https://example.com", "https://www.example.com"]);
-  });
-
-  it("orders base, ported www variant, then extras", () => {
-    const parsed = parseUrl("https://example.com:8443");
-    expect(deriveAllowedOrigins(parsed, { includeWww: true, dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) })).toEqual([
-      "https://example.com:8443",
-      "https://www.example.com:8443",
-      "https://localhost:8787",
-    ]);
-  });
-
-  it("de-dupes an extra origin equal to the www variant", () => {
-    const parsed = parseUrl("https://example.com");
-    expect(deriveAllowedOrigins(parsed, { includeWww: true, dev: devAllowance({ extraOrigins: ["https://www.example.com"] }) })).toEqual([
-      "https://example.com",
-      "https://www.example.com",
-    ]);
   });
 });
 

@@ -296,7 +296,8 @@ group of your own can also list `require-approval`, and it does not need `requir
 
 **Decide the window and the bot defence when you define the approval.** `ttlMs` is how long a presented code holds; leave it out and the window is
 `APPROVAL_TTL_MS`. `rateLimit` is required, because the prompt is open to anyone and answers guesses at a shared code; forge picks no numbers. Pass
-`turnstile` to challenge it: it takes the same `keys` and `verify` as `AuthWebOptions.turnstile`, but no `flows`. `view` replaces the prompt's
+`turnstile: {}` to challenge it: it reads its keys and pins its token as `AuthWebOptions.turnstile` does, and takes the same `keys` and `verify`
+overrides, but no `flows`. `view` replaces the prompt's
 markup with your own component, which receives `ApprovalViewProps`.
 
 **A route that answers JSON gets a 403 instead of a redirect.** Pass `requireApproval(approval, { medium: "json" })` for it.
@@ -866,52 +867,38 @@ without a solved token:
 ```ts
 import type { AuthWebOptions } from "@y-core/forge/auth/web";
 
-const options: AuthWebOptions<Env> = {
-  ...rest,
-  turnstile: {
-    keys: (c) => ({ siteKey: c.env.TURNSTILE_SITE_KEY, secretKey: c.env.TURNSTILE_SECRET_KEY }),
-    verify: (c) => ({ expectedHostname: c.url.hostname }),
-  },
-};
+const options: AuthWebOptions<Env> = { ...rest, turnstile: {} };
 ```
 
-Both are read per request, because the secret is a binding. Always pass `expectedHostname` ([`INPUT_VALIDATION.md`][iv-4a] §4a); forge picks
-each form's action and token field itself. The page needs the client imports and the CSP in [`AUTH_MOUNTING.md`][am-3] §3, or every guarded form is
-refused.
+Forge reads `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` off the request's bindings, and a missing or blank one answers 500 naming it rather
+than leaving a form unguarded. It pins each token to the request's own hostname, sends `CF-Connecting-IP` as the remote address when the request
+carries one, and picks each form's action and token field itself ([`INPUT_VALIDATION.md`][iv-4a] §4a). The page needs the client imports and the
+CSP in [`AUTH_MOUNTING.md`][am-3] §3, or every guarded form is refused.
 
 **Guard fewer forms by naming the ones you want.** Leave `flows` out and every form it can cover is guarded:
 
 ```ts
-turnstile: { keys, verify, flows: ["signup", "resend"] },
+turnstile: { flows: ["signup", "resend"] },
 ```
 
-**Grant `turnstileTestingSecrets` in the development entry to run against Cloudflare's testing keys.** Those keys answer a fixed hostname and no
-action, so every local submission is refused without the grant. Thread the `DevAllowance` into `verify`:
+**Override a default only where a deployment differs.** `keys` replaces the bindings read, and `verify` is merged over the defaults — a site served
+on more than one hostname pins the one its widget is registered for:
 
 ```ts
-// src/worker-factory.ts
-import type { AuthTurnstileOptions } from "@y-core/forge/auth/web";
-import type { DevAllowance } from "@y-core/forge/dev";
-
-export function authTurnstile(dev?: DevAllowance): AuthTurnstileOptions<Env> {
-  return {
-    keys: (c) => ({ siteKey: c.env.TURNSTILE_SITE_KEY, secretKey: c.env.TURNSTILE_SECRET_KEY }),
-    verify: (c) => ({ expectedHostname: c.url.hostname, ...(dev === undefined ? {} : { dev }) }),
-  };
-}
+turnstile: { verify: () => ({ expectedHostname: "example.com" }) },
 ```
 
-```ts
-// src/worker.dev.ts
-import { devAllowance } from "@y-core/forge/dev";
+**Run the app with [`forge cf dev`][cf-dev] to submit against Cloudflare's testing keys.** Those keys answer a fixed hostname and no action, so
+under any other build every local submission is refused. Put a testing pair in `.dev.vars`; nothing changes in `turnstile`:
 
-import { createWorker } from "./worker-factory";
-
-export default createWorker({ dev: devAllowance({ turnstileTestingSecrets: true }) });
+```bash
+# .dev.vars — Cloudflare's always-passes testing pair
+TURNSTILE_SITE_KEY=1x00000000000000000000AA
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
 ```
 
-`createWorker` sets `turnstile: authTurnstile(dev)` from the allowance it is given. The production entry passes none, and the grant skips the
-hostname, action and cdata checks only under one of the testing secrets ([`src/dev/README.md`][dev-readme]).
+Under `forge cf dev` the hostname, action and cdata checks are skipped for a testing secret and for nothing else, so a real secret in `.dev.vars`
+is still checked in full ([`INPUT_VALIDATION.md`][iv-4a] §4a).
 
 **A view you replace through `views` renders the widget itself.** Its props carry `turnstile`, and on the verify page `resendTurnstile`, whenever
 that form is guarded. A replacement whose forms swap a refusal into the view the way the shipped ones do gives its root `AUTH_SIGNIN_ID`,
@@ -1000,8 +987,8 @@ go beyond `isAdmin`.
 [am-7]: ../../docs/AUTH_MOUNTING.md#7-rotating-the-key-ring
 [am-8]: ../../docs/AUTH_MOUNTING.md#8-turnstile-on-the-anonymous-forms
 [boundaries-2c]: ../../warden/canon/libs/BOUNDARIES.md#2c-why-identity-is-application-layer
+[cf-dev]: ../tooling/cf/README.md#running-the-app-locally
 [crypto-readme]: ../crypto/README.md
-[dev-readme]: ../dev/README.md
 [dm]: ../../docs/DATABASE_MANAGEMENT.md
 [eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw

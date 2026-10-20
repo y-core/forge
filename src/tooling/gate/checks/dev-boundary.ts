@@ -4,36 +4,30 @@ import { dirname, resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
-import type { DevBoundaryCheckConfig } from "./types";
+import { deployTarget, readPackageImports } from "./package-imports";
+import { collectFiles, isTestSource, resolveModuleFile, unresolvedSourceEntries } from "./source-scan";
+import type { DevBoundaryCheckConfig, PackageImports } from "./types";
 import { readWorkerConfig } from "./worker-config";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
 const SCANNED = (name: string): boolean => MODULE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !isTestSource(name);
 
-/** The filename convention a development entry point is derived from. */
-const DEV_ENTRY = /\.dev\.tsx?$/;
+/** The filename suffix that marks a development module — an entry point, or a relaxation beside its concern. @internal */
+export const DEV_MODULE = /\.dev\.tsx?$/;
 
-/** Whether `file` is a development entry point — by the convention, or by an explicit listing. @public */
-export function isDevEntry(file: string, devEntries: readonly string[] = []): boolean {
-  return DEV_ENTRY.test(file) || devEntries.includes(file);
+/** Whether `file` is a development module by its `*.dev.ts` suffix. @public */
+export function isDevModule(file: string): boolean {
+  return DEV_MODULE.test(file);
 }
 
-/** Whether `file` lives in one of this repository's own dev-only trees. */
-function isDevOnly(file: string, devOnlyDirs: readonly string[]): boolean {
+/** Whether `file` lives in one of this repository's own dev-only trees. @internal */
+export function isDevOnly(file: string, devOnlyDirs: readonly string[]): boolean {
   return devOnlyDirs.some((dir) => file === dir || file.startsWith(`${dir}/`));
 }
 
-// `resolveSpecifier` strips the extension, because the graph check it serves needs only the directory.
-// A finding has to name a file, so the extension — and the `mod.ts` a directory specifier means — is put back.
-function resolveModuleFile(root: string, modulePath: string): string | null {
-  const candidates = [...MODULE_EXTENSIONS.map((ext) => `${modulePath}${ext}`), ...MODULE_EXTENSIONS.map((ext) => `${modulePath}/mod${ext}`)];
-  return candidates.find((candidate) => existsSync(resolve(root, candidate))) ?? null;
-}
-
-/** The manifest of an installed dependency, found by walking `node_modules` upward from `root`. */
-function manifestPath(root: string, packageName: string): string | null {
+/** The manifest of an installed dependency, found by walking `node_modules` upward from `root`. @internal */
+export function manifestPath(root: string, packageName: string): string | null {
   let current = resolve(root);
   for (;;) {
     const candidate = resolve(current, "node_modules", packageName, "package.json");
@@ -58,8 +52,8 @@ export function devOnlySpecifiers(root: string, packageName: string): readonly s
   }
 }
 
-/** Whether `specifier` is one of the forbidden published ones; a trailing `/*` matches a subtree. */
-function isForbidden(specifier: string, forbidden: readonly string[]): boolean {
+/** Whether `specifier` is one of the forbidden published ones; a trailing `/*` matches a subtree. @internal */
+export function isForbidden(specifier: string, forbidden: readonly string[]): boolean {
   return forbidden.some((entry) => (entry.endsWith("/*") ? specifier.startsWith(entry.slice(0, -1)) : specifier === entry));
 }
 
@@ -84,43 +78,67 @@ function judgeMain(config: DevBoundaryCheckConfig): Finding[] {
   }
 
   const normalized = main.startsWith("./") ? main.slice(2) : main;
-  if (!isDevEntry(normalized, config.devEntries)) return [];
+  if (!isDevModule(normalized)) return [];
   return [
     fail(`\`main\` names the development entry \`${normalized}\``, {
       file: workerConfig,
       detail: [
-        "a development entry mints the allowances production must not hold, so deploying one puts every relaxation in the deployed bundle",
+        "a development entry holds code production must not run, so deploying one puts it in the deployed bundle",
         "point `main` at the production entry, and keep the development one to `wrangler dev`",
       ],
     }),
   ];
 }
 
-/** Rule B: nothing imports a development entry, which has no importer outside the test set. */
-function judgeEntryImport(config: DevBoundaryCheckConfig, file: string, specifier: string, line: number): Finding | null {
-  const module = resolveSpecifier(file, specifier);
+/** Rule B, on the manifest: no `imports` entry resolves to a development module in the deployed bundle. */
+function judgeImportsMap(imports: PackageImports): Finding[] {
+  return Object.keys(imports).flatMap((key) => {
+    const target = deployTarget(imports, key);
+    if (target === null || !isDevModule(target)) return [];
+    return [
+      fail(`\`imports\` entry \`${key}\` deploys the development module \`${target}\``, {
+        file: "package.json",
+        detail: [
+          "the condition the deployed bundle resolves `imports` under picks a `*.dev.ts` module, so every importer of the entry deploys it",
+          "point that condition at a module without the suffix, and keep the development one behind the `forge-dev` condition, which only `forge cf dev` sets",
+        ],
+      }),
+    ];
+  });
+}
+
+/** Rule B: no production module imports a development one, not even for a type. */
+function judgeDevModuleImport(
+  config: DevBoundaryCheckConfig,
+  imports: PackageImports,
+  file: string,
+  specifier: string,
+  line: number,
+): Finding | null {
+  const module = resolveSpecifier(file, specifier) ?? deployTarget(imports, specifier);
   if (module === null) return null;
   const target = resolveModuleFile(config.root, module) ?? module;
-  if (!isDevEntry(target, config.devEntries)) return null;
-  return fail(`development entry imported — \`${specifier}\` resolves to \`${target}\``, {
+  if (!isDevModule(target)) return null;
+  return fail(`development module imported — \`${specifier}\` resolves to \`${target}\``, {
     file,
     line,
     detail: [
-      "a development entry is reached by `wrangler dev` alone; an import makes it reachable from whatever imports this file",
-      "move the shared part into a module both entries import, and drop this import",
+      "a `*.dev.ts` module is reached from the development entry alone; an import makes it reachable from whatever imports this file",
+      "import it from a `*.dev.ts` module instead, and keep what production needs in a module without the suffix",
     ],
   });
 }
 
-/** Rule C: only a development entry may import a dev-only module. */
+/** Rule C: only a development module may import a dev-only one. */
 function judgeDevOnlyImport(
   config: DevBoundaryCheckConfig,
+  imports: PackageImports,
   forbidden: readonly string[],
   file: string,
   specifier: string,
   line: number,
 ): Finding | null {
-  const module = resolveSpecifier(file, specifier);
+  const module = resolveSpecifier(file, specifier) ?? deployTarget(imports, specifier);
   const crossing =
     module === null
       ? isForbidden(specifier, forbidden)
@@ -135,13 +153,13 @@ function judgeDevOnlyImport(
     file,
     line,
     detail: [
-      "a dev-only module is not deployable: minting an allowance, or faking a binding, is something only a development entry may do",
-      "import it from a `*.dev.ts` entry, or import the type alone — a type is erased and puts nothing in the bundle",
+      "a dev-only module is not deployable: faking a binding, or relaxing a guard, is something only development code may do",
+      "import it from a `*.dev.ts` module, or import the type alone — a type is erased and puts nothing in the bundle",
     ],
   });
 }
 
-/** Fails when a production module names a development entry, a dev-only module, or is itself deployed as `main`. @public */
+/** Fails when a production module imports a `*.dev.ts` module or a dev-only one, or `main` is a development module. @public */
 export function checkDevBoundary(config: DevBoundaryCheckConfig): CheckResult {
   const sources = config.sources ?? ["src"];
   const files = sources.flatMap((dir) => collectFiles(config.root, dir, SCANNED));
@@ -149,18 +167,8 @@ export function checkDevBoundary(config: DevBoundaryCheckConfig): CheckResult {
   const unresolved = unresolvedSourceEntries(config.root, sources);
   if (unresolved.length > 0) return checkResult(unresolved, "");
 
-  const findings: Finding[] = [...judgeMain(config)];
-
-  // Derived from the filename, so a listing that only restates the convention is a second spelling
-  // of the same fact and can disagree with it.
-  for (const entry of config.devEntries ?? []) {
-    if (!DEV_ENTRY.test(entry)) continue;
-    findings.push(
-      fail(`\`devEntries\` lists \`${entry}\`, which the \`*.dev.ts\` convention already derives`, {
-        detail: ["remove the entry — the convention is what the check reads, and a listing beside it can only disagree"],
-      }),
-    );
-  }
+  const imports = readPackageImports(config.root);
+  const findings: Finding[] = [...judgeMain(config), ...judgeImportsMap(imports)];
 
   const forbidden = (config.packages ?? []).flatMap((packageName) => {
     const declared = devOnlySpecifiers(config.root, packageName);
@@ -178,19 +186,18 @@ export function checkDevBoundary(config: DevBoundaryCheckConfig): CheckResult {
 
   let judged = 0;
   for (const file of files) {
-    if (isDevOnly(file, config.devOnlyDirs ?? [])) continue;
+    if (isDevModule(file) || isDevOnly(file, config.devOnlyDirs ?? [])) continue;
     judged++;
-    const devEntry = isDevEntry(file, config.devEntries);
-    for (const ref of parseImports(readFileSync(resolve(config.root, file), "utf-8"))) {
-      const entryFinding = judgeEntryImport(config, file, ref.specifier, ref.line);
-      if (entryFinding !== null) findings.push(entryFinding);
-      // A type import is erased at emit, and the allowance *type* is what a production option names;
-      // only minting one is the crossing.
-      if (devEntry || ref.kind === "type") continue;
-      const devOnlyFinding = judgeDevOnlyImport(config, forbidden, file, ref.specifier, ref.line);
+    const source = readFileSync(resolve(config.root, file), "utf-8");
+    for (const ref of parseImports(source)) {
+      const devModuleFinding = judgeDevModuleImport(config, imports, file, ref.specifier, ref.line);
+      if (devModuleFinding !== null) findings.push(devModuleFinding);
+      // A type import is erased at emit, so it puts nothing dev-only in the deployed bundle.
+      if (ref.kind === "type") continue;
+      const devOnlyFinding = judgeDevOnlyImport(config, imports, forbidden, file, ref.specifier, ref.line);
       if (devOnlyFinding !== null) findings.push(devOnlyFinding);
     }
   }
 
-  return checkResult(findings, `${judged} deployable sources mint no development allowance`);
+  return checkResult(findings, `${judged} deployable sources reach no development code`);
 }

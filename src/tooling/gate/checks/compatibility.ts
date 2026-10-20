@@ -1,14 +1,10 @@
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { CompatibilityCheckConfig } from "./types";
-import { readWorkerConfig } from "./worker-config";
+import { isRecord, readWorkerConfig } from "./worker-config";
 
 /** Forge's own posture: the pure Workers/V8 surface, plus the module registry's semantics. */
 const REQUIRED_FLAGS = ["no_nodejs_compat", "no_nodejs_compat_v2", "new_module_registry"] as const;
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** The flag a `no_*` requirement refuses, so the contradiction set needs no second list to declare it. */
 function refused(flag: string): string | undefined {

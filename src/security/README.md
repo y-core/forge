@@ -220,17 +220,31 @@ the route once in development after you add it.
 
 ## Keeping dev-only sources out of the production policy
 
-Compute dev-only CSP sources — a live-reload hash, a local tooling origin — in the dev worker entry, never in the shared base:
+Compute dev-only CSP sources — a live-reload hash, a local tooling origin — in a dev-only module behind your own `imports` alias, never in the
+shared base. The alias's `default` target returns `{}`, and the dev target answers only in a build `forge cf dev` armed; the alias, the shared type
+and the check are set up as in [Keeping your own dev-only code out of the deploy][cf-own]:
 
 ```ts
-// src/worker.dev.ts — production never imports this file
+// src/dev-csp.dev.ts — "#app/dev-csp" resolves here under forge cf dev, and to src/dev-csp.strict.ts otherwise
+import type { DevCspSources } from "./types";
+
+declare const __FORGE_DEV__: boolean | undefined;
+
 const WRANGLER_LIVE_RELOAD_HASH = "'sha256-g5a3SrOYIecCloZ8S7M4xdT1pbYi6e7mjHrmwphRxfE='";
 
-app.use("*", createSecurityHeaders(mergeSecurityHeaders(baseHeaders, { scriptSrc: [WRANGLER_LIVE_RELOAD_HASH] })));
+export const devCspSources: DevCspSources = () =>
+  typeof __FORGE_DEV__ !== "undefined" && __FORGE_DEV__ === true ? { scriptSrc: [WRANGLER_LIVE_RELOAD_HASH] } : {};
 ```
 
-The hash cannot reach production, because production never imports the entry that names it. The containment guarantee is
-[`SECURITY_HARDENING.md`][sh-2c] §2c's.
+```ts
+// the shared app module
+import { devCspSources } from "#app/dev-csp";
+
+app.use("*", createSecurityHeaders(mergeSecurityHeaders(baseHeaders, devCspSources())));
+```
+
+`DevCspSources` is `() => Partial<SecurityHeadersOptions>`, declared once in your `src/types.ts`. A deploy bundles the `default` target, so the
+hash never reaches production. The containment guarantee is [`SECURITY_HARDENING.md`][sh-2c] §2c's.
 
 ---
 
@@ -296,8 +310,8 @@ The single-signal tiers `originProtection` is built from are exported too — `c
 allowlist only, taking a plain `string[]`). Which to reach for, why `same-site` is refused alongside `cross-site`, and why `Sec-Fetch-Site` is a
 veto rather than a pass are [`SECURITY_HARDENING.md`][sh-3e] §3e's. **Pick one tier per route; do not stack them.**
 
-`crossOriginProtection` fails closed on a request carrying no `Sec-Fetch-Site` at all. A [`DevAllowance`][dev-readme] granting
-`missingFetchMetadata`, passed as `dev`, accepts it instead — and only a development entry can mint one.
+`crossOriginProtection()` fails closed on a request carrying no `Sec-Fetch-Site` at all. Under [`forge cf dev`][cf-dev] it accepts one instead,
+so a local tool that sends no Fetch Metadata can still post; it takes no option for this.
 
 For a one-off check inside a handler rather than a route-wide middleware, the pure predicates behind the middleware take plain inputs and return
 plain results:
@@ -366,8 +380,8 @@ Declare the binding in `wrangler.jsonc`:
 ]
 ```
 
-`limiter(c)` resolves the binding per request — its shape is the exported `RateLimitBinding` type. An absent binding answers `503`, unless a
-[`DevAllowance`][dev-readme] granting `rateLimitOptional` is passed as `dev`, which skips the guard and logs a warning instead. Over the limit,
+`limiter(c)` resolves the binding per request — its shape is the exported `RateLimitBinding` type. An absent binding answers `503`, except under
+[`forge cf dev`][cf-dev], which skips the guard and logs a warning instead. Over the limit,
 `onLimit(c)` answers; it defaults to `429`.
 
 ### Choosing the key
@@ -439,19 +453,19 @@ deriveAllowedOrigins(parseUrl("https://example.com:8443"), { includeWww: true })
 // ["https://example.com:8443", "https://www.example.com:8443"]
 ```
 
-**A dev entrypoint can append more origins, and nothing else can.** `{ dev }` takes a [`DevAllowance`][dev-readme] carrying `extraOrigins`. Each
-entry must be a normalized origin — exactly what a browser puts in an `Origin` header, so no path, no trailing slash, no credentials, no redundant
-default port — and `https:` or an `http://localhost` / `http://127.0.0.1` loopback, the same rule the schema applies. Anything else throws, which in
-a dev entry is boot time. An entry already in the list is dropped, so passing the base origin back in is harmless.
+**`forge cf dev` can admit more origins, and nothing else can.** Under [`forge cf dev`][cf-dev], `originProtection` and `originGuard` admit,
+beside their allowlist, the origins the `FORGE_DEV_ORIGINS` binding lists, comma-separated, in `.dev.vars`:
 
-```ts
-// dev worker entry only — browser at https://localhost:8787, no proxy in front
-deriveAllowedOrigins(parseUrl(env.BASE_URL), { dev: devAllowance({ extraOrigins: ["https://localhost:8787"] }) });
+```bash
+# .dev.vars — browser at https://localhost:8787, no proxy in front
+FORGE_DEV_ORIGINS=https://localhost:8787
 ```
 
-There is no env var for this and no plain option: the token comes from `@y-core/forge/dev`, and `validate-dev-boundary` refuses that import from
-anything but a `*.dev.ts` entry — so the production bundle structurally contains no extra origin. Under the standard posture none is needed at all;
-what `extraOrigins` may hold, and how the set reaches the guards, are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
+Each entry must be a normalized origin — exactly what a browser puts in an `Origin` header, so no path, no trailing slash, no credentials, no
+redundant default port — and `https:` or an `http://localhost` / `http://127.0.0.1` loopback, the same rule the schema applies. Anything else
+throws on the guarded request, so a typo answers 500 rather than quietly admitting nothing. A deployed Worker ignores the binding even when one is
+set, and `deriveAllowedOrigins` never reads it. Under the standard posture none is needed at all; what the binding may hold, and how the set
+reaches the guards, are [`SECURITY_HARDENING.md`][sh-3f] §3f's.
 
 ---
 
@@ -545,8 +559,8 @@ comes from `getNonce(c)` and from nowhere else.
 
 **Every write 403s locally while production is fine — the dev transport is the cause.** The origin guards compare origins by exact string, so a dev
 server speaking `http` behind a TLS-terminating proxy refuses the browser's `https` origin, its own forms included. Serve https at every hop in dev
-— the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `extraOrigins` only in the proxy-less
-case. The posture, including why the scheme is never patched up in middleware, is [`WORKERS_PLATFORM.md`][wp-4e] §4e's.
+— the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `FORGE_DEV_ORIGINS` only in the
+proxy-less case. The posture, including why the scheme is never patched up in middleware, is [`WORKERS_PLATFORM.md`][wp-4e] §4e's.
 
 **A pure predicate is not middleware.** `matchOrigin`, `verifyOrigin` and `checkCrossOriginProtection` reach a route only through the factory that
 wraps them.
@@ -573,7 +587,8 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 
 [assets-readme]: ../tooling/assets/README.md
 [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
-[dev-readme]: ../dev/README.md
+[cf-dev]: ../tooling/cf/README.md#running-the-app-locally
+[cf-own]: ../tooling/cf/README.md#keeping-your-own-dev-only-code-out-of-the-deploy
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [form-readme]: ../form/README.md
 [html-readme]: ../html/README.md

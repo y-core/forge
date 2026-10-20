@@ -1,19 +1,31 @@
+import { disclosedErrorMessage } from "#relax/error-page";
+
 import type { AppContext } from "../context/types";
-import { safeUrl } from "../html/escape";
+import { escapeHtml, safeUrl } from "../html/escape";
 import { html } from "../html/html";
 import { htmlResponse } from "../http/response";
 import { renderError } from "../render/htmx/fragment";
 import { requestIdCtx } from "../security/request-id";
-import type { ErrorPageOptions } from "./types";
+import type { ErrorPageOptions, RelaxErrorDisclosure } from "./types";
 
-/** Builds a styled full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`; the thrown message is printed only under a `DevAllowance` granting `errorDetail`. @public */
+const FIXED_MESSAGE = "An unexpected error occurred.";
+
+/** Builds a styled full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`; only a development build discloses the thrown message. @public */
 export function createErrorPage<Bindings = Record<string, unknown>>(
   options: ErrorPageOptions<Bindings> = {},
+): (error: Error, c: AppContext<Bindings>) => Response {
+  return createErrorPageWith(options, disclosedErrorMessage);
+}
+
+/** `createErrorPage` with the message disclosure passed in. @internal */
+export function createErrorPageWith<Bindings = Record<string, unknown>>(
+  options: ErrorPageOptions<Bindings>,
+  disclose: RelaxErrorDisclosure,
 ): (error: Error, c: AppContext<Bindings>) => Response {
   const title = options.title ?? "Something went wrong";
 
   return (error, c) => {
-    const message = options.dev?.options.errorDetail === true ? error.message : "An unexpected error occurred.";
+    const message = disclose(error) ?? FIXED_MESSAGE;
 
     let stylesheetHref: string | undefined;
     try {
@@ -42,4 +54,11 @@ export function createErrorPage<Bindings = Record<string, unknown>>(
     </html>`;
     return htmlResponse(doc, 500);
   };
+}
+
+/** The error boundary's fallback 500 document, disclosing what `disclose` returns for `error` and quoting `reference`. @internal */
+export function fallbackErrorDocument(error: Error, reference: string | undefined, disclose: RelaxErrorDisclosure): string {
+  const detail = `<p>${escapeHtml(disclose(error) ?? FIXED_MESSAGE)}</p>`;
+  const quote = reference ? `<p>Reference: ${escapeHtml(reference)}</p>` : "";
+  return `<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}${quote}</body></html>`;
 }

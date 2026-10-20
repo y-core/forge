@@ -18,9 +18,6 @@ export function createApp<Bindings extends object = Record<string, unknown>>(opt
   if (options?.onError) {
     app.setOnError(options.onError);
   }
-  if (options?.dev?.options.errorDetail === true) {
-    app.setErrorDetail(true);
-  }
   if (options?.notFound) {
     app.setNotFound(options.notFound);
   }

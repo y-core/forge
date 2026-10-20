@@ -21,7 +21,6 @@
   },
   "forge": {
     "devOnly": [
-      "./dev",
       "./testing",
       "./testing/coverage",
       "./testing/d1",
@@ -136,6 +135,28 @@
       "optional": true
     }
   },
+  "imports": {
+    "#relax/rate-limit": {
+      "forge-dev": "./src/security/rate-limit.dev.ts",
+      "default": "./src/security/rate-limit.strict.ts"
+    },
+    "#relax/cop": {
+      "forge-dev": "./src/security/cop.dev.ts",
+      "default": "./src/security/cop.strict.ts"
+    },
+    "#relax/origin": {
+      "forge-dev": "./src/security/url.dev.ts",
+      "default": "./src/security/url.strict.ts"
+    },
+    "#relax/turnstile": {
+      "forge-dev": "./src/form/turnstile.dev.ts",
+      "default": "./src/form/turnstile.strict.ts"
+    },
+    "#relax/error-page": {
+      "forge-dev": "./src/app/error-page.dev.ts",
+      "default": "./src/app/error-page.strict.ts"
+    }
+  },
   "exports": {
     "./app": {
       "types": "./src/app/mod.ts",
@@ -173,10 +194,6 @@
     "./crypto/keyring": {
       "types": "./src/crypto/keyring/mod.ts",
       "import": "./src/crypto/keyring/mod.ts"
-    },
-    "./dev": {
-      "types": "./src/dev/mod.ts",
-      "import": "./src/dev/mod.ts"
     },
     "./form": {
       "types": "./src/form/mod.ts",
@@ -451,7 +468,6 @@
     "src/config/",
     "src/context/",
     "src/crypto/",
-    "src/dev/",
     "src/form/",
     "src/html/",
     "src/http/",

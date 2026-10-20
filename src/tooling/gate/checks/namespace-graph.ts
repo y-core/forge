@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { buildGraph, diffGraph, findEnumerations } from "./namespace-graph-parse";
+import { readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource } from "./source-scan";
 import type { ExportsMap } from "./types";
 import type { DeclaredGraph, SourceFile } from "./types";
@@ -119,7 +120,7 @@ export function checkNamespaceGraph(config: NamespaceGraphCheckConfig): CheckRes
 
   const sources = resolveSources(config.root, sourceDir);
   if (sources.length === 0) return scannedNothing(`\`${sourceDir}\` matched no source`, "namespace-graph");
-  const observed = buildGraph(sources, namespaces);
+  const observed = buildGraph(sources, namespaces, readPackageImports(config.root));
 
   const findings: Finding[] = diffGraph(observed, config.graph, namespaces).map((finding) => {
     if (finding.file === undefined) return fail(finding.detail, { file: "edges" });

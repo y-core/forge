@@ -19,6 +19,7 @@ export {
   cssTokensStep,
   designScaleStep,
   devBoundaryStep,
+  devBundleStep,
   exportsStep,
   exposureStep,
   formatStep,
@@ -114,8 +115,10 @@ export {
   parseDeclaredCustomProperties,
 } from "./checks/design-parse";
 export type { DevBoundaryCheckConfig } from "./checks/types";
-export { checkDevBoundary, devOnlySpecifiers, isDevEntry } from "./checks/dev-boundary";
-export type { ExportsCheckConfig, ExportsMap } from "./checks/types";
+export { checkDevBoundary, devOnlySpecifiers, isDevModule } from "./checks/dev-boundary";
+export type { BundleMetafile, DevBundleCheckConfig, WorkerBundler } from "./checks/types";
+export { bundleWorker, checkDevBundle } from "./checks/dev-bundle";
+export type { ExportsCheckConfig, ExportsMap, PackageImports } from "./checks/types";
 export { checkExports, isBrowserSubpath, isPublished, parseSubpathPatterns } from "./checks/exports";
 export type { ExposureCheckConfig, ExposurePosture } from "./checks/types";
 export { checkExposure } from "./checks/exposure";

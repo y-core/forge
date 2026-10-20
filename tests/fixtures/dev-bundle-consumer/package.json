@@ -1,0 +1,11 @@
+{
+  "name": "dev-bundle-consumer",
+  "private": true,
+  "type": "module",
+  "imports": {
+    "#app/debug-banner": {
+      "forge-dev": "./src/debug-banner.dev.ts",
+      "default": "./src/debug-banner.strict.ts"
+    }
+  }
+}

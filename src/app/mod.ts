@@ -16,6 +16,7 @@ export { mergeMeta, metaTags } from "./meta";
 export { definePage } from "./page";
 export type { PageShell, ShellDocument, ShellSlot } from "./types";
 export { pageShell, renderShell } from "./shell";
+export { readTurnstileKey } from "./turnstile";
 export type {
   ActionDefinition,
   ActionTurnstileOptions,

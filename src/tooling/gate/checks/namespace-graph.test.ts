@@ -223,6 +223,49 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
   });
 });
 
+describe("checkNamespaceGraph() — an edge reached through the `imports` map", () => {
+  it("reports an undeclared edge a `#` specifier reaches, against the importing file and its line", () => {
+    const root = fixtureRoot({
+      "package.json": JSON.stringify({ imports: { "#beta/*": "./src/beta/*.ts" } }),
+      "src/alpha/mod.ts": "export const m = 1;\n",
+      "src/alpha/a.ts": 'export const a = 1;\nimport { b } from "#beta/b";\nexport const c = b;\n',
+      "src/beta/mod.ts": "export const m = 2;\n",
+      "src/beta/b.ts": "export const b = 2;\n",
+    });
+
+    const result = checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((finding) => [finding.file, finding.line])).toEqual([["src/alpha/a.ts", 2]]);
+    expect(result.findings[0]?.message).toContain("`alpha` imports `beta` but `EDGES` declares no such edge");
+  });
+
+  it("reports an edge only a condition the deployed bundle never sets reaches, since an edge in any build is an edge", () => {
+    const root = fixtureRoot({
+      "package.json": JSON.stringify({ imports: { "#relax/b": { "forge-dev": "./src/beta/b.dev.ts", default: "./src/alpha/b.ts" } } }),
+      "src/alpha/mod.ts": "export const m = 1;\n",
+      "src/alpha/a.ts": 'import { b } from "#relax/b";\nexport const a = b;\n',
+      "src/alpha/b.ts": "export const b = 0;\n",
+      "src/beta/mod.ts": "export const m = 2;\n",
+      "src/beta/b.dev.ts": "export const b = 2;\n",
+    });
+
+    const result = checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH });
+
+    expect(result.findings.map((finding) => [finding.file, finding.line])).toEqual([["src/alpha/a.ts", 1]]);
+  });
+
+  it("raises no edge for a `#` specifier the manifest does not map", () => {
+    const root = fixtureRoot({
+      "package.json": JSON.stringify({ imports: { "#beta/*": "./src/beta/*.ts" } }),
+      "src/alpha/mod.ts": 'import { x } from "#gamma/x";\nexport const m = x;\n',
+      "src/beta/mod.ts": "export const m = 2;\n",
+    });
+
+    expect(checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH }).findings).toEqual([]);
+  });
+});
+
 describe("checkNamespaceGraph() — the document guarded against a returning catalogue", () => {
   const tree = (doc: string) =>
     fixtureRoot({ "src/alpha/mod.ts": "export const m = 1;\n", "src/beta/mod.ts": "export const m = 2;\n", [DOC]: doc });

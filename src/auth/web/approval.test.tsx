@@ -257,6 +257,30 @@ describe("registerApproval — behind a Turnstile challenge", () => {
     });
   });
 
+  describe("with forge's defaults", () => {
+    const ENV = { TURNSTILE_SITE_KEY: "site-from-env", TURNSTILE_SECRET_KEY: "secret-from-env" };
+
+    it("renders the widget under the site key the bindings carry", async () => {
+      const html = await (await approvalApp(fakeApproval({ turnstile: {} })).request(`${ORIGIN}/approve`, {}, ENV)).text();
+      expect(attrOf(html, 'data-sitekey="site-from-env"', "data-action")).toBe(APPROVAL_TURNSTILE_ACTION);
+    });
+
+    for (const { outcome, hostname, status } of [
+      { outcome: "admits a challenge solved for the request's own hostname", hostname: "app.example", status: 303 },
+      { outcome: "refuses a challenge solved for another hostname", hostname: "elsewhere.example", status: 422 },
+    ]) {
+      it(outcome, async () => {
+        siteverify({ success: true, hostname, action: APPROVAL_TURNSTILE_ACTION });
+        const res = await approvalApp(fakeApproval({ turnstile: {} })).request(
+          `${ORIGIN}/approve`,
+          presented({ code: FAKE_APPROVAL_CODE, "cf-turnstile-response": "t" }),
+          ENV,
+        );
+        expect(res.status).toBe(status);
+      });
+    }
+  });
+
   it("admits the right code once the challenge is solved for the approval's action", async () => {
     siteverify({ success: true, hostname: "app.example", action: APPROVAL_TURNSTILE_ACTION });
     const res = await approvalApp(fakeApproval({ turnstile })).request(

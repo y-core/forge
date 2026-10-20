@@ -182,7 +182,7 @@ same bytes.
 | `lint` | `forge verify --only lint` — checks, never writes |
 | `test` | `bun test` |
 | `test:browser` | `playwright test` |
-| `dev` | The asset build, then `wrangler dev` |
+| `dev` | The asset build, then `forge cf dev` |
 | `dev:forge` | The local library sync |
 | `build:assets` | `forge assets build all` |
 | `types:assets` | `forge verify --only types:assets` |

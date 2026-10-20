@@ -4,8 +4,9 @@ import { resolve } from "node:path";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
+import { importTargets, readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
-import type { SsrBoundaryCheckConfig } from "./types";
+import type { PackageImports, SsrBoundaryCheckConfig } from "./types";
 
 const MODULE_EXTENSIONS = [".ts", ".tsx"] as const;
 
@@ -46,7 +47,7 @@ export function clientSubpaths(config: SsrBoundaryConfig): Map<string, string> {
 }
 
 /** Judges one file's imports against the boundary. @public */
-export function validateSsrBoundary(file: string, source: string, config: SsrBoundaryConfig): Finding[] {
+export function validateSsrBoundary(file: string, source: string, config: SsrBoundaryConfig, imports: PackageImports = {}): Finding[] {
   const reason = boundaryViolation(file, config);
   if (reason === null) return [];
 
@@ -57,7 +58,8 @@ export function validateSsrBoundary(file: string, source: string, config: SsrBou
     const target = resolveSpecifier(file, ref.specifier);
     // A self-import by package name resolves to nothing relative, so the published subpath list is
     // the only thing that can tell it from a third party's.
-    if (target === null) return published.has(ref.specifier) ? [`line ${ref.line}: \`${ref.specifier}\``] : [];
+    const mapped = importTargets(imports, ref.specifier).some((path) => isClientOwned(path, config.clientDirs));
+    if (target === null) return mapped || published.has(ref.specifier) ? [`line ${ref.line}: \`${ref.specifier}\``] : [];
     if (!isClientOwned(target, config.clientDirs)) return [];
     return [`line ${ref.line}: \`${ref.specifier}\``];
   });
@@ -73,7 +75,8 @@ export function checkSsrBoundary(config: SsrBoundaryCheckConfig): CheckResult {
   const unresolved = unresolvedSourceEntries(config.root, config.sources);
   if (unresolved.length > 0) return checkResult(unresolved, "");
 
-  const findings = files.flatMap((file) => validateSsrBoundary(file, readFileSync(resolve(config.root, file), "utf-8"), config));
+  const imports = readPackageImports(config.root);
+  const findings = files.flatMap((file) => validateSsrBoundary(file, readFileSync(resolve(config.root, file), "utf-8"), config, imports));
 
   return checkResult(findings, `${files.length} files respect the ${config.clientDirs.join(", ")} boundary`);
 }

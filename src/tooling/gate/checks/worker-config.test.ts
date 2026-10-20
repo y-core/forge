@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { readWorkerConfig } from "./worker-config";
+import { isRecord, readWorkerConfig } from "./worker-config";
 
 let root: string;
 
@@ -13,6 +13,12 @@ beforeEach(() => {
 
 afterEach(() => {
   rmSync(root, { recursive: true, force: true });
+});
+
+describe("isRecord", () => {
+  it("accepts an object and rejects an array and null", () => {
+    expect([isRecord({ name: "app" }), isRecord(["app"]), isRecord(null)]).toEqual([true, false, false]);
+  });
 });
 
 describe("readWorkerConfig", () => {

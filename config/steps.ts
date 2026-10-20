@@ -133,7 +133,7 @@ export const STEPS: readonly Step[] = [
     sources: ["src"],
     crossings: TOOLING_CROSSINGS,
   }),
-  devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/dev", "src/testing"] }),
+  devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/testing"] }),
   stubGlobalsStep({
     root: ROOT,
     stubs: [".types"],

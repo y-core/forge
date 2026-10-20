@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { buildGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import type { EdgeKind, SourceFile } from "./types";
+import type { EdgeKind, PackageImports, SourceFile } from "./types";
 
 function sites(source: string): [string, EdgeKind][] {
   return parseImports(source).map((ref) => [ref.specifier, ref.kind]);
@@ -13,9 +13,9 @@ function kindOf(statement: string): [string, EdgeKind] {
   return [statement, only === undefined ? (`expected exactly one site, got ${refs.length}` as EdgeKind) : only.kind];
 }
 
-function edges(files: readonly SourceFile[], dirs: readonly string[]) {
+function edges(files: readonly SourceFile[], dirs: readonly string[], imports: PackageImports = {}) {
   const rows: { from: string; to: string; kind: EdgeKind; file: string; line: number }[] = [];
-  for (const [from, targets] of buildGraph(files, dirs)) {
+  for (const [from, targets] of buildGraph(files, dirs, imports)) {
     for (const [to, edge] of targets) rows.push({ from, to, kind: edge.kind, file: edge.file, line: edge.line });
   }
   return rows;
@@ -235,6 +235,32 @@ describe("buildGraph() — edge recording (the declared-edge check)", () => {
 
   it("returns no edge for a file outside every declared namespace", () => {
     const files: SourceFile[] = [{ path: "config/tool.ts", source: 'import { b } from "../src/beta/b";' }];
+
+    expect(edges(files, ["alpha", "beta"])).toEqual([]);
+  });
+});
+
+describe("buildGraph() — a `#` specifier through the `imports` map", () => {
+  it("records an edge to every namespace any condition's target lies in", () => {
+    const files: SourceFile[] = [{ path: "src/alpha/a.ts", source: 'import { b } from "#relax/b";' }];
+    const imports = { "#relax/b": { "forge-dev": "./src/beta/b.dev.ts", default: "./src/gamma/b.ts" } };
+
+    expect(edges(files, ["alpha", "beta", "gamma"], imports)).toEqual([
+      { from: "alpha", to: "beta", kind: "value", file: "src/alpha/a.ts", line: 1 },
+      { from: "alpha", to: "gamma", kind: "value", file: "src/alpha/a.ts", line: 1 },
+    ]);
+  });
+
+  it("keeps a type-only `#` import a type edge", () => {
+    const files: SourceFile[] = [{ path: "src/alpha/a.ts", source: 'import type { B } from "#beta/b";' }];
+
+    expect(edges(files, ["alpha", "beta"], { "#beta/*": "./src/beta/*.ts" })).toEqual([
+      { from: "alpha", to: "beta", kind: "type", file: "src/alpha/a.ts", line: 1 },
+    ]);
+  });
+
+  it("records nothing for a `#` specifier when no map is given", () => {
+    const files: SourceFile[] = [{ path: "src/alpha/a.ts", source: 'import { b } from "#beta/b";' }];
 
     expect(edges(files, ["alpha", "beta"])).toEqual([]);
   });

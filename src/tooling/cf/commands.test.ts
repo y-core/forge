@@ -15,12 +15,12 @@ describe("createCfCommands", () => {
     const cf = createCfCommands();
     expect([cf.name, cf.description]).toEqual([
       "cf",
-      "Reconcile and generate against Cloudflare — account bindings, zone rules, and the env schema",
+      "Reconcile, generate and run against Cloudflare — account bindings, zone rules, the env schema, and the local dev server",
     ]);
   });
 
-  it("groups everything under sync and gen, in that order", () => {
-    expect(createCfCommands().commands.map((c) => c.name)).toEqual(["sync", "gen"]);
+  it("groups everything under sync, gen and dev, in that order", () => {
+    expect(createCfCommands().commands.map((c) => c.name)).toEqual(["sync", "gen", "dev"]);
   });
 
   it("takes no arguments of its own and declares no flags", () => {
@@ -79,18 +79,26 @@ describe("createCfCommands — gen", () => {
   });
 });
 
+describe("createCfCommands — dev", () => {
+  it("is runnable bare and has no subcommands", () => {
+    const dev = child(createCfCommands(), "dev");
+    expect([typeof (dev as { run?: unknown }).run, dev.commands]).toEqual(["function", []]);
+  });
+});
+
 describe("createCfCommands — the tree is linked both ways", () => {
   it("links every child back to its parent", () => {
     const cf = createCfCommands();
     const sync = child(cf, "sync");
     const gen = child(cf, "gen");
-    expect([sync.parent, gen.parent, child(sync, "account").parent, child(sync, "zone").parent, child(gen, "env").parent]).toEqual([
-      cf,
-      cf,
-      sync,
-      sync,
-      gen,
-    ]);
+    expect([
+      sync.parent,
+      gen.parent,
+      child(cf, "dev").parent,
+      child(sync, "account").parent,
+      child(sync, "zone").parent,
+      child(gen, "env").parent,
+    ]).toEqual([cf, cf, cf, sync, sync, gen]);
   });
 
   it("leaves the root with no parent", () => {

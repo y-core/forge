@@ -34,8 +34,18 @@ export function requireTools(tools: ToolHints, spawn: SpawnSync = spawnSync): vo
 }
 
 /** Spawns `cmd args` with inherited stdio, returning how it exited without throwing. */
-export function runUnchecked(cmd: string, args: string[], opts?: { cwd?: string; timeoutMs?: number }, spawn: SpawnSync = spawnSync): RunOutcome {
-  const r = spawn(cmd, args, { stdio: "inherit", env: process.env, ...(opts?.cwd ? { cwd: opts.cwd } : {}), ...spawnDeadline(opts?.timeoutMs) });
+export function runUnchecked(
+  cmd: string,
+  args: string[],
+  opts?: { cwd?: string; env?: typeof process.env; timeoutMs?: number },
+  spawn: SpawnSync = spawnSync,
+): RunOutcome {
+  const r = spawn(cmd, args, {
+    stdio: "inherit",
+    env: opts?.env ?? process.env,
+    ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    ...spawnDeadline(opts?.timeoutMs),
+  });
   return { code: r.status ?? 1, exited: typeof r.status === "number" && !r.error, spawnError: r.error?.message };
 }
 

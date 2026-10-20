@@ -1,7 +1,8 @@
 import { safeCheck, v } from "../validation/mod";
 import type { BaseUrlConfig, DeriveAllowedOriginsOptions, ParsedUrl } from "./types";
 
-const LOOPBACK_ALLOWANCE = "http://localhost and http://127.0.0.1 are allowed for local development";
+/** The loopback exception every https requirement here states. @internal */
+export const LOOPBACK_ALLOWANCE = "http://localhost and http://127.0.0.1 are allowed for local development";
 
 /** Valibot schema transforming an https URL string (or an http loopback URL) into a `BaseUrlConfig`; the origin set it feeds: SECURITY_HARDENING.md §3f. @public */
 export const BaseUrlConfigSchema = v.pipe(
@@ -32,29 +33,11 @@ export function deriveAllowedOrigins(parsed: ParsedUrl, options: DeriveAllowedOr
   if (options.includeWww && !parsed.hostname.startsWith("www.")) {
     add(parsed.origin.replace("://", "://www."));
   }
-  for (const entry of options.dev?.options.extraOrigins ?? []) {
-    add(parseExtraOrigin(entry).origin);
-  }
   return origins;
 }
 
-function parseExtraOrigin(entry: string): URL {
-  let url: URL;
-  try {
-    url = new URL(entry);
-  } catch {
-    throw new Error(`extraOrigins entry is not a normalized origin: ${entry}`);
-  }
-  if (entry !== url.origin) {
-    throw new Error(`extraOrigins entry is not a normalized origin: ${entry}`);
-  }
-  if (!isHttpsOrLoopback(url)) {
-    throw new Error(`extraOrigins entry must use https: (${LOOPBACK_ALLOWANCE}): ${entry}`);
-  }
-  return url;
-}
-
-function isHttpsOrLoopback(url: URL): boolean {
+/** Whether `url` is https, or http on a loopback host. @internal */
+export function isHttpsOrLoopback(url: URL): boolean {
   return url.protocol === "https:" || (url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1"));
 }
 

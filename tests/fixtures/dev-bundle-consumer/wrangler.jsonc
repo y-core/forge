@@ -1,0 +1,5 @@
+{
+  // `main` is the production entry, and it still reaches development code through `./grant`.
+  "name": "dev-bundle-consumer",
+  "main": "src/worker.ts",
+}

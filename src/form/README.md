@@ -45,16 +45,18 @@ const ContactSchema = v.strictObject({
 
 const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
   schema: ContactSchema,
-  turnstile: {
-    secretKey: (_c, config) => config.services.turnstile.secretKey,
-    verify: (c) => ({ expectedHostname: c.url.hostname, expectedAction: "contact" }),
-  },
+  turnstile: { verify: () => ({ expectedAction: "contact" }) },
   handle: async (data) => {
     await sendEmail(data);
     return fragmentResponse(renderSuccess("Thanks — we'll be in touch."));
   },
 });
 ```
+
+`turnstile: {}` is the whole opt-in: the secret comes from `TURNSTILE_SECRET_KEY`, the token is pinned to the request's own hostname, and
+`CF-Connecting-IP` goes to siteverify when the request carries one. `secretKey` and `verify` override those defaults, `verify` merged over them.
+Render the widget's site key from `readTurnstileKey(c, "siteKey")`, exported by `@y-core/forge/app`, so the page and the check read one place. A
+missing or blank key answers 500 naming it.
 
 On `GET` the guard pre-mints a token for the current path; render it with `<Form csrfToken={…}>` from `@y-core/forge/ui/core`, which writes both the
 hidden `_csrf` input and the `hx-headers` entry htmx submits it on. A form htmx or the browser submits by GET or DELETE gets the header
@@ -222,7 +224,7 @@ carrying `{ status: 413 }`.
 error }` naming why.
 
 ```ts
-const result = await verifyTurnstile(formData, env.TURNSTILE_SECRET_KEY, {
+const result = await verifyTurnstile(formData, await readTurnstileKey(c, "secretKey"), {
   expectedHostname: c.url.hostname,
   expectedAction: "contact",
   remoteIp: c.request.headers.get("CF-Connecting-IP") ?? undefined,
@@ -241,8 +243,9 @@ policy, the latter matching whatever field the widget writes.
 `signal` is caller cancellation, and an abort on it **rejects** rather than resolving to a result. `defineAction` threads `c.request.signal` in by
 default, and a `verify()` returning its own `signal` wins over that.
 
-Relaxing the hostname, action and cdata checks for local development takes a `DevAllowance` grant **and** one of Cloudflare's published testing
-secrets; neither half relaxes anything alone ([`INPUT_VALIDATION.md`][iv-4a] §4a).
+To submit forms locally against Cloudflare's published testing secrets, run the app with [`forge cf dev`][cf-dev] and set one of those secrets
+as the secret key. Under it the hostname, action and cdata checks are skipped for a testing secret, and for nothing else; every other build
+compares them ([`INPUT_VALIDATION.md`][iv-4a] §4a).
 
 ---
 
@@ -284,6 +287,7 @@ when a fresh isolate starts rather than mid-life.
 
 [app-readme]: ../app/README.md
 [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
+[cf-dev]: ../tooling/cf/README.md#running-the-app-locally
 [iv]: ../../docs/INPUT_VALIDATION.md
 [iv-1d]: ../../docs/INPUT_VALIDATION.md#1d-defineaction--the-schema-contract
 [iv-2c]: ../../docs/INPUT_VALIDATION.md#2c-parseformdata--body-read-with-size-limit

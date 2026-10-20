@@ -2,6 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 
 import type { FeatureManifest } from "../../curate/types";
+import { fail } from "../finding";
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkImportBoundary, guardedSubpaths, isGuarded } from "./import-boundary";
 import type { ImportBoundaryCheckConfig } from "./types";
@@ -254,6 +255,111 @@ describe("checkImportBoundary — a build-time tree", () => {
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((finding) => finding.message)).toEqual(["`sources` entry `lib` names no directory under the root"]);
+  });
+});
+
+describe("checkImportBoundary — a `#` specifier through the `imports` map", () => {
+  const manifest = (imports: Record<string, unknown>): string => JSON.stringify({ name: "app", imports });
+
+  it("reports a `#` specifier whose target is guarded, with the file, line and target", () => {
+    const result = checkImportBoundary(
+      project({
+        "package.json": manifest({ "#assets/*": "./src/tooling/assets/*.ts" }),
+        "src/http/mod.ts": '/** doc */\nexport { safeJoin } from "#assets/paths";\n',
+        "src/tooling/assets/paths.ts": "export const safeJoin = 1;\n",
+      }),
+    );
+
+    expect(result.findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
+      ["src/http/mod.ts", 2, "import boundary crossed — `#assets/paths` resolves to `src/tooling/assets/paths.ts`"],
+    ]);
+  });
+
+  it("reports a `#` specifier whose guarded target sits only under `forge-dev`, since that build bundles it", () => {
+    const result = checkImportBoundary(
+      project({
+        "package.json": manifest({ "#relax/paths": { "forge-dev": "./src/tooling/assets/paths.ts", default: "./src/http/paths.ts" } }),
+        "src/http/mod.ts": 'export { safeJoin } from "#relax/paths";\n',
+        "src/http/paths.ts": "export const safeJoin = 0;\n",
+        "src/tooling/assets/paths.ts": "export const safeJoin = 1;\n",
+      }),
+    );
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "import boundary crossed — `#relax/paths` resolves to `src/tooling/assets/paths.ts`",
+    ]);
+  });
+
+  it("reports one finding per guarded target when a `#` specifier's targets land in more than one guarded file", () => {
+    const result = checkImportBoundary(
+      project({
+        "package.json": manifest({
+          "#relax/paths": { "forge-dev": "./src/tooling/assets/paths.dev.ts", default: "./src/ui/assets/build/paths.ts" },
+        }),
+        "src/http/mod.ts": '/** doc */\nexport { safeJoin } from "#relax/paths";\n',
+        "src/tooling/assets/paths.dev.ts": "export const safeJoin = 1;\n",
+        "src/ui/assets/build/paths.ts": "export const safeJoin = 0;\n",
+      }),
+    );
+    const detail = [
+      "nothing outside `src/tooling`, `src/ui/assets/build` may import from inside them at value",
+      "move the importing module inside the guarded tree, or drop the import",
+    ];
+
+    expect(result.ok).toBe(false);
+    expect(result.findings).toEqual([
+      fail("import boundary crossed — `#relax/paths` resolves to `src/tooling/assets/paths.dev.ts`", { file: "src/http/mod.ts", line: 2, detail }),
+      fail("import boundary crossed — `#relax/paths` resolves to `src/ui/assets/build/paths.ts`", { file: "src/http/mod.ts", line: 2, detail }),
+    ]);
+  });
+
+  it("passes a `#` specifier whose every target stays outside the guarded trees", () => {
+    const result = checkImportBoundary(
+      project({
+        "package.json": manifest({ "#relax/paths": { "forge-dev": "./src/http/paths.dev.ts", default: "./src/http/paths.ts" } }),
+        "src/http/mod.ts": 'export { safeJoin } from "#relax/paths";\n',
+        "src/http/paths.ts": "export const safeJoin = 0;\n",
+      }),
+    );
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("ignores a `#` specifier the manifest does not map", () => {
+    const result = checkImportBoundary(
+      project({
+        "package.json": manifest({ "#assets/*": "./src/tooling/assets/*.ts" }),
+        "src/http/mod.ts": 'export { safeJoin } from "#tooling/paths";\n',
+      }),
+    );
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("allows a type-only `#` import of a guarded target, as it allows a relative one", () => {
+    const result = checkImportBoundary(
+      project({
+        "package.json": manifest({ "#assets/*": "./src/tooling/assets/*.ts" }),
+        "src/http/mod.ts": 'import type { Paths } from "#assets/paths";\nexport type P = Paths;\n',
+        "src/tooling/assets/paths.ts": "export type Paths = string;\n",
+      }),
+    );
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("reports a skeleton module reaching a one-way slice through a `#` specifier", () => {
+    const result = checkImportBoundary(
+      app({
+        ...SHOWCASE,
+        "package.json": manifest({ "#showcase": "./src/showcase/mod.ts" }),
+        "src/views/layout.ts": 'import { registerShowcase } from "#showcase";\nexport const l = registerShowcase;\n',
+      }),
+    );
+
+    expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
+      ["src/views/layout.ts", "import boundary crossed — `#showcase` resolves to `src/showcase/mod.ts`"],
+    ]);
   });
 });
 
@@ -669,6 +775,42 @@ describe("checkImportBoundary — feature slices under the feature graph", () =>
 
     expect(result.findings.map((finding) => finding.message)).toEqual([
       "slice boundary crossed — `../contact/form` resolves to `src/contact/form.ts`, inside feature `contact`, which `email` does not require",
+    ]);
+  });
+
+  it("reports a slice reaching a feature it does not require through a `#` specifier", () => {
+    const files = {
+      ...EMAIL,
+      "package.json": JSON.stringify({ imports: { "#email/*": "./src/email/*.ts" } }),
+      "src/contact/form.ts": 'import { send } from "#email/send";\nexport const form = send;\n',
+    };
+    const result = checkImportBoundary(sliced(files, { contact: slice("src/contact"), email: slice("src/email") }));
+
+    expect(result.findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
+      [
+        "src/contact/form.ts",
+        1,
+        "slice boundary crossed — `#email/send` resolves to `src/email/send.ts`, inside feature `email`, which `contact` does not require",
+      ],
+    ]);
+  });
+
+  it("judges every target of a `#` specifier, reporting a later one the slice does not require", () => {
+    const files = {
+      ...EMAIL,
+      ...FORM,
+      "package.json": JSON.stringify({ imports: { "#x": { "forge-dev": "./src/email/send.ts", default: "./src/form/field.ts" } } }),
+      "src/contact/form.ts": 'import { field } from "#x";\nexport const form = field;\n',
+    };
+    const features = { contact: slice("src/contact", ["email"]), email: slice("src/email"), form: slice("src/form") };
+    const result = checkImportBoundary(sliced(files, features));
+
+    expect(result.findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
+      [
+        "src/contact/form.ts",
+        1,
+        "slice boundary crossed — `#x` resolves to `src/form/field.ts`, inside feature `form`, which `contact` does not require",
+      ],
     ]);
   });
 

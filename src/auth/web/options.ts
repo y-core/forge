@@ -1,3 +1,4 @@
+import { readTurnstileKey, turnstileVerifyOptions } from "../../app/turnstile";
 import { contextVar } from "../../context/accessor";
 import type { AppContext } from "../../context/types";
 import { CSRF_HEADER_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
@@ -114,7 +115,8 @@ export async function turnstileWidgetFor<Bindings>(
   turnstile: Pick<AuthTurnstileOptions<Bindings>, "keys">,
   action: string,
 ): Promise<AuthTurnstileWidget> {
-  const { siteKey } = await turnstile.keys(c);
+  const { keys } = turnstile;
+  const siteKey = await readTurnstileKey(c, "siteKey", keys && (async () => (await keys(c)).siteKey));
   return { siteKey, action };
 }
 
@@ -124,8 +126,12 @@ export async function turnstileCheckFor<Bindings>(
   turnstile: Pick<AuthTurnstileOptions<Bindings>, "keys" | "verify">,
   action: string,
 ): Promise<AuthTurnstileCheck> {
-  const { secretKey } = await turnstile.keys(c);
-  return { secretKey, verify: { ...turnstile.verify(c), expectedAction: action, tokenField: TURNSTILE_FIELD_DEFAULT } };
+  const { keys } = turnstile;
+  const secretKey = await readTurnstileKey(c, "secretKey", keys && (async () => (await keys(c)).secretKey));
+  return {
+    secretKey,
+    verify: { ...turnstileVerifyOptions(c, turnstile.verify?.(c)), expectedAction: action, tokenField: TURNSTILE_FIELD_DEFAULT },
+  };
 }
 
 /** The widget `flow`'s form renders, or `undefined` when the deployment guards no such form. @internal */

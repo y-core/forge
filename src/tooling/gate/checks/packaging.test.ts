@@ -109,6 +109,37 @@ describe("checkPackaging()", () => {
     ).toEqual([]);
   });
 
+  describe("the `imports` map", () => {
+    const RELAX = {
+      "src/ui/mod.ts": "export const nothing = 1;",
+      "src/ui/relax.dev.ts": `import { helper } from "./relax-helper";\nexport const relax = helper;`,
+      "src/ui/relax-helper.ts": "export const helper = true;",
+      "src/ui/relax.strict.ts": "export const relax = false;",
+      "src/ui/relax.dev.test.ts": `import { relax } from "./relax.dev";\nimport { helper } from "./relax-helper";`,
+      "src/ui/relax.strict.test.ts": `import { relax } from "./relax.strict";`,
+    };
+
+    it("counts every condition's target as an entry, and what each target imports as reached", () => {
+      const manifest = { imports: { "#relax/ui": { "forge-dev": "./src/ui/relax.dev.ts", default: "./src/ui/relax.strict.ts" } } };
+      expect(files({ ...RELAX, "package.json": JSON.stringify(manifest) })).toEqual([]);
+    });
+
+    it("counts a target written as a bare string as an entry", () => {
+      expect(
+        files({
+          "src/ui/mod.ts": "export const nothing = 1;",
+          "src/ui/relax.strict.ts": "export const relax = false;",
+          "src/ui/relax.strict.test.ts": `import { relax } from "./relax.strict";`,
+          "package.json": JSON.stringify({ imports: { "#relax/ui": "./src/ui/relax.strict.ts" } }),
+        }),
+      ).toEqual([]);
+    });
+
+    it("reports the same targets, and what they import, once no `imports` entry names them", () => {
+      expect(files(RELAX).toSorted()).toEqual(["src/ui/relax-helper.ts", "src/ui/relax.dev.ts", "src/ui/relax.strict.ts"]);
+    });
+  });
+
   it("asks nothing of a module nothing imports at all — that is the exports check's subject", () => {
     expect(files({ "src/ui/mod.ts": "export const nothing = 1;", "src/ui/orphan.ts": "export const orphan = 1;" })).toEqual([]);
   });

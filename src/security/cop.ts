@@ -1,13 +1,15 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
+import { admitsMissingFetchMetadata } from "#relax/cop";
+
 import { getAppContext } from "../context/types";
 import { isWebSocketUpgrade } from "../http/upgrade";
 import { err, ok } from "../result/result";
-import { isExemptFromOriginCheck, verifyOrigin } from "./origin";
-import type { CrossOriginProtectionOptions, CrossOriginResult, OriginProtectionOptions } from "./types";
+import { isExemptFromOriginCheck, verifyOrigin, withExtraOrigins } from "./origin";
+import type { CrossOriginResult, OriginProtectionOptions } from "./types";
 
-/** The verdict itself, taking the missing-header allowance as a parameter rather than as an option. */
-function crossOriginVerdict(request: Request, allowMissingHeader: boolean): CrossOriginResult {
+/** The Fetch Metadata verdict, with the missing-header allowance passed in. @internal */
+export function crossOriginVerdict(request: Request, allowMissingHeader: boolean): CrossOriginResult {
   if (isExemptFromOriginCheck(request)) {
     return ok();
   }
@@ -31,14 +33,14 @@ function crossOriginVerdict(request: Request, allowMissingHeader: boolean): Cros
 }
 
 /** Pure function: inspects Sec-Fetch-Site to detect cross-site mutations. @public */
-export function checkCrossOriginProtection(request: Request, options: CrossOriginProtectionOptions = {}): CrossOriginResult {
-  return crossOriginVerdict(request, options.dev?.options.missingFetchMetadata === true);
+export function checkCrossOriginProtection(request: Request): CrossOriginResult {
+  return crossOriginVerdict(request, admitsMissingFetchMetadata());
 }
 
 /** Middleware that rejects cross-site mutation requests via Fetch Metadata with a 403. @public */
-export function crossOriginProtection(options: CrossOriginProtectionOptions = {}): Middleware {
+export function crossOriginProtection(): Middleware {
   return async (context, next) => {
-    const result = checkCrossOriginProtection(context.request, options);
+    const result = checkCrossOriginProtection(context.request);
     if (!result.ok) {
       return new Response("Forbidden", { status: 403 });
     }
@@ -50,15 +52,13 @@ export function crossOriginProtection(options: CrossOriginProtectionOptions = {}
 export function originProtection<Bindings = Record<string, unknown>>(options: OriginProtectionOptions<Bindings>): Middleware {
   return async (context, next) => {
     if (isExemptFromOriginCheck(context.request)) return next();
-    // Not `dev.missingFetchMetadata`, which only `checkCrossOriginProtection` reads: the allowlist
-    // below is what judges a request with no Fetch Metadata, so the veto is read here without one.
     const cop = crossOriginVerdict(context.request, true);
     if (!cop.ok) return new Response("Forbidden", { status: 403 });
     // `Sec-Fetch-Site` is a veto, not a pass: a good value must not short-circuit the allowlist,
     // or a non-browser client skips it by forging one `Sec-Fetch-Site: same-origin` header.
     const allowed =
       typeof options.allowedOrigins === "function" ? options.allowedOrigins(getAppContext<Bindings>(context)) : options.allowedOrigins;
-    const origin = verifyOrigin(context.request, allowed);
+    const origin = verifyOrigin(context.request, withExtraOrigins(context, allowed));
     if (origin.ok) return next();
     // The allowlist had nothing to judge, so fall back to the tier `SECURITY_HARDENING.md` §3e names:
     // the veto above admits only `same-origin` and `none`, values page content cannot forge.

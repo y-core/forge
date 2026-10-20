@@ -3,13 +3,14 @@ import { createRouter, RequestContext } from "@remix-run/fetch-router";
 import type { MatcherLimits, Matcher, MultiMatcher } from "@remix-run/route-pattern/match";
 import { createMatcher, createMultiMatcher } from "@remix-run/route-pattern/match";
 
+import { disclosedErrorMessage } from "#relax/error-page";
+
 import type { Config } from "../config/config";
 import { resolveConfig } from "../config/config";
 import { mergePendingHeaders } from "../context/pending-headers";
 import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { ConfigKey, EnvKey, ExecutionContextKey, getAppContext } from "../context/types";
-import { escapeHtml } from "../html/escape";
 import { CacheControl } from "../http/headers";
 import { rebuildResponse } from "../http/rebuild";
 import { createLogger } from "../logging/logger";
@@ -18,6 +19,7 @@ import { serializeError } from "../logging/serialize-error";
 import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
 import { requestIdCtx } from "../security/request-id";
+import { fallbackErrorDocument } from "./error-page";
 import { shellCtx } from "./shell";
 import type { PageShell } from "./types";
 import type { GlobalMiddlewareEntry, MethodMismatch, RequestState } from "./types";
@@ -113,7 +115,6 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   private _onError?: (err: Error, c: AppContext<Bindings>) => Response | Promise<Response>;
   private _notFound?: (c: AppContext<Bindings>, config: unknown) => Response | Promise<Response>;
   private _methodMismatch: MethodMismatch = "notFound";
-  private _errorDetail = false;
   /** Config store attached by `registerConfig`. @internal */
   configStore?: Config<unknown>;
   private _shell?: PageShell<Bindings>;
@@ -142,11 +143,6 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
   notFound(c: AppContext<Bindings>, config: unknown): Response | Promise<Response> {
     if (this._notFound) return this._notFound(c, config);
     return hardenedText("Not Found", 404);
-  }
-
-  /** Whether the boundary's 500 page prints the thrown message; only a `DevAllowance` turns it on. */
-  setErrorDetail(enabled: boolean): void {
-    this._errorDetail = enabled;
   }
 
   /** Registers the document shell every mounted page renders into — the single writer of that slot. */
@@ -295,11 +291,9 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
     } catch {
       await flush;
     }
-    const detail = this._errorDetail ? `<p>${escapeHtml(err.message)}</p>` : "<p>An unexpected error occurred.</p>";
     // Only ever echoed, never generated here: an id exists only where `requestId` middleware ran.
     const reference = requestIdCtx.getOptional(context);
-    const quote = reference ? `<p>Reference: ${escapeHtml(reference)}</p>` : "";
-    return new Response(`<!DOCTYPE html><html><body><h1>500 Internal Server Error</h1>${detail}${quote}</body></html>`, {
+    return new Response(fallbackErrorDocument(err, reference, disclosedErrorMessage), {
       status: 500,
       headers: { ...BASELINE_HEADERS, "content-type": "text/html; charset=utf-8", ...(reference ? { "x-request-id": reference } : {}) },
     });

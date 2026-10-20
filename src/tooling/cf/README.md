@@ -8,15 +8,16 @@ audience: internal
 
 Bindings drift. A `wrangler.jsonc` declares a KV namespace, a D1 database and three secrets; what is actually on the account is whatever a sequence
 of half-remembered dashboard clicks left behind. This namespace reconciles the two, in both scopes Cloudflare divides on — account resources and
-zone rules — and generates the env schema from the same config.
+zone rules — and generates the env schema from the same config. It also runs the app locally with forge's development relaxations switched on.
 
-Reach for it before a deploy, and in the gate.
+Reach for it before a deploy, in the gate, and as your `dev` script.
 
 ```bash
 forge cf sync                 # status for the account scope. Writes nothing
 forge cf sync --commit        # create the missing remotes, write the resolved ids back
 forge cf sync zone            # zone rules, read from config/site.ts
 forge cf gen env              # emit env.schema.ts from wrangler.jsonc + .dev.vars
+forge cf dev                  # wrangler dev, with forge's development relaxations on
 ```
 
 ---
@@ -302,6 +303,105 @@ The command emits the module and runs an oxfmt pass, so the generated file passe
 
 ---
 
+## Running the app locally
+
+**Run `forge cf dev` wherever you would have run `wrangler dev`.** It is `wrangler dev` with forge's development relaxations switched on, so the
+`dev` script keeps its asset build and swaps only the last command:
+
+```json
+{ "scripts": { "dev": "forge assets build && forge cf dev" } }
+```
+
+Wrangler's own flags go after `--`:
+
+```bash
+forge cf dev -- --port 8788
+```
+
+Under `forge cf dev`, and under nothing else:
+
+- a route behind `rateLimit` runs without its limiter binding, and logs a warning instead of answering `503`;
+- `crossOriginProtection()` accepts a request carrying no Fetch Metadata headers;
+- `originProtection` and `originGuard` admit the origins `FORGE_DEV_ORIGINS` lists in `.dev.vars`
+  ([`src/security/README.md`][security-origins]);
+- Turnstile accepts Cloudflare's published testing secrets ([`src/auth/README.md`][auth-turnstile]);
+- the 500 page shows the thrown message, escaped.
+
+A plain `wrangler dev` gets none of these, and neither does `wrangler deploy`, so a local run that behaves like production is one command away.
+
+**With several `-c` configs, put the app's first.** Only the first config's Worker is armed:
+
+```bash
+forge cf dev -- -c wrangler.jsonc -c ../auth-worker/wrangler.jsonc
+```
+
+**Never export `forge-dev` in `WRANGLER_BUILD_CONDITIONS` yourself.** `forge cf dev` sets it in wrangler's own process and leaves your shell
+alone. A deploy from a shell that carries it bundles every development module, and `validate-dev-bundle` fails on the variable before that can
+happen ([`src/tooling/gate/README.md`][gate-readme]).
+
+---
+
+## Keeping your own dev-only code out of the deploy
+
+When code the shared path calls should behave differently in development — a debug banner, a dev-only CSP source — put it behind an `imports`
+alias of your own. A deploy resolves the alias's `default` target, so the development module never reaches the bundle.
+
+Map the alias in your `package.json`:
+
+```json
+{
+  "imports": {
+    "#app/debug-banner": {
+      "forge-dev": "./src/debug-banner.dev.ts",
+      "default": "./src/debug-banner.strict.ts"
+    }
+  }
+}
+```
+
+Declare the shape once, and annotate both targets with it:
+
+```ts
+// src/types.ts
+export type DebugBanner = () => string | undefined;
+```
+
+```ts
+// src/debug-banner.strict.ts
+import type { DebugBanner } from "./types";
+
+export const debugBanner: DebugBanner = () => undefined;
+```
+
+```ts
+// src/debug-banner.dev.ts
+import type { DebugBanner } from "./types";
+
+declare const __FORGE_DEV__: boolean | undefined;
+
+export const debugBanner: DebugBanner = () => (typeof __FORGE_DEV__ !== "undefined" && __FORGE_DEV__ === true ? "development build" : undefined);
+```
+
+Import the alias, never either file, from the shared code:
+
+```ts
+import { debugBanner } from "#app/debug-banner";
+```
+
+Then run the app with the `forge cf dev` script above.
+
+**The annotation is what keeps the two targets in step.** `tsc` checks the code importing the alias against the `default` target only, so without
+the shared type the development module could change shape and nothing would say so.
+
+**The development module checks `__FORGE_DEV__` itself.** The condition picks the module, and the define is what lets it answer: a bundle built
+under `forge-dev` without `__FORGE_DEV__` set to `true` still answers as the strict target does. `forge cf dev` sets both.
+
+**`validate-dev-bundle` is the check.** On the `full` tier it bundles your deployed `main` and fails when a `*.dev.ts` reaches it — a `default`
+pointing at the development file, say. `validate-dev-boundary` fails a production module importing `./debug-banner.dev` directly. Both are
+[`src/tooling/gate/README.md`][gate-readme]'s.
+
+---
+
 ## Reading wrangler.jsonc from a Playwright config
 
 A `playwright.config.ts` runs under node, and node cannot load this namespace's barrel. Import the parser from its own subpath instead:
@@ -324,7 +424,7 @@ The subpath exports `parseWranglerConfig` and nothing else. Why it is published 
 ## Driving it without the CLI
 
 ```ts
-import { createGenEnvCommand, createSyncAccountCommand, createSyncZoneCommand } from "@y-core/forge/tooling/cf";
+import { createDevCommand, createGenEnvCommand, createSyncAccountCommand, createSyncZoneCommand } from "@y-core/forge/tooling/cf";
 ```
 
 Each `create*Command` returns the `Command` the `forge` binary attaches, ready to hand to `execute`. The barrel also publishes the reconciliation
@@ -364,12 +464,17 @@ destroyed. A splice that fails its own verification writes nothing, `--force` in
 - [`src/site/README.md`][site-readme] — the zone block this reconciles, and the allow-list rulings behind it
 - [`src/config/README.md`][config-readme] — the three-part env setup `gen env` is one third of
 - [`src/app/README.md`][app-readme] — `validateBindings`, which enforces the generated schema
+- [`docs/NAMESPACES.md`][ns-5i] §5i — why a development relaxation is a module the build selects, never an option
 - [`docs/SOURCE_OF_TRUTH.md`][sot-2f] §2f — why this README, and not a `docs/` document, owns the rulings above
 
 [app-readme]: ../../app/README.md
+[auth-turnstile]: ../../auth/README.md#challenging-bots-on-the-sign-in-and-sign-up-forms
 [config-readme]: ../../config/README.md
+[gate-readme]: ../gate/README.md
 [keyring-readme]: ../../crypto/keyring/README.md#rotating-the-root-secret
 [ns-3c]: ../../../docs/NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
+[ns-5i]: ../../../docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
+[security-origins]: ../../security/README.md#deriving-allowed-origins-from-base_url
 [session-readme]: ../../session/README.md#rotating-a-signing-secret
 [site-readme]: ../../site/README.md
 [sot-2f]: ../../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows

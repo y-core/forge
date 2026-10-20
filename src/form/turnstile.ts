@@ -1,18 +1,23 @@
+import { admitsTestingSecret } from "#relax/turnstile";
+
 import { err, ok } from "../result/result";
 import { TURNSTILE_FIELD_DEFAULT } from "./constants";
-import type { ReadonlyFormData, TurnstileResult, TurnstileVerifyOptions } from "./types";
+import type { ReadonlyFormData, RelaxTestingSecret, TurnstileResult, TurnstileVerifyOptions } from "./types";
 
 const VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
-// Under one of Cloudflare's published testing secrets siteverify answers a fixed body: its own `hostname`, and no `action` or `cdata`.
-const TESTING_SECRETS: ReadonlySet<string> = new Set([
-  "1x0000000000000000000000000000000AA",
-  "2x0000000000000000000000000000000AA",
-  "3x0000000000000000000000000000000AA",
-]);
-
 /** Verifies a Cloudflare Turnstile token against the siteverify API. @public */
 export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: string, options: TurnstileVerifyOptions): Promise<TurnstileResult> {
+  return verifyTurnstileWith(formData, secretKey, options, admitsTestingSecret);
+}
+
+/** `verifyTurnstile` with the testing-secret relaxation passed in. @internal */
+export async function verifyTurnstileWith(
+  formData: ReadonlyFormData,
+  secretKey: string,
+  options: TurnstileVerifyOptions,
+  admitsTesting: RelaxTestingSecret,
+): Promise<TurnstileResult> {
   if (!options.expectedHostname) {
     return err("hostname-mismatch");
   }
@@ -53,8 +58,7 @@ export async function verifyTurnstile(formData: ReadonlyFormData, secretKey: str
     return err("verification-failed");
   }
 
-  const testingSecret = options.dev?.options.turnstileTestingSecrets === true && TESTING_SECRETS.has(secretKey);
-  if (testingSecret) return ok();
+  if (admitsTesting(secretKey)) return ok();
 
   if (data.hostname !== options.expectedHostname) {
     return err("hostname-mismatch");

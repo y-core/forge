@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../app/forge-app";
+import { RequestContext } from "../context/types";
+import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
-import { isExemptFromOriginCheck, originGuard, verifyOrigin } from "./origin";
+import * as securityBarrel from "./mod";
+import { isExemptFromOriginCheck, originGuard, verifyOrigin, withExtraOrigins } from "./origin";
+import { readDevOrigins } from "./url.dev";
 
 function makeApp(allowed: string[]) {
   const app = new Forge();
@@ -139,5 +143,41 @@ describe("verifyOrigin", () => {
   it("ignores a Referer on a WebSocket upgrade and returns missing", () => {
     const req = new Request("https://example.com/live", { headers: { Upgrade: "websocket", Referer: "https://example.com/page" } });
     expect(verifyOrigin(req, ALLOWED)).toEqual({ ok: false, error: "missing" });
+  });
+});
+
+describe("withExtraOrigins", () => {
+  const TUNNEL = "https://tunnel.example";
+  const CONFIGURED = ["https://example.com"];
+  const request = new Request("https://example.com/test", { method: "POST" });
+
+  it("appends the origins the relaxation reads from this request's bindings", () => {
+    const context = createTestContext(request, { env: { FORGE_DEV_ORIGINS: TUNNEL } });
+    expect(withExtraOrigins(context, CONFIGURED, readDevOrigins)).toEqual([...CONFIGURED, TUNNEL]);
+  });
+
+  it("returns the allowlist itself when the relaxation finds nothing", () => {
+    const context = createTestContext(request, { env: {} });
+    expect(withExtraOrigins(context, CONFIGURED, readDevOrigins)).toBe(CONFIGURED);
+  });
+
+  it("stays strict on a bare router, which carries no bindings", () => {
+    expect(withExtraOrigins(new RequestContext(request), CONFIGURED, readDevOrigins)).toBe(CONFIGURED);
+  });
+
+  it("appends nothing by default in a build not armed for development, whatever `FORGE_DEV_ORIGINS` names", () => {
+    const context = createTestContext(request, { env: { FORGE_DEV_ORIGINS: TUNNEL } });
+    expect(withExtraOrigins(context, CONFIGURED)).toBe(CONFIGURED);
+  });
+
+  it("leaves `originGuard` refusing a `FORGE_DEV_ORIGINS` origin in a build not armed for development", async () => {
+    const res = await makeApp(CONFIGURED).request("/test", { method: "POST", headers: { Origin: TUNNEL } }, { FORGE_DEV_ORIGINS: TUNNEL });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("withExtraOrigins on the barrel", () => {
+  it("stays off the security barrel, so no consumer reaches the relaxation", () => {
+    expect(Object.values<unknown>(securityBarrel).includes(withExtraOrigins)).toBe(false);
   });
 });

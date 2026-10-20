@@ -245,7 +245,7 @@ Every app runs the same lifecycle, so the scripts are the same in each. Copy the
 
 | Script | Command | What it does |
 | --- | --- | --- |
-| `dev` | `forge db migrate && wrangler dev` | Applies pending migrations to the local database before the dev server starts |
+| `dev` | `forge db migrate && forge cf dev` | Applies pending migrations to the local database before the dev server starts |
 | `db:status` | `forge db migrate status` | Which migrations are applied and pending, and where the files and the database disagree |
 | `db:lint` | `forge db lint` | Checks the migrations the local database does not hold yet: the stamp, the lint rules, and every drop or rename |
 | `db:compose` | `forge db migrate compose` | Writes the next migration from the declared schema |

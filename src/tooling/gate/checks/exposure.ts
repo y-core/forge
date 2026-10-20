@@ -1,7 +1,7 @@
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { ExposureCheckConfig, ExposurePosture } from "./types";
-import { readWorkerConfig } from "./worker-config";
+import { isRecord, readWorkerConfig } from "./worker-config";
 
 interface ExposureKey {
   key: string;
@@ -48,10 +48,6 @@ const CONTROLS: readonly ExposureControl[] = [
     conflict: { message: "wrangler accepts exactly one", detail: ["delete one — `routes` for a list of patterns, `route` for a single one"] },
   },
 ];
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 /** The value as a reader sees it, capped so one long `routes` array cannot own the line. */
 function describe(block: Record<string, unknown>, key: string): string {

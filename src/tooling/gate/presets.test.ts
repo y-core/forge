@@ -45,6 +45,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
       "lint:types",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -60,6 +61,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
       "lint:types",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -81,16 +83,19 @@ describe("cloudflareWorkerSteps() — shape", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("holds back only the test rows, so a quality run is every other step of the default table", () => {
+  it("holds back only the test row and the bundle proof, so a quality run is every other step of the default table", () => {
     const held = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }).filter((step) => step.tier !== undefined);
 
-    expect(held.map((step) => [step.label, step.tier])).toEqual([["test", "standard"]]);
+    expect(held.map((step) => [step.label, step.tier])).toEqual([
+      ["test", "standard"],
+      ["validate-dev-bundle", "full"],
+    ]);
   });
 
-  it("makes test:browser the only full-tier row once the browser opt-in is taken", () => {
+  it("adds test:browser to the full tier once the browser opt-in is taken", () => {
     const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === "full");
 
-    expect(held.map((step) => step.label)).toEqual(["test:browser"]);
+    expect(held.map((step) => step.label)).toEqual(["validate-dev-bundle", "test:browser"]);
   });
 });
 
@@ -124,13 +129,20 @@ describe("cloudflareWorkerSteps() — the exposure row", () => {
       "validate-exposure",
       "validate-compatibility",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
   it("orders it after validate-asset-root when both halves are configured", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" }));
 
-    expect(labels.slice(-4)).toEqual(["validate-asset-root", "validate-exposure", "validate-compatibility", "validate-dev-boundary"]);
+    expect(labels.slice(-5)).toEqual([
+      "validate-asset-root",
+      "validate-exposure",
+      "validate-compatibility",
+      "validate-dev-boundary",
+      "validate-dev-bundle",
+    ]);
   });
 
   it("omits the row for an app naming no worker config", () => {
@@ -150,6 +162,12 @@ describe("cloudflareWorkerSteps() — the compatibility row", () => {
   });
 });
 
+const DEV_MODULE_APP = {
+  "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts" }\n',
+  "src/worker.ts": 'import { viewer } from "./controllers/logs.dev";\n\nexport default { fetch: () => new Response(viewer) };\n',
+  "src/controllers/logs.dev.ts": 'export const viewer = "logs";\n',
+};
+
 describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
   // Default-on: the forbidden specifiers come from forge's own installed manifest, so an app that
   // configures nothing still fails on `@y-core/forge/testing` in a deployed module.
@@ -157,7 +175,7 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
     const row = cloudflareWorkerSteps().find((step) => step.label === "validate-dev-boundary");
 
     expect(row?.tier).toBeUndefined();
-    expect(labelsOf(cloudflareWorkerSteps()).at(-1)).toBe("validate-dev-boundary");
+    expect(labelsOf(cloudflareWorkerSteps()).at(-2)).toBe("validate-dev-boundary");
   });
 
   it("orders it after the two rows read from the worker config", () => {
@@ -172,6 +190,20 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
 
     expect(labels.indexOf("validate-dev-boundary")).toBeLessThan(labels.indexOf("db:schema:digests"));
     expect(labels.indexOf("validate-dev-boundary")).toBeLessThan(labels.indexOf("test:browser"));
+  });
+
+  it("fails a production import of a `*.dev.ts` helper with nothing configured", async () => {
+    const root = gateFixtureRoot(DEV_MODULE_APP, "forge-presets-");
+    try {
+      const result = await runRow(cloudflareWorkerSteps({ root }), "validate-dev-boundary");
+
+      expect(result.findings.map((finding) => [finding.file, finding.message])).toContainEqual([
+        "src/worker.ts",
+        "development module imported — `./controllers/logs.dev` resolves to `src/controllers/logs.dev.ts`",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -306,6 +338,45 @@ describe("cloudflareWorkerSteps() — the db rows", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the dev-bundle row", () => {
+  it("emits validate-dev-bundle on the full tier, right after the dev-boundary row, with no machine prerequisite", () => {
+    const steps = cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" });
+    const labels = labelsOf(steps);
+    const row = steps.find((step) => step.label === "validate-dev-bundle");
+
+    expect(labels.indexOf("validate-dev-bundle")).toBe(labels.indexOf("validate-dev-boundary") + 1);
+    expect(row?.tier).toBe("full");
+    expect(row?.requires).toBeUndefined();
+  });
+
+  it("judges the worker config the app names", async () => {
+    const root = gateFixtureRoot({ "wrangler.workers.jsonc": '{ "name": "app" }\n' }, "forge-presets-");
+    try {
+      const result = await runRow(cloudflareWorkerSteps({ root, workerConfig: "wrangler.workers.jsonc" }), "validate-dev-bundle");
+
+      expect(result.findings.map((finding) => [finding.file, finding.message])).toContainEqual([
+        "wrangler.workers.jsonc",
+        "`main` is unstated, so there is no deployed bundle to judge",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("fails a `*.dev.ts` helper that reaches main's bundle, with nothing configured", async () => {
+    const root = gateFixtureRoot(DEV_MODULE_APP, "forge-presets-");
+    try {
+      const result = await runRow(cloudflareWorkerSteps({ root }), "validate-dev-bundle");
+
+      expect(result.findings.filter((finding) => finding.message.startsWith("development code")).map((finding) => finding.file)).toEqual([
+        "src/controllers/logs.dev.ts",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("cloudflareWorkerSteps() — the test rows", () => {
   it("emits one row per set, in declared order, where the single test row stood", () => {
     const labels = labelsOf(
@@ -327,6 +398,7 @@ describe("cloudflareWorkerSteps() — the test rows", () => {
       "test:unit",
       "test:seam",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -386,6 +458,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
       "validate-vendor-boundary",
       "validate-contrast",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -632,6 +705,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "validate-class-tokens",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
     expect(labels).not.toContain("validate-css-tokens");
   });
@@ -650,6 +724,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "validate-css-tokens",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -667,6 +742,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "lint:types",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -730,6 +806,7 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
       "lint:types",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -831,6 +908,7 @@ describe("cloudflareWorkerSteps() — the markdown row", () => {
       "lint:types",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -864,6 +942,7 @@ describe("cloudflareWorkerSteps() — the warden step", () => {
       "warden",
       "test",
       "validate-dev-boundary",
+      "validate-dev-bundle",
     ]);
   });
 
@@ -937,6 +1016,7 @@ describe("cloudflareWorkerSteps() — watches", () => {
       "test",
       "validate-contrast",
       "validate-asset-root",
+      "validate-dev-bundle",
       "db:schema:digests",
       "db:lint",
       "db:schema",

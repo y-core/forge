@@ -1,11 +1,12 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { captureStreams } from "../../../src/tooling/cli/proc";
 import { changelogSectionDigest, parseChangelog } from "../../../src/tooling/gate/changelog";
 import { checkResult, fail, warn } from "../../../src/tooling/gate/finding";
 import { compareSemVer, parseSemVer } from "../../../src/tooling/gate/semver";
 import type { ChangelogDocument } from "../../../src/tooling/gate/types";
-import type { CheckResult, Finding } from "../../../src/tooling/gate/types";
+import type { CheckResult, Finding, SemVer } from "../../../src/tooling/gate/types";
 
 /** What the changelog check needs to know about the project. @public */
 export interface ChangelogCheckConfig {
@@ -18,6 +19,8 @@ export interface ChangelogCheckConfig {
   title?: string;
   /** Section-digest manifest path relative to `root`. Defaults to `config/changelog-sections.json`; absent, the section check does not run. */
   sectionsFile?: string;
+  /** What the release command puts before a version to name its git tag. Defaults to `v`. */
+  tagPrefix?: string;
 }
 
 // The manifest is what makes "a released section is not edited by hand" checkable offline: the
@@ -53,14 +56,39 @@ function sectionFindings(parsed: ChangelogDocument, sections: Readonly<Record<st
   return findings;
 }
 
-/** Judges a parsed changelog against `packageVersion`, and its released sections against `sections`. @public */
+/** Reports every released version at or above the oldest heading that the changelog no longer carries a section for. */
+function releaseGapFindings(parsed: ChangelogDocument, releasedVersions: readonly string[] | undefined, file: string): Finding[] {
+  if (releasedVersions === undefined) return [];
+  const headings = parsed.versions.map((heading) => parseSemVer(heading.version)).filter((version) => version !== null);
+  const oldest = headings.reduce<SemVer | undefined>(
+    (low, version) => (low === undefined || compareSemVer(version, low) < 0 ? version : low),
+    undefined,
+  );
+  if (oldest === undefined) return [];
+  const carried = new Set(parsed.versions.map((heading) => heading.version));
+  return releasedVersions
+    .filter((version) => !carried.has(version))
+    .filter((version) => {
+      const released = parseSemVer(version);
+      return released !== null && compareSemVer(released, oldest) >= 0;
+    })
+    .map((version) =>
+      fail(
+        `\`${version}\` was released (its tag exists) but the changelog has no section for it — only the oldest releases may be trimmed. Restore the section and its digest.`,
+        { file },
+      ),
+    );
+}
+
+/** Judges a parsed changelog against `packageVersion`, its released sections against `sections`, and its headings against `releasedVersions`. @public */
 export function validateChangelog(
   parsed: ChangelogDocument,
   packageVersion: string,
   file: string,
   sections?: Readonly<Record<string, string>>,
+  releasedVersions?: readonly string[],
 ): Finding[] {
-  const findings: Finding[] = [...sectionFindings(parsed, sections, file)];
+  const findings: Finding[] = [...sectionFindings(parsed, sections, file), ...releaseGapFindings(parsed, releasedVersions, file)];
 
   const seen = new Map<string, number>();
   for (const heading of parsed.versions) {
@@ -130,6 +158,17 @@ function readSections(config: ChangelogCheckConfig): Record<string, string> | un
   return JSON.parse(readFileSync(path, "utf-8")) as Record<string, string>;
 }
 
+/** The versions `prefix`-named git tags release, or `undefined` where `root` has no readable tags. */
+function readReleasedVersions(root: string, prefix: string): string[] | undefined {
+  const listed = captureStreams("git", ["tag", "--list", `${prefix}*`], { cwd: root });
+  if (listed.code !== 0) return undefined;
+  return listed.stdout
+    .split("\n")
+    .filter((tag) => tag.startsWith(prefix))
+    .map((tag) => tag.slice(prefix.length))
+    .filter((version) => parseSemVer(version) !== null);
+}
+
 /** Reads the changelog and judges it. @public */
 export function checkChangelog(config: ChangelogCheckConfig): CheckResult {
   const file = config.file ?? "CHANGELOG.md";
@@ -149,8 +188,8 @@ export function checkChangelog(config: ChangelogCheckConfig): CheckResult {
     return checkResult(findings, "");
   }
 
-  // A changelog holding only `[Unreleased]` is a project before its first release, so it passes.
-  findings.push(...validateChangelog(parsed.data, config.packageVersion, file, readSections(config)));
+  const released = readReleasedVersions(config.root, config.tagPrefix ?? "v");
+  findings.push(...validateChangelog(parsed.data, config.packageVersion, file, readSections(config), released));
 
   return checkResult(findings, `${file} verified — ${parsed.data.versions.length} released versions, newest first, matching package.json.`);
 }

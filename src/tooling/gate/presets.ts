@@ -15,6 +15,7 @@ import {
   cssTokensStep,
   dbSteps,
   devBoundaryStep,
+  devBundleStep,
   exportsStep,
   exposureStep,
   importBoundaryStep,
@@ -203,7 +204,10 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   // Default-on and not opt-out: the forbidden specifiers are read from forge's own installed manifest,
   // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
-  steps.push(devBoundaryStep({ root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] }));
+  const devTrees = { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] };
+  steps.push(devBoundaryStep(devTrees));
+  // Full tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
+  steps.push(devBundleStep(devTrees, { tier: "full" }));
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
   if (options.db) steps.push(...dbSteps({ root }));
