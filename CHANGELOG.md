@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.14] — 2026-10-20
+
 ### Added
 
 - **`ServeWorkerOptions.dev` serves a harness Worker as `forge cf dev` builds it**, each `#relax/*` import resolved to its development module
@@ -666,6 +672,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.5.14]: https://github.com/y-core/forge/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/y-core/forge/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/y-core/forge/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/y-core/forge/compare/v0.5.10...v0.5.11
