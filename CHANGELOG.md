@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.12] — 2026-10-20
+
 ### Fixed
 
 - **A resend refused by the Turnstile challenge shows "Verification failed. Please try again."**, the copy the other auth forms give the same
@@ -6161,6 +6167,7 @@ text-size-[20px]")` keeps both, because `text-size-hero` sets a line height the 
   `ui/assets/css/tailwind.css`, so it resolves forge's own token utilities rather than treating
   each as unknown.
 
+[0.5.12]: https://github.com/y-core/forge/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/y-core/forge/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/y-core/forge/compare/v0.5.9...v0.5.10
 [0.5.9]: https://github.com/y-core/forge/compare/v0.5.8...v0.5.9
