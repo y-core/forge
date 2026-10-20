@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.13] — 2026-10-20
+
 ### Breaking Changes
 
 - **Forge owns the Turnstile wiring, so `turnstile: {}` is a complete configuration** on `defineAction`, `definePage`, `AuthWebOptions` and
@@ -648,6 +654,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.5.13]: https://github.com/y-core/forge/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/y-core/forge/compare/v0.5.11...v0.5.12
 [0.5.11]: https://github.com/y-core/forge/compare/v0.5.10...v0.5.11
 [0.5.10]: https://github.com/y-core/forge/compare/v0.5.9...v0.5.10
