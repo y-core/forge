@@ -45,6 +45,26 @@ test.describe("mountNavDrawer — a panel that transitions `visibility` on open"
   });
 });
 
+const COLLAPSIBLE_FIXTURE = `<details id="drawer" data-slot="collapsible">
+  <summary>Menu</summary>
+  <div data-slot="collapsible-content"><a id="first" href="#first">First</a><a href="#second">Second</a></div>
+</details>`;
+
+test.describe("mountNavDrawer — a forge `Collapsible` transitioning `::details-content` on open", () => {
+  test.use({ reducedMotion: "no-preference" });
+
+  test("focus lands on the panel's first item once the disclosure has opened", async ({ page }) => {
+    await mount(page, COLLAPSIBLE_FIXTURE, { css: ["./ui/assets/css/forge-ui.css"], expose: { forgeDrawer: "./ui/client/drawer" } });
+    await page.evaluate(() =>
+      window.forgeDrawer.mountNavDrawer({ selector: "#drawer", query: "all", panelSelector: ":scope > [data-slot~='collapsible-content']" }),
+    );
+
+    await page.click("summary");
+
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("first");
+  });
+});
+
 const POPOVER_FIXTURE = `<details id="drawer" open>
   <summary>Menu</summary>
   <div id="panel"><button id="opener" popovertarget="menu">Open menu</button><div id="menu" popover><button id="item">Item</button></div></div>

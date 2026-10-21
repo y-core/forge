@@ -29,6 +29,9 @@ describe("reduced-motion", () => {
     "transition-none",
     // The panel pattern: the motion is ungated on its own token and the settled state sits beside it.
     "max-md:transition-[transform,visibility] motion-reduce:max-md:transition-none",
+    // Replacing rather than removing: under reduce the slide gives way to an opacity-only fade.
+    "motion-safe:transition-[opacity,translate] motion-reduce:transition-opacity",
+    "max-md:transition-[transform,visibility] motion-reduce:max-md:transition-opacity",
   ]) {
     it(`leaves \`${text}\` alone`, () => {
       expect(runRule(reducedMotion, attribute("class", literal(text)))).toEqual([]);

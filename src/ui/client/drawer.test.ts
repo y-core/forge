@@ -120,12 +120,13 @@ class FakeDocument {
 
   readonly frames = new FakeFrames();
   panelTransition = { transitionDuration: "0s", transitionDelay: "0s" };
+  detailsTransition = { transitionDuration: "0s", transitionDelay: "0s" };
 
   readonly defaultView: {
     matchMedia?: ((query: string) => FakeMediaQueryList) | undefined;
     requestAnimationFrame: (callback: (time: number) => void) => number;
     cancelAnimationFrame: (id: number) => void;
-    getComputedStyle: () => { transitionDuration: string; transitionDelay: string };
+    getComputedStyle: (element: unknown, pseudo?: string) => { transitionDuration: string; transitionDelay: string };
   };
 
   constructor(media: FakeMediaQueryList, queries: string[]) {
@@ -136,7 +137,7 @@ class FakeDocument {
       },
       requestAnimationFrame: this.frames.request,
       cancelAnimationFrame: this.frames.cancel,
-      getComputedStyle: () => this.panelTransition,
+      getComputedStyle: (_element: unknown, pseudo?: string) => (pseudo === "::details-content" ? this.detailsTransition : this.panelTransition),
     };
   }
 
@@ -697,6 +698,39 @@ describe("mountNavDrawer — a panel still hidden when it opens", () => {
 
     expect(f.doc.frames.pending.size).toBe(0);
     expect(f.doc.activeElement).toBeNull();
+  });
+
+  it("focuses an item that was not yet rendered when the disclosure opened, once it renders", () => {
+    const f = fixture(true);
+    f.doc.detailsTransition = { transitionDuration: "200ms", transitionDelay: "0s" };
+    const items = f.el.panel.items;
+    for (const item of items) item.rendered = false;
+    mountNavDrawer({ element: f.element });
+
+    f.el.userToggle();
+    expect(f.doc.activeElement).toBeNull();
+
+    for (const item of items) item.rendered = true;
+    f.doc.frames.run(16);
+
+    expect(f.doc.activeElement).toBe(items[0]);
+    expect(f.doc.frames.pending.size).toBe(0);
+  });
+
+  it("keeps retrying while the disclosure's `::details-content` transition outlasts the panel's", () => {
+    const f = fixture(true);
+    f.doc.detailsTransition = { transitionDuration: "200ms", transitionDelay: "0s" };
+    (f.el.panel.items[0] as FakeNode).refusesFocus = true;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.doc.frames.run(1000);
+    f.doc.frames.run(1199);
+    expect(f.doc.frames.pending.size).toBe(1);
+
+    f.doc.frames.run(1200);
+
+    expect(f.doc.frames.pending.size).toBe(0);
   });
 
   it("drops a pending retry when the drawer closes before it lands", () => {

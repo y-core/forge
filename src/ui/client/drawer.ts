@@ -141,21 +141,23 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     pendingFocus = 0;
   };
 
-  // A panel that transitions `visibility` on open is still hidden when `toggle` fires, and the
-  // browser refuses focus to a hidden element; the retry is bounded by the panel's own transition.
+  // A panel's `visibility` or a disclosure's `::details-content` transition still hides the items when
+  // `toggle` fires, so each frame re-resolves the first one until the longer transition has run.
   const focusFirstItem = () => {
-    const first = focusables()[0];
-    if (first === undefined || panel === null) return;
-    first.focus();
-    if (activeElement(el) === first) return;
-    const budget = transitionSpan(win.getComputedStyle(panel));
+    if (panel === null) return;
+    const attempt = () => {
+      const first = focusables()[0];
+      first?.focus();
+      return first !== undefined && activeElement(el) === first;
+    };
+    if (attempt()) return;
+    const budget = Math.max(transitionSpan(win.getComputedStyle(panel)), transitionSpan(win.getComputedStyle(el, "::details-content")));
     let start: number | undefined;
     const retry = (time: number) => {
       pendingFocus = 0;
       start ??= time;
       if (!isActive()) return;
-      first.focus();
-      if (activeElement(el) === first || time - start >= budget) return;
+      if (attempt() || time - start >= budget) return;
       pendingFocus = win.requestAnimationFrame(retry);
     };
     pendingFocus = win.requestAnimationFrame(retry);

@@ -1,6 +1,28 @@
+import { STATE_ATTRS } from "../contracts/state-attrs";
 import { TOOLTIP_MOUNTED_ATTR } from "../contracts/toggle-contract";
 import { ownerWindow } from "./dom";
 import type { TooltipOptions } from "./types";
+
+/** How long after the last tooltip closes the next one still opens at once. */
+const WARM_MS = 300;
+
+interface Warmth {
+  open: Set<HTMLElement>;
+  cooling: number;
+  holder: HTMLElement | null;
+}
+
+/** Per realm, because the warm window is the reader's sweep across one page, and a frame is another page. */
+const warmth = new WeakMap<Window, Warmth>();
+
+function warmthOf(win: Window): Warmth {
+  let state = warmth.get(win);
+  if (!state) {
+    state = { open: new Set(), cooling: 0, holder: null };
+    warmth.set(win, state);
+  }
+  return state;
+}
 
 /** Mounts a tooltip's delayed show/hide behaviour and returns a disposer. */
 export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): () => void {
@@ -16,12 +38,43 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   const schedule = (open: boolean, delay: number) => {
     win.clearTimeout(timer);
     timer = win.setTimeout(() => {
-      if (open) content.showPopover?.();
-      else content.hidePopover?.();
+      if (open) {
+        content.showPopover?.();
+        return;
+      }
+      // Cleared first, so a tip that opened instantly still fades out.
+      content.removeAttribute(STATE_ATTRS.instant);
+      content.hidePopover?.();
     }, delay);
   };
 
-  const show = () => schedule(true, showDelay);
+  const show = () => {
+    const state = warmth.get(win);
+    const warm = state !== undefined && (state.cooling !== 0 || [...state.open].some((tip) => tip !== content));
+    if (!warm) {
+      schedule(true, showDelay);
+      return;
+    }
+    content.setAttribute(STATE_ATTRS.instant, "");
+    schedule(true, 0);
+  };
+
+  const onToggle = (event: Event) => {
+    const state = warmthOf(win);
+    if ((event as ToggleEvent).newState === "open") {
+      state.open.add(content);
+      return;
+    }
+    content.removeAttribute(STATE_ATTRS.instant);
+    state.open.delete(content);
+    if (state.open.size > 0) return;
+    win.clearTimeout(state.cooling);
+    state.holder = content;
+    state.cooling = win.setTimeout(() => {
+      state.cooling = 0;
+      state.holder = null;
+    }, WARM_MS);
+  };
   const hide = () => schedule(false, hideDelay);
 
   // WCAG 2.1 SC 1.4.13 (Hoverable): the pointer must be able to travel onto the tooltip without
@@ -53,6 +106,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   trigger.addEventListener("focusout", hide, { signal });
   content.addEventListener("pointerenter", onPointerEnter, { signal });
   content.addEventListener("pointerleave", onPointerLeave, { signal });
+  content.addEventListener("toggle", onToggle, { signal });
 
   root.setAttribute(TOOLTIP_MOUNTED_ATTR, "");
 
@@ -60,5 +114,11 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
     lifetime.abort();
     win.clearTimeout(timer);
     root.removeAttribute(TOOLTIP_MOUNTED_ATTR);
+    const state = warmth.get(win);
+    state?.open.delete(content);
+    if (state?.holder === content) {
+      win.clearTimeout(state.cooling);
+      warmth.delete(win);
+    }
   };
 }

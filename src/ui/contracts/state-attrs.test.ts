@@ -66,13 +66,14 @@ describe("stateAttrs", () => {
 
   // Open, closed, popup-open and the two transition phases are the platform's now — `:popover-open`,
   // `[open]`, `:has()` and `@starting-style` express every one of them without an attribute.
-  it("declares exactly the nine names of the convention", () => {
+  it("declares exactly the names of the convention", () => {
     expect(Object.values(STATE_ATTRS).sort()).toEqual(
       [
         "data-align",
         "data-busy",
         "data-checked",
         "data-disabled",
+        "data-instant",
         "data-invalid",
         "data-orientation",
         "data-pressed",

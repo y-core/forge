@@ -177,3 +177,98 @@ describe("mountTooltip", () => {
     expect(root.hasAttribute("data-tooltip-mounted")).toBe(false);
   });
 });
+
+describe("mountTooltip — the warm window", () => {
+  /** Two mounted tooltips on one fresh window, whose popover calls fire `toggle` as the platform's do. */
+  function pair() {
+    const { doc, el } = fakeTree();
+    const tip = (id: string) => {
+      const root = el("DIV", { "data-slot": "tooltip" });
+      const trigger = el("BUTTON", { "data-slot": "tooltip-trigger", "aria-describedby": id });
+      const content = el("DIV", { "data-slot": "tooltip-content", id }) as FakeElement & {
+        instantAtHide: boolean[];
+        showPopover: () => void;
+        hidePopover: () => void;
+      };
+      content.instantAtHide = [];
+      content.showPopover = () => content.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+      content.hidePopover = () => {
+        content.instantAtHide.push(content.hasAttribute("data-instant"));
+        content.dispatchEvent(new FakeEvent("toggle", { newState: "closed" }));
+      };
+      root.append(trigger, content);
+      doc.root.append(root);
+      return { trigger, content, dispose: mountTooltip(root as never) };
+    };
+    const win = doc.defaultView;
+    const lastDelay = () => [...win.delays.values()].at(-1);
+    return { win, a: tip("a"), b: tip("b"), lastDelay };
+  }
+
+  function openThenClose({ win, a }: ReturnType<typeof pair>): void {
+    pointer(a.trigger, "pointerenter");
+    win.advance(400);
+    pointer(a.trigger, "pointerleave");
+    win.advance(100);
+  }
+
+  it("opens the next tip at once, marked data-instant, inside the window after one closes", () => {
+    const tips = pair();
+    openThenClose(tips);
+
+    tips.win.advance(299);
+    pointer(tips.b.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 0, instant: true });
+  });
+
+  it("waits the full delay, unmarked, once the window has cooled", () => {
+    const tips = pair();
+    openThenClose(tips);
+
+    tips.win.advance(300);
+    pointer(tips.b.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 400, instant: false });
+  });
+
+  it("opens at once while another tip is still open", () => {
+    const tips = pair();
+    pointer(tips.a.trigger, "pointerenter");
+    tips.win.advance(400);
+
+    pointer(tips.b.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 0, instant: true });
+  });
+
+  it("clears the marker before hiding, so an instant tip still fades out", () => {
+    const tips = pair();
+    openThenClose(tips);
+    pointer(tips.b.trigger, "pointerenter");
+    tips.win.advance(0);
+
+    pointer(tips.b.trigger, "pointerleave");
+    tips.win.advance(100);
+
+    expect({ atHide: tips.b.content.instantAtHide, after: tips.b.content.hasAttribute("data-instant") }).toEqual({ atHide: [false], after: false });
+  });
+
+  it("ends the window when the tip that armed it is disposed", () => {
+    const tips = pair();
+    openThenClose(tips);
+
+    tips.a.dispose();
+    pointer(tips.b.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 400, instant: false });
+  });
+
+  it("starts cold on a fresh window", () => {
+    const tips = pair();
+
+    pointer(tips.a.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.a.content.hasAttribute("data-instant") }).toEqual({ delay: 400, instant: false });
+  });
+});

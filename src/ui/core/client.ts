@@ -3,14 +3,14 @@
 import { dismissAlert } from "../client/alert";
 import { announceFailure, announceFieldError } from "../client/announce";
 import { mountRovingFocus } from "../client/composite";
-import { ownerDocument, ownerWindow } from "../client/dom";
+import { ownerDocument } from "../client/dom";
 import { mountInputFormat } from "../client/input-format";
 import { checkMenuItem, mountMenu } from "../client/menu";
 import { mountNumberField } from "../client/number-field";
 import { mountExpandedState, mountExpandedStates } from "../client/popover-expanded";
 import { registerScope } from "../client/resume";
 import { mountTabs } from "../client/tabs";
-import { dismissToast, mountToastAnnouncements } from "../client/toast";
+import { dismissToast, mountToastAnnouncements, scheduleToastDismissal } from "../client/toast";
 import { mountTooltip } from "../client/tooltip";
 import { mountTurnstile } from "../client/turnstile";
 import { ALERT_SCOPE } from "../contracts/alert-contract";
@@ -34,11 +34,7 @@ registerScope<"dismiss">(TOAST_SCOPE, {
   setup({ root, state }) {
     const ms = Number(state[TOAST_DURATION_KEY]?.value) || 0;
     if (ms <= 0) return;
-    // The toast's own realm schedules its own dismissal — a bare `setTimeout` would fire on the
-    // top-level window's clock, which an iframe can have torn down underneath it.
-    const win = ownerWindow(root);
-    const id = win.setTimeout(() => dismissToast(root), ms);
-    return () => win.clearTimeout(id);
+    return scheduleToastDismissal(root, ms);
   },
   on: { dismiss: ({ root }) => dismissToast(root) },
 });

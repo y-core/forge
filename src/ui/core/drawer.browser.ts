@@ -133,3 +133,74 @@ test.describe("Drawer", () => {
     });
   }
 });
+
+test.describe("Drawer — non-modal <Drawer open>", () => {
+  async function openInPage(page: Page): Promise<void> {
+    const html = await render(
+      Drawer({ id: "nav", side: "right", open: true, titled: true, children: [Drawer.Title({ for: "nav", children: "Navigation" })] }),
+    );
+    const after = `<div id="after" style="position: relative; height: 100vh">Positioned page content after the drawer.</div>`;
+    await mount(
+      page,
+      `<style>${await compiledCss(renderedClasses(html))}</style><main><p>Page content above the drawer.</p>${html}${after}</main>`,
+    );
+  }
+
+  test("docks fixed at its right edge while open", async ({ page }) => {
+    await openInPage(page);
+
+    const docked = await page.evaluate(() => {
+      const panel = document.querySelector("#nav") as HTMLDialogElement;
+      const rect = panel.getBoundingClientRect();
+      return {
+        modal: panel.matches(":modal"),
+        position: getComputedStyle(panel).position,
+        right: Math.round(rect.right),
+        top: Math.round(rect.top),
+      };
+    });
+
+    expect(docked).toEqual({ modal: false, position: "fixed", right: await page.evaluate(() => window.innerWidth), top: 0 });
+  });
+
+  test("paints above positioned page content that comes after it", async ({ page }) => {
+    await openInPage(page);
+
+    const hit = await page.evaluate(() => {
+      const rect = (document.querySelector("#nav") as HTMLElement).getBoundingClientRect();
+      return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)?.closest("#nav") !== null;
+    });
+
+    expect(hit).toBe(true);
+  });
+
+  test("keeps that edge through close(), sliding out rather than jumping", async ({ page }) => {
+    await openInPage(page);
+
+    const frames = await page.evaluate(
+      () =>
+        new Promise<{ docked: { left: number; top: number }; closing: Array<{ left: number; top: number }> }>((resolve) => {
+          const panel = document.querySelector("#nav") as HTMLDialogElement;
+          const read = () => {
+            const rect = panel.getBoundingClientRect();
+            return { left: Math.round(rect.left), top: Math.round(rect.top) };
+          };
+          const docked = read();
+          const closing: Array<{ left: number; top: number }> = [];
+          panel.close();
+          const tick = () => {
+            if (getComputedStyle(panel).display !== "none") closing.push(read());
+            if (closing.length < 6 && getComputedStyle(panel).display !== "none") requestAnimationFrame(tick);
+            else resolve({ docked, closing });
+          };
+          tick();
+        }),
+    );
+
+    expect(frames.closing.length, "no frame caught the panel after close()").toBeGreaterThan(0);
+    for (const frame of frames.closing) {
+      expect(frame.left, `a closing frame left the docked edge: ${JSON.stringify(frames)}`).toBeGreaterThanOrEqual(frames.docked.left);
+      expect(frame.top, `a closing frame moved off the top edge: ${JSON.stringify(frames)}`).toBe(frames.docked.top);
+    }
+  });
+});

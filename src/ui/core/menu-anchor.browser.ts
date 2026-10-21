@@ -16,6 +16,9 @@ declare global {
   }
 }
 
+// Reduced motion takes forge's popup `scale` out, so a rect read on the opening frame is the settled one.
+test.use({ reducedMotion: "reduce" });
+
 const CSS = { css: ["./ui/assets/css/forge-ui.css"] };
 const CSS_AND_JS = { ...CSS, expose: { forgeResume: "./ui/client/resume", forgeCoreClient: "./ui/core/client" } };
 

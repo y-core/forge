@@ -1,13 +1,21 @@
 import { activeElement, contains } from "./dom";
 
-/** Removes `root`, first moving focus to what `rehome` names when `root` is what holds it. @internal */
+/** Marks `root` inert, first moving focus to what `rehome` names when `root` holds it, and removes it once its exit transitions finish. @internal */
 export function removeRehomingFocus(root: HTMLElement, rehome: (root: HTMLElement) => HTMLElement | null): void {
-  // Read before the removal: once `root` is out of the document, `contains` can no longer tell that
-  // the focus `<body>` now holds was the user's place inside it.
+  // A timer and a click can both dismiss one toast; the first one wins.
+  if (root.inert) return;
+  // Moved before `inert`, which would otherwise drop the focus it holds to `<body>` first.
   const active = activeElement(root);
   const target = active && contains(root, active) ? rehome(root) : null;
-  root.remove();
   target?.focus();
+  root.inert = true;
+  // Transitions only: a consumer's infinite `animate-*` never finishes, and would hold the node forever.
+  const running = typeof root.getAnimations === "function" ? root.getAnimations().filter((animation) => "transitionProperty" in animation) : [];
+  if (running.length === 0) {
+    root.remove();
+    return;
+  }
+  void Promise.allSettled(running.map((animation) => animation.finished)).then(() => root.remove());
 }
 
 /** Lets focus into an element that could not otherwise take it, leaving one that already could alone. @internal */

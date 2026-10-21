@@ -18,7 +18,31 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **Overlays open and close with motion.** A modal `Dialog`, `Popover`, `Menu`, `Tooltip` and the `Toolbar` flyout fade and scale (150ms in,
+  100ms out), and a `Toast` fades in. Popups scale from the side of their anchor, and a context menu from the point that was clicked. Retime
+  all of them with `--forge-motion-enter` / `--forge-motion-exit`, or set `--forge-motion-scale: 1` on a component whose custom motion leaves
+  `scale` out of `transition-property`. A caller's `transition-none` still opens one instantly.
+- **A timed `Toast` pauses while it is hovered or focused, or while its window is in the background**, and then runs only the time it had
+  left.
+- **A dismissed `Toast` or `Alert` fades out before it is removed.** It is marked `inert` at once, and focus moves to a toast that is not
+  fading, or to the region.
+- **Moving from one `Tooltip` to the next opens it at once.** While another tip is open, or for 300ms after one closes, the next one skips its
+  delay and fade and carries `data-instant`, which `STATE_ATTRS` now lists.
+
+### Changed
+
+- **A non-modal `<Drawer open>` docks at its edge** (`position: fixed`, `z-50`) instead of flowing in the page, and slides out from that edge
+  on `close()`. It still has no backdrop and leaves the page usable.
+- **Under `prefers-reduced-motion: reduce`, overlays fade instead of changing instantly.** Only the scale and the Drawer's slide are dropped.
+  `forge-ui-reduced-motion` now allows replacing a scale or slide with an opacity fade, and `09-interaction.md` counts changes started
+  together on one duration and one easing as one motion moment.
+
+### Fixed
+
+- **`mountNavDrawer` focuses the panel's first control even when a disclosure's `::details-content` transition is still running.** It waits
+  out whichever of the panel's transition or the disclosure's is longer.
 
 ---
 

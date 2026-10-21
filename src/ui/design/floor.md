@@ -94,7 +94,8 @@ call site or the build fails.
 **Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target --> `sm` is the floor of the size scale, which
 `shape` squares off rather than resizes. A control does not shrink below it to make a layout fit; the layout gives way.
 
-**Honour `prefers-reduced-motion` on every authored motion.** <!-- rule:forge-ui-reduced-motion --> Applies to `motion-safe:` / `motion-reduce:`
+**Honour `prefers-reduced-motion` on every authored motion**, by removing the motion or by replacing a scale or slide with an opacity fade.
+<!-- rule:forge-ui-reduced-motion --> Applies to `motion-safe:` / `motion-reduce:`
 classes and to every declarative state transition — `starting:`, `open:`, `not-open:`, `transition-discrete` — alike.
 
 ### 1g. The Designed Empty State

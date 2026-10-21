@@ -441,3 +441,84 @@ test.describe("Tooltip — anchored placement", () => {
     }
   }
 });
+
+test.describe("Tooltip — show motion", () => {
+  async function showAndRead(page: Page): Promise<{ transitions: string[]; opacity: number }> {
+    const html = await render(
+      Tooltip({
+        children: [
+          Tooltip.Trigger({ id: "save", for: "save-tip", children: "Save" }),
+          Tooltip.Content({ id: "save-tip", children: "Writes the file" }),
+        ],
+      }),
+    );
+    await mount(page, html, { css: PLACEMENT_CSS.css });
+    return page.evaluate(() => {
+      const tip = document.querySelector("#save-tip") as HTMLElement;
+      tip.showPopover();
+      return {
+        transitions: tip.getAnimations().map((animation) => (animation as CSSTransition).transitionProperty),
+        opacity: Number(getComputedStyle(tip).opacity),
+      };
+    });
+  }
+
+  test("a shown tip fades and scales in from below half opacity", async ({ page }) => {
+    const frame = await showAndRead(page);
+
+    expect(frame.transitions, JSON.stringify(frame)).toEqual(expect.arrayContaining(["opacity", "scale"]));
+    expect(frame.opacity).toBeLessThan(0.5);
+  });
+
+  test.describe("under reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("a shown tip fades in without scaling", async ({ page }) => {
+      const frame = await showAndRead(page);
+
+      expect(frame.transitions).toEqual(["opacity"]);
+      expect(frame.opacity).toBeLessThan(0.5);
+    });
+  });
+});
+
+test.describe("Tooltip — the warm window", () => {
+  const tip = (name: string) =>
+    Tooltip({
+      children: [
+        Tooltip.Trigger({ id: name, for: `${name}-tip`, children: name }),
+        Tooltip.Content({ id: `${name}-tip`, children: `About ${name}` }),
+      ],
+    });
+
+  async function mountRow(page: Page): Promise<void> {
+    const html = await render([tip("a"), tip("b"), tip("c")]);
+    await mount(page, `<div style="display: flex; gap: 40px; padding: 80px">${html}</div>`, { css: ["./ui/assets/css/forge-ui.css"], ...EXPOSE });
+    await start(page);
+  }
+
+  const shown = (page: Page, id: string) => page.evaluate((target) => document.querySelector(target)?.matches(":popover-open") ?? false, id);
+
+  test("the next tip opens at once with nothing running, and the delay returns after an idle gap", async ({ page }) => {
+    await mountRow(page);
+    await page.hover("#a");
+    await expect.poll(() => shown(page, "#a-tip"), { timeout: 3000 }).toBe(true);
+
+    await page.hover("#b");
+    await expect.poll(() => shown(page, "#b-tip"), { timeout: 150 }).toBe(true);
+    const warm = await page.evaluate(() => {
+      const content = document.querySelector("#b-tip") as HTMLElement;
+      return { instant: content.hasAttribute("data-instant"), transitions: content.getAnimations().length };
+    });
+    expect(warm).toEqual({ instant: true, transitions: 0 });
+
+    await page.mouse.move(0, 0);
+    await expect.poll(() => shown(page, "#b-tip"), { timeout: 3000 }).toBe(false);
+    await page.waitForTimeout(600);
+    await page.hover("#c");
+    await page.waitForTimeout(200);
+    expect(await shown(page, "#c-tip"), "a cold tip opened before its delay").toBe(false);
+    await expect.poll(() => shown(page, "#c-tip"), { timeout: 3000 }).toBe(true);
+    expect(await page.evaluate(() => document.querySelector("#c-tip")?.hasAttribute("data-instant"))).toBe(false);
+  });
+});

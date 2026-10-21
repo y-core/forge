@@ -2,12 +2,12 @@ import { announceToast } from "./announce";
 import { programmaticStop, removeRehomingFocus } from "./dismiss";
 import { asElement, contains, ownerWindow } from "./dom";
 
-/** Where focus goes when the toast holding it leaves: a surviving toast's dismiss button, else the region. */
+/** Where focus goes when the toast holding it leaves: a surviving toast's dismiss button, else the region; a fading toast is not surviving. */
 function rehomeTarget(root: HTMLElement): HTMLElement | null {
   const container = root.closest<HTMLElement>("[data-slot~='toast-container']");
   if (!container) return null;
   for (const button of container.querySelectorAll<HTMLElement>("[data-slot~='toast-close']")) {
-    if (!contains(root, button)) return button;
+    if (!contains(root, button) && !button.closest("[inert]")) return button;
   }
   // The region is not otherwise focusable, so focus has to be let in deliberately: `<body>` announces
   // nothing.
@@ -19,6 +19,53 @@ function rehomeTarget(root: HTMLElement): HTMLElement | null {
 // their focus to `<body>` loses their place in the page with no way to tell what happened.
 export function dismissToast(root: HTMLElement): void {
   removeRehomingFocus(root, rehomeTarget);
+}
+
+type PauseReason = "pointer" | "focus" | "window";
+
+/** Dismisses `root` after `ms` of unpaused time, holding while it is hovered, focused or its window is blurred, and returns a disposer. @internal */
+export function scheduleToastDismissal(root: HTMLElement, ms: number): () => void {
+  // The toast's own realm schedules its own dismissal — a bare `setTimeout` would fire on the
+  // top-level window's clock, which an iframe can have torn down underneath it.
+  const win = ownerWindow(root);
+  const reasons = new Set<PauseReason>();
+  let remaining = ms;
+  let startedAt = 0;
+  let timer = 0;
+
+  const run = () => {
+    startedAt = win.performance.now();
+    timer = win.setTimeout(() => dismissToast(root), remaining);
+  };
+  const pause = (reason: PauseReason) => {
+    if (reasons.size === 0) {
+      win.clearTimeout(timer);
+      remaining = Math.max(0, remaining - (win.performance.now() - startedAt));
+    }
+    reasons.add(reason);
+  };
+  const resume = (reason: PauseReason) => {
+    if (reasons.delete(reason) && reasons.size === 0) run();
+  };
+  const onFocusOut = (event: Event) => {
+    const next = (event as FocusEvent).relatedTarget as Node | null;
+    if (!next || !contains(root, next)) resume("focus");
+  };
+
+  const lifetime = new AbortController();
+  const { signal } = lifetime;
+  root.addEventListener("pointerenter", () => pause("pointer"), { signal });
+  root.addEventListener("pointerleave", () => resume("pointer"), { signal });
+  root.addEventListener("focusin", () => pause("focus"), { signal });
+  root.addEventListener("focusout", onFocusOut, { signal });
+  win.addEventListener("blur", () => pause("window"), { signal });
+  win.addEventListener("focus", () => resume("window"), { signal });
+  run();
+
+  return () => {
+    lifetime.abort();
+    win.clearTimeout(timer);
+  };
 }
 
 const TOAST_SELECTOR = "[data-slot~='toast']";

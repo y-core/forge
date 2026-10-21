@@ -159,3 +159,55 @@ describe("FakeWindow.fetch under a signal", () => {
     expect(await response.json()).toEqual({ id: 7 });
   });
 });
+
+describe("FakeWindow clock", () => {
+  it("runs only the timers that fall due, in due order, at their due time", () => {
+    const win = new FakeDocument().defaultView;
+    const ran: Array<[string, number]> = [];
+    win.setTimeout(() => ran.push(["late", win.performance.now()]), 300);
+    win.setTimeout(() => ran.push(["early", win.performance.now()]), 100);
+    win.setTimeout(() => ran.push(["later", win.performance.now()]), 900);
+
+    win.advance(500);
+
+    expect(ran).toEqual([
+      ["early", 100],
+      ["late", 300],
+    ]);
+    expect(win.performance.now()).toBe(500);
+  });
+
+  it("runs a timer armed by another inside the same advance once it falls due", () => {
+    const win = new FakeDocument().defaultView;
+    const ran: number[] = [];
+    win.setTimeout(() => win.setTimeout(() => ran.push(win.performance.now()), 50), 100);
+
+    win.advance(200);
+
+    expect(ran).toEqual([150]);
+  });
+
+  it("never runs a cleared timer", () => {
+    const win = new FakeDocument().defaultView;
+    const ran: string[] = [];
+    const id = win.setTimeout(() => ran.push("cleared"), 10);
+    win.clearTimeout(id);
+
+    win.advance(100);
+
+    expect(ran).toEqual([]);
+  });
+
+  it("delivers a window event to the listeners registered under a live signal only", () => {
+    const win = new FakeDocument().defaultView;
+    const heard: string[] = [];
+    const lifetime = new AbortController();
+    win.addEventListener("blur", () => heard.push("blur"), { signal: lifetime.signal });
+
+    win.dispatchEvent(new FakeEvent("blur"));
+    lifetime.abort();
+    win.dispatchEvent(new FakeEvent("blur"));
+
+    expect(heard).toEqual(["blur"]);
+  });
+});

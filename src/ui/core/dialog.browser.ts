@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { render } from "../../testing/render";
 import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { Dialog } from "./dialog";
+import { Drawer } from "./drawer";
 
 declare global {
   interface Window {
@@ -222,5 +223,116 @@ test.describe("Dialog — the viewport gutter", () => {
     expect(near(rect.left, VIEWPORT.width - rect.right), `left ${rect.left} vs right ${rect.right}`).toBe(true);
     expect(near(rect.top, VIEWPORT.height - rect.bottom), `top ${rect.top} vs bottom ${rect.bottom}`).toBe(true);
     expect(rect.top, "the dialog is pinned to the top gutter rather than centred").toBeGreaterThan(GUTTER);
+  });
+});
+
+interface MotionRead {
+  panel: string[];
+  backdrop: string[];
+  opacity: number;
+  display: string;
+}
+
+// Read in the same task as the call, so the first frame of a transition is the one observed.
+function actAndRead(page: Page, act: "showModal" | "close" | "none"): Promise<MotionRead> {
+  return page.evaluate((call) => {
+    const el = document.querySelector("dialog") as HTMLDialogElement;
+    if (call !== "none") el[call]();
+    const running = el.getAnimations({ subtree: true }) as CSSTransition[];
+    const on = (pseudo: string | null) =>
+      running.filter((animation) => (animation.effect as KeyframeEffect).pseudoElement === pseudo).map((animation) => animation.transitionProperty);
+    return { panel: on(null), backdrop: on("::backdrop"), opacity: Number(getComputedStyle(el).opacity), display: getComputedStyle(el).display };
+  }, act);
+}
+
+async function mountStyled(page: Page, html: string): Promise<void> {
+  await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
+}
+
+test.describe("Dialog — open and close motion", () => {
+  test("a modal open fades and scales the panel and fades the backdrop", async ({ page }) => {
+    await mountStyled(page, await markup());
+
+    const frame = await actAndRead(page, "showModal");
+
+    expect(frame.panel, JSON.stringify(frame)).toEqual(expect.arrayContaining(["opacity", "scale"]));
+    expect(frame.backdrop, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.opacity).toBeLessThan(0.5);
+  });
+
+  test("a close fades out while the panel is still painted", async ({ page }) => {
+    await mountStyled(page, await markup());
+    await actAndRead(page, "showModal");
+    await expect.poll(() => actAndRead(page, "none").then((frame) => frame.opacity)).toBe(1);
+
+    const frame = await actAndRead(page, "close");
+
+    expect(frame.panel, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.backdrop, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.display).not.toBe("none");
+  });
+
+  test("a non-modal <Dialog open> sits in the page with nothing running", async ({ page }) => {
+    await mountStyled(page, await markup(true));
+
+    const frame = await actAndRead(page, "none");
+
+    expect(frame).toEqual({ panel: [], backdrop: [], opacity: 1, display: "block" });
+  });
+
+  // A close leaves a modal and a non-modal dialog in the same `:not([open])` state, so CSS gives both the exit.
+  test("closing a non-modal <Dialog open> fades it out like a modal", async ({ page }) => {
+    await mountStyled(page, await markup(true));
+
+    const frame = await actAndRead(page, "close");
+
+    expect(frame.panel, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.display).not.toBe("none");
+  });
+
+  test("a <Dialog open> closed and reopened as a modal still fades out on its next close", async ({ page }) => {
+    await mountStyled(page, await markup(true));
+    await actAndRead(page, "close");
+    await expect.poll(() => actAndRead(page, "none").then((frame) => frame.display)).toBe("none");
+    await actAndRead(page, "showModal");
+    await expect.poll(() => actAndRead(page, "none").then((frame) => frame.opacity)).toBe(1);
+
+    const frame = await actAndRead(page, "close");
+
+    expect(frame.panel, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.backdrop, JSON.stringify(frame)).toContain("opacity");
+  });
+
+  test("a Drawer keeps its slide and gains no opacity transition on its panel", async ({ page }) => {
+    await mountStyled(page, await render(Drawer({ id: "nav", side: "left", label: "Navigation", children: "Links" })));
+
+    const frame = await actAndRead(page, "showModal");
+
+    expect(frame.panel, JSON.stringify(frame)).toContain("translate");
+    expect(frame.panel).not.toContain("opacity");
+  });
+
+  test.describe("under reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("a modal open fades its panel and backdrop without scaling", async ({ page }) => {
+      await mountStyled(page, await markup());
+
+      const frame = await actAndRead(page, "showModal");
+
+      expect({ panel: frame.panel, backdrop: frame.backdrop }).toEqual({ panel: ["opacity"], backdrop: ["opacity"] });
+      await expect.poll(() => actAndRead(page, "none").then((settled) => settled.opacity)).toBe(1);
+    });
+
+    test("a Drawer fades on its 200ms rather than sliding", async ({ page }) => {
+      await mountStyled(page, await render(Drawer({ id: "nav", side: "left", label: "Navigation", children: "Links" })));
+
+      const frame = await actAndRead(page, "showModal");
+
+      expect(frame.panel, JSON.stringify(frame)).toEqual(["opacity"]);
+      expect(await page.evaluate(() => getComputedStyle(document.querySelector("#nav") as HTMLElement).transitionDuration)).toBe(
+        "0.2s, 0.2s, 0.2s",
+      );
+    });
   });
 });

@@ -188,7 +188,10 @@ const PLACEMENT_STYLE = `<style>
 
 const RAIL_GAP = 8; // 0.5rem
 
+// The rect is read the instant the flyout opens, before a scale-in would have settled.
 test.describe("Toolbar — flyout placement", () => {
+  test.use({ reducedMotion: "reduce" });
+
   async function openFlyout(page: Page, placement: ToolbarPlacement) {
     const html = await render(Toolbar({ config: CONFIG, icon, placement }));
     await mount(page, `${PLACEMENT_STYLE}<div data-scope="app">${html}</div>`, PLACEMENT_CSS);
@@ -255,5 +258,32 @@ test.describe("Toolbar — flyout placement", () => {
 
     close(first.flyout.left, first.trigger.right + RAIL_GAP);
     close(first.flyout.top, first.trigger.top);
+  });
+});
+
+async function openingTransitions(page: Page): Promise<string[]> {
+  const html = await render(Toolbar({ config: CONFIG, icon, placement: "left" }));
+  await mount(page, `${PLACEMENT_STYLE}<div data-scope="app">${html}</div>`, PLACEMENT_CSS);
+  await page.evaluate(() => window.forgeResume.resume());
+  return page.evaluate(() => {
+    (document.querySelector("[data-ref='layers']") as HTMLElement).click();
+    const flyout = document.querySelector("[data-slot~='toolbar-flyout']") as HTMLElement;
+    return flyout.getAnimations().map((animation) => (animation as CSSTransition).transitionProperty);
+  });
+}
+
+test.describe("Toolbar — flyout motion", () => {
+  test("the flyout fades and scales in like every other popup", async ({ page }) => {
+    const transitions = await openingTransitions(page);
+
+    expect(transitions.toSorted()).toEqual(["opacity", "scale"]);
+  });
+
+  test.describe("under reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("the flyout fades in without scaling", async ({ page }) => {
+      expect(await openingTransitions(page)).toEqual(["opacity"]);
+    });
   });
 });

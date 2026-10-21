@@ -47,6 +47,64 @@ describe("removeRehomingFocus", () => {
   });
 });
 
+describe("removeRehomingFocus — the exit", () => {
+  it("marks the element inert and removes it at once in a realm with no getAnimations", () => {
+    const { doc, panel } = tree();
+
+    removeRehomingFocus(panel as never, () => null);
+
+    expect({ inert: panel.inert, removed: doc.root.querySelector("#panel") }).toEqual({ inert: true, removed: null });
+  });
+
+  it("removes it at once when nothing is running", () => {
+    const { doc, panel } = tree();
+    Object.assign(panel, { getAnimations: () => [] });
+
+    removeRehomingFocus(panel as never, () => null);
+
+    expect(doc.root.querySelector("#panel")).toBe(null);
+  });
+
+  it("keeps it in place, inert, until a running transition finishes", async () => {
+    const { doc, panel } = tree();
+    const { promise: finished, resolve } = Promise.withResolvers<undefined>();
+    Object.assign(panel, { getAnimations: () => [{ transitionProperty: "opacity", finished }] });
+
+    removeRehomingFocus(panel as never, () => null);
+    await Promise.resolve();
+    const during = { inert: panel.inert, present: doc.root.querySelector("#panel") === panel };
+    resolve(undefined);
+    await finished;
+    await Promise.resolve();
+
+    expect({ during, after: doc.root.querySelector("#panel") }).toEqual({ during: { inert: true, present: true }, after: null });
+  });
+
+  it("removes it at once when the only running animation is not a transition, such as an infinite one", () => {
+    const { doc, panel } = tree();
+    const never = new Promise<undefined>(() => {});
+    Object.assign(panel, { getAnimations: () => [{ animationName: "pulse", finished: never }] });
+
+    removeRehomingFocus(panel as never, () => null);
+
+    expect(doc.root.querySelector("#panel")).toBe(null);
+  });
+
+  it("does nothing to an element already inert, so a second dismissal neither rehomes nor removes", () => {
+    const { doc, panel, inside } = tree();
+    inside.focus();
+    panel.inert = true;
+    let asked = false;
+
+    removeRehomingFocus(panel as never, () => {
+      asked = true;
+      return null;
+    });
+
+    expect({ asked, present: doc.root.querySelector("#panel") === panel }).toEqual({ asked: false, present: true });
+  });
+});
+
 describe("programmaticStop", () => {
   it("lets focus in without adding a Tab stop, and answers the element it was given", () => {
     const { panel } = tree();

@@ -205,8 +205,9 @@ Forge's ratified motion dial is 3 of 10 ([`UI_DESIGN_GUIDANCE.md`][udg-8] §8). 
 the interface _responding_, and never as the interface performing.
 
 Default: author one motion moment per interaction — unless a brief raises the motion dial for a named marketing surface.
-<!-- rule:forge-ui-interaction-one-moment --> A dialog that fades its backdrop, scales its panel, and slides its title is three moments where one
-was asked for, and the reader waits for all three. _Which_ changes may carry motion at all is [`12-density.md`][density]'s
+<!-- rule:forge-ui-interaction-one-moment --> A moment is a set of changes started together, on one duration and one easing, so a dialog that
+fades its backdrop as it scales its panel is one moment. A panel that scales and then slides its title in afterwards is two, and the reader waits
+for both. _Which_ changes may carry motion at all is [`12-density.md`][density]'s
 (`forge-ui-density-motion-budget`); this rule bounds how much motion any one of them gets.
 
 ### 4a. Declarative entry and exit
@@ -246,10 +247,10 @@ Default: animate `transform` and `opacity` only — unless the moment is a discl
 fragment-swapped page it reflows content the reader may be mid-click on.
 
 Every authored moment is subject to `forge-ui-reduced-motion`, which is Floor: gate it behind `motion-safe:` and give `motion-reduce:` the instant
-state. That includes the declarative `starting:` / `open:` motion above.
+state or an opacity-only fade. That includes the declarative `starting:` / `open:` motion above.
 
 ```tsx
-// Wrong — three simultaneous moments, an unbounded duration, and no reduced-motion path.
+// Wrong — an unbounded duration, an oversized scale and slide, and no reduced-motion path.
 <Dialog class="transition-all duration-700 starting:scale-50 starting:opacity-0 starting:translate-y-8">
   <p class="text-sm">Delete this workspace?</p>
 </Dialog>
@@ -257,8 +258,13 @@ state. That includes the declarative `starting:` / `open:` motion above.
 // Costs: a modal that takes most of a second to become usable, and one that never stops moving for
 // a reader who asked the OS for less motion.
 
-// Right — one moment, response-length, opt-in.
-<Dialog class="motion-safe:transition-opacity motion-safe:transition-discrete motion-safe:duration-150 motion-safe:starting:opacity-0">
+// Right — no motion classes. The dialog already ships one response-length moment, off under reduced motion.
+<Dialog>
+  <p class="text-sm">Delete this workspace?</p>
+</Dialog>
+
+// Right — an override of that default, which is per property: this dialog keeps the fade and only slows it.
+<Dialog class="motion-safe:duration-200">
   <p class="text-sm">Delete this workspace?</p>
 </Dialog>
 ```

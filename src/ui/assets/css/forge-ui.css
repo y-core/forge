@@ -51,6 +51,7 @@
        2. Tooltip ............... Tooltip              — src/ui/core/tooltip.tsx
        3. Coordinate placement .. Menu (context menus) — src/ui/client/popover-anchor.ts
        4. Open-trigger state .... Popover, Toolbar, Menu
+       4b. Popup motion ......... Popover, Menu, Tooltip, Toolbar, Toast
        5. Disclosure motion ..... Collapsible, Accordion — src/ui/core/collapsible.tsx, accordion.tsx
        6. Dialog ................ Dialog, Drawer       — src/ui/core/dialog.tsx, drawer.tsx
        7. Slider ................ Slider               — src/ui/core/slider.tsx
@@ -284,6 +285,12 @@
 }
 
 @layer components {
+  :root {
+    --forge-motion-enter: 150ms;
+    --forge-motion-exit: 100ms;
+    --forge-motion-scale: 0.97;
+  }
+
   /* ══ 1. Anchored placement — Popover, Menu, Toolbar ══════════════════════
 
    No `anchor-name`, `anchor-scope` or `position-anchor` anywhere: a popup shown by an invoker gets
@@ -566,6 +573,8 @@
   [data-slot~="tooltip"]:not([data-tooltip-mounted]):hover [data-slot~="tooltip-content"],
   [data-slot~="tooltip"]:not([data-tooltip-mounted]):focus-within [data-slot~="tooltip-content"] {
     display: block;
+    opacity: 1;
+    scale: 1;
   }
 
   /* ══ 3. Coordinate placement — Menu, for context menus ════════════════════
@@ -623,6 +632,178 @@
     [data-slot~="popover-content"],
     [data-slot~="toolbar-flyout"] {
       inset: auto auto 1rem 1rem;
+    }
+  }
+
+  /* ══ 4b. Popup motion — Popover, Menu, Tooltip, Toolbar, Toast ═══════════
+   `scale`, not a slide: centred placement already spends `translate`, and a slide points the wrong
+   way once `position-try-fallbacks` flips the popup.
+
+   The scale grows from the anchor: the side sets one axis of the origin and the align the other,
+   read exactly as the placement rules in §1 read them. Known limit: a `position-try-fallbacks` flip
+   does not move the origin, because `transform-origin` is not allowed in `@position-try`
+   (csswg #12169). At this scale the error is ~3%, accepted. */
+  /* Not inherited: a centre-aligned popup nested in another must fall back to `center`, not take its ancestor's axis. */
+  @property --forge-origin-x {
+    syntax: "*";
+    inherits: false;
+  }
+  @property --forge-origin-y {
+    syntax: "*";
+    inherits: false;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="bottom"],
+      [data-side="block-end"]
+    ) {
+    --forge-origin-y: top;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="top"],
+      [data-side="block-start"]
+    ) {
+    --forge-origin-y: bottom;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords])[data-side="left"],
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords])[data-side="inline-start"]:dir(
+      ltr
+    ),
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords])[data-side="inline-end"]:dir(
+      rtl
+    ) {
+    --forge-origin-x: right;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords])[data-side="right"],
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords])[data-side="inline-end"]:dir(
+      ltr
+    ),
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords])[data-side="inline-start"]:dir(
+      rtl
+    ) {
+    --forge-origin-x: left;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="top"],
+      [data-side="bottom"]
+    )[data-align="start"],
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="block-start"],
+      [data-side="block-end"]
+    )[data-align="start"]:dir(ltr),
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="block-start"],
+      [data-side="block-end"]
+    )[data-align="end"]:dir(rtl) {
+    --forge-origin-x: left;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="top"],
+      [data-side="bottom"]
+    )[data-align="end"],
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="block-start"],
+      [data-side="block-end"]
+    )[data-align="end"]:dir(ltr),
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="block-start"],
+      [data-side="block-end"]
+    )[data-align="start"]:dir(rtl) {
+    --forge-origin-x: right;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="left"],
+      [data-side="right"],
+      [data-side="inline-start"],
+      [data-side="inline-end"]
+    )[data-align="start"] {
+    --forge-origin-y: top;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):not([data-coords]):is(
+      [data-side="left"],
+      [data-side="right"],
+      [data-side="inline-start"],
+      [data-side="inline-end"]
+    )[data-align="end"] {
+    --forge-origin-y: bottom;
+  }
+  /* `openPopoverAt` puts a context menu's top-left corner on the click, so that corner is the origin. */
+  [popover][data-coords] {
+    --forge-origin-x: left;
+    --forge-origin-y: top;
+  }
+  /* `data-side` names the rail's edge, and §1 aligns the flyout to its trigger's top or left. */
+  [data-slot~="toolbar-flyout"][data-side="left"] {
+    --forge-origin-x: left;
+    --forge-origin-y: top;
+  }
+  [data-slot~="toolbar-flyout"][data-side="right"] {
+    --forge-origin-x: right;
+    --forge-origin-y: top;
+  }
+  [data-slot~="toolbar-flyout"][data-side="top"] {
+    --forge-origin-x: left;
+    --forge-origin-y: top;
+  }
+  [data-slot~="toolbar-flyout"][data-side="bottom"] {
+    --forge-origin-x: left;
+    --forge-origin-y: bottom;
+  }
+
+  /* The fade runs under every motion preference: reduced motion replaces the scale with it rather
+   than removing the change. Only `scale` waits on `no-preference`. */
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]) {
+    opacity: 0;
+    transition:
+      opacity var(--forge-motion-exit) ease-in,
+      display var(--forge-motion-exit) allow-discrete,
+      overlay var(--forge-motion-exit) allow-discrete;
+  }
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+    opacity: 1;
+    transition-duration: var(--forge-motion-enter);
+    transition-timing-function: ease-out;
+  }
+  @starting-style {
+    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]) {
+      scale: var(--forge-motion-scale);
+      transform-origin: var(--forge-origin-x, center) var(--forge-origin-y, center);
+      transition:
+        opacity var(--forge-motion-exit) ease-in,
+        scale var(--forge-motion-exit) ease-in,
+        display var(--forge-motion-exit) allow-discrete,
+        overlay var(--forge-motion-exit) allow-discrete;
+    }
+    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+      scale: 1;
+    }
+    @starting-style {
+      :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+        scale: var(--forge-motion-scale);
+      }
+    }
+  }
+
+  /* A tip opened inside the tooltip warm window skips its enter; `tooltip.ts` clears the marker before the exit. */
+  [data-slot~="tooltip-content"][data-instant] {
+    transition: none;
+  }
+
+  [data-slot~="toast"] {
+    transition: opacity var(--forge-motion-enter) ease-out;
+  }
+  /* A dismissal marks the node inert and removes it once this fade has run; the stack closes up on removal, never by animating layout. */
+  :is([data-slot~="toast"], [data-slot~="alert"])[inert] {
+    opacity: 0;
+    transition: opacity var(--forge-motion-exit) ease-in;
+  }
+  @starting-style {
+    [data-slot~="toast"] {
+      opacity: 0;
     }
   }
 
@@ -709,30 +890,29 @@
    height are utilities in `drawer.tsx`, where a caller's `w-96` still wins on layer order — from
    `components` they would be unoverridable.
 
-   **Each side is matched in two states, not one.** `:modal` is false the instant `close()` is
-   called, but the panel is still on screen for the whole exit transition below — keyed on `:modal`
-   alone the placement vanished on frame one and the panel snapped to its static position before
-   sliding, which put a right drawer on the left edge and reversed the top and bottom ones. `:modal`
-   is still what excludes `<Drawer open>`, the non-modal panel in the page: it is `[open]` and
-   matches neither selector. A drawer that is genuinely closed is `display: none`, so giving it the
-   edge costs nothing. */
-  [data-slot~="drawer"]:modal[data-side="left"],
-  [data-slot~="drawer"]:not([open])[data-side="left"] {
+   **Each side is keyed on `data-side` alone, in every state.** A modal drawer, a closing one and a
+   non-modal `<Drawer open>` all dock at their edge, so the exit slides out from where the panel
+   already sits. `position: fixed` is set here because the UA gives a non-modal dialog
+   `position: absolute`; a modal one is fixed in the top layer either way. A docked non-modal drawer
+   has no backdrop and leaves the page interactive. A drawer that is genuinely closed is
+   `display: none`, so giving it the edge costs nothing. */
+  [data-slot~="drawer"][data-side="left"] {
+    position: fixed;
     inset: 0 auto 0 0;
     margin: 0;
   }
-  [data-slot~="drawer"]:modal[data-side="right"],
-  [data-slot~="drawer"]:not([open])[data-side="right"] {
+  [data-slot~="drawer"][data-side="right"] {
+    position: fixed;
     inset: 0 0 0 auto;
     margin: 0;
   }
-  [data-slot~="drawer"]:modal[data-side="top"],
-  [data-slot~="drawer"]:not([open])[data-side="top"] {
+  [data-slot~="drawer"][data-side="top"] {
+    position: fixed;
     inset: 0 0 auto 0;
     margin: 0;
   }
-  [data-slot~="drawer"]:modal[data-side="bottom"],
-  [data-slot~="drawer"]:not([open])[data-side="bottom"] {
+  [data-slot~="drawer"][data-side="bottom"] {
+    position: fixed;
     inset: auto 0 0 0;
     margin: 0;
   }
@@ -740,17 +920,56 @@
     background-color: var(--overlay);
   }
 
-  /* The panel slides in from its own edge rather than appearing on the frame the dialog opens.
-   `:not([open])` is the closed *and* the closing state — `:modal` stops matching the moment `close()`
-   is called, so an exit keyed on it would never run — while `<Drawer open>`, the non-modal panel in
-   the page, matches neither selector and is left alone. `display` and `overlay` ride the same
-   duration with `allow-discrete` so the panel stays painted and in the top layer for the whole exit.
+  /* The panel slides in from its own edge rather than appearing on the frame the dialog opens, and
+   under reduced motion it fades instead, on the same durations. `:not([open])` is the closed *and*
+   the closing state — `:modal` stops matching the moment `close()` is called, so an exit keyed on it
+   would never run. `<Drawer open>` matches neither on load, so it opens docked and still, and leaves
+   from its edge on `close()`. `display` and `overlay` ride the same duration with `allow-discrete`
+   so the panel stays painted and in the top layer for the whole exit.
 
    200ms in and 150ms out is the top of `forge-ui-interaction-duration`'s band: the drawer is the
    largest surface forge moves, and it read as an instant appearance below it. */
+  [data-slot~="drawer"]:not([open]),
+  [data-slot~="drawer"]:modal {
+    transition:
+      opacity 200ms ease-out,
+      display 200ms allow-discrete,
+      overlay 200ms allow-discrete;
+  }
+  [data-slot~="drawer"]:not([open]) {
+    opacity: 0;
+    transition-duration: 150ms;
+  }
+  @starting-style {
+    [data-slot~="drawer"]:modal {
+      opacity: 0;
+    }
+  }
+  [data-slot~="drawer"]:not([open])::backdrop,
+  [data-slot~="drawer"]:modal::backdrop {
+    transition:
+      opacity 200ms ease-out,
+      display 200ms allow-discrete,
+      overlay 200ms allow-discrete;
+  }
+  [data-slot~="drawer"]:modal::backdrop {
+    opacity: 1;
+  }
+  [data-slot~="drawer"]:not([open])::backdrop {
+    opacity: 0;
+    transition-duration: 150ms;
+  }
+  @starting-style {
+    [data-slot~="drawer"]:modal::backdrop {
+      opacity: 0;
+    }
+  }
+
+  /* With motion the slide replaces the fade, so the panel stays opaque. */
   @media (prefers-reduced-motion: no-preference) {
     [data-slot~="drawer"]:not([open]),
     [data-slot~="drawer"]:modal {
+      opacity: 1;
       transition:
         translate 200ms ease-out,
         display 200ms allow-discrete,
@@ -791,25 +1010,72 @@
       [data-slot~="drawer"]:modal[data-side="bottom"] {
         translate: 0 100%;
       }
+      [data-slot~="drawer"]:modal {
+        opacity: 1;
+      }
     }
+  }
 
-    [data-slot~="drawer"]:not([open])::backdrop,
-    [data-slot~="drawer"]:modal::backdrop {
-      transition:
-        opacity 200ms ease-out,
-        display 200ms allow-discrete,
-        overlay 200ms allow-discrete;
-    }
-    [data-slot~="drawer"]:modal::backdrop {
-      opacity: 1;
-    }
-    [data-slot~="drawer"]:not([open])::backdrop {
+  /* The dialog fades and scales on the drawer's `:modal` / `:not([open])` pair, so `<Dialog open>` opens still. The fade runs under
+   every motion preference; only the scale waits on `no-preference`. */
+  [data-slot~="dialog"]:not([open]),
+  [data-slot~="dialog"]:modal {
+    transition:
+      opacity var(--forge-motion-exit) ease-in,
+      display var(--forge-motion-exit) allow-discrete,
+      overlay var(--forge-motion-exit) allow-discrete;
+  }
+  [data-slot~="dialog"]:not([open]) {
+    opacity: 0;
+  }
+  [data-slot~="dialog"]:modal {
+    opacity: 1;
+    transition-duration: var(--forge-motion-enter);
+    transition-timing-function: ease-out;
+  }
+  [data-slot~="dialog"]:not([open])::backdrop,
+  [data-slot~="dialog"]:modal::backdrop {
+    transition:
+      opacity var(--forge-motion-exit) ease-in,
+      display var(--forge-motion-exit) allow-discrete,
+      overlay var(--forge-motion-exit) allow-discrete;
+  }
+  [data-slot~="dialog"]:not([open])::backdrop {
+    opacity: 0;
+  }
+  [data-slot~="dialog"]:modal::backdrop {
+    opacity: 1;
+    transition-duration: var(--forge-motion-enter);
+    transition-timing-function: ease-out;
+  }
+  @starting-style {
+    [data-slot~="dialog"]:modal {
       opacity: 0;
-      transition-duration: 150ms;
+    }
+    [data-slot~="dialog"]:modal::backdrop {
+      opacity: 0;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    [data-slot~="dialog"]:not([open]),
+    [data-slot~="dialog"]:modal {
+      transition:
+        opacity var(--forge-motion-exit) ease-in,
+        scale var(--forge-motion-exit) ease-in,
+        display var(--forge-motion-exit) allow-discrete,
+        overlay var(--forge-motion-exit) allow-discrete;
+    }
+    [data-slot~="dialog"]:not([open]) {
+      scale: var(--forge-motion-scale);
+    }
+    [data-slot~="dialog"]:modal {
+      scale: 1;
+      transition-duration: var(--forge-motion-enter);
+      transition-timing-function: ease-out;
     }
     @starting-style {
-      [data-slot~="drawer"]:modal::backdrop {
-        opacity: 0;
+      [data-slot~="dialog"]:modal {
+        scale: var(--forge-motion-scale);
       }
     }
   }

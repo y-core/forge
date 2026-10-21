@@ -104,6 +104,15 @@ export class FakeElement {
     this.attrs.set("tabindex", String(value));
   }
 
+  // Reflected, as the real property is, so a `[inert]` selector sees what the property set.
+  get inert(): boolean {
+    return this.attrs.has("inert");
+  }
+
+  set inert(value: boolean) {
+    this.toggleAttribute("inert", value);
+  }
+
   getAttribute(name: string): string | null {
     return this.attrs.get(name) ?? null;
   }
@@ -416,16 +425,61 @@ export class FakeWindow {
   /** The delay each pending timer was armed with, by id. */
   readonly delays = new Map<number, number>();
 
+  private readonly dues = new Map<number, number>();
+
+  private clock = 0;
+
+  /** Reads the clock {@link advance} moves; nothing else moves it. */
+  readonly performance = { now: (): number => this.clock };
+
   setTimeout(fn: () => void, ms = 0): number {
     this.seq += 1;
     this.timers.set(this.seq, fn);
     this.delays.set(this.seq, ms);
+    this.dues.set(this.seq, this.clock + Math.max(0, ms));
     return this.seq;
   }
 
   clearTimeout(id: number): void {
     this.timers.delete(id);
     this.delays.delete(id);
+    this.dues.delete(id);
+  }
+
+  /** Moves the clock `ms` forward, running each timer that falls due on the way, at its due time and in due order. */
+  advance(ms: number): void {
+    const until = this.clock + ms;
+    for (;;) {
+      const next = [...this.dues.entries()].filter(([, due]) => due <= until).sort(([a, x], [b, y]) => x - y || a - b)[0];
+      if (!next) break;
+      const [id, due] = next;
+      const fn = this.timers.get(id);
+      this.clearTimeout(id);
+      this.clock = due;
+      fn?.();
+    }
+    this.clock = until;
+  }
+
+  readonly listeners = new Map<string, Array<(event: FakeEvent) => void>>();
+
+  addEventListener(type: string, listener: (event: FakeEvent) => void, options?: boolean | AddEventListenerOptions): void {
+    const signal = typeof options === "object" ? options.signal : undefined;
+    if (signal?.aborted) return;
+    const list = this.listeners.get(type) ?? [];
+    list.push(listener);
+    this.listeners.set(type, list);
+    signal?.addEventListener("abort", () => this.removeEventListener(type, listener), { once: true });
+  }
+
+  removeEventListener(type: string, listener: (event: FakeEvent) => void, _options?: boolean | EventListenerOptions): void {
+    const list = this.listeners.get(type) ?? [];
+    const at = list.indexOf(listener);
+    if (at >= 0) list.splice(at, 1);
+  }
+
+  dispatchEvent(event: FakeEvent): void {
+    for (const listener of [...(this.listeners.get(event.type) ?? [])]) listener(event);
   }
 
   /** The real one: a microtask is not a clock, so `await Promise.resolve()` drains it in order. */
@@ -438,6 +492,7 @@ export class FakeWindow {
     const pending = [...this.timers.entries()].sort(([a], [b]) => a - b);
     this.timers.clear();
     this.delays.clear();
+    this.dues.clear();
     for (const [, fn] of pending) fn();
   }
 

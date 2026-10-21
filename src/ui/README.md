@@ -124,6 +124,14 @@ weight, so `font-display` reads as one and `cn("font-display", "font-semibold")`
 narrows the dialog, as it reads. Declare `@layer app;` _after_ the forge imports and put your own chrome rules there; why the remedy is a layer and
 never specificity is [`UI_CLASS_COMPOSITION.md`][ucc-2e] §2e.
 
+### Retime or remove the open and close motion
+
+A modal `Dialog`, a `Popover`, a `Menu`, a `Tooltip` and a `Toolbar` flyout fade and scale as they open and close, and a `Toast` fades in as it
+arrives. A dismissed toast or alert fades out before it is removed. When the reader's system asks for reduced motion, they fade without scaling or
+sliding. To retime every one of them, set `--forge-motion-enter` and `--forge-motion-exit` in your own `:root`. To change one, put utilities on the
+component — `<Popover.Content class="transition-none">` opens it instantly, and a `duration-*` or `ease-*` replaces only the timing. A custom motion
+that leaves `scale` out of `transition-property` also sets `--forge-motion-scale: 1` on the component, or the closed scale snaps on exit.
+
 ### Get dark mode
 
 Forge's colours are custom properties whose mode `.dark` on `<html>` selects, so **every forge component works in dark mode with no extra setup**
@@ -255,8 +263,9 @@ that heading, so the overlay is named by what the reader sees; pass `label` or `
 none of the three does not compile — single-pass SSR cannot see whether you wrote a `.Title`, so an unconditional reference would dangle and the
 overlay would open unnamed.
 
-`openModal` on a `Dialog` asks for the centred modal mode; `open` is the platform's non-modal mode and flows inline. The rulings behind the choices
-are [`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
+`openModal` on a `Dialog` asks for the centred modal mode; `open` is the platform's non-modal mode and flows inline. On a `Drawer`, `open` docks
+the panel at its edge above the page, with no backdrop and the page still usable. The rulings behind the choices are
+[`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
 
 ### Make a keyboard-driven component actually respond
 
@@ -451,7 +460,7 @@ One import registers every scope `ui/core` markup names; `src/ui/core/client.ts`
 [`UI_CLIENT_RUNTIME.md`][ucr-2] §2's.
 
 A `Toast` you render yourself carries its auto-dismiss delay as island state under the key `ui/contracts` publishes; a positive value schedules
-removal on the toast's own realm clock.
+removal on the toast's own realm clock. A timed toast waits while it is hovered or focused, or while its window is in the background.
 
 ---
 
@@ -850,7 +859,8 @@ rather than blanking the row mid-flick, and adds **no autoplay**: the strip is s
 `mountViewportCollapse` wants the `<details>` rendered **open** — with scripting unavailable the navigation is visible, which is the safe state —
 and **stops driving it the moment the user toggles it themselves**, per mount and not persisted. It **throws** when the element it was told to drive
 is absent or is not a disclosure, and **reports** when the realm has no `matchMedia`. `mountNavDrawer` is its off-canvas sibling: it gives an open
-`<details>` its modal behaviour — Escape, scroll lock, focus trap — for as long as its media query matches.
+`<details>` its modal behaviour — Escape, scroll lock, focus trap — for as long as its media query matches. On open it moves focus to the panel's
+first focusable control, waiting out the panel's own transition or the disclosure's `::details-content` one, whichever is longer.
 
 `mountRovingFocus` makes a composite you render one tab stop, and resolves its **items live on every interaction**, so a composite whose items are
 swapped, filtered or reordered needs no re-registration. The ring's rules: arrow keys inside a text field belong to the caret until its edge;

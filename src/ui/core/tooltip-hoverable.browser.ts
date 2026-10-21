@@ -93,6 +93,7 @@ test.describe("Tooltip — with scripting off", () => {
 
       await page.hover("[data-slot~='tooltip-trigger']", { force: true });
       await expect(content).toBeVisible();
+      await expect(content).toHaveCSS("opacity", "1");
       await expect(content).toHaveText("A long explanation the user may want to select and copy.");
     });
 
@@ -102,6 +103,7 @@ test.describe("Tooltip — with scripting off", () => {
       await page.locator("[data-slot~='tooltip-trigger']").focus();
 
       await expect(page.locator("#tip")).toBeVisible();
+      await expect(page.locator("#tip")).toHaveCSS("opacity", "1");
     });
   }
 });

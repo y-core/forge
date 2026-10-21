@@ -2,9 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
 import { announce } from "./announce";
-import { fakeTree } from "./dom.fixture";
+import { FakeEvent, fakeTree } from "./dom.fixture";
 import type { FakeElement } from "./dom.fixture";
-import { dismissToast, mountToastAnnouncements } from "./toast";
+import { dismissToast, mountToastAnnouncements, scheduleToastDismissal } from "./toast";
 
 /** A container holding `count` toasts, each with a dismiss button, plus the focus helpers. */
 function container(count: number) {
@@ -215,5 +215,111 @@ describe("mountToastAnnouncements", () => {
 
     expect(heldBy(polite)).toEqual(["Saved"]);
     expect(dispose).not.toThrow();
+  });
+});
+
+describe("dismissToast — beside a fading toast", () => {
+  it("passes over an inert toast's dismiss button and falls back to the region", () => {
+    const { doc, region, toasts, close } = container(2);
+    (toasts[1] as FakeElement).inert = true;
+    close(0)?.focus();
+
+    dismissToast(toasts[0] as never);
+
+    expect(doc.activeElement).toBe(region);
+  });
+});
+
+describe("scheduleToastDismissal", () => {
+  /** One timed toast, with a sibling outside it for focus to move to. */
+  function timed(ms = 1000) {
+    const { doc, region, toasts } = container(1);
+    const toast = toasts[0] as FakeElement;
+    const outside = doc.createElement("BUTTON");
+    doc.root.append(outside);
+    const dispose = scheduleToastDismissal(toast as never, ms);
+    return { win: doc.defaultView, region, toast, outside, dispose, present: () => region.children.includes(toast) };
+  }
+
+  const PAUSES = [
+    {
+      reason: "the pointer",
+      pause: ({ toast }: ReturnType<typeof timed>) => toast.dispatchEvent(new FakeEvent("pointerenter")),
+      resume: ({ toast }: ReturnType<typeof timed>) => toast.dispatchEvent(new FakeEvent("pointerleave")),
+    },
+    {
+      reason: "focus",
+      pause: ({ toast }: ReturnType<typeof timed>) => toast.dispatchEvent(new FakeEvent("focusin")),
+      resume: ({ toast, outside }: ReturnType<typeof timed>) => toast.dispatchEvent(new FakeEvent("focusout", { relatedTarget: outside })),
+    },
+    {
+      reason: "a blurred window",
+      pause: ({ win }: ReturnType<typeof timed>) => win.dispatchEvent(new FakeEvent("blur")),
+      resume: ({ win }: ReturnType<typeof timed>) => win.dispatchEvent(new FakeEvent("focus")),
+    },
+  ];
+
+  it("dismisses the toast once its duration has run", () => {
+    const toast = timed(1000);
+
+    toast.win.advance(999);
+    const before = toast.present();
+    toast.win.advance(1);
+
+    expect({ before, after: toast.present() }).toEqual({ before: true, after: false });
+  });
+
+  for (const { reason, pause, resume } of PAUSES) {
+    it(`holds while ${reason} pauses it, then runs only the time that was left`, () => {
+      const toast = timed(1000);
+      toast.win.advance(400);
+      pause(toast);
+      toast.win.advance(5000);
+      const held = toast.present();
+
+      resume(toast);
+      toast.win.advance(599);
+      const beforeRemaining = toast.present();
+      toast.win.advance(1);
+
+      expect({ held, beforeRemaining, after: toast.present() }).toEqual({ held: true, beforeRemaining: true, after: false });
+    });
+  }
+
+  it("resumes only once every reason to pause has gone", () => {
+    const toast = timed(1000);
+    toast.toast.dispatchEvent(new FakeEvent("pointerenter"));
+    toast.win.dispatchEvent(new FakeEvent("blur"));
+
+    toast.toast.dispatchEvent(new FakeEvent("pointerleave"));
+    toast.win.advance(5000);
+    const stillBlurred = toast.present();
+    toast.win.dispatchEvent(new FakeEvent("focus"));
+    toast.win.advance(1000);
+
+    expect({ stillBlurred, after: toast.present() }).toEqual({ stillBlurred: true, after: false });
+  });
+
+  it("stays paused while focus moves between nodes inside the toast", () => {
+    const toast = timed(1000);
+    const inside = toast.toast.querySelector("[data-slot~='toast-close']");
+    toast.toast.dispatchEvent(new FakeEvent("focusin"));
+
+    toast.toast.dispatchEvent(new FakeEvent("focusout", { relatedTarget: inside }));
+    toast.win.advance(5000);
+
+    expect(toast.present()).toBe(true);
+  });
+
+  it("stops listening and never dismisses once disposed", () => {
+    const toast = timed(1000);
+    toast.dispose();
+
+    toast.win.advance(5000);
+
+    expect({ present: toast.present(), windowListeners: [...toast.win.listeners.values()].flat().length }).toEqual({
+      present: true,
+      windowListeners: 0,
+    });
   });
 });

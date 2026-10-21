@@ -1,11 +1,11 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
 import { FakeElement, FakeEvent, fakeTree } from "../client/dom.fixture";
 import { resume, resumeScope } from "../client/resume";
 import { ALERT_SCOPE } from "../contracts/alert-contract";
 import { ANNOUNCE_FAILURE_ATTR, ANNOUNCER_REGION_SLOTS, ANNOUNCER_SCOPE } from "../contracts/announcer-contract";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
-import { ISLAND_STATE_KEY } from "../contracts/island-contract";
+import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
 import { TOAST_CONTAINER_SCOPE, TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
 // Import client.ts to register the toast and alert scopes as a side effect.
 import "./client";
@@ -13,8 +13,6 @@ import "./client";
 class FakeEl {
   dataset: Record<string, string>;
   removed = false;
-  // Names `globalThis` as the owning realm so `ownerWindow` routes the toast's timer to the captured `setTimeout`.
-  ownerDocument = { defaultView: globalThis };
   remove() {
     this.removed = true;
   }
@@ -25,23 +23,6 @@ class FakeEl {
     if (state !== undefined) this.dataset[ISLAND_STATE_KEY] = JSON.stringify(state);
   }
 }
-
-type TimerCapture = { fn: () => void; ms: number } | undefined;
-let capturedTimer: TimerCapture;
-const origSetTimeout = globalThis.setTimeout;
-
-beforeEach(() => {
-  capturedTimer = undefined;
-  // @ts-expect-error — intentionally replacing global for test isolation
-  globalThis.setTimeout = (fn: () => void, ms: number) => {
-    capturedTimer = { fn, ms };
-    return 0;
-  };
-});
-
-afterEach(() => {
-  globalThis.setTimeout = origSetTimeout;
-});
 
 /** A `<dialog>` whose `showModal` is countable, and absent when the fixture asks for the `?.` branch. */
 class FakeDialog extends FakeElement {
@@ -104,25 +85,42 @@ describe("toast scope — registration", () => {
   });
 });
 
+/** A toast resumed from its island state inside a region, on a window whose clock the test drives. */
+function timedToast(state: Record<string, unknown>) {
+  const { doc, el } = fakeTree();
+  const region = el("SECTION");
+  region.append(el("DIV", { "data-scope": TOAST_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify(state) }));
+  doc.root.append(region);
+  return { doc, win: doc.defaultView, region };
+}
+
 describe("toast scope — auto-close", () => {
-  it("schedules removal after configured duration", () => {
-    const root = new FakeEl(TOAST_SCOPE, { [TOAST_DURATION_KEY]: 3000 }) as unknown as HTMLElement;
-    resumeScope(root);
-    expect(capturedTimer?.ms).toBe(3000);
-    capturedTimer?.fn();
-    expect((root as unknown as FakeEl).removed).toBe(true);
+  it("dismisses the toast once its configured duration elapses, and not before", () => {
+    const { doc, win, region } = timedToast({ [TOAST_DURATION_KEY]: 3000 });
+    const release = resume(doc as never);
+
+    win.advance(2999);
+    const before = region.children.length;
+    win.advance(1);
+    release();
+
+    expect({ before, after: region.children.length }).toEqual({ before: 1, after: 0 });
   });
 
-  it("does not schedule a timer when duration is absent", () => {
-    const root = new FakeEl(TOAST_SCOPE) as unknown as HTMLElement;
-    resumeScope(root);
-    expect(capturedTimer).toBeUndefined();
+  it("never dismisses the toast when duration is absent", () => {
+    const { doc, win, region } = timedToast({});
+    resume(doc as never);
+    win.advance(60_000);
+
+    expect(region.children.length).toBe(1);
   });
 
-  it("does not schedule a timer when duration is 0", () => {
-    const root = new FakeEl(TOAST_SCOPE, { [TOAST_DURATION_KEY]: 0 }) as unknown as HTMLElement;
-    resumeScope(root);
-    expect(capturedTimer).toBeUndefined();
+  it("never dismisses the toast when duration is 0", () => {
+    const { doc, win, region } = timedToast({ [TOAST_DURATION_KEY]: 0 });
+    resume(doc as never);
+    win.advance(60_000);
+
+    expect(region.children.length).toBe(1);
   });
 });
 
