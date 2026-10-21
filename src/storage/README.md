@@ -347,13 +347,18 @@ return serveObject(r2Backend(c.env.ASSETS), c.request, key, { contentDisposition
 
 ## Handing out a temporary download link
 
-A signed URL delegates GET access to one object for a fixed window without exposing the bucket.
+A signed URL delegates GET access to one object for a fixed window without exposing the bucket. The ring's secret is a binding of its own,
+checked by `KeyRingSecretSchema` as a field of the env schema you hand to `validateBindings` or `validateEnv`
+([Validating bindings before anything reads them][app-readme-bindings]).
 
 ```ts
-import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+import { importKeyRing, KeyRingSecretSchema, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { createSignedObjectUrl, r2Backend, serveObject, verifySignedObjectUrl } from "@y-core/forge/storage/r2";
+import { v } from "@y-core/forge/validation";
 
-const ring = await importKeyRing(parseKeyRingSecrets(c.env.SIGNED_URL_KEY_RING)); // hex, from a secret binding — never a literal
+const EnvSchema = v.object({ SIGNED_URL_KEY_RING: KeyRingSecretSchema /* , …the rest of your bindings */ });
+
+const ring = await importKeyRing(parseKeyRingSecrets(c.env.SIGNED_URL_KEY_RING)); // a secret binding — never a literal
 
 const url = await createSignedObjectUrl(ring, c.request.url, "avatars/42.png", { expiresInSeconds: 600 });
 
@@ -463,6 +468,7 @@ reserved `||` separator, and an empty-string `prefix` on `createKVStore` (it wou
 - [`docs/TEST_RUNNERS.md`][tr-7b] §7b — `fakeD1`, `fakeKV` and `fakeR2`
 - [`src/tooling/lint/README.md`][lint-readme] — `forge/sql-explicit-transaction`, the rule that refuses a runtime `BEGIN`
 
+[app-readme-bindings]: ../app/README.md#validating-bindings-before-anything-reads-them
 [dm]: ../../docs/DATABASE_MANAGEMENT.md
 [eh]: ../../docs/FORGE_ERRORS.md
 [eh-5c]: ../../docs/FORGE_ERRORS.md#5c-infrastructure-errors--log-and-fail-closed

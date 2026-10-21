@@ -423,7 +423,8 @@ body to a client is an HTTP output concern (§5d) — and takes the body without
 lets a renderer carry a large engine without any of it reaching the response path. `render/jsx` and `render/htmx` escape through `html` (§5m);
 `render/markdown` keeps its own escaper, which writes the hex references CommonMark conformance expects, and stays a leaf.
 
-**A component takes one props object, with `children` inside it.** Never `Component(options, children)` — the single-argument shape is what forge's
+**A component takes one props object, with `children` inside it** — or, for content laid out in a grid, in named props such as `render/pdf`'s
+`Table` `header` and `rows`, each cell lowered as `children` is. Never `Component(options, children)` — the single-argument shape is what forge's
 JSX runtime calls (`src/render/jsx/jsx-runtime.ts`, `FC<P>` in `src/render/jsx/types.ts`), so the same component is callable by hand and as JSX,
 and a second call convention never has to be kept in step with the first.
 

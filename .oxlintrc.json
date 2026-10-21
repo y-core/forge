@@ -107,10 +107,10 @@
     },
     {
       // A file that is itself a published subpath is its own `types.ts`: `./testing/snapshot`,
-      // `./testing/harness` and `./testing/d1` are off the `./testing` barrel on purpose, and moving their shapes into the
+      // `./testing/harness`, `./testing/d1` and `./testing/node` are off the `./testing` barrel on purpose, and moving their shapes into the
       // namespace's `types.ts` would put them on that barrel — the one place `TEST_RUNNERS.md` §7f says
       // they do not belong.
-      "files": ["src/testing/d1.ts", "src/testing/harness.ts", "src/testing/snapshot.ts"],
+      "files": ["src/testing/d1.ts", "src/testing/harness.ts", "src/testing/node.d.ts", "src/testing/snapshot.ts"],
       "rules": { "forge/type-import-external": "off" }
     },
     {

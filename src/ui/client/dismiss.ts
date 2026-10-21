@@ -1,21 +1,17 @@
-import { activeElement, contains } from "./dom";
+import { STATE_ATTRS } from "../contracts/state-attrs";
+import { activeElement, afterTransitions, contains } from "./dom";
 
-/** Marks `root` inert, first moving focus to what `rehome` names when `root` holds it, and removes it once its exit transitions finish. @internal */
+/** Marks `root` dismissing and inert, first moving focus to what `rehome` names when `root` holds it, and removes it once its exit transitions finish. @internal */
 export function removeRehomingFocus(root: HTMLElement, rehome: (root: HTMLElement) => HTMLElement | null): void {
   // A timer and a click can both dismiss one toast; the first one wins.
-  if (root.inert) return;
+  if (root.hasAttribute(STATE_ATTRS.dismissing)) return;
   // Moved before `inert`, which would otherwise drop the focus it holds to `<body>` first.
   const active = activeElement(root);
   const target = active && contains(root, active) ? rehome(root) : null;
   target?.focus();
+  root.setAttribute(STATE_ATTRS.dismissing, "");
   root.inert = true;
-  // Transitions only: a consumer's infinite `animate-*` never finishes, and would hold the node forever.
-  const running = typeof root.getAnimations === "function" ? root.getAnimations().filter((animation) => "transitionProperty" in animation) : [];
-  if (running.length === 0) {
-    root.remove();
-    return;
-  }
-  void Promise.allSettled(running.map((animation) => animation.finished)).then(() => root.remove());
+  afterTransitions(root, () => root.remove());
 }
 
 /** Lets focus into an element that could not otherwise take it, leaving one that already could alone. @internal */

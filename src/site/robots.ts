@@ -3,6 +3,9 @@ import type { ResolvedSiteConfig } from "./types";
 /** The path the generated sitemap is served from, relative to the origin. @public */
 export const SITEMAP_PATH = "/sitemap.xml";
 
+/** The root files a site emits, which `forge cf sync zone` allows whether the zone config names them or not. @public */
+export const SITE_FILES: readonly string[] = ["/robots.txt", SITEMAP_PATH];
+
 /** Renders a `robots.txt` body — one stanza per rule, then the `Sitemap:` line when enabled. @public */
 export function renderRobotsTxt(config: ResolvedSiteConfig): string {
   const stanzas = config.robots.rules.map((rule) => {

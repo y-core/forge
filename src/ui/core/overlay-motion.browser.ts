@@ -30,6 +30,9 @@ const DISCLOSURE = `<style>
 const CONSUMER_MOTION =
   "translate-y-0 opacity-100 not-open:translate-y-2 not-open:opacity-0 motion-safe:transition-[opacity,translate,display,overlay] motion-safe:transition-discrete motion-safe:duration-300 motion-safe:ease-linear motion-safe:starting:open:translate-y-2 motion-safe:starting:open:opacity-0";
 
+const CONSUMER_SLIDE =
+  "[--forge-motion-opacity:1] [--forge-motion-scale:1] not-open:translate-y-2 motion-safe:starting:open:translate-y-2 motion-safe:transition-[translate,display,overlay] motion-safe:transition-discrete motion-safe:duration-300";
+
 function markup(): Promise<string> {
   return render(
     Popover({
@@ -267,6 +270,32 @@ test.describe("forge's default popup motion, with no consumer classes", () => {
     await mountDefaults(page);
     await page.evaluate(() => (document.querySelector("#tips") as HTMLElement).style.setProperty("--forge-motion-scale", "1"));
     expect((await clickAndRead(page, '[data-slot~="popover-trigger"]', "#tips")).scale).toBe(1);
+  });
+
+  test("the closed opacity is --forge-motion-opacity", async ({ page }) => {
+    await mountDefaults(page);
+
+    expect(await opacityOf(page, "#tips")).toBe(0);
+    await page.evaluate(() => (document.querySelector("#tips") as HTMLElement).style.setProperty("--forge-motion-opacity", "0.5"));
+    expect(await opacityOf(page, "#tips")).toBe(0.5);
+  });
+
+  test("a custom slide that sets --forge-motion-opacity to 1 stays visible on every exit frame", async ({ page }) => {
+    const html = await render(
+      Popover({
+        children: [
+          Popover.Trigger({ for: "tips", children: "Tips" }),
+          Popover.Content({ id: "tips", label: "Tips", side: "bottom", class: CONSUMER_SLIDE, children: "Body" }),
+        ],
+      }),
+    );
+    await mount(page, `${FIXTURE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
+    await page.click('[data-slot~="popover-trigger"]');
+    await expect.poll(() => opacityOf(page, "#tips")).toBe(1);
+
+    const exiting = (await exitFrames(page, "#tips")).filter((frame) => !frame.open && frame.display !== "none");
+    expect(exiting.length, "no frame caught the slide after the close").toBeGreaterThan(0);
+    expect(exiting.map((frame) => frame.opacity)).toEqual(exiting.map(() => 1));
   });
 
   test("a caller's transition-none opens a popover instantly", async ({ page }) => {

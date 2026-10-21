@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
 import { normalizeUrl } from "./html";
-import { createHtmlWriter, parseMarkdown, renderMarkdownHtml } from "./mod";
-import type { HtmlSchema, HtmlUrlCandidate } from "./mod";
+import { createHtmlWriter, DEFAULT_MARKDOWN_HANDLERS, parseMarkdown, renderMarkdownHtml } from "./mod";
+import type { HtmlSchema, HtmlUrlCandidate, MarkdownNodeHandler } from "./mod";
 
 const SCHEMA: HtmlSchema = {
   elements: {
@@ -111,5 +111,31 @@ describe("renderMarkdownHtml line anchors", () => {
     expect(renderMarkdownHtml(parseMarkdown("a\n\n- b\n- c\n\nd\n"), { schema, lineAnchors: true })).toBe(
       '<p data-line="1">a</p>\n<ul data-line="3">\n<li>b</li>\n<li>c</li>\n</ul>\n<p data-line="6">d</p>',
     );
+  });
+});
+
+describe("DEFAULT_MARKDOWN_HANDLERS", () => {
+  test("is frozen, and so is each of its handlers", () => {
+    expect(Object.isFrozen(DEFAULT_MARKDOWN_HANDLERS)).toBe(true);
+    for (const handler of Object.values(DEFAULT_MARKDOWN_HANDLERS)) expect(Object.isFrozen(handler)).toBe(true);
+  });
+
+  test("holds no handler for the node types that need per-render state", () => {
+    for (const type of ["table", "linkReference", "imageReference", "footnoteReference"])
+      expect(Object.hasOwn(DEFAULT_MARKDOWN_HANDLERS, type)).toBe(false);
+  });
+
+  test("an override falling back to its code handler renders a non-svg fence as the default does", () => {
+    const schema: HtmlSchema = { elements: { pre: {}, code: { attributes: ["class"] } }, url: ({ value }) => value };
+    const svgCode: MarkdownNodeHandler = {
+      enter: (node, context) => {
+        if (node.type === "code" && node.lang === "svg") context.writer.text("svg");
+        else DEFAULT_MARKDOWN_HANDLERS.code?.enter(node, context);
+      },
+    };
+    const document = parseMarkdown("```ts\nconst a = 1;\n```\n");
+    const expected = '<pre><code class="language-ts">const a = 1;\n</code></pre>';
+    expect(renderMarkdownHtml(document, { schema })).toBe(expected);
+    expect(renderMarkdownHtml(document, { schema, handlers: { code: svgCode } })).toBe(expected);
   });
 });

@@ -24,6 +24,12 @@ function warmthOf(win: Window): Warmth {
   return state;
 }
 
+// A popover removed while showing is hidden without a `toggle`, so `open` alone can hold a tip that is gone.
+function openTips(state: Warmth): Set<HTMLElement> {
+  for (const tip of state.open) if (!tip.isConnected || !tip.matches(":popover-open")) state.open.delete(tip);
+  return state.open;
+}
+
 /** Mounts a tooltip's delayed show/hide behaviour and returns a disposer. */
 export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): () => void {
   const trigger = root.querySelector<HTMLElement>("[data-slot~='tooltip-trigger']");
@@ -50,7 +56,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
 
   const show = () => {
     const state = warmth.get(win);
-    const warm = state !== undefined && (state.cooling !== 0 || [...state.open].some((tip) => tip !== content));
+    const warm = state !== undefined && (state.cooling !== 0 || [...openTips(state)].some((tip) => tip !== content));
     if (!warm) {
       schedule(true, showDelay);
       return;
@@ -67,7 +73,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
     }
     content.removeAttribute(STATE_ATTRS.instant);
     state.open.delete(content);
-    if (state.open.size > 0) return;
+    if (openTips(state).size > 0) return;
     win.clearTimeout(state.cooling);
     state.holder = content;
     state.cooling = win.setTimeout(() => {

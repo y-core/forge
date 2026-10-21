@@ -8,7 +8,8 @@ import { COLUMN_GUTTER, MARGIN, PAGE_WIDTH, ROW_COLUMNS } from "./geometry";
 import { paginate } from "./paginate";
 import { createPdfRenderer } from "./renderer";
 import { structureTreeOf } from "./structure";
-import type { PdfBox, PdfContent, PdfElement, PdfStructureNode } from "./types";
+import { spanOf, trackOffsets } from "./tracks";
+import type { PdfBox, PdfContent, PdfElement, PdfField, PdfSpan, PdfStructureNode } from "./types";
 
 const MEASURE: PdfBox = { x: MARGIN, width: PAGE_WIDTH - MARGIN * 2, height: 700 };
 
@@ -73,6 +74,83 @@ describe("the printed grid is the track model", () => {
   });
 });
 
+describe("a field row refuses a placement outside the twelve columns when it is built", () => {
+  const uncheckedSpan = (span: number): PdfSpan => span as PdfSpan;
+
+  const REFUSED: [string, PdfField[], RegExp][] = [
+    ["a start of 0", [{ label: "Surname", start: 0, span: 4 }], /"Surname".*column 0/],
+    ["a start of 13", [{ label: "Surname", start: 13, span: 1 }], /"Surname".*column 13/],
+    ["a start that is not a whole column", [{ label: "Surname", start: 2.5, span: 4 }], /"Surname".*column 2\.5/],
+    ["a span of 0", [{ label: "Surname", start: 1, span: uncheckedSpan(0) }], /"Surname".*spans 0 columns/],
+    ["a negative span", [{ label: "Surname", start: 1, span: uncheckedSpan(-1) }], /"Surname".*spans -1 columns/],
+    ["a span that is not a whole number of columns", [{ label: "Surname", start: 1, span: uncheckedSpan(2.5) }], /"Surname".*spans 2\.5 columns/],
+    ["a span that runs past column 12", [{ label: "Surname", start: 10, span: 4 }], /"Surname".*10–13/],
+    [
+      "an auto-placed field after a full row",
+      [
+        { label: "Surname", span: 12 },
+        { label: "Initials", span: 2 },
+      ],
+      /"Initials".*column 13/,
+    ],
+  ];
+
+  for (const [name, fields, message] of REFUSED) {
+    test(`throws a RangeError naming the field for ${name}`, () => {
+      expect(() => fieldsElement(fields)).toThrow(RangeError);
+      expect(() => fieldsElement(fields)).toThrow(message);
+    });
+  }
+
+  test("sets a valid layout at the columns it asked for", () => {
+    const cursor = createCursor(undefined);
+    cursor.newPage();
+    place(
+      cursor,
+      fieldsElement([
+        { label: "Surname", span: 6, labels: "above" },
+        { label: "Initials", span: 3, labels: "above" },
+        { label: "Title", start: 10, span: 3, labels: "above" },
+      ]),
+      MEASURE,
+    );
+    const offsets = trackOffsets(gridTracks(MEASURE.width), COLUMN_GUTTER);
+    const xs = (cursor.pages[0]?.nodes ?? []).flatMap((node) => (node.kind === "text" ? [node.x] : []));
+    expect(xs).toEqual([0, 6, 9].map((column) => MEASURE.x + (offsets[column] ?? Number.NaN)));
+  });
+});
+
+describe("a field with no span fills the rest of its row", () => {
+  function answerRules(fields: PdfField[]): { x: number; width: number }[] {
+    const cursor = createCursor(undefined);
+    cursor.newPage();
+    place(cursor, fieldsElement(fields), MEASURE);
+    return (cursor.pages[0]?.nodes ?? []).flatMap((node) => {
+      if (node.kind !== "path") return [];
+      const [from, to] = node.commands;
+      return from?.op === "move" && to?.op === "line" ? [{ x: from.x, width: to.x - from.x }] : [];
+    });
+  }
+
+  function columnsAt(start: number, count: number): { x: number; width: number } {
+    const widths = gridTracks(MEASURE.width);
+    const offsets = trackOffsets(widths, COLUMN_GUTTER);
+    return { x: MEASURE.x + (offsets[start - 1] ?? Number.NaN), width: spanOf(widths, start - 1, count, COLUMN_GUTTER) };
+  }
+
+  test("after a field of eight columns, it takes columns 9–12", () => {
+    const rules = answerRules([
+      { label: "Street", span: 8, labels: "above" },
+      { label: "Code", labels: "above" },
+    ]);
+    expect(rules).toEqual([columnsAt(1, 8), columnsAt(9, 4)]);
+  });
+
+  test("from an explicit start of column 5, it takes columns 5–12", () => {
+    expect(answerRules([{ label: "Code", start: 5, labels: "above" }])).toEqual([columnsAt(5, 8)]);
+  });
+});
+
 function pathsOf(node: PdfStructureNode, above: readonly string[] = []): { path: string[]; leaf: PdfStructureNode }[] {
   const here = [...above, node.type];
   return node.children.length === 0 ? [{ path: here, leaf: node }] : node.children.flatMap((child) => pathsOf(child, here));
@@ -99,7 +177,6 @@ describe("a tick list reaches the tree as a list whose items say their own state
     expect(items.filter((path) => path[2] === "LBody")).toHaveLength(2);
   });
 
-  // The state is the only thing the box says, and before this it reached no reader at all.
   test("gives each item's label the alternate text that distinguishes the two states", () => {
     const labels = pathsOf(treeOf([TICKS]))
       .filter((entry) => entry.leaf.type === "Lbl")

@@ -289,6 +289,7 @@
     --forge-motion-enter: 150ms;
     --forge-motion-exit: 100ms;
     --forge-motion-scale: 0.97;
+    --forge-motion-opacity: 0;
   }
 
   /* ══ 1. Anchored placement — Popover, Menu, Toolbar ══════════════════════
@@ -752,7 +753,7 @@
   /* The fade runs under every motion preference: reduced motion replaces the scale with it rather
    than removing the change. Only `scale` waits on `no-preference`. */
   :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]) {
-    opacity: 0;
+    opacity: var(--forge-motion-opacity);
     transition:
       opacity var(--forge-motion-exit) ease-in,
       display var(--forge-motion-exit) allow-discrete,
@@ -765,7 +766,7 @@
   }
   @starting-style {
     :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
-      opacity: 0;
+      opacity: var(--forge-motion-opacity);
     }
   }
   @media (prefers-reduced-motion: no-preference) {
@@ -796,14 +797,14 @@
   [data-slot~="toast"] {
     transition: opacity var(--forge-motion-enter) ease-out;
   }
-  /* A dismissal marks the node inert and removes it once this fade has run; the stack closes up on removal, never by animating layout. */
-  :is([data-slot~="toast"], [data-slot~="alert"])[inert] {
-    opacity: 0;
+  /* A dismissal marks the node `data-dismissing` and removes it once this fade has run; the stack closes up on removal, never by animating layout. */
+  :is([data-slot~="toast"], [data-slot~="alert"])[data-dismissing] {
+    opacity: var(--forge-motion-opacity);
     transition: opacity var(--forge-motion-exit) ease-in;
   }
   @starting-style {
     [data-slot~="toast"] {
-      opacity: 0;
+      opacity: var(--forge-motion-opacity);
     }
   }
 
@@ -867,17 +868,19 @@
    absolute-positioning equation `inset` and `margin: auto` already solve, and centering would be
    what gives way.
 
-   `:modal`, not every dialog: the UA gives *any* open dialog `position: absolute`, so an unqualified
-   selector handed the viewport gutter to `<Dialog open>` — the documented non-modal mode — and it
-   floated over the page on load. The two states are styled apart because they are different objects:
-   one is a layer over the page, the other a panel in it, which is what `position: static` says. Both
-   are `components` defaults, so a caller who does want a non-modal dialog positioned still writes
-   `absolute` and wins on layer order. */
-  [data-slot~="dialog"]:modal {
+   Not every dialog: the UA gives *any* open dialog `position: absolute`, so an unqualified selector
+   handed the viewport gutter to `<Dialog open>` — the documented non-modal mode — and it floated over
+   the page on load. The two states are styled apart because they are different objects: one is a
+   layer over the page, the other a panel in it, which is what `position: static` says. The closed
+   state takes the modal placement because `:modal` stops matching the moment `close()` is called, so
+   the exit fade would otherwise paint at the viewport's corner. Both are `components` defaults, so a
+   caller who does want a non-modal dialog positioned still writes `absolute` and wins on layer order. */
+  [data-slot~="dialog"]:is(:modal, :not([open])) {
+    position: fixed;
     inset: 1rem;
     margin: auto;
   }
-  [data-slot~="dialog"]:not(:modal) {
+  [data-slot~="dialog"][open]:not(:modal) {
     position: static;
     margin: 0;
   }
@@ -937,12 +940,12 @@
       overlay 200ms allow-discrete;
   }
   [data-slot~="drawer"]:not([open]) {
-    opacity: 0;
+    opacity: var(--forge-motion-opacity);
     transition-duration: 150ms;
   }
   @starting-style {
     [data-slot~="drawer"]:modal {
-      opacity: 0;
+      opacity: var(--forge-motion-opacity);
     }
   }
   [data-slot~="drawer"]:not([open])::backdrop,
@@ -1017,16 +1020,20 @@
   }
 
   /* The dialog fades and scales on the drawer's `:modal` / `:not([open])` pair, so `<Dialog open>` opens still. The fade runs under
-   every motion preference; only the scale waits on `no-preference`. */
+   every motion preference; only the scale waits on `no-preference`. Placement holds on `step-end` until the exit ends, so a
+   closing `<Dialog open>` fades where it sat instead of jumping to the modal centre. */
   [data-slot~="dialog"]:not([open]),
   [data-slot~="dialog"]:modal {
     transition:
       opacity var(--forge-motion-exit) ease-in,
       display var(--forge-motion-exit) allow-discrete,
-      overlay var(--forge-motion-exit) allow-discrete;
+      overlay var(--forge-motion-exit) allow-discrete,
+      position var(--forge-motion-exit) step-end allow-discrete,
+      inset var(--forge-motion-exit) step-end allow-discrete,
+      margin var(--forge-motion-exit) step-end allow-discrete;
   }
   [data-slot~="dialog"]:not([open]) {
-    opacity: 0;
+    opacity: var(--forge-motion-opacity);
   }
   [data-slot~="dialog"]:modal {
     opacity: 1;
@@ -1050,7 +1057,7 @@
   }
   @starting-style {
     [data-slot~="dialog"]:modal {
-      opacity: 0;
+      opacity: var(--forge-motion-opacity);
     }
     [data-slot~="dialog"]:modal::backdrop {
       opacity: 0;
@@ -1063,7 +1070,10 @@
         opacity var(--forge-motion-exit) ease-in,
         scale var(--forge-motion-exit) ease-in,
         display var(--forge-motion-exit) allow-discrete,
-        overlay var(--forge-motion-exit) allow-discrete;
+        overlay var(--forge-motion-exit) allow-discrete,
+        position var(--forge-motion-exit) step-end allow-discrete,
+        inset var(--forge-motion-exit) step-end allow-discrete,
+        margin var(--forge-motion-exit) step-end allow-discrete;
     }
     [data-slot~="dialog"]:not([open]) {
       scale: var(--forge-motion-scale);

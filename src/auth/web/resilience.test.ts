@@ -60,7 +60,7 @@ const MEMBER_PAGE = "/app/member";
 const PROTECTED_PREFIXES = ["/account", "/admin", "/auth/enrol", MEMBER_PAGE];
 
 const UNUSABLE_NOTICE = "This sign-in method can&#39;t be checked right now. Choose another method below.";
-const UNRECOGNISED_NOTICE = "That did not match. Ask for a new code and try again.";
+const RECOVERY_UNRECOGNISED_NOTICE = "That recovery code did not match. Check it and try again.";
 
 const authMap = authRoutes("/auth");
 const accountMap = accountRoutes("/account");
@@ -745,7 +745,7 @@ describe("the failure matrix: a lost value never locks an account out, and never
     const totp = await v.form("/auth/verify", { code: await authenticator(h, ada.secret) });
     expect({ status: totp.status, notice: noticeOf(await totp.text()) }).toEqual({ status: 422, notice: UNUSABLE_NOTICE });
     const spent = await v.form("/auth/verify?factor=recovery-code", { code: ada.codes[0] ?? "" });
-    expect({ status: spent.status, notice: noticeOf(await spent.text()) }).toEqual({ status: 422, notice: UNRECOGNISED_NOTICE });
+    expect({ status: spent.status, notice: noticeOf(await spent.text()) }).toEqual({ status: 422, notice: RECOVERY_UNRECOGNISED_NOTICE });
     expect(locationOf(await v.get("/account/factors"))).toEqual({ status: 303, location: "/auth/verify" });
     expect(locationOf(await v.get("/auth/enrol/totp"))).toEqual({ status: 303, location: "/auth/verify" });
     expect(await h.registry().resolve(ada.userId)).toEqual(ok(stepUp(["totp-app", "recovery-code"])));

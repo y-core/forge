@@ -6,9 +6,14 @@ import { normalizeEmail } from "./email";
 import { adminRefusal, NO_ADMIN_YET, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
 import type { UserRow } from "./types";
 
-// Prefix-anchored, so the unique index on `email_key` answers the search rather than a full scan.
-function likeTerm(query: string): string {
-  return `${normalizeEmail(query).replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+/** The least string above every string starting with `prefix`, or `null` when no string is. @internal */
+function upperBound(prefix: string): string | null {
+  const points = Array.from(prefix, (char) => char.codePointAt(0) ?? 0);
+  while (points.length > 0) {
+    const last = points.pop() ?? 0;
+    if (last < 0x10ffff) return String.fromCodePoint(...points, last === 0xd7ff ? 0xe000 : last + 1);
+  }
+  return null;
 }
 
 /** Creates the `AdminUserStore` over a SQL database — the surface that lists, searches, elevates, deactivates and deletes. @public */
@@ -35,14 +40,15 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
     },
 
     async search(query, page: AuthUserPage = {}) {
-      // Matched against `email_key`, so a search folds case exactly where the unique index does.
       const limit = pageLimit(page.limit);
-      const term = likeTerm(query);
+      const from = normalizeEmail(query);
+      const to = upperBound(from);
       const cursor = page.after === undefined ? null : uuidKey(page.after);
       if (page.after !== undefined && !cursor) return ok([]);
+      const range = to === null ? sql`email_key >= ${from}` : sql`email_key >= ${from} AND email_key < ${to}`;
       const fragment = cursor
-        ? sql`SELECT * FROM auth_users WHERE email_key LIKE ${term} ESCAPE '\\' AND id < ${cursor} ORDER BY id DESC LIMIT ${limit}`
-        : sql`SELECT * FROM auth_users WHERE email_key LIKE ${term} ESCAPE '\\' ORDER BY id DESC LIMIT ${limit}`;
+        ? sql`SELECT * FROM auth_users WHERE ${range} AND id < ${cursor} ORDER BY id DESC LIMIT ${limit}`
+        : sql`SELECT * FROM auth_users WHERE ${range} ORDER BY id DESC LIMIT ${limit}`;
       const outcome = await db.query<UserRow>(fragment);
       return outcome.ok ? readRow("adminUsers.search", () => outcome.data.map(readUser)) : err(storeError("adminUsers.search", outcome.error));
     },

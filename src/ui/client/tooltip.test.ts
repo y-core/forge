@@ -187,18 +187,31 @@ describe("mountTooltip — the warm window", () => {
       const trigger = el("BUTTON", { "data-slot": "tooltip-trigger", "aria-describedby": id });
       const content = el("DIV", { "data-slot": "tooltip-content", id }) as FakeElement & {
         instantAtHide: boolean[];
+        open: boolean;
         showPopover: () => void;
         hidePopover: () => void;
       };
       content.instantAtHide = [];
-      content.showPopover = () => content.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+      content.open = false;
+      const real = content.matches.bind(content);
+      content.matches = (selector: string) => (selector === ":popover-open" ? content.open : real(selector));
+      content.showPopover = () => {
+        content.open = true;
+        content.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+      };
       content.hidePopover = () => {
         content.instantAtHide.push(content.hasAttribute("data-instant"));
+        content.open = false;
         content.dispatchEvent(new FakeEvent("toggle", { newState: "closed" }));
       };
       root.append(trigger, content);
       doc.root.append(root);
-      return { trigger, content, dispose: mountTooltip(root as never) };
+      const detach = () => {
+        root.remove();
+        content.open = false;
+      };
+      const disconnect = () => root.remove();
+      return { trigger, content, detach, disconnect, dispose: mountTooltip(root as never) };
     };
     const win = doc.defaultView;
     const lastDelay = () => [...win.delays.values()].at(-1);
@@ -259,6 +272,28 @@ describe("mountTooltip — the warm window", () => {
     openThenClose(tips);
 
     tips.a.dispose();
+    pointer(tips.b.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 400, instant: false });
+  });
+
+  it("waits the full delay after a showing tip is removed, which the platform hides without a toggle", () => {
+    const tips = pair();
+    pointer(tips.a.trigger, "pointerenter");
+    tips.win.advance(400);
+
+    tips.a.detach();
+    pointer(tips.b.trigger, "pointerenter");
+
+    expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 400, instant: false });
+  });
+
+  it("waits the full delay after a showing tip leaves the document, even while it still matches :popover-open", () => {
+    const tips = pair();
+    pointer(tips.a.trigger, "pointerenter");
+    tips.win.advance(400);
+
+    tips.a.disconnect();
     pointer(tips.b.trigger, "pointerenter");
 
     expect({ delay: tips.lastDelay(), instant: tips.b.content.hasAttribute("data-instant") }).toEqual({ delay: 400, instant: false });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { num, pdfName, pdfString, pdfTextString, textWidth, uncovered, winAnsiByte, wrapText } from "./text";
+import { WIN_ANSI_CHARACTERS, num, pdfName, pdfString, pdfTextString, textWidth, uncovered, winAnsiByte, wrapText } from "./text";
 
 // The WinAnsi points above U+00FF, which a Latin-1 range walk never reaches.
 const ABOVE_LATIN1 = [
@@ -176,5 +176,22 @@ describe("a name object ends at the first delimiter, so everything else is writt
 
   test("writes a character outside ASCII as the UTF-8 bytes PDF names it by", () => {
     expect(pdfName("Æon")).toBe("#c3#86on");
+  });
+});
+
+describe("WIN_ANSI_CHARACTERS", () => {
+  const characters = [...WIN_ANSI_CHARACTERS];
+
+  test("round-trips every character through winAnsiByte to a distinct byte, in byte order", () => {
+    const bytes = characters.map((character) => winAnsiByte(character.codePointAt(0) ?? -1));
+    expect(bytes.every((byte) => byte !== undefined)).toBe(true);
+    expect(bytes).toEqual([...bytes].sort((left, right) => (left ?? 0) - (right ?? 0)));
+    expect(new Set(bytes).size).toBe(characters.length);
+  });
+
+  test("covers exactly the code points winAnsiByte accepts across the whole BMP", () => {
+    const accepted = Array.from({ length: 0x10000 }, (_unit, code) => code).filter((code) => winAnsiByte(code) !== undefined);
+    expect(characters.map((character) => character.codePointAt(0)).toSorted((left, right) => (left ?? 0) - (right ?? 0))).toEqual(accepted);
+    expect(characters.length).toBe(0x5f + 0x60 + ABOVE_LATIN1.length);
   });
 });

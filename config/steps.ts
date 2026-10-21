@@ -82,6 +82,8 @@ export const COMMENT_BUDGET_SOURCES = ["src", "config", "warden/src", "tests", "
 export const STEPS: readonly Step[] = [
   typecheckStep(),
   { label: "typecheck:workers-consumer", tail: 20, cmd: ["tsc", "--noEmit", "-p", "tests/fixtures/workers-consumer/tsconfig.json"] },
+  { label: "typecheck:workers-consumer-node", tail: 20, cmd: ["tsc", "--noEmit", "-p", "tests/fixtures/workers-consumer/tsconfig.node.json"] },
+  { label: "typecheck:service-worker-consumer", tail: 20, cmd: ["tsc", "--noEmit", "-p", "tests/fixtures/service-worker-consumer/tsconfig.json"] },
   lintStep({ sources: ["src/", "config/", "warden/"] }),
   formatStep({ sources: ["."] }),
   // oxfmt ignores `**/*.md`, so this step is what holds markdown to a house layout.

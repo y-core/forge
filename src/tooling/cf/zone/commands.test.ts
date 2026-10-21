@@ -3,8 +3,11 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { accountRoutes, adminRoutes } from "../../../auth/web/routes";
+import { routePaths } from "../../../router/filter";
 import { resolveSiteConfig } from "../../../site/config";
 import type { SiteConfig, ZoneRule } from "../../../site/types";
+import { ZonePatternError } from "../../../site/zone";
 import { createSyncZoneCommand, phaseAction, planZoneRules, rulesInSync } from "./commands";
 
 const roots: string[] = [];
@@ -20,7 +23,7 @@ const base: SiteConfig = {
   zone: {
     apex: "example.com",
     redirect: { from: ["www.example.com"] },
-    allow: { action: "managed_challenge", prefixes: ["/assets/"], files: ["/favicon.ico"] },
+    allow: { action: "managed_challenge", paths: ["/", "/fica"], prefixes: ["/assets/"], files: ["/favicon.ico"] },
   },
 };
 
@@ -35,16 +38,47 @@ describe("planZoneRules", () => {
     ]);
   });
 
-  it("takes the served paths from the config's pages when the allow block names none", () => {
-    const [firewall] = plan(base);
-    expect(firewall?.desired[0]?.expression).toContain('"/" "/favicon.ico" "/fica"');
+  it("refuses an allow block that names no paths", () => {
+    const config = { ...base, zone: { ...base.zone, allow: { action: "block" } } } as unknown as SiteConfig;
+    expect(() => plan(config)).toThrow(/paths/);
   });
 
-  it("prefers an explicit allow.paths over the GET-only page list", () => {
+  it("emits the explicit allow.paths, not the GET-only page list", () => {
     const zone = { ...base.zone, allow: { ...base.zone?.allow, action: "block" as const, paths: ["/", "/api/contact"] } };
     const [firewall] = plan({ ...base, zone: { apex: "example.com", ...zone } });
-    expect(firewall?.desired[0]?.expression).toContain('"/api/contact"');
+    expect(firewall?.desired[0]?.expression).toContain('"/" "/api/contact" "/favicon.ico"');
+    expect(firewall?.desired[0]?.expression).not.toContain('"/fica"');
     expect(firewall?.desired[0]?.action).toBe("block");
+  });
+
+  it("allows robots.txt and the sitemap on a zone that names no files", () => {
+    const [firewall] = plan({ ...base, zone: { apex: "example.com", allow: { action: "block", paths: ["/"] } } });
+    expect(firewall?.desired[0]?.expression).toContain('{"/" "/robots.txt" "/sitemap.xml"}');
+  });
+
+  it("plans the auth route maps with no literal param", () => {
+    const paths = [...routePaths(accountRoutes("/account")), ...routePaths(adminRoutes("/admin"))];
+    const [firewall] = plan({ ...base, zone: { ...base.zone, allow: { action: "block", paths } } });
+    const expression = firewall?.desired[0]?.expression ?? "";
+    for (const clause of expression.split(" or ")) {
+      expect(clause).not.toContain(":");
+      expect(clause).not.toMatch(/\*[A-Za-z_$]/);
+    }
+    expect(expression).toContain('strict wildcard "/admin/users/*/edit"');
+    expect(expression).toContain('strict wildcard "/account/passkeys/*"');
+  });
+
+  it("refuses a catch-all route with the ZonePatternError the CLI prints", () => {
+    const allow = { action: "block" as const, paths: ["/:slug"] };
+    const refusal = (() => {
+      try {
+        plan({ ...base, zone: { ...base.zone, apex: "example.com", allow } });
+      } catch (error) {
+        return error;
+      }
+      return undefined;
+    })();
+    expect(refusal instanceof ZonePatternError && refusal.reason).toBe("catch-all");
   });
 
   it("plans an empty rule list for a phase the config says nothing about", () => {

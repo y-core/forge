@@ -141,8 +141,8 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     pendingFocus = 0;
   };
 
-  // A panel's `visibility` or a disclosure's `::details-content` transition still hides the items when
-  // `toggle` fires, so each frame re-resolves the first one until the longer transition has run.
+  // The items can still be hidden when `toggle` fires, so each frame re-resolves the first one
+  // until the panel's transition has run.
   const focusFirstItem = () => {
     if (panel === null) return;
     const attempt = () => {
@@ -151,7 +151,7 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
       return first !== undefined && activeElement(el) === first;
     };
     if (attempt()) return;
-    const budget = Math.max(transitionSpan(win.getComputedStyle(panel)), transitionSpan(win.getComputedStyle(el, "::details-content")));
+    const budget = transitionSpan(win.getComputedStyle(panel));
     let start: number | undefined;
     const retry = (time: number) => {
       pendingFocus = 0;

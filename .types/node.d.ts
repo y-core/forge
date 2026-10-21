@@ -20,21 +20,13 @@ declare module "node:process" {
 
   // The object form, needed for `process.exitCode = n` — a settable property a named import
   // cannot express, since imported bindings are read-only.
-  interface Process {
+  export interface Process {
     argv: string[];
-    env: Record<string, string | undefined>;
     exitCode?: number;
     readonly pid: number;
-    readonly stdin: NodeStdioStream;
-    readonly stdout: NodeStdioStream;
     readonly stderr: NodeStdioStream;
-    cwd(): string;
-    exit(code?: number): never;
     kill(pid: number, signal: string): void;
-    once(event: string, listener: () => void): void;
   }
-  const process: Process;
-  export default process;
 }
 
 declare const process: {

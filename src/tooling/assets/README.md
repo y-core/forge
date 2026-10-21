@@ -144,6 +144,27 @@ self.addEventListener("fetch", (event) => {
 });
 ```
 
+**Typecheck the worker under its own `tsconfig`.** Neither a Worker's types nor the DOM library declare `ServiceWorkerGlobalScope`, so the
+snippet fails under the app's config. Give it a `tsconfig.sw.json` of its own, and list `src/client/sw.ts` under `exclude` in the app's
+`tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ESNext",
+    "lib": ["ESNext", "WebWorker"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noEmit": true,
+    "types": []
+  },
+  "include": ["src/client/sw.ts"]
+}
+```
+
+Run both in the `typecheck` script: `tsc --noEmit && tsc --noEmit -p tsconfig.sw.json`.
+
 **The shell is what a first page needs.** It holds every `css` output, every sprite sheet, and each `js.bundles` entry together with every chunk
 and stylesheet it statically imports. A chunk reached only through `import()` is left out. Set `precache: false` on a bundle a first visit does
 not need, such as an admin bundle, and none of its files are precached.

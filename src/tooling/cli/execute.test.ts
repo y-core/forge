@@ -180,6 +180,19 @@ describe("execute()", () => {
     expect(state.exitCode).toBe(1);
   });
 
+  it("prints a plain Error thrown by a run handler as the same one line a CliError gets, and exits(1)", async () => {
+    const cmd = createCommand({
+      name: "root",
+      run: () => {
+        throw new Error("boom");
+      },
+    });
+    const { io, err, state } = makeIO();
+    await run(cmd, [], io);
+    expect(err).toEqual(["Error: boom"]);
+    expect(state.exitCode).toBe(1);
+  });
+
   it("awaits async run handlers", async () => {
     let resolved = false;
     const cmd = createCommand({

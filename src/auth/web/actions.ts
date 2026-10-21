@@ -17,7 +17,7 @@ import { describeValidationIssue, v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
 import type { EnrollableFactorService } from "../factors/types";
 import { redactSigninReason } from "../flows/signin";
-import type { AuthSigninNotice } from "../flows/types";
+import type { AuthSigninNotice, AuthSigninReason } from "../flows/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
 import { approvalCtx, authFreshStepUpWindow, stepUpHolds } from "./guards";
 import {
@@ -71,12 +71,14 @@ import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types"
 const NO_SESSION =
   "auth/web action: no session on this request — mount `sessionMiddleware` before the auth routes, or a sign-in writes an identity nothing can read back.";
 
-const SIGNIN_NOTICE: Readonly<Record<AuthSigninNotice, string>> = {
-  throttled: "Too many attempts. Wait a while before asking for another code.",
+const SIGNIN_NOTICE: Readonly<Record<Exclude<AuthSigninNotice, "throttled" | "unrecognised">, string>> = {
   unavailable: "We could not reach the sign-in service. Please try again in a moment.",
-  unrecognised: "That did not match. Ask for a new code and try again.",
   unusable: "This sign-in method can't be checked right now. Choose another method below.",
 };
+
+const THROTTLED_RESEND_NOTICE = "Too many attempts. Wait a while before asking for another code.";
+
+const THROTTLED_RETRY_NOTICE = "Too many attempts. Wait a while, then try again.";
 
 const FIELD_REFUSAL: Readonly<Record<string, string>> = {
   email: "Enter an email address in the form name@example.com.",
@@ -93,6 +95,20 @@ const CHALLENGE_REFUSAL = "Verification failed. Please try again.";
 const RECOVERY_CODE_REFUSAL = "That is not one of the new codes. Enter one exactly as it is shown.";
 
 const TOTP_ENROL_REFUSAL = "That code did not match. Enter the code your app shows now.";
+
+const UNRECOGNISED_NOTICE: Readonly<Record<AuthFactorKind, string>> = {
+  "email-otp": "That did not match. Ask for a new code and try again.",
+  "totp-app": TOTP_ENROL_REFUSAL,
+  "recovery-code": "That recovery code did not match. Check it and try again.",
+  passkey: "That did not match. Please try again.",
+};
+
+function verifyNoticeFor(factor: AuthFactorKind, reason: AuthSigninReason): string {
+  const notice = redactSigninReason(reason);
+  if (notice === "unrecognised") return UNRECOGNISED_NOTICE[factor];
+  if (notice === "throttled") return factor === "email-otp" ? THROTTLED_RESEND_NOTICE : THROTTLED_RETRY_NOTICE;
+  return SIGNIN_NOTICE[notice];
+}
 
 const RECOVERY_CODE_UNREADABLE = "That is not a recovery code. Enter one exactly as you saved it.";
 
@@ -321,7 +337,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
         const stepped = await services.signin.stepUp(demand.identity.userId, demand.factor, parsed.data.code, at);
         if (!stepped.ok) {
           if (stepped.error === "unusable") requestLog.getOptional(c)?.warn("auth.factor.unusable", { kind: demand.factor });
-          return loadVerify(c, options, { error: SIGNIN_NOTICE[redactSigninReason(stepped.error)], status: 422 });
+          return loadVerify(c, options, { error: verifyNoticeFor(demand.factor, stepped.error), status: 422 });
         }
         markAuthStepUp(session, at, authNow(options));
         const target = await authAfterStepUpTarget(c, options, demand.identity, demand.factor, authReturnPath(c, options));
@@ -333,7 +349,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       const completed = await services.signin.complete(pending, parsed.data.code, at);
       if (!completed.ok) {
-        return loadVerify(c, options, { email: pending, error: SIGNIN_NOTICE[redactSigninReason(completed.error)], status: 422 });
+        return loadVerify(c, options, { email: pending, error: verifyNoticeFor(demand.factor, completed.error), status: 422 });
       }
 
       establishAuthSession(session, completed.data.user.id, at, authNow(options));

@@ -3,4 +3,4 @@ export { derivePseudonym } from "./pseudonym";
 export { createKeyRingResolver } from "./resolver";
 export { importKeyRing } from "./ring";
 export { atRestKeyId, openAtRest, sealAtRest } from "./seal";
-export { parseKeyRingSecrets } from "./secrets";
+export { KeyRingSecretSchema, parseKeyRingSecrets } from "./secrets";

@@ -472,26 +472,31 @@ reach it is to ask for it by name, which is a decision the importing file makes 
 export target its barrel never re-exports from is left out of that barrel's `@public` coverage walk, so "published but off the barrel" is a shape
 the gate holds rather than one it tolerates.
 
-**A suite that imports `@y-core/forge/testing/snapshot` references the shim, and then needs no `exclude`.** `@y-core/forge/testing/node` is a
-types-only subpath declaring exactly the node surface `matchTextSnapshot` reaches. One line at the top of the file that imports it:
+**A suite that imports `@y-core/forge/testing/snapshot`, `/d1` or `/harness` references the shim, and then needs no `exclude`.**
+`@y-core/forge/testing/node` is a types-only subpath declaring the node surface those three reach. One line at the top of the file that imports
+one:
 
 ```ts
 /// <reference types="@y-core/forge/testing/node" />
 ```
 
-A type reference directive is resolved per file, so the Worker half of the same program keeps an empty `types` array and sees none of it; dropping
-the file from `include`, or adding `node` to `types`, is not the supported way. Forge holds the shim's sufficiency from
-`tests/fixtures/workers-consumer/snapshot-suite.ts`, which compiles under `"types": []` the way a consumer's does.
+**The reference reaches the whole program, not the one file.** The shim declares no globals, but its `node:*` modules resolve for every file
+the program includes, so a Worker file compiled alongside a referencing suite can import `node:os` and typecheck. Keep Worker code in a program
+that no referencing file joins. Dropping the file from `include`, or adding `node` to `types`, is not the supported way. A consumer's `tests/` is
+the node program, Playwright specs included ([`CONFIG_BASELINE.md`][cb-1] §1). Forge holds both halves in `tests/fixtures/workers-consumer/`:
+`tsconfig.json` compiles the Worker files with no shim (`typecheck:workers-consumer`), and `tsconfig.node.json` compiles the snapshot, d1 and
+harness suites against it (`typecheck:workers-consumer-node`), both under `"types": []`.
 
-**`@y-core/forge/testing/harness` is off the barrel for the same reason, and needs no shim.** `src/testing/harness.ts` imports `wrangler` and
-`node:path`, and `serveWorker` (§1f) runs only under node. The file that imports it is a node-run Playwright spec, never part of a Worker program,
-so there is no Worker-typed program for a shim to serve.
+**`@y-core/forge/testing/harness` is off the barrel for the same reason.** `src/testing/harness.ts` imports `wrangler` and `node:path`, and
+`serveWorker` (§1f) runs only under node.
 
 **`@y-core/forge/testing/d1` is off the barrel for the same reason as the harness.** `openTestD1` imports `wrangler` and `node:fs`, starts
 wrangler's local D1 through `getPlatformProxy`, and is bundled to `d1.mjs` for node like `./testing/harness`. `getPlatformProxy` does answer under
 `bun test`, but a spec that starts it stays in the workerd set (§1f), because workerd is the prerequisite that set is held back on. Its co-located
 `d1.test.ts` covers the pure helpers and the refusals that come before a process starts; `tests/workerd/test-d1.workerd.ts` covers the engine.
-Forge's own workerd specs open D1 through its `openPlatformD1` (`tests/workerd/d1.ts`).
+Forge's own workerd specs open D1 through its `openPlatformD1` (`tests/workerd/d1.ts`). It re-exports `sql`, so a node spec builds the fragment
+`explainPlan` takes without importing `storage/db`, which ships as TypeScript. Its default path loads the app's host config, so that file imports
+forge only from `@y-core/forge/tooling/db/host` ([declaring what forge reads][db-host-config]).
 
 **What makes any of these files legal is that no deployed code can reach it, not an exemption from "Web APIs only".** There is no gate step that
 checks for a non-Web API — the rule is prose in `CLAUDE.md`, and the only thing enforcing it is that a runtime source file typechecks under the
@@ -547,7 +552,9 @@ a fake store should not pay for the whole component library. It needs no node mo
 not. `key` is `barrel/component`, the spelling a coverage manifest's own keys use, because `Input` names a component in both `core` and
 `controls`. The array and each entry are frozen and ordered by `key`, so a failure names the same component first on every run.
 
+[cb-1]: ../warden/canon/apps/CONFIG_BASELINE.md#1-the-tsconfig-flag-set
 [cr-1a]: ../warden/canon/libs/CODE_REVIEW.md#1a-pre-review-preparation
+[db-host-config]: ../src/tooling/db/README.md#declaring-what-forge-reads
 [errors-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror
 [htmx-7]: ./HTMX.md#7-trust-posture--selectors-and-json-values-must-be-developer-supplied
 [namespaces-3c]: NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt

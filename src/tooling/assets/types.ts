@@ -1,5 +1,6 @@
 import { safeRedirectPath } from "../../http/redirect-path";
 import type { SecurityHeadersOptions } from "../../security/types";
+import { SITE_FILES } from "../../site/robots";
 import { SiteConfigSchema } from "../../site/types";
 import { v } from "../../validation/mod";
 
@@ -182,7 +183,7 @@ const PathsConfigSchema = v.object({ sourceDir: v.optional(v.string()), publicDi
 const SiteBuildConfigSchema = v.object({ outDir: v.string(), config: SiteConfigSchema });
 
 /** The files a configured `site` block writes into its `outDir`. @public */
-export const SITE_OUTPUTS: readonly string[] = ["robots.txt", "sitemap.xml"];
+export const SITE_OUTPUTS: readonly string[] = SITE_FILES.map((file) => file.slice(1));
 
 export const AssetsConfigSchema = v.object({
   paths: v.optional(PathsConfigSchema),

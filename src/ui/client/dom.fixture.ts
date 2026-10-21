@@ -86,7 +86,9 @@ export class FakeElement {
   }
 
   get isConnected(): boolean {
-    return this.parent !== null || this.ownerDocument !== null;
+    if (this.parent) return this.parent.isConnected;
+    const doc = this.ownerDocument;
+    return doc !== null && (this === doc.root || this === doc.body);
   }
 
   // Reflected over the attribute like the real property, because a controller that distinguishes a
@@ -239,6 +241,7 @@ export class FakeElement {
 export class FakeDocument {
   readonly nodeType = 9;
   activeElement: FakeElement | null = null;
+  visibilityState: DocumentVisibilityState = "visible";
   readonly body = new FakeElement("BODY");
   readonly root = new FakeElement("HTML");
   readonly defaultView: FakeWindow;

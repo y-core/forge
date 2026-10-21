@@ -156,8 +156,12 @@ function headingTag(node: MarkdownNode): string {
   return node.type === "heading" ? `h${node.depth}` : "p";
 }
 
-/** The CommonMark renderings every node type falls back to. @internal */
-export const DEFAULT_HANDLERS: MarkdownNodeHandlers = {
+function freezeHandlers(handlers: Record<string, MarkdownNodeHandler>): MarkdownNodeHandlers {
+  return Object.freeze(Object.fromEntries(Object.entries(handlers).map(([type, handler]) => [type, Object.freeze(handler)])));
+}
+
+/** The stateless renderings a custom handler can fall back to, never `table`, `linkReference`, `imageReference` or `footnoteReference`, whose handlers need per-render state. */
+export const DEFAULT_MARKDOWN_HANDLERS: MarkdownNodeHandlers = freezeHandlers({
   paragraph: {
     enter: (node, context) => {
       const { writer, tight, task } = context;
@@ -244,7 +248,7 @@ export const DEFAULT_HANDLERS: MarkdownNodeHandlers = {
     },
     children: () => null,
   },
-};
+});
 
 function titleAttribute(title: string | null): HtmlAttributes {
   return title === null ? [] : [["title", title]];
@@ -343,7 +347,7 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
   }
 
   const handlers: MarkdownNodeHandlers = {
-    ...DEFAULT_HANDLERS,
+    ...DEFAULT_MARKDOWN_HANDLERS,
     linkReference: {
       enter: (node, { writer: out }) => {
         const target = node.type === "linkReference" ? resolveReference(node.label) : null;

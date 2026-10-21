@@ -16,6 +16,7 @@ import {
   createKeyRingResolver,
   derivePseudonym,
   importKeyRing,
+  KeyRingSecretSchema,
   openAtRest,
   parseKeyRingSecrets,
   sealAtRest,
@@ -35,6 +36,18 @@ Give the ring a variable of its own, such as `APP_SEAL_KEY_RING`, holding 32 ran
 ```ts
 const ring = await importKeyRing(parseKeyRingSecrets(c.env.APP_SEAL_KEY_RING));
 ```
+
+Make `KeyRingSecretSchema` the variable's field in your app's env schema. It accepts the comma-joined rotation form, each secret at least 32
+bytes of hex, and a short or mistyped secret fails validation with `Invalid environment: APP_SEAL_KEY_RING: <reason>`:
+
+```ts
+import { v } from "@y-core/forge/validation";
+
+const EnvSchema = v.object({ APP_SEAL_KEY_RING: KeyRingSecretSchema /* , …the rest of your bindings */ });
+```
+
+Pass that schema to `validateBindings` or `validateEnv` — [Validating bindings before anything reads them][app-readme-bindings] shows where
+each one goes.
 
 Import the ring once per `env` and hand the same one to everything below — [Resolving the ring once per env](#resolving-the-ring-once-per-env)
 shows how.
@@ -232,6 +245,7 @@ is genuine.
 - [`src/crypto/README.md`][crypto-readme] — the `crypto` container this namespace sits in
 
 [am-7]: ../../../docs/AUTH_MOUNTING.md#7-rotating-the-key-ring
+[app-readme-bindings]: ../../app/README.md#validating-bindings-before-anything-reads-them
 [auth-readme]: ../../auth/README.md
 [cf-readme-rotate]: ../../tooling/cf/README.md#rotating-a-key-ring
 [crypto-readme]: ../README.md

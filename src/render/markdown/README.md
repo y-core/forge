@@ -53,6 +53,9 @@ rendered inside it, and `layout` says whether those children are laid out inline
 1-based source line — to each top-level element, for a schema that allows it. `classNames` renames or drops the classes the engine writes,
 and `footnotes` renames the footnote ids.
 
+A handler can fall back to the frozen `DEFAULT_MARKDOWN_HANDLERS`. It has no `table`, `linkReference`, `imageReference` or
+`footnoteReference` handler, because those keep state across one render; leave such a type out of `handlers` to keep its default.
+
 To write markup of your own under the same rules, open the writer directly:
 
 ```ts
@@ -156,19 +159,19 @@ Each kind of construct sees only a bounded span, so no construct's scan can make
 
 `sanitizeSvg` reads the source of an ` ```svg ` fence strictly and answers the drawing cut down to `SVG_TAGS` and `SVG_ATTRIBUTES`, or
 `null` when the markup is not well formed or holds anything but one `<svg>`. `writeSvg` writes it through a writer, so a code handler can
-render the drawing inline and fall back to a code block on `null`.
+render the drawing inline and fall back to `DEFAULT_MARKDOWN_HANDLERS.code` on `null`.
 
 ```ts
-import { codeBlockText, sanitizeSvg, writeSvg } from "@y-core/forge/render/markdown";
+import { codeBlockText, DEFAULT_MARKDOWN_HANDLERS, sanitizeSvg, writeSvg } from "@y-core/forge/render/markdown";
 import type { MarkdownNodeHandler } from "@y-core/forge/render/markdown";
 
-const svgCode = (fallback: MarkdownNodeHandler): MarkdownNodeHandler => ({
+const svgCode: MarkdownNodeHandler = {
   enter: (node, context) => {
     const svg = node.type === "code" && node.lang === "svg" ? sanitizeSvg(codeBlockText(context.document.source, context.unit.start, node.segments)) : null;
-    if (svg === null) fallback.enter(node, context);
+    if (svg === null) DEFAULT_MARKDOWN_HANDLERS.code?.enter(node, context);
     else writeSvg(svg, context.writer);
   },
-});
+};
 ```
 
 Scripts, `foreignObject`, `style`, event handlers and links that fail `isSafeUrl` are stripped. Every `id` is prefixed with `gv-`, and a

@@ -317,6 +317,21 @@ describe("createVerifyActions on the second half of a sign-in", () => {
     expect(res.headers.get("location")).toBe("/auth/signin");
   });
 
+  const emailNotices = [
+    ["unrecognised", "That did not match. Ask for a new code and try again."],
+    ["too-many-attempts", "Too many attempts. Wait a while before asking for another code."],
+  ] as const;
+
+  for (const [reason, notice] of emailNotices) {
+    it(`answers an emailed code refused as ${reason} by pointing at a new code`, async () => {
+      const options = optionsWith({ signin: fakeAuthSigninFlow({ complete: async () => err(reason) }) });
+      const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+
+      const res = await app.request("/auth/verify", formBody({ code: "123456" }));
+      expect({ status: res.status, notice: textOf(await res.text(), "div", 'data-slot="alert-description"') }).toEqual({ status: 422, notice });
+    });
+  }
+
   it("re-renders at 422 for a code the schema refuses, without reaching the flow", async () => {
     const options = completing({ status: "satisfied" });
     const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
@@ -453,6 +468,23 @@ describe("createVerifyActions on a step-up", () => {
     const res = await app.request("/auth/verify?factor=totp-app", formBody({ code: "123456" }));
     expect({ status: res.status, warnings }).toEqual({ status: 422, warnings: [] });
   });
+
+  const stepUpNotices = [
+    ["totp-app", "123456", "unrecognised", "That code did not match. Enter the code your app shows now."],
+    ["totp-app", "123456", "too-many-attempts", "Too many attempts. Wait a while, then try again."],
+    ["recovery-code", "ABCD-EFGH", "unrecognised", "That recovery code did not match. Check it and try again."],
+    ["recovery-code", "ABCD-EFGH", "too-many-attempts", "Too many attempts. Wait a while, then try again."],
+  ] as const;
+
+  for (const [factor, code, reason, notice] of stepUpNotices) {
+    it(`answers a ${factor} step-up refused as ${reason} without offering a new code, which only an email can send`, async () => {
+      const options = optionsWith({ ...holdingBoth, signin: fakeAuthSigninFlow({ stepUp: async () => err(reason) }) });
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+
+      const res = await app.request(`/auth/verify?factor=${factor}`, formBody({ code }));
+      expect({ status: res.status, notice: textOf(await res.text(), "div", 'data-slot="alert-description"') }).toEqual({ status: 422, notice });
+    });
+  }
 
   it("hands the presented kind to the flow, so a recovery code is never checked as an app code", async () => {
     const presented: string[] = [];

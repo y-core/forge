@@ -50,7 +50,7 @@ const ToastContainer: FC<ToastContainerProps> = ({
     data-scope={TOAST_CONTAINER_SCOPE}
     data-position={position}
     aria-label={label}
-    class={cn("fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
+    class={cn("pointer-events-none fixed z-50 flex max-h-dvh w-full max-w-sm flex-col gap-2 p-4", positionClasses[position], cls)}
     {...rest}>
     {children}
   </section>
@@ -74,7 +74,7 @@ const ToastRoot: FC<ToastProps> = ({
       {...presentationAttrs({ tone, appearance })}
       {...(interactive ? { "data-scope": TOAST_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify({ [TOAST_DURATION_KEY]: duration }) } : {})}
       class={cn(
-        "relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg",
+        "pointer-events-auto relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg",
         toneVariants({ tone, appearance }),
         dismissible && "pe-10",
         cls,

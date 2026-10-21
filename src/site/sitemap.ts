@@ -1,7 +1,5 @@
+import { isDynamicRoute } from "./dynamic-route";
 import type { ResolvedSiteConfig, ResolveSitemapOptions, SitemapEntry } from "./types";
-
-/** Route-pattern syntax that cannot be turned into a concrete URL. @internal */
-const DYNAMIC_PATTERN = /[:*{}()?]/;
 
 const XML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" };
 
@@ -36,7 +34,7 @@ export function resolveSitemapEntries(paths: readonly string[], options: Resolve
   const resolved: SitemapEntry[] = [];
 
   for (const raw of paths) {
-    if (DYNAMIC_PATTERN.test(raw)) continue;
+    if (isDynamicRoute(raw)) continue;
     const path = normalisePath(raw);
     if (seen.has(path)) continue;
     if (exclude.some((pattern) => matchesExclude(path, pattern))) continue;

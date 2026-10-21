@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
+import { SITE_FILES } from "../../site/robots";
 import { v } from "../../validation/mod";
 import { AssetsConfigSchema, SITE_OUTPUTS } from "./types";
 
 const parse = (value: unknown) => v.safeParse(AssetsConfigSchema, value);
 
 describe("SITE_OUTPUTS", () => {
-  it("names the two files a site block writes into its outDir", () => {
+  it("names the site files a site block writes into its outDir, relative to it", () => {
+    expect(SITE_OUTPUTS).toEqual(SITE_FILES.map((file) => file.slice(1)));
     expect(SITE_OUTPUTS).toEqual(["robots.txt", "sitemap.xml"]);
   });
 });

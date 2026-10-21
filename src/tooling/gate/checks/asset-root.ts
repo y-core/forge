@@ -2,6 +2,8 @@ import { posix, relative, resolve } from "node:path";
 
 import { loadConfig } from "../../assets/config";
 import { iconTarget } from "../../assets/icons";
+import { deployRoot } from "../../assets/paths";
+import { SERVICE_WORKER_FILE } from "../../assets/service-worker";
 import { SITE_OUTPUTS } from "../../assets/types";
 import { checkResult, fail, warn } from "../finding";
 import type { CheckResult, Finding } from "../types";
@@ -45,6 +47,7 @@ export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<Chec
   const icons = resolved.icons;
   if (icons) for (const output of icons.outputs) record(iconTarget(icons, output).dir, output.file, "icons.outputs");
   for (const file of resolved.site ? SITE_OUTPUTS : []) record(resolved.site?.outDir ?? "", file, "site");
+  if (resolved.js.serviceWorker !== null) record(deployRoot(root, resolved.paths.publicDir), SERVICE_WORKER_FILE, "js.serviceWorker");
 
   const rules = Array.isArray(assets.run_worker_first) ? assets.run_worker_first.filter((rule): rule is string => typeof rule === "string") : [];
   const excluded = new Set(rules.filter((rule) => rule.startsWith("!")).map((rule) => rule.slice(1)));

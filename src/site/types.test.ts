@@ -113,17 +113,21 @@ describe("SiteConfigSchema — zone", () => {
   });
 
   it("rejects an allow action outside the terminating set", () => {
-    expect(parse({ ...base, zone: { allow: { action: "log" } } }).success).toBe(false);
+    expect(parse({ ...base, zone: { allow: { action: "log", paths: ["/"] } } }).success).toBe(false);
   });
 
   it("accepts every terminating allow action", () => {
     for (const action of ["managed_challenge", "js_challenge", "challenge", "block"]) {
-      expect(parse({ ...base, zone: { allow: { action } } }).success).toBe(true);
+      expect(parse({ ...base, zone: { allow: { action, paths: ["/"] } } }).success).toBe(true);
     }
   });
 
   it("rejects an allow block with no action", () => {
-    expect(parse({ ...base, zone: { allow: { prefixes: ["/assets/"] } } }).success).toBe(false);
+    expect(parse({ ...base, zone: { allow: { prefixes: ["/assets/"], paths: ["/"] } } }).success).toBe(false);
+  });
+
+  it("rejects an allow block with no paths", () => {
+    expect(parse({ ...base, zone: { allow: { action: "block" } } }).success).toBe(false);
   });
 
   it("rejects a redirect status that is not a redirect status", () => {

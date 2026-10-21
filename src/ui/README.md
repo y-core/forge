@@ -130,7 +130,8 @@ A modal `Dialog`, a `Popover`, a `Menu`, a `Tooltip` and a `Toolbar` flyout fade
 arrives. A dismissed toast or alert fades out before it is removed. When the reader's system asks for reduced motion, they fade without scaling or
 sliding. To retime every one of them, set `--forge-motion-enter` and `--forge-motion-exit` in your own `:root`. To change one, put utilities on the
 component — `<Popover.Content class="transition-none">` opens it instantly, and a `duration-*` or `ease-*` replaces only the timing. A custom motion
-that leaves `scale` out of `transition-property` also sets `--forge-motion-scale: 1` on the component, or the closed scale snaps on exit.
+that leaves `scale` out of `transition-property` also sets `--forge-motion-scale: 1` on the component, or the closed scale snaps on exit. One that
+leaves `opacity` out, such as a slide, sets `--forge-motion-opacity: 1` the same way, or the panel turns invisible on the first exit frame.
 
 ### Get dark mode
 
@@ -460,7 +461,7 @@ One import registers every scope `ui/core` markup names; `src/ui/core/client.ts`
 [`UI_CLIENT_RUNTIME.md`][ucr-2] §2's.
 
 A `Toast` you render yourself carries its auto-dismiss delay as island state under the key `ui/contracts` publishes; a positive value schedules
-removal on the toast's own realm clock. A timed toast waits while it is hovered or focused, or while its window is in the background.
+removal on the toast's own realm clock. A timed toast waits while it is hovered, while it holds keyboard focus, or while its page is hidden.
 
 ---
 
@@ -860,7 +861,7 @@ rather than blanking the row mid-flick, and adds **no autoplay**: the strip is s
 and **stops driving it the moment the user toggles it themselves**, per mount and not persisted. It **throws** when the element it was told to drive
 is absent or is not a disclosure, and **reports** when the realm has no `matchMedia`. `mountNavDrawer` is its off-canvas sibling: it gives an open
 `<details>` its modal behaviour — Escape, scroll lock, focus trap — for as long as its media query matches. On open it moves focus to the panel's
-first focusable control, waiting out the panel's own transition or the disclosure's `::details-content` one, whichever is longer.
+first focusable control, waiting out the panel's own transition.
 
 `mountRovingFocus` makes a composite you render one tab stop, and resolves its **items live on every interaction**, so a composite whose items are
 swapped, filtered or reordered needs no re-registration. The ring's rules: arrow keys inside a text field belong to the caret until its edge;

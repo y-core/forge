@@ -21,6 +21,9 @@ const SITE = `
     config: { origin: "https://example.com", pages: ["/"], robots: { rules: [{ userAgent: "*" }] } },
   },`;
 
+const SERVICE_WORKER = `
+  js: { serviceWorker: { entry: "src/sw.ts" } },`;
+
 function writeConfigs(blocks: string, runWorkerFirst: readonly string[]): void {
   writeFileSync(join(root, "assets.config.ts"), `export default {\n  paths: { publicDir: "public/assets" },${blocks}\n};\n`);
   writeFileSync(
@@ -96,6 +99,33 @@ describe("checkAssetRoot", () => {
     const result = await run();
     expect(result.ok).toBe(false);
     expect(result.findings.map((f) => f.detail)).toEqual([['add "!/static/*" to assets.run_worker_first']]);
+  });
+
+  it("fails naming the service worker the exclusion list forgot", async () => {
+    writeConfigs(SERVICE_WORKER, ["/*", "!/assets/*"]);
+    const result = await run();
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => [f.message, f.detail])).toEqual([
+      [
+        "`/sw.js` is written to the asset tree by `js.serviceWorker` but `run_worker_first` does not exclude it",
+        ['add "!/sw.js" to assets.run_worker_first'],
+      ],
+    ]);
+  });
+
+  it("passes without a warning when the service worker is excluded", async () => {
+    writeConfigs(SERVICE_WORKER, ["/*", "!/assets/*", "!/sw.js"]);
+    const result = await run();
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("does not record the service worker when none is built", async () => {
+    writeConfigs(ICONS, ["/*", "!/favicon.svg", "!/sw.js"]);
+    const result = await run();
+    expect(result.findings.map((f) => [f.level, f.message])).toEqual([
+      ["warn", "`!/sw.js` excludes a path no build step writes to the asset root"],
+    ]);
   });
 
   it("warns, without failing, on an exclusion no build step writes", async () => {

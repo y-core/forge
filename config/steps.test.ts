@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, matchesGlob } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -40,6 +40,21 @@ describe("the gate's step table", () => {
     expect((row?.cmd ?? []).join(" ")).toContain("config/");
   });
 
+  it("compiles every suite that references the node shim outside the Worker program, so a Node import in Worker code fails", () => {
+    const fixture = join(ROOT, "tests/fixtures/workers-consumer");
+    const included = (config: string): string[] => (JSON.parse(readFileSync(join(fixture, config), "utf-8")) as { include: string[] }).include;
+    const referencesShim = (file: string): boolean => readFileSync(join(fixture, file), "utf-8").includes("src/testing/node.d.ts");
+
+    const suites = readdirSync(fixture).filter((file) => file.endsWith(".ts") && referencesShim(file));
+
+    expect(suites).toContain("harness-suite.ts");
+    expect(included("tsconfig.json").filter(referencesShim)).toEqual([]);
+    expect(suites.filter((file) => !included("tsconfig.node.json").includes(file))).toEqual([]);
+    expect(STEPS.find((step) => step.label === "typecheck:workers-consumer-node")?.cmd).toContain(
+      "tests/fixtures/workers-consumer/tsconfig.node.json",
+    );
+  });
+
   // The script is how a row is run by hand, and the two disagreeing is a trap.
   it("runs each Playwright row with the same command its package script does", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
@@ -75,6 +90,8 @@ describe("the gate's watches", () => {
     expect(STEPS.filter((step) => step.watches === undefined).map((step) => step.label)).toEqual([
       "typecheck",
       "typecheck:workers-consumer",
+      "typecheck:workers-consumer-node",
+      "typecheck:service-worker-consumer",
       "lint:types",
       "test",
       "validate-exports",

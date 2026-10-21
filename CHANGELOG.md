@@ -18,22 +18,32 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`zone.allow.paths` is required, and `forge cf sync zone` no longer falls back to the GET-only `pages`.** Pass `routePaths(routes)` across
+  every method.
+
 ### Added
 
 - **Overlays open and close with motion.** A modal `Dialog`, `Popover`, `Menu`, `Tooltip` and the `Toolbar` flyout fade and scale (150ms in,
   100ms out), and a `Toast` fades in. Popups scale from the side of their anchor, and a context menu from the point that was clicked. Retime
-  all of them with `--forge-motion-enter` / `--forge-motion-exit`, or set `--forge-motion-scale: 1` on a component whose custom motion leaves
-  `scale` out of `transition-property`. A caller's `transition-none` still opens one instantly.
-- **A timed `Toast` pauses while it is hovered or focused, or while its window is in the background**, and then runs only the time it had
-  left.
-- **A dismissed `Toast` or `Alert` fades out before it is removed.** It is marked `inert` at once, and focus moves to a toast that is not
-  fading, or to the region.
+  all of them with `--forge-motion-enter` / `--forge-motion-exit`. On a component whose custom motion leaves `scale` or `opacity` out of
+  `transition-property`, set `--forge-motion-scale: 1` or `--forge-motion-opacity: 1`. A caller's `transition-none` still opens one
+  instantly.
+- **A timed `Toast` pauses while it is hovered, while it holds keyboard focus, or while its page is hidden**, and then runs only the time it
+  had left. A toast that arrives on a hidden page waits for it to be shown.
+- **A dismissed `Toast` or `Alert` fades out before it is removed.** It is marked `data-dismissing` and `inert` at once, and focus moves to a
+  toast that is not fading, or to the region. `STATE_ATTRS` lists `data-dismissing`.
 - **Moving from one `Tooltip` to the next opens it at once.** While another tip is open, or for 300ms after one closes, the next one skips its
   delay and fade and carries `data-instant`, which `STATE_ATTRS` now lists.
+- **`@y-core/forge/tooling/db/host` carries `forgeSchema` and `DbHostConfig`** for a `config/db.ts` that node loads. **`testing/d1` re-exports
+  `sql`**, so a node spec builds the fragment `explainPlan` takes without importing `storage/db`.
+- **`crypto/keyring` exports `KeyRingSecretSchema`**, which validates a comma-joined ring of hex secrets from env and, like
+  `parseKeyRingSecrets`, ignores surrounding whitespace. `CsrfConfigSchema.secret` is built on it.
 
 ### Changed
 
-- **A non-modal `<Drawer open>` docks at its edge** (`position: fixed`, `z-50`) instead of flowing in the page, and slides out from that edge
+- **A non-modal `<Drawer open>` docks at its edge** (`position: fixed`, `z-40`, below toasts) instead of flowing in the page, and slides out from that edge
   on `close()`. It still has no backdrop and leaves the page usable.
 - **Under `prefers-reduced-motion: reduce`, overlays fade instead of changing instantly.** Only the scale and the Drawer's slide are dropped.
   `forge-ui-reduced-motion` now allows replacing a scale or slide with an opacity fade, and `09-interaction.md` counts changes started
@@ -41,8 +51,28 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Fixed
 
-- **`mountNavDrawer` focuses the panel's first control even when a disclosure's `::details-content` transition is still running.** It waits
-  out whichever of the panel's transition or the disclosure's is longer.
+- **Parameterised, wildcard and optional routes are allowed at the edge.** `buildAllowExpression` emits them as `strict wildcard` clauses
+  instead of literal paths.
+- **`mountNavDrawer` focuses the panel's first control once it becomes focusable after `toggle`.** It retries each frame for the length of
+  the panel's transition.
+- **`openTestD1()` with no options loads a `config/db.ts` written as the README shows, under node.** An existing `config/db.ts` must import
+  `forgeSchema` and `DbHostConfig` from `@y-core/forge/tooling/db/host` instead of `@y-core/forge/tooling/db`.
+- **`testing/d1` and `testing/harness` typecheck under `"types": []`** with only `/// <reference types="@y-core/forge/testing/node" />`.
+- **The admin user search reads through the `email_key` index instead of scanning every user.**
+- **`render/markdown` exports `DEFAULT_MARKDOWN_HANDLERS`**, so a handler override can fall back to the default one. It is frozen, and has no
+  `table`, `linkReference`, `imageReference` or `footnoteReference` handler, because those need per-render state.
+- **A wrong authenticator-app or recovery code no longer says to ask for a new code.** Only an emailed code is told to ask for another.
+- **The `render/pdf` README gives Arimo's licence as SIL OFL 1.1**, not Apache-2.0.
+- **A PDF `Table` takes JSX in its `header` and `rows` cells.** It used to fail typecheck and throw a `TypeError` at render.
+- **`render/pdf` exports `WIN_ANSI_CHARACTERS`**, the characters WinAnsi encodes, for a font subset's `covering`.
+- **A PDF form field placed outside the 12-column row, or given a span that isn't a whole number from 1 to 12, throws a `RangeError` naming
+  its label**, instead of rendering clipped or at zero or negative width. A field with no `span` fills the rest of its row.
+- **A zone's edge rule allows `/robots.txt` and the sitemap without listing them in `files`.**
+- **`buildAllowExpression` refuses a route, file or prefix holding a character a browser would percent-encode**, such as `/café/:id`,
+  with a `ZonePatternError`. The edge rule would never have matched it. Write the path percent-encoded instead.
+- **The service-worker example in the `tooling/assets` README typechecks**, under the worker's own tsconfig the README now shows.
+- **`validate-asset-root` knows about `sw.js`.** With a service worker, a missing `!/sw.js` under `run_worker_first` fails, and a present one
+  no longer warns.
 
 ---
 

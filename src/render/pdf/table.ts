@@ -1,5 +1,7 @@
+import { Stack } from "./components";
 import { resolveTracks, trackOffsets } from "./tracks";
-import type { PdfBox, PdfCursor, PdfElement, PdfFragment, PdfScopeFrame, PdfTrack, PdfTypesetting, TableProps } from "./types";
+import { toPdfElements } from "./tree";
+import type { PdfBox, PdfContent, PdfCursor, PdfElement, PdfFragment, PdfScopeFrame, PdfTrack, PdfTypesetting, TableProps } from "./types";
 
 interface Laid {
   boxes: PdfBox[];
@@ -37,29 +39,36 @@ function lay(box: PdfBox, tracks: readonly PdfTrack[], gap: number, set?: PdfTyp
   };
 }
 
+function lowerTableCell(content: PdfContent): PdfElement {
+  const elements = toPdfElements(content);
+  const [only] = elements;
+  return elements.length === 1 && only !== undefined ? only : Stack({ children: elements });
+}
+
 /** A grid whose columns agree across every row, whose header repeats, and whose rows never split. @public */
 export function Table(props: TableProps): PdfElement {
   const gap = props.gap ?? 0;
-  const columns = Math.max(props.header?.length ?? 0, ...props.rows.map((row) => row.length), 0);
+  const header = props.header?.map(lowerTableCell);
+  const rows = props.rows.map((row) => row.map(lowerTableCell));
+  const columns = Math.max(header?.length ?? 0, ...rows.map((row) => row.length), 0);
   const tracks = props.tracks ?? Array.from({ length: columns }, () => 1);
 
   return {
-    audit: { table: { header: props.header !== undefined } },
+    audit: { table: { header: header !== undefined } },
     // Cells rather than `pdfContainer`: a table holds its children in a grid, so the first of them
     // opens no section a page break could honour.
-    children: [...(props.header ?? []), ...props.rows.flat()],
+    children: [...(header ?? []), ...rows.flat()],
     measure(width, set) {
       const laid = lay({ x: 0, width, height: Number.POSITIVE_INFINITY }, tracks, gap, set);
-      const header = props.header === undefined ? 0 : laid.rowHeight(props.header);
+      const headerHeight = header === undefined ? 0 : laid.rowHeight(header);
       return {
         preferred: width,
-        minimum: props.rows.flat().reduce((most, cell) => Math.max(most, cell.measure(width, set).minimum), 0),
-        height: header + props.rows.reduce((total, row) => total + laid.rowHeight(row), 0),
+        minimum: rows.flat().reduce((most, cell) => Math.max(most, cell.measure(width, set).minimum), 0),
+        height: headerHeight + rows.reduce((total, row) => total + laid.rowHeight(row), 0),
       };
     },
     fragments(box, set) {
       const laid = lay(box, tracks, gap, set);
-      const header = props.header;
       const headerHeight = header === undefined ? 0 : laid.rowHeight(header);
       const fragments: PdfFragment[] = [];
       let painted = -1;
@@ -69,7 +78,7 @@ export function Table(props: TableProps): PdfElement {
 
       if (header !== undefined) {
         fragments.push({
-          reserve: headerHeight + (laid.rowHeight(props.rows[0] ?? []) || 0),
+          reserve: headerHeight + (laid.rowHeight(rows[0] ?? []) || 0),
           advance: headerHeight,
           paint(cursor) {
             painted = cursor.pages.length;
@@ -80,7 +89,7 @@ export function Table(props: TableProps): PdfElement {
         });
       }
 
-      for (const row of props.rows) {
+      for (const row of rows) {
         const advance = laid.rowHeight(row);
         fragments.push({
           // A row moves whole: one reserve for the whole of it, so the break falls between rows.

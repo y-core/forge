@@ -104,6 +104,29 @@ function declaredPath(root, declared) {
   }
 }
 
+// src/storage/db/sql.ts
+var SQL_PLACEHOLDER = "?";
+var SQL_FRAGMENT_BRAND = /* @__PURE__ */ Symbol("forge.storage.db.SqlFragment");
+function sql(strings, ...values) {
+  let text = strings[0] ?? "";
+  const params = [];
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i];
+    const next = strings[i + 1] ?? "";
+    if (isSqlFragment(value)) {
+      text += value.text + next;
+      params.push(...value.params);
+    } else {
+      text += SQL_PLACEHOLDER + next;
+      params.push(value);
+    }
+  }
+  return { [SQL_FRAGMENT_BRAND]: true, text, params };
+}
+function isSqlFragment(x) {
+  return typeof x === "object" && x !== null && x[SQL_FRAGMENT_BRAND] === true;
+}
+
 // src/testing/d1.ts
 async function openPlatformD1(configPath, persistPath) {
   const proxy = await getPlatformProxy({ configPath, persist: { path: persistPath }, remoteBindings: false, envFiles: [] });
@@ -177,7 +200,7 @@ async function openTestD1(options = {}) {
     throw error;
   });
   const db = platform.binding;
-  const rows = async (sql) => (await db.prepare(sql).all()).results;
+  const rows = async (sql2) => (await db.prepare(sql2).all()).results;
   const migrate = async () => {
     for (const migration of migrations) {
       const statements = unstable_splitSqlQuery(migration.sql).filter((statement) => statement.trim() !== "");
@@ -239,6 +262,7 @@ export {
   openPlatformD1,
   openTestD1,
   scansTable,
+  sql,
   testD1Config,
   usesIndex
 };

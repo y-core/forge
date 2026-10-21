@@ -7,15 +7,17 @@ var CSRF_HEADER_DEFAULT = "X-CSRF-Token";
 // src/validation/validation.ts
 import * as v from "valibot";
 
+// src/crypto/keyring/secrets.ts
+var KEY_RING_SECRET_PATTERN = /^(?:[0-9a-fA-F]{2}){32,}(?:\s*,\s*(?:[0-9a-fA-F]{2}){32,})*$/;
+var KeyRingSecretSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.regex(KEY_RING_SECRET_PATTERN, "must be comma-separated secrets, each an even number of hex characters, at least 64 (32 bytes)")
+);
+
 // src/form/config.ts
 var FORM_MAX_BYTES_DEFAULT = 100 * 1024;
-var KEY_RING_SECRET_PATTERN = /^(?:[0-9a-fA-F]{2}){32,}(?:\s*,\s*(?:[0-9a-fA-F]{2}){32,})*$/;
-var CsrfConfigSchema = v.object({
-  secret: v.pipe(
-    v.string(),
-    v.regex(KEY_RING_SECRET_PATTERN, "must be comma-separated secrets, each an even number of hex characters, at least 64 (32 bytes)")
-  )
-});
+var CsrfConfigSchema = v.object({ secret: KeyRingSecretSchema });
 var TurnstileConfigSchema = v.object({ secretKey: v.string(), siteKey: v.string() });
 
 // src/crypto/primitives/aead.ts

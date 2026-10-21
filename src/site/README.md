@@ -34,11 +34,17 @@ export default defineSiteConfig({
   pages: routePaths(routes, { method: "GET" }),
   robots: { rules: [{ userAgent: "*", allow: ["/"], disallow: ["/api/"] }], sitemap: true },
   sitemap: { exclude: ["/api/*"], entries: { "/": { changefreq: "monthly", priority: 1.0 } } },
+  zone: {
+    allow: { action: "managed_challenge", paths: routePaths(routes), prefixes: ["/assets/"], files: ["/favicon.ico"] }, // every method, not `pages`
+  },
 });
 ```
 
 `pages` is a plain `string[]`, which is what keeps this namespace a leaf and its schema validating plain data. `resolveSiteConfig` fills in every
 optional block; `SiteConfigSchema` validates one that did not come through `defineSiteConfig`.
+
+**`forge cf sync zone` adds `/robots.txt` and the sitemap path to `zone.allow.files` for you**, since the site emits both. Any other root file,
+such as `/favicon.ico`, you list yourself.
 
 ---
 
@@ -75,6 +81,10 @@ const rule = buildAllowRule(
 
 const redirect = buildRedirectRule({ from: ["www.example.com"], apex: "example.com" });
 ```
+
+A dynamic route is matched by its shape: each `:param` or `*wildcard` becomes a `strict wildcard` `*` and an optional `(…)` is allowed both ways,
+while a route whose first segment is dynamic (`/:slug`, `/:a/:b`) or names a host or search part is refused with `ZonePatternError`. So is any
+path, prefix or file a browser would percent-encode, such as `/café/`: write it percent-encoded (`/caf%C3%A9/`) and it passes unchanged.
 
 **Start on `managed_challenge` rather than `block`.** A legitimate path caught by mistake then gets a challenge a human can pass. Cloudflare's `log`
 action is Enterprise-only, so this is the available shakedown, and either action ends the request at the edge — the saved Worker invocation is

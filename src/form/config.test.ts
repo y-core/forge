@@ -42,6 +42,12 @@ describe("CsrfConfigSchema", () => {
     expect(v.safeParse(CsrfConfigSchema, { secret: `${VALID_SECRET} , ${OLDER_SECRET}` }).success).toBe(true);
   });
 
+  for (const secret of [` ${VALID_SECRET}`, `${VALID_SECRET}\n`, `\n${VALID_SECRET},${OLDER_SECRET}\n`]) {
+    it(`accepts the ring ${JSON.stringify(secret)} with its surrounding whitespace`, () => {
+      expect(v.safeParse(CsrfConfigSchema, { secret }).success).toBe(true);
+    });
+  }
+
   it("rejects a ring with one entry under the 32-byte floor", () => {
     const result = v.safeParse(CsrfConfigSchema, { secret: `${VALID_SECRET},${OLDER_SECRET.slice(0, 62)}` });
     expect(result.success).toBe(false);
@@ -50,6 +56,13 @@ describe("CsrfConfigSchema", () => {
   it("rejects a ring with an empty entry between its commas", () => {
     expect(v.safeParse(CsrfConfigSchema, { secret: `${VALID_SECRET},,${OLDER_SECRET}` }).success).toBe(false);
     expect(v.safeParse(CsrfConfigSchema, { secret: `${VALID_SECRET},` }).success).toBe(false);
+  });
+
+  it("refuses a malformed ring on its secret field with the key-ring message", () => {
+    const result = v.safeParse(CsrfConfigSchema, { secret: `${VALID_SECRET},` });
+    expect(result.issues?.map((issue) => [v.getDotPath(issue), issue.message])).toEqual([
+      ["secret", "must be comma-separated secrets, each an even number of hex characters, at least 64 (32 bytes)"],
+    ]);
   });
 
   it("rejects a missing secret", () => {

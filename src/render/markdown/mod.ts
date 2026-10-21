@@ -1,7 +1,7 @@
 export { rescanUnitBounds, scanBlocks } from "./block";
 export { createCalloutTransform } from "./callout";
 export { createUnitCache, parseMarkdown } from "./document";
-export { codeBlockText, createHtmlWriter, inlinePlainText, renderMarkdownHtml } from "./html";
+export { codeBlockText, createHtmlWriter, DEFAULT_MARKDOWN_HANDLERS, inlinePlainText, renderMarkdownHtml } from "./html";
 export { lineAtOffset } from "./source";
 export { sanitizeSvg, writeSvg } from "./svg";
 export { isSafeUrl, SVG_ATTRIBUTES, SVG_TAGS } from "./svg-schema";

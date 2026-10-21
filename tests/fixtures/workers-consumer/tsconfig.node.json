@@ -1,0 +1,1 @@
+{ "extends": "./tsconfig.json", "include": ["workerd-globals.d.ts", "snapshot-suite.ts", "d1-suite.ts", "harness-suite.ts"] }

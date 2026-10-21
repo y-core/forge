@@ -47,11 +47,17 @@ function pastCursor(user: FakeAuthUser, cursor: unknown): boolean {
   return cursor instanceof Uint8Array && idKey(user) < hex(cursor);
 }
 
-/** Whether an account's email key matches the prefix-anchored `LIKE` pattern the admin store builds. */
-function matchesTerm(user: FakeAuthUser, term: unknown): boolean {
-  if (typeof term !== "string" || !term.endsWith("%")) return false;
-  const prefix = term.slice(0, -1).replaceAll(/\\([\\%_])/g, "$1");
-  return (user.emailKey ?? user.email.toLowerCase()).startsWith(prefix);
+/** Orders two strings by their UTF-8 bytes, which is how a `BINARY` column compares them. */
+function compareBinary(left: string, right: string): number {
+  const [a, b] = [new TextEncoder().encode(left), new TextEncoder().encode(right)];
+  for (let i = 0; i < Math.min(a.length, b.length); i += 1) if (a[i] !== b[i]) return (a[i] ?? 0) - (b[i] ?? 0);
+  return a.length - b.length;
+}
+
+/** Whether an account's email key falls in the `email_key >= ? AND email_key < ?` range the admin store searches. */
+function inKeyRange(user: FakeAuthUser, from: unknown, to: unknown): boolean {
+  const key = user.emailKey ?? user.email.toLowerCase();
+  return typeof from === "string" && compareBinary(key, from) >= 0 && (to === null || (typeof to === "string" && compareBinary(key, to) < 0));
 }
 
 function userRow(user: FakeAuthUser): Record<string, unknown> {
@@ -120,15 +126,12 @@ function respond(
       .slice(0, Number(params[1]))
       .map(userRow);
   }
-  if (sql === "SELECT * FROM auth_users WHERE email_key LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?") {
-    return newestFirst(users.filter((user) => matchesTerm(user, params[0])))
-      .slice(0, Number(params[1]))
-      .map(userRow);
-  }
-  if (sql === "SELECT * FROM auth_users WHERE email_key LIKE ? ESCAPE '\\' AND id < ? ORDER BY id DESC LIMIT ?") {
-    return newestFirst(users.filter((user) => matchesTerm(user, params[0])))
-      .filter((user) => pastCursor(user, params[1]))
-      .slice(0, Number(params[2]))
+  const search = /^SELECT \* FROM auth_users WHERE email_key >= \?( AND email_key < \?)?( AND id < \?)? ORDER BY id DESC LIMIT \?$/.exec(sql);
+  if (search) {
+    const [from, to, cursor] = search[1] ? [params[0], params[1], params[2]] : [params[0], null, params[1]];
+    return newestFirst(users.filter((user) => inKeyRange(user, from, to)))
+      .filter((user) => !search[2] || pastCursor(user, cursor))
+      .slice(0, Number(params.at(-1)))
       .map(userRow);
   }
   if (sql === "SELECT COUNT(*) AS total FROM auth_users WHERE is_admin = 1 AND deactivated_at IS NULL") {

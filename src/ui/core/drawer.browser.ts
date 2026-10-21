@@ -5,6 +5,7 @@ import { render } from "../../testing/render";
 import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import type { PhysicalSide } from "../contracts/types";
 import { Drawer } from "./drawer";
+import { Toast } from "./toast";
 
 const W_80 = 320;
 
@@ -172,6 +173,22 @@ test.describe("Drawer — non-modal <Drawer open>", () => {
     });
 
     expect(hit).toBe(true);
+  });
+
+  test("leaves a bottom-right toast's dismiss button reachable when it comes after the toast region", async ({ page }) => {
+    const toasts = await render(Toast.Container({ children: Toast({ dismissible: true, children: Toast.Description({ children: "Saved" }) }) }));
+    const drawer = await render(Drawer({ id: "nav", side: "right", open: true, label: "Navigation" }));
+    await mount(page, `<style>${await compiledCss(renderedClasses(toasts + drawer))}</style>${toasts}${drawer}`);
+
+    const hit = await page.evaluate(() => {
+      const rect = (document.querySelector("[data-slot='toast-close']") as HTMLElement).getBoundingClientRect();
+      return document
+        .elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+        ?.closest("[data-slot]")
+        ?.getAttribute("data-slot");
+    });
+
+    expect(hit).toBe("toast-close");
   });
 
   test("keeps that edge through close(), sliding out rather than jumping", async ({ page }) => {

@@ -595,8 +595,8 @@ export interface TableProps {
   tracks?: readonly PdfTrack[] | undefined;
   gap?: number | undefined;
   /** The row re-emitted at the top of every page the table continues onto. */
-  header?: readonly PdfElement[] | undefined;
-  rows: readonly (readonly PdfElement[])[];
+  header?: readonly PdfContent[] | undefined;
+  rows: readonly (readonly PdfContent[])[];
 }
 
 /** A page size this engine names; an unlisted size is given as points instead. @public */

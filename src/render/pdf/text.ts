@@ -157,6 +157,13 @@ export function winAnsiByte(code: number): number | undefined {
   return WIN_ANSI.get(code);
 }
 
+/** Every character the WinAnsi encoding carries, in byte order — a `covering` corpus for a base-14-compatible subset. */
+export const WIN_ANSI_CHARACTERS: string = String.fromCodePoint(
+  ...[...Array.from({ length: 0x100 }, (_unit, code) => code), ...WIN_ANSI.keys()]
+    .filter((code) => winAnsiByte(code) !== undefined)
+    .sort((left, right) => (winAnsiByte(left) ?? 0) - (winAnsiByte(right) ?? 0)),
+);
+
 /** A PDF literal string: WinAnsi bytes, with the structural characters and every high byte escaped. @internal */
 export function pdfString(text: string): string {
   let out = "";

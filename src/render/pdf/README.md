@@ -75,8 +75,9 @@ Row({ tracks: [{ points: 120 }, 1, 1], gap: 12, children: [label, first, second]
 
 ### The same components, written as JSX
 
-Every component takes **one props object with `children` inside it**, which is exactly what forge's JSX runtime calls. So the tree above can be
-written as markup instead — in a file that names this namespace's runtime as its JSX source:
+Every component takes **one props object with `children` inside it** — a `Table` takes its cells in `header` and `rows` instead, each cell any
+content `children` would take — which is exactly what forge's JSX runtime calls. So the tree above can be written as markup instead — in a file
+that names this namespace's runtime as its JSX source:
 
 ```tsx
 /** @jsxImportSource @y-core/forge/render/pdf */
@@ -453,16 +454,18 @@ a two-page declaration can become three. A face drawn to Helvetica's metrics ref
 
 | Face | Licence | Use it? |
 | --- | --- | --- |
-| **Arimo** | Apache-2.0 | Yes. Metric-compatible with Arial, itself drawn to Helvetica's metrics across WinAnsi, and carries no Reserved Font Name — which matters, because subsetting is modification. |
-| Liberation Sans | OFL 1.1 | Works, and is better known. The OFL's Reserved Font Name clause binds the subset you ship, so the built face must be renamed. |
+| **Arimo** | OFL 1.1 | Yes. Metric-compatible with Arial, itself drawn to Helvetica's metrics across WinAnsi. OFL, but names no Reserved Font Name, so a subset needs no rename — which matters, because subsetting is modification. |
+| Liberation Sans | OFL 1.1 | Works, and is better known. Unlike Arimo's, its licence names a Reserved Font Name, and that clause binds the subset you ship, so the built face must be renamed. |
 | Nimbus Sans | AFPL/GPL + font exception | No. The exception exempts the documents you produce, not the font files you redistribute — and a pack ships the file. |
 
 Name the face and the text it must set in `forge.assets.ts`, then hand the built pack to the renderer:
 
 ```ts
 // forge.assets.ts — `covering` is the corpus, and WinAnsi is the whole of what the base-14 faces set
+import { WIN_ANSI_CHARACTERS } from "@y-core/forge/render/pdf";
+
 fonts: {
-  subsets: [{ family: "Arimo", from: "node_modules/…/Arimo-Regular.ttf", to: "fonts/arimo-400.ttf", covering: WINANSI }],
+  subsets: [{ family: "Arimo", from: "node_modules/…/Arimo-Regular.ttf", to: "fonts/arimo-400.ttf", covering: WIN_ANSI_CHARACTERS }],
 }
 ```
 

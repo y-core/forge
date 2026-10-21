@@ -245,6 +245,9 @@ function actAndRead(page: Page, act: "showModal" | "close" | "none"): Promise<Mo
   }, act);
 }
 
+const CONSUMER_SLIDE =
+  "[--forge-motion-opacity:1] [--forge-motion-scale:1] not-open:translate-y-2 motion-safe:starting:open:translate-y-2 motion-safe:transition-[translate,display,overlay] motion-safe:transition-discrete motion-safe:duration-300";
+
 async function mountStyled(page: Page, html: string): Promise<void> {
   await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
 }
@@ -303,6 +306,40 @@ test.describe("Dialog — open and close motion", () => {
     expect(frame.backdrop, JSON.stringify(frame)).toContain("opacity");
   });
 
+  test("the closed opacity is --forge-motion-opacity", async ({ page }) => {
+    await mountStyled(page, await markup());
+    const closedOpacity = () => actAndRead(page, "none").then((frame) => frame.opacity);
+
+    expect(await closedOpacity()).toBe(0);
+    await page.evaluate(() => (document.querySelector("#confirm") as HTMLElement).style.setProperty("--forge-motion-opacity", "0.5"));
+    expect(await closedOpacity()).toBe(0.5);
+  });
+
+  test("a custom slide that sets --forge-motion-opacity to 1 stays visible on every exit frame", async ({ page }) => {
+    const html = await render(Dialog({ id: "confirm", label: "Delete project?", class: CONSUMER_SLIDE, children: "Body" }));
+    await mountStyled(page, html);
+    await actAndRead(page, "showModal");
+    await expect.poll(() => actAndRead(page, "none").then((frame) => frame.opacity)).toBe(1);
+
+    const exiting = await page.evaluate(
+      () =>
+        new Promise<number[]>((resolve) => {
+          const el = document.querySelector("#confirm") as HTMLDialogElement;
+          const out: number[] = [];
+          el.close();
+          const tick = () => {
+            if (getComputedStyle(el).display === "none" || out.length === 4) return resolve(out);
+            out.push(Number(getComputedStyle(el).opacity));
+            requestAnimationFrame(tick);
+          };
+          tick();
+        }),
+    );
+
+    expect(exiting.length, "no frame caught the slide after close()").toBeGreaterThan(0);
+    expect(exiting).toEqual(exiting.map(() => 1));
+  });
+
   test("a Drawer keeps its slide and gains no opacity transition on its panel", async ({ page }) => {
     await mountStyled(page, await render(Drawer({ id: "nav", side: "left", label: "Navigation", children: "Links" })));
 
@@ -333,6 +370,94 @@ test.describe("Dialog — open and close motion", () => {
       expect(await page.evaluate(() => getComputedStyle(document.querySelector("#nav") as HTMLElement).transitionDuration)).toBe(
         "0.2s, 0.2s, 0.2s",
       );
+    });
+  });
+});
+
+interface ExitFrames {
+  settled: { x: number; y: number; width: number; height: number };
+  closing: Array<{ x: number; y: number; width: number; height: number }>;
+}
+
+// The centre rather than the corner, because the exit scale shrinks the panel about it.
+function readExitFrames(page: Page, act: "showModal" | "none"): Promise<ExitFrames> {
+  return page.evaluate(
+    (call) =>
+      new Promise<ExitFrames>((resolve) => {
+        const el = document.querySelector("#confirm") as HTMLDialogElement;
+        const read = () => {
+          const rect = el.getBoundingClientRect();
+          return { x: Math.round(rect.x + rect.width / 2), y: Math.round(rect.y + rect.height / 2), width: rect.width, height: rect.height };
+        };
+        if (call === "showModal") el.showModal();
+        const finish = () => {
+          const settled = read();
+          const closing: ExitFrames["closing"] = [];
+          el.close();
+          const tick = () => {
+            if (getComputedStyle(el).display === "none") return resolve({ settled, closing });
+            closing.push(read());
+            requestAnimationFrame(tick);
+          };
+          tick();
+        };
+        void Promise.all(el.getAnimations({ subtree: true }).map((animation) => animation.finished)).then(finish);
+      }),
+    act,
+  );
+}
+
+async function mountTall(page: Page, html: string): Promise<void> {
+  await page.setViewportSize(VIEWPORT);
+  await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style><div style="height: 3000px"></div>${html}`);
+}
+
+function centred(frames: ExitFrames): void {
+  expect(frames.closing.length, "no frame caught the panel after close()").toBeGreaterThan(0);
+  expect(near(frames.settled.x, VIEWPORT.width / 2) && near(frames.settled.y, VIEWPORT.height / 2), JSON.stringify(frames.settled)).toBe(true);
+  for (const frame of frames.closing) {
+    expect({ x: frame.x, y: frame.y }, JSON.stringify(frames)).toEqual({ x: frames.settled.x, y: frames.settled.y });
+  }
+}
+
+test.describe("Dialog — placement through the exit fade", () => {
+  test("a closing modal stays centred in the viewport", async ({ page }) => {
+    await mountTall(page, await markup());
+
+    centred(await readExitFrames(page, "showModal"));
+  });
+
+  test("a modal closed on a scrolled page stays centred in the viewport", async ({ page }) => {
+    await mountTall(page, await markup());
+    await page.evaluate(() => window.scrollTo(0, 1500));
+
+    centred(await readExitFrames(page, "showModal"));
+  });
+
+  test("a non-modal <Dialog open> fades out where it sits in the page", async ({ page }) => {
+    await mountTall(page, await markup(true));
+    await page.evaluate(() => window.scrollTo(0, 2800));
+
+    const frames = await readExitFrames(page, "none");
+
+    expect(frames.closing.length, "no frame caught the panel after close()").toBeGreaterThan(0);
+    for (const frame of frames.closing) {
+      expect(near(frame.x, frames.settled.x) && near(frame.y, frames.settled.y), JSON.stringify(frames)).toBe(true);
+    }
+  });
+
+  test.describe("under reduced motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("a closing modal keeps its whole rect, unscaled", async ({ page }) => {
+      await mountTall(page, await markup());
+
+      const frames = await readExitFrames(page, "showModal");
+
+      centred(frames);
+      for (const frame of frames.closing) {
+        expect({ width: frame.width, height: frame.height }).toEqual({ width: frames.settled.width, height: frames.settled.height });
+      }
     });
   });
 });

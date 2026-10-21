@@ -1,5 +1,5 @@
 export { defineSiteConfig, resolveSiteConfig } from "./config";
-export { renderRobotsTxt, SITEMAP_PATH } from "./robots";
+export { renderRobotsTxt, SITE_FILES, SITEMAP_PATH } from "./robots";
 export { renderSitemapXml, resolveSitemapEntries } from "./sitemap";
 export type {
   Changefreq,
@@ -15,9 +15,10 @@ export type {
   SitemapOverride,
   ZoneAction,
   ZoneConfig,
+  ZonePatternRefusal,
   ZoneRule,
   ZoneSurface,
 } from "./types";
 export { SiteConfigSchema } from "./types";
 export type { AllowRuleOptions } from "./types";
-export { buildAllowExpression, buildAllowRule, buildRedirectRule, EXPRESSION_MAX_CHARS, RESERVED_PREFIXES } from "./zone";
+export { buildAllowExpression, buildAllowRule, buildRedirectRule, EXPRESSION_MAX_CHARS, RESERVED_PREFIXES, ZonePatternError } from "./zone";

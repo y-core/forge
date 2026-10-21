@@ -273,13 +273,135 @@ test.describe("openPopoverAt placement after close", () => {
   });
 });
 
+test.describe("openPopoverAt under forge's own CSS and default motion", () => {
+  const FORGE_CSS = { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] };
+  const SIZE_RULE = `<style>[popover] { border: 0; padding: 0; } #ctx { box-sizing: border-box; width: 120px; height: 80px; }</style>`;
+
+  async function mountForge(page: Page): Promise<void> {
+    await mount(page, `${SIZE_RULE}${await markup()}`, FORGE_CSS);
+  }
+
+  async function settle(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      await Promise.allSettled(el?.getAnimations().map((animation) => animation.finished) ?? []);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+  }
+
+  async function closeAndReadMidExit(page: Page) {
+    return page.evaluate(async () => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      if (!el) return null;
+      const closed = new Promise<void>((resolve) =>
+        el.addEventListener("toggle", (event) => {
+          if ((event as ToggleEvent).newState === "closed") resolve();
+        }),
+      );
+      el.hidePopover();
+      await closed;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const rect = el.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, exiting: el.getAnimations().length > 0 };
+    });
+  }
+
+  const anchorProps = (page: Page) =>
+    page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      return { x: el?.style.getPropertyValue("--anchor-x"), y: el?.style.getPropertyValue("--anchor-y"), style: el?.getAttribute("style") ?? null };
+    });
+
+  test("holds the exit fade at the click point rather than jumping to the viewport origin", async ({ page }) => {
+    await mountForge(page);
+    await openAt(page, 200, 150);
+    await settle(page);
+
+    expect(await closeAndReadMidExit(page)).toEqual({ left: 200, top: 150, exiting: true });
+  });
+
+  test("clears the coordinates once the exit fade has run", async ({ page }) => {
+    await mountForge(page);
+    await openAt(page, 200, 150);
+    await settle(page);
+
+    await closeAndReadMidExit(page);
+    await settle(page);
+
+    expect(await anchorProps(page)).toEqual({ x: "", y: "", style: null });
+  });
+
+  test("leaves no swap listener behind once the exit fade has cleared the coordinates", async ({ page }) => {
+    await mountForge(page);
+    await openAt(page, 200, 150);
+    await settle(page);
+
+    await closeAndReadMidExit(page);
+    await settle(page);
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      el?.style.setProperty("--anchor-x", "5px");
+      el?.style.setProperty("--anchor-y", "6px");
+      document.dispatchEvent(new Event("htmx:before:swap"));
+    });
+
+    expect(await anchorProps(page)).toMatchObject({ x: "5px", y: "6px" });
+  });
+
+  test("a reopen during the exit fade keeps its new coordinates", async ({ page }) => {
+    await mountForge(page);
+    await openAt(page, 200, 150);
+    await settle(page);
+
+    await closeAndReadMidExit(page);
+    await openAt(page, 40, 60);
+    await settle(page);
+
+    expect(await anchorProps(page)).toMatchObject({ x: "40px", y: "60px" });
+    expect(await box(page)).toMatchObject({ left: 40, top: 60 });
+  });
+
+  test("clamps the settled box, not the scaled-down opening one, inside the margin at the bottom-right edge", async ({ page }) => {
+    await mountForge(page);
+    const { w, h } = await viewport(page);
+
+    await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      if (el) window.forgePopoverAnchor.openPopoverAt(el, 1e6, 1e6, { margin: 8 });
+    });
+    await settle(page);
+
+    expect(await box(page)).toMatchObject({ right: w - 8, bottom: h - 8 });
+  });
+
+  test("flips the settled box, not the scaled-down opening one, so its far corner lands on the click", async ({ page }) => {
+    await mountForge(page);
+    const { w, h } = await viewport(page);
+
+    await page.evaluate(
+      // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
+      ({ w, h }) => {
+        const el = document.querySelector<HTMLElement>("#ctx");
+        if (el) window.forgePopoverAnchor.openPopoverAt(el, w - 10, h - 10, { margin: 8, flip: true });
+      },
+      { w, h },
+    );
+    await settle(page);
+
+    expect(await box(page)).toMatchObject({ right: w - 10, bottom: h - 10 });
+  });
+});
+
 const ORIGIN = "https://forge.test";
 
-async function openForgeCspSite(page: Page): Promise<void> {
+const FORGE_CSS_PATH = new URL("../assets/css/forge-ui.css", import.meta.url).pathname;
+
+async function openForgeCspSite(page: Page, withForgeCss = false): Promise<void> {
   const nonce = "popover-anchor-probe";
   const csp = applySecurityHeaders(new Response(""), { nonce }).headers.get("content-security-policy") ?? "";
   const region = await render(Menu.Popup({ label: "Context actions", id: "ctx", children: Menu.Item({ id: "row", for: "ctx", children: "Row" }) }));
-  const index = `<!doctype html><html><head><script src="/bundle.js"></script></head><body>
+  const stylesheet = withForgeCss ? `<link rel="stylesheet" href="/forge-ui.css">` : "";
+  const index = `<!doctype html><html><head>${stylesheet}<script src="/bundle.js"></script></head><body>
 <button id="swap" hx-get="/region" hx-target="#region">Swap</button>
 <div id="region">${region}</div>
 </body></html>`;
@@ -294,6 +416,7 @@ async function openForgeCspSite(page: Page): Promise<void> {
   await page.route(`${ORIGIN}/**`, async (route: Route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/bundle.js") return route.fulfill({ contentType: "text/javascript", body: bundle });
+    if (path === "/forge-ui.css") return route.fulfill({ contentType: "text/css", path: FORGE_CSS_PATH });
     if (path === "/region") return route.fulfill({ contentType: "text/html", body: region });
     return route.fulfill({ contentType: "text/html", headers: { "Content-Security-Policy": csp }, body: index });
   });
@@ -374,6 +497,33 @@ test.describe("openPopoverAt under forge's own CSP across an htmx swap", () => {
     await swapRegionAndSettle(page);
 
     expect(afterClose).toEqual({ style: null, coords: true });
+    expect(await page.evaluate(() => window.anchorViolations)).toEqual([]);
+  });
+
+  test("a swap during the exit fade under forge's CSS and default motion raises no violation", async ({ page }) => {
+    await openForgeCspSite(page, true);
+    await openAt(page, 200, 150);
+
+    const exitingAtSwap = await page.evaluate(async () => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      if (!el) return null;
+      await Promise.allSettled(el.getAnimations().map((animation) => animation.finished));
+      let exiting = false;
+      document.addEventListener("htmx:before:swap", () => (exiting = el.getAnimations().length > 0), { once: true });
+      const closed = new Promise<void>((resolve) =>
+        el.addEventListener("toggle", (event) => {
+          if ((event as ToggleEvent).newState === "closed") resolve();
+        }),
+      );
+      const settled = new Promise<void>((resolve) => document.addEventListener("htmx:after:settle", () => resolve(), { once: true }));
+      el.hidePopover();
+      await closed;
+      document.querySelector<HTMLElement>("#swap")?.click();
+      await settled;
+      return exiting;
+    });
+
+    expect(exitingAtSwap, "the swap landed after the exit fade, so it tested nothing").toBe(true);
     expect(await page.evaluate(() => window.anchorViolations)).toEqual([]);
   });
 });

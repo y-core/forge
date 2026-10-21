@@ -119,6 +119,17 @@ describe("fakeAuthD1 through the admin user store", () => {
     expect(found.ok && found.data).toEqual([]);
   });
 
+  it("matches every account for an empty term, newest first", async () => {
+    const found = await stores(ACCOUNTS).admin.search("");
+    expect(found.ok && found.data.map((row) => row.id)).toEqual([GRACE, ADA]);
+  });
+
+  it("pages a search past a cursor", async () => {
+    const found = await stores(ACCOUNTS).admin.search("", { after: GRACE });
+    const bounded = await stores(ACCOUNTS).admin.search("ada", { after: ADA });
+    expect([found.ok && found.data.map((row) => row.id), bounded.ok && bounded.data]).toEqual([[ADA], []]);
+  });
+
   it("counts only the admins who could still sign in", async () => {
     const counted = await stores(ACCOUNTS).admin.countAdmins();
     expect(counted.ok && counted.data).toBe(0);

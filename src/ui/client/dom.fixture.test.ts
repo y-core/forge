@@ -211,3 +211,18 @@ describe("FakeWindow clock", () => {
     expect(heard).toEqual(["blur"]);
   });
 });
+
+describe("FakeElement.isConnected", () => {
+  it("holds only while the element's top ancestor is its document's root or body", () => {
+    const { doc, el } = fakeTree();
+    const owned = el();
+    const child = el();
+    doc.body.append(owned);
+    owned.append(child);
+    const attached = child.isConnected;
+
+    owned.remove();
+
+    expect({ attached, removed: child.isConnected, unattached: el().isConnected }).toEqual({ attached: true, removed: false, unattached: false });
+  });
+});

@@ -4,3 +4,8 @@ interface Element {
   append(content: string | ReadableStream | Response): Element;
   remove(): Element;
 }
+
+interface ExecutionContext {
+  waitUntil(promise: Promise<unknown>): void;
+  passThroughOnException(): void;
+}

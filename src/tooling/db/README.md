@@ -215,7 +215,7 @@ An optional `config/db.ts` default-exports a `DbHostConfig`. Every field is opti
 specifier such as the one `forgeSchema` returns:
 
 ```ts
-import { forgeSchema, type DbHostConfig } from "@y-core/forge/tooling/db";
+import { forgeSchema, type DbHostConfig } from "@y-core/forge/tooling/db/host";
 
 export default {
   // Loaded in this order, so a file with a FOREIGN KEY comes after the file declaring its target.
@@ -223,6 +223,9 @@ export default {
   seeds: ["config/db/seeds"],
 } satisfies DbHostConfig;
 ```
+
+`openTestD1` loads `config/db.ts` under node too, and node cannot load this namespace's barrel, so the file imports from `/host`. That subpath
+exports `forgeSchema` and `DbHostConfig` and nothing else. Why it is published separately is [`docs/NAMESPACES.md`][ns-3c] §3c.
 
 The default layout keeps everything under `config/db/`: `migrations` defaults to `config/db/migrations`, which is both where migrations are read
 from and where compose writes, and `snapshot` defaults to `config/db/schema.snapshot.json`. `backupsDir` defaults to `.forge/backups`. An entry in
@@ -365,6 +368,7 @@ home.
 [dm-9]: ../../../docs/DATABASE_MANAGEMENT.md#9-the-ci-gate
 [dm-9a]: ../../../docs/DATABASE_MANAGEMENT.md#9a-the-workers-builds-deploy-command
 [dm-9b]: ../../../docs/DATABASE_MANAGEMENT.md#9b-the-migration-contract
+[ns-3c]: ../../../docs/NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [sb-1]: ../../../docs/STORAGE_BINDINGS.md#1-storagedb--d1-database-client
 [sc]: ../../../docs/SCHEMA_COMPOSITION.md
 [sc-3]: ../../../docs/SCHEMA_COMPOSITION.md#3-ownership

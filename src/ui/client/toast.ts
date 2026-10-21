@@ -21,13 +21,14 @@ export function dismissToast(root: HTMLElement): void {
   removeRehomingFocus(root, rehomeTarget);
 }
 
-type PauseReason = "pointer" | "focus" | "window";
+type PauseReason = "pointer" | "focus" | "hidden";
 
-/** Dismisses `root` after `ms` of unpaused time, holding while it is hovered, focused or its window is blurred, and returns a disposer. @internal */
+/** Dismisses `root` after `ms` of unpaused time, holding while it is hovered, keyboard-focused or its page is hidden, and returns a disposer. @internal */
 export function scheduleToastDismissal(root: HTMLElement, ms: number): () => void {
   // The toast's own realm schedules its own dismissal — a bare `setTimeout` would fire on the
   // top-level window's clock, which an iframe can have torn down underneath it.
   const win = ownerWindow(root);
+  const doc = win.document;
   const reasons = new Set<PauseReason>();
   let remaining = ms;
   let startedAt = 0;
@@ -47,6 +48,13 @@ export function scheduleToastDismissal(root: HTMLElement, ms: number): () => voi
   const resume = (reason: PauseReason) => {
     if (reasons.delete(reason) && reasons.size === 0) run();
   };
+  const onFocusIn = (event: Event) => {
+    if ((event.target as Element).matches(":focus-visible")) pause("focus");
+  };
+  const onVisibilityChange = () => {
+    if (doc.visibilityState === "hidden") pause("hidden");
+    else resume("hidden");
+  };
   const onFocusOut = (event: Event) => {
     const next = (event as FocusEvent).relatedTarget as Node | null;
     if (!next || !contains(root, next)) resume("focus");
@@ -56,11 +64,11 @@ export function scheduleToastDismissal(root: HTMLElement, ms: number): () => voi
   const { signal } = lifetime;
   root.addEventListener("pointerenter", () => pause("pointer"), { signal });
   root.addEventListener("pointerleave", () => resume("pointer"), { signal });
-  root.addEventListener("focusin", () => pause("focus"), { signal });
+  root.addEventListener("focusin", onFocusIn, { signal });
   root.addEventListener("focusout", onFocusOut, { signal });
-  win.addEventListener("blur", () => pause("window"), { signal });
-  win.addEventListener("focus", () => resume("window"), { signal });
-  run();
+  doc.addEventListener("visibilitychange", onVisibilityChange, { signal });
+  if (doc.visibilityState === "hidden") reasons.add("hidden");
+  else run();
 
   return () => {
     lifetime.abort();

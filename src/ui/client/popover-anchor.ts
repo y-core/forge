@@ -1,5 +1,5 @@
 import { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
-import { ownerDocument, ownerWindow } from "./dom";
+import { afterTransitions, ownerDocument, ownerWindow } from "./dom";
 import type { OpenPopoverAtOptions } from "./types";
 
 /** Confines `value` to `low..high`, where an inverted range resolves to `high`. @internal */
@@ -15,10 +15,10 @@ export function axis(point: number, size: number, extent: number, margin: number
   return clamp(preferred, margin, Math.max(margin, extent - size - margin));
 }
 
+// `offsetWidth`, not the bounding rect: the opening frame is still scaled down by the enter motion.
 function place(el: HTMLElement, win: Window, x: number, y: number, margin: number, flip: boolean): void {
-  const rect = el.getBoundingClientRect();
-  el.style.setProperty(ANCHOR_X_PROPERTY, `${axis(x, rect.width, win.innerWidth, margin, flip)}px`);
-  el.style.setProperty(ANCHOR_Y_PROPERTY, `${axis(y, rect.height, win.innerHeight, margin, flip)}px`);
+  el.style.setProperty(ANCHOR_X_PROPERTY, `${axis(x, el.offsetWidth, win.innerWidth, margin, flip)}px`);
+  el.style.setProperty(ANCHOR_Y_PROPERTY, `${axis(y, el.offsetHeight, win.innerHeight, margin, flip)}px`);
 }
 
 /** The pending deferred show per element, so a second call cancels the first. */
@@ -27,16 +27,29 @@ const pendingArms = new WeakMap<HTMLElement, () => void>();
 /** The latest call per element, so a superseded call's disposer leaves the newer placement's close-time clear armed. */
 const latestCalls = new WeakMap<HTMLElement, object>();
 
-// htmx 4's settle copies a leftover `style` attribute onto the swapped-in element through
-// `setAttribute`, which the CSP's `style-src-attr` blocks.
-function clearPlacementOnClose(event: Event): void {
-  if ((event as Event & { newState?: string }).newState !== "closed") return;
-  const el = event.currentTarget as HTMLElement;
+function clearClosedPlacement(el: HTMLElement): void {
+  if (el.matches(":popover-open")) return;
   el.style.removeProperty(ANCHOR_X_PROPERTY);
   el.style.removeProperty(ANCHOR_Y_PROPERTY);
   // Chrome writes a pending CSSOM change back as `style=""` after removal unless the attribute is read first.
   if (el.getAttribute("style") === "") el.removeAttribute("style");
   el.removeEventListener("toggle", clearPlacementOnClose);
+}
+
+// htmx 4's settle copies a leftover `style` attribute onto the swapped-in element through
+// `setAttribute`, which the CSP's `style-src-attr` blocks.
+function clearPlacementOnClose(event: Event): void {
+  if ((event as Event & { newState?: string }).newState !== "closed") return;
+  const el = event.currentTarget as HTMLElement;
+  const doc = ownerDocument(el);
+  const clearBeforeSwap = () => clearClosedPlacement(el);
+  // Deferred past the exit fade, which would otherwise play at the viewport's top-left corner,
+  // unless a swap arrives first and would copy the attribute mid-fade.
+  doc.addEventListener("htmx:before:swap", clearBeforeSwap, { once: true, capture: true });
+  afterTransitions(el, () => {
+    doc.removeEventListener("htmx:before:swap", clearBeforeSwap, { capture: true });
+    clearClosedPlacement(el);
+  });
 }
 
 /** Shows a native popover with its top-left corner at viewport coordinates `x`, `y`, clamped to keep the panel on screen, and returns a disposer. @public */

@@ -17,7 +17,7 @@ describe("Toast", () => {
         </Toast>,
       ),
     ).toBe(
-      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="relative flex w-full items-start gap-3 rounded-box border-field' +
+      '<div data-slot="toast" data-tone="neutral" data-appearance="soft" class="pointer-events-auto relative flex w-full items-start gap-3 rounded-box border-field' +
         " py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)]" +
         " [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]" +
         " border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)]" +

@@ -39,7 +39,7 @@ describe("resolveSiteConfig", () => {
   });
 
   it("carries a zone block through, filling the apex from the origin's hostname", () => {
-    const zone: SiteConfig["zone"] = { redirect: { from: ["www.example.com"] }, allow: { action: "block" } };
+    const zone: SiteConfig["zone"] = { redirect: { from: ["www.example.com"] }, allow: { action: "block", paths: ["/"] } };
     expect(resolveSiteConfig({ ...base, zone }).zone).toEqual({ ...zone, apex: "example.com" });
   });
 

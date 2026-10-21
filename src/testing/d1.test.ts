@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { dropStatements, openTestD1, scansTable, testD1Config, usesIndex } from "./d1";
+import { sql as storageSql } from "../storage/db/sql";
+import { dropStatements, openTestD1, scansTable, sql, testD1Config, usesIndex } from "./d1";
 import type { PlanStep } from "./d1";
 
 describe("testD1Config()", () => {
@@ -129,5 +130,17 @@ describe("scansTable()", () => {
     expect(scansTable([step("SCAN p USING INDEX p_name"), step("SEARCH p USING INTEGER PRIMARY KEY (rowid=?)"), step("SCAN posts")], "p")).toBe(
       false,
     );
+  });
+});
+
+describe("sql", () => {
+  it("is the storage/db tag itself", () => {
+    expect(sql).toBe(storageSql);
+  });
+
+  it("builds a fragment with a placeholder per interpolated value", () => {
+    const fragment = sql`SELECT id FROM posts WHERE user_id = ${1}`;
+
+    expect({ text: fragment.text, params: fragment.params }).toEqual({ text: "SELECT id FROM posts WHERE user_id = ?", params: [1] });
   });
 });

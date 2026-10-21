@@ -631,7 +631,7 @@ file in its own host config with `forgeSchema`, alongside its own:
 
 ```ts
 // config/db.ts
-import { forgeSchema } from "@y-core/forge/tooling/db";
+import { forgeSchema } from "@y-core/forge/tooling/db/host";
 
 export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] };
 ```

@@ -37,6 +37,7 @@
       "./testing/harness",
       "./testing/totp",
       "./tooling/cf/wrangler",
+      "./tooling/db/host",
       "./tooling/gate/chromium",
       "./tooling/lint/plugin"
     ]
@@ -349,6 +350,10 @@
     "./tooling/db": {
       "types": "./src/tooling/db/mod.ts",
       "import": "./src/tooling/db/mod.ts"
+    },
+    "./tooling/db/host": {
+      "types": "./src/tooling/db/host.ts",
+      "import": "./src/tooling/db/host.mjs"
     },
     "./tooling/gate": {
       "types": "./src/tooling/gate/mod.ts",

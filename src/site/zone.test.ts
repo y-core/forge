@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { ZoneSurface } from "./types";
-import { buildAllowExpression, buildAllowRule, buildRedirectRule, EXPRESSION_MAX_CHARS } from "./zone";
+import { buildAllowExpression, buildAllowRule, buildRedirectRule, EXPRESSION_MAX_CHARS, ZonePatternError } from "./zone";
 
 const surface: ZoneSurface = {
   apex: "example.com",
@@ -9,6 +9,20 @@ const surface: ZoneSurface = {
   prefixes: ["/assets/"],
   files: ["/favicon.ico", "/robots.txt", "/sitemap.xml"],
 };
+
+const allowPaths = (...paths: string[]): string => buildAllowExpression({ apex: "example.com", paths, prefixes: [], files: [] });
+
+const surfaceRefusal = (zone: ZoneSurface): ZonePatternError | undefined => {
+  try {
+    buildAllowExpression(zone);
+  } catch (error) {
+    if (error instanceof ZonePatternError) return error;
+    throw error;
+  }
+  return undefined;
+};
+
+const refusal = (source: string): ZonePatternError | undefined => surfaceRefusal({ apex: "example.com", paths: [source], prefixes: [], files: [] });
 
 describe("buildAllowExpression", () => {
   it("puts every exact path and root file in one membership set, sorted", () => {
@@ -40,8 +54,122 @@ describe("buildAllowExpression", () => {
     expect(() => buildAllowExpression({ ...surface, paths })).toThrow(new RegExp(String(EXPRESSION_MAX_CHARS)));
   });
 
-  it("escapes a quote in a path rather than closing the literal early", () => {
-    expect(buildAllowExpression({ ...surface, paths: ['/a"b'] })).toContain('"/a\\"b"');
+  it("refuses a route a browser would percent-encode, in every place a path is written", () => {
+    const surfaces: ZoneSurface[] = [
+      { apex: "example.com", paths: ["/café/:id"], prefixes: [], files: [] },
+      { apex: "example.com", paths: ["/über"], prefixes: [], files: [] },
+      { apex: "example.com", paths: [], prefixes: [], files: ["/😀.txt"] },
+      { apex: "example.com", paths: [], prefixes: ["/café/"], files: [] },
+    ];
+    for (const zone of surfaces) {
+      const error = surfaceRefusal(zone);
+      expect(error?.reason).toBe("encoding");
+      expect(error?.message).toContain("percent-encoded");
+    }
+  });
+
+  it("refuses every character of the browser path percent-encode set", () => {
+    for (const char of [" ", '"', "#", "<", ">", "`", "{", "}", "\t", "\x7f"]) {
+      expect(surfaceRefusal({ apex: "example.com", paths: [`/a${char}b`], prefixes: [], files: [] })?.reason).toBe("encoding");
+      expect(surfaceRefusal({ apex: "example.com", paths: [`/a${char}b/:id`], prefixes: [], files: [] })?.reason).toBe("encoding");
+    }
+    expect(surfaceRefusal({ apex: "example.com", paths: [], prefixes: [], files: ["/a?b"] })?.reason).toBe("encoding");
+  });
+
+  it("accepts a route already written percent-encoded, unchanged", () => {
+    const expression = buildAllowExpression({ apex: "example.com", paths: ["/caf%C3%A9/:id", "/%C3%BCber"], prefixes: ["/caf%C3%A9/"], files: [] });
+    expect(expression).toContain('http.request.uri.path in {"/%C3%BCber"}');
+    expect(expression).toContain('strict wildcard "/caf%C3%A9/*"');
+    expect(expression).toContain('starts_with(http.request.uri.path, "/caf%C3%A9/")');
+  });
+
+  it("emits printable ASCII outside the set verbatim", () => {
+    const ascii = "/a-z_A.Z~0!$&'+,;=@[]^|%";
+    expect(buildAllowExpression({ apex: "example.com", paths: [ascii], prefixes: [], files: [] })).toContain(`{"${ascii}"}`);
+  });
+});
+
+describe("buildAllowExpression — dynamic routes", () => {
+  it("matches a param as a strict wildcard rather than as a literal path", () => {
+    const expression = allowPaths("/admin/users/:id/edit");
+    expect(expression).toContain('http.request.uri.path strict wildcard "/admin/users/*/edit"');
+    expect(expression).not.toContain(":id");
+  });
+
+  it("emits one clause for a named and an unnamed wildcard of the same shape", () => {
+    const expression = allowPaths("/files/*rest", "/files/*");
+    expect(expression.split('strict wildcard "/files/*"').length).toBe(2);
+  });
+
+  it("allows an optional both with and without its contents", () => {
+    const expression = allowPaths("/docs(/guides/:category)");
+    expect(expression).toContain('http.request.uri.path in {"/docs"}');
+    expect(expression).toContain('strict wildcard "/docs/guides/*"');
+  });
+
+  it("expands nested optionals into every reachable shape", () => {
+    const expression = allowPaths("/api(/v:major(.:minor))");
+    expect(expression).toContain('http.request.uri.path in {"/api"}');
+    expect(expression).toContain('strict wildcard "/api/v*"');
+    expect(expression).toContain('strict wildcard "/api/v*.*"');
+  });
+
+  it("keeps an escaped asterisk literal in the wildcard", () => {
+    expect(allowPaths("/files/2\\*3/:id")).toContain('strict wildcard "/files/2\\\\*3/*"');
+  });
+
+  it("keeps an escaped backslash literal in the wildcard", () => {
+    expect(allowPaths("/a\\\\b/:id")).toContain('strict wildcard "/a\\\\\\\\b/*"');
+  });
+
+  it("unescapes a colon that is not a param", () => {
+    expect(allowPaths("/t/12\\:30/:id")).toContain('strict wildcard "/t/12:30/*"');
+  });
+
+  it("matches a route that is static once unescaped as an exact path", () => {
+    const expression = allowPaths("/calc/2\\*3");
+    expect(expression).toContain('http.request.uri.path in {"/calc/2*3"}');
+    expect(expression).not.toContain("strict wildcard");
+  });
+
+  it("collapses adjacent wildcards, since Cloudflare rejects `**`", () => {
+    const expression = allowPaths("/a/:x*y");
+    expect(expression).toContain('strict wildcard "/a/*"');
+    expect(expression).not.toContain("**");
+  });
+
+  it("refuses a route whose first segment is dynamic, since `*` spans `/` and would match nearly every path", () => {
+    for (const source of ["/:slug", "/*", "/*rest", "/(:locale)", "/:a/:b", "/:name.:ext", "/:a/x", "/x:id/y"]) {
+      const error = refusal(source);
+      expect(error?.reason).toBe("catch-all");
+      expect(error?.source).toBe(source);
+    }
+  });
+
+  it("accepts a dynamic route behind a static first segment", () => {
+    for (const source of ["/x/:id", "/x/:a/:b", "/api/v:major"]) expect(refusal(source)).toBeUndefined();
+  });
+
+  it("refuses a route that names a host", () => {
+    for (const source of ["https://example.com/x/:id", "://:tenant.example.com/d"]) expect(refusal(source)?.reason).toBe("host");
+  });
+
+  it("refuses a route that carries a search constraint", () => {
+    expect(refusal("/search?q=")?.reason).toBe("search");
+  });
+
+  it("refuses a source that is not a route pattern", () => {
+    for (const source of ["/a(:b", "/a)", "/a\\", "/a/:"]) expect(refusal(source)?.reason).toBe("malformed");
+  });
+
+  it("names the refusal as a ZonePatternError", () => {
+    const error = refusal("/:slug");
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.name).toBe("ZonePatternError");
+  });
+
+  it("does not refuse a surface whose only path is dynamic as empty", () => {
+    expect(allowPaths("/u/:id")).toContain('strict wildcard "/u/*"');
   });
 });
 

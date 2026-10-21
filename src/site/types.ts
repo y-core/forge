@@ -42,13 +42,11 @@ const ZoneAllowSchema = v.object({
   description: v.optional(v.string()),
   prefixes: v.optional(v.array(v.string())),
   files: v.optional(v.array(v.string())),
-  paths: v.optional(v.array(v.string())),
+  paths: v.array(v.string()),
 });
 
 const ZoneConfigSchema = v.object({
   zoneId: v.optional(v.string()),
-  // Omitted, it is the origin's hostname. Stating it twice is how the two drift, and there is no
-  // case for a zone whose apex is not the host the site declares itself served from.
   apex: v.optional(HostnameSchema),
   redirect: v.optional(ZoneRedirectSchema),
   allow: v.optional(ZoneAllowSchema),
@@ -79,6 +77,8 @@ export type RobotsConfig = v.InferOutput<typeof RobotsConfigSchema>;
 export type SitemapConfig = v.InferOutput<typeof SitemapConfigSchema>;
 /** The terminating action a WAF allow-list rule takes on traffic it does not recognise. @public */
 export type ZoneAction = v.InferOutput<typeof ZoneActionSchema>;
+/** Why a route source or path cannot be expressed as a zone allow-list clause. @public */
+export type ZonePatternRefusal = "catch-all" | "host" | "search" | "malformed" | "encoding";
 /** The zone block of a site config — edge rules derived from the same route table. @public */
 export type ZoneConfig = v.InferOutput<typeof ZoneConfigSchema>;
 /** A {@link ZoneConfig} whose `apex` has been filled in from the origin. @public */
@@ -114,7 +114,7 @@ export interface ResolveSitemapOptions {
 export interface ZoneSurface {
   /** The host the rule is scoped to, and the only host whose surface is enumerated here. */
   apex: string;
-  /** Exact application paths — `routePaths(routes)` across every method. */
+  /** Route sources — `routePaths(routes)` across every method; a dynamic one is matched as a `strict wildcard`. */
   paths: readonly string[];
   /** Path prefixes served wholesale, matched as `starts_with` — `/assets/`, `/cdn-cgi/`. */
   prefixes: readonly string[];

@@ -73,6 +73,7 @@ describe("stateAttrs", () => {
         "data-busy",
         "data-checked",
         "data-disabled",
+        "data-dismissing",
         "data-instant",
         "data-invalid",
         "data-orientation",

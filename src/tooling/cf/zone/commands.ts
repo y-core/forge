@@ -2,6 +2,7 @@ import { resolve } from "node:path";
 import process, { env } from "node:process";
 
 import { resolveSiteConfig } from "../../../site/config";
+import { SITE_FILES } from "../../../site/robots";
 import type { SiteConfig, ZoneRule } from "../../../site/types";
 import { buildAllowRule, buildRedirectRule } from "../../../site/zone";
 import { createCommand } from "../../cli/command";
@@ -85,7 +86,7 @@ export function planZoneRules(config: ReturnType<typeof resolveSiteConfig>): Arr
       desired: allow
         ? [
             buildAllowRule(
-              { apex: zone.apex, paths: allow.paths ?? config.pages, prefixes: allow.prefixes ?? [], files: allow.files ?? [] },
+              { apex: zone.apex, paths: allow.paths, prefixes: allow.prefixes ?? [], files: [...(allow.files ?? []), ...SITE_FILES] },
               { action: allow.action, ...(allow.description !== undefined ? { description: allow.description } : {}) },
             ),
           ]

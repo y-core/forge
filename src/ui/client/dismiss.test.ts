@@ -48,12 +48,16 @@ describe("removeRehomingFocus", () => {
 });
 
 describe("removeRehomingFocus — the exit", () => {
-  it("marks the element inert and removes it at once in a realm with no getAnimations", () => {
+  it("marks the element dismissing and inert, and removes it at once in a realm with no getAnimations", () => {
     const { doc, panel } = tree();
 
     removeRehomingFocus(panel as never, () => null);
 
-    expect({ inert: panel.inert, removed: doc.root.querySelector("#panel") }).toEqual({ inert: true, removed: null });
+    expect({ dismissing: panel.hasAttribute("data-dismissing"), inert: panel.inert, removed: doc.root.querySelector("#panel") }).toEqual({
+      dismissing: true,
+      inert: true,
+      removed: null,
+    });
   });
 
   it("removes it at once when nothing is running", () => {
@@ -65,19 +69,19 @@ describe("removeRehomingFocus — the exit", () => {
     expect(doc.root.querySelector("#panel")).toBe(null);
   });
 
-  it("keeps it in place, inert, until a running transition finishes", async () => {
+  it("keeps it in place, dismissing and inert, until a running transition finishes", async () => {
     const { doc, panel } = tree();
     const { promise: finished, resolve } = Promise.withResolvers<undefined>();
     Object.assign(panel, { getAnimations: () => [{ transitionProperty: "opacity", finished }] });
 
     removeRehomingFocus(panel as never, () => null);
     await Promise.resolve();
-    const during = { inert: panel.inert, present: doc.root.querySelector("#panel") === panel };
+    const during = { dismissing: panel.hasAttribute("data-dismissing"), inert: panel.inert, present: doc.root.querySelector("#panel") === panel };
     resolve(undefined);
     await finished;
     await Promise.resolve();
 
-    expect({ during, after: doc.root.querySelector("#panel") }).toEqual({ during: { inert: true, present: true }, after: null });
+    expect({ during, after: doc.root.querySelector("#panel") }).toEqual({ during: { dismissing: true, inert: true, present: true }, after: null });
   });
 
   it("removes it at once when the only running animation is not a transition, such as an infinite one", () => {
@@ -90,10 +94,10 @@ describe("removeRehomingFocus — the exit", () => {
     expect(doc.root.querySelector("#panel")).toBe(null);
   });
 
-  it("does nothing to an element already inert, so a second dismissal neither rehomes nor removes", () => {
+  it("does nothing to an element already dismissing, so a second dismissal neither rehomes nor removes", () => {
     const { doc, panel, inside } = tree();
     inside.focus();
-    panel.inert = true;
+    panel.setAttribute("data-dismissing", "");
     let asked = false;
 
     removeRehomingFocus(panel as never, () => {
@@ -102,6 +106,15 @@ describe("removeRehomingFocus — the exit", () => {
     });
 
     expect({ asked, present: doc.root.querySelector("#panel") === panel }).toEqual({ asked: false, present: true });
+  });
+
+  it("still dismisses an element something else already made inert, such as a drawer isolating the page", () => {
+    const { doc, panel } = tree();
+    panel.inert = true;
+
+    removeRehomingFocus(panel as never, () => null);
+
+    expect(doc.root.querySelector("#panel")).toBe(null);
   });
 });
 

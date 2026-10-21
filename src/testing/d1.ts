@@ -10,6 +10,8 @@ import { INVENTORY_SELECT } from "../storage/db/schema";
 import type { D1Database, SqlFragment } from "../storage/db/types";
 import { declaredPath, DEFAULT_DB_CONFIG, loadHostConfig } from "../tooling/db/declared";
 
+export { sql } from "../storage/db/sql";
+
 /** Where `openTestD1` reads the app from; every path is relative to `root`, the current directory where unset. @public */
 export interface OpenTestD1Options {
   root?: string;

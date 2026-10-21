@@ -376,12 +376,23 @@ export function columnsElement(cells: readonly PdfCell[]): PdfElement {
   });
 }
 
-// Where each field sits: the column it asked for, or the next one free where it asked for none.
-function placements(fields: readonly PdfField[]): { start: number; columns: number }[] {
+interface Placement {
+  start: number;
+  columns: number;
+}
+
+function placements(fields: readonly PdfField[]): Placement[] {
   let next = 1;
   return fields.map((field) => {
-    const columns = field.span ?? ROW_COLUMNS;
     const start = field.start ?? next;
+    if (!Number.isInteger(start) || start < 1 || start > ROW_COLUMNS)
+      throw new RangeError(`Field "${field.label}" starts at column ${start}, outside 1–${ROW_COLUMNS}`);
+    const { span } = field;
+    if (span !== undefined && (!Number.isInteger(span) || span < 1 || span > ROW_COLUMNS))
+      throw new RangeError(`Field "${field.label}" spans ${span} columns, outside 1–${ROW_COLUMNS}`);
+    if (span !== undefined && start + span - 1 > ROW_COLUMNS)
+      throw new RangeError(`Field "${field.label}" spans columns ${start}–${start + span - 1}, past column ${ROW_COLUMNS}`);
+    const columns = span ?? ROW_COLUMNS - start + 1;
     next = start + columns;
     return { start, columns };
   });
@@ -400,8 +411,7 @@ function standsAbove(field: PdfField, width: number, set: PdfTypesetting): boole
   return set.wrap(field.label, LABEL_SIZE, LABEL_WIDTH, BOLD_RUN).length > 2;
 }
 
-function layOut(fields: readonly PdfField[], box: PdfBox, set: PdfTypesetting): LaidField[] {
-  const placed = placements(fields);
+function layOut(fields: readonly PdfField[], placed: readonly Placement[], box: PdfBox, set: PdfTypesetting): LaidField[] {
   const widths = gridTracks(box.width);
   const offsets = trackOffsets(widths, COLUMN_GUTTER);
   return fields.map((field, index) => {
@@ -424,13 +434,14 @@ function layOut(fields: readonly PdfField[], box: PdfBox, set: PdfTypesetting): 
 
 /** One row of fields, each set at its own span of the grid, label beside its answer or above it. @internal */
 export function fieldsElement(fields: readonly PdfField[]): PdfElement {
+  const placed = placements(fields);
   const runs = fields.flatMap((field) => [
     { text: field.label, size: LABEL_SIZE, style: BOLD_RUN },
     ...(field.value === undefined ? [] : [{ text: field.value, size: VALUE_SIZE }]),
   ]);
   return element(runs, (box, set) => {
     if (fields.length === 0) return [];
-    const laid = layOut(fields, box, set);
+    const laid = layOut(fields, placed, box, set);
     const lines = (cell: LaidField): number =>
       cell.above ? cell.label.length + Math.max(cell.value.length, 1) : Math.max(cell.label.length, cell.value.length, 1);
     const rows = laid.reduce((most, cell) => Math.max(most, lines(cell)), 0);

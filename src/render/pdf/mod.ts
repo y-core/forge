@@ -6,6 +6,7 @@ export { createPdfImage } from "./image";
 export { Link } from "./link";
 export { createPdfPen } from "./path";
 export { Table } from "./table";
+export { WIN_ANSI_CHARACTERS } from "./text";
 export { DEFAULT_ORPHANS, DEFAULT_PDF_LANG, DEFAULT_PDF_MAX_PAGES, DEFAULT_WIDOWS, LINK_SCHEMES, MAX_PDF_IMAGE_PIXELS } from "./limits";
 export { PDF_PAGE_SIZES, pdfContentBox, resolvePdfPage } from "./page";
 export { PDF_INK_NAMES, createPdfPalette } from "./palette";

@@ -91,24 +91,47 @@ describe("createAdminUserStore", () => {
     const [client, db] = clientOf(() => [userRow()]);
     const found = await createAdminUserStore(client).search("  AURORA@Example.TEST ");
     expect(found.ok && found.data.map((user) => user.emailKey)).toEqual(["aurora@example.test"]);
-    expect(db.calls[0]?.sql).toContain("email_key LIKE ?");
-    expect(db.calls[0]?.params).toEqual(["aurora@example.test%", 50]);
+    expect(db.calls[0]?.sql).toContain("email_key >= ? AND email_key < ?");
+    expect(db.calls[0]?.params).toEqual(["aurora@example.test", "aurora@example.tesu", 50]);
   });
 
-  // Prefix-anchored so the unique index on `email_key` answers the search; a leading `%` made every
-  // search a full scan. The product consequence: a substring mid-address no longer matches.
-  it("anchors the pattern at the start, so the unique index on email_key can answer it", async () => {
+  it("bounds the search to keys starting with the term, so a mid-address substring is outside the range", async () => {
     const [client, db] = clientOf(() => []);
     await createAdminUserStore(client).search("aurora");
-    expect(db.calls[0]?.params[0]).toBe("aurora%");
-    expect(String(db.calls[0]?.params[0]).startsWith("%")).toBe(false);
+    expect(db.calls[0]?.params).toEqual(["aurora", "aurorb", 50]);
   });
 
-  it("escapes the two LIKE wildcards a search term may itself carry", async () => {
+  it("treats `%` and `_` as literal characters", async () => {
     const [client, db] = clientOf(() => []);
     await createAdminUserStore(client).search("100%_a");
-    expect(db.calls[0]?.params[0]).toBe("100\\%\\_a%");
-    expect(db.calls[0]?.sql).toContain("ESCAPE '\\'");
+    expect(db.calls[0]?.params).toEqual(["100%_a", "100%_b", 50]);
+    expect(db.calls[0]?.sql).not.toContain("LIKE");
+  });
+
+  it("carries past U+10FFFF into the code point before it", async () => {
+    const [client, db] = clientOf(() => []);
+    await createAdminUserStore(client).search("a\u{10FFFF}");
+    expect(db.calls[0]?.params).toEqual(["a\u{10FFFF}", "b", 50]);
+  });
+
+  it("steps over the surrogate gap from U+D7FF to U+E000", async () => {
+    const [client, db] = clientOf(() => []);
+    await createAdminUserStore(client).search("\u{D7FF}");
+    expect(db.calls[0]?.params).toEqual(["\u{D7FF}", "\u{E000}", 50]);
+  });
+
+  it("drops the upper bound for an empty term, which every key starts with", async () => {
+    const [client, db] = clientOf(() => []);
+    await createAdminUserStore(client).search("");
+    expect(db.calls[0]?.sql).toContain("WHERE email_key >= ? ORDER BY");
+    expect(db.calls[0]?.params).toEqual(["", 50]);
+  });
+
+  it("keeps the range under a cursor, paging below it", async () => {
+    const [client, db] = clientOf(() => []);
+    await createAdminUserStore(client).search("ada", { after: OTHER_ID });
+    expect(db.calls[0]?.sql).toContain("email_key >= ? AND email_key < ? AND id < ?");
+    expect(db.calls[0]?.params).toEqual(["ada", "adb", uuidToBytes(OTHER_ID), 50]);
   });
 });
 

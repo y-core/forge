@@ -133,8 +133,8 @@ constraint, a cascade, a batch rolling back — open a real database instead. `o
 the order wrangler would, read from the directory `config/db.ts` names:
 
 ```ts
+/// <reference types="@y-core/forge/testing/node" />
 import { expect, test } from "@playwright/test";
-import { createD1Client, sql } from "@y-core/forge/storage/db";
 import { openTestD1, type TestD1 } from "@y-core/forge/testing/d1";
 
 let db: TestD1;
@@ -143,9 +143,12 @@ test.afterAll(() => db.dispose());
 test.beforeEach(() => db.reset());
 
 test("deleting a user removes their posts", async () => {
-  const client = createD1Client(db.binding);
-  await client.batch([sql`INSERT INTO users (id) VALUES (${1})`, sql`INSERT INTO posts (id, user_id) VALUES (${1}, ${1})`]);
-  await client.execute(sql`DELETE FROM users WHERE id = ${1}`);
+  const { binding } = db;
+  await binding.batch([
+    binding.prepare("INSERT INTO users (id) VALUES (?)").bind(1),
+    binding.prepare("INSERT INTO posts (id, user_id) VALUES (?, ?)").bind(1, 1),
+  ]);
+  await binding.prepare("DELETE FROM users WHERE id = ?").bind(1).run();
   expect(await db.rows("SELECT id FROM posts")).toEqual([]);
 });
 ```
@@ -155,7 +158,9 @@ process, which is far cheaper than a new handle. Each handle has its own databas
 `hostConfig` and `migrations` point it elsewhere than the current directory's `config/db.ts`, and the host config is loaded and refused exactly
 as `forge db` loads it.
 
-It runs under node, so the file belongs to the Playwright workerd set, not `bun test` ([`TEST_RUNNERS.md`][testing-7f] §7f).
+It runs under node, so the file belongs to the Playwright workerd set, not `bun test` ([`TEST_RUNNERS.md`][testing-7f] §7f). A node spec
+imports forge only through subpaths node can load, so it drives the database through `db.binding` rather than `createD1Client`, and the app's
+`config/db.ts` imports `@y-core/forge/tooling/db/host` ([declaring what forge reads][db-host-config]).
 
 ### Asserting that a query uses its index
 
@@ -163,7 +168,7 @@ It runs under node, so the file belongs to the Playwright workerd set, not `bun 
 showing up later as rows read on the bill:
 
 ```ts
-import { explainPlan, scansTable, usesIndex } from "@y-core/forge/testing/d1";
+import { explainPlan, scansTable, sql, usesIndex } from "@y-core/forge/testing/d1";
 
 const plan = await explainPlan(db, sql`SELECT id FROM posts WHERE user_id = ${userId} ORDER BY id`);
 expect(usesIndex(plan, "posts_user")).toBe(true);
@@ -443,6 +448,7 @@ to survive a round trip through an unmodelled table hands the code its own store
 [canon-testing-3a]: ../../warden/canon/libs/TESTING.md#3a-assert-the-escaped-form
 [canon-testing-4]: ../../warden/canon/libs/TESTING.md#4-fakes-over-mocks
 [canon-testing-5c]: ../../warden/canon/libs/TESTING.md#5c-no-mocking-of-security-primitives
+[db-host-config]: ../tooling/db/README.md#declaring-what-forge-reads
 [storage-readme]: ../storage/README.md
 [testing-1f]: ../../docs/TEST_RUNNERS.md#1f-the-workerd-set
 [testing-3c]: ../../docs/TEST_RUNNERS.md#3c-render-once-assert-once

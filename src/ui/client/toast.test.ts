@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
 import { announce } from "./announce";
 import { FakeEvent, fakeTree } from "./dom.fixture";
-import type { FakeElement } from "./dom.fixture";
+import type { FakeDocument, FakeElement } from "./dom.fixture";
 import { dismissToast, mountToastAnnouncements, scheduleToastDismissal } from "./toast";
 
 /** A container holding `count` toasts, each with a dismiss button, plus the focus helpers. */
@@ -238,7 +238,20 @@ describe("scheduleToastDismissal", () => {
     const outside = doc.createElement("BUTTON");
     doc.root.append(outside);
     const dispose = scheduleToastDismissal(toast as never, ms);
-    return { win: doc.defaultView, region, toast, outside, dispose, present: () => region.children.includes(toast) };
+    return { doc, win: doc.defaultView, region, toast, outside, dispose, present: () => region.children.includes(toast) };
+  }
+
+  /** Focus landing on the toast's dismiss button, keyboard-visible or not. */
+  function focusClose(toast: FakeElement, visible: boolean): void {
+    const close = toast.querySelector("[data-slot~='toast-close']") as FakeElement;
+    const real = close.matches.bind(close);
+    close.matches = (selector: string) => (selector === ":focus-visible" ? visible : real(selector));
+    close.dispatchEvent(new FakeEvent("focusin"));
+  }
+
+  function setVisibility(doc: FakeDocument, state: DocumentVisibilityState): void {
+    doc.visibilityState = state;
+    doc.dispatchEvent(new FakeEvent("visibilitychange"));
   }
 
   const PAUSES = [
@@ -249,13 +262,13 @@ describe("scheduleToastDismissal", () => {
     },
     {
       reason: "focus",
-      pause: ({ toast }: ReturnType<typeof timed>) => toast.dispatchEvent(new FakeEvent("focusin")),
+      pause: ({ toast }: ReturnType<typeof timed>) => focusClose(toast, true),
       resume: ({ toast, outside }: ReturnType<typeof timed>) => toast.dispatchEvent(new FakeEvent("focusout", { relatedTarget: outside })),
     },
     {
-      reason: "a blurred window",
-      pause: ({ win }: ReturnType<typeof timed>) => win.dispatchEvent(new FakeEvent("blur")),
-      resume: ({ win }: ReturnType<typeof timed>) => win.dispatchEvent(new FakeEvent("focus")),
+      reason: "a hidden page",
+      pause: ({ doc }: ReturnType<typeof timed>) => setVisibility(doc, "hidden"),
+      resume: ({ doc }: ReturnType<typeof timed>) => setVisibility(doc, "visible"),
     },
   ];
 
@@ -289,21 +302,55 @@ describe("scheduleToastDismissal", () => {
   it("resumes only once every reason to pause has gone", () => {
     const toast = timed(1000);
     toast.toast.dispatchEvent(new FakeEvent("pointerenter"));
-    toast.win.dispatchEvent(new FakeEvent("blur"));
+    setVisibility(toast.doc, "hidden");
 
     toast.toast.dispatchEvent(new FakeEvent("pointerleave"));
     toast.win.advance(5000);
-    const stillBlurred = toast.present();
-    toast.win.dispatchEvent(new FakeEvent("focus"));
+    const stillHidden = toast.present();
+    setVisibility(toast.doc, "visible");
     toast.win.advance(1000);
 
-    expect({ stillBlurred, after: toast.present() }).toEqual({ stillBlurred: true, after: false });
+    expect({ stillHidden, after: toast.present() }).toEqual({ stillHidden: true, after: false });
+  });
+
+  it("holds from mount in a page that is already hidden, then runs its whole duration once shown", () => {
+    const { doc, region, toasts } = container(1);
+    const toast = toasts[0] as FakeElement;
+    doc.visibilityState = "hidden";
+    scheduleToastDismissal(toast as never, 1000);
+    doc.defaultView.advance(5000);
+    const held = region.children.includes(toast);
+
+    setVisibility(doc, "visible");
+    doc.defaultView.advance(999);
+    const beforeDuration = region.children.includes(toast);
+    doc.defaultView.advance(1);
+
+    expect({ held, beforeDuration, after: region.children.includes(toast) }).toEqual({ held: true, beforeDuration: true, after: false });
+  });
+
+  it("keeps counting while the window is blurred but the page stays visible, as when an iframe takes focus", () => {
+    const toast = timed(1000);
+
+    toast.win.dispatchEvent(new FakeEvent("blur"));
+    toast.win.advance(1000);
+
+    expect(toast.present()).toBe(false);
+  });
+
+  it("keeps counting when focus arrives without :focus-visible, as a mouse close rehoming it does", () => {
+    const toast = timed(1000);
+
+    focusClose(toast.toast, false);
+    toast.win.advance(1000);
+
+    expect(toast.present()).toBe(false);
   });
 
   it("stays paused while focus moves between nodes inside the toast", () => {
     const toast = timed(1000);
     const inside = toast.toast.querySelector("[data-slot~='toast-close']");
-    toast.toast.dispatchEvent(new FakeEvent("focusin"));
+    focusClose(toast.toast, true);
 
     toast.toast.dispatchEvent(new FakeEvent("focusout", { relatedTarget: inside }));
     toast.win.advance(5000);
@@ -317,9 +364,10 @@ describe("scheduleToastDismissal", () => {
 
     toast.win.advance(5000);
 
-    expect({ present: toast.present(), windowListeners: [...toast.win.listeners.values()].flat().length }).toEqual({
-      present: true,
-      windowListeners: 0,
-    });
+    expect({
+      present: toast.present(),
+      windowListeners: [...toast.win.listeners.values()].flat().length,
+      documentListeners: [...toast.doc.listeners.values()].flat().length,
+    }).toEqual({ present: true, windowListeners: 0, documentListeners: 0 });
   });
 });

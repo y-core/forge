@@ -60,6 +60,38 @@ const status = async (dev) => {
 console.log(JSON.stringify({ dev: await status(true), strict: await status(false) }));
 `;
 
+const HOST_CONFIG = `import { forgeSchema, type DbHostConfig } from "@y-core/forge/tooling/db/host";
+
+export default {
+  schemas: [forgeSchema("auth"), "config/db/schema.sql"],
+  migrations: "db/migrations",
+} satisfies DbHostConfig;
+`;
+
+const POSTS_MIGRATION = "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL);\nCREATE INDEX posts_user ON posts (user_id);\n";
+
+const DEFAULT_OPEN = `
+const { openTestD1 } = await import("@y-core/forge/testing/d1");
+const db = await openTestD1();
+try {
+  console.log(JSON.stringify(await db.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'posts'")));
+} finally {
+  await db.dispose();
+}
+`;
+
+const EXPLAINED = `
+const { explainPlan, openTestD1, scansTable, sql, usesIndex } = await import("@y-core/forge/testing/d1");
+const db = await openTestD1();
+try {
+  const fragment = sql\`SELECT id FROM posts WHERE user_id = \${1}\`;
+  const plan = await explainPlan(db, fragment);
+  console.log(JSON.stringify({ fragment: { text: fragment.text, params: fragment.params }, indexed: usesIndex(plan, "posts_user"), scanned: scansTable(plan, "posts") }));
+} finally {
+  await db.dispose();
+}
+`;
+
 /** A consumer whose `node_modules` holds the tarball `bun pm pack` makes of forge, as the release ships it, with forge's dependencies and wrangler beside it. */
 function consumerRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-harness-consumer-"));
@@ -122,5 +154,33 @@ test.describe("forge installed from its packed tarball", () => {
 
     expect(run.status).toBe(0);
     expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ dev: 200, strict: 503 });
+  });
+  test.describe("testing/d1 from a consumer's node spec", () => {
+    test.beforeAll(() => {
+      writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
+      mkdirSync(join(root, "config"), { recursive: true });
+      writeFileSync(join(root, "config", "db.ts"), HOST_CONFIG);
+      mkdirSync(join(root, "db", "migrations"), { recursive: true });
+      writeFileSync(join(root, "db", "migrations", "0001_posts.sql"), POSTS_MIGRATION);
+    });
+
+    test("opens a database with no options from a config/db.ts written as the tooling/db README shows", () => {
+      const run = runNode(root, DEFAULT_OPEN);
+
+      expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
+      expect(run.status).toBe(0);
+      expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual([{ name: "posts" }]);
+    });
+
+    test("builds a fragment with testing/d1's sql and explains it, importing nothing node cannot load", () => {
+      const run = runNode(root, EXPLAINED);
+
+      expect(run.status).toBe(0);
+      expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
+        fragment: { text: "SELECT id FROM posts WHERE user_id = ?", params: [1] },
+        indexed: true,
+        scanned: false,
+      });
+    });
   });
 });

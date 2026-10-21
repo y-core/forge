@@ -122,8 +122,9 @@ describe("sweepDetachedScopes", () => {
         () =>
           disposed.push(root.id),
     });
-    const { el } = fakeTree();
+    const { doc, el } = fakeTree();
     const connected = el("DIV", { "data-scope": "sweep-probe", id: "connected" });
+    doc.body.append(connected);
     const detached = new FakeElement("DIV", { "data-scope": "sweep-probe", id: "detached" });
     new FakeElement().append(detached);
     const asRoot = (node: FakeElement) => node as unknown as HTMLElement;
@@ -180,8 +181,9 @@ describe("the setup signal", () => {
 
   it("aborts for a detached root on the sweep, and stays live for a connected one", () => {
     const handed = signalProbe("signal-sweep");
-    const { el } = fakeTree();
+    const { doc, el } = fakeTree();
     const connected = el("DIV", { "data-scope": "signal-sweep", id: "connected" });
+    doc.body.append(connected);
     const detached = new FakeElement("DIV", { "data-scope": "signal-sweep", id: "detached" });
     new FakeElement().append(detached);
     resumeScope(asRoot(connected));

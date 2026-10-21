@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { resolveSiteConfig } from "./config";
-import { renderRobotsTxt } from "./robots";
+import { renderRobotsTxt, SITE_FILES, SITEMAP_PATH } from "./robots";
 import type { SiteConfig } from "./types";
 
 const base: SiteConfig = {
@@ -41,5 +41,11 @@ describe("renderRobotsTxt", () => {
   it("renders a bare User-agent line for a rule carrying no directives", () => {
     const config = resolveSiteConfig({ ...base, robots: { rules: [{ userAgent: "*" }] } });
     expect(renderRobotsTxt(config)).toBe("User-agent: *\n");
+  });
+});
+
+describe("SITE_FILES", () => {
+  it("names robots.txt and the sitemap path", () => {
+    expect(SITE_FILES).toEqual(["/robots.txt", SITEMAP_PATH]);
   });
 });

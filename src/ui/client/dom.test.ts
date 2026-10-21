@@ -1,6 +1,18 @@
 import { describe, expect, it } from "bun:test";
 
-import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument, queryAcross, safeStorage } from "./dom";
+import {
+  activeElement,
+  afterTransitions,
+  asElement,
+  closestAcross,
+  contains,
+  elementById,
+  eventTarget,
+  isRtl,
+  ownerDocument,
+  queryAcross,
+  safeStorage,
+} from "./dom";
 import { FakeDocument, FakeElement, FakeEvent, fakeTree } from "./dom.fixture";
 
 const asNode = (el: FakeElement) => el as unknown as Node;
@@ -15,6 +27,73 @@ describe("ownerDocument", () => {
   it("reports the document a node was created in", () => {
     const { doc, el } = fakeTree();
     expect(ownerDocument(asNode(el()))).toBe(doc as unknown as Document);
+  });
+});
+
+describe("afterTransitions", () => {
+  it("runs at once, before returning, in a realm with no getAnimations", () => {
+    const { el } = fakeTree();
+    let ran = false;
+
+    afterTransitions(asRoot(el()), () => {
+      ran = true;
+    });
+
+    expect(ran).toBe(true);
+  });
+
+  it("runs at once, before returning, when nothing is running", () => {
+    const { el } = fakeTree();
+    const node = Object.assign(el(), { getAnimations: () => [] });
+    let ran = false;
+
+    afterTransitions(asRoot(node), () => {
+      ran = true;
+    });
+
+    expect(ran).toBe(true);
+  });
+
+  it("waits for a running transition to finish", async () => {
+    const { el } = fakeTree();
+    const { promise: finished, resolve } = Promise.withResolvers<undefined>();
+    const node = Object.assign(el(), { getAnimations: () => [{ transitionProperty: "opacity", finished }] });
+    let ran = false;
+
+    afterTransitions(asRoot(node), () => {
+      ran = true;
+    });
+    await Promise.resolve();
+    const during = ran;
+    resolve(undefined);
+    await finished;
+    await Promise.resolve();
+
+    expect({ during, after: ran }).toEqual({ during: false, after: true });
+  });
+
+  it("still runs when a transition is cancelled rather than finished", async () => {
+    const { el } = fakeTree();
+    const finished = Promise.reject(new Error("cancelled"));
+    const node = Object.assign(el(), { getAnimations: () => [{ transitionProperty: "opacity", finished }] });
+    const { promise: ran, resolve } = Promise.withResolvers<boolean>();
+
+    afterTransitions(asRoot(node), () => resolve(true));
+
+    expect(await ran).toBe(true);
+  });
+
+  it("runs at once when the only running animation is not a transition, such as an infinite one", () => {
+    const { el } = fakeTree();
+    const never = new Promise<undefined>(() => {});
+    const node = Object.assign(el(), { getAnimations: () => [{ animationName: "pulse", finished: never }] });
+    let ran = false;
+
+    afterTransitions(asRoot(node), () => {
+      ran = true;
+    });
+
+    expect(ran).toBe(true);
   });
 });
 

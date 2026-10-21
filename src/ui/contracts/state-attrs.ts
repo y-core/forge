@@ -21,6 +21,8 @@ export const STATE_ATTRS = {
   align: "data-align",
   /** Present while a tooltip opened inside the warm window, so its enter skips the fade. */
   instant: "data-instant",
+  /** Present from a dismissal until the element is removed — what the exit fade keys on. */
+  dismissing: "data-dismissing",
 } as const;
 
 // Literal keys, never `STATE_ATTRS.pressed`: a runtime reference would retain the whole table in
