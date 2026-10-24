@@ -1,14 +1,8 @@
-import { existsSync } from "node:fs";
-import { createRequire } from "node:module";
+import type { BrowserEngine } from "./types";
 
-import type { BrowserType } from "@playwright/test";
+const BROWSER_ENGINES: readonly BrowserEngine[] = ["chromium", "firefox", "webkit"];
 
-import { resolveChromiumPath } from "./chromium";
-
-/** Whether a launchable Chromium exists, either the system one or playwright's own download. @public */
-export function hasChromium(): boolean {
-  if (resolveChromiumPath() !== undefined) return true;
-  // A stale download from an earlier playwright version reads as absent, not present.
-  const { chromium } = createRequire(import.meta.url)("@playwright/test") as { chromium: BrowserType };
-  return existsSync(chromium.executablePath());
+/** Whether a Playwright project name is one of the browser engines, rather than a runtime such as `workerd`. @public */
+export function isBrowserEngine(name: string): name is BrowserEngine {
+  return (BROWSER_ENGINES as readonly string[]).includes(name);
 }

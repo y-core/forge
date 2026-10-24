@@ -43,10 +43,11 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §5d No 200 on Guard Failure: never adjust the assertion to match
 - §5e No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task is complete
-- §6a One Command, Three Modes: the inner loop, the gate a task closes on, and the release gate
+- §6a One Command, Nested Tiers: the lines between them, and what an absent prerequisite means
 - §6b What Each Tool Catches: the failure classes
-- §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
+- §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
 - §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: the three, and who overrides which
+- §6e One Tier per Moment: which tier each moment of a task takes, and where the browser engines come in
 
 ---
 
@@ -379,29 +380,35 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ## 6. The Verification Gate
 
-### 6a. One Command, Three Modes
+### 6a. One Command, Nested Tiers
 
-**There is one gate command with three modes — `quality`, `standard` and `full` — selected with `--mode`, not three commands.** They are nested:
-`quality ⊆ standard ⊆ full`. **A bare invocation is `standard`**, and that is the run a task closes on; `quality` is the loop to write in and is
-opt-in, and `full` is the release gate. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather
-than trusting any prose copy.
+**There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** They
+are nested: `static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **A bare invocation is `runtime`**, and that is the run a task closes on; §6e says which
+tier each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than
+trusting any prose copy.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
 warning" — is a failure.
 
-**Neither line between the modes is cost.** `full` is separated by a machine prerequisite: every step below it works on any machine with the
-repository's dependencies installed, and a step needing a fetched browser binary or a live service is `full`-only. `quality` is separated from
-`standard` by what a step does — one that judges the source is `quality`, one that runs the code is `standard`. "This suite got slow" has no bearing
-on either question. An absent prerequisite is a skip below `full` and a failure in a `full` run, because a release may not be assured by a step
-nobody ran.
+**What separates one tier from the next is a property of the step alone, and never cost:**
 
-**The mode is part of the verdict**, since the modes are different assurances — and so is a skipped step: a green that skipped one is not the green
+| Line | A step is above it when |
+| --- | --- |
+| `static` \| `unit` | it runs the code rather than judging the source |
+| `unit` \| `runtime` | it needs a runtime prerequisite — the Playwright server, workerd, a local database |
+| `runtime` \| `deploy` | it runs whole: below `deploy` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here |
+| `deploy` \| `release` | it re-runs a suite another row already ran, on another engine |
+
+"This suite got slow" has no bearing on any of them. **An absent prerequisite is a skip below `runtime` and a failure from `runtime` up**, because
+those tiers promise that a runtime ran, and a task may not close on a step nobody ran.
+
+**The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
 
-**Execution order is tier-stable, not table order: within a tier the table's declared order holds, and across tiers the cheaper tier runs first.**
-The selector sorts by tier after filtering, so where a preset emits a `full` row is not where it runs — an appended `standard` row still runs ahead
-of it. That is what makes a fail-fast `full` run fail on the sub-second check rather than after minutes of browser. A repository consequently never
-declines a preset's opt-in to get sensible ordering, and never re-declares a row it only wanted moved.
+**Execution order is tier-stable, not table order: within a tier the table's declared order holds, and across tiers the lower tier runs first.**
+The selector sorts by tier after filtering, so where a preset emits a `release` row is not where it runs — an appended `unit` row still runs ahead
+of it. That is what makes a fail-fast `release` run fail on the sub-second check rather than after minutes of browser. A repository consequently
+never declines a preset's opt-in to get sensible ordering, and never re-declares a row it only wanted moved.
 
 ### 6b. What Each Tool Catches
 
@@ -419,6 +426,24 @@ a fail-fast run stops there without being told to.
 
 A narrowed selection brands every summary line as scoped, so a scoped green can never be read as a green gate. **A selection resolving to zero steps
 is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
+
+**The `runtime` tier's narrowing is not a scoped selection.** It is the tier's own definition (§6a), fixed by the tree and the commit it sits on,
+so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
+same commit.
+
+**A runtime row's reach is derived, never declared by hand.** The runner asks the row's tool what the narrowed run would select: the row runs
+nothing when the answer is nothing, runs narrowed when it is something, and runs whole when the answer cannot be read. A change to one of the
+gate's own inputs, or to a path the row declares wide, runs it whole. The only hand-kept list names what the tool's graph cannot see — a file a spec
+reads without importing it, or a module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that
+leaves one of its globs matching nothing is refused rather than silently narrowing the row. **`deploy` runs every row whole on every tag**, which is
+the backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
+
+**A spec reaches the application through the server it starts and the assets that server serves, so a runtime row's reach includes both.** The
+server half is the import graph of the Worker's entry. The asset half is what the asset build reads: each bundle's inputs, and every file the
+stylesheets' source declarations cover. Both are derived from what the build already declares, never listed beside it. Wherever the application
+has an asset build, a browser row takes the asset half, because the browser loads the built assets whatever serves them. A Worker-runtime row
+takes it only when the Worker serves the assets. A stylesheet left on automatic source detection covers the whole tree, so every change runs the
+browser row whole — narrowing comes from the stylesheet naming its sources.
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
 and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
@@ -453,6 +478,34 @@ still collides when two repositories' browser sets run at once; an environment-v
 **`reuseExistingServer` is `false`.** The dev command builds the stylesheet as it boots, so a reused server serves the CSS the source had at boot
 time — a run against edited views then measures the previous layout and reports it as current. A repository that cannot make `false` work records
 the exception with its compensating control, rather than leaving the reuse undocumented.
+
+### 6e. One Tier per Moment
+
+**Each moment of a task takes one tier of the same gate, and no moment takes a scoped run:**
+
+| Moment | Command | Runs |
+| --- | --- | --- |
+| Write | `bun run verify:static`, plus `bun test <file>` | every row that judges the source; one test file |
+| Task close | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch, on Chromium |
+| Tag | `bun run verify:deploy`, on the remote | every runtime row whole, plus the rows that judge a finished change |
+| Sign-off | `bun run verify:release`, before a release ships | the above, plus every browser spec on Firefox and WebKit |
+
+**No task asks whether it touches UI.** A bare `verify` takes the Chromium row whenever a pending change falls within the row's derived reach (§6c),
+the Worker's import graph and the asset build's inputs, so a change to a view, a stylesheet or a controller reaches the browser set without anyone
+deciding it should. While iterating, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and it is a scoped run that
+closes nothing (§6c).
+
+**`test:browser` is the primary engine's row, and it names Chromium alone.** The preset emits `test:browser:firefox` and `test:browser:webkit`
+beside it at `release`, and `--only` matches a label exactly, so an engine token is refused under any lower tier.
+
+**Every spec runs on every engine at sign-off; an application tags no cross-engine subset.** An engine difference found there is fixed, or skipped
+as the first line of the case with `test.skip(browserName === "…", "<task-id>: <symptom on this engine>")`, the task filed before the skip is
+written. A spec that needs a Chromium-only Playwright capability — the CDP virtual WebAuthn authenticator has no Firefox or WebKit equivalent — is
+skipped on the other two the same way.
+
+**A browser run takes no retries, and never more workers than the Playwright server's client limit.** `retries` is `0`, because a retry turns an
+intermittent failure into a green. The worker count defaults to the client limit, read from the environment, because a worker past it only queues;
+a set whose specs share one database across workers sets `1` and says why.
 
 [aa-1]: ./APP_ARCHITECTURE.md#1-the-composition-root
 [boundaries-2]: ./BOUNDARIES.md#2-middleware-ordering-and-guard-placement

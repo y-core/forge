@@ -24,6 +24,13 @@ function select(root: HTMLElement, chosen: HTMLElement): void {
   }
 }
 
+function alignPanels(root: HTMLElement): void {
+  for (const tab of tabsIn(root)) {
+    const panel = panelFor(tab);
+    if (panel) panel.hidden = tab.getAttribute("aria-selected") !== "true";
+  }
+}
+
 /** Mounts a `Tabs` root and returns a disposer. */
 export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => void {
   const list = root.querySelector<HTMLElement>(TABLIST_SELECTOR) ?? root;
@@ -75,6 +82,7 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
   if (activation === "manual") list.addEventListener("keydown", onKeyDown, { signal });
   list.addEventListener("focusout", onFocusOut, { signal });
 
+  alignPanels(root);
   root.setAttribute(TABS_MOUNTED_ATTR, "");
 
   return () => {

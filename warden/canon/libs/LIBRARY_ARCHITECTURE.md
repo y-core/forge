@@ -149,8 +149,9 @@ wrong under most of them.
 
 **The scope stops at the component tier, and that is a decision rather than the reach of a relative path.** A component library owes its consumers
 the classes its own components emit — importing the component namespace _is_ the statement that they will be rendered. A namespace whose markup is
-opt-in owes something different: whether an app mounts that surface is the app's call, so what it owes is a **documented scanning requirement in
-that namespace's README**, and the app declares it.
+opt-in is not scanned by default, because whether an app mounts that surface is the app's call. What it owes instead is **its own source
+declaration** — a stylesheet beside it whose paths are relative to itself, published by the package for the app that mounts the surface to import.
+The app makes the choice by importing that file and never by writing a path, for the same reason the component stylesheet's paths are relative.
 
 ---
 

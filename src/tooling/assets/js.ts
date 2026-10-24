@@ -1,19 +1,37 @@
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 
-import type { Metafile } from "esbuild";
+import type { BuildOptions, Metafile } from "esbuild";
 
 import { safeJoin } from "./paths";
 import { bundler } from "./peers";
-import type { JsBuildResult, ResolvedJsBundle } from "./types";
+import type { JsBuildResult, JsBuildShape, ResolvedJsBundle } from "./types";
 
-type JsSubGroupOptions = {
-  format: NonNullable<ResolvedJsBundle["format"]>;
-  splitting: boolean;
-  define: ResolvedJsBundle["define"];
-  conditions: ResolvedJsBundle["conditions"];
-  minify: boolean;
-};
+/** The shape `bundle` builds with, its own settings over the run's `minify`. @internal */
+export function jsBuildShape(bundle: ResolvedJsBundle, minify: boolean | undefined): JsBuildShape {
+  return {
+    format: bundle.format ?? "esm",
+    splitting: bundle.splitting ?? false,
+    define: bundle.define,
+    conditions: bundle.conditions,
+    minify: bundle.minify ?? minify ?? false,
+  };
+}
+
+/** The esbuild options every browser bundle and the service worker are built with, placement aside. @internal */
+export function jsBuildOptions(shape: JsBuildShape): BuildOptions {
+  return {
+    bundle: true,
+    splitting: shape.splitting,
+    format: shape.format,
+    minify: shape.minify,
+    platform: "browser",
+    jsx: "automatic",
+    jsxImportSource: "@y-core/forge/render/jsx",
+    ...(shape.define !== undefined ? { define: shape.define } : {}),
+    ...(shape.conditions !== undefined ? { conditions: shape.conditions } : {}),
+  };
+}
 
 /** Whether a file in the output directory is one of this group's own, hashed (`main-A1B2.js`) or not. */
 function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
@@ -22,7 +40,7 @@ function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
 }
 
 /** Every output reachable from `roots` through static imports, and through dynamic ones too when `lazy`, roots and CSS bundles included. @internal */
-export function importClosure(outputs: Metafile["outputs"], roots: Iterable<string>, lazy: boolean): Set<string> {
+export function outputClosure(outputs: Metafile["outputs"], roots: Iterable<string>, lazy: boolean): Set<string> {
   const reached = new Set<string>();
   const pending = [...roots];
   for (let path = pending.pop(); path !== undefined; path = pending.pop()) {
@@ -79,15 +97,9 @@ export async function buildJS(bundles: ResolvedJsBundle[], opts: { outDir: strin
     rmSync(join(outdir, "chunks"), { recursive: true, force: true });
     mkdirSync(outdir, { recursive: true });
 
-    const bySubKey = new Map<string, { options: JsSubGroupOptions; bundles: ResolvedJsBundle[] }>();
+    const bySubKey = new Map<string, { options: JsBuildShape; bundles: ResolvedJsBundle[] }>();
     for (const bundle of group) {
-      const options: JsSubGroupOptions = {
-        format: bundle.format ?? "esm",
-        splitting: bundle.splitting ?? false,
-        define: bundle.define,
-        conditions: bundle.conditions,
-        minify: bundle.minify ?? opts.minify ?? false,
-      };
+      const options = jsBuildShape(bundle, opts.minify);
       const subKey = JSON.stringify([options.format, options.splitting, options.define ?? {}, options.conditions ?? null, options.minify]);
       const sub = bySubKey.get(subKey) ?? { options, bundles: [] };
       sub.bundles.push(bundle);
@@ -96,20 +108,12 @@ export async function buildJS(bundles: ResolvedJsBundle[], opts: { outDir: strin
 
     for (const { options, bundles: subGroup } of bySubKey.values()) {
       const result = await esbuild.build({
+        ...jsBuildOptions(options),
         entryPoints: subGroup.map((b) => b.entry),
         outdir,
-        bundle: true,
-        splitting: options.splitting,
-        format: options.format,
-        minify: options.minify,
-        platform: "browser",
-        jsx: "automatic",
-        jsxImportSource: "@y-core/forge/render/jsx",
         chunkNames: "chunks/[name]-[hash]",
         entryNames: shouldHash ? "[name]-[hash]" : "[name]",
         metafile: true,
-        ...(options.define !== undefined ? { define: options.define } : {}),
-        ...(options.conditions !== undefined ? { conditions: options.conditions } : {}),
       });
 
       const metaOutputs = result.metafile?.outputs ?? {};
@@ -123,7 +127,7 @@ export async function buildJS(bundles: ResolvedJsBundle[], opts: { outDir: strin
         const entries = new Set(subGroup.filter((bundle) => (bundle.precache ?? "shell") === scope).map((bundle) => resolve(bundle.entry)));
         return emitted.filter(({ entryPoint }) => entryPoint !== undefined && entries.has(entryPoint)).map(({ outPath }) => outPath);
       };
-      const reached = new Set([...importClosure(metaOutputs, rootsOf("shell"), false), ...importClosure(metaOutputs, rootsOf("all"), true)]);
+      const reached = new Set([...outputClosure(metaOutputs, rootsOf("shell"), false), ...outputClosure(metaOutputs, rootsOf("all"), true)]);
       precache.push(...[...reached].map(toRelPath));
       for (const bundle of subGroup) {
         const absEntry = resolve(bundle.entry);

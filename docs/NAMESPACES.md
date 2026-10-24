@@ -105,13 +105,9 @@ check rebuilds each bundle on every gate run and fails on any difference. Which 
 **Playwright is the second such host, and forge cannot choose bun on the consumer's behalf.** A `playwright.config.ts` importing a forge subpath
 dies at config load with the same error, and under bun a dev server playwright spawns binds where the browser cannot reach it — specs that pass
 under `bunx playwright test` fail with `net::ERR_ABORTED` under `bunx --bun playwright test`. So a Playwright config, and a consumer's browser or
-workerd spec, loads forge through committed bundles too — `@y-core/forge/tooling/gate/chromium` is the one symbol a config needs. A bundle carries
-only what such a host needs, and a symbol a bun suite also wants stays on its barrel as well. `tests/workerd/harness-consumer.workerd.ts` installs
-the tarball `bun pm pack` makes and loads every `forge.node` subpath under node, so a surface a spec needs and forge never bundled fails in forge
-first.
-
-Forge's own `playwright.config.ts` imports the `.mjs` rather than the source, so forge's gate exercises the exact module a consumer loads and a
-broken bundle fails here rather than there.
+workerd spec, loads forge through committed bundles too. A bundle carries only what such a host needs, and a symbol a bun suite also wants stays
+on its barrel as well. `tests/workerd/harness-consumer.workerd.ts` installs the tarball `bun pm pack` makes and loads every `forge.node` subpath
+under node, so a surface a spec needs and forge never bundled fails in forge first.
 
 **A published module may not import a build-time package, so oxlint's types are restated in `types.ts` rather than imported from it.** oxlint is a
 devDependency, and an import of its types would make every consumer of forge depend on it. The same constraint reaches anything the plugin loads at
@@ -398,7 +394,7 @@ request without Fetch Metadata.
 **The check holds it in two places.** Rule B of `validate-dev-boundary` fails a production module importing a `*.dev.ts`, a type import included;
 a `*.dev.ts` may import another. Rule C fails a value import of a dev-only subpath outside a `*.dev.ts` module. Both follow a `#` specifier to its
 deploy target, and rule B fails each `imports` entry whose deploy target is a `*.dev.ts`, and every importer that reaches it. The built bundle is
-still `validate-dev-bundle`'s to prove: on the `full` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a dev-only
+still `validate-dev-bundle`'s to prove: on the `deploy` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a dev-only
 directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every
 dev module.
 

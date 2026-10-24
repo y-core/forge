@@ -224,6 +224,15 @@ export interface JsBuildResult {
   /** Each entry output not opted out with `precache: false`, plus every chunk it statically imports, and under `precache: "all"` every chunk it reaches through `import()` too, relative to the asset root. */
   precache: string[];
 }
+/** What decides how one bundle builds, and so which bundles can share an esbuild run. @internal */
+export type JsBuildShape = {
+  format: NonNullable<ResolvedJsBundle["format"]>;
+  splitting: boolean;
+  define: ResolvedJsBundle["define"];
+  conditions: ResolvedJsBundle["conditions"];
+  minify: boolean;
+};
+
 export type CssBuild = v.InferOutput<typeof CssBuildSchema>;
 export type CopyEntry = v.InferOutput<typeof CopyEntrySchema>;
 /** One SVG-to-PNG rasterization; the unset dimension is derived from the source's intrinsic ratio. @public */
@@ -384,4 +393,25 @@ export interface FontPackData {
     sfnt: string;
     metrics: FontMetricsData;
   }[];
+}
+
+/** How a stylesheet's `@import "tailwindcss"` scopes automatic source detection. @internal */
+export type CssRootMode = "none" | "auto" | "explicit";
+
+/** One `@source` directive, as Tailwind's `compile` resolved it. @internal */
+export interface CssSourceDeclaration {
+  /** Directory of the stylesheet that declared it, absolute. */
+  base: string;
+  /** The path or glob as written, relative to `base`. */
+  pattern: string;
+  /** Whether it is an `@source not` exclusion. */
+  negated: boolean;
+}
+
+/** What a stylesheet tells Tailwind to scan, and every stylesheet compiled to say so. @internal */
+export interface CssDeclaration {
+  root: CssRootMode;
+  sources: readonly CssSourceDeclaration[];
+  /** Absolute paths, the entry first. */
+  stylesheets: readonly string[];
 }

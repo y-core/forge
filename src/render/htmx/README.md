@@ -193,14 +193,14 @@ Every dynamic message is escaped on the way in, so the error strings can come st
 ### Choosing how the banners are styled
 
 `FragmentOptions` asks you one question: whose classes win. Leave `class` and `ulClass` alone and you get forge's status-token styling, which needs
-Tailwind to have seen this directory — `forge.css` deliberately does not scan `src/render/htmx`, so add the source path to your own stylesheet:
+Tailwind to have seen this directory — `forge.css` deliberately does not scan `src/render/htmx`, so import the directory's own `@source` lines into
+your stylesheet:
 
 ```css
-@source "../node_modules/@y-core/forge/src/render/htmx";
+@import "@y-core/forge/render/htmx/sources.css";
 ```
 
-The path is relative to the stylesheet you write it in; [`forge.css`][forge-css] documents the same pattern for the other opt-in surfaces. Pass your
-own `class` and `ulClass` instead and you need none of that — the defaults are never emitted.
+Pass your own `class` and `ulClass` instead and you need none of that — the defaults are never emitted.
 
 `successAttr` is the marker attribute stamped on the success wrapper, `data-success` by default, so client code and tests can find it. It is the one
 option interpolated verbatim rather than escaped; keep it a literal you wrote, never anything derived from a request.
@@ -279,7 +279,6 @@ path and query.
 [eh]: ../../../docs/FORGE_ERRORS.md
 [eh-2]: ../../../docs/FORGE_ERRORS.md#2-fragment-renderers-renderhtmx-namespace
 [eh-2d]: ../../../docs/FORGE_ERRORS.md#2d-fragment-options-and-escaping
-[forge-css]: ../../ui/assets/css/forge.css
 [form-readme]: ../../form/README.md
 [htmx]: ../../../docs/HTMX.md
 [htmx-10]: ../../../docs/HTMX.md#10-a-page-or-a-fragment--ispartial-reads-hx-request-type

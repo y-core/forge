@@ -3,7 +3,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import type { GateMode } from "../types";
+import { GATE_TIERS } from "../types";
+import type { GateTier } from "../types";
 import { checkAssetManifest } from "./asset-manifest";
 
 let root: string;
@@ -47,7 +48,7 @@ function writeAsset(relative: string): void {
   writeFileSync(path, "built");
 }
 
-const run = (mode: GateMode = "quality") => checkAssetManifest({ root, assetConfig: "assets.config.ts" }, mode);
+const run = (tier: GateTier = "static") => checkAssetManifest({ root, assetConfig: "assets.config.ts" }, tier);
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "forge-asset-manifest-"));
@@ -104,38 +105,38 @@ describe("checkAssetManifest", () => {
     expect(result.findings.map((f) => f.message)).toEqual(["`js/main.js` maps to `../../elsewhere/main.js`, which is not under `public/assets`"]);
   });
 
-  it("passes a types-only artifact in a quality run, whose paths no build has produced", async () => {
+  it("passes a types-only artifact in a static run, whose paths no build has produced", async () => {
     writeModule({ "js/main.js": "js/main.js" }, TYPES_HEADER);
 
-    const result = await run("quality");
+    const result = await run("static");
 
     expect(result.ok).toBe(true);
     expect(result.findings).toEqual([]);
     expect(result.summary).toBe("asset manifest: types-only artifact, nothing to verify");
   });
 
-  it("fails a types-only artifact in a standard or full run, where a green would ship an unbuilt tree", async () => {
+  it("fails a types-only artifact in every tier above static, where a green would ship an unbuilt tree", async () => {
     writeModule({ "js/main.js": "js/main.js" }, TYPES_HEADER);
 
-    expect((await run("standard")).ok).toBe(false);
+    for (const tier of ["unit", "runtime", "deploy"] as const) expect((await run(tier)).ok).toBe(false);
 
-    const result = await run("full");
+    const result = await run("release");
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((f) => f.message)).toEqual([
       "`.forge/assets.ts` is the types-only artifact, whose paths are logical names no build has produced",
     ]);
     expect(result.findings.map((f) => f.detail)).toEqual([
-      ["run `forge assets build --minify` — only a quality run accepts an artifact that was never built"],
+      ["run `forge assets build --minify` — only a static run accepts an artifact that was never built"],
     ]);
     expect(result.summary).toBe("asset manifest: types-only artifact");
   });
 
-  it("passes an empty manifest in every mode, since an icons-only config emits no entries", async () => {
+  it("passes an empty manifest in every tier, since an icons-only config emits no entries", async () => {
     writeModule({});
 
-    for (const mode of ["quality", "standard", "full"] as const) {
-      const result = await run(mode);
+    for (const tier of GATE_TIERS) {
+      const result = await run(tier);
       expect(result.ok).toBe(true);
       expect(result.findings).toEqual([]);
       expect(result.summary).toBe("asset manifest: empty, nothing to verify");

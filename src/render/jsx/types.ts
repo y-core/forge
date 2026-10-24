@@ -93,7 +93,7 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   title?: string | undefined;
   lang?: string | undefined;
   dir?: "ltr" | "rtl" | "auto" | undefined;
-  hidden?: boolean | undefined;
+  hidden?: boolean | "until-found" | undefined;
   tabindex?: number | undefined;
   nonce?: string | undefined;
   slot?: string | undefined;

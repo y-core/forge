@@ -19,7 +19,9 @@ import {
   formatScopedBanner,
   formatStepLine,
   formatSummary,
+  formatUntouched,
 } from "./report";
+import { GATE_TIERS } from "./types";
 import type { Step } from "./types";
 
 describe("formatDuration()", () => {
@@ -160,21 +162,26 @@ describe("formatSummary()", () => {
 describe("listLabel()", () => {
   const conditional: Step = { label: "validate-class-groups", run: () => checkResult([], ""), requires: { tool: "tailwindcss", hint: "x" } };
 
-  it("marks a step with a dependency as conditional below the full tier, naming the dependency", () => {
-    expect(listLabel(conditional, "quality")).toBe("validate-class-groups (conditional — tailwindcss required)");
-    expect(listLabel(conditional, "standard")).toBe("validate-class-groups (conditional — tailwindcss required)");
+  it("marks a step with a dependency as conditional below the runtime tier, naming the dependency", () => {
+    expect(listLabel(conditional, "static")).toBe("validate-class-groups (conditional — tailwindcss required)");
+    expect(listLabel(conditional, "unit")).toBe("validate-class-groups (conditional — tailwindcss required)");
   });
 
-  it("states the dependency as required in a full run, where its absence is a failure", () => {
-    expect(listLabel({ label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } }, "full")).toBe(
-      "test:browser (requires chromium)",
-    );
+  it("states the dependency as required from the runtime tier up, where its absence is a failure", () => {
+    const browser: Step = { label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } };
+
+    for (const tier of ["runtime", "deploy", "release"] as const) expect(listLabel(browser, tier)).toBe("test:browser (requires chromium)");
   });
 
-  it("leaves a step with no dependency its bare label in every mode", () => {
-    expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "quality")).toBe("lint");
-    expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "standard")).toBe("lint");
-    expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, "full")).toBe("lint");
+  it("leaves a step with no dependency its bare label in every tier", () => {
+    for (const tier of GATE_TIERS) expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, tier)).toBe("lint");
+  });
+
+  it("says how a narrowed or untouched step reaches the pending changes, ahead of its dependency", () => {
+    const browser: Step = { label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } };
+
+    expect(listLabel(browser, "runtime", "narrow")).toBe("test:browser (narrowed to pending changes) (requires chromium)");
+    expect(listLabel({ label: "db:lint", tail: 10, cmd: ["forge"] }, "runtime", "untouched")).toBe("db:lint (untouched)");
   });
 });
 
@@ -207,24 +214,26 @@ describe("formatFixSummary()", () => {
 });
 
 describe("formatMissingRequirement()", () => {
-  it("fails the step in a full run, naming the absent tool and the remedy verbatim", () => {
-    expect(formatMissingRequirement("test:browser", "chromium", "run `bunx playwright install chromium`", "full")).toBe(
-      "✗ test:browser — chromium not found; run `bunx playwright install chromium`",
-    );
+  it("fails the step from the runtime tier up, naming the absent tool and the remedy verbatim", () => {
+    for (const tier of ["runtime", "deploy", "release"] as const) {
+      expect(formatMissingRequirement("test:browser", "Playwright server", "set `PW_TEST_CONNECT_WS_ENDPOINT`", tier)).toBe(
+        "✗ test:browser — Playwright server not found; set `PW_TEST_CONNECT_WS_ENDPOINT`",
+      );
+    }
   });
 
-  it("reports the same event as a skip below the full tier, carrying the remedy with it", () => {
-    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "standard")).toBe(
+  it("reports the same event as a skip below the runtime tier, carrying the remedy with it", () => {
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "unit")).toBe(
       "○ validate-class-groups — skipped (tailwindcss not found; run `bun add -d tailwindcss`)",
     );
-    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "quality")).toBe(
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`", "static")).toBe(
       "○ validate-class-groups — skipped (tailwindcss not found; run `bun add -d tailwindcss`)",
     );
   });
 
   it("prints a multi-route remedy unwrapped, since not every remedy is a single command", () => {
-    expect(formatMissingRequirement("test:browser", "chromium", "run `a`, or set `CHROME_PATH`", "full")).toBe(
-      "✗ test:browser — chromium not found; run `a`, or set `CHROME_PATH`",
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `a`, or set `TAILWIND_PATH`", "release")).toBe(
+      "✗ validate-class-groups — tailwindcss not found; run `a`, or set `TAILWIND_PATH`",
     );
   });
 });
@@ -262,22 +271,35 @@ describe("formatFindingBlock()", () => {
 describe("formatReused()", () => {
   const tree = "0123456789abcdef0123456789abcdef01234567";
 
-  it("names the mode and the full hash of the run it stands on, and says no step ran", () => {
-    expect(formatReused("verify", { tree, mode: "full", labels: ["lint"] })).toBe(
-      `✓ verify — reused the passing full run of tree ${tree}; no step ran`,
+  it("names the tier and the full hash of the run it stands on, and says no step ran", () => {
+    expect(formatReused("verify", { tree, tier: "release", labels: ["lint"] })).toBe(
+      `✓ verify — reused the passing release run of tree ${tree}; no step ran`,
     );
   });
 });
 
 describe("formatReuseMiss()", () => {
-  it("says the tree has no passing run on record at the requested mode", () => {
-    expect(formatReuseMiss({ tree: "abc123", mode: "standard" })).toBe(
-      "○ no passing run of tree abc123 on record at standard or above; running the gate",
+  it("says the tree has no passing run on record at the requested tier", () => {
+    expect(formatReuseMiss({ tree: "abc123", tier: "runtime" })).toBe(
+      "○ no passing run of tree abc123 on record at runtime or above; running the gate",
     );
   });
 
   it("says there is no work tree when the hash is undefined", () => {
-    expect(formatReuseMiss({ tree: undefined, mode: "standard" })).toBe("○ not a git work tree — no receipt to reuse; running the gate");
+    expect(formatReuseMiss({ tree: undefined, tier: "runtime" })).toBe("○ not a git work tree — no receipt to reuse; running the gate");
+  });
+});
+
+describe("formatUntouched()", () => {
+  it("says how many pending changes left the step with nothing to run", () => {
+    expect(formatUntouched("test:workerd", 3)).toBe("○ test:workerd — untouched by 3 changes");
+    expect(formatUntouched("db:lint", 1)).toBe("○ db:lint — untouched by 1 change");
+  });
+
+  it("names the probe that found nothing selected, so the reader can ask it again", () => {
+    expect(formatUntouched("test:workerd", 2, undefined, "playwright test --project=workerd --only-changed --list")).toBe(
+      "○ test:workerd — untouched by 2 changes: `playwright test --project=workerd --only-changed --list` selects nothing",
+    );
   });
 });
 
@@ -301,8 +323,8 @@ describe("formatNothingAffected()", () => {
   });
 
   it("says several changed paths touch no step, in the plural", () => {
-    expect(formatNothingAffected("verify --mode full --affected", { changed: 3, total: 40 })).toBe(
-      "○ verify --mode full --affected — 3 changed paths touch no step; nothing ran ⚠ scoped run (0 of 40 steps) — not the gate",
+    expect(formatNothingAffected("verify --tier release --affected", { changed: 3, total: 40 })).toBe(
+      "○ verify --tier release --affected — 3 changed paths touch no step; nothing ran ⚠ scoped run (0 of 40 steps) — not the gate",
     );
   });
 });

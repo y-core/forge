@@ -209,7 +209,7 @@ line.
 - there is no snapshot yet, and something declared is on disk alongside a migration.
 
 **`--replay`** adds the one comparison worth making — the replayed migrations against the loaded declarations, both built in a real SQLite — and is
-the `db:schema` row in `full`. In a checkout that declares a schema and composes nothing, there is no history to compare, and `--replay` is the
+the `db:schema` row in `runtime`. In a checkout that declares a schema and composes nothing, there is no history to compare, and `--replay` is the
 proof that the declarations execute at all.
 
 **`forge db migrate status --check`** is the other half: the database, which it measures against the migrations (`DATABASE_MANAGEMENT.md` §6c). A

@@ -1,10 +1,11 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
+import { worktreeFixture } from "../cli/worktree.fixture";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
-import { importBoundaryStep } from "./builders";
+import { browserSteps, importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
@@ -27,7 +28,7 @@ const DESIGN = { stylesheet: "src/assets/tailwind.css", cssDir: "src/assets" };
 async function runRow(steps: readonly Step[], label: string): Promise<CheckResult> {
   const row = steps.find((step) => step.label === label);
   if (row === undefined || !isCheckStep(row)) throw new Error(`no ${label} row`);
-  return row.run("quality");
+  return row.run("static");
 }
 
 function crossingsOf(result: CheckResult): [string | undefined, string][] {
@@ -83,19 +84,19 @@ describe("cloudflareWorkerSteps() — shape", () => {
     expect(new Set(labels).size).toBe(labels.length);
   });
 
-  it("holds back only the test row and the bundle proof, so a quality run is every other step of the default table", () => {
+  it("holds back only the test row and the bundle proof, so a static run is every other step of the default table", () => {
     const held = cloudflareWorkerSteps({ assetConfig: "src/assets/config.ts" }).filter((step) => step.tier !== undefined);
 
     expect(held.map((step) => [step.label, step.tier])).toEqual([
-      ["test", "standard"],
-      ["validate-dev-bundle", "full"],
+      ["test", "unit"],
+      ["validate-dev-bundle", "deploy"],
     ]);
   });
 
-  it("adds test:browser to the full tier once the browser opt-in is taken", () => {
-    const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === "full");
+  it("adds test:browser to the runtime tier once the browser opt-in is taken", () => {
+    const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === "runtime");
 
-    expect(held.map((step) => step.label)).toEqual(["validate-dev-bundle", "test:browser"]);
+    expect(held.map((step) => step.label)).toEqual(["test:browser"]);
   });
 });
 
@@ -108,11 +109,12 @@ describe("cloudflareWorkerSteps() — the §6c property", () => {
     expect(labelsOf(gated)).toEqual([]);
   });
 
-  it("gates only the two compiling design rows and the browser row once the opt-ins are taken", () => {
+  it("gates only the compiling design rows and the browser row once the opt-ins are taken", () => {
     const gated = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.requires !== undefined);
 
-    expect(labelsOf(gated)).toEqual(["validate-class-tokens", "validate-css-tokens", "test:browser"]);
-    expect(gated.map((step) => step.requires?.tool)).toEqual(["tailwindcss", "tailwindcss", "chromium"]);
+    expect(labelsOf(gated)).toEqual(["validate-class-tokens", "validate-css-coverage", "validate-css-tokens", "test:browser"]);
+    expect(gated.slice(0, 3).map((step) => step.requires?.tool)).toEqual(["tailwindcss", "tailwindcss", "tailwindcss"]);
+    expect(gated.at(-1)?.requires?.probe).toBeFunction();
   });
 });
 
@@ -171,7 +173,7 @@ const DEV_MODULE_APP = {
 describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
   // Default-on: the forbidden specifiers come from forge's own installed manifest, so an app that
   // configures nothing still fails on `@y-core/forge/testing` in a deployed module.
-  it("emits validate-dev-boundary on the quality tier for an app that configures nothing", () => {
+  it("emits validate-dev-boundary on the static tier for an app that configures nothing", () => {
     const row = cloudflareWorkerSteps().find((step) => step.label === "validate-dev-boundary");
 
     expect(row?.tier).toBeUndefined();
@@ -208,13 +210,14 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the browser row", () => {
-  it("puts test:browser last, on the full tier and behind the downloaded browser", () => {
+  it("puts test:browser last, on the runtime tier and behind the Playwright server", () => {
     const steps = cloudflareWorkerSteps({ browser: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
     const browser = steps.at(-1);
 
     expect(browser?.label).toBe("test:browser");
-    expect(browser?.tier).toBe("full");
-    expect(browser?.requires?.tool).toBe("chromium");
+    expect(browser?.tier).toBe("runtime");
+    expect(browser?.requires?.probe).toBeFunction();
+    expect(browser !== undefined && !isCheckStep(browser) ? browser.cmd : undefined).toEqual(["playwright", "test", "--project=chromium"]);
   });
 
   it("omits the row for an app with no browser suite", () => {
@@ -223,13 +226,158 @@ describe("cloudflareWorkerSteps() — the browser row", () => {
   });
 });
 
+describe("cloudflareWorkerSteps() — the browser rows per engine", () => {
+  function browserRows(steps: readonly Step[]): [string, string | undefined, readonly string[] | undefined, Step["narrow"]][] {
+    return steps
+      .filter((step) => step.label.startsWith("test:browser"))
+      .map((step) => [step.label, step.tier, isCheckStep(step) ? undefined : step.cmd, step.narrow]);
+  }
+
+  it("hands an engine list to browserSteps, so the matrix rows are exactly the builder's", () => {
+    const engines = ["chromium", "firefox", "webkit"] as const;
+
+    expect(browserRows(cloudflareWorkerSteps({ browser: { engines } }))).toEqual(browserRows(browserSteps({ engines })));
+  });
+
+  it("emits the same Chromium row for `true` as for an engine list naming Chromium alone", () => {
+    expect(browserRows(cloudflareWorkerSteps({ browser: true }))).toEqual(
+      browserRows(cloudflareWorkerSteps({ browser: { engines: ["chromium"] } })),
+    );
+  });
+});
+
+describe("cloudflareWorkerSteps() — the rows a spec reaches through the served Worker", () => {
+  const APP = {
+    "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts" }\n',
+    "wrangler.staging.jsonc": '{ "name": "app-staging", "main": "src/staging.ts" }\n',
+    "src/worker.ts": 'import { routes } from "./routes";\nexport default { routes };\n',
+    "src/staging.ts": "export default {};\n",
+    "src/routes.ts": "export const routes = 1;\n",
+    "tests/app.browser.ts": "export {};\n",
+  };
+
+  const traced = async (steps: readonly Step[], root: string): Promise<[string, readonly string[] | undefined][]> =>
+    Promise.all(
+      steps
+        .filter((step) => step.label.startsWith("test:"))
+        .map(async (step): Promise<[string, readonly string[] | undefined]> => [step.label, await step.widen?.(root)]),
+    );
+
+  it("runs the browser and workerd rows whole for a change to the app Worker's closure, read from the default config", async () => {
+    const root = gateFixtureRoot(APP);
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, browser: { engines: ["chromium", "firefox"] }, workerd: true });
+
+    expect(await traced(steps, root)).toEqual([
+      ["test:browser", ["src/routes.ts", "src/worker.ts"]],
+      ["test:browser:firefox", ["src/routes.ts", "src/worker.ts"]],
+      ["test:workerd", ["src/routes.ts", "src/worker.ts"]],
+    ]);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("traces the Worker the app's own `workerConfig` names", async () => {
+    const root = gateFixtureRoot(APP);
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, workerConfig: "wrangler.staging.jsonc", browser: true });
+
+    expect(await traced(steps, root)).toEqual([["test:browser", ["src/staging.ts"]]]);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("rejects the trace when the app's Worker config names no `main`, so the rows run whole", async () => {
+    const root = gateFixtureRoot({ "wrangler.jsonc": '{ "name": "app" }\n' });
+    const [workerd] = cloudflareWorkerSteps({ root, wranglerTypes: false, workerd: true }).filter((step) => step.label === "test:workerd");
+
+    await expect(Promise.resolve(workerd?.widen?.(root))).rejects.toThrow("names no `main`");
+    rmSync(root, { recursive: true, force: true });
+  });
+});
+
+describe("cloudflareWorkerSteps() — the rows a spec reaches through the served assets", () => {
+  const TAILWIND = resolve(import.meta.dir, "../../../node_modules/tailwindcss");
+  const ASSETS = {
+    js: { bundles: [{ entry: "src/client/main.ts", outdir: "js" }] },
+    css: [{ tool: "tailwindcss", input: "src/styles/main.css", output: "css/main.css" }],
+  };
+  const APP = {
+    ".gitignore": "node_modules\n",
+    "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts" }\n',
+    "wrangler.assets.jsonc": '{ "name": "app", "main": "src/worker.ts", "assets": { "directory": "public" } }\n',
+    "config/assets.ts": `export default ${JSON.stringify(ASSETS)};\n`,
+    "src/worker.ts": "export default {};\n",
+    "src/client/main.ts": 'import { helper } from "./helper";\nconsole.log(helper);\n',
+    "src/client/helper.ts": "export const helper = 1;\n",
+    "src/styles/main.css": '@import "tailwindcss" source(none);\n@source "../views";\n',
+    "src/views/page.tsx": "export const page = 1;\n",
+  };
+  const roots: string[] = [];
+
+  afterAll(() => {
+    for (const root of roots) rmSync(root, { recursive: true, force: true });
+  });
+
+  function repo(): string {
+    const root = worktreeFixture(APP);
+    roots.push(root);
+    mkdirSync(join(root, "node_modules"));
+    symlinkSync(TAILWIND, join(root, "node_modules/tailwindcss"));
+    return root;
+  }
+
+  const widened = async (steps: readonly Step[], label: string, root: string): Promise<readonly string[] | undefined> =>
+    steps.find((step) => step.label === label)?.widen?.(root);
+
+  const REACHED = ["src/client/helper.ts", "src/views/page.tsx"];
+  const reachedOf = (paths: readonly string[] | undefined): string[] | undefined => paths?.filter((path) => REACHED.includes(path));
+
+  it("runs the browser row whole for a change to a client bundle input or a covered CSS source", async () => {
+    const root = repo();
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, assetConfig: "config/assets.ts", browser: true });
+
+    const paths = await widened(steps, "test:browser", root);
+
+    expect(reachedOf(paths)).toEqual(REACHED);
+    expect(paths).toContain("src/worker.ts");
+  });
+
+  it("widens the workerd row by the asset inputs only when the wrangler config serves assets", async () => {
+    const root = repo();
+    const served = cloudflareWorkerSteps({
+      root,
+      wranglerTypes: false,
+      assetConfig: "config/assets.ts",
+      workerConfig: "wrangler.assets.jsonc",
+      workerd: true,
+    });
+    const unserved = cloudflareWorkerSteps({ root, wranglerTypes: false, assetConfig: "config/assets.ts", workerd: true });
+
+    expect(reachedOf(await widened(served, "test:workerd", root))).toEqual(REACHED);
+    expect(await widened(unserved, "test:workerd", root)).toEqual(["src/worker.ts"]);
+  });
+
+  it("leaves both rows on the Worker's closure without an `assetConfig`", async () => {
+    const root = repo();
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, workerConfig: "wrangler.assets.jsonc", browser: true, workerd: true });
+
+    expect(await widened(steps, "test:browser", root)).toEqual(["src/worker.ts"]);
+    expect(await widened(steps, "test:workerd", root)).toEqual(["src/worker.ts"]);
+  });
+
+  it("rejects the browser trace when an asset input does not resolve, so the row runs whole", async () => {
+    const root = repo();
+    writeFileSync(join(root, "src/client/helper.ts"), 'export { gone } from "./gone";\n');
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, assetConfig: "config/assets.ts", browser: true });
+
+    await expect(Promise.resolve(widened(steps, "test:browser", root))).rejects.toThrow();
+  });
+});
+
 describe("cloudflareWorkerSteps() — the workerd row", () => {
-  it("puts test:workerd last, on the full tier and behind the installed runtime", () => {
+  it("puts test:workerd last, on the runtime tier and behind the installed runtime", () => {
     const steps = cloudflareWorkerSteps({ workerd: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
     const workerd = steps.at(-1);
 
     expect(workerd?.label).toBe("test:workerd");
-    expect(workerd?.tier).toBe("full");
+    expect(workerd?.tier).toBe("runtime");
     expect(workerd?.requires?.tool).toBe("workerd");
   });
 
@@ -250,11 +398,11 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the features row", () => {
-  it("puts validate-features last, after test:workerd, on the full tier", () => {
+  it("puts validate-features last, after test:workerd, on the deploy tier", () => {
     const steps = cloudflareWorkerSteps({ features: {}, browser: true, workerd: true, db: true });
 
     expect(labelsOf(steps).slice(-2)).toEqual(["test:workerd", "validate-features"]);
-    expect(steps.at(-1)?.tier).toBe("full");
+    expect(steps.at(-1)?.tier).toBe("deploy");
   });
 
   it("omits the row for an app with no feature manifest to verify", () => {
@@ -265,7 +413,7 @@ describe("cloudflareWorkerSteps() — the features row", () => {
     const root = gateFixtureRoot({ "README.md": "# app\n" }, "forge-gate-features-");
     const row = cloudflareWorkerSteps({ root, features: {} }).at(-1);
     if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
-    const result = await row.run("full");
+    const result = await row.run("deploy");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.ok).toBe(false);
@@ -278,7 +426,7 @@ describe("cloudflareWorkerSteps() — the features row", () => {
     const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
     const row = cloudflareWorkerSteps({ root, features: { profiles: [["blog"]] } }).at(-1);
     if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
-    const result = await row.run("full");
+    const result = await row.run("deploy");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.findings.map((finding) => finding.message)).toEqual([
@@ -290,7 +438,7 @@ describe("cloudflareWorkerSteps() — the features row", () => {
     const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
     const row = cloudflareWorkerSteps({ root, features: { profiles: [] } }).at(-1);
     if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
-    const result = await row.run("full");
+    const result = await row.run("deploy");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.ok).toBe(false);
@@ -301,13 +449,13 @@ describe("cloudflareWorkerSteps() — the features row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the db rows", () => {
-  it("emits the digests row on quality, and the lint and replay rows in full, behind the installed runtime", () => {
+  it("emits the digests row on static, and the lint and replay rows on runtime, behind the installed runtime", () => {
     const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:"));
 
     expect(rows.map((step) => [step.label, step.tier, step.requires?.tool])).toEqual([
       ["db:schema:digests", undefined, undefined],
-      ["db:lint", "full", "workerd"],
-      ["db:schema", "full", "workerd"],
+      ["db:lint", "runtime", "workerd"],
+      ["db:schema", "runtime", "workerd"],
     ]);
   });
 
@@ -339,13 +487,13 @@ describe("cloudflareWorkerSteps() — the db rows", () => {
 });
 
 describe("cloudflareWorkerSteps() — the dev-bundle row", () => {
-  it("emits validate-dev-bundle on the full tier, right after the dev-boundary row, with no machine prerequisite", () => {
+  it("emits validate-dev-bundle on the deploy tier, right after the dev-boundary row, with no machine prerequisite", () => {
     const steps = cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" });
     const labels = labelsOf(steps);
     const row = steps.find((step) => step.label === "validate-dev-bundle");
 
     expect(labels.indexOf("validate-dev-bundle")).toBe(labels.indexOf("validate-dev-boundary") + 1);
-    expect(row?.tier).toBe("full");
+    expect(row?.tier).toBe("deploy");
     expect(row?.requires).toBeUndefined();
   });
 
@@ -415,12 +563,12 @@ describe("cloudflareWorkerSteps() — the test rows", () => {
     const steps = cloudflareWorkerSteps({ testSets: [] });
 
     expect(labelsOf(steps).filter((label) => label.startsWith("test"))).toEqual([]);
-    expect(selectSteps(steps, { mode: "quality", only: ["test"] })).toMatchObject({ ok: false });
+    expect(selectSteps(steps, { tier: "static", only: ["test"] })).toMatchObject({ ok: false });
   });
 
   it("leaves a label colliding with another row to selectSteps, which refuses the whole table", () => {
     const steps = cloudflareWorkerSteps({ testSets: [{ label: "lint", sources: ["tests/unit/"] }] });
-    const selection = selectSteps(steps, { mode: "quality" });
+    const selection = selectSteps(steps, { tier: "static" });
 
     expect(selection.ok).toBe(false);
     expect(selection.ok ? "" : selection.error).toContain("Duplicate step label: lint");
@@ -488,8 +636,8 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     if (crossed === undefined || !isCheckStep(crossed) || uncrossed === undefined || !isCheckStep(uncrossed))
       throw new Error("no import-boundary row");
 
-    expect((await crossed.run("quality")).ok).toBe(true);
-    expect((await uncrossed.run("quality")).ok).toBe(false);
+    expect((await crossed.run("static")).ok).toBe(true);
+    expect((await uncrossed.run("static")).ok).toBe(false);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -497,7 +645,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n" });
     const row = cloudflareWorkerSteps({ root, importBoundary: IMPORT, features: {} }).find((step) => step.label === "validate-import-boundary");
     if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
-    const result = await row.run("quality");
+    const result = await row.run("static");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.findings.map((finding) => finding.message)).toEqual([
@@ -511,7 +659,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
       (step) => step.label === "validate-import-boundary",
     );
     if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
-    const result = await row.run("quality");
+    const result = await row.run("static");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.findings.map((finding) => [finding.file, finding.message])).toEqual([
@@ -524,7 +672,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n", "src/app.ts": "export const app = 1;\n" });
     const row = cloudflareWorkerSteps({ root, importBoundary: IMPORT }).find((step) => step.label === "validate-import-boundary");
     if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
-    const result = await row.run("quality");
+    const result = await row.run("static");
     rmSync(root, { recursive: true, force: true });
 
     expect(result.ok).toBe(true);
@@ -690,7 +838,7 @@ describe("cloudflareWorkerSteps() — the vendor-boundary row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the design rows", () => {
-  it("emits three rows before test when no cssDir is given", () => {
+  it("emits four rows before test when no cssDir is given", () => {
     const labels = labelsOf(cloudflareWorkerSteps({ design: { stylesheet: "src/assets/tailwind.css" } }));
 
     expect(labels).toEqual([
@@ -703,6 +851,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "validate-modern-css",
       "validate-class-order",
       "validate-class-tokens",
+      "validate-css-coverage",
       "test",
       "validate-dev-boundary",
       "validate-dev-bundle",
@@ -710,7 +859,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
     expect(labels).not.toContain("validate-css-tokens");
   });
 
-  it("adds validate-css-tokens as the fourth row when a cssDir is given", () => {
+  it("adds validate-css-tokens after the coverage row when a cssDir is given", () => {
     expect(labelsOf(cloudflareWorkerSteps({ design: DESIGN }))).toEqual([
       "types:cf-runtime",
       "types:cf-bindings",
@@ -721,6 +870,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "validate-modern-css",
       "validate-class-order",
       "validate-class-tokens",
+      "validate-css-coverage",
       "validate-css-tokens",
       "test",
       "validate-dev-boundary",
@@ -768,7 +918,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
 async function classOrderResult(options: Parameters<typeof cloudflareWorkerSteps>[0]): Promise<boolean> {
   const step = cloudflareWorkerSteps(options).find((s) => s.label === "validate-class-order");
   if (step === undefined || !isCheckStep(step)) throw new Error("validate-class-order missing");
-  return (await step.run("quality")).ok;
+  return (await step.run("static")).ok;
 }
 
 describe("cloudflareWorkerSteps() — the generated-type commands", () => {
@@ -860,7 +1010,7 @@ describe("cloudflareWorkerSteps() — options", () => {
 });
 
 describe("cloudflareWorkerSteps() — the type-aware lint row", () => {
-  it("emits lint:types on the quality tier, immediately after format", () => {
+  it("emits lint:types on the static tier, immediately after format", () => {
     const steps = cloudflareWorkerSteps({ sources: ["src/", "tests/"] });
     const row = steps.find((step) => step.label === "lint:types");
 
@@ -893,7 +1043,7 @@ describe("cloudflareWorkerSteps() — the type-aware lint row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the markdown row", () => {
-  it("emits validate-markdown on the quality tier, between format and lint:types", () => {
+  it("emits validate-markdown on the static tier, between format and lint:types", () => {
     const steps = cloudflareWorkerSteps({ markdown: { sources: ["docs"] } });
     const row = steps.find((step) => step.label === "validate-markdown");
 
@@ -993,6 +1143,7 @@ describe("cloudflareWorkerSteps() — watches", () => {
     expect(watches["validate-modern-css"]).toEqual(["src", "src/**"]);
     expect(watches["validate-class-order"]).toEqual(["src", "src/**"]);
     expect(watches["validate-class-tokens"]).toEqual(["src", "src/**", "**/*.css"]);
+    expect(watches["validate-css-coverage"]).toEqual(["src", "src/**", "**/*.css"]);
     expect(watches["validate-css-tokens"]).toEqual(["**/*.css"]);
     expect(watches["validate-ssr-boundary"]).toEqual(["src", "src/**"]);
     expect(watches["validate-client-boundary"]).toEqual(["src/ui/client", "src/ui/client/**", "src/app", "src/app/**"]);
@@ -1054,10 +1205,10 @@ describe("forgeChecks() — shape", () => {
     ]);
   });
 
-  it("holds back only the test row, so every check it emits is a quality-run assurance", () => {
+  it("holds back only the test row, so every check it emits is a static-run assurance", () => {
     const held = forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.tier !== undefined);
 
-    expect(held.map((step) => [step.label, step.tier])).toEqual([["test", "standard"]]);
+    expect(held.map((step) => [step.label, step.tier])).toEqual([["test", "unit"]]);
   });
 
   it("omits the checks carrying project-specific policy, which a table must name explicitly", () => {
@@ -1069,7 +1220,7 @@ describe("forgeChecks() — shape", () => {
     expect(labels).not.toContain("validate-css-sources");
   });
 
-  it("carries no machine prerequisite, so the whole preset is legal in a quality run", () => {
+  it("carries no machine prerequisite, so the whole preset is legal in a static run", () => {
     expect(forgeChecks({ root: "/nowhere", pkg: PKG }).filter((step) => step.requires !== undefined)).toEqual([]);
   });
 });

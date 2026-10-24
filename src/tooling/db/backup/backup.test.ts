@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it, spyOn } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
@@ -27,8 +27,8 @@ import { schemaFingerprint } from "../migrate/fingerprint";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import type { DbHostConfig, DbIo, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
-import { resolveBackupsDir, runBackup, withoutPlannerStatistics } from "./backup";
-import * as read from "./read";
+import { resolveBackupsDir, runBackup, takeBackup, withoutPlannerStatistics } from "./backup";
+import { readWholeTable } from "./read";
 
 const roots: string[] = [];
 
@@ -732,21 +732,22 @@ describe("runBackup --via export", () => {
   it("proves a verified export without reading the restore whole, and records the digests a read backup of the same rows records", async () => {
     const members = Array.from({ length: 300 }, (_, index) => ({ team: `team-${index % 2}`, person: `p${String(index).padStart(3, "0")}` }));
     const database = { ...COMPOSITE, rows: { ...ROWS, members } };
-    const wholeReads = spyOn(read, "readWholeTable");
-    try {
-      const exported = await runBackup(await context(appRoot(), exporting(database)), { out: null, verify: true, label: null, via: "export" });
-      const exportedWholeReads = wholeReads.mock.calls.length;
-      const readBackup = await runBackup(await context(appRoot(), fakeWrangler(database)), { out: null, verify: true, label: null });
+    let wholeReads = 0;
+    const counting = { readWholeTable: (...args: Parameters<typeof readWholeTable>) => ((wholeReads += 1), readWholeTable(...args)) };
+    const exported = await takeBackup(
+      await context(appRoot(), exporting(database)),
+      { out: null, verify: true, label: null, via: "export" },
+      counting,
+    );
+    const exportedWholeReads = wholeReads;
+    const readBackup = await takeBackup(await context(appRoot(), fakeWrangler(database)), { out: null, verify: true, label: null }, counting);
 
-      expect({ export: exportedWholeReads, read: wholeReads.mock.calls.length }).toEqual({ export: 0, read: 3 });
-      expect(exported.manifest.verified).toEqual([
-        { route: "full", divergent: 0 },
-        { route: "migrations", divergent: 0 },
-      ]);
-      expect(exported.manifest.tables).toEqual(readBackup.manifest.tables);
-    } finally {
-      wholeReads.mockRestore();
-    }
+    expect({ export: exportedWholeReads, read: wholeReads }).toEqual({ export: 0, read: 3 });
+    expect(exported.manifest.verified).toEqual([
+      { route: "full", divergent: 0 },
+      { route: "migrations", divergent: 0 },
+    ]);
+    expect(exported.manifest.tables).toEqual(readBackup.manifest.tables);
   });
 
   it("passes an export whose rows differ in content from the source's, since it never compares them with the source", async () => {

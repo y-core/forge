@@ -58,9 +58,23 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      # `standard`; `verify:full` will have completed by the time a tag reaches here
+      # Pinned to the installed `@playwright/test`: the gate refuses a server on any other version. Started by
+      # hand because a service container takes no command, and this image's default command is a shell.
+      - name: start playwright server
+        run: |
+          docker run -d --name playwright --init --ipc=host -p 3000:3000 mcr.microsoft.com/playwright:v1.64.1-noble \
+            npx -y playwright@1.64.1 run-server --port 3000 --host 0.0.0.0 --max-clients "$PLAYWRIGHT_SERVER_MAX_CLIENTS"
+          timeout 120 bash -c 'until (echo > /dev/tcp/127.0.0.1/3000) 2>/dev/null; do sleep 1; done'
+        env:
+          PLAYWRIGHT_SERVER_MAX_CLIENTS: "4"
+
+      # `deploy`: every runtime suite whole, on Chromium; `verify:release` adds the engine matrix before the tag is cut
       - name: verify
-        run: bun run verify
+        run: bun run verify:deploy
+        env:
+          PW_TEST_CONNECT_WS_ENDPOINT: ws://127.0.0.1:3000/
+          PW_TEST_CONNECT_EXPOSE_NETWORK: <loopback>
+          PLAYWRIGHT_SERVER_MAX_CLIENTS: "4"
 
       - name: pack
         run: bun pm pack --filename "y-core-forge-${VERSION}.tgz"

@@ -94,8 +94,6 @@ const Tab: FC<TabProps> = ({ for: panelId, selected = false, disabled = false, c
     {...(selected ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}
     class={cn(TAB_BASE, cls)}
     {...rest}
-    // After `rest`, because a caller's own `id` would otherwise leave the panel's reference dangling:
-    // the pairing is derived from the one id the caller wrote, and is not theirs to break.
     id={tabId(panelId)}>
     {children}
   </a>
@@ -108,7 +106,7 @@ const TabsContent: FC<TabsContentProps> = ({ id, selected = false, class: cls, c
     data-slot={slotToken("tabs-content", inherited)}
     tabindex={0}
     aria-labelledby={tabId(id)}
-    {...(selected ? {} : { hidden: true })}
+    {...(selected ? {} : { hidden: "until-found" as const })}
     {...stateAttrs({ selected })}
     class={cn("focus-ring", cls)}
     {...rest}>

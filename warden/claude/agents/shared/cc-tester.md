@@ -34,8 +34,8 @@ This agent exists to absorb them — _not_ because an agent cannot be trusted to
 
 That rationale is also the boundary:
 
-- **The full cross-cutting gate comes here.** `bun run verify`, the release gate, any suite whose output is voluminous or whose failure could belong
-  to more than one owner.
+- **The full cross-cutting gate comes here.** `bun run verify`, the run a task closes on; `bun run verify:release`, the sign-off a release blocks
+  on; any suite whose output is voluminous or whose failure could belong to more than one owner. A caller that names no tier gets a bare `verify`.
 - **A single scoped step does not have to.** An owning agent may run `bun run verify --only lint` or one test file itself: the output is small and
   it owns the fix either way. Routing a few lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
 - **A scoped green is never a green gate**, whoever ran it.

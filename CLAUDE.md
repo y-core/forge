@@ -32,7 +32,7 @@
 - ALWAYS give every source file its own co-located test (`*.test.ts` / `*.test.tsx`) — an `@internal` helper file included, and covering it through
   a caller does not satisfy the check ([`CODE_RULES.md`][cr-4] §4, [`TESTING.md`][tl-2] §2)
 - ALWAYS run local verification after changes — **the full gate goes to `cc-tester`**; a single scoped step is yours to run (`AGENT_WORKFLOW.md` §4)
-- ALWAYS write inside `bun run verify:quality`, and never offer a task for review without a green gate behind it — the lane is a claim about a run
+- ALWAYS write inside `bun run verify:static`, and never offer a task for review without a green gate behind it — the lane is a claim about a run
   (`AGENT_WORKFLOW.md` §5), and a budget or document failing there is one the reviewer now spends their pass on
 - ALWAYS write for the reader, not the record (`PLAIN_LANGUAGE.md` §2, §3d, §8)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (`AGENT_WORKFLOW.md` §3), and keep a command in a shape the
@@ -56,8 +56,9 @@
 | `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
 | `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 
-A bare `bun run verify` is the `standard` tier — the run a task closes on. **`bun run verify:quality` is the loop to write in**: every row that
-judges the source rather than running it, which is the whole gate bar the test suite, in about thirteen seconds. It holds the rules above that a
+A bare `bun run verify` is the `runtime` tier — the run a task closes on, with the browser and workerd suites on Chromium narrowed to the pending
+changes. **`bun run verify:static` is the loop to write in**: every row that judges the source rather than running it, which is the whole gate bar
+the test suites, in about thirteen seconds. It holds the rules above that a
 step checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a finding lands in
 seconds instead of after a 16-second suite.
 
@@ -65,10 +66,10 @@ These flags are not findable from `package.json`:
 
 ```bash
 bun run verify --only lint     # one step, for the dev loop (any step label)
-bun run verify --list          # print the steps of the selected mode, run none
+bun run verify --list          # print the steps of the selected tier, run none
 ```
 
-Gate philosophy, the modes, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. The step list itself is `config/steps.ts`.
+Gate philosophy, the tiers, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. The step list itself is `config/steps.ts`.
 
 **Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), `biome` (retired — use `oxfmt`).
 

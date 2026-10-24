@@ -207,7 +207,7 @@ of any security-sensitive guard.
 ## Gate Obligations
 What the change newly comes under: a co-located test per new source file, a
 barrel entry per new public symbol, and the document rules for every section
-the plan adds. Name them; the `quality` tier is what closes them.
+the plan adds. Name them; the `static` tier is what closes them.
 
 ## Open Questions
 Anything you could not resolve — state the options and your recommendation.

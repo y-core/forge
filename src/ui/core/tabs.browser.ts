@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { mount, withCompiledCss } from "../client/browser.fixture";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { Tabs } from "./tabs";
 
@@ -68,6 +68,34 @@ test.describe("Tabs", () => {
     await start(page);
 
     expect(await tabsState(page)).toEqual({ selected: ["p-a-tab"], dataSelected: ["p-a-tab"], visiblePanels: ["p-a"] });
+  });
+
+  test("keeps a server-hidden panel out of the layout once mounted, before any selection", async ({ page }) => {
+    await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
+    await start(page);
+
+    expect(await page.locator("#p-b").evaluate((el) => getComputedStyle(el).display)).toBe("none");
+  });
+
+  test("hides a panel revealed before mount, and leaves no until-found for the platform to reveal again", async ({ page }) => {
+    await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
+    await page.evaluate(() => document.querySelector("#p-b")?.removeAttribute("hidden"));
+    await start(page);
+
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("[role='tabpanel']")].map((el) => [
+          el.id,
+          getComputedStyle(el).display,
+          el.getAttribute("hidden"),
+        ]),
+      ),
+    ).toEqual([
+      ["p-a", "block", null],
+      ["p-b", "none", ""],
+      ["p-c", "none", ""],
+      ["p-d", "none", ""],
+    ]);
   });
 
   test("is one Tab stop", async ({ page }) => {

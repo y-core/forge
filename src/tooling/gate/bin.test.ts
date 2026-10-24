@@ -3,10 +3,10 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CliContext } from "../cli/types";
+import { worktreeFixture } from "../cli/worktree.fixture";
 import { createReleaseBinCommand } from "../release/release";
 import { PLAIN } from "../term/color";
 import { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
-import { worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
 

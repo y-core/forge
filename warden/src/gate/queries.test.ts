@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
+import type { GateTier } from "../../../src/tooling/gate/types";
 import { openDatabase } from "../index/db";
 import { checkGoldenQueries } from "./queries";
 
@@ -145,7 +146,7 @@ describe("checkGoldenQueries()", () => {
     expect(result.summary).toContain("floor margin 0.045 answered / 0.000 refused");
   });
 
-  it("warns on a standard run when the floor has less than 0.05 of room, naming both queries", () => {
+  it("warns on a unit run when the floor has less than 0.05 of room, naming both queries", () => {
     const result = checkGoldenQueries({ ...config(repo("warden-golden-margin-warn-")), queries: QUORUM, coverage: false });
 
     const margin = result.findings.find((finding) => finding.file === "warden/src/search/search.ts");
@@ -155,10 +156,13 @@ describe("checkGoldenQueries()", () => {
     expect(margin?.detail).toEqual([`thinnest answered 0.045  "${THIN.query}"`, 'loudest refused   0.000  ""']);
   });
 
-  it("fails the same margin on a release run — a warning that fires daily is trained away", () => {
-    const result = checkGoldenQueries({ ...config(repo("warden-golden-margin-fail-")), queries: QUORUM, coverage: false }, "full");
+  it("fails the same margin from the deploy tier up — a warning that fires daily is trained away", () => {
+    const margin = (tier: GateTier) =>
+      checkGoldenQueries({ ...config(repo("warden-golden-margin-fail-")), queries: QUORUM, coverage: false }, tier).findings.find(
+        (finding) => finding.file === "warden/src/search/search.ts",
+      )?.level;
 
-    expect(result.findings.find((finding) => finding.file === "warden/src/search/search.ts")?.level).toBe("fail");
+    expect([margin("runtime"), margin("deploy"), margin("release")]).toEqual(["warn", "fail", "fail"]);
   });
 
   it("stands the margin guard down for a replacement set too small to have measured the corpus", () => {

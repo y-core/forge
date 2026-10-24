@@ -94,8 +94,8 @@ async function proveSkeleton(
     if (build.code !== 0) return fail(`${label}: the skeleton's asset build failed`, { detail: tail(build.output) });
   }
 
-  const verify = run(["forge", "verify", "--mode", "standard"], tree, env);
-  if (verify.code !== 0) return fail(`${label}: the skeleton's standard gate failed`, { detail: tail(verify.output) });
+  const verify = run(["forge", "verify", "--tier", "unit"], tree, env);
+  if (verify.code !== 0) return fail(`${label}: the skeleton's unit gate failed`, { detail: tail(verify.output) });
   return undefined;
 }
 
@@ -126,7 +126,7 @@ function sameDropped(a: ResolvedProfile, b: ResolvedProfile): boolean {
   return a.dropped.length === b.dropped.length && a.dropped.every((feature) => b.dropped.includes(feature));
 }
 
-/** Curates the working tree once per distinct resolved profile, each into its own temporary directory, and runs that skeleton's `standard` gate there. @public */
+/** Curates the working tree once per distinct resolved profile, each into its own temporary directory, and runs that skeleton's `unit` gate there. @public */
 export async function checkFeatures(check: FeaturesCheckConfig, run: CurateRunner = runCommand): Promise<CheckResult> {
   let config: FeatureManifest;
   try {
@@ -150,5 +150,5 @@ export async function checkFeatures(check: FeaturesCheckConfig, run: CurateRunne
     const finding = await gateProfile(check, config, profile, run);
     if (finding !== undefined) return checkResult([finding], "");
   }
-  return checkResult([], `features: ${distinct.map((profile) => profile.label).join("; ")} each passed its standard gate`);
+  return checkResult([], `features: ${distinct.map((profile) => profile.label).join("; ")} each passed its unit gate`);
 }

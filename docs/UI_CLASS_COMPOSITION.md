@@ -145,7 +145,7 @@ removes a real repetition; a group id is its own documentation at the point of u
 
 **`validate-class-groups` regenerates the table and fails the gate on any difference**, so a `tailwindcss` release that moves the ground truth is
 reported rather than silently absorbed, and a hand edit to the generated file fails the same way. It runs wherever the optional `tailwindcss` peer
-resolves — skipped below the `full` tier, failed by a full run ([`TEST_RUNNERS.md`][testing-6] §6).
+resolves — skipped below the `runtime` tier, failed from `runtime` up ([`TEST_RUNNERS.md`][testing-6] §6).
 
 **The class list is not authoritative for a root's named values.** `getClassList()` enumerates a value scale for `left`, `right` and `inset-s` but
 nothing for `start` and `end` beyond three statics, so `start-*` and `end-*` would otherwise not merge against each other at all. A root the class
@@ -304,10 +304,11 @@ last-declaration-wins.
 
 ### 2e. A Consumer Rule Loses by Layer, Not by Selector
 
-**Every rule in `forge-ui.css` sits in `@layer components`, so a utility passed at a call site wins over a component default** — which is what makes
-`class` on a forge component behave as it reads. The consequence runs the other way too: a rule an app puts in `@layer components` is outranked by
-every forge utility in `@layer utilities`, whatever its specificity. **The remedy is a layer, not a selector** — one declared after `utilities`.
-Reaching for higher specificity instead appears to work until the next utility is added.
+**A component default in `forge-ui.css` sits in `@layer components`, so a utility passed at a call site wins over it** — which is what makes `class`
+on a forge component behave as it reads. A state rule and the forced-colors restorations sit in `@layer utilities`, because a component's own
+utility must not outrank them. The consequence runs the other way too: a rule an app puts in `@layer components` is outranked by every forge utility
+in `@layer utilities`, whatever its specificity. **The remedy is a layer, not a selector** — one declared after `utilities`. Reaching for higher
+specificity instead appears to work until the next utility is added.
 
 ### 2f. A Reserved Root, Where a Utility Root Carries Two Concerns
 

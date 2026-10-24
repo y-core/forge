@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 
-import { classesOf, mount, renderedClasses, test } from "./browser.fixture";
+import { classesOf, mount, renderedClasses, test, withCompiledCss } from "./browser.fixture";
 
 const NO_PREFERENCE_RULE = `<style>@media (prefers-reduced-motion: no-preference) { #probe { translate: 100px; } }</style><div id="probe">probe</div>`;
 
@@ -39,6 +39,17 @@ test.describe("the harness under test.use({ forcedColors })", () => {
   test("reaches the page", async ({ page }) => {
     await mount(page, "<div>probe</div>");
     expect(await page.evaluate(() => matchMedia("(forced-colors: active)").matches)).toBe(true);
+  });
+});
+
+test.describe("withCompiledCss with script disabled", () => {
+  test.use({ javaScriptEnabled: false });
+
+  test("inlines the utilities the markup names and preflight's [hidden] rule", async ({ page }) => {
+    await mount(page, await withCompiledCss(`<div id="q" class="p-4">q</div><div id="p" hidden>p</div>`));
+
+    expect(await page.locator("#q").evaluate((el) => getComputedStyle(el).paddingTop)).toBe("16px");
+    expect(await page.locator("#p").evaluate((el) => getComputedStyle(el).display)).toBe("none");
   });
 });
 

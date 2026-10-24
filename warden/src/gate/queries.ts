@@ -1,5 +1,6 @@
 import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
-import type { CheckResult, Finding, GateMode } from "../../../src/tooling/gate/types";
+import type { CheckResult, Finding, GateTier } from "../../../src/tooling/gate/types";
+import { GATE_TIERS } from "../../../src/tooling/gate/types";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { build } from "../index/build";
@@ -63,7 +64,7 @@ function rollup(measured: ReadonlyMap<Dimension, Rollup>): string {
 }
 
 /** Runs the golden retrieval set against a freshly built index. @public */
-export function checkGoldenQueries(config: GoldenCheckConfig, mode: GateMode = "standard"): CheckResult {
+export function checkGoldenQueries(config: GoldenCheckConfig, tier: GateTier = "unit"): CheckResult {
   const queries = config.queries ?? GOLDEN;
   if (queries.length === 0) return scannedNothing("the golden set is empty — retrieval is unmeasured", "warden:queries", "read");
 
@@ -180,7 +181,7 @@ export function checkGoldenQueries(config: GoldenCheckConfig, mode: GateMode = "
     const margin = thinnest - loudest;
     const guarded = config.queries === undefined || queries.length >= MARGIN_QUORUM;
     if (guarded && margin < MARGIN) {
-      const report = mode === "full" ? fail : warn;
+      const report = GATE_TIERS.indexOf(tier) >= GATE_TIERS.indexOf("deploy") ? fail : warn;
       findings.push(
         report(`the floor has ${margin.toFixed(3)} of room left, under ${MARGIN.toFixed(2)} — \`FLOOR\` is ${FLOOR} and sits between these two`, {
           file: "warden/src/search/search.ts",

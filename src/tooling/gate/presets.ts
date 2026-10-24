@@ -1,17 +1,20 @@
 import { existsSync, readdirSync } from "node:fs";
 import { posix, resolve } from "node:path";
 
+import { assetInputs } from "../assets/inputs";
 import { CliError } from "../cli/errors";
+import { worktreeFiles } from "../cli/worktree";
 import { loadFeatures } from "../curate/config";
 import {
   assetManifestStep,
   assetRootStep,
-  browserStep,
+  browserSteps,
   checkStep,
   classOrderStep,
   classTokensStep,
   compatibilityStep,
   contrastStep,
+  cssCoverageStep,
   cssTokensStep,
   dbSteps,
   devBoundaryStep,
@@ -34,6 +37,8 @@ import {
 } from "./builders";
 import { checkImportBoundary } from "./checks/import-boundary";
 import { isTestSource } from "./checks/source-scan";
+import { isRecord, readWorkerConfig } from "./checks/worker-config";
+import { workerMainClosure } from "./closure";
 import { checkResult, fail } from "./finding";
 import type { Step } from "./types";
 import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
@@ -54,6 +59,22 @@ function besideVendor(root: string, vendorDir: string): string[] {
     .map((entry) => (parent === "." ? entry.name : `${parent}/${entry.name}`))
     .filter((path) => path !== vendorDir)
     .sort();
+}
+
+async function assetReach(cwd: string, assetConfig: string): Promise<string[]> {
+  const files = worktreeFiles(cwd);
+  if (files === undefined) throw new Error(`${cwd} is not inside a git work tree, so no listing meets the stylesheets' \`@source\``);
+  return assetInputs(cwd, assetConfig, files);
+}
+
+async function servedAssetReach(cwd: string, workerConfig: string, assetConfig: string): Promise<string[]> {
+  const read = readWorkerConfig(cwd, workerConfig, "asset reach");
+  if (!("config" in read)) throw new Error(read.findings.map((finding) => finding.message).join("; "));
+  return isRecord(read.config.assets) ? assetReach(cwd, assetConfig) : [];
+}
+
+async function unionReach(traces: readonly Promise<string[]>[]): Promise<string[]> {
+  return [...new Set((await Promise.all(traces)).flat())].sort();
 }
 
 /** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
@@ -125,6 +146,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
       modernCssStep({ root, sources: designSources, deferred: design.deferred ?? [] }),
       classOrderStep({ root, sources: designSources }),
       classTokensStep({ root, sources: designSources, stylesheet: design.stylesheet }),
+      cssCoverageStep({ root, sources: designSources, stylesheet: design.stylesheet }),
     );
     if (design.cssDir !== undefined) {
       steps.push(cssTokensStep({ root, stylesheet: design.stylesheet, cssDir: design.cssDir }));
@@ -206,13 +228,24 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
   const devTrees = { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] };
   steps.push(devBoundaryStep(devTrees));
-  // Full tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
-  steps.push(devBundleStep(devTrees, { tier: "full" }));
+  // Deploy tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
+  steps.push(devBundleStep(devTrees));
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
+  // A spec reaches the app through the Worker and any assets it serves, never an import, so a change to either runs the row whole.
+  const workerConfig = options.workerConfig ?? "wrangler.jsonc";
+  const assetConfig = options.assetConfig;
+  const workerTrace = (cwd: string): Promise<string[]> => workerMainClosure(cwd, workerConfig);
+  const widen =
+    assetConfig === undefined ? workerTrace : (cwd: string): Promise<string[]> => unionReach([workerTrace(cwd), assetReach(cwd, assetConfig)]);
+  const workerdWiden =
+    assetConfig === undefined
+      ? workerTrace
+      : (cwd: string): Promise<string[]> => unionReach([workerTrace(cwd), servedAssetReach(cwd, workerConfig, assetConfig)]);
   if (options.db) steps.push(...dbSteps({ root }));
-  if (options.browser) steps.push(browserStep({ tier: "full" }));
-  if (options.workerd) steps.push(workerdStep({ tier: "full" }));
+  if (options.browser === true) steps.push(...browserSteps({ engines: ["chromium"], widen }));
+  else if (options.browser !== undefined && options.browser !== false) steps.push(...browserSteps({ engines: options.browser.engines, widen }));
+  if (options.workerd) steps.push(workerdStep({ widen: workerdWiden }));
   if (options.features !== undefined) {
     const assets = options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut };
     steps.push(featuresStep({ root, ...options.features, ...assets }));

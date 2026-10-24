@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { cpSync } from "node:fs";
 
-import { gateFixtureRoot } from "./checks/gate.fixture";
+import { gateFixtureRoot } from "../gate/checks/gate.fixture";
 import { worktreeGitEnv } from "./worktree";
 
 function gitIn(root: string, args: string[]): void {

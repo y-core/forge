@@ -3,11 +3,11 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { worktreeHash } from "../cli/worktree";
+import { cloneWorktree, worktreeFixture } from "../cli/worktree.fixture";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { clearReceipt, readReceipt, receiptCovers, recordReceipt } from "./receipt";
 import type { GateReceipt } from "./types";
-import { worktreeHash } from "./worktree";
-import { cloneWorktree, worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
 
@@ -40,7 +40,7 @@ const OTHER = "b".repeat(40);
 const RECEIPT_PATH = ".git/forge-verify-receipt.json";
 
 function receipt(overrides: Partial<GateReceipt> = {}): GateReceipt {
-  return { tree: TREE, mode: "standard", labels: ["typecheck", "lint"], ...overrides };
+  return { tree: TREE, tier: "unit", labels: ["typecheck", "lint"], ...overrides };
 }
 
 function status(root: string): string {
@@ -65,9 +65,11 @@ describe("readReceipt()", () => {
 
   const malformed: readonly [string, string][] = [
     ["malformed JSON", "{not json"],
-    ["an unknown mode", JSON.stringify({ tree: TREE, mode: "release", labels: [] })],
-    ["a non-hex tree", JSON.stringify({ tree: "z".repeat(40), mode: "standard", labels: [] })],
-    ["a non-array labels", JSON.stringify({ tree: TREE, mode: "standard", labels: "lint" })],
+    ["an unknown tier", JSON.stringify({ tree: TREE, tier: "full", labels: [] })],
+    ["a receipt written under the retired `mode` key", JSON.stringify({ tree: TREE, mode: "standard", labels: [] })],
+    ["a non-hex base", JSON.stringify({ tree: TREE, tier: "runtime", base: "HEAD", labels: [] })],
+    ["a non-hex tree", JSON.stringify({ tree: "z".repeat(40), tier: "unit", labels: [] })],
+    ["a non-array labels", JSON.stringify({ tree: TREE, tier: "unit", labels: "lint" })],
   ];
   for (const [name, contents] of malformed) {
     it(`reads ${name} as no receipt`, () => {
@@ -78,6 +80,13 @@ describe("readReceipt()", () => {
     });
   }
 
+  it("reads back the base a runtime receipt was recorded against", () => {
+    const root = worktreeClone();
+    recordReceipt(root, receipt({ tier: "runtime", base: OTHER }));
+
+    expect(readReceipt(root)).toEqual(receipt({ tier: "runtime", base: OTHER }));
+  });
+
   it("accepts a 64-hex tree, as a SHA-256 repository writes", () => {
     const root = worktreeClone();
     recordReceipt(root, receipt({ tree: "c".repeat(64) }));
@@ -87,28 +96,28 @@ describe("readReceipt()", () => {
 });
 
 describe("recordReceipt()", () => {
-  it("keeps a higher-mode receipt for the same tree over a lower-mode one", () => {
+  it("keeps a higher-tier receipt for the same tree over a lower-tier one", () => {
     const root = worktreeClone();
-    recordReceipt(root, receipt({ mode: "full" }));
-    recordReceipt(root, receipt({ mode: "quality" }));
+    recordReceipt(root, receipt({ tier: "release" }));
+    recordReceipt(root, receipt({ tier: "static" }));
 
-    expect(readReceipt(root)?.mode).toBe("full");
+    expect(readReceipt(root)?.tier).toBe("release");
   });
 
-  it("replaces a receipt for a different tree, whatever its mode", () => {
+  it("replaces a receipt for a different tree, whatever its tier", () => {
     const root = worktreeClone();
-    recordReceipt(root, receipt({ mode: "full" }));
-    recordReceipt(root, receipt({ tree: OTHER, mode: "quality" }));
+    recordReceipt(root, receipt({ tier: "release" }));
+    recordReceipt(root, receipt({ tree: OTHER, tier: "static" }));
 
-    expect(readReceipt(root)).toEqual(receipt({ tree: OTHER, mode: "quality" }));
+    expect(readReceipt(root)).toEqual(receipt({ tree: OTHER, tier: "static" }));
   });
 
-  it("replaces a receipt for the same tree with a higher-mode one", () => {
+  it("replaces a receipt for the same tree with a higher-tier one", () => {
     const root = worktreeClone();
-    recordReceipt(root, receipt({ mode: "quality" }));
-    recordReceipt(root, receipt({ mode: "full" }));
+    recordReceipt(root, receipt({ tier: "static" }));
+    recordReceipt(root, receipt({ tier: "release" }));
 
-    expect(readReceipt(root)?.mode).toBe("full");
+    expect(readReceipt(root)?.tier).toBe("release");
   });
 
   it("changes neither the tree hash nor git status, since it lives in the git directory", () => {
@@ -155,18 +164,33 @@ describe("clearReceipt()", () => {
 });
 
 describe("receiptCovers()", () => {
-  const wanted = { tree: TREE, mode: "standard" as const, labels: ["lint"] };
+  const wanted = { tree: TREE, tier: "unit" as const, labels: ["lint"] };
 
-  it("covers the same tree and mode when the request's labels are a subset", () => {
+  it("covers the same tree and tier when the request's labels are a subset", () => {
     expect(receiptCovers(receipt(), wanted)).toBe(true);
   });
 
-  it("lets a full receipt cover a standard request", () => {
-    expect(receiptCovers(receipt({ mode: "full" }), wanted)).toBe(true);
+  it("lets a release receipt cover a unit request", () => {
+    expect(receiptCovers(receipt({ tier: "release" }), wanted)).toBe(true);
   });
 
-  it("refuses a quality receipt for a standard request", () => {
-    expect(receiptCovers(receipt({ mode: "quality" }), wanted)).toBe(false);
+  it("refuses a static receipt for a unit request", () => {
+    expect(receiptCovers(receipt({ tier: "static" }), wanted)).toBe(false);
+  });
+
+  it("refuses a runtime receipt recorded against another base, since its narrowing read changes against that commit", () => {
+    const runtime = { ...wanted, tier: "runtime" as const, base: TREE };
+
+    expect(receiptCovers(receipt({ tier: "runtime", base: TREE }), runtime)).toBe(true);
+    expect(receiptCovers(receipt({ tier: "runtime", base: OTHER }), runtime)).toBe(false);
+    expect(receiptCovers(receipt({ tier: "runtime" }), runtime)).toBe(false);
+  });
+
+  it("ignores the base of a receipt from any other tier, since none of them narrows", () => {
+    expect(receiptCovers(receipt({ tier: "deploy", base: OTHER }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
+    expect(receiptCovers(receipt({ tier: "release", base: OTHER }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
+    expect(receiptCovers(receipt({ tier: "release" }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
+    expect(receiptCovers(receipt({ base: OTHER }), { ...wanted, base: TREE })).toBe(true);
   });
 
   it("refuses a different tree", () => {

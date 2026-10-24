@@ -104,6 +104,8 @@
   &:focus-visible,
   &:has(:focus-visible) {
     @apply inset-ring-2 inset-ring-[var(--focus-ring,var(--color-ring))];
+    outline: 2px solid transparent;
+    outline-offset: -2px;
   }
 }
 
@@ -294,24 +296,13 @@
 
   /* ══ 1. Anchored placement — Popover, Menu, Toolbar ══════════════════════
 
-   No `anchor-name`, `anchor-scope` or `position-anchor` anywhere: a popup shown by an invoker gets
-   an **implicit anchor** — its invoker — and `position-anchor`'s initial `auto` resolves to it. That
-   holds for `command`/`commandfor` exactly as for `popovertarget`, and it binds each submenu to its
-   own row, which no name can do (an open panel is in the top layer, where a row-named lookup returns
-   the last matching row in tree order — csswg-drafts #11602). Naming an anchor here would *override*
-   the implicit one and is what previously made a JavaScript binding look necessary.
-
-   The boundary: a popup shown by `showPopover()` rather than by an invoker has no implicit anchor and
-   falls back to its static position. Every popup forge ships is invoker-opened, and a coordinate-placed
-   one sets its own inset. `menu-anchor.browser.ts` holds all three cases.
-
-   `:not([data-coords])` rather than source order. `Menu.Popup` emits `data-side` even when `coords`
-   is set, so these selectors really do match a context menu, and the coordinate rule below used to
-   win only by tying on specificity and coming later. */
+   `position-anchor`'s initial value is `normal`, so the rule names `auto` to reach the invoker's
+   implicit anchor. No `anchor-name` is set: a name would override that per-row implicit anchor. */
   [data-slot~="menu-popup"]:not([data-coords]),
   [data-slot~="popover-content"],
   [data-slot~="toolbar-flyout"] {
     position: fixed;
+    position-anchor: auto;
     margin: 0;
     inset: auto;
     /* Anchored placement - flip rather than run off-screen. */
@@ -841,13 +832,12 @@
   }
 
   /* ══ 5b. Tabs — the no-script fallback ════════════════════════════════════
-   A tab is an `<a href="#panel">`, so with no script the browser still navigates to the panel; these
-   two rules are what make that navigation *show* it. The UA's `[hidden]` rule is not `!important`,
-   so an author rule may reveal a panel the server rendered closed, and `:has()` is what lets the
-   server-selected panel step aside once the reader has chosen another.
+   Preflight's `!important` `[hidden]` rule exempts `until-found`, which fragment navigation reveals;
+   `:target` covers an engine without it. `mountTabs` retires the `:target` pair via `data-tabs-mounted`. */
+  [data-slot~="tabs-content"][hidden="until-found"] {
+    display: none;
+  }
 
-   Both are retired by `data-tabs-mounted`, which `mountTabs` stamps — from there the controller owns
-   `hidden` and the fragment is never followed. */
   [data-slot~="tabs"]:not([data-tabs-mounted]) [data-slot~="tabs-content"]:target {
     display: block;
   }
@@ -1236,27 +1226,12 @@
   [data-slot~="navbar"]::details-content {
     content-visibility: visible;
   }
+}
 
+@layer utilities {
   /* ══ 9. Forced colors — CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter, Slider, Table.Row ══
-   `CheckboxGroup.Item` and `RadioGroup.Item` set `appearance-none` and paint their own box, which
-   **forfeits WCAG 1.4.11's carve-out** for a component "determined by the user agent and not
-   modified by the author". This block is what forge owes in exchange, and it is not a formality: in
-   forced-colors mode the UA overrides author colours with the user's palette, so `--input` and
-   `--primary` both collapse to the same forced value and a checked box becomes indistinguishable
-   from an empty one. Windows High Contrast users would get two identical squares.
-
-   `forced-color-adjust: none` opts these two elements out of that override, and every value below is
-   a **system colour keyword** rather than a token — which is the point. Opting out is safe only
-   while the replacement still comes from the user's own palette; a `--primary` here would be forge
-   overruling a preference the whole mode exists to honour.
-
-   `Highlight` is the checked fill because it is the palette's "selected" colour, which is what a
-   checked control is. The focus outline is restated because a `ring` is a `box-shadow`, and shadows
-   do not render in forced-colors mode at all — so `focus-visible:ring-2` alone leaves a focused
-   control with no visible indicator here.
-
-   Both controls take the same rules: their difference is `border-radius`, which forced colors does
-   not touch. */
+   Every value is a system colour keyword, so the user's own palette still decides the paint. In
+   `utilities` because a component's own `bg-*` or `outline-none` utility outranks `components`. */
   @media (forced-colors: active) {
     [data-slot~="checkbox-group-input"],
     [data-slot~="radio-group-input"] {
@@ -1339,11 +1314,8 @@
       outline-offset: 2px;
     }
 
-    /* A menu row's focus cue is `focus-visible:bg-accent` — a colour change, which forced colors
-     overrides outright — beside the `outline-none` every row carries. The measured result is a
-     focused row with no indicator at all: no shadow, no outline, and Canvas behind it either way.
-     Unlike `focus-ring`, whose `outline-none` Chromium overrules with its own ring here, this one
-     stands, so the outline is restated. */
+    /* A menu row's focus cue is `focus-visible:bg-accent`, a colour forced colors overrides, beside
+     an `outline-none` that would otherwise leave the row no indicator. */
     :is(
       [data-slot~="menu-item"],
       [data-slot~="menu-checkbox-item"],

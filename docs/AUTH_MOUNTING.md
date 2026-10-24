@@ -171,7 +171,7 @@ Every item here is a seam with a contract and no implementation, and each is req
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | With `AuthWebOptions.turnstile` set: `import "@y-core/forge/ui/client/htmx"` and `import "@y-core/forge/ui/core/client"` before `resume()`, the `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` bindings, and a CSP that admits Cloudflare's challenge | Without both imports nothing mounts the widget or holds the press, so no token reaches the server and every guarded form is refused (§8). Without either binding every guarded page answers 500 naming it. The CSP takes either `NONCE` with `'strict-dynamic'` in `scriptSrc`, or `TURNSTILE_CSP` there, and `TURNSTILE_CSP` in `frameSrc` and `connectSrc` either way — [`src/security/README.md`][security-readme] section “Widening the policy for a third-party origin”. Where Trusted Types are enforced, the `trusted-types` directive lists `TURNSTILE_TRUSTED_TYPES_POLICY` beside `HTMX_TRUSTED_TYPES_POLICY` ([`SECURITY_HARDENING.md`][sh-2g] §2g). |
-| An `@source` line covering the installed package's `src/auth/` directory | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The exact directive is in [`src/auth/README.md`][auth-readme]. |
+| `@import "@y-core/forge/auth/sources.css";` in your stylesheet | `forge.css` does not scan the auth views, so their utility classes are not generated in your build. The file carries the `@source` lines for `src/auth/`; [`src/auth/README.md`][auth-readme] has the detail. |
 | A `ForgeIcon<AuthIconName>` covering every name in that union | The views draw from **your** sprite, not a bundled one. Build it with `createIcon`, documented at [`src/ui/README.md`][ui-readme] section “Bind the icon sprite once”. Lucide covers the whole union, but names one glyph differently: its file is `triangle-alert.svg`, so map it to `alert` when you assemble the sprite. |
 
 **`AuthIconName` owns its own membership.** The type in `src/auth/web/types.ts` is the machine-checked source and the register names it
@@ -210,8 +210,8 @@ with defaults rather than as bare literals is what makes the next binding cost o
 established, not a window activity extends: a session an attacker took is otherwise one they can keep alive forever. A session carrying no
 established-at stamp is over rather than unbounded.
 
-**A stylesheet rebuild.** The `@source` line in §3 changes what Tailwind scans, so your CSS build depends on the installed package's contents as
-well as on your lockfile.
+**A stylesheet rebuild.** The `sources.css` import in §3 changes what Tailwind scans, so your CSS build depends on the installed package's contents
+as well as on your lockfile.
 
 **A browser bundle entry.** `import "@y-core/forge/auth/client"` has to reach the browser before `resume()`, which for most apps means a new entry
 point or an addition to an existing one.

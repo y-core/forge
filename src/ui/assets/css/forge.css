@@ -5,11 +5,11 @@
      @import "@y-core/forge/ui/assets/css/tailwind.css";
 
    That file is Tailwind composed with this one. Import this file directly instead only to pass
-   Tailwind import options of your own — `@import "tailwindcss" source(none);` above it — which is
-   why nothing here imports Tailwind. Take one path or the other, never both.
+   Tailwind import options of your own — `@import "tailwindcss" source(none) prefix(tw);` above
+   it — which is why nothing here imports Tailwind. Take one path or the other, never both.
 
-   Either way that is the whole setup. There is nothing else to supply — no ramp, no custom variant,
-   no theme file. Everything below is imported for you, and each file has exactly one job:
+   Either way the theme needs nothing else from you — no ramp, no custom variant, no theme file.
+   Everything below is imported for you, and each file has exactly one job:
 
      theme-neutral.css     the default colour scheme — `--gray-1` … `--gray-12`, each declared once
      theme-colors.css      the four status hues, the absolute alpha ramps, and the `--cast-a*` /
@@ -124,13 +124,12 @@
    `contracts` sounds type-only, but `menu-contract.ts` publishes a class *string*: a row built in
    the browser cannot invoke an SSR component, so the utilities it needs are written there.
 
-   `logging` is deliberately absent — an opt-in surface an app mounts explicitly, and an app that
-   does not should not pay for its utilities. It documents its own `@source` line.
+   Namespaces outside `ui/` are deliberately absent — each is an opt-in surface an app mounts
+   explicitly, and an app that does not should not pay for its utilities. Each ships its own
+   `sources.css` for the app to import.
 */
 @source "../../core";
 @source "../../chrome";
 @source "../../controls";
 @source "../../contracts";
-@source not "../../**/*.test.ts";
-@source not "../../**/*.test.tsx";
-@source not "../../**/*.browser.ts";
+@source not "../../**/*.{test,browser,fixture}.*";

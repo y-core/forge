@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix, resolve } from "node:path";
 
-import { captureStreams } from "../cli/proc";
+import { captureStreams } from "./proc";
 
 const GIT_LOCATION_VARIABLES = [
   "GIT_DIR",
@@ -48,8 +48,20 @@ export function worktreeHash(cwd: string): string | undefined {
   }
 }
 
+/** The commit `HEAD` names in the work tree at `cwd`, or `undefined` outside one or before its first commit. */
+export function worktreeHead(cwd: string): string | undefined {
+  const head = git(cwd, ["rev-parse", "--verify", "--quiet", "HEAD"]);
+  return head.ok ? head.out.trim() : undefined;
+}
+
 function paths(out: string): string[] {
   return out.split("\0").filter((path) => path !== "");
+}
+
+/** Lists every file under `cwd` the work tree holds, tracked or untracked and never ignored, relative to `cwd`; `undefined` outside a work tree. */
+export function worktreeFiles(cwd: string): readonly string[] | undefined {
+  const listing = git(cwd, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
+  return listing.ok ? [...new Set(paths(listing.out))].sort() : undefined;
 }
 
 /** Lists every path the working tree at `cwd` changes against `HEAD`, untracked files in and ignored ones out, relative to `cwd`. */

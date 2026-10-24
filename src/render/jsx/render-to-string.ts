@@ -23,7 +23,6 @@ export const VOID_ELEMENTS = new Set([
   "wbr",
 ]);
 
-/** Attributes that are boolean: emitted as bare name when truthy, omitted when falsy. */
 const BOOLEAN_ATTRS = new Set([
   "allowfullscreen",
   "async",
@@ -63,16 +62,12 @@ export const URL_ATTRS: ReadonlySet<string> = new Set([
   "xml:base",
 ]);
 
-/** Attributes whose boolean value renders as `="true"`/`="false"`, per HTML's enumerated semantics. */
 const ENUMERATED_ATTRS = new Set(["draggable", "spellcheck", "contenteditable"]);
 
-/** Valid HTML attribute name: starts with a letter/`_`/`:`, then letters, digits, `_`, `.`, `:`, `-`. */
 const VALID_ATTR_NAME = /^[A-Za-z_:][\w.:-]*$/;
 
-/** Valid element tag name: a letter, then letters, digits or `-`. */
 const VALID_TAG_NAME = /^[A-Za-z][A-Za-z0-9-]*$/;
 
-/** Renders element attributes to a string of `key="value"` pairs. */
 function renderAttributes(props: Record<string, unknown>): string {
   let attrs = "";
   for (const [key, value] of Object.entries(props)) {
@@ -119,7 +114,8 @@ function renderAttributes(props: Record<string, unknown>): string {
     if (value === false) continue;
 
     if (BOOLEAN_ATTRS.has(lowerName)) {
-      if (value) attrs += ` ${attrName}`;
+      if (lowerName === "hidden" && value === "until-found") attrs += ` ${attrName}="until-found"`;
+      else if (value) attrs += ` ${attrName}`;
       continue;
     }
 
@@ -144,12 +140,10 @@ function renderAttributes(props: Record<string, unknown>): string {
   return attrs;
 }
 
-/** Duck-type thenable check, so custom thenables are awaited too. */
 function isAsync(value: unknown): value is PromiseLike<unknown> {
   return value != null && typeof (value as Record<string, unknown>).then === "function";
 }
 
-/** Renders a node synchronously, returning a Promise only when an async component is encountered. */
 function renderNodeSync(node: unknown): string | Promise<string> {
   if (node === null || node === undefined || node === false || node === true) return "";
   if (typeof node === "string") return escapeHtml(node);

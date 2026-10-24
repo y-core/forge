@@ -528,16 +528,15 @@ The pages render into the shell your app registers, the same one every other mou
 
 ## Getting the shipped pages into your CSS build
 
-`forge.css` does not scan the auth views, so an app that mounts them must add this line to its own stylesheet, copied as it stands — the path is
-relative to the stylesheet, and this is what it is from an `src/` beside `node_modules`:
+`forge.css` does not scan the auth views, so an app that mounts them imports the namespace's own `@source` lines into its stylesheet:
 
 ```css
-@source "../node_modules/@y-core/forge/src/auth";
+@import "@y-core/forge/auth/sources.css";
 ```
 
-Tailwind's scanner follows the symlink a `file:` dependency installs, so it works against a local checkout too. **Do not judge the line by
-comparing built stylesheets**: forge's `ui` scan set can already produce every class the auth views use, so both builds may come out the same. The
-line is still required.
+Those paths are relative to the file that declares them, so they resolve wherever the package landed — a hoisted install, pnpm, a workspace or a
+git dependency. **Do not judge the import by comparing built stylesheets**: forge's `ui` scan set can already produce every class the auth views
+use, so both builds may come out the same. The import is still required.
 
 The views also draw their glyphs from **your** sprite rather than a bundled one. `AuthWebOptions.icon` is a `ForgeIcon<AuthIconName>`, and that
 union names every symbol it must cover; where to get them is [`AUTH_MOUNTING.md`][am-3] §3.

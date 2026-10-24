@@ -19,10 +19,10 @@ export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): Ch
   return checkStep("validate-docs", () => checkDocs(config), options);
 }
 
-/** Checks the changelog's headings against the current package version, on the `full` tier. @public */
+/** Checks the changelog's headings against the current package version, on the `deploy` tier. @public */
 export function changelogStep(config: ChangelogCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-changelog", () => checkChangelog(config), options, {
-    tier: "full",
+    tier: "deploy",
     watches: [config.file ?? "CHANGELOG.md", config.sectionsFile ?? "config/changelog-sections.json"],
   });
 }
@@ -42,7 +42,7 @@ export function wardenQueriesStep(config: GoldenCheckConfig, options: StepOption
   // The *effective* sets, not the caller's: `warden probe` reads them off this row, so a repository
   // taking the shipped pair is measured against the shipped pair.
   return {
-    ...checkStep(GOLDEN_STEP_LABEL, (mode) => checkGoldenQueries(config, mode), options, { requires: SQLITE }),
+    ...checkStep(GOLDEN_STEP_LABEL, (tier) => checkGoldenQueries(config, tier), options, { requires: SQLITE }),
     golden: config.queries ?? GOLDEN,
     negative: config.negative ?? NEGATIVE,
   };
@@ -91,8 +91,8 @@ export function wardenAppSteps(options: WardenAppStepOptions): readonly CheckSte
       ...(options.decisionsDir === undefined ? {} : { decisionsDir: options.decisionsDir }),
       ...(options.requiredFrontmatter === undefined ? {} : { requiredFrontmatter: options.requiredFrontmatter }),
     }),
-    wardenStep(scope, { tier: "standard" }),
-    wardenQueriesStep({ ...scope, queries, ...(options.negative === undefined ? {} : { negative: options.negative }) }, { tier: "standard" }),
-    duplicatesStep(scope, { tier: "standard" }),
+    wardenStep(scope, { tier: "unit" }),
+    wardenQueriesStep({ ...scope, queries, ...(options.negative === undefined ? {} : { negative: options.negative }) }, { tier: "unit" }),
+    duplicatesStep(scope, { tier: "unit" }),
   ];
 }

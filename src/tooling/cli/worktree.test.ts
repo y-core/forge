@@ -3,8 +3,8 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 
-import { gateFixtureRoot } from "./checks/gate.fixture";
-import { worktreeChanges, worktreeGitEnv, worktreeGitPath, worktreeHash } from "./worktree";
+import { gateFixtureRoot } from "../gate/checks/gate.fixture";
+import { worktreeChanges, worktreeFiles, worktreeGitEnv, worktreeGitPath, worktreeHash, worktreeHead } from "./worktree";
 import { cloneWorktree, worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
@@ -188,6 +188,42 @@ describe("worktreeChanges()", () => {
   });
 });
 
+describe("worktreeFiles()", () => {
+  it("lists tracked and untracked files, never an ignored one, relative to the work tree root", () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "new.txt"), "new\n");
+    writeFileSync(join(root, "ignored.log"), "noise\n");
+
+    expect(worktreeFiles(root)).toEqual([".gitignore", "a.txt", "new.txt", "src/b.txt"]);
+  });
+
+  it("lists only what lies under a subdirectory, relative to it", () => {
+    expect(worktreeFiles(join(worktreeClone(), "src"))).toEqual(["b.txt"]);
+  });
+
+  it("answers undefined outside a work tree", () => {
+    expect(worktreeFiles(fixtureRoot())).toBeUndefined();
+  });
+});
+
+describe("worktreeHead()", () => {
+  it("names the commit HEAD points at, whatever the working tree holds", () => {
+    const root = worktreeClone();
+    const head = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf-8" }).stdout?.trim();
+    writeFileSync(join(root, "a.txt"), "edited\n");
+
+    expect(worktreeHead(root)).toBe(head);
+  });
+
+  it("is undefined in a repository with no commit yet, and outside a work tree", () => {
+    const root = fixtureRoot(FILES, "forge-worktree-");
+    gitIn(root, ["init", "-q"]);
+
+    expect(worktreeHead(root)).toBeUndefined();
+    expect(worktreeHead(fixtureRoot())).toBeUndefined();
+  });
+});
+
 describe("worktreeGitEnv()", () => {
   it("drops git's repository-location variables and keeps the rest of the environment", () => {
     const env = withGitEnv({ GIT_DIR: "/elsewhere/.git", GIT_INDEX_FILE: "/elsewhere/index", GIT_WORK_TREE: "/elsewhere" }, worktreeGitEnv);
@@ -216,5 +252,13 @@ describe("under a hook's GIT_DIR and GIT_INDEX_FILE", () => {
     expect(readFileSync(join(other, ".git/index")).equals(otherIndex)).toBe(true);
     expect(headTree(other)).toBe(otherTree);
     expect(porcelainStatus(other)).toBe("");
+  });
+
+  it("lists the cwd's files rather than the named repository's", () => {
+    const root = worktreeClone();
+    const other = worktreeRoot({ "z.txt": "zeta\n" });
+    const hooked = { GIT_DIR: join(other, ".git"), GIT_INDEX_FILE: join(other, ".git/index") };
+
+    expect(withGitEnv(hooked, () => worktreeFiles(root))).toEqual([".gitignore", "a.txt", "src/b.txt"]);
   });
 });

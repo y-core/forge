@@ -1,17 +1,19 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
+import { parseArgs } from "../cli/parse";
 import type { CliContext } from "../cli/types";
+import { worktreeHash, worktreeHead } from "../cli/worktree";
+import { cloneWorktree, worktreeFixture } from "../cli/worktree.fixture";
 import { PLAIN } from "../term/color";
+import { browserEnginesRequired } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
-import { readReceipt, recordReceipt } from "./receipt";
+import { clearReceipt, readReceipt, recordReceipt } from "./receipt";
 import type { CommandStep, Step } from "./types";
-import { worktreeHash } from "./worktree";
-import { cloneWorktree, worktreeFixture } from "./worktree.fixture";
 
 const roots: string[] = [];
 
@@ -91,7 +93,7 @@ async function run(
   console.error = (msg: string) => logs.push(msg);
   let code: number | undefined;
   try {
-    await command.run?.([], { full: false, list: false, fix: false, only: [], ...flags } as never, ctx);
+    await command.run?.([], { list: false, fix: false, only: [], ...flags } as never, ctx);
   } catch (error) {
     if (!(error instanceof Exited)) throw error;
     code = error.code;
@@ -102,71 +104,84 @@ async function run(
   return { logs, code };
 }
 
-describe("createGateCommand() — the mode reaches a check", () => {
+describe("createGateCommand() — the tier reaches a check", () => {
   const seen: string[] = [];
   const recording: Step = {
     label: "validate-thing",
-    run: (mode) => {
-      seen.push(mode);
+    run: (tier) => {
+      seen.push(tier);
       return checkResult([], "");
     },
   };
 
-  it("hands a check the mode of the run, which a check may vary its strictness on", async () => {
+  it("hands a check the tier of the run, which a check may vary its strictness on", async () => {
     seen.length = 0;
-    await run([recording], { mode: "quality" });
-    await run([recording]);
-    await run([recording], { full: true });
+    for (const tier of ["static", "unit", "runtime", "deploy", "release"]) await run([recording], { tier });
 
-    expect(seen).toEqual(["quality", "standard", "full"]);
+    expect(seen).toEqual(["static", "unit", "runtime", "deploy", "release"]);
   });
 
-  it("resolves a bare run to standard, so `verify` is the gate and quality is opt-in", async () => {
+  it("resolves a bare run to runtime, so `verify` is the run a task closes on", async () => {
     seen.length = 0;
     await run([recording]);
 
-    expect(seen).toEqual(["standard"]);
-  });
-
-  it("reads --full as sugar for --mode full", async () => {
-    seen.length = 0;
-    await run([recording], { full: true });
-    await run([recording], { mode: "full" });
-
-    expect(seen).toEqual(["full", "full"]);
+    expect(seen).toEqual(["runtime"]);
   });
 });
 
-describe("createGateCommand() — resolving the mode", () => {
+describe("createGateCommand() — resolving the tier", () => {
   const trivial: Step = { label: "alpha", run: () => checkResult([], "") };
+  const flags = createGateCommand({ cwd: "/nowhere", steps: [trivial] }).flags;
 
-  it("refuses --mode and --full together rather than inventing a precedence", async () => {
-    const { logs, code } = await run([trivial], { mode: "quality", full: true });
+  it("refuses an unrecognised --tier, naming the five it knows and running nothing", async () => {
+    const called: string[] = [];
+    const recording: Step = { label: "alpha", run: () => (called.push("alpha"), checkResult([], "")) };
+    const { logs, code } = await run([recording], { tier: "full" });
 
-    expect(logs).toContain("Pass --mode or --full, not both.");
-    expect(code).toBe(1);
+    expect({ logs, code, called }).toEqual({
+      logs: ['Unknown --tier: "full". Known tiers: static, unit, runtime, deploy, release.'],
+      code: 1,
+      called: [],
+    });
   });
 
-  it("refuses an unrecognised --mode, naming the three it knows", async () => {
-    const { logs, code } = await run([trivial], { mode: "nope" });
-
-    expect(logs).toContain('Unknown --mode: "nope". Known modes: quality, standard, full.');
-    expect(code).toBe(1);
+  it("knows neither --mode nor --full, so a retired spelling is refused as an unknown flag", () => {
+    expect(() => parseArgs(["--mode", "full"], flags)).toThrow("Unknown flag: --mode");
+    expect(() => parseArgs(["--full"], flags)).toThrow("Unknown flag: --full");
   });
 
-  it("names the mode canonically in the banner, since --full is an input spelling only", async () => {
-    expect((await run([trivial], { mode: "quality", list: true })).logs).toEqual(["verify --mode quality — 1 step\n  alpha"]);
+  it("names a tier other than runtime in the banner, and a bare run as plain `verify`", async () => {
+    expect((await run([trivial], { tier: "static", list: true })).logs).toEqual(["verify --tier static — 1 step\n  alpha"]);
     expect((await run([trivial], { list: true })).logs).toEqual(["verify — 1 step\n  alpha"]);
-    expect((await run([trivial], { full: true, list: true })).logs).toEqual(["verify --mode full — 1 step\n  alpha"]);
+    expect((await run([trivial], { tier: "runtime", list: true })).logs).toEqual(["verify — 1 step\n  alpha"]);
+    expect((await run([trivial], { tier: "release", list: true })).logs).toEqual(["verify --tier release — 1 step\n  alpha"]);
   });
 });
 
 describe("createGateCommand() — a step whose dependency is absent", () => {
-  it("skips it in a quality run but refuses to call the run green, and exits non-zero", async () => {
-    const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)]);
+  it("skips it below the runtime tier but refuses to call the run green, and exits non-zero", async () => {
+    for (const tier of ["static", "unit"]) {
+      const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier });
 
-    expect(logs).toContain("○ delta — skipped (tailwindcss not found; run `bun add -d tailwindcss`)");
-    expect(logs.at(-1)?.startsWith("○ verify — 1 step passed, 1 step skipped")).toBe(true);
+      expect(logs).toContain("○ delta — skipped (tailwindcss not found; run `bun add -d tailwindcss`)");
+      expect(logs.at(-1)?.startsWith(`○ verify --tier ${tier} — 1 step passed, 1 step skipped`)).toBe(true);
+      expect(code).toBe(1);
+    }
+  });
+
+  it("fails it from the runtime tier up, which promise that a runtime ran", async () => {
+    for (const tier of ["runtime", "deploy", "release"]) {
+      const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier });
+
+      expect(logs).toContain("✗ delta — tailwindcss not found; run `bun add -d tailwindcss`");
+      expect(logs.at(-1)).toContain("failed at `delta` (step 2 of 2");
+      expect(code).toBe(1);
+    }
+  });
+
+  it("names the skip in the closing line", async () => {
+    const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier: "unit" });
+
     expect(logs.at(-1)).toContain("not green: 1 step never ran");
     expect(code).toBe(1);
   });
@@ -174,12 +189,35 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
   it("probes one tool once however many steps name it, since the probe shells out", async () => {
     let probes = 0;
     const counted = { tool: "tailwindcss", probe: () => ((probes += 1), false), hint: "run `bun add -d tailwindcss`" };
-    await run([passing("alpha", counted), passing("beta", counted), passing("gamma", counted)]);
+    await run([passing("alpha", counted), passing("beta", counted), passing("gamma", counted)], { tier: "unit" });
 
     expect(probes).toBe(1);
   });
 
-  it("runs it when the probe finds the dependency, in a quality run as much as a full one", async () => {
+  it("awaits a probe that answers asynchronously, reporting the step missing when it settles false", async () => {
+    const remote = { tool: "Playwright server", probe: () => Promise.resolve(false), hint: "start the sidecar" };
+    const { logs, code } = await run([passing("delta", remote)]);
+
+    expect(logs).toContain("✗ delta — Playwright server not found; start the sidecar");
+    expect(code).toBe(1);
+  });
+
+  it("gives every browser step under one Playwright server the hint its one probe earned", async () => {
+    const probes = {
+      env: { PW_TEST_CONNECT_WS_ENDPOINT: "ws://sidecar.test:3000/" },
+      serverStatus: () => Promise.resolve({ state: "mismatch" as const, server: "1.64" }),
+    };
+    const { logs } = await run(
+      [passing("chromium", browserEnginesRequired(["chromium"], probes)), passing("others", browserEnginesRequired(["firefox", "webkit"], probes))],
+      { tier: "unit" },
+    );
+    const skips = logs.filter((line) => line.startsWith("○ chromium") || line.startsWith("○ others"));
+
+    expect(skips).toHaveLength(2);
+    expect(skips.every((line) => line.includes("the server runs Playwright 1.64"))).toBe(true);
+  });
+
+  it("runs it when the probe finds the dependency, in a static run as much as a release one", async () => {
     const { logs, code } = await run([passing("delta", PRESENT)]);
 
     expect(logs.some((line) => line.startsWith("✓ delta"))).toBe(true);
@@ -187,25 +225,26 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
     expect(code).toBeUndefined();
   });
 
-  it("fails the release gate rather than skipping, since --full is what a publish is checked by", async () => {
-    const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { full: true });
+  it("fails the release gate rather than skipping, since `--tier release` is what a publish is checked by", async () => {
+    const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier: "release" });
 
-    expect(logs).toContain("✗ delta — tailwindcss not found; run `bun add -d tailwindcss`");
-    expect(logs.at(-1)?.startsWith("✗ verify --mode full — failed at `delta` (step 2 of 2")).toBe(true);
+    expect(logs.at(-1)?.startsWith("✗ verify --tier release — failed at `delta` (step 2 of 2")).toBe(true);
     expect(code).toBe(1);
   });
 
   it("refuses a green when every selected step was skipped", async () => {
-    const { logs, code } = await run([passing("alpha", ABSENT), passing("beta", ABSENT), passing("gamma", ABSENT)]);
+    const { logs, code } = await run([passing("alpha", ABSENT), passing("beta", ABSENT), passing("gamma", ABSENT)], { tier: "unit" });
 
-    expect(logs.at(-1)).toMatch(/^✗ verify — every step skipped \(0 of 3 ran, .+\) — refusing to report a green gate that ran nothing$/);
+    expect(logs.at(-1)).toMatch(
+      /^✗ verify --tier unit — every step skipped \(0 of 3 ran, .+\) — refusing to report a green gate that ran nothing$/,
+    );
     expect(code).toBe(1);
   });
 
   it("counts a skip in the failure line, and states the failing step's position rather than a run count", async () => {
-    const { logs, code } = await run([passing("alpha"), passing("skipped", ABSENT), failing("beta"), passing("gamma")]);
+    const { logs, code } = await run([passing("alpha"), passing("skipped", ABSENT), failing("beta"), passing("gamma")], { tier: "unit" });
 
-    expect(logs.at(-1)?.startsWith("✗ verify — failed at `beta` (step 3 of 4, 1 skipped")).toBe(true);
+    expect(logs.at(-1)?.startsWith("✗ verify --tier unit — failed at `beta` (step 3 of 4, 1 skipped")).toBe(true);
     expect(code).toBe(1);
   });
 });
@@ -220,19 +259,19 @@ describe("createGateCommand() — --fix", () => {
   });
 
   it("spawns no fixer for a step whose dependency is absent", async () => {
-    const { logs, code } = await run([fixable("alpha"), fixable("delta", ABSENT)], { fix: true });
+    const { logs, code } = await run([fixable("alpha"), fixable("delta", ABSENT)], { fix: true, tier: "unit" });
 
     expect(logs.some((line) => line.startsWith("✓ fix:alpha"))).toBe(true);
     expect(logs.some((line) => line.startsWith("✓ fix:delta") || line.startsWith("✗ fix:delta"))).toBe(false);
     expect(logs.at(-1)).toBe(
-      "1 fixed, 1 step skipped — that step was not fixed; install what each skip line above names, then re-run `bun run verify`.",
+      "1 fixed, 1 step skipped — that step was not fixed; install what each skip line above names, then re-run `bun run verify --tier unit`.",
     );
     expect(code).toBe(1);
   });
 
   // A step with no fixer was never going to spawn, so probing it would report a dependency this run
   // does not need.
-  it("asks the fixer question before the dependency question, even under --full", async () => {
+  it("asks the fixer question before the dependency question, even at the release tier", async () => {
     const probed: string[] = [];
     const check: Step = {
       label: "validate-thing",
@@ -246,10 +285,10 @@ describe("createGateCommand() — --fix", () => {
         hint: "run `bun add -d tailwindcss`",
       },
     };
-    const { logs, code } = await run([check], { fix: true, full: true });
+    const { logs, code } = await run([check], { fix: true, tier: "release" });
 
     expect(probed).toEqual([]);
-    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify --mode full` to confirm.");
+    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify --tier release` to confirm.");
     expect(code).toBeUndefined();
   });
 
@@ -327,17 +366,17 @@ describe("createGateCommand() — --list", () => {
     requires: { tool: "tailwindcss", probe: () => false, hint: "run `bun add -d tailwindcss`" },
   };
 
-  it("marks a step with a dependency conditional in a quality run, executing none of them", async () => {
-    const { logs, code } = await run([passing("alpha"), exploding], { list: true });
+  it("marks a step with a dependency conditional below the runtime tier, executing none of them", async () => {
+    const { logs, code } = await run([passing("alpha"), exploding], { list: true, tier: "unit" });
 
-    expect(logs).toEqual(["verify — 2 steps\n  alpha\n  validate-class-groups (conditional — tailwindcss required)"]);
+    expect(logs).toEqual(["verify --tier unit — 2 steps\n  alpha\n  validate-class-groups (conditional — tailwindcss required)"]);
     expect(code).toBeUndefined();
   });
 
-  it("states the dependency as required under --full, where its absence is a failure", async () => {
-    const { logs } = await run([exploding], { list: true, full: true });
+  it("states the dependency as required at the release tier, where its absence is a failure", async () => {
+    const { logs } = await run([exploding], { list: true, tier: "release" });
 
-    expect(logs).toEqual(["verify --mode full — 1 step\n  validate-class-groups (requires tailwindcss)"]);
+    expect(logs).toEqual(["verify --tier release — 1 step\n  validate-class-groups (requires tailwindcss)"]);
   });
 });
 
@@ -374,13 +413,18 @@ describe("createGateCommand() — the receipt a passing run records", () => {
     return { root, calls, steps };
   }
 
-  it("records the tree, mode and labels of an unscoped pass", async () => {
+  it("records the tree, tier, HEAD commit and labels of an unscoped pass", async () => {
     const root = worktreeClone();
     const { step } = counting();
     const { code } = await run([step("alpha"), step("beta")], {}, { cwd: root });
 
     expect(code).toBeUndefined();
-    expect(readReceipt(root)).toEqual({ tree: worktreeHash(root) ?? "", mode: "standard", labels: ["alpha", "beta"] });
+    expect(readReceipt(root)).toEqual({
+      tree: worktreeHash(root) ?? "",
+      tier: "runtime",
+      base: worktreeHead(root) ?? "",
+      labels: ["alpha", "beta"],
+    });
   });
 
   it("answers --reuse on the same tree without calling a step, naming the hash", async () => {
@@ -389,7 +433,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
 
     expect(calls).toEqual([]);
     expect(code).toBeUndefined();
-    expect(logs).toEqual([`✓ verify — reused the passing standard run of tree ${worktreeHash(root) ?? ""}; no step ran`]);
+    expect(logs).toEqual([`✓ verify — reused the passing runtime run of tree ${worktreeHash(root) ?? ""}; no step ran`]);
   });
 
   it("runs the gate under --reuse after a tracked file is edited", async () => {
@@ -398,7 +442,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
     const { logs } = await run(steps, { reuse: true }, { cwd: root });
 
     expect(calls).toEqual(["alpha", "beta"]);
-    expect(logs[0]).toBe(`○ no passing run of tree ${worktreeHash(root) ?? ""} on record at standard or above; running the gate`);
+    expect(logs[0]).toBe(`○ no passing run of tree ${worktreeHash(root) ?? ""} on record at runtime or above; running the gate`);
   });
 
   it("runs the gate under --reuse after an untracked file is added", async () => {
@@ -432,7 +476,7 @@ describe("createGateCommand() — the receipt a passing run records", () => {
       [[passing("alpha"), failing("beta")], {}],
       [[passing("alpha")], { fix: true }],
       [[passing("alpha")], { list: true }],
-      [[passing("alpha"), passing("beta", absent)], {}],
+      [[passing("alpha"), passing("beta", absent)], { tier: "unit" }],
     ];
     for (const [steps, flags] of cases) {
       const root = worktreeClone();
@@ -449,21 +493,37 @@ describe("createGateCommand() — the receipt a passing run records", () => {
     expect(readReceipt(root)).toBeUndefined();
   });
 
-  it("lets a full receipt answer a standard --reuse, and refuses a quality one", async () => {
+  it("lets a deploy receipt answer a runtime --reuse, and refuses a unit one", async () => {
     const root = worktreeClone();
     const tree = worktreeHash(root) ?? "";
     const { calls, step } = counting();
     const steps = [step("alpha")];
 
-    recordReceipt(root, { tree, mode: "quality", labels: ["alpha"] });
+    recordReceipt(root, { tree, tier: "unit", labels: ["alpha"] });
+    await run(steps, { reuse: true }, { cwd: root });
+    expect(calls).toEqual(["alpha"]);
+
+    clearReceipt(root);
+    calls.length = 0;
+    recordReceipt(root, { tree, tier: "deploy", base: "0".repeat(40), labels: ["alpha"] });
+    const { logs } = await run(steps, { reuse: true }, { cwd: root });
+    expect(calls).toEqual([]);
+    expect(logs).toEqual([`✓ verify — reused the passing deploy run of tree ${tree}; no step ran`]);
+  });
+
+  it("refuses a runtime receipt recorded against another HEAD, and reuses one recorded against this one", async () => {
+    const root = worktreeClone();
+    const tree = worktreeHash(root) ?? "";
+    const { calls, step } = counting();
+    const steps = [step("alpha")];
+
+    recordReceipt(root, { tree, tier: "runtime", base: "0".repeat(40), labels: ["alpha"] });
     await run(steps, { reuse: true }, { cwd: root });
     expect(calls).toEqual(["alpha"]);
 
     calls.length = 0;
-    recordReceipt(root, { tree, mode: "full", labels: ["alpha"] });
-    const { logs } = await run(steps, { reuse: true }, { cwd: root });
+    await run(steps, { reuse: true }, { cwd: root });
     expect(calls).toEqual([]);
-    expect(logs).toEqual([`✓ verify — reused the passing full run of tree ${tree}; no step ran`]);
   });
 
   it("clears an existing receipt when an unscoped run skips a step", async () => {
@@ -626,9 +686,9 @@ describe("createGateCommand() — --affected", () => {
     const root = worktreeClone();
     writeFileSync(join(root, "package.json"), '{"name":"x"}\n');
     const { steps } = table();
-    const { logs } = await run(steps, { affected: true, mode: "full" }, { cwd: root });
+    const { logs } = await run(steps, { affected: true, tier: "release" }, { cwd: root });
 
-    expect(logs.at(-1)).toStartWith("✓ verify --mode full --affected — 3 steps passed (");
+    expect(logs.at(-1)).toStartWith("✓ verify --tier release --affected — 3 steps passed (");
     expect(logs.at(-1)).toEndWith("⚠ scoped run (3 of 3 steps) — not the gate");
   });
 
@@ -667,6 +727,300 @@ describe("createGateCommand() — --affected", () => {
     expect(calls).toEqual([]);
     expect(logs).toEqual(["--affected reads its changes from git, and this is not a git work tree."]);
     expect(code).toBe(1);
+  });
+});
+
+describe("createGateCommand() — the runtime tier's narrowing", () => {
+  const FILES = { "src/ui/a.ts": "a\n", "src/ui/theme.css": "t\n", "db/schema.sql": "s\n", "docs/A.md": "a\n" };
+  const TEMPLATE = worktreeRoot(FILES);
+
+  function worktreeClone(): string {
+    const root = cloneWorktree(TEMPLATE);
+    roots.push(root);
+    return root;
+  }
+
+  // Each row writes the arguments it was spawned with outside the tree, so a test reads back how the runner reached it.
+  const out = fixtureRoot();
+  const recording = (label: string, watches: readonly string[], narrow?: CommandStep["narrow"]): CommandStep => ({
+    label,
+    tier: "runtime",
+    tail: 5,
+    cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD")-${label}.args"`, "sh", "whole"],
+    watches,
+    ...(narrow === undefined ? {} : { narrow }),
+  });
+
+  const table = (): Step[] => [
+    passing("lint"),
+    recording("browser", ["src/**"], { args: ["--only-changed"], wide: ["src/ui/theme.css"] }),
+    recording("db", ["db/**"]),
+  ];
+
+  const spawnedWith = (root: string, label: string): string | undefined => {
+    const path = join(out, `${basename(root)}-${label}.args`);
+    return existsSync(path) ? readFileSync(path, "utf-8").trim() : undefined;
+  };
+
+  it("runs a touched row with its narrow arguments, reports an untouched one, and is a gate green", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
+    const { logs, code } = await run(table(), {}, { cwd: root });
+
+    expect(spawnedWith(root, "browser")).toBe("whole --only-changed");
+    expect(spawnedWith(root, "db")).toBeUndefined();
+    expect(logs).toContain("○ db — untouched by 1 change");
+    expect(logs.at(-1)).toMatch(/^✓ verify — 2 steps passed \([^)]+\)$/);
+    expect(code).toBeUndefined();
+  });
+
+  it("runs a row whole when a pending change matches its `wide` globs", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "src/ui/theme.css"), "new\n");
+    await run(table(), {}, { cwd: root });
+
+    expect(spawnedWith(root, "browser")).toBe("whole");
+  });
+
+  it("runs every runtime row whole when a gate input changes", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "tools.ts"), "new\n");
+    await run(table(), {}, { cwd: root, gateInputs: ["tools.ts"] });
+
+    expect([spawnedWith(root, "browser"), spawnedWith(root, "db")]).toEqual(["whole", "whole"]);
+  });
+
+  it("runs no runtime row on a clean tree, and records only the rows that ran", async () => {
+    const root = worktreeClone();
+    const { logs } = await run(table(), {}, { cwd: root });
+
+    expect(logs).toContain("○ browser — untouched by 0 changes");
+    expect(logs).toContain("○ db — untouched by 0 changes");
+    expect(readReceipt(root)?.labels).toEqual(["lint"]);
+  });
+
+  it("records a narrowed run's receipt against HEAD, naming only the rows that ran", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
+    await run(table(), {}, { cwd: root });
+
+    expect(readReceipt(root)).toEqual({
+      tree: worktreeHash(root) ?? "",
+      tier: "runtime",
+      base: worktreeHead(root) ?? "",
+      labels: ["lint", "browser"],
+    });
+  });
+
+  it("never probes an untouched row, so a runtime it would need is not asked for", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
+    const probed: string[] = [];
+    const absent = { tool: "workerd", probe: () => (probed.push("db"), false), hint: "run `bun install`" };
+    const { code } = await run([passing("lint"), { ...recording("db", ["db/**"]), requires: absent }], {}, { cwd: root });
+
+    expect({ probed, code }).toEqual({ probed: [], code: undefined });
+  });
+
+  it("runs every row whole from the deploy tier up, whatever is pending", async () => {
+    for (const tier of ["deploy", "release"]) {
+      const root = worktreeClone();
+      writeFileSync(join(root, "docs/A.md"), "edited\n");
+      await run(table(), { tier }, { cwd: root });
+
+      expect([spawnedWith(root, "browser"), spawnedWith(root, "db")]).toEqual(["whole", "whole"]);
+    }
+  });
+
+  it("refuses a table whose nested glob matches no file in the work tree, before any row runs", async () => {
+    const root = worktreeClone();
+    const { logs, code } = await run([passing("lint"), recording("db", ["database/**"])], {}, { cwd: root });
+
+    expect(logs).toEqual([
+      'Step "db" declares `watches` glob "database/**", which matches no file in the work tree — a renamed path no longer reaches the step, so update the glob.',
+    ]);
+    expect(code).toBe(1);
+  });
+
+  it("lists how each runtime row reaches the pending changes", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
+    const { logs } = await run(table(), { list: true }, { cwd: root });
+
+    expect(logs).toEqual(["verify — 3 steps\n  lint\n  browser (narrowed to pending changes)\n  db (untouched)"]);
+  });
+});
+
+describe("createGateCommand() — a row that traces or probes before it narrows", () => {
+  const FILES = { "src/ui/a.ts": "a\n", "src/ui/exposed.ts": "e\n", "docs/A.md": "a\n" };
+  const TEMPLATE = worktreeRoot(FILES);
+  const out = fixtureRoot();
+
+  function editedClone(path = "src/ui/a.ts"): string {
+    const root = cloneWorktree(TEMPLATE);
+    roots.push(root);
+    writeFileSync(join(root, path), "edited\n");
+    return root;
+  }
+
+  // Answers `--list` with `listing` and `exit`, recording that it was asked; any other run records its arguments.
+  const probing = (listing: string, exit = 0, reach: { wide?: readonly string[]; widen?: Step["widen"] } = {}): CommandStep => ({
+    label: "browser",
+    tier: "runtime",
+    tail: 5,
+    cmd: [
+      "sh",
+      "-c",
+      `case " $* " in *" --list "*) touch "${out}/$(basename "$PWD").probed"; printf '%s' '${listing}'; exit ${exit};; esac; printf '%s ' "$@" > "${out}/$(basename "$PWD").args"`,
+      "sh",
+      "whole",
+    ],
+    narrow: {
+      args: ["--only-changed"],
+      probe: { args: ["--list"], selects: (output) => output !== "none" },
+      ...(reach.wide === undefined ? {} : { wide: reach.wide }),
+    },
+    ...(reach.widen === undefined ? {} : { widen: reach.widen }),
+  });
+
+  const outcome = (root: string): { probed: boolean; args: string | undefined } => {
+    const args = join(out, `${basename(root)}.args`);
+    return { probed: existsSync(join(out, `${basename(root)}.probed`)), args: existsSync(args) ? readFileSync(args, "utf-8").trim() : undefined };
+  };
+
+  it("leaves a row its probe selects nothing for untouched, saying which probe found so, and records only the rows that ran", async () => {
+    const root = editedClone();
+    const { logs, code } = await run([passing("lint"), probing("none")], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: true, args: undefined });
+    expect(logs.find((line) => line.startsWith("○ browser"))).toMatch(
+      /^○ browser — untouched by 1 change: `sh -c .* --only-changed --list` selects nothing$/,
+    );
+    expect(readReceipt(root)?.labels).toEqual(["lint"]);
+    expect(code).toBeUndefined();
+  });
+
+  it("runs a row narrowed when its probe selects something", async () => {
+    const root = editedClone();
+    await run([probing("one spec")], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: true, args: "whole --only-changed" });
+  });
+
+  it("runs a row whole when its probe exits non-zero, never untouched", async () => {
+    const root = editedClone();
+    await run([probing("none", 1)], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: true, args: "whole" });
+  });
+
+  it("runs a row whole without probing when a pending change is a path its `widen` traces", async () => {
+    const root = editedClone("src/ui/exposed.ts");
+    await run([probing("none", 0, { widen: () => ["src/ui/exposed.ts"] })], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
+  });
+
+  it("probes a row whose `widen` traces none of the pending changes", async () => {
+    const root = editedClone();
+    await run([probing("none", 0, { widen: async () => ["src/ui/exposed.ts"] })], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: true, args: undefined });
+  });
+
+  it("runs a row its watches leave untouched whole when a pending change is a path its `widen` traces from the gate's root", async () => {
+    const root = editedClone("src/ui/exposed.ts");
+    const seen: string[] = [];
+    const step: CommandStep = {
+      label: "db",
+      tier: "runtime",
+      tail: 5,
+      cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD").args"`, "sh", "whole"],
+      watches: ["docs/**"],
+      widen: (cwd) => (seen.push(cwd), ["src/ui/exposed.ts"]),
+    };
+    await run([step], {}, { cwd: root });
+
+    expect({ seen, args: outcome(root).args }).toEqual({ seen: [root], args: "whole" });
+  });
+
+  it("runs a row whole when its `widen` throws", async () => {
+    const root = editedClone();
+    const widen = (): string[] => {
+      throw new Error("no bundler");
+    };
+    await run([probing("none", 0, { widen })], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
+  });
+
+  it("runs a row whole without probing when its `widen` rejects", async () => {
+    const root = editedClone();
+    await run([probing("none", 0, { widen: () => Promise.reject(new Error("bundle failed")) })], {}, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
+  });
+
+  it("runs a row whole when its probe cannot be spawned, never untouched", async () => {
+    const root = editedClone();
+    const unspawnable: CommandStep = { ...probing("none"), label: "absent", cmd: ["forge-no-such-binary", "test"] };
+    const saved = process.env.TMPDIR;
+    process.env.TMPDIR = mkdtempSync(join(tmpdir(), "forge-system-tmp-"));
+    const { logs, code } = await run([unspawnable], {}, { cwd: root }).finally(() => {
+      rmSync(process.env.TMPDIR!, { recursive: true, force: true });
+      if (saved === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = saved;
+    });
+
+    expect(logs.find((line) => line.includes(" absent"))).toMatch(/^✗ absent \([^)]+\)$/);
+    expect(code).toBe(1);
+  });
+
+  it("runs a row whole without probing when a gate input or a `wide` glob changes", async () => {
+    const gateInput = editedClone("docs/A.md");
+    await run([probing("none")], {}, { cwd: gateInput, gateInputs: ["docs/**"] });
+    const wide = editedClone("docs/A.md");
+    await run([probing("none", 0, { wide: ["docs/**"] })], {}, { cwd: wide });
+
+    expect([outcome(gateInput), outcome(wide)]).toEqual([
+      { probed: false, args: "whole" },
+      { probed: false, args: "whole" },
+    ]);
+  });
+
+  it("never probes from the deploy tier up, where every row runs whole", async () => {
+    const root = editedClone();
+    await run([probing("none")], { tier: "deploy" }, { cwd: root });
+
+    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
+  });
+
+  it("never asks for the prerequisite of a row its probe leaves untouched", async () => {
+    const root = editedClone();
+    const probed: string[] = [];
+    const absent = { tool: "playwright server", probe: () => (probed.push("browser"), false), hint: "start it" };
+    const { code } = await run([passing("lint"), { ...probing("none"), requires: absent }], {}, { cwd: root });
+
+    expect({ probed, code }).toEqual({ probed: [], code: undefined });
+  });
+
+  it("lists the reach the probe and the trace settle on", async () => {
+    const untouched = editedClone();
+    const traced = editedClone("src/ui/exposed.ts");
+    const listed = async (root: string, step: CommandStep): Promise<string[]> => (await run([step], { list: true }, { cwd: root })).logs;
+
+    expect(await listed(untouched, probing("none"))).toEqual(["verify — 1 step\n  browser (untouched)"]);
+    expect(await listed(traced, probing("none", 0, { widen: () => ["src/ui/exposed.ts"] }))).toEqual(["verify — 1 step\n  browser"]);
+  });
+
+  it("reuses a receipt whose run the probe left the row out of, without probing again", async () => {
+    const root = editedClone();
+    await run([passing("lint"), probing("none")], {}, { cwd: root });
+    rmSync(join(out, `${basename(root)}.probed`));
+    const { logs } = await run([passing("lint"), probing("none")], { reuse: true }, { cwd: root });
+
+    expect(logs.at(-1)).toStartWith("✓ verify — reused the passing runtime run");
+    expect(outcome(root).probed).toBe(false);
   });
 });
 

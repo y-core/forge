@@ -54,7 +54,7 @@ function recorder(results: CaptureResult[] = []): { run: CurateRunner; calls: Ca
 }
 
 const PASS: CaptureResult = { code: 0, output: "", ms: 0 };
-const VERIFY = ["forge", "verify", "--mode", "standard"];
+const VERIFY = ["forge", "verify", "--tier", "unit"];
 
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
@@ -67,7 +67,7 @@ describe("defaultFeatureProfiles()", () => {
 });
 
 describe("checkFeatures()", () => {
-  it("builds the skeleton's assets and then runs its standard gate, both inside the curated tree", async () => {
+  it("builds the skeleton's assets and then runs its unit gate, both inside the curated tree", async () => {
     const { run, calls } = recorder();
     const result = await checkFeatures({ root: demonstrator(), assetConfig: "config/assets.ts", profiles: [["showcase"]] }, run);
     const tree = calls[0]!.cwd;
@@ -102,7 +102,7 @@ describe("checkFeatures()", () => {
       [true, true],
     ]);
     expect(new Set(calls.map((call) => call.cwd)).size).toBe(3);
-    expect(result.summary).toBe("features: --drop showcase; --drop contact; --drop showcase,contact each passed its standard gate");
+    expect(result.summary).toBe("features: --drop showcase; --drop contact; --drop showcase,contact each passed its unit gate");
   });
 
   it("proves only the profiles it is given, in their order", async () => {
@@ -113,7 +113,7 @@ describe("checkFeatures()", () => {
       [false, true],
       [true, true],
     ]);
-    expect(result.summary).toBe("features: --drop contact; --drop contact,showcase each passed its standard gate");
+    expect(result.summary).toBe("features: --drop contact; --drop contact,showcase each passed its unit gate");
   });
 
   it("runs against a tree already curated, its manifest trimmed to the kept feature and the root's node_modules linked in", async () => {
@@ -160,7 +160,7 @@ describe("checkFeatures()", () => {
     const result = await checkFeatures({ root: demonstrator(), profiles: [["showcase"]] }, run);
 
     expect(result.ok).toBe(false);
-    expect(result.findings).toEqual([{ level: "fail", message: "--drop showcase: the skeleton's standard gate failed", detail: lines.slice(30) }]);
+    expect(result.findings).toEqual([{ level: "fail", message: "--drop showcase: the skeleton's unit gate failed", detail: lines.slice(30) }]);
   });
 
   it("names the second profile when it is the one that fails, and proves no profile after it", async () => {
@@ -168,7 +168,7 @@ describe("checkFeatures()", () => {
     const result = await checkFeatures({ root: demonstrator() }, run);
 
     expect(calls).toHaveLength(2);
-    expect(result.findings).toEqual([{ level: "fail", message: "--drop contact: the skeleton's standard gate failed", detail: ["red"] }]);
+    expect(result.findings).toEqual([{ level: "fail", message: "--drop contact: the skeleton's unit gate failed", detail: ["red"] }]);
   });
 
   it("never runs the gate when the asset build fails", async () => {
@@ -310,7 +310,7 @@ describe("checkFeatures() — the feature graph", () => {
       [true, true],
       [false, true],
     ]);
-    expect(result.summary).toBe("features: --drop showcase (+ contact); --drop contact each passed its standard gate");
+    expect(result.summary).toBe("features: --drop showcase (+ contact); --drop contact each passed its unit gate");
   });
 
   it("proves a one-feature manifest's default profiles as one skeleton", async () => {
@@ -328,7 +328,7 @@ describe("checkFeatures() — the feature graph", () => {
     const result = await checkFeatures({ root }, run);
 
     expect(calls.map((call) => call.argv)).toEqual([VERIFY]);
-    expect(result.summary).toBe("features: --drop showcase each passed its standard gate");
+    expect(result.summary).toBe("features: --drop showcase each passed its unit gate");
   });
 
   it("fails, naming the profile, on a manifest whose graph does not resolve, and runs nothing", async () => {

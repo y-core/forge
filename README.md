@@ -225,9 +225,9 @@ expect(res.status).toBe(200);
 ```bash
 bun test                       # all tests
 bun test src/form              # one namespace
-bun run verify                 # the standard gate — the run a task closes on
+bun run verify                 # the gate a task closes on — the `runtime` tier
 bun run verify --only lint     # one step, for the dev loop
-bun run verify --list          # print the steps of the selected mode, run none
+bun run verify --list          # print the steps of the selected tier, run none
 ```
 
 `@y-core/forge/testing` ships the fixtures a consuming suite would otherwise hand-roll: a loaded request context, in-memory D1 and KV fakes, real

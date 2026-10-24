@@ -25,6 +25,7 @@ audience: internal
 - §2a Build Functions — Orchestration: `buildAll`, the per-stage slice rule, and the absence of globs
 - §2b Hash and Change Detection: opt-in content hashing, and why the state helpers go unused
 - §2c The Namespace Orchestrates Builders and Is Not One: the drives-one/is-one routing rule, and where the compute half went
+- §2d assetInputs Reads What the Build Reads, With the Build's Own Options: every input traced from the builders, and why it rejects
 - §3 assets — the Runtime Namespace: resolving logical names to hashed paths
 - §3a createManifest — Content-Hashed Paths: a record and a prefix, not a directory scan
 - §3b createSpriteRegistry — Sprite Sheet URL Lookup: group name to sheet URL, and what it is not
@@ -127,6 +128,27 @@ parent barrel for runtime-safe.
 **The routing question for anything new: does this drive an external builder, or is it one?** Drives one → `src/tooling/assets`. Is one → the
 namespace that owns the artifact.
 
+### 2d. assetInputs Reads What the Build Reads, With the Build's Own Options
+
+**`assetInputs(root, assetConfigPath, files)` answers which repository files an asset build reads**, so the gate can tell when what the browser
+loads could have changed. It asks each builder rather than predicting it:
+
+- **A JS bundle and the service worker** are traced by esbuild with `write: false` and `metafile: true`, from the options the build itself uses.
+  `jsBuildOptions` in `src/tooling/assets/js.ts` and `serviceWorkerBuildOptions` in `src/tooling/assets/service-worker.ts` are those options, and
+  `buildJS` and the service-worker build call the same functions. A second copy of the options would let the trace and the build drift apart
+  silently, and the gate would then narrow a row past a file the bundle really reads.
+- **A CSS entry** reads as every stylesheet Tailwind's `compile` loads, plus each file in `files` that the entry's `@source` lines cover. A
+  directory source covers every listed file beneath it, which is more than Tailwind's own scanner reads. That excess can only run a row whole when
+  it did not need to, and never narrows one. A stylesheet that leaves automatic detection on covers every listed file.
+- **Every other stage** reads as the local paths the config states for it. `statedInputs` in `src/tooling/assets/inputs.ts` owns which fields
+  those are.
+- **The config module**: its `importClosure`, which reaches every module the config imports.
+
+**`node_modules` is left out.** A dependency upgrade changes `bun.lock`, a gate input that already runs every row whole.
+
+**An input that does not resolve rejects rather than being skipped**: a config path missing from disk, or a stylesheet import that resolves to
+nothing. The caller then runs the row whole, which is the safe direction for a reach the function could not compute.
+
 ---
 
 ## 3. assets — the Runtime Namespace
@@ -221,8 +243,8 @@ forge's default.
 
 **The guard keeps `gen types` from degrading the manifest; `validate-asset-manifest` catches it being ahead of the tree for any other reason** — a
 `public/` nobody rebuilt, a pruned hashed output, a hand-edited artifact. The check asserts one thing: every `DATA` value resolves to a file under
-`publicDir`. A types-only artifact passes a quality run, because its identity paths deliberately do not exist — that is what lets `tsc` run on a
-clean checkout — and fails a `standard` or `full` run, where a green on an artifact nobody built is the 404 it exists to prevent.
+`publicDir`. A types-only artifact passes a `static` run, because its identity paths deliberately do not exist — that is what lets `tsc` run on a
+clean checkout — and fails every tier above it, where a green on an artifact nobody built is the 404 it exists to prevent.
 
 ### 4c. The Emitted Glyph Union — the ForgeIcon Seam
 

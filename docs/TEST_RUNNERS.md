@@ -19,10 +19,11 @@ audience: consumer
 - §1 Test Runners: the runners, their type stub, and which question each answers
 - §1a bun:test Primitives: import source and nesting limit
 - §1b Custom bun:test Stub — No bun-types: the hard package ban
-- §1c The Browser Set: real Chromium behind its own verb
+- §1c The Browser Set: real browsers behind their own verb
 - §1d Waiting on an htmx Swap: `htmx:after:swap` on `document`, once the new markup is live
 - §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
 - §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, on `createTestHarness` under node
+- §1g The Cross-Engine Subset: which specs also run in Firefox and WebKit, and how a skip on one engine is written
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -79,32 +80,27 @@ must be rejected.
 
 ### 1c. The Browser Set
 
-**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`.** `playwright.config.ts` owns the discovery pattern, the
-project list and the parallelism — cite it, never restate it here.
+**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`, and §1g's subset also runs in Firefox and WebKit.**
+`playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it, never restate it here.
 
-**The set runs the installed binary under node — `playwright test --project=chromium`, in the script and in `browserStep`'s argv alike — and the
-config imports the committed `./tooling/gate/chromium` bundle, because under bun a dev server playwright spawns itself is unreachable from the
-browser in a sandbox.** [`NAMESPACES.md`][namespaces-3c] §3c is that ruling's single home. The bare name is resolved off the runner's `binDir`, as
-every command step's is — a gate never reaches a registry to find what it runs.
+**The set runs the installed binary under node — `playwright test` with one `--project` per engine, in the script and in `browserStep`'s argv alike
+— because under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox.** [`NAMESPACES.md`][namespaces-3c] §3c is
+that ruling's single home. The bare name is resolved off the runner's `binDir`, as every command step's is — a gate never reaches a registry to
+find what it runs.
 
-**The set is held back to the `full` tier, and the reason is a prerequisite, not cost.** It needs a browser binary, and a prerequisite is the only
-legitimate ground for holding a step back. Cost never is. It runs under `bun run verify:full`, the release gate, which is permitted to carry one
-([`TESTING.md`][testing-6c] §6c).
+**The set runs from the `runtime` tier, and the reason is a prerequisite, not cost.** It needs the Playwright server, and a prerequisite is the
+only legitimate ground for holding a step out of `unit`. Cost never is ([`TESTING.md`][testing-6c] §6c). Chromium's row runs under a bare
+`bun run verify`, narrowed to the specs the pending changes reach; §1g's Firefox and WebKit rows run only at `release`.
 
 **A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
 
-**The browser comes from the environment, so forge ships no install script.** `CHROME_PATH` is what `hasChromium` resolves first, so an environment
-that sets it at an installed Chromium satisfies the probe before anyone runs anything. `browserStep`'s hint is reached only where it is unset, and
-it names `bunx playwright install chromium` rather than a script this repository would otherwise have to define.
-
-**So the browser set is verified manually and at publish, not in the default gate — a ruling, not an oversight.** forge runs no CI, so
-`bun run test:browser` before a commit that touches `src/ui/client/` or a controller is the check, and `prepublishOnly` is the backstop: a full run
-fails hard when a prerequisite probe returns false (`src/tooling/gate/command.ts`) and refuses a green when nothing ran, so a chromium-absent
-machine cannot publish.
+**Every browser runs in the devctl Playwright container, and nothing falls back to a local one.** forge, the workspace and the container are
+one environment, so a missing piece fails loudly. `PW_TEST_CONNECT_WS_ENDPOINT` names the server. `PLAYWRIGHT_SERVER_MAX_CLIENTS` is its
+`--max-clients` and the config's worker count, because a worker past the limit only queues. The config refuses to load without either.
 
 **A consequence accepted with it:** `validate-co-location` (`src/tooling/gate/checks/co-location.ts`) counts a `.browser.ts` as satisfying
-co-location for a module the default gate never executes, so `bun run verify` can certify as tested a module whose only test it did not run.
-Demanding a second unit file would buy a fake one, which is worse.
+co-location, so `bun run verify:unit`, which runs no browser, can certify as tested a module whose only test it did not run. Demanding a second
+unit file would buy a fake one, which is worse.
 
 **`bun test` is untouched by it.** The two never share a process, so no global is ever redefined and forge's Cloudflare `Request` / `Response` /
 `fetch` semantics stay exactly as the runtime ships them — which matters, because forge is a Workers framework and those semantics _are_ the
@@ -130,12 +126,12 @@ behaviour test.
 possible — dispatches a real event through the browser's own input path, and reads what resulted. A test that counts calls is testing the test's own
 fixture.
 
-**The browser set cannot prove an `@utility`, and a spec that seems to is passing for another reason.** `mount`'s `css` option serves the
-stylesheets **raw, with no Tailwind build**, so a `state-busy` or a `focus-ring` in the mounted markup resolves to nothing at all — a computed-style
-assertion against one reads the browser's initial value and says nothing about the recipe. What the option _does_ reach is the plain CSS in
-`forge-ui.css`'s `@layer` blocks, which is why `forced-colors.browser.ts` works: its forced-colors block is `[data-slot~="…"]` rules, not utilities.
-A claim about a recipe's own selector belongs in a `bun test` that compiles the design system — `src/tooling/gate/checks/state-recipes.test.ts` is
-the pattern, and the compiled selector is the artefact it reads.
+**`mount`'s `css` option cannot prove an `@utility`, and a spec that seems to is passing for another reason.** The option serves the stylesheets
+**raw, with no Tailwind build**, so a `state-busy` or a `focus-ring` in the mounted markup resolves to nothing at all — a computed-style assertion
+against one reads the browser's initial value and says nothing about the recipe. **A claim that depends on a utility or on preflight mounts
+`withCompiledCss(html)` instead**, which inlines the Tailwind build of the markup's own classes, preflight included. A claim about a recipe's own
+selector belongs in a `bun test` that compiles the design system — `src/tooling/gate/checks/state-recipes.test.ts` is the pattern, and the compiled
+selector is the artefact it reads.
 
 **A UA pseudo-element is asserted from rendered pixels, never from `getComputedStyle`.** Chromium answers
 `getComputedStyle(el, "::-webkit-slider-runnable-track")` with the _host_ element's style rather than the pseudo-element's, so a computed-style spec
@@ -200,11 +196,29 @@ wrote under `--persist-to`, which the harness cannot read, so it serves no Worke
 **The compose cases run on a bounded pool, `CASE_CONCURRENCY` in `tests/workerd/db-compose.workerd.ts`.** Each case spawns wrangler many times
 over, so running every case at once exhausts memory and the OOM killer takes the gate down; a small pool keeps most of the wall-clock win.
 
-**The set is held back to the `full` tier, and the reason is a prerequisite, not cost** — the same ground the browser set is held back on (§1c).
+**The set runs from the `runtime` tier, narrowed to the specs the pending changes reach, and the reason is a prerequisite, not cost** — the same
+ground the browser set runs there on (§1c).
 `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
 
-**`test` does not reach `tests/workerd/`, so that this set is not also `standard`'s.** A spec here costs a runtime start; a co-located test costs
-milliseconds, and the run a task closes on must not pay a runtime start per spec.
+**`test` does not reach `tests/workerd/`, so that this set is not also `unit`'s.** A spec here needs a runtime start, and `unit` is the run for
+a machine with no runtime installed.
+
+### 1g. The Cross-Engine Subset
+
+**A spec joins the subset when its assertion reads something the engine computes rather than something forge's JavaScript wrote.** That covers CSS
+layout and anchor placement; top-layer, popover, dialog, invoker and light-dismiss behaviour; forced colors and UA styling; no-script platform
+defaults; and the focus and `:focus-visible` heuristics. Engines disagree there, and a Chromium-only run is green wherever they do.
+
+**A spec stays Chromium-only when a second engine could not tell it anything, or could not run it:** forge's own DOM logic — signals, binding,
+htmx glue, resume — and a spec needing a Chromium-only Playwright capability, CDP's virtual WebAuthn authenticator or the accessibility tree.
+
+**The tag is `@cross-engine`, on every top-level `describe` or bare `test` of the file.** The `firefox` and `webkit` projects select it by `grep`;
+the `chromium` project has no `grep` and runs everything. A file tagged in part leaves its untagged cases silently Chromium-only.
+
+**A skip on one engine is either a forge defect or a missing platform behaviour, and its reason says which.** A forge defect is filed as a `bug`
+task before the skip is written, and the reason reads `"<task-id>: <symptom on this engine>"`, so the task that fixes it is the one that removes it.
+A behaviour the engine does not implement is not forge's to file, and the reason names the missing behaviour, such as WebKit's absent forced-colors
+palette. Either way the skip is the first line of the case, `test.skip(browserName === "…", reason)`, never a tag taken off.
 
 ---
 
@@ -370,22 +384,29 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 
 ## 6. The Verification Gate
 
-See [`TESTING.md`][testing-6] §6 for the one-command-three-modes gate, the flag table, the prerequisite line, and the scoped-run rule.
+See [`TESTING.md`][testing-6] §6 for the one command and its tiers, the flag table, the lines between the tiers, and the scoped-run rule.
 `config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
-**A step's tier follows [`TESTING.md`][testing-6c] §6c's two lines, never a speed estimate**, and an omitted `tier` is `quality`. `standard` adds
-`test`; `full` adds the rows held back on a prerequisite or reserved for release, the runtime suites among them (§1c, §1f). `test` covers every
-co-located suite that judges nothing external — `src/`, `config/` and `warden/src/` — so `standard` runs those alone and the workerd set is reached
-only through its own step (§1f).
+**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, never a speed estimate**, and an omitted `tier` is `static`. `unit` adds
+`test`; `runtime` adds the runtime suites on Chromium and the database rows (§1c, §1f); `deploy` runs those whole and adds the rows that judge a
+finished change; `release` adds §1g's Firefox and WebKit rows. `test` covers every co-located suite that judges nothing external — `src/`,
+`config/` and `warden/src/` — so `unit` runs those alone and the workerd set is reached only through its own step (§1f).
 
 The table is not the running order ([`TESTING.md`][testing-6c] §6c's tier-stable sort), so `browserStep` sitting above `dbSteps` in the file does
 not put Chromium ahead of the digest check.
 
+**forge's Firefox and WebKit rows run only §1g's `@cross-engine` subset; an application's run every spec** ([`TESTING.md`][testing-apps-6e] §6e),
+from a `playwright.config.ts` project per engine over the same specs and the same server (§1c). Both tables take the rows from `browserSteps`.
+
+**forge's browser and workerd rows run whole when a change reaches what a spec loads without importing it**: a module `mount`'s `expose` bundles
+from a string, a file named by `new URL(…, import.meta.url)`, or a Worker config with its `main`'s closure. `config/spec-reach.ts` is their
+`widen`, and refuses any such site it cannot read as a literal. A fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`
+on both. The ruling is forge's own, because `mount` is a fixture forge does not publish.
+
 **The reviewer's baseline is a reuse run, and the developer's closing run is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the reviewer run
-the gate with `--reuse`. `cc-tester` closes a task on `verify:full`, which records a receipt for the tree it judged, so a reviewer who reaches the
-same bytes gets a one-line verdict rather than a second full run; a tree that moved in between runs the gate. That holds only while forge's own
-suite leaves the working tree as it found it: a test that writes into the tree withholds the receipt, and every baseline after it pays for a full
-run.
+the gate with `--reuse`. `cc-tester` closes a task on `verify`, whose receipt names the tree and commit it judged, so a reviewer on the same bytes
+and commit gets a one-line verdict; anything that moved runs the gate. A test that writes into the tree withholds the receipt, so every baseline
+after it pays for a whole run.
 
 **`GATE_INPUTS` in `config/steps.ts` holds the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and the
 `result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can
@@ -393,10 +414,9 @@ change any row's verdict — so under `--affected` a change to one runs every st
 list bounds what it reads** — the whole type program, an unbounded import graph, every path a document names, or the whole surface the exports map
 declares. `config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.
 
-**Each spawned step runs under its own `TMPDIR`, which the gate removes with whatever the step left in it.** A failed step's full log is the one
-thing a run keeps, for its reader to open afterwards. **`test` also fails when its suite leaves anything there**, naming each entry, because it is
-built with `leavesNoTemp`: a spec removes every temp directory it creates, in an `afterAll` over a file-level `roots` array, so a bare `bun test`
-off the gate leaves none either.
+**Each spawned step runs under its own `TMPDIR`, which the gate removes with whatever the step left in it**; a failed step's full log is all a
+run keeps. **`test` also fails when its suite leaves anything there**, naming each entry, because it is built with `leavesNoTemp`: a spec removes
+every temp directory it creates, in an `afterAll` over a file-level `roots` array, so a bare `bun test` leaves none either.
 
 ---
 
@@ -575,4 +595,5 @@ not. `key` is `barrel/component`, the spelling a coverage manifest's own keys us
 [testing-5b]: ../warden/canon/libs/TESTING.md#5b-negative-case-structure
 [testing-5c]: ../warden/canon/libs/TESTING.md#5c-no-mocking-of-security-primitives
 [testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
-[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-two-lines-between-the-modes
+[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
+[testing-apps-6e]: ../warden/canon/apps/TESTING.md#6e-one-tier-per-moment

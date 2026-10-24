@@ -39,9 +39,9 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task is complete
-- §6a One Command, Three Modes: the writing loop, the gate and the release gate
+- §6a One Command, Nested Tiers: the writing loop, the gate a task closes on, and the release gate
 - §6b What Each Tool Catches: the failure classes
-- §6c The Two Lines Between the Modes: the kind line below, the prerequisite line above
+- §6c The Lines Between the Tiers: kind, prerequisite, narrowing and engine
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
 
 ---
@@ -75,9 +75,9 @@ preference:
 
 **A browser test runs in a real browser under its own verb**, with its own config owning the discovery pattern, project list, and parallelism.
 
-**The set sits outside the default gate, and the reason is a prerequisite, not cost.** It needs a browser binary an install step fetches, and a
-prerequisite is the only legitimate ground for a set to stand outside it (§6c). **Cost never is.** It **is** a step of the release gate,
-which is permitted to carry a prerequisite.
+**The set sits outside `unit`, and the reason is a prerequisite, not cost.** It needs a browser binary or server an install step provides, and a
+prerequisite is the only legitimate ground for a set to stand outside it (§6c). **Cost never is.** It runs from `runtime` up, the tiers that are
+permitted to carry a prerequisite.
 
 **This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
 natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
@@ -351,35 +351,36 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ## 6. The Verification Gate
 
-### 6a. One Command, Three Modes
+### 6a. One Command, Nested Tiers
 
-**There is one gate command with three modes — quality, standard and full — not three commands.** Verbs sharing every flag and every line of
-behaviour, differing only in a membership filter, are modes by definition. **`standard` is what a bare invocation runs**, and it is what a task
-closes on; `quality` is the loop to write in and `full` is the release gate.
+**There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** Verbs
+sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
+`static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **`runtime` is what a bare invocation runs**, and it is what a task closes on; `static` is the loop to
+write in, `unit` is the run for a machine with no runtime installed, `deploy` is the run a remote makes before a version ships, and `release` is the
+gate a publish blocks on. What separates one tier from the next is §6c's.
 
-**A config file owns the step list** — every step, how it runs, and whether it is full-only. Read it there rather than trusting any prose copy. A
+**A config file owns the step list** — every step, how it runs, and the tier it runs from. Read it there rather than trusting any prose copy. A
 step is one of two things: an external command, or a check the runner calls in-process.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
 warning" — is a failure.
 
-**A step may declare a prerequisite, and what an absent one means is the mode's answer rather than the step's.** The runner probes once per step.
-Below the `full` tier the step is **skipped**, named as skipped with the hint that would install its dependency; in a **`full` run it fails** with
-that same hint, because `full` is the release gate a publish blocks on and a release may not be assured by a step nobody ran. **A run in which every
-selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
+**A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
+Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
+same hint, because those tiers promise that a runtime ran, and a task close, a deploy or a release may not be assured by a step nobody ran. **A
+run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
-never inferred from raw tool output. The mode is part of the verdict, because the modes are different assurances, and **a skipped step is part
+never inferred from raw tool output. The tier is part of the verdict, because the tiers are different assurances, and **a skipped step is part
 of it too** — a green that skipped a step is not the green that ran it.
 
 | Flag | Effect |
 | --- | --- |
-| `--mode <quality\|standard\|full>` | Select the tier; omitted, the run is `standard` |
-| `--full` | Sugar for `--mode full`; passing both is refused rather than given a precedence |
+| `--tier <static\|unit\|runtime\|deploy\|release>` | Select the tier; omitted, the run is `runtime` |
 | `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
 | `--list` | Print the resolved selection and exit, running nothing |
 | `--fix` | Run each selected step's fixer, then re-run to confirm |
-| `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this mode or higher; otherwise run the gate |
+| `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this tier or higher; otherwise run the gate |
 | `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
 
 ### 6b. What Each Tool Catches
@@ -396,39 +397,60 @@ Keyed by tool rather than by step: which steps exist drifts, and §6a already sa
 **Fix type failures first** — they cascade into misleading lint and test failures. The step table encodes this by ordering the type check first, so
 a fail-fast run stops there without being told to.
 
-### 6c. The Two Lines Between the Modes
+### 6c. The Lines Between the Tiers
 
-**Each line is an objective property of a step rather than a judgement about it, and neither is cost.** A tier a step was moved out of because
+**Each line is an objective property of a step rather than a judgement about it, and none is cost.** A tier a step was moved out of because
 somebody found it slow is a tier nobody can predict the membership of.
 
-**The prerequisite line separates `full` from the rest.** Every step below it works on any machine with the repository's dependencies installed —
-nothing to fetch, no binary beyond the declared dev dependencies. That is what makes those runs the gate anyone may run at any time, and **why cost
-is never grounds for moving a step across this line**. The full run is the release gate and **is** permitted a prerequisite: a step whose
-prerequisite is never worth waiting for is full-only. Between them sits the step that declares a `requires` probe — it runs wherever its dependency
-happens to be installed, and §6a's mode-decided verdict is what keeps that from weakening the release gate.
+**The kind line separates `static` from `unit`: a step that runs the code is `unit`, and a step that judges it is `static`.** Type checking,
+linting, formatting and every project validator read the source and say something about it; a test suite executes what the source builds. The
+distinction is what the step does, not what it costs — a type-aware lint that takes seconds stays in `static`, and a suite that happens to be quick
+is still `unit`. **A tier is therefore predictable from the step alone**, which is what lets a writer trust one run to judge everything they just
+wrote.
 
-**The kind line separates `quality` from `standard`: a step that runs the code is `standard`, and a step that judges it is `quality`.** Type
-checking, linting, formatting and every project validator read the source and say something about it; a test suite executes what the source builds.
-The distinction is what the step does, not what it costs — a type-aware lint that takes seconds stays in `quality`, and a suite that happens to be
-quick is still `standard`. **A tier is therefore predictable from the step alone**, which is what lets a writer trust one run to judge everything
-they just wrote.
+**The prerequisite line separates `unit` from `runtime`.** Every step below it works on any machine with the repository's dependencies installed —
+nothing to fetch, no binary or service beyond the declared dev dependencies. That is what makes those runs the gate anyone may run at any time, and
+**why cost is never grounds for moving a step across this line**. A step that needs a runtime — a browser server, a Worker runtime, a local
+database — runs from `runtime` up. Between them sits the step that declares a `requires` probe on an optional dependency: it runs wherever that
+dependency happens to be installed, and §6a's tier-decided verdict is what keeps that from weakening the gate a task closes on.
 
-The two lines compose rather than compete: a step is `quality` unless it runs the code, `standard` unless it also needs a prerequisite, and `full`
-when it does.
+**The narrowing line separates `runtime` from `deploy`: below `deploy`, a step that declares how to narrow runs only over the pending changes; from
+`deploy` up it runs whole.** Under `runtime` such a step runs whole when a change touches one of the gate's own inputs or a path the step declares
+wide. Otherwise its tool is asked what the narrowed run would select: the step runs nothing when the answer is nothing, runs narrowed to the specs
+the changes reach when it is something, and runs whole when the answer cannot be read. A step that asks whether the tree is ready to ship
+— a written changelog entry, a bundle of what deploys, a gate over a derived tree — also starts at `deploy`, because it judges a finished change
+rather than one in progress.
+
+**A step's reach is derived from a graph a check already holds — the tool's import graph, the declared namespace graph — and never from a path
+list kept by hand.** The only hand-kept list names what that graph cannot see: a file a spec reads without importing it, or a module it reaches
+through a specifier resolved at run time. That list is checked against the tree, so a rename that leaves one of its globs matching nothing is
+refused rather than silently narrowing the step. **`deploy` runs every step whole on every tag**, which is the backstop for a reach the
+derivation missed.
+
+**The engine line separates `deploy` from `release`: a step that re-runs a suite another step already ran, on another engine, is `release`.** The
+primary engine proves the behaviour; each other engine proves only that it holds there too.
+
+The lines compose rather than compete: a step is `static` unless it runs the code, `unit` unless it needs a runtime, `runtime` when it does,
+`deploy` when it judges a finished change, and `release` when it repeats a runtime suite on another engine.
 
 That rank is also what orders the run. **Execution order is tier-stable rather than table order: within a tier the table's declared order holds,
-and across tiers the lower tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `full` row is
-not where it runs, and a `standard` row appended after one still runs ahead of it. That is what makes a fail-fast `full` run fail on the
+and across tiers the lower tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `release` row is
+not where it runs, and a `unit` row appended after one still runs ahead of it. That is what makes a fail-fast `release` run fail on the
 sub-second check rather than after minutes of browser — and why a repository never re-declares a row it only wanted moved.
 
-The mode enum is closed and ordered, and a step names **the lowest mode it runs in — a rank, not a set of modes**. There is consequently no way to
-express a step a lower mode has and a higher one does not, so `quality ⊆ standard ⊆ full` is structural rather than something a test has to catch
-after the fact.
+The tier enum is closed and ordered, and a step names **the lowest tier it runs in — a rank, not a set of tiers**. There is consequently no way to
+express a step a lower tier has and a higher one does not, so the nesting is structural rather than something a test has to catch after the fact.
+**`deploy` ranks below `release` by content, not by when it runs**: it is everything but the other engines, so a passing `release` answers
+`deploy` as well.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 
 A narrowed selection brands every summary line as scoped and not the gate, so a scoped green can never be read as a green gate. **A selection
 resolving to zero steps is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
+
+**The `runtime` tier's narrowing is not a scoped selection.** It is the tier's own definition (§6c), fixed by the tree and the commit it sits on,
+so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
+same commit.
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
 and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no

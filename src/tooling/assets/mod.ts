@@ -1,4 +1,5 @@
 export { createAssetsCommands } from "./commands";
+export { importClosure } from "./closure";
 export type { LoadConfigOptions } from "./types";
 export { defineAssetsConfig, env, flag, loadConfig } from "./config";
 export { copyAssets } from "./copy";
@@ -7,6 +8,7 @@ export { fetchURL } from "./download";
 export { buildFont, buildFontPacks, buildFontSubsets, extractFontMetrics, postScriptName, subsetFont } from "./font-build";
 export { buildFonts } from "./fonts";
 export { hashFile, hashString } from "./hash";
+export { assetInputs } from "./inputs";
 export { buildIcons, iconLinks, iconTarget } from "./icons";
 export { buildJS } from "./js";
 export { buildMarks, svgPathCommands, svgToMark } from "./mark-build";

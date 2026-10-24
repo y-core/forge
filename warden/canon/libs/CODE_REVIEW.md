@@ -296,4 +296,4 @@ reads both.
 [testing-3f]: ./TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
 [testing-6]: ./TESTING.md#6-the-verification-gate
-[testing-6a]: ./TESTING.md#6a-one-command-three-modes
+[testing-6a]: ./TESTING.md#6a-one-command-nested-tiers

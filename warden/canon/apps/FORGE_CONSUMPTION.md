@@ -86,7 +86,7 @@ the application owns which of them run and over which directories. Wiring one is
 ```ts
 import { commentBudgetStep } from "@y-core/forge/tooling/gate";
 
-commentBudgetStep({ root: ROOT, sources: ["src", "config"] }, { tier: "standard" });
+commentBudgetStep({ root: ROOT, sources: ["src", "config"] }, { tier: "unit" });
 ```
 
 **`commentBudgetStep` is the one that makes the comment budget gated rather than reviewed.** Without it, [`CODE_REVIEW.md`][cr-3a] §3a has no step

@@ -216,10 +216,11 @@ These consequences follow, each the rule rather than a special case:
 
 ### 2i. `openPopoverAt` — Coordinate Placement
 
-**Every other popup in forge is placed by CSS, against its trigger.** An _invoker-opened_ popup's **implicit anchor** is its invoker, which
-`position-anchor`'s initial `auto` resolves to; `src/ui/core/menu-anchor.browser.ts` pins the boundary this section depends on: a popup shown by
-`showPopover()` has no implicit anchor at all. A **context menu has no trigger**, so nothing carries the anchor name, every anchored rule resolves
-to nothing, and the UA's `[popover]` default centres the panel — the one place a context menu must never be.
+**Every other popup in forge is placed by CSS, against its trigger.** An _invoker-opened_ popup's **implicit anchor** is its invoker, which the
+stylesheet's explicit `position-anchor: auto` resolves to — the property's initial value is `normal`, which resolves to none.
+`src/ui/core/menu-anchor.browser.ts` pins the boundary this section depends on: a popup shown by `showPopover()` has no implicit anchor at all. A
+**context menu has no trigger**, so nothing carries the anchor name, every anchored rule resolves to nothing, and the UA's `[popover]` default
+centres the panel — the one place a context menu must never be.
 
 `openPopoverAt` shows the popup with its top-left corner on the point, clamped so the whole box stays on screen. These properties are load-bearing:
 

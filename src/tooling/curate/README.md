@@ -240,16 +240,16 @@ cloudflareWorkerSteps({ features: {} /* … */ });
 cloudflareWorkerSteps({ features: { profiles: [["showcase"], ["showcase", "contact"]] } /* … */ });
 ```
 
-It adds `validate-features`, last in the `full` tier. For each profile — a `--drop` list, by default each feature alone and then all of them — the
+It adds `validate-features`, last in the `deploy` tier. For each profile — a `--drop` list, by default each feature alone and then all of them — the
 row resolves the profile through the graph, curates into a temporary directory, runs any regeneration, links your `node_modules` into it, checks a
-kept manifest names exactly the features kept, builds its assets when the preset names an `assetConfig`, and runs the skeleton's `standard` gate
+kept manifest names exactly the features kept, builds its assets when the preset names an `assetConfig`, and runs the skeleton's `unit` gate
 there. Profiles resolving to the same features are proved once, and a profile's label names what the graph added — `--drop email (+ contact)`. A
 failure names the profile and reports the tail of the skeleton's own output, and the row stops there.
 
 The default profiles end with every feature dropped together, because a line two features share is exercised both ways only by that set. An empty
 `profiles`, or a profile that drops nothing, fails the row: either would pass having proved no skeleton.
 
-The skeleton runs `standard`, never `full`: its own step table still carries `validate-features`, so a full run inside it would curate again. Your
+The skeleton runs `unit`, never `deploy`: its own step table still carries `validate-features`, so a `deploy` run inside it would curate again. Your
 `node_modules` is linked rather than installed, so the row makes no network call, and the link is removed before the temporary tree is, so the
 removal cannot follow it into your installed dependencies. Every command runs with `FORGE_APP_ROOT` set to the temporary tree and
 `NODE_PRESERVE_SYMLINKS=1`, so a verb that defaults its root from that variable resolves the skeleton, and a module resolved through the link keeps

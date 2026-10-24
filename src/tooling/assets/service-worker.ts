@@ -2,8 +2,9 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-import type { Plugin } from "esbuild";
+import type { BuildOptions, Plugin } from "esbuild";
 
+import { jsBuildOptions } from "./js";
 import { assetUrlBase } from "./paths";
 import { bundler } from "./peers";
 import type { ResolvedServiceWorkerBuild } from "./types";
@@ -56,6 +57,25 @@ function precachePlugin(precache: readonly string[], version: string): Plugin {
   };
 }
 
+/** The esbuild options the service worker builds with, its output file aside. @internal */
+export function serviceWorkerBuildOptions(
+  serviceWorker: ResolvedServiceWorkerBuild,
+  opts: { precache: readonly string[]; version: string; minify?: boolean | undefined },
+): BuildOptions {
+  return {
+    ...jsBuildOptions({
+      format: "iife",
+      splitting: false,
+      define: serviceWorker.define,
+      conditions: serviceWorker.conditions,
+      minify: serviceWorker.minify ?? opts.minify ?? false,
+    }),
+    entryPoints: [serviceWorker.entry],
+    banner: { js: SERVICE_WORKER_BANNER },
+    plugins: [precachePlugin(opts.precache, opts.version)],
+  };
+}
+
 /** Bundles the service worker, unhashed, to `sw.js` in `opts.outDir`, with `precache` and `version` as the `PRECACHE_URLS` and `PRECACHE_VERSION` it imports. @public */
 export async function buildServiceWorker(
   serviceWorker: ResolvedServiceWorkerBuild,
@@ -63,20 +83,7 @@ export async function buildServiceWorker(
 ): Promise<string> {
   const esbuild = await bundler("js.serviceWorker");
   const outfile = resolve(opts.outDir, SERVICE_WORKER_FILE);
-  await esbuild.build({
-    entryPoints: [serviceWorker.entry],
-    outfile,
-    bundle: true,
-    format: "iife",
-    minify: serviceWorker.minify ?? opts.minify ?? false,
-    platform: "browser",
-    jsx: "automatic",
-    jsxImportSource: "@y-core/forge/render/jsx",
-    banner: { js: SERVICE_WORKER_BANNER },
-    plugins: [precachePlugin(opts.precache, opts.version)],
-    ...(serviceWorker.define !== undefined ? { define: serviceWorker.define } : {}),
-    ...(serviceWorker.conditions !== undefined ? { conditions: serviceWorker.conditions } : {}),
-  });
+  await esbuild.build({ ...serviceWorkerBuildOptions(serviceWorker, opts), outfile });
   return outfile;
 }
 

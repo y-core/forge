@@ -61,14 +61,12 @@ describe("Tabs", () => {
     expect(slotsOf(html)).toEqual(["tabs", "tabs-list", "tab", "tab", "tabs-content", "tabs-content"]);
     expect([attrsOf(html, 'id="panel-a"'), attrsOf(html, 'id="panel-b"')]).toEqual([
       { id: "panel-a", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-a-tab", "data-selected": "" },
-      { id: "panel-b", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-b-tab", hidden: "" },
+      { id: "panel-b", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-b-tab", hidden: "until-found" },
     ]);
   });
 });
 
 describe("Tabs.List", () => {
-  // APG asks a tablist for a name, and a page with two tab sets gives a reader nothing to tell them
-  // apart without one — so it is required rather than forwarded if the caller remembers it.
   it("cannot be rendered unnamed", () => {
     // @ts-expect-error — one of `label` or `labelledby` is required.
     const unnamed = <Tabs.List />;
@@ -161,8 +159,6 @@ describe("Tabs.Tab", () => {
     expect(classesOf(html).at(-1)).toBe("grow");
   });
 
-  // A panel is a Tab stop in its own right, so an unnamed one is announced as "tab panel" and nothing
-  // else — the pairing runs both ways off the single id the caller wrote.
   it("names the panel it controls, and keeps the derived id when a caller supplies one of their own", async () => {
     const html = await render(
       <Tabs>
@@ -197,7 +193,7 @@ describe("Tabs.Content", () => {
       "data-slot": "tabs-content",
       tabindex: "0",
       "aria-labelledby": "panel-b-tab",
-      hidden: "",
+      hidden: "until-found",
     });
   });
 

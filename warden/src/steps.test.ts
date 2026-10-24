@@ -22,22 +22,22 @@ describe("warden steps", () => {
     for (const step of STEPS) expect(isCheckStep(step)).toBe(true);
   });
 
-  it("puts the changelog on the `full` tier alone, and leaves the rest on `quality`", () => {
-    expect(STEPS.map((step) => step.tier)).toEqual([undefined, "full", undefined]);
+  it("puts the changelog on the `deploy` tier alone, and leaves the rest on `static`", () => {
+    expect(STEPS.map((step) => step.tier)).toEqual([undefined, "deploy", undefined]);
   });
 
-  it("lets a project pull the changelog into the quality run, overriding the default", () => {
-    expect(changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }, { tier: "quality" }).tier).toBeUndefined();
+  it("lets a project pull the changelog into the static run, overriding the default", () => {
+    expect(changelogStep({ root: "/nowhere", packageVersion: "1.0.0" }, { tier: "static" }).tier).toBeUndefined();
   });
 
   it("lets a project hold a check back to a higher tier", () => {
-    expect(docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }, { tier: "standard" }).tier).toBe("standard");
+    expect(docsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS }, { tier: "unit" }).tier).toBe("unit");
   });
 
   it("hands the config it was given to the check, rather than capturing one of its own", async () => {
     const step = changelogStep({ root: "/nowhere/forge-no-such-root", packageVersion: "1.0.0" });
 
-    const result = await step.run("quality");
+    const result = await step.run("static");
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((finding) => `${finding.file}: ${finding.message}`)).toEqual(["CHANGELOG.md: file does not exist"]);

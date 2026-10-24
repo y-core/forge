@@ -1,4 +1,5 @@
 import type { ValidationResult } from "../../result/types";
+import type { BrowserEngine, PlaywrightServerStatus } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { DeferredFinding } from "./checks/types";
@@ -15,8 +16,8 @@ export type { ImportBoundaryCheckConfig } from "./checks/types";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
 export interface StepOptions {
-  /** The lowest mode the step runs in. */
-  tier?: GateMode;
+  /** The lowest tier the step runs in. */
+  tier?: GateTier;
   /** Replaces the step's default dependency; `null` drops it, so a project that vendors one is not gated on probing it. */
   requires?: StepRequirement | null;
   /** Replaces the step's derived `watches`; `null` drops it, so the step runs on every change. */
@@ -144,11 +145,11 @@ export interface CloudflareWorkerStepOptions {
   warden?: boolean;
   /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
   root?: string;
-  /** Whether to emit the two `forge db schema check` rows: digests in `standard`, the replay in `full`. Defaults to `false`. */
+  /** Whether to emit the `forge db` rows: the digests in `static`, the lint and the replay in `runtime`. Defaults to `false`. */
   db?: boolean;
-  /** Whether to emit the `full`-tier `test:browser` step. Defaults to `false`. */
-  browser?: boolean;
-  /** Whether to emit the `full`-tier `test:workerd` step. Defaults to `false`. */
+  /** `true` emits the `runtime`-tier `test:browser` row on Chromium; `engines` is handed to {@link browserSteps}. Defaults to `false`. */
+  browser?: boolean | { engines: readonly [BrowserEngine, ...BrowserEngine[]] };
+  /** Whether to emit the `runtime`-tier `test:workerd` step. Defaults to `false`. */
   workerd?: boolean;
   /** Omit to emit no JSX-pragma row. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
@@ -203,7 +204,7 @@ export interface SummaryInput {
   gate: string;
   /** Steps that ran and passed — the only number a green line may be built from. */
   passed: number;
-  /** Steps whose dependency was absent below the `full` tier. */
+  /** Steps whose dependency was absent below the `runtime` tier. */
   skipped: number;
   /** Steps the selection resolved to. */
   selected: number;
@@ -221,7 +222,9 @@ export interface SummaryInput {
 export interface GateReceipt {
   /** `git write-tree` over the working tree, untracked files in and ignored ones out. */
   tree: string;
-  mode: GateMode;
+  tier: GateTier;
+  /** The `HEAD` commit the run's pending changes were read against; absent in a repository with no commit. */
+  base?: string;
   /** Every step the run executed. */
   labels: readonly string[];
 }
@@ -237,31 +240,60 @@ export interface SemVer {
 export type BumpKind = "major" | "minor" | "patch";
 
 /** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
-export const GATE_MODES = ["quality", "standard", "full"] as const;
+export const GATE_TIERS = ["static", "unit", "runtime", "deploy", "release"] as const;
 
 /** How much of the table to run. @public */
-export type GateMode = (typeof GATE_MODES)[number];
+export type GateTier = (typeof GATE_TIERS)[number];
+
+/** How a selected step runs: its whole command, its command plus `narrow.args`, or not at all because no pending change touches it. @public */
+export type StepReach = "whole" | "narrow" | "untouched";
 
 /** A dependency a step needs, with the probe that detects it and the remedy to print. @public */
 export interface StepRequirement {
   /** What is missing, named verbatim in the skipped and failure lines. */
   tool: string;
   /** Answers whether the dependency is present. Defaults to whether `<tool> --version` exits 0. */
-  probe?: () => boolean;
+  probe?: () => boolean | Promise<boolean>;
   /** Remedy shown verbatim when the probe fails, e.g. ``run `bun add -d esbuild` ``. */
   hint: string;
+}
+
+/** What the browser requirement asks, each defaulting to the real environment. @internal */
+export interface BrowserProbes {
+  env: Readonly<Record<string, string | undefined>>;
+  clientVersion: () => string;
+  serverStatus: (endpoint: string, clientVersion: string, headers?: Readonly<Record<string, string>>) => Promise<PlaywrightServerStatus>;
 }
 
 /** What every step carries, whichever way it runs. @public */
 export interface StepBase {
   /** Stable identifier — the `--only` token, and the name reported on failure. */
   label: string;
-  /** The lowest mode this step runs in; omitted, it runs from `quality` up. */
-  tier?: GateMode;
-  /** Dependency probed before the step runs: absent, only a full run fails; the lower modes skip. */
+  /** The lowest tier this step runs in; omitted, it runs from `static` up. */
+  tier?: GateTier;
+  /** Dependency probed before the step runs: absent, a run from `runtime` up fails and the lower tiers skip. */
   requires?: StepRequirement;
   /** Globs, relative to the runner's `cwd`, of every path the step reads; omitted, `--affected` runs it on any change. */
   watches?: readonly string[];
+  /** Resolves at the `runtime` tier, for a step that would otherwise narrow or stay untouched, the paths relative to `cwd` whose change runs it whole that no glob names ahead of time; a rejection runs it whole. */
+  widen?: (cwd: string) => readonly string[] | Promise<readonly string[]>;
+  /** Narrows the step to pending changes at the `runtime` tier; from `deploy` up it runs whole. */
+  narrow?: {
+    /** Appended to `cmd` when a pending change touches `watches`. */
+    args: readonly string[];
+    /** Globs whose change runs the step whole, for inputs its narrowing cannot trace. */
+    wide?: readonly string[];
+    /** Appended to `cmd` and `args` to ask the tool what the narrowed run would select, without running it; a non-zero exit runs the step whole. */
+    probe?: StepProbe;
+  };
+}
+
+/** How a narrowed step asks its tool whether the pending changes select anything. @public */
+export interface StepProbe {
+  /** Appended after `narrow.args`, turning the narrowed run into a listing. */
+  args: readonly string[];
+  /** False only when the listing proves nothing is selected, so output it cannot read still runs the step. */
+  selects: (output: string) => boolean;
 }
 
 /** A step run as an external process, reported from the tail of its captured output. @public */
@@ -281,7 +313,7 @@ export interface CommandStep extends StepBase {
 
 /** A step run in-process, reported from the findings it returns rather than from captured text. @public */
 export interface CheckStep extends StepBase {
-  run: (mode: GateMode) => CheckResult | Promise<CheckResult>;
+  run: (tier: GateTier) => CheckResult | Promise<CheckResult>;
   /** Auto-fixing counterpart invoked by `--fix`, called in-process like `run`. */
   fix?: () => void | Promise<void>;
   cmd?: never;
@@ -296,9 +328,11 @@ export type Selection =
       ok: true;
       /** The steps to run, in table order. */
       steps: readonly Step[];
-      /** How many steps the mode holds in total — the denominator of the scoped banner. */
+      /** How each selected step runs, by label. */
+      reach: Readonly<Record<string, StepReach>>;
+      /** How many steps the tier holds in total — the denominator of the scoped banner. */
       total: number;
-      /** True when fewer steps were selected than the mode holds or `changed` narrowed the run, so a green is not a gate green. */
+      /** True when fewer steps were selected than the tier holds or `changed` narrowed the run, so a green is not a gate green. */
       scoped: boolean;
     }
   | { ok: false; error: string };

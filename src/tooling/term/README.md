@@ -65,7 +65,7 @@ a truncating one at `abc…`, and when every column has hit its floor the grid o
 const lines = definitionList(
   [
     { term: "--only <step>", description: "Run one step. Any step label works." },
-    { term: "--list", description: "Print the steps of the selected mode and run none." },
+    { term: "--list", description: "Print the steps of the selected tier and run none." },
   ],
   { width: terminalWidth(), indent: 2 },
 );

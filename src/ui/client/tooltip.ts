@@ -3,7 +3,6 @@ import { TOOLTIP_MOUNTED_ATTR } from "../contracts/toggle-contract";
 import { ownerWindow } from "./dom";
 import type { TooltipOptions } from "./types";
 
-/** How long after the last tooltip closes the next one still opens at once. */
 const WARM_MS = 300;
 
 interface Warmth {
@@ -40,6 +39,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   const showDelay = options.showDelayMs ?? 400;
   const hideDelay = options.hideDelayMs ?? 100;
   let timer = 0;
+  const lacksHint = () => content.popover !== "hint";
 
   const schedule = (open: boolean, delay: number) => {
     win.clearTimeout(timer);
@@ -68,6 +68,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   const onToggle = (event: Event) => {
     const state = warmthOf(win);
     if ((event as ToggleEvent).newState === "open") {
+      if (lacksHint()) for (const tip of [...openTips(state)]) if (tip !== content) tip.hidePopover();
       state.open.add(content);
       return;
     }
@@ -88,7 +89,7 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   const onPointerEnter = () => show();
 
   // A tap fires `pointerleave` the moment the finger lifts, which would close the tooltip in the
-  // same gesture that opened it. Touch dismissal is the platform's: `popover="hint"` light-dismisses.
+  // same gesture that opened it.
   const onPointerLeave = (event: Event) => {
     if ((event as PointerEvent).pointerType === "touch") return;
     hide();
@@ -103,6 +104,19 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
     if (trigger.matches(":focus-visible")) show();
   };
 
+  const onKeyDown = (event: Event) => {
+    if ((event as KeyboardEvent).key !== "Escape" || !lacksHint() || !content.matches(":popover-open")) return;
+    event.preventDefault();
+    schedule(false, 0);
+  };
+
+  const onOutsidePointerDown = (event: Event) => {
+    if (!lacksHint() || !content.matches(":popover-open")) return;
+    const path = event.composedPath();
+    if (path.includes(trigger) || path.includes(content)) return;
+    schedule(false, 0);
+  };
+
   const lifetime = new AbortController();
   const { signal } = lifetime;
   trigger.addEventListener("pointerenter", onPointerEnter, { signal });
@@ -113,6 +127,8 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
   content.addEventListener("pointerenter", onPointerEnter, { signal });
   content.addEventListener("pointerleave", onPointerLeave, { signal });
   content.addEventListener("toggle", onToggle, { signal });
+  win.document.addEventListener("keydown", onKeyDown, { signal });
+  win.document.addEventListener("pointerdown", onOutsidePointerDown, { signal });
 
   root.setAttribute(TOOLTIP_MOUNTED_ATTR, "");
 

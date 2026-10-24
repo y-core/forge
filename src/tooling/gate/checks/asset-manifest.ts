@@ -5,13 +5,13 @@ import { loadConfig } from "../../assets/config";
 import { readEmittedManifest } from "../../assets/pipeline";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import type { GateMode } from "../types";
+import type { GateTier } from "../types";
 import type { AssetManifestCheckConfig } from "./types";
 
 const BUILD_HINT = "run `forge assets build --minify` — the manifest is ahead of the built tree";
 
 /** Checks every path the emitted assets manifest maps to exists under `publicDir`. @public */
-export async function checkAssetManifest(config: AssetManifestCheckConfig, mode: GateMode): Promise<CheckResult> {
+export async function checkAssetManifest(config: AssetManifestCheckConfig, tier: GateTier): Promise<CheckResult> {
   const { root } = config;
   const assetsPath = config.assetsPath ?? ".forge/assets.ts";
   const modulePath = resolve(root, assetsPath);
@@ -30,12 +30,12 @@ export async function checkAssetManifest(config: AssetManifestCheckConfig, mode:
   }
 
   if (typesOnly) {
-    if (mode === "quality") return checkResult([], "asset manifest: types-only artifact, nothing to verify");
+    if (tier === "static") return checkResult([], "asset manifest: types-only artifact, nothing to verify");
     return checkResult(
       [
         fail(`\`${assetsPath}\` is the types-only artifact, whose paths are logical names no build has produced`, {
           file: assetsPath,
-          detail: ["run `forge assets build --minify` — only a quality run accepts an artifact that was never built"],
+          detail: ["run `forge assets build --minify` — only a static run accepts an artifact that was never built"],
         }),
       ],
       "asset manifest: types-only artifact",

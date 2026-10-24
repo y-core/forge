@@ -61,16 +61,17 @@
 | {{ADDITIONAL_TOOL}} | {{ITS_ROLE}} |
 
 ```bash
-bun run verify                 # the gate — every step must pass
+bun run verify:static          # the loop to write in — every row that judges the source
+bun run verify                 # the gate a task closes on — runtime suites on one engine, narrowed to pending changes
+bun run verify:release         # the release gate — every runtime suite whole, on every engine
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
-bun run verify:full            # the release gate — adds the steps needing a machine prerequisite
 bun run lint                   # check only, never write (`verify --only lint`)
 bun run fix                    # every step's fixer (`verify --fix`)
 ```
 
-**One command, two modes**, not two commands. `{{STEPS_CONFIG_PATH}}` is the single source of truth for the gate's steps and which of them are
-full-only. Gate philosophy, the modes, and the flags: `TESTING.md` §6.
+**One command with tiers**, not a command per tier. `{{STEPS_CONFIG_PATH}}` is the single source of truth for the gate's steps and the tier each
+runs from. Gate philosophy, the tiers, and the flags: `TESTING.md` §6.
 
 **Avoid:** runtime-specific type packages (use the hand-written stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`).
 

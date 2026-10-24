@@ -481,7 +481,7 @@ forge db migrate status --check --target remote    # the deployed database agree
 expects a column no migration has applied, at the last cheap place to catch it.
 
 `dbSteps()` from `@y-core/forge/tooling/gate` is the first line as gate rows, with the lint every consumer would otherwise have to remember: the
-digest check in `quality`, and `forge db lint` and `--replay` in `full`. An app on the shared Worker table takes the same rows from
+digest check in `static`, and `forge db lint` and `--replay` in `runtime`. An app on the shared Worker table takes the same rows from
 `cloudflareWorkerSteps({ db: true })`.
 
 ### 9a. The Workers Builds Deploy Command

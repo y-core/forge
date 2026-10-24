@@ -1,8 +1,9 @@
 import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
 import { formatFinding } from "./finding";
+import { failsWhenAbsent } from "./steps";
 import type { Finding } from "./types";
-import type { GateMode, GateReceipt, Step } from "./types";
+import type { GateReceipt, GateTier, Step, StepReach } from "./types";
 import type { SummaryInput } from "./types";
 
 /** Formats a duration for a step line, rendering sub-50ms as `<0.1s`. */
@@ -72,10 +73,17 @@ export function formatList(
   return [`${gate} — ${labels.length} ${plural}`, ...labels.map((label) => `  ${label}`)].join("\n") + scoped;
 }
 
-/** The `--list` label of a step: its own, with the dependency it is conditional on below the `full` tier. */
-export function listLabel(step: Step, mode: GateMode): string {
-  if (step.requires === undefined) return step.label;
-  return mode === "full" ? `${step.label} (requires ${step.requires.tool})` : `${step.label} (conditional — ${step.requires.tool} required)`;
+/** The `--list` label of a step: its own, with how it reaches pending changes and the dependency it is conditional on below the `runtime` tier. */
+export function listLabel(step: Step, tier: GateTier, reach: StepReach = "whole"): string {
+  const label = reach === "whole" ? step.label : `${step.label} (${reach === "narrow" ? "narrowed to pending changes" : "untouched"})`;
+  if (step.requires === undefined) return label;
+  return failsWhenAbsent(tier) ? `${label} (requires ${step.requires.tool})` : `${label} (conditional — ${step.requires.tool} required)`;
+}
+
+/** Formats the line shown for a step no pending change touches, which the `runtime` tier runs nothing for, naming the `probe` command that found so when one did. */
+export function formatUntouched(label: string, changes: number, style: Colorize = PLAIN, probe?: string): string {
+  const why = probe === undefined ? "" : `: \`${probe}\` selects nothing`;
+  return `${style.yellow("○")} ${label} — untouched by ${changes} change${changes === 1 ? "" : "s"}${why}`;
 }
 
 /** Formats the `--fix` closing line, which always points at the run that confirms it. */
@@ -88,10 +96,10 @@ export function formatFixSummary(input: { gate: string; fixed: number; unfixable
   return `${input.fixed} fixed${detail} — re-run \`bun run ${input.gate}\` to confirm.`;
 }
 
-/** Formats the line shown when a step's dependency is absent: skipped below the `full` tier, failed by it. */
-export function formatMissingRequirement(label: string, tool: string, hint: string, mode: GateMode, style: Colorize = PLAIN): string {
+/** Formats the line shown when a step's dependency is absent: skipped below the `runtime` tier, failed from it up. */
+export function formatMissingRequirement(label: string, tool: string, hint: string, tier: GateTier, style: Colorize = PLAIN): string {
   const detail = `${tool} not found; ${hint}`;
-  return mode === "full" ? `${style.red("✗")} ${label} — ${detail}` : `${style.yellow("○")} ${label} — skipped (${detail})`;
+  return failsWhenAbsent(tier) ? `${style.red("✗")} ${label} — ${detail}` : `${style.yellow("○")} ${label} — skipped (${detail})`;
 }
 
 /** Formats the pointer to a failing step's untruncated output, indented to match the excerpt. */
@@ -104,15 +112,15 @@ export function formatLeftInTemp(entries: readonly string[]): string {
   return `left in its TMPDIR: ${entries.join(", ")}`;
 }
 
-/** Formats the verdict of a `--reuse` run answered by a recorded receipt, naming the mode and tree it stands on. */
+/** Formats the verdict of a `--reuse` run answered by a recorded receipt, naming the tier and tree it stands on. */
 export function formatReused(gate: string, receipt: GateReceipt, style: Colorize = PLAIN): string {
-  return `${style.green("✓")} ${gate} — reused the passing ${receipt.mode} run of tree ${receipt.tree}; no step ran`;
+  return `${style.green("✓")} ${gate} — reused the passing ${receipt.tier} run of tree ${receipt.tree}; no step ran`;
 }
 
 /** Formats the line a `--reuse` run prints before running the gate, saying why no receipt answered it. */
-export function formatReuseMiss(miss: { tree: string | undefined; mode: GateMode }, style: Colorize = PLAIN): string {
+export function formatReuseMiss(miss: { tree: string | undefined; tier: GateTier }, style: Colorize = PLAIN): string {
   if (miss.tree === undefined) return `${style.yellow("○")} not a git work tree — no receipt to reuse; running the gate`;
-  return `${style.yellow("○")} no passing run of tree ${miss.tree} on record at ${miss.mode} or above; running the gate`;
+  return `${style.yellow("○")} no passing run of tree ${miss.tree} on record at ${miss.tier} or above; running the gate`;
 }
 
 /** Formats the line shown when the tree changed during a green run, so no receipt was written. */

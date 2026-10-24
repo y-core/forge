@@ -1,6 +1,10 @@
+import { createRequire } from "node:module";
+import { isAbsolute } from "node:path";
+
+import { importClosure } from "../assets/closure";
 import { checkAssetManifest } from "./checks/asset-manifest";
 import { checkAssetRoot } from "./checks/asset-root";
-import { hasChromium } from "./checks/browser";
+import { isBrowserEngine } from "./checks/browser";
 import { checkBundle, checkNodeExports, hasEsbuild } from "./checks/bundle";
 import { checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder } from "./checks/class-order";
@@ -9,6 +13,7 @@ import { checkCoLocation } from "./checks/co-location";
 import { checkCommentBudget } from "./checks/comment-budget";
 import { checkCompatibility } from "./checks/compatibility";
 import { checkContrast } from "./checks/contrast";
+import { checkCssCoverage } from "./checks/css-coverage";
 import { checkCssSources } from "./checks/css-sources";
 import { checkCssTokens } from "./checks/css-tokens";
 import { checkDesignScale } from "./checks/design-scale";
@@ -26,6 +31,7 @@ import { checkMenuNaming } from "./checks/menu-naming";
 import { checkModernCss } from "./checks/modern-css";
 import { checkNamespaceGraph } from "./checks/namespace-graph";
 import { checkPackaging } from "./checks/packaging";
+import { playwrightServerStatus } from "./checks/playwright-server";
 import { checkSsrBoundary } from "./checks/ssr-boundary";
 import { checkStubGlobals } from "./checks/stub-globals";
 import type { AssetManifestCheckConfig } from "./checks/types";
@@ -38,6 +44,7 @@ import type { CoLocationCheckConfig } from "./checks/types";
 import type { CommentBudgetCheckConfig } from "./checks/types";
 import type { CompatibilityCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
+import type { CssCoverageCheckConfig } from "./checks/types";
 import type { CssSourcesCheckConfig } from "./checks/types";
 import type { CssTokensCheckConfig } from "./checks/types";
 import type { DesignScaleCheckConfig } from "./checks/types";
@@ -55,14 +62,40 @@ import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
 import type { FeaturesCheckConfig } from "./checks/types";
+import type { BrowserEngine } from "./checks/types";
+import type { DeclaredGraph } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
-import type { CheckStep, CommandStep, GateMode, StepRequirement } from "./types";
+import type { BrowserProbes, CheckStep, CommandStep, GateTier, StepBase, StepRequirement } from "./types";
 import type { SourceStepOptions, StepOptions } from "./types";
 
-// The key is omitted when the value is the default, so a table reads as the tiers it departs from.
-function tier(value: GateMode | undefined, fallback: GateMode = "quality"): { tier: GateMode } | Record<string, never> {
+function tier(value: GateTier | undefined, fallback: GateTier = "static"): { tier: GateTier } | Record<string, never> {
   const resolved = value ?? fallback;
-  return resolved === "quality" ? {} : { tier: resolved };
+  return resolved === "static" ? {} : { tier: resolved };
+}
+
+type NarrowOptions = { args?: readonly string[]; wide?: readonly string[] };
+
+type WidenOption = { widen?: StepBase["widen"] };
+
+function playwrightListSelects(output: string): boolean {
+  const last = output.trimEnd().split("\n").at(-1);
+  return last !== "Total: 0 tests in 0 files";
+}
+
+function widening(widen: StepBase["widen"]): { widen: NonNullable<StepBase["widen"]> } | Record<string, never> {
+  return widen === undefined ? {} : { widen };
+}
+
+// `--only-changed` traces each spec's imports, so what a spec reads without importing it widens the run whole.
+// `--list` loads the specs without global setup or a browser, and Playwright exits 0 when `--only-changed` selects none.
+function playwrightNarrowing(options: NarrowOptions | undefined): { narrow: NonNullable<StepBase["narrow"]> } {
+  return {
+    narrow: {
+      args: options?.args ?? ["--only-changed"],
+      wide: ["playwright.config.ts", ...(options?.wide ?? [])],
+      probe: { args: ["--list"], selects: playwrightListSelects },
+    },
+  };
 }
 
 function prerequisite(
@@ -106,7 +139,7 @@ export function checkStep(
   label: string,
   run: CheckStep["run"],
   options: StepOptions,
-  defaults: { tier?: GateMode; requires?: StepRequirement; fix?: CheckStep["fix"]; watches?: readonly string[] } = {},
+  defaults: { tier?: GateTier; requires?: StepRequirement; fix?: CheckStep["fix"]; watches?: readonly string[] } = {},
 ): CheckStep {
   return {
     label,
@@ -150,7 +183,7 @@ export function formatStep(options: SourceStepOptions = {}): CommandStep {
   };
 }
 
-/** `oxlint --type-aware` over `sources` (default `src/`), the slowest row of the `quality` tier at a few seconds. @public */
+/** `oxlint --type-aware` over `sources` (default `src/`), the slowest row of the `static` tier at a few seconds. @public */
 export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
   return {
@@ -164,50 +197,148 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
   };
 }
 
-/** `bun test` over `sources`, or the whole project when none are named; defaults to `standard`, the tier that runs the code rather than judging it. @public */
+/** `bun test` over `sources`, or the whole project when none are named; defaults to `unit`, the tier that runs the code rather than judging it. @public */
 export function testStep(options: SourceStepOptions & { label?: string; leavesNoTemp?: boolean } = {}): CommandStep {
-  // `label` is a parameter because a suite split by the question each set answers needs one row per
-  // set, and `selectSteps` refuses a duplicate label.
   return {
     label: options.label ?? "test",
     tail: 120,
     cmd: ["bun", "test", ...(options.sources ?? [])],
     ...(options.leavesNoTemp === true ? { leavesNoTemp: true } : {}),
-    ...tier(options.tier, "standard"),
+    ...tier(options.tier, "unit"),
     ...watching(options.watches),
   };
 }
 
-/** `playwright test --project=chromium` under node, defaulting to the `full` tier: it needs a downloaded browser. @public */
-export function browserStep(options: { hint?: string } & StepOptions = {}): CommandStep {
+function playwrightClientVersion(): string {
+  return (createRequire(import.meta.url)("@playwright/test/package.json") as { version: string }).version;
+}
+
+type ServerAnswer =
+  | { state: "ready" }
+  | { state: "unreachable"; reason: string }
+  | { state: "mismatch"; server: string; client: string }
+  | { state: "no-client"; reason: string };
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function askServer(endpoint: string, probes: Pick<BrowserProbes, "env" | "clientVersion" | "serverStatus">): Promise<ServerAnswer> {
+  let client: string;
+  try {
+    client = probes.clientVersion();
+  } catch (error) {
+    return { state: "no-client", reason: messageOf(error) };
+  }
+  let headers: Record<string, string>;
+  try {
+    headers = probes.env.PW_TEST_CONNECT_HEADERS === undefined ? {} : (JSON.parse(probes.env.PW_TEST_CONNECT_HEADERS) as Record<string, string>);
+  } catch (error) {
+    return { state: "unreachable", reason: `PW_TEST_CONNECT_HEADERS: ${messageOf(error)}` };
+  }
+  const status = await probes.serverStatus(endpoint, client, headers);
+  return status.state === "mismatch" ? { ...status, client } : status;
+}
+
+// Every browser step under one endpoint names the same tool, and the gate probes a tool once, so the
+// answer is kept per endpoint: a step whose own probe never ran still prints what the server said.
+const serverAnswers = new Map<string, ServerAnswer>();
+
+function playwrightServerRequired(endpoint: string, probes: Pick<BrowserProbes, "env" | "clientVersion" | "serverStatus">): StepRequirement {
+  return {
+    tool: `Playwright server at ${endpoint}`,
+    probe: async () => {
+      const answer = await askServer(endpoint, probes);
+      serverAnswers.set(endpoint, answer);
+      return answer.state === "ready";
+    },
+    get hint() {
+      const answer = serverAnswers.get(endpoint);
+      if (answer?.state === "no-client") {
+        return `\`@playwright/test\` cannot be resolved (${answer.reason}); add it as a devDependency at the server's Playwright version`;
+      }
+      if (answer?.state === "mismatch") {
+        return `the server runs Playwright ${answer.server} and \`@playwright/test\` is ${answer.client}; pin \`@playwright/test\` to ${answer.server}`;
+      }
+      const host = URL.parse(endpoint)?.hostname ?? endpoint;
+      const reason = answer?.state === "unreachable" ? ` (${answer.reason})` : "";
+      return `nothing answered at ${endpoint}${reason}; check the Playwright sidecar is running and that NO_PROXY includes \`${host}\``;
+    },
+  };
+}
+
+/** The browser step's requirement: the Playwright server `PW_TEST_CONNECT_WS_ENDPOINT` names, failing when it names none. @internal */
+export function browserEnginesRequired(projects: readonly string[], probes: Partial<BrowserProbes> = {}): StepRequirement {
+  for (const project of projects) {
+    if (!isBrowserEngine(project)) {
+      throw new Error(`browserStep: project "${project}" is not a browser engine; run it through its own step, or state \`requires\``);
+    }
+  }
+  const env = probes.env ?? process.env;
+  const endpoint = env.PW_TEST_CONNECT_WS_ENDPOINT;
+  if (endpoint === undefined || endpoint === "") {
+    return {
+      tool: "Playwright server",
+      probe: () => false,
+      hint: "`PW_TEST_CONNECT_WS_ENDPOINT` is unset; set it to the Playwright container's ws:// URL",
+    };
+  }
+  return playwrightServerRequired(endpoint, {
+    env,
+    clientVersion: probes.clientVersion ?? playwrightClientVersion,
+    serverStatus: probes.serverStatus ?? playwrightServerStatus,
+  });
+}
+
+/** `playwright test` under node over the named `projects` (default `["chromium"]`), defaulting to the `runtime` tier: it needs the Playwright server. Narrowed by `--only-changed`, untouched when `--list` shows that selects no spec, and run whole when `playwright.config.ts`, a `narrow.wide` glob or a `widen` path changes. Throws on a project that is not a browser engine unless `requires` is stated. @public */
+export function browserStep(
+  options: { projects?: readonly [string, ...string[]]; narrow?: NarrowOptions } & WidenOption & StepOptions = {},
+): CommandStep {
+  const projects = options.projects ?? ["chromium"];
   return {
     label: "test:browser",
-    // Defaults to `full` — it needs a downloaded browser — but the caller may state it, so the
-    // step table can be read for which steps run in which mode without opening this file.
-    ...tier(options.tier, "full"),
+    ...tier(options.tier, "runtime"),
     tail: 120,
     // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
     // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
-    cmd: ["playwright", "test", "--project=chromium"],
-    // The probe targets the browser, not the `playwright` CLI: the CLI is a devDependency and always
-    // present, so probing it would pass vacuously and let every spec fail at launch.
-    ...prerequisite(options.requires, {
-      tool: "chromium",
-      probe: hasChromium,
-      // Unreachable wherever `CHROME_PATH` names a browser: it addresses a machine that has none.
-      hint: options.hint ?? "run `bunx playwright install chromium`",
-    }),
+    cmd: ["playwright", "test", ...projects.map((project) => `--project=${project}`)],
+    // The probe targets the server, not the `playwright` CLI: the CLI is a devDependency and always
+    // present, so probing it would pass vacuously and let every spec fail at connect.
+    ...prerequisite(options.requires, options.requires === undefined ? browserEnginesRequired(projects) : undefined),
     ...watching(options.watches),
+    ...widening(options.widen),
+    ...playwrightNarrowing(options.narrow),
   };
 }
 
-/** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `full` tier: it needs the workerd runtime installed. @public */
-export function workerdStep(options: { hint?: string; leavesNoTemp?: boolean } & SourceStepOptions = {}): CommandStep {
+/** One browser row per engine: `test:browser` on `primary` at the `runtime` tier, and `test:browser:<engine>` for each other engine at `release`. `primary` defaults to Chromium when listed, else the first engine. Throws on an empty list, an unknown or repeated engine, or a `primary` not listed. @public */
+export function browserSteps(
+  options: { engines: readonly [BrowserEngine, ...BrowserEngine[]]; primary?: BrowserEngine; narrow?: NarrowOptions } & WidenOption &
+    Omit<StepOptions, "tier">,
+): CommandStep[] {
+  const { engines, primary: named, ...shared } = options;
+  if (engines.length === 0) throw new Error("browserSteps: `engines` is empty; name at least one engine");
+  const unknown = engines.find((engine) => !isBrowserEngine(engine));
+  if (unknown !== undefined) throw new Error(`browserSteps: "${unknown}" is not a browser engine`);
+  const repeated = engines.find((engine, index) => engines.indexOf(engine) !== index);
+  if (repeated !== undefined) throw new Error(`browserSteps: "${repeated}" is named twice`);
+  const primary = named ?? (engines.includes("chromium") ? "chromium" : engines[0]);
+  if (!engines.includes(primary)) throw new Error(`browserSteps: primary "${primary}" is not among the engines`);
+
+  return engines.map((engine) =>
+    engine === primary
+      ? browserStep({ ...shared, projects: [engine] })
+      : { ...browserStep({ ...shared, projects: [engine], tier: "release" }), label: `test:browser:${engine}` },
+  );
+}
+
+/** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `runtime` tier: it needs the workerd runtime installed. Narrowed and widened as {@link browserStep} is. @public */
+export function workerdStep(
+  options: { hint?: string; leavesNoTemp?: boolean; narrow?: NarrowOptions } & WidenOption & SourceStepOptions = {},
+): CommandStep {
   return {
     label: "test:workerd",
-    // Defaults to `full` — it needs the workerd runtime installed — but the caller may state it, so
-    // the step table can be read for which steps run in which mode without opening this file.
-    ...tier(options.tier, "full"),
+    ...tier(options.tier, "runtime"),
     tail: 120,
     // Node, never bun: under bun `createTestHarness` loses the `cf` blob miniflare's own `undici` carries, and no request is ever answered.
     cmd: ["playwright", "test", "--project=workerd", ...(options.sources ?? [])],
@@ -221,30 +352,67 @@ export function workerdStep(options: { hint?: string; leavesNoTemp?: boolean } &
       hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
     }),
     ...watching(options.watches),
+    ...widening(options.widen),
+    ...playwrightNarrowing(options.narrow),
   };
 }
 
-/** Curates the demonstrator into a temporary tree and runs the skeleton's `standard` gate there, always in the `full` tier. @public */
+/** Curates the demonstrator into a temporary tree and runs the skeleton's `unit` gate there, always in the `deploy` tier. @public */
 export function featuresStep(config: FeaturesCheckConfig, options: Omit<StepOptions, "tier"> = {}): CheckStep {
-  return checkStep("validate-features", () => checkFeatures(config), { ...options, tier: "full" });
+  return checkStep("validate-features", () => checkFeatures(config), { ...options, tier: "deploy" });
 }
 
-/** The `forge db` rows: the schema digests in `quality`; the lint, which reads the local database, and the schema replay in `full`, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. @public */
+/** Globs covering every namespace in `namespaces` and each one they reach through `graph`'s edges, primitives included; throws on a namespace the graph does not declare. */
+export function namespaceWatches(namespaces: readonly string[], graph: DeclaredGraph): string[] {
+  const declared = new Set([...Object.keys(graph.edges), ...Object.values(graph.edges).flatMap(Object.keys), ...graph.primitives, ...graph.leaf]);
+  const unknown = namespaces.find((namespace) => !declared.has(namespace));
+  if (unknown !== undefined) throw new Error(`"${unknown}", which the namespace graph does not declare`);
+  const reached = new Set([...namespaces, ...graph.primitives]);
+  for (const namespace of reached) for (const target of Object.keys(graph.edges[namespace] ?? {})) reached.add(target);
+  return [...reached].sort().map((namespace) => `src/${namespace}/**`);
+}
+
+const SOURCE_ENTRY = /\.[cm]?[jt]sx?$/;
+
+function dbWatches(root: string | undefined, exercises: readonly string[] | undefined, graph: DeclaredGraph | undefined): string[] | undefined {
+  if (exercises === undefined) return undefined;
+  if (graph === undefined) throw new Error("dbSteps: `exercises` names namespaces, so it needs the `graph` to expand them through");
+  let watched: string[];
+  try {
+    watched = namespaceWatches(exercises, graph);
+  } catch (error) {
+    throw new Error(`dbSteps: \`exercises\` names ${messageOf(error)}`, { cause: error });
+  }
+  if (root === undefined || isAbsolute(root)) return undefined;
+  return [...watched, `${root.replace(/\/+$/, "")}/**`];
+}
+
+/** The `forge db` rows: the schema digests in `static`; the lint, which reads the local database, and the schema replay in `runtime`, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. Watching a relative `root` and every namespace `exercises` reaches through `graph`, else every change; a source file in `forge` runs them whole when its import closure changes. @public */
 export function dbSteps(
-  options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string; watches?: readonly string[] } = {},
+  options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string; exercises?: readonly string[]; graph?: DeclaredGraph } = {},
 ): [CommandStep, CommandStep, CommandStep] {
   const forge = options.forge ?? ["forge"];
   const root = options.root === undefined ? [] : ["--root", options.root];
-  const watches = watching(options.watches);
+  const watches = watching(dbWatches(options.root, options.exercises, options.graph));
+  const entries = forge.filter((arg) => SOURCE_ENTRY.test(arg)).map((arg) => `./${arg.replace(/^\.\//, "")}`);
+  const traced = entries.length === 0 ? {} : { widen: (cwd: string) => importClosure(cwd, entries) };
   const requires = {
     tool: "workerd",
     probe: hasWorkerd,
     hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
   };
   return [
-    { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root], ...watches },
-    { label: "db:lint", tier: "full", tail: 40, cmd: [...forge, "db", "lint", ...root], requires, ...watches },
-    { label: "db:schema", tier: "full", tail: 60, cmd: [...forge, "db", "schema", "check", "--replay", ...root], requires, ...watches },
+    { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root], ...watches, ...traced },
+    { label: "db:lint", tier: "runtime", tail: 40, cmd: [...forge, "db", "lint", ...root], requires, ...watches, ...traced },
+    {
+      label: "db:schema",
+      tier: "runtime",
+      tail: 60,
+      cmd: [...forge, "db", "schema", "check", "--replay", ...root],
+      requires,
+      ...watches,
+      ...traced,
+    },
   ];
 }
 
@@ -275,7 +443,7 @@ export function compatibilityStep(config: CompatibilityCheckConfig, options: Ste
 
 /** Checks every path the emitted assets manifest maps to exists under the served asset directory. @public */
 export function assetManifestStep(config: AssetManifestCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-asset-manifest", (gateMode) => checkAssetManifest(config, gateMode), options);
+  return checkStep("validate-asset-manifest", (gateTier) => checkAssetManifest(config, gateTier), options);
 }
 
 /** Checks every source module has a test beside it, so deleting one is loud rather than silent. @public */
@@ -315,7 +483,7 @@ export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOpt
 
 /** Bundles the deployed `main` and checks that no module in it is development code. @public */
 export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "full" });
+  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "deploy" });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */
@@ -351,7 +519,6 @@ const esbuildRequired = (): StepRequirement => ({ tool: "esbuild", probe: hasEsb
 
 /** Measures every audited foreground/background pair against its contrast criterion. @public */
 export function contrastStep(config: ContrastCheckConfig, options: StepOptions = {}): CheckStep {
-  // The dependency rides on the palette: a project pointing `palettePath` elsewhere is not gated on tailwind.
   const defaults = config.palettePath === undefined ? {} : { requires: tailwindRequired() };
   return checkStep("validate-contrast", () => checkContrast(config), options, defaults);
 }
@@ -395,6 +562,14 @@ export function classOrderStep(config: ClassOrderCheckConfig, options: StepOptio
 /** Checks every class token resolves to CSS, so a misspelled utility fails rather than rendering nothing. @public */
 export function classTokensStep(config: ClassTokensCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-class-tokens", () => checkClassTokens(config), options, {
+    requires: tailwindRequired(),
+    watches: [...sourceWatches(config.sources), STYLESHEET_WATCHES],
+  });
+}
+
+/** Checks automatic source detection is off and every class-declaring source file is named by an `@source`. @public */
+export function cssCoverageStep(config: CssCoverageCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-css-coverage", () => checkCssCoverage(config), options, {
     requires: tailwindRequired(),
     watches: [...sourceWatches(config.sources), STYLESHEET_WATCHES],
   });

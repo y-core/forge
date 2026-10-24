@@ -396,7 +396,7 @@ the shared type the development module could change shape and nothing would say 
 **The development module checks `__FORGE_DEV__` itself.** The condition picks the module, and the define is what lets it answer: a bundle built
 under `forge-dev` without `__FORGE_DEV__` set to `true` still answers as the strict target does. `forge cf dev` sets both.
 
-**`validate-dev-bundle` is the check.** On the `full` tier it bundles your deployed `main` and fails when a `*.dev.ts` reaches it — a `default`
+**`validate-dev-bundle` is the check.** On the `deploy` tier it bundles your deployed `main` and fails when a `*.dev.ts` reaches it — a `default`
 pointing at the development file, say. `validate-dev-boundary` fails a production module importing `./debug-banner.dev` directly. Both are
 [`src/tooling/gate/README.md`][gate-readme]'s.
 

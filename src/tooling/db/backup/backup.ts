@@ -156,7 +156,12 @@ export async function runBackup(run: DbRunContext, options: BackupOptions): Prom
   }
 }
 
-async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<BackupOutcome> {
+/** {@link runBackup} without the apply lock, reading each table whole through `readers`. @internal */
+export async function takeBackup(
+  run: DbRunContext,
+  options: BackupOptions,
+  readers: { readWholeTable: typeof readWholeTable } = { readWholeTable },
+): Promise<BackupOutcome> {
   const { io, home, config } = run;
 
   const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
@@ -193,7 +198,7 @@ async function takeBackup(run: DbRunContext, options: BackupOptions): Promise<Ba
   const tables = [...appTables, ...companionTables];
   const sources: SourceTable[] = [];
   if (via === "read") {
-    for (const table of tables) sources.push(await readWholeTable(io, home, table));
+    for (const table of tables) sources.push(await readers.readWholeTable(io, home, table));
     const app = sources.slice(0, appTables.length);
     io.log(`read ✓ ${app.reduce((total, source) => total + source.rows.length, 0)} rows across ${app.length} tables`);
   }

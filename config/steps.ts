@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
-  browserStep,
+  browserSteps,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -56,6 +56,7 @@ import {
 } from "./exemptions";
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
+import { browserSpecReach, workerdSpecReach } from "./spec-reach";
 
 // Derived from this file's location, never `process.cwd()`: the paths must resolve the same whichever directory the gate ran from.
 /** Repository root. */
@@ -64,6 +65,13 @@ export const ROOT = resolveAppRoot(resolve(dirname(fileURLToPath(import.meta.url
 const EXPORTS = pkg.exports as ExportsMap;
 
 const CORPUS_WATCHES = ["**/*.md", "warden/**"];
+
+/** The directory every stylesheet forge ships lives in. */
+export const CSS_DIR = "src/ui/assets/css";
+
+const STYLESHEET = `${CSS_DIR}/tailwind.css`;
+
+const GRAPH = { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES };
 
 /** Globs whose change selects every step under `--affected`: the gate runner and the check code it runs. */
 export const GATE_INPUTS: readonly string[] = [
@@ -98,15 +106,9 @@ export const STEPS: readonly Step[] = [
     browserOnly: BROWSER_ONLY,
     sideEffectOnly: ["./render/jsx/register"],
     sealedInternal: SEALED_INTERNAL,
-    assetDirs: [{ dir: "src/ui/assets/css", extension: ".css" }],
+    assetDirs: [{ dir: CSS_DIR, extension: ".css" }],
   }),
-  namespaceGraphStep({
-    root: ROOT,
-    exports: EXPORTS,
-    graph: { primitives: PRIMITIVES, leaf: LEAF, edges: EDGES },
-    sealedInternal: SEALED_INTERNAL,
-    enumerationDoc: "docs/NAMESPACES.md",
-  }),
+  namespaceGraphStep({ root: ROOT, exports: EXPORTS, graph: GRAPH, sealedInternal: SEALED_INTERNAL, enumerationDoc: "docs/NAMESPACES.md" }),
   jsxStep({ root: ROOT }),
   menuNamingStep({ root: ROOT }),
   coLocationStep({ root: ROOT, sources: ["src", "warden"], exempt: CO_LOCATION_EXEMPT }),
@@ -175,48 +177,38 @@ export const STEPS: readonly Step[] = [
     documentedNonExports: ["./crypto/primitives"],
     unboundSubpaths: ["./render/jsx/jsx-runtime", "./render/jsx/jsx-dev-runtime"],
   }),
-  changelogStep({ root: ROOT, packageVersion: pkg.version }, { tier: "full" }),
-  designStep({
-    root: ROOT,
-    packageName: pkg.name,
-    exports: EXPORTS,
-    designDir: "src/ui/design",
-    cssDir: "src/ui/assets/css",
-    oxlintConfig: ".oxlintrc.json",
-  }),
+  changelogStep({ root: ROOT, packageVersion: pkg.version }),
+  designStep({ root: ROOT, packageName: pkg.name, exports: EXPORTS, designDir: "src/ui/design", cssDir: CSS_DIR, oxlintConfig: ".oxlintrc.json" }),
   modernCssStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED] }),
   classOrderStep({ root: ROOT, sources: ["src", ...CN_FIXTURE_SPECS] }),
-  classTokensStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED], stylesheet: "src/ui/assets/css/tailwind.css" }),
-  classGroupsStep({
-    root: ROOT,
-    stylesheet: "src/ui/assets/css/tailwind.css",
-    table: "src/ui/core/utils/class-groups.ts",
-    stateRecipes: FORGE_STATE_RECIPES,
-  }),
-  designScaleStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" }),
+  classTokensStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED], stylesheet: STYLESHEET }),
+  classGroupsStep({ root: ROOT, stylesheet: STYLESHEET, table: "src/ui/core/utils/class-groups.ts", stateRecipes: FORGE_STATE_RECIPES }),
+  designScaleStep({ root: ROOT, stylesheet: STYLESHEET, table: "src/tooling/lint/data/design-scale.ts" }),
   iccProfileStep({ root: ROOT, profile: "src/render/pdf/sRGB2014.icc", module: "src/render/pdf/icc.ts" }),
   nodeExportsStep({ exports: EXPORTS, node: pkg.forge.node, fixer: BUNDLE_FIXER }),
   ...BUNDLES.map(({ label, entry, bundle, watches }) => bundleStep(label, { root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }, { watches })),
   contrastStep(
     {
       root: ROOT,
-      cssDir: "src/ui/assets/css",
-      tokenFiles: ["src/ui/assets/css/theme-neutral.css", "src/ui/assets/css/theme-colors.css", "src/ui/assets/css/theme-base.css"],
-      mappingFile: "src/ui/assets/css/theme-base.css",
+      cssDir: CSS_DIR,
+      tokenFiles: [`${CSS_DIR}/theme-neutral.css`, `${CSS_DIR}/theme-colors.css`, `${CSS_DIR}/theme-base.css`],
+      mappingFile: `${CSS_DIR}/theme-base.css`,
       pairs: CONTRAST_PAIRS,
       criteria: CRITERION,
       // Deferred: resolving at import time would throw before the runner exists to report the step skipped.
       palettePath: () => fileURLToPath(import.meta.resolve("tailwindcss/theme.css")),
       accepted: ACCEPTED_CONTRAST,
     },
-    { watches: ["src/ui/assets/css/**", "src/ui/contracts/theme/**"] },
+    { watches: [`${CSS_DIR}/**`, "src/ui/contracts/theme/**"] },
   ),
   cssSourcesStep({
     root: ROOT,
     uiDir: "src/ui",
-    cssDir: "src/ui/assets/css",
+    cssDir: CSS_DIR,
     sourceDir: "src",
     readme: "src/ui/README.md",
+    packageName: pkg.name,
+    exports: EXPORTS,
     classFree: new Map([
       ["assets", "sprite and glyph data — no markup, no class strings"],
       ["client", "mount controllers; the markup they operate on is the consumer's"],
@@ -224,16 +216,21 @@ export const STEPS: readonly Step[] = [
       ["server", "SSR helpers that delegate to core/ components for all markup"],
     ]),
   }),
-  cssTokensStep({ root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", cssDir: "src/ui/assets/css" }),
+  cssTokensStep({ root: ROOT, stylesheet: STYLESHEET, cssDir: CSS_DIR }),
   wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { watches: CORPUS_WATCHES }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
-  browserStep({ tier: "full", watches: ["src/**", "tests/fixtures/**", "playwright.config.ts"] }),
-  workerdStep({ tier: "full", watches: ["src/**", "tests/**"], leavesNoTemp: true }),
+  ...browserSteps({
+    engines: ["chromium", "firefox", "webkit"],
+    narrow: { wide: [`${CSS_DIR}/**`, "tests/fixtures/**"] },
+    widen: browserSpecReach,
+  }),
+  workerdStep({ leavesNoTemp: true, narrow: { wide: ["tests/fixtures/**"] }, widen: workerdSpecReach }),
   ...dbSteps({
     root: "tests/fixtures/db-schema",
     forge: ["bun", "run", "src/tooling/root/bin.ts"],
-    watches: ["src/**", "tests/fixtures/db-schema/**"],
+    exercises: ["tooling/db", "auth"],
+    graph: GRAPH,
   }),
 ];
 

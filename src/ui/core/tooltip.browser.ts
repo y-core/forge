@@ -25,7 +25,7 @@ function focusedId(page: Page): Promise<string | null> {
   return page.evaluate(() => document.activeElement?.id ?? null);
 }
 
-test.describe("Tooltip", () => {
+test.describe("Tooltip", { tag: "@cross-engine" }, () => {
   const markup = () =>
     render(
       Tooltip({
@@ -89,8 +89,6 @@ test.describe("Tooltip", () => {
     await expect.poll(() => isShown(page), { timeout: 3000 }).toBe(false);
   });
 
-  // The blur path is the tooltip's own; Escape below is the `popover="hint"` platform's, and forge
-  // holds no handler for it — both are pinned so neither can be lost without a failure here.
   test("closes when focus leaves the trigger", async ({ page }) => {
     await mount(page, `${await markup()}<button id="after">after</button>`, EXPOSE);
     await start(page);
@@ -123,7 +121,71 @@ test.describe("Tooltip", () => {
   });
 });
 
-test.describe("Tooltip — label kind", () => {
+test.describe("Tooltip — where popover=hint parses as manual", { tag: "@cross-engine" }, () => {
+  const tip = (name: string) =>
+    Tooltip({
+      children: [
+        Tooltip.Trigger({ id: name, for: `${name}-tip`, children: name }),
+        Tooltip.Content({ id: `${name}-tip`, children: `About ${name}` }),
+      ],
+    });
+
+  async function mountManual(page: Page): Promise<void> {
+    const html = (await render([tip("save"), tip("open")])).replaceAll('popover="hint"', 'popover="manual"');
+    await mount(page, `<button id="before">b</button>${html}`, EXPOSE);
+    await start(page);
+    expect(await page.evaluate(() => document.querySelector<HTMLElement>("#save-tip")?.popover)).toBe("manual");
+  }
+
+  test("closes on Escape", async ({ page }) => {
+    await mountManual(page);
+
+    await page.hover("#save");
+    await expect.poll(() => isOpen(page, "save-tip"), { timeout: 3000 }).toBe(true);
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
+  });
+
+  test("Escape closes a tip inside a modal dialog and leaves the dialog open", async ({ page }) => {
+    const html = (await render(tip("save"))).replaceAll('popover="hint"', 'popover="manual"');
+    await mount(page, `<dialog id="dialog"><button id="before">b</button>${html}</dialog>`, EXPOSE);
+    await start(page);
+    await page.evaluate(() => document.querySelector<HTMLDialogElement>("#dialog")?.showModal());
+
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+    await expect.poll(() => isOpen(page, "save-tip"), { timeout: 3000 }).toBe(true);
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
+    expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#dialog")?.open)).toBe(true);
+  });
+
+  test("closes on a pointerdown outside the trigger and the tip", async ({ page }) => {
+    await mountManual(page);
+
+    await page.evaluate(() => document.querySelector<HTMLElement>("#save-tip")?.showPopover());
+    expect(await isOpen(page, "save-tip")).toBe(true);
+    await page.mouse.click(1200, 650);
+
+    await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
+  });
+
+  test("a second tip opening closes the first rather than stacking on it", async ({ page }) => {
+    await mountManual(page);
+
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+    await expect.poll(() => isOpen(page, "save-tip"), { timeout: 3000 }).toBe(true);
+    await page.hover("#open");
+
+    await expect.poll(() => isOpen(page, "open-tip"), { timeout: 3000 }).toBe(true);
+    await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
+  });
+});
+
+test.describe("Tooltip — label kind", { tag: "@cross-engine" }, () => {
   test("names its trigger by the tooltip text and gives it no description", async ({ page }) => {
     const html = await render(
       Tooltip({
@@ -178,7 +240,7 @@ const pasteToolbar = () =>
     }),
   );
 
-test.describe("Tooltip — an aria-disabled trigger still shows its tooltip", () => {
+test.describe("Tooltip — an aria-disabled trigger still shows its tooltip", { tag: "@cross-engine" }, () => {
   test("opens on hover through the state-disabled styling a toolbar item carries", async ({ page }) => {
     const html = await pasteToolbar();
     await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
@@ -224,7 +286,7 @@ test.describe("Tooltip — an aria-disabled trigger still shows its tooltip", ()
   });
 });
 
-test.describe("Tooltip — an aria-disabled trigger fires nothing", () => {
+test.describe("Tooltip — an aria-disabled trigger fires nothing", { tag: "@cross-engine" }, () => {
   const tip = (id: string, trigger: Parameters<typeof Tooltip.Trigger>[0]) =>
     Tooltip({ children: [Tooltip.Trigger(trigger), Tooltip.Content({ id: `${id}-tip`, children: `${id} hint` })] });
 
@@ -304,7 +366,7 @@ function isShownIn(page: Page, tree: Tree): Promise<boolean> {
   }, tree);
 }
 
-test.describe("Tooltip — inside a shadow root", () => {
+test.describe("Tooltip — inside a shadow root", { tag: "@cross-engine" }, () => {
   const markup = () =>
     render(
       Tooltip({
@@ -365,7 +427,7 @@ const PLACEMENT_STYLE = `<style>
 
 const GAP = 6;
 
-test.describe("Tooltip — anchored placement", () => {
+test.describe("Tooltip — anchored placement", { tag: "@cross-engine" }, () => {
   async function show(page: Page, side: string, align: string) {
     const html = await render(
       Tooltip({
@@ -442,7 +504,7 @@ test.describe("Tooltip — anchored placement", () => {
   }
 });
 
-test.describe("Tooltip — show motion", () => {
+test.describe("Tooltip — show motion", { tag: "@cross-engine" }, () => {
   async function showAndRead(page: Page): Promise<{ transitions: string[]; opacity: number }> {
     const html = await render(
       Tooltip({
@@ -463,7 +525,8 @@ test.describe("Tooltip — show motion", () => {
     });
   }
 
-  test("a shown tip fades and scales in from below half opacity", async ({ page }) => {
+  test("a shown tip fades and scales in from below half opacity", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "bug-261022-75: the tip reads opacity 1 on the frame it is shown, so it never fades in");
     const frame = await showAndRead(page);
 
     expect(frame.transitions, JSON.stringify(frame)).toEqual(expect.arrayContaining(["opacity", "scale"]));
@@ -473,7 +536,8 @@ test.describe("Tooltip — show motion", () => {
   test.describe("under reduced motion", () => {
     test.use({ reducedMotion: "reduce" });
 
-    test("a shown tip fades in without scaling", async ({ page }) => {
+    test("a shown tip fades in without scaling", async ({ page, browserName }) => {
+      test.skip(browserName === "firefox", "bug-261022-75: the tip reads opacity 1 on the frame it is shown, so it never fades in");
       const frame = await showAndRead(page);
 
       expect(frame.transitions).toEqual(["opacity"]);
@@ -482,7 +546,7 @@ test.describe("Tooltip — show motion", () => {
   });
 });
 
-test.describe("Tooltip — the warm window", () => {
+test.describe("Tooltip — the warm window", { tag: "@cross-engine" }, () => {
   const tip = (name: string) =>
     Tooltip({
       children: [

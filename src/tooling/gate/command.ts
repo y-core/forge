@@ -8,6 +8,7 @@ import { createCommand } from "../cli/command";
 import { loadConfigModule } from "../cli/config-module";
 import { capture, hasTool, insertPath } from "../cli/proc";
 import type { CaptureResult, Command } from "../cli/types";
+import { worktreeChanges, worktreeFiles, worktreeHash, worktreeHead } from "../cli/worktree";
 import { PLAIN } from "../term/color";
 import type { Colorize } from "../term/types";
 import { clearReceipt, readReceipt, receiptCovers, recordReceipt } from "./receipt";
@@ -26,19 +27,20 @@ import {
   formatStepLine,
   listLabel,
   formatSummary,
+  formatUntouched,
 } from "./report";
-import { isCheckStep, selectSteps } from "./steps";
-import { GATE_MODES } from "./types";
-import type { CheckStep, CommandStep, GateMode, Step, StepRequirement } from "./types";
+import { failsWhenAbsent, isCheckStep, selectSteps } from "./steps";
+import { GATE_TIERS } from "./types";
+import type { CheckStep, CommandStep, GateTier, Step, StepReach, StepRequirement } from "./types";
 import type { GateCommandConfig } from "./types";
-import { worktreeChanges, worktreeHash } from "./worktree";
 
 /** Where `forge verify` looks for a step table when `--config` names none. @public */
 export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
 
+const DEFAULT_TIER: GateTier = "runtime";
+
 const gateFlags = {
-  mode: { type: "string" as const, description: "Which tier to run: quality, standard or full (default: standard)" },
-  full: { type: "boolean" as const, description: "Also run the steps that may require a machine prerequisite" },
+  tier: { type: "string" as const, description: `Which tier to run: ${GATE_TIERS.join(", ")} (default: ${DEFAULT_TIER})` },
   only: {
     type: "string" as const,
     multiple: true as const,
@@ -46,7 +48,7 @@ const gateFlags = {
   },
   list: { type: "boolean" as const, description: "Print the selected steps and exit, running none" },
   fix: { type: "boolean" as const, description: "Run each selected step's fixer instead of the step" },
-  reuse: { type: "boolean" as const, description: "Exit green at once when a passing run of this exact tree is on record at this mode or above" },
+  reuse: { type: "boolean" as const, description: "Exit green at once when a passing run of this exact tree is on record at this tier or above" },
   affected: { type: "boolean" as const, description: "Run only the steps whose watched paths the working tree's changes touch (a scoped run)" },
 };
 
@@ -91,25 +93,65 @@ function captureStep(bin: string, args: string[], cwd: string, step: Pick<Comman
 }
 
 // Asked once per tool per run, because `hasTool` shells out and several steps name the same one.
-// What an absent dependency means is the mode's answer: no failure to promise below `full`.
-function absentRequirement(step: Step, probed: Map<string, boolean>): StepRequirement | undefined {
+// What an absent dependency means is the tier's answer: no runtime is promised below `runtime`.
+async function absentRequirement(step: Step, probed: Map<string, boolean>): Promise<StepRequirement | undefined> {
   const required = step.requires;
   if (required === undefined) return undefined;
   const cached = probed.get(required.tool);
-  const present = cached ?? (required.probe === undefined ? hasTool(required.tool) : required.probe());
+  const present = cached ?? (required.probe === undefined ? hasTool(required.tool) : await required.probe());
   probed.set(required.tool, present);
   return present ? undefined : required;
 }
 
-// `--full` is sugar for `--mode full`, so the two together are a contradiction to refuse rather than
-// a precedence to invent.
-function resolveMode(flags: { mode: string | undefined; full: boolean | undefined }): { ok: true; mode: GateMode } | { ok: false; error: string } {
-  if (flags.mode !== undefined && flags.full === true) return { ok: false, error: "Pass --mode or --full, not both." };
-  if (flags.full === true) return { ok: true, mode: "full" };
-  if (flags.mode === undefined) return { ok: true, mode: "standard" };
-  const named = GATE_MODES.find((candidate) => candidate === flags.mode);
-  if (named === undefined) return { ok: false, error: `Unknown --mode: "${flags.mode}". Known modes: ${GATE_MODES.join(", ")}.` };
-  return { ok: true, mode: named };
+function decidesLate(step: Step, reach: StepReach | undefined): boolean {
+  return reach === "narrow" && (step.widen !== undefined || step.narrow?.probe !== undefined);
+}
+
+async function widenedBy(step: Step, pending: readonly string[], cwd: string): Promise<boolean> {
+  const widen = step.widen;
+  if (widen === undefined || pending.length === 0) return false;
+  try {
+    const paths = new Set(await widen(cwd));
+    return pending.some((path) => paths.has(path));
+  } catch {
+    return true;
+  }
+}
+
+async function settleReach(
+  steps: readonly Step[],
+  reach: Readonly<Record<string, StepReach>>,
+  pending: readonly string[],
+  cwd: string,
+): Promise<{ reach: Record<string, StepReach>; probes: Record<string, string> }> {
+  const settled: Record<string, StepReach> = { ...reach };
+  const probes: Record<string, string> = {};
+  for (const step of steps) {
+    const before = reach[step.label];
+    if (before !== "narrow" && before !== "untouched") continue;
+    if (await widenedBy(step, pending, cwd)) {
+      settled[step.label] = "whole";
+      continue;
+    }
+    const probe = step.narrow?.probe;
+    if (before !== "narrow" || isCheckStep(step) || probe === undefined) continue;
+    const [bin, ...args] = step.cmd;
+    const asked = [...args, ...(step.narrow?.args ?? []), ...probe.args];
+    const result = captureStep(bin, asked, cwd, {});
+    if (result.code !== 0) settled[step.label] = "whole";
+    else if (!probe.selects(result.output)) {
+      settled[step.label] = "untouched";
+      probes[step.label] = [bin, ...asked].join(" ");
+    }
+  }
+  return { reach: settled, probes };
+}
+
+function resolveTier(flag: string | undefined): { ok: true; tier: GateTier } | { ok: false; error: string } {
+  if (flag === undefined) return { ok: true, tier: DEFAULT_TIER };
+  const named = GATE_TIERS.find((candidate) => candidate === flag);
+  if (named === undefined) return { ok: false, error: `Unknown --tier: "${flag}". Known tiers: ${GATE_TIERS.join(", ")}.` };
+  return { ok: true, tier: named };
 }
 
 function reportFailure(label: string, output: string, tail: number, cwd: string): void {
@@ -120,10 +162,10 @@ function reportFailure(label: string, output: string, tail: number, cwd: string)
 
 // A check that throws is a defect in the check, not a verdict — but the gate still owes a summary
 // line, so the throw is reported as that step's failure rather than unwinding the whole run.
-async function runCheck(step: CheckStep, mode: GateMode, style: Colorize): Promise<{ ok: boolean; ms: number; report: string }> {
+async function runCheck(step: CheckStep, tier: GateTier, style: Colorize): Promise<{ ok: boolean; ms: number; report: string }> {
   const started = Date.now();
   try {
-    const result = await step.run(mode);
+    const result = await step.run(tier);
     return { ok: result.ok, ms: Date.now() - started, report: formatFindingBlock(result.findings, style) };
   } catch (error) {
     return { ok: false, ms: Date.now() - started, report: `    ${error instanceof Error ? error.message : String(error)}` };
@@ -136,7 +178,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
   return createCommand({
     name: "verify",
-    description: "Run the verification gate (--mode quality|standard|full; default standard)",
+    description: `Run the verification gate (--tier ${GATE_TIERS.join("|")}; default ${DEFAULT_TIER})`,
     flags: gateFlags,
     args: { kind: "none" },
     async run(_args, flags, ctx) {
@@ -145,12 +187,12 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       const style = ctx?.out ?? PLAIN;
       // Annotated: TS narrows past a never-returning call only through an explicitly typed callee.
       const quit: (code: number) => never = ctx?.io.exit ?? exit;
-      const resolved = resolveMode(flags);
+      const resolved = resolveTier(flags.tier);
       if (!resolved.ok) {
         console.error(resolved.error);
         quit(1);
       }
-      const { mode } = resolved;
+      const { tier } = resolved;
       if (flags.reuse === true) {
         const clash = [
           (flags.only?.length ?? 0) > 0 && "only",
@@ -163,22 +205,25 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
           quit(1);
         }
       }
-      // The mode belongs in the verdict: `✓ verify` and `✓ verify --mode full` are different
-      // assurances. Named canonically — `--full` is an input spelling, not an output one.
+      // The tier belongs in the verdict: `✓ verify` and `✓ verify --tier release` are different assurances.
       const affected = flags.affected === true;
-      const banner = ["verify", ...(mode === "standard" ? [] : ["--mode", mode]), ...(affected ? ["--affected"] : [])].join(" ");
+      const banner = ["verify", ...(tier === DEFAULT_TIER ? [] : ["--tier", tier]), ...(affected ? ["--affected"] : [])].join(" ");
 
-      const changed = affected ? worktreeChanges(cwd) : undefined;
+      const pending = affected || tier === "runtime" ? worktreeChanges(cwd) : undefined;
+      const changed = affected ? pending : undefined;
       if (affected && changed === undefined) {
         console.error("--affected reads its changes from git, and this is not a git work tree.");
         quit(1);
       }
 
+      const files = worktreeFiles(cwd);
       const selection = selectSteps(table, {
-        mode,
+        tier,
         ...(flags.only === undefined ? {} : { only: flags.only }),
         ...(changed === undefined ? {} : { changed }),
+        ...(pending === undefined ? {} : { pending }),
         ...(gateInputs === undefined ? {} : { gateInputs }),
+        ...(files === undefined ? {} : { files }),
       });
       if (!selection.ok) {
         console.error(selection.error);
@@ -186,12 +231,16 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       }
 
       const { steps, total, scoped } = selection;
+      insertPath(binDir);
+      const settle = async (): Promise<{ reach: Record<string, StepReach>; probes: Record<string, string> }> =>
+        pending === undefined ? { reach: { ...selection.reach }, probes: {} } : settleReach(steps, selection.reach, pending, cwd);
 
       if (flags.list) {
+        const { reach } = await settle();
         console.log(
           formatList(
             banner,
-            steps.map((step) => listLabel(step, mode)),
+            steps.map((step) => listLabel(step, tier, reach[step.label])),
             { total, scoped },
             style,
           ),
@@ -203,8 +252,6 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         console.log(formatNothingAffected(banner, { changed: changed?.length ?? 0, total }, style));
         return;
       }
-
-      insertPath(binDir);
 
       if (flags.fix) {
         let fixed = 0;
@@ -238,10 +285,10 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
             }
             continue;
           }
-          const absent = absentRequirement(step, probed);
+          const absent = await absentRequirement(step, probed);
           if (absent !== undefined) {
-            console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, mode, style));
-            if (mode === "full") broke = true;
+            console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
+            if (failsWhenAbsent(tier)) broke = true;
             else skipped++;
             continue;
           }
@@ -262,15 +309,22 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
       const unscoped = (flags.only?.length ?? 0) === 0 && !affected;
       const tree = unscoped ? worktreeHash(cwd) : undefined;
-      const labels = steps.map((step) => step.label);
+      const base = tree === undefined ? undefined : worktreeHead(cwd);
       if (flags.reuse === true) {
+        // A receipt of this tree and base settled its late rows over the same changes, so it is not asked to have run them.
+        const required = steps
+          .filter((step) => selection.reach[step.label] !== "untouched" && !decidesLate(step, selection.reach[step.label]))
+          .map((step) => step.label);
         const receipt = tree === undefined ? undefined : readReceipt(cwd);
-        if (receipt !== undefined && tree !== undefined && receiptCovers(receipt, { tree, mode, labels })) {
+        if (receipt !== undefined && tree !== undefined && receiptCovers(receipt, { tree, tier, base, labels: required })) {
           console.log(formatReused(banner, receipt, style));
           return;
         }
-        console.log(formatReuseMiss({ tree, mode }, style));
+        console.log(formatReuseMiss({ tree, tier }, style));
       }
+
+      const { reach, probes } = await settle();
+      const labels = steps.filter((step) => reach[step.label] !== "untouched").map((step) => step.label);
 
       const started = Date.now();
       let passed = 0;
@@ -279,10 +333,15 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       const probed = new Map<string, boolean>();
 
       for (const [index, step] of steps.entries()) {
-        const absent = absentRequirement(step, probed);
+        if (reach[step.label] === "untouched") {
+          console.log(formatUntouched(step.label, pending?.length ?? 0, style, probes[step.label]));
+          continue;
+        }
+
+        const absent = await absentRequirement(step, probed);
         if (absent !== undefined) {
-          console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, mode, style));
-          if (mode === "full") {
+          console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
+          if (failsWhenAbsent(tier)) {
             failedAt = { label: step.label, at: index + 1 };
             break;
           }
@@ -291,7 +350,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         if (isCheckStep(step)) {
-          const { ok, ms, report } = await runCheck(step, mode, style);
+          const { ok, ms, report } = await runCheck(step, tier, style);
           console.log(formatStepLine(step.label, ok, ms, style));
           // Warnings are worth printing on a pass too — they are the check's only voice.
           if (report !== "") console.log(report);
@@ -304,7 +363,8 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         const [bin, ...args] = step.cmd;
-        const result = captureStep(bin, args, cwd, step);
+        const narrowed = reach[step.label] === "narrow" ? (step.narrow?.args ?? []) : [];
+        const result = captureStep(bin, [...args, ...narrowed], cwd, step);
         console.log(formatStepLine(step.label, result.code === 0, result.ms, style));
         if (result.code !== 0) {
           reportFailure(step.label, result.output, step.tail, cwd);
@@ -333,7 +393,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       const green = failedAt === undefined && passed > 0 && skipped === 0;
       if (unscoped && tree !== undefined) {
         if (!green) clearReceipt(cwd);
-        else if (worktreeHash(cwd) === tree) recordReceipt(cwd, { tree, mode, labels });
+        else if (worktreeHash(cwd) === tree) recordReceipt(cwd, { tree, tier, ...(base === undefined ? {} : { base }), labels });
         else console.log(formatReceiptWithheld(style));
       }
 

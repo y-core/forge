@@ -113,7 +113,7 @@ The rule text lives in the canon and is not repeated here. This is the index fro
 
 After every implementation batch, **the full gate goes to `cc-tester`**:
 
-- **Run the `quality` tier yourself first** — `bun run verify:quality`, or whatever the repository spells it. It is the run that judges what you
+- **Run the `static` tier yourself first** — `bun run verify:static`, or whatever the repository spells it. It is the run that judges what you
   just wrote rather than what the code does: the comment budget, a field gloss, a count, the barrel, a new file's co-located test, and the wrap of
   every document you edited. Sending those to `cc-tester` instead costs a whole round trip per finding, and a gate stops at the first one.
 - Ask `cc-tester` to run `bun run verify` and report the verdict. Never stream a full gate through this context — that is the whole reason the agent

@@ -396,8 +396,8 @@ that throws yields the page without the link rather than no page.
 A `Reference: <id>` line appears when the `requestId` middleware ran, matching the `x-request-id` header for a user to quote. Neither page mints an
 id, so without that middleware the line is absent.
 
-The page is Tailwind-classed markup that `forge.css` does not scan, so add `@source "…/@y-core/forge/src/app";` to your own stylesheet or it renders
-unstyled ([`FORGE_STRUCTURE.md`][la-3d] §3d).
+The page is Tailwind-classed markup that `forge.css` does not scan, so import its `@source` lines with
+`@import "@y-core/forge/app/sources.css";` in your own stylesheet, or it renders unstyled ([`FORGE_STRUCTURE.md`][la-3d] §3d).
 
 ---
 

@@ -34,7 +34,7 @@ audience: internal
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
-- §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:full` alone, and where component coverage is checked
+- §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:release` alone, and where component coverage is checked
 - §2m The Bun Floor Is the Bun the Gate Runs On: why `engines.bun` equals `packageManager`, and what raising it takes
 - §2n A Node-Reached Export Is Declared Under `forge.node`: the one list every bundle, drift row and check is derived from
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
@@ -215,7 +215,7 @@ placeholder promotion itself writes. Empty plus commits since the tag is the ref
 `--allow-empty-changelog` is for a genuinely entry-free tooling release, and two properties keep it from becoming routine. **It does not license a
 malformed document** — an unparseable changelog is a separate refusal with no escape, because promotion has nothing to act on. **It still
 promotes**, so the section ships as a permanent `_Nothing yet._` entry in the released record; skipping promotion would leave the topmost released
-heading behind `package.json` and fail §2e on the next `verify --full`.
+heading behind `package.json` and fail §2e on the next `bun run verify:deploy`.
 
 **The link reference definition is best-effort.** Its base URL comes from `package.json`'s `repository` field, normalised by stripping a `git+`
 prefix and a `.git` suffix. Absent or unusable, the definition is omitted and the promotion still succeeds — a consumer with no known remote must
@@ -229,9 +229,9 @@ I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
 
 ### 2e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `full`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
-Requiring a written `[Unreleased]` entry on every quality or standard run would fail every work-in-progress commit; a full run runs exactly where
-the invariant bites, before `prepublishOnly` and before a tag exists.
+**`CHANGELOG.md` is checked by a `deploy`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
+Requiring a written `[Unreleased]` entry on every run below `deploy` would fail every work-in-progress commit; `deploy` and `release` run exactly
+where the invariant bites, before `prepublishOnly` and before a tag exists.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
 with, and two parsers for one document is precisely the drift the gate exists to catch. One parser, two callers.
@@ -261,16 +261,16 @@ forge's in `config/steps.ts` (see [`TESTING.md`][testing-6a] §6a).
 `createGateCommand`, so a project needs no binding file of its own. The factory stays published for the case the bin cannot serve — a table
 assembled at run time, or a gate embedded in a larger CLI.
 
-**The modes are [`TESTING.md`][testing-6a] §6a's, as one command.** Modelling them as separate verbs would cost a duplicated binding file per
+**The tiers are [`TESTING.md`][testing-6a] §6a's, as one command.** Modelling them as separate verbs would cost a duplicated binding file per
 repo, a `gate` config field, and a superset invariant that must be _tested_ rather than being true by construction.
 
-**A dependency's absence is answered by the mode, not the table** ([`TESTING.md`][testing-6a] §6a). That is what lets the design-system steps run on
-every machine that has `tailwindcss`, an optional peer, instead of only in a full run, while a full run never skips — a verdict hardcoded in the
-table could state only one of them. `--list` words a step's dependency per mode: conditional, or required.
+**A dependency's absence is answered by the tier, not the table** ([`TESTING.md`][testing-6a] §6a). That is what lets the design-system steps run
+on every machine that has `tailwindcss`, an optional peer, while a run from `runtime` up never skips them — a verdict hardcoded in the table could
+state only one of them. `--list` words a step's dependency per tier: conditional, or required.
 
-**`GateMode` is derived from the ordered `GATE_MODES` tuple, and `Step.tier` names the lowest mode a step runs in** — the rank
-[`TESTING.md`][testing-6c] §6c requires, so `quality ⊆ standard ⊆ full` is a shape the types make unsayable to break rather than a restriction the
-runner enforces at runtime.
+**`GateTier` is derived from the ordered `GATE_TIERS` tuple, and `Step.tier` names the lowest tier a step runs in** — the rank
+[`TESTING.md`][testing-6c] §6c requires, so the nesting is a shape the types make unsayable to break rather than a restriction the runner enforces
+at runtime.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
 different prefix, and one config field is cheaper than a fork of the runner per app. The temp-directory prefix behind the full-log file stays
@@ -308,9 +308,9 @@ step that succeeds vacuously. The two `.types/` paths are baked in: an option no
 **`presets.test.ts` pins every emitted command verbatim**, because the contract is "these are the commands the fleet runs": only a literal
 assertion catches a table that type-checks but names a command no app can run.
 
-**A row's tier follows [`TESTING.md`][testing-6c] §6c, and `forge verify --list` prints it** — `quality` if it judges the source, `standard` if it
-runs it, `full` if it needs a prerequisite never worth waiting for or runs a second gate. The default table declares no `requires`, so it runs whole
-on any machine with the dependencies installed; `presets.test.ts` asserts that absence, since one added there would bind every app at once.
+**A row's tier follows [`TESTING.md`][testing-6c] §6c's lines, and `forge verify --list` prints it.** The default table declares no
+`requires`, so every row of it runs on any machine with the dependencies installed; `presets.test.ts` asserts that absence, since one added there
+would bind every app at once.
 
 ### 2h. Roots Are Stated or Derived, Never Discovered
 
@@ -414,7 +414,7 @@ they asked for.
 tag is not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`) — an
 unpushed tag does not exist for a consumer, and `getLatestTag` would cut the next release on top of it regardless. Neither is a gate step: both are
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
-an offline `verify:full` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal.
+an offline `verify:release` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal.
 
 These habits carry the rest:
 
@@ -445,7 +445,7 @@ the behaviour a consumer can reason about.
 
 ### 2l. A Forge Release Never Waits on a Consumer
 
-**The gate `config/release.ts` hands `forge release` is `verify:full`, and it reads nothing outside this checkout.** A consumer depends on forge,
+**The gate `config/release.ts` hands `forge release` is `verify:release`, and it reads nothing outside this checkout.** A consumer depends on forge,
 never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is the
 dependency inverted.
 
@@ -520,5 +520,5 @@ different posture; forge itself ships the step rather than running it, having no
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [release-refusals]: ../src/tooling/release/README.md#getting-past-a-refusal
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
-[testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-three-modes
-[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-two-lines-between-the-modes
+[testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
+[testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers

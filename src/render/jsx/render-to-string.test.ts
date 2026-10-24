@@ -104,6 +104,12 @@ describe("renderToString — HTML elements", () => {
     );
   });
 
+  it("emits hidden=until-found with its value and any other truthy hidden bare", async () => {
+    expect([String(await renderToString(el("div", { hidden: "until-found" }))), String(await renderToString(el("div", { hidden: true })))]).toEqual(
+      ['<div hidden="until-found"></div>', "<div hidden></div>"],
+    );
+  });
+
   it("emits boolean attributes only when truthy", async () => {
     expect(String(await renderToString(el("input", { type: "text", disabled: false, required: true })))).toBe('<input type="text" required>');
   });
@@ -274,6 +280,15 @@ describe("renderToString — function components", () => {
     }
 
     expect(String(await renderToString(el(AsyncBox as unknown as ComponentFn, { id: 42 })))).toBe('<div data-id="42">42</div>');
+  });
+
+  it("awaits a component that returns a non-Promise thenable", async () => {
+    function Deferred() {
+      // oxlint-disable-next-line unicorn/no-thenable -- the case proves a non-Promise thenable is awaited, so it must build one.
+      return { then: (resolve: (value: unknown) => void) => resolve(el("b", { id: "t" })) };
+    }
+
+    expect(String(await renderToString(el(Deferred as unknown as ComponentFn, {})))).toBe('<b id="t"></b>');
   });
 
   it("renders nested components", async () => {

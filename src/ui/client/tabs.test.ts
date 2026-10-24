@@ -87,6 +87,16 @@ describe("mountTabs", () => {
     });
   });
 
+  it("hides every panel but the selected one on mount, whatever revealed it before", () => {
+    const { root, panels } = tabs({ selected: 1 });
+    (panels[2] as FakeElement).hidden = false;
+    (panels[1] as FakeElement).hidden = true;
+
+    mountTabs(root as never);
+
+    expect(panels.map((panel) => panel.hidden)).toEqual([true, false, true]);
+  });
+
   it("selects on focus under automatic activation, moving both halves of the state", () => {
     const { root, tabs: list, panels } = tabs();
     mountTabs(root as never);

@@ -90,8 +90,8 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
     return releaseClear;
   }
 
-  // The platform's light-dismiss pass runs on the `pointerup` that ends the opening right-click, so
-  // a capture listener on the document shows the panel after that pass, within the same event.
+  // Firefox and WebKit light-dismiss on the `pointerup` that ends the opening right-click, so a
+  // capture listener on the document shows the panel after that pass, within the same event.
   const doc = ownerDocument(el);
   doc.addEventListener("pointerup", show, { once: true, capture: true });
 

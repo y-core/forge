@@ -55,28 +55,44 @@ emit. One import supplies both:
 @import "@y-core/forge/ui/assets/css/tailwind.css";
 ```
 
-That file is `@import "tailwindcss"` followed by `forge.css`, and it is the one place forge states that composition — the app's stylesheet, its
-Tailwind build, and the class sorter in `.oxfmtrc.json` all read it. Import it from anywhere in the tree: `@import "tailwindcss"` resolves from the
-file's own location, which reaches forge's peer dependency under pnpm's strict layout and the app's own copy under a hoisted one.
+That file is `@import "tailwindcss" source(none)` followed by `forge.css`, and it is the one place forge states that composition — the app's
+stylesheet, its Tailwind build, and the class sorter in `.oxfmtrc.json` all read it. Import it from anywhere in the tree: `@import "tailwindcss"`
+resolves from the file's own location, which reaches forge's peer dependency under pnpm's strict layout and the app's own copy under a hoisted one.
 
-**Take the second path only if you must pass Tailwind import options** — `source(none)`, a prefix — since an option cannot be added to an import
+**Take the second path only if you must pass Tailwind import options of your own** — a prefix — since an option cannot be added to an import
 nested inside a file you do not control:
 
 ```css
-@import "tailwindcss" source(none);
+@import "tailwindcss" source(none) prefix(tw);
 @import "@y-core/forge/ui/assets/css/forge.css";
 ```
 
 `forge.css` never imports Tailwind itself, which is what keeps that path open. **Take one path or the other, never both** — importing Tailwind twice
-emits preflight twice.
+emits preflight twice. **Keep `source(none)` on your own import**: the gate's coverage row fails a stylesheet that leaves automatic detection on.
 
 ### Tell Tailwind which directories to scan
 
-Tailwind v4's content scan ignores `node_modules`, so `forge.css` carries its own `@source` paths for `src/ui/`, resolved relative to itself —
-nothing is required of you for the `ui` components.
+`tailwind.css` turns Tailwind's automatic detection off, so the build scans only what an `@source` line names. Name your own source directories
+in your stylesheet, relative to it:
 
-**`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup whose classes are the app's to scan; each says so in its
-own README where it applies.
+```css
+@source "../src";
+@source not "../src/**/*.test.ts";
+```
+
+`forge.css` carries its own `@source` paths for `src/ui/`, resolved relative to itself — nothing is required of you for the `ui` components.
+
+**`forge.css` scans `ui/` and nothing else.** Other namespaces ship server-rendered markup whose classes are the app's to scan. Each of those
+ships a `sources.css` for your stylesheet to import, and says so in its own README where it applies:
+
+```css
+@import "@y-core/forge/render/htmx/sources.css";
+```
+
+**A file no `@source` names gets no CSS, and nothing at build time says so** — its classes render with no rule behind them. Under
+`cloudflareWorkerSteps`, setting `design` adds the `validate-css-coverage` row, which fails each `.ts` or `.tsx` file under `design.sources`
+that declares utility classes no `@source` covers. The failure names the `@source` line to add. A test file is never required to be covered.
+The row also warns on a scanned directory where no file declares a class, which is scan breadth you can cut.
 
 ### Pick a colour scheme, and a shape independently of it
 

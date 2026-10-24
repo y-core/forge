@@ -38,7 +38,6 @@
       "./testing/totp",
       "./tooling/cf/wrangler",
       "./tooling/db/host",
-      "./tooling/gate/chromium",
       "./tooling/lint/plugin"
     ]
   },
@@ -54,9 +53,11 @@
     "test:browser": "playwright test --project=chromium",
     "test:workerd": "playwright test --project=workerd",
     "verify": "bun run src/tooling/root/bin.ts verify",
-    "verify:full": "bun run src/tooling/root/bin.ts verify --full",
-    "verify:quality": "bun run src/tooling/root/bin.ts verify --mode quality",
-    "prepublishOnly": "bun run verify:full"
+    "verify:static": "bun run src/tooling/root/bin.ts verify --tier static",
+    "verify:unit": "bun run src/tooling/root/bin.ts verify --tier unit",
+    "verify:deploy": "bun run src/tooling/root/bin.ts verify --tier deploy",
+    "verify:release": "bun run src/tooling/root/bin.ts verify --tier release",
+    "prepublishOnly": "bun run verify:release"
   },
   "sideEffects": [
     "./src/auth/client/mod.ts",
@@ -163,6 +164,7 @@
       "types": "./src/app/mod.ts",
       "import": "./src/app/mod.ts"
     },
+    "./app/sources.css": "./src/app/sources.css",
     "./assets": {
       "types": "./src/assets/mod.ts",
       "import": "./src/assets/mod.ts"
@@ -176,6 +178,7 @@
       "import": "./src/auth/mod.ts"
     },
     "./auth/schema.sql": "./src/auth/schema.sql",
+    "./auth/sources.css": "./src/auth/sources.css",
     "./auth/client": {
       "types": "./src/auth/client/mod.ts",
       "import": "./src/auth/client/mod.ts"
@@ -212,6 +215,7 @@
       "types": "./src/logging/mod.ts",
       "import": "./src/logging/mod.ts"
     },
+    "./logging/sources.css": "./src/logging/sources.css",
     "./logging/viewer": {
       "types": "./src/logging/viewer/mod.ts",
       "import": "./src/logging/viewer/mod.ts"
@@ -220,6 +224,7 @@
       "types": "./src/render/htmx/mod.ts",
       "import": "./src/render/htmx/mod.ts"
     },
+    "./render/htmx/sources.css": "./src/render/htmx/sources.css",
     "./render/jsx": {
       "types": "./src/render/jsx/mod.ts",
       "import": "./src/render/jsx/mod.ts"
@@ -358,10 +363,6 @@
     "./tooling/gate": {
       "types": "./src/tooling/gate/mod.ts",
       "import": "./src/tooling/gate/mod.ts"
-    },
-    "./tooling/gate/chromium": {
-      "types": "./src/tooling/gate/checks/chromium.ts",
-      "import": "./src/tooling/gate/chromium.mjs"
     },
     "./tooling/gate/types": {
       "types": "./src/tooling/gate/types.ts",

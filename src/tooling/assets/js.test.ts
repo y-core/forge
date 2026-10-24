@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import type { Metafile } from "esbuild";
 
-import { buildJS, importClosure } from "./js";
+import { buildJS, outputClosure } from "./js";
 
 type Output = Metafile["outputs"][string];
 type Import = Output["imports"][number];
@@ -17,7 +17,7 @@ function metaOutput(imports: Import[] = [], cssBundle?: string): Output {
 const statically = (path: string): Import => ({ path, kind: "import-statement" });
 const lazily = (path: string): Import => ({ path, kind: "dynamic-import" });
 
-describe("importClosure()", () => {
+describe("outputClosure()", () => {
   const cases: { name: string; outputs: Metafile["outputs"]; roots: string[]; expected: string[] }[] = [
     { name: "reaches nothing from no roots", outputs: { "main.js": metaOutput() }, roots: [], expected: [] },
     {
@@ -69,14 +69,14 @@ describe("importClosure()", () => {
 
   for (const { name, outputs, roots, expected } of cases) {
     it(name, () => {
-      expect([...importClosure(outputs, roots, false)].sort()).toEqual(expected);
+      expect([...outputClosure(outputs, roots, false)].sort()).toEqual(expected);
     });
   }
 
   it("follows a dynamic import when lazy, and everything the lazy chunk imports statically", () => {
     const outputs = { "main.js": metaOutput([lazily("lazy.js")]), "lazy.js": metaOutput([statically("lazy-dep.js")]), "lazy-dep.js": metaOutput() };
 
-    expect([...importClosure(outputs, ["main.js"], true)].sort()).toEqual(["lazy-dep.js", "lazy.js", "main.js"]);
+    expect([...outputClosure(outputs, ["main.js"], true)].sort()).toEqual(["lazy-dep.js", "lazy.js", "main.js"]);
   });
 
   it("follows a dynamic import a lazy chunk itself makes, when lazy", () => {
@@ -87,7 +87,7 @@ describe("importClosure()", () => {
       "b.js": metaOutput(),
     };
 
-    expect([...importClosure(outputs, ["main.js"], true)].sort()).toEqual(["a.css", "a.js", "b.js", "main.js"]);
+    expect([...outputClosure(outputs, ["main.js"], true)].sort()).toEqual(["a.css", "a.js", "b.js", "main.js"]);
   });
 });
 

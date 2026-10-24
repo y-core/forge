@@ -1,9 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { rmSync } from "node:fs";
+import { createRequire } from "node:module";
 
 import {
   assetManifestStep,
   assetRootStep,
   browserStep,
+  browserSteps,
+  browserEnginesRequired,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -12,11 +16,13 @@ import {
   commentBudgetStep,
   compatibilityStep,
   contrastStep,
+  cssCoverageStep,
   cssSourcesStep,
   cssTokensStep,
   dbSteps,
   designScaleStep,
   devBoundaryStep,
+  devBundleStep,
   exportsStep,
   exposureStep,
   formatStep,
@@ -28,6 +34,7 @@ import {
   menuNamingStep,
   modernCssStep,
   namespaceGraphStep,
+  namespaceWatches,
   packagingStep,
   sourceWatches,
   ssrBoundaryStep,
@@ -38,13 +45,25 @@ import {
   typecheckStep,
   workerdStep,
 } from "./builders";
-import { hasChromium } from "./checks/browser";
 import { hasTailwind } from "./checks/design-system";
+import { gateFixtureRoot } from "./checks/gate.fixture";
+import type { PlaywrightServerStatus } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
-import { isCheckStep } from "./steps";
-import type { Step } from "./types";
+import { isCheckStep, selectSteps } from "./steps";
+import type { CommandStep, GateTier, Step } from "./types";
 
 const EXPORTS = { ".": "./src/mod.ts" };
+
+const GRAPH = { primitives: ["p"], leaf: ["l"], edges: { a: { b: "value" }, b: { c: "type" }, d: { a: "value" } } } as const satisfies Parameters<
+  typeof namespaceWatches
+>[1];
+
+const LISTING = ["--list"];
+
+// The probe's parse is a function, so a row's narrowing is compared with the probe reduced to its arguments.
+const narrowing = (step: Step): unknown => (step.narrow === undefined ? undefined : { ...step.narrow, probe: step.narrow.probe?.args });
+
+const playwrightVersion = (createRequire(import.meta.url)("@playwright/test/package.json") as { version: string }).version;
 
 const CHECK_STEPS: readonly Step[] = [
   exportsStep({ root: "/nowhere", packageName: "@scope/pkg", exports: EXPORTS, files: ["src"] }),
@@ -59,7 +78,7 @@ const CHECK_STEPS: readonly Step[] = [
     criteria: {},
     palettePath: () => "/nowhere/theme.css",
   }),
-  cssSourcesStep({ root: "/nowhere", uiDir: "ui", cssDir: "css", sourceDir: "src", readme: "README.md" }),
+  cssSourcesStep({ root: "/nowhere", uiDir: "ui", cssDir: "css", sourceDir: "src", readme: "README.md", packageName: "pkg", exports: {} }),
   assetManifestStep({ root: "/nowhere", assetConfig: "assets.config.ts" }),
 ];
 
@@ -98,8 +117,8 @@ describe("markdownStep()", () => {
     expect(CHECK_STEPS.filter((step) => isCheckStep(step) && step.fix !== undefined)).toEqual([]);
   });
 
-  it("runs from the tier the caller states, defaulting to quality like every other check", () => {
-    expect(markdownStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
+  it("runs from the tier the caller states, defaulting to static like every other check", () => {
+    expect(markdownStep({ root: "/nowhere" }, { tier: "unit" }).tier).toBe("unit");
     expect(markdownStep({ root: "/nowhere" }).tier).toBeUndefined();
   });
 });
@@ -117,7 +136,6 @@ describe("builders — the tool steps", () => {
     expect(formatStep().cmd).toEqual(["oxfmt", "--check", "src/"]);
   });
 
-  // Both tools exit 0 on a `warn` diagnostic, so the flag is what makes a green gate mean a clean tree.
   it("fails lint on a warning, without letting the fixer inherit the flag", () => {
     const lint = lintStep();
 
@@ -183,12 +201,10 @@ describe("builders — the tool steps", () => {
 });
 
 describe("typeAwareLintStep()", () => {
-  it("defaults to the quality tier: it judges the source rather than running it, whatever it costs", () => {
+  it("defaults to the static tier: it judges the source rather than running it, whatever it costs", () => {
     expect(typeAwareLintStep().tier).toBeUndefined();
   });
 
-  // The type-aware run is a superset of the syntax run, so it is the only one that can tell a stale
-  // directive from one only a type-aware rule redeems. The check rides here for that reason.
   it("reports unused suppression directives as errors", () => {
     expect(typeAwareLintStep().cmd).toEqual([
       "oxlint",
@@ -206,42 +222,268 @@ describe("typeAwareLintStep()", () => {
 });
 
 describe("browserStep()", () => {
-  it("defaults to the full tier, because it is the one step needing a machine prerequisite", () => {
-    expect(browserStep().tier).toBe("full");
+  it("defaults to the runtime tier, because it needs a machine prerequisite", () => {
+    expect(browserStep().tier).toBe("runtime");
   });
 
-  // Under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox,
-  // and the prebuilt `tooling/gate/chromium` subpath is what removes the reason to prefer bun.
+  it("runs from the tier the caller states, over its runtime default", () => {
+    expect(browserStep({ tier: "release" }).tier).toBe("release");
+  });
+
+  it("narrows to the specs a pending change reaches, and runs whole when the Playwright config changes", () => {
+    expect(narrowing(browserStep())).toEqual({ args: ["--only-changed"], wide: ["playwright.config.ts"], probe: LISTING });
+  });
+
+  it("adds a caller's wide globs to the Playwright config, and takes a caller's narrowing arguments", () => {
+    expect(narrowing(browserStep({ narrow: { args: ["--last-failed"], wide: ["css/**"] } }))).toEqual({
+      args: ["--last-failed"],
+      wide: ["playwright.config.ts", "css/**"],
+      probe: LISTING,
+    });
+  });
+
+  it("carries a caller's traced paths onto every Playwright row, and none by default", () => {
+    const widen = (): string[] => ["src/exposed.ts"];
+
+    expect([browserStep().widen, workerdStep().widen]).toEqual([undefined, undefined]);
+    expect([browserStep({ widen }).widen, workerdStep({ widen }).widen]).toEqual([widen, widen]);
+    expect(browserSteps({ engines: ["chromium", "webkit"], widen }).map((step) => step.widen)).toEqual([widen, widen]);
+  });
+
+  it("reads a listing as selecting nothing only from Playwright's zero-test total", () => {
+    const selects = browserStep().narrow?.probe?.selects ?? ((): boolean => true);
+
+    expect(selects("Listing tests:\nTotal: 0 tests in 0 files\n")).toBe(false);
+    expect(selects("Listing tests:\n  [chromium] › a.browser.ts:3:1 › a\nTotal: 1 test in 1 file\n")).toBe(true);
+    expect(selects("Error: PW_TEST_CONNECT_WS_ENDPOINT is unset")).toBe(true);
+    expect(selects("")).toBe(true);
+    expect(selects("Total: 0 tests in 0 files\n  [chromium] › a.browser.ts:3:1 › a\nTotal: 1 test in 1 file\n")).toBe(true);
+    expect(selects("Listing tests:\nTotal: 0 tests in 0 files\nWarning: listing interrupted\n")).toBe(true);
+  });
+
+  it("reads a total that is not the zero-test line whole as selecting", () => {
+    const selects = browserStep().narrow?.probe?.selects ?? ((): boolean => false);
+    const cases = [
+      "Listing tests:\nTotal: 0 tests in 1 file\n",
+      "Listing tests:\nTotal: 10 tests in 0 files\n",
+      "Listing tests:\n  Total: 0 tests in 0 files\n",
+      "Listing tests:\nTotal: 0 tests in 0 files (1 skipped)\n",
+      "Listing tests:\ntotal: 0 tests in 0 files\n",
+    ];
+
+    expect(cases.filter((output) => !selects(output))).toEqual([]);
+  });
+
   it("spawns the installed binary under node over the chromium project alone, so the workerd project stays its own row", () => {
     expect(browserStep().cmd).toEqual(["playwright", "test", "--project=chromium"]);
   });
 
-  // `bunx` installs from the registry when it resolves nothing locally, which is a supply-chain
-  // fallback no gate step may carry — every other command step resolves off `binDir` too.
+  it("names one --project flag per engine it is given, in order", () => {
+    expect(browserStep({ projects: ["chromium", "firefox", "webkit"] }).cmd).toEqual([
+      "playwright",
+      "test",
+      "--project=chromium",
+      "--project=firefox",
+      "--project=webkit",
+    ]);
+  });
+
   it("never routes through a resolver that could fetch a binary from the registry", () => {
     expect(browserStep().cmd).not.toContain("bunx");
   });
 
-  it("names the browser as the prerequisite, not the playwright CLI that is always installed", () => {
-    expect(browserStep().requires?.tool).toBe("chromium");
+  it("carries the browser requirement when the caller states none", () => {
+    expect(browserStep().requires?.probe).toBeFunction();
   });
 
-  it("probes for the browser itself rather than spawning a command that could pass vacuously", () => {
-    expect(browserStep().requires?.probe).toBe(hasChromium);
+  it("refuses a project that is not a browser engine, which no browser probe can answer for", () => {
+    expect(() => browserStep({ projects: ["chromium", "workerd"] })).toThrow('project "workerd" is not a browser engine');
   });
 
-  it("names the install command, since a reader who sees it has no browser downloaded", () => {
-    expect(browserStep().requires?.hint).toBe("run `bunx playwright install chromium`");
+  it("runs a project that is not a browser engine when the caller states the requirement", () => {
+    const requires = { tool: "workerd", hint: "run `bun install`" };
+
+    expect(browserStep({ projects: ["workerd"], requires }).requires).toBe(requires);
+  });
+});
+
+describe("browserEnginesRequired() — no Playwright server named", () => {
+  it("fails, so an unset endpoint never falls back to a local browser", () => {
+    const requires = browserEnginesRequired(["chromium"], { env: {} });
+
+    expect(requires.probe?.()).toBe(false);
+    expect([requires.tool, requires.hint]).toEqual([
+      "Playwright server",
+      "`PW_TEST_CONNECT_WS_ENDPOINT` is unset; set it to the Playwright container's ws:// URL",
+    ]);
   });
 
-  it("takes a hint of its own, for a project installing the browser some other way", () => {
-    expect(browserStep({ hint: "pnpm exec playwright install" }).requires?.hint).toBe("pnpm exec playwright install");
+  it("treats an empty endpoint as unset, the way Playwright does", () => {
+    expect(browserEnginesRequired(["chromium"], { env: { PW_TEST_CONNECT_WS_ENDPOINT: "" } }).probe?.()).toBe(false);
+  });
+});
+
+describe("browserEnginesRequired() — a Playwright server named by PW_TEST_CONNECT_WS_ENDPOINT", () => {
+  const ENDPOINT = "ws://playwright:3000/";
+
+  function sidecar(status: PlaywrightServerStatus, env: Record<string, string> = {}) {
+    const calls: { endpoint: string; client: string; headers: Readonly<Record<string, string>> | undefined }[] = [];
+    const probes = {
+      env: { PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT, ...env },
+      serverStatus: (endpoint: string, client: string, headers?: Readonly<Record<string, string>>) => {
+        calls.push({ endpoint, client, headers });
+        return Promise.resolve(status);
+      },
+    };
+    return { requires: browserEnginesRequired(["chromium", "firefox"], probes), calls };
+  }
+
+  it("names the server as the prerequisite, since under a connection no local browser is launched", () => {
+    expect(sidecar({ state: "ready" }).requires.tool).toBe(`Playwright server at ${ENDPOINT}`);
+  });
+
+  it("passes with no local engines when the server accepts the connection", async () => {
+    expect(await sidecar({ state: "ready" }).requires.probe?.()).toBe(true);
+  });
+
+  it("asks the server as the installed @playwright/test, carrying PW_TEST_CONNECT_HEADERS", async () => {
+    const { requires, calls } = sidecar({ state: "ready" }, { PW_TEST_CONNECT_HEADERS: '{"x-token":"abc"}' });
+    await requires.probe?.();
+
+    expect(calls).toEqual([{ endpoint: ENDPOINT, client: playwrightVersion, headers: { "x-token": "abc" } }]);
+  });
+
+  it("fails when the server does not answer, with a hint naming the endpoint and what to check", async () => {
+    const { requires } = sidecar({ state: "unreachable", reason: "connect ECONNREFUSED" });
+
+    expect(await requires.probe?.()).toBe(false);
+    expect(requires.hint).toBe(
+      `nothing answered at ${ENDPOINT} (connect ECONNREFUSED); check the Playwright sidecar is running and that NO_PROXY includes \`playwright\``,
+    );
+  });
+
+  it("fails on a version mismatch, with a hint naming both versions and the pin that fixes it", async () => {
+    const { requires } = sidecar({ state: "mismatch", server: "1.64" });
+
+    expect(await requires.probe?.()).toBe(false);
+    expect(requires.hint).toBe(
+      `the server runs Playwright 1.64 and \`@playwright/test\` is ${playwrightVersion}; pin \`@playwright/test\` to 1.64`,
+    );
+  });
+
+  it("fails rather than throwing on unreadable PW_TEST_CONNECT_HEADERS, and names the variable", async () => {
+    const { requires, calls } = sidecar({ state: "ready" }, { PW_TEST_CONNECT_HEADERS: "{not json" });
+
+    expect(await requires.probe?.()).toBe(false);
+    expect(calls).toEqual([]);
+    expect(requires.hint).toContain("PW_TEST_CONNECT_HEADERS");
+  });
+
+  it("blames a missing @playwright/test rather than the headers or the sidecar", async () => {
+    const probes = {
+      env: { PW_TEST_CONNECT_WS_ENDPOINT: "ws://no-client.test:3000/" },
+      clientVersion: () => {
+        throw new Error("Cannot find package '@playwright/test'");
+      },
+      serverStatus: () => Promise.resolve({ state: "ready" as const }),
+    };
+    const requires = browserEnginesRequired(["chromium"], probes);
+
+    expect(await requires.probe?.()).toBe(false);
+    expect(requires.hint).toBe(
+      "`@playwright/test` cannot be resolved (Cannot find package '@playwright/test'); add it as a devDependency at the server's Playwright version",
+    );
+  });
+});
+
+describe("browserSteps()", () => {
+  const ALL = { engines: ["chromium", "firefox", "webkit"] } as const;
+
+  function rowsOf(steps: readonly CommandStep[]): [string, string | undefined, readonly string[]][] {
+    return steps.map((step) => [step.label, step.tier, step.cmd]);
+  }
+
+  it("puts the primary engine on the runtime tier under the bare label, and every other engine on release under its own", () => {
+    expect(rowsOf(browserSteps(ALL))).toEqual([
+      ["test:browser", "runtime", ["playwright", "test", "--project=chromium"]],
+      ["test:browser:firefox", "release", ["playwright", "test", "--project=firefox"]],
+      ["test:browser:webkit", "release", ["playwright", "test", "--project=webkit"]],
+    ]);
+  });
+
+  it("puts every engine row behind the Playwright server and narrows each the same way", () => {
+    const rows = browserSteps({ ...ALL, narrow: { wide: ["css/**"] } });
+
+    expect(rows.every((step) => typeof step.requires?.probe === "function")).toBe(true);
+    expect(rows.map(narrowing)).toEqual(Array(3).fill({ args: ["--only-changed"], wide: ["playwright.config.ts", "css/**"], probe: LISTING }));
+  });
+
+  it("emits the same row for Chromium alone as browserStep does", () => {
+    expect(rowsOf(browserSteps({ engines: ["chromium"] }))).toEqual(rowsOf([browserStep()]));
+  });
+
+  it("makes the named primary the runtime row", () => {
+    expect(rowsOf(browserSteps({ ...ALL, primary: "webkit" })).map(([label, tier]) => [label, tier])).toEqual([
+      ["test:browser:chromium", "release"],
+      ["test:browser:firefox", "release"],
+      ["test:browser", "runtime"],
+    ]);
+  });
+
+  it("takes the first engine as primary when Chromium is not listed", () => {
+    expect(rowsOf(browserSteps({ engines: ["webkit", "firefox"] })).map(([label, tier]) => [label, tier])).toEqual([
+      ["test:browser", "runtime"],
+      ["test:browser:firefox", "release"],
+    ]);
+  });
+
+  it("carries a caller's watches onto every engine row", () => {
+    expect(browserSteps({ ...ALL, watches: ["src/**"] }).map((step) => step.watches)).toEqual([["src/**"], ["src/**"], ["src/**"]]);
+  });
+
+  it("selects Chromium alone for `--only test:browser` at the release tier", () => {
+    const selection = selectSteps(browserSteps(ALL), { tier: "release", only: ["test:browser"] });
+
+    expect(selection.ok && selection.steps.map((step) => step.label)).toEqual(["test:browser"]);
+  });
+
+  it("holds every engine row out of the unit tier, and the matrix out of runtime and deploy", () => {
+    const labelsAt = (tier: GateTier): string[] => {
+      const selection = selectSteps([typecheckStep(), ...browserSteps(ALL)], { tier });
+      return selection.ok ? selection.steps.map((step) => step.label).filter((label) => label.startsWith("test:browser")) : [];
+    };
+
+    expect([labelsAt("unit"), labelsAt("runtime"), labelsAt("deploy")]).toEqual([[], ["test:browser"], ["test:browser"]]);
+  });
+
+  it("refuses an empty engine list", () => {
+    expect(() => browserSteps({ engines: [] as unknown as readonly ["chromium"] })).toThrow("browserSteps: `engines` is empty");
+  });
+
+  it("refuses an engine Playwright does not ship", () => {
+    expect(() => browserSteps({ engines: ["edge" as "chromium"] })).toThrow('browserSteps: "edge" is not a browser engine');
+  });
+
+  it("refuses an engine named twice", () => {
+    expect(() => browserSteps({ engines: ["firefox", "firefox"] })).toThrow('browserSteps: "firefox" is named twice');
+  });
+
+  it("refuses a primary engine that is not listed", () => {
+    expect(() => browserSteps({ engines: ["firefox"], primary: "chromium" })).toThrow('browserSteps: primary "chromium" is not among the engines');
   });
 });
 
 describe("workerdStep()", () => {
-  it("defaults to the full tier, because it is held back on a prerequisite the way the browser set is", () => {
-    expect(workerdStep().tier).toBe("full");
+  it("defaults to the runtime tier, because it is held back on a prerequisite the way the browser set is", () => {
+    expect(workerdStep().tier).toBe("runtime");
+  });
+
+  it("runs from the tier the caller states, over its runtime default", () => {
+    expect(workerdStep({ tier: "deploy" }).tier).toBe("deploy");
+  });
+
+  it("narrows and widens as the browser row does", () => {
+    expect(narrowing(workerdStep())).toEqual({ args: ["--only-changed"], wide: ["playwright.config.ts"], probe: LISTING });
   });
 
   it("runs the workerd Playwright project under node, where createTestHarness answers HTTP", () => {
@@ -275,30 +517,35 @@ describe("workerdStep()", () => {
 });
 
 describe("featuresStep()", () => {
-  it("is the validate-features row, on the full tier because it runs a whole second gate", () => {
+  it("is the validate-features row, on the deploy tier because it runs a whole second gate", () => {
     const step = featuresStep({ root: "/nowhere" });
 
     expect(step.label).toBe("validate-features");
-    expect(step.tier).toBe("full");
+    expect(step.tier).toBe("deploy");
   });
 
   it("takes no tier override, since a lower tier would recurse into the gate it runs", () => {
     // @ts-expect-error -- `tier` is not part of the options featuresStep takes
-    expect(featuresStep({ root: "/nowhere" }, { tier: "quality" }).tier).toBe("full");
+    expect(featuresStep({ root: "/nowhere" }, { tier: "static" }).tier).toBe("deploy");
   });
 });
 
 describe("builders — tier", () => {
-  it("puts every check this namespace still builds on the quality tier", () => {
+  it("puts every check this namespace still builds on the static tier", () => {
     expect(CHECK_STEPS.filter((step) => step.tier !== undefined)).toEqual([]);
   });
 
   it("lets a project hold any check back to a higher tier", () => {
-    expect(jsxStep({ root: "/nowhere" }, { tier: "full" }).tier).toBe("full");
-    expect(jsxStep({ root: "/nowhere" }, { tier: "standard" }).tier).toBe("standard");
+    expect(jsxStep({ root: "/nowhere" }, { tier: "release" }).tier).toBe("release");
+    expect(jsxStep({ root: "/nowhere" }, { tier: "unit" }).tier).toBe("unit");
   });
 
-  it('omits the key rather than writing "quality", so a quality-tier step carries no key at all', () => {
+  it("puts the test suite on the unit tier and the dev bundle on deploy", () => {
+    expect(testStep().tier).toBe("unit");
+    expect(devBundleStep({ root: "/nowhere" }).tier).toBe("deploy");
+  });
+
+  it('omits the key rather than writing "static", so a static-tier step carries no key at all', () => {
     expect(Object.hasOwn(typecheckStep(), "tier")).toBe(false);
   });
 });
@@ -322,14 +569,16 @@ describe("builders — conditional on tailwindcss", () => {
     classGroupsStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/class-groups.ts" }),
     designScaleStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/design-scale.ts" }),
     classTokensStep({ root: "/nowhere", sources: ["src/ui"], stylesheet: "css/tailwind.css" }),
+    cssCoverageStep({ root: "/nowhere", sources: ["src/ui"], stylesheet: "css/tailwind.css" }),
     cssTokensStep({ root: "/nowhere", stylesheet: "css/tailwind.css", cssDir: "css" }),
   ];
 
-  it("runs the four design-system steps from the quality tier up, naming tailwindcss and the command that installs it", () => {
+  it("runs the design-system steps from the static tier up, naming tailwindcss and the command that installs it", () => {
     expect(conditional().map((step) => [step.label, step.tier, step.requires?.tool, step.requires?.hint])).toEqual([
       ["validate-class-groups", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
       ["validate-design-scale", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
       ["validate-class-tokens", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-css-coverage", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
       ["validate-css-tokens", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
     ]);
   });
@@ -411,6 +660,32 @@ describe("sourceWatches()", () => {
   });
 });
 
+describe("namespaceWatches()", () => {
+  it("follows edges of either kind transitively, never against their direction, and adds the primitives", () => {
+    expect(namespaceWatches(["a"], GRAPH)).toEqual(["src/a/**", "src/b/**", "src/c/**", "src/p/**"]);
+  });
+
+  it("knows a namespace from any place the graph declares it", () => {
+    expect(namespaceWatches(["l", "c", "p"], GRAPH)).toEqual(["src/c/**", "src/l/**", "src/p/**"]);
+  });
+
+  it("refuses a namespace the graph does not declare", () => {
+    expect(() => namespaceWatches(["a", "nope"], GRAPH)).toThrow('"nope", which the namespace graph does not declare');
+  });
+
+  it("closes over a cycle in the edges, watching each namespace on it once", () => {
+    const cyclic = { primitives: [], leaf: [], edges: { a: { b: "value" }, b: { c: "value" }, c: { a: "type" } } } as const;
+
+    expect(namespaceWatches(["b"], cyclic)).toEqual(["src/a/**", "src/b/**", "src/c/**"]);
+  });
+
+  it("follows a primitive's own edges, since the closure starts from every primitive", () => {
+    const graph = { primitives: ["p"], leaf: [], edges: { p: { q: "value" }, q: {}, x: {} } } as const;
+
+    expect(namespaceWatches(["x"], graph)).toEqual(["src/p/**", "src/q/**", "src/x/**"]);
+  });
+});
+
 describe("builders — derived watches", () => {
   const BUNDLE = { root: "/nowhere", entry: "src/lint/mod.ts", bundle: "src/lint/plugin.mjs", fixer: "gen" };
   const CONTRAST = { root: "/nowhere", cssDir: "css", tokenFiles: [], mappingFile: "css/theme.css", pairs: [], criteria: {} };
@@ -453,7 +728,15 @@ describe("builders — derived watches", () => {
       [cssTokensStep({ root: "/nowhere", stylesheet: "css/t.css", cssDir: "css" }), ["**/*.css"]],
       [iccProfileStep({ root: "/nowhere", profile: "pdf/p.icc", module: "pdf/icc.ts" }), ["pdf/p.icc", "pdf/icc.ts"]],
       [
-        cssSourcesStep({ root: "/nowhere", uiDir: "src/ui", cssDir: "src/ui/css", sourceDir: "src", readme: "src/ui/README.md" }),
+        cssSourcesStep({
+          root: "/nowhere",
+          uiDir: "src/ui",
+          cssDir: "src/ui/css",
+          sourceDir: "src",
+          readme: "src/ui/README.md",
+          packageName: "pkg",
+          exports: {},
+        }),
         ["src/ui", "src/ui/**", "src/ui/css", "src/ui/css/**", "src", "src/**", "src/ui/README.md", "src/ui/README.md/**"],
       ],
       [exposureStep({ root: "/nowhere" }), ["wrangler.jsonc"]],
@@ -487,17 +770,45 @@ describe("builders — derived watches", () => {
     expect(contrastStep(CONTRAST, { watches: ["css/**"] }).watches).toEqual(["css/**"]);
   });
 
-  it("applies dbSteps's watches to every row, and none by default", () => {
-    expect(dbSteps({ watches: ["db/**"] }).map((step) => step.watches)).toEqual([["db/**"], ["db/**"], ["db/**"]]);
-    expect(dbSteps().map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
+  it("watches the root and every namespace `exercises` reaches through the graph on every db row, primitives included", () => {
+    const watched = ["src/a/**", "src/b/**", "src/c/**", "src/p/**", "db/fixture/**"];
+
+    expect(dbSteps({ root: "db/fixture/", exercises: ["a"], graph: GRAPH }).map((step) => step.watches)).toEqual([watched, watched, watched]);
   });
 
-  it("puts the lint and the replay in full behind workerd, and the digests in quality", () => {
+  it("watches every change for a db row with no `exercises`, or whose root is the project itself", () => {
+    expect(dbSteps().map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
+    expect(dbSteps({ root: "db/fixture" }).map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
+    expect(dbSteps({ root: "/app", exercises: ["a"], graph: GRAPH }).map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
+  });
+
+  it("traces the source file its command runs, resolved from the gate's root, and nothing for a bare binary", async () => {
+    const [digests, lint, replay] = dbSteps({ forge: ["bun", "run", "./bin.ts"] });
+    const root = gateFixtureRoot({ "bin.ts": 'import { a } from "./lib/a";\nexport { a };\n', "lib/a.ts": "export const a = 1;\n" });
+
+    expect(await lint.widen?.(root)).toEqual(["bin.ts", "lib/a.ts"]);
+    expect([digests.widen, replay.widen].every((widen) => widen === lint.widen)).toBe(true);
+    expect(dbSteps().map((step) => step.widen)).toEqual([undefined, undefined, undefined]);
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("refuses a namespace the graph does not declare, and `exercises` without a graph", () => {
+    expect(() => dbSteps({ root: "/app", exercises: ["a", "nope"], graph: GRAPH })).toThrow(
+      'dbSteps: `exercises` names "nope", which the namespace graph does not declare',
+    );
+    expect(() => dbSteps({ root: "db", exercises: ["a"] })).toThrow("needs the `graph`");
+  });
+
+  it("puts the lint and the replay in runtime behind workerd, and the digests in static", () => {
     expect(dbSteps().map((step) => [step.label, step.tier, step.requires?.tool])).toEqual([
       ["db:schema:digests", undefined, undefined],
-      ["db:lint", "full", "workerd"],
-      ["db:schema", "full", "workerd"],
+      ["db:lint", "runtime", "workerd"],
+      ["db:schema", "runtime", "workerd"],
     ]);
+  });
+
+  it("declares no narrowing on any db row, so each runs whole or not at all", () => {
+    expect(dbSteps().map((step) => step.narrow)).toEqual([undefined, undefined, undefined]);
   });
 
   it("passes --root and the forge command to every row", () => {

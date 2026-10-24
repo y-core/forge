@@ -507,7 +507,14 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (!hasTurnstileApi(win) || state !== "ready") return;
     event.preventDefault();
     const pressed = asElement(ctx?.request?.submitter) ?? elt;
-    takeHold({ release: () => replaySubmission(elt, pressed), submitter: pressed });
+    // On a task of its own: a token answered inside `execute()` would otherwise replay inside the
+    // dispatch it is replaying, and Firefox sends nothing for a submission dispatched there.
+    const release = () => {
+      win.setTimeout(() => {
+        if (!lifetime.signal.aborted) replaySubmission(elt, pressed);
+      }, 0);
+    };
+    takeHold({ release, submitter: pressed });
   };
   if (submitMode) form.addEventListener("htmx:config:request", onConfigRequest, { signal: lifetime.signal });
 

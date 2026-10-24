@@ -23,8 +23,8 @@ Each child's own README teaches it. Sending what a renderer produced is [`@y-cor
 
 ## Gotchas
 
-**The htmx status banners render Tailwind classes `forge.css` does not scan.** Add an `@source` line for `src/render/htmx` to your own stylesheet,
-or pass your own classes — [`src/render/htmx/README.md`][htmx-readme] has both.
+**The htmx status banners render Tailwind classes `forge.css` does not scan.** Import `@y-core/forge/render/htmx/sources.css`, whose `@source`
+lines cover them, into your own stylesheet, or pass your own classes — [`src/render/htmx/README.md`][htmx-readme] has both.
 
 ---
 

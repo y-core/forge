@@ -1,9 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { GATE_MODES } from "./types";
+import { GATE_TIERS } from "./types";
 
-describe("GATE_MODES", () => {
-  it("is the three tiers in ascending order, which is what the selector ranks against", () => {
-    expect([...GATE_MODES]).toEqual(["quality", "standard", "full"]);
+describe("GATE_TIERS", () => {
+  it("is the tiers in ascending order, which is what the selector ranks against", () => {
+    expect([...GATE_TIERS]).toEqual(["static", "unit", "runtime", "deploy", "release"]);
   });
 });

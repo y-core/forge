@@ -187,6 +187,7 @@ interface Scene {
   calls: { executes: number; resets: number; params: Record<string, unknown> | null };
   replayed: string[];
   dispose: () => void;
+  win: FakeDocument["defaultView"];
 }
 
 function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<string, string> = {}): Scene {
@@ -221,7 +222,7 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
   form.addEventListener("submit", (event) => replayed.push((event as FakeSubmitEvent).submitter?.id || "form"));
 
   const dispose = mountTurnstile(form as unknown as HTMLElement);
-  return { form, field, widget, calls, replayed, dispose };
+  return { form, field, widget, calls, replayed, dispose, win: doc.defaultView };
 }
 
 const finallyRequest = (scene: Scene, from: FakeElement, status?: number): { resets: number; value: string } => {
@@ -291,8 +292,21 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     expect(scene.replayed).toEqual([]);
 
     completeChallenge(scene);
+    expect(scene.replayed).toEqual([]);
+    scene.win.advance(0);
 
     expect(scene.replayed).toEqual(["form"]);
+  });
+
+  it("drops the replay when the controller is disposed between the token and the replay's task", () => {
+    const scene = submitScene();
+    configRequest(scene, scene.form);
+
+    completeChallenge(scene);
+    scene.dispose();
+    scene.win.advance(0);
+
+    expect(scene.replayed).toEqual([]);
   });
 
   it("lets a press through unheld once the token input is filled, spending no challenge on it", () => {
@@ -328,6 +342,7 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     expect({ first: first.disabled, second: second.disabled }).toEqual({ first: false, second: true });
 
     completeChallenge(scene);
+    scene.win.advance(0);
 
     expect(scene.replayed).toEqual(["preview"]);
     expect(second.disabled).toBe(false);

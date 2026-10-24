@@ -11,7 +11,7 @@ description: "The tsconfig flags, oxlint base and overrides, gate wiring, script
 >
 > **Diffed by hand.** No gate check enforces this document — each section is written concrete enough to hold a repository against without tooling.
 >
-> Defers to: [`TESTING.md`][testing-6] §6 for what the gate modes mean and what a step's tier is; [`FORGE_CONSUMPTION.md`][fc] for the
+> Defers to: [`TESTING.md`][testing-6] §6 for what the gate tiers mean and what a step's tier is; [`FORGE_CONSUMPTION.md`][fc] for the
 > application-to-library relationship, which is a different subject from the toolchain.
 
 ---
@@ -151,16 +151,16 @@ a check over its own data, a build its own pipeline needs.
 It is spread, not hand-assembled: a repository writing those builder calls out again has one place per row for the `dependency` flag and the tier to
 drift.
 
-**The preset emits `lint:types` at the `standard` tier**, immediately after `format`. An application never hand-appends `typeAwareLintStep`: the
+**The preset emits `lint:types` at the `static` tier**, immediately after `format`. An application never hand-appends `typeAwareLintStep`: the
 selector refuses a duplicate label, so a local row is not an addition but a failure. A repository that was appending one deletes it when it takes
 the preset that emits it.
 
 **`oxlint-tsgolint` is therefore a required devDependency**, pinned exactly like `oxlint` itself. Without it the type-aware rules in §2a are a
 config nothing executes.
 
-**Ordering is never a reason to decline an opt-in.** The gate sorts by tier after filtering, so the cheaper tier always runs first and an appended
-`standard` row always runs ahead of a preset's `full` one ([`TESTING.md`][testing-6a] §6a). A repository that declines `browser: true` so it can
-append `browserStep` itself, later in the table, is working around a problem the selector does not have.
+**Ordering is never a reason to decline an opt-in.** The gate sorts by tier after filtering, so the lower tier always runs first and an appended
+`unit` row always runs ahead of a preset's `runtime` one ([`TESTING.md`][testing-6a] §6a). A repository that declines `browser: true` so it can
+append `browserSteps` itself, later in the table, is working around a problem the selector does not have.
 
 **The opt-ins an application takes are a statement about the application, not about its gate's shape:** `db` when it has a D1 binding, `browser`
 when it has a browser set, `workerd` when it has one, `design` when it uses `ui/*`, `warden` when it clones the governing corpus, and `markdown`
@@ -175,9 +175,11 @@ same bytes.
 
 | Script | Runs |
 | --- | --- |
-| `verify` | `forge verify` — the gate a task closes on |
-| `verify:quality` | `forge verify --mode quality` — every row that judges the source rather than running it |
-| `verify:full` | `forge verify --full` |
+| `verify` | `forge verify` — the `runtime` tier, the gate a task closes on |
+| `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it |
+| `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed |
+| `verify:deploy` | `forge verify --tier deploy` — what the remote runs on a tag |
+| `verify:release` | `forge verify --tier release` — sign-off, every browser spec on every engine |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |
 | `test` | `bun test` |
@@ -219,4 +221,4 @@ update and nothing to gain.
 
 [fc]: ./FORGE_CONSUMPTION.md
 [testing-6]: ./TESTING.md#6-the-verification-gate
-[testing-6a]: ./TESTING.md#6a-one-command-three-modes
+[testing-6a]: ./TESTING.md#6a-one-command-nested-tiers

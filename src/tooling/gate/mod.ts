@@ -7,6 +7,7 @@ export {
   assetManifestStep,
   assetRootStep,
   browserStep,
+  browserSteps,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -15,6 +16,7 @@ export {
   commentBudgetStep,
   compatibilityStep,
   contrastStep,
+  cssCoverageStep,
   cssSourcesStep,
   cssTokensStep,
   designScaleStep,
@@ -56,8 +58,8 @@ export type { AssetManifestCheckConfig } from "./checks/types";
 export { checkAssetManifest } from "./checks/asset-manifest";
 export type { AssetRootCheckConfig } from "./checks/types";
 export { checkAssetRoot } from "./checks/asset-root";
-export { hasChromium } from "./checks/browser";
-export { egressProxy, resolveChromiumPath } from "./checks/chromium";
+export type { BrowserEngine } from "./checks/types";
+export { isBrowserEngine } from "./checks/browser";
 export { hasWorkerd } from "./checks/workerd";
 export type { ImportBoundaryCheckConfig } from "./checks/types";
 export { checkImportBoundary, guardedSubpaths, isGuarded } from "./checks/import-boundary";
@@ -94,6 +96,8 @@ export {
 } from "./checks/contrast-parse";
 export type { ClassDeclaration } from "./checks/types";
 export { findClassDeclarations, findSourceDirectives, isClassAnchor } from "./checks/css-parse";
+export type { CssCoverageCheckConfig } from "./checks/types";
+export { checkCssCoverage } from "./checks/css-coverage";
 export type { CssSourcesCheckConfig } from "./checks/types";
 export { checkCssSources } from "./checks/css-sources";
 export type { CssTokensCheckConfig } from "./checks/types";
@@ -222,6 +226,7 @@ export type { CheckResult, Finding, FindingLevel } from "./types";
 export { checkResult, fail, formatCheckResult, formatFinding, reportCheck, scannedNothing, warn } from "./finding";
 export type { CloudflareWorkerDesignOptions, CloudflareWorkerStepOptions, GatePackage, LibraryStepOptions } from "./types";
 export { cloudflareWorkerSteps, forgeChecks } from "./presets";
-export type { CheckStep, CommandStep, GateMode, Selection, Step, StepBase, StepRequirement } from "./types";
+export { workerMainClosure } from "./closure";
+export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepProbe, StepReach, StepRequirement } from "./types";
 export { DEFAULT_GATE_INPUTS, isCheckStep, selectSteps } from "./steps";
-export { GATE_MODES } from "./types";
+export { GATE_TIERS } from "./types";

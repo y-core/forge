@@ -131,6 +131,21 @@ describe("listWorkingTree()", () => {
     ]);
   });
 
+  it("lists the root's repository even when an inherited GIT_DIR names another, as inside a git hook", () => {
+    const root = repo();
+    const other = tracked(curateFixtureRepo());
+    const saved = process.env.GIT_DIR;
+    process.env.GIT_DIR = join(other, ".git");
+    writeFileSync(join(root, "only-here.txt"), "here\n");
+    writeFileSync(join(other, ".git/info/exclude"), "only-here.txt\n");
+    try {
+      expect(listWorkingTree(root)).toContain("only-here.txt");
+    } finally {
+      if (saved === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = saved;
+    }
+  });
+
   it("refuses a directory that is not a git working tree as an external failure", () => {
     const plain = tracked(mkdtempSync(join(tmpdir(), "forge-curate-plain-")));
     const error = refusal(() => listWorkingTree(plain));
@@ -1082,7 +1097,7 @@ describe("createCurateCommand()", () => {
       row("added:", "(none)"),
       row("removed:", "src/showcase"),
       row("scripts:", "showcase:demo"),
-      row("seams:", "config/features.ts −1, README.md −3, src/app.ts −2"),
+      row("seams:", "README.md −3, config/features.ts −1, src/app.ts −2"),
       row("regenerated:", "(none)"),
       row("manifest:", "(kept, or outside the working tree)"),
     ]);

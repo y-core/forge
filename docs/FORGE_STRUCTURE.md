@@ -22,7 +22,7 @@ audience: internal
 - §3a No Build Step in the Gate: the library is always consumed as source
 - §3b TypeScript Configuration Constraints: what source and test files see
 - §3c Peer Dependencies for Build Tools: the build tools are optional, and a peer-only subpath may import its peer statically
-- §3d CSS Source Scanning Stops at `ui/`: what a consumer's Tailwind build must be told
+- §3d CSS Source Scanning Stops at `ui/`: automatic detection off, an opt-in namespace's `sources.css`, and what the gate checks
 - §4 Facade Pattern Implementation: how a facade namespace is written
 - §4a Re-export Rules for Facade Namespaces: expose what consumers need
 - §4b Breaking the Facade: the sanctioned way to add an export
@@ -97,14 +97,26 @@ its justification — the declaration was owed either way.
 ### 3d. CSS Source Scanning Stops at `ui/`
 
 See [`LIBRARY_ARCHITECTURE.md`][la-3d] §3d for why a scanner never reaches `node_modules`, why the source paths are written relative to the
-stylesheet, and why the scope stops at the component tier. Here the scanner is Tailwind, the stylesheet is `forge.css`, the paths are `@source`
-directives, and the component tier is `ui/`.
+stylesheet, why the scope stops at the component tier, and what an opt-in namespace owes instead. Here the scanner is Tailwind, the stylesheet is
+`forge.css`, the paths are `@source` directives, and the component tier is `ui/`.
+
+**Forge's composed stylesheet turns automatic detection off.** `tailwind.css` imports Tailwind with `source(none)`, so a consumer's build scans
+only what an `@source` line names: forge's own lines, an opt-in namespace's, and the app's. Automatic detection scans every file under the build's
+working directory that git does not ignore, tests and docs included, and that breadth hides gaps. A class survives because some test happens to
+spell it too, and the file that renders it is never named. With detection off a missing `@source` shows up as an unstyled class rather than
+staying hidden, and the gate catches it before that: `src/tooling/gate/checks/css-coverage.ts` fails each class-declaring app file that no
+`@source` covers.
+
+**An opt-in namespace outside `ui/` ships its source declaration as `@y-core/forge/<namespace>/sources.css`.** Each `sources.css` sits at the
+namespace's barrel, its `@source "./";` covers every class-declaring file beneath it, and the namespace's README carries the `@import` line an app
+that mounts the surface adds to its own stylesheet.
 
 **The scope is enforced in both directions, and the coverage direction is the one that catches drift.** A directory under `src/ui/` whose files
 declare a utility class must be scanned or explicitly registered as class-free — a new component directory added without either fails the gate
-rather than shipping classes no consumer build generates. The other direction refuses an `@source` path resolving outside `src/ui/`, and a namespace
-outside `ui/` that declares a class string must instead document the `@source` requirement in its own README.
-`src/tooling/gate/checks/css-sources.ts` owns them all, derived from disk, so none is a list to keep in step.
+rather than shipping classes no consumer build generates. The other direction refuses an `@source` path in `forge.css`'s directory that resolves
+outside `src/ui/`. A class-declaring file outside `ui/` fails unless the nearest `sources.css` at or above it covers it, `package.json` exports that
+file at its own subpath, and the namespace's README carries its `@import` line verbatim. `src/tooling/gate/checks/css-sources.ts` owns them all,
+derived from disk, so none is a list to keep in step.
 
 ---
 

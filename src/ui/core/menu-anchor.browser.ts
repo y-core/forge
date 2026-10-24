@@ -67,7 +67,7 @@ function near(actual: number, expected: number, tolerance = 2): boolean {
 
 const GAP = 6;
 
-test.describe("Menu — anchored to its trigger", () => {
+test.describe("Menu — anchored to its trigger", { tag: "@cross-engine" }, () => {
   async function simpleMenu(page: Page, options = CSS): Promise<void> {
     const popup = Menu.Popup({
       triggered: true,
@@ -125,7 +125,7 @@ test.describe("Menu — anchored to its trigger", () => {
   });
 });
 
-test.describe("a context menu against the platform's light-dismiss pass", () => {
+test.describe("a context menu against the platform's light-dismiss pass", { tag: "@cross-engine" }, () => {
   async function contextFixture(page: Page, guard: boolean): Promise<void> {
     const html = await render(
       Menu.Popup({ label: "Context actions", id: "ctx", coords: true, children: [Menu.Item({ id: "cut", for: false, children: "Cut" })] }),
@@ -156,7 +156,11 @@ test.describe("a context menu against the platform's light-dismiss pass", () => 
     expect({ top: popup.top, left: popup.left }).toEqual({ top: 120, left: 150 });
   });
 
-  test("without the guard, the same right-click dismisses it immediately", async ({ page }) => {
+  test("without the guard, the same right-click dismisses it immediately", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "chromium",
+      "Chromium runs light dismiss on click, which a secondary button never fires, so no right-click release dismisses",
+    );
     await contextFixture(page, false);
     await page.mouse.click(150, 120, { button: "right" });
 
@@ -214,8 +218,12 @@ interface ExitFrame {
   opacity: number;
 }
 
-test.describe("Menu — a submenu mid-exit", () => {
-  test("a closing submenu stays on its own row for every frame it is still painted", async ({ page }) => {
+test.describe("Menu — a submenu mid-exit", { tag: "@cross-engine" }, () => {
+  test("a closing submenu stays on its own row for every frame it is still painted", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox" || browserName === "webkit",
+      "bug-261022-74: the submenu stops rendering the moment it closes, so no exit frame paints",
+    );
     await twoSubmenus(page, CSS_AND_JS, FADE_STYLE);
     await page.evaluate(() => window.forgeResume.resume());
     await page.click('[data-slot~="menu-trigger"]');
@@ -305,9 +313,7 @@ test.describe("Menu — a submenu mid-exit", () => {
   });
 });
 
-// The menu takes the implicit anchor its own invocation supplies and the tooltip takes
-// `--forge-tooltip`, so the two cannot collide: only one of them is a name.
-test.describe("Menu — a composed trigger serves both of its compounds", () => {
+test.describe("Menu — a composed trigger serves both of its compounds", { tag: "@cross-engine" }, () => {
   test("a tooltip wrapping a menu trigger anchors each popup to the shared button", async ({ page }) => {
     const trigger = Tooltip.Trigger({ id: "file", for: "file-tip", asChild: true, children: Menu.Trigger({ for: "file-menu", children: "File" }) });
     const popup = Menu.Popup({ triggered: true, id: "file-menu", children: [Menu.Item({ id: "new", for: false, children: "New" })] });
@@ -379,7 +385,7 @@ function expectOnInlineEnd(dir: "ltr" | "rtl", sub: Box, anchor: Box): void {
   expect(near(sub.right, anchor.left - GAP), `rtl: sub.right ${sub.right} vs anchor.left ${anchor.left} - ${GAP}`).toBe(true);
 }
 
-test.describe("Menu — a logical side is resolved by CSS, not by the server", () => {
+test.describe("Menu — a logical side is resolved by CSS, not by the server", { tag: "@cross-engine" }, () => {
   test("one SSR string mounted under both directions reads data-side=inline-end in each", async ({ page }) => {
     const html = await renderNavbar();
     const observed: Record<string, { side: string | null; direction: string }> = {};
@@ -396,7 +402,7 @@ test.describe("Menu — a logical side is resolved by CSS, not by the server", (
   });
 });
 
-test.describe("Menu — inline-end mirrors with the subtree direction, in CSS alone", () => {
+test.describe("Menu — inline-end mirrors with the subtree direction, in CSS alone", { tag: "@cross-engine" }, () => {
   async function openNested(page: Page, dir: "ltr" | "rtl", html: string, extraStyle = ""): Promise<Record<keyof typeof NAV, Box>> {
     await mount(page, inDirection(dir, html, extraStyle), CSS);
     await revealBar(page);
@@ -406,8 +412,6 @@ test.describe("Menu — inline-end mirrors with the subtree direction, in CSS al
   }
 
   for (const dir of ["ltr", "rtl"] as const) {
-    // The row, not the panel: the implicit anchor is the invoker, so the submenu opens beside the
-    // row that opened it rather than at the panel's top corner. The mirroring is still CSS alone.
     test(`dir=${dir}: the submenu opens on its row's inline-end edge`, async ({ page }) => {
       const html = await renderNavbar();
       const box = await openNested(page, dir, html);
@@ -421,7 +425,7 @@ test.describe("Menu — inline-end mirrors with the subtree direction, in CSS al
   }
 });
 
-test.describe("Menu — the key that opens a submenu and the edge it opens on agree", () => {
+test.describe("Menu — the key that opens a submenu and the edge it opens on agree", { tag: "@cross-engine" }, () => {
   const CSS_AND_CHROME_JS = { ...CSS_AND_JS, expose: { ...CSS_AND_JS.expose, forgeChromeClient: "./ui/chrome/client" } };
 
   const TOWARD = [
@@ -450,17 +454,12 @@ test.describe("Menu — the key that opens a submenu and the edge it opens on ag
   }
 });
 
-// Resets the named-anchor declarations so these cases measure the implicit anchor instead:
-// `position-anchor: auto` is the initial value, and it resolves to the invoker's anchor.
 const NO_NAMES = `<style>
   [data-slot~="menu"], [data-slot~="popover"] { anchor-scope: none; }
   [data-slot~="menu-trigger"], [data-slot~="popover-trigger"], [data-slot~="menu-popup"] { anchor-name: none; }
-  [data-slot~="menu-popup"]:not([data-coords]), [data-slot~="popover-content"] { position-anchor: auto; }
 </style>`;
 
-test.describe("the implicit anchor an invoker supplies", () => {
-  // On the Chromium this repository runs, `command`/`commandfor` sets an implicit anchor identical
-  // to `popovertarget`'s — which is what lets the stylesheet carry no `anchor-name` at all.
+test.describe("the implicit anchor an invoker supplies", { tag: "@cross-engine" }, () => {
   test("a popover opened by commandfor lands under its trigger with no anchor-name in the sheet", async ({ page }) => {
     const html = await render(
       Popover({
@@ -488,8 +487,6 @@ test.describe("the implicit anchor an invoker supplies", () => {
     expect(near(popup.top, trigger.bottom + GAP), `popup.top ${popup.top} vs trigger.bottom ${trigger.bottom} + ${GAP}`).toBe(true);
   });
 
-  // Row accuracy is what `mountAnchorBinding` was written to achieve, and the implicit anchor reaches
-  // it with no names and no JavaScript — the named binding that replaced it is what was suppressing it.
   test("each submenu binds to its own row, with no names and no client bundle", async ({ page }) => {
     await twoSubmenus(page, CSS, NO_NAMES);
     await page.click('[data-slot~="menu-trigger"]');
@@ -508,8 +505,6 @@ test.describe("the implicit anchor an invoker supplies", () => {
     expect(second.subB.top, "bound to the other row — the row-named failure the panel binding existed to avoid").not.toBe(second.triggerA.top);
   });
 
-  // The boundary the deletion inherits: an implicit anchor exists only when an invoker opened the
-  // popup. Every popup forge ships is invoker-opened, and a coordinate-placed one sets its own inset.
   test("a hand-shown popup has no implicit anchor at all", async ({ page }) => {
     await twoSubmenus(page, CSS, NO_NAMES);
     await page.evaluate(() => {

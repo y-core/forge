@@ -65,16 +65,17 @@
 | {{ASSET_PIPELINE}} | Client bundle and stylesheet pipeline |
 
 ```bash
-bun run verify                 # the gate — every step must pass
+bun run verify:static          # the loop to write in — every row that judges the source
+bun run verify                 # the gate a task closes on — runtime suites on Chromium, narrowed to pending changes
+bun run verify:release         # sign-off — every runtime suite whole, every browser spec on every engine
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
-bun run verify:full            # the release gate — adds the steps needing a machine prerequisite
 bun run dev                    # asset build + forge cf dev
 bun run build:assets           # production asset build
 ```
 
-**One command, two modes**, not two commands. `{{STEPS_CONFIG_PATH}}` is the single source of truth for the gate's steps and which of them are
-full-only. Gate philosophy, the modes, and the flags: `TESTING.md` §6.
+**One command with tiers**, not a command per tier. `{{STEPS_CONFIG_PATH}}` is the single source of truth for the gate's steps and the tier each
+runs from. Gate philosophy, the tiers, and the flags: `TESTING.md` §6; which tier each moment of a task takes: `TESTING.md` §6e.
 
 **Avoid:** `npm`/`pnpm`/`yarn` (use `bun`), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), runtime-specific type packages (use the hand-written
 stub).

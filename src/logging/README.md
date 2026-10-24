@@ -335,8 +335,8 @@ For the table to fill the viewport instead of growing the page, the shell's cont
 `min-h-dvh` alone is not enough — an indefinite column takes its height from its content, so a long table grows the document. Any other layout still
 renders correctly; the table just falls back to a `max-h-dvh` box.
 
-The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts it must add
-`@source "…/@y-core/forge/src/logging";` to its own stylesheet or every class renders unstyled.
+The viewer's markup is Tailwind-classed and `forge.css` does not scan it, so an app that mounts it must import the namespace's `@source` lines
+with `@import "@y-core/forge/logging/sources.css";` in its own stylesheet, or every class renders unstyled.
 
 A failed request's alert is spoken through `announce()`, so **the shell must render `<Announcer />` from `@y-core/forge/ui/core`**, and the client
 entry must import `@y-core/forge/ui/client/htmx` and `@y-core/forge/ui/core/client` before `resume()`. Without them the alert still renders and

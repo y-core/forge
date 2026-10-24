@@ -17,7 +17,6 @@ const PACKAGE = JSON.parse(readFileSync(resolve(ROOT, "package.json"), "utf-8"))
 const DECLARED = { ...PACKAGE.dependencies, ...PACKAGE.peerDependencies };
 const CONFIGS: readonly BundleCheckConfig[] = BUNDLES.map(({ entry, bundle }) => ({ root: ROOT, entry, bundle, fixer: BUNDLE_FIXER }));
 const PLUGIN_BUNDLE = "src/tooling/lint/plugin.mjs";
-const CHROMIUM_BUNDLE = "src/tooling/gate/chromium.mjs";
 const WRANGLER_BUNDLE = "src/tooling/cf/wrangler.mjs";
 
 const roots: string[] = [];
@@ -33,12 +32,6 @@ describe("the committed bundles", () => {
     const source = readFileSync(resolve(ROOT, PLUGIN_BUNDLE), "utf-8");
 
     expect(source.match(/^\s*(?:import|require)\b/m)).toBeNull();
-  });
-
-  it("resolves only node builtins, so a consumer's `node_modules` layout cannot break the chromium bundle", () => {
-    const source = readFileSync(resolve(ROOT, CHROMIUM_BUNDLE), "utf-8");
-
-    expect([...source.matchAll(/^\s*(?:import|require)\b[^\n]*?["']([^"']+)["']/gm)].map((match) => match[1])).toEqual(["node:fs"]);
   });
 
   it("keeps a package dependency as an import rather than inlining it", () => {
@@ -61,12 +54,6 @@ describe("the committed bundles", () => {
     const loaded = (await import(resolve(ROOT, PLUGIN_BUNDLE))) as { default: { meta: { name: string } } };
 
     expect(loaded.default.meta.name).toBe("forge");
-  });
-
-  it("exports the resolution a `playwright.config.ts` imports, callable under node", async () => {
-    const loaded = (await import(resolve(ROOT, CHROMIUM_BUNDLE))) as { resolveChromiumPath: () => string | undefined };
-
-    expect(typeof loaded.resolveChromiumPath).toBe("function");
   });
 });
 

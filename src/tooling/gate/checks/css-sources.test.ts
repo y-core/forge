@@ -30,7 +30,7 @@ function root(tree: Record<string, string>): string {
 }
 
 function config(tree: Record<string, string>, extra: Partial<CssSourcesCheckConfig> = {}): CssSourcesCheckConfig {
-  return { root: root(tree), uiDir: "src/ui", cssDir: "src/css", sourceDir: "src", readme: "README.md", ...extra };
+  return { root: root(tree), uiDir: "src/ui", cssDir: "src/css", sourceDir: "src", readme: "README.md", packageName: "pkg", exports: {}, ...extra };
 }
 
 function messages(tree: Record<string, string>, extra: Partial<CssSourcesCheckConfig> = {}): string[] {
@@ -74,8 +74,8 @@ describe("checkCssSources() — pass A, where an @source path points", () => {
       message: `@source "../../outside" resolves outside src/ui/ (outside)`,
       file: "src/css/tailwind.css",
       detail: [
-        "The stylesheet scans src/ui/ and nothing else. A namespace outside it documents its own",
-        "@source requirement in its README for the consuming app to honour instead.",
+        "The stylesheet scans src/ui/ and nothing else. A namespace outside it ships its own",
+        "`sources.css` for the consuming app to import instead.",
       ],
     });
   });
@@ -192,36 +192,199 @@ describe("checkCssSources() — pass B, whether a directory is registered", () =
   });
 });
 
-describe("checkCssSources() — pass C, a sibling namespace that renders classes", () => {
-  it("rejects a namespace outside the component root whose README never mentions @source", () => {
-    const tree = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "src/logging/viewer.ts": CLASSES };
+const BASE = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "README.md": "# forge\n" };
 
-    expect(checkCssSources(config(tree)).findings[0]).toEqual({
+const SHIPPED_NS = {
+  ...BASE,
+  "src/ns/mod.ts": "export {};\n",
+  "src/ns/card.tsx": CLASSES,
+  "src/ns/sources.css": '@source "./";\n',
+  "src/ns/README.md": 'Add @import "pkg/ns/sources.css"; to your stylesheet.\n',
+};
+
+const NS_EXPORTS = { "./ns/sources.css": "./src/ns/sources.css" };
+
+function findings(tree: Record<string, string>, extra: Partial<CssSourcesCheckConfig> = {}) {
+  return checkCssSources(config(tree, extra)).findings;
+}
+
+describe("checkCssSources() — pass C, whether a namespace outside the component root ships its classes", () => {
+  it("passes a namespace whose sources.css covers it, is exported, and is published in its README", () => {
+    const result = checkCssSources(config(SHIPPED_NS, { exports: NS_EXPORTS }));
+
+    expect(result.findings).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts an exports entry in object form whose import condition names the sources.css", () => {
+    expect(findings(SHIPPED_NS, { exports: { "./ns/sources.css": { import: "./src/ns/sources.css" } } })).toEqual([]);
+  });
+
+  it("blames the nearest barrel directory when no sources.css sits above a class-declaring file, listing the file", () => {
+    const tree = { ...BASE, "src/ns/mod.ts": "export {};\n", "src/ns/parts/card.tsx": CLASSES };
+
+    expect(findings(tree)).toEqual([
+      {
+        level: "fail",
+        message: "renders utility classes, but no sources.css above it ships them to the consuming app",
+        file: "src/ns",
+        detail: [
+          "src/ns/parts/card.tsx",
+          'Ship src/ns/sources.css with `@source "./";`, export it from package.json,',
+          "and put its `@import` line in src/ns/README.md.",
+        ],
+      },
+      fail(AGGREGATE),
+    ]);
+  });
+
+  it("blames the file's own directory when no barrel sits above it either", () => {
+    const tree = { ...BASE, "src/loose/parts/card.tsx": CLASSES };
+
+    expect(findings(tree)[0]).toEqual({
       level: "fail",
-      message: "renders utility classes, but its README.md never mentions @source",
-      file: "src/logging",
+      message: "renders utility classes, but no sources.css above it ships them to the consuming app",
+      file: "src/loose/parts",
       detail: [
-        "src/logging/viewer.ts",
-        "The stylesheet scans src/ui/ only, so these classes are the consuming app's to scan.",
-        "Say so in src/logging/README.md, where someone adopting this surface reads it.",
+        "src/loose/parts/card.tsx",
+        'Ship src/loose/parts/sources.css with `@source "./";`, export it from package.json,',
+        "and put its `@import` line in src/loose/parts/README.md.",
       ],
     });
   });
 
-  it("accepts it once its own README says an app must scan it", () => {
-    const tree = {
-      "src/css/tailwind.css": SCAN_ALL,
-      "src/ui/core/button.ts": CLASSES,
-      "src/logging/viewer.ts": CLASSES,
-      "src/logging/README.md": "Add an @source line for this directory.\n",
-    };
+  it("never takes a sources.css or barrel at the source root itself as a namespace's", () => {
+    const tree = { ...BASE, "src/sources.css": '@source "./";\n', "src/mod.ts": "export {};\n", "src/loose/card.tsx": CLASSES };
 
-    expect(messages(tree)).toEqual([]);
+    expect(findings(tree)[0]?.file).toBe("src/loose");
   });
 
-  it("leaves a sibling that declares no utility class alone, README or not", () => {
-    const tree = { "src/css/tailwind.css": SCAN_ALL, "src/ui/core/button.ts": CLASSES, "src/logging/viewer.ts": "export const level = 'info';\n" };
+  it("ignores a class string in a spec, which a consuming app never scans", () => {
+    expect(findings({ ...BASE, "src/ns/mod.ts": "export {};\n", "src/ns/card.test.tsx": CLASSES })).toEqual([]);
+  });
 
-    expect(messages(tree)).toEqual([]);
+  it("raises nothing for a namespace that declares no utility classes and ships no sources.css", () => {
+    expect(findings({ ...BASE, "src/plain/mod.ts": 'export const label = "Save changes";\n' })).toEqual([]);
+  });
+
+  it("rejects a sources.css whose @source paths miss a class-declaring file, listing only the missed one", () => {
+    const tree = { ...SHIPPED_NS, "src/ns/other/panel.tsx": CLASSES, "src/ns/sources.css": '@source "./other";\n' };
+
+    expect(findings(tree, { exports: NS_EXPORTS })).toEqual([
+      {
+        level: "fail",
+        message: "its sources.css does not cover every class-declaring file under it",
+        file: "src/ns",
+        detail: ["src/ns/card.tsx", "Add an @source path to src/ns/sources.css that reaches them."],
+      },
+      fail(AGGREGATE),
+    ]);
+  });
+
+  it("does not count an @source not exclusion as cover", () => {
+    const tree = { ...SHIPPED_NS, "src/ns/sources.css": '@source not "./";\n' };
+
+    expect(findings(tree, { exports: NS_EXPORTS }).map((finding) => finding.message)).toEqual([
+      "its sources.css does not cover every class-declaring file under it",
+      AGGREGATE,
+    ]);
+  });
+
+  it("rejects a sources.css package.json does not export", () => {
+    expect(findings(SHIPPED_NS)).toEqual([
+      {
+        level: "fail",
+        message: 'its sources.css is not exported as "./ns/sources.css"',
+        file: "src/ns",
+        detail: ['Map "./ns/sources.css" to "./src/ns/sources.css" in package.json exports.'],
+      },
+      fail(AGGREGATE),
+    ]);
+  });
+
+  it("rejects an export of the subpath that points at another file, in string or object form", () => {
+    const cases: CssSourcesCheckConfig["exports"][] = [
+      { "./ns/sources.css": "./src/other/sources.css" },
+      { "./ns/sources.css": { import: "./src/other/sources.css", types: "./src/ns/sources.css" } },
+    ];
+
+    for (const exports of cases) {
+      expect(findings(SHIPPED_NS, { exports }).map((finding) => finding.message)).toEqual([
+        'its sources.css is not exported as "./ns/sources.css"',
+        AGGREGATE,
+      ]);
+    }
+  });
+
+  it("rejects a README that does not carry the @import line verbatim", () => {
+    expect(findings({ ...SHIPPED_NS, "src/ns/README.md": "# ns\n" }, { exports: NS_EXPORTS })).toEqual([
+      {
+        level: "fail",
+        message: "its README.md does not publish the line that imports its sources.css",
+        file: "src/ns",
+        detail: ['Expected verbatim: @import "pkg/ns/sources.css"'],
+      },
+      fail(AGGREGATE),
+    ]);
+  });
+
+  it("rejects a namespace that ships a sources.css but no README at all", () => {
+    const { "src/ns/README.md": _readme, ...tree } = SHIPPED_NS;
+
+    expect(findings(tree, { exports: NS_EXPORTS }).map((finding) => finding.message)).toEqual([
+      "its README.md does not publish the line that imports its sources.css",
+      AGGREGATE,
+    ]);
+  });
+
+  it("names the package in the expected @import line", () => {
+    const tree = { ...SHIPPED_NS, "src/ns/README.md": '@import "@scope/lib/ns/sources.css";\n' };
+
+    expect(findings(tree, { exports: NS_EXPORTS, packageName: "@scope/lib" })).toEqual([]);
+    expect(findings(tree, { exports: NS_EXPORTS })[0]?.detail).toEqual(['Expected verbatim: @import "pkg/ns/sources.css"']);
+  });
+
+  it("lets a nested barrel be covered by the sources.css of the namespace above it", () => {
+    const tree = { ...SHIPPED_NS, "src/ns/web/mod.ts": "export {};\n", "src/ns/web/widget.tsx": CLASSES };
+
+    expect(findings(tree, { exports: NS_EXPORTS })).toEqual([]);
+  });
+
+  it("checks a nested renderer's own subpath and its own README", () => {
+    const tree = {
+      ...BASE,
+      "src/family/one/mod.ts": "export {};\n",
+      "src/family/one/render.ts": CLASSES,
+      "src/family/one/sources.css": '@source "./";\n',
+      "src/family/one/README.md": '@import "pkg/family/one/sources.css";\n',
+    };
+
+    expect(findings(tree, { exports: { "./family/one/sources.css": "./src/family/one/sources.css" } })).toEqual([]);
+  });
+
+  it("does not accept a nested renderer's @import line published only in its parent's README", () => {
+    const tree = {
+      ...BASE,
+      "src/family/README.md": '@import "pkg/family/one/sources.css";\n',
+      "src/family/one/mod.ts": "export {};\n",
+      "src/family/one/render.ts": CLASSES,
+      "src/family/one/sources.css": '@source "./";\n',
+    };
+
+    expect(findings(tree, { exports: { "./family/one/sources.css": "./src/family/one/sources.css" } })).toEqual([
+      {
+        level: "fail",
+        message: "its README.md does not publish the line that imports its sources.css",
+        file: "src/family/one",
+        detail: ['Expected verbatim: @import "pkg/family/one/sources.css"'],
+      },
+      fail(AGGREGATE),
+    ]);
+  });
+
+  it("blames a nested renderer's own barrel, not its family, when neither ships a sources.css", () => {
+    const tree = { ...BASE, "src/family/one/mod.ts": "export {};\n", "src/family/one/render.ts": CLASSES };
+
+    expect(findings(tree).map((finding) => finding.file)).toEqual(["src/family/one", undefined]);
   });
 });

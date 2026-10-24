@@ -22,9 +22,42 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 - **`zone.allow.paths` is required, and `forge cf sync zone` no longer falls back to the GET-only `pages`.** Pass `routePaths(routes)` across
   every method.
+- **`browserStep` requires the Playwright server and never a local browser.** With `PW_TEST_CONNECT_WS_ENDPOINT` unset the step fails instead of
+  probing for an installed engine. `browserStep`'s `hint` option, `hasChromium`, `hasBrowserEngine`, `resolveChromiumPath`, `egressProxy` and the
+  `@y-core/forge/tooling/gate/chromium` subpath are removed.
+- **`forge verify` runs one tier — `static`, `unit`, `runtime`, `deploy` or `release` — chosen with `--tier`; `--mode` and `--full` are
+  removed.** A bare `verify` is now `runtime`: it adds the browser, workerd and database rows on their primary engine, narrowed to the pending
+  changes, and fails rather than skips a row whose prerequisite is absent. Rename the scripts `verify:quality` to `verify:static` and `verify:full`
+  to `verify:release`, and add `verify:unit` and `verify:deploy`. `GateMode` and `GATE_MODES` are `GateTier` and `GATE_TIERS`, `selectSteps`
+  takes `tier`, a check's `run` receives one, and a receipt carries `tier` and the `base` commit a `runtime` run read its changes against. A table
+  that states `tier: "quality"` or `"standard"` states `"static"` or `"unit"`; a `"full"` row moves to whichever tier `TESTING.md` §6c's lines
+  put it in. `browserSteps({ engines })` emits `test:browser` for the primary engine at `runtime` and `test:browser:<engine>` for each other engine
+  at `release`, and `cloudflareWorkerSteps({ browser: { engines } })` is built on it. At `runtime`, `browserStep` and `workerdStep` first run
+  their narrowed command with `--list` and report the row untouched when it lists no spec, and `StepProbe` is exported for a step of your own.
+  A step's new top-level `widen: (cwd) => paths`, taken by `browserStep`, `browserSteps` and `workerdStep`, names paths whose change runs a
+  narrowed or untouched row whole, and a `widen` that rejects does too; build one from the new `importClosure` (exported by
+  `@y-core/forge/tooling/assets`) and `workerMainClosure` (by `@y-core/forge/tooling/gate`). `cloudflareWorkerSteps` widens its browser and
+  workerd rows by the import closure of the wrangler config's `main`, so a change to app source runs them whole and only a spec-only edit narrows,
+  and `dbSteps` widens by its `forge` command's source entry. With `assetConfig` set, the browser rows also widen by everything the asset build
+  reads, and the workerd row does too when the wrangler config has an `assets` block. Drop `watches` from a Playwright row. `dbSteps` replaces
+  its `watches` option with `exercises` and `graph`, which watch the namespaces it runs through the namespace graph; without them it runs on every
+  change. A `watches` or `narrow.wide` glob that matches no file fails the gate, naming the row and the glob.
+- **`tailwind.css` imports Tailwind with `source(none)`, so a build scans only what an `@source` line names.** An app that relied on automatic
+  detection loses the classes of every file no `@source` names. Add `@source` lines for your own source directories to your stylesheet, as the
+  `ui` README's “Tell Tailwind which directories to scan” shows; under `cloudflareWorkerSteps` with `design` set, the new `validate-css-coverage`
+  row names each uncovered file and the line to add. An app that imports `forge.css` under its own Tailwind import keeps
+  `source(none)` there, since the row fails a stylesheet that leaves detection on.
+- **An opt-in namespace's classes come from its own `sources.css`, not from a `node_modules` path in your stylesheet.** Replace each
+  `@source "…/node_modules/@y-core/forge/src/<namespace>"` line with `@import "@y-core/forge/<namespace>/sources.css";`, for `auth`, `app`,
+  `logging` and `render/htmx`. The new files' paths resolve under any install layout, a git dependency included.
 
 ### Added
 
+- **`cssCoverageStep` checks an app's `@source` coverage**, as the `validate-css-coverage` row. It fails a stylesheet that leaves automatic
+  detection on and each class-declaring source file no `@source` covers, and warns on a scanned directory that declares no class.
+  `checkCssCoverage` and `CssCoverageCheckConfig` are exported beside it from `@y-core/forge/tooling/gate`.
+- **`assetInputs(root, assetConfigPath, files)` in `@y-core/forge/tooling/assets` lists every repository file an asset build reads**, for a
+  `widen` of your own. It rejects on an input that does not resolve.
 - **Overlays open and close with motion.** A modal `Dialog`, `Popover`, `Menu`, `Tooltip` and the `Toolbar` flyout fade and scale (150ms in,
   100ms out), and a `Toast` fades in. Popups scale from the side of their anchor, and a context menu from the point that was clicked. Retime
   all of them with `--forge-motion-enter` / `--forge-motion-exit`. On a component whose custom motion leaves `scale` or `opacity` out of
@@ -51,6 +84,8 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Fixed
 
+- **`mountTurnstile` under `challenge="submit"` replays a held press in Firefox when Turnstile answers inside `execute()`.** The replay now runs
+  on a task of its own instead of inside the submission it replays, which Firefox sent nothing for.
 - **Parameterised, wildcard and optional routes are allowed at the edge.** `buildAllowExpression` emits them as `strict wildcard` clauses
   instead of literal paths.
 - **`mountNavDrawer` focuses the panel's first control once it becomes focusable after `toggle`.** It retries each frame for the length of

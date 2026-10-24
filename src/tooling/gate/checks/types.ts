@@ -300,6 +300,20 @@ export interface CssSourcesCheckConfig {
   classFree?: ReadonlyMap<string, string>;
   /** Directories under `uiDir` that declare classes but are opt-in, each mapped to the exact `@source` line an app must add. */
   consumerScanned?: ReadonlyMap<string, string>;
+  /** The specifier a README's stylesheet `@import` line begins with. */
+  packageName: string;
+  /** The package.json map through which every shipped `sources.css` must be reachable. */
+  exports: ExportsMap;
+}
+
+/** What the `@source` coverage check needs to know about the project. @public */
+export interface CssCoverageCheckConfig {
+  /** Application root, inside a git work tree. Every reported path is relative to it. */
+  root: string;
+  /** The stylesheet whose `@source` declaration is read, relative to `root`. */
+  stylesheet: string;
+  /** Files and directories whose class-declaring files must be covered, relative to `root`; a `!`-prefixed entry excludes a subtree. */
+  sources: readonly string[];
 }
 
 /** What the theme-token namespace check needs to know about the project. @public */
@@ -827,3 +841,9 @@ export interface DevBundleCheckConfig {
   /** The environment a deploy from this shell inherits, read for `WRANGLER_BUILD_CONDITIONS`. Defaults to `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
 }
+
+/** A browser engine Playwright downloads and launches. @public */
+export type BrowserEngine = "chromium" | "firefox" | "webkit";
+
+/** What one upgrade request learned about a Playwright server. @internal */
+export type PlaywrightServerStatus = { state: "ready" } | { state: "unreachable"; reason: string } | { state: "mismatch"; server: string };

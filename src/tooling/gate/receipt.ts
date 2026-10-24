@@ -1,18 +1,21 @@
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 
-import { GATE_MODES } from "./types";
-import type { GateMode, GateReceipt } from "./types";
-import { worktreeGitPath } from "./worktree";
+import { worktreeGitPath } from "../cli/worktree";
+import { GATE_TIERS } from "./types";
+import type { GateReceipt, GateTier } from "./types";
 
 const RECEIPT_FILE = "forge-verify-receipt.json";
 
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
 function isReceipt(value: unknown): value is GateReceipt {
   if (typeof value !== "object" || value === null) return false;
-  const { tree, mode, labels } = value as Record<string, unknown>;
+  const { tree, tier, base, labels } = value as Record<string, unknown>;
   return (
     typeof tree === "string" &&
-    /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tree) &&
-    GATE_MODES.some((known) => known === mode) &&
+    OBJECT_ID.test(tree) &&
+    (base === undefined || (typeof base === "string" && OBJECT_ID.test(base))) &&
+    GATE_TIERS.some((known) => known === tier) &&
     Array.isArray(labels) &&
     labels.every((label) => typeof label === "string")
   );
@@ -26,8 +29,8 @@ function removeQuietly(path: string): void {
   }
 }
 
-function rank(mode: GateMode): number {
-  return GATE_MODES.indexOf(mode);
+function rank(tier: GateTier): number {
+  return GATE_TIERS.indexOf(tier);
 }
 
 /** Reads the receipt recorded in the git directory of the work tree at `cwd`, or `undefined` when there is no valid one. */
@@ -42,15 +45,16 @@ export function readReceipt(cwd: string): GateReceipt | undefined {
   }
 }
 
-/** Records `receipt` atomically, unless the existing one names the same tree at a higher mode. */
+/** Records `receipt` atomically, unless the existing one names the same tree at a higher tier. */
 export function recordReceipt(cwd: string, receipt: GateReceipt): void {
   const path = worktreeGitPath(cwd, RECEIPT_FILE);
   if (path === undefined) return;
   const existing = readReceipt(cwd);
-  if (existing !== undefined && existing.tree === receipt.tree && rank(existing.mode) > rank(receipt.mode)) return;
+  if (existing !== undefined && existing.tree === receipt.tree && rank(existing.tier) > rank(receipt.tier)) return;
   const tmp = `${path}.${process.pid}.tmp`;
   try {
-    writeFileSync(tmp, `${JSON.stringify({ tree: receipt.tree, mode: receipt.mode, labels: receipt.labels })}\n`, "utf-8");
+    const { tree, tier, base, labels } = receipt;
+    writeFileSync(tmp, `${JSON.stringify({ tree, tier, ...(base === undefined ? {} : { base }), labels })}\n`, "utf-8");
     renameSync(tmp, path);
   } catch {
     removeQuietly(tmp);
@@ -63,7 +67,11 @@ export function clearReceipt(cwd: string): void {
   if (path !== undefined) removeQuietly(path);
 }
 
-/** Answers whether `receipt` vouches for a run of `wanted.labels` at `wanted.mode` over `wanted.tree`. */
-export function receiptCovers(receipt: GateReceipt, wanted: { tree: string; mode: GateMode; labels: readonly string[] }): boolean {
-  return receipt.tree === wanted.tree && rank(receipt.mode) >= rank(wanted.mode) && wanted.labels.every((label) => receipt.labels.includes(label));
+/** Answers whether `receipt` vouches for a run of `wanted.labels` at `wanted.tier` over `wanted.tree`; a `runtime` receipt also needs `wanted.base`, since its narrowing read changes against it. */
+export function receiptCovers(
+  receipt: GateReceipt,
+  wanted: { tree: string; tier: GateTier; base?: string | undefined; labels: readonly string[] },
+): boolean {
+  if (receipt.tier === "runtime" && receipt.base !== wanted.base) return false;
+  return receipt.tree === wanted.tree && rank(receipt.tier) >= rank(wanted.tier) && wanted.labels.every((label) => receipt.labels.includes(label));
 }

@@ -1,21 +1,14 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { mount, withCompiledCss } from "../client/browser.fixture";
 import { Tabs } from "./tabs";
 import { Toggle } from "./toggle";
 import { ToggleGroup } from "./toggle-group";
 
-// `mount`'s `css` option runs through `page.addStyleTag`, which is script — unusable in the one mode
-// this file exists to cover. Inlined instead, which is also what a no-script reader really receives.
-const INLINE_CSS = readFileSync(fileURLToPath(new URL("../assets/css/forge-ui.css", import.meta.url)), "utf-8");
-
 async function mountWithoutScript(page: Page, body: string): Promise<void> {
-  await mount(page, `<style>${INLINE_CSS}</style><form id="f" action="/submit">${body}</form>`);
+  await mount(page, await withCompiledCss(`<form id="f" action="/submit">${body}</form>`));
 }
 
 /** The FormData a native submit would carry, read without running any page script. */
@@ -24,7 +17,7 @@ async function submitted(page: Page): Promise<Array<[string, string]>> {
   return [...new URL(request.url()).searchParams.entries()];
 }
 
-test.describe("the four components that used to be inert without script", () => {
+test.describe("the four components that used to be inert without script", { tag: "@cross-engine" }, () => {
   test.use({ javaScriptEnabled: false });
 
   test("Tabs: every panel is reachable by following a tab's fragment", async ({ page }) => {
@@ -42,13 +35,11 @@ test.describe("the four components that used to be inert without script", () => 
     );
     await mountWithoutScript(page, html);
 
-    // The server-selected panel is the one on screen before anything is clicked.
     await expect(page.locator("#p-a")).toBeVisible();
     await expect(page.locator("#p-b")).toBeHidden();
 
     await page.locator('[role="tab"][aria-controls="p-b"]').click();
 
-    // Anchor navigation alone switched the panel — no controller ran.
     await expect(page.locator("#p-b")).toBeVisible();
     await expect(page.locator("#p-a")).toBeHidden();
   });
@@ -114,8 +105,6 @@ test.describe("the four components that used to be inert without script", () => 
     await page.locator('input[value="left"]').focus();
     await page.keyboard.press("ArrowRight");
 
-    // The platform's own radio-group behaviour, which is why no roving-focus controller is mounted
-    // for `type="single"`.
     await expect(page.locator('input[value="right"]')).toBeChecked();
   });
 

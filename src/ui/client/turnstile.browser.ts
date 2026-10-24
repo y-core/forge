@@ -1618,6 +1618,28 @@ test.describe("mountTurnstile — challenge='submit' against real htmx", () => {
     });
   });
 
+  test("replays a press Turnstile answers inside execute() itself, sending one POST with the token @cross-engine", async ({ page }) => {
+    const posts = await mountUnderHtmx(page, await submitModeMarkup());
+    await page.evaluate(() => {
+      const api = window.turnstile;
+      if (!api) throw new Error("the Turnstile stub is not installed");
+      api.execute = () => {
+        window.turnstileCalls.executes += 1;
+        const input = document.createElement("input");
+        input.type = "hidden";
+        input.name = "cf-turnstile-response";
+        input.value = "token-1";
+        document.querySelector("[data-ref='turnstile']")?.appendChild(input);
+        ((window.turnstileCalls.params ?? {}).callback as (token: string) => void)("token-1");
+      };
+    });
+    await page.locator("#field").fill("typed@example.com");
+    await page.locator("#submit").click();
+    await expect.poll(() => posts.length).toBe(1);
+    expect(new URLSearchParams(posts[0]).get("cf-turnstile-response")).toBe("token-1");
+    expect(await executes(page)).toBe(1);
+  });
+
   test("resets the form once the replayed submission is answered 200", async ({ page }) => {
     const posts = await mountUnderHtmx(page, await submitModeMarkup());
     await page.locator("#field").fill("typed@example.com");

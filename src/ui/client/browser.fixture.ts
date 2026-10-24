@@ -132,3 +132,8 @@ export async function compiledCss(candidates: readonly string[]): Promise<string
   const sheet = await compile(readFileSync(TAILWIND_ENTRY, "utf-8"), { base: dirname(TAILWIND_ENTRY), loadStylesheet });
   return sheet.build([...candidates]);
 }
+
+/** `html` behind an inline `<style>` of the Tailwind build its classes compile to, preflight included. */
+export async function withCompiledCss(html: string): Promise<string> {
+  return `<style>${await compiledCss(renderedClasses(html))}</style>${html}`;
+}

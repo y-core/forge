@@ -16,8 +16,9 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve } from "node:pa
 
 import { createCommand } from "../cli/command";
 import { CliError } from "../cli/errors";
-import { capture, captureStreams } from "../cli/proc";
+import { capture } from "../cli/proc";
 import type { Command } from "../cli/types";
+import { worktreeFiles } from "../cli/worktree";
 import { definitionList } from "../term/grid";
 import { DEFAULT_FEATURE_MANIFEST, loadFeatures } from "./config";
 import { describeFeatureGraph, featureGraph, quoteList, resolveFeatures } from "./graph";
@@ -63,11 +64,8 @@ export function withLinkedModules<T>(root: string, tree: string, body: () => T):
 
 /** The working tree's files, root-relative: tracked and untracked alike, minus what `.gitignore` excludes and what is no longer on disk. @internal */
 export function listWorkingTree(root: string): string[] {
-  const result = captureStreams("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root });
-  if (!result.exited || result.code !== 0) {
-    throw new CliError("external", `git ls-files failed in ${root} — forge curate copies a git working tree`);
-  }
-  const listed = [...new Set(result.stdout.split("\0").filter((path) => path !== ""))];
+  const listed = worktreeFiles(root);
+  if (listed === undefined) throw new CliError("external", `git ls-files failed in ${root} — forge curate copies a git working tree`);
   return listed.filter((path) => lstatSync(join(root, path), { throwIfNoEntry: false }) !== undefined);
 }
 

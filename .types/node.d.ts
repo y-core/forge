@@ -198,6 +198,43 @@ declare module "node:net" {
     close(listener?: () => void): Server;
   }
   export function createServer(): Server;
+  interface Socket {
+    destroy(): void;
+    end(data?: string): void;
+  }
+}
+
+declare module "node:http" {
+  import type { AddressInfo, Socket } from "node:net";
+  type IncomingHttpHeaders = Record<string, string | string[] | undefined>;
+  interface IncomingMessage {
+    statusCode?: number;
+    headers: IncomingHttpHeaders;
+    setEncoding(encoding: "utf8"): void;
+    on(event: "data", listener: (chunk: string) => void): IncomingMessage;
+    on(event: "end", listener: () => void): IncomingMessage;
+  }
+  interface ClientRequest {
+    on(event: "upgrade", listener: (response: IncomingMessage, socket: Socket) => void): ClientRequest;
+    on(event: "response", listener: (response: IncomingMessage) => void): ClientRequest;
+    on(event: "timeout", listener: () => void): ClientRequest;
+    on(event: "error", listener: (error: Error) => void): ClientRequest;
+    destroy(error?: Error): void;
+    end(): void;
+  }
+  interface Server {
+    on(event: "upgrade", listener: (request: IncomingMessage, socket: Socket) => void): Server;
+    listen(port: number, host: string, listener: () => void): Server;
+    address(): AddressInfo | string | null;
+    close(): Server;
+    closeAllConnections(): void;
+  }
+  export function request(url: URL, options: { headers?: Record<string, string>; timeout?: number }): ClientRequest;
+  export function createServer(): Server;
+}
+
+declare module "node:https" {
+  export { request } from "node:http";
 }
 
 declare module "node:crypto" {
