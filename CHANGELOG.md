@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.16] — 2026-10-25
+
 ### Fixed
 
 - **`forge release` signs its commit under `commit.gpgsign`, as `git commit` did.** In 0.5.15 it was built unsigned whatever the setting, and a signing
@@ -776,6 +782,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.5.16]: https://github.com/y-core/forge/compare/v0.5.15...v0.5.16
 [0.5.15]: https://github.com/y-core/forge/compare/v0.5.14...v0.5.15
 [0.5.14]: https://github.com/y-core/forge/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/y-core/forge/compare/v0.5.12...v0.5.13
