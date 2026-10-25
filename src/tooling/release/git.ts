@@ -1,5 +1,10 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, posix } from "node:path";
+
 import { captureStreams } from "../cli/proc";
 import type { SpawnSync, StreamCapture } from "../cli/types";
+import { worktreeGitEnv } from "../cli/worktree";
 import { parseSemVer } from "../gate/semver";
 import { ReleaseError } from "./types";
 
@@ -8,8 +13,8 @@ function failureDetail(r: StreamCapture): string {
 }
 
 /** Runs a git command in `cwd` and returns its trimmed stdout, throwing a {@link ReleaseError} on failure. */
-export function gitExec(args: string[], cwd: string, spawn?: SpawnSync): string {
-  const r = captureStreams("git", args, { cwd }, spawn);
+export function gitExec(args: string[], cwd: string, spawn?: SpawnSync, env?: typeof process.env): string {
+  const r = captureStreams("git", args, { cwd, ...(env ? { env } : {}) }, spawn);
   if (r.code !== 0) throw new ReleaseError("git-error", `git ${args[0]} failed: ${failureDetail(r)}`);
   return r.stdout.trim();
 }
@@ -110,16 +115,46 @@ export function getLastCommitMessage(cwd: string, spawn?: SpawnSync): string {
   return gitExec(["log", "-1", "--format=%s"], cwd, spawn);
 }
 
-function hasStagedChanges(cwd: string, spawn?: SpawnSync): boolean {
-  return gitExec(["diff", "--cached", "--name-only"], cwd, spawn) !== "";
+/** Commits `files` on HEAD through a private index, so a missing `.git/index` cannot empty the commit; `false`, without error, when nothing changed. */
+export function commit(cwd: string, message: string, files: string[], spawn?: SpawnSync): boolean {
+  const env = worktreeGitEnv();
+  const head = gitExec(["rev-parse", "--verify", "HEAD"], cwd, spawn, env);
+  const dir = mkdtempSync(join(tmpdir(), "forge-release-"));
+  let next: string;
+  try {
+    const indexed = { ...env, GIT_INDEX_FILE: join(dir, "index") };
+    gitExec(["read-tree", head], cwd, spawn, indexed);
+    gitExec(["add", "--", ...files], cwd, spawn, indexed);
+    const diff = captureStreams("git", ["diff", "--cached", "--quiet", head], { cwd, env: indexed }, spawn);
+    if (diff.exited && diff.code === 0) return false;
+    if (!diff.exited || diff.code !== 1) throw new ReleaseError("git-error", `git diff failed: ${failureDetail(diff)}`);
+    const tree = gitExec(["write-tree"], cwd, spawn, indexed);
+    next = gitExec(["commit-tree", tree, "-p", head, "-m", message], cwd, spawn, env);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+  gitExec(["update-ref", "-m", `commit: ${message}`, "HEAD", next, head], cwd, spawn, env);
+  try {
+    gitExec(["reset", "-q", "--", ...files], cwd, spawn, env);
+  } catch (err) {
+    throw new ReleaseError(
+      "index-stale",
+      `${next.slice(0, 8)} "${message}" landed, but the index still holds the old ${files.join(" ")}: ${err instanceof Error ? err.message : String(err)}\n` +
+        `Bring it in line with:\n  git reset -q -- ${files.join(" ")}`,
+    );
+  }
+  return true;
 }
 
-/** Stages `files` and commits. Returns `false`, without error, when nothing was staged. */
-export function commit(cwd: string, message: string, files: string[], spawn?: SpawnSync): boolean {
-  gitExec(["add", ...files], cwd, spawn);
-  if (!hasStagedChanges(cwd, spawn)) return false;
-  gitExec(["commit", "-m", message], cwd, spawn);
-  return true;
+/** Every path the HEAD commit changed against its parent, relative to `cwd`. */
+export function committedPaths(cwd: string, spawn?: SpawnSync): string[] {
+  const env = worktreeGitEnv();
+  const prefix = gitExec(["rev-parse", "--show-prefix"], cwd, spawn, env);
+  const names = gitExec(["diff", "--name-only", "--no-renames", "-z", "HEAD^", "HEAD"], cwd, spawn, env);
+  return names
+    .split("\0")
+    .filter(Boolean)
+    .map((path) => posix.relative(`/${prefix}`, `/${path}`));
 }
 
 /** True when `tag` already exists in the repository. */

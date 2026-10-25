@@ -96,6 +96,7 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 | The gate failed | Fix what it reported; `--allow-unverified` tags a tree no gate has passed |
 | The gate could not be run | Name this project's gate with `gateCommand`; `--allow-unverified` releases without one |
 | The commit failed with the version already written | `git checkout -- package.json CHANGELOG.md`, which the error names |
+| The release commit changed a path it never staged, or none | `git reset HEAD^`, which the error names; no tag is cut — no flag reaches this one |
 
 **Every refusal except the clean-tree check, the branch check and the gate fires under `--dry` too**, so a preview never hides the refusal it is
 previewing. Those three are skipped because a dry run writes nothing for them to protect. A remote that cannot be reached at all is reported and

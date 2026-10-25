@@ -20,6 +20,7 @@ interface MockDeps {
   resolveVersion: Mock<(opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult>;
   updatePackageVersion: Mock<(version: string, cwd: string) => void>;
   commit: Mock<(cwd: string, message: string, files: string[]) => boolean>;
+  committedPaths: Mock<(cwd: string) => string[]>;
   tagExists: Mock<(cwd: string, tag: string) => boolean>;
   createTag: Mock<(cwd: string, tag: string) => void>;
   readChangelog: Mock<(cwd: string, file: string) => string | null>;
@@ -41,6 +42,7 @@ function makeDeps(overrides: Partial<MockDeps> = {}): MockDeps {
     resolveVersion: mock((_opts: unknown): VersionResult => ({ version: "1.1.0", reason: "auto-patch", previous: "v1.0.0" })),
     updatePackageVersion: mock((_version: string, _cwd: string): void => {}),
     commit: mock((_cwd: string, _message: string, _files: string[]): boolean => true),
+    committedPaths: mock((_cwd: string): string[] => ["package.json"]),
     tagExists: mock((_cwd: string, _tag: string): boolean => false),
     createTag: mock((_cwd: string, _tag: string): void => {}),
     readChangelog: mock((_cwd: string, _file: string): string | null => WRITTEN),
@@ -444,6 +446,59 @@ describe("createReleaseCommand() — a tag that fails after the commit", () => {
     });
     const cmd = createReleaseCommand({ cwd: "/project" }, deps);
     expect(() => runCapturingLogs(() => void cmd.run?.([], FLAGS))).toThrow("creating tag v1.1.0 failed: git tag failed: fatal: tag exists");
+  });
+});
+
+describe("createReleaseCommand() — the commit it is about to tag", () => {
+  const FLAGS = {
+    dry: false,
+    "allow-dirty": true,
+    "allow-empty-changelog": false,
+    "allow-semver": false,
+    "allow-branch": false,
+    "allow-unverified": true,
+  };
+
+  it("tags a commit that changed only what it staged", () => {
+    const deps = makeDeps({ committedPaths: mock((_cwd: string): string[] => ["CHANGELOG.md", "package.json"]) });
+    runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS));
+    expect(deps.createTag.mock.calls).toHaveLength(1);
+  });
+
+  it("refuses to tag a commit that changed paths it never staged, and names the undo", () => {
+    const deps = makeDeps({ committedPaths: mock((_cwd: string): string[] => ["package.json", "src/mod.ts", "README.md"]) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => runCapturingLogs(() => void cmd.run?.([], FLAGS))).toThrow(
+      'Commit "chore: release 1.1.0" changed src/mod.ts, README.md instead of only package.json, CHANGELOG.md, config/changelog-sections.json, so v1.1.0 was not cut.\n' +
+        "Undo the commit, keeping the release files in the working tree:\n  git reset HEAD^",
+    );
+    expect(deps.createTag.mock.calls).toHaveLength(0);
+  });
+
+  it("refuses to tag a commit that changed no path at all", () => {
+    const deps = makeDeps({ committedPaths: mock((_cwd: string): string[] => []) });
+    const cmd = createReleaseCommand({ cwd: "/project" }, deps);
+    expect(() => runCapturingLogs(() => void cmd.run?.([], FLAGS))).toThrow('Commit "chore: release 1.1.0" changed no path instead of only');
+    expect(deps.createTag.mock.calls).toHaveLength(0);
+  });
+
+  it("does not inspect HEAD when nothing was committed", () => {
+    const deps = makeDeps({ commit: mock((_cwd: string, _message: string, _files: string[]): boolean => false) });
+    runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS));
+    expect(deps.committedPaths.mock.calls).toHaveLength(0);
+    expect(deps.createTag.mock.calls).toHaveLength(1);
+  });
+
+  it("reports an index left stale after the commit landed, and still tags it", () => {
+    const deps = makeDeps({
+      commit: mock((_cwd: string, _message: string, _files: string[]): boolean => {
+        throw new ReleaseError("index-stale", "abc12345 landed, but the index still holds the old package.json");
+      }),
+    });
+    const logs = runCapturingLogs(() => void createReleaseCommand({ cwd: "/project" }, deps).run?.([], FLAGS));
+    expect(logs).toContain("  abc12345 landed, but the index still holds the old package.json");
+    expect(deps.committedPaths.mock.calls).toHaveLength(1);
+    expect(deps.createTag.mock.calls).toHaveLength(1);
   });
 });
 

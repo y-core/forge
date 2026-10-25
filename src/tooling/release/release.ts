@@ -4,7 +4,17 @@ import type { Command } from "../cli/types";
 import { formatReleaseDate, parseChangelog, promoteUnreleased } from "../gate/changelog";
 import { definitionList } from "../term/grid";
 import { DEFAULT_GATE_COMMAND, runGate } from "./gate";
-import { commit, createTag, currentBranch, defaultBranch, isWorkingTreeClean, remoteTags, tagExists, tagIsAncestorOfHead } from "./git";
+import {
+  commit,
+  committedPaths,
+  createTag,
+  currentBranch,
+  defaultBranch,
+  isWorkingTreeClean,
+  remoteTags,
+  tagExists,
+  tagIsAncestorOfHead,
+} from "./git";
 import { readChangelog, readRepositoryUrl, updatePackageVersion, writeChangelog, writeChangelogSections } from "./pkg-json";
 import { removedSurfaceSince } from "./surface";
 import type { BumpEvidence, ReleaseCommandConfig, ReleaseDeps } from "./types";
@@ -34,6 +44,7 @@ export function createReleaseCommand(
     resolveVersion,
     updatePackageVersion,
     commit,
+    committedPaths,
     tagExists,
     createTag,
     readChangelog,
@@ -236,16 +247,31 @@ export function createReleaseCommand(
         }
         committed = deps.commit(cwd, message, staged);
       } catch (err) {
-        // Without the recovery named here, the next run refuses as dirty, and forcing it past that
-        // promotes the changelog a second time under the same heading.
-        throw new ReleaseError(
-          "release-part-written",
-          `${staged.join(" and ")} may hold the ${result.version} release uncommitted: ${err instanceof Error ? err.message : String(err)}\n` +
-            `Undo the write before releasing again:\n  git checkout -- ${staged.join(" ")}`,
-        );
+        if (err instanceof ReleaseError && err.kind === "index-stale") {
+          committed = true;
+          console.log(`  ${err.message}`);
+        } else {
+          // Without the recovery named here, the next run refuses as dirty, and forcing it past that
+          // promotes the changelog a second time under the same heading.
+          throw new ReleaseError(
+            "release-part-written",
+            `${staged.join(" and ")} may hold the ${result.version} release uncommitted: ${err instanceof Error ? err.message : String(err)}\n` +
+              `Undo the write before releasing again:\n  git checkout -- ${staged.join(" ")}`,
+          );
+        }
       }
       if (!committed) {
         console.log(`  package.json already at ${result.version} — skipping commit.`);
+      } else {
+        const changed = deps.committedPaths(cwd);
+        const strays = changed.filter((path) => !staged.includes(path));
+        if (changed.length === 0 || strays.length > 0) {
+          throw new ReleaseError(
+            "commit-mismatch",
+            `Commit "${message}" changed ${changed.length === 0 ? "no path" : strays.join(", ")} instead of only ${staged.join(", ")}, so ${tag} was not cut.\n` +
+              "Undo the commit, keeping the release files in the working tree:\n  git reset HEAD^",
+          );
+        }
       }
 
       try {

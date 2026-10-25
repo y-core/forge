@@ -109,6 +109,10 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`validate-asset-root` knows about `sw.js`.** With a service worker, a missing `!/sw.js` under `run_worker_first` fails, and a present one
   no longer warns.
 
+- **`forge release` no longer commits an empty tree when `.git/index` reads as missing.** The release commit is built against a private index, and
+  a commit that changes a path it never staged, or none, is refused before tagging as the new `commit-mismatch` `ReleaseErrorKind`. An index
+  left stale after a correct commit is reported as `index-stale`, and the tag is still cut. The commit no longer runs git hooks.
+
 ---
 
 ## [0.5.14] — 2026-10-20

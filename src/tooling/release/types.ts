@@ -18,7 +18,9 @@ export type ReleaseErrorKind =
   | "wrong-branch"
   | "gate-failed"
   | "gate-unrunnable"
-  | "release-part-written";
+  | "release-part-written"
+  | "index-stale"
+  | "commit-mismatch";
 
 /** An error raised by the release pipeline, tagged with its {@link ReleaseErrorKind}. */
 export class ReleaseError extends Error {
@@ -67,8 +69,10 @@ export interface ReleaseDeps {
   isWorkingTreeClean: (cwd: string) => boolean;
   resolveVersion: (opts: { explicit?: string; cwd: string; tagPrefix: string }) => VersionResult;
   updatePackageVersion: (version: string, cwd: string) => void;
-  /** Stages `files` and commits. Returns `false` (no error) when nothing was staged. */
+  /** Commits `files` on HEAD. Returns `false` (no error) when none of them changed. */
   commit: (cwd: string, message: string, files: string[]) => boolean;
+  /** Every path the HEAD commit changed against its parent. */
+  committedPaths: (cwd: string) => string[];
   tagExists: (cwd: string, tag: string) => boolean;
   createTag: (cwd: string, tag: string) => void;
   /** Reads the changelog, or `null` when the file does not exist. */

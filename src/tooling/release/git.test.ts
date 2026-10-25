@@ -1,6 +1,11 @@
 import { describe, expect, it, mock } from "bun:test";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import type { SpawnOutcome, SpawnSync } from "../cli/types";
+import { worktreeGitEnv } from "../cli/worktree";
+import { worktreeFixture } from "../cli/worktree.fixture";
 import * as git from "./git";
 import { ReleaseError } from "./types";
 
@@ -258,37 +263,157 @@ describe("createTag()", () => {
 });
 
 describe("commit()", () => {
-  it("returns false and does not call git commit when nothing is staged", () => {
+  const RELEASE = ["package.json", "CHANGELOG.md"];
+
+  function answerPlumbing(diffStatus: number, ...rest: SpawnOutcome[]): void {
     mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValueOnce(answered("head0000\n"));
     mockSpawnSync.mockReturnValueOnce(answered(""));
     mockSpawnSync.mockReturnValueOnce(answered(""));
+    mockSpawnSync.mockReturnValueOnce(diffStatus === 0 ? answered("") : failed(diffStatus, ""));
+    for (const outcome of rest) mockSpawnSync.mockReturnValueOnce(outcome);
+  }
 
-    const result = commit("/cwd", "chore: release 1.0.0", ["package.json"]);
+  function callArgs(): string[][] {
+    return mockSpawnSync.mock.calls.map((c) => c[1]);
+  }
 
-    expect(result).toBe(false);
-    expect(mockSpawnSync.mock.calls).toHaveLength(2);
-    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["add", "package.json"]);
-    expect(mockSpawnSync.mock.calls[1]![1]).toEqual(["diff", "--cached", "--name-only"]);
-    const commitCall = mockSpawnSync.mock.calls.find((c) => Array.isArray(c[1]) && (c[1] as string[]).includes("commit"));
-    expect(commitCall).toBeUndefined();
+  function indexOf(call: number): string | undefined {
+    return mockSpawnSync.mock.calls[call]![2].env?.GIT_INDEX_FILE;
+  }
 
+  it("builds the commit with plumbing on HEAD and compare-and-swaps the ref", () => {
+    answerPlumbing(1, answered("tree0000\n"), answered("next0000\n"), answered(""), answered(""));
+
+    expect(commit("/cwd", "chore: release 1.0.0", RELEASE)).toBe(true);
+    expect(callArgs()).toEqual([
+      ["rev-parse", "--verify", "HEAD"],
+      ["read-tree", "head0000"],
+      ["add", "--", "package.json", "CHANGELOG.md"],
+      ["diff", "--cached", "--quiet", "head0000"],
+      ["write-tree"],
+      ["commit-tree", "tree0000", "-p", "head0000", "-m", "chore: release 1.0.0"],
+      ["update-ref", "-m", "commit: chore: release 1.0.0", "HEAD", "next0000", "head0000"],
+      ["reset", "-q", "--", "package.json", "CHANGELOG.md"],
+    ]);
     mockSpawnSync.mockReturnValue(answered(""));
   });
 
-  it("returns true and calls git commit when files are staged", () => {
+  it("touches only a private index under the temp directory, never the repository's or an inherited one", () => {
+    const inherited = process.env["GIT_INDEX_FILE"];
+    process.env["GIT_INDEX_FILE"] = "/elsewhere/index";
+    try {
+      answerPlumbing(1, answered("tree0000"), answered("next0000"), answered(""), answered(""));
+      commit("/cwd", "chore: release 1.0.0", RELEASE);
+    } finally {
+      if (inherited === undefined) delete process.env["GIT_INDEX_FILE"];
+      else process.env["GIT_INDEX_FILE"] = inherited;
+    }
+
+    const privateIndex = indexOf(1);
+    expect(privateIndex?.startsWith(tmpdir())).toBe(true);
+    expect([indexOf(2), indexOf(3), indexOf(4)]).toEqual([privateIndex, privateIndex, privateIndex]);
+    expect([indexOf(0), indexOf(5), indexOf(6), indexOf(7)]).toEqual([undefined, undefined, undefined, undefined]);
+    expect(existsSync(dirname(privateIndex!))).toBe(false);
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("returns false and writes nothing when none of the files changed", () => {
+    answerPlumbing(0);
+
+    expect(commit("/cwd", "chore: release 1.0.0", RELEASE)).toBe(false);
+    expect(callArgs().map((args) => args[0])).toEqual(["rev-parse", "read-tree", "add", "diff"]);
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("throws when git diff fails rather than answering whether anything changed", () => {
+    answerPlumbing(128);
+
+    expect(() => commit("/cwd", "chore: release 1.0.0", RELEASE)).toThrow(new ReleaseError("git-error", "git diff failed: exit 128"));
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("surfaces a moved HEAD as a ReleaseError and leaves the index alone", () => {
+    answerPlumbing(
+      1,
+      answered("tree0000"),
+      answered("next0000"),
+      failed(128, "fatal: cannot lock ref 'HEAD': is at other000 but expected head0000"),
+    );
+
+    expect(() => commit("/cwd", "chore: release 1.0.0", RELEASE)).toThrow(
+      new ReleaseError("git-error", "git update-ref failed: fatal: cannot lock ref 'HEAD': is at other000 but expected head0000"),
+    );
+    expect(callArgs().some((args) => args[0] === "reset")).toBe(false);
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("reports an index it could not bring in line as index-stale, naming the commit and the fix", () => {
+    answerPlumbing(1, answered("tree0000"), answered("next00001234"), answered(""), failed(128, "fatal: index.lock exists"));
+
+    let caught: unknown;
+    try {
+      commit("/cwd", "chore: release 1.0.0", RELEASE);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(ReleaseError);
+    expect((caught as ReleaseError).kind).toBe("index-stale");
+    expect((caught as ReleaseError).message).toBe(
+      'next0000 "chore: release 1.0.0" landed, but the index still holds the old package.json CHANGELOG.md: git reset failed: fatal: index.lock exists\n' +
+        "Bring it in line with:\n  git reset -q -- package.json CHANGELOG.md",
+    );
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+});
+
+describe("commit() against a repository whose index is gone", () => {
+  const FILES = ["package.json", "CHANGELOG.md", "config/changelog-sections.json"];
+
+  it("still commits HEAD's whole tree plus the release files", () => {
+    const root = worktreeFixture({
+      "package.json": '{ "version": "1.0.0" }\n',
+      "CHANGELOG.md": "# Changelog\n",
+      "config/changelog-sections.json": "{}\n",
+      "src/mod.ts": "export {};\n",
+      "README.md": "# fixture\n",
+    });
+    try {
+      const config = join(root, ".git", "config");
+      writeFileSync(config, readFileSync(config, "utf-8") + "[user]\n\tname = gate\n\temail = gate@fixture.invalid\n[commit]\n\tgpgsign = false\n");
+      writeFileSync(join(root, "package.json"), '{ "version": "1.0.1" }\n');
+      writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## [1.0.1]\n");
+      writeFileSync(join(root, "config/changelog-sections.json"), '{ "1.0.1": [] }\n');
+      rmSync(join(root, ".git", "index"));
+
+      expect(git.commit(root, "chore: release 1.0.1", FILES)).toBe(true);
+      const tree = git.gitExec(["ls-tree", "-r", "--name-only", "HEAD"], root, undefined, worktreeGitEnv()).split("\n");
+      expect(tree.sort()).toEqual(["CHANGELOG.md", "README.md", "config/changelog-sections.json", "package.json", "src/mod.ts"]);
+      expect(git.committedPaths(root).sort()).toEqual([...FILES].sort());
+      expect(git.readFileAtRef(root, "HEAD", "package.json")).toBe('{ "version": "1.0.1" }');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("committedPaths()", () => {
+  it("lists what HEAD changed against its parent, relative to the working directory", () => {
     mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValueOnce(answered("pkg/\n"));
+    mockSpawnSync.mockReturnValueOnce(answered("pkg/package.json\0pkg/CHANGELOG.md\0src/mod.ts\0"));
+
+    expect(git.committedPaths("/cwd/pkg", mockSpawnSync)).toEqual(["package.json", "CHANGELOG.md", "../src/mod.ts"]);
+    expect(mockSpawnSync.mock.calls[1]![1]).toEqual(["diff", "--name-only", "--no-renames", "-z", "HEAD^", "HEAD"]);
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("answers no path for a commit whose tree matches its parent's", () => {
+    mockSpawnSync.mockClear();
+    mockSpawnSync.mockReturnValueOnce(answered("\n"));
     mockSpawnSync.mockReturnValueOnce(answered(""));
-    mockSpawnSync.mockReturnValueOnce(answered("package.json"));
-    mockSpawnSync.mockReturnValueOnce(answered(""));
 
-    const result = commit("/cwd", "chore: release 1.0.0", ["package.json"]);
-
-    expect(result).toBe(true);
-    expect(mockSpawnSync.mock.calls).toHaveLength(3);
-    expect(mockSpawnSync.mock.calls[0]![1]).toEqual(["add", "package.json"]);
-    expect(mockSpawnSync.mock.calls[1]![1]).toEqual(["diff", "--cached", "--name-only"]);
-    expect(mockSpawnSync.mock.calls[2]![1]).toEqual(["commit", "-m", "chore: release 1.0.0"]);
-
+    expect(git.committedPaths("/cwd", mockSpawnSync)).toEqual([]);
     mockSpawnSync.mockReturnValue(answered(""));
   });
 });
