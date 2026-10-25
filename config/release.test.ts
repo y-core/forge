@@ -50,18 +50,26 @@ describe("the gate a release runs", () => {
     expect(RELEASE_ONLY.filter((label) => labels("deploy").includes(label))).toEqual([]);
   });
 
-  it("publishes a script per tier, the bare one running the runtime tier", () => {
+  it("publishes a script per tier something runs, the bare one running the runtime tier", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
     const gate = "bun run src/tooling/root/bin.ts verify";
 
-    expect([scripts.verify, scripts["verify:static"], scripts["verify:unit"], scripts["verify:deploy"], scripts["verify:release"]]).toEqual([
+    expect([scripts.verify, scripts["verify:static"], scripts["verify:unit"], scripts["verify:release"]]).toEqual([
       gate,
       `${gate} --tier static`,
       `${gate} --tier unit`,
-      `${gate} --tier deploy`,
       `${gate} --tier release`,
     ]);
+    expect(scripts["verify:deploy"]).toBeUndefined();
     expect(scripts.prepublishOnly).toBe("bun run verify:release");
+  });
+
+  // TEST_RUNNERS.md §6: the local `verify:release` already ran every runtime suite on the tagged tree.
+  it("verifies a tag on the unit tier, with no browser server to start", () => {
+    const workflow = readFileSync(join(ROOT, ".github/workflows/release.yml"), "utf-8");
+
+    expect(workflow.match(/bun run verify\S*/g)).toEqual(["bun run verify:unit"]);
+    expect(workflow).not.toContain("playwright");
   });
 
   // BUILD_TOOLING.md §2m.

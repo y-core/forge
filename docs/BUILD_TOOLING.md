@@ -139,9 +139,9 @@ where one does; an override defeats exactly one guard, and a malformed changelog
 module, so a consumer whose verification script is named otherwise states it in that module rather than passing `--allow-unverified` on every
 release, which is the guard permanently off.
 
-**The gate runs here, not only in CI.** `.github/workflows/release.yml` fires `on: push: tags`, so its `bun run verify` runs against a tag that is
-already public: a failure there aborts before `gh release create` and leaves a fetchable tag with no asset, whose only recoveries are deleting a
-published tag or burning the version. The branch check and the gate run after the re-tag check and before the first write.
+**The gate runs here, not only in CI.** `.github/workflows/release.yml` fires `on: push: tags`, so its `bun run verify:unit` runs against a tag
+that is already public: a failure there aborts before `gh release create` and leaves a fetchable tag with no asset, whose only recoveries are
+deleting a published tag or burning the version. The branch check and the gate run after the re-tag check and before the first write.
 
 **A failure between the version write and the commit names its own recovery.** The bump, the promotion and the commit run as one guarded step; if
 the commit fails — a pre-commit hook, most often — the refusal states `git checkout -- package.json CHANGELOG.md`. Without it the next run refuses
@@ -215,7 +215,7 @@ placeholder promotion itself writes. Empty plus commits since the tag is the ref
 `--allow-empty-changelog` is for a genuinely entry-free tooling release, and two properties keep it from becoming routine. **It does not license a
 malformed document** — an unparseable changelog is a separate refusal with no escape, because promotion has nothing to act on. **It still
 promotes**, so the section ships as a permanent `_Nothing yet._` entry in the released record; skipping promotion would leave the topmost released
-heading behind `package.json` and fail §2e on the next `bun run verify:deploy`.
+heading behind `package.json` and fail §2e on the next `bun run verify:release`.
 
 **The link reference definition is best-effort.** Its base URL comes from `package.json`'s `repository` field, normalised by stripping a `git+`
 prefix and a `.git` suffix. Absent or unusable, the definition is omitted and the promotion still succeeds — a consumer with no known remote must

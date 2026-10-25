@@ -137,8 +137,8 @@ the unnamed default may be absent.
 
 ## Publishing the tagged tarball
 
-`forge release` commits and tags. Pushing the tag is what publishes: `.github/workflows/release.yml` re-runs the gate, packs the tag with
-`bun pm pack`, attests the tarball's build provenance, and attaches it to a GitHub Release. The command's last line is the push to run.
+`forge release` commits and tags. Pushing the tag is what publishes: `.github/workflows/release.yml` re-runs the gate's `unit` tier, packs the
+tag with `bun pm pack`, attests the tarball's build provenance, and attaches it to a GitHub Release. The command's last line is the push to run.
 
 **The job runs in the `release` environment, which protects nothing until you configure it.** Add its protection rules — required reviewers, the
 tags allowed to deploy — under the repository's Settings → Environments. A consumer checks the tarball with

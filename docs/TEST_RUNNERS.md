@@ -403,6 +403,9 @@ from a string, a file named by `new URL(…, import.meta.url)`, or a Worker conf
 `widen`, and refuses any such site it cannot read as a literal. A fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`
 on both. The ruling is forge's own, because `mount` is a fixture forge does not publish.
 
+**forge's tag runs `unit` on the remote, not `deploy`**: `forge release` refuses to tag a tree `verify:release` has not passed, and that answers
+`deploy` ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
+
 **The reviewer's baseline is a reuse run, and the developer's closing run is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the reviewer run
 the gate with `--reuse`. `cc-tester` closes a task on `verify`, whose receipt names the tree and commit it judged, so a reviewer on the same bytes
 and commit gets a one-line verdict; anything that moved runs the gate. A test that writes into the tree withholds the receipt, so every baseline

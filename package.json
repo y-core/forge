@@ -55,7 +55,6 @@
     "verify": "bun run src/tooling/root/bin.ts verify",
     "verify:static": "bun run src/tooling/root/bin.ts verify --tier static",
     "verify:unit": "bun run src/tooling/root/bin.ts verify --tier unit",
-    "verify:deploy": "bun run src/tooling/root/bin.ts verify --tier deploy",
     "verify:release": "bun run src/tooling/root/bin.ts verify --tier release",
     "prepublishOnly": "bun run verify:release"
   },
