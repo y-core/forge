@@ -129,7 +129,9 @@ export function commit(cwd: string, message: string, files: string[], spawn?: Sp
     if (diff.exited && diff.code === 0) return false;
     if (!diff.exited || diff.code !== 1) throw new ReleaseError("git-error", `git diff failed: ${failureDetail(diff)}`);
     const tree = gitExec(["write-tree"], cwd, spawn, indexed);
-    next = gitExec(["commit-tree", tree, "-p", head, "-m", message], cwd, spawn, env);
+    // `git commit` signs under `commit.gpgsign`; `commit-tree` is told explicitly so the release commit keeps that.
+    const signed = captureStreams("git", ["config", "--bool", "commit.gpgsign"], { cwd, env }, spawn).stdout.trim() === "true";
+    next = gitExec(["commit-tree", tree, "-p", head, ...(signed ? ["-S"] : []), "-m", message], cwd, spawn, env);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -141,6 +143,15 @@ export function commit(cwd: string, message: string, files: string[], spawn?: Sp
       "index-stale",
       `${next.slice(0, 8)} "${message}" landed, but the index still holds the old ${files.join(" ")}: ${err instanceof Error ? err.message : String(err)}\n` +
         `Bring it in line with:\n  git reset -q -- ${files.join(" ")}`,
+    );
+  }
+  // A reset that read `.git/index` as missing exits 0 having written back the release paths alone.
+  const strays = gitExec(["diff", "--cached", "--name-only", "HEAD"], cwd, spawn, env).split("\n").filter(Boolean);
+  if (strays.length > 0) {
+    throw new ReleaseError(
+      "index-stale",
+      `${next.slice(0, 8)} "${message}" landed, but the index no longer matches it at ${strays.length} path(s), ${strays.slice(0, 3).join(", ")} among them.\n` +
+        "Unless you staged those yourself, restore it from the commit with:\n  git reset -q",
     );
   }
   return true;

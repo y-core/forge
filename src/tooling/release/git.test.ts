@@ -262,6 +262,16 @@ describe("createTag()", () => {
   });
 });
 
+function caught(run: () => unknown): ReleaseError {
+  try {
+    run();
+  } catch (err) {
+    if (err instanceof ReleaseError) return err;
+    throw err;
+  }
+  throw new Error("expected a ReleaseError");
+}
+
 describe("commit()", () => {
   const RELEASE = ["package.json", "CHANGELOG.md"];
 
@@ -274,6 +284,12 @@ describe("commit()", () => {
     for (const outcome of rest) mockSpawnSync.mockReturnValueOnce(outcome);
   }
 
+  function answerCommit(signing: SpawnOutcome, ...rest: SpawnOutcome[]): void {
+    answerPlumbing(1, answered("tree0000\n"), signing, answered("next00001234\n"), ...rest);
+  }
+
+  const UNSET = failed(1, "");
+
   function callArgs(): string[][] {
     return mockSpawnSync.mock.calls.map((c) => c[1]);
   }
@@ -282,8 +298,8 @@ describe("commit()", () => {
     return mockSpawnSync.mock.calls[call]![2].env?.GIT_INDEX_FILE;
   }
 
-  it("builds the commit with plumbing on HEAD and compare-and-swaps the ref", () => {
-    answerPlumbing(1, answered("tree0000\n"), answered("next0000\n"), answered(""), answered(""));
+  it("builds the commit with plumbing on HEAD, compare-and-swaps the ref and checks the index it leaves", () => {
+    answerCommit(UNSET, answered(""), answered(""), answered(""));
 
     expect(commit("/cwd", "chore: release 1.0.0", RELEASE)).toBe(true);
     expect(callArgs()).toEqual([
@@ -292,10 +308,28 @@ describe("commit()", () => {
       ["add", "--", "package.json", "CHANGELOG.md"],
       ["diff", "--cached", "--quiet", "head0000"],
       ["write-tree"],
+      ["config", "--bool", "commit.gpgsign"],
       ["commit-tree", "tree0000", "-p", "head0000", "-m", "chore: release 1.0.0"],
-      ["update-ref", "-m", "commit: chore: release 1.0.0", "HEAD", "next0000", "head0000"],
+      ["update-ref", "-m", "commit: chore: release 1.0.0", "HEAD", "next00001234", "head0000"],
       ["reset", "-q", "--", "package.json", "CHANGELOG.md"],
+      ["diff", "--cached", "--name-only", "HEAD"],
     ]);
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("signs the commit when commit.gpgsign is true, as git commit would", () => {
+    answerCommit(answered("true\n"), answered(""), answered(""), answered(""));
+
+    commit("/cwd", "chore: release 1.0.0", RELEASE);
+    expect(callArgs()[6]).toEqual(["commit-tree", "tree0000", "-p", "head0000", "-S", "-m", "chore: release 1.0.0"]);
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
+
+  it("does not sign when commit.gpgsign is false", () => {
+    answerCommit(answered("false\n"), answered(""), answered(""), answered(""));
+
+    commit("/cwd", "chore: release 1.0.0", RELEASE);
+    expect(callArgs()[6]).not.toContain("-S");
     mockSpawnSync.mockReturnValue(answered(""));
   });
 
@@ -303,7 +337,7 @@ describe("commit()", () => {
     const inherited = process.env["GIT_INDEX_FILE"];
     process.env["GIT_INDEX_FILE"] = "/elsewhere/index";
     try {
-      answerPlumbing(1, answered("tree0000"), answered("next0000"), answered(""), answered(""));
+      answerCommit(UNSET, answered(""), answered(""), answered(""));
       commit("/cwd", "chore: release 1.0.0", RELEASE);
     } finally {
       if (inherited === undefined) delete process.env["GIT_INDEX_FILE"];
@@ -313,7 +347,7 @@ describe("commit()", () => {
     const privateIndex = indexOf(1);
     expect(privateIndex?.startsWith(tmpdir())).toBe(true);
     expect([indexOf(2), indexOf(3), indexOf(4)]).toEqual([privateIndex, privateIndex, privateIndex]);
-    expect([indexOf(0), indexOf(5), indexOf(6), indexOf(7)]).toEqual([undefined, undefined, undefined, undefined]);
+    expect([0, 5, 6, 7, 8, 9].map(indexOf)).toEqual([undefined, undefined, undefined, undefined, undefined, undefined]);
     expect(existsSync(dirname(privateIndex!))).toBe(false);
     mockSpawnSync.mockReturnValue(answered(""));
   });
@@ -334,12 +368,7 @@ describe("commit()", () => {
   });
 
   it("surfaces a moved HEAD as a ReleaseError and leaves the index alone", () => {
-    answerPlumbing(
-      1,
-      answered("tree0000"),
-      answered("next0000"),
-      failed(128, "fatal: cannot lock ref 'HEAD': is at other000 but expected head0000"),
-    );
+    answerCommit(UNSET, failed(128, "fatal: cannot lock ref 'HEAD': is at other000 but expected head0000"));
 
     expect(() => commit("/cwd", "chore: release 1.0.0", RELEASE)).toThrow(
       new ReleaseError("git-error", "git update-ref failed: fatal: cannot lock ref 'HEAD': is at other000 but expected head0000"),
@@ -349,28 +378,34 @@ describe("commit()", () => {
   });
 
   it("reports an index it could not bring in line as index-stale, naming the commit and the fix", () => {
-    answerPlumbing(1, answered("tree0000"), answered("next00001234"), answered(""), failed(128, "fatal: index.lock exists"));
+    answerCommit(UNSET, answered(""), failed(128, "fatal: index.lock exists"));
 
-    let caught: unknown;
-    try {
-      commit("/cwd", "chore: release 1.0.0", RELEASE);
-    } catch (err) {
-      caught = err;
-    }
-    expect(caught).toBeInstanceOf(ReleaseError);
-    expect((caught as ReleaseError).kind).toBe("index-stale");
-    expect((caught as ReleaseError).message).toBe(
+    const err = caught(() => commit("/cwd", "chore: release 1.0.0", RELEASE));
+    expect(err.kind).toBe("index-stale");
+    expect(err.message).toBe(
       'next0000 "chore: release 1.0.0" landed, but the index still holds the old package.json CHANGELOG.md: git reset failed: fatal: index.lock exists\n' +
         "Bring it in line with:\n  git reset -q -- package.json CHANGELOG.md",
     );
     mockSpawnSync.mockReturnValue(answered(""));
   });
+
+  it("reports a reset that succeeded on a truncated index as index-stale rather than success", () => {
+    answerCommit(UNSET, answered(""), answered(""), answered("README.md\nsrc/a.ts\nsrc/b.ts\nsrc/c.ts\n"));
+
+    const err = caught(() => commit("/cwd", "chore: release 1.0.0", RELEASE));
+    expect(err.kind).toBe("index-stale");
+    expect(err.message).toBe(
+      'next0000 "chore: release 1.0.0" landed, but the index no longer matches it at 4 path(s), README.md, src/a.ts, src/b.ts among them.\n' +
+        "Unless you staged those yourself, restore it from the commit with:\n  git reset -q",
+    );
+    mockSpawnSync.mockReturnValue(answered(""));
+  });
 });
 
-describe("commit() against a repository whose index is gone", () => {
+describe("commit() against a real repository", () => {
   const FILES = ["package.json", "CHANGELOG.md", "config/changelog-sections.json"];
 
-  it("still commits HEAD's whole tree plus the release files", () => {
+  function releaseFixture(config: string): string {
     const root = worktreeFixture({
       "package.json": '{ "version": "1.0.0" }\n',
       "CHANGELOG.md": "# Changelog\n",
@@ -378,19 +413,48 @@ describe("commit() against a repository whose index is gone", () => {
       "src/mod.ts": "export {};\n",
       "README.md": "# fixture\n",
     });
+    const gitConfig = join(root, ".git", "config");
+    writeFileSync(gitConfig, readFileSync(gitConfig, "utf-8") + `[user]\n\tname = gate\n\temail = gate@fixture.invalid\n${config}`);
+    writeFileSync(join(root, "package.json"), '{ "version": "1.0.1" }\n');
+    writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## [1.0.1]\n");
+    writeFileSync(join(root, "config/changelog-sections.json"), '{ "1.0.1": [] }\n');
+    return root;
+  }
+
+  const readGit = (root: string, args: string[]) => git.gitExec(args, root, undefined, worktreeGitEnv());
+
+  it("commits HEAD's whole tree plus the release files when the index is gone, and reports the index the reset left", () => {
+    const root = releaseFixture("[commit]\n\tgpgsign = false\n");
     try {
-      const config = join(root, ".git", "config");
-      writeFileSync(config, readFileSync(config, "utf-8") + "[user]\n\tname = gate\n\temail = gate@fixture.invalid\n[commit]\n\tgpgsign = false\n");
-      writeFileSync(join(root, "package.json"), '{ "version": "1.0.1" }\n');
-      writeFileSync(join(root, "CHANGELOG.md"), "# Changelog\n\n## [1.0.1]\n");
-      writeFileSync(join(root, "config/changelog-sections.json"), '{ "1.0.1": [] }\n');
       rmSync(join(root, ".git", "index"));
 
-      expect(git.commit(root, "chore: release 1.0.1", FILES)).toBe(true);
-      const tree = git.gitExec(["ls-tree", "-r", "--name-only", "HEAD"], root, undefined, worktreeGitEnv()).split("\n");
+      expect(caught(() => git.commit(root, "chore: release 1.0.1", FILES)).kind).toBe("index-stale");
+      const tree = readGit(root, ["ls-tree", "-r", "--name-only", "HEAD"]).split("\n");
       expect(tree.sort()).toEqual(["CHANGELOG.md", "README.md", "config/changelog-sections.json", "package.json", "src/mod.ts"]);
       expect(git.committedPaths(root).sort()).toEqual([...FILES].sort());
       expect(git.readFileAtRef(root, "HEAD", "package.json")).toBe('{ "version": "1.0.1" }');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("leaves the index matching the commit when the index is intact", () => {
+    const root = releaseFixture("[commit]\n\tgpgsign = false\n");
+    try {
+      expect(git.commit(root, "chore: release 1.0.1", FILES)).toBe(true);
+      expect(readGit(root, ["diff", "--cached", "--name-only", "HEAD"])).toBe("");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("asks the signing program under commit.gpgsign, and moves no ref when it refuses", () => {
+    const root = releaseFixture("[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = false\n");
+    try {
+      const before = readGit(root, ["rev-parse", "HEAD"]);
+
+      expect(caught(() => git.commit(root, "chore: release 1.0.1", FILES)).message).toStartWith("git commit-tree failed:");
+      expect(readGit(root, ["rev-parse", "HEAD"])).toBe(before);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

@@ -18,7 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **`forge release` signs its commit under `commit.gpgsign`, as `git commit` did.** In 0.5.15 it was built unsigned whatever the setting, and a signing
+  failure now stops the release before `HEAD` moves.
+- **`forge release` reports an index the post-commit sync left truncated.** A sync that read `.git/index` as missing used to report success with
+  every other tracked file staged for deletion; it is now `index-stale`, naming `git reset -q`.
 
 ---
 
