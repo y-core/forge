@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.5.15] — 2026-10-25
+
 ### Breaking Changes
 
 - **`zone.allow.paths` is required, and `forge cf sync zone` no longer falls back to the GET-only `pages`.** Pass `routePaths(routes)` across
@@ -765,6 +771,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.5.15]: https://github.com/y-core/forge/compare/v0.5.14...v0.5.15
 [0.5.14]: https://github.com/y-core/forge/compare/v0.5.13...v0.5.14
 [0.5.13]: https://github.com/y-core/forge/compare/v0.5.12...v0.5.13
 [0.5.12]: https://github.com/y-core/forge/compare/v0.5.11...v0.5.12
