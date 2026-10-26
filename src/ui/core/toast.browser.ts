@@ -3,10 +3,13 @@ import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
 import { Dock } from "../chrome/dock";
-import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
+import { compiledCss, mount, paintedHex, renderedClasses } from "../client/browser.fixture";
+import { contrastRatio } from "../contracts/theme/color";
+import { CRITERION } from "../contracts/theme/contrast-pairs";
 import { FlashContainer } from "../server/flash";
 import { createIcon } from "./icon";
 import { Toast } from "./toast";
+import { TONES } from "./utils/tone";
 
 declare global {
   interface Window {
@@ -213,5 +216,51 @@ test.describe("FlashContainer — taps reach what lies beneath it", () => {
 
     await page.mouse.click(at.x, at.y);
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-scope='toast']") === null)).toBe(true);
+  });
+});
+
+for (const dark of [false, true]) {
+  test(`every soft tone's close glyph paints at full opacity and clears the 1.4.3 floor in ${dark ? "dark" : "light"}`, async ({ page }) => {
+    const html = (
+      await Promise.all(TONES.map((tone) => render(Toast({ id: tone, tone, appearance: "soft", dismissible: true, children: "Saved" }))))
+    ).join("");
+    await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
+    if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+
+    const failing: string[] = [];
+    for (const tone of TONES) {
+      const read = await page.evaluate((id) => {
+        const panel = document.getElementById(id) as HTMLElement;
+        const button = panel.querySelector("[data-slot~='toast-close']") as HTMLElement;
+        const glyph = button.querySelector("span") as HTMLElement;
+        return { opacity: getComputedStyle(button).opacity, fg: getComputedStyle(glyph).color, bg: getComputedStyle(panel).backgroundColor };
+      }, tone);
+      const fg = await paintedHex(page, read.fg);
+      const bg = await paintedHex(page, read.bg);
+      const ratio = Number(contrastRatio(fg, bg).toFixed(2));
+      if (read.opacity !== "1" || ratio < CRITERION["1.4.3"].floor) failing.push(`${tone} opacity=${read.opacity} ${fg} on ${bg} = ${ratio}`);
+    }
+
+    expect(failing).toEqual([]);
+  });
+}
+
+test.describe("Toast — the close target", { tag: "@cross-engine" }, () => {
+  test("the close button is at least 32px each way, and the padding keeps the content clear of it", async ({ page }) => {
+    const html = await render(Toast({ id: "saved", dismissible: true, children: "Saved" }));
+    await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style><main>${html}</main>`);
+
+    const button = page.locator("#saved [data-slot~='toast-close']");
+    const box = await button.boundingBox();
+    expect({ wide: (box?.width ?? 0) >= 32, tall: (box?.height ?? 0) >= 32 }).toEqual({ wide: true, tall: true });
+
+    const edges = await page.evaluate(() => {
+      const panel = document.querySelector("#saved") as HTMLElement;
+      const style = getComputedStyle(panel);
+      const contentEnd =
+        panel.getBoundingClientRect().right - Number.parseFloat(style.borderInlineEndWidth) - Number.parseFloat(style.paddingInlineEnd);
+      return { contentEnd, buttonStart: (panel.querySelector("[data-slot~='toast-close']") as HTMLElement).getBoundingClientRect().left };
+    });
+    expect(edges.contentEnd).toBeLessThanOrEqual(edges.buttonStart);
   });
 });

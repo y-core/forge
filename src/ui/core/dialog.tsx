@@ -4,6 +4,7 @@ import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
 import { descriptionId, titleId } from "../contracts/naming";
 import type { DialogNaming } from "../contracts/types";
+import { mergeDescribedBy } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
@@ -68,6 +69,7 @@ const DialogRoot: FC<DialogProps> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-describedby": describedBy,
   ...props
 }) => (
   <dialog
@@ -77,7 +79,7 @@ const DialogRoot: FC<DialogProps> = ({
     {...dialogNameAttrs(id, { label, labelledby, titled })}
     // Emitted on the caller's word, exactly as the title reference is: a description that resolves to
     // nothing suppresses `aria-description` and `title` rather than merely being ignored.
-    {...(described ? { "aria-describedby": descriptionId(id) } : {})}
+    aria-describedby={mergeDescribedBy(describedBy, [described ? descriptionId(id) : undefined])}
     {...(open && !openModal ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
     closedby='any'

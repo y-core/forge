@@ -20,16 +20,17 @@ const dots = (html: string): { href: string; label: string; current: boolean }[]
 describe("Carousel", () => {
   it("renders the whole root and strip exactly, a forwarded value escaped", async () => {
     expect(await render(<Carousel data-note={`R&D's "n" <x>`} />)).toBe(
-      '<div data-slot="carousel" data-snap="start" class="relative" data-note="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;">' +
+      '<div data-slot="carousel" class="relative" data-note="R&amp;D&#39;s &quot;n&quot; &lt;x&gt;">' +
         '<div data-slot="carousel-strip" role="group" aria-label="Slides" tabindex="0"' +
         ' class="flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-contain rounded-box [scrollbar-width:thin] motion-safe:scroll-smooth">' +
         "</div></div>",
     );
   });
 
-  it("snaps to the start and says so on the root, where a controller reads it", async () => {
-    expect(attrsOf(await render(<Carousel />))).toEqual({ "data-slot": "carousel", "data-snap": "start" });
-    expect(attrOf(await render(<Carousel snap='center' />), "data-snap")).toBe("center");
+  it("takes no snap of its own, so where a slide settles is each Carousel.Item's to say", async () => {
+    expect(attrsOf(await render(<Carousel />))).toEqual({ "data-slot": "carousel" });
+    // @ts-expect-error -- Carousel's root has no `snap`; alignment is set on each Carousel.Item
+    expect(attrsOf(await render(<Carousel snap='center' />))).not.toHaveProperty("data-snap");
   });
 
   // A roledescription and a name are both dropped by the user agent on a roleless element, so the
@@ -37,9 +38,8 @@ describe("Carousel", () => {
   it("becomes a named region renamed `carousel` when it has a name, and stays a plain wrapper without one", async () => {
     expect(attrsOf(await render(<Carousel label='Featured' />))).toEqual({
       "data-slot": "carousel",
-      "data-snap": "start",
       role: "region",
-      "aria-roledescription": "carousel",
+      "aria-roledescription": LABEL_DEFAULTS.carouselRoleDescription,
       "aria-label": "Featured",
     });
   });
@@ -69,6 +69,21 @@ describe("Carousel", () => {
   });
 });
 
+describe("Carousel — translating the role descriptions", () => {
+  it("announces the root by a caller's roledescription, still as a region", async () => {
+    expect(attrsOf(await render(<Carousel label='À la une' aria-roledescription='carrousel' />))).toEqual({
+      "data-slot": "carousel",
+      role: "region",
+      "aria-roledescription": "carrousel",
+      "aria-label": "À la une",
+    });
+  });
+
+  it("announces a slide by a caller's roledescription", async () => {
+    expect(attrOf(await render(<Carousel.Item label='Un' aria-roledescription='diapositive' />), "aria-roledescription")).toBe("diapositive");
+  });
+});
+
 describe("Carousel.Item", () => {
   it("is a full-width slide snapping to the start, carrying the id a dot links to", async () => {
     const html = await render(<Carousel.Item id='s-1'>One</Carousel.Item>);
@@ -90,7 +105,7 @@ describe("Carousel.Item", () => {
     expect(attrsOf(await render(<Carousel.Item label='Rainfall, 1990–2020' />))).toEqual({
       "data-slot": "carousel-item",
       role: "group",
-      "aria-roledescription": "slide",
+      "aria-roledescription": LABEL_DEFAULTS.carouselSlideRoleDescription,
       "aria-label": "Rainfall, 1990–2020",
     });
   });

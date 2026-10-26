@@ -9,7 +9,6 @@ import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
 interface CarouselRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
-  snap?: CarouselSnap | undefined;
   /** Accessible name; with it the root is a region announced as a carousel, without it a plain wrapper the strip sits in. */
   label?: string | undefined;
   /** Accessible name for the scrolling strip itself, which is a keyboard tab stop. @default the root's `label`, else `LABEL_DEFAULTS.carouselStrip` */
@@ -43,13 +42,12 @@ const STRIP = "flex snap-x snap-mandatory gap-4 overflow-x-auto overscroll-x-con
 const ITEM = "w-full shrink-0";
 const SNAP: Record<CarouselSnap, string> = { start: "snap-start", center: "snap-center" };
 
-const CarouselRoot: FC<CarouselRootProps> = ({ snap = "start", label, stripLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
+const CarouselRoot: FC<CarouselRootProps> = ({ label, stripLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     data-slot={slotToken("carousel", inherited)}
-    data-snap={snap}
     // The role is what exposes the other two: a user agent drops `aria-roledescription` on an element
     // with no role, and `aria-label` is prohibited on `generic`.
-    {...(label !== undefined ? { role: "region", "aria-roledescription": "carousel", "aria-label": label } : {})}
+    {...(label !== undefined ? { role: "region", "aria-roledescription": LABEL_DEFAULTS.carouselRoleDescription, "aria-label": label } : {})}
     class={cn("relative", cls)}
     {...rest}>
     {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow. */}
@@ -63,7 +61,7 @@ const CarouselItem: FC<CarouselItemProps> = ({ snap = "start", label, class: cls
   <div
     data-slot={slotToken("carousel-item", inherited)}
     role='group'
-    {...(label !== undefined ? { "aria-roledescription": "slide", "aria-label": label } : {})}
+    {...(label !== undefined ? { "aria-roledescription": LABEL_DEFAULTS.carouselSlideRoleDescription, "aria-label": label } : {})}
     class={cn(ITEM, SNAP[snap], cls)}
     {...rest}>
     {children}

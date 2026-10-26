@@ -79,7 +79,7 @@ export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({ contract, exit, cs
           </Alert>
         )}
         <AuthPasskeyScope contract={contract} class='flex flex-col gap-3'>
-          <FormField name='nickname'>
+          <FormField>
             <FormField.Label name='nickname'>Name this passkey</FormField.Label>
             <Input data-ref={PASSKEY.nickname} field={{ name: "nickname", description: true }} autocomplete='off' />
             <FormField.Description name='nickname'>So you can tell your devices apart later.</FormField.Description>

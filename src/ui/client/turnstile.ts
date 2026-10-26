@@ -28,7 +28,8 @@ type HtmxRequestDetail = {
 
 type Hold = { release: () => void; submitter: HTMLElement | null };
 
-const HTMX_SUBMISSION = "[hx-post],[hx-put],[hx-patch],[hx-delete],[data-hx-post],[data-hx-put],[data-hx-patch],[data-hx-delete]";
+const HTMX_SUBMISSION =
+  "[hx-action],[hx-post],[hx-put],[hx-patch],[hx-delete],[data-hx-action],[data-hx-post],[data-hx-put],[data-hx-patch],[data-hx-delete]";
 
 declare global {
   interface Window {
@@ -147,6 +148,11 @@ export function mountTurnstile(root: HTMLElement): () => void {
     console.warn("[turnstile] the widget is not inside a <form>; the token would have nowhere to submit");
     return () => {};
   }
+  const frame = ref(TURNSTILE.frame, container);
+  if (!frame) {
+    console.warn(`[turnstile] no [data-ref="${TURNSTILE.frame}"] in the widget; the widget will not mount`);
+    return () => {};
+  }
 
   const existing = mounted.get(container);
   if (existing) return existing;
@@ -205,7 +211,8 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (!message) return;
     const revealed = shown && message.hidden;
     message.hidden = !shown;
-    if (revealed) announce(message.textContent ?? "", { channel: ANNOUNCE_TURNSTILE_CHANNEL, politeness: "assertive", within: container });
+    if (revealed)
+      announce(message.textContent ?? "", { channel: ANNOUNCE_TURNSTILE_CHANNEL, politeness: "assertive", repeat: true, within: container });
   };
 
   const showFallback = () => reveal(TURNSTILE.fallback, true);
@@ -281,7 +288,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     armHold();
     if (running) return;
     try {
-      win.turnstile?.execute(container);
+      win.turnstile?.execute(frame);
     } catch {
       onExecuteFailure("error");
     }
@@ -401,7 +408,7 @@ export function mountTurnstile(root: HTMLElement): () => void {
     if (cdata !== null) params.cData = cdata;
     if (responseFieldName !== null) params["response-field-name"] = responseFieldName;
     try {
-      widgetId = win.turnstile.render(container, params);
+      widgetId = win.turnstile.render(frame, params);
       state = "ready";
       renderedTheme = theme;
       observeTheme();

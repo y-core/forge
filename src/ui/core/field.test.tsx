@@ -1,11 +1,27 @@
 import { describe, expect, it } from "bun:test";
 
+import type { JSX, JSXNode } from "../../render/jsx/types";
 import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { FieldDescription, FieldError, FieldLabel, fieldControlProps, fieldDescribedBy, fieldDescriptionId, fieldErrorId, fieldId } from "./field";
+import { CheckboxGroup } from "./checkbox-group";
+import {
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+  fieldControlId,
+  fieldControlProps,
+  fieldDescribedBy,
+  fieldDescriptionId,
+  fieldErrorId,
+  fieldId,
+  fieldItemId,
+  mergeDescribedBy,
+} from "./field";
 import { FormField } from "./field-layout";
 import { Field } from "./field-stack";
 import { Input } from "./input";
+import { RadioGroup } from "./radio-group";
+import type { FieldDescriptor } from "./types";
 
 const ROOT = 'data-slot="field"';
 const LABEL = 'data-slot="field-label"';
@@ -49,17 +65,62 @@ describe("fieldId helpers", () => {
   });
 });
 
+describe("fieldControlId", () => {
+  const cases: ReadonlyArray<{
+    label: string;
+    id: string | undefined;
+    field: { name: string; scope?: string } | undefined;
+    expected: string | undefined;
+  }> = [
+    { label: "an explicit id wins over the descriptor", id: "mine", field: { name: "email" }, expected: "mine" },
+    { label: "an explicit id stands with no descriptor", id: "mine", field: undefined, expected: "mine" },
+    { label: "a descriptor derives the field id", id: undefined, field: { name: "email" }, expected: "field-email" },
+    {
+      label: "a scoped descriptor derives the scoped field id",
+      id: undefined,
+      field: { name: "email", scope: "signup" },
+      expected: "field-signup-email",
+    },
+    { label: "an empty name derives nothing", id: undefined, field: { name: "" }, expected: undefined },
+    { label: "a whitespace-only name derives nothing", id: undefined, field: { name: " " }, expected: undefined },
+    { label: "neither an id nor a descriptor is no id", id: undefined, field: undefined, expected: undefined },
+  ];
+
+  for (const { label, id, field, expected } of cases) {
+    it(label, () => {
+      expect(fieldControlId(id, field)).toBe(expected);
+    });
+  }
+});
+
+describe("fieldItemId — an item never takes a group message's id", () => {
+  const reserved: ReadonlyArray<readonly [value: string, scope: string | undefined]> = [
+    ["error", undefined],
+    ["description", undefined],
+    ["error", "signup"],
+    ["description", "signup"],
+  ];
+
+  it("derives no id for an item valued 'error' or 'description', scoped or not", () => {
+    expect(reserved.map(([value, scope]) => fieldItemId("level", value, scope))).toEqual([undefined, undefined, undefined, undefined]);
+  });
+
+  it("still derives an id for any other value, so only the two message suffixes are reserved", () => {
+    expect([fieldItemId("level", "warn"), fieldItemId("level", "warn", "signup")]).toEqual(["field-level-warn", "field-signup-level-warn"]);
+  });
+});
+
 describe("Field primitives", () => {
   it("renders the whole field element exactly, its own class entities and a forwarded value escaped", async () => {
-    expect(await render(<FormField name='email' data-note={`R&D's <x>`} />)).toBe(
+    expect(await render(<FormField data-note={`R&D's <x>`} />)).toBe(
       '<fieldset data-slot="field" data-orientation="vertical" class="group/field flex w-full gap-3 data-[invalid]:text-destructive-text' +
-        ' flex-col [&amp;&gt;*]:w-full" data-note="R&amp;D&#39;s &lt;x&gt;"></fieldset>',
+        ' flex-col" data-note="R&amp;D&#39;s &lt;x&gt;"></fieldset>',
     );
   });
 
   it("wires Field.Label to the control id via explicit name prop", async () => {
     const html = await render(
-      <FormField name='email'>
+      <FormField>
         <FormField.Label name='email'>Email address</FormField.Label>
         <FormField.Content>
           <Input field={{ name: "email" }} />
@@ -73,10 +134,10 @@ describe("Field primitives", () => {
 
   it("adds data-invalid to the field and aria-invalid to the control", async () => {
     const html = await render(
-      <FormField name='email' invalid>
+      <FormField invalid>
         <FormField.Label name='email'>Email</FormField.Label>
         <FormField.Content>
-          <Input field={{ name: "email", invalid: true }} />
+          <Input field={{ name: "email", error: "Email is required." }} />
           <FormField.Error name='email'>Email is required.</FormField.Error>
         </FormField.Content>
       </FormField>,
@@ -94,10 +155,10 @@ describe("Field primitives", () => {
 
   it("wires description and error ids into aria-describedby", async () => {
     const html = await render(
-      <FormField name='message' invalid>
+      <FormField invalid>
         <FormField.Label name='message'>Message</FormField.Label>
         <FormField.Content>
-          <Input field={{ name: "message", invalid: true, description: true }} />
+          <Input field={{ name: "message", error: "Required", description: true }} />
           <FormField.Description name='message'>Minimum 15 characters</FormField.Description>
           <FormField.Error name='message'>Required</FormField.Error>
         </FormField.Content>
@@ -110,7 +171,7 @@ describe("Field primitives", () => {
 
   it("inherits disabled state on the control, so the browser refuses the input itself", async () => {
     const html = await render(
-      <FormField name='name' disabled>
+      <FormField disabled>
         <FormField.Label name='name'>Name</FormField.Label>
         <FormField.Content>
           <Input field={{ name: "name", disabled: true }} />
@@ -124,10 +185,10 @@ describe("Field primitives", () => {
 
   it("preserves explicit control props over field defaults, appending its own IDREF rather than replacing", async () => {
     const html = await render(
-      <FormField name='name' invalid>
+      <FormField invalid>
         <FormField.Label name='name'>Name</FormField.Label>
         <FormField.Content>
-          <Input id='custom-id' aria-describedby='custom-help' aria-invalid='false' field={{ name: "name", invalid: true }} />
+          <Input id='custom-id' aria-describedby='custom-help' aria-invalid='false' field={{ name: "name", error: "Required" }} />
         </FormField.Content>
       </FormField>,
     );
@@ -144,7 +205,7 @@ describe("Field primitives", () => {
   it("nests a whole field inside Field.Group, which is the element the container query keys on", async () => {
     const html = await render(
       <FormField.Group>
-        <FormField name='name'>
+        <FormField>
           <FormField.Label name='name'>Name</FormField.Label>
           <FormField.Content>
             <Input field={{ name: "name" }} />
@@ -172,7 +233,7 @@ describe("Field primitives", () => {
   it("renders Field.Title and Field.Separator with explicit slots, the separator carrying its own content", async () => {
     const html = await render(
       <FormField.Group>
-        <FormField name='name'>
+        <FormField>
           <FormField.Title>Name</FormField.Title>
           <FormField.Content>
             <Input field={{ name: "name" }} />
@@ -205,6 +266,36 @@ describe("Field primitives", () => {
   });
 });
 
+describe("FormField — the members and the control carry the name, never the root", () => {
+  it("rejects a root name at the type level, and a root alone wires no id", async () => {
+    // @ts-expect-error -- the root takes no `name`; the members and the control's `field` carry it
+    const html = await render(<FormField name='email' />);
+
+    expect([referencedIds(html), declaredIds(html)]).toEqual([[], []]);
+  });
+
+  it("names the layout guide's example textbox: its label points at the input and its description is the one it reads", async () => {
+    const html = await render(
+      <FormField.Group class='gap-2'>
+        <FormField>
+          <FormField.Content class='gap-2'>
+            <FormField.Label name='email'>Email</FormField.Label>
+            <Input field={{ name: "email", description: true }} />
+            <FormField.Description name='email'>We only use this for receipts.</FormField.Description>
+          </FormField.Content>
+        </FormField>
+      </FormField.Group>,
+    );
+
+    expect([attrOf(html, "for", LABEL), attrOf(html, "aria-describedby", INPUT)]).toEqual([
+      attrOf(html, "id", INPUT),
+      attrOf(html, "id", DESCRIPTION),
+    ]);
+    expect(referencedIds(html)).toEqual([fieldId("email"), fieldDescriptionId("email")]);
+    expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+  });
+});
+
 function idsAndRefs(html: string): string[] {
   return [...html.matchAll(/(?:^|\s)(?:id|for|aria-describedby)="([^"]*)"/g)].flatMap((match) => (match[1] ?? "").split(" "));
 }
@@ -216,7 +307,7 @@ describe("Field ids — aria-describedby names only what renders", () => {
 
   it("a declared description wires the IDREF, and the description element carries that id", async () => {
     const html = await render(
-      <FormField name='email'>
+      <FormField>
         <FormField.Content>
           <Input field={{ name: "email", description: true }} />
           <FormField.Description name='email'>We never share it.</FormField.Description>
@@ -229,7 +320,7 @@ describe("Field ids — aria-describedby names only what renders", () => {
   });
 
   it("an invalid field with no description names the error alone", async () => {
-    expect(attrsOf(await render(<Input field={{ name: "email", invalid: true }} />))).toEqual({
+    expect(attrsOf(await render(<Input field={{ name: "email", error: "Required" }} />))).toEqual({
       ...CONTROL,
       id: "field-email",
       name: "email",
@@ -253,7 +344,7 @@ describe("Field ids — two forms on one page", () => {
     const form = (scope: string) => {
       const naming = scoped ? { name: "email", scope } : { name: "email" };
       return (
-        <FormField name='email'>
+        <FormField>
           <FormField.Label {...naming}>Email</FormField.Label>
           <FormField.Content>
             <Input field={{ ...naming, description: true }} />
@@ -344,10 +435,10 @@ describe("Field ids — the empty string is not a missing value", () => {
 
   it("every IDREF a full field renders names an element declared in that same render", async () => {
     const html = await render(
-      <FormField name='email' invalid>
+      <FormField invalid>
         <FormField.Label name='email'>Email</FormField.Label>
         <FormField.Content>
-          <Input field={{ name: "email", description: true, invalid: true }} />
+          <Input field={{ name: "email", description: true, error: "Required" }} />
           <FormField.Description name='email'>Work address</FormField.Description>
           <FormField.Error name='email'>Required</FormField.Error>
         </FormField.Content>
@@ -364,10 +455,10 @@ describe("Field ids — the empty string is not a missing value", () => {
 
 const fullField = (name: string) =>
   render(
-    <FormField name={name} invalid>
+    <FormField invalid>
       <FormField.Label name={name}>Email</FormField.Label>
       <FormField.Content>
-        <Input field={{ name, description: true, invalid: true }} />
+        <Input field={{ name, description: true, error: "Required" }} />
         <FormField.Description name={name}>Work address</FormField.Description>
         <FormField.Error name={name}>Required</FormField.Error>
       </FormField.Content>
@@ -376,7 +467,7 @@ const fullField = (name: string) =>
 
 describe("Field ids — an empty or whitespace-only name is no name at all", () => {
   it("fieldControlProps derives neither an id nor an aria-describedby for an empty name", () => {
-    expect(fieldControlProps({}, { name: "", description: true, invalid: true })).toStrictEqual({
+    expect(fieldControlProps({}, { name: "", description: true, error: "Required" })).toStrictEqual({
       name: "",
       disabled: undefined,
       "aria-invalid": true,
@@ -384,7 +475,7 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("a whitespace-only name is the same no-name as the empty string", () => {
-    expect(fieldControlProps({}, { name: " ", description: true, invalid: true })).toStrictEqual({
+    expect(fieldControlProps({}, { name: " ", description: true, error: "Required" })).toStrictEqual({
       name: " ",
       disabled: undefined,
       "aria-invalid": true,
@@ -419,7 +510,7 @@ describe("Field ids — an empty or whitespace-only name is no name at all", () 
   });
 
   it("aria-invalid still rides on a blank-named control, because invalidity is not an IDREF", async () => {
-    expect(attrsOf(await render(<Input field={{ name: "", description: true, invalid: true }} />))).toEqual({
+    expect(attrsOf(await render(<Input field={{ name: "", description: true, error: "Required" }} />))).toEqual({
       ...CONTROL,
       name: "",
       "aria-invalid": "true",
@@ -475,7 +566,7 @@ const ASCII_WS_CHARS: ReadonlyArray<readonly [label: string, ws: string]> = [
 
 describe("Field ids — a name or scope must be a single id token", () => {
   it("fieldControlProps derives neither an id nor an aria-describedby for a name with a space", () => {
-    expect(fieldControlProps({}, { name: "first name", description: true, invalid: true })).toStrictEqual({
+    expect(fieldControlProps({}, { name: "first name", description: true, error: "Required" })).toStrictEqual({
       name: "first name",
       disabled: undefined,
       "aria-invalid": true,
@@ -483,7 +574,7 @@ describe("Field ids — a name or scope must be a single id token", () => {
   });
 
   it("every other ASCII whitespace character suppresses derivation exactly as a space does", () => {
-    const derived = ASCII_WS_CHARS.map(([label, ws]) => [label, fieldControlProps({}, { name: `a${ws}b`, description: true, invalid: true })]);
+    const derived = ASCII_WS_CHARS.map(([label, ws]) => [label, fieldControlProps({}, { name: `a${ws}b`, description: true, error: "Required" })]);
 
     expect(derived).toStrictEqual(ASCII_WS_CHARS.map(([label, ws]) => [label, { name: `a${ws}b`, disabled: undefined, "aria-invalid": true }]));
   });
@@ -570,32 +661,309 @@ describe("Field — arbitrary attribute pass-through", () => {
 
 describe("FormField — orientation and responsive", () => {
   it("lays out vertically by default and stamps no data-responsive", async () => {
-    expect(attrsOf(await render(<FormField name='email' />))).toEqual({ "data-slot": "field", "data-orientation": "vertical" });
+    expect(attrsOf(await render(<FormField />))).toEqual({ "data-slot": "field", "data-orientation": "vertical" });
   });
 
   it("orientation='horizontal' stamps the horizontal axis and swaps the column layout for a row", async () => {
-    const html = await render(<FormField name='email' orientation='horizontal' />);
+    const html = await render(<FormField orientation='horizontal' />);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "field", "data-orientation": "horizontal" });
-    expect(variantClasses(html, await render(<FormField name='email' />))).toEqual({
+    expect(variantClasses(html, await render(<FormField />))).toEqual({
       added: ["flex-row", "items-start", "[&amp;&gt;[data-slot~=field-content]]:flex-1", "[&amp;&gt;[data-slot~=field-label]]:flex-auto"],
-      dropped: ["flex-col", "[&amp;&gt;*]:w-full"],
+      dropped: ["flex-col"],
     });
   });
 
   it("responsive stamps data-responsive and layers the container-query row on the vertical layout", async () => {
-    const html = await render(<FormField name='email' responsive />);
+    const html = await render(<FormField responsive />);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "field", "data-responsive": "", "data-orientation": "vertical" });
-    expect(variantClasses(html, await render(<FormField name='email' />))).toEqual({
+    expect(variantClasses(html, await render(<FormField />))).toEqual({
       added: [
         "@md/field-group:flex-row",
         "@md/field-group:items-start",
-        "@md/field-group:[&amp;&gt;*]:w-auto",
         "@md/field-group:[&amp;&gt;[data-slot~=field-content]]:flex-1",
         "@md/field-group:[&amp;&gt;[data-slot~=field-label]]:flex-auto",
       ],
       dropped: [],
     });
+  });
+});
+
+describe("FormField.Error — a blank message renders no element, so nothing names it", () => {
+  const blank: ReadonlyArray<{ label: string; element: JSX.Element }> = [
+    { label: "no children", element: <FormField.Error name='email' /> },
+    { label: "the empty string", element: <FormField.Error name='email'>{""}</FormField.Error> },
+    { label: "an empty array", element: <FormField.Error name='email'>{[]}</FormField.Error> },
+    { label: "ASCII whitespace only", element: <FormField.Error name='email'>{"  \n\t"}</FormField.Error> },
+    { label: "an array of null and a space", element: <FormField.Error name='email'>{[null, " "]}</FormField.Error> },
+    { label: "a nested empty array beside false", element: <FormField.Error name='email'>{[[], false]}</FormField.Error> },
+    { label: "true", element: <FormField.Error name='email'>{true}</FormField.Error> },
+  ];
+
+  for (const { label, element } of blank) {
+    it(`renders nothing for ${label}`, async () => {
+      expect(await render(element)).toBe("");
+    });
+  }
+
+  it("a field whose error is the empty string renders no error, and the control references nothing undeclared", async () => {
+    const error = "";
+    const html = await render(
+      <FormField invalid={Boolean(error)}>
+        <FormField.Label name='email'>Email</FormField.Label>
+        <Input field={{ name: "email", error }} />
+        <FormField.Error name='email'>{error}</FormField.Error>
+      </FormField>,
+    );
+
+    expect(slotsOf(html)).toEqual(["field", "field-label", "input"]);
+    expect(attrsOf(html, INPUT)).toEqual({ ...CONTROL, id: "field-email", name: "email" });
+    expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+  });
+
+  it("a valid field whose error has no children renders no error, and the control references nothing undeclared", async () => {
+    const html = await render(
+      <FormField invalid={false}>
+        <FormField.Label name='email'>Email</FormField.Label>
+        <Input field={{ name: "email" }} />
+        <FormField.Error name='email' />
+      </FormField>,
+    );
+
+    expect(slotsOf(html)).toEqual(["field", "field-label", "input"]);
+    expect(attrsOf(html, INPUT)).toEqual({ ...CONTROL, id: "field-email", name: "email" });
+    expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+  });
+
+  const rendered: ReadonlyArray<{ label: string; element: JSX.Element; content: string }> = [
+    { label: "the number zero", element: <FormField.Error name='email'>{0}</FormField.Error>, content: "0" },
+    { label: "text padded with spaces", element: <FormField.Error name='email'>{" Required "}</FormField.Error>, content: " Required " },
+    { label: "a lone non-breaking space", element: <FormField.Error name='email'>{NBSP}</FormField.Error>, content: NBSP },
+    {
+      label: "an element child",
+      element: (
+        <FormField.Error name='email'>
+          <span>Required</span>
+        </FormField.Error>
+      ),
+      content: "<span>Required</span>",
+    },
+    {
+      label: "an array holding a space and text",
+      element: <FormField.Error name='email'>{[" ", "Required"]}</FormField.Error>,
+      content: " Required",
+    },
+  ];
+
+  for (const { label, element, content } of rendered) {
+    it(`still renders the error paragraph for ${label}, its content intact`, async () => {
+      const html = await render(element);
+
+      expect([attrsOf(html), contentOf(html, "p")]).toEqual([{ "data-slot": "field-error", id: "field-email-error" }, content]);
+    });
+  }
+
+  it("CheckboxGroup.Error renders nothing for the empty string too", async () => {
+    expect(await render(<CheckboxGroup.Error name='opts'>{""}</CheckboxGroup.Error>)).toBe("");
+  });
+
+  it("a root marked invalid styles the fieldset only, and never marks or describes the control", async () => {
+    const html = await render(
+      <FormField invalid>
+        <Input field={{ name: "email" }} />
+      </FormField>,
+    );
+
+    expect([attrsOf(html, ROOT), attrsOf(html, INPUT)]).toEqual([
+      { "data-slot": "field", "data-invalid": "", "data-orientation": "vertical" },
+      { ...CONTROL, id: "field-email", name: "email" },
+    ]);
+  });
+});
+
+const MESSAGES: ReadonlyArray<{ label: string; message: JSXNode }> = [
+  { label: "the empty string", message: "" },
+  { label: "ASCII whitespace only", message: "  \n\t" },
+  { label: "an empty array", message: [] },
+  { label: "a nested empty array beside false", message: [[], false] },
+  { label: "true", message: true },
+  { label: "the number zero", message: 0 },
+  { label: "a lone non-breaking space", message: NBSP },
+  { label: "text", message: "Required" },
+  { label: "an array holding a space and text", message: [" ", "Required"] },
+];
+
+describe("FieldDescriptor.error — the control marks and describes only a message that renders", () => {
+  const wired = (error: JSXNode) => (
+    <FormField>
+      <FormField.Label name='email'>Email</FormField.Label>
+      <Input field={{ name: "email", error }} />
+      <FormField.Error name='email'>{error}</FormField.Error>
+    </FormField>
+  );
+
+  const blank: ReadonlyArray<{ label: string; error: JSXNode }> = [
+    { label: "the empty string", error: "" },
+    { label: "ASCII whitespace only", error: "  \n\t" },
+    { label: "an empty array", error: [] },
+    { label: "an array of null and a space", error: [null, " "] },
+  ];
+
+  for (const { label, error } of blank) {
+    it(`a blank error (${label}) renders no message, so the control is neither marked nor described`, async () => {
+      const html = await render(wired(error));
+
+      expect(slotsOf(html)).toEqual(["field", "field-label", "input"]);
+      expect(attrsOf(html, INPUT)).toEqual({ ...CONTROL, id: "field-email", name: "email" });
+      expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+    });
+  }
+
+  const shown: ReadonlyArray<{ label: string; error: JSXNode }> = [
+    { label: "text", error: "Required" },
+    { label: "text padded with spaces", error: " Required " },
+    { label: "an element", error: <span>Required</span> },
+  ];
+
+  for (const { label, error } of shown) {
+    it(`a rendered error (${label}) marks the control invalid and describes it by the message's id`, async () => {
+      const html = await render(wired(error));
+
+      expect(attrsOf(html, INPUT)).toEqual({
+        ...CONTROL,
+        id: "field-email",
+        name: "email",
+        "aria-describedby": "field-email-error",
+        "aria-invalid": "true",
+      });
+      expect(declaredIds(html)).toContain("field-email-error");
+      expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+    });
+  }
+
+  for (const { label, message } of MESSAGES) {
+    it(`the control is invalid exactly when the error renders, for ${label}`, async () => {
+      const renders = (await render(<FormField.Error name='email'>{message}</FormField.Error>)) !== "";
+      const marked = attrOf(await render(<Input field={{ name: "email", error: message }} />), "aria-invalid", INPUT) === "true";
+
+      expect(marked).toBe(renders);
+    });
+  }
+
+  it("a stale descriptor carrying only invalid: true marks nothing", () => {
+    const stale: FieldDescriptor = Object.assign({ name: "email" }, { invalid: true });
+
+    expect(fieldControlProps({}, stale)).toStrictEqual({ id: "field-email", name: "email", disabled: undefined, "aria-invalid": undefined });
+  });
+});
+
+describe("CheckboxGroup and RadioGroup — the fieldset marks and describes only an error that renders", () => {
+  const checkboxes = (error: JSXNode) => (
+    <CheckboxGroup name='opts' error={error}>
+      <CheckboxGroup.Item name='opts' value='a'>
+        A
+      </CheckboxGroup.Item>
+      <CheckboxGroup.Error name='opts'>{error}</CheckboxGroup.Error>
+    </CheckboxGroup>
+  );
+
+  const radios = (error: JSXNode) => (
+    <RadioGroup name='opts' error={error}>
+      <RadioGroup.Item name='opts' value='a'>
+        A
+      </RadioGroup.Item>
+      <RadioGroup.Error name='opts'>{error}</RadioGroup.Error>
+    </RadioGroup>
+  );
+
+  const groups = [
+    {
+      group: "CheckboxGroup",
+      wired: checkboxes,
+      root: 'data-slot="checkbox-group"',
+      slots: ["checkbox-group", "checkbox-group-item", "checkbox-group-input"],
+    },
+    { group: "RadioGroup", wired: radios, root: 'data-slot="radio-group"', slots: ["radio-group", "radio-group-item", "radio-group-input"] },
+  ] as const;
+
+  const blank: ReadonlyArray<{ label: string; error: JSXNode }> = [
+    { label: "the empty string", error: "" },
+    { label: "ASCII whitespace only", error: "  \n\t" },
+    { label: "an empty array", error: [] },
+    { label: "an array of null and a space", error: [null, " "] },
+  ];
+
+  const shown: ReadonlyArray<{ label: string; error: JSXNode }> = [
+    { label: "text", error: "Pick one." },
+    { label: "text padded with spaces", error: " Pick one " },
+    { label: "an element", error: <span>Pick one.</span> },
+  ];
+
+  for (const { group, wired, root, slots } of groups) {
+    for (const { label, error } of blank) {
+      it(`${group} with a blank error (${label}) renders no message, so the fieldset is neither marked nor described`, async () => {
+        const html = await render(wired(error));
+        const attrs = attrsOf(html, root);
+
+        expect(slotsOf(html)).toEqual([...slots]);
+        expect(["aria-describedby" in attrs, "data-invalid" in attrs]).toEqual([false, false]);
+        expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+      });
+    }
+
+    for (const { label, error } of shown) {
+      it(`${group} with a rendered error (${label}) marks the fieldset and describes it by the message's id`, async () => {
+        const html = await render(wired(error));
+        const attrs = attrsOf(html, root);
+
+        expect([attrs["aria-describedby"], "data-invalid" in attrs]).toEqual(["field-opts-error", true]);
+        expect(declaredIds(html)).toContain("field-opts-error");
+        expect(referencedIds(html).filter((id) => !declaredIds(html).includes(id))).toEqual([]);
+      });
+    }
+
+    for (const { label, message } of MESSAGES) {
+      it(`${group} is marked and described exactly when the error renders, for ${label}`, async () => {
+        const renders = (await render(<FieldError name='opts'>{message}</FieldError>)) !== "";
+        const attrs = attrsOf(await render(wired(message)), root);
+
+        expect(["data-invalid" in attrs, attrs["aria-describedby"] === "field-opts-error"]).toEqual([renders, renders]);
+      });
+    }
+  }
+
+  it("a stale root carrying only invalid: true marks and describes neither group", async () => {
+    const stale = Object.assign({ name: "opts" }, { invalid: true });
+    const checkboxAttrs = attrsOf(await render(<CheckboxGroup {...stale} />), 'data-slot="checkbox-group"');
+    const radioAttrs = attrsOf(await render(<RadioGroup {...stale} />), 'data-slot="radio-group"');
+
+    expect([checkboxAttrs, radioAttrs].map((attrs) => ["data-invalid" in attrs, "aria-describedby" in attrs])).toEqual([
+      [false, false],
+      [false, false],
+    ]);
+  });
+});
+
+describe("mergeDescribedBy — one IDREF list, the caller's ids first and each id once", () => {
+  const cases = [
+    { existing: "hint", added: ["field-email-description"], expected: "hint field-email-description" },
+    { existing: "a a b", added: ["b", "c", "a"], expected: "a b c" },
+    { existing: "\t a \n\f\r b ", added: [" c  d "], expected: "a b c d" },
+    { existing: `a${NBSP}b`, added: ["c"], expected: `a${NBSP}b c` },
+    { existing: undefined, added: [undefined, "", "  "], expected: undefined },
+    { existing: "", added: [], expected: undefined },
+    { existing: " hint  help ", added: [], expected: "hint help" },
+    { existing: undefined, added: ["tip"], expected: "tip" },
+  ];
+
+  it("merges each pair into the list a reader resolves", () => {
+    expect(cases.map(({ existing, added }) => mergeDescribedBy(existing, added))).toEqual(cases.map(({ expected }) => expected));
+  });
+});
+
+describe("fieldDescribedBy — an existing id that forge also derives", () => {
+  it("names the derived id once, where the caller put it", () => {
+    expect(fieldDescribedBy("email", { existing: "field-email-description", description: true })).toBe("field-email-description");
   });
 });

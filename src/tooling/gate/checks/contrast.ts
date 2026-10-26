@@ -3,11 +3,11 @@ import { resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { contrastRatio, oklchToPaintedHex, parseOklch } from "./color";
+import { compositeOver, contrastRatio, oklchToPaintedHex, parseOklch } from "./color";
 import { checkAccepted, checkDarkHoldsOnlySteps, MODE_LABEL, mergeThemes, parseThemeDeclarations } from "./contrast-parse";
 import { blankComments, lineAt, listFiles } from "./source-scan";
 import type { Mode, ParsedTheme } from "./types";
-import type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./types";
+import type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, ContrastSideInput, Measurement, Unresolved } from "./types";
 
 /** Reads `--color-*` declarations out of an upstream palette stylesheet. @public */
 export function parsePalette(css: string): Map<string, string> {
@@ -53,6 +53,21 @@ export function resolveColor(token: string, mode: Mode, theme: ParsedTheme, pale
   return { token, at: current, reason: "resolves through more than eight indirections — the chain is cyclic" };
 }
 
+/** Refuses an alpha the measurement cannot honour: any on a background, or one outside 0–1 on a foreground. */
+function alphaRefusal(side: ContrastSideInput, role: "foreground" | "background"): Unresolved | undefined {
+  const { alpha } = side;
+  if (alpha === undefined) return undefined;
+  if (role === "background") {
+    return {
+      token: side.token,
+      at: side.token,
+      reason: "carries an alpha — a translucent background has no single colour without the surface beneath it",
+    };
+  }
+  if (Number.isFinite(alpha) && alpha >= 0 && alpha <= 1) return undefined;
+  return { token: side.token, at: side.token, reason: `carries alpha ${alpha}, outside 0–1` };
+}
+
 /** Measures every pair in both modes. @public */
 export function measurePairs(
   pairs: readonly ContrastPairInput[],
@@ -63,8 +78,9 @@ export function measurePairs(
   const out: Measurement[] = [];
   for (const pair of pairs) {
     for (const mode of ["light", "dark"] as const) {
-      const foreground = resolveColor(pair.foreground.token, mode, theme, palette);
-      const background = resolveColor(pair.background.token, mode, theme, palette);
+      const foreground = alphaRefusal(pair.foreground, "foreground") ?? resolveColor(pair.foreground.token, mode, theme, palette);
+      const background = alphaRefusal(pair.background, "background") ?? resolveColor(pair.background.token, mode, theme, palette);
+      const { alpha } = pair.foreground;
       const base: Measurement = {
         token: pair.token,
         mode,
@@ -72,8 +88,14 @@ export function measurePairs(
         floor: criteria[pair.criterion]?.floor ?? Number.POSITIVE_INFINITY,
         foreground,
         background,
+        ...(alpha === undefined ? {} : { alpha }),
       };
-      out.push(typeof foreground === "string" && typeof background === "string" ? { ...base, ratio: contrastRatio(foreground, background) } : base);
+      if (typeof foreground !== "string" || typeof background !== "string") {
+        out.push(base);
+        continue;
+      }
+      const painted = alpha === undefined ? foreground : compositeOver(foreground, background, alpha);
+      out.push({ ...base, ratio: contrastRatio(painted, background) });
     }
   }
   return out;
@@ -162,7 +184,7 @@ export function checkContrast(config: ContrastCheckConfig): CheckResult {
     const bg = typeof measurement.background === "string" ? measurement.background : "?";
     findings.push(
       fail(
-        `${measurement.token} (${measurement.mode}) measures ${measurement.ratio.toFixed(2)}:1 against a ${measurement.floor}:1 floor — ${criteria[measurement.criterion]?.name ?? measurement.criterion}. ${fg} on ${bg}`,
+        `${measurement.token} (${measurement.mode}) measures ${measurement.ratio.toFixed(2)}:1 against a ${measurement.floor}:1 floor — ${criteria[measurement.criterion]?.name ?? measurement.criterion}. ${fg}${measurement.alpha === undefined ? "" : ` at ${Math.round(measurement.alpha * 100)}%`} on ${bg}`,
         { file: cssDir },
       ),
     );

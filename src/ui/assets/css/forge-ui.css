@@ -21,19 +21,21 @@
    The utilities block comes first only because it is the shorter of the two; layer *order* is fixed
    by Tailwind, not by where the block sits in this file.
 
-   **What is in the components block, and why none of it can live on the component.** Four kinds,
-   each a case a `class=` attribute cannot reach:
+   **What is in the components block, and why none of it can live on the component.** Each kind
+   is a case a `class=` attribute cannot reach:
 
    - a **UA pseudo-element** — `::-webkit-slider-runnable-track`, `::backdrop`, `::details-content`;
    - a **CSS Anchor Positioning binding**, where the `anchor-name` on a trigger and the
      `position-anchor` on a panel are two halves of one relationship declared together;
    - a **state selector spanning two elements** — `:has(> …:popover-open)`;
-   - a **`@supports` fallback**, which no utility has a syntax for;
-   - a **`forced-colors` restoration** — the obligation a component takes on the moment it paints a
-     control the UA used to draw. Tailwind has a `forced-colors:` variant, so this one is a judgement
-     rather than an impossibility: the block is six declarations of system colour keywords across two
-     components and two states, and split across two `class` attributes it would be unreadable and
-     silently half-applied the first time one of them changed.
+   - a **`@supports` fallback**, which no utility has a syntax for.
+
+   **The `forced-colors` restoration sits in the utilities block** — the obligation a component takes
+   on the moment it paints a control the UA used to draw. Tailwind has a `forced-colors:` variant, so
+   keeping it here is a judgement rather than an impossibility: the block is system colour keywords for
+   each component and state, and split across their `class` attributes it would be unreadable and
+   silently half-applied the first time one of them changed. It is in the utilities layer so that it
+   wins over the utilities it restores.
 
    Everything else forge draws is a Tailwind utility in the component's own `class`, where a reader
    looks first and a caller can override it.
@@ -44,6 +46,11 @@
        htmx indicators .......... consumer-facing      — src/ui/design/reference/11-htmx.md
        Theme toggle icons ....... ThemeToggle          — src/ui/chrome/theme-toggle.tsx, theme.ts
        Join shared edges ........ Join                 — src/ui/core/join.tsx
+       9. Forced colors ......... CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter,
+                                  Slider, Table.Row, Tabs, Toolbar
+                                  — src/ui/core/checkbox-group.tsx, radio-group.tsx, switch.tsx,
+                                    toggle.tsx, toggle-group.tsx, filter.tsx, slider.tsx, table.tsx,
+                                    tabs.tsx, toolbar.tsx
 
      Components
        1. Anchored placement .... Popover, Menu, Toolbar — src/ui/core/popover.tsx, menu.tsx,
@@ -53,15 +60,13 @@
        4. Open-trigger state .... Popover, Toolbar, Menu
        4b. Popup motion ......... Popover, Menu, Tooltip, Toolbar, Toast
        5. Disclosure motion ..... Collapsible, Accordion — src/ui/core/collapsible.tsx, accordion.tsx
+       5b. Tabs ................. Tabs                 — src/ui/core/tabs.tsx
        6. Dialog ................ Dialog, Drawer       — src/ui/core/dialog.tsx, drawer.tsx
        7. Slider ................ Slider               — src/ui/core/slider.tsx
        7b. Progress ............. Progress             — src/ui/core/progress.tsx
        7c. Meter ................ Meter                — src/ui/core/meter.tsx
        8. Navbar ................ Navbar               — src/ui/chrome/navbar.tsx
-       9. Forced colors ......... CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter,
-                                  Slider, Table.Row
-                                  — src/ui/core/checkbox-group.tsx, radio-group.tsx, switch.tsx,
-                                    toggle.tsx, toggle-group.tsx, filter.tsx, slider.tsx, table.tsx
+       8b. Dock ................. Dock                 — src/ui/chrome/dock.tsx
 
    **Do not put general-purpose utilities here.** Tailwind supplies those. Every block is tied to one
    named consumer, and a block whose consumer is gone should be deleted with it.
@@ -161,7 +166,7 @@
    boundary and none at the edges.
 
    All three of `width`, `min-width` and `max-width` pin that width, because a container that sizes
-   its children — `Field`'s vertical `[&>*]:w-full` is one, and outranks this rule — otherwise
+   its children — a `[&>*]:w-full` rule outranks this one — otherwise
    stretches the frame past its grid, and the slack lands after the last rule as a wider final cell. */
 @utility otp-cells {
   --otp-cell: var(--spacing-control-md);
@@ -1226,10 +1231,38 @@
   [data-slot~="navbar"]::details-content {
     content-visibility: visible;
   }
+
+  /* ══ 8b. Dock — the page's clearance for the fixed bar ═══════════════════
+   `scroll-padding` lifts a focused control above the bar; the body padding gives the last one room
+   to get there. */
+  html:has([data-slot~="dock"]) {
+    --forge-dock-height: 3.5rem;
+    --forge-dock-reserve: calc(var(--forge-dock-height) + env(safe-area-inset-bottom));
+    scroll-padding-bottom: var(--forge-dock-reserve);
+  }
+  html:has([data-slot~="dock"][data-size="sm"]) {
+    --forge-dock-height: 3rem;
+  }
+  html:has([data-slot~="dock"][data-size="lg"]) {
+    --forge-dock-height: 4.5rem;
+  }
+  html:has([data-slot~="dock"][data-hide-above="md"]) {
+    @variant md {
+      --forge-dock-reserve: 0px;
+    }
+  }
+  html:has([data-slot~="dock"][data-hide-above="lg"]) {
+    @variant lg {
+      --forge-dock-reserve: 0px;
+    }
+  }
+  html:has([data-slot~="dock"]) > body {
+    padding-bottom: var(--forge-dock-reserve);
+  }
 }
 
 @layer utilities {
-  /* ══ 9. Forced colors — CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter, Slider, Table.Row ══
+  /* ══ 9. Forced colors — CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter, Slider, Table.Row, Tabs, Toolbar ══
    Every value is a system colour keyword, so the user's own palette still decides the paint. In
    `utilities` because a component's own `bg-*` or `outline-none` utility outranks `components`. */
   @media (forced-colors: active) {
@@ -1314,17 +1347,16 @@
       outline-offset: 2px;
     }
 
-    /* A menu row's focus cue is `focus-visible:bg-accent`, a colour forced colors overrides, beside
-     an `outline-none` that would otherwise leave the row no indicator. */
-    :is(
-      [data-slot~="menu-item"],
-      [data-slot~="menu-checkbox-item"],
-      [data-slot~="menu-radio-item"],
-      [data-slot~="menu-link-item"],
-      [data-slot~="menu-submenu-trigger"]
-    ):focus-visible {
+    [data-slot~="toolbar-button"][data-pressed],
+    [data-slot~="toolbar-link"][data-pressed] {
+      forced-color-adjust: none;
+      background-color: Highlight;
+      color: HighlightText;
+    }
+    [data-slot~="toolbar-button"][data-pressed]:focus-visible,
+    [data-slot~="toolbar-link"][data-pressed]:focus-visible {
       outline: 2px solid CanvasText;
-      outline-offset: -2px;
+      outline-offset: 2px;
     }
 
     [data-slot~="slider"] {
@@ -1370,6 +1402,15 @@
       forced-color-adjust: none;
       background-color: Highlight;
       color: HighlightText;
+    }
+
+    /* `Canvas`, not `transparent`: forced colors repaints an author's transparent border in the text
+     colour, which would draw the selected tab's bar under every tab. */
+    [data-slot~="tab"] {
+      border-color: Canvas;
+    }
+    [data-slot~="tab"][data-selected] {
+      border-color: CanvasText;
     }
   }
 }

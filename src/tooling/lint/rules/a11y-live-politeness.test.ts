@@ -11,11 +11,15 @@ describe("a11y-live-politeness", () => {
   });
 
   it("reports a value that is neither `polite` nor `assertive`", () => {
-    expect(runRule(a11yLivePoliteness, live(literal("off")))[0]).toContain('`aria-live="off"` is neither `polite` nor `assertive`');
+    expect(runRule(a11yLivePoliteness, live(literal("loud")))[0]).toContain('`aria-live="loud"` is neither `polite` nor `assertive`');
   });
 
   it("leaves `polite` alone — that is the form the rule asks for", () => {
     expect(runRule(a11yLivePoliteness, live(literal("polite")))).toEqual([]);
+  });
+
+  it("leaves `off` alone — it opens no region, so there is no politeness to judge", () => {
+    expect(runRule(a11yLivePoliteness, live(literal("off")))).toEqual([]);
   });
 
   it("leaves a value resolved at render time alone, which no reader of the source can judge", () => {

@@ -52,6 +52,13 @@ export async function mount(page: Page, html: string, options: MountOptions = {}
   }
 }
 
+/** Pastes `text` into the focused element through the real clipboard, so the page sees a trusted paste. */
+export async function pasteText(page: Page, text: string): Promise<void> {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+  await page.evaluate((value) => navigator.clipboard.writeText(value), text);
+  await page.keyboard.press("ControlOrMeta+V");
+}
+
 /** Undoes `escapeHtml`, so a class carrying `>` or `'` reaches the compiler as the utility the source wrote. */
 function unescapeAttribute(value: string): string {
   return value.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&quot;", '"').replaceAll("&#39;", "'").replaceAll("&amp;", "&");

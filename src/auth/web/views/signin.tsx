@@ -34,16 +34,9 @@ const SigninEmailForm: FC<{
     csrfHeader={csrfHeader}
     {...hxAttrs({ post: submitPath, target: `#${AUTH_SIGNIN_ID}`, swap: "outerHTML" })}
     class='flex flex-col gap-6'>
-    <FormField name='email' invalid={fieldError !== undefined}>
+    <FormField invalid={fieldError !== undefined}>
       <FormField.Label name='email'>Email address</FormField.Label>
-      <Input
-        type='email'
-        value={email}
-        autocomplete='email'
-        autofocus
-        required
-        field={{ name: "email", invalid: fieldError !== undefined, description: true }}
-      />
+      <Input type='email' value={email} autocomplete='email' autofocus required field={{ name: "email", error: fieldError, description: true }} />
       <FormField.Description name='email'>We send a single-use code to this address.</FormField.Description>
       {fieldError === undefined ? null : (
         <FormField.Error name='email'>

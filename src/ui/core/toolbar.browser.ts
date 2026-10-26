@@ -3,8 +3,10 @@ import type { Page } from "@playwright/test";
 
 import { jsx } from "../../render/jsx/jsx-runtime";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, paintedHex, renderedClasses } from "../client/browser.fixture";
 import { scopeAttrs } from "../contracts/scope-attrs";
+import { contrastRatio } from "../contracts/theme/color";
+import { CRITERION } from "../contracts/theme/contrast-pairs";
 import { Resumable } from "../server/resumable";
 import { Toolbar } from "./toolbar";
 
@@ -231,4 +233,57 @@ test.describe("Toolbar.Input", () => {
 
     expect(await focusedId(page)).toBe("clear");
   });
+});
+
+const PRESSED_BAR = /(\S+\([^)]*\)|#[0-9a-f]+|[a-z]+) 0px -2px 0px 0px inset/i;
+
+test.describe("Toolbar — a pressed item's cue is not colour alone", { tag: "@cross-engine" }, () => {
+  test.use({ reducedMotion: "reduce" });
+
+  for (const dark of [false, true]) {
+    test(`a pressed item draws a bar an unpressed one leaves out, clearing 1.4.11 against its fill and the page in ${dark ? "dark" : "light"}`, async ({
+      page,
+    }) => {
+      const html = await render(
+        Toolbar({
+          label: "Formatting",
+          children: [
+            Toolbar.Button({ id: "on", pressed: true, children: "Bold" }),
+            Toolbar.Button({ id: "off", pressed: false, children: "Italic" }),
+          ],
+        }),
+      );
+      await mount(
+        page,
+        `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
+      );
+      if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+
+      const read = await page.evaluate(() => {
+        const style = (selector: string) => getComputedStyle(document.querySelector(selector) as Element);
+        return {
+          on: style("#on").boxShadow,
+          off: style("#off").boxShadow,
+          fill: style("#on").backgroundColor,
+          page: style("main").backgroundColor,
+        };
+      });
+
+      expect(read.off).not.toMatch(PRESSED_BAR);
+      const bar = PRESSED_BAR.exec(read.on)?.[1];
+      const failing: string[] = bar === undefined ? [`no 2px bar in ${read.on}`] : [];
+      if (bar !== undefined) {
+        const painted = await paintedHex(page, bar);
+        for (const [against, value] of [
+          ["fill", read.fill],
+          ["page", read.page],
+        ] as const) {
+          const behind = await paintedHex(page, value);
+          const ratio = Number(contrastRatio(painted, behind).toFixed(2));
+          if (ratio < CRITERION["1.4.11"].floor) failing.push(`bar ${painted} on ${against} ${behind} = ${ratio}`);
+        }
+      }
+      expect(failing).toEqual([]);
+    });
+  }
 });

@@ -25,13 +25,13 @@ audience: consumer
 - §1 ui/core Component Contract: the rules every SSR component obeys
 - §1a Dropped and Unsanitized Pass-Through Attributes: why `style` never arrives, and the one family left unsanitized
 - §1c Button and the asChild Invariant: the ratified throw, and the `data-slot` token list
-- §1e Switch and Slider — CSS-Only Controls: the `peer-*` trap, the sanitized readout, the declined formatter seam
+- §1e Switch and Slider — CSS-Only Controls: the `peer-*` trap, the sanitized readout and who keeps it true, the declined formatter seam
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
 - §1g Composite Widgets: the markers that make many focusable items one tab stop
 - §1h Overlays and Disclosures: native popover and `<details>`; naming a panel; how a popup's side resolves against the reader's direction
 - §1i Native-Input Primitive Decisions: an axis that is not an orientation, a scroll area that hijacks nothing, the bounds content-sizing needs, and
   a frame clipped rather than scrolled
-- §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring, and why suppressing won
+- §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring, why suppressing won, and the reserved item values
 - §1k One Consumption Path, Not Two: JSX as the terminal surface, the `data-scope` route, the rejected Custom Element mirror
 - §1l Chrome Navigation Announces Only What It Implements: the not-a-menubar and not-a-rail-stop rulings
 - §1m The Prop Vocabulary: the ratified props, the ban on `variant`, and the one `size` exemption
@@ -51,7 +51,8 @@ audience: consumer
 i18n surface, so a name a consumer cannot reach cannot be translated, and a default spelled at its call site is a second home for the string the
 table exists to hold. `LABEL_DEFAULTS` is `@public` because a translating consumer's only other option is re-typing each string in a repository
 forge's gate cannot see, where it silently stops matching. A conformance scan enforces this with no exemption row: no literal label default, no
-literal text in an `sr-only` span, no literal `aria-label`, and no template-literal name carrying a word outside its interpolations.
+literal text in an `sr-only` span, no literal `aria-label` or `aria-roledescription`, written as an attribute or as an object-spread key, and no
+template-literal one carrying a word outside its interpolations.
 
 **Key a catalogue on the key, never on the English value.** Every `LABEL_DEFAULTS` value is a string, so its key set types one directly as
 `Record<keyof typeof LABEL_DEFAULTS, string>` and yields a compile error when forge adds a site. `STEP_STATE_LABELS` stays a second table because it
@@ -100,6 +101,11 @@ element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Toolt
 `data-slot="menu-trigger tooltip-trigger"`. Overwriting silently unmakes the inner compound, and every rule and query keyed on its slot stops
 matching.
 
+**Merge into `aria-describedby`; never replace it.** It is an IDREF list, so a caller's ids come first and forge's derived ids follow, each id
+once, through `mergeDescribedBy` in `src/ui/core/field.tsx`. Destructure the caller's value out of props and rewrite the attribute in place, as
+with `data-slot`. Under `asChild`, the compound merges the child's value itself before calling `cloneAsChild`, which still overwrites: no other
+`asChild` compound derives a description to lose.
+
 **Select `data-slot` with `~=`, never `=`.** The two have identical specificity (0,1,0), so nothing about the cascade shifts; `=` is simply wrong on
 a composed element. A consumer keying on `[data-slot="…"]` exactly must make the same change to keep matching one.
 
@@ -107,14 +113,13 @@ a composed element. A consumer keying on `[data-slot="…"]` exactly must make t
 `forge-ui.css` declares forge's one named anchor on the tooltip trigger slot alone, and the set is closed: `Tooltip.Trigger` is the only trigger
 compound offering `asChild`, which makes it always the outer wrapper.
 
-**Apply the intrinsic-element rules only to an intrinsic child.** `cloneAsChild` normalises `disabled` and `type` for a `<button>`, and turns
-`disabled` into `aria-disabled` on any other tag, because those are the attributes the element itself will render. A component child is not yet an
-element: it receives the compound's `disabled` as a prop only where the compound set it, and `type` by the one rule both kinds of child share —
-the caller's, then the child's own, then a default — and its own render decides what they become. The default is `"button"` for a `<button>`, and
-for a component only the `defaultType` its compound declares. `cloneAsChild` cannot see what a component renders, so it treats one carrying an
-`href` as a link, and a component carrying `href` never receives the compound's default. A compound forwards its caller's
-`type` as `type` and never passes its own default there, where it would overwrite a child's `type="submit"`. Erasing or translating them
-beforehand would strip `disabled` from a `Toolbar.Button` before it could resolve it into its own `aria-disabled`.
+**Apply the intrinsic-element rules to an intrinsic child, and the anchor rules to anything carrying an `href`.** `cloneAsChild` normalises
+`disabled` and `type` for a `<button>`, defaulting `type` to `"button"`, and turns `disabled` into `aria-disabled` on any other tag. It cannot see
+what a component renders, so an `href` is the one sign it reads. A component carrying one is an anchor: it gets no `type`, `disabled` is
+translated, and while disabled or busy the `href` is withdrawn exactly as on an `<a>`. Any other component receives the compound's `disabled` as a
+prop only where the compound set it, and `type` only from the caller or itself. It gets no default, because a component that renders an `<input>`
+would come out `type="button"` and stop being a form control. Erasing or translating `disabled` beforehand would strip it from a `Toolbar.Button`
+before it could resolve it into its own `aria-disabled`.
 
 **Destructure the inherited `"data-slot"` out of props and rewrite the literal in place** as `data-slot={slotToken("own-token", inherited)}`, own
 token first (`slotToken` is owned by `src/ui/core/utils/as-child.ts`). A bare literal loses the compound's own token to any caller that passes
@@ -134,10 +139,13 @@ on it matches nothing — no build error, no visual hint beyond a state that nev
 selector instead.
 
 **`Slider`'s `output` prop carries the _sanitized_ value, never the raw `value` prop** — the string HTML's value-sanitization algorithm for
-`input[type=range]` settles on, which is what positions the thumb. A readout taken from the prop can disagree with the thumb permanently, and
-`Slider` ships no client controller to reconcile them. The algorithm is module-local to `slider.tsx` and takes the serialized attribute string
-rather than the prop, so it parses byte-for-byte what the browser parses. **Mirroring that readout on input is the consumer's job** — forge stays
-markup-only (§1a). This is §1h's "stamp only what the server can keep true" resolving _toward_ stamping.
+`input[type=range]` settles on, which is what positions the thumb. A readout taken from the prop would disagree with the thumb from the first paint,
+before any script runs. The algorithm is module-local to `slider.tsx` and takes the serialized attribute string rather than the prop, so it parses
+byte-for-byte what the browser parses. This is §1h's "stamp only what the server can keep true" resolving _toward_ stamping.
+
+**After the first paint, the client keeps the readout true.** The `slider` scope in `ui/core/client` mirrors the thumb's value into the `<output>`
+on every `input`. A bound `Slider` also stamps its `data-field` on the `<output>`, so `bindControls` paints the readout from the signal through
+`HTMLOutputElement.value`, and a signal write moves the readout with the thumb.
 
 **`output` stays a boolean, and the unformatted readout is a decision rather than a gap** — no formatting hook, no locale, no unit. A consumer
 wanting `"50%"` composes their own `<output>`, as `Meter.Value`'s caller-supplied children already make presenting a number composition rather than
@@ -314,6 +322,9 @@ avoid colliding with, so falling back would re-create the cross-wiring the prop 
 
 **The rule governs references forge emits, not ids it merely declares.** An id that is declared and never named by any IDREF stays outside the rule
 and round-trips a `value` verbatim. Give any such id a reference and it must route through the same gate first.
+
+**An item value that is one of the field's own message suffixes derives no item id.** `description` or `error` would make `${fieldId}-${value}` the
+group's own description or error id, so the item id is suppressed on the same reasoning as a whitespace-bearing value.
 
 ### 1k. One Consumption Path, Not Two
 

@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 
-import { classesOf, mount, renderedClasses, test, withCompiledCss } from "./browser.fixture";
+import { classesOf, mount, pasteText, renderedClasses, SECURE_ORIGIN, test, withCompiledCss } from "./browser.fixture";
 
 const NO_PREFERENCE_RULE = `<style>@media (prefers-reduced-motion: no-preference) { #probe { translate: 100px; } }</style><div id="probe">probe</div>`;
 
@@ -59,5 +59,28 @@ test.describe("the class readers", () => {
 
   test("hand the compiler every class as the source wrote it, not as the attribute escaped it", () => {
     expect({ rendered: renderedClasses(ESCAPED), slot: classesOf(ESCAPED, "icon") }).toEqual({ rendered: SOURCE_CLASSES, slot: SOURCE_CLASSES });
+  });
+});
+
+test.describe("pasteText", () => {
+  test("delivers a trusted paste the field takes as typed input, as a person's paste would", async ({ page }) => {
+    await mount(page, `<input id="target" type="text">`, { origin: SECURE_ORIGIN });
+    await page.evaluate(() => {
+      const target = document.getElementById("target") as HTMLInputElement;
+      const heard: string[] = [];
+      target.addEventListener("paste", (event) => heard.push(`paste:${event.isTrusted}`));
+      target.addEventListener("input", (event) => heard.push(`input:${(event as InputEvent).inputType}`));
+      Object.assign(window, { heard });
+      target.focus();
+    });
+
+    await pasteText(page, "12 3-4");
+
+    expect(
+      await page.evaluate(() => ({
+        heard: (window as unknown as { heard: string[] }).heard,
+        value: (document.getElementById("target") as HTMLInputElement).value,
+      })),
+    ).toEqual({ heard: ["paste:true", "input:insertFromPaste"], value: "12 3-4" });
   });
 });

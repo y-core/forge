@@ -224,6 +224,8 @@ export interface AcceptedRow {
 /** One side of an audited pair — the token whose resolved colour is measured. */
 export interface ContrastSideInput {
   readonly token: string;
+  /** The opacity the side is painted at, 0–1; a foreground is composited over its background before it is measured. */
+  readonly alpha?: number;
 }
 
 /** One audited pair — foreground and background tokens judged against a criterion. */
@@ -273,6 +275,7 @@ export interface Measurement {
   floor: number;
   foreground: string | Unresolved;
   background: string | Unresolved;
+  alpha?: number;
   ratio?: number;
 }
 

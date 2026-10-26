@@ -19,6 +19,7 @@ const ids: RuleId[] = [
   "forge-ui-interaction-filter-group-required",
   "forge-ui-catalog-wrong-raw-input",
   "forge-ui-contrast-floor",
+  "forge-ui-hit-target",
   "forge-ui-a11y-label-association",
   "forge-ui-a11y-live-politeness",
   "forge-ui-a11y-no-aria-readonly-on-button",

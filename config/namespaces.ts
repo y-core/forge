@@ -35,7 +35,7 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     security: "value",
   },
   auth: { "crypto/keyring": "value", logging: "value", "storage/db": "value" },
-  "auth/client": { auth: "value", http: "value", "ui/client": "value" },
+  "auth/client": { auth: "value", http: "value", "ui/client": "value", "ui/core": "value" },
   "auth/web": {
     app: "value",
     auth: "value",

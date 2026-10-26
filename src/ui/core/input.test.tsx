@@ -12,6 +12,7 @@ const SIZE_CLASSES = [
 const PAINTED = [
   { format: "#### #### #### ####", value: "4111111111111111", expected: "4111 1111 1111 1111" },
   { format: "##/##", value: 1226, expected: "12/26" },
+  { format: "+1 (###) ###-####", value: 4155551212, expected: "+1 (415) 555-1212" },
 ] as const;
 
 describe("Input", () => {

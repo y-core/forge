@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { mount, withCompiledCss } from "../client/browser.fixture";
+import { compiledCss, mount, paintedHex, renderedClasses, withCompiledCss } from "../client/browser.fixture";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
+import { contrastRatio } from "../contracts/theme/color";
+import { CRITERION } from "../contracts/theme/contrast-pairs";
 import { Tabs } from "./tabs";
 
 declare global {
@@ -341,4 +343,57 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
       selectedPanels: ["p-b"],
     });
   });
+});
+
+test.describe("Tabs — the selected tab's cue is not colour alone", { tag: "@cross-engine" }, () => {
+  for (const dark of [false, true]) {
+    test(`the selected tab draws a bar the unselected one leaves transparent, clearing 1.4.11 against its fill and the page in ${dark ? "dark" : "light"}`, async ({
+      page,
+    }) => {
+      const html = await tabsMarkup();
+      await mount(
+        page,
+        `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
+      );
+      if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+
+      const read = await page.evaluate(() => {
+        const style = (selector: string) => getComputedStyle(document.querySelector(selector) as Element);
+        const alpha = (color: string) => {
+          const context = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D;
+          context.fillStyle = color;
+          context.fillRect(0, 0, 1, 1);
+          return context.getImageData(0, 0, 1, 1).data[3];
+        };
+        const selected = style("#p-a-tab");
+        const unselected = style("#p-b-tab");
+        return {
+          selected: {
+            width: selected.borderBottomWidth,
+            alpha: alpha(selected.borderBottomColor),
+            color: selected.borderBottomColor,
+            fill: selected.backgroundColor,
+          },
+          unselected: { width: unselected.borderBottomWidth, color: unselected.borderBottomColor },
+          surface: style("main").backgroundColor,
+        };
+      });
+      expect({ selected: { width: read.selected.width, alpha: read.selected.alpha }, unselected: read.unselected }).toEqual({
+        selected: { width: "2px", alpha: 255 },
+        unselected: { width: "2px", color: "rgba(0, 0, 0, 0)" },
+      });
+
+      const bar = await paintedHex(page, read.selected.color);
+      const failing: string[] = [];
+      for (const [against, value] of [
+        ["fill", read.selected.fill],
+        ["surface", read.surface],
+      ] as const) {
+        const behind = await paintedHex(page, value);
+        const ratio = Number(contrastRatio(bar, behind).toFixed(2));
+        if (ratio < CRITERION["1.4.11"].floor) failing.push(`bar ${bar} on ${against} ${behind} = ${ratio}`);
+      }
+      expect(failing).toEqual([]);
+    });
+  }
 });

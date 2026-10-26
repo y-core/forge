@@ -62,7 +62,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
 
   it("an invalid group with no description names the error alone, and the error claims no live-region role", async () => {
     const html = await render(
-      <RadioGroup name='plan' invalid>
+      <RadioGroup name='plan' error='Choose a plan.'>
         <RadioGroup.Error name='plan'>Choose a plan.</RadioGroup.Error>
       </RadioGroup>,
     );
@@ -73,7 +73,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
 
   it("an invalid group with a description names both, description first", async () => {
     const html = await render(
-      <RadioGroup name='plan' description invalid>
+      <RadioGroup name='plan' description error='Choose a plan.'>
         <RadioGroup.Description name='plan'>Change it any time.</RadioGroup.Description>
         <RadioGroup.Error name='plan'>Choose a plan.</RadioGroup.Error>
       </RadioGroup>,
@@ -213,7 +213,11 @@ describe("RadioGroup — size, invalid and busy", () => {
   });
 
   it("stamps invalidity for a stylesheet but keeps aria-invalid off, which the radiogroup role forbids", async () => {
-    expect(attrsOf(await render(<RadioGroup name='r' invalid />))).toEqual({ ...ROOT, "aria-describedby": "field-r-error", "data-invalid": "" });
+    expect(attrsOf(await render(<RadioGroup name='r' error='Required' />))).toEqual({
+      ...ROOT,
+      "aria-describedby": "field-r-error",
+      "data-invalid": "",
+    });
   });
 
   it("stamps busyness for a stylesheet but keeps aria-busy off, which the radiogroup role forbids", async () => {
@@ -221,7 +225,7 @@ describe("RadioGroup — size, invalid and busy", () => {
   });
 
   it("a caller's own aria attribute survives the state spread", async () => {
-    expect(attrsOf(await render(<RadioGroup name='r' invalid aria-label='Plan' />))).toEqual({
+    expect(attrsOf(await render(<RadioGroup name='r' error='Required' aria-label='Plan' />))).toEqual({
       ...ROOT,
       "aria-describedby": "field-r-error",
       "data-invalid": "",
@@ -246,5 +250,81 @@ describe("RadioGroup — size, invalid and busy", () => {
       "aria-invalid": "true",
       "aria-busy": "true",
     });
+  });
+});
+
+describe("RadioGroup — an item value never takes a group message's id", () => {
+  const levels = () =>
+    render(
+      <RadioGroup name='level' description error='Choose a level.'>
+        <RadioGroup.Item name='level' value='error'>
+          Error
+        </RadioGroup.Item>
+        <RadioGroup.Item name='level' value='description'>
+          Description
+        </RadioGroup.Item>
+        <RadioGroup.Item name='level' value='warn'>
+          Warn
+        </RadioGroup.Item>
+        <RadioGroup.Description name='level'>Which entries to keep.</RadioGroup.Description>
+        <RadioGroup.Error name='level'>Choose a level.</RadioGroup.Error>
+      </RadioGroup>,
+    );
+
+  it("declares every id on the page once", async () => {
+    const declared = [...(await levels()).matchAll(/\sid="([^"]*)"/g)].map((match) => match[1]);
+
+    expect(declared).toEqual([...new Set(declared)]);
+  });
+
+  it("gives the items valued 'error' and 'description' no id, and the other item its derived one", async () => {
+    const items = [...(await levels()).matchAll(/<input[^>]*>/g)].map((match) => attrsOf(match[0]));
+
+    expect(items).toEqual([
+      { ...ITEM, name: "level", value: "error" },
+      { ...ITEM, name: "level", value: "description" },
+      { ...ITEM, id: "field-level-warn", name: "level", value: "warn" },
+    ]);
+  });
+
+  it("points the group's error reference at the error message and nothing else", async () => {
+    const html = await levels();
+    const holders = [...html.matchAll(/<(\w+)[^>]*\sid="field-level-error"/g)].map((match) => match[1]);
+
+    expect([holders, attrOf(html, "id", ERROR)]).toEqual([["p"], "field-level-error"]);
+  });
+});
+
+describe("RadioGroup — a caller's aria-describedby joins the derived ids rather than replacing them", () => {
+  it("lists the caller's id ahead of the description and the error", async () => {
+    expect(
+      attrOf(
+        await render(
+          <RadioGroup name='plan' description error='x' aria-describedby='hint'>
+            <RadioGroup.Description name='plan'>Help</RadioGroup.Description>
+            <RadioGroup.Error name='plan'>x</RadioGroup.Error>
+          </RadioGroup>,
+        ),
+        "aria-describedby",
+      ),
+    ).toBe("hint field-plan-description field-plan-error");
+  });
+
+  it("names a derived id the caller already wrote once, in the caller's position", async () => {
+    expect(
+      attrOf(
+        await render(
+          <RadioGroup name='plan' description error='x' aria-describedby='field-plan-error'>
+            <RadioGroup.Description name='plan'>Help</RadioGroup.Description>
+            <RadioGroup.Error name='plan'>x</RadioGroup.Error>
+          </RadioGroup>,
+        ),
+        "aria-describedby",
+      ),
+    ).toBe("field-plan-error field-plan-description");
+  });
+
+  it("emits no aria-describedby for an empty caller value when nothing derived renders", async () => {
+    expect(attrsOf(await render(<RadioGroup name='plan' aria-describedby='' />))).toEqual(ROOT);
   });
 });

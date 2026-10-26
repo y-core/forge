@@ -14,10 +14,10 @@ const code = (props: Parameters<typeof OtpInput>[0] = {}) => render(<OtpInput na
 describe("OtpInput", () => {
   it("renders the whole frame and its editor exactly, caller class merged last and forwarded values escaped", async () => {
     expect(await render(<OtpInput name='code' value='123456' class='w-full' data-slot='pin' data-note='a&b' />)).toBe(
-      '<div data-slot="otp-input-wrapper" data-size="md" class="state-disabled state-invalid focus-ring otp-cells inline-flex overflow-clip' +
+      '<div data-slot="otp-input-wrapper" data-scope="otp-input" data-otp-length="6" data-size="md" class="state-disabled state-invalid focus-ring otp-cells inline-flex overflow-clip' +
         ' rounded-field border-field border-input bg-background h-control-md [--otp-length:6] w-full">' +
-        '<input data-slot="otp-input pin" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6"' +
-        ' data-size="md" class="state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none' +
+        '<input data-slot="otp-input pin" type="text" inputmode="numeric" autocomplete="one-time-code" data-size="md"' +
+        ' class="state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none' +
         ' tabular-nums text-base" name="code" value="123456" data-note="a&amp;b"></div>',
     );
   });
@@ -28,18 +28,24 @@ describe("OtpInput", () => {
       type: "text",
       inputmode: "numeric",
       autocomplete: "one-time-code",
-      pattern: "[0-9]*",
-      maxlength: "6",
       "data-size": "md",
       name: "code",
     });
   });
 
-  it("sets both the native maxlength and the cell count the frame paints from the one length prop", async () => {
+  it("sets both the controller's digit cap and the cell count the frame paints from the one length prop", async () => {
     const four = await code({ length: 4 });
 
-    expect(attrOf(four, "maxlength", EDITOR)).toBe("4");
+    expect(attrOf(four, "data-otp-length", FRAME)).toBe("4");
     expect(variantClasses(four, await code(), FRAME)).toEqual({ added: ["[--otp-length:4]"], dropped: ["[--otp-length:6]"] });
+  });
+
+  it("takes no pattern or maxlength from a caller, either of which would refuse a code pasted with a separator", () => {
+    // @ts-expect-error — the controller caps the digits, so a native pattern is not a prop.
+    const patterned = <OtpInput name='code' pattern='[0-9]*' />;
+    // @ts-expect-error — the length prop is the one cap.
+    const capped = <OtpInput name='code' maxlength={6} />;
+    void [patterned, capped];
   });
 
   it("stamps the size on both boxes, which the cell utilities read, and scales the frame height with the type", async () => {
@@ -60,13 +66,11 @@ describe("OtpInput", () => {
   });
 
   it("wires id, name and the aria-* description chain from a field descriptor, as Input does", async () => {
-    expect(attrsOf(await render(<OtpInput field={{ name: "code", invalid: true, description: true }} />), EDITOR)).toEqual({
+    expect(attrsOf(await render(<OtpInput field={{ name: "code", error: "Required", description: true }} />), EDITOR)).toEqual({
       "data-slot": "otp-input",
       type: "text",
       inputmode: "numeric",
       autocomplete: "one-time-code",
-      pattern: "[0-9]*",
-      maxlength: "6",
       "data-size": "md",
       id: "field-code",
       name: "code",
@@ -83,8 +87,6 @@ describe("OtpInput", () => {
       type: "text",
       inputmode: "numeric",
       autocomplete: "one-time-code",
-      pattern: "[0-9]*",
-      maxlength: "6",
       "data-size": "md",
       name: "code",
       "data-invalid": "",

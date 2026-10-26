@@ -43,6 +43,7 @@ export type { MenuItemAttrsOptions } from "./types";
 export { applyFormat, INPUT_FORMAT_ATTR, INPUT_FORMAT_SCOPE, stripFormat } from "./input-format-contract";
 export { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "./navbar-contract";
 export { NUMBER_FIELD_SCOPE } from "./number-field-contract";
+export { OTP_INPUT_SCOPE, OTP_LENGTH_ATTR } from "./otp-input-contract";
 export { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, invokerAttrs, POPOVER_COORDS_ATTR, POPOVER_SCOPE } from "./overlay-contract";
 export type { PopupKind } from "./types";
 export { scopeAttrs } from "./scope-attrs";
@@ -61,7 +62,7 @@ export { APPEARANCES, PRESENTATION_ATTRS, presentationAttrs, TONES } from "./voc
 export type { Appearance, PresentationAttrName, PresentationAttrsProps, Shape, Size } from "./types";
 export type { Tone } from "./types";
 export { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR, TABS_SCOPE } from "./tabs-contract";
-export { TOGGLE_GROUP_ITEM_SELECTOR, TOGGLE_GROUP_SCOPE, TOOLTIP_MOUNTED_ATTR, TOOLTIP_SCOPE } from "./toggle-contract";
+export { FILTER_SCOPE, TOGGLE_GROUP_ITEM_SELECTOR, TOGGLE_GROUP_SCOPE, TOOLTIP_MOUNTED_ATTR, TOOLTIP_SCOPE } from "./toggle-contract";
 export { TOOLBAR_ITEM_ATTR, TOOLBAR_ITEM_SELECTOR, TOOLBAR_SCOPE } from "./toolbar-contract";
 export {
   TURNSTILE,

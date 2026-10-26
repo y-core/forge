@@ -39,6 +39,7 @@ export class FakeElement {
   readOnly = false;
   checked = false;
   value = "";
+  form: FakeElement | null = null;
   id = "";
   focused = false;
   /** The host of a shadow root, set when one is attached — a real `ShadowRoot` always carries it. */

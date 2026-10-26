@@ -39,7 +39,7 @@ export interface NavLink {
   label: string;
   /** Route-map key (NOT a URL) — passed to `resolveHref` to produce the final `href`. */
   href: string;
-  /** This link is the page the reader is on. `BAR_LINK`'s `aria-[current]:*` utilities paint it. */
+  /** Marks the destination the reader is on: `aria-current="page"` plus `data-selected`. */
   current?: boolean | undefined;
   /** Presentational visibility tokens, not access control: the item is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;

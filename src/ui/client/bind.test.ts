@@ -76,8 +76,11 @@ describe("readControl", () => {
     expect(readControl(surrogate("b") as unknown as Control, ["a", "b"])).toEqual(["a"]);
   });
 
-  it("reads a plain boolean from the control, and a tagged one as always chosen", () => {
-    expect(readControl(checkbox("", true), false)).toBe(true);
+  it("reads a plain boolean from the control, and a tagged one by whether its tag spells true", () => {
+    expect(readControl(checkbox("true", true), false)).toBe(true);
+    expect(readControl(checkbox("false", true), true)).toBe(false);
+    expect(readControl(checkbox("", true), false)).toBe(false);
+    expect(readControl(surrogate("false") as unknown as Control, true)).toBe(false);
     const { el } = fakeTree();
     const plain = el("INPUT");
     plain.checked = true;
@@ -272,15 +275,79 @@ describe("bindControls — mounting and disposing", () => {
     });
   });
 
-  it("repaints from the signals a microtask after a form reset has reverted the controls", async () => {
+  it("repaints from the signals a task after a form reset has reverted the controls", () => {
+    const { doc, form, root, input } = scope();
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
+    input.value = "";
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: form }));
+    doc.defaultView.flush();
+
+    expect(input.value).toBe("ada");
+  });
+
+  it("waits a task rather than a microtask, so a reset the reader clicked has reverted the controls first", async () => {
     const { doc, form, root, input } = scope();
     bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
     input.value = "";
 
     doc.dispatchEvent(new FakeEvent("reset", { target: form }));
     await Promise.resolve();
+    const afterMicrotask = input.value;
+    doc.defaultView.flush();
+
+    expect({ afterMicrotask, afterTask: input.value }).toEqual({ afterMicrotask: "", afterTask: "ada" });
+  });
+
+  it("repaints after resetting a form the root wraps, which owns the control without containing the root", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV");
+    const form = el("FORM");
+    const input = el("INPUT", { "data-field": "name" });
+    input.form = form;
+    form.append(input);
+    root.append(form);
+    doc.body.append(root);
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
+    input.value = "";
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: form }));
+    doc.defaultView.flush();
 
     expect(input.value).toBe("ada");
+  });
+
+  it("leaves the controls alone when a form that neither contains the root nor owns a bound control resets", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV");
+    const sibling = el("FORM");
+    const input = el("INPUT", { "data-field": "name" });
+    root.append(input);
+    doc.body.append(root, sibling);
+    bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
+    input.value = "";
+
+    doc.dispatchEvent(new FakeEvent("reset", { target: sibling }));
+    doc.defaultView.flush();
+
+    expect(input.value).toBe("");
+  });
+
+  it("picking No on a boolean Yes/No radio pair writes false", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV");
+    const yes = el("INPUT", { "data-field": "answer", "data-value": "true" });
+    const no = el("INPUT", { "data-field": "answer", "data-value": "false" });
+    root.append(yes, no);
+    doc.body.append(root);
+    const answer = createSignal(true);
+    bindControls(root as unknown as HTMLElement, { answer });
+
+    no.checked = true;
+    yes.checked = false;
+    no.dispatchEvent(new FakeEvent("change"));
+
+    expect({ signal: answer.value, yes: yes.checked, no: no.checked }).toEqual({ signal: false, yes: false, no: true });
   });
 
   it("removes every listener on dispose, the document-level one included", () => {
@@ -311,25 +378,25 @@ describe("bindControls — mounting and disposing", () => {
     expect({ whileMounted, afterDispose: name.value }).toEqual({ whileMounted: "grace", afterDispose: "grace" });
   });
 
-  it("stops repainting on a reset once disposed, so the disposed listener is gone rather than inert", async () => {
+  it("stops repainting on a reset once disposed, so the disposed listener is gone rather than inert", () => {
     const { doc, form, root, input } = scope();
     bindControls(root as unknown as HTMLElement, { name: createSignal("ada") })();
     input.value = "";
 
     doc.dispatchEvent(new FakeEvent("reset", { target: form }));
-    await Promise.resolve();
+    doc.defaultView.flush();
 
     expect(input.value).toBe("");
   });
 
-  it("drops a repaint a reset queued before a synchronous dispose, so a disposed binding never writes", async () => {
+  it("drops a repaint a reset queued before a synchronous dispose, so a disposed binding never writes", () => {
     const { doc, form, root, input } = scope();
     const dispose = bindControls(root as unknown as HTMLElement, { name: createSignal("ada") });
     input.value = "";
 
     doc.dispatchEvent(new FakeEvent("reset", { target: form }));
     dispose();
-    await Promise.resolve();
+    doc.defaultView.flush();
 
     expect(input.value).toBe("");
   });
@@ -382,7 +449,7 @@ describe("bindControls — one field at a time", () => {
     expect({ name: nameInput.value, age: ageInput.value }).toEqual({ name: "grace", age: "typed but not yet read" });
   });
 
-  it("paints a control swapped into a new shadow root before a form reset, re-reading the trees first", async () => {
+  it("paints a control swapped into a new shadow root before a form reset, re-reading the trees first", () => {
     const { doc, el, form, root, nameInput } = twoFields();
     const name = createSignal("ada");
     bindControls(root as unknown as HTMLElement, { name, age: createSignal("36") });
@@ -394,7 +461,7 @@ describe("bindControls — one field at a time", () => {
     root.append(host);
 
     doc.dispatchEvent(new FakeEvent("reset", { target: form }));
-    await Promise.resolve();
+    doc.defaultView.flush();
 
     expect({ light: nameInput.value, swapped: swapped.value }).toEqual({ light: "ada", swapped: "ada" });
   });

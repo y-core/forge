@@ -52,9 +52,9 @@ export const PasskeyEditView: FC<PasskeyEditViewProps> = ({
           csrfHeader={csrfHeader}
           {...hxAttrs({ patch: renamePath, target: `#${AUTH_PASSKEY_EDIT_ID}`, swap: "outerHTML" })}
           class='flex flex-col gap-6'>
-          <FormField name='label' invalid={fieldError !== undefined}>
+          <FormField invalid={fieldError !== undefined}>
             <FormField.Label name='label'>Name</FormField.Label>
-            <Input value={credential.label ?? ""} autofocus field={{ name: "label", invalid: fieldError !== undefined, description: true }} />
+            <Input value={credential.label ?? ""} autofocus field={{ name: "label", error: fieldError, description: true }} />
             <FormField.Description name='label'>This is how the passkey is named in your list.</FormField.Description>
             {fieldError === undefined ? null : (
               <FormField.Error name='label'>

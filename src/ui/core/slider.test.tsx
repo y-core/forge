@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { ANNOUNCER_REGION_SLOTS } from "../contracts/announcer-contract";
+import { fieldAttr } from "../server/field-attr";
+import { Announcer } from "./announcer";
 import { Slider, sanitizeRangeValue } from "./slider";
 
 const INPUT = 'data-slot="slider"';
@@ -9,6 +12,20 @@ const BARE = { "data-slot": "slider", type: "range", "data-size": "md" };
 
 function readoutOf(html: string): string {
   return /<output[^>]*>([^<]*)<\/output>/.exec(html)?.[1] ?? "";
+}
+
+const LIVE_ROLES = new Set(["alert", "status", "log"]);
+
+function liveRegionSlotsOf(html: string): string[] {
+  const slots: string[] = [];
+  for (const [tag, name] of html.matchAll(/<([a-z][a-z0-9-]*)(?:\s[^>]*)?>/g)) {
+    const attrs = attrsOf(tag);
+    const live = attrs["aria-live"];
+    const role = attrs["role"];
+    const isLive = live !== undefined ? live !== "off" : role !== undefined ? LIVE_ROLES.has(role) : name === "output";
+    if (isLive) slots.push(attrs["data-slot"] ?? "");
+  }
+  return slots;
 }
 
 describe("Slider", () => {
@@ -49,7 +66,7 @@ describe("Slider", () => {
   });
 
   it("points an invalid field's control at the error that explains it", async () => {
-    expect(attrsOf(await render(<Slider field={{ name: "opacity", invalid: true }} />))).toEqual({
+    expect(attrsOf(await render(<Slider field={{ name: "opacity", error: "Required" }} />))).toEqual({
       ...BARE,
       id: "field-opacity",
       name: "opacity",
@@ -128,6 +145,34 @@ describe("Slider", () => {
       name: "opacity",
     });
     expect(readoutOf(html)).toBe("100");
+  });
+
+  it("names the bound field on the readout as well as the control, so a signal write repaints both", async () => {
+    expect(await render(<Slider output min={1} max={120} value={60} {...fieldAttr("fov")} />)).toBe(
+      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md"' +
+        ' class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm"' +
+        ' data-on-input="sync" min="1" max="120" value="60" data-field="fov"><output data-slot="slider-output" aria-live="off" data-field="fov"' +
+        ' class="text-sm text-muted-foreground tabular-nums">60</output></div>',
+    );
+  });
+
+  it("the readout is not a live region, so the range input alone carries the value", async () => {
+    expect(attrOf(await render(<Slider output />), "aria-live", 'data-slot="slider-output"')).toBe("off");
+  });
+
+  it("a page with a readout Slider and the Announcer holds only the Announcer's live region", async () => {
+    const html = await render(
+      <>
+        <Announcer />
+        <Slider output field={{ name: "opacity" }} />
+      </>,
+    );
+
+    expect(liveRegionSlotsOf(html)).toEqual([ANNOUNCER_REGION_SLOTS.polite, ANNOUNCER_REGION_SLOTS.assertive]);
+  });
+
+  it("leaves an unbound readout unnamed", async () => {
+    expect(attrsOf(await render(<Slider output />), 'data-slot="slider-output"')).toEqual({ "data-slot": "slider-output", "aria-live": "off" });
   });
 });
 

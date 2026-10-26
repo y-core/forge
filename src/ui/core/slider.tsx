@@ -115,10 +115,15 @@ export const Slider: FC<SliderProps> = ({
     />
   );
   const readout = sanitizeRangeValue(resolved);
+  const bound = resolved["data-field"];
   return (
     <div data-slot='slider-wrapper' data-scope={SLIDER_SCOPE} class={cn("flex gap-2", isVertical ? "flex-col items-center" : "items-center")}>
       {control}
-      <output data-slot='slider-output' class='text-sm text-muted-foreground tabular-nums'>
+      <output
+        data-slot='slider-output'
+        aria-live='off'
+        data-field={typeof bound === "string" ? bound : undefined}
+        class='text-sm text-muted-foreground tabular-nums'>
         {readout}
       </output>
     </div>

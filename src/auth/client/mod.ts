@@ -1,5 +1,6 @@
 /** Registers the passkey ceremony and site-data scopes forge's auth views stamp; side-effect import before `resume()`. */
 
+import "../../ui/core/client";
 import { registerScope } from "../../ui/client/resume";
 import { PASSKEY_SCOPE } from "../passkey-contract";
 import { SITE_DATA_SCOPE } from "../site-data-contract";

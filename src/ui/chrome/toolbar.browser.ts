@@ -3,7 +3,7 @@ import type { Page } from "@playwright/test";
 
 import { jsx } from "../../render/jsx/jsx-runtime";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { createIcon } from "../core/icon";
 import { Toolbar } from "./toolbar";
 import type { ToolbarDefinition, ToolbarPlacement } from "./types";
@@ -285,5 +285,37 @@ test.describe("Toolbar — flyout motion", () => {
     test("the flyout fades in without scaling", async ({ page }) => {
       expect(await openingTransitions(page)).toEqual(["opacity"]);
     });
+  });
+});
+
+test.describe("chrome Toolbar — an active tool is painted, not only classed", { tag: "@cross-engine" }, () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("the active tool draws the pressed bar and the inactive one does not, with no `active` class anywhere", async ({ page }) => {
+    const html = await render(
+      Toolbar({
+        config: {
+          label: "Scene tools",
+          groups: [
+            {
+              items: [
+                { ...action("select", "Select"), active: true },
+                { ...action("line", "Line"), active: false },
+              ],
+            },
+          ],
+        },
+        icon,
+      }),
+    );
+    await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
+
+    const read = await page.evaluate(() => {
+      const bar = (ref: string) =>
+        / 0px -2px 0px 0px inset/.test(getComputedStyle(document.querySelector(`[data-ref="${ref}"]`) as Element).boxShadow);
+      return { active: bar("select"), inactive: bar("line"), classed: document.querySelectorAll(".active").length };
+    });
+
+    expect(read).toEqual({ active: true, inactive: false, classed: 0 });
   });
 });

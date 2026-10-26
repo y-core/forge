@@ -138,7 +138,12 @@ describe("Toolbar.Button", () => {
       "data-pressed": "",
       "data-slot": "toolbar-button",
     });
-    expect(classesOf(html)).toEqual(classesOf(await defaultItem()));
+    expect(classesOf(html)).toEqual([
+      ...classesOf(await defaultItem()),
+      "data-pressed:bg-accent",
+      "data-pressed:text-accent-foreground",
+      "data-pressed:inset-shadow-[0_-2px_0_0_currentColor]",
+    ]);
   });
 
   it("strips both the native disabled attribute and the href from a non-button asChild child", async () => {
@@ -236,6 +241,14 @@ describe("Toolbar.Link", () => {
   });
 });
 
+describe("Toolbar — the pressed cue", () => {
+  it("paints no pressed cue on an item that declares no pressed axis", async () => {
+    const items = [await defaultItem(), await render(<Toolbar.Link href='/docs'>Docs</Toolbar.Link>)];
+
+    expect(items.map((html) => classesOf(html).filter((token) => token.startsWith("data-pressed:")))).toEqual([[], []]);
+  });
+});
+
 describe("Toolbar.Input", () => {
   it("is a focus stop like any other item", async () => {
     const html = await render(<Toolbar.Input placeholder='Search' />);
@@ -305,7 +318,7 @@ describe("Toolbar.Button asChild — a component child's type", () => {
     ).toEqual({ type: "submit", "data-slot": "button toolbar-button", "data-toolbar-item": "" });
   });
 
-  it("gives type='button' to a component child that sets no type and renders none of its own", async () => {
+  it("gives no type to a component child that sets none, since it cannot see what the child renders", async () => {
     expect(
       attrsOf(
         await render(
@@ -314,7 +327,7 @@ describe("Toolbar.Button asChild — a component child's type", () => {
           </Toolbar.Button>,
         ),
       ),
-    ).toEqual({ type: "button", "data-slot": "toolbar-button", "data-toolbar-item": "" });
+    ).toEqual({ "data-slot": "toolbar-button", "data-toolbar-item": "" });
   });
 
   it("gives no type to a Link child, adding only its slot token and the roving-focus marker", async () => {

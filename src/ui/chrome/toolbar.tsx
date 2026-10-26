@@ -68,7 +68,6 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         data-ref={ref}
         title={label}
         aria-label={label}
-        class={cn(active && "active")}
         {...actionAttrs(item, ctx.commandTarget)}
         {...data}>
         <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />

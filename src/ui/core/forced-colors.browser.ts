@@ -216,7 +216,7 @@ test.describe("composite items keep a focus indicator under forced colors", { ta
     expect(rings).toEqual({ b: ring, tb: ring, "p-a-tab": ring });
   });
 
-  test("a menu row gets an outline restated for it, having neither shadow nor background left", async ({ page, browserName }) => {
+  test("a menu row keeps forge's own ring rather than losing it to outline-none", async ({ page, browserName }) => {
     test.skip(browserName === "webkit", NO_FORCED_PALETTE);
     await menuRow(page);
     await focusByKey(page, "row");
@@ -248,5 +248,160 @@ test.describe("composite items keep a focus indicator under forced colors", { ta
     await focusByKey(page, "row");
 
     expect(await strongestChange(page, unfocused, await surround(page, "#row"))).toBeGreaterThan(HALF_CHANNEL_RANGE);
+  });
+});
+
+function tabSet(id: string, selected: boolean): Promise<string> {
+  return render(
+    Tabs({
+      children: [
+        Tabs.List({ label: "Views", children: Tabs.Tab({ for: id, selected, children: "Alpha" }) }),
+        Tabs.Content({ id, selected, children: "A" }),
+      ],
+    }),
+  );
+}
+
+async function tabSets(): Promise<string> {
+  return `<div style="padding:16px">${await tabSet("p-a", true)}</div><div style="padding:16px">${await tabSet("p-b", false)}</div>`;
+}
+
+test.describe("forced colors — a selected tab stays distinguishable from an unselected one", { tag: "@cross-engine" }, () => {
+  test("a selected tab draws its bar in CanvasText and an unselected one draws it in Canvas", async ({ page }) => {
+    await forced(page, await tabSets());
+
+    const bars = await page.evaluate(() => {
+      const bar = (selector: string) => {
+        const style = getComputedStyle(document.querySelector(selector) as Element);
+        return { width: style.borderBottomWidth, color: style.borderBottomColor };
+      };
+      return { selected: bar("#p-a-tab"), unselected: bar("#p-b-tab") };
+    });
+    expect(bars).toEqual({
+      selected: { width: "2px", color: await systemColor(page, "CanvasText") },
+      unselected: { width: "2px", color: await systemColor(page, "Canvas") },
+    });
+  });
+
+  test("a selected tab paints a full-contrast change against an unselected one", async ({ page, browserName }) => {
+    test.skip(browserName === "webkit", NO_FORCED_PALETTE);
+    await forced(page, await tabSets());
+
+    expect(await strongestChange(page, await surround(page, "#p-a-tab"), await surround(page, "#p-b-tab"))).toBeGreaterThan(HALF_CHANNEL_RANGE);
+  });
+});
+
+async function checkRows(page: Page): Promise<void> {
+  await forced(
+    page,
+    `<style>#m { inset: 120px auto auto 120px; }</style>${pad(
+      await render(
+        Menu.Popup({
+          label: "View",
+          id: "m",
+          children: [
+            Menu.Item({ id: "above", for: false, children: "Refresh" }),
+            Menu.CheckboxItem({ id: "on", for: false, checked: true, children: "Wrap lines" }),
+            Menu.CheckboxItem({ id: "off", for: false, children: "Wrap lines" }),
+            Menu.Item({ id: "below", for: false, children: "Refresh" }),
+          ],
+        }),
+      ),
+    )}`,
+  );
+  await page.evaluate(async () => {
+    document.querySelector<HTMLElement>("#m")?.showPopover();
+    await Promise.all(document.getAnimations().map((animation) => animation.finished));
+  });
+}
+
+async function pressedPair(page: Page): Promise<void> {
+  await forced(
+    page,
+    pad(
+      await render(
+        Toolbar({
+          label: "Formatting",
+          children: [
+            Toolbar.Button({ id: "on", pressed: true, children: "Bold" }),
+            Toolbar.Button({ id: "off", pressed: false, children: "Bold" }),
+          ],
+        }),
+      ),
+    ),
+  );
+}
+
+test.describe("forced colors — a checked menu row and a pressed toolbar item stay distinguishable", { tag: "@cross-engine" }, () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("a checked row draws its tick in the row's own forced colour and an unchecked row draws none", async ({ page }) => {
+    await checkRows(page);
+
+    const read = await page.evaluate(() => {
+      const tick = (selector: string) => {
+        const row = document.querySelector(selector) as Element;
+        const before = getComputedStyle(row, "::before");
+        return {
+          bottom: before.borderBottomWidth,
+          end: before.borderInlineEndWidth,
+          color: before.borderBottomColor,
+          text: getComputedStyle(row).color,
+        };
+      };
+      return { on: tick("#on"), off: tick("#off") };
+    });
+
+    expect({
+      on: { bottom: read.on.bottom, end: read.on.end, sameColour: read.on.color === read.on.text },
+      off: { bottom: read.off.bottom, end: read.off.end },
+    }).toEqual({ on: { bottom: "2px", end: "2px", sameColour: true }, off: { bottom: "0px", end: "0px" } });
+  });
+
+  test("a checked row paints a full-contrast change against an unchecked one of the same label", async ({ page, browserName }) => {
+    test.skip(browserName === "webkit", NO_FORCED_PALETTE);
+    await checkRows(page);
+
+    expect(await strongestChange(page, await surround(page, "#on"), await surround(page, "#off"))).toBeGreaterThan(HALF_CHANNEL_RANGE);
+  });
+
+  test("a pressed toolbar item paints Highlight under HighlightText and an unpressed one does not", async ({ page }) => {
+    await pressedPair(page);
+
+    const highlight = await systemColor(page, "Highlight");
+    const read = await page.evaluate(() => {
+      const style = (selector: string) => getComputedStyle(document.querySelector(selector) as Element);
+      return { onFill: style("#on").backgroundColor, onText: style("#on").color, offFill: style("#off").backgroundColor };
+    });
+
+    expect({ onFill: read.onFill, onText: read.onText, offIsHighlight: read.offFill === highlight }).toEqual({
+      onFill: highlight,
+      onText: await systemColor(page, "HighlightText"),
+      offIsHighlight: false,
+    });
+  });
+
+  test("a focused pressed toolbar item is outlined in CanvasText outside its Highlight fill", async ({ page }) => {
+    await pressedPair(page);
+    await focusByKey(page, "on");
+
+    const read = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector("#on") as Element);
+      return { width: style.outlineWidth, style: style.outlineStyle, color: style.outlineColor, offset: style.outlineOffset };
+    });
+
+    expect(read).toEqual({ width: "2px", style: "solid", color: await systemColor(page, "CanvasText"), offset: "2px" });
+  });
+
+  test("a pressed toolbar item opts out of forced colour adjustment and an unpressed one keeps it", async ({ page, browserName }) => {
+    test.skip(browserName === "webkit", "WebKit does not implement forced-color-adjust, so it computes no value to read");
+    await pressedPair(page);
+
+    expect(
+      await page.evaluate(() => ({
+        on: getComputedStyle(document.querySelector("#on") as Element).forcedColorAdjust,
+        off: getComputedStyle(document.querySelector("#off") as Element).forcedColorAdjust,
+      })),
+    ).toEqual({ on: "none", off: "auto" });
   });
 });

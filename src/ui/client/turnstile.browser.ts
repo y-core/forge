@@ -19,7 +19,7 @@ import {
 } from "../contracts/turnstile-contract";
 import { Announcer } from "../core/announcer";
 import { Turnstile } from "../core/turnstile";
-import { bundleModules, mount } from "./browser.fixture";
+import { bundleModules, mount, withCompiledCss } from "./browser.fixture";
 import { TURNSTILE_FOCUS_GUARD_MS } from "./turnstile";
 
 declare global {
@@ -62,6 +62,11 @@ const FAKE_SCRIPT = `
     render: function (el, params) {
       window.turnstileCalls.params = params;
       window.turnstileCalls.renders.push({ sitekey: params.sitekey, size: params.size, theme: params.theme });
+      var frame = document.createElement("div");
+      frame.setAttribute("data-fake-frame", "");
+      frame.style.width = "300px";
+      frame.style.height = "65px";
+      el.appendChild(frame);
       return "widget-1";
     },
     // Records only: the real challenge answers later, which is what completeChallenge stands in for.
@@ -141,11 +146,13 @@ function submitModeMarkup(
     validateAttr?: boolean;
     formNoValidate?: boolean;
     second?: boolean;
+    hxAction?: boolean;
   } = {},
 ): Promise<string> {
   const { appearance, required = false, htmx = true, novalidate = false, onButton = false } = options;
-  const { validateAttr = false, formNoValidate = false, second = false } = options;
-  const verb = htmx ? { "hx-post": "/contact", "hx-swap": "none" } : { action: "/contact", method: "post" };
+  const { validateAttr = false, formNoValidate = false, second = false, hxAction = false } = options;
+  const htmxVerb = hxAction ? { "hx-action": "/contact", "hx-method": "post", "hx-swap": "none" } : { "hx-post": "/contact", "hx-swap": "none" };
+  const verb = htmx ? htmxVerb : { action: "/contact", method: "post" };
   return render(
     jsx("form", {
       id: "form",
@@ -1687,6 +1694,27 @@ test.describe("mountTurnstile — challenge='submit' against real htmx", () => {
     expect(posts).toEqual([]);
   });
 
+  test("recognises an hx-action form: no false warning, the press is held, one POST carries the token, and the widget resets", async ({ page }) => {
+    const warnings: string[] = [];
+    page.on("console", (message) => {
+      if (message.text().startsWith("[turnstile]")) warnings.push(message.text());
+    });
+    const posts = await mountUnderHtmx(page, await submitModeMarkup({ hxAction: true }));
+    await page.locator("#field").fill("typed@example.com");
+
+    await page.locator("#submit").click();
+    await expect.poll(() => executes(page)).toBe(1);
+    expect(posts).toEqual([]);
+
+    await completeChallenge(page);
+    await expect.poll(() => page.evaluate(() => window.turnstileCalls.resets)).toBe(1);
+
+    expect(posts).toHaveLength(1);
+    expect(new URLSearchParams(posts[0]).get("cf-turnstile-response")).toBe("token-1");
+    await expect(page.locator("#field")).toHaveValue("");
+    expect(warnings).toEqual([]);
+  });
+
   test("spends no challenge on a button-issued press that asks htmx to validate", async ({ page }) => {
     const posts = await mountUnderHtmx(page, await submitModeMarkup({ required: true, onButton: true, validateAttr: true }));
 
@@ -1699,6 +1727,55 @@ test.describe("mountTurnstile — challenge='submit' against real htmx", () => {
 
     await expect.poll(() => executes(page)).toBe(1);
     expect(posts).toEqual([]);
+  });
+});
+
+/** A form whose submit button sits directly below a `load="focus"` widget, under the Tailwind build its classes compile to. */
+function reservedBoxMarkup(): Promise<string> {
+  return render(
+    jsx("form", {
+      id: "form",
+      children: [
+        jsx("input", { id: "field", name: "email" }),
+        Turnstile({ siteKey: "site-key", size: "normal", load: "focus" }),
+        jsx("button", { id: "submit", type: "submit", children: "Send" }),
+      ],
+    }),
+  ).then(withCompiledCss);
+}
+
+test.describe("mountTurnstile — the reserved box @cross-engine", () => {
+  const submitTop = (page: Page) => page.evaluate(() => document.querySelector("#submit")?.getBoundingClientRect().top ?? Number.NaN);
+  const bottomOf = (page: Page, selector: string) =>
+    page.evaluate((one) => document.querySelector(one)?.getBoundingClientRect().bottom ?? Number.NaN, selector);
+
+  async function mountRendered(page: Page): Promise<number> {
+    await serveScript(page);
+    await mount(page, await reservedBoxMarkup(), EXPOSE);
+    await mountController(page);
+    const before = await submitTop(page);
+    await engage(page);
+    await expect.poll(() => page.evaluate(() => window.turnstileCalls?.renders.length ?? 0)).toBe(1);
+    return before;
+  }
+
+  test("the reserved frame holds the widget's height, so the render moves nothing below it", async ({ page }) => {
+    const restingTop = await mountRendered(page);
+
+    expect(Math.abs((await submitTop(page)) - restingTop)).toBeLessThanOrEqual(0.5);
+  });
+
+  test("a fallback revealed beside a mounted widget pushes the next control down instead of sliding under it", async ({ page }) => {
+    await mountRendered(page);
+
+    await fireCallback(page, "error-callback", 300010);
+    await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
+
+    const top = await submitTop(page);
+    expect({
+      widget: (await bottomOf(page, "[data-fake-frame]")) <= top + 0.5,
+      fallback: (await bottomOf(page, "[data-ref='turnstile-fallback']")) <= top + 0.5,
+    }).toEqual({ widget: true, fallback: true });
   });
 });
 

@@ -48,7 +48,7 @@ export const EmailChangeView: FC<EmailChangeViewProps> = ({
                 <Alert.Description>{error}</Alert.Description>
               </Alert>
             )}
-            <FormField name='email' invalid={fieldError !== undefined}>
+            <FormField invalid={fieldError !== undefined}>
               <FormField.Label name='email'>New email address</FormField.Label>
               <Input
                 type='email'
@@ -56,7 +56,7 @@ export const EmailChangeView: FC<EmailChangeViewProps> = ({
                 autocomplete='email'
                 autofocus
                 required
-                field={{ name: "email", invalid: fieldError !== undefined, description: true }}
+                field={{ name: "email", error: fieldError, description: true }}
               />
               <FormField.Description name='email'>We send a confirmation link there. Nothing changes until you open it.</FormField.Description>
               {fieldError === undefined ? null : (

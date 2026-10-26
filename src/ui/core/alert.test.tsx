@@ -102,8 +102,22 @@ describe("Alert", () => {
       "aria-label": "Dismiss",
       "data-on-click": "dismiss",
     });
-    expect(variantClasses(html, await callout())).toEqual({ added: ["pe-8"], dropped: ["pe-4"] });
+    expect(variantClasses(html, await callout())).toEqual({ added: ["pe-10"], dropped: ["pe-4"] });
     expect(textNodes(html)).toEqual(["Message", "×"]);
+  });
+
+  it("paints the dismiss button at full strength on a 32px target, with no opacity utility dimming the glyph", async () => {
+    expect(classesOf(await callout({ dismissible: true }), 'data-slot="alert-dismiss"')).toEqual([
+      "absolute",
+      "end-2",
+      "top-2",
+      "inline-flex",
+      "size-8",
+      "items-center",
+      "justify-center",
+      "rounded-sm",
+      "focus-ring",
+    ]);
   });
 
   it("renders neither the dismiss button nor the scope unless it was asked for one", async () => {

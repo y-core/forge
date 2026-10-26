@@ -4,7 +4,7 @@ import type { Page } from "@playwright/test";
 import { harnessTest } from "../../tests/workerd/harness.fixture";
 import type { ServedWorker } from "../testing/harness";
 import { totpCodes } from "../testing/totp";
-import { bundleModules } from "../ui/client/browser.fixture";
+import { bundleModules, pasteText } from "../ui/client/browser.fixture";
 import { addVirtualAuthenticator } from "./client/authenticator.fixture";
 import { JOURNEY_NOTICE, JOURNEY_RESET, JOURNEY_SCRIPT } from "./journey.fixture";
 
@@ -60,6 +60,19 @@ async function confirmCode(page: Page, label: string, code: string): Promise<voi
   await page.getByRole("button", { name: "Confirm" }).click();
 }
 
+/** Pastes `text` into the emailed-code field and confirms, asserting the verify post carries `digits`. */
+async function pasteCode(page: Page, text: string, digits: string): Promise<void> {
+  const field = page.getByLabel("Verification code");
+  await field.focus();
+  await pasteText(page, text);
+  await expect(field).toHaveValue(digits);
+  const [request] = await Promise.all([
+    page.waitForRequest((sent) => sent.method() === "POST" && new URL(sent.url()).pathname === "/auth/verify"),
+    page.getByRole("button", { name: "Confirm" }).click(),
+  ]);
+  expect(new URLSearchParams(request.postData() ?? "").get("code")).toBe(digits);
+}
+
 test("signs up with an authenticator app, adds a passkey, signs out, and signs back in with the passkey", async ({ page, served }) => {
   test.slow();
   const errors: string[] = [];
@@ -72,7 +85,8 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Sign up" }).click();
   await expect(page).toHaveURL(/\/auth\/verify$/);
-  await confirmCode(page, "Verification code", await emailedCode(served, email, 1));
+  const signupCode = await emailedCode(served, email, 1);
+  await pasteCode(page, `${signupCode.slice(0, 3)} ${signupCode.slice(3)}`, signupCode);
   await expect(page).toHaveURL(/\/auth\/enrol\/totp$/);
 
   // Enrolling on the previous step's code, inside the server's one-step drift window, leaves the current step unspent for the step-up.
@@ -99,7 +113,8 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/auth\/verify$/);
-  await confirmCode(page, "Verification code", await emailedCode(served, email, 2));
+  const signinCode = await emailedCode(served, email, 2);
+  await pasteCode(page, `${signinCode.slice(0, 3)}-${signinCode.slice(3)}`, signinCode);
   await expect(page).toHaveURL(/\/auth\/verify$/);
   await page.getByRole("link", { name: "Use a passkey instead" }).click();
   await expect(page).toHaveURL(/\/auth\/verify\?factor=passkey$/);

@@ -62,17 +62,17 @@ Forge's field primitives already encode the ratio, so the rule mostly reduces to
 import { FormField, Input } from "@y-core/forge/ui/core";
 
 <FormField.Group class='gap-2'>
-  <FormField name='email'>
+  <FormField>
     <FormField.Content class='gap-2'>
       <FormField.Label name='email'>Email</FormField.Label>
-      <Input name='email' />
+      <Input field={{ name: "email", description: true }} />
       <FormField.Description name='email'>We only use this for receipts.</FormField.Description>
     </FormField.Content>
   </FormField>
-  <FormField name='company'>
+  <FormField>
     <FormField.Content class='gap-2'>
       <FormField.Label name='company'>Company</FormField.Label>
-      <Input name='company' />
+      <Input field={{ name: "company" }} />
     </FormField.Content>
   </FormField>
 </FormField.Group>;
@@ -85,17 +85,17 @@ input, so the two fields read as one run of five unrelated lines.
 import { FormField, Input } from "@y-core/forge/ui/core";
 
 <FormField.Group>
-  <FormField name='email'>
+  <FormField>
     <FormField.Content>
       <FormField.Label name='email'>Email</FormField.Label>
-      <Input name='email' />
+      <Input field={{ name: "email", description: true }} />
       <FormField.Description name='email'>We only use this for receipts.</FormField.Description>
     </FormField.Content>
   </FormField>
-  <FormField name='company'>
+  <FormField>
     <FormField.Content>
       <FormField.Label name='company'>Company</FormField.Label>
-      <Input name='company' />
+      <Input field={{ name: "company" }} />
     </FormField.Content>
   </FormField>
 </FormField.Group>;

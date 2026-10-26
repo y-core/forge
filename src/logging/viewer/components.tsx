@@ -89,11 +89,11 @@ export const LogFilterBar: FC<LogFilterBarProps> = ({ level, q, targetId, formAc
       indicator: `#${targetId}`,
       disable: "find button[type='submit']",
     })}>
-    <FormField name='q' class='min-w-xs flex-1'>
+    <FormField class='min-w-xs flex-1'>
       <FormField.Label name='q'>Search</FormField.Label>
       <Input name='q' type='search' placeholder='message, prefix, requestId…' value={q ?? ""} field={{ name: "q" }} />
     </FormField>
-    <FormField name='level' class='max-w-xs flex-1'>
+    <FormField class='max-w-xs flex-1'>
       <FormField.Label name='level'>Level</FormField.Label>
       <Select name='level' field={{ name: "level" }} icon={icon}>
         <Select.Option value='' selected={!level}>

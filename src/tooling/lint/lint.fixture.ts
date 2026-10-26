@@ -27,6 +27,17 @@ export function template(...chunks: string[]): AstNode {
   } as AstNode;
 }
 
+/** A template literal whose chunks surround `expressions`, which the real AST also lists as children. */
+export function interpolated(chunks: string[], expressions: AstNode[]): AstNode {
+  return {
+    type: "TemplateLiteral",
+    loc: nextLoc(),
+    quasis: chunks.map((chunk) => ({ type: "TemplateElement", loc: nextLoc(), value: { cooked: chunk, raw: chunk } })),
+    expressions,
+    children: expressions,
+  } as unknown as AstNode;
+}
+
 /** A JSX attribute and the nodes its value is built from. */
 export function attribute(name: string, ...children: AstNode[]): AstNode {
   return {

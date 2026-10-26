@@ -85,6 +85,7 @@ one as the delta.
 | Every corpus rule the lint plugin owns — `src/tooling/lint/rules/` is the list | `bun run verify --only lint` |
 | The corpus against forge's API, and both rule registers against the plugin | `bun run verify --only validate-design` |
 | ARIA vocabulary validity — attribute names, role names, value shapes | `bun run verify --only lint` |
+| A pointer target under the `Button` `sm` box (`forge-ui-hit-target`) | `bun run test:browser src/ui/hit-target.browser.ts` |
 | The comment budget ([`CODE_RULES.md`][cr-5a] §5a, [`CODE_RULES.md`][cr-5f] §5f) | `bun run verify --only validate-comment-budget` |
 | Behaviour of the changed unit | `bun test <path>` |
 
@@ -227,7 +228,6 @@ re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-accessibi
 | --- | --- |
 | `forge-ui-accessible-name` | The name depends on the rendered subtree and on component internals a source scan cannot follow |
 | `forge-ui-heading-order` | Order is a property of the rendered document, not of one file — a composed section can correctly write several `<h3>`s before the `<h2>` its page places above them |
-| `forge-ui-hit-target` | Needs to know which element is interactive and what the unspecified axis resolves to at render |
 | `forge-ui-not-color-alone` | Turns on whether an icon and words _also_ convey the state |
 | `forge-ui-a11y-icon-plus-text` | Preferred form and permitted alternative are the same shape in source — a component catalog's `aria-label` sites alone would fire |
 | `forge-ui-a11y-label-element` | The trigger is "the design has no room for a visible label", a fact about the design and not about the markup |

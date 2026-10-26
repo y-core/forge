@@ -121,14 +121,9 @@ export const VerifyView: FC<VerifyViewProps> = ({
             {factor === "recovery-code" ? (
               <RecoveryCodeField fieldError={fieldError} icon={AppIcon} />
             ) : (
-              <FormField name='code' invalid={fieldError !== undefined}>
+              <FormField invalid={fieldError !== undefined}>
                 <FormField.Label name='code'>Verification code</FormField.Label>
-                <OtpInput
-                  length={digits}
-                  autofocus
-                  autocomplete='one-time-code'
-                  field={{ name: "code", invalid: fieldError !== undefined, description: true }}
-                />
+                <OtpInput length={digits} autofocus autocomplete='one-time-code' field={{ name: "code", error: fieldError, description: true }} />
                 <FormField.Description name='code'>{digits} digits. Spaces and dashes are ignored.</FormField.Description>
                 {fieldError === undefined ? null : (
                   <FormField.Error name='code'>

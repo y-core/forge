@@ -112,9 +112,9 @@ ignoring.
 // happens to own that id today.
 
 // Right.
-<FormField name="email" invalid={Boolean(errors.email)}>
+<FormField invalid={Boolean(errors.email)}>
   <FormField.Label name="email">Email address</FormField.Label>
-  <Input name="email" type="email" field={{ name: "email", invalid: Boolean(errors.email) }} />
+  <Input name="email" type="email" field={{ name: "email", error: errors.email }} />
   <FormField.Error name="email">{errors.email}</FormField.Error>
 </FormField>
 ```
@@ -184,8 +184,9 @@ the Floor; this is where in the process it gets satisfied. Durations and the one
 Default: speak through `announce()` and add no live region of your own — unless the surface has a genuinely separate stream of updates, which is
 what a channel of its own is for. <!-- rule:forge-ui-a11y-one-live-region --> `<Announcer />`, stamped once in the layout, renders the page's only
 live regions, one polite and one assertive, and `announce(text, { channel, politeness })` is how anything reaches them. A second live region on
-the page means two announcers competing over one utterance queue, and the reader hears fragments of both. The rule reports `aria-live` and the
-roles that imply it, `alert`, `status` and `log`, alike.
+the page means two announcers competing over one utterance queue, and the reader hears fragments of both. The rule reports `aria-live`, the roles
+that imply it, `alert`, `status` and `log`, and an `<output>` with neither, which is an implicit `status`; a readout such as `Slider`'s takes
+`aria-live="off"`, and the control it mirrors carries the value.
 
 **`Toast` and `Toast.Container` are visual, deliberately.** The container is a scope that hands each toast it holds to `announce()`, at load and
 whenever one is inserted, `FlashOob` included. The announcer's regions exist from the first paint, which is what makes an insertion reliable, where

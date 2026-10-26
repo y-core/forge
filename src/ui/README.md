@@ -183,9 +183,9 @@ inert until [`ui/core/client`](#y-coreforgeuicoreclient) is imported.
 import { Button, Form, FormField, Input } from "@y-core/forge/ui/core";
 
 <Form hx-post='/api/contact' hx-target='#contact-result'>
-  <FormField name='name' invalid={Boolean(errors.name)}>
+  <FormField invalid={Boolean(errors.name)}>
     <FormField.Label name='name'>Your name</FormField.Label>
-    <Input name='name' field={{ name: "name", invalid: Boolean(errors.name) }} required />
+    <Input name='name' field={{ name: "name", error: errors.name }} required />
     {errors.name && <FormField.Error name='name'>{errors.name}</FormField.Error>}
   </FormField>
   <Button type='submit'>Send message</Button>
@@ -215,9 +215,10 @@ sends the DELETE, which carries none of the form's fields. Both requests go to o
 
 ### Wire a label, a description and an error to one control
 
-`FormField`'s compound members derive `for` / `id` / `aria-describedby` from the field `name`, so **pass the same `name` to every member** and the
-wiring happens. Reach for `Field` instead when the row is a settings control rather than a validated form field: it is a label-and-control layout
-with no form semantics.
+`FormField.Label`, `.Description` and `.Error` derive `for` and `id` from a `name`, and the control derives its `id` and `aria-describedby` from the
+same `name` in its `field` descriptor, so **pass one `name` to every member and to the control's `field`** and the wiring happens. Reach for `Field`
+instead when the row is a settings control rather than a validated form field: it is a label-and-control layout with no form semantics. Its caption
+names the one control it wraps through `aria-labelledby`, so give that control an `id` or a `field` and no `Label` of its own.
 
 The decisions below are yours, and both default to the quiet answer:
 
@@ -228,11 +229,16 @@ The decisions below are yours, and both default to the quiet answer:
   something really describes the field.
 
 A blank or whitespace-bearing `name` or `scope` derives no wiring at all, while the `name` **attribute** still renders exactly as given
-([`UI_SSR_COMPONENTS.md`][usc-1j] §1j). `FormField.Error` renders nothing when its child is `null`, `false` or empty, so an error slot costs nothing
-on the happy path.
+([`UI_SSR_COMPONENTS.md`][usc-1j] §1j). `FormField.Error` renders nothing when its message is blank (`null`, `false`, `""`, an empty array or
+whitespace only), so an error slot costs nothing on the happy path. **Pass the message to the control as `field={{ name, error }}`.** A non-blank
+`error` emits `aria-invalid` and adds the error id to `aria-describedby`, by the same test that decides whether `FormField.Error` renders, so the
+control never names an error that did not render. A `CheckboxGroup` or `RadioGroup` takes the same message as its own `error`, which marks and
+describes the fieldset by the same test. `FormField`'s own `invalid` only recolours its fieldset and reaches no control.
 
 When you are building the same wiring by hand — a control forge does not ship, inside a `FormField` — the id helpers exported beside `FormField`
 derive the same strings the components use, and `fieldControlProps` is the merge `Input` / `Select` / `Textarea` perform internally.
+An `aria-describedby` you pass yourself, to a control, a group root, a `Tooltip.Trigger` or a `Dialog`, is kept ahead of the ids forge adds, never
+replaced by them.
 
 ### Choose a tone, an appearance and a size
 
@@ -247,7 +253,7 @@ declared in [`ui/contracts`](#y-coreforgeuicontracts).
 | `size` | `sm`, `md`, `lg` | `Button`, `Avatar`, `Spinner`, `ToggleGroup`, chrome `ThemeToggle` / `Toolbar`, and every field control; `Badge` takes `sm`/`md` |
 | `shape` | `default`, `icon`, `square`, `circle` | `Button` — an icon-only button is `shape='icon'`, never a size |
 | `orientation` | `horizontal`, `vertical` | anything with a layout axis: `Tabs`, `Toolbar`, `ToggleGroup`, `Slider`, `Progress`, `Separator`, `ScrollArea`, `FormField`, `Field`, `CheckboxGroup`, `RadioGroup` |
-| `invalid`, `busy` | boolean | every field control, each emitting `aria-invalid` / `aria-busy` beside `data-invalid` / `data-busy`; `Button` writes `busy` through `loading` |
+| `invalid`, `busy` | boolean | every field control, each emitting `aria-invalid` / `aria-busy` beside `data-invalid` / `data-busy`; `CheckboxGroup` and `RadioGroup` take an `error` message instead of `invalid`, while their `.Item` keeps `invalid`; `Button` writes `busy` through `loading` |
 
 Some props deliberately sit outside it: `Switch`'s label side is `labelPlacement`, and `FormField`'s width-driven collapse is `responsive` — neither
 is an axis, so neither rides `orientation`. `Turnstile`'s `size` is Cloudflare's, passed through verbatim.
@@ -288,7 +294,8 @@ the panel at its edge above the page, with no backdrop and the page still usable
 
 `Toolbar`, `Menu`, `Tabs`, `Tooltip`, `NumberField`, `ToggleGroup`, a modal `Dialog`, a `Popover.Content` and a readout `Slider` render a
 `data-scope` and are **inert until `@y-core/forge/ui/core/client` is imported**: the markup stays valid and accessible, but the arrow keys are
-missing. That import is [the next section](#y-coreforgeuicoreclient).
+missing. That import is [the next section](#y-coreforgeuicoreclient). `Filter` is scoped too, and without the import its `×` falls back to a
+native reset: that empties a choice made on the page but restores one the server rendered, and inside your own form it resets the whole form.
 
 ### Render a button as something that is not a `<button>`
 
@@ -302,8 +309,9 @@ missing. That import is [the next section](#y-coreforgeuicoreclient).
 
 It requires **exactly one JSX element child**; a string, number, fragment, array or empty child is a programming error and `Button` **throws**
 rather than silently degrading ([`UI_SSR_COMPONENTS.md`][usc-1c] §1c). `Link` and `Breadcrumbs.Link` take the same prop, for merging onto a router
-link. When you need the button's paint on markup that is not a button at all — a pagination anchor, a bespoke control — the `buttonVariants`
-resolver returns the class string on its own.
+link. A disabled or loading `Button` rendered onto a link — an `<a>`, or a router link component given an `href` — stays a focus stop announced as
+disabled, but loses its `href`, so it cannot navigate. When you need the button's paint on markup that is not a button at all — a pagination anchor,
+a bespoke control — the `buttonVariants` resolver returns the class string on its own.
 
 ### Name an icon-only button with a tooltip
 
@@ -390,34 +398,63 @@ class (`class='pe-10'`), and lay the glyph over that gutter as an `aria-hidden`,
 `pointer-events-none` is what keeps the glyph from swallowing the click that opens the file picker, and `aria-hidden` keeps it out of a name the
 control's own label already carries.
 
+### Take a one-time code
+
+Put an `OtpInput` inside a `FormField`, with `length` set to the number of digits the code has, and size the server schema to the same number:
+
+```tsx
+import { FormField, OtpInput } from "@y-core/forge/ui/core";
+import { formDigits, v } from "@y-core/forge/validation";
+
+<FormField invalid={Boolean(errors.code)}>
+  <FormField.Label name='code'>Verification code</FormField.Label>
+  <OtpInput length={6} field={{ name: "code", error: errors.code }} />
+  {errors.code && <FormField.Error name='code'>{errors.code}</FormField.Error>}
+</FormField>;
+
+const schema = v.object({ code: v.pipe(formDigits(), v.length(6)) });
+```
+
+With `@y-core/forge/ui/core/client` imported, a typed or pasted code is reduced to its first six digits as it arrives, so `123 456` and `123-456`
+both read `123456`. Without it the code posts as typed and the schema reduces it, so the server gets the same value either way. `OtpInput` does
+not accept `pattern` or `maxlength`: either one blocks a code pasted as `123 456`.
+
 ### Group a card or phone number as the reader leaves the field
 
 `Input`'s `format` is a template whose `#` are the slots the value fills and whose every other character is a literal:
 `format='#### #### #### ####'` groups a card number, `format='(###) ###-####'` a phone number. Reach for it only after the native affordances, which
-need no script: `inputmode`, `pattern`, `autocomplete` and `maxlength` are Tier 0, and CSS is Tier 1. Nothing reformats **as** the user types — that
+need no script: `inputmode`, `pattern`, `autocomplete` and `maxlength` are Tier 0, and CSS is Tier 1. Nothing regroups **as** the user types — that
 is a caret-bug generator forge does not ship — so the value is regrouped only when focus leaves the field.
+
+**A literal is removed only where the template places it, so a leading literal may be typed fully, partly or not at all.** With
+`format='+1 (###) ###-####'`, the values `4155551212`, `14155551212` and `+1 (415) 555-1212` all group as `+1 (415) 555-1212`, because a leading
+character equal to a digit literal is read as that literal. A literal typed where the template has a slot is kept as content, and a value with
+more characters than the template has slots is left as typed.
 
 **The formatted string is what the form posts.** `format` is cosmetic to the user, not to the wire: a `format=` field serialises as
 `"4111 1111 1111 1111"`, and the server schema is half of the contract. Pair it with `formDigits()` from
 [`@y-core/forge/validation`][validation-readme], which reduces the value to its digits so the field parses identically whether or not the script
-ran. `format` is never validation — the schema is the truth.
+ran. With a digit literal, `formDigits()` keeps the literal's digits — `+1 (415) 555-1212` parses as `"14155551212"` — so size the schema for
+them, or reduce the value in the handler with `stripFormat(format, value)` from [`@y-core/forge/ui/contracts`](#y-coreforgeuicontracts).
+`format` is never validation — the schema is the truth.
 
 **The server paints the formatted value itself**, running the same transform at render time, so a first paint with JS disabled already reads
 grouped, a re-render after a failed submit agrees with the post-blur value, and the controller's first write is a no-op. Nothing is required of the
 app.
 
 **`format` and `bind` do not compose.** A bound control's signal _is_ its state, and re-spacing the value would lie to every reader that parses it
-back — `Number("1,234.50")` is `NaN`. A control carrying both is refused with one warning and left alone.
+back — `Number("1,234.50")` is `NaN`. The `ui/controls` `Input` does not accept `format`, so passing both is a type error; a `ui/core` `Input`
+given `data-field` by hand and a `format` is refused at runtime with one warning and left alone.
 
 **Pair it with `tabular-nums` as a caller class** — `class='max-w-xs tabular-nums'` — so the groups do not shift width as digits change. It is
 deliberately not in the component's own classes, which every consumer wears.
 
 ### Put a CAPTCHA on a form
 
-`Turnstile` renders the container Cloudflare's widget mounts into, holding two hidden alerts — the general fallback and the unsupported-browser
-message. Place it **inside** the `<form>` so the token input Cloudflare injects is submitted with it; nothing else is required, since the container
-stamps the `turnstile` scope and `resume()` mounts the controller ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c). `siteKey` is required and comes from the
-Worker env, never a literal.
+`Turnstile` renders the container for Cloudflare's widget: a frame the widget mounts into, followed by two hidden alerts — the general fallback and
+the unsupported-browser message. Place it **inside** the `<form>` so the token input Cloudflare injects is submitted with it; nothing else is
+required, since the container stamps the `turnstile` scope and `resume()` mounts the controller ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c). `siteKey` is
+required and comes from the Worker env, never a literal.
 
 **Add the preconnect hint to your page head yourself** — forge has no page-head API to hang it on, and under the eager default every page entry
 opens the connection:
@@ -573,6 +610,9 @@ const fr: Record<keyof typeof LABEL_DEFAULTS, string> = { alertDismiss: "Fermer"
 **Key your catalogue on the key, never on the English value.** Matching `"Dismiss"` to decide what to render makes every wording fix in forge a
 silent breaking change for you, and one forge's gate cannot detect. The key is the stable name; the value is the thing you are replacing.
 
+`Carousel`'s role descriptions, `carouselRoleDescription` and `carouselSlideRoleDescription`, have no prop of their own: pass the translation as
+`aria-roledescription` on `Carousel` or `Carousel.Item`, together with the `label` without which no role description reaches a reader.
+
 One name has no default and takes none: `Navbar`'s `<nav>` landmark. An unnamed `<nav>` already announces as "navigation", so a constant default
 would replace a correct platform default with a guess — and give two Navbars on one page the same name. Pass `aria-label` or `aria-labelledby`
 yourself wherever a page renders more than one.
@@ -593,7 +633,8 @@ literal of your own. The helpers cover it in both directions: `stateAttrs` / `pr
 is the browser half — only keys present in the state object are touched, and a touched key is reconciled in full.
 
 Selectors and scope names follow the same rule. Forge's `menu` scope finds its rows **by ARIA role** rather than a forge marker, so a `<button>` you
-build with `menuItemAttrs` and the published class is navigable the moment it is correctly roled. `Toolbar`, by contrast, uses an explicit item
+build with `menuItemAttrs` and the published class is navigable the moment it is correctly roled. It is painted the same way too: a checkable row
+draws its tick from `data-checked`, so write the state with `applyStateAttrs` beside `aria-checked`. `Toolbar`, by contrast, uses an explicit item
 marker, because `Toolbar.Group` and `Toolbar.Separator` are toolbar slots that must **not** be focus stops.
 
 ### Share one action namespace between server and client
@@ -797,12 +838,15 @@ Pair the SSR `fieldAttr` helper (from [`ui/server`](#y-coreforgeuiserver)), or t
 DOM → signal resolves the nearest `[data-field]` across shadow boundaries, absorbing a click that landed on an inner `<svg>`, and **infers the
 value's type from what the signal currently holds**: `boolean` reads `checked`, `number` goes through `Number()`, a `string[]` toggles membership of
 the item's value, anything else is the string. So seed the record with the type you want back. Signal → DOM paints `checked` / `value` and the
-pressed state, guarded by a differs-check so a paint never fights a drag in progress.
+pressed state, guarded by a differs-check so a paint never fights a drag in progress. A form reset, whether scripted or from a reset button, and
+whether the form sits inside the root or wraps it, repaints every bound control from its signal, because the signal is the state.
 
 **The signal is the state and the DOM is a paint of it**, so the pressed state is never read back — which is what lets a repaint restore a group
 after its markup was replaced wholesale ([`UI_SSR_COMPONENTS.md`][usc-2a] §2a). A `data-field` naming no signal reports and is skipped.
 
-`bindText` and `bindAttr` are the one-way siblings, for markup that only _displays_ a signal — text content, or one named attribute.
+`bindText` and `bindAttr` are the one-way siblings, for markup that only _displays_ a signal — text content, or one named attribute. Bound to a
+boolean, an `aria-*` attribute is written `"true"` or `"false"`, as the renderer writes it; any other attribute is present for `true` and removed
+for `false`.
 
 **`bindAttr` sanitizes exactly as the renderer does**, because a signal is seeded from `data-island-state` and so is as reachable as a request
 parameter. A value bound to `href`, `src`, `data` or any other URL attribute has a scheme outside http/https/mailto/tel collapsed to `"#"`; a bare
@@ -968,6 +1012,10 @@ const messages = await flash.get(c);         // in the next loader; clears as it
 because each cookie name signs under a subkey of its own. The cookie's name, path, max-age and `sameSite` all have defaults, so pass one only when
 the app needs it to differ. `success` / `info` / `warning` / `error` are conveniences over `set`, and `get` clears as it reads.
 
+**Every flash call in one request reaches the next page**, in the order the calls were made — calls started together, as in `Promise.all`,
+count in the order they were started, and a call that throws leaves the others' messages in place. Past the cookie's 4096-byte limit the oldest
+messages are dropped first, and a single message too large to fit on its own throws.
+
 **Choose the renderer by how the page is arriving.** `FlashContainer` is the full-page render — a toast container wrapping the messages.
 `FlashOob` wraps each toast in an HTMX out-of-band swap targeting the container already on the page, which is what a fragment response needs.
 `Flash` alone renders the messages without a container, for a container you place yourself.
@@ -1070,7 +1118,9 @@ browser without `:has()` keeps the full column. The rulings are `forge-ui-nav-ra
 `forge-ui-nav-rail-collapsed-width` in [`ui/design/reference/08-navigation.md`][navigation].
 
 `Dock` is the phone-width alternative: a fixed bottom bar of three to five equal-weight destinations, hidden above a breakpoint you choose. It is
-markup only — no scope, no controller.
+markup only — no scope, no controller. While the bar shows, forge's stylesheet reserves its height at the foot of the page: as scroll padding, so a
+focused control scrolls clear of it, and as `<body>` padding, so the last one can. A `pb-*` on your `<body>` replaces that padding, so include the
+bar's height in it. A class that sets the bar's own height breaks the match.
 
 ### Describe a toolbar as data
 

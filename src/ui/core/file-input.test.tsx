@@ -29,7 +29,7 @@ describe("FileInput", () => {
   });
 
   it("derives id, name, and aria-describedby from a field descriptor, so a caller wires none of them", async () => {
-    expect(attrsOf(await render(<FileInput field={{ name: "avatar", description: true, invalid: true }} />))).toEqual({
+    expect(attrsOf(await render(<FileInput field={{ name: "avatar", description: true, error: "Required" }} />))).toEqual({
       type: "file",
       "data-slot": "file-input",
       "data-size": "md",

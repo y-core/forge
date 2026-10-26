@@ -65,7 +65,7 @@ describe("Select", () => {
 
   it("wires the label's for to the id the field descriptor derived, so clicking the label focuses this select", async () => {
     const html = await render(
-      <FormField name='choice'>
+      <FormField>
         <FormField.Label name='choice'>Choice</FormField.Label>
         <FormField.Content>
           <Select icon={icon} field={{ name: "choice" }}>

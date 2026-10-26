@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
+import { Slider } from "../controls/slider";
 import { ToggleGroup } from "../controls/toggle-group";
 import { Resumable } from "../server/resumable";
 import { mount } from "./browser.fixture";
@@ -13,6 +14,7 @@ declare global {
     forgeSignal: typeof import("./signal");
     forgeSignals: typeof import("./signal-record");
     demoSignals: import("./types").SignalRecord<{ choice: unknown }>;
+    nameSignals: import("./types").SignalRecord<{ name: string }>;
     lastValue?: unknown;
   }
 }
@@ -495,5 +497,78 @@ test.describe("bindControls — the signal is the state and the DOM is a paint o
       { aria: "true", data: true },
       { aria: "false", data: false },
     ]);
+  });
+});
+
+/** Binds the `demo` scope's `name` field directly, keeping the signal on `window` for {@link nameAgreement}. */
+function bindName(page: Page): Promise<void> {
+  return page.evaluate(() => {
+    window.nameSignals = window.forgeSignals.signalRecord({ name: "ada" });
+    window.forgeBind.bindControls(document.querySelector("[data-scope='demo']") as HTMLElement, window.nameSignals);
+  });
+}
+
+function nameAgreement(page: Page): Promise<{ input: string | undefined; signal: string }> {
+  return page.evaluate(() => ({ input: document.querySelector<HTMLInputElement>("#name")?.value, signal: window.nameSignals.name.value }));
+}
+
+test.describe("bindControls — the bound Slider's readout", () => {
+  test("a signal write repaints the readout along with the range input", async ({ page }) => {
+    const html = await render(Resumable({ name: "demo", children: Slider({ bind: "fov", min: 1, max: 120, value: 60, output: true }) }));
+    await mount(page, html, EXPOSE);
+
+    const painted = await page.evaluate(() => {
+      const signals = window.forgeSignals.signalRecord({ fov: 60 });
+      window.forgeBind.bindControls(document.querySelector("[data-scope='demo']") as HTMLElement, signals);
+      signals.fov.value = 90;
+      return {
+        input: document.querySelector<HTMLInputElement>("[data-slot~='slider']")?.value,
+        output: document.querySelector("[data-slot~='slider-output']")?.textContent,
+      };
+    });
+
+    expect(painted).toEqual({ input: "90", output: "90" });
+  });
+});
+
+test.describe("bindControls — a scripted reset of a form the root wraps", () => {
+  test("repaints the reverted control from the signal", async ({ page }) => {
+    await mount(page, `<div data-scope="demo"><form id="f"><input id="name" value="ada" data-field="name"></form></div>`, EXPOSE);
+    await bindName(page);
+    await page.fill("#name", "edited");
+
+    await page.evaluate(() => document.querySelector<HTMLFormElement>("#f")?.reset());
+
+    await expect.poll(() => nameAgreement(page)).toEqual({ input: "edited", signal: "edited" });
+  });
+});
+
+test.describe("bindControls — a reset the reader clicks", { tag: "@cross-engine" }, () => {
+  test("repaints after the revert when the form wraps the root", async ({ page }) => {
+    await mount(
+      page,
+      `<form id="f"><div data-scope="demo"><input id="name" value="ada" data-field="name"></div><button id="r" type="reset">Reset</button></form>`,
+      EXPOSE,
+    );
+    await bindName(page);
+    await page.fill("#name", "edited");
+
+    await page.click("#r");
+
+    await expect.poll(() => nameAgreement(page)).toEqual({ input: "edited", signal: "edited" });
+  });
+
+  test("repaints after the revert when the root wraps the form", async ({ page }) => {
+    await mount(
+      page,
+      `<div data-scope="demo"><form id="f"><input id="name" value="ada" data-field="name"><button id="r" type="reset">Reset</button></form></div>`,
+      EXPOSE,
+    );
+    await bindName(page);
+    await page.fill("#name", "edited");
+
+    await page.click("#r");
+
+    await expect.poll(() => nameAgreement(page)).toEqual({ input: "edited", signal: "edited" });
   });
 });

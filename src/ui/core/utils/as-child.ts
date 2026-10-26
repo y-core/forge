@@ -32,27 +32,21 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
   const childClass = typeof rawClass === "string" ? rawClass : undefined;
   const childType = typeof children.type === "string" ? children.type : undefined;
   const isButton = childType === "button";
+  const isAnchor = childType === "a" || (childType === undefined && children.props.href !== undefined);
   const childSlot = children.props["data-slot"];
   // Either spelling makes an anchor inert: `disabled` from the compound, or an `aria-disabled` the
   // compound already resolved into the props it is merging.
   const ariaDisabled = options.props["aria-disabled"];
   const inert = options.disabled === true || ariaDisabled === true || ariaDisabled === "true";
-  const isLinkComponent = childType === undefined && children.props.href !== undefined;
-  const fallbackType = isButton ? "button" : isLinkComponent ? undefined : options.defaultType;
 
   return cloneElement(children, {
     ...options.props,
-    // The caller's `type` wins, then the child's own, then the default: `"button"` for a `<button>`, and
-    // the compound's `defaultType` for a component without an `href`, which would render a link.
-    ...(childType === undefined || isButton
-      ? definedEntries({ disabled: options.disabled, type: options.type ?? children.props.type ?? fallbackType })
-      : {}),
     // `disabled` is button-only, and `rest` carries it through on compounds that do not destructure
     // it out, so an `<a>` would come out `<a disabled aria-disabled="true">`.
-    ...(childType !== undefined && !isButton
-      ? { disabled: undefined, ...(options.disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}) }
-      : {}),
-    ...(childType === "a" && inert ? INERT_ANCHOR_PROPS : {}),
+    ...(isButton || (childType === undefined && !isAnchor)
+      ? definedEntries({ disabled: options.disabled, type: options.type ?? children.props.type ?? (isButton ? "button" : undefined) })
+      : { disabled: undefined, ...(options.disabled ? { "aria-disabled": "true", ...stateAttrs({ disabled: true }) } : {}) }),
+    ...(isAnchor && inert ? INERT_ANCHOR_PROPS : {}),
     ...(present(options.prefix) || present(options.suffix)
       ? { children: [options.prefix ?? null, children.props.children, options.suffix ?? null] }
       : {}),

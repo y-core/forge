@@ -7,7 +7,8 @@ audience: internal
 # `@y-core/forge/tooling/lint`
 
 Name one subpath in `.oxlintrc.json` and oxlint gains forge's rules under the `forge/` prefix. They are read off the AST, so a class list bound to a
-module-scope const and passed by name is judged like an inline literal.
+module-scope const and passed by name is judged like an inline literal, and a string const named `*_CLASS` or `*_CLASSES` is judged where it is
+declared, as a complete class list.
 
 Beside the plugin sit its rule catalogs — plain data answering "which document states this rule, and what enforces it?" without opening either side.
 
@@ -116,8 +117,8 @@ corpusIdOf("color-token-only"); // "forge-ui-color-token-only" | undefined
 The `forge-ui-` prefix is the whole of the mapping, and `validate-design` fails when the register and `.oxlintrc.json` disagree, so a rule cannot
 drift away from the document that states it.
 
-`RULE_ENFORCER` says which side a row is held against: a `gate` rule against the gate's own detectors, a `lint` rule against `.oxlintrc.json`, and
-`contrast` against the measured colour pairs.
+`RULE_ENFORCER` says which side a row is held against: a `gate` rule against the gate's own detectors, a `lint` rule against `.oxlintrc.json`,
+`contrast` against the measured colour pairs, and `browser` against the boxes a browser spec measures.
 
 ---
 

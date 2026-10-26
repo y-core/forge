@@ -30,6 +30,9 @@ const CALLER_CLASS = "p-99";
 /** A state-attribute value no component can compute. */
 const STATE_OVERRIDE = "caller-wins";
 
+/** The stateful probe's invalid state for a group, which takes an error message and has no `invalid` prop. */
+const MESSAGE_INVALID = { invalid: undefined, error: "x" };
+
 /** The field name every bound control's probe binds to. */
 const BIND_FIELD = "b";
 
@@ -39,6 +42,8 @@ const FIELD_ATTR = Object.keys(fieldAttr(BIND_FIELD))[0] as string;
 interface Participant {
   /** Fixture props for a component that cannot render without them. */
   readonly props?: Record<string, unknown>;
+  /** Overrides on the stateful probe for a component whose invalid state is driven by a message rather than a boolean. */
+  readonly stateProps?: Record<string, unknown>;
   /** The first `data-slot` token on the element that receives forwarded props. */
   readonly slot: string;
   /** The first `data-slot` token on the element that receives the caller's `class`, when it is not the forwarding element. */
@@ -61,7 +66,7 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
   Button: { slot: "button" },
   Card: { slot: "card" },
   Carousel: { slot: "carousel" },
-  CheckboxGroup: { props: { name: "cg" }, slot: "checkbox-group", stateAttr: "data-orientation" },
+  CheckboxGroup: { props: { name: "cg" }, stateProps: MESSAGE_INVALID, slot: "checkbox-group", stateAttr: "data-orientation" },
   Collapsible: { slot: "collapsible" },
   Dialog: { props: { id: "d1" }, slot: "dialog" },
   Drawer: { props: { id: "dr1" }, slot: "drawer", stateAttr: "data-side" },
@@ -89,7 +94,7 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
   Pagination: { slot: "pagination" },
   Popover: { slot: "popover" },
   Progress: { slot: "progress", stateAttr: "data-orientation" },
-  RadioGroup: { props: { name: "rg" }, slot: "radio-group", stateAttr: "data-orientation" },
+  RadioGroup: { props: { name: "rg" }, stateProps: MESSAGE_INVALID, slot: "radio-group", stateAttr: "data-orientation" },
   ScrollArea: { slot: "scroll-area", stateAttr: "data-orientation" },
   Select: {
     props: { icon },
@@ -129,7 +134,7 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
 
 /** The bound tier's entries: each `ui/core` twin's targets, plus the props its wrapper requires. */
 const CONTROL_PARTICIPANTS: Record<string, Participant> = {
-  CheckboxGroup: { props: { name: "cg" }, slot: "checkbox-group", stateAttr: "data-orientation" },
+  CheckboxGroup: { props: { name: "cg" }, stateProps: MESSAGE_INVALID, slot: "checkbox-group", stateAttr: "data-orientation" },
   FileInput: { props: { bind: BIND_FIELD }, slot: "file-input" },
   Input: { props: { bind: BIND_FIELD }, slot: "input" },
   NumberField: { slot: "number-field" },
@@ -139,7 +144,7 @@ const CONTROL_PARTICIPANTS: Record<string, Participant> = {
     classSlot: "otp-input-wrapper",
     split: "the root is the frame that paints the cells; props reach the native field laid onto it",
   },
-  RadioGroup: { props: { name: "rg" }, slot: "radio-group", stateAttr: "data-orientation" },
+  RadioGroup: { props: { name: "rg" }, stateProps: MESSAGE_INVALID, slot: "radio-group", stateAttr: "data-orientation" },
   Select: {
     props: { bind: BIND_FIELD, icon },
     slot: "select",
@@ -242,7 +247,7 @@ for (const key of KEYS) {
 const RENDERED_STATEFUL: Record<string, string> = {};
 for (const key of KEYS) {
   const participant = participantOf(key);
-  if (participant) RENDERED_STATEFUL[key] = await renderProbe(key, participant, STATEFUL_PROPS);
+  if (participant) RENDERED_STATEFUL[key] = await renderProbe(key, participant, { ...STATEFUL_PROPS, ...participant.stateProps });
 }
 
 const STATE_ATTR_NAMES = new Set<string>(Object.values(STATE_ATTRS));
@@ -519,28 +524,43 @@ describe("ui conformance — forge's default English has one home (decision-2609
     expect(offenders).toEqual([]);
   });
 
-  it("writes no literal aria-label, so every name a consumer must translate is a key they can see", () => {
-    const offenders = Object.entries(sources).flatMap(([file, source]) =>
-      [...source.matchAll(/aria-label=['"][^'"]+['"]/g)].map((match) => `${file}: ${match[0]}`),
-    );
+  it("flags a literal passed by object spread, so the scan below catches the form the carousel shipped in", () => {
+    expect(literalNames(`{...(label !== undefined ? { role: "region", "aria-roledescription": "carousel", "aria-label": label } : {})}`)).toEqual([
+      `"aria-roledescription": "carousel"`,
+    ]);
+    expect(literalNames(`aria-label='Close'`)).toEqual([`aria-label='Close'`]);
+  });
+
+  it("writes no literal aria-label or aria-roledescription, so every word a consumer must translate is a key they can see", () => {
+    const offenders = Object.entries(sources).flatMap(([file, source]) => literalNames(source).map((hit) => `${file}: ${hit}`));
     expect(offenders).toEqual([]);
   });
 
   it("flags a template-literal name when there is one, so the scan below is proof and not decoration", () => {
     expect(templateNames("aria-label={`Slide ${index + 1}`} aria-label={`${caller.name}`}")).toEqual(["aria-label={`Slide ${index + 1}`}"]);
+    expect(templateNames('{ "aria-roledescription": `slide ${n}` }')).toEqual(['"aria-roledescription": `slide ${n}`']);
   });
 
-  // A quoted-literal scan alone passes a template: `Slide ${n}` carries an English word an
-  // interpolation scan never sees, which is exactly how one shipped past the first version of this.
+  it("leaves a template-literal name to the template scan, because the quoted-literal scan cannot see one", () => {
+    expect(literalNames("aria-label={`Slide ${index + 1}`}")).toEqual([]);
+  });
+
   it("writes no English inside a template-literal name either, where a quoted-literal scan is blind", () => {
     const offenders = Object.entries(sources).flatMap(([file, source]) => templateNames(source).map((hit) => `${file}: ${hit}`));
     expect(offenders).toEqual([]);
   });
 });
 
-/** Every `aria-label={\`…\`}` in `source` whose template holds a word outside its interpolations. */
+/** Every quoted-literal `aria-label` or `aria-roledescription` in `source`, as a JSX attribute or an object-spread key. */
+function literalNames(source: string): string[] {
+  return [...source.matchAll(/(?:aria-(?:label|roledescription)=|["']aria-(?:label|roledescription)["']\s*:\s*)['"][^'"]+['"]/g)].map(
+    (match) => match[0],
+  );
+}
+
+/** Every template-literal `aria-label` or `aria-roledescription`, as a JSX attribute or an object-spread key, holding a word outside its interpolations. */
 function templateNames(source: string): string[] {
-  return [...source.matchAll(/(?:aria-label|aria-roledescription)=\{`([^`]*)`\}/g)]
+  return [...source.matchAll(/(?:aria-(?:label|roledescription)=\{|["']aria-(?:label|roledescription)["']\s*:\s*)`([^`]*)`\}?/g)]
     .filter((match) => /[A-Za-z]/.test((match[1] ?? "").replaceAll(/\$\{[^}]*\}/g, "")))
     .map((match) => match[0]);
 }

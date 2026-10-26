@@ -26,16 +26,9 @@ export const ApprovalView: FC<ApprovalViewProps> = ({ submitPath, csrfToken, csr
       </Card.Header>
       <Card.Content>
         <Form action={submitPath} csrfToken={csrfToken} csrfHeader={csrfHeader} class='flex flex-col gap-6'>
-          <FormField name='code' invalid={fieldError !== undefined}>
+          <FormField invalid={fieldError !== undefined}>
             <FormField.Label name='code'>Administrator code</FormField.Label>
-            <Input
-              type='password'
-              autocomplete='off'
-              autofocus
-              required
-              data-ref='approval-code'
-              field={{ name: "code", invalid: fieldError !== undefined }}
-            />
+            <Input type='password' autocomplete='off' autofocus required data-ref='approval-code' field={{ name: "code", error: fieldError }} />
             {fieldError === undefined ? null : <FormField.Error name='code'>{fieldError}</FormField.Error>}
           </FormField>
           {turnstile === undefined ? null : (

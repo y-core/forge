@@ -3,6 +3,7 @@
 import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { nameAttrs } from "../contracts/naming";
+import { FILTER_SCOPE } from "../contracts/toggle-contract";
 import type { ContainerNaming, Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import type { FilterAppearance } from "./types";
@@ -11,7 +12,7 @@ import { cn } from "./utils/cn";
 import { PRESSED_PAINT } from "./utils/recipes";
 
 interface FilterOwnProps extends Omit<JSX.IntrinsicElements["form"], "children"> {
-  /** Renders a `<fieldset>` for a filter inside the consumer's own form; the reset then clears that whole form. */
+  /** Renders a `<fieldset>` for a filter inside the consumer's own form; the clear then empties only its chips. */
   nested?: boolean | undefined;
   children?: JSXNode | undefined;
 }
@@ -28,7 +29,7 @@ interface FilterItemProps extends Omit<JSX.IntrinsicElements["input"], "type" | 
   /** Shared `name` that makes these chips one group — repeated per chip, as `ToggleGroup.Item` does. */
   name: string;
   value: string;
-  /** The initial choice; the reset restores it. */
+  /** The server-rendered choice, which the clear still empties. */
   checked?: boolean | undefined;
   size?: Size | undefined;
   appearance?: FilterAppearance | undefined;
@@ -42,9 +43,8 @@ interface FilterResetProps extends Omit<JSX.IntrinsicElements["button"], "type" 
 
 const ROOT = "group/filter m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0";
 
-// The chosen chip stays visible and its siblings hide, all on the form's own `:has(:checked)`; the
-// stacked variant outranks the chip's own `inline-flex` whatever order Tailwind emits the two in.
-const ITEM_STATE = "cursor-pointer has-[:checked]:border-primary group-has-[:checked]/filter:not-has-[:checked]:hidden";
+// The stacked variant outranks the chip's own height and padding whatever order Tailwind emits the two in.
+const ITEM_STATE = "cursor-pointer has-[:checked]:border-primary group-has-[:checked]/filter:not-has-[:checked]:not-has-[:focus]:sr-only";
 
 const RESET_STATE = "hidden group-has-[:checked]/filter:inline-flex";
 
@@ -55,7 +55,7 @@ const GROUP = "flex min-w-0 flex-wrap items-center gap-2";
 const FilterRoot: FC<FilterOwnProps> = ({ nested = false, class: cls, children, "data-slot": inherited, ...rest }) => {
   const Tag = nested ? "fieldset" : "form";
   return (
-    <Tag data-slot={slotToken("filter", inherited)} class={cn(ROOT, cls)} {...rest}>
+    <Tag data-slot={slotToken("filter", inherited)} data-scope={FILTER_SCOPE} class={cn(ROOT, cls)} {...rest}>
       {children}
     </Tag>
   );

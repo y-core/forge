@@ -80,7 +80,7 @@ export { isToolingDirective, validateCommentBudget } from "./checks/comment-budg
 export type { CommentBudgetCheckConfig, CommentSpan } from "./checks/types";
 export { checkPackaging, fixtureName, moduleImports } from "./checks/packaging";
 export type { PackagingCheckConfig } from "./checks/types";
-export { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./checks/color";
+export { compositeOver, contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./checks/color";
 export type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./checks/types";
 export { checkContrast, measurePairs, parsePalette, resolveColor } from "./checks/contrast";
 export type { AcceptedRow, Declaration, Mode, ParsedTheme } from "./checks/types";

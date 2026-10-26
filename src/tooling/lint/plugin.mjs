@@ -11,6 +11,7 @@ var RULE_CORPUS_PATH = {
   "forge-ui-interaction-filter-group-required": "src/ui/design/reference/09-interaction.md",
   "forge-ui-catalog-wrong-raw-input": "src/ui/design/catalog.md",
   "forge-ui-contrast-floor": "src/ui/design/floor.md",
+  "forge-ui-hit-target": "src/ui/design/floor.md",
   "forge-ui-a11y-label-association": "src/ui/design/floor.md",
   "forge-ui-a11y-live-politeness": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-a11y-no-aria-readonly-on-button": "src/ui/design/reference/10-accessibility.md",
@@ -31,6 +32,7 @@ var RULE_ENFORCER = {
   "forge-ui-interaction-filter-group-required": "lint",
   "forge-ui-catalog-wrong-raw-input": "lint",
   "forge-ui-contrast-floor": "contrast",
+  "forge-ui-hit-target": "browser",
   "forge-ui-a11y-label-association": "lint",
   "forge-ui-a11y-live-politeness": "lint",
   "forge-ui-a11y-no-aria-readonly-on-button": "lint",
@@ -386,6 +388,9 @@ var a11yAriaBesideData = {
 // src/tooling/lint/ast.ts
 var CLASS_ATTRIBUTES = /* @__PURE__ */ new Set(["class", "className"]);
 var CLASS_CALLEES = /* @__PURE__ */ new Set(["cn", "cva"]);
+var CLASS_CONSTANT_NAME = /_CLASS(?:ES)?$/;
+var NOT_A_CLASS_LIST = /* @__PURE__ */ new Set(["DARK_CLASS"]);
+var STRING_VALUED = /* @__PURE__ */ new Set(["Literal", "TemplateLiteral", "BinaryExpression"]);
 function keyName(key) {
   if (key === void 0) return "";
   return key.name ?? (typeof key.value === "string" ? key.value : "");
@@ -393,6 +398,7 @@ function keyName(key) {
 function isClassPosition(node) {
   if (node.type === "JSXAttribute") return CLASS_ATTRIBUTES.has(node.name?.name ?? "");
   if (node.type === "Property") return CLASS_ATTRIBUTES.has(keyName(node.key));
+  if (node.type === "VariableDeclarator") return isClassConstant(node);
   if (node.type !== "CallExpression") return false;
   const callee = node.callee;
   return callee?.type === "Identifier" && CLASS_CALLEES.has(callee.name);
@@ -414,17 +420,27 @@ function childrenOf(node) {
   }
   return out;
 }
-function statedText(node, out = []) {
+function statedText(node, bindingOf, out = [], seen = /* @__PURE__ */ new Set()) {
   if (node.type === "Literal") {
     const value = node.value;
     if (typeof value === "string") out.push(value);
     return out;
   }
   if (node.type === "TemplateLiteral") {
-    for (const quasi of node.quasis) out.push(quasi.value.cooked ?? quasi.value.raw);
+    const template = node;
+    for (const quasi of template.quasis) out.push(quasi.value.cooked ?? quasi.value.raw);
+    for (const expression of template.expressions ?? []) statedText(expression, bindingOf, out, seen);
     return out;
   }
-  for (const child of childrenOf(node)) statedText(child, out);
+  if (node.type === "Identifier") {
+    const init = bindingOf(node);
+    if (init !== void 0 && !seen.has(init)) {
+      seen.add(init);
+      statedText(init, bindingOf, out, seen);
+      return out;
+    }
+  }
+  for (const child of childrenOf(node)) statedText(child, bindingOf, out, seen);
   return out;
 }
 function isModuleScope(declarator) {
@@ -433,23 +449,46 @@ function isModuleScope(declarator) {
   const holder = declaration.parent ?? void 0;
   return holder?.type === "Program" || holder?.type === "ExportNamedDeclaration" && holder.parent?.type === "Program";
 }
+function isClassConstant(node) {
+  if (node.type !== "VariableDeclarator") return false;
+  const declarator = node;
+  if (declarator.id?.type !== "Identifier") return false;
+  const name = declarator.id.name;
+  if (!CLASS_CONSTANT_NAME.test(name) || NOT_A_CLASS_LIST.has(name)) return false;
+  const init = declarator.init;
+  if (init == null || !STRING_VALUED.has(init.type)) return false;
+  if (init.type === "Literal" && typeof init.value !== "string") return false;
+  return isModuleScope(node);
+}
 function literalVisitor(onPart) {
   const moduleConstants = /* @__PURE__ */ new Map();
+  const judgedWhereWritten = /* @__PURE__ */ new Set();
+  const bindingOf = (identifier) => {
+    const parent = identifier.parent ?? void 0;
+    if (parent?.type === "CallExpression" && parent.callee === identifier) return void 0;
+    const member = parent;
+    if (parent?.type === "MemberExpression" && member?.computed !== true && member?.property === identifier) return void 0;
+    if (parent?.type === "Property" && parent.key === identifier) return void 0;
+    const name = identifier.name;
+    if (judgedWhereWritten.has(name)) return void 0;
+    const init = moduleConstants.get(name);
+    if (init === void 0 || isClassPosition(init)) return void 0;
+    return init;
+  };
   return {
     VariableDeclarator(node) {
       const declarator = node;
       const name = declarator.id?.type === "Identifier" ? declarator.id.name : void 0;
       if (name === void 0 || declarator.init == null || !isModuleScope(node)) return;
       moduleConstants.set(name, declarator.init);
+      if (isClassConstant(node)) judgedWhereWritten.add(name);
     },
     Identifier(node) {
-      const init = moduleConstants.get(node.name);
+      const init = bindingOf(node);
       if (init === void 0) return;
-      if (node.parent?.type === "CallExpression" && node.parent.callee === node) return;
-      if (isClassPosition(init)) return;
       const position = enclosingClassPosition(node);
       if (position === void 0) return;
-      for (const text of statedText(init)) onPart(position, { node, text, loc: node.loc });
+      for (const text of statedText(init, bindingOf)) onPart(position, { node, text, loc: node.loc });
     },
     Literal(node) {
       const value = node.value;
@@ -488,7 +527,7 @@ function classExpressionVisitor(onExpression) {
     if (parts === void 0) buffered.set(position, [part]);
     else parts.push(part);
   });
-  return { ...visitor, "JSXAttribute:exit": flush, "CallExpression:exit": flush, "Property:exit": flush };
+  return { ...visitor, "JSXAttribute:exit": flush, "CallExpression:exit": flush, "Property:exit": flush, "VariableDeclarator:exit": flush };
 }
 
 // src/tooling/lint/rules/a11y-heading-size-by-class.ts
@@ -601,7 +640,7 @@ var a11yLivePoliteness = {
     return {
       JSXOpeningElement(node) {
         const value = statedString(attributeNamed(node, "aria-live")?.value);
-        if (value === void 0 || value === "polite") return;
+        if (value === void 0 || value === "polite" || value === "off") return;
         report(
           value === "assertive" ? '`aria-live="assertive"` interrupts the reader \u2014 state why in a suppression, or use `polite`' : `\`aria-live="${value}"\` is neither \`polite\` nor \`assertive\``,
           node.loc
@@ -645,8 +684,18 @@ var a11yOneLiveRegion = {
           if (live !== void 0 && live !== "off") report(`\`aria-live="${live}"\` opens a second live region \u2014 ${ROUTE}`, node.loc);
           return;
         }
-        const role = statedString(attributeNamed(node, "role")?.value);
-        if (role !== void 0 && LIVE_ROLES.has(role)) report(`\`role="${role}"\` opens a second live region \u2014 ${ROUTE}`, node.loc);
+        const roleAttribute = attributeNamed(node, "role");
+        if (roleAttribute) {
+          const role = statedString(roleAttribute.value);
+          if (role !== void 0 && LIVE_ROLES.has(role)) report(`\`role="${role}"\` opens a second live region \u2014 ${ROUTE}`, node.loc);
+          return;
+        }
+        if (openingTag(node) === "output" && !attributesOf(node).some((attribute) => attribute.type === "JSXSpreadAttribute")) {
+          report(
+            `\`<output>\` is an implicit \`role="status"\` and opens a second live region \u2014 give a readout \`aria-live="off"\`, or ${ROUTE}`,
+            node.loc
+          );
+        }
       }
     };
   }

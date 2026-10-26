@@ -1,6 +1,25 @@
 import { closestAcross, eventTarget, ownerWindow } from "./dom";
 
 const STEPPER_SELECTOR = "[data-slot~='number-field-decrement'],[data-slot~='number-field-increment']";
+const NUMBER_DEFAULT_STEP = 1;
+
+function numberBound(raw: string | null): number | undefined {
+  if (raw === null || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+function stepWithoutGranularity(input: HTMLInputElement, direction: 1 | -1): void {
+  const empty = input.value === "";
+  const current = empty ? 0 : Number(input.value);
+  const min = numberBound(input.getAttribute("min"));
+  const max = numberBound(input.getAttribute("max"));
+  let next = current + direction * NUMBER_DEFAULT_STEP;
+  if (max !== undefined && next > max) next = max;
+  if (min !== undefined && next < min) next = min;
+  if (!empty && (direction > 0 ? next < current : next > current)) return;
+  input.value = String(Number(next.toPrecision(15)));
+}
 
 /** Mounts the stepper buttons for `<NumberField>` and returns a disposer. */
 export function mountNumberField(root: HTMLElement): () => void {
@@ -20,7 +39,9 @@ export function mountNumberField(root: HTMLElement): () => void {
 
     // `matches`, not `dataset.slot === …`: `data-slot` is a token list, and an equality test would
     // silently fall through to `stepDown()` on an increment button carrying a second token.
-    if (button.matches("[data-slot~='number-field-increment']")) input.stepUp();
+    const direction = button.matches("[data-slot~='number-field-increment']") ? 1 : -1;
+    if (input.getAttribute("step")?.toLowerCase() === "any") stepWithoutGranularity(input, direction);
+    else if (direction > 0) input.stepUp();
     else input.stepDown();
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));

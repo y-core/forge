@@ -246,3 +246,28 @@ describe("Dialog — the name the root resolves to", () => {
     expect(tagOf(html, `id="${named}"`).startsWith("<h2 ")).toBe(true);
   });
 });
+
+describe("Dialog — a caller's aria-describedby joins the description reference rather than replacing it", () => {
+  it("lists the caller's id ahead of the description it renders", async () => {
+    expect(
+      attrOf(
+        await render(
+          <Dialog id='confirm' titled described aria-describedby='hint'>
+            <Dialog.Title for='confirm'>Delete project?</Dialog.Title>
+            <Dialog.Description for='confirm'>Every environment attached to it goes too.</Dialog.Description>
+          </Dialog>,
+        ),
+        "aria-describedby",
+        'data-slot="dialog"',
+      ),
+    ).toBe("hint confirm-description");
+  });
+
+  it("keeps the caller's id alone when the dialog renders no description", async () => {
+    expect(attrOf(await render(<Dialog id='confirm' titled aria-describedby='hint' />), "aria-describedby", 'data-slot="dialog"')).toBe("hint");
+  });
+
+  it("emits no reference for a blank caller id when the dialog renders no description", async () => {
+    expect(attrsOf(await render(<Dialog id='confirm' titled aria-describedby='  ' />))).not.toHaveProperty("aria-describedby");
+  });
+});

@@ -75,6 +75,14 @@ describe("hasHtmxSubmission", () => {
     expect(hasHtmxSubmission(form({}, { "hx-post": "/contact" }))).toBe(true);
   });
 
+  it("is true for htmx 4's hx-action, in both spellings and on a descendant", () => {
+    expect([
+      hasHtmxSubmission(form({ "hx-action": "/contact" })),
+      hasHtmxSubmission(form({ "data-hx-action": "/contact" })),
+      hasHtmxSubmission(form({}, { "hx-action": "/contact" })),
+    ]).toEqual([true, true, true]);
+  });
+
   it("is false for a native form, which has no request for the challenge to defer", () => {
     expect(hasHtmxSubmission(form({ action: "/contact", method: "post" }))).toBe(false);
   });
@@ -184,22 +192,30 @@ interface Scene {
   form: FakeForm;
   field: FakeElement;
   widget: FakeElement;
-  calls: { executes: number; resets: number; params: Record<string, unknown> | null };
+  frame: FakeElement;
+  calls: { executes: number; resets: number; params: Record<string, unknown> | null; targets: unknown[] };
   replayed: string[];
   dispose: () => void;
   win: FakeDocument["defaultView"];
 }
 
-function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<string, string> = {}): Scene {
+function mountedScene(
+  formAttrs: Record<string, string>,
+  widgetAttrs: Record<string, string> = {},
+  fieldAttrs: Record<string, string> = { name: "email", "hx-post": "/validate" },
+  framed = true,
+): Scene {
   const doc = Object.assign(new FakeDocument(), { documentElement: { classList: { contains: () => false } } });
-  const calls: Scene["calls"] = { executes: 0, resets: 0, params: null };
+  const calls: Scene["calls"] = { executes: 0, resets: 0, params: null, targets: [] };
   Object.assign(doc.defaultView, {
     turnstile: {
-      render: (_el: unknown, params: Record<string, unknown>) => {
+      render: (target: unknown, params: Record<string, unknown>) => {
+        calls.targets.push(target);
         calls.params = params;
         return "widget-1";
       },
-      execute: () => {
+      execute: (target: unknown) => {
+        calls.targets.push(target);
         calls.executes += 1;
       },
       reset: () => {
@@ -213,8 +229,10 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
 
   const form = new FakeForm("FORM", formAttrs);
   form.ownerDocument = doc;
-  const field = new FakeElement("INPUT", { name: "email", "hx-post": "/validate" });
+  const field = new FakeElement("INPUT", fieldAttrs);
   const widget = new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key", ...widgetAttrs });
+  const frame = new FakeElement("DIV", { "data-ref": TURNSTILE.frame });
+  if (framed) widget.append(frame);
   form.append(field, widget);
   doc.body.append(form);
 
@@ -222,7 +240,7 @@ function mountedScene(formAttrs: Record<string, string>, widgetAttrs: Record<str
   form.addEventListener("submit", (event) => replayed.push((event as FakeSubmitEvent).submitter?.id || "form"));
 
   const dispose = mountTurnstile(form as unknown as HTMLElement);
-  return { form, field, widget, calls, replayed, dispose, win: doc.defaultView };
+  return { form, field, widget, frame, calls, replayed, dispose, win: doc.defaultView };
 }
 
 const finallyRequest = (scene: Scene, from: FakeElement, status?: number): { resets: number; value: string } => {
@@ -243,7 +261,7 @@ const completeChallenge = (scene: Scene): void => {
 };
 
 describe("mountTurnstile — the reset is scoped to the element that issued the request", () => {
-  const verbs = ["hx-post", "hx-put", "hx-patch", "hx-delete", "data-hx-post"];
+  const verbs = ["hx-action", "hx-post", "hx-put", "hx-patch", "hx-delete", "data-hx-action", "data-hx-post"];
 
   for (const verb of verbs) {
     it(`resets the widget and clears the form for a 200 answer to a request the form issued through ${verb}`, () => {
@@ -348,6 +366,18 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     expect(second.disabled).toBe(false);
   });
 
+  it("holds the press of a form submitting through hx-action, with no false fallback warning", () => {
+    const warnings = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const scene = mountedScene({ "hx-action": "/contact" }, { "data-challenge": "submit" }, { name: "email" });
+
+      expect(configRequest(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
+      expect(warnings.mock.calls.filter(([text]) => String(text).startsWith('[turnstile] challenge="submit"'))).toEqual([]);
+    } finally {
+      warnings.mockRestore();
+    }
+  });
+
   it("reports a dropped press to the form rather than losing it", () => {
     const scene = submitScene();
     const pressed = button(scene, "submit");
@@ -404,7 +434,9 @@ describe("mountTurnstile — explicit rendering", () => {
     Object.assign(doc.defaultView, { turnstile: undefined, clearInterval: () => {} });
     const form = new FakeForm("FORM", { "hx-post": "/contact" });
     doc.body.append(form);
-    form.append(new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key", ...widgetAttrs }));
+    const widget = new FakeElement("DIV", { "data-ref": TURNSTILE.widget, "data-sitekey": "site-key", ...widgetAttrs });
+    widget.append(new FakeElement("DIV", { "data-ref": TURNSTILE.frame }));
+    form.append(widget);
     return { doc, head, form };
   }
 
@@ -492,22 +524,87 @@ describe("mountTurnstile — explicit rendering", () => {
 });
 
 describe("mountTurnstile — a revealed failure is announced on its own channel", () => {
-  it("interrupts with the fallback, and an app message on the default channel does not cancel it", () => {
+  const FALLBACK = "The security check could not load.";
+
+  const announcedScene = () => {
     const scene = mountedScene({ "hx-post": "/contact" });
     const doc = scene.form.ownerDocument as FakeDocument;
     const assertive = new FakeElement("DIV", { "data-slot": ANNOUNCER_REGION_SLOTS.assertive });
     doc.root.append(assertive);
     const fallback = new FakeElement("P", { "data-ref": TURNSTILE.fallback });
     fallback.hidden = true;
-    fallback.textContent = "The security check could not load.";
-    scene.form.querySelector(`[data-ref='${TURNSTILE.widget}']`)?.append(fallback);
+    fallback.textContent = FALLBACK;
+    scene.widget.append(fallback);
+    const errored = () => (scene.calls.params?.["error-callback"] as ((code?: unknown) => void) | undefined)?.(300010);
+    const spoken = () => assertive.children.map((node) => node.textContent);
+    return { scene, doc, errored, spoken };
+  };
 
-    const errored = scene.calls.params?.["error-callback"] as (code?: unknown) => void;
-    errored(300010);
+  let warnings: Mock<typeof console.warn>;
+
+  beforeEach(() => {
+    warnings = spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warnings.mockRestore();
+  });
+
+  it("interrupts with the fallback, and an app message on the default channel does not cancel it", () => {
+    const { doc, errored, spoken } = announcedScene();
+
+    errored();
     announce("Payment declined", { politeness: "assertive", within: doc as unknown as Node });
     doc.defaultView.flush();
 
-    expect(assertive.children.map((node) => node.textContent)).toEqual(["The security check could not load.", "Payment declined"]);
+    expect(spoken()).toEqual([FALLBACK, "Payment declined"]);
+  });
+
+  it("re-announces the fallback when it is revealed again after a recovery", () => {
+    const { scene, doc, errored, spoken } = announcedScene();
+
+    errored();
+    doc.defaultView.flush();
+    const first = spoken();
+    completeChallenge(scene);
+    errored();
+    doc.defaultView.flush();
+
+    expect([first, spoken()]).toEqual([[FALLBACK], [FALLBACK]]);
+  });
+
+  it("announces once when a retried error-callback finds the fallback already up", () => {
+    const { doc, errored, spoken } = announcedScene();
+
+    errored();
+    errored();
+    doc.defaultView.flush();
+
+    expect(spoken()).toEqual([FALLBACK]);
+  });
+});
+
+describe("mountTurnstile — the widget renders into its frame", () => {
+  it("renders and executes Cloudflare's widget in the frame, never on the root that holds the messages", () => {
+    const scene = mountedScene({ "hx-post": "/contact" }, { "data-challenge": "submit" });
+
+    configRequest(scene, scene.form);
+
+    expect(scene.calls.targets).toEqual([scene.frame, scene.frame]);
+  });
+
+  it("no-ops, reporting the missing frame, when the widget carries none", () => {
+    const warnings = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const scene = mountedScene({ "hx-post": "/contact" }, {}, undefined, false);
+      scene.dispose();
+
+      expect({ targets: scene.calls.targets, namesFrame: warnings.mock.calls.map(([text]) => String(text).includes('"turnstile-frame"')) }).toEqual(
+        { targets: [], namesFrame: [true] },
+      );
+    } finally {
+      warnings.mockRestore();
+    }
   });
 });
 

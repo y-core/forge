@@ -5,7 +5,7 @@ import { stateAttrs } from "../contracts/state-attrs";
 import type { Orientation } from "../contracts/types";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
-import { FIELD_ITEM_SIZE, FieldDescription, FieldError, fieldDescribedBy, fieldItemId, fieldStateProps } from "./field";
+import { blankMessage, FIELD_ITEM_SIZE, FieldDescription, FieldError, fieldDescribedBy, fieldItemId, fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
@@ -16,7 +16,8 @@ interface CheckboxGroupRootProps extends Omit<JSX.IntrinsicElements["fieldset"],
   scope?: string | undefined;
   /** A description element renders for this group. */
   description?: boolean | undefined;
-  invalid?: boolean | undefined;
+  /** The message the group's `Error` shows; a blank one marks nothing. */
+  error?: JSXNode | undefined;
   busy?: boolean | undefined;
   disabled?: boolean | undefined;
   orientation?: Orientation | undefined;
@@ -39,7 +40,7 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   name,
   scope,
   description = false,
-  invalid = false,
+  error,
   busy = false,
   disabled = false,
   orientation = "vertical",
@@ -47,9 +48,11 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-describedby": existing,
   ...rest
 }) => {
-  const describedBy = fieldDescribedBy(name, { ...(scope !== undefined ? { scope } : {}), description, invalid });
+  const invalid = !blankMessage(error);
+  const describedBy = fieldDescribedBy(name, { ...(scope !== undefined ? { scope } : {}), description, invalid, existing });
   // `aria-invalid` and `aria-busy` are not valid on the fieldset's implicit `group` role, so only the
   // CSS state hooks land here; an `Item` carries the aria on the input, where the role allows it.
   return (

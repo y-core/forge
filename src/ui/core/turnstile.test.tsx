@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { renderToString } from "../../render/jsx/render-to-string";
-import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { Turnstile } from "./turnstile";
 
 const mount = (props: Omit<Parameters<typeof Turnstile>[0], "siteKey"> = {}) =>
@@ -18,15 +18,18 @@ const MOUNT_ATTRS = {
   "data-load": "eager",
 };
 
+const FRAME = 'data-ref="turnstile-frame"';
+
 const messageOf = (html: string, ref: string) => new RegExp(`data-ref="${ref}"[^>]*>([^<]*)<`).exec(html)?.[1];
 
 describe("Turnstile", () => {
-  it("renders the whole mount point exactly, both controller messages overridden and escaped", async () => {
+  it("renders the whole mount point exactly, both messages overridden, escaped and outside the reserved frame", async () => {
     expect(
       await mount({ size: "compact", class: "mt-4", unsupported: `Use Chrome's latest`, children: `Retry & reload <now>`, "data-note": "a&b" }),
     ).toBe(
       '<div data-slot="turnstile" data-scope="turnstile" data-ref="turnstile" data-sitekey="site-123" data-size="compact" data-load="eager"' +
-        ' class="h-35 w-37.5 mt-4" data-note="a&amp;b">' +
+        ' class="mt-4" data-note="a&amp;b">' +
+        '<div data-ref="turnstile-frame" class="h-35 w-37.5"></div>' +
         '<p data-ref="turnstile-fallback" hidden class="text-sm text-destructive-text">Retry &amp; reload &lt;now&gt;</p>' +
         '<p data-ref="turnstile-unsupported" hidden class="text-sm text-destructive-text">Use Chrome&#39;s latest</p></div>',
     );
@@ -48,17 +51,26 @@ describe("Turnstile", () => {
   });
 
   it("reserves the compact widget's published box, so the form does not jump when the widget paints", async () => {
-    expect(variantClasses(await mount({ size: "compact" }), await mount())).toEqual({ added: ["h-35", "w-37.5"], dropped: ["h-16.25", "w-75"] });
+    expect(variantClasses(await mount({ size: "compact" }), await mount(), FRAME)).toEqual({
+      added: ["h-35", "w-37.5"],
+      dropped: ["h-16.25", "w-75"],
+    });
   });
 
   it("reserves the flexible widget's box as a full-width band with Cloudflare's floor", async () => {
-    expect(variantClasses(await mount({ size: "flexible" }), await mount())).toEqual({ added: ["w-full", "min-w-75"], dropped: ["w-75"] });
+    expect(variantClasses(await mount({ size: "flexible" }), await mount(), FRAME)).toEqual({ added: ["w-full", "min-w-75"], dropped: ["w-75"] });
+  });
+
+  it("puts a consumer class on the root, never on the reserved frame", async () => {
+    const html = await mount({ class: "mt-4" });
+
+    expect({ root: classesOf(html), frame: classesOf(html, FRAME) }).toEqual({ root: ["mt-4"], frame: ["h-16.25", "w-75"] });
   });
 
   it("reserves nothing for an appearance that shows the widget only when it must, so no permanent hole is left", async () => {
     const html = await mount({ appearance: "interaction-only" });
 
-    expect(classesOf(html)).toEqual([]);
+    expect(tagOf(html, FRAME)).toBe('<div data-ref="turnstile-frame">');
     expect(attrOf(html, "data-appearance")).toBe("interaction-only");
   });
 

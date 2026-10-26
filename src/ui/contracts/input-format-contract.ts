@@ -7,22 +7,26 @@ export const INPUT_FORMAT_ATTR = "data-format";
 const SLOT = "#";
 const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f", "\v"]);
 
-/** The template's literal alphabet — every non-slot character it uses, plus whitespace unconditionally. */
-function literalsOf(template: string): Set<string> {
-  const literals = new Set(WHITESPACE);
-  for (const char of template) if (char !== SLOT) literals.add(char);
-  return literals;
-}
-
-/** `value` with every character the template treats as a literal removed — what makes formatting idempotent. @public */
+/** `value` with each literal removed only where the template places it, and whitespace anywhere — what makes formatting idempotent. @public */
 export function stripFormat(template: string, value: string): string {
-  const literals = literalsOf(template);
+  const templateChars = [...template];
+  let cursor = 0;
   let significant = "";
-  for (const char of value) if (!literals.has(char)) significant += char;
+  for (const char of value) {
+    let at = cursor;
+    while (at < templateChars.length && templateChars[at] !== SLOT && templateChars[at] !== char) at += 1;
+    if (at < templateChars.length && templateChars[at] !== SLOT && templateChars[at] === char) {
+      cursor = at + 1;
+      continue;
+    }
+    if (WHITESPACE.has(char)) continue;
+    cursor = at < templateChars.length ? at + 1 : templateChars.length;
+    significant += char;
+  }
   return significant;
 }
 
-/** `value` regrouped onto the template, or its bare significant characters when it does not fit. @public */
+/** `value` regrouped onto the template, or unchanged when its significant characters outnumber the slots. @public */
 export function applyFormat(template: string, value: string): string {
   const slots = [...template].filter((char) => char === SLOT).length;
   if (slots === 0) return value;
@@ -31,7 +35,7 @@ export function applyFormat(template: string, value: string): string {
   // code unit counts an astral character twice and hands back half a surrogate pair.
   const significant = [...stripFormat(template, value)];
   if (significant.length === 0) return "";
-  if (significant.length > slots) return significant.join("");
+  if (significant.length > slots) return value;
 
   let formatted = "";
   let filled = 0;

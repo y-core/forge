@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { attrOf } from "../../testing/markup";
+import { attrOf, classesOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { createIcon } from "../core/icon";
@@ -222,6 +222,13 @@ describe("Toolbar — the pressed axis is tri-state", () => {
     const out = await render(<Toolbar config={withActive(true)} icon={icon} />);
 
     expect(pressedAttrs(out)).toEqual(['aria-pressed="true"', 'data-pressed=""']);
+  });
+
+  it("marks an active tool by its pressed state alone, with no `active` class", async () => {
+    const active = classesOf(await render(<Toolbar config={withActive(true)} icon={icon} />), "aria-pressed");
+
+    expect(active).not.toContain("active");
+    expect(active).toEqual(classesOf(await render(<Toolbar config={withActive(false)} icon={icon} />), "aria-pressed"));
   });
 
   it("says nothing at all when the item declares no pressed axis", async () => {

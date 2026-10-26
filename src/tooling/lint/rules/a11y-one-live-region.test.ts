@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attribute, container, element, identifier, literal, runRule } from "../lint.fixture.ts";
+import { attribute, container, element, identifier, literal, runRule, spread } from "../lint.fixture.ts";
 import { a11yOneLiveRegion } from "./a11y-one-live-region.ts";
 
 const live = (value: Parameters<typeof attribute>[1]) => element("div", attribute("aria-live", value));
@@ -61,6 +61,33 @@ describe("a11y-one-live-region", () => {
 
   it("leaves a value resolved at render time alone", () => {
     expect(runRule(a11yOneLiveRegion, live(container(identifier("politeness"))))).toEqual([]);
+  });
+
+  it("reports a bare `<output>`, which is an implicit status region, and routes it to `announce()`", () => {
+    const messages = runRule(a11yOneLiveRegion, element("output"));
+
+    expect(messages.length).toBe(1);
+    expect(messages[0]).toContain('`<output>` is an implicit `role="status"`');
+    expect(messages[0]).toContain("`announce()`");
+  });
+
+  it('leaves an `<output>` alone when `aria-live="off"` switches its region off', () => {
+    expect(runRule(a11yOneLiveRegion, element("output", attribute("aria-live", literal("off"))))).toEqual([]);
+  });
+
+  it("leaves an `<output>` alone when an explicit role replaces its implicit status", () => {
+    expect(runRule(a11yOneLiveRegion, element("output", attribute("role", literal("img"))))).toEqual([]);
+  });
+
+  it("reports an `<output>` given a live role once, by that role", () => {
+    const messages = runRule(a11yOneLiveRegion, element("output", attribute("role", literal("alert"))));
+
+    expect(messages.length).toBe(1);
+    expect(messages[0]).toContain('`role="alert"` opens a second live region');
+  });
+
+  it("leaves an `<output>` alone when a spread may supply its `aria-live` at render time", () => {
+    expect(runRule(a11yOneLiveRegion, element("output", spread("props")))).toEqual([]);
   });
 
   it("leaves an element carrying no `aria-live` alone", () => {

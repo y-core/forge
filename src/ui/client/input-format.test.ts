@@ -56,6 +56,24 @@ describe("mountInputFormat", () => {
     expect(input.value).toBe("4111 1111 1111 1111");
   });
 
+  it("regroups a phone number under a leading digit-literal template", () => {
+    const { input } = field({ "data-format": "+1 (###) ###-####" }, "4155551212");
+    mountInputFormat(input as never);
+
+    blur(input);
+
+    expect(input.value).toBe("+1 (415) 555-1212");
+  });
+
+  it("leaves a server-painted digit-literal value untouched", () => {
+    const { input } = field({ "data-format": "+1 (###) ###-####" }, "+1 (415) 555-1212");
+    mountInputFormat(input as never);
+
+    blur(input);
+
+    expect(input.value).toBe("+1 (415) 555-1212");
+  });
+
   it("dispatches neither input nor change, because the significant characters did not change", () => {
     const { input } = field({ "data-format": CARD }, "4111111111111111");
     const heard: string[] = [];

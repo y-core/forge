@@ -36,7 +36,7 @@ const AlertRoot: FC<AlertProps> = ({
     class={cn(
       "relative grid gap-1.5 rounded-box border-field py-3 ps-4 pe-4 text-sm",
       toneVariants({ tone, appearance }),
-      dismissible && "pe-8",
+      dismissible && "pe-10",
       cls,
     )}
     {...rest}>
@@ -47,7 +47,7 @@ const AlertRoot: FC<AlertProps> = ({
         data-slot='alert-dismiss'
         aria-label={dismissLabel}
         {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-        class='absolute end-2 top-2 rounded-sm opacity-50 focus-ring hover:opacity-100 motion-safe:transition-opacity'>
+        class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded-sm focus-ring'>
         <span aria-hidden='true' class='text-base leading-none'>
           ×
         </span>

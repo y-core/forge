@@ -4,6 +4,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { FILTER_SCOPE } from "../contracts/toggle-contract";
 import { Button } from "./button";
 import { Filter } from "./filter";
 
@@ -25,18 +26,16 @@ const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 describe("Filter", () => {
   it("renders the nested fieldset exactly — the filter inside a consumer's own form — with forwarded values escaped", async () => {
     expect(await render(<Filter nested class='w-40' id='x' data-slot='facets' data-note={`R&D's <x>`} />)).toBe(
-      '<fieldset data-slot="filter facets" class="group/filter m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 w-40"' +
+      '<fieldset data-slot="filter facets" data-scope="filter" class="group/filter m-0 flex min-w-0 flex-wrap items-center gap-2 border-0 p-0 w-40"' +
         ' id="x" data-note="R&amp;D&#39;s &lt;x&gt;"></fieldset>',
     );
   });
 
-  // The element is a `<form>` so the reset has an owner, and it carries no role of its own: the chips
-  // belong to the group inside it, which is the only element a `radiogroup` may own children for.
   it("is its own form by default, with no role competing with the group it holds", async () => {
     const html = await render(<Filter />);
 
     expect(tagOf(html).startsWith("<form ")).toBe(true);
-    expect(attrsOf(html)).toEqual({ "data-slot": "filter" });
+    expect(attrsOf(html)).toEqual({ "data-slot": "filter", "data-scope": FILTER_SCOPE });
   });
 
   it("names the group the chips are one-of-N within, which is what a lone chip is announced against", async () => {
@@ -59,12 +58,12 @@ describe("Filter", () => {
     expect(classesOf(html, 'data-slot="filter-input"')).toEqual(["sr-only"]);
   });
 
-  it("paints the chip as a ghost button plus the rules that hide the unchosen and light the chosen", async () => {
+  it("paints the chip as a ghost button plus the rules that clip the unchosen unless it holds focus, and light the chosen", async () => {
     expect(variantClasses(await item(), await chip())).toEqual({
       added: [
         "cursor-pointer",
         "has-[:checked]:border-primary",
-        "group-has-[:checked]/filter:not-has-[:checked]:hidden",
+        "group-has-[:checked]/filter:not-has-[:checked]:not-has-[:focus]:sr-only",
         "has-[:checked]:bg-primary",
         "has-[:checked]:text-primary-foreground",
         "has-[:checked]:hover:bg-primary",
@@ -73,7 +72,7 @@ describe("Filter", () => {
     });
   });
 
-  it("checked stamps the native attribute, which is the state the reset restores", async () => {
+  it("checked stamps the native attribute, which is the server-rendered choice", async () => {
     expect(attrsOf(await item({ checked: true }), 'data-slot="filter-input"')).toEqual({
       "data-slot": "filter-input",
       type: "radio",
@@ -108,7 +107,7 @@ describe("Filter", () => {
     expect(textNodes(html)).toEqual(["R&amp;D&#39;s"]);
   });
 
-  it("the reset is a native type=reset, named by an sr-only Clear beside a glyph no screen reader reads", async () => {
+  it("the reset is a native type=reset, so with no script it still undoes a choice made on the page, named by an sr-only Clear beside a glyph no screen reader reads", async () => {
     const html = await reset();
 
     expect(attrsOf(html)).toEqual({ type: "reset", "data-slot": "filter-reset" });

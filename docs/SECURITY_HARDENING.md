@@ -86,8 +86,9 @@ each middleware rebuilding its own `Response`.
   with no CSP and no HSTS.
 - **Header-name conflicts resolve inner-wins.** `setPendingHeader` is last-writer-wins per name and a middleware registered deeper queues later, so
   a consumer middleware that queues an overlapping name overrides the security default rather than being overridden by it. Nothing inside forge
-  overlaps — `createSecurityHeaders` owns the names it sets, `requestId` owns `x-request-id`, and session and flash use `set-cookie` with
-  `{ append: true }` — so this is observable only from consumer middleware. Pinned in `src/security/headers.test.ts`.
+  overlaps — `createSecurityHeaders` owns the names it sets, `requestId` owns `x-request-id`, session appends its `set-cookie`, and flash
+  replaces only the `set-cookie` queued under its own cookie name — so this is observable only from consumer middleware. Pinned in
+  `src/security/headers.test.ts`.
 
 A header baked into the handler's own `Response` is resolved in the channel's favour: `mergePendingHeaders` set-overwrites onto the response.
 **`Content-Security-Policy` is the one name that combines instead of overwriting.** The queued policy is set and the response's own is appended

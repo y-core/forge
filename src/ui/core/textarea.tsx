@@ -1,6 +1,6 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
-import type { FC, JSX, PropsWithChildren } from "../../render/jsx/types";
+import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
 import { fieldControlProps, fieldStateProps } from "./field";
@@ -8,12 +8,10 @@ import type { FieldDescriptor } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
-type TextareaProps = JSX.IntrinsicElements["textarea"] & {
-  field?: FieldDescriptor | undefined;
-  size?: Size | undefined;
-  invalid?: boolean | undefined;
-  busy?: boolean | undefined;
-};
+type TextareaContent = { value?: string | undefined; children?: undefined } | { value?: undefined; children?: JSXNode | undefined };
+
+type TextareaProps = Omit<JSX.IntrinsicElements["textarea"], "value" | "children"> &
+  TextareaContent & { field?: FieldDescriptor | undefined; size?: Size | undefined; invalid?: boolean | undefined; busy?: boolean | undefined };
 
 // `h-auto` and the two bounds are what content sizing needs, not taste: `UI_SSR_COMPONENTS.md` §1i.
 const TEXTAREA_BASE = "state-busy state-disabled state-invalid field-sizing-content field-chrome h-auto max-h-64 min-h-16 resize-y py-2 focus-ring";
@@ -22,9 +20,10 @@ const TEXTAREA_BASE = "state-busy state-disabled state-invalid field-sizing-cont
 const TEXTAREA_TEXT = { sm: "text-sm", md: "text-sm", lg: "text-base" } as const;
 
 /** A styled multi-line `<textarea>`, wired to a `FieldDescriptor` when one is passed. @public */
-export const Textarea: FC<PropsWithChildren<TextareaProps>> = ({
+export const Textarea: FC<TextareaProps> = ({
   class: cls,
   field,
+  value,
   children,
   size = "md",
   invalid = false,
@@ -41,7 +40,7 @@ export const Textarea: FC<PropsWithChildren<TextareaProps>> = ({
       class={cn(TEXTAREA_BASE, TEXTAREA_TEXT[size], cls)}
       {...resolved}
       {...fieldStateProps(invalid, busy)}>
-      {children}
+      {value ?? children}
     </textarea>
   );
 };

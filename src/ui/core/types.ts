@@ -34,7 +34,8 @@ export interface FieldDescriptor {
   scope?: string | undefined;
   /** A description element renders for this field. */
   description?: boolean | undefined;
-  invalid?: boolean | undefined;
+  /** The message the field's `Error` shows; a blank one marks nothing. */
+  error?: JSXNode | undefined;
   disabled?: boolean | undefined;
 }
 

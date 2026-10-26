@@ -59,10 +59,11 @@ export function bindAttr<T extends Record<string, unknown>>(root: HTMLElement, s
     const signal = resolve(signals, parsed.field, BIND_ATTR_ATTR);
     if (signal === undefined) return undefined;
     return effect(() => {
+      // WAI-ARIA is string-valued, so a boolean is spelled out: an absent `aria-*` means "not applicable",
+      // and `""` is not `"true"`. Any other boolean attribute is spelled by presence.
       const value = signal.value;
-      // `false`, `null` and `undefined` all remove the attribute, and `true` writes the empty
-      // string, which is how HTML spells a present boolean attribute.
-      if (value === false || value === null || value === undefined) el.removeAttribute(parsed.attribute);
+      if (typeof value === "boolean" && parsed.attribute.toLowerCase().startsWith("aria-")) el.setAttribute(parsed.attribute, String(value));
+      else if (value === false || value === null || value === undefined) el.removeAttribute(parsed.attribute);
       else el.setAttribute(parsed.attribute, value === true ? "" : safeBindAttrValue(parsed.attribute, String(value)));
     });
   });

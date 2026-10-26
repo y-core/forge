@@ -194,9 +194,9 @@ user compares side by side — a filter panel, a column picker — where opening
 removes it.
 
 **Default:** wrap every validated input in `FormField` with `FormField.Label` and `FormField.Error`. <!-- rule:forge-ui-catalog-field-wrapper -->
-`FormField` derives the `id`, the `for`, the `aria-describedby`, and the `aria-invalid` from one `name`, which is how `forge-ui-accessible-name` and
-`forge-ui-not-color-alone` are satisfied without hand-wiring. Override with `Field` for a settings row that has no validation and no error slot.
-`../README.md` carries the worked wiring.
+`FormField`'s members and the control's `field` descriptor derive the `id`, the `for` and the `aria-describedby` from the one `name` they share,
+and the `aria-invalid` from the descriptor's `error`, which is how `forge-ui-accessible-name` and `forge-ui-not-color-alone` are satisfied without
+hand-wiring. Override with `Field` for a settings row that has no validation and no error slot. `../README.md` carries the worked wiring.
 
 **Default:** import a control from `@y-core/forge/ui/core` unless it needs a client signal, and from `@y-core/forge/ui/controls` when it does.
 <!-- rule:forge-ui-catalog-bound-controls --> The two barrels publish the same names deliberately; the `ui/controls` variant adds `bind` and

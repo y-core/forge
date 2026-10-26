@@ -46,6 +46,7 @@ interface ToolbarSeparatorProps extends Omit<JSX.IntrinsicElements["hr"], "child
 }
 
 const ROOT_BASE = "flex items-center gap-1";
+const PRESSED_CUE = "data-pressed:bg-accent data-pressed:text-accent-foreground data-pressed:inset-shadow-[0_-2px_0_0_currentColor]";
 
 // The roving-tab-stop marker is not derived from `pressed` and carries no default: several items may
 // be pressed, and `initialIndex` already falls back to the first enabled one when nothing is marked.
@@ -86,7 +87,7 @@ const ToolbarRoot: FC<ToolbarRootProps> = ({
 );
 
 function itemClass(styling: ToolbarItemStyling, cls: string | undefined, extra?: string): string {
-  const merged = cn(extra, cls);
+  const merged = cn(styling.pressed !== undefined && PRESSED_CUE, extra, cls);
   return buttonVariants({
     tone: styling.tone ?? "neutral",
     appearance: styling.appearance ?? "ghost",
@@ -110,7 +111,7 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({
   "aria-disabled": inert,
   ...rest
 }) => {
-  const className = itemClass({ tone, appearance, size, shape }, cls);
+  const className = itemClass({ tone, appearance, size, shape, pressed }, cls);
   const attrs = { ...itemAttrs(pressed, ariaDisabled(inert)), ...rest };
   const slot = slotToken("toolbar-button", inherited);
 
@@ -120,7 +121,6 @@ const ToolbarButton: FC<ToolbarButtonProps> = ({
       class: className,
       props: attrs,
       type: rest.type,
-      defaultType: "button",
       ...(typeof rest.disabled === "boolean" ? { disabled: rest.disabled } : {}),
       message:
         "Toolbar.Button with asChild requires exactly one JSX element child (e.g. <a> or <button>); received a string, number, fragment, array, or empty child instead.",
@@ -148,7 +148,7 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({
   "aria-disabled": inert,
   ...rest
 }) => {
-  const className = itemClass({ tone, appearance, size, shape }, cls, "underline-offset-4 hover:underline");
+  const className = itemClass({ tone, appearance, size, shape, pressed }, cls, "underline-offset-4 hover:underline");
   const attrs = { ...itemAttrs(pressed, ariaDisabled(inert)), ...rest };
   const slot = slotToken("toolbar-link", inherited);
 

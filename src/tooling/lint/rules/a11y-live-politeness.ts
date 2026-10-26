@@ -11,7 +11,7 @@ export const a11yLivePoliteness: LintRule = {
       JSXOpeningElement(node: AstNode): void {
         // Only a stated literal is judgeable; a `{expr}` value is resolved at render time.
         const value = statedString(attributeNamed(node, "aria-live")?.value);
-        if (value === undefined || value === "polite") return;
+        if (value === undefined || value === "polite" || value === "off") return;
         report(
           value === "assertive"
             ? '`aria-live="assertive"` interrupts the reader — state why in a suppression, or use `polite`'

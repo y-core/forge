@@ -5,6 +5,7 @@ import type { SignalRecord } from "./types";
 interface ControlElement extends HTMLElement {
   checked?: boolean;
   value?: string;
+  form?: HTMLFormElement | null;
 }
 
 const FIELD_SELECTOR = "[data-field]";
@@ -30,7 +31,7 @@ export function readControl(el: ControlElement, current: unknown): unknown {
     if (!next) return current.filter((entry) => entry !== tagged);
     return current.includes(tagged) ? current : [...current, tagged];
   }
-  if (typeof current === "boolean") return tagged === undefined ? el.checked === true : true;
+  if (typeof current === "boolean") return tagged === undefined ? el.checked === true : isChosen(el, true);
   const raw = tagged ?? el.value ?? "";
   // `Number("")` is 0, which would refill a numeric field the reader has just cleared. NaN keeps the
   // signal a number — so the inference above still holds — and `paintControl` declines to paint it.
@@ -122,16 +123,18 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
 
   const disposers = (Object.keys(signals) as Array<keyof T>).map((field) => effect(() => paintField(field, signals[field].value)));
 
-  // A native form reset reverts every control without firing `input` or `change`, so nothing above
-  // notices; the reset algorithm runs synchronously after dispatch, so a microtask suffices.
   const onReset = (event: Event) => {
     const form = event.target as Node | null;
-    if (!form || !contains(form, root)) return;
-    ownerWindow(root).queueMicrotask(() => {
+    if (!form) return;
+    const governed = contains(form, root) || queryTrees<ControlElement>(shadowTrees(root), FIELD_SELECTOR).some((el) => el.form === form);
+    if (!governed) return;
+    // A reset the reader clicks drains microtasks between firing `reset` and reverting the controls,
+    // so the repaint waits a task, which runs after the revert either way.
+    ownerWindow(root).setTimeout(() => {
       if (lifetime.signal.aborted) return;
       trees = shadowTrees(root);
       for (const field of Object.keys(signals) as Array<keyof T>) paintField(field, signals[field].value);
-    });
+    }, 0);
   };
   const doc = ownerDocument(root);
   const lifetime = new AbortController();

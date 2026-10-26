@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { contrastRatio as uiContrastRatio, relativeLuminance as uiRelativeLuminance } from "../../../ui/contracts/theme/color";
-import { contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./color";
+import { compositeOver, contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./color";
 import { parseThemeDeclarations, resolveStep } from "./contrast-parse";
 import type { Mode } from "./types";
 
@@ -71,6 +71,26 @@ describe("oklchToPaintedHex() — what Chromium paints", () => {
 
   it("differs from the generator's chroma-reduced conversion out of gamut", () => {
     expect(oklchToPaintedHex(0.505, 0.213, 27.518)).not.toBe("#bf000f");
+  });
+});
+
+describe("compositeOver()", () => {
+  const cases = [
+    { foreground: "#000000", background: "#ffffff", alpha: 0.5, painted: "#808080" },
+    { foreground: "#ffffff", background: "#000000", alpha: 0.5, painted: "#808080" },
+    { foreground: "#c10007", background: "#fef2f2", alpha: 1, painted: "#c10007" },
+    { foreground: "#c10007", background: "#fef2f2", alpha: 0, painted: "#fef2f2" },
+    { foreground: "#7f1d1d", background: "#fef2f2", alpha: 0.5, painted: "#bf8888" },
+  ];
+
+  for (const { foreground, background, alpha, painted } of cases) {
+    it(`paints ${foreground} at ${alpha} over ${background} as ${painted}, the colour Chromium paints`, () => {
+      expect(compositeOver(foreground, background, alpha)).toBe(painted);
+    });
+  }
+
+  it("blends in gamma-encoded sRGB, not in linear light", () => {
+    expect(compositeOver("#000000", "#ffffff", 0.5)).not.toBe("#bcbcbc");
   });
 });
 

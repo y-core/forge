@@ -3,8 +3,10 @@ import type { Page } from "@playwright/test";
 
 import type { JSXNode } from "../../render/jsx/types";
 import { render } from "../../testing/render";
-import { mount } from "../client/browser.fixture";
+import { compiledCss, mount, paintedHex, renderedClasses } from "../client/browser.fixture";
 import { scopeAttrs } from "../contracts/scope-attrs";
+import { contrastRatio } from "../contracts/theme/color";
+import { CRITERION } from "../contracts/theme/contrast-pairs";
 import { Menu } from "./menu";
 
 declare global {
@@ -1028,5 +1030,143 @@ test.describe("Menu — items replaced between openings", () => {
 
     await page.keyboard.press("Enter");
     expect(await page.evaluate(() => window.activations)).toEqual(["paste"]);
+  });
+});
+
+async function mountStateRows(page: Page, dark: boolean): Promise<void> {
+  const html =
+    `<button id="before">before</button>` +
+    (await render(
+      Menu.Popup({
+        label: "View",
+        id: "m",
+        children: [
+          Menu.Item({ id: "plain", for: false, children: "Refresh" }),
+          Menu.CheckboxItem({ id: "on", for: false, checked: true, children: "Wrap lines" }),
+          Menu.CheckboxItem({ id: "off", for: false, children: "Wrap lines" }),
+          Menu.RadioItem({ id: "radio", for: false, checked: true, children: "Compact" }),
+          Menu.LinkItem({ id: "here", for: false, href: "/here", "aria-current": "page", children: "Here" }),
+          Menu.LinkItem({ id: "there", for: false, href: "/there", children: "There" }),
+        ],
+      }),
+    ));
+  await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
+  if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+  await page.evaluate(() => document.querySelector<HTMLElement>("#m")?.showPopover());
+}
+
+function opaqueness(page: Page, color: string): Promise<number> {
+  return page.evaluate((value) => {
+    const context = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D;
+    context.fillStyle = value;
+    context.fillRect(0, 0, 1, 1);
+    return context.getImageData(0, 0, 1, 1).data[3] ?? 0;
+  }, color);
+}
+
+async function ratioFailures(page: Page, label: string, color: string, behind: Record<string, string>, floor: number): Promise<string[]> {
+  const painted = await paintedHex(page, color);
+  const failing: string[] = [];
+  for (const [against, value] of Object.entries(behind)) {
+    const backdrop = await paintedHex(page, value);
+    const ratio = Number(contrastRatio(painted, backdrop).toFixed(2));
+    if (ratio < floor) failing.push(`${label} ${painted} on ${against} ${backdrop} = ${ratio}`);
+  }
+  return failing;
+}
+
+const INSET_RING = /(\S+\([^)]*\)|#[0-9a-f]+|[a-z]+) 0px 0px 0px 2px inset/i;
+
+test.describe("Menu — a row's focus and state cues are not colour alone", { tag: "@cross-engine" }, () => {
+  for (const dark of [false, true]) {
+    const scheme = dark ? "dark" : "light";
+
+    test(`a keyboard-focused row draws a ring clearing 1.4.11 against its fill and the popup in ${scheme}`, async ({ page }) => {
+      await mountStateRows(page, dark);
+      await page.locator("#before").focus();
+      const unfocused = await page.evaluate(() => getComputedStyle(document.querySelector("#plain") as Element).boxShadow);
+      await page.keyboard.press("Tab");
+      const focused = await page.evaluate(() => {
+        const row = document.querySelector("#plain") as Element;
+        const style = getComputedStyle(row);
+        return {
+          id: document.activeElement?.id,
+          focusVisible: row.matches(":focus-visible"),
+          shadow: style.boxShadow,
+          fill: style.backgroundColor,
+          popup: getComputedStyle(document.querySelector("#m") as Element).backgroundColor,
+        };
+      });
+
+      expect(unfocused).not.toContain("2px inset");
+      expect({ id: focused.id, focusVisible: focused.focusVisible }).toEqual({ id: "plain", focusVisible: true });
+      const ring = INSET_RING.exec(focused.shadow)?.[1];
+      const failing =
+        ring === undefined
+          ? [`no 2px inset ring in ${focused.shadow}`]
+          : await ratioFailures(page, "ring", ring, { fill: focused.fill, popup: focused.popup }, CRITERION["1.4.11"].floor);
+      expect(failing).toEqual([]);
+    });
+
+    test(`a checked row draws an opaque tick an unchecked one leaves out, clearing 1.4.11 against the popup in ${scheme}`, async ({ page }) => {
+      await mountStateRows(page, dark);
+      const read = await page.evaluate(() => {
+        const tick = (selector: string) => {
+          const style = getComputedStyle(document.querySelector(selector) as Element, "::before");
+          return { bottom: style.borderBottomWidth, end: style.borderInlineEndWidth, color: style.borderBottomColor };
+        };
+        return {
+          on: tick("#on"),
+          radio: tick("#radio"),
+          off: tick("#off"),
+          popup: getComputedStyle(document.querySelector("#m") as Element).backgroundColor,
+        };
+      });
+
+      const width = (one: { bottom: string; end: string }) => ({ bottom: one.bottom, end: one.end });
+      expect({ on: width(read.on), radio: width(read.radio), off: width(read.off) }).toEqual({
+        on: { bottom: "2px", end: "2px" },
+        radio: { bottom: "2px", end: "2px" },
+        off: { bottom: "0px", end: "0px" },
+      });
+      expect([await opaqueness(page, read.on.color), await opaqueness(page, read.radio.color)]).toEqual([255, 255]);
+      expect([
+        ...(await ratioFailures(page, "#on tick", read.on.color, { popup: read.popup }, CRITERION["1.4.11"].floor)),
+        ...(await ratioFailures(page, "#radio tick", read.radio.color, { popup: read.popup }, CRITERION["1.4.11"].floor)),
+      ]).toEqual([]);
+    });
+  }
+
+  test("the current link row is set heavier than its sibling, its text clearing 1.4.3 against its fill", async ({ page }) => {
+    await mountStateRows(page, false);
+    const read = await page.evaluate(() => {
+      const style = (selector: string) => getComputedStyle(document.querySelector(selector) as Element);
+      return {
+        here: style("#here").fontWeight,
+        there: style("#there").fontWeight,
+        color: style("#here").color,
+        fill: style("#here").backgroundColor,
+      };
+    });
+
+    expect({ here: read.here, there: read.there }).toEqual({ here: "600", there: "400" });
+    expect(await ratioFailures(page, "#here text", read.color, { fill: read.fill }, CRITERION["1.4.3"].floor)).toEqual([]);
+  });
+
+  test("a checked row's label starts where an unchecked one's does", async ({ page }) => {
+    await mountStateRows(page, false);
+    const starts = await page.evaluate(() => {
+      const labelStart = (selector: string) => {
+        const walker = document.createTreeWalker(document.querySelector(selector) as Element, NodeFilter.SHOW_TEXT);
+        let last: Node | null = null;
+        for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) last = node;
+        const range = document.createRange();
+        range.selectNodeContents(last as Node);
+        return range.getBoundingClientRect().left;
+      };
+      return { on: labelStart("#on"), off: labelStart("#off") };
+    });
+
+    expect(starts.on).toBe(starts.off);
   });
 });

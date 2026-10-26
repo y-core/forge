@@ -156,6 +156,11 @@ clips and a conformance measurement must match what is painted — that is the o
 pins both: the two agree on the conversion, and `oklchToPaintedHex(0.505, 0.213, 27.518)` is asserted to be `#c10007` and explicitly _not_ the
 chroma-reduced `#bf000f`.
 
+**A translucent foreground is blended the way a browser composites it, and the result is a model rather than a pixel match.** The gate's
+`compositeOver` blends in gamma-encoded sRGB, not in linear light, and `color.test.ts` pins that. An engine rounds an opacity layer on its own
+terms, so a painted pixel can differ slightly from the gate's figure; a pair that passes only by that margin passes on the model, not on every
+screen.
+
 ### 2c. Emission Contract
 
 **The generator is held to the declaration contract rather than exempted from it.** [`UI_CLASS_COMPOSITION.md`][ucc-2] §2 owns both halves — one
@@ -187,6 +192,10 @@ and the _keys_ the painter writes into — `SCALE_ROW_ATTR`, `HEX_ATTR` and `rat
 **Every pair forge measures is declared in one list, and each row records what it is and what binds it** — the token, the role it plays in the
 library, the step it resolves through, each side of the measurement, and the WCAG criterion whose floor applies. The criteria and their floors
 are declared beside it.
+
+**A side may record the opacity it is painted at.** A foreground with one is measured composited over its background (§2b), so a control drawn
+at half strength is judged at the contrast it actually has. A background with one is refused as unresolved: a translucent surface has no single
+colour without the surface beneath it.
 
 **The gate consumes that list rather than restating it.** `config/steps.ts` imports the pairs, the criteria and the exemptions and hands them to the
 contrast step, which resolves each token through the stylesheets and measures it. What the check asserts, in what order, with what message, is the
@@ -223,7 +232,8 @@ per mode.
 
 **Only the pairs whose two sides are both steps of a generated scale can be measured live**, and that boundary is in the data rather than in a
 comment: a pair resolving through a fixed token has no generated value to measure, because `buildTheme` generates scales and not the semantic layer
-above them.
+above them. **A translucent side is measured by the gate only**: `liveRatios` reads a scale step as opaque, so no scale pair carries an
+opacity, and `color.test.ts` holds that.
 
 **The readout's key carries the background as well as the token**, because one token is audited against two different backgrounds and a token-only
 key silently collapses those rows onto each other. A `LiveRatio` carries the one text both a Worker render and a browser repaint print, so the

@@ -73,9 +73,9 @@ const TabsList: FC<TabsListProps> = ({ orientation = "horizontal", label, labell
 );
 
 const TAB_BASE = cn(
-  "cursor-pointer rounded-field border-0 bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline " +
+  "cursor-pointer rounded-field border-b-2 border-transparent bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline " +
     "focus-ring hover:text-foreground " +
-    "state-disabled aria-selected:bg-accent aria-selected:text-accent-foreground",
+    "state-disabled aria-selected:bg-accent aria-selected:text-accent-foreground data-selected:border-current",
 );
 
 // An `<a href="#panel">`, not a `<button>`: the fragment keeps a tab set operable with no script,

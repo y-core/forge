@@ -66,7 +66,7 @@ export const SignupView: FC<SignupViewProps> = ({
               <Alert.Description>{error}</Alert.Description>
             </Alert>
           )}
-          <FormField name='email' invalid={fieldError !== undefined}>
+          <FormField invalid={fieldError !== undefined}>
             <FormField.Label name='email'>Email address</FormField.Label>
             <Input
               type='email'
@@ -74,7 +74,7 @@ export const SignupView: FC<SignupViewProps> = ({
               autocomplete='email'
               autofocus
               required
-              field={{ name: "email", invalid: fieldError !== undefined, description: true }}
+              field={{ name: "email", error: fieldError, description: true }}
             />
             <FormField.Description name='email'>This is the address you will sign in with.</FormField.Description>
             {fieldError === undefined ? null : (

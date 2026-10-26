@@ -59,6 +59,7 @@ export interface VariableDeclaratorNode extends AstNode {
 /** A template literal, read one interpolation-delimited chunk at a time. */
 export interface TemplateLiteralNode extends AstNode {
   quasis: readonly TemplateElementNode[];
+  expressions?: readonly AstNode[] | undefined;
 }
 
 /** One `oxlint-disable*` comment, as the linter parsed it. */
@@ -114,6 +115,7 @@ export type RuleId =
   | "forge-ui-interaction-filter-group-required"
   | "forge-ui-catalog-wrong-raw-input"
   | "forge-ui-contrast-floor"
+  | "forge-ui-hit-target"
   | "forge-ui-a11y-label-association"
   | "forge-ui-a11y-live-politeness"
   | "forge-ui-a11y-no-aria-readonly-on-button"
@@ -125,7 +127,7 @@ export type RuleId =
   | "forge-ui-optional-prop-undefined";
 
 /** Which mechanism enforces a rule. @public */
-export type RuleEnforcer = "gate" | "lint" | "contrast";
+export type RuleEnforcer = "gate" | "lint" | "contrast" | "browser";
 
 /** A JSX opening element and the attributes it carries, in source order. */
 export interface JsxOpeningElementNode extends AstNode {

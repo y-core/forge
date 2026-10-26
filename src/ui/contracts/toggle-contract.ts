@@ -9,3 +9,6 @@ export const TOOLTIP_SCOPE = "tooltip";
 
 /** Marks a tooltip whose controller has mounted, retiring the CSS-only hover fallback. @public */
 export const TOOLTIP_MOUNTED_ATTR = "data-tooltip-mounted";
+
+/** Resumable-scope name the Filter root stamps, for a clear that empties a server-rendered choice. Eager. @public */
+export const FILTER_SCOPE = "filter";

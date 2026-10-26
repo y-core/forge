@@ -18,7 +18,107 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`applyFormat` from `@y-core/forge/ui/contracts` leaves a value with more characters than the template has slots unchanged**, instead of
+  returning its bare characters, and a literal typed where the template has a slot is kept as content.
+- **`Turnstile` reserves the widget's box on an inner `[data-ref="turnstile-frame"]` element**, so a `class` passed to `Turnstile` no longer sizes
+  the reserved box.
+- **`FormField` takes no `name`.** It never wired anything. Pass the `name` to `FormField.Label`, `.Description` and `.Error` and to the control's
+  `field` descriptor, which derive the `id`, `for` and `aria-describedby`, and delete it from the root.
+- **The bound `Input` from `@y-core/forge/ui/controls` no longer accepts `format`.** Passing both is a type error; a bound field's value is its
+  signal's.
+- **`Carousel` takes no `snap`.** It only stamped a `data-snap` that nothing read, so the slides never moved. Pass `snap` to each `Carousel.Item`
+  and delete it from the root.
+- **A control's `field` descriptor takes the error message as `error`, and no longer accepts `invalid`.** A non-blank `error` emits `aria-invalid`
+  and adds the error id to `aria-describedby`; a blank one (`""`, whitespace only, an empty array) marks nothing, so the control never names a
+  `FormField.Error` that rendered nothing. Replace `field={{ name, invalid: Boolean(error) }}` with `field={{ name, error }}`. `FormField`'s own
+  `invalid` is unchanged.
+- **`CheckboxGroup` and `RadioGroup` take the error message as `error`, and no longer accept `invalid`.** A non-blank `error` stamps `data-invalid`
+  and adds the error id to the fieldset's `aria-describedby`; a blank one (`""`, whitespace only, an empty array) marks nothing, so the group never
+  names a `.Error` that rendered nothing. Replace `invalid={Boolean(error)}` on the root with `error={error}`. An `.Item`'s own `invalid` is
+  unchanged.
+- **The chrome `Toolbar` no longer adds an `active` class to an action whose `active` is set.** The item is marked by `aria-pressed` and
+  `data-pressed`, which forge now paints. Move any `.active` rule of your own to `[data-pressed]`.
+
+### Added
+
+- **`RULE_ENFORCER` routes `forge-ui-hit-target` to a new `"browser"` enforcer**, in `@y-core/forge/tooling/lint`, and `RuleId` and
+  `RuleEnforcer` gain the matching members. Forge's browser set now measures every published `ui/core` and `ui/chrome` pointer target against the
+  `Button` `sm` box.
+
+### Changed
+
+- **`@y-core/forge/auth/client` imports `@y-core/forge/ui/core/client`**, so the turnstile scope no longer needs a separate import.
+- **`forge-ui-a11y-one-live-region` reports an `<output>` that states neither `aria-live` nor `role`**, since it is an implicit `role="status"`
+  live region. Give a readout `aria-live="off"`, or speak through `announce()`. **`forge-ui-a11y-live-politeness` accepts `aria-live="off"`**, which
+  it used to report.
+- **A contrast pair's foreground may carry an `alpha`.** The contrast check measures it composited over the background, using `compositeOver` from
+  `@y-core/forge/tooling/gate`, and reports a translucent background as unresolved.
+- **`Carousel` and `Carousel.Item` take their `carousel` and `slide` role descriptions from `LABEL_DEFAULTS`** as `carouselRoleDescription` and
+  `carouselSlideRoleDescription`, so a catalogue typed `Record<keyof typeof LABEL_DEFAULTS, string>` needs both keys.
+- **`Dock` takes a fixed height per `size`** (3rem, 3.5rem, 4.5rem, plus the safe-area inset) instead of growing with its content, so the page can
+  reserve exactly that height.
+- **`forge-ui-focus-ring` and the other class rules judge a module-scope `*_CLASS` or `*_CLASSES` string where it is declared**, and follow a
+  chain of same-file constants to the class list it names. A class constant that suppresses the outline with no ring is reported even when nothing
+  in its own file uses it.
+
+### Fixed
+
+- **Every flash call in one request reaches the next page, including calls made together.** `createFlash` merges them into one `Set-Cookie` in call order, dropping the oldest
+  messages past 4096 bytes; before, the browser kept only the last.
+- **`Input`'s `format` no longer deletes a digit literal's digit from the value.** With `format='+1 (###) ###-####'`, `4155551212` now groups as
+  `+1 (415) 555-1212` instead of `+1 (455) 552-2`.
+- **A form control under `Tooltip.Trigger asChild` or `Toolbar.Button asChild` keeps its own `type`.** Switch, Toggle, Slider, Input,
+  CheckboxGroup.Item and RadioGroup.Item no longer render `type="button"`.
+- **`<Button asChild disabled>` or `loading` onto a link component is inert.** A router `Link` carrying an `href` renders `aria-disabled="true"`
+  with no `href`, instead of a live `<a href disabled>`.
+- **`Turnstile` recognises a form submitted through `hx-action`.** In submit mode the press is held for the challenge, and the widget resets after
+  a submission and clears the form after a 2xx, as it does for a verb attribute.
+- **A second reveal of `Turnstile`'s fallback message is announced again**, after a retry or a swap, rather than only the first time.
+- **A revealed `Turnstile` fallback no longer overlaps the control below the widget.** The messages render below the widget's frame, outside it.
+- **`Filter`'s `×` empties the group even when the server checked a chip, and every chip stays reachable by arrow keys**; the clear needs
+  `@y-core/forge/ui/core/client`.
+- **`OtpInput` accepts a code pasted with spaces or dashes.** It no longer renders `pattern` or `maxlength`. With `ui/core/client` imported, the
+  field keeps the first `length` digits as they are typed or pasted, and without it the code posts as typed for `formDigits()` to reduce.
+- **`Field` names the control it wraps.** A `Select`, `Slider`, `Switch` or `Input` carrying an `id` or a `field` is labelled by the caption
+  through `aria-labelledby`; before, it had no accessible name.
+- **A `CheckboxGroup.Item` or `RadioGroup.Item` whose `value` is `error` or `description` renders no `id`**, rather than one equal to the group's
+  error or description id.
+- **A vertical `FormField` no longer overrides its children's widths.** A `Select class='w-40'` renders 160px wide, and `FormField.Label` is as wide
+  as its text.
+- **Picking the `"false"` item of a `RadioGroup` or `ToggleGroup` bound to a boolean signal sets the signal `false`**; before, it stayed `true`
+  while the screen showed the other choice.
+- **`bindControls` repaints every bound control after a form reset the reader clicks, and after resetting a form the root wraps**, so the controls
+  and their signals agree; before, only a scripted reset of a form around the root repainted.
+- **A bound `Slider`'s `<output>` follows a signal write**, rather than keeping the value it last showed.
+- **`bindAttr` writes a boolean bound to an `aria-*` attribute as `"true"` or `"false"`**, rather than removing it or writing `""`, so a bound
+  `aria-disabled` now blocks the click it should.
+- **`Slider`'s `output` readout is no longer a second live region.** The `<output>` carries `aria-live="off"`, so the value is read from the range
+  input and no longer announced on every step beside `<Announcer />`.
+- **The `Toast` and `Alert` dismiss buttons paint at full strength.** The × and its focus ring were drawn at half opacity, about 2.5:1 on the light
+  soft tones; they now take the panel's own text colour. `Alert`'s dismiss is a 32×32 target, and a dismissible `Alert` reserves `pe-10` to clear
+  it.
+- **`FormField.Error` renders nothing when its message is blank** (no children, `""`, an empty array or whitespace only) rather than an empty
+  paragraph carrying the field's error id. `CheckboxGroup.Error` and `RadioGroup.Error` behave the same.
+- **A control focused beneath the `Dock` now scrolls clear of it.** While the bar shows, the page reserves its height as `scroll-padding-bottom` on
+  `<html>` and `padding-bottom` on `<body>`, and gives it back above `hideAbove`. A `pb-*` utility on your `<body>` replaces that padding.
+- **A caller's `aria-describedby` no longer replaces the ids forge derives.** `Tooltip.Trigger` (plain and `asChild`), the `CheckboxGroup` and
+  `RadioGroup` roots and `Dialog` now merge it into one list, the caller's ids first and each id once, so the tooltip, the group's error and the
+  dialog's description stay announced. An empty or whitespace-only `aria-describedby` on one of them that leaves nothing behind is omitted rather
+  than rendered as `""`. `fieldDescribedBy` and `fieldControlProps` also drop an id the caller repeats.
+- **The selected `Tabs.Tab` is marked by more than colour.** It draws a 2px bottom rule in its own text colour, clearing 3:1 against its fill and
+  the page in both themes, and under forced colors that rule is `CanvasText` while an unselected tab draws none. Before, its only cue was a 1.08:1
+  fill, and in High Contrast every tab looked the same. Every tab is 2px taller, so selecting one never shifts the row.
+- **A focused menu row draws forge's focus ring.** `Menu.Item`, `.CheckboxItem`, `.RadioItem`, `.LinkItem`, `.SubmenuTrigger` and any row
+  wearing `MENU_ITEM_CLASS` show a 2px ring inside the row. Before, focus was only a 1.1:1 tint.
+- **A checked `Menu.CheckboxItem` or `Menu.RadioItem` shows a tick.** Every checkable row keeps room for it, so checking a row never moves its
+  label. The tick is drawn in the row's text colour and stays visible under forced colors. Before, checked and unchecked rows looked the same.
+- **A pressed `Toolbar.Button` or `Toolbar.Link` draws a 2px bar along its bottom edge in its text colour.** Under forced colors it paints
+  `Highlight`, with a `CanvasText` focus outline outside it. Only an item given `pressed` carries the cue. Before, pressed and unpressed items were
+  identical.
+- **The current link in a `Navbar` dropdown, and any `Menu.LinkItem` with `aria-current`, is set semibold on the accent fill**, as the bar's own
+  links are.
 
 ---
 

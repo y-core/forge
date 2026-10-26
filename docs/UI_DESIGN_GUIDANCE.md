@@ -32,7 +32,7 @@ audience: consumer
 - §3c The Forge-Primitive Admission Test: what a candidate rule must name to be admitted
 - §4 Anti-Drift Contract with the Design Gate: the corpus may not describe an API forge lacks
 - §4a Gate Enforcement Across Both Tiers: the gate's second direction, and why a gated rule is not thereby a Floor rule
-- §4b Two Enforcement Mechanisms: the check step and the oxlint plugin, and the two registers that keep them honest
+- §4b Enforcement Mechanisms: the check steps, the oxlint plugin and the browser set, and the two registers that keep them honest
 - §5 Three-Way Documentation Boundary: which of three homes owns a given statement
 - §5a Routing Rule for a New Design Rule: design rules and anti-patterns never land in `docs/`
 - §6 The Corpus Is Subject to the Governing-Doc Format: numbering and a Quick Reference, because warden reads both
@@ -202,9 +202,9 @@ The suppression mechanism itself is uniform across rule ids; the tiers are not e
 who may write one and on what grounds — a stated reason for a Default, and nothing at all for a Floor rule, where a suppression is a defect to
 remove rather than an override to accept.
 
-### 4b. Two Enforcement Mechanisms
+### 4b. Enforcement Mechanisms
 
-A corpus rule is enforced by one of two mechanisms, and which one is a property of **what the rule has to read** rather than of its tier, or of
+A corpus rule is enforced by one mechanism, and which one is a property of **what the rule has to read** rather than of its tier, or of
 whether its subject is markup or a class string.
 
 **forge's oxlint plugin** — `@y-core/forge/tooling/lint`, run by the `lint` step — owns every rule a **parsed file settles**. That is both families:
@@ -215,8 +215,11 @@ are not class strings, because the parser says they are not. A plugin rule's per
 `oxlint-disable-next-line forge/<key> -- <why>`, and because the rule is a lint rule it is also eligible for a fixer — a `CheckStep` can never carry
 one.
 
-**`validate-contrast`** owns the one rule no source text states: `forge-ui-contrast-floor` is measured off resolved colours, so it reads no `.tsx`
-at all.
+**`validate-contrast`** owns a rule no source text states: `forge-ui-contrast-floor` is measured off resolved colours, so it reads no `.tsx` at
+all.
+
+**The browser set** owns `forge-ui-hit-target`: a target's box exists only once an engine lays it out, so `src/ui/hit-target.browser.ts` measures
+every component the `core` and `chrome` barrels publish, in every engine.
 
 **What a plugin rule cannot own** is a rule needing more than one file — an import graph, an export map, a compiled stylesheet, a README held
 against a barrel. oxlint judges one file at a time, which is why those checks stay gate steps and why `validate-design` still runs: it holds the
@@ -259,7 +262,11 @@ this one does not pretend to.
 **A class list bound to a module-scope `const` and passed by name is judged where the name is used.** Forge writes most of its recipes that way, so
 a plugin reading only inline literals would be blind to most of the class strings it exists to check. An initializer that is already a class
 position of its own — `const R = cva(…)` — is judged where it is written and not a second time through the name. A `const` declared inside a
-function is not resolved: a class list written there is not the shared recipe this reaches for.
+function is not resolved: a class list written there is not the shared recipe this reaches for. A module-scope string `const` named `*_CLASS` or
+`*_CLASSES` is a class position of its own, judged where it is declared whether or not its file uses it, because forge publishes such constants for
+other files to apply, and a rule reading only use sites never sees one. It is judged there and not again where the name is used, so it must carry
+its own ring. `DARK_CLASS` is exempt: it names the class the theme script toggles, not a class list. A name bound to another same-file constant is
+followed to the class list at the end of the chain.
 
 ---
 

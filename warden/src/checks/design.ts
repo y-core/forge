@@ -203,7 +203,7 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
     if (enforcer === "gate") {
       findings.push(
         fail(
-          `RULE_ENFORCER calls \`${ruleId}\` a gate rule, but design-parse.ts detects no source rule — a corpus rule is \`lint\` or \`contrast\``,
+          `RULE_ENFORCER calls \`${ruleId}\` a gate rule, but design-parse.ts detects no source rule — a corpus rule is \`lint\`, \`contrast\` or \`browser\``,
           { file: table },
         ),
       );

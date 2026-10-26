@@ -6,6 +6,7 @@ declare global {
   interface Window {
     forgeNumberField: typeof import("./number-field");
     disposeNumberField?: () => void;
+    numberFieldEvents?: string[];
   }
 }
 
@@ -14,6 +15,12 @@ const EXPOSE = { expose: { forgeNumberField: "./ui/client/number-field" } };
 const FIELD = `<div id="root" data-slot="number-field">
   <button id="dec" type="button" data-slot="number-field-decrement">-</button>
   <input id="n" type="number" value="1" data-slot="number-field-input" />
+  <button id="inc" type="button" data-slot="number-field-increment">+</button>
+</div>`;
+
+const ANY_FIELD = `<div id="root" data-slot="number-field">
+  <button id="dec" type="button" data-slot="number-field-decrement">-</button>
+  <input id="n" type="number" step="any" value="1.5" min="0" max="3" data-slot="number-field-input" />
   <button id="inc" type="button" data-slot="number-field-increment">+</button>
 </div>`;
 
@@ -61,5 +68,49 @@ test.describe("the disabled reflection", () => {
     await page.evaluate(() => document.querySelector<HTMLInputElement>("#n")?.setAttribute("disabled", ""));
 
     await expect(page.locator("#inc")).toBeEnabled();
+  });
+});
+
+test.describe('step="any"', () => {
+  let pageErrors: string[];
+
+  test.beforeEach(async ({ page }) => {
+    pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(error.message));
+    await mount(page, ANY_FIELD, EXPOSE);
+    await page.evaluate(() => {
+      const root = document.querySelector<HTMLElement>("#root");
+      const input = document.querySelector<HTMLInputElement>("#n");
+      const events: string[] = [];
+      window.numberFieldEvents = events;
+      for (const type of ["input", "change"]) input?.addEventListener(type, (event) => events.push(event.type));
+      if (root) window.forgeNumberField.mountNumberField(root);
+    });
+  });
+
+  test("increments 1.5 to 2.5, firing input then change, with no page error", async ({ page }) => {
+    await page.locator("#inc").click();
+
+    await expect(page.locator("#n")).toHaveValue("2.5");
+    expect({ events: await page.evaluate(() => window.numberFieldEvents), pageErrors }).toEqual({ events: ["input", "change"], pageErrors: [] });
+  });
+
+  test("decrements 1.5 to 0.5", async ({ page }) => {
+    await page.locator("#dec").click();
+
+    await expect(page.locator("#n")).toHaveValue("0.5");
+  });
+
+  test("clamps a second increment to max", async ({ page }) => {
+    await page.locator("#inc").click();
+    await page.locator("#inc").click();
+
+    await expect(page.locator("#n")).toHaveValue("3");
+  });
+
+  test("hands focus back to the field after an any step", async ({ page }) => {
+    await page.locator("#inc").click();
+
+    await expect(page.locator("#n")).toBeFocused();
   });
 });

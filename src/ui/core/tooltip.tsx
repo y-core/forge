@@ -6,6 +6,7 @@ import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import type { Align, PhysicalSide } from "../contracts/types";
+import { mergeDescribedBy } from "./field";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
@@ -55,13 +56,20 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-describedby": ownDescribedBy,
   ...rest
 }) => {
   if (kind === "label") assertUnnamedTrigger(rest, asChild ? children : null);
   const className = cn("cursor-default focus-ring", cls);
   const inert = rest.disabled === true || (asChild && isValidElement(children) && children.props.disabled === true);
+  const childDescribedBy = asChild && isValidElement(children) ? children.props["aria-describedby"] : undefined;
+  const describedBy = mergeDescribedBy(typeof childDescribedBy === "string" ? childDescribedBy : undefined, [
+    ownDescribedBy,
+    kind === "label" ? undefined : contentId,
+  ]);
   const attrs = {
-    ...(kind === "label" ? { "aria-labelledby": contentId } : { "aria-describedby": contentId }),
+    ...(kind === "label" ? { "aria-labelledby": contentId } : {}),
+    ...(describedBy !== undefined ? { "aria-describedby": describedBy } : {}),
     ...rest,
     ...(inert ? { disabled: undefined, "aria-disabled": "true" as const, ...stateAttrs({ disabled: true }) } : {}),
   };
@@ -73,7 +81,6 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
       class: className,
       props: attrs,
       type: rest.type,
-      defaultType: "button",
       message:
         "Tooltip.Trigger with asChild requires exactly one JSX element child (e.g. <button> or <a>); received a string, number, fragment, array, or empty child instead.",
     }) as ReturnType<FC<TooltipTriggerProps>>;

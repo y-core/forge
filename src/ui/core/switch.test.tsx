@@ -81,7 +81,7 @@ describe("Switch", () => {
   });
 
   it("points the input at its own error message when the field is invalid", async () => {
-    expect(attrsOf(await render(<Switch field={{ name: "grid", invalid: true }} />), INPUT)).toEqual({
+    expect(attrsOf(await render(<Switch field={{ name: "grid", error: "Required" }} />), INPUT)).toEqual({
       "data-slot": "switch-input",
       type: "checkbox",
       role: "switch",

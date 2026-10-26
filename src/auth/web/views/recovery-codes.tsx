@@ -16,15 +16,9 @@ const CODE_BLOCK = "rounded-field border-field border-border px-3 py-2 font-mono
 
 /** The single field a recovery code is typed into, shared by the verify page and the confirmation below. @internal */
 export const RecoveryCodeField: FC<{ fieldError: string | undefined; icon: ForgeIcon<"alert"> }> = ({ fieldError, icon: AppIcon }) => (
-  <FormField name='code' invalid={fieldError !== undefined}>
+  <FormField invalid={fieldError !== undefined}>
     <FormField.Label name='code'>Recovery code</FormField.Label>
-    <Input
-      type='text'
-      autocomplete='off'
-      spellcheck={false}
-      required
-      field={{ name: "code", invalid: fieldError !== undefined, description: true }}
-    />
+    <Input type='text' autocomplete='off' spellcheck={false} required field={{ name: "code", error: fieldError, description: true }} />
     <FormField.Description name='code'>Spaces, dashes and letter case are ignored.</FormField.Description>
     {fieldError === undefined ? null : (
       <FormField.Error name='code'>

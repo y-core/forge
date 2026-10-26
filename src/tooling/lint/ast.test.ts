@@ -1,7 +1,21 @@
 import { describe, expect, it } from "bun:test";
 
 import { classExpressionVisitor, classLiteralVisitor } from "./ast.ts";
-import { attribute, call, declaration, declarator, element, identifier, literal, other, property, template, traverse } from "./lint.fixture.ts";
+import {
+  attribute,
+  call,
+  container,
+  declaration,
+  declarator,
+  element,
+  identifier,
+  interpolated,
+  literal,
+  other,
+  property,
+  template,
+  traverse,
+} from "./lint.fixture.ts";
 import type { ClassText } from "./types.ts";
 import type { AstNode } from "./types.ts";
 
@@ -157,5 +171,94 @@ describe("classLiteralVisitor() — a class list passed by name", () => {
     );
 
     expect(found.map((one) => one.loc)).toEqual([name.loc]);
+  });
+});
+
+describe("a `*_CLASS` string constant is a class position of its own", () => {
+  const concatenated = () => other("BinaryExpression", literal("a "), literal("b"));
+
+  for (const { name, root, expected } of [
+    { name: "a concatenated `*_CLASS`", root: () => other("Program", declaration(declarator("ROW_CLASS", concatenated()))), expected: ["a  b"] },
+    {
+      name: "an exported `*_CLASS`",
+      root: () => other("Program", other("ExportNamedDeclaration", declaration(declarator("ROW_CLASS", concatenated())))),
+      expected: ["a  b"],
+    },
+    {
+      name: "a `*_CLASSES` template",
+      root: () => other("Program", declaration(declarator("CHIP_CLASSES", template("p-1 gap-1")))),
+      expected: ["p-1 gap-1"],
+    },
+  ]) {
+    it(`judges ${name} where it is declared, though nothing in its file uses it`, () => {
+      expect(expressions(root())).toEqual(expected);
+    });
+  }
+
+  it("judges the constant at its declaration and not a second time where `cn` names it", () => {
+    const stated = literal("p-2");
+    const root = other("Program", declaration(declarator("ROW_CLASS", stated)), attribute("class", container(call("cn", identifier("ROW_CLASS")))));
+    const found: ClassText[] = [];
+    traverse(
+      classLiteralVisitor((one) => found.push(one)),
+      root,
+    );
+
+    expect(found.map((one) => [one.text, one.loc])).toEqual([["p-2", stated.loc]]);
+  });
+
+  it("follows a name bound to another name through to the class list it ends at", () => {
+    const root = other(
+      "Program",
+      declaration(declarator("BASE", literal("p-2"))),
+      declaration(declarator("ALIAS", identifier("BASE"))),
+      attribute("class", container(call("cn", identifier("ALIAS")))),
+    );
+
+    expect(expressions(root)).toEqual(["p-2"]);
+  });
+
+  it("follows a name interpolated into a template the class position names", () => {
+    const root = other(
+      "Program",
+      declaration(declarator("BASE", literal("p-2"))),
+      declaration(declarator("ROW", interpolated(["", " gap-1"], [identifier("BASE")]))),
+      attribute("class", container(call("cn", identifier("ROW")))),
+    );
+
+    expect(expressions(root).map((text) => text.split(" ").filter(Boolean).toSorted())).toEqual([["gap-1", "p-2"]]);
+  });
+
+  it("terminates on two names bound to each other, stating no class", () => {
+    const root = other(
+      "Program",
+      declaration(declarator("A", identifier("B"))),
+      declaration(declarator("B", identifier("A"))),
+      attribute("class", container(call("cn", identifier("A")))),
+    );
+
+    expect(expressions(root)).toEqual([]);
+  });
+
+  it("leaves `DARK_CLASS` alone, which names the theme class and is no class list", () => {
+    expect(expressions(other("Program", declaration(declarator("DARK_CLASS", literal("dark")))))).toEqual([]);
+  });
+
+  it("leaves a regular expression named `*_CLASS` alone", () => {
+    expect(expressions(other("Program", declaration(declarator("PROSE_CLASS", literal(/prose-\w+/)))))).toEqual([]);
+  });
+
+  it("leaves a `*_CLASS` declared inside a function alone", () => {
+    expect(expressions(other("Program", other("FunctionDeclaration", declaration(declarator("ROW_CLASS", literal("p-4"))))))).toEqual([]);
+  });
+
+  it("judges a `*_CLASS` object of recipes where it is used, and not where it is declared", () => {
+    const recipes = () => declaration(declarator("SECTION_CLASS", other("ObjectExpression", literal("bg-a"), literal("bg-b"))));
+
+    expect(literals(other("Program", recipes()))).toEqual([]);
+    expect(literals(other("Program", recipes(), attribute("class", container(call("cva", identifier("SECTION_CLASS"))))))).toEqual([
+      "bg-a",
+      "bg-b",
+    ]);
   });
 });

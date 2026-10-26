@@ -8,8 +8,7 @@ import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
 
-interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
-  name: string;
+interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children" | "name"> {
   invalid?: boolean | undefined;
   disabled?: boolean | undefined;
   orientation?: Orientation | undefined;
@@ -40,15 +39,14 @@ const fieldVariants = cva({
   variants: {
     orientation: {
       horizontal: "flex-row items-start [&>[data-slot~=field-content]]:flex-1 [&>[data-slot~=field-label]]:flex-auto",
-      vertical: "flex-col [&>*]:w-full",
+      vertical: "flex-col",
     },
   },
   defaultVariants: { orientation: "vertical" },
 });
 
-/** The horizontal arrangement, re-applied once the `field-group` container is wide enough. */
 const FIELD_RESPONSIVE = cn(
-  "@md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>*]:w-auto @md/field-group:[&>[data-slot~=field-content]]:flex-1 @md/field-group:[&>[data-slot~=field-label]]:flex-auto",
+  "@md/field-group:flex-row @md/field-group:items-start @md/field-group:[&>[data-slot~=field-content]]:flex-1 @md/field-group:[&>[data-slot~=field-label]]:flex-auto",
 );
 
 /** Shared Tailwind class string for FieldLabel and FieldTitle. */
@@ -61,6 +59,18 @@ export const FIELD_LABEL_CLASSES = cn(
 const ASCII_WS = /[\t\n\f\r ]/;
 
 const ASCII_WS_ONLY = /^[\t\n\f\r ]*$/;
+
+const FIELD_MESSAGE_SUFFIXES: ReadonlySet<string> = new Set(["description", "error"]);
+
+/** Whether a message renders no text, the test that decides whether a field's error renders. @internal */
+export function blankMessage(node: unknown): boolean {
+  return (
+    node == null ||
+    typeof node === "boolean" ||
+    (typeof node === "string" && ASCII_WS_ONLY.test(node)) ||
+    (Array.isArray(node) && node.every(blankMessage))
+  );
+}
 
 function idToken(value: string): boolean {
   return value !== "" && !ASCII_WS.test(value);
@@ -76,6 +86,11 @@ export function fieldId(name: string, scope?: string): string {
   return scope !== undefined && !ASCII_WS_ONLY.test(scope) ? `field-${scope}-${name}` : `field-${name}`;
 }
 
+/** The id a control renders under: its own `id`, else the one its field descriptor derives. @internal */
+export function fieldControlId(id: string | undefined, field: FieldDescriptor | undefined): string | undefined {
+  return id ?? (field !== undefined && derivable(field.name, field.scope) ? fieldId(field.name, field.scope) : undefined);
+}
+
 /** The id of the field's description, derived from {@link fieldId} so the two always agree. */
 export function fieldDescriptionId(name: string, scope?: string): string {
   return `${fieldId(name, scope)}-description`;
@@ -88,7 +103,13 @@ export function fieldErrorId(name: string, scope?: string): string {
 
 /** The id of one item in a checkable group, `undefined` when either half cannot be derived. @internal */
 export function fieldItemId(name: string, value: string, scope?: string): string | undefined {
-  return derivable(name, scope) && derivable(value) ? `${fieldId(name, scope)}-${value}` : undefined;
+  return derivable(name, scope) && derivable(value) && !FIELD_MESSAGE_SUFFIXES.has(value) ? `${fieldId(name, scope)}-${value}` : undefined;
+}
+
+/** One `aria-describedby` value, the existing ids first and each id once, `undefined` when none remain. @internal */
+export function mergeDescribedBy(existing: string | undefined, added: readonly (string | undefined)[]): string | undefined {
+  const ids = new Set([existing, ...added].flatMap((part) => (part === undefined ? [] : part.split(ASCII_WS))).filter((id) => id !== ""));
+  return ids.size > 0 ? [...ids].join(" ") : undefined;
 }
 
 /** The box a checkable group's item draws, per size — the same square in both groups. @internal */
@@ -97,20 +118,15 @@ export const FIELD_ITEM_SIZE = { sm: "size-3.5", md: "size-4", lg: "size-5" } as
 /** The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public */
 export function fieldDescribedBy(name: string, options: FieldDescribedByOptions = {}): string | undefined {
   const named = derivable(name, options.scope);
-  const value = [
-    options.existing,
+  return mergeDescribedBy(options.existing, [
     named && options.description ? fieldDescriptionId(name, options.scope) : undefined,
     named && options.invalid ? fieldErrorId(name, options.scope) : undefined,
-  ]
-    .flatMap((part) => (part === undefined ? [] : part.split(/[\t\n\f\r ]+/)))
-    .filter((token) => token !== "")
-    .join(" ");
-  return value ? value : undefined;
+  ]);
 }
 
 /** Merges field descriptor wiring into control props. @public */
 export function fieldControlProps<T extends FieldControlProps>(props: T, field: FieldDescriptor): T {
-  const invalid = field.invalid ?? false;
+  const invalid = !blankMessage(field.error);
   const describedBy = fieldDescribedBy(field.name, {
     ...(field.scope !== undefined ? { scope: field.scope } : {}),
     ...(field.description !== undefined ? { description: field.description } : {}),
@@ -118,7 +134,7 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
     ...(props["aria-describedby"] !== undefined ? { existing: props["aria-describedby"] } : {}),
   });
 
-  const id = props.id ?? (derivable(field.name, field.scope) ? fieldId(field.name, field.scope) : undefined);
+  const id = fieldControlId(props.id, field);
 
   return {
     ...props,
@@ -130,9 +146,8 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
   };
 }
 
-/** A `<fieldset>` wrapper carrying a field's name, orientation, and invalid or disabled state to its parts. @internal */
+/** A `<fieldset>` wrapper carrying a field's orientation and its invalid or disabled state to its parts. @internal */
 export const FieldRoot: FC<PropsWithChildren<FieldProps>> = ({
-  name,
   invalid = false,
   disabled = false,
   orientation = "vertical",
@@ -201,7 +216,7 @@ export const FieldDescription: FC<PropsWithChildren<DescriptionProps & FieldNami
   );
 };
 
-/** A field's error message, rendering nothing when it has no children; `announce()` speaks it, not a role. @internal */
+/** A field's error message, rendering nothing when its children render no text. @internal */
 export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
   class: cls,
   id,
@@ -212,7 +227,7 @@ export const FieldError: FC<PropsWithChildren<ErrorProps & FieldNaming>> = ({
   "data-slot": inherited,
   ...props
 }) => {
-  if (children == null || children === false) {
+  if (blankMessage(children)) {
     return null;
   }
 

@@ -21,8 +21,12 @@ export const MENU_GROUP_SELECTOR = "fieldset,[role='group']";
 /** The class string every menu row shape wears, including client-built rows. @public */
 export const MENU_ITEM_CLASS =
   "flex w-full items-center gap-2 rounded-field px-2 py-1.5 text-start text-sm text-popover-foreground " +
-  "bg-transparent border-0 cursor-pointer outline-none " +
+  "bg-transparent border-0 cursor-pointer focus-ring " +
   "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground " +
+  "aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground " +
+  "aria-[checked]:before:size-4 aria-[checked]:before:shrink-0 " +
+  "data-checked:before:mx-1.25 data-checked:before:mb-1 data-checked:before:h-2.5 data-checked:before:w-1.5 " +
+  "data-checked:before:rotate-45 rtl:data-checked:before:-scale-x-100 data-checked:before:border-e-2 data-checked:before:border-b-2 " +
   "state-disabled";
 
 /** The `aria-checked` and delegated-action attributes a checkable row carries; empty for a plain row. */

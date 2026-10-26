@@ -4,9 +4,11 @@ import { dismissAlert } from "../client/alert";
 import { announceFailure, announceFieldError } from "../client/announce";
 import { mountRovingFocus } from "../client/composite";
 import { ownerDocument } from "../client/dom";
+import { mountFilter } from "../client/filter";
 import { mountInputFormat } from "../client/input-format";
 import { checkMenuItem, mountMenu } from "../client/menu";
 import { mountNumberField } from "../client/number-field";
+import { mountOtpInput } from "../client/otp-input";
 import { mountExpandedState, mountExpandedStates } from "../client/popover-expanded";
 import { registerScope } from "../client/resume";
 import { mountTabs } from "../client/tabs";
@@ -19,11 +21,12 @@ import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contra
 import { INPUT_FORMAT_SCOPE } from "../contracts/input-format-contract";
 import { MENU_SCOPE } from "../contracts/menu-contract";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
+import { OTP_INPUT_SCOPE } from "../contracts/otp-input-contract";
 import { POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { SLIDER_SCOPE } from "../contracts/slider-contract";
 import { TABS_SCOPE } from "../contracts/tabs-contract";
 import { TOAST_CONTAINER_SCOPE, TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
-import { TOGGLE_GROUP_ITEM_SELECTOR, TOGGLE_GROUP_SCOPE, TOOLTIP_SCOPE } from "../contracts/toggle-contract";
+import { FILTER_SCOPE, TOGGLE_GROUP_ITEM_SELECTOR, TOGGLE_GROUP_SCOPE, TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import { TOOLBAR_ITEM_SELECTOR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
 import { TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
 import type { MenuAction } from "../contracts/types";
@@ -98,9 +101,13 @@ registerScope(TOGGLE_GROUP_SCOPE, {
   },
 });
 
+registerScope(FILTER_SCOPE, { eager: true, setup: ({ root }) => mountFilter(root) });
+
 registerScope(NUMBER_FIELD_SCOPE, { eager: true, setup: ({ root }) => mountNumberField(root) });
 
 registerScope(INPUT_FORMAT_SCOPE, { eager: true, setup: ({ root }) => mountInputFormat(root) });
+
+registerScope(OTP_INPUT_SCOPE, { eager: true, setup: ({ root }) => mountOtpInput(root) });
 
 registerScope<SliderAction>(SLIDER_SCOPE, {
   on: {

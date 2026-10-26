@@ -60,6 +60,32 @@ describe("Textarea", () => {
   it("appends a caller class after its own, so the caller's wins a conflict", async () => {
     expect(classesOf(await area({ class: "extra" })).at(-1)).toBe("extra");
   });
+
+  it("renders a value as its text content, because a browser ignores a value attribute on a textarea", async () => {
+    const html = await area({ value: "hello" });
+
+    expect(html.endsWith(">hello</textarea>")).toBe(true);
+    expect(attrsOf(html)).toEqual({ "data-slot": "textarea", "data-size": "md" });
+  });
+
+  it("escapes a value exactly as it escapes the same text given as children", async () => {
+    expect(await area({ value: "R&D's <x>" })).toBe(await render(<Textarea>{"R&D's <x>"}</Textarea>));
+  });
+
+  it("keeps a field's name and still renders the value as content when wired to a field", async () => {
+    const html = await area({ field: { name: "bio" }, value: "hi" });
+
+    expect(attrOf(html, "name")).toBe("bio");
+    expect(Object.hasOwn(attrsOf(html), "value")).toBe(false);
+    expect(html.endsWith(">hi</textarea>")).toBe(true);
+  });
+
+  it("rejects a value and children together at the type level, and the value is what renders", async () => {
+    // @ts-expect-error -- a Textarea's initial text is its value or its children, never both
+    const html = await render(<Textarea value='a'>b</Textarea>);
+
+    expect(html.endsWith(">a</textarea>")).toBe(true);
+  });
 });
 
 describe("Textarea — size, invalid and busy", () => {

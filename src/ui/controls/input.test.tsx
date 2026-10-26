@@ -19,4 +19,12 @@ describe("controls/Input", () => {
       '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" value="ada" data-ref="name-input" data-field="name">',
     );
   });
+
+  it("refuses format at the type level", async () => {
+    // @ts-expect-error -- a bound Input's value is its signal's, which a format would regroup
+    const out = await render(<Input bind='card' format='#### ####' />);
+    expect(out).toBe(
+      '<input data-slot="input" data-size="md" class="state-busy state-disabled state-invalid field-chrome focus-ring h-control-md text-sm" data-field="card">',
+    );
+  });
 });

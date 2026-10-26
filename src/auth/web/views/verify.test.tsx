@@ -53,7 +53,7 @@ function verify(props: Partial<VerifyViewProps> = {}) {
 describe("VerifyView", () => {
   it("renders a six-cell numeric code field wired to the `code` field id", async () => {
     expect(tagOf(await verify(), 'id="field-code"')).toBe(
-      '<input data-slot="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6" data-size="md" ' +
+      '<input data-slot="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code" data-size="md" ' +
         'class="state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums text-base" ' +
         'autofocus id="field-code" name="code" aria-describedby="field-code-description">',
     );
@@ -63,7 +63,12 @@ describe("VerifyView", () => {
   // the same defect the schema had: a correct eight-digit code typed into a six-cell field.
   it("sizes the field to the presented factor's width, and describes that width in words", async () => {
     const html = await verify({ codeDigits: 8 });
-    expect(attrOf(html, 'id="field-code"', "maxlength")).toBe("8");
+    const editor = attrsOf(html, 'id="field-code"');
+    expect({ cap: attrOf(html, 'data-slot="otp-input-wrapper"', "data-otp-length"), name: editor.name, native: "maxlength" in editor }).toEqual({
+      name: "code",
+      cap: "8",
+      native: false,
+    });
     expect(textOf(html, "p", 'id="field-code-description"')).toBe("8 digits. Spaces and dashes are ignored.");
   });
 

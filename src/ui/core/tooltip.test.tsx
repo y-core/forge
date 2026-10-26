@@ -362,7 +362,7 @@ describe("Tooltip.Trigger asChild — a component child's type", () => {
     ).toEqual({ type: "submit", "data-slot": "toolbar-button tooltip-trigger", "data-toolbar-item": "", "aria-describedby": "t" });
   });
 
-  it("gives type='button' to a component child that sets no type and renders none of its own", async () => {
+  it("gives no type to a component child that sets none, since it cannot see what the child renders", async () => {
     expect(
       attrsOf(
         await render(
@@ -371,7 +371,7 @@ describe("Tooltip.Trigger asChild — a component child's type", () => {
           </Tooltip.Trigger>,
         ),
       ),
-    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "t" });
+    ).toEqual({ "data-slot": "tooltip-trigger", "aria-describedby": "t" });
   });
 
   it("gives no type to a Link child, adding only its slot token and aria-describedby", async () => {
@@ -412,5 +412,89 @@ describe("Tooltip.Trigger asChild — an intrinsic button child's type", () => {
         ),
       ),
     ).toEqual({ type: "submit", "data-slot": "tooltip-trigger", "aria-describedby": "t" });
+  });
+});
+
+describe("Tooltip.Trigger — a caller's aria-describedby joins the content id rather than replacing it", () => {
+  it("lists the caller's id ahead of the content id on a plain trigger", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' aria-describedby='hint'>
+            Save
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "hint tip" });
+  });
+
+  it("keeps the asChild child's own id ahead of the content id", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' asChild>
+            <button type='button' aria-describedby='hint'>
+              Save
+            </button>
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "hint tip" });
+  });
+
+  it("orders the child's id, then the trigger's, then the content id on the asChild path", async () => {
+    expect(
+      attrOf(
+        await render(
+          <Tooltip.Trigger for='tip' asChild aria-describedby='a'>
+            <button type='button' aria-describedby='b'>
+              Save
+            </button>
+          </Tooltip.Trigger>,
+        ),
+        "aria-describedby",
+      ),
+    ).toBe("b a tip");
+  });
+
+  it("names the content id once and collapses the caller's whitespace", async () => {
+    expect(
+      attrOf(
+        await render(
+          <Tooltip.Trigger for='tip' aria-describedby='  hint  tip '>
+            Save
+          </Tooltip.Trigger>,
+        ),
+        "aria-describedby",
+      ),
+    ).toBe("hint tip");
+  });
+
+  it("keeps the caller's description in label kind without describing the trigger by the content it is named by", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' kind='label' aria-describedby='hint'>
+            B
+          </Tooltip.Trigger>,
+        ),
+      ),
+    ).toEqual({ type: "button", "data-slot": "tooltip-trigger", "aria-labelledby": "tip", "aria-describedby": "hint" });
+  });
+
+  it("drops a blank caller description in label kind, and reduces it to the content id otherwise", async () => {
+    const rendered = async (kind: "label" | undefined) =>
+      attrsOf(
+        await render(
+          <Tooltip.Trigger for='tip' kind={kind} aria-describedby='  '>
+            B
+          </Tooltip.Trigger>,
+        ),
+      );
+
+    expect({ label: await rendered("label"), description: await rendered(undefined) }).toEqual({
+      label: { type: "button", "data-slot": "tooltip-trigger", "aria-labelledby": "tip" },
+      description: { type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "tip" },
+    });
   });
 });

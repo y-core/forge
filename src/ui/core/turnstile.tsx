@@ -5,7 +5,6 @@ import { LABEL_DEFAULTS } from "../contracts/labels";
 import { TURNSTILE, TURNSTILE_SCOPE } from "../contracts/turnstile-contract";
 import type { TurnstileProps } from "./types";
 import { slotToken } from "./utils/as-child";
-import { cn } from "./utils/cn";
 
 // Cloudflare's published widget dimensions, held only for `appearance="always"`: the other two modes
 // show nothing until they must, so a reservation there would leave a permanent hole.
@@ -43,8 +42,9 @@ export const Turnstile: FC<TurnstileProps> = ({
     data-response-field-name={responseFieldName}
     data-language={language}
     data-tabindex={tabindex}
-    class={cn(appearance === "always" ? RESERVED_BOX[size] : undefined, cls)}
+    class={cls}
     {...rest}>
+    <div data-ref={TURNSTILE.frame} class={appearance === "always" ? RESERVED_BOX[size] : undefined} />
     <p data-ref={TURNSTILE.fallback} hidden={true} class='text-sm text-destructive-text'>
       {children ?? LABEL_DEFAULTS.turnstileFallback}
     </p>

@@ -4,11 +4,17 @@ import { describe, expect, it } from "bun:test";
 
 import { createElement } from "../../../render/jsx/element";
 import type { FC, JSX } from "../../../render/jsx/types";
+import { attrOf, attrsOf } from "../../../testing/markup";
 import { render } from "../../../testing/render";
 import { MENU_ITEM_CLASS } from "../../contracts/menu-contract";
 import { Button, buttonVariants } from "../button";
+import { Input } from "../input";
+import { Link } from "../link";
 import { Menu } from "../menu";
 import { Popover } from "../popover";
+import { Slider } from "../slider";
+import { Switch } from "../switch";
+import { Toggle } from "../toggle";
 import { Toolbar } from "../toolbar";
 import { Tooltip } from "../tooltip";
 import { cloneAsChild, slotToken } from "./as-child";
@@ -140,38 +146,26 @@ describe("cloneAsChild — a component child renders its own disabled and type",
       expected: '<button type="button" class="probe-class" data-slot="probe">Go</button>',
     },
     {
-      label: "takes the compound's default type when neither the option nor the child sets one",
-      child: <Probe>Go</Probe>,
-      options: { ...base, defaultType: "button" as const },
-      expected: '<button type="button" class="probe-class" data-slot="probe">Go</button>',
-    },
-    {
       label: "gets no type at all when the compound declares no default, so a link component stays a plain link",
       child: <ProbeLink href='/docs'>Docs</ProbeLink>,
       options: base,
       expected: '<a href="/docs" class="probe-class" data-slot="probe">Docs</a>',
     },
     {
-      label: "gets no type from the compound's default when it carries an href, so a link component never renders type='button'",
-      child: <ProbeLink href='/docs'>Docs</ProbeLink>,
-      options: { ...base, defaultType: "button" as const },
-      expected: '<a href="/docs" class="probe-class" data-slot="probe">Docs</a>',
-    },
-    {
-      label: "keeps its own type over the compound's default when it carries an href",
+      label: "keeps its own type when it carries an href",
       child: (
         <ProbeLink href='/docs' type='text/html'>
           Docs
         </ProbeLink>
       ),
-      options: { ...base, defaultType: "button" as const },
+      options: base,
       expected: '<a href="/docs" type="text/html" class="probe-class" data-slot="probe">Docs</a>',
     },
     {
-      label: "still receives the caller's explicit type when it carries an href, because the caller wins",
+      label: "is never given the compound's type option when it carries an href, like an `<a>`",
       child: <ProbeLink href='/docs'>Docs</ProbeLink>,
-      options: { ...base, type: "button", defaultType: "button" as const },
-      expected: '<a href="/docs" type="button" class="probe-class" data-slot="probe">Docs</a>',
+      options: { ...base, type: "button" },
+      expected: '<a href="/docs" class="probe-class" data-slot="probe">Docs</a>',
     },
   ];
 
@@ -180,6 +174,98 @@ describe("cloneAsChild — a component child renders its own disabled and type",
       expect(await render(cloneAsChild(child, options))).toBe(expected);
     });
   }
+});
+
+describe("cloneAsChild — a component that renders a form control keeps its own type under Tooltip.Trigger asChild", () => {
+  it("leaves Switch, Toggle and Slider their input type, and Input none", async () => {
+    const triggers = [
+      <Tooltip.Trigger for='t' asChild>
+        <Switch name='s' />
+      </Tooltip.Trigger>,
+      <Tooltip.Trigger for='t' asChild>
+        <Toggle name='s'>B</Toggle>
+      </Tooltip.Trigger>,
+      <Tooltip.Trigger for='t' asChild>
+        <Slider name='s' />
+      </Tooltip.Trigger>,
+      <Tooltip.Trigger for='t' asChild>
+        <Input name='s' />
+      </Tooltip.Trigger>,
+    ];
+
+    expect(await Promise.all(triggers.map(async (el) => attrOf(await render(el), "type", 'aria-describedby="t"')))).toEqual([
+      "checkbox",
+      "checkbox",
+      "range",
+      "",
+    ]);
+  });
+});
+
+describe("cloneAsChild — a component child carrying an href is a link", () => {
+  it("is withdrawn from navigation and marked aria-disabled when the compound is disabled", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Button asChild disabled>
+            <Link href='/next'>Next</Link>
+          </Button>,
+        ),
+      ),
+    ).toEqual({
+      "data-slot": "link button",
+      "data-tone": "primary",
+      "data-decoration": "underline",
+      "aria-disabled": "true",
+      "data-disabled": "",
+      role: "link",
+      tabindex: "0",
+    });
+  });
+
+  it("is withdrawn from navigation and marked aria-disabled when the compound is loading", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Button asChild loading>
+            <Link href='/next'>Next</Link>
+          </Button>,
+        ),
+      ),
+    ).toEqual({
+      "data-slot": "link button",
+      "data-tone": "primary",
+      "data-decoration": "underline",
+      "aria-busy": "true",
+      "aria-disabled": "true",
+      "data-busy": "",
+      role: "link",
+      tabindex: "0",
+    });
+  });
+
+  it("is withdrawn from navigation by an aria-disabled the compound resolved, not only by the option", async () => {
+    const options = { ...base, props: { "aria-disabled": "true" } };
+
+    expect(attrsOf(await render(cloneAsChild(<ProbeLink href='/docs'>Docs</ProbeLink>, options)))).toEqual({
+      "aria-disabled": "true",
+      role: "link",
+      tabindex: "0",
+      "data-slot": "probe",
+    });
+  });
+
+  it("keeps its href and gains no disabled state when the compound is enabled", async () => {
+    expect(
+      attrsOf(
+        await render(
+          <Button asChild>
+            <Link href='/next'>Next</Link>
+          </Button>,
+        ),
+      ),
+    ).toEqual({ "data-slot": "link button", "data-tone": "primary", "data-decoration": "underline", href: "/next" });
+  });
 });
 
 describe("cloneAsChild — data-slot is a token list", () => {

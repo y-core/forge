@@ -62,7 +62,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
 
   it("an invalid group with no description names the error alone, and the error claims no live-region role", async () => {
     const html = await render(
-      <CheckboxGroup name='toppings' invalid>
+      <CheckboxGroup name='toppings' error='Pick at least one.'>
         <CheckboxGroup.Error name='toppings'>Pick at least one.</CheckboxGroup.Error>
       </CheckboxGroup>,
     );
@@ -73,7 +73,7 @@ describe("CheckboxGroup — aria-describedby names only what renders", () => {
 
   it("an invalid group with a description names both, description first", async () => {
     const html = await render(
-      <CheckboxGroup name='toppings' description invalid>
+      <CheckboxGroup name='toppings' description error='Pick at least one.'>
         <CheckboxGroup.Description name='toppings'>Pick as many as you like.</CheckboxGroup.Description>
         <CheckboxGroup.Error name='toppings'>Pick at least one.</CheckboxGroup.Error>
       </CheckboxGroup>,
@@ -213,7 +213,11 @@ describe("CheckboxGroup — size, invalid and busy", () => {
   });
 
   it("stamps invalidity for a stylesheet but keeps aria-invalid off, which the group role forbids", async () => {
-    expect(attrsOf(await render(<CheckboxGroup name='c' invalid />))).toEqual({ ...ROOT, "aria-describedby": "field-c-error", "data-invalid": "" });
+    expect(attrsOf(await render(<CheckboxGroup name='c' error='Required' />))).toEqual({
+      ...ROOT,
+      "aria-describedby": "field-c-error",
+      "data-invalid": "",
+    });
   });
 
   it("stamps busyness for a stylesheet but keeps aria-busy off, which the group role forbids", async () => {
@@ -221,7 +225,7 @@ describe("CheckboxGroup — size, invalid and busy", () => {
   });
 
   it("a caller's own aria attribute survives the state spread", async () => {
-    expect(attrsOf(await render(<CheckboxGroup name='c' invalid aria-label='Plan' />))).toEqual({
+    expect(attrsOf(await render(<CheckboxGroup name='c' error='Required' aria-label='Plan' />))).toEqual({
       ...ROOT,
       "aria-describedby": "field-c-error",
       "data-invalid": "",
@@ -250,5 +254,39 @@ describe("CheckboxGroup — size, invalid and busy", () => {
       "aria-invalid": "true",
       "aria-busy": "true",
     });
+  });
+});
+
+describe("CheckboxGroup — a caller's aria-describedby joins the derived ids rather than replacing them", () => {
+  it("lists the caller's id ahead of the description and the error", async () => {
+    expect(
+      attrOf(
+        await render(
+          <CheckboxGroup name='toppings' description error='x' aria-describedby='hint'>
+            <CheckboxGroup.Description name='toppings'>Help</CheckboxGroup.Description>
+            <CheckboxGroup.Error name='toppings'>x</CheckboxGroup.Error>
+          </CheckboxGroup>,
+        ),
+        "aria-describedby",
+      ),
+    ).toBe("hint field-toppings-description field-toppings-error");
+  });
+
+  it("names a derived id the caller already wrote once, in the caller's position", async () => {
+    expect(
+      attrOf(
+        await render(
+          <CheckboxGroup name='toppings' description error='x' aria-describedby='field-toppings-error'>
+            <CheckboxGroup.Description name='toppings'>Help</CheckboxGroup.Description>
+            <CheckboxGroup.Error name='toppings'>x</CheckboxGroup.Error>
+          </CheckboxGroup>,
+        ),
+        "aria-describedby",
+      ),
+    ).toBe("field-toppings-error field-toppings-description");
+  });
+
+  it("emits no aria-describedby for an empty caller value when nothing derived renders", async () => {
+    expect(attrsOf(await render(<CheckboxGroup name='toppings' aria-describedby='' />))).toEqual(ROOT);
   });
 });

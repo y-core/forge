@@ -548,7 +548,7 @@ union names every symbol it must cover; where to get them is [`AUTH_MOUNTING.md`
 Import the controller for its side effect, before `resume()`:
 
 ```ts
-import "@y-core/forge/auth/client"; // registers the `passkey` scope
+import "@y-core/forge/auth/client"; // registers the auth scopes, and every scope ui/core markup names
 import { resume } from "@y-core/forge/ui/client";
 
 resume();

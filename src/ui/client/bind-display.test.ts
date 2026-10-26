@@ -181,6 +181,20 @@ describe("bindAttr", () => {
     expect(el.attrs.has("hidden")).toBe(false);
   });
 
+  it('spells a bound aria-* boolean as "true" and "false", never removed or empty', () => {
+    const el = new FakeElement({ "aria-disabled": "false", "data-bind-attr": "aria-disabled:locked" });
+    const state = signals({ locked: false });
+
+    bindAttr(root(el), state);
+    const painted = [el.getAttribute("aria-disabled")];
+    state.locked.value = true;
+    painted.push(el.getAttribute("aria-disabled"));
+    state.locked.value = false;
+    painted.push(el.getAttribute("aria-disabled"));
+
+    expect(painted).toEqual(["false", "true", "false"]);
+  });
+
   it("removes the attribute for null and undefined too", () => {
     for (const empty of [null, undefined]) {
       const el = new FakeElement({ "data-bind-attr": "title:label" });

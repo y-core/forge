@@ -319,6 +319,10 @@ describe("the gray dials' safety claim", () => {
     ]);
   });
 
+  it("audits no scale pair at an alpha, because `liveRatios` reads a scale step opaque and would report a ratio nothing paints", () => {
+    expect(scalePairs().filter((pair) => pair.foreground.alpha !== undefined || pair.background.alpha !== undefined)).toEqual([]);
+  });
+
   it("leaves every other pair beyond the dials' reach", () => {
     const unreachable = CONTRAST_PAIRS.filter((pair) => pair.foreground.kind === "fixed" || pair.background.kind === "fixed");
     expect(scalePairs().length + unreachable.length).toBe(CONTRAST_PAIRS.length);

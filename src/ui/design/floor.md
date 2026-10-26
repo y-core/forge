@@ -58,8 +58,9 @@ shipped, not the token's light value.
 
 **Never carry status by color alone.** <!-- rule:forge-ui-not-color-alone --> Pair the token with an `Icon` and with text. On a field, carry it with
 both `data-invalid` and `aria-invalid`, and note that **two mechanisms emit them**: `FormField`'s `invalid` prop puts `data-invalid` on the
-`<fieldset>` (through `stateAttrs`), while `aria-invalid` reaches the control only through `fieldControlProps`. Setting `invalid` alone styles the
-field and announces nothing. A red `Alert` with no icon and no `Alert.Title` naming the failure is a color-only status.
+`<fieldset>` (through `stateAttrs`), while `aria-invalid` reaches the control only through its own `field` descriptor
+(`field={{ name, error }}`), which `fieldControlProps` merges when the message is not blank. Setting the root's `invalid` alone styles the field and
+announces nothing. A red `Alert` with no icon and no `Alert.Title` naming the failure is a color-only status.
 
 ### 1d. Focus Stays Visible
 
@@ -92,7 +93,9 @@ call site or the build fails.
 ### 1f. Hit Target and Reduced Motion
 
 **Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target --> `sm` is the floor of the size scale, which
-`shape` squares off rather than resizes. A control does not shrink below it to make a layout fit; the layout gives way.
+`shape` squares off rather than resizes. A control does not shrink below it to make a layout fit; the layout gives way. The target is the box a
+pointer activates — the element, or the `<label>` that activates it, whichever is larger — and the floor holds on both axes. A link inside a
+sentence is the one exception, as WCAG 2.5.8 grants it: its box is the line of text it sits in.
 
 **Honour `prefers-reduced-motion` on every authored motion**, by removing the motion or by replacing a scale or slide with an opacity fade.
 <!-- rule:forge-ui-reduced-motion --> Applies to `motion-safe:` / `motion-reduce:`
@@ -106,8 +109,8 @@ text saying what would be here, and the action that fills it. `Card.Content` hol
 
 ### 1h. Accessible Names and Label Association
 
-**Give every control an accessible name.** <!-- rule:forge-ui-accessible-name --> Via `Label`, via `FormField.Label`, or via visually-hidden text.
-An icon-only control (`shape="icon"`) has no name until you give it one — `Icon` is `aria-hidden` by default.
+**Give every control an accessible name.** <!-- rule:forge-ui-accessible-name --> Via `Label`, via `FormField.Label`, via `Field`'s caption, or via
+visually-hidden text. An icon-only control (`shape="icon"`) has no name until you give it one — `Icon` is `aria-hidden` by default.
 
 - Wrong: `<Button shape="icon"><AppIcon name="close" /></Button>`
 - Right: `<Button shape="icon" aria-label="Dismiss"><AppIcon name="close" /></Button>`

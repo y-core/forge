@@ -179,3 +179,205 @@ describe("convenience methods", () => {
     });
   }
 });
+
+const flashCookies = (res: Response) => res.headers.getSetCookie().filter((h) => h.startsWith("flash="));
+
+async function wireFor(flash: ReturnType<typeof createFlash>, messages: FlashMessage[]): Promise<string> {
+  const app = new Forge();
+  mapHandler(app, "GET", "/", async (c) => {
+    await flash.set(c, messages);
+    return new Response("ok");
+  });
+  return extractCookieValue((await app.request("/")).headers.get("Set-Cookie"))!;
+}
+
+async function readBack(flash: ReturnType<typeof createFlash>, setCookie: string): Promise<unknown> {
+  const app = new Forge();
+  mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
+  return (await app.request("/", { headers: { Cookie: `flash=${extractCookieValue(setCookie)}` } })).json();
+}
+
+describe("one cookie per response", () => {
+  it("merges a success then a warning into one cookie that reads back as both, in order", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.success(c, "Saved");
+      await flash.warning(c, "Quota nearly full");
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/"));
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "success", text: "Saved" },
+      { type: "warning", text: "Quota nearly full" },
+    ]);
+  });
+
+  it("appends a later set to an earlier set of several, keeping call order", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.set(c, [
+        { type: "info", text: "first" },
+        { type: "error", text: "second" },
+      ]);
+      await flash.set(c, [{ type: "success", text: "third" }]);
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/"));
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "info", text: "first" },
+      { type: "error", text: "second" },
+      { type: "success", text: "third" },
+    ]);
+  });
+
+  it("replaces the read's clear with a set made after it, carrying only the new messages", async () => {
+    const flash = createFlash({ ring });
+    const incoming = await wireFor(flash, [{ type: "info", text: "from last page" }]);
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.get(c);
+      await flash.success(c, "fresh");
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/", { headers: { Cookie: `flash=${incoming}` } }));
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).not.toMatch(/Max-Age=0(;|$)/);
+    expect(await readBack(flash, cookies[0]!)).toEqual([{ type: "success", text: "fresh" }]);
+  });
+
+  it("keeps a set made before the read instead of queuing the read's clear", async () => {
+    const flash = createFlash({ ring });
+    const incoming = await wireFor(flash, [{ type: "info", text: "from last page" }]);
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.success(c, "fresh");
+      await flash.get(c);
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/", { headers: { Cookie: `flash=${incoming}` } }));
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([{ type: "success", text: "fresh" }]);
+  });
+
+  it("queues a single clear when the flash is read twice", async () => {
+    const flash = createFlash({ ring });
+    const incoming = await wireFor(flash, [{ type: "info", text: "from last page" }]);
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.get(c);
+      await flash.get(c);
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/", { headers: { Cookie: `flash=${incoming}` } }));
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toMatch(/Max-Age=0(;|$)/);
+  });
+
+  it("merges two flash calls made together into one cookie, in the order they were called", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await Promise.all([flash.success(c, "a"), flash.warning(c, "b")]);
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/"));
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "success", text: "a" },
+      { type: "warning", text: "b" },
+    ]);
+  });
+
+  it("a refused call between two others leaves both of their messages queued", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      const settled = await Promise.allSettled([flash.success(c, "a"), flash.info(c, "a".repeat(4000)), flash.warning(c, "b")]);
+      expect(settled.map((s) => s.status)).toEqual(["fulfilled", "rejected", "fulfilled"]);
+      expect((settled[1] as PromiseRejectedResult).reason).toBeInstanceOf(Error);
+      expect(((settled[1] as PromiseRejectedResult).reason as Error).message).toMatch(/at most 4096 bytes/);
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/"));
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "success", text: "a" },
+      { type: "warning", text: "b" },
+    ]);
+  });
+
+  it("a read made alongside two calls neither clears nor drops them", async () => {
+    const flash = createFlash({ ring });
+    const incomingMessages: FlashMessage[] = [{ type: "info", text: "from last page" }];
+    const incoming = await wireFor(flash, incomingMessages);
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      const [read] = await Promise.all([flash.get(c), flash.success(c, "a"), flash.warning(c, "b")]);
+      expect(read).toEqual(incomingMessages);
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/", { headers: { Cookie: `flash=${incoming}` } }));
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).not.toMatch(/Max-Age=0(;|$)/);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "success", text: "a" },
+      { type: "warning", text: "b" },
+    ]);
+  });
+});
+
+describe("past 4096 bytes", () => {
+  const long = (lead: string) => lead + "a".repeat(1200);
+
+  it("drops the oldest message when a third call would overflow the cookie", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.info(c, long("1"));
+      await flash.info(c, long("2"));
+      await flash.info(c, long("3"));
+      return new Response("ok");
+    });
+    const cookies = flashCookies(await app.request("/"));
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "info", text: long("2") },
+      { type: "info", text: long("3") },
+    ]);
+  });
+
+  it("drops the oldest of one oversized batch rather than failing the request", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.set(c, [
+        { type: "info", text: long("1") },
+        { type: "info", text: long("2") },
+        { type: "info", text: long("3") },
+      ]);
+      return new Response("ok");
+    });
+    const res = await app.request("/");
+    expect(res.status).toBe(200);
+    const cookies = flashCookies(res);
+    expect(cookies).toHaveLength(1);
+    expect(await readBack(flash, cookies[0]!)).toEqual([
+      { type: "info", text: long("2") },
+      { type: "info", text: long("3") },
+    ]);
+  });
+
+  it("refuses a lone message too large for the cookie", async () => {
+    const flash = createFlash({ ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await expect(flash.info(c, "a".repeat(4000))).rejects.toThrow(/at most 4096 bytes/);
+      return new Response("ok");
+    });
+    expect((await app.request("/")).status).toBe(200);
+  });
+});

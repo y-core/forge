@@ -6,6 +6,7 @@ import { ALERT_SCOPE } from "../contracts/alert-contract";
 import { ANNOUNCE_FAILURE_ATTR, ANNOUNCER_REGION_SLOTS, ANNOUNCER_SCOPE } from "../contracts/announcer-contract";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE } from "../contracts/dialog-contract";
 import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
+import { OTP_INPUT_SCOPE, OTP_LENGTH_ATTR } from "../contracts/otp-input-contract";
 import { TOAST_CONTAINER_SCOPE, TOAST_DURATION_KEY, TOAST_SCOPE } from "../contracts/toast-contract";
 // Import client.ts to register the toast and alert scopes as a side effect.
 import "./client";
@@ -193,6 +194,21 @@ describe("announcer scope", () => {
     release();
 
     expect(win.timers.size).toBe(0);
+  });
+});
+
+describe("otp-input scope", () => {
+  it("filters the frame's editor from resume on, so a code typed with a space reaches the form as digits", () => {
+    const { doc, el } = fakeTree();
+    const editor = el("INPUT", { "data-slot": "otp-input" });
+    doc.root.append(el("DIV", { "data-scope": OTP_INPUT_SCOPE, [OTP_LENGTH_ATTR]: "6" }).append(editor));
+
+    const release = resume(doc as never);
+    editor.value = "123 456";
+    editor.dispatchEvent(new FakeEvent("input"));
+    release();
+
+    expect(editor.value).toBe("123456");
   });
 });
 

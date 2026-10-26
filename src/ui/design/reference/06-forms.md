@@ -30,8 +30,8 @@ These primitives look interchangeable and are not.
 
 | Given | Choose | Why |
 | --- | --- | --- |
-| A control that is validated, can be wrong, and has a server-side `name` | `FormField` | A `<fieldset>` that wires `id` / `for` / `aria-describedby` / `aria-invalid` from one `name` |
-| A settings row — a labelled control with no validation and no error | `Field` | A layout row with a decorative `<span>` label; no form semantics at all |
+| A control that is validated, can be wrong, and has a server-side `name` | `FormField` | A `<fieldset>` whose members and the control's `field` descriptor derive `id` / `for` / `aria-describedby` / `aria-invalid` from one shared `name` |
+| A settings row — a labelled control with no validation and no error | `Field` | A layout row whose caption names the one control it wraps through `aria-labelledby`; no fieldset and no error slot |
 | Several checkboxes or radios answering one question | `CheckboxGroup` / `RadioGroup` | Real `<input type="checkbox">` / `<input type="radio">`; radio grouping and roving focus are the platform's |
 | A one-time code the reader types or pastes | `OtpInput` inside `FormField` | One `<input autocomplete="one-time-code">` painted as cells; the value is the platform's, not assembled |
 | A `<label>` you place yourself, beside a control you have already wired | `Label` | A real `<label for>` with a `required` marker and nothing else — no row, no fieldset, no id derivation |
@@ -46,14 +46,14 @@ for a control whose value is applied immediately and cannot fail — a theme pre
 <!-- rule:forge-ui-form-bare-label -->
 
 `Label` is the one primitive that wires nothing: it renders a `<label for>` and a `required` marker, and the `for` is yours to get right. `Field`
-replaces it with a decorative `<span>` in a layout row, and `FormField` replaces it again with a `<fieldset>` that derives the id — so reaching for
-`Label` inside either is two labels for one control. Override for markup forge does not shape at all, where there is no row and no fieldset to put
-the label in.
+replaces it with a caption that names the control through `aria-labelledby`, and `FormField` replaces it again with a `<fieldset>` that derives the
+id — so reaching for `Label` inside either is two labels for one control. Override for markup forge does not shape at all, where there is no row and
+no fieldset to put the label in.
 
 **Default: use `CheckboxGroup` / `RadioGroup` rather than a `FormField` wrapping loose inputs.**
 <!-- rule:forge-ui-form-group-primitive -->
 
-Both accept `name`, `scope`, `description`, `invalid`, `disabled` and `orientation`, and expose `.Label`, `.Item`, `.Description` and `.Error`.
+Both accept `name`, `scope`, `description`, `error`, `disabled` and `orientation`, and expose `.Label`, `.Item`, `.Description` and `.Error`.
 Override only for a group whose items are not a single question — a matrix of independent toggles, which is a stack of `Field` rows.
 
 **Default: `FormField.Legend` takes `appearance="legend"` when it heads a section of fields, and `appearance="label"` when it names one cluster.**
@@ -147,15 +147,16 @@ than ignored, and the message is never announced.
 // Right — one `name`, every id derived.
 import { FormField, Input } from "@y-core/forge/ui/core";
 
-<FormField name='email' invalid={Boolean(error)}>
+<FormField invalid={Boolean(error)}>
   <FormField.Label name='email'>Email</FormField.Label>
-  <Input name='email' type='email' field={{ name: "email", invalid: Boolean(error) }} />
+  <Input name='email' type='email' field={{ name: "email", error }} />
   <FormField.Error name='email'>{error}</FormField.Error>
 </FormField>;
 ```
 
-`FormField.Error` renders nothing when its child is `null`, `false` or empty, so it is safe unconditionally — no `{error && …}` guard, and therefore
-no branch that can be forgotten.
+`FormField.Error` renders nothing when its message is blank (`null`, `false`, `""`, an empty array or whitespace only), so it is safe
+unconditionally: no `{error && …}` guard, and therefore no branch that can be forgotten. The control's `field` takes the same `error`, and marks
+itself invalid only when that message renders; the root's `invalid` reaches no control (§5).
 
 ---
 
@@ -220,7 +221,7 @@ never went through `fieldControlProps` styles as invalid and announces nothing. 
 
 ```tsx
 // Wrong — invalid signalled by a class alone.
-<FormField name='card' class='border-destructive'>
+<FormField class='border-destructive'>
   <FormField.Label name='card'>Card number</FormField.Label>
   <Input name='card' />
 </FormField>
@@ -233,13 +234,14 @@ Costs: nothing reaches the accessibility tree, and a user who cannot distinguish
 import { createIcon, FormField, Input } from "@y-core/forge/ui/core";
 
 const AppIcon = createIcon("/assets/icons.svg");
+const error = "That card number is not valid.";
 
-<FormField name='card' invalid>
+<FormField invalid>
   <FormField.Label name='card'>Card number</FormField.Label>
-  <Input name='card' field={{ name: "card", invalid: true }} />
+  <Input name='card' field={{ name: "card", error }} />
   <FormField.Error name='card'>
     <AppIcon name='close' aria-hidden='true' />
-    That card number is not valid.
+    {error}
   </FormField.Error>
 </FormField>;
 ```

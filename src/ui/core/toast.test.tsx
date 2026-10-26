@@ -74,6 +74,20 @@ describe("Toast", () => {
     });
   });
 
+  it("paints the close button at full strength on a 32px target, with no opacity utility dimming the glyph", async () => {
+    expect(classesOf(await render(<Toast dismissible>Message</Toast>), 'data-slot="toast-close"')).toEqual([
+      "absolute",
+      "end-2",
+      "top-2",
+      "inline-flex",
+      "size-8",
+      "items-center",
+      "justify-center",
+      "rounded-sm",
+      "focus-ring",
+    ]);
+  });
+
   it("hands the controller a duration in island state once there is a timer to run", async () => {
     const html = await render(<Toast duration={3000}>Message</Toast>);
 

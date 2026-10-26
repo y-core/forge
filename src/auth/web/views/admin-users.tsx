@@ -28,7 +28,7 @@ export const AdminUsersView: FC<AdminUsersViewProps> = ({ users, query, nextCurs
     <div class={cn("mx-auto flex w-full max-w-4xl flex-col gap-6", cls)}>
       <Heading class='text-xl font-semibold text-foreground'>Users</Heading>
       <Form method='get' action={listPath} class='flex items-end gap-2' data-ref='admin-user-search'>
-        <FormField name='q' class='max-w-sm flex-1'>
+        <FormField class='max-w-sm flex-1'>
           <FormField.Label name='q'>Search by email address</FormField.Label>
           <Input type='search' value={query} field={{ name: "q" }} />
         </FormField>

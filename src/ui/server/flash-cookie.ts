@@ -1,9 +1,22 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
-import { setPendingHeader } from "../../context/pending-headers";
+import { contextVar } from "../../context/accessor";
+import { pendingCookieValue, replacePendingCookie } from "../../context/pending-headers";
 import { createSignedCookie } from "../../session/cookie";
 import type { FlashMessage, FlashType } from "./types";
 import type { FlashCookieOptions, Flasher } from "./types";
+
+const flashQueue = contextVar<Promise<unknown>>("__flashQueue");
+
+// oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
+function inTurn<T>(c: RequestContext<any, any>, step: () => Promise<T>): Promise<T> {
+  const run = (flashQueue.getOptional(c) ?? Promise.resolve()).then(step);
+  flashQueue.set(
+    c,
+    run.catch(() => undefined),
+  );
+  return run;
+}
 
 /** Creates a `Flasher` backed by a signed cookie cleared on read. @public */
 export function createFlash(options: FlashCookieOptions): Flasher {
@@ -14,10 +27,32 @@ export function createFlash(options: FlashCookieOptions): Flasher {
 
   const cookie = createSignedCookie(name, { ring: options.ring, path, maxAge, sameSite });
 
+  function parseMessages(raw: string | null): FlashMessage[] {
+    if (raw === null) return [];
+    try {
+      const v = JSON.parse(raw);
+      return Array.isArray(v) ? (v as FlashMessage[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
-  async function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {
-    const serialized = await cookie.serialize(JSON.stringify(messages));
-    setPendingHeader(c, "set-cookie", serialized, { append: true });
+  function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {
+    return inTurn(c, async () => {
+      const queued = pendingCookieValue(c, name);
+      const earlier = queued === null ? [] : parseMessages((await cookie.read(`${name}=${queued}`))?.value ?? null);
+      let kept = [...earlier, ...messages];
+      for (;;) {
+        try {
+          replacePendingCookie(c, await cookie.serialize(JSON.stringify(kept)));
+          return;
+        } catch (error) {
+          if (kept.length <= 1) throw error;
+          kept = kept.slice(1);
+        }
+      }
+    });
   }
 
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
@@ -27,15 +62,8 @@ export function createFlash(options: FlashCookieOptions): Flasher {
     // reads as `null`, and leaving it uncleared means the browser re-sends and re-fails it forever.
     if (reading === null) return [];
     const clearCookie = await cookie.serialize("", { maxAge: 0, path });
-    setPendingHeader(c, "set-cookie", clearCookie, { append: true });
-    const raw = reading.value;
-    if (raw === null) return [];
-    try {
-      const v = JSON.parse(raw);
-      return Array.isArray(v) ? (v as FlashMessage[]) : [];
-    } catch {
-      return [];
-    }
+    if (pendingCookieValue(c, name) === null) replacePendingCookie(c, clearCookie);
+    return parseMessages(reading.value);
   }
 
   function convenience(type: FlashType) {

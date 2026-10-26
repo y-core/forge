@@ -17,7 +17,7 @@ function carousel(snap: "start" | "center"): string {
   const dots = [1, 2, 3].map((n) => `<a href="#c-${n}" aria-label="Slide ${n}">${n}</a>`).join("");
   return (
     `<div style="width:300px">` +
-    `<div data-slot="carousel" data-snap="${snap}" class="relative"><div data-slot="carousel-strip" role="group" aria-label="Slides" tabindex="0" class="${STRIP}">${items}</div></div>` +
+    `<div data-slot="carousel" class="relative"><div data-slot="carousel-strip" role="group" aria-label="Slides" tabindex="0" class="${STRIP}">${items}</div></div>` +
     `<nav>${dots}</nav></div>`
   );
 }

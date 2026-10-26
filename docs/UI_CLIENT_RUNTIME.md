@@ -134,9 +134,11 @@ Its deliberate behaviours:
   attribute of forge's own is therefore forbidden**, and the value is written with `setAttribute` rather than `script.nonce =`, which sets only the
   internal slot in some engines. So `script-src 'nonce-…' 'strict-dynamic'` works without widening anything to Cloudflare's origin
   ([`SECURITY_HARDENING.md`][sh-3] §3).
-- **The container reserves the widget's box only when the widget is always visible.** The reservation is keyed on `appearance`, not `challenge`:
-  `always` holds Cloudflare's published dimensions so the eager render stops shifting first paint, while `execute` and `interaction-only` reserve
-  nothing rather than leaving a permanent hole. Classes, never a `style` attribute ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a).
+- **The widget's frame reserves its box only when the widget is always visible, and the messages sit outside it.** The frame is the
+  `[data-ref="turnstile-frame"]` element the widget mounts into, and the reservation is keyed on `appearance`, not `challenge`: `always` holds
+  Cloudflare's published dimensions so the eager render stops shifting first paint, while `execute` and `interaction-only` reserve nothing rather
+  than leaving a permanent hole. Both messages render below the frame, outside it, so a revealed message pushes the form down rather than sliding
+  under the widget. Classes, never a `style` attribute ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a).
 - **The token is scoped to the form's own action, and to its own submission.** `action`, `cData` and `responseFieldName` are the widget halves of
   `verifyTurnstile`'s options, and why each pair must be set together is [`INPUT_VALIDATION.md`][iv-4a] §4a's. A value outside
   `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the server stays the one enforcement point.
@@ -182,8 +184,9 @@ Its deliberate behaviours:
   `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, its detail a `TurnstileAbandonedDetail`; the submitter is un-busied
   before dispatch so a handler that focuses it finds a live target. It deliberately carries no way to release the held press: reviving it is the
   tokenless POST the drop exists to prevent. Teardown is the one silent exception, since it runs mid-swap into a page already going away.
-- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx verb fires no `htmx:config:request` and has no request to
-  hold, so the controller reports the authoring error and falls back to `challenge="render"` — a degraded form, never a dead submit button.
+- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx request attribute — a verb or `hx-action` — fires no
+  `htmx:config:request` and has no request to hold, so the controller reports the authoring error and falls back to `challenge="render"` — a
+  degraded form, never a dead submit button.
 
 ### 2d. The Disposer Contract
 

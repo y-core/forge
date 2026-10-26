@@ -18,6 +18,18 @@ export function contrastRatio(a: string, b: string): number {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
+/** The opaque `#rrggbb` a browser paints `foreground` at `alpha` over `background`, blended in gamma-encoded sRGB. @public */
+export function compositeOver(foreground: string, background: string, alpha: number): string {
+  const channel = (index: number): string => {
+    const fg = Number.parseInt(foreground.slice(1 + index * 2, 3 + index * 2), 16);
+    const bg = Number.parseInt(background.slice(1 + index * 2, 3 + index * 2), 16);
+    return Math.round(fg * alpha + bg * (1 - alpha))
+      .toString(16)
+      .padStart(2, "0");
+  };
+  return `#${channel(0)}${channel(1)}${channel(2)}`;
+}
+
 // An alpha component is rejected rather than dropped: a translucent colour has no single contrast
 // ratio, and measuring it at full opacity reports a number wrong in the safe-looking direction.
 /** Parses `oklch(50.5% 0.213 27.518)` into its three numbers, or `null` when the value is not one. @public */

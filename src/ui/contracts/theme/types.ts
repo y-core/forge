@@ -47,8 +47,8 @@ export type Criterion = "1.4.3" | "1.4.11";
 export type SideStep = number | Readonly<Record<Mode, number>>;
 
 export type ContrastSide =
-  | { readonly kind: "scale"; readonly token: string; readonly family: ScaleFamily; readonly step: SideStep }
-  | { readonly kind: "fixed"; readonly token: string };
+  | { readonly kind: "scale"; readonly token: string; readonly family: ScaleFamily; readonly step: SideStep; readonly alpha?: number }
+  | { readonly kind: "fixed"; readonly token: string; readonly alpha?: number };
 
 /** A side both the audit and the live measurement resolve on a generated scale. @public */
 export type ScaleSide = Extract<ContrastSide, { kind: "scale" }>;

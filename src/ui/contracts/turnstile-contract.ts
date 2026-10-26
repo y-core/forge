@@ -1,7 +1,9 @@
 /** `data-ref` values the controller queries on the SSR-rendered markup. @public */
 export const TURNSTILE = {
-  /** Container the controller explicitly renders the widget into. */
+  /** Root the controller mounts on, holding the frame and both messages. */
   widget: "turnstile",
+  /** Box the controller renders Cloudflare's widget into, sized to its published dimensions under `appearance="always"`. */
+  frame: "turnstile-frame",
   /** Inline message revealed when the challenge cannot load. */
   fallback: "turnstile-fallback",
   /** Inline message revealed when Turnstile does not support the visitor's browser at all. */

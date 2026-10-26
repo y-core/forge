@@ -245,3 +245,43 @@ describe("checkContrast() — a scheme may not override an audited token", () =>
     expect(result.findings).toEqual([]);
   });
 });
+
+describe("checkContrast() — a translucent foreground", () => {
+  const atAlpha = (foreground: ContrastPairInput["foreground"], background: ContrastPairInput["background"] = { token: "--surface" }) => [
+    { token: "body text", criterion: "aa-text", foreground, background },
+  ];
+
+  it("measures the colour the foreground paints once composited, failing the mode it drops below the floor in", () => {
+    const result = checkContrast(fixture("#000000", { pairs: atAlpha({ token: "--ink", alpha: 0.5 }) }));
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "body text (light) measures 3.95:1 against a 4.5:1 floor — WCAG 2.2 AA text. #000000 at 50% on #ffffff",
+    ]);
+  });
+
+  it("passes the same pair painted opaque", () => {
+    expect(checkContrast(fixture("#000000")).findings).toEqual([]);
+  });
+
+  it("measures a foreground at alpha 1 as the opaque colour, so a pair exactly on the floor still passes", () => {
+    expect(checkContrast(fixture("#767676", { pairs: atAlpha({ token: "--ink", alpha: 1 }) })).findings).toEqual([]);
+  });
+
+  it("refuses a translucent background in both modes, which has no single colour without the surface beneath it", () => {
+    const result = checkContrast(fixture("#000000", { pairs: atAlpha({ token: "--ink" }, { token: "--surface", alpha: 0.5 }) }));
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "body text (light): background `--surface` carries an alpha — a translucent background has no single colour without the surface beneath it",
+      "body text (dark): background `--surface` carries an alpha — a translucent background has no single colour without the surface beneath it",
+    ]);
+  });
+
+  it("refuses a foreground alpha outside 0–1 in both modes rather than compositing it", () => {
+    const result = checkContrast(fixture("#000000", { pairs: atAlpha({ token: "--ink", alpha: 1.5 }) }));
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "body text (light): foreground `--ink` carries alpha 1.5, outside 0–1",
+      "body text (dark): foreground `--ink` carries alpha 1.5, outside 0–1",
+    ]);
+  });
+});

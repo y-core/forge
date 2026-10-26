@@ -1,9 +1,11 @@
-/** Every English accessible name forge falls back to where the caller named nothing; each is overridable by the prop beside it. @public */
+/** Every English word forge announces where the caller supplied none; each is overridable by the prop beside it. @public */
 export const LABEL_DEFAULTS = {
   alertDismiss: "Dismiss",
   breadcrumbs: "Breadcrumb",
   carouselDots: "Slides",
+  carouselRoleDescription: "carousel",
   carouselSlide: "Slide",
+  carouselSlideRoleDescription: "slide",
   carouselStrip: "Slides",
   dock: "Primary",
   filterReset: "Clear",

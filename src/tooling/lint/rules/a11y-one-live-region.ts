@@ -1,4 +1,4 @@
-import { attributeNamed, statedString } from "../jsx.ts";
+import { attributeNamed, attributesOf, openingTag, statedString } from "../jsx.ts";
 import { reporter } from "../report.ts";
 import type { AstNode, LintRule } from "../types.ts";
 
@@ -19,8 +19,18 @@ export const a11yOneLiveRegion: LintRule = {
           if (live !== undefined && live !== "off") report(`\`aria-live="${live}"\` opens a second live region — ${ROUTE}`, node.loc);
           return;
         }
-        const role = statedString(attributeNamed(node, "role")?.value);
-        if (role !== undefined && LIVE_ROLES.has(role)) report(`\`role="${role}"\` opens a second live region — ${ROUTE}`, node.loc);
+        const roleAttribute = attributeNamed(node, "role");
+        if (roleAttribute) {
+          const role = statedString(roleAttribute.value);
+          if (role !== undefined && LIVE_ROLES.has(role)) report(`\`role="${role}"\` opens a second live region — ${ROUTE}`, node.loc);
+          return;
+        }
+        if (openingTag(node) === "output" && !attributesOf(node).some((attribute) => attribute.type === "JSXSpreadAttribute")) {
+          report(
+            `\`<output>\` is an implicit \`role="status"\` and opens a second live region — give a readout \`aria-live="off"\`, or ${ROUTE}`,
+            node.loc,
+          );
+        }
       },
     };
   },

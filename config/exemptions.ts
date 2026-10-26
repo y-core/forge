@@ -41,6 +41,7 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/ui/contracts/island-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/navbar-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/number-field-contract.ts", "declared contract constants — the markup that uses them is tested"],
+  ["src/ui/contracts/otp-input-contract.ts", "declared contract constants — the markup and the controller that use them are tested"],
   ["src/ui/contracts/overlay-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/scope-events.ts", "declared event names — the controllers that dispatch them are tested"],
   ["src/ui/contracts/slider-contract.ts", "declared contract constants — the markup that uses them is tested"],

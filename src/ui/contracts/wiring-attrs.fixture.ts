@@ -5,6 +5,7 @@ import { DIALOG_OPEN_MODAL_ATTR } from "./dialog-contract";
 import { INPUT_FORMAT_ATTR } from "./input-format-contract";
 import { MENU_KEEP_OPEN_ATTR } from "./menu-contract";
 import { NAVBAR_DRAWER_ATTR } from "./navbar-contract";
+import { OTP_LENGTH_ATTR } from "./otp-input-contract";
 import { POPOVER_COORDS_ATTR } from "./overlay-contract";
 import { TABS_MOUNTED_ATTR } from "./tabs-contract";
 import { TOOLTIP_MOUNTED_ATTR } from "./toggle-contract";
@@ -19,10 +20,11 @@ export const WIRING_ATTRS: Record<string, string> = {
   "data-ref": "the handle a scope's own setup addresses an element by",
   "data-field": "the form field a bound control reads and writes",
   [INPUT_FORMAT_ATTR]: "the input mask a bound control applies",
+  [OTP_LENGTH_ATTR]: "how many digits an OTP field's controller keeps",
   "data-content": "the tooltip text a controller lifts into its popup",
   "data-position": "where a fixed container sits on the viewport",
+  "data-hide-above": "the breakpoint above which a dock hides and gives back its page clearance",
   "data-placement": "where a decoration sits relative to its host",
-  "data-snap": "which edge a carousel slide settles on",
   "data-label-position": "which side of a control its label sits on",
   "data-responsive": "whether a field collapses by width",
   "data-multiple": "whether a toggle group is checkboxes or radios",

@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
 import type { FC, JSX } from "../../render/jsx/types";
+import { OTP_INPUT_SCOPE } from "../contracts/otp-input-contract";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
 import { fieldControlProps, fieldStateProps } from "./field";
@@ -9,7 +10,7 @@ import type { OtpLength } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
-type OtpInputProps = Omit<JSX.IntrinsicElements["input"], "size" | "type" | "maxlength" | "children"> & {
+type OtpInputProps = Omit<JSX.IntrinsicElements["input"], "size" | "type" | "maxlength" | "pattern" | "children"> & {
   field?: FieldDescriptor | undefined;
   length?: OtpLength | undefined;
   size?: Size | undefined;
@@ -47,14 +48,17 @@ export const OtpInput: FC<OtpInputProps> = ({
 }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
   return (
-    <div data-slot='otp-input-wrapper' {...presentationAttrs({ size })} class={cn(FRAME, FRAME_SIZE[size], LENGTH_CLASS[length], cls)}>
+    <div
+      data-slot='otp-input-wrapper'
+      data-scope={OTP_INPUT_SCOPE}
+      data-otp-length={length}
+      {...presentationAttrs({ size })}
+      class={cn(FRAME, FRAME_SIZE[size], LENGTH_CLASS[length], cls)}>
       <input
         data-slot={slotToken("otp-input", inherited)}
         type='text'
         inputmode='numeric'
         autocomplete='one-time-code'
-        pattern='[0-9]*'
-        maxlength={length}
         {...presentationAttrs({ size })}
         class={cn(EDITOR, EDITOR_SIZE[size])}
         {...resolved}

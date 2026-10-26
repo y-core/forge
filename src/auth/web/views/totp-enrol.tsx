@@ -97,13 +97,9 @@ export const TotpEnrolView: FC<TotpEnrolViewProps> = ({
           </code>
         </div>
         <Form action={enrolPath} csrfToken={csrfToken} csrfHeader={csrfHeader} class='flex flex-col gap-6'>
-          <FormField name='code' invalid={fieldError !== undefined}>
+          <FormField invalid={fieldError !== undefined}>
             <FormField.Label name='code'>Code from your app</FormField.Label>
-            <OtpInput
-              length={digits}
-              invalid={fieldError !== undefined}
-              field={{ name: "code", invalid: fieldError !== undefined, description: true }}
-            />
+            <OtpInput length={digits} invalid={fieldError !== undefined} field={{ name: "code", error: fieldError, description: true }} />
             <FormField.Description name='code'>{`${digits} digits, refreshed by the app every ${period} seconds.`}</FormField.Description>
             {fieldError === undefined ? null : (
               <FormField.Error name='code'>
