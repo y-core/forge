@@ -572,3 +572,49 @@ test.describe("bindControls — a reset the reader clicks", { tag: "@cross-engin
     await expect.poll(() => nameAgreement(page)).toEqual({ input: "edited", signal: "edited" });
   });
 });
+
+test.describe("bindControls — events that stay inside a shadow root", () => {
+  test("a non-composed change on a shadow-root checkbox updates the signal", async ({ page }) => {
+    await mount(page, `<div data-scope="demo"><div id="host"></div></div>`, EXPOSE);
+
+    const value = await page.evaluate(() => {
+      const shadow = document.querySelector("#host")?.attachShadow({ mode: "open" });
+      if (!shadow) return null;
+      shadow.innerHTML = `<input id="on" type="checkbox" data-field="on">`;
+      const signals = window.forgeSignals.signalRecord({ on: false });
+      window.forgeBind.bindControls(document.querySelector("[data-scope='demo']") as HTMLElement, signals);
+      const box = shadow.querySelector<HTMLInputElement>("#on");
+      if (!box) return null;
+      box.checked = true;
+      box.dispatchEvent(new Event("change", { bubbles: true }));
+      return signals.on.value;
+    });
+
+    expect(value).toBe(true);
+  });
+
+  test("a scripted reset of a shadow-root form repaints the reverted control from the signal", async ({ page }) => {
+    await mount(page, `<div data-scope="demo"><div id="host"></div></div>`, EXPOSE);
+    await page.evaluate(() => {
+      const shadow = document.querySelector("#host")?.attachShadow({ mode: "open" });
+      if (!shadow) return;
+      shadow.innerHTML = `<form id="f"><input id="name" value="ada" data-field="name"></form>`;
+      window.nameSignals = window.forgeSignals.signalRecord({ name: "ada" });
+      window.forgeBind.bindControls(document.querySelector("[data-scope='demo']") as HTMLElement, window.nameSignals);
+      const input = shadow.querySelector<HTMLInputElement>("#name");
+      if (!input) return;
+      input.value = "edited";
+      input.dispatchEvent(new Event("input", { bubbles: true, composed: true }));
+      shadow.querySelector<HTMLFormElement>("#f")?.reset();
+    });
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
+          input: document.querySelector("#host")?.shadowRoot?.querySelector<HTMLInputElement>("#name")?.value,
+          signal: window.nameSignals.name.value,
+        })),
+      )
+      .toEqual({ input: "edited", signal: "edited" });
+  });
+});

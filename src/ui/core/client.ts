@@ -124,7 +124,10 @@ registerScope(DIALOG_SCOPE, {
     // The `open` attribute always yields a non-modal dialog, so an SSR-open modal has to be opened
     // here — and `showModal()` throws `InvalidStateError` on one already open.
     const dialog = root as HTMLDialogElement;
-    if (root.hasAttribute(DIALOG_OPEN_MODAL_ATTR) && !dialog.open) dialog.showModal?.();
+    if (root.hasAttribute(DIALOG_OPEN_MODAL_ATTR) && !dialog.open) {
+      dialog.showModal?.();
+      dialog.addEventListener("close", () => root.removeAttribute(DIALOG_OPEN_MODAL_ATTR), { once: true });
+    }
   },
 });
 

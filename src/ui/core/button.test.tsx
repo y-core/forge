@@ -1,9 +1,10 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Button } from "./button";
 import { createIcon } from "./icon";
+import * as cnModule from "./utils/cn";
 
 const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 16 16" });
 
@@ -134,12 +135,23 @@ describe("Button", () => {
     }
   });
 
+  it("merges a caller class in a single class pass once its variant has rendered", async () => {
+    await render(<Button class='x'>Click</Button>);
+    const cn = spyOn(cnModule, "cn");
+    try {
+      await render(<Button class='x'>Click</Button>);
+      expect(cn).toHaveBeenCalledTimes(1);
+    } finally {
+      cn.mockRestore();
+    }
+  });
+
   it("stretches a square shape to its container and rounds a circle to a pill", async () => {
     const md = await render(<Button>x</Button>);
 
     expect(variantClasses(await render(<Button shape='square'>x</Button>), md)).toEqual({
-      added: ["aspect-square", "w-full", "p-0"],
-      dropped: ["px-4"],
+      added: ["aspect-square", "h-auto", "w-full", "p-0"],
+      dropped: ["h-control-md", "px-4"],
     });
     expect(variantClasses(await render(<Button shape='circle'>x</Button>), md)).toEqual({
       added: ["w-control-md", "rounded-selector", "px-0"],

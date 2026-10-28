@@ -28,7 +28,8 @@ audience: consumer
 - §1e Switch and Slider — CSS-Only Controls: the `peer-*` trap, the sanitized readout and who keeps it true, the declined formatter seam
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
 - §1g Composite Widgets: the markers that make many focusable items one tab stop
-- §1h Overlays and Disclosures: native popover and `<details>`; naming a panel; how a popup's side resolves against the reader's direction
+- §1h Overlays and Disclosures: native popover and `<details>`; the box a Trigger or Close carries; naming a panel; which opens light-dismiss;
+  how a popup's side resolves against the reader's direction
 - §1i Native-Input Primitive Decisions: an axis that is not an orientation, a scroll area that hijacks nothing, the bounds content-sizing needs, and
   a frame clipped rather than scrolled
 - §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring, why suppressing won, and the reserved item values
@@ -101,10 +102,10 @@ element that genuinely is both: `<Tooltip.Trigger asChild><Menu.Trigger/></Toolt
 `data-slot="menu-trigger tooltip-trigger"`. Overwriting silently unmakes the inner compound, and every rule and query keyed on its slot stops
 matching.
 
-**Merge into `aria-describedby`; never replace it.** It is an IDREF list, so a caller's ids come first and forge's derived ids follow, each id
-once, through `mergeDescribedBy` in `src/ui/core/field.tsx`. Destructure the caller's value out of props and rewrite the attribute in place, as
-with `data-slot`. Under `asChild`, the compound merges the child's value itself before calling `cloneAsChild`, which still overwrites: no other
-`asChild` compound derives a description to lose.
+**Merge into `aria-describedby` and `aria-labelledby`; never replace them.** Each is an IDREF list, so a caller's ids come first and forge's
+derived ids follow, each id once, through `mergeIdRefs` in `src/ui/core/field.tsx`. Destructure the caller's value out of props and rewrite the
+attribute in place, as with `data-slot`. Under `asChild`, the compound merges the child's value itself before calling `cloneAsChild`, which still
+overwrites: no other `asChild` compound derives a description to lose.
 
 **Select `data-slot` with `~=`, never `=`.** The two have identical specificity (0,1,0), so nothing about the cascade shifts; `=` is simply wrong on
 a composed element. A consumer keying on `[data-slot="…"]` exactly must make the same change to keep matching one.
@@ -201,6 +202,13 @@ buys it is everything §1h opens with: exclusive-open, the toggle, and correct f
 renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
 did would be asserting a structure the platform contradicts.
 
+**A Trigger or Close primitive carries the `sm` button box.** `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`,
+`Popover.Trigger`, `Menu.Trigger` and a bare `Tooltip.Trigger` render `buttonBox({ size: "sm" })` — its height, padding and `focus-ring`, with a
+transparent border and none of `buttonVariants`' paint — and merge the caller's `class` through `cn`, so a caller's padding wins while the height
+holds the 28px Floor (`src/ui/design/floor.md` §1f). An unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each
+caller has to remember. `asChild` is not offered on any of them except `Tooltip.Trigger`, whose `asChild` keeps its child's box: no forge caller
+needs one, and a child would hand the Floor back to the caller's choice of element.
+
 **Name an icon-only trigger with `kind="label"`, never with a description.** `Tooltip.Trigger` points `aria-describedby` at its content by
 default, which is right when the trigger already has a name. An icon-only button has none but the tooltip's text, and repeating that text as an
 `aria-label` beside a description announces it twice. `kind="label"` points `aria-labelledby` at the content instead and emits no description, so
@@ -267,6 +275,13 @@ points at, derived `${id}-description` from the one id the caller wrote. `alert`
 Message Dialog: a message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel"
 hears the consequence and not the button alone.
 
+**Emit `closedby` only on a surface that can open modal.** A non-modal `open` `Dialog` or `Drawer` renders none, because `closedby="any"` on an
+open non-modal `<dialog>` closes it on any click elsewhere on the page and on Escape pressed anywhere — the reader could never type into the input
+beside it. Every other root renders `closedby="any"`, so a modal open light-dismisses on Escape or a backdrop click. **An `alert` `Dialog` renders
+`closedby="closerequest"` instead**: APG's alert dialog is dismissed from the keyboard, and a stray click on the backdrop must not discard a message
+that interrupted the reader to be read. **A dialog rendered `open` and later reopened modal by its trigger closes on Escape and not on a backdrop
+click**, because it carries no `closedby` and the platform's modal default is `closerequest`.
+
 **Project only the subset the stylesheet can render**, so an unrenderable value is unrepresentable rather than silently unstyled: `Popover.Content`
 and `Tooltip.Content` take `PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the projection tracks the value
 space it is cut from.
@@ -279,7 +294,10 @@ selectable rows are the Grid pattern, which brings a whole keyboard contract for
 what a reader can act on, where an `aria-selected` on the row is neither. The scroll wrapper takes the shape `ScrollArea.Viewport` has — a named
 `<section>` that is an unconditional tab stop — because a browser makes an overflowing scroller focusable only when it holds nothing focusable, and
 Safari not at all, so a wide table of plain text would otherwise be unscrollable from the keyboard (WCAG 2.1.1). That is why `Table` requires
-`label`.
+`label`. `zebra` stripes skip a row carrying `selected` or a tone, so the stripe never hides either. **Under `pinRows` the wrapper inherits the
+`max-height` of its direct parent and nothing else**, and that inherited limit is what makes the wrapper the scroller the header sticks to. A
+parent sized with `height` alone, or a `max-height` set on a grandparent, leaves the wrapper at `max-height: none`: it grows to the table's height,
+never scrolls, and the header scrolls away with the page.
 
 ### 1i. Native-Input Primitive Decisions
 
@@ -294,10 +312,11 @@ orientation: orientation is the widget's own axis, a switch is always horizontal
 both required: with no floor, every consumer that passes `rows` gets a collapsed one-line box, and with no cap the control grows without bound.
 `src/ui/core/textarea.tsx` is authoritative over which utilities express them.
 
-**Clip `OtpInput`'s frame with `overflow: clip`, never `hidden`.** The editor deliberately overhangs the frame's interior to leave the caret room
-after the last glyph (`forge-ui.css`, `otp-editor`). Under `overflow: hidden` that frame is also a scroll container, so revealing the caret at the
-clipped edge scrolls the whole grid a pad's width off its cells — permanently, on the first full code typed. `clip` forbids scrolling and clips the
-same overhang.
+**Clip `OtpInput`'s frame with `overflow-x: clip`, never `hidden`.** The editor deliberately overhangs the frame's interior to leave the caret
+room after the last glyph (`forge-ui.css`, `otp-editor`). Under `overflow: hidden` that frame is also a scroll container, so revealing the caret at
+the clipped edge scrolls the whole grid a pad's width off its cells — permanently, on the first full code typed. `clip` forbids scrolling and clips
+the same overhang. The y axis stays visible because the editor also reaches over the frame's top and bottom border, so the whole frame is its hit
+target.
 
 ### 1j. Derived Ids Must Be Id Tokens
 

@@ -1,3 +1,4 @@
+import { splitLightDark } from "../../../ui/contracts/theme/theme-contract";
 import { fail } from "../finding";
 import type { Finding } from "../types";
 import { blankComments, lineAt } from "./source-scan";
@@ -27,24 +28,6 @@ function blockBodies(css: string, selector: string): { body: string; offset: num
     }
   }
   return out;
-}
-
-// Depth-aware on the top-level comma alone: an argument is routinely `var(--x)` and may be
-// `rgba(0, 0, 0, 0.4)`, whose own commas must not split the value.
-/** The branches of a `light-dark(a, b)` value, or `undefined` when the value is not one. */
-export function splitLightDark(value: string): readonly [string, string] | undefined {
-  const trimmed = value.trim();
-  if (!/^light-dark\s*\(/i.test(trimmed) || !trimmed.endsWith(")")) return undefined;
-
-  const inner = trimmed.slice(trimmed.indexOf("(") + 1, -1);
-  let depth = 0;
-  for (let i = 0; i < inner.length; i++) {
-    const ch = inner[i];
-    if (ch === "(") depth++;
-    else if (ch === ")") depth--;
-    else if (ch === "," && depth === 0) return [inner.slice(0, i).trim(), inner.slice(i + 1).trim()];
-  }
-  return undefined;
 }
 
 // The light and dark maps are derived from one block rather than from two: a `light-dark()` value splits into

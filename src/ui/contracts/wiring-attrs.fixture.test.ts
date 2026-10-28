@@ -42,6 +42,7 @@ const EXPECTED = [
   "data-load",
   "data-menu-keep-open",
   "data-multiple",
+  "data-narrow-edge",
   "data-navbar-drawer",
   "data-open-modal",
   "data-otp-length",

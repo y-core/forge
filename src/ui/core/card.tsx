@@ -10,7 +10,7 @@ type CardProps = JSX.IntrinsicElements["div"];
 const CardRoot: FC<CardProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div
     data-slot={slotToken("card", inherited)}
-    class={cn("flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm", cls)}
+    class={cn("flex flex-col rounded-box border-field border-border bg-card text-card-foreground shadow-sm", cls)}
     {...rest}>
     {children}
   </div>

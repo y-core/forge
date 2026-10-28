@@ -31,6 +31,21 @@ describe("Menu.Trigger — data-slot", () => {
   });
 });
 
+describe("Menu.Trigger — the sm button box", () => {
+  it("clears the Floor bare, with the sm height, a focus ring and an unpainted border", async () => {
+    const classes = classesOf(await render(<Menu.Trigger for='m' />));
+
+    for (const token of ["h-control-sm", "focus-ring", "border-transparent", "cursor-pointer"]) expect(classes).toContain(token);
+  });
+
+  it("lets a caller's padding evict the box's own while the height stays", async () => {
+    const classes = classesOf(await render(<Menu.Trigger for='m' class='px-6' />));
+
+    for (const token of ["px-6", "h-control-sm"]) expect(classes).toContain(token);
+    expect(classes).not.toContain("px-3");
+  });
+});
+
 describe("Menu.SubmenuTrigger — data-slot", () => {
   it("emits its own token alone when none was inherited, and calls itself a menu item", async () => {
     expect(attrsOf(await render(<Menu.SubmenuTrigger for='s' />))).toEqual({
@@ -68,6 +83,10 @@ describe("Menu.Popup — the name it takes from its trigger", () => {
 
     expect(attrOf(html, "aria-labelledby", 'role="menu"')).toBe("m-trigger");
     expect(attrOf(html, "id", 'data-slot="menu-trigger"')).toBe("m-trigger");
+  });
+
+  it("lists a caller's aria-labelledby ahead of the trigger reference rather than replacing it", async () => {
+    expect(attrOf(await render(<Menu.Popup triggered id='m' aria-labelledby='extra' />), "aria-labelledby", 'role="menu"')).toBe("extra m-trigger");
   });
 
   it("keeps the derived id when a caller supplies their own, which would break the pairing", async () => {
@@ -182,5 +201,47 @@ describe("a trigger's aria-haspopup names the role its target actually carries",
 
     expect(attrOf(html, "role", `id="${target}"`)).toBe("menu");
     expect(attrOf(html, "aria-haspopup", 'data-slot="menu-trigger"')).toBe(attrOf(html, "role", `id="${target}"`));
+  });
+});
+
+describe("Menu — phrasing content", () => {
+  it("renders its root, its popup and a group label as spans, so none splits an enclosing paragraph", async () => {
+    expect(await render(<Menu />)).toStartWith("<span");
+    expect(
+      await render(
+        <Menu.Popup id='m' label='File'>
+          Open
+        </Menu.Popup>,
+      ),
+    ).toStartWith("<span");
+    expect(await render(<Menu.GroupLabel>Recent</Menu.GroupLabel>)).toStartWith("<span");
+  });
+
+  it("renders a group and a separator as spans carrying their roles", async () => {
+    const group = await render(<Menu.Group aria-labelledby='g' />);
+    const separator = await render(<Menu.Separator />);
+
+    expect(group).toStartWith("<span");
+    expect(attrOf(group, "role", 'data-slot="menu-group"')).toBe("group");
+    expect(separator).toStartWith("<span");
+    expect(attrOf(separator, "role", 'data-slot="menu-separator"')).toBe("separator");
+  });
+
+  it("disables every row of a disabled group unless a row sets its own disabled", async () => {
+    const html = await render(
+      <Menu.Group disabled>
+        <Menu.Item id='plain'>Open</Menu.Item>
+        <Menu.CheckboxItem id='check'>Wrap</Menu.CheckboxItem>
+        <Menu.RadioItem id='radio'>Small</Menu.RadioItem>
+        <Menu.SubmenuTrigger for='sub'>More</Menu.SubmenuTrigger>
+        <Menu.Item id='kept' disabled={false}>
+          Keep
+        </Menu.Item>
+      </Menu.Group>,
+    );
+
+    expect(attrOf(html, "aria-disabled", 'data-slot="menu-group"')).toBe("true");
+    const disabled = (id: string) => "disabled" in attrsOf(html, `id="${id}"`);
+    expect(["plain", "check", "radio", "sub-trigger", "kept"].map(disabled)).toEqual([true, true, true, true, false]);
   });
 });

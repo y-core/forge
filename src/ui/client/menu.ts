@@ -1,6 +1,6 @@
 import { MENU_GROUP_SELECTOR, MENU_ITEM_SELECTOR, MENU_KEEP_OPEN_ATTR, MENU_RADIO_SELECTOR } from "../contracts/menu-contract";
 import { applyStateAttrs } from "../contracts/state-attrs";
-import { isDisabled, leavesRing, mountRovingFocus } from "./composite";
+import { canTakeFocus, isDisabled, mountRovingFocus } from "./composite";
 import { activeElement, asElement, closestAcross, contains, elementById, eventTarget, isRtl, ownerDocument, ownerWindow } from "./dom";
 import type { MenuOptions } from "./types";
 
@@ -33,27 +33,35 @@ export function checkMenuItem(item: HTMLElement, scope: HTMLElement): void {
     setChecked(item, item.getAttribute("aria-checked") !== "true");
     return;
   }
-  // Bounded to the scope: a menu rendered inside an unrelated `<fieldset>` would otherwise clear
+  // Bounded to the scope: a menu rendered inside an unrelated `role=group` would otherwise clear
   // radio rows belonging to a different menu entirely.
   const group = closestAcross<HTMLElement>(item, MENU_GROUP_SELECTOR);
   const within = group && contains(scope, group) ? group : scope;
-  for (const sibling of within.querySelectorAll<HTMLElement>(MENU_RADIO_SELECTOR)) setChecked(sibling, false);
+  const owner = closestAcross<HTMLElement>(item, MENU_POPUP_SELECTOR);
+  for (const sibling of within.querySelectorAll<HTMLElement>(MENU_RADIO_SELECTOR)) {
+    if (closestAcross(sibling, MENU_POPUP_SELECTOR) === owner) setChecked(sibling, false);
+  }
   setChecked(item, true);
 }
 
 /** Mounts a menu popup's keyboard behaviour, returning a disposer. */
 export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => void {
-  const disposeFocus = mountRovingFocus(popup, { items: MENU_ITEM_SELECTOR, orientation: "vertical", loop: options.loop ?? true, typeahead: true });
+  let disposeFocus: (() => void) | null = null;
   let opener: HTMLElement | null = null;
+
+  function mountRing(): void {
+    disposeFocus ??= mountRovingFocus(popup, { items: MENU_ITEM_SELECTOR, orientation: "vertical", loop: options.loop ?? true, typeahead: true });
+  }
 
   const onBeforeToggle = (event: Event) => {
     if ((event as Event & { newState?: string }).newState !== "open") return;
     opener = asElement(activeElement(popup));
+    armDocument();
   };
 
   function firstRingItem(): HTMLElement | null {
     for (const item of popup.querySelectorAll<HTMLElement>(MENU_ITEM_SELECTOR)) {
-      if (!leavesRing(item)) return item;
+      if (canTakeFocus(item)) return item;
     }
     return null;
   }
@@ -61,9 +69,11 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
   const onToggle = (event: Event) => {
     const newState = (event as Event & { newState?: string }).newState;
     if (newState === "open") {
+      mountRing();
       firstRingItem()?.focus();
       return;
     }
+    disarmDocument();
     const active = activeElement(popup);
     if (active && active !== ownerDocument(popup).body && !contains(popup, active)) return;
     opener?.focus();
@@ -198,15 +208,36 @@ export function mountMenu(popup: HTMLElement, options: MenuOptions = {}): () => 
   popup.addEventListener("keydown", onKeyDown, { signal });
   popup.addEventListener("focusout", onFocusOut, { signal });
   popup.addEventListener("click", onActivateLink, { signal });
-  const doc = ownerDocument(popup);
-  doc.addEventListener("pointerdown", onPointerDown, { capture: true, signal });
-  doc.addEventListener("pointerup", onPointerUp, { capture: true, signal });
-  doc.addEventListener("pointercancel", settleInvokerPress, { capture: true, signal });
-  doc.addEventListener("click", onInvokerClick, { capture: true, signal });
+
+  let armed: AbortController | null = null;
+
+  function armDocument(): void {
+    if (armed) return;
+    armed = new AbortController();
+    const listening = { capture: true, signal: armed.signal };
+    const doc = ownerDocument(popup);
+    doc.addEventListener("pointerdown", onPointerDown, listening);
+    doc.addEventListener("pointerup", onPointerUp, listening);
+    doc.addEventListener("pointercancel", settleInvokerPress, listening);
+    doc.addEventListener("click", onInvokerClick, listening);
+  }
+
+  function disarmDocument(): void {
+    armed?.abort();
+    armed = null;
+    win.clearTimeout(settleTimer);
+    pressingInvoker = false;
+  }
+
+  if (popup.matches(":popover-open")) {
+    mountRing();
+    armDocument();
+  }
 
   return () => {
     lifetime.abort();
+    disarmDocument();
     win.clearTimeout(settleTimer);
-    disposeFocus();
+    disposeFocus?.();
   };
 }

@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { CheckboxGroup } from "./checkbox-group";
 
@@ -26,9 +26,9 @@ describe("CheckboxGroup", () => {
         </CheckboxGroup.Item>,
       ),
     ).toBe(
-      '<label data-slot="checkbox-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="checkbox"' +
+      '<label data-slot="checkbox-group-item" class="inline-flex min-h-control-sm items-center gap-2 text-sm text-foreground"><input type="checkbox"' +
         ' data-slot="checkbox-group-input" id="field-toppings-cheese" name="toppings" value="cheese" class="state-busy state-disabled' +
-        ' shrink-0 appearance-none rounded-sm border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
+        ' shrink-0 appearance-none rounded-sm border-field state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
         ' data-note="R&amp;D&#39;s">Cheese &amp; &quot;extra&quot; &lt;x&gt;</label>',
     );
   });
@@ -288,5 +288,18 @@ describe("CheckboxGroup — a caller's aria-describedby joins the derived ids ra
 
   it("emits no aria-describedby for an empty caller value when nothing derived renders", async () => {
     expect(attrsOf(await render(<CheckboxGroup name='toppings' aria-describedby='' />))).toEqual(ROOT);
+  });
+});
+
+describe("CheckboxGroup — the root's size reaches its items", () => {
+  it("sizes each input from the root, and an item's own size wins", async () => {
+    const html = await render(
+      <CheckboxGroup name='c' size='lg'>
+        <CheckboxGroup.Item name='c' value='a' />
+        <CheckboxGroup.Item name='c' value='b' size='sm' />
+      </CheckboxGroup>,
+    );
+
+    expect([classesOf(html, 'value="a"').at(-1), classesOf(html, 'value="b"').at(-1)]).toEqual(["size-5", "size-3.5"]);
   });
 });

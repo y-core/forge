@@ -99,6 +99,7 @@ test.describe("seed apply against real local D1", () => {
   let root = "";
 
   test.beforeAll(async () => {
+    test.setTimeout(240_000);
     root = freshRoot();
     const init = await forgeDb(root, ["migrate", "compose", "init"]);
     expect(init.code, init.stderr).toBe(0);

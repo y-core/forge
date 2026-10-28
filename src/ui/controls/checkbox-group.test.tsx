@@ -2,15 +2,16 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { classesOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { CheckboxGroup } from "./checkbox-group";
 
-const GROUP_CLASS = "state-busy m-0 flex gap-2 border-0 state-invalid p-0 flex-col";
+const GROUP_CLASS = "state-busy m-0 flex gap-x-2 border-0 state-invalid p-0 flex-col";
 
-const ITEM_CLASS = "inline-flex items-center gap-2 text-sm text-foreground";
+const ITEM_CLASS = "inline-flex min-h-control-sm items-center gap-2 text-sm text-foreground";
 
 const INPUT_CLASS =
-  "state-busy state-disabled shrink-0 appearance-none rounded-sm border state-invalid border-input " +
+  "state-busy state-disabled shrink-0 appearance-none rounded-sm border-field state-invalid border-input " +
   "bg-background focus-ring-outset checked:bg-primary size-4";
 
 const GROUP_OPEN = `<fieldset data-slot="checkbox-group" data-size="md" data-orientation="vertical" class="${GROUP_CLASS}">`;
@@ -60,5 +61,17 @@ describe("controls/CheckboxGroup", () => {
         '<p data-slot="field-description" class="text-sm leading-normal text-muted-foreground">Pick any.</p>' +
         '<p data-slot="field-error" class="text-sm font-normal text-destructive-text">Pick one.</p></fieldset>',
     );
+  });
+});
+
+describe("controls/CheckboxGroup — the root's size reaches a bound item", () => {
+  it("sizes the input from the root", async () => {
+    const html = await render(
+      <CheckboxGroup name='toppings' size='lg'>
+        <CheckboxGroup.Item bind='toppings' value='olives' />
+      </CheckboxGroup>,
+    );
+
+    expect(classesOf(html, 'data-slot="checkbox-group-input"').at(-1)).toBe("size-5");
   });
 });

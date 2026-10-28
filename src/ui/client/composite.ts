@@ -17,14 +17,27 @@ const NO_CURRENT = -1;
 
 const mountedComposites = new WeakMap<HTMLElement, () => void>();
 
+/** Whether a node sits inside a mounted composite nested below `root`, whose unclaimed keys bubble on to it. */
+function withinNestedComposite(root: HTMLElement, node: Node | null): boolean {
+  for (let at = node; at && at !== root; at = at.parentNode ?? (at as ShadowRoot).host ?? null) {
+    if (mountedComposites.has(at as HTMLElement)) return true;
+  }
+  return false;
+}
+
 /** Whether an item is inert — disabled by either `disabled` or `aria-disabled`. @internal */
 export function isDisabled(el: HTMLElement): boolean {
   return (el as HTMLButtonElement).disabled === true || el.getAttribute("aria-disabled") === "true";
 }
 
-/** Whether an item is out of the navigation ring entirely, which only the native `disabled` is. @internal */
-export function leavesRing(el: HTMLElement): boolean {
-  return (el as HTMLButtonElement).disabled === true;
+/** Whether an element is rendered, answering yes where `checkVisibility` is unavailable. */
+function isRendered(el: HTMLElement): boolean {
+  return el.checkVisibility?.() !== false;
+}
+
+/** Whether an item may hold the ring's focus — rendered and not natively disabled, so `aria-disabled` stays in. @internal */
+export function canTakeFocus(el: HTMLElement): boolean {
+  return (el as HTMLButtonElement).disabled !== true && isRendered(el);
 }
 
 // Which types leave the arrows to the ring, not which edit text: `range` is absent because it uses
@@ -73,7 +86,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
 
   // The visibility filter is what makes a composite nestable: a closed submenu's popup is still a
   // descendant, and an unfiltered query would splice its items into the parent's ring.
-  const listItems = (): HTMLElement[] => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter((el) => el.checkVisibility?.() !== false);
+  const listItems = (): HTMLElement[] => Array.from(root.querySelectorAll<HTMLElement>(selector)).filter(isRendered);
 
   function setTabStop(items: HTMLElement[], index: number): void {
     for (let i = 0; i < items.length; i += 1) {
@@ -97,7 +110,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
   function nextEnabled(items: HTMLElement[], from: number, stride: number): number {
     for (let i = from; i >= 0 && i < items.length; i += stride) {
       const item = items[i];
-      if (item && !leavesRing(item)) return i;
+      if (item && canTakeFocus(item)) return i;
     }
     return -1;
   }
@@ -154,7 +167,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     for (let offset = 1; offset <= items.length; offset += 1) {
       const index = (Math.max(current, 0) + offset) % items.length;
       const item = items[index];
-      if (!item || leavesRing(item)) continue;
+      if (!item || !canTakeFocus(item)) continue;
       if ((item.textContent ?? "").trim().toLowerCase().startsWith(buffer)) {
         focusItem(items, index);
         return true;
@@ -189,6 +202,8 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
 
     const items = listItems();
     if (items.length === 0) return;
+    const keyTarget = eventTarget(keyEvent) as Node | null;
+    if (indexOf(items, keyTarget) === NO_CURRENT && !withinNestedComposite(root, keyTarget)) return;
 
     // The `&&` chain keeps `getComputedStyle`'s forced style recalculation off every key whose
     // meaning direction cannot change.
@@ -228,7 +243,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
   function initialIndex(items: HTMLElement[]): number {
     const marked = items.findIndex((item) => item.hasAttribute(ACTIVE_COMPOSITE_ITEM));
     const markedItem = items[marked];
-    if (markedItem && !leavesRing(markedItem)) return marked;
+    if (markedItem && canTakeFocus(markedItem)) return marked;
     const enabled = firstEnabled(items);
     return enabled === -1 ? 0 : enabled;
   }
@@ -275,11 +290,23 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
     return false;
   }
 
+  /** The focused item, else the written stop if it can still take focus, else the nearest one that can, forward first. */
+  function standingStop(items: HTMLElement[]): number {
+    const focused = indexOf(items, activeElement(root));
+    if (focused !== NO_CURRENT) return focused;
+    if (!ringWritten) return NO_CURRENT;
+    const written = tabStopIndex(items);
+    const item = items[written];
+    if (!item || canTakeFocus(item)) return written;
+    const forward = nextEnabled(items, written + 1, 1);
+    return forward === -1 ? nextEnabled(items, written - 1, -1) : forward;
+  }
+
   /** Writes the ring's one stop: the item already holding it, or the one the widget designates. */
   // A stop counts as standing only once this controller has written one. The attribute cannot carry
   // that on its own — forge renders `tabindex="0"` on an inert anchor, which is no entry point.
   function normaliseRing(items: HTMLElement[]): void {
-    const standing = ringWritten ? tabStopIndex(items) : NO_CURRENT;
+    const standing = standingStop(items);
     setTabStop(items, standing === NO_CURRENT ? initialIndex(items) : standing);
     ringWritten = true;
   }
@@ -350,7 +377,7 @@ export function mountRovingFocus(root: HTMLElement, options: RovingFocusOptions)
   root.addEventListener("focusout", onFocusOut);
   // `hidden` as well as `childList`: revealing an item admits it to the ring exactly as inserting one
   // does, and a root hidden at mount had no items to write a stop over until it is shown.
-  observer?.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden"] });
+  observer?.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ["hidden", "disabled"] });
 
   const dispose = () => {
     mountedComposites.delete(root);

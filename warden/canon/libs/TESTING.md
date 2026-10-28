@@ -79,6 +79,10 @@ preference:
 prerequisite is the only legitimate ground for a set to stand outside it (§6c). **Cost never is.** It runs from `runtime` up, the tiers that are
 permitted to carry a prerequisite.
 
+**Chromium is the set's engine; another engine is an opt-in `release` row (§6c)**, for a library whose consumers need wider compatibility. Where the
+environment serves the other engines from their own server, the browser config routes those projects there and the gate probes the server each row
+will reach.
+
 **This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
 natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
 one retargeting rule backwards makes the central assertion pass for the wrong reason. A separate process guarantees the isolation by construction
@@ -428,7 +432,8 @@ refused rather than silently narrowing the step. **`deploy` runs every step whol
 derivation missed.
 
 **The engine line separates `deploy` from `release`: a step that re-runs a suite another step already ran, on another engine, is `release`.** The
-primary engine proves the behaviour; each other engine proves only that it holds there too.
+primary engine proves the behaviour; each other engine proves only that it holds there too. The primary engine is Chromium, and another engine is
+added only by choice.
 
 The lines compose rather than compete: a step is `static` unless it runs the code, `unit` unless it needs a runtime, `runtime` when it does,
 `deploy` when it judges a finished change, and `release` when it repeats a runtime suite on another engine.

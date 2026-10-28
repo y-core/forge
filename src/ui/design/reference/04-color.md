@@ -338,7 +338,7 @@ _app's_ own `dark:` utilities too, the escape hatch is re-declaring the variant 
 ## 8. Tone by intent, appearance by emphasis
 
 `tone` and `appearance` are two questions, not one: what the message _is_, and how loudly this surface has to say it. `Button`, `Badge`, `Alert` and
-`Toast` all read the same tones through `toneVariants`, so the same word means the same thing wherever it is passed.
+`Toast` all paint from the same tone table, so the same word means the same thing wherever it is passed.
 
 Default: pick `tone` from what the message is — `destructive` for loss or an irreversible act, `warning` for a risk the reader can still avoid,
 `success` for a claim that something completed, `info` for neutral information, `primary` for the one primary action a surface has, and `neutral`

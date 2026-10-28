@@ -13,6 +13,8 @@ declare global {
     itemScans: string[];
     /** Elements `checkVisibility()` was called on, recorded by the observer-cost instrumentation. */
     visibilityChecks: number;
+    /** `defaultPrevented` of each keydown once it has bubbled past the composite, recorded at the document. */
+    keyPrevented: boolean[];
   }
 }
 
@@ -291,6 +293,7 @@ test.describe("the item scan is narrowed to the keys that can consume it", () =>
     await install(page, { typeahead: true });
 
     await page.focus("#field");
+    await page.evaluate(() => document.querySelector<HTMLInputElement>("#field")?.setSelectionRange(0, 0));
     await instrumentItemScans(page);
 
     expect(await scansWhilePressing(page, "c")).toEqual([]);
@@ -376,6 +379,22 @@ test.describe("disabled items", () => {
 
     expect(await tabIndexes(page)).toEqual([-1, 0, -1]);
   });
+
+  for (const viaAttribute of [false, true]) {
+    test(`moves the tab stop off an item disabled at runtime through ${viaAttribute ? "the attribute" : "the property"}`, async ({ page }) => {
+      await mount(page, toolbar({ count: 3 }), EXPOSE);
+      await install(page);
+
+      await page.evaluate(async (attribute) => {
+        const item = document.querySelector<HTMLButtonElement>("#b0");
+        if (attribute) item?.setAttribute("disabled", "");
+        else if (item) item.disabled = true;
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }, viaAttribute);
+
+      expect(await tabIndexes(page)).toEqual([-1, 0, -1]);
+    });
+  }
 });
 
 test.describe("loop", () => {
@@ -447,6 +466,44 @@ test.describe("typeahead", () => {
 });
 
 test.describe("native inputs are never stolen from", () => {
+  test("leaves an arrow on a non-ring control inside a plain item container, with no nested composite, to that control", async ({ page }) => {
+    const html =
+      '<div id="root"><button id="b0" data-item>a</button><div id="group"><select id="pick"><option>x</option><option>y</option></select></div><button id="b2" data-item>c</button></div>';
+    await mount(page, html, EXPOSE);
+    await install(page, { orientation: "vertical" });
+
+    await page.evaluate(() => {
+      window.keyPrevented = [];
+      document.addEventListener("keydown", (event) => window.keyPrevented.push(event.defaultPrevented));
+    });
+    await page.focus("#pick");
+    await page.keyboard.press("ArrowDown");
+
+    expect({ prevented: await page.evaluate(() => window.keyPrevented), focused: await focusedId(page) }).toEqual({
+      prevented: [false],
+      focused: "pick",
+    });
+  });
+
+  test("leaves an arrow on a control that is not one of the ring's items to that control", async ({ page }) => {
+    const html =
+      '<div id="root"><button id="b0" data-item>a</button><select id="pick"><option>x</option><option>y</option></select><button id="b2" data-item>c</button></div>';
+    await mount(page, html, EXPOSE);
+    await install(page, { orientation: "vertical" });
+
+    await page.evaluate(() => {
+      window.keyPrevented = [];
+      document.addEventListener("keydown", (event) => window.keyPrevented.push(event.defaultPrevented));
+    });
+    await page.focus("#pick");
+    await page.keyboard.press("ArrowDown");
+
+    expect({ prevented: await page.evaluate(() => window.keyPrevented), focused: await focusedId(page) }).toEqual({
+      prevented: [false],
+      focused: "pick",
+    });
+  });
+
   const WITH_INPUT =
     '<div id="root"><button id="b0" data-item>a</button><input id="field" data-item value="hello"><button id="b2" data-item>c</button></div>';
 
@@ -742,6 +799,44 @@ test.describe("exactly one tab stop survives a change of membership", () => {
     });
 
     expect(await tabIndexes(page)).toEqual([0, -1]);
+  });
+
+  test("keeps the stop on the item focused before a reveal from above the root is observed", async ({ page }) => {
+    await mount(
+      page,
+      '<div id="panel" hidden><div id="root"><button id="b0" data-item>0</button><button id="b1" data-item>1</button><button id="b2" data-item>2</button></div></div>',
+      EXPOSE,
+    );
+    await install(page, { orientation: "vertical" });
+
+    await page.evaluate(async () => {
+      document.querySelector("#panel")?.removeAttribute("hidden");
+      document.querySelector<HTMLElement>("#b2")?.focus();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(await tabIndexes(page)).toEqual([-1, -1, 0]);
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedId(page)).toBe("b1");
+  });
+
+  test("keeps the stop on the item focused before the root's own reveal is observed", async ({ page }) => {
+    await mount(
+      page,
+      '<div id="root" hidden><button id="b0" data-item>0</button><button id="b1" data-item>1</button><button id="b2" data-item>2</button></div>',
+      EXPOSE,
+    );
+    await install(page, { orientation: "vertical" });
+
+    await page.evaluate(async () => {
+      document.querySelector("#root")?.removeAttribute("hidden");
+      document.querySelector<HTMLElement>("#b2")?.focus();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    });
+
+    expect(await tabIndexes(page)).toEqual([-1, -1, 0]);
+    await page.keyboard.press("ArrowUp");
+    expect(await focusedId(page)).toBe("b1");
   });
 });
 

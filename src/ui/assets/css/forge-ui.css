@@ -27,7 +27,7 @@
    - a **UA pseudo-element** — `::-webkit-slider-runnable-track`, `::backdrop`, `::details-content`;
    - a **CSS Anchor Positioning binding**, where the `anchor-name` on a trigger and the
      `position-anchor` on a panel are two halves of one relationship declared together;
-   - a **state selector spanning two elements** — `:has(> …:popover-open)`;
+   - a **state selector spanning two elements** — `:has(…:target)`;
    - a **`@supports` fallback**, which no utility has a syntax for.
 
    **The `forced-colors` restoration sits in the utilities block** — the obligation a component takes
@@ -46,6 +46,7 @@
        htmx indicators .......... consumer-facing      — src/ui/design/reference/11-htmx.md
        Theme toggle icons ....... ThemeToggle          — src/ui/chrome/theme-toggle.tsx, theme.ts
        Join shared edges ........ Join                 — src/ui/core/join.tsx
+       Open-trigger state ....... Popover, Toolbar, Menu
        9. Forced colors ......... CheckboxGroup, RadioGroup, Switch, Toggle, ToggleGroup, Filter,
                                   Slider, Table.Row, Tabs, Toolbar
                                   — src/ui/core/checkbox-group.tsx, radio-group.tsx, switch.tsx,
@@ -57,7 +58,6 @@
                                                            src/ui/chrome/toolbar.tsx
        2. Tooltip ............... Tooltip              — src/ui/core/tooltip.tsx
        3. Coordinate placement .. Menu (context menus) — src/ui/client/popover-anchor.ts
-       4. Open-trigger state .... Popover, Toolbar, Menu
        4b. Popup motion ......... Popover, Menu, Tooltip, Toolbar, Toast
        5. Disclosure motion ..... Collapsible, Accordion — src/ui/core/collapsible.tsx, accordion.tsx
        5b. Tabs ................. Tabs                 — src/ui/core/tabs.tsx
@@ -67,6 +67,7 @@
        7c. Meter ................ Meter                — src/ui/core/meter.tsx
        8. Navbar ................ Navbar               — src/ui/chrome/navbar.tsx
        8b. Dock ................. Dock                 — src/ui/chrome/dock.tsx
+       8c. Page clearance ....... Navbar, Dock         — src/ui/chrome/navbar.tsx, dock.tsx
 
    **Do not put general-purpose utilities here.** Tailwind supplies those. Every block is tied to one
    named consumer, and a block whose consumer is gone should be deleted with it.
@@ -89,7 +90,8 @@
      otp-editor       the field inside that frame — the cell-wide glyph advance, and the caret's room
 
    They are utilities in `cn`'s sense — the derivation reads their compiled signature — so a caller's
-   `rounded-lg` after `field-chrome` still wins.
+   `rounded-lg` after `field-chrome` still wins. `tabs-revealed` is a top-level `@custom-variant` for
+   the same reason; it is §5b's no-script condition, read by `Tabs.Tab`'s cue, §5b and §9.
   ────────────────────────────────────────────────────────────────────────────── */
 
 @utility border-field {
@@ -112,6 +114,13 @@
     outline: 2px solid transparent;
     outline-offset: -2px;
   }
+  @supports (hanging-punctuation: first) and (-webkit-hyphens: none) {
+    &:has(:focus) {
+      @apply inset-ring-2 inset-ring-[var(--focus-ring,var(--color-ring))];
+      outline: 2px solid transparent;
+      outline-offset: -2px;
+    }
+  }
 }
 
 /* The exception, and the only one: a control whose box *is* its content has no interior to spend two
@@ -128,11 +137,11 @@
 }
 
 @utility state-disabled {
-  &:is(:disabled, [aria-disabled="true"], :has(:disabled)),
+  &:is(:disabled, [aria-disabled="true"], :has(:disabled), :has(> [data-slot~="select"][aria-disabled="true"])),
   fieldset:disabled & {
     @apply opacity-50;
   }
-  &:is(:disabled, [aria-disabled="true"], :has(:disabled)):not([data-slot~="tooltip-trigger"]),
+  &:is(:disabled, [aria-disabled="true"], :has(:disabled), :has(> [data-slot~="select"][aria-disabled="true"])):not([data-slot~="tooltip-trigger"]),
   fieldset:disabled &:not([data-slot~="tooltip-trigger"]) {
     @apply pointer-events-none;
   }
@@ -148,7 +157,10 @@
 
 @utility state-busy {
   &:is([aria-busy="true"], [data-busy], :has([aria-busy="true"]), :has([data-busy])) {
-    @apply pointer-events-none cursor-progress;
+    @apply cursor-progress;
+  }
+  &:is([aria-busy="true"], [data-busy], :has([aria-busy="true"]), :has([data-busy])):not([data-slot~="tooltip-trigger"]) {
+    @apply pointer-events-none;
   }
 }
 
@@ -193,8 +205,8 @@
    The box is `content-box`, so the field measures `pad + length · cell` and overhangs the frame's
    interior by exactly `pad`. That overhang is the room the caret needs after the last glyph's own
    letter-spacing — without it the field scrolls the moment a full code is typed — and the frame
-   clips it, which is what keeps the cells equal instead of paying for the caret with a wider last
-   one. */
+   clips it on the inline axis, which is what keeps the cells equal instead of paying for the caret
+   with a wider last one. */
 @utility otp-editor {
   --otp-pad: calc((var(--otp-cell) - 1ch) / 2);
   box-sizing: content-box;
@@ -202,6 +214,8 @@
   padding-inline: var(--otp-pad) 0;
   letter-spacing: calc(var(--otp-cell) - 1ch);
 }
+
+@custom-variant tabs-revealed (&:where([data-slot~="tabs"]:not([data-tabs-mounted]):has(> [data-slot~="tabs-content"]:not([data-selected]):not([hidden])) > *, [data-slot~="tabs"]:not([data-tabs-mounted]):has(> [data-slot~="tabs-content"]:not([data-selected]):not([hidden])) > [data-slot~="tabs-list"] > *, [data-slot~="tabs"]:not([data-tabs-mounted]):has(> [data-slot~="tabs-content"]:target:not([data-selected])) > *, [data-slot~="tabs"]:not([data-tabs-mounted]):has(> [data-slot~="tabs-content"]:target:not([data-selected])) > [data-slot~="tabs-list"] > *));
 
 @layer utilities {
   /* ── htmx request indicators ─────────────────────────────────────────────
@@ -289,6 +303,30 @@
     border-end-start-radius: 0;
     border-end-end-radius: 0;
   }
+
+  /* ── Open-trigger state ──────────────────────────────────────────────────
+   The trigger stays highlighted while its panel is open, replacing the old `<details open>` group
+   state. `:has()` is what makes this expressible without a controller: the trigger is styled from a
+   *sibling's* state, which no `class=` on the trigger could know about. */
+  [data-slot~="popover"]:has(> [data-slot~="popover-content"]:popover-open) > [data-slot~="popover-trigger"] {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
+  [data-slot~="toolbar-popover"]:has(> [data-slot~="toolbar-flyout"]:popover-open) > [data-slot~="toolbar-trigger"] {
+    background-color: var(--primary);
+    color: var(--primary-foreground);
+  }
+  [data-slot~="menu"]:has(> [data-slot~="menu-popup"]:popover-open) > [data-slot~="menu-trigger"] {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
+  /* The submenu row is a *sibling* of the panel it opens, not its parent, so this pair reads `+`
+   where the three above read `>`. `Dialog` has no rule at all: its trigger only ever emits
+   `show-modal`, so the `::backdrop` paints over a highlight nothing could see. */
+  [data-slot~="menu-submenu-trigger"]:has(+ [data-slot~="menu-popup"]:popover-open) {
+    background-color: var(--accent);
+    color: var(--accent-foreground);
+  }
 }
 
 @layer components {
@@ -304,8 +342,7 @@
    `position-anchor`'s initial value is `normal`, so the rule names `auto` to reach the invoker's
    implicit anchor. No `anchor-name` is set: a name would override that per-row implicit anchor. */
   [data-slot~="menu-popup"]:not([data-coords]),
-  [data-slot~="popover-content"],
-  [data-slot~="toolbar-flyout"] {
+  [data-slot~="popover-content"] {
     position: fixed;
     position-anchor: auto;
     margin: 0;
@@ -497,33 +534,6 @@
     translate: 0 -50%;
   }
 
-  /* `data-side` names the **rail's** edge, not the flyout's, so the inversion below is correct
-   rather than a transcription slip: a rail on the `left` opens its flyout to the right of itself
-   (`left: anchor(right)`). `toolbar.tsx` is where the value is set, from the same `placement` prop
-   that puts the rail on that edge. */
-  [data-slot~="toolbar-flyout"][data-side="left"] {
-    left: anchor(right);
-    top: anchor(top);
-    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical rail edge, so the gap stays on that edge */
-    margin-left: 0.5rem;
-  }
-  [data-slot~="toolbar-flyout"][data-side="right"] {
-    right: anchor(left);
-    top: anchor(top);
-    /* modern-css-allow: forge-ui-platform-logical-spacing — `data-side` names a physical rail edge, so the gap stays on that edge */
-    margin-right: 0.5rem;
-  }
-  [data-slot~="toolbar-flyout"][data-side="top"] {
-    top: anchor(bottom);
-    left: anchor(left);
-    margin-top: 0.5rem;
-  }
-  [data-slot~="toolbar-flyout"][data-side="bottom"] {
-    bottom: anchor(top);
-    left: anchor(left);
-    margin-bottom: 0.5rem;
-  }
-
   /* ══ 2. Tooltip ═══════════════════════════════════════════════════════════
    The one surface that still needs a **named** anchor, and the reason is structural: a tooltip's
    content is `popover="hint"` shown by a controller, so it has no invoker and therefore no implicit
@@ -598,36 +608,11 @@
     position-try-fallbacks: none;
   }
 
-  /* ══ 4. Open-trigger state — Popover, Toolbar, Menu ═══════════════════════
-   The trigger stays highlighted while its panel is open, replacing the old `<details open>` group
-   state. `:has()` is what makes this expressible without a controller: the trigger is styled from a
-   *sibling's* state, which no `class=` on the trigger could know about. */
-  [data-slot~="popover"]:has(> [data-slot~="popover-content"]:popover-open) > [data-slot~="popover-trigger"] {
-    background-color: var(--accent);
-    color: var(--accent-foreground);
-  }
-  [data-slot~="toolbar-popover"]:has(> [data-slot~="toolbar-flyout"]:popover-open) > [data-slot~="toolbar-trigger"] {
-    background-color: var(--primary);
-    color: var(--primary-foreground);
-  }
-  [data-slot~="menu"]:has(> [data-slot~="menu-popup"]:popover-open) > [data-slot~="menu-trigger"] {
-    background-color: var(--accent);
-    color: var(--accent-foreground);
-  }
-  /* The submenu row is a *sibling* of the panel it opens, not its parent, so this pair reads `+`
-   where the three above read `>`. `Dialog` has no rule at all: its trigger only ever emits
-   `show-modal`, so the `::backdrop` paints over a highlight nothing could see. */
-  [data-slot~="menu-submenu-trigger"]:has(+ [data-slot~="menu-popup"]:popover-open) {
-    background-color: var(--accent);
-    color: var(--accent-foreground);
-  }
-
   /* Fallback for engines without anchor positioning: keep panels usable (a JS positioner can refine
    placement per-browser if needed). */
   @supports not (top: anchor(bottom)) {
     [data-slot~="menu-popup"]:not([data-coords]),
-    [data-slot~="popover-content"],
-    [data-slot~="toolbar-flyout"] {
+    [data-slot~="popover-content"] {
       inset: auto auto 1rem 1rem;
     }
   }
@@ -723,50 +708,32 @@
     )[data-align="end"] {
     --forge-origin-y: bottom;
   }
-  /* `openPopoverAt` puts a context menu's top-left corner on the click, so that corner is the origin. */
   [popover][data-coords] {
     --forge-origin-x: left;
     --forge-origin-y: top;
   }
-  /* `data-side` names the rail's edge, and §1 aligns the flyout to its trigger's top or left. */
-  [data-slot~="toolbar-flyout"][data-side="left"] {
-    --forge-origin-x: left;
-    --forge-origin-y: top;
-  }
-  [data-slot~="toolbar-flyout"][data-side="right"] {
-    --forge-origin-x: right;
-    --forge-origin-y: top;
-  }
-  [data-slot~="toolbar-flyout"][data-side="top"] {
-    --forge-origin-x: left;
-    --forge-origin-y: top;
-  }
-  [data-slot~="toolbar-flyout"][data-side="bottom"] {
-    --forge-origin-x: left;
-    --forge-origin-y: bottom;
-  }
 
   /* The fade runs under every motion preference: reduced motion replaces the scale with it rather
    than removing the change. Only `scale` waits on `no-preference`. */
-  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]) {
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]) {
     opacity: var(--forge-motion-opacity);
     transition:
       opacity var(--forge-motion-exit) ease-in,
       display var(--forge-motion-exit) allow-discrete,
       overlay var(--forge-motion-exit) allow-discrete;
   }
-  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+  :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):popover-open {
     opacity: 1;
     transition-duration: var(--forge-motion-enter);
     transition-timing-function: ease-out;
   }
   @starting-style {
-    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):popover-open {
       opacity: var(--forge-motion-opacity);
     }
   }
   @media (prefers-reduced-motion: no-preference) {
-    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]) {
+    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]) {
       scale: var(--forge-motion-scale);
       transform-origin: var(--forge-origin-x, center) var(--forge-origin-y, center);
       transition:
@@ -775,11 +742,11 @@
         display var(--forge-motion-exit) allow-discrete,
         overlay var(--forge-motion-exit) allow-discrete;
     }
-    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+    :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):popover-open {
       scale: 1;
     }
     @starting-style {
-      :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"], [data-slot~="toolbar-flyout"]):popover-open {
+      :is([data-slot~="popover-content"], [data-slot~="menu-popup"], [data-slot~="tooltip-content"]):popover-open {
         scale: var(--forge-motion-scale);
       }
     }
@@ -827,18 +794,19 @@
       block-size: 0;
       overflow: clip;
       transition:
-        block-size 200ms ease,
-        content-visibility 200ms allow-discrete;
+        block-size var(--forge-motion-exit) ease,
+        content-visibility var(--forge-motion-exit) allow-discrete;
     }
     [data-slot~="collapsible"][open]::details-content,
     [data-slot~="accordion-item"][open]::details-content {
       block-size: auto;
+      transition-duration: var(--forge-motion-enter);
     }
   }
 
   /* ══ 5b. Tabs — the no-script fallback ════════════════════════════════════
    Preflight's `!important` `[hidden]` rule exempts `until-found`, which fragment navigation reveals;
-   `:target` covers an engine without it. `mountTabs` retires the `:target` pair via `data-tabs-mounted`. */
+   `:target` covers an engine without it. `mountTabs` retires these rules and the `tabs-revealed` variant via `data-tabs-mounted`. */
   [data-slot~="tabs-content"][hidden="until-found"] {
     display: none;
   }
@@ -847,8 +815,14 @@
     display: block;
   }
 
-  [data-slot~="tabs"]:not([data-tabs-mounted]):has([data-slot~="tabs-content"]:target) [data-slot~="tabs-content"]:not(:target) {
+  [data-slot~="tabs"]:not([data-tabs-mounted]):has(> [data-slot~="tabs-content"]:target) > [data-slot~="tabs-content"]:not(:target) {
     display: none;
+  }
+
+  [data-slot~="tabs-content"][data-selected] {
+    @variant tabs-revealed {
+      display: none;
+    }
   }
 
   /* ══ 6. Dialog ════════════════════════════════════════════════════════════
@@ -923,20 +897,17 @@
    the closing state — `:modal` stops matching the moment `close()` is called, so an exit keyed on it
    would never run. `<Drawer open>` matches neither on load, so it opens docked and still, and leaves
    from its edge on `close()`. `display` and `overlay` ride the same duration with `allow-discrete`
-   so the panel stays painted and in the top layer for the whole exit.
-
-   200ms in and 150ms out is the top of `forge-ui-interaction-duration`'s band: the drawer is the
-   largest surface forge moves, and it read as an instant appearance below it. */
+   so the panel stays painted and in the top layer for the whole exit. */
   [data-slot~="drawer"]:not([open]),
   [data-slot~="drawer"]:modal {
     transition:
-      opacity 200ms ease-out,
-      display 200ms allow-discrete,
-      overlay 200ms allow-discrete;
+      opacity var(--forge-motion-enter) ease-out,
+      display var(--forge-motion-enter) allow-discrete,
+      overlay var(--forge-motion-enter) allow-discrete;
   }
   [data-slot~="drawer"]:not([open]) {
     opacity: var(--forge-motion-opacity);
-    transition-duration: 150ms;
+    transition-duration: var(--forge-motion-exit);
   }
   @starting-style {
     [data-slot~="drawer"]:modal {
@@ -946,16 +917,16 @@
   [data-slot~="drawer"]:not([open])::backdrop,
   [data-slot~="drawer"]:modal::backdrop {
     transition:
-      opacity 200ms ease-out,
-      display 200ms allow-discrete,
-      overlay 200ms allow-discrete;
+      opacity var(--forge-motion-enter) ease-out,
+      display var(--forge-motion-enter) allow-discrete,
+      overlay var(--forge-motion-enter) allow-discrete;
   }
   [data-slot~="drawer"]:modal::backdrop {
     opacity: 1;
   }
   [data-slot~="drawer"]:not([open])::backdrop {
     opacity: 0;
-    transition-duration: 150ms;
+    transition-duration: var(--forge-motion-exit);
   }
   @starting-style {
     [data-slot~="drawer"]:modal::backdrop {
@@ -969,12 +940,12 @@
     [data-slot~="drawer"]:modal {
       opacity: 1;
       transition:
-        translate 200ms ease-out,
-        display 200ms allow-discrete,
-        overlay 200ms allow-discrete;
+        translate var(--forge-motion-enter) ease-out,
+        display var(--forge-motion-enter) allow-discrete,
+        overlay var(--forge-motion-enter) allow-discrete;
     }
     [data-slot~="drawer"]:not([open]) {
-      transition-duration: 150ms;
+      transition-duration: var(--forge-motion-exit);
     }
     [data-slot~="drawer"]:modal {
       translate: 0 0;
@@ -1083,6 +1054,11 @@
         scale: var(--forge-motion-scale);
       }
     }
+  }
+
+  :is([data-slot~="dialog"], [data-slot~="drawer"])[data-open-modal]:modal,
+  :is([data-slot~="dialog"], [data-slot~="drawer"])[data-open-modal]:modal::backdrop {
+    transition: none;
   }
 
   /* ══ 7. Slider — track and thumb ══════════════════════════════════════════
@@ -1218,7 +1194,7 @@
     }
   }
 
-  /* ══ 8. Navbar — the closed-<details> content gate ════════════════════════
+  /* ══ 8. Navbar — the closed-<details> content gate, and a bar's block-edge clearance ══
    Chromium ≥131 wraps closed-`<details>` content in `::details-content` with
    `content-visibility: hidden` — an ancestor-level gate that suppresses the content div regardless
    of its own `display`. `Navbar` renders its desktop bar from a closed `<details>` and drives
@@ -1231,14 +1207,32 @@
   [data-slot~="navbar"]::details-content {
     content-visibility: visible;
   }
+  html:has([data-slot~="navbar"]) {
+    --forge-navbar-height: 3.5rem;
+    --forge-navbar-row: max(var(--forge-navbar-height), 1.75rem);
+  }
+  html:has([data-slot~="navbar"][data-side="top"]) {
+    --forge-navbar-top-reserve: var(--forge-navbar-row);
+  }
+  html:has([data-slot~="navbar"][data-side="bottom"]) {
+    --forge-navbar-bottom-reserve: var(--forge-navbar-row);
+  }
+  html:has([data-slot~="navbar"][data-narrow-edge="top"]) {
+    @variant max-md {
+      --forge-navbar-top-reserve: var(--forge-navbar-row);
+    }
+  }
+  html:has([data-slot~="navbar"][data-narrow-edge="bottom"]) {
+    @variant max-md {
+      --forge-navbar-bottom-reserve: var(--forge-navbar-row);
+    }
+  }
 
   /* ══ 8b. Dock — the page's clearance for the fixed bar ═══════════════════
-   `scroll-padding` lifts a focused control above the bar; the body padding gives the last one room
-   to get there. */
+   The body padding gives the last focused control room to scroll clear of the bar. */
   html:has([data-slot~="dock"]) {
     --forge-dock-height: 3.5rem;
     --forge-dock-reserve: calc(var(--forge-dock-height) + env(safe-area-inset-bottom));
-    scroll-padding-bottom: var(--forge-dock-reserve);
   }
   html:has([data-slot~="dock"][data-size="sm"]) {
     --forge-dock-height: 3rem;
@@ -1258,6 +1252,13 @@
   }
   html:has([data-slot~="dock"]) > body {
     padding-bottom: var(--forge-dock-reserve);
+  }
+
+  /* ══ 8c. Page clearance — Navbar, Dock ═══════════════════════════════════
+   Each edge sums every bar's reserve, so a bottom Navbar and a Dock add up rather than one
+   replacing the other. */
+  html:has([data-slot~="dock"], [data-slot~="navbar"]:is([data-side="top"], [data-side="bottom"], [data-narrow-edge])) {
+    scroll-padding-block: var(--forge-navbar-top-reserve, 0px) calc(var(--forge-navbar-bottom-reserve, 0px) + var(--forge-dock-reserve, 0px));
   }
 }
 
@@ -1346,6 +1347,14 @@
       outline: 2px solid CanvasText;
       outline-offset: 2px;
     }
+    @supports (hanging-punctuation: first) and (-webkit-hyphens: none) {
+      [data-slot~="toggle"]:has(:focus),
+      [data-slot~="toggle-group-item"]:has(:focus),
+      [data-slot~="filter-item"]:has(:focus) {
+        outline: 2px solid CanvasText;
+        outline-offset: 2px;
+      }
+    }
 
     [data-slot~="toolbar-button"][data-pressed],
     [data-slot~="toolbar-link"][data-pressed] {
@@ -1410,7 +1419,9 @@
       border-color: Canvas;
     }
     [data-slot~="tab"][data-selected] {
-      border-color: CanvasText;
+      @variant not-tabs-revealed {
+        border-color: CanvasText;
+      }
     }
   }
 }

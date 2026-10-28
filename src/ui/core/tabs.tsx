@@ -6,8 +6,10 @@ import { nameAttrs, tabId } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TABS_SCOPE } from "../contracts/tabs-contract";
 import type { ContainerNaming, Orientation } from "../contracts/types";
+import { mergeIdRefs } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { fillPartProps } from "./utils/part-props";
 
 interface TabsRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   orientation?: Orientation | undefined;
@@ -53,7 +55,7 @@ const TabsRoot: FC<TabsRootProps> = ({
     {...stateAttrs({ orientation })}
     class={cn("flex", orientation === "vertical" ? "flex-row gap-4" : "flex-col gap-3", cls)}
     {...rest}>
-    {children}
+    {fillPartProps(children, new Map([[TabsList, { orientation }]]))}
   </div>
 );
 
@@ -66,7 +68,11 @@ const TabsList: FC<TabsListProps> = ({ orientation = "horizontal", label, labell
     data-slot={slotToken("tabs-list", inherited)}
     aria-orientation={orientation}
     {...stateAttrs({ orientation })}
-    class={cn("flex gap-1", orientation === "vertical" ? "flex-col border-e border-border pe-2" : "border-b border-border pb-1", cls)}
+    class={cn(
+      "group/tabs-list flex gap-1",
+      orientation === "vertical" ? "flex-col border-e border-border pe-2" : "border-b border-border pb-1",
+      cls,
+    )}
     {...rest}>
     {children}
   </div>
@@ -74,8 +80,9 @@ const TabsList: FC<TabsListProps> = ({ orientation = "horizontal", label, labell
 
 const TAB_BASE = cn(
   "cursor-pointer rounded-field border-b-2 border-transparent bg-transparent px-3 py-1.5 text-sm font-medium text-muted-foreground no-underline " +
+    "group-data-[orientation=vertical]/tabs-list:border-e-2 group-data-[orientation=vertical]/tabs-list:border-b-0 " +
     "focus-ring hover:text-foreground " +
-    "state-disabled aria-selected:bg-accent aria-selected:text-accent-foreground data-selected:border-current",
+    "state-disabled data-selected:not-tabs-revealed:border-current data-selected:not-tabs-revealed:bg-accent data-selected:not-tabs-revealed:text-accent-foreground",
 );
 
 // An `<a href="#panel">`, not a `<button>`: the fragment keeps a tab set operable with no script,
@@ -99,13 +106,21 @@ const Tab: FC<TabProps> = ({ for: panelId, selected = false, disabled = false, c
   </a>
 );
 
-const TabsContent: FC<TabsContentProps> = ({ id, selected = false, class: cls, children, "data-slot": inherited, ...rest }) => (
+const TabsContent: FC<TabsContentProps> = ({
+  id,
+  selected = false,
+  class: cls,
+  children,
+  "data-slot": inherited,
+  "aria-labelledby": ownLabelledBy,
+  ...rest
+}) => (
   <div
     id={id}
     role='tabpanel'
     data-slot={slotToken("tabs-content", inherited)}
     tabindex={0}
-    aria-labelledby={tabId(id)}
+    aria-labelledby={mergeIdRefs(ownLabelledBy, [tabId(id)])}
     {...(selected ? {} : { hidden: "until-found" as const })}
     {...stateAttrs({ selected })}
     class={cn("focus-ring", cls)}

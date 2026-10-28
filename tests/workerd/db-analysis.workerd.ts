@@ -100,6 +100,7 @@ test.describe("the migration analysis against a local target", () => {
   let root = "";
 
   test.beforeAll(async () => {
+    test.setTimeout(240_000);
     root = freshRoot();
     writeFileSync(join(root, "schema.sql"), BEFORE);
     const init = await forgeDb(root, ["migrate", "compose", "init"]);

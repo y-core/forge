@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { RadioGroup } from "./radio-group";
 
@@ -26,9 +26,9 @@ describe("RadioGroup", () => {
         </RadioGroup.Item>,
       ),
     ).toBe(
-      '<label data-slot="radio-group-item" class="inline-flex items-center gap-2 text-sm text-foreground"><input type="radio"' +
+      '<label data-slot="radio-group-item" class="inline-flex min-h-control-sm items-center gap-2 text-sm text-foreground"><input type="radio"' +
         ' data-slot="radio-group-input" id="field-plan-free" name="plan" value="free" class="state-busy state-disabled shrink-0' +
-        ' appearance-none rounded-full border state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
+        ' appearance-none rounded-full border-field state-invalid border-input bg-background focus-ring-outset checked:bg-primary size-4"' +
         ' data-note="R&amp;D&#39;s">Free &amp; &quot;easy&quot; &lt;x&gt;</label>',
     );
   });
@@ -326,5 +326,18 @@ describe("RadioGroup — a caller's aria-describedby joins the derived ids rathe
 
   it("emits no aria-describedby for an empty caller value when nothing derived renders", async () => {
     expect(attrsOf(await render(<RadioGroup name='plan' aria-describedby='' />))).toEqual(ROOT);
+  });
+});
+
+describe("RadioGroup — the root's size reaches its items", () => {
+  it("sizes each input from the root, and an item's own size wins", async () => {
+    const html = await render(
+      <RadioGroup name='r' size='lg'>
+        <RadioGroup.Item name='r' value='a' />
+        <RadioGroup.Item name='r' value='b' size='sm' />
+      </RadioGroup>,
+    );
+
+    expect([classesOf(html, 'value="a"').at(-1), classesOf(html, 'value="b"').at(-1)]).toEqual(["size-5", "size-3.5"]);
   });
 });

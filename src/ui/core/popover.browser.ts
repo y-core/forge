@@ -17,12 +17,12 @@ async function start(page: Page): Promise<void> {
   await page.evaluate(() => window.forgeResume.resume());
 }
 
-function markup(): Promise<string> {
+function markup(id = "tips"): Promise<string> {
   return render(
     Popover({
       children: [
-        Popover.Trigger({ for: "tips", "data-ref": "trigger", children: "Tips" }),
-        Popover.Content({ id: "tips", label: "Tips", side: "top", align: "end", children: "Body" }),
+        Popover.Trigger({ for: id, "data-ref": "trigger", children: "Tips" }),
+        Popover.Content({ id, label: "Tips", side: "top", align: "end", children: "Body" }),
       ],
     }),
   );
@@ -68,6 +68,15 @@ test.describe("Popover", () => {
     await expect.poll(() => state(page)).toEqual({ nativeOpen: false, triggerLit: false });
   });
 
+  test("flips its invoker's aria-expanded when the popover's id is no CSS identifier", async ({ page }) => {
+    await mount(page, await markup('a "b'), EXPOSE);
+    await start(page);
+
+    await page.click("[data-ref='trigger']");
+
+    await expect.poll(() => page.evaluate(() => document.querySelector("[data-ref='trigger']")?.getAttribute("aria-expanded"))).toBe("true");
+  });
+
   test("light-dismiss is the platform's, and the attributes follow it", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
@@ -91,5 +100,23 @@ test.describe("Popover", () => {
         return { side: panel?.getAttribute("data-side"), align: panel?.getAttribute("data-align") };
       }),
     ).toEqual({ side: "top", align: "end" });
+  });
+});
+
+test.describe("Popover — inside a paragraph", () => {
+  test("stays inside the paragraph instead of splitting it", async ({ page }) => {
+    await mount(page, `<p>text ${await markup()} more</p>`);
+
+    expect(
+      await page.evaluate(() => {
+        const paragraph = document.querySelector("p");
+        return {
+          paragraphs: document.querySelectorAll("p").length,
+          keepsTail: paragraph?.textContent?.includes("more") ?? false,
+          holdsRoot: paragraph?.querySelector("[data-slot~='popover']") !== null,
+          holdsContent: paragraph?.querySelector("#tips") !== null,
+        };
+      }),
+    ).toEqual({ paragraphs: 1, keepsTail: true, holdsRoot: true, holdsContent: true });
   });
 });

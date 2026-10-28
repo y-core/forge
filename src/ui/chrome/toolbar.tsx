@@ -1,11 +1,12 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
 import type { JSXElement, JSXNode } from "../../render/jsx/types";
-import { invokerAttrs } from "../contracts/overlay-contract";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
+import type { PhysicalSide } from "../contracts/types";
 import { Button } from "../core/button";
+import { Popover } from "../core/popover";
 import { Toolbar as CoreToolbar } from "../core/toolbar";
 import type { ForgeIcon } from "../core/types";
 import { slotToken } from "../core/utils/as-child";
@@ -23,9 +24,10 @@ interface RenderCtx<G extends string> {
   seq: { n: number };
 }
 
-const FLYOUT_CLS = "min-w-52 rounded-box border border-border bg-popover p-2 pb-2.5 text-popover-foreground shadow-md";
+const FLYOUT_CLS = "min-w-52 p-2 pb-2.5";
 const FLYOUT_TITLE_CLS = "px-0.5 pt-0.5 pb-1.5 text-xs font-semibold tracking-wider text-muted-foreground uppercase";
 const FLYOUT_BODY_CLS = "flex max-h-[60vh] flex-col items-stretch gap-3.5 overflow-y-auto px-0.5 pt-1 pb-0.5";
+const FLYOUT_SIDE: Record<ToolbarPlacement, PhysicalSide> = { left: "right", right: "left", top: "bottom", bottom: "top" };
 
 function isVerticalPlacement(placement: ToolbarPlacement): boolean {
   return placement === "left" || placement === "right";
@@ -59,9 +61,10 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
 
   if (item.kind === "action") {
     const { icon, label, ref, data = {}, active, size = "md" } = item;
+    const { "data-slot": dataSlot, ...dataRest } = data;
     return (
       <CoreToolbar.Button
-        data-slot={slotToken("toolbar-action", data["data-slot"])}
+        data-slot={slotToken("toolbar-action", dataSlot)}
         shape='icon'
         size={size}
         {...(active === undefined ? {} : { pressed: active })}
@@ -69,7 +72,7 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         title={label}
         aria-label={label}
         {...actionAttrs(item, ctx.commandTarget)}
-        {...data}>
+        {...dataRest}>
         <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
       </CoreToolbar.Button>
     );
@@ -78,29 +81,22 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
   const { icon, label, ref, content, compact, titleAction } = item;
   const id = `toolbar-flyout-${ctx.idBase}-${ctx.seq.n++}`;
   return (
-    <div data-slot='toolbar-popover' class='relative flex w-full flex-col items-center'>
-      <CoreToolbar.Button
-        data-slot='toolbar-trigger'
-        shape='icon'
-        command='toggle-popover'
-        commandfor={id}
-        {...invokerAttrs(id, "dialog")}
-        data-ref={ref}
-        title={label}
-        aria-label={label}>
-        <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
+    <Popover data-slot='toolbar-popover' class='relative flex w-full flex-col items-center'>
+      <CoreToolbar.Button asChild shape='icon' size='md'>
+        <Popover.Trigger for={id} data-slot='toolbar-trigger' data-ref={ref} title={label} aria-label={label}>
+          <Icon name={icon} viewBox='0 0 24 24' class='h-5 w-5' />
+        </Popover.Trigger>
       </CoreToolbar.Button>
-      <div
+      <Popover.Content
         id={id}
-        role='dialog'
-        aria-labelledby={`${id}-title`}
         data-slot='toolbar-flyout'
-        popover='auto'
-        data-side={placement}
+        side={FLYOUT_SIDE[placement]}
+        align='start'
+        labelledby={`${id}-title`}
         data-compact={compact ? "" : undefined}
         class={FLYOUT_CLS}>
-        <div id={`${id}-title`} data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
-          <span>{label}</span>
+        <div data-slot='toolbar-flyout-title' class={cn(FLYOUT_TITLE_CLS, "flex items-center justify-between gap-2")}>
+          <span id={`${id}-title`}>{label}</span>
           {/* Unmarked on purpose: roving focus queries the whole rail subtree, so a toolbar-item
               marker here would splice flyout buttons into the rail's arrow-key ring. */}
           {titleAction && (
@@ -121,8 +117,8 @@ function renderItem<A extends string, G extends string>(item: ToolbarItem<A, G>,
         <div data-slot='toolbar-flyout-body' class={FLYOUT_BODY_CLS}>
           {content}
         </div>
-      </div>
-    </div>
+      </Popover.Content>
+    </Popover>
   );
 }
 

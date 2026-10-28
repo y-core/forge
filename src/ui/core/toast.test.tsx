@@ -4,6 +4,7 @@ import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup
 import { render } from "../../testing/render";
 import { TOAST_CONTAINER_SCOPE } from "../contracts/toast-contract";
 import { Toast } from "./toast";
+import { TONES } from "./utils/tone";
 
 const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, "");
 const slotsOf = (html: string) => [...html.matchAll(/data-slot="([^"]+)"/g)].map((match) => match[1]);
@@ -21,7 +22,7 @@ describe("Toast", () => {
         " py-4 ps-4 pe-4 shadow-lg [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)]" +
         " [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]" +
         " border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)]" +
-        ' hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]" id="t1" data-testid="toast" data-note="a&amp;b">' +
+        '" id="t1" data-testid="toast" data-note="a&amp;b">' +
         '<div data-slot="toast-body" class="flex-1 space-y-1">Hello</div></div>',
     );
   });
@@ -74,6 +75,14 @@ describe("Toast", () => {
     });
   });
 
+  it("paints no hover fill on the panel in any tone or appearance, since the panel takes no pointer action", async () => {
+    const appearances = ["solid", "soft"] as const;
+    const panels = await Promise.all(
+      TONES.flatMap((tone) => appearances.map((appearance) => render(<Toast {...{ tone, appearance }}>Message</Toast>))),
+    );
+    expect(panels.flatMap((html) => classesOf(html).filter((token) => token.startsWith("hover:")))).toEqual([]);
+  });
+
   it("paints the close button at full strength on a 32px target, with no opacity utility dimming the glyph", async () => {
     expect(classesOf(await render(<Toast dismissible>Message</Toast>), 'data-slot="toast-close"')).toEqual([
       "absolute",
@@ -85,6 +94,10 @@ describe("Toast", () => {
       "justify-center",
       "rounded-sm",
       "focus-ring",
+      "hover:outline-1",
+      "hover:-outline-offset-1",
+      "hover:outline-current",
+      "hover:outline-solid",
     ]);
   });
 

@@ -19,7 +19,8 @@ audience: consumer
 ## 0. Quick Reference
 
 - §7 Trust Posture: selector and JSON values must be developer-supplied
-- §7a URL-Valued hx Attributes Are Deliberately Unsanitized: why `"#"` is the wrong refusal here, and the runtime layers beneath that reason
+- §7a URL-Valued hx Attributes Are Deliberately Unsanitized: why `"#"` is the wrong refusal here, why `bindAttr` removes a request attribute
+  bound to a script URL instead, and the runtime layers beneath that reason
 - §7b What htmx Evaluates: `hx-on:*`, `js:`-prefixed values and trigger filters — the construction rule, the CSP and Trusted Types beneath it, and
   why `hx-on:*` stays untyped
 - §8 The Form-Independent sync Default: why `closest form` is not a safe default
@@ -64,6 +65,13 @@ loud, and the user sees nothing happen. On an `hx-get` it is a valid same-origin
 for it and swap the response into the target. Sanitizing here converts a loud refusal into a _successful wrong request_ — a fetch-and-swap
 indistinguishable at the point of failure from the behaviour the author intended. A guard whose failure mode is silent success is worse than no
 guard, because it also removes the pressure to supply a trustworthy value in the first place.
+
+**A request attribute driven by a signal is removed while its value is a script URL, and never collapsed to `"#"`.** A signal is seeded from
+`data-island-state`, so a bound value is as reachable as a request parameter and is not author-written. While the value `bindAttr` writes to
+`hx-action` or a request verb (`hx-get`, `hx-post`, `hx-put`, `hx-patch`, `hx-delete`, `hx-query`) begins `js:` or `javascript:`, `bindAttr`
+removes the attribute and warns once for that binding, so htmx sends nothing; the next safe value writes it back. The rule holds in either prefix,
+with any `:inherited` or `:append` suffix, in any case, and after control characters and whitespace are stripped from the value. Removal fails
+closed where `"#"` would fail open. Any other URL binds as written, and a value the renderer emits stays verbatim.
 
 Further runtime layers sit **underneath** that reason. Neither is the control, and neither would justify the attributes being unsanitized on its
 own:

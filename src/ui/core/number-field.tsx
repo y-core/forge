@@ -5,6 +5,7 @@ import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NUMBER_FIELD_SCOPE } from "../contracts/number-field-contract";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
+import { buttonBox } from "./button";
 import { fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -23,14 +24,11 @@ type NumberFieldInputProps = Omit<JSX.IntrinsicElements["input"], "children" | "
 interface NumberFieldButtonProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** Accessible name for the stepper. Defaults to `"Decrement"` / `"Increment"`. */
   label?: string | undefined;
+  size?: Size | undefined;
   children?: JSXNode | undefined;
 }
 
-const BUTTON_BASE = cn(
-  "inline-flex size-8 items-center justify-center rounded-field border border-input bg-background " +
-    "cursor-pointer text-foreground focus-ring hover:bg-accent " +
-    "state-disabled",
-);
+const STEPPER_PAINT = "border-input bg-background text-foreground hover:bg-accent cursor-pointer";
 
 const NumberFieldRoot: FC<NumberFieldRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
   <div data-slot={slotToken("number-field", inherited)} data-scope={NUMBER_FIELD_SCOPE} class={cn("inline-flex items-center gap-1", cls)} {...rest}>
@@ -58,6 +56,7 @@ const NumberFieldInput: FC<NumberFieldInputProps> = ({
 
 const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({
   label = LABEL_DEFAULTS.numberFieldDecrement,
+  size = "md",
   class: cls,
   children,
   "data-slot": inherited,
@@ -68,7 +67,7 @@ const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({
     data-slot={slotToken("number-field-decrement", inherited)}
     aria-label={label}
     tabindex={-1}
-    class={cn(BUTTON_BASE, cls)}
+    class={cn(buttonBox({ size, shape: "icon" }), STEPPER_PAINT, cls)}
     {...rest}>
     {children ?? "−"}
   </button>
@@ -76,6 +75,7 @@ const NumberFieldDecrement: FC<NumberFieldButtonProps> = ({
 
 const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({
   label = LABEL_DEFAULTS.numberFieldIncrement,
+  size = "md",
   class: cls,
   children,
   "data-slot": inherited,
@@ -86,7 +86,7 @@ const NumberFieldIncrement: FC<NumberFieldButtonProps> = ({
     data-slot={slotToken("number-field-increment", inherited)}
     aria-label={label}
     tabindex={-1}
-    class={cn(BUTTON_BASE, cls)}
+    class={cn(buttonBox({ size, shape: "icon" }), STEPPER_PAINT, cls)}
     {...rest}>
     {children ?? "+"}
   </button>

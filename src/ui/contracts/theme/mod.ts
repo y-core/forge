@@ -50,6 +50,7 @@ export {
   scaleVars,
   schemeCss,
   shapeVars,
+  splitLightDark,
   stepProperty,
 } from "./theme-contract";
 export type { CopyTarget, Dial, DialValues, GeneratedTheme, LiveRatio } from "./types";

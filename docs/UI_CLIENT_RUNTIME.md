@@ -75,6 +75,10 @@ The theme surface is split across two subpaths, and the split matters. **`@y-cor
 **Its hash must be listed in the CSP `script-src`.** Any _other_ server-rendered inline `<script>` must instead carry the per-request nonce from
 `getNonce(c)` — see [`SECURITY_HARDENING.md`][sh-2a] §2a.
 
+**The script and the client read storage by one rule, so they never paint different themes.** A stored value that is not a known preference reads
+as `system`, and storage that throws reads as empty. The client also survives a write that throws: the preference still applies for the page, and
+the failure is reported rather than raised.
+
 **A pre-paint inline script is for state the server cannot know, and a second one is not minted for state it can.** Every surface that renders one
 state and corrects it on the client is tested against that rule. The theme passes on every count: its value is in `localStorage`, which no server
 can read, and the wrong intermediate state is a full-page inversion. The viewport-driven disclosure (§2l) passes on none — its input is a width the
@@ -89,7 +93,8 @@ other still live in the same document.
 
 **`isDark` is a stable binding over the live documents, not a slot**, so it can be captured before `resume()` runs and still report the truth
 afterwards, and it reads `false` once no document holds a theme scope. A single slot fails both ways — a second document silently takes the export
-over, and disposing either leaves `isDark` reading sources that are dead.
+over, and disposing either leaves `isDark` reading sources that are dead. **The binding is itself tracked**, so an effect that read it before any
+theme scope existed re-runs when one resumes rather than keeping the `false` it first saw.
 
 **Runtime auth filtering of the bar arrives as an event, not through an exported setter.** The server seeds the same token set at render, so the
 first paint is already correct. A channel rather than a forge-held signal, because the emitter — a login, an htmx swap, an app's own router — need
@@ -197,11 +202,11 @@ runs every disposer collected during that resume, so the two halves fit without 
 — on every re-resume, and a page re-resuming after each htmx swap accumulates one set per swap. Nothing warns; the page simply gets slower and
 starts handling the same keystroke several times.
 
-**The runtime owns the effects a `setup` creates and the `signal` it is handed; the author owns everything else.** Every `effect` created while
-a scope's `setup` runs is collected and disposed with the scope, and the context's `signal` is aborted when the scope is disposed — so a `setup`
-hands it to `fetch` and to `addEventListener` rather than tracking a flag of its own. What a `setup` _returns_ is for what neither reaches:
-observers, timers, controller handles, a listener added without the signal. It runs **after** the scope's effects are disposed and its `signal` is
-aborted, so no reactive computation is alive while an author's teardown mutates the DOM those effects write to.
+**The runtime owns the effects and computeds a `setup` creates and the `signal` it is handed; the author owns everything else.** Every `effect`
+and `computed` created while a scope's `setup` runs is collected and disposed with the scope, and the context's `signal` is aborted when the scope
+is disposed — so a `setup` hands it to `fetch` and to `addEventListener` rather than tracking a flag of its own. What a `setup` _returns_ is for
+what neither reaches: observers, timers, controller handles, a listener added without the signal. It runs **after** the scope's effects are
+disposed and its `signal` is aborted, so no reactive computation is alive while an author's teardown mutates the DOM those effects write to.
 
 **Ownership is the window in which `setup` runs, and nothing wider.** An effect created in an `on` handler, or in a `.then()` resolving after
 `setup` returned, is owned by nothing and must be disposed by whoever created it — per-invocation ownership would be wrong more often than right,
@@ -212,8 +217,8 @@ These consequences follow, each the rule rather than a special case:
 - **A `setup` that returns nothing is legal**, and is not treated as a disposer.
 - **A disposer must be idempotent-safe to call after its element is gone.** Removing a listener from a detached node is a no-op, which is why
   teardown never needs to check.
-- **A `setup` that throws disposes the effects it created, aborts its `signal`, and leaves its root resumable.** A root marked resumed with no
-  disposer would be unreachable by every teardown and inert on re-resume, which is a worse failure than the throw.
+- **A `setup` that throws disposes the effects and computeds it created, aborts its `signal`, and leaves its root resumable.** A root marked
+  resumed with no disposer would be unreachable by every teardown and inert on re-resume, which is a worse failure than the throw.
 - **A throwing disposer is reported and does not stop the rest of teardown.** Teardown iterates every live scope, so one failure must not silently
   skip the scopes queued behind it.
 
@@ -231,7 +236,8 @@ centres the panel — the one place a context menu must never be.
   [`UI_SSR_COMPONENTS.md`][usc-1a] §1a.
 - **The placement is cleared when the popup closes**, because a CSSOM write still leaves a `style` attribute. htmx 4's settle copies an old id'd
   element's attributes onto its same-id replacement with `setAttribute`, which forge's CSP blocks: `style-src-attr` falls back to a `style-src`
-  with no `'unsafe-inline'`. Only the anchor properties are removed, and the attribute only once empty, so a caller's own inline styles survive.
+  with no `'unsafe-inline'`. Only what the call wrote is removed — the anchor and origin properties, and a `data-coords` it added — and the
+  attribute only once empty, so a caller's own inline styles and a markup `coords` survive.
 - **The matching CSS rule must reset `inset` and `margin` explicitly.** Without that the UA default survives, the panel centres itself, and the
   custom properties hold perfectly correct values while nothing moves. That failure looks like a bug in the TypeScript and is not.
 - **Clamping needs the box, not the point**, so the coordinates are written twice: once before the popup is shown, while it still measures zero, and
@@ -242,8 +248,10 @@ centres the panel — the one place a context menu must never be.
   listeners and before any paint. Callers pass `event.buttons !== 0`, never a flat `true`: a keyboard-raised `contextmenu` (Menu key, `Shift+F10`)
   reports no buttons and is followed by no release, so an unconditional guard arms a listener the _next_ unrelated click fires.
 
-The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the coordinate rule; `openPopoverAt` stamps it too, so a
-popup that opens both ways needs no second markup variant. Calling it again **repositions** an open popup.
+The popup opts in with `Menu.Popup`'s `coords` prop, which stamps `data-coords` and selects the coordinate rule; `openPopoverAt` stamps it too and
+removes its own stamp on close, so a popup that opens both ways needs no second markup variant and its next trigger open is anchored again. Calling
+it again **repositions** an open popup. **The call also writes the motion origin**, because only it knows where a flip or clamp put the box: the
+scale grows from the corner nearest the point.
 
 **It returns a disposer, because the deferred path arms a listener.** A second call on the same element cancels the first's pending show, which
 would otherwise land at stale coordinates on the next release, and a show deferred past an htmx swap that removed the element never happens. A
@@ -362,7 +370,8 @@ because a scope action writes a signal and the painted DOM has to be there befor
 before one of its sources moved — the torn read an eager, push-based derivation produces. An effect whose sources moved under an unchanged value is
 dropped without running. **There is deliberately no dirty flag**: an "already dirty, so stop propagating" short-circuit cannot coexist with the
 throw-clears-the-queue rule below, because a flush abandoned by a thrower would leave the computed marked dirty and wedge its queued reader for
-good.
+good. **Disposing a `computed`'s owner unsubscribes it from every source and freezes it at its last value** (§2d), so a swapped-out island leaves
+no subscription behind on a signal that outlives it.
 
 **An effect runs exactly once per settled state, and that is a guarantee.** It rests on one rule: **writing a signal during an `effect` or
 `computed` run throws.** With no writes in effects there is no effect-to-effect edge, so a double run cannot be constructed at all. Ordering is not
@@ -410,7 +419,13 @@ would otherwise never be visited, its `setup` would never run, and nothing would
 can resume only its own subtree.
 
 **Installing the listeners and resuming a tree are two jobs, and `resume` keeps them apart.** The delegation is installed once per **document**; the
-eager pass runs on **every** call, over the root it was given, so `resume()` followed by `resume(shadowRoot)` still visits the shadow subtree. Each
+eager pass runs on **every** call, over the root it was given, so `resume()` followed by `resume(shadowRoot)` still visits the shadow subtree.
+
+**Each call also listens inside every open shadow root it finds**, because `change`, `submit`, `reset` and `command` are not composed and never
+reach a listener on the document from inside a shadow tree. A shadow root is listened in once however many calls find it, and the listeners go
+with the document's delegation. **A shadow root attached after the last call is not listened in** until `resume(shadowRoot)` runs over it — the
+composed events still arrive, which makes the gap easy to miss. `bindControls` follows the same rule for its own `change` and `reset` listeners,
+over the shadow roots under its root when it mounts. Each
 call's disposer owns only the scopes that call resumed, and the release that removes the listeners first disposes every scope still active in the
 document — a lazily-resumed scope belongs to no call's set and would otherwise outlive its only route to teardown.
 
@@ -419,11 +434,11 @@ later scopes still resume and a subsequent `resume()` re-attempts the one that t
 rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` would produce a scope whose every
 signal is missing.
 
-**A removal is not a resume, so the htmx entry sweeps after every swap.** Detached scopes are otherwise swept only as something else resumes, so a
-swap that removes scoped markup and introduces none never reaches the sweep — and a retained scope keeps its document-level listeners alive. That
-is a leak rather than untidiness, so `ui/client/htmx` disposes every scope whose root has left its document on `htmx:finally:swap`. **It is a sweep
-rather than a per-element hook** because htmx's `htmx:before:cleanup` fires only for elements that carry htmx attributes, and a plain `data-scope`
-subtree inside a swapped container carries none.
+**A removal is not a resume, so the htmx entry sweeps after every swap.** Detached scopes are otherwise swept only once per `resume()` call and as
+a lazy scope first resumes, so a swap that removes scoped markup and introduces none never reaches the sweep — and a retained scope keeps its
+document-level listeners alive. That is a leak rather than untidiness, so `ui/client/htmx` disposes every scope whose root has left its document on
+`htmx:finally:swap`. **It is a sweep rather than a per-element hook** because htmx's `htmx:before:cleanup` fires only for elements that carry htmx
+attributes, and a plain `data-scope` subtree inside a swapped container carries none.
 
 **`disposeScopesIn` is for an app's own removals.** It disposes the scope at an element and every scope below it before the app detaches them — a
 removal htmx did not make raises no swap event, so nothing else would dispose those scopes until the next resume.
@@ -439,6 +454,10 @@ commands** — those whose name begins with `--` — and leaves the platform's b
 attribute. **That listener must be capture-phase**, and that is the platform's constraint rather than a preference: `command` is dispatched with
 `bubbles: false`, so a bubble-phase delegated listener never sees it and every custom invoker action goes dead — silently, because the invoker
 still fires and the platform still ignores a command it does not know.
+
+**A command runs the handler of the scope holding its `commandfor` target, not the invoker's.** The `commandfor` names the element the action is
+for, so the lookup climbs from that target while the handler's `el` stays the invoker. An invoker outside every scope — a toolbar rail beside an
+editor — therefore reaches the editor's handler, and an invoker inside scope A that names an element in scope B runs B's.
 
 **An inert element runs no action, and the runtime stops the platform acting on an `aria-disabled` one too.** Neither route runs an action on a
 `disabled` or `aria-disabled="true"` element. `aria-disabled` is only advisory to the platform, which still submits, navigates, fires `command` and

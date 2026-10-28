@@ -21,6 +21,7 @@ const ICON = createIcon("/sprite.svg");
 const FIXTURE = `<style>
   body { margin: 0; }
   [data-slot~="popover-trigger"] { position: fixed; top: 200px; left: 120px; }
+  [data-slot~="tooltip"] { position: fixed; top: 200px; left: 400px; }
 </style>`;
 
 const DISCLOSURE = `<style>
@@ -52,16 +53,21 @@ async function open(page: Page): Promise<void> {
 
 const panelOpacity = (page: Page) => page.evaluate(() => Number(getComputedStyle(document.querySelector("#tips") as HTMLElement).opacity));
 
-test.describe("overlay motion is the platform's", () => {
+test.describe("overlay motion is the platform's", { tag: "@cross-engine" }, () => {
   // The UA applies `@starting-style` inside the style engine, so the first painted frame is already
   // the starting one — no frame of scheduling is needed to produce a from-value.
   test("@starting-style supplies the enter's from-value in the same task as the click", async ({ page }) => {
     await open(page);
+    const enter = await page.evaluate(() => {
+      const panel = document.querySelector("#tips") as HTMLElement;
+      const fade = panel.getAnimations().find((animation) => (animation as CSSTransition).transitionProperty === "opacity");
+      return {
+        open: panel.matches(":popover-open"),
+        from: (fade?.effect as KeyframeEffect | null | undefined)?.getKeyframes()[0]?.opacity ?? null,
+      };
+    });
 
-    // A ceiling, not an exact `0`: under parallel load a frame or two of the transition has already
-    // elapsed by the time the value is read.
-    expect(await panelOpacity(page), "the first frame painted at full opacity — the enter never had a from-value").toBeLessThan(0.5);
-    expect(await page.evaluate(() => document.querySelector("#tips")?.matches(":popover-open")), "already open, and still transparent").toBe(true);
+    expect(enter, "the enter had no opacity transition starting from 0").toEqual({ open: true, from: "0" });
   });
 
   test("the enter interpolates rather than snapping", async ({ page }) => {
@@ -89,7 +95,12 @@ test.describe("overlay motion is the platform's", () => {
 
   // Only `transition-behavior: allow-discrete` on `display` and `overlay` can hold the element in
   // the top layer through the exit; no script can.
-  test("Escape leaves the panel painted and in the top layer for the whole exit", async ({ page }) => {
+  test("Escape leaves the panel painted and in the top layer for the whole exit", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox",
+      "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+    );
+    test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
     await open(page);
     await expect.poll(() => panelOpacity(page)).toBe(1);
 
@@ -218,7 +229,69 @@ const POPUPS: Array<{ name: string; trigger: string | null; popup: string }> = [
 const opacityOf = (page: Page, selector: string) =>
   page.evaluate((target) => Number(getComputedStyle(document.querySelector(target) as HTMLElement).opacity), selector);
 
-test.describe("forge's default popup motion, with no consumer classes", () => {
+const CONSUMER_MOTION_UNPAINTED =
+  "translate-y-0 opacity-100 not-open:translate-y-2 not-open:opacity-0 motion-safe:transition-[opacity,translate] motion-safe:transition-discrete motion-safe:duration-300 motion-safe:ease-linear motion-safe:starting:open:translate-y-2 motion-safe:starting:open:opacity-0";
+
+const CENTRED_FIXTURE = `<style>
+  body { margin: 0; }
+  [data-slot~="popover-trigger"] { position: fixed; top: 300px; left: 240px; }
+  [data-slot~="menu-trigger"] { position: fixed; top: 300px; left: 620px; }
+  [data-slot~="tooltip"] { position: fixed; top: 300px; left: 1000px; }
+</style>`;
+
+function centredSlides(): Promise<string> {
+  return render([
+    Popover({
+      children: [
+        Popover.Trigger({ for: "tips", children: "Tips" }),
+        Popover.Content({ id: "tips", label: "Tips", side: "bottom", align: "center", class: CONSUMER_SLIDE, children: "Body" }),
+      ],
+    }),
+    Menu({
+      children: [
+        Menu.Trigger({ for: "file-menu", children: "File" }),
+        Menu.Popup({
+          triggered: true,
+          id: "file-menu",
+          side: "bottom",
+          align: "center",
+          class: CONSUMER_SLIDE,
+          children: [Menu.Item({ id: "new", for: "file-menu", children: "New" })],
+        }),
+      ],
+    }),
+    Tooltip({
+      children: [
+        Tooltip.Trigger({ id: "save", for: "save-tip", children: "Save" }),
+        Tooltip.Content({ id: "save-tip", align: "center", class: CONSUMER_SLIDE, children: "Writes the file" }),
+      ],
+    }),
+  ]);
+}
+
+const runningOn = (page: Page, selector: string) =>
+  page.evaluate((target) => (document.querySelector(target) as HTMLElement).getAnimations().length, selector);
+
+function inlineExit(page: Page, popup: string): Promise<{ settled: number; exiting: number[] }> {
+  return page.evaluate(
+    (selector) =>
+      new Promise<{ settled: number; exiting: number[] }>((resolve) => {
+        const el = document.querySelector(selector) as HTMLElement;
+        const settled = Math.round(el.getBoundingClientRect().left);
+        const exiting: number[] = [];
+        el.hidePopover();
+        const tick = () => {
+          if (getComputedStyle(el).display === "none" || exiting.length === 12) return resolve({ settled, exiting });
+          exiting.push(Math.round(el.getBoundingClientRect().left));
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+    popup,
+  );
+}
+
+test.describe("forge's default popup motion, with no consumer classes", { tag: "@cross-engine" }, () => {
   for (const { name, trigger, popup } of POPUPS) {
     test(`${name} fades in over --forge-motion-enter from a first frame below half opacity`, async ({ page }) => {
       await mountDefaults(page);
@@ -231,7 +304,12 @@ test.describe("forge's default popup motion, with no consumer classes", () => {
       await expect.poll(() => opacityOf(page, popup)).toBe(1);
     });
 
-    test(`${name} stays painted in the top layer through a --forge-motion-exit fade`, async ({ page }) => {
+    test(`${name} stays painted in the top layer through a --forge-motion-exit fade`, async ({ page, browserName }) => {
+      test.skip(
+        browserName === "firefox",
+        "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+      );
+      test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
       await mountDefaults(page);
       await clickAndRead(page, trigger, popup);
       await expect.poll(() => opacityOf(page, popup)).toBe(1);
@@ -280,7 +358,12 @@ test.describe("forge's default popup motion, with no consumer classes", () => {
     expect(await opacityOf(page, "#tips")).toBe(0.5);
   });
 
-  test("a custom slide that sets --forge-motion-opacity to 1 stays visible on every exit frame", async ({ page }) => {
+  test("a custom slide that sets --forge-motion-opacity to 1 stays visible on every exit frame", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox",
+      "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+    );
+    test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
     const html = await render(
       Popover({
         children: [
@@ -297,6 +380,52 @@ test.describe("forge's default popup motion, with no consumer classes", () => {
     expect(exiting.length, "no frame caught the slide after the close").toBeGreaterThan(0);
     expect(exiting.map((frame) => frame.opacity)).toEqual(exiting.map(() => 1));
   });
+
+  test("a custom transition-property list without display and overlay stops painting on the first exit frame", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox",
+      "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+    );
+    test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
+    const html = await render(
+      Popover({
+        children: [
+          Popover.Trigger({ for: "tips", children: "Tips" }),
+          Popover.Content({ id: "tips", label: "Tips", side: "bottom", class: CONSUMER_MOTION_UNPAINTED, children: "Body" }),
+        ],
+      }),
+    );
+    await mount(page, `${FIXTURE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
+    await page.click('[data-slot~="popover-trigger"]');
+    await expect.poll(() => opacityOf(page, "#tips")).toBe(1);
+
+    const exiting = (await exitFrames(page, "#tips")).filter((frame) => !frame.open);
+
+    expect(exiting[0], JSON.stringify(exiting)).toMatchObject({ display: "none" });
+  });
+
+  for (const { name, trigger, popup } of POPUPS) {
+    test(`a custom slide on a centre-aligned ${name} moves it along the inline axis as it exits`, async ({ page, browserName }) => {
+      test.skip(
+        browserName === "firefox",
+        "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+      );
+      test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
+      const html = await centredSlides();
+      await mount(page, `${CENTRED_FIXTURE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`, CLIENT);
+      await page.evaluate(() => window.forgeResume.resume());
+      await clickAndRead(page, trigger, popup);
+      await expect.poll(() => runningOn(page, popup)).toBe(0);
+
+      const { settled, exiting } = await inlineExit(page, popup);
+
+      expect(exiting.length, "no frame caught the slide after the close").toBeGreaterThan(0);
+      expect(
+        exiting.some((left) => Math.abs(left - settled) > 1),
+        `the panel held its inline position at ${settled}: ${JSON.stringify(exiting)}`,
+      ).toBe(true);
+    });
+  }
 
   test("a caller's transition-none opens a popover instantly", async ({ page }) => {
     const html = await render(
@@ -359,7 +488,7 @@ async function mountOrigins(page: Page, html: string): Promise<void> {
   await page.evaluate(() => window.forgeResume.resume());
 }
 
-test.describe("the scale grows from the anchor side", () => {
+test.describe("the scale grows from the anchor side", { tag: "@cross-engine" }, () => {
   test("a bottom/start popover scales from its top-left corner", async ({ page }) => {
     await mountOrigins(
       page,
@@ -476,10 +605,12 @@ test.describe("the scale grows from the anchor side", () => {
   });
 });
 
-test.describe("the disclosure height animation", () => {
+test.describe("the disclosure height animation", { tag: "@cross-engine" }, () => {
   // The one place `forge-ui-interaction-no-motion-on-layout` permits animating a layout property,
   // and it is only expressible because `interpolate-size` makes `auto` an interpolable keyword.
-  test("::details-content interpolates to auto rather than snapping open", async ({ page }) => {
+  test("::details-content interpolates to auto rather than snapping open", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "no interpolate-size: Firefox cannot transition block-size to auto");
+    test.skip(browserName === "webkit", "no interpolate-size: WebKit cannot transition block-size to auto");
     const html = await render(
       Collapsible({
         children: [

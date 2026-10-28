@@ -216,6 +216,10 @@ describe("Tabs.Content", () => {
     });
   });
 
+  it("lists a caller's aria-labelledby ahead of the tab reference rather than replacing it", async () => {
+    expect(attrOf(await render(<Tabs.Content id='p' aria-labelledby='extra' />), "aria-labelledby", 'role="tabpanel"')).toBe("extra p-tab");
+  });
+
   it("appends a caller class, keeps its slot token ahead of an inherited one, and escapes children", async () => {
     const html = await render(
       <Tabs.Content id='panel-a' selected class='pt-2' data-slot='settings-panel'>
@@ -226,5 +230,19 @@ describe("Tabs.Content", () => {
     expect(classesOf(html).at(-1)).toBe("pt-2");
     expect(attrOf(html, "data-slot")).toBe("tabs-content settings-panel");
     expect(textOf(html)).toBe("R&amp;D&#39;s &lt;view&gt;");
+  });
+});
+
+describe("Tabs — the root's orientation reaches its list", () => {
+  it("renders a vertical list under a vertical root", async () => {
+    const html = await render(
+      <Tabs orientation='vertical'>
+        <Tabs.List label='Views' />
+      </Tabs>,
+    );
+    const list = 'role="tablist"';
+
+    expect(attrOf(html, "aria-orientation", list)).toBe("vertical");
+    expect(classesOf(html, list)).toContain("flex-col");
   });
 });

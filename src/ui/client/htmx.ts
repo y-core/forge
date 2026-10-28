@@ -13,6 +13,7 @@ registerHtmxSecurity(htmx, window);
 // htmx's d.ts types `noSwap` as `number[]`, but htmx matches a status-class string such as "5xx" too.
 const swapPolicy: { noSwap: Array<number | string> } = htmx.config;
 swapPolicy.noSwap = [204, 304, "5xx"];
+htmx.config.morphIgnore = [...htmx.config.morphIgnore, "style"];
 
 document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => {
   const first = sheet.cssRules[0];

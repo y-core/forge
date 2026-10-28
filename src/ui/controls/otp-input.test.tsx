@@ -5,9 +5,10 @@ import { describe, expect, it } from "bun:test";
 import { render } from "../../testing/render";
 import { OtpInput } from "./otp-input";
 
-const FRAME = "state-disabled state-invalid focus-ring otp-cells inline-flex overflow-clip rounded-field border-field border-input bg-background";
+const FRAME = "state-disabled state-invalid focus-ring otp-cells inline-flex overflow-x-clip rounded-field border-field border-input bg-background";
 
-const EDITOR = "state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums";
+const EDITOR =
+  "state-busy otp-editor -my-(--border-width) h-[calc(100%+2*var(--border-width))] shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums";
 
 const frame = (length: number) =>
   `<div data-slot="otp-input-wrapper" data-scope="otp-input" data-otp-length="${length}" data-size="md" class="${FRAME} h-control-md [--otp-length:${length}]">`;

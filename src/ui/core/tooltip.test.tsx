@@ -3,7 +3,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { FC, JSX } from "../../render/jsx/types";
-import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Link } from "./link";
 import { Menu } from "./menu";
@@ -13,8 +13,8 @@ import { Tooltip } from "./tooltip";
 describe("Tooltip.Content", () => {
   it("renders the whole hint exactly, its own slot token alone and its children escaped", async () => {
     expect(await render(<Tooltip.Content id='tip'>{`R&D's <hint>`}</Tooltip.Content>)).toBe(
-      '<div id="tip" role="tooltip" data-slot="tooltip-content" popover="hint" data-side="top" data-align="center" ' +
-        'class="z-50 w-max max-w-xs rounded-field bg-foreground px-2 py-1 text-xs text-background shadow-md">R&amp;D&#39;s &lt;hint&gt;</div>',
+      '<span id="tip" role="tooltip" data-slot="tooltip-content" popover="hint" data-side="top" data-align="center" ' +
+        'class="z-50 w-max max-w-xs rounded-field bg-foreground px-2 py-1 text-xs text-background shadow-md">R&amp;D&#39;s &lt;hint&gt;</span>',
     );
   });
 
@@ -74,6 +74,37 @@ describe("Tooltip.Trigger", () => {
         ),
       ),
     ).toEqual({ type: "button", "aria-describedby": "tip", "data-slot": "tooltip-trigger my-thing" });
+  });
+});
+
+describe("Tooltip.Trigger — the sm button box on the bare form", () => {
+  it("clears the Floor bare, with the sm height, a focus ring and an unpainted border", async () => {
+    const classes = classesOf(await render(<Tooltip.Trigger for='tip'>Save</Tooltip.Trigger>));
+
+    for (const token of ["h-control-sm", "focus-ring", "border-transparent", "cursor-default"]) expect(classes).toContain(token);
+  });
+
+  it("lets a caller's padding evict the box's own while the height stays", async () => {
+    const classes = classesOf(
+      await render(
+        <Tooltip.Trigger for='tip' class='px-6'>
+          Save
+        </Tooltip.Trigger>,
+      ),
+    );
+
+    for (const token of ["px-6", "h-control-sm"]) expect(classes).toContain(token);
+    expect(classes).not.toContain("px-3");
+  });
+
+  it("leaves the box to the child under asChild", async () => {
+    const html = await render(
+      <Tooltip.Trigger for='tip' asChild>
+        <a href='/help'>Help</a>
+      </Tooltip.Trigger>,
+    );
+
+    expect(classesOf(html)).not.toContain("h-control-sm");
   });
 });
 
@@ -297,7 +328,7 @@ describe("Tooltip.Trigger disabled — inert but still hoverable and focusable",
         </Tooltip.Trigger>,
       ),
     ).toBe(
-      '<button type="button" data-slot="tooltip-trigger" class="cursor-default focus-ring" aria-describedby="tip" aria-disabled="true" data-disabled="">Save</button>',
+      '<button type="button" data-slot="tooltip-trigger" class="state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-sm px-3 text-sm border-transparent cursor-default" aria-describedby="tip" aria-disabled="true" data-disabled="">Save</button>',
     );
   });
 
@@ -496,5 +527,12 @@ describe("Tooltip.Trigger — a caller's aria-describedby joins the content id r
       label: { type: "button", "data-slot": "tooltip-trigger", "aria-labelledby": "tip" },
       description: { type: "button", "data-slot": "tooltip-trigger", "aria-describedby": "tip" },
     });
+  });
+});
+
+describe("Tooltip — phrasing content", () => {
+  it("renders its root and its content as spans, so neither splits an enclosing paragraph", async () => {
+    expect(await render(<Tooltip>x</Tooltip>)).toStartWith("<span");
+    expect(await render(<Tooltip.Content id='tip'>Hint</Tooltip.Content>)).toStartWith("<span");
   });
 });

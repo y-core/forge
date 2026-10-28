@@ -138,6 +138,28 @@ describe("renderToString — HTML elements", () => {
     expect(String(await renderToString(node))).toBe('<div draggable="false"></div>');
   });
 
+  for (const [name, whenTrue, whenFalse] of [
+    ["translate", "yes", "no"],
+    ["autocapitalize", "on", "off"],
+  ] as const) {
+    it(`spells a boolean ${name} as "${whenTrue}" and "${whenFalse}"`, async () => {
+      const on = el("div", { [name]: true });
+      on.props.children = "";
+      const off = el("div", { [name]: false });
+      off.props.children = "";
+
+      expect([String(await renderToString(on)), String(await renderToString(off))]).toEqual([
+        `<div ${name}="${whenTrue}"></div>`,
+        `<div ${name}="${whenFalse}"></div>`,
+      ]);
+    });
+  }
+
+  it("passes an autocapitalize keyword through verbatim", async () => {
+    const node = el("input", { autocapitalize: "words" });
+    expect(String(await renderToString(node))).toBe('<input autocapitalize="words">');
+  });
+
   it("renders nonce attribute", async () => {
     const node = el("script", { nonce: "abc123", src: "/main.js", type: "module" });
     expect(String(await renderToString(node))).toBe('<script nonce="abc123" src="/main.js" type="module"></script>');

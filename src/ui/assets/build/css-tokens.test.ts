@@ -76,3 +76,22 @@ describe("readThemeTokens() over minified CSS", () => {
     expect(resolveToken("--background", tokens.light!)).toBe("#f3f4f6");
   });
 });
+
+describe("readThemeTokens() color-scheme", () => {
+  it("captures color-scheme per theme, a selector override winning over :root", () => {
+    const tokens = readThemeTokens(`:root { color-scheme: light; --a: #fff; } .dark { color-scheme: only dark; }`, SELECTORS);
+    expect(tokens.light!.get("color-scheme")).toBe("light");
+    expect(tokens.dark!.get("color-scheme")).toBe("only dark");
+  });
+
+  it("leaves color-scheme unset when no block declares it", () => {
+    const tokens = readThemeTokens(CSS, SELECTORS);
+    expect(tokens.dark!.has("color-scheme")).toBe(false);
+  });
+
+  it("does not read a property that merely ends in color-scheme", () => {
+    const tokens = readThemeTokens(`:root { --x-color-scheme: dark; }`, SELECTORS);
+    expect(tokens.light!.has("color-scheme")).toBe(false);
+    expect(tokens.light!.get("--x-color-scheme")).toBe("dark");
+  });
+});

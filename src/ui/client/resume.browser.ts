@@ -621,10 +621,90 @@ test.describe("resume — shadow-root discovery", () => {
 
     expect(roots).toEqual(["go"]);
   });
+
+  for (const type of SCOPE_EVENTS) {
+    test(`a "${type}" inside a shadow scope runs its data-on-${type} action exactly once`, async ({ page }) => {
+      await mount(page, `<div id="host"></div>`, EXPOSE);
+
+      const calls = await page.evaluate((eventType) => {
+        const seen: string[] = [];
+        const shadow = document.querySelector("#host")?.attachShadow({ mode: "open" });
+        if (!shadow) return seen;
+        shadow.innerHTML = `<div data-scope="demo"><span id="target" data-on-${eventType}="act">x</span></div>`;
+        window.forgeResume.registerScope("demo", { on: { act: () => seen.push(eventType) } });
+        window.forgeResume.resume();
+        const composed = eventType === "click" || eventType === "input";
+        shadow.querySelector("#target")?.dispatchEvent(new Event(eventType, { bubbles: true, composed }));
+        return seen;
+      }, type);
+
+      expect(calls).toEqual([type]);
+    });
+  }
+
+  test("a clicked --act command inside a shadow scope runs its handler exactly once", async ({ page }) => {
+    await mount(page, `<div id="host"></div>`, EXPOSE);
+
+    const calls = await page.evaluate(() => {
+      const seen: string[] = [];
+      const shadow = document.querySelector("#host")?.attachShadow({ mode: "open" });
+      if (!shadow) return seen;
+      shadow.innerHTML = `<div data-scope="demo" id="sink"><button id="btn" commandfor="sink" command="--act">go</button></div>`;
+      window.forgeResume.registerScope("demo", { on: { act: (ctx) => seen.push(ctx.el.id) } });
+      window.forgeResume.resume();
+      shadow.querySelector<HTMLElement>("#btn")?.click();
+      return seen;
+    });
+
+    expect(calls).toEqual(["btn"]);
+  });
+
+  test("a shadow-scope change after the disposer runs nothing", async ({ page }) => {
+    await mount(page, `<div id="host"></div>`, EXPOSE);
+
+    const calls = await page.evaluate(() => {
+      const seen: string[] = [];
+      const shadow = document.querySelector("#host")?.attachShadow({ mode: "open" });
+      if (!shadow) return seen;
+      shadow.innerHTML = `<div data-scope="demo"><span id="target" data-on-change="act">x</span></div>`;
+      window.forgeResume.registerScope("demo", { on: { act: () => seen.push("change") } });
+      window.forgeResume.resume()();
+      shadow.querySelector("#target")?.dispatchEvent(new Event("change", { bubbles: true }));
+      return seen;
+    });
+
+    expect(calls).toEqual([]);
+  });
+
+  test("resume() reads each eager root's isConnected a bounded number of times", async ({ page }) => {
+    await mount(page, `<div id="list"></div>`, EXPOSE);
+
+    const most = await page.evaluate(() => {
+      const list = document.querySelector("#list");
+      const reads = new Map<HTMLElement, number>();
+      for (let i = 0; i < 50; i += 1) {
+        const root = document.createElement("div");
+        root.dataset.scope = "demo";
+        Object.defineProperty(root, "isConnected", {
+          get: () => {
+            reads.set(root, (reads.get(root) ?? 0) + 1);
+            return true;
+          },
+        });
+        reads.set(root, 0);
+        list?.append(root);
+      }
+      window.forgeResume.registerScope("demo", { eager: true });
+      window.forgeResume.resume();
+      return Math.max(...reads.values());
+    });
+
+    expect(most).toBeLessThanOrEqual(2);
+  });
 });
 
 test.describe("resume — Invoker Commands bridge", () => {
-  test("a native --command reaches the scope handler through event.source", async ({ page }) => {
+  test("an invoker inside its target scope reaches the scope handler with a native --command", async ({ page }) => {
     const html = await render(
       Resumable({ name: "demo", id: "sink", children: jsx("button", { id: "btn", commandfor: "sink", command: "--act", children: "go" }) }),
     );
@@ -641,6 +721,40 @@ test.describe("resume — Invoker Commands bridge", () => {
     // Proves the capture-phase registration too: `command` does not bubble, so a bubble-phase
     // delegated listener on `document` would never see it and this would be empty.
     expect(result).toEqual(["btn"]);
+  });
+
+  test("an invoker outside its target scope runs that scope's handler once, with the invoker as ctx.el", async ({ page }) => {
+    const sink = await render(Resumable({ name: "demo", id: "sink", children: "panel" }));
+    await mount(page, `${sink}<button id="btn" commandfor="sink" command="--act">go</button>`, EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const calls: string[] = [];
+      window.forgeResume.registerScope("demo", { on: { act: (ctx) => calls.push(ctx.el.id) } });
+      window.forgeResume.resume();
+      document.querySelector<HTMLElement>("#btn")?.click();
+      return calls;
+    });
+
+    expect(result).toEqual(["btn"]);
+  });
+
+  test("an invoker inside scope A targeting scope B runs B's handler", async ({ page }) => {
+    const a = await render(
+      Resumable({ name: "a", id: "a", children: jsx("button", { id: "btn", commandfor: "b", command: "--act", children: "go" }) }),
+    );
+    const b = await render(Resumable({ name: "b", id: "b", children: "panel" }));
+    await mount(page, `${a}${b}`, EXPOSE);
+
+    const result = await page.evaluate(() => {
+      const calls: string[] = [];
+      window.forgeResume.registerScope("a", { on: { act: () => calls.push("a") } });
+      window.forgeResume.registerScope("b", { on: { act: () => calls.push("b") } });
+      window.forgeResume.resume();
+      document.querySelector<HTMLElement>("#btn")?.click();
+      return calls;
+    });
+
+    expect(result).toEqual(["b"]);
   });
 
   test("a built-in command is left to the platform and never reaches the scope table", async ({ page }) => {
@@ -726,10 +840,15 @@ test.describe("resume — the inert-click guard", () => {
   }
 
   function clickAndRead(page: Page, id: string): Promise<{ reached: string[]; hash: string }> {
-    return page.evaluate((target) => {
+    return page.evaluate(async (target) => {
       const reached = (window as unknown as { reached: string[] }).reached;
       reached.length = 0;
+      const navigated = new Promise<void>((resolve) => {
+        window.addEventListener("hashchange", () => resolve(), { once: true });
+        setTimeout(resolve, 300);
+      });
       document.getElementById(target)?.click();
+      await navigated;
       return { reached: [...reached], hash: location.hash };
     }, id);
   }

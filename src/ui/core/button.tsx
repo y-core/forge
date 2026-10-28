@@ -8,13 +8,19 @@ import type { ButtonProps } from "./types";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
+import { CONTROL_PADDING } from "./utils/recipes";
 import { toneVariants } from "./utils/tone";
 
-const buttonBox = cva({
+/** Resolves the button box — size, shape and focus ring with no paint — for a primitive that must clear the Floor. @internal */
+export const buttonBox = cva({
   base: "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors",
   variants: {
-    size: { sm: "h-control-sm px-3 text-sm", md: "h-control-md px-4 text-sm", lg: "h-control-lg px-6 text-base" },
-    shape: { default: "", icon: "w-control-md px-0", square: "aspect-square w-full p-0", circle: "w-control-md rounded-selector px-0" },
+    size: {
+      sm: `h-control-sm ${CONTROL_PADDING.sm} text-sm`,
+      md: `h-control-md ${CONTROL_PADDING.md} text-sm`,
+      lg: `h-control-lg ${CONTROL_PADDING.lg} text-base`,
+    },
+    shape: { default: "", icon: "w-control-md px-0", square: "aspect-square h-auto w-full p-0", circle: "w-control-md rounded-selector px-0" },
   },
   compoundVariants: [
     { shape: ["icon", "circle"], size: "sm", class: "w-control-sm" },
@@ -28,6 +34,8 @@ const NEUTRAL_CHROME: Partial<Record<Appearance, string>> = {
   ghost: "text-foreground hover:bg-accent hover:text-accent-foreground",
 };
 
+const VARIANT_CLASSES = new Map<string, string>();
+
 /** Resolves the shared button box, paint, size and shape classes for every button-shaped component. @public */
 export function buttonVariants(
   props: {
@@ -40,12 +48,17 @@ export function buttonVariants(
 ): string {
   const tone = props.tone ?? "primary";
   const appearance = props.appearance ?? "solid";
-  return cn(
-    buttonBox({ size: props.size, shape: props.shape }),
-    toneVariants({ tone, appearance }),
-    tone === "neutral" ? NEUTRAL_CHROME[appearance] : undefined,
-    props.class,
-  );
+  const key = `${tone}|${appearance}|${props.size ?? "md"}|${props.shape ?? "default"}`;
+  let variant = VARIANT_CLASSES.get(key);
+  if (variant === undefined) {
+    variant = cn(
+      buttonBox({ size: props.size, shape: props.shape }),
+      toneVariants({ tone, appearance }),
+      tone === "neutral" ? NEUTRAL_CHROME[appearance] : undefined,
+    );
+    VARIANT_CLASSES.set(key, variant);
+  }
+  return props.class ? cn(variant, props.class) : variant;
 }
 
 /** A native `<button>`, or under `asChild` its props merged onto a single JSX element child. @public */
@@ -65,8 +78,7 @@ export const Button: FC<ButtonProps> = ({
   ...rest
 }) => {
   const className = buttonVariants({ tone, appearance, size, shape, class: cls });
-  // `aria-disabled` beside `aria-busy`: `state-busy` is `pointer-events-none`, which stops the mouse
-  // and not the keyboard, and a reader told only "busy" is not told the control is unavailable.
+  // `aria-disabled` beside `aria-busy`: a reader told only "busy" is not told the control is unavailable.
   const busy = loading ? { "aria-busy": "true", "aria-disabled": "true", ...stateAttrs({ busy: true }) } : {};
   // The invoker is withheld rather than gated, the rule `menuItemAttrs` states: the platform runs
   // `command` before any listener forge owns, so there is no sink downstream of it to refuse.

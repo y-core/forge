@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { fieldAttr } from "../server/field-attr";
 import { Input } from "./input";
 
 const SIZE_CLASSES = [
@@ -94,6 +95,14 @@ describe("Input — format", () => {
       "data-size": "md",
       name: "expiry",
     });
+  });
+
+  it("leaves a bound field's value raw for its signal, yet still stamps the scope so the client controller warns", async () => {
+    const markup = await render(<Input format='##/##' value='1226' {...fieldAttr("expiry")} />);
+    expect(attrOf(markup, "value")).toBe("1226");
+    expect(attrOf(markup, "data-scope")).toBe("input-format");
+    expect(attrOf(markup, "data-format")).toBe("##/##");
+    expect(attrOf(markup, "data-field")).toBe("expiry");
   });
 
   it("lets a caller's own scope and template win the spread, which is the forwarding contract", async () => {

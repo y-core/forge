@@ -54,13 +54,15 @@ export function meterState(attrs: Pick<MeterTrackProps, "value" | "min" | "max" 
   const high = clamp(toNumber(attrs.high, max), low, max);
   const optimum = clamp(toNumber(attrs.optimum, (min + max) / 2), min, max);
 
-  // `<=` and `>=`, matching HTML's own `GetGaugeRegion`: a value sitting exactly on `low` is in the
-  // low region, not between the two, and the same at `high`.
-  const band = (n: number): "low" | "medium" | "high" => (n <= low ? "low" : n >= high ? "high" : "medium");
-  const best = band(optimum);
-  const here = band(value);
-  if (here === best) return "optimum";
-  return best === "medium" || here === "medium" ? "suboptimum" : "poor";
+  if (optimum < low) {
+    if (value <= low) return "optimum";
+    return value <= high ? "suboptimum" : "poor";
+  }
+  if (optimum > high) {
+    if (value >= high) return "optimum";
+    return value >= low ? "suboptimum" : "poor";
+  }
+  return value >= low && value <= high ? "optimum" : "suboptimum";
 }
 
 const MeterTrack: FC<MeterTrackProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (

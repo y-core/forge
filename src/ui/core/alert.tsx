@@ -9,7 +9,7 @@ import { presentationAttrs } from "../contracts/vocabulary";
 import type { PanelAppearance } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { toneVariants } from "./utils/tone";
+import { toneSurfaceVariants } from "./utils/tone";
 
 type AlertProps = JSX.IntrinsicElements["div"] & {
   tone?: Tone | undefined;
@@ -35,7 +35,7 @@ const AlertRoot: FC<AlertProps> = ({
     {...(dismissible ? { "data-scope": ALERT_SCOPE } : {})}
     class={cn(
       "relative grid gap-1.5 rounded-box border-field py-3 ps-4 pe-4 text-sm",
-      toneVariants({ tone, appearance }),
+      toneSurfaceVariants({ tone, appearance }),
       dismissible && "pe-10",
       cls,
     )}
@@ -47,7 +47,7 @@ const AlertRoot: FC<AlertProps> = ({
         data-slot='alert-dismiss'
         aria-label={dismissLabel}
         {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-        class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded-sm focus-ring'>
+        class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded-sm focus-ring hover:outline-1 hover:-outline-offset-1 hover:outline-current hover:outline-solid'>
         <span aria-hidden='true' class='text-base leading-none'>
           ×
         </span>
@@ -63,7 +63,7 @@ const AlertTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "d
 );
 
 const AlertDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("alert-description", inherited)} class={cn("text-sm leading-relaxed text-pretty opacity-90", cls)} {...rest}>
+  <div data-slot={slotToken("alert-description", inherited)} class={cn("text-sm leading-relaxed text-pretty", cls)} {...rest}>
     {children}
   </div>
 );

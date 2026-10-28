@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Badge } from "./badge";
+import { TONES } from "./utils/tone";
 
 const chip = (props: Parameters<typeof Badge>[0] = {}) => render(<Badge {...props}>New</Badge>);
 
@@ -13,7 +14,7 @@ describe("Badge", () => {
         " font-medium px-2.5 py-0.5 text-xs [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)]" +
         " [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)]" +
         " [--tone-soft-border:var(--color-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg)" +
-        ' [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)] uppercase">R&amp;D&#39;s</span>',
+        ' [--focus-ring:var(--color-ring)] uppercase">R&amp;D&#39;s</span>',
     );
   });
 
@@ -37,29 +38,23 @@ describe("Badge", () => {
     expect(added.length).toBe(dropped.length);
   });
 
+  it("paints no hover fill in any tone or appearance, since a badge takes no pointer action", async () => {
+    const appearances = ["solid", "soft", "outline"] as const;
+    const chips = await Promise.all(TONES.flatMap((tone) => appearances.map((appearance) => chip({ tone, appearance }))));
+    expect(chips.flatMap((html) => classesOf(html).filter((token) => token.startsWith("hover:")))).toEqual([]);
+  });
+
   it("gives the solid appearance its own fill and evicts the soft one it conflicts with", async () => {
     expect(variantClasses(await chip({ appearance: "solid" }), await chip())).toEqual({
-      added: [
-        "border-transparent",
-        "bg-(--tone)",
-        "text-(--tone-fg)",
-        "[--focus-ring:var(--tone-fg)]",
-        "hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]",
-      ],
-      dropped: [
-        "border-(--tone-soft-border)",
-        "bg-(--tone-soft)",
-        "text-(--tone-soft-fg)",
-        "[--focus-ring:var(--color-ring)]",
-        "hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]",
-      ],
+      added: ["border-transparent", "bg-(--tone)", "text-(--tone-fg)", "[--focus-ring:var(--tone-fg)]"],
+      dropped: ["border-(--tone-soft-border)", "bg-(--tone-soft)", "text-(--tone-soft-fg)", "[--focus-ring:var(--color-ring)]"],
     });
   });
 
   it("gives the outline appearance a border in the tone's own text colour and no fill", async () => {
     const { added } = variantClasses(await chip({ appearance: "outline" }), await chip());
 
-    expect(added).toEqual(["border-(--tone-text)", "bg-transparent", "text-(--tone-text)", "hover:bg-(--tone-soft)"]);
+    expect(added).toEqual(["border-(--tone-text)", "bg-transparent", "text-(--tone-text)"]);
   });
 
   it("tightens the padding and drops a type step at the sm size, which nothing but the classes says", async () => {

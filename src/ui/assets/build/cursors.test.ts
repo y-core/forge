@@ -275,4 +275,76 @@ describe("buildCursors()", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  describe("light-dark() tokens", () => {
+    const bake = (css: string): { light: string; dark: string } => {
+      const { dir, config } = setup();
+      try {
+        const select = buildCursors(config, css).select!;
+        return { light: parseCursorValue(select.light!).svg, dark: parseCursorValue(select.dark!).svg };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+    const strokes = (svg: string): string[] => [...svg.matchAll(/stroke="([^"]+)"/g)].map((m) => m[1] ?? "");
+
+    it("bakes each branch of the signal token into its own mode", () => {
+      const baked = bake(`:root { --foreground: light-dark(#fff, #000); --background: #808080; } .dark { color-scheme: dark; }`);
+      expect(strokes(baked.light)[1]).toBe("#ffffff");
+      expect(strokes(baked.dark)[1]).toBe("#000000");
+    });
+
+    it("resolves a var() inside each branch against the theme's tokens", () => {
+      const baked = bake(
+        `:root { --a: #ff0000; --b: #0000ff; --foreground: light-dark(var(--a), var(--b)); --background: #808080; } .dark { color-scheme: only dark; }`,
+      );
+      expect(strokes(baked.light)[1]).toBe("#ff0000");
+      expect(strokes(baked.dark)[1]).toBe("#0000ff");
+    });
+
+    it("bakes a cssvar() over a light-dark() token per mode", () => {
+      const baked = bake(`:root { --foreground: #808080; --background: light-dark(#111111, #eeeeee); } .dark { color-scheme: dark; }`);
+      expect(strokes(baked.light)[0]).toBe("#111111");
+      expect(strokes(baked.dark)[0]).toBe("#eeeeee");
+    });
+
+    it("takes the light branch for a theme declaring no dark color-scheme", () => {
+      const baked = bake(`:root { color-scheme: light dark; --foreground: light-dark(#fff, #000); --background: #808080; }`);
+      expect(strokes(baked.light)[1]).toBe("#ffffff");
+      expect(strokes(baked.dark)[1]).toBe("#ffffff");
+    });
+
+    it("throws on a light-dark() carrying a single argument", () => {
+      expect(() => bake(`:root { --foreground: light-dark(#fff); --background: #808080; }`)).toThrow(/unparseable colour: light-dark\(#fff\)/);
+    });
+  });
+
+  it("bakes a stray `<` beside a dropped element as text, never as a tag", () => {
+    const { dir, config } = setup();
+    try {
+      writeFileSync(
+        join(dir, "select.svg"),
+        `<svg viewBox="0 0 24 24" data-cursor-token="--foreground"><text><<script></script>img onerror=1></text></svg>`,
+      );
+      const light = parseCursorValue(buildCursors(config, CSS).select!.light!).svg;
+      expect(light).not.toContain("<img");
+      expect(light).toContain("<text>&lt;");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the geometry after a nested <svg> closes", () => {
+    const { dir, config } = setup();
+    try {
+      writeFileSync(
+        join(dir, "select.svg"),
+        `<svg viewBox="0 0 24 24" data-cursor-token="--foreground"><svg x="2"><circle r="1"/></svg><path d="M1 0"/></svg>`,
+      );
+      const light = parseCursorValue(buildCursors(config, CSS).select!.light!).svg;
+      expect(light).toContain(`<svg x="2"><circle r="1"/></svg><path d="M1 0"/>`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

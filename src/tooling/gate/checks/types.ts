@@ -92,6 +92,8 @@ export interface BundleCheckConfig {
 export interface RootRow {
   /** Group for a named value the design system did not enumerate; absent when the root takes no named value. */
   named?: string;
+  /** Group for a bare integer value, where it differs from `named`; absent otherwise. */
+  integer?: string;
   /** The enumerated minority values, and the group they take. */
   exceptions?: { values: readonly string[]; group: string };
   /** Group for an arbitrary value whose kind is not listed in `kinds`. */
@@ -401,7 +403,9 @@ export interface DesignScaleCheckConfig {
 export interface CssNode {
   kind: string;
   property?: string;
+  selector?: string;
   name?: string;
+  params?: string;
   nodes?: readonly CssNode[];
 }
 

@@ -221,9 +221,10 @@ interface ExitFrame {
 test.describe("Menu — a submenu mid-exit", { tag: "@cross-engine" }, () => {
   test("a closing submenu stays on its own row for every frame it is still painted", async ({ page, browserName }) => {
     test.skip(
-      browserName === "firefox" || browserName === "webkit",
-      "bug-261022-74: the submenu stops rendering the moment it closes, so no exit frame paints",
+      browserName === "firefox",
+      "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
     );
+    test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
     await twoSubmenus(page, CSS_AND_JS, FADE_STYLE);
     await page.evaluate(() => window.forgeResume.resume());
     await page.click('[data-slot~="menu-trigger"]');

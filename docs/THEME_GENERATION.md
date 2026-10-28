@@ -98,7 +98,9 @@ source of truth:
 **Shape lives in `theme-base.css`, and a scheme file never declares it.** The shape tokens — the radii, the control heights, `--border-width` and
 `--elevation` — are declared once beside the semantic colour mapping, and every component reads them through the bridged utilities (`rounded-field`,
 `h-control-*`, `border-field` and their kin) rather than through a raw Tailwind size. `rounded-sm` through `rounded-xl` are bridged to `--radius`
-too; bare `rounded`, `rounded-xs` and `rounded-2xl` are not, and a unit test refuses any of them in a `ui` source.
+too; bare `rounded`, `rounded-xs` and `rounded-2xl` are not, and a unit test refuses any of them in a `ui` source. The same test refuses an
+all-sides border width that does not read `--border-width` — a bare `border`, `border-2` or `border-[3px]` — so every bordered surface takes
+`border-field`; a one-sided rule such as `border-b` is a divider and is not judged.
 
 **`--elevation` multiplies every length in the `--shadow-*` scale**, so `:root { --elevation: 0 }` in a shape file paints no elevation at all
 and `1` is the default geometry. The scale itself stays in `@theme inline`, where a `:root` copy would never reach a utility; the multiplier is

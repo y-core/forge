@@ -147,8 +147,8 @@ import { Badge, Button, Card, ScrollArea, Separator } from "@y-core/forge/ui/cor
 Density is the standing excuse for shrinking a control past the point where it can be used. **The Floor does not have a density setting.** At
 density 10, on the densest table forge can render, all of the following hold exactly as they hold at density 3:
 
-- **`forge-ui-hit-target`** — the `Button` `sm` box is the floor of the size scale, and there is nothing below it. A dense layout that does not fit
-  gives way; the control does not shrink. Padding may tighten around a target, but the target's own box may not go under `sm`.
+- **`forge-ui-hit-target`** — an absolute 28px on both axes, which every shipped shape's `sm` box clears. A dense layout that does not fit gives
+  way; the control does not shrink. Padding may tighten around a target, but the target's own box may not go under 28px.
 - **`forge-ui-contrast-floor`** — 4.5:1 for body text, 3:1 for large text and UI boundaries, in both `:root` and `.dark`. Small text needs _more_
   contrast, not less, so a dense surface is where `--muted-foreground` on `--card` most needs checking rather than assuming.
 - **`forge-ui-focus-ring`** — `focus-visible:ring-2 focus-visible:ring-ring` on every interactive element. A ring that would overlap a neighbour at
@@ -174,7 +174,8 @@ Motion at 3 means transitions exist to explain a change of state and nothing els
 of those is a state the platform already exposes to a selector — `:popover-open`, `[open]`, `@starting-style` — so the stylesheet animates against
 the element's own state with no controller in between.
 
-Default: authored motion is limited to state changes a user caused — open, close, dismiss — and carries no entrance animation on page load, unless a
-brief raises motion above forge's ratified default of 3. <!-- rule:forge-ui-density-motion-budget -->
+Default: authored motion is limited to state changes a user caused — open, close, dismiss — and carries no entrance animation on page load except a
+toast's, whose arrival answers the action that rendered the page, unless a brief raises motion above forge's ratified default of 3.
+<!-- rule:forge-ui-density-motion-budget -->
 
 Every motion decision remains subject to `forge-ui-reduced-motion`, at every setting of the dial.

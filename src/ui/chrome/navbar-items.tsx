@@ -150,7 +150,7 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
   const cols = MEGA_COLS[Math.min(item.groups.length, 4)] ?? "grid-cols-1";
   return [
     <Popover data-slot={slotToken("navbar-megamenu")} class='max-md:hidden' {...fattrs}>
-      <Popover.Trigger for={id} class={BAR_ITEM}>
+      <Popover.Trigger for={id} class={cn(BAR_ITEM, "h-auto border-0")}>
         <span>{item.label}</span>
         {chevron(ctx)}
       </Popover.Trigger>
@@ -166,7 +166,7 @@ function renderMegaMenu(item: NavMegaMenu, depth: number, ctx: NavRenderCtx): JS
 function renderBarMenu(id: string, children: JSXNode, item: NavMenu, ctx: NavRenderCtx): JSXNode {
   return (
     <Menu class='max-md:hidden' {...filterAttrs(item, ctx.activeFilters)}>
-      <Menu.Trigger for={id} class={BAR_ITEM}>
+      <Menu.Trigger for={id} class={cn(BAR_ITEM, "h-auto border-0")}>
         <span>{item.label}</span>
         {chevron(ctx)}
       </Menu.Trigger>

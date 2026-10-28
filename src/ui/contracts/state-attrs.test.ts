@@ -187,6 +187,20 @@ describe("the presence hooks the lint rule forbids by hand", () => {
     align: "start",
   };
 
+  it("emits every attribute in the convention's order", () => {
+    expect(Object.keys(stateAttrs(EVERY_STATE))).toEqual([
+      "data-pressed",
+      "data-checked",
+      "data-selected",
+      "data-disabled",
+      "data-invalid",
+      "data-busy",
+      "data-orientation",
+      "data-side",
+      "data-align",
+    ]);
+  });
+
   it("names exactly the flags `stateAttrs` emits with an empty value", () => {
     const emitted = Object.entries(stateAttrs(EVERY_STATE))
       .filter(([, value]) => value === "")

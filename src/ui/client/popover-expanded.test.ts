@@ -1,10 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
-import { FakeEvent, fakeTree } from "./dom.fixture";
+import { FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
 import { mountExpandedState, mountExpandedStates } from "./popover-expanded";
 
 /** A popup with `count` invokers pointing at it, plus one pointing somewhere else. */
 function scene(popupId = "p") {
+  installCssEscape();
   const { doc, el } = fakeTree();
   const popup = el("DIV", { id: popupId, popover: "auto" });
   const invoker = el("BUTTON", { "aria-controls": popupId, "aria-expanded": "false", id: "invoker" });
@@ -36,6 +37,15 @@ describe("mountExpandedState", () => {
     expect(other.getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("finds the invokers of a popup whose id is no CSS identifier", () => {
+    const { popup, invoker, other } = scene('1"x');
+    mountExpandedState(popup as never);
+
+    popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+
+    expect([invoker.getAttribute("aria-expanded"), other.getAttribute("aria-expanded")]).toEqual(["true", "false"]);
+  });
+
   it("acts on beforetoggle too, so the attribute lands in the click's own event", () => {
     const { popup, invoker } = scene();
     mountExpandedState(popup as never);
@@ -43,6 +53,32 @@ describe("mountExpandedState", () => {
     popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
 
     expect(invoker.getAttribute("aria-expanded")).toBe("true");
+  });
+
+  it("reads only the invokers that name the toggled popup", () => {
+    const { doc, popup, other } = scene();
+    const selectors: string[] = [];
+    const query = doc.querySelectorAll.bind(doc);
+    Object.assign(doc, {
+      querySelectorAll: (selector: string) => {
+        selectors.push(selector);
+        return query(selector);
+      },
+    });
+    const reads: string[] = [];
+    const read = other.getAttribute.bind(other);
+    Object.assign(other, {
+      getAttribute: (name: string) => {
+        reads.push(name);
+        return read(name);
+      },
+    });
+    mountExpandedState(popup as never);
+
+    popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+    popup.dispatchEvent(toggle("open"));
+
+    expect({ selectors, reads }).toEqual({ selectors: ['[aria-controls="p"]', '[aria-controls="p"]'], reads: [] });
   });
 
   it("does nothing for a popup with no id, which no invoker could name", () => {
@@ -91,6 +127,7 @@ describe("mountExpandedState", () => {
 
 describe("mountExpandedStates", () => {
   it("mounts every popover inside the root, and the root itself when it is one", () => {
+    installCssEscape();
     const { doc, el } = fakeTree();
     const rail = el("NAV");
     const first = el("DIV", { id: "f1", popover: "auto" });

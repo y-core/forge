@@ -116,3 +116,43 @@ test.describe("Menu checkable rows", () => {
     expect(await stateOf(page, "sm")).toEqual({ aria: "true", data: true });
   });
 });
+
+test.describe("Menu checkable rows — a submenu's radios", () => {
+  async function nestedMarkup(): Promise<string> {
+    const submenu = Menu.Popup({
+      triggered: true,
+      id: "sub",
+      children: [
+        Menu.RadioItem({ id: "sub-a", for: false, checked: true, children: "Sub A" }),
+        Menu.RadioItem({ id: "sub-b", for: false, children: "Sub B" }),
+      ],
+    });
+    return render(
+      Menu({
+        children: [
+          Menu.Trigger({ for: "m", children: "View" }),
+          Menu.Popup({
+            triggered: true,
+            id: "m",
+            children: [
+              Menu.RadioItem({ id: "parent", for: false, children: "Parent" }),
+              Menu.SubmenuTrigger({ for: "sub", children: "More" }),
+              submenu,
+            ],
+          }),
+        ],
+      }),
+    );
+  }
+
+  test("checking a parent radio row leaves the submenu's checked radio checked", async ({ page }) => {
+    await mount(page, await nestedMarkup(), EXPOSE);
+    await page.evaluate(() => window.forgeResume.resume());
+    await page.click("[data-slot~='menu-trigger']");
+
+    await page.click("#parent");
+
+    expect(await stateOf(page, "parent")).toEqual({ aria: "true", data: true });
+    expect(await stateOf(page, "sub-a")).toEqual({ aria: "true", data: true });
+  });
+});

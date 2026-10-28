@@ -2,10 +2,13 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { attrOf } from "../../testing/markup";
+import { attrOf, attrsOf } from "../../testing/markup";
 import { render } from "../../testing/render";
+import type { ScopeDefinition } from "../client/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
 import { NAVBAR_SCOPE } from "../contracts/navbar-contract";
+import { scopeAttrs } from "../contracts/scope-attrs";
+import type { NavbarAction } from "../contracts/types";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
 import type { NavDrawerEdge, NavPlacement } from "./types";
@@ -22,22 +25,22 @@ const icon = createIcon("/sprite.svg", {
 });
 
 const SINGLE_A =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
 
 const RAIL_LEFT_A =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="h-full"><nav class="h-full"><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky top-0 left-0 max-h-dvh overflow-y-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col gap-4 p-2 group-open:flex"><div data-slot="navbar-section" class="flex flex-col gap-1"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="h-full"><nav class="h-full"><details data-slot="navbar" data-side="left" class="group bg-background/95 backdrop-blur z-40 sticky top-0 left-0 max-h-dvh overflow-y-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col gap-4 p-2 group-open:flex"><div data-slot="navbar-section" class="flex flex-col gap-1"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
 
 const RAIL_MENU_FILE_NEW =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="h-full"><nav class="h-full"><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky top-0 left-0 max-h-dvh overflow-y-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col gap-4 p-2 group-open:flex"><div data-slot="navbar-section" class="flex flex-col gap-1"><details data-slot="navbar-disclosure" class=""><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>File</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><a href="/route/new" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">New</a></div></details></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="h-full"><nav class="h-full"><details data-slot="navbar" data-side="left" class="group bg-background/95 backdrop-blur z-40 sticky top-0 left-0 max-h-dvh overflow-y-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col gap-4 p-2 group-open:flex"><div data-slot="navbar-section" class="flex flex-col gap-1"><details data-slot="navbar-disclosure" class=""><summary data-slot="navbar-disclosure-trigger" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground w-full list-none justify-between [&amp;::-webkit-details-marker]:hidden"><span>File</span><span aria-hidden="true" class="text-xs opacity-70 motion-safe:transition-transform [[open]&gt;summary&gt;&amp;]:rotate-180"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><use href="/sprite.svg#icon-chevron-down"></use></svg></span></summary><div data-slot="navbar-disclosure-content" class="ms-3 flex flex-col gap-1 border-s border-border ps-2"><a href="/route/new" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">New</a></div></details></div></div></details></nav></div>';
 
 const OPEN_A =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto" open><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur" open><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
 
 const DRAWER_TOP_A =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto max-md:bg-transparent max-md:backdrop-blur-none" data-navbar-drawer><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden max-md:relative max-md:z-50"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div data-slot="navbar-backdrop" data-on-click="closeNav" aria-hidden="true" class="hidden max-md:invisible max-md:fixed max-md:inset-0 max-md:z-30 max-md:block max-md:bg-foreground/40 max-md:opacity-0 max-md:transition-[opacity,visibility] max-md:group-open:visible max-md:group-open:opacity-100 motion-reduce:max-md:transition-none"></div><div class="flex-col justify-between gap-4 p-2 md:flex md:flex-row md:items-center max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[translate,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-safe:max-md:group-open:transition-[translate] motion-reduce:max-md:transition-none max-md:start-0 max-md:-translate-x-full max-md:border-e max-md:rtl:translate-x-full"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur max-md:bg-transparent max-md:backdrop-blur-none" data-navbar-drawer><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row) max-md:relative max-md:z-50 max-md:h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div data-slot="navbar-backdrop" data-on-click="closeNav" aria-hidden="true" class="hidden max-md:invisible max-md:fixed max-md:inset-0 max-md:z-30 max-md:block max-md:bg-foreground/40 max-md:opacity-0 max-md:duration-(--forge-motion-exit) max-md:ease-out max-md:group-open:visible max-md:group-open:opacity-100 max-md:group-open:duration-(--forge-motion-enter) motion-safe:max-md:transition-[opacity,visibility] motion-reduce:max-md:transition-[opacity,visibility]"></div><div class="flex-col justify-between gap-4 p-2 md:flex md:flex-row md:items-center md:h-(--forge-navbar-row) max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[translate,opacity,visibility] max-md:duration-(--forge-motion-exit) max-md:ease-out max-md:group-open:visible max-md:group-open:transition-[translate,opacity] max-md:group-open:duration-(--forge-motion-enter) motion-safe:max-md:group-open:translate-x-0 motion-reduce:max-md:opacity-0 motion-reduce:max-md:group-open:opacity-100 max-md:start-0 max-md:border-e motion-safe:max-md:-translate-x-full motion-safe:max-md:rtl:translate-x-full max-md:pt-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
 
 const DRAWER_RAIL_RIGHT_A =
-  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="h-full"><nav class="h-full"><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky top-0 right-0 max-h-dvh overflow-y-auto max-md:bg-transparent max-md:backdrop-blur-none max-md:max-h-none max-md:overflow-visible" data-navbar-drawer><summary data-slot="navbar-toggle" aria-label="Menu" class="sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end max-md:relative max-md:z-50"><span class="group-open:hidden -scale-x-100 rtl:scale-x-100" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-panel-open"></use></svg></span><span class="hidden group-open:inline -scale-x-100 rtl:scale-x-100" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-panel-close"></use></svg></span></summary><div data-slot="navbar-backdrop" data-on-click="closeNav" aria-hidden="true" class="hidden max-md:invisible max-md:fixed max-md:inset-0 max-md:z-30 max-md:block max-md:bg-foreground/40 max-md:opacity-0 max-md:transition-[opacity,visibility] max-md:group-open:visible max-md:group-open:opacity-100 motion-reduce:max-md:transition-none"></div><div class="flex-col gap-4 p-2 md:hidden md:group-open:flex max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[translate,visibility] max-md:duration-200 max-md:group-open:visible max-md:group-open:translate-x-0 motion-safe:max-md:group-open:transition-[translate] motion-reduce:max-md:transition-none max-md:end-0 max-md:translate-x-full max-md:border-s max-md:rtl:-translate-x-full"><div data-slot="navbar-section" class="flex flex-col gap-1"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
+  '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="h-full"><nav class="h-full"><details data-slot="navbar" data-side="right" class="group bg-background/95 backdrop-blur z-40 sticky top-0 right-0 max-h-dvh overflow-y-auto max-md:bg-transparent max-md:backdrop-blur-none max-md:max-h-none max-md:overflow-visible" data-navbar-drawer><summary data-slot="navbar-toggle" aria-label="Menu" class="sticky top-0 flex cursor-pointer list-none items-center justify-start bg-background/95 p-3 focus-ring group-open:justify-end max-md:relative max-md:z-50 max-md:h-(--forge-navbar-row)"><span class="group-open:hidden -scale-x-100 rtl:scale-x-100" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-panel-open"></use></svg></span><span class="hidden group-open:inline -scale-x-100 rtl:scale-x-100" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 24 24" class="" aria-hidden="true"><use href="/sprite.svg#icon-panel-close"></use></svg></span></summary><div data-slot="navbar-backdrop" data-on-click="closeNav" aria-hidden="true" class="hidden max-md:invisible max-md:fixed max-md:inset-0 max-md:z-30 max-md:block max-md:bg-foreground/40 max-md:opacity-0 max-md:duration-(--forge-motion-exit) max-md:ease-out max-md:group-open:visible max-md:group-open:opacity-100 max-md:group-open:duration-(--forge-motion-enter) motion-safe:max-md:transition-[opacity,visibility] motion-reduce:max-md:transition-[opacity,visibility]"></div><div class="flex-col gap-4 p-2 md:hidden md:group-open:flex max-md:invisible max-md:fixed max-md:inset-y-0 max-md:z-40 max-md:flex max-md:w-72 max-md:max-w-[85vw] max-md:flex-col max-md:overflow-y-auto max-md:border-border max-md:bg-background max-md:p-4 max-md:shadow-xl max-md:transition-[translate,opacity,visibility] max-md:duration-(--forge-motion-exit) max-md:ease-out max-md:group-open:visible max-md:group-open:transition-[translate,opacity] max-md:group-open:duration-(--forge-motion-enter) motion-safe:max-md:group-open:translate-x-0 motion-reduce:max-md:opacity-0 motion-reduce:max-md:group-open:opacity-100 max-md:end-0 max-md:border-s motion-safe:max-md:translate-x-full motion-safe:max-md:rtl:-translate-x-full max-md:pt-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>';
 
 describe("Navbar — structure", () => {
   it("renders the root with data-slot=navbar inside a resumable scope", async () => {
@@ -50,7 +53,7 @@ describe("Navbar — structure", () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "Left", href: "l" }] }, { items: [{ label: "Right", href: "r" }] }] };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} />);
     expect(out).toBe(
-      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/l" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">Left</a></div><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/r" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">Right</a></div></div></details></nav></div>',
+      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/l" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">Left</a></div><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/r" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">Right</a></div></div></details></nav></div>',
     );
   });
 
@@ -81,7 +84,7 @@ describe("Navbar — landmark", () => {
   it("puts aria-label on the landmark and leaves the disclosure unnamed", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} aria-label='Component catalog' />);
     expect(out).toBe(
-      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav aria-label="Component catalog"><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
+      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav aria-label="Component catalog"><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
     );
     expect(landmark(out)?.[1]).toBe(' aria-label="Component catalog"');
     expect(/<details[^>]*aria-label/.test(out)).toBe(false);
@@ -99,7 +102,7 @@ describe("Navbar — landmark", () => {
     );
     expect(landmark(out)?.[1]).toBe(' aria-label="Catalog" class="h-full"');
     expect(landmark(out)?.[2]).toBe(
-      ' data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky top-0 left-0 max-h-dvh overflow-y-auto" open',
+      ' data-slot="navbar" data-side="left" class="group bg-background/95 backdrop-blur z-40 sticky top-0 left-0 max-h-dvh overflow-y-auto" open',
     );
   });
 });
@@ -115,7 +118,7 @@ describe("Navbar — placement", () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} placement='bottom' />);
     expect(out).toBe(
-      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 right-0 md:inset-x-0 md:top-auto md:bottom-0 md:left-auto"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
+      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 right-0 md:inset-x-0 md:top-auto md:bottom-0 md:left-auto"><nav><details data-slot="navbar" data-side="bottom" class="group bg-background/95 backdrop-blur"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
     );
   });
 
@@ -123,7 +126,19 @@ describe("Navbar — placement", () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} class='my-bar' />);
     expect(out).toBe(
-      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto my-bar"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
+      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur my-bar"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
+    );
+  });
+
+  it("lands a forwarded id, data-ref and class on the disclosure and leaves the sticky wrapper without them", async () => {
+    const config: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
+    const out = await render(<Navbar config={config} resolveHref={id} icon={icon} id='x' data-ref='nav' class='my-bar' />);
+    const wrapper = /<div data-scope="navbar"([^>]*)>/.exec(out)?.[1] ?? "";
+    const details = /<details([^>]*)>/.exec(out)?.[1] ?? "";
+
+    expect(details).toBe(' data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur my-bar" id="x" data-ref="nav"');
+    expect(wrapper).toBe(
+      ' data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"',
     );
   });
 
@@ -131,7 +146,7 @@ describe("Navbar — placement", () => {
     const config: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
     const out = await render(<Navbar config={config} resolveHref={id} icon={icon} id='main-nav' data-ref='nav' />);
     expect(out).toBe(
-      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details data-slot="navbar" class="group z-40 bg-background/95 backdrop-blur sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto" id="main-nav" data-ref="nav"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
+      '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details data-slot="navbar" data-side="top" class="group bg-background/95 backdrop-blur" id="main-nav" data-ref="nav"><summary data-slot="navbar-toggle" aria-label="Menu" class="flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)"><span class="group-open:hidden" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-hamburger"></use></svg></span><span class="hidden group-open:inline" aria-hidden="true"><svg data-slot="icon" width="22" height="22" viewBox="0 0 22 22" class="" aria-hidden="true"><use href="/sprite.svg#icon-close"></use></svg></span></summary><div class="hidden flex-col justify-between gap-4 p-2 group-open:flex md:flex md:flex-row md:items-center md:h-(--forge-navbar-row)"><div data-slot="navbar-section" class="flex flex-col gap-1 md:flex-row md:items-center"><a href="/route/a" data-slot="navbar-link" class="inline-flex items-center gap-1 rounded-field px-3 py-2 text-sm font-medium hover:bg-accent hover:text-accent-foreground cursor-pointer focus-ring aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground">A</a></div></div></details></nav></div>',
     );
   });
 });
@@ -141,7 +156,8 @@ describe("Navbar — collapsible", () => {
 
   const panelClass = (html: string) => /<\/summary><div class="([^"]*)"/.exec(html)?.[1] ?? "";
   const classOf = (html: string, slot: string) => new RegExp(`data-slot="${slot}"[^>]*? class="([^"]*)"`).exec(html)?.[1] ?? "";
-  const rootClass = (html: string) => /<details data-slot="navbar" class="([^"]*)"/.exec(html)?.[1] ?? "";
+  const rootClass = (html: string) => /<details data-slot="navbar" data-side="[^"]*" class="([^"]*)"/.exec(html)?.[1] ?? "";
+  const wrapperClass = (html: string) => /<div data-scope="navbar"[^>]* class="([^"]*)"/.exec(html)?.[1] ?? "";
 
   it('emits exactly the pre-existing markup when collapsible="mobile" is passed explicitly', async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='mobile' />);
@@ -194,8 +210,14 @@ describe("Navbar — collapsible", () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} />);
 
     expect(out).toBe(SINGLE_A);
-    expect(out.startsWith('<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}"><nav><details')).toBe(true);
-    expect(classOf(out, "navbar-toggle")).toBe("flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden");
+    expect(
+      out.startsWith(
+        '<div data-scope="navbar" data-island-state="{&quot;filters&quot;:[]}" class="z-40 sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto"><nav><details',
+      ),
+    ).toBe(true);
+    expect(classOf(out, "navbar-toggle")).toBe(
+      "flex cursor-pointer list-none items-center justify-end p-3 focus-ring md:hidden h-(--forge-navbar-row)",
+    );
   });
 
   it("keeps the panel and its sections vertical at every breakpoint", async () => {
@@ -207,15 +229,16 @@ describe("Navbar — collapsible", () => {
   it("emits the rail placement class string for each of the four placements", async () => {
     const placements: NavPlacement[] = ["top", "bottom", "left", "right"];
     const classes = await Promise.all(
-      placements.map(async (placement) =>
-        rootClass(await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' placement={placement} />)),
-      ),
+      placements.map(async (placement) => {
+        const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' placement={placement} />);
+        return placement === "top" || placement === "bottom" ? wrapperClass(out) : rootClass(out);
+      }),
     );
     expect(classes).toEqual([
-      "group z-40 bg-background/95 backdrop-blur sticky inset-x-0 top-0",
-      "group z-40 bg-background/95 backdrop-blur sticky inset-x-0 bottom-0",
-      "group z-40 bg-background/95 backdrop-blur sticky top-0 left-0 max-h-dvh overflow-y-auto",
-      "group z-40 bg-background/95 backdrop-blur sticky top-0 right-0 max-h-dvh overflow-y-auto",
+      "z-40 sticky inset-x-0 top-0 h-full",
+      "z-40 sticky inset-x-0 bottom-0 h-full",
+      "group bg-background/95 backdrop-blur z-40 sticky top-0 left-0 max-h-dvh overflow-y-auto",
+      "group bg-background/95 backdrop-blur z-40 sticky top-0 right-0 max-h-dvh overflow-y-auto",
     ]);
   });
 });
@@ -259,19 +282,11 @@ describe("Navbar — drawer mode", () => {
   });
 
   it("drops the bar's own backdrop-filter below md, which would otherwise contain the fixed panel", async () => {
-    const bar = (html: string) => (/<details data-slot="navbar" class="([^"]*)"/.exec(html)?.[1] ?? "").split(" ");
+    const bar = (html: string) => (/<details data-slot="navbar" data-side="[^"]*" class="([^"]*)"/.exec(html)?.[1] ?? "").split(" ");
     expect(bar(await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' />))).toEqual([
       "group",
-      "z-40",
       "bg-background/95",
       "backdrop-blur",
-      "sticky",
-      "inset-y-0",
-      "left-0",
-      "md:inset-x-0",
-      "md:top-0",
-      "md:right-auto",
-      "md:bottom-auto",
       "max-md:bg-transparent",
       "max-md:backdrop-blur-none",
     ]);
@@ -279,12 +294,12 @@ describe("Navbar — drawer mode", () => {
 
   it("releases the rail's own scroll box too, which would otherwise clip the panel that left the flow", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible='always' collapsedAs='drawer' />);
-    const bar = (/<details data-slot="navbar" class="([^"]*)"/.exec(out)?.[1] ?? "").split(" ");
+    const bar = (/<details data-slot="navbar" data-side="[^"]*" class="([^"]*)"/.exec(out)?.[1] ?? "").split(" ");
     expect(bar).toContain("max-md:max-h-none");
     expect(bar).toContain("max-md:overflow-visible");
   });
 
-  it("hides the closed panel by visibility rather than display, which is what leaves the slide transitionable", async () => {
+  it("hides the closed panel by visibility rather than display, and times its slide or fade on the shared motion tokens", async () => {
     const panel = panelClass(await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' />));
     expect(panel).toEqual([
       "flex-col",
@@ -294,6 +309,7 @@ describe("Navbar — drawer mode", () => {
       "md:flex",
       "md:flex-row",
       "md:items-center",
+      "md:h-(--forge-navbar-row)",
       "max-md:invisible",
       "max-md:fixed",
       "max-md:inset-y-0",
@@ -307,26 +323,41 @@ describe("Navbar — drawer mode", () => {
       "max-md:bg-background",
       "max-md:p-4",
       "max-md:shadow-xl",
-      "max-md:transition-[translate,visibility]",
-      "max-md:duration-200",
+      "max-md:transition-[translate,opacity,visibility]",
+      "max-md:duration-(--forge-motion-exit)",
+      "max-md:ease-out",
       "max-md:group-open:visible",
-      "max-md:group-open:translate-x-0",
-      "motion-safe:max-md:group-open:transition-[translate]",
-      "motion-reduce:max-md:transition-none",
+      "max-md:group-open:transition-[translate,opacity]",
+      "max-md:group-open:duration-(--forge-motion-enter)",
+      "motion-safe:max-md:group-open:translate-x-0",
+      "motion-reduce:max-md:opacity-0",
+      "motion-reduce:max-md:group-open:opacity-100",
       "max-md:start-0",
-      "max-md:-translate-x-full",
       "max-md:border-e",
-      "max-md:rtl:translate-x-full",
+      "motion-safe:max-md:-translate-x-full",
+      "motion-safe:max-md:rtl:translate-x-full",
+      "max-md:pt-(--forge-navbar-row)",
     ]);
+    expect(panel).not.toContain("motion-reduce:max-md:transition-none");
+    expect(panel).toContain("motion-reduce:max-md:opacity-0");
+    expect(panel).toContain("max-md:duration-(--forge-motion-exit)");
+    expect(panel).toContain("max-md:group-open:duration-(--forge-motion-enter)");
+  });
+
+  it("times the backdrop on the same motion tokens, with no reduced-motion cut", async () => {
+    const backdrop = classOf(await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' />), "navbar-backdrop").split(" ");
+    expect(backdrop).toContain("max-md:duration-(--forge-motion-exit)");
+    expect(backdrop).toContain("max-md:group-open:duration-(--forge-motion-enter)");
+    expect(backdrop.filter((token) => token.endsWith("transition-none"))).toEqual([]);
   });
 
   it("derives the edge from placement, mirroring both the offset and the transform under rtl", async () => {
     const edgeOf = async (placement: NavPlacement) =>
       panelClass(await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' placement={placement} />)).filter((token) =>
-        /^max-md:(?:start-0|end-0|border-e|border-s|-?translate-x-full|rtl:-?translate-x-full)$/.test(token),
+        /^(?:motion-safe:)?max-md:(?:start-0|end-0|border-e|border-s|-?translate-x-full|rtl:-?translate-x-full)$/.test(token),
       );
-    const leading = ["max-md:start-0", "max-md:-translate-x-full", "max-md:border-e", "max-md:rtl:translate-x-full"];
-    const trailing = ["max-md:end-0", "max-md:translate-x-full", "max-md:border-s", "max-md:rtl:-translate-x-full"];
+    const leading = ["max-md:start-0", "max-md:border-e", "motion-safe:max-md:-translate-x-full", "motion-safe:max-md:rtl:translate-x-full"];
+    const trailing = ["max-md:end-0", "max-md:border-s", "motion-safe:max-md:translate-x-full", "motion-safe:max-md:rtl:-translate-x-full"];
 
     expect(await edgeOf("top")).toEqual(leading);
     expect(await edgeOf("left")).toEqual(leading);
@@ -338,14 +369,19 @@ describe("Navbar — drawer mode", () => {
     const edgeOf = async (placement: NavPlacement, drawerEdge: NavDrawerEdge) =>
       panelClass(
         await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' placement={placement} drawerEdge={drawerEdge} />),
-      ).filter((token) => /^max-md:(?:start-0|end-0|border-e|border-s|-?translate-x-full|rtl:-?translate-x-full)$/.test(token));
+      ).filter((token) => /^(?:motion-safe:)?max-md:(?:start-0|end-0|border-e|border-s|-?translate-x-full|rtl:-?translate-x-full)$/.test(token));
 
-    expect(await edgeOf("top", "trailing")).toEqual(["max-md:end-0", "max-md:translate-x-full", "max-md:border-s", "max-md:rtl:-translate-x-full"]);
+    expect(await edgeOf("top", "trailing")).toEqual([
+      "max-md:end-0",
+      "max-md:border-s",
+      "motion-safe:max-md:translate-x-full",
+      "motion-safe:max-md:rtl:-translate-x-full",
+    ]);
     expect(await edgeOf("right", "leading")).toEqual([
       "max-md:start-0",
-      "max-md:-translate-x-full",
       "max-md:border-e",
-      "max-md:rtl:translate-x-full",
+      "motion-safe:max-md:-translate-x-full",
+      "motion-safe:max-md:rtl:translate-x-full",
     ]);
   });
 
@@ -387,7 +423,12 @@ describe("Navbar — drawer mode", () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} collapsedAs='drawer' drawerEdge='trailing' />);
     const details = /<details ([^>]*)>/.exec(out)?.[1] ?? "";
 
-    expect([...details.matchAll(/([\w-]+)(?:="[^"]*")?/g)].map(([, name]) => name)).toEqual(["data-slot", "class", "data-navbar-drawer"]);
+    expect([...details.matchAll(/([\w-]+)(?:="[^"]*")?/g)].map(([, name]) => name)).toEqual([
+      "data-slot",
+      "data-side",
+      "class",
+      "data-navbar-drawer",
+    ]);
   });
 
   it("leaves a hamburger toggle's glyph spans free of any mirroring class, drawer or not", async () => {
@@ -409,6 +450,156 @@ describe("Navbar — drawer mode", () => {
     expect(toggle).toContain("max-md:relative");
     expect(toggle).toContain("max-md:z-50");
   });
+
+  it("clears the open panel of the toggle on the edge the toggle sits at, a side rail's being the top", async () => {
+    const clearance = await Promise.all(
+      (["mobile", "always"] as const).flatMap((collapsible) =>
+        (["top", "bottom", "left", "right"] as const).map(async (placement) => [
+          `${collapsible} ${placement}`,
+          panelClass(
+            await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible={collapsible} placement={placement} collapsedAs='drawer' />),
+          ).filter((token) => /^max-md:p[tb]-/.test(token)),
+        ]),
+      ),
+    );
+
+    expect(Object.fromEntries(clearance)).toEqual({
+      "mobile top": ["max-md:pt-(--forge-navbar-row)"],
+      "mobile bottom": ["max-md:pb-(--forge-navbar-row)"],
+      "mobile left": ["max-md:pt-(--forge-navbar-row)"],
+      "mobile right": ["max-md:pb-(--forge-navbar-row)"],
+      "always top": ["max-md:pt-(--forge-navbar-row)"],
+      "always bottom": ["max-md:pb-(--forge-navbar-row)"],
+      "always left": ["max-md:pt-(--forge-navbar-row)"],
+      "always right": ["max-md:pt-(--forge-navbar-row)"],
+    });
+  });
+
+  it("sizes every drawer toggle from the height token below md, and lifts it above the backdrop at every placement", async () => {
+    const toggles = Object.fromEntries(
+      await Promise.all(
+        (["mobile", "always"] as const).flatMap((collapsible) =>
+          (["top", "bottom", "left", "right"] as const).map(async (placement): Promise<[string, string[]]> => [
+            `${collapsible} ${placement}`,
+            classOf(
+              await render(<Navbar config={A} resolveHref={id} icon={icon} collapsible={collapsible} placement={placement} collapsedAs='drawer' />),
+              "navbar-toggle",
+            ).split(" "),
+          ]),
+        ),
+      ),
+    );
+    const rows = Object.fromEntries(
+      Object.entries(toggles).map(([key, toggle]) => [
+        key,
+        { height: toggle.includes("max-md:h-(--forge-navbar-row)"), lifted: toggle.includes("max-md:relative") && toggle.includes("max-md:z-50") },
+      ]),
+    );
+
+    expect(rows).toEqual({
+      "mobile top": { height: true, lifted: true },
+      "mobile bottom": { height: true, lifted: true },
+      "mobile left": { height: true, lifted: true },
+      "mobile right": { height: true, lifted: true },
+      "always top": { height: true, lifted: true },
+      "always bottom": { height: true, lifted: true },
+      "always left": { height: true, lifted: true },
+      "always right": { height: true, lifted: true },
+    });
+    expect(toggles["always left"]).not.toContain("h-(--forge-navbar-row)");
+    expect(toggles["always right"]).not.toContain("h-(--forge-navbar-row)");
+  });
+
+  it("sizes no row from the raw height token, at any placement, collapsible or collapsedAs", async () => {
+    const raw = await Promise.all(
+      (["mobile", "always"] as const).flatMap((collapsible) =>
+        (["top", "bottom", "left", "right"] as const).flatMap((placement) =>
+          (["drawer", undefined] as const).map(async (collapsedAs) => {
+            const out = await render(
+              <Navbar config={A} resolveHref={id} icon={icon} collapsible={collapsible} placement={placement} collapsedAs={collapsedAs} />,
+            );
+            return [...out.matchAll(/ class="([^"]*)"/g)]
+              .flatMap((match) => (match[1] ?? "").split(" "))
+              .filter((token) => token.endsWith("(--forge-navbar-height)"))
+              .map((token) => `${collapsible} ${placement} ${collapsedAs ?? "inline"}: ${token}`);
+          }),
+        ),
+      ),
+    );
+
+    expect(raw.flat()).toEqual([]);
+  });
+});
+
+describe("Navbar — a horizontal bar sizes its row from the height token", () => {
+  const A: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
+  const placements: NavPlacement[] = ["top", "bottom", "left", "right"];
+
+  const tokensOf = (cls: string) => cls.split(" ");
+  const panelClass = (html: string) => /<\/summary><div class="([^"]*)"/.exec(html)?.[1] ?? "";
+  const classOf = (html: string, slot: string) => new RegExp(`data-slot="${slot}"[^>]*? class="([^"]*)"`).exec(html)?.[1] ?? "";
+
+  it("stamps its placement on the disclosure as data-side, for each of the four placements", async () => {
+    const sides = await Promise.all(
+      placements.map(async (placement) =>
+        attrOf(await render(<Navbar config={A} resolveHref={id} icon={icon} placement={placement} />), "data-side", 'data-slot="navbar"'),
+      ),
+    );
+
+    expect(sides).toEqual(["top", "bottom", "left", "right"]);
+  });
+
+  it("gives every phone bar's toggle the token's height, and only a top or bottom bar's desktop panel", async () => {
+    const rows = await Promise.all(
+      placements.map(async (placement) => {
+        const out = await render(<Navbar config={A} resolveHref={id} icon={icon} placement={placement} collapsible='mobile' />);
+        return {
+          placement,
+          toggle: tokensOf(classOf(out, "navbar-toggle")).includes("h-(--forge-navbar-row)"),
+          panel: tokensOf(panelClass(out)).includes("md:h-(--forge-navbar-row)"),
+        };
+      }),
+    );
+
+    expect(rows).toEqual([
+      { placement: "top", toggle: true, panel: true },
+      { placement: "bottom", toggle: true, panel: true },
+      { placement: "left", toggle: true, panel: false },
+      { placement: "right", toggle: true, panel: false },
+    ]);
+  });
+
+  it("names the block edge a left or right phone bar pins to as data-narrow-edge, and no edge on a top or bottom bar or a rail", async () => {
+    const edges = await Promise.all(
+      placements.flatMap((placement) =>
+        Object.entries({
+          "mobile inline": <Navbar config={A} resolveHref={id} icon={icon} placement={placement} collapsible='mobile' />,
+          "mobile drawer": <Navbar config={A} resolveHref={id} icon={icon} placement={placement} collapsible='mobile' collapsedAs='drawer' />,
+          "always inline": <Navbar config={A} resolveHref={id} icon={icon} placement={placement} collapsible='always' />,
+          "always drawer": <Navbar config={A} resolveHref={id} icon={icon} placement={placement} collapsible='always' collapsedAs='drawer' />,
+        }).map(async ([mode, node]) => [`${mode} ${placement}`, attrsOf(await render(node), 'data-slot="navbar"')["data-narrow-edge"] ?? null]),
+      ),
+    );
+
+    expect(Object.fromEntries(edges)).toEqual({
+      "mobile inline top": null,
+      "mobile inline bottom": null,
+      "mobile inline left": "top",
+      "mobile inline right": "bottom",
+      "mobile drawer top": null,
+      "mobile drawer bottom": null,
+      "mobile drawer left": "top",
+      "mobile drawer right": "bottom",
+      "always inline top": null,
+      "always inline bottom": null,
+      "always inline left": null,
+      "always inline right": null,
+      "always drawer top": null,
+      "always drawer bottom": null,
+      "always drawer left": null,
+      "always drawer right": null,
+    });
+  });
 });
 
 describe("Navbar — defaultOpen", () => {
@@ -425,14 +616,23 @@ describe("Navbar — defaultOpen", () => {
   });
 });
 
-// The scope name is a contract between the markup and `chrome/client`'s registration; it was a bare
-// literal in both, so a rename in one left the other silently inert.
 describe("Navbar — the scope name is the contract", () => {
   const A: NavDefinition = { sections: [{ items: [{ label: "A", href: "a" }] }] };
 
   it("stamps the constant the client scope registers, not a literal beside it", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} />);
     expect(/<div data-scope="([^"]*)"/.exec(out)?.[1]).toBe(NAVBAR_SCOPE);
+  });
+});
+
+describe("Navbar — the scope's action is typed", () => {
+  it("refuses a misspelt action in the markup and in the handler table the client registers", () => {
+    // @ts-expect-error — "closeNva" is not a NavbarAction
+    const attrs = scopeAttrs<NavbarAction>({ onClick: "closeNva" });
+    // @ts-expect-error — the scope's handler table is keyed by NavbarAction
+    const on: ScopeDefinition<NavbarAction>["on"] = { closeNva: () => {} };
+
+    expect({ attrs, handlers: Object.keys(on ?? {}) }).toEqual({ attrs: { "data-on-click": "closeNva" }, handlers: ["closeNva"] });
   });
 });
 
@@ -447,7 +647,6 @@ describe("Navbar — toggleLabel", () => {
     expect(attrOf(shipped, "aria-label", 'data-slot="navbar-toggle"')).toBe(LABEL_DEFAULTS.navbarToggle);
   });
 
-  // `...rest` spreads onto the `<details>`, so an undestructured prop would land there as an attribute.
   it("keeps the prop off the disclosure, which is not what it names", async () => {
     const out = await render(<Navbar config={A} resolveHref={id} icon={icon} toggleLabel='Menú' />);
 

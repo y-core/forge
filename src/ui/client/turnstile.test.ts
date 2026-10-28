@@ -83,6 +83,16 @@ describe("hasHtmxSubmission", () => {
     ]).toEqual([true, true, true]);
   });
 
+  it("is true for htmx 4's hx-get and hx-query, in both spellings and on a descendant", () => {
+    expect([
+      hasHtmxSubmission(form({ "hx-query": "/contact" })),
+      hasHtmxSubmission(form({ "data-hx-query": "/contact" })),
+      hasHtmxSubmission(form({ "hx-get": "/contact" })),
+      hasHtmxSubmission(form({ "data-hx-get": "/contact" })),
+      hasHtmxSubmission(form({}, { "hx-query": "/contact" })),
+    ]).toEqual([true, true, true, true, true]);
+  });
+
   it("is false for a native form, which has no request for the challenge to defer", () => {
     expect(hasHtmxSubmission(form({ action: "/contact", method: "post" }))).toBe(false);
   });
@@ -261,7 +271,19 @@ const completeChallenge = (scene: Scene): void => {
 };
 
 describe("mountTurnstile — the reset is scoped to the element that issued the request", () => {
-  const verbs = ["hx-action", "hx-post", "hx-put", "hx-patch", "hx-delete", "data-hx-action", "data-hx-post"];
+  const verbs = [
+    "hx-action",
+    "hx-get",
+    "hx-post",
+    "hx-put",
+    "hx-patch",
+    "hx-delete",
+    "hx-query",
+    "data-hx-action",
+    "data-hx-get",
+    "data-hx-post",
+    "data-hx-query",
+  ];
 
   for (const verb of verbs) {
     it(`resets the widget and clears the form for a 200 answer to a request the form issued through ${verb}`, () => {
@@ -370,6 +392,18 @@ describe("mountTurnstile — challenge='submit' holds the form's own press only"
     const warnings = spyOn(console, "warn").mockImplementation(() => {});
     try {
       const scene = mountedScene({ "hx-action": "/contact" }, { "data-challenge": "submit" }, { name: "email" });
+
+      expect(configRequest(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
+      expect(warnings.mock.calls.filter(([text]) => String(text).startsWith('[turnstile] challenge="submit"'))).toEqual([]);
+    } finally {
+      warnings.mockRestore();
+    }
+  });
+
+  it("holds the press of a form submitting through hx-query, with no false fallback warning", () => {
+    const warnings = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const scene = mountedScene({ "hx-query": "/contact" }, { "data-challenge": "submit" }, { name: "email" });
 
       expect(configRequest(scene, scene.form)).toEqual({ prevented: true, executes: 1 });
       expect(warnings.mock.calls.filter(([text]) => String(text).startsWith('[turnstile] challenge="submit"'))).toEqual([]);

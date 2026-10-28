@@ -7,7 +7,22 @@ const NO_PREFERENCE_RULE = `<style>@media (prefers-reduced-motion: no-preference
 const prefersReduce = (page: import("@playwright/test").Page): Promise<boolean> =>
   page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
 
-test.describe("the harness without a media option", () => {
+test.describe("mount", { tag: "@cross-engine" }, () => {
+  test("puts plain markup in standards mode", async ({ page }) => {
+    await mount(page, "<div>probe</div>");
+    expect(await page.evaluate(() => document.compatMode)).toBe("CSS1Compat");
+  });
+
+  test("keeps the doctype markup already carries, in standards mode", async ({ page }) => {
+    await mount(page, "<!doctype html><div>probe</div>");
+    expect(await page.evaluate(() => ({ mode: document.compatMode, doctype: document.doctype?.name }))).toEqual({
+      mode: "CSS1Compat",
+      doctype: "html",
+    });
+  });
+});
+
+test.describe("the harness without a media option", { tag: "@cross-engine" }, () => {
   test("leaves the page on the no-preference branch", async ({ page }) => {
     await mount(page, NO_PREFERENCE_RULE);
     expect(await prefersReduce(page)).toBe(false);
@@ -15,7 +30,7 @@ test.describe("the harness without a media option", () => {
   });
 });
 
-test.describe("the harness under test.use({ reducedMotion })", () => {
+test.describe("the harness under test.use({ reducedMotion })", { tag: "@cross-engine" }, () => {
   test.use({ reducedMotion: "reduce" });
 
   test("reaches the page before any markup lands", async ({ page }) => {
@@ -33,7 +48,7 @@ test.describe("the harness under test.use({ reducedMotion })", () => {
   });
 });
 
-test.describe("the harness under test.use({ forcedColors })", () => {
+test.describe("the harness under test.use({ forcedColors })", { tag: "@cross-engine" }, () => {
   test.use({ forcedColors: "active" });
 
   test("reaches the page", async ({ page }) => {
@@ -42,7 +57,7 @@ test.describe("the harness under test.use({ forcedColors })", () => {
   });
 });
 
-test.describe("withCompiledCss with script disabled", () => {
+test.describe("withCompiledCss with script disabled", { tag: "@cross-engine" }, () => {
   test.use({ javaScriptEnabled: false });
 
   test("inlines the utilities the markup names and preflight's [hidden] rule", async ({ page }) => {
@@ -53,7 +68,7 @@ test.describe("withCompiledCss with script disabled", () => {
   });
 });
 
-test.describe("the class readers", () => {
+test.describe("the class readers", { tag: "@cross-engine" }, () => {
   const ESCAPED = `<svg data-slot="icon" class="[[open]&gt;summary&gt;&amp;]:rotate-180 [&amp;:has(&lt;x)]:p-1 content-[&quot;a&quot;] after:content-[&#39;b&#39;]"></svg>`;
   const SOURCE_CLASSES = ["[[open]>summary>&]:rotate-180", "[&:has(<x)]:p-1", 'content-["a"]', "after:content-['b']"];
 
@@ -62,8 +77,10 @@ test.describe("the class readers", () => {
   });
 });
 
-test.describe("pasteText", () => {
-  test("delivers a trusted paste the field takes as typed input, as a person's paste would", async ({ page }) => {
+test.describe("pasteText", { tag: "@cross-engine" }, () => {
+  test("delivers a trusted paste the field takes as typed input, as a person's paste would", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "no clipboard-read/clipboard-write permission grant in Playwright");
+    test.skip(browserName === "webkit", "no clipboard-read/clipboard-write permission grant in Playwright");
     await mount(page, `<input id="target" type="text">`, { origin: SECURE_ORIGIN });
     await page.evaluate(() => {
       const target = document.getElementById("target") as HTMLInputElement;

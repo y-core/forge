@@ -175,8 +175,8 @@ and the class, which is exactly the problem `@starting-style` was specified to r
 Default: declare a repeating motion as keyframes gated on `prefers-reduced-motion` rather than running a `setInterval` that mutates
 `style.transform`, `style.left`, `style.top` or `style.translate` — unless each step's value is computed from data that changed since the last one,
 which no keyframe can read. <!-- rule:forge-ui-platform-ticker --> Keyframes run off the main thread, so the motion survives a busy tab where the
-interval stutters. The gate is not optional here: `forge-ui-reduced-motion` is Floor, and a declared animation is gated with `motion-safe:` and
-given a settled `motion-reduce:` state exactly as an authored transition is.
+interval stutters. The gate is not optional here: `forge-ui-reduced-motion` is Floor, and a declared animation is gated with `motion-safe:` exactly
+as an authored transition is, and `motion-reduce:` gets the settled state or an opacity fade.
 
 ### 2d. Paths, gradients and reveals
 

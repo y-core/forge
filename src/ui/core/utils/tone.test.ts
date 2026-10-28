@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { cn } from "./cn";
-import { APPEARANCES, TONES, toneTokens, toneVariants } from "./tone";
+import { APPEARANCES, TONES, toneSurfaceVariants, toneTokens, toneVariants } from "./tone";
 
 const NEUTRAL =
   "[--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]";
@@ -49,6 +49,19 @@ describe("toneVariants", () => {
         "[--focus-ring:var(--color-ring)]",
         "[--focus-ring:var(--color-ring)]",
       ]);
+    }
+  });
+});
+
+describe("toneSurfaceVariants", () => {
+  it("is exactly toneVariants with every hover utility removed, in every tone × appearance cell", () => {
+    for (const tone of TONES) {
+      for (const appearance of APPEARANCES) {
+        const surface = toneSurfaceVariants({ tone, appearance });
+        const control = toneVariants({ tone, appearance }).split(" ");
+        expect(surface).toBe(control.filter((token) => !token.startsWith("hover:")).join(" "));
+        expect(control.some((token) => token.startsWith("hover:"))).toBe(true);
+      }
     }
   });
 });

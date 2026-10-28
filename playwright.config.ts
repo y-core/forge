@@ -7,6 +7,17 @@ const maxClients = Number(process.env.PLAYWRIGHT_SERVER_MAX_CLIENTS);
 if (!Number.isInteger(maxClients) || maxClients < 1) {
   throw new Error("PLAYWRIGHT_SERVER_MAX_CLIENTS must be the Playwright container's --max-clients, a positive integer");
 }
+const compatEndpoint = process.env.PLAYWRIGHT_COMPAT_WS_ENDPOINT;
+const exposeNetwork = process.env.PW_TEST_CONNECT_EXPOSE_NETWORK;
+const headers = process.env.PW_TEST_CONNECT_HEADERS;
+const compat =
+  compatEndpoint === undefined || compatEndpoint === ""
+    ? undefined
+    : {
+        wsEndpoint: compatEndpoint,
+        ...(exposeNetwork === undefined ? {} : { exposeNetwork }),
+        ...(headers === undefined ? {} : { headers: JSON.parse(headers) as Record<string, string> }),
+      };
 
 export default defineConfig({
   testDir: ".",
@@ -27,22 +38,26 @@ export default defineConfig({
         channel: "chromium",
       },
     },
-    {
-      name: "firefox",
-      testMatch: "src/**/*.browser.ts",
-      grep: /@cross-engine/,
-      fullyParallel: true,
-      workers: 2,
-      use: { ...devices["Desktop Firefox"] },
-    },
-    {
-      name: "webkit",
-      testMatch: "src/**/*.browser.ts",
-      grep: /@cross-engine/,
-      fullyParallel: true,
-      workers: 2,
-      use: { ...devices["Desktop Safari"] },
-    },
+    ...(compat === undefined
+      ? []
+      : [
+          {
+            name: "firefox",
+            testMatch: "src/**/*.browser.ts",
+            grep: /@cross-engine/,
+            fullyParallel: true,
+            workers: 2,
+            use: { ...devices["Desktop Firefox"], connectOptions: compat },
+          },
+          {
+            name: "webkit",
+            testMatch: "src/**/*.browser.ts",
+            grep: /@cross-engine/,
+            fullyParallel: true,
+            workers: 2,
+            use: { ...devices["Desktop Safari"], connectOptions: compat },
+          },
+        ]),
     { name: "workerd", testMatch: "tests/workerd/**/*.workerd.ts", fullyParallel: false },
   ],
 });

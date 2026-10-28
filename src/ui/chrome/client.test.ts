@@ -2,11 +2,12 @@ import { describe, expect, it } from "bun:test";
 
 import { FakeElement, FakeEvent, fakeTree } from "../client/dom.fixture";
 import { resume, resumeScope } from "../client/resume";
+import { effect } from "../client/signal";
 import { ISLAND_STATE_ATTR } from "../contracts/island-contract";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
 import { isDark } from "./client";
-import { DARK_CLASS, DEFAULT_THEME_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
+import { DARK_CLASS, DEFAULT_THEME_PREF, THEME_ATTR, THEME_PREFS, THEME_STORAGE_KEY } from "./theme";
 
 class FakeClassList {
   readonly tokens = new Set<string>();
@@ -42,12 +43,17 @@ class FakeHtml {
 class FakeStorage {
   private readonly items = new Map<string, string>();
   writes = 0;
+  /** The `DOMException` name a theme-key `getItem` or `setItem` throws, mirroring blocked or full storage. */
+  throwOnRead: string | null = null;
+  throwOnWrite: string | null = null;
 
   getItem(key: string): string | null {
+    if (this.throwOnRead !== null && key === THEME_STORAGE_KEY) throw new DOMException("denied", this.throwOnRead);
     return this.items.get(key) ?? null;
   }
 
   setItem(key: string, value: string): void {
+    if (this.throwOnWrite !== null && key === THEME_STORAGE_KEY) throw new DOMException("denied", this.throwOnWrite);
     this.writes += 1;
     this.items.set(key, value);
   }
@@ -79,12 +85,26 @@ class FakeScopeRoot {
   readonly nodeType = 1;
   readonly isConnected = true;
   readonly shadowRoot = null;
+  readonly parentNode = null;
   readonly dataset: { scope: string; state: string };
   readonly ownerDocument: FakeDocument;
 
   constructor(ownerDocument: FakeDocument, scope: string, state: Record<string, unknown>) {
     this.ownerDocument = ownerDocument;
     this.dataset = { scope, state: JSON.stringify(state) };
+  }
+
+  /** The root doubles as its own `cycleTheme` trigger, so a click on it reaches the scope's action. */
+  closest(selector: string): this | null {
+    return selector === "[data-on-click]" || selector === "[data-scope]" ? this : null;
+  }
+
+  getAttribute(name: string): string | null {
+    return name === "data-on-click" ? "cycleTheme" : null;
+  }
+
+  getRootNode(): FakeDocument {
+    return this.ownerDocument;
   }
 }
 
@@ -97,7 +117,7 @@ class FakeDocument {
   readonly defaultView: { localStorage: FakeStorage; matchMedia?: (query: string) => FakeMediaQueryList };
 
   constructor(options: { stored?: string; matchMedia?: boolean } = {}) {
-    if (options.stored) this.storage.setItem(THEME_STORAGE_KEY, options.stored);
+    if (options.stored !== undefined) this.storage.setItem(THEME_STORAGE_KEY, options.stored);
     this.defaultView = { localStorage: this.storage };
     if (options.matchMedia !== false) this.defaultView.matchMedia = () => this.mql;
   }
@@ -112,9 +132,21 @@ class FakeDocument {
     return this.roots;
   }
 
-  addEventListener(): void {}
+  private readonly listeners: Array<[string, (event: unknown) => void]> = [];
 
-  removeEventListener(): void {}
+  addEventListener(type: string, listener: (event: unknown) => void): void {
+    this.listeners.push([type, listener]);
+  }
+
+  removeEventListener(type: string, listener: (event: unknown) => void): void {
+    const at = this.listeners.findIndex(([t, l]) => t === type && l === listener);
+    if (at !== -1) this.listeners.splice(at, 1);
+  }
+
+  click(root: FakeScopeRoot): void {
+    const event = { type: "click", target: root, composedPath: () => [root], preventDefault() {}, stopImmediatePropagation() {} };
+    for (const [type, listener] of [...this.listeners]) if (type === "click") listener(event);
+  }
 }
 
 const asDocument = (doc: FakeDocument) => doc as unknown as Document;
@@ -137,6 +169,82 @@ describe("isDark — stable accessor", () => {
   it("reads false until the theme scope resumes (no theme scope resumed here)", () => {
     expect(isDark.value).toBe(false);
   });
+});
+
+describe("isDark — reactive across resume and release", () => {
+  it("re-runs an effect registered before resume when the theme turns dark, and again on the last release", () => {
+    const seen: boolean[] = [];
+    const stop = effect(() => {
+      seen.push(isDark.value);
+    });
+    const doc = new FakeDocument({ stored: "dark" });
+    doc.addTheme();
+
+    const dispose = resume(asDocument(doc));
+    const resumed = [...seen];
+    dispose();
+
+    expect({ resumed, released: seen }).toEqual({ resumed: [false, true], released: [false, true, false] });
+    stop();
+  });
+});
+
+describe("theme scope — the stored preference", () => {
+  for (const stored of THEME_PREFS) {
+    it(`seeds the stored preference ${JSON.stringify(stored)} unchanged`, () => {
+      const doc = new FakeDocument({ stored });
+      doc.addTheme();
+      const dispose = resume(asDocument(doc));
+
+      expect(prefOf(doc.roots[0] as FakeScopeRoot)?.value).toBe(stored);
+
+      dispose();
+    });
+  }
+
+  for (const stored of ["auto", ""]) {
+    it(`seeds an unknown stored value ${JSON.stringify(stored)} as the system preference`, () => {
+      const doc = new FakeDocument({ stored });
+      doc.addTheme();
+      const dispose = resume(asDocument(doc));
+
+      expect({ pref: prefOf(doc.roots[0] as FakeScopeRoot)?.value, attr: doc.documentElement.getAttribute(THEME_ATTR) }).toEqual({
+        pref: DEFAULT_THEME_PREF,
+        attr: DEFAULT_THEME_PREF,
+      });
+
+      dispose();
+    });
+  }
+
+  for (const name of ["SecurityError", "QuotaExceededError"]) {
+    it(`resumes on the system preference when reading the stored value throws ${name}`, () => {
+      const doc = new FakeDocument({ stored: "dark" });
+      doc.storage.throwOnRead = name;
+      doc.addTheme();
+      const dispose = resume(asDocument(doc));
+
+      expect(prefOf(doc.roots[0] as FakeScopeRoot)?.value).toBe(DEFAULT_THEME_PREF);
+
+      dispose();
+    });
+
+    it(`keeps cycling and painting when persisting throws ${name}`, () => {
+      const doc = new FakeDocument({ stored: "light" });
+      doc.storage.throwOnWrite = name;
+      doc.addTheme();
+      const { result: dispose } = captureWarnings(() => resume(asDocument(doc)));
+
+      captureWarnings(() => doc.click(doc.roots[0] as FakeScopeRoot));
+
+      expect({ pref: prefOf(doc.roots[0] as FakeScopeRoot)?.value, dark: doc.documentElement.classList.contains(DARK_CLASS) }).toEqual({
+        pref: "dark",
+        dark: true,
+      });
+
+      dispose();
+    });
+  }
 });
 
 describe("theme scope — one preference per document", () => {
@@ -467,8 +575,7 @@ describe("theme scope — the cycle", () => {
     const cycle = ["dark", "system", "light"];
     for (const [step, expected] of cycle.entries()) {
       // Alternating roots is the regression: each used to advance its own signal from a stale value.
-      const pref = prefOf(doc.roots[step % 2] as FakeScopeRoot);
-      if (pref) pref.value = { light: "dark", dark: "system", system: "light" }[pref.value as string] ?? DEFAULT_THEME_PREF;
+      doc.click(doc.roots[step % 2] as FakeScopeRoot);
       expect(doc.documentElement.getAttribute(THEME_ATTR)).toBe(expected);
     }
 

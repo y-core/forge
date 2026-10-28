@@ -51,7 +51,7 @@ function box(page: Page): Promise<{ left: number; right: number; top: number; bo
   });
 }
 
-test.describe("Drawer", () => {
+test.describe("Drawer", { tag: "@cross-engine" }, () => {
   test("the trigger opens it as a real modal, and Escape closes it", async ({ page }) => {
     await open(page);
 
@@ -112,8 +112,24 @@ test.describe("Drawer", () => {
     expect(sliding, "no translate transition ran on open").toBe(true);
 
     // The one case that must not opt out of motion: `@starting-style` puts the panel a full width
-    // off-screen, and this is what proves it arrives — polled, because it arrives over 200ms.
+    // off-screen, and this is what proves it arrives — polled, because it arrives over `--forge-motion-enter`.
     await expect.poll(() => box(page).then((rect) => rect.left)).toBe(0);
+  });
+
+  test("takes its durations from --forge-motion-enter and --forge-motion-exit", async ({ page }) => {
+    await open(page);
+    const retimed = await page.evaluate(() => {
+      const panel = document.querySelector("#nav") as HTMLDialogElement;
+      panel.style.cssText = "--forge-motion-enter: 300ms; --forge-motion-exit: 250ms";
+      const distinct = (style: CSSStyleDeclaration) => [...new Set(style.transitionDuration.split(", "))];
+      const read = () => ({ panel: distinct(getComputedStyle(panel)), backdrop: distinct(getComputedStyle(panel, "::backdrop")) });
+      panel.showModal();
+      const entering = read();
+      panel.close();
+      return { entering, exiting: read() };
+    });
+
+    expect(retimed).toEqual({ entering: { panel: ["0.3s"], backdrop: ["0.3s"] }, exiting: { panel: ["0.25s"], backdrop: ["0.25s"] } });
   });
 
   for (const motion of [false, true]) {
@@ -135,7 +151,7 @@ test.describe("Drawer", () => {
   }
 });
 
-test.describe("Drawer — non-modal <Drawer open>", () => {
+test.describe("Drawer — non-modal <Drawer open>", { tag: "@cross-engine" }, () => {
   async function openInPage(page: Page): Promise<void> {
     const html = await render(
       Drawer({ id: "nav", side: "right", open: true, titled: true, children: [Drawer.Title({ for: "nav", children: "Navigation" })] }),
@@ -175,6 +191,15 @@ test.describe("Drawer — non-modal <Drawer open>", () => {
     expect(hit).toBe(true);
   });
 
+  test("stays open through a click on the page and an Escape outside it", async ({ page }) => {
+    await openInPage(page);
+
+    await page.click("#after", { position: { x: 10, y: 10 } });
+    await page.keyboard.press("Escape");
+
+    expect(await page.evaluate(() => document.querySelector<HTMLDialogElement>("#nav")?.open)).toBe(true);
+  });
+
   test("leaves a bottom-right toast's dismiss button reachable when it comes after the toast region", async ({ page }) => {
     const toasts = await render(Toast.Container({ children: Toast({ dismissible: true, children: Toast.Description({ children: "Saved" }) }) }));
     const drawer = await render(Drawer({ id: "nav", side: "right", open: true, label: "Navigation" }));
@@ -191,7 +216,8 @@ test.describe("Drawer — non-modal <Drawer open>", () => {
     expect(hit).toBe("toast-close");
   });
 
-  test("keeps that edge through close(), sliding out rather than jumping", async ({ page }) => {
+  test("keeps that edge through close(), sliding out rather than jumping", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", "Firefox never transitions `display`, so the panel is display:none on the frame close() runs");
     await openInPage(page);
 
     const frames = await page.evaluate(

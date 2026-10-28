@@ -108,6 +108,42 @@ describe("checkMenuItem", () => {
 
     expect(state(stranger)).toEqual({ aria: "true", data: true });
   });
+
+  it("checking an ungrouped parent radio leaves a submenu's checked radio checked", () => {
+    const { doc, el } = fakeTree();
+    const popup = el("DIV", { "data-slot": "menu-popup" });
+    const parent = el("BUTTON", { role: "menuitemradio", "aria-checked": "false", id: "parent" });
+    const submenu = el("DIV", { "data-slot": "menu-popup" });
+    const child = el("BUTTON", { role: "menuitemradio", "aria-checked": "true", "data-checked": "", id: "child" });
+    submenu.append(child);
+    popup.append(parent, submenu);
+    doc.root.append(popup);
+
+    checkMenuItem(parent as never, popup as never);
+
+    expect({ parent: state(parent), child: state(child) }).toEqual({ parent: { aria: "true", data: true }, child: { aria: "true", data: true } });
+  });
+
+  it("checking a grouped parent radio leaves a submenu nested in that group alone", () => {
+    const { doc, el } = fakeTree();
+    const popup = el("DIV", { "data-slot": "menu-popup" });
+    const group = el("FIELDSET", { role: "group" });
+    const parent = el("BUTTON", { role: "menuitemradio", "aria-checked": "false", id: "parent" });
+    const sibling = el("BUTTON", { role: "menuitemradio", "aria-checked": "true", "data-checked": "", id: "sibling" });
+    const submenu = el("DIV", { "data-slot": "menu-popup" });
+    const child = el("BUTTON", { role: "menuitemradio", "aria-checked": "true", "data-checked": "", id: "child" });
+    submenu.append(child);
+    group.append(parent, sibling, submenu);
+    popup.append(group);
+    doc.root.append(popup);
+
+    checkMenuItem(parent as never, popup as never);
+
+    expect({ sibling: state(sibling), child: state(child) }).toEqual({
+      sibling: { aria: "false", data: false },
+      child: { aria: "true", data: true },
+    });
+  });
 });
 
 describe("mountMenu", () => {
@@ -124,11 +160,12 @@ describe("mountMenu", () => {
   it("navigates exactly the roles MENU_ITEM_SELECTOR names, and nothing else in the popup", () => {
     const { doc, popup, rows, separator } = navigableMenu();
     const dispose = mountMenu(popup as never);
+    popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
 
     rows[0]?.focus();
     const visited = [doc.activeElement?.getAttribute("role") ?? null];
     for (let step = 1; step < rows.length; step += 1) {
-      popup.dispatchEvent(new FakeEvent("keydown", { key: "ArrowDown" }));
+      popup.dispatchEvent(new FakeEvent("keydown", { key: "ArrowDown", target: doc.activeElement }));
       visited.push(doc.activeElement?.getAttribute("role") ?? null);
     }
     dispose();
@@ -438,21 +475,32 @@ describe("mountMenu", () => {
 
       expect(hides).toEqual([]);
     });
+
+    it("closes on a focus-out after reopening when the popup closed under an invoker press before its release", () => {
+      const { popup, trigger, elsewhere, hides } = openWithInvoker();
+      const dispose = mountMenu(popup as never);
+
+      trigger.dispatchEvent(new FakeEvent("pointerdown"));
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "closed" }));
+      popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+      popup.dispatchEvent(new FakeEvent("focusout", { relatedTarget: elsewhere }));
+      dispose();
+
+      expect(hides).toEqual(["m"]);
+    });
   });
 
   describe("mountMenu — disposing", () => {
     const count = (el: FakeElement, type: string): number => el.listeners.get(type)?.length ?? 0;
 
-    it("listens for its own events and the roving ring's while mounted", () => {
+    it("listens for its own events while closed, and for the roving ring's from its first open", () => {
       const { popup } = navigableMenu();
 
       mountMenu(popup as never);
+      const closed = { before: count(popup, "beforetoggle"), toggle: count(popup, "toggle"), keydown: count(popup, "keydown") };
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
 
-      expect({ before: count(popup, "beforetoggle"), toggle: count(popup, "toggle"), keydown: count(popup, "keydown") }).toEqual({
-        before: 1,
-        toggle: 1,
-        keydown: 2,
-      });
+      expect({ closed, opened: count(popup, "keydown") }).toEqual({ closed: { before: 1, toggle: 1, keydown: 1 }, opened: 2 });
     });
 
     it("removes all three on dispose", () => {
@@ -467,19 +515,38 @@ describe("mountMenu", () => {
       });
     });
 
-    it("removes its document-level pointer and click listeners on dispose", () => {
+    it("holds document-level pointer and click listeners only while open, and none once disposed open", () => {
       const { doc, popup } = navigableMenu();
       const onDoc = () =>
         Object.fromEntries(["pointerdown", "pointerup", "pointercancel", "click"].map((type) => [type, doc.listeners.get(type)?.length ?? 0]));
 
       const dispose = mountMenu(popup as never);
-      const mounted = onDoc();
+      const closed = onDoc();
+      popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+      const open = onDoc();
       dispose();
 
-      expect({ mounted, disposed: onDoc() }).toEqual({
-        mounted: { pointerdown: 1, pointerup: 1, pointercancel: 1, click: 1 },
+      expect({ closed, open, disposed: onDoc() }).toEqual({
+        closed: { pointerdown: 0, pointerup: 0, pointercancel: 0, click: 0 },
+        open: { pointerdown: 1, pointerup: 1, pointercancel: 1, click: 1 },
         disposed: { pointerdown: 0, pointerup: 0, pointercancel: 0, click: 0 },
       });
+    });
+
+    it("re-arms its document listeners on each open and drops them on each close", () => {
+      const { doc, popup } = navigableMenu();
+      const dispose = mountMenu(popup as never);
+      const armed = () => doc.listeners.get("pointerdown")?.length ?? 0;
+
+      popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+      const first = armed();
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "closed" }));
+      const closed = armed();
+      popup.dispatchEvent(new FakeEvent("beforetoggle", { newState: "open" }));
+      const second = armed();
+      dispose();
+
+      expect([first, closed, second]).toEqual([1, 0, 1]);
     });
 
     it("releases the roving focus too, so an opened popup no longer steals focus after disposal", () => {
@@ -490,6 +557,59 @@ describe("mountMenu", () => {
       popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
 
       expect(doc.activeElement).toBe(null);
+    });
+  });
+
+  describe("mountMenu — cost while closed", () => {
+    it("runs no per-menu lookup on a document click while every menu is closed", () => {
+      installCssEscape();
+      const { doc, el } = fakeTree();
+      const popups = ["a", "b", "c"].map((id) => {
+        const popup = el("DIV", { "data-slot": "menu-popup", role: "menu", id });
+        popup.append(el("BUTTON", { role: "menuitem" }));
+        doc.root.append(el("BUTTON", { commandfor: id }), popup);
+        return popup;
+      });
+      let queries = 0;
+      let points = 0;
+      const query = doc.querySelector.bind(doc);
+      Object.assign(doc, {
+        querySelector: (selector: string) => {
+          queries += 1;
+          return query(selector);
+        },
+        elementFromPoint: () => {
+          points += 1;
+          return null;
+        },
+      });
+      const disposers = popups.map((popup) => mountMenu(popup as never));
+
+      for (const type of ["pointerdown", "pointerup", "click"]) doc.dispatchEvent(new FakeEvent(type, { clientX: 1, clientY: 1 }));
+      for (const dispose of disposers) dispose();
+
+      expect({ queries, points }).toEqual({ queries: 0, points: 0 });
+    });
+
+    it("builds no observer and lists no rows until the first open", () => {
+      const { doc, popup } = navigableMenu();
+      doc.defaultView.observeMutations();
+      let rowQueries = 0;
+      const query = popup.querySelectorAll.bind(popup);
+      Object.assign(popup, {
+        querySelectorAll: (selector: string) => {
+          if (selector === MENU_ITEM_SELECTOR) rowQueries += 1;
+          return query(selector);
+        },
+      });
+
+      const dispose = mountMenu(popup as never);
+      const closed = { observers: doc.defaultView.observers.length, rowQueries };
+      popup.dispatchEvent(new FakeEvent("toggle", { newState: "open" }));
+      const opened = doc.defaultView.observers.length;
+      dispose();
+
+      expect({ closed, opened }).toEqual({ closed: { observers: 0, rowQueries: 0 }, opened: 1 });
     });
   });
 });

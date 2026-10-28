@@ -240,13 +240,43 @@ async function askServer(endpoint: string, probes: Pick<BrowserProbes, "env" | "
   return status.state === "mismatch" ? { ...status, client } : status;
 }
 
+interface PlaywrightServer {
+  variable: string;
+  tool: string;
+  unset: string;
+  running: string;
+}
+
+const PRIMARY_SERVER: PlaywrightServer = {
+  variable: "PW_TEST_CONNECT_WS_ENDPOINT",
+  tool: "Playwright server",
+  unset: "set it to the Playwright container's ws:// URL",
+  running: "check the Playwright sidecar is running",
+};
+
+const COMPAT_SERVER: PlaywrightServer = {
+  variable: "PLAYWRIGHT_COMPAT_WS_ENDPOINT",
+  tool: "Playwright compat server",
+  unset:
+    "Firefox and WebKit run on the playwright-compat server — start it with `devctl infra up playwright-compat` and set the variable to its ws:// URL",
+  running: "check the playwright-compat server is up (`devctl infra up playwright-compat`)",
+};
+
+function serverFor(engine: string): PlaywrightServer {
+  return engine === "chromium" ? PRIMARY_SERVER : COMPAT_SERVER;
+}
+
 // Every browser step under one endpoint names the same tool, and the gate probes a tool once, so the
 // answer is kept per endpoint: a step whose own probe never ran still prints what the server said.
 const serverAnswers = new Map<string, ServerAnswer>();
 
-function playwrightServerRequired(endpoint: string, probes: Pick<BrowserProbes, "env" | "clientVersion" | "serverStatus">): StepRequirement {
+function playwrightServerRequired(
+  server: PlaywrightServer,
+  endpoint: string,
+  probes: Pick<BrowserProbes, "env" | "clientVersion" | "serverStatus">,
+): StepRequirement {
   return {
-    tool: `Playwright server at ${endpoint}`,
+    tool: `${server.tool} at ${endpoint}`,
     probe: async () => {
       const answer = await askServer(endpoint, probes);
       serverAnswers.set(endpoint, answer);
@@ -262,35 +292,39 @@ function playwrightServerRequired(endpoint: string, probes: Pick<BrowserProbes, 
       }
       const host = URL.parse(endpoint)?.hostname ?? endpoint;
       const reason = answer?.state === "unreachable" ? ` (${answer.reason})` : "";
-      return `nothing answered at ${endpoint}${reason}; check the Playwright sidecar is running and that NO_PROXY includes \`${host}\``;
+      return `nothing answered at ${endpoint}${reason}; ${server.running} and that NO_PROXY includes \`${host}\``;
     },
   };
 }
 
-/** The browser step's requirement: the Playwright server `PW_TEST_CONNECT_WS_ENDPOINT` names, failing when it names none. @internal */
+/** The browser step's requirement: the Playwright server its engines run on — PW_TEST_CONNECT_WS_ENDPOINT's for Chromium, PLAYWRIGHT_COMPAT_WS_ENDPOINT's for Firefox and WebKit — failing when it names none. @internal */
 export function browserEnginesRequired(projects: readonly string[], probes: Partial<BrowserProbes> = {}): StepRequirement {
   for (const project of projects) {
     if (!isBrowserEngine(project)) {
       throw new Error(`browserStep: project "${project}" is not a browser engine; run it through its own step, or state \`requires\``);
     }
   }
-  const env = probes.env ?? process.env;
-  const endpoint = env.PW_TEST_CONNECT_WS_ENDPOINT;
-  if (endpoint === undefined || endpoint === "") {
-    return {
-      tool: "Playwright server",
-      probe: () => false,
-      hint: "`PW_TEST_CONNECT_WS_ENDPOINT` is unset; set it to the Playwright container's ws:// URL",
-    };
+  const primaryProject = projects.find((project) => serverFor(project) === PRIMARY_SERVER);
+  const compatProject = projects.find((project) => serverFor(project) === COMPAT_SERVER);
+  if (primaryProject !== undefined && compatProject !== undefined) {
+    throw new Error(
+      `browserStep: "${primaryProject}" and "${compatProject}" run on different Playwright servers; give each engine its own row with browserSteps`,
+    );
   }
-  return playwrightServerRequired(endpoint, {
+  const server = compatProject === undefined ? PRIMARY_SERVER : COMPAT_SERVER;
+  const env = probes.env ?? process.env;
+  const endpoint = env[server.variable];
+  if (endpoint === undefined || endpoint === "") {
+    return { tool: server.tool, probe: () => false, hint: `\`${server.variable}\` is unset; ${server.unset}` };
+  }
+  return playwrightServerRequired(server, endpoint, {
     env,
     clientVersion: probes.clientVersion ?? playwrightClientVersion,
     serverStatus: probes.serverStatus ?? playwrightServerStatus,
   });
 }
 
-/** `playwright test` under node over the named `projects` (default `["chromium"]`), defaulting to the `runtime` tier: it needs the Playwright server. Narrowed by `--only-changed`, untouched when `--list` shows that selects no spec, and run whole when `playwright.config.ts`, a `narrow.wide` glob or a `widen` path changes. Throws on a project that is not a browser engine unless `requires` is stated. @public */
+/** `playwright test` under node over the named `projects` (default `["chromium"]`), defaulting to the `runtime` tier: it needs the Playwright server. Narrowed by `--only-changed`, untouched when `--list` shows that selects no spec, and run whole when `playwright.config.ts`, a `narrow.wide` glob or a `widen` path changes. Throws on a project that is not a browser engine unless `requires` is stated, or on projects that run on different Playwright servers. @public */
 export function browserStep(
   options: { projects?: readonly [string, ...string[]]; narrow?: NarrowOptions } & WidenOption & StepOptions = {},
 ): CommandStep {

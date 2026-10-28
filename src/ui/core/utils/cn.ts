@@ -110,7 +110,6 @@ export function cn(...classes: (string | false | null | undefined)[]): string {
   if (hit !== undefined) return hit;
 
   const resolved = resolve(joined);
-  // Clear-on-full rather than LRU: eviction stays O(1) amortised with no ordering structure to keep.
   if (cache.size >= CACHE_LIMIT) cache.clear();
   cache.set(joined, resolved);
   return resolved;

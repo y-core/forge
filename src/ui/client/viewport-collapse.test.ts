@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { mountViewportCollapse } from "./viewport-collapse";
+import { MD_DOWN_QUERY } from "./viewport-disclosure";
 
 class FakeMediaQueryList {
   readonly listeners = new Set<() => void>();
@@ -219,7 +220,7 @@ describe("mountViewportCollapse", () => {
     const b = fixture(true);
     mountViewportCollapse({ element: b.element, query: "(max-width: 30rem)" });
 
-    expect(a.el.queries).toEqual(["(max-width: 47.99rem)"]);
+    expect(a.el.queries).toEqual([MD_DOWN_QUERY]);
     expect(b.el.queries).toEqual(["(max-width: 30rem)"]);
   });
 

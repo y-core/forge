@@ -4,13 +4,9 @@ import { ownerDocument } from "./dom";
 function syncInvokers(popup: HTMLElement, open: boolean): void {
   const id = popup.id;
   if (!id) return;
-  // Matched by reading the attribute rather than by an `[aria-controls="…"]` selector, because an id
-  // is not required to be a valid CSS identifier and escaping it would be the only other option.
   const root = popup.getRootNode() as Partial<ParentNode>;
   const tree = typeof root.querySelectorAll === "function" ? (root as ParentNode) : ownerDocument(popup);
-  for (const invoker of tree.querySelectorAll("[aria-controls]")) {
-    if (invoker.getAttribute("aria-controls") === id) invoker.setAttribute("aria-expanded", String(open));
-  }
+  for (const invoker of tree.querySelectorAll(`[aria-controls="${CSS.escape(id)}"]`)) invoker.setAttribute("aria-expanded", String(open));
 }
 
 /** Keeps every invoker's `aria-expanded` in step with `popup`'s open state, returning a disposer. */

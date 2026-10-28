@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { Button } from "./button";
+import { Button, buttonBox } from "./button";
 import { Toggle } from "./toggle";
 import { ToggleGroup } from "./toggle-group";
 
@@ -14,10 +14,10 @@ const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
 describe("Toggle", () => {
   it("renders the whole control exactly, caller class merged last and children escaped", async () => {
     expect(await render(<Toggle class='w-full'>{`R&D's <bold>`}</Toggle>)).toBe(
-      '<label data-slot="toggle" data-size="md" class="inline-flex items-center justify-center gap-2 rounded-field px-2.5 font-medium' +
-        " border-field border-input bg-transparent text-foreground focus-ring hover:bg-accent hover:text-accent-foreground state-busy" +
-        " state-disabled state-invalid has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary" +
-        ' cursor-pointer h-control-md text-sm w-full"><input data-slot="toggle-input" type="checkbox" class="sr-only">R&amp;D&#39;s &lt;bold&gt;</label>',
+      '<label data-slot="toggle" data-size="md" class="state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field' +
+        " border-field font-medium whitespace-nowrap focus-ring motion-safe:transition-colors h-control-md px-4 text-sm state-invalid" +
+        " border-input bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground has-[:checked]:bg-primary" +
+        ' has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary cursor-pointer w-full"><input data-slot="toggle-input" type="checkbox" class="sr-only">R&amp;D&#39;s &lt;bold&gt;</label>',
     );
   });
 
@@ -64,12 +64,23 @@ describe("Toggle — size, invalid and busy", () => {
     expect(sizes.map((html) => attrOf(html, "data-size"))).toEqual(["sm", "md", "lg"]);
   });
 
-  it("moves the control height with that size rather than restyling the box", async () => {
-    expect(variantClasses(await toggle({ size: "sm" }), await toggle())).toEqual({ added: ["h-control-sm"], dropped: ["h-control-md"] });
-    expect(variantClasses(await toggle({ size: "lg" }), await toggle())).toEqual({
-      added: ["h-control-lg", "text-base"],
-      dropped: ["h-control-md", "text-sm"],
+  it("moves the control height and padding with Button's size scale", async () => {
+    expect(variantClasses(await toggle({ size: "sm" }), await toggle())).toEqual({
+      added: ["h-control-sm", "px-3"],
+      dropped: ["h-control-md", "px-4"],
     });
+    expect(variantClasses(await toggle({ size: "lg" }), await toggle())).toEqual({
+      added: ["h-control-lg", "px-6", "text-base"],
+      dropped: ["h-control-md", "px-4", "text-sm"],
+    });
+  });
+
+  it("Toggle's box is Button's box at every size", async () => {
+    const sizes = ["sm", "md", "lg"] as const;
+    const boxes = sizes.map((size) => buttonBox({ size }).split(" "));
+    const toggles = await Promise.all(sizes.map((size) => toggle({ size })));
+
+    expect(toggles.map((html, i) => classesOf(html).slice(0, boxes[i]?.length))).toEqual(boxes);
   });
 
   it("invalid stamps data-invalid beside aria-invalid on the input", async () => {

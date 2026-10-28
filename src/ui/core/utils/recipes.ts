@@ -16,6 +16,9 @@ const FIELD_HEIGHT = { sm: "h-control-sm", md: "h-control-md", lg: "h-control-lg
 /** Type size per control `Size`, for a control that takes its own height rather than the token's. @internal */
 export const FIELD_TEXT_SIZE = { sm: "text-sm", md: "text-sm", lg: "text-base" } as const;
 
+/** Inline padding per control `Size`, the one scale a button and a toolbar text field read. @internal */
+export const CONTROL_PADDING = { sm: "px-3", md: "px-4", lg: "px-6" } as const;
+
 /** Height and type size per control `Size`, read from the `--control-h-*` tokens. @internal */
 export const FIELD_SIZE = {
   sm: `${FIELD_HEIGHT.sm} ${FIELD_TEXT_SIZE.sm}`,
@@ -26,7 +29,6 @@ export const FIELD_SIZE = {
 /** The marker circle a Steps step or a Timeline item paints its state into. @internal */
 export const STEP_MARKER = "inline-flex size-control-sm items-center justify-center rounded-selector border-field text-sm font-medium";
 
-/** The word a screen reader gets for each `StepState`, since the marker differs only in colour. @internal */
 /** The marker's paint per `StepState`, read from the `--tone` properties the root hands down. @internal */
 export const STEP_MARKER_STATE: Record<StepState, string> = {
   complete: "border-transparent bg-(--tone) text-(--tone-fg)",

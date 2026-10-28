@@ -105,6 +105,14 @@ describe("findScopes", () => {
     expect(ids(findScopes(asParent(root)))).toEqual(["root", "child"]);
   });
 
+  it("queries the trees the caller supplies instead of walking for its own", () => {
+    const { root } = scopeTree();
+    const { el } = fakeTree();
+    const elsewhere = el();
+    elsewhere.append(el("DIV", { "data-scope": "elsewhere", id: "elsewhere" }));
+    expect(ids(findScopes(asParent(root), [asParent(elsewhere) as unknown as Element]))).toEqual(["root", "elsewhere"]);
+  });
+
   it("reports nothing for a tree with no scope in it", () => {
     const { el } = fakeTree();
     const root = el();

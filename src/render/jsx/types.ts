@@ -97,13 +97,13 @@ export interface HTMLAttributes extends AriaAttributes, HtmxAttributes {
   tabindex?: number | undefined;
   nonce?: string | undefined;
   slot?: string | undefined;
-  translate?: "yes" | "no" | undefined;
+  translate?: boolean | "yes" | "no" | undefined;
   spellcheck?: boolean | undefined;
   contenteditable?: boolean | "true" | "false" | "plaintext-only" | undefined;
   draggable?: boolean | "true" | "false" | undefined;
   popover?: "" | "auto" | "manual" | "hint" | undefined;
   accesskey?: string | undefined;
-  autocapitalize?: "none" | "off" | "on" | "sentences" | "words" | "characters" | undefined;
+  autocapitalize?: boolean | "none" | "off" | "on" | "sentences" | "words" | "characters" | undefined;
   inputmode?: "none" | "text" | "decimal" | "numeric" | "tel" | "search" | "email" | "url" | undefined;
   enterkeyhint?: "enter" | "done" | "go" | "next" | "previous" | "search" | "send" | undefined;
   children?: JSXNode | undefined;

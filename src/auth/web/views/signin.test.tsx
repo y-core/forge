@@ -77,10 +77,10 @@ describe("SigninView", () => {
         "text-sm [--tone:var(--color-destructive)] [--tone-fg:var(--color-destructive-foreground)] [--tone-text:var(--color-destructive-text)] " +
         "[--tone-soft:var(--color-status-danger-subtle)] [--tone-soft-fg:var(--color-status-danger-subtle-foreground)] " +
         "[--tone-soft-border:var(--color-status-danger-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) " +
-        '[--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]">' +
+        '[--focus-ring:var(--color-ring)]">' +
         '<svg data-slot="icon" class="size-4" aria-hidden="true"><use href="/assets/icons.svg#icon-alert"></use></svg>' +
         '<div data-slot="alert-title" class="leading-none font-medium tracking-tight">Sign-in failed</div>' +
-        '<div data-slot="alert-description" class="text-sm leading-relaxed text-pretty opacity-90">Too many attempts. Try again in an hour.</div>' +
+        '<div data-slot="alert-description" class="text-sm leading-relaxed text-pretty">Too many attempts. Try again in an hour.</div>' +
         "</div>",
     );
   });

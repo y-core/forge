@@ -73,7 +73,10 @@ describe("the @utility recipes claim the scope they paint at", () => {
 
   for (const [utility, expected] of [
     ["border-field", "border-width"],
-    ["field-chrome", "background-color,border-color,border-radius,border-width,color,font-size,height,line-height,padding-inline,width"],
+    [
+      "field-chrome",
+      "background-color,border-color,border-radius,border-width,color,color@&::placeholder,font-size,height,line-height,padding-inline,width",
+    ],
     ["otp-cells", "background-image,background-position,background-repeat,background-size,max-width,min-width,width"],
     ["otp-editor", "box-sizing,letter-spacing,padding-inline,width"],
   ] as const) {
@@ -85,8 +88,14 @@ describe("the @utility recipes claim the scope they paint at", () => {
 
   // The near miss: the ring variables are claimed at base scope and written only under focus.
   for (const [utility, ring] of [
-    ["focus-ring", "--tw-inset-ring-color,--tw-inset-ring-shadow,--tw-outline-style"],
-    ["focus-ring-outset", "--tw-outline-style,--tw-ring-color,--tw-ring-shadow"],
+    [
+      "focus-ring",
+      "--tw-inset-ring-color@&:focus-visible|&:has(:focus-visible),--tw-inset-ring-color@@supports (hanging-punctuation: first) and (-webkit-hyphens: none);&:has(:focus),--tw-inset-ring-shadow@&:focus-visible|&:has(:focus-visible),--tw-inset-ring-shadow@@supports (hanging-punctuation: first) and (-webkit-hyphens: none);&:has(:focus),--tw-outline-style,box-shadow@&:focus-visible|&:has(:focus-visible),box-shadow@@supports (hanging-punctuation: first) and (-webkit-hyphens: none);&:has(:focus),outline-offset@&:focus-visible|&:has(:focus-visible),outline-offset@@supports (hanging-punctuation: first) and (-webkit-hyphens: none);&:has(:focus),outline-style,outline@&:focus-visible|&:has(:focus-visible),outline@@supports (hanging-punctuation: first) and (-webkit-hyphens: none);&:has(:focus)",
+    ],
+    [
+      "focus-ring-outset",
+      "--tw-outline-style,--tw-ring-color@&:focus-visible|&:has(:focus-visible),--tw-ring-shadow@&:focus-visible|&:has(:focus-visible),box-shadow@&:focus-visible|&:has(:focus-visible),outline-style",
+    ],
   ] as const) {
     it(`${utility} writes its ring only under :focus-visible, which is what makes it a near miss`, async () => {
       expect(await signatureOf(utility)).toBe(ring);

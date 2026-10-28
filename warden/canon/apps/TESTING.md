@@ -47,7 +47,7 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
 - §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: the three, and who overrides which
-- §6e One Tier per Moment: which tier each moment of a task takes, and where the browser engines come in
+- §6e One Tier per Moment: which tier each moment of a task takes, and where an opted-in engine comes in
 
 ---
 
@@ -395,7 +395,7 @@ warning" — is a failure.
 | Line | A step is above it when |
 | --- | --- |
 | `static` \| `unit` | it runs the code rather than judging the source |
-| `unit` \| `runtime` | it needs a runtime prerequisite — the Playwright server, workerd, a local database |
+| `unit` \| `runtime` | it needs a runtime prerequisite — a Playwright server, workerd, a local database |
 | `runtime` \| `deploy` | it runs whole: below `deploy` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here |
 | `deploy` \| `release` | it re-runs a suite another row already ran, on another engine |
 
@@ -488,22 +488,28 @@ the exception with its compensating control, rather than leaving the reuse undoc
 | Write | `bun run verify:static`, plus `bun test <file>` | every row that judges the source; one test file |
 | Task close | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch, on Chromium |
 | Tag | `bun run verify:deploy`, on the remote | every runtime row whole, plus the rows that judge a finished change |
-| Sign-off | `bun run verify:release`, before a release ships | the above, plus every browser spec on Firefox and WebKit |
+| Sign-off | `bun run verify:release`, before a release ships | the above, plus every browser spec on each other engine the application opts into |
 
 **No task asks whether it touches UI.** A bare `verify` takes the Chromium row whenever a pending change falls within the row's derived reach (§6c),
 the Worker's import graph and the asset build's inputs, so a change to a view, a stylesheet or a controller reaches the browser set without anyone
 deciding it should. While iterating, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and it is a scoped run that
 closes nothing (§6c).
 
-**`test:browser` is the primary engine's row, and it names Chromium alone.** The preset emits `test:browser:firefox` and `test:browser:webkit`
-beside it at `release`, and `--only` matches a label exactly, so an engine token is refused under any lower tier.
+**Chromium is the browser set's engine, and `test:browser` is its row.** `browser: true` emits that row alone. An application that needs wider
+compatibility lists `engines`, and the preset adds `test:browser:firefox` and `test:browser:webkit` at `release` as its final sign-off; `--only`
+matches a label exactly, so an engine token is refused under any lower tier.
 
-**Every spec runs on every engine at sign-off; an application tags no cross-engine subset.** An engine difference found there is fixed, or skipped
-as the first line of the case with `test.skip(browserName === "…", "<task-id>: <symptom on this engine>")`, the task filed before the skip is
-written. A spec that needs a Chromium-only Playwright capability — the CDP virtual WebAuthn authenticator has no Firefox or WebKit equivalent — is
-skipped on the other two the same way.
+**Firefox and WebKit run on a second Playwright server, started only on request, whose endpoint `PLAYWRIGHT_COMPAT_WS_ENDPOINT` names.** The test
+runner reads only the primary server's variable, so the application's `playwright.config.ts` points its `firefox` and `webkit` projects at the
+second through `use.connectOptions`, which replaces the environment's connection whole, and declares them only when the variable is set. The
+release rows probe the same endpoint and fail naming it.
 
-**A browser run takes no retries, and never more workers than the Playwright server's client limit.** `retries` is `0`, because a retry turns an
+**An application that opts into Firefox and WebKit runs every spec on them; it tags no cross-engine subset.** An engine difference found there is
+fixed, or skipped as the first line of the case with `test.skip(browserName === "…", "<task-id>: <symptom on this engine>")`, the task filed before
+the skip is written. A spec that needs a Chromium-only Playwright capability — the CDP virtual WebAuthn authenticator has no Firefox or WebKit
+equivalent — is skipped on the other two the same way.
+
+**A browser run takes no retries, and never more workers than its Playwright server's client limit.** `retries` is `0`, because a retry turns an
 intermittent failure into a green. The worker count defaults to the client limit, read from the environment, because a worker past it only queues;
 a set whose specs share one database across workers sets `1` and says why.
 

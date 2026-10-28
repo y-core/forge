@@ -10,8 +10,9 @@ const TAB_ROLE = /\[role='([^']+)'\]/.exec(TAB_SELECTOR)?.[1] ?? TAB_SELECTOR;
 function tabs(options: { activation?: string; selected?: number } = {}) {
   const { doc, el } = fakeTree();
   const { activation = "automatic", selected = 0 } = options;
-  const root = el("DIV", { "data-slot": "tabs", "data-activation": activation });
+  const root = el("DIV", { "data-slot": "tabs", "data-scope": "tabs", "data-activation": activation });
   const list = el("DIV", { role: "tablist" });
+  root.append(list);
   const made = ["a", "b", "c"].map((id, i) => {
     const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === selected), href: `#p-${id}` });
     const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
@@ -22,9 +23,8 @@ function tabs(options: { activation?: string; selected?: number } = {}) {
     root.append(panel);
     return { tab, panel };
   });
-  root.append(list);
   doc.root.append(root);
-  return { doc, root, list, tabs: made.map((m) => m.tab), panels: made.map((m) => m.panel) };
+  return { doc, el, root, list, tabs: made.map((m) => m.tab), panels: made.map((m) => m.panel) };
 }
 
 const fire = (el: FakeElement, type: string) => {
@@ -152,6 +152,72 @@ describe("mountTabs", () => {
     fire(list[1] as FakeElement, "focusin");
 
     expect(selection(list)).toEqual(["true", "false", "false"]);
+  });
+
+  it("selecting an outer tab leaves a nested Tabs' selection and panels alone", () => {
+    const { el, root, tabs: outer, panels } = tabs();
+    const innerRoot = el("DIV", { "data-slot": "tabs", "data-scope": "tabs" });
+    const innerList = el("DIV", { role: "tablist" });
+    const [x, y] = ["x", "y"].map((id, i) => {
+      const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === 0), href: `#p-${id}` });
+      if (i === 0) tab.setAttribute("data-selected", "");
+      const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
+      panel.hidden = i !== 0;
+      innerList.append(tab);
+      innerRoot.append(panel);
+      return { tab, panel };
+    }) as [{ tab: FakeElement; panel: FakeElement }, { tab: FakeElement; panel: FakeElement }];
+    innerRoot.append(innerList);
+    (panels[0] as FakeElement).append(innerRoot);
+    mountTabs(root as never);
+    mountTabs(innerRoot as never);
+
+    fire(outer[1] as FakeElement, "focusin");
+
+    expect({
+      selected: x.tab.getAttribute("aria-selected"),
+      hook: x.tab.hasAttribute("data-selected"),
+      shown: x.panel.hidden,
+      other: y.panel.hidden,
+    }).toEqual({ selected: "true", hook: true, shown: false, other: true });
+  });
+
+  it("drives its own tablist, not a nested Tabs' tablist that precedes it", () => {
+    const { doc, el } = fakeTree();
+    const root = el("DIV", { "data-slot": "tabs", "data-scope": "tabs" });
+    const innerRoot = el("DIV", { "data-slot": "tabs", "data-scope": "tabs" });
+    const innerList = el("DIV", { role: "tablist" });
+    const [x, y] = ["x", "y"].map((id, i) => {
+      const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === 0), href: `#p-${id}` });
+      const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
+      panel.hidden = i !== 0;
+      innerList.append(tab);
+      innerRoot.append(panel);
+      return tab;
+    }) as [FakeElement, FakeElement];
+    innerRoot.append(innerList);
+    root.append(innerRoot);
+    const list = el("DIV", { role: "tablist" });
+    const [, b] = ["a", "b"].map((id, i) => {
+      const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === 0), href: `#p-${id}` });
+      const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
+      panel.hidden = i !== 0;
+      list.append(tab);
+      root.append(panel);
+      return tab;
+    }) as [FakeElement, FakeElement];
+    root.append(list);
+    doc.root.append(root);
+    mountTabs(root as never);
+
+    fire(y, "focusin");
+    fire(b, "focusin");
+
+    expect({ x: x.getAttribute("aria-selected"), y: y.getAttribute("aria-selected"), b: b.getAttribute("aria-selected") }).toEqual({
+      x: "true",
+      y: "false",
+      b: "true",
+    });
   });
 });
 

@@ -1,4 +1,7 @@
-import { describe, expect, it } from "bun:test";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { resolve } from "node:path";
 
 import { deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./class-groups-parse";
 import type { ClassGroupTable } from "./types";
@@ -6,6 +9,7 @@ import type { CssNode, DesignSystem } from "./types";
 
 const declaration = (property: string): CssNode => ({ kind: "declaration", property });
 const rule = (...nodes: CssNode[]): CssNode[] => [{ kind: "rule", nodes }];
+const scoped = (selector: string, ...nodes: CssNode[]): CssNode[] => [{ kind: "rule", selector, nodes }];
 
 describe("signature", () => {
   it("names the CSS properties a utility writes", () => {
@@ -16,9 +20,39 @@ describe("signature", () => {
     expect(signature(rule(declaration("width"), declaration("height")))).toBe("height,width");
   });
 
-  it("prefers the `--tw-*` variables when a utility sets any, so `ring-2` and `shadow-md` stay apart", () => {
-    expect(signature(rule(declaration("--tw-ring-shadow"), declaration("box-shadow")))).toBe("--tw-ring-shadow");
-    expect(signature(rule(declaration("--tw-shadow"), declaration("box-shadow")))).toBe("--tw-shadow");
+  it("unions the `--tw-*` variables with the CSS properties, so `ring-2` and `shadow-md` stay apart", () => {
+    expect(signature(rule(declaration("--tw-ring-shadow"), declaration("box-shadow")))).toBe("--tw-ring-shadow,box-shadow");
+    expect(signature(rule(declaration("--tw-shadow"), declaration("box-shadow")))).toBe("--tw-shadow,box-shadow");
+  });
+
+  it("keeps the CSS property beside a variable, so `border-dashed` and `divide-solid` are told apart by scope", () => {
+    expect(signature(scoped(".border-dashed", declaration("--tw-border-style"), declaration("border-style")))).toBe(
+      "--tw-border-style,border-style",
+    );
+  });
+
+  it("tags a property set under a selector other than the utility's own class with that selector", () => {
+    const nodes = scoped(":where(.space-x-4 > :not(:last-child))", declaration("margin-inline-start"));
+    expect(signature(nodes)).toBe("margin-inline-start@:where(& > :not(:last-child))");
+  });
+
+  it("leaves a property set under the utility's own escaped class untagged", () => {
+    expect(signature(scoped(".bg-\\[linear-gradient\\(red\\,blue\\)\\]", declaration("background-image")))).toBe("background-image");
+  });
+
+  it("tags a property set inside a wrapping at-rule with its prelude, outermost first and before the selector", () => {
+    const media: CssNode = { kind: "at-rule", name: "@media", params: "(forced-colors: active)", nodes: [declaration("outline-offset")] };
+    const supports: CssNode = { kind: "at-rule", name: "@supports", params: "(a: b), (c: d)", nodes: scoped("&:hover", declaration("color")) };
+    expect(signature(scoped(".outline-hidden", declaration("outline-style"), media))).toBe(
+      "outline-offset@@media (forced-colors: active),outline-style",
+    );
+    expect(signature([{ kind: "at-rule", name: "@media", params: "print", nodes: [supports] }])).toBe(
+      "color@@media print;@supports (a: b)|(c: d);&:hover",
+    );
+  });
+
+  it("joins a selector list with `|`, so the context never splits on the signature's own comma", () => {
+    expect(signature(scoped(".x:focus, .x:hover", declaration("color")))).toBe("color@&:focus|.x:hover");
   });
 
   it("ignores an `@property` block, which describes a variable rather than setting one", () => {
@@ -62,6 +96,12 @@ describe("reach", () => {
 
   it("returns a property that is nobody's shorthand unchanged", () => {
     expect([...reach("display")]).toEqual(["display"]);
+  });
+
+  it("expands the property part of a scoped token and keeps its selector context", () => {
+    const reached = reach("margin-inline@:where(&)");
+    expect(reached.has("margin-inline-start@:where(&)")).toBe(true);
+    expect(reached.has("margin-inline-start")).toBe(false);
   });
 
   it("splits a multi-property signature and expands each part", () => {
@@ -243,6 +283,43 @@ describe("deriveClassGroups", () => {
     expect(table.overrides.get("padding")).toEqual(["padding-left"]);
   });
 
+  it("derives no edge onto a group whose every property is a `--tw-*` variable, so `space-x-reverse` survives `space-x-4`", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({ statics: { reverse: ["--tw-space-x-reverse"], space: ["--tw-space-x-reverse", "margin-inline-start"] } }),
+    );
+    expect(table.statics.get("space")).toBe("--tw-space-x-reverse,margin-inline-start");
+    expect(table.overrides.get("--tw-space-x-reverse,margin-inline-start")).toBeUndefined();
+  });
+
+  it("takes an integer group when two integer probes beyond the class list agree and differ from the named default", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({
+        functional: { border: ["border-width"] },
+        classes: { "border-red": ["border-color"], "border-blue": ["border-color"] },
+        compiles: { "border-3": ["border-width"], "border-13": ["border-width"] },
+      }),
+    );
+    expect(table.roots.get("border")?.integer).toBe("border-width");
+  });
+
+  it("takes no integer group when the integer probes disagree", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({
+        functional: { border: ["border-width"] },
+        classes: { "border-red": ["border-color"] },
+        compiles: { "border-3": ["border-width"], "border-13": ["border-style"] },
+      }),
+    );
+    expect(table.roots.get("border")?.integer).toBeUndefined();
+  });
+
+  it("takes no integer group when an integer resolves to the named default already", () => {
+    const table = deriveClassGroups(
+      fakeDesignSystem({ functional: { p: ["padding"] }, classes: { "p-1": ["padding"] }, compiles: { "p-3": ["padding"], "p-13": ["padding"] } }),
+    );
+    expect(table.roots.get("p")?.integer).toBeUndefined();
+  });
+
   it("derives no edge between partially overlapping signatures, so both utilities survive", () => {
     const table = deriveClassGroups(
       fakeDesignSystem({
@@ -284,5 +361,49 @@ describe("renderClassGroups", () => {
     const emit = (classes: Record<string, string[]>): string =>
       renderClassGroups(deriveClassGroups(fakeDesignSystem({ functional: { x: ["a"] }, classes })));
     expect(emit({ "x-1": ["a"], "x-2": ["b"] })).toBe(emit({ "x-2": ["b"], "x-1": ["a"] }));
+  });
+});
+
+describe("the rendered resolver", () => {
+  const dirs: string[] = [];
+
+  afterAll(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function loadResolver(table: ClassGroupTable): Promise<(utility: string) => string | undefined> {
+    const dir = mkdtempSync(resolve(tmpdir(), "forge-class-groups-parse-"));
+    dirs.push(dir);
+    const path = resolve(dir, "class-groups.ts");
+    writeFileSync(path, renderClassGroups(table), "utf-8");
+    return ((await import(path)) as { classGroup: (utility: string) => string | undefined }).classGroup;
+  }
+
+  const table: ClassGroupTable = {
+    statics: new Map([["block", "display"]]),
+    roots: new Map([
+      ["bg", { named: "background-color", arbitrary: "background-color", kinds: { image: "background-image" } }],
+      ["border", { named: "border-color", integer: "border-width", exceptions: { values: ["2"], group: "border-width" } }],
+    ]),
+    overrides: new Map([["border-width", ["border-top-width"]]]),
+  };
+
+  for (const value of [
+    "linear-gradient(red,blue)",
+    "radial-gradient(red,blue)",
+    "conic-gradient(red,blue)",
+    "repeating-linear-gradient(red,blue)",
+  ]) {
+    it(`reads \`bg-[${value}]\` as an image`, async () => {
+      expect((await loadResolver(table))(`bg-[${value}]`)).toBe("background-image");
+    });
+  }
+
+  it("reads a bare integer the class list does not enumerate through the integer group", async () => {
+    expect((await loadResolver(table))("border-3")).toBe("border-width");
+  });
+
+  it("reads a named value through the named group still", async () => {
+    expect((await loadResolver(table))("border-red-500")).toBe("border-color");
   });
 });

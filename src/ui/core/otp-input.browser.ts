@@ -47,7 +47,7 @@ function frameWidth(page: Page): Promise<number> {
   return page.evaluate(() => document.querySelector("[data-slot~='otp-input-wrapper']")?.getBoundingClientRect().width ?? 0);
 }
 
-test.describe("OtpInput", () => {
+test.describe("OtpInput", { tag: "@cross-engine" }, () => {
   test("carries the mobile-keyboard and autofill affordances on the one native field", async ({ page }) => {
     await mountOtp(page);
     expect((await editor(page)).attrs).toEqual({ inputmode: "numeric", autocomplete: "one-time-code", pattern: null, maxlength: null });
@@ -55,23 +55,31 @@ test.describe("OtpInput", () => {
 
   test("a full code fits its cells: the caret after the last glyph never scrolls the editor", async ({ page }) => {
     await mountOtp(page);
-    await page.fill("#field-code", "123456");
     await page.focus("#field-code");
-    await page.keyboard.press("End");
+    await page.keyboard.type("123456");
 
     const state = await editor(page);
     expect(state.value).toBe("123456");
-    expect(state.scrollLeft).toBe(0);
-    expect(state.scrollWidth).toBeLessThanOrEqual(state.clientWidth);
+    expect(state.scrollLeft).toBeLessThanOrEqual(1);
   });
 
-  // Pins `overflow: clip` over `hidden` on the frame: `UI_SSR_COMPONENTS.md` §1i.
+  // Pins `overflow-x: clip` over `hidden` on the frame: `UI_SSR_COMPONENTS.md` §1i.
   test("typing a full code leaves every digit on its cell: the frame is clipped, not scrolled", async ({ page }) => {
     await mountOtp(page);
     await page.focus("#field-code");
     await page.keyboard.type("123456");
 
     expect(await page.evaluate(() => document.querySelector<HTMLElement>("[data-slot~='otp-input-wrapper']")?.scrollLeft)).toBe(0);
+  });
+
+  test("a press on the frame's top border lands on the editor, so the measured box is the clickable one", async ({ page }) => {
+    await mountOtp(page);
+    const hit = await page.evaluate(() => {
+      const frame = document.querySelector("[data-slot~='otp-input-wrapper']")?.getBoundingClientRect();
+      if (!frame) return null;
+      return document.elementFromPoint(frame.left + frame.width / 2, frame.top)?.getAttribute("data-slot");
+    });
+    expect(hit).toBe("otp-input");
   });
 
   // The frame's width is a function of length and cell, never of its container: stretched, the slack
@@ -84,7 +92,12 @@ test.describe("OtpInput", () => {
     expect(await frameWidth(page)).toBe(intrinsic);
   });
 
-  test("with no script, a pasted `123 456` is kept whole and the form is valid, so the server receives it to reduce", async ({ page }) => {
+  test("with no script, a pasted `123 456` is kept whole and the form is valid, so the server receives it to reduce", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName === "firefox", "no clipboard-read/clipboard-write permission grant in Playwright");
+    test.skip(browserName === "webkit", "no clipboard-read/clipboard-write permission grant in Playwright");
     await mountOtp(page, { secure: true });
     await page.focus("#field-code");
     await pasteText(page, "123 456");

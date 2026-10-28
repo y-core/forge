@@ -26,6 +26,12 @@ export class FakeEvent {
 /** The tags whose `tabIndex` property answers 0 with no attribute written; `<a>` needs an `href` too. */
 const NATIVELY_FOCUSABLE = new Set(["BUTTON", "INPUT", "SELECT", "TEXTAREA", "SUMMARY"]);
 
+function cssUnescape(value: string): string {
+  return value.replace(/\\(?:([0-9a-fA-F]{1,6})\s?|(.))/g, (_, hex: string | undefined, char: string | undefined) =>
+    hex === undefined ? (char ?? "") : String.fromCodePoint(Number.parseInt(hex, 16)),
+  );
+}
+
 /** A minimal element: attributes, children, listeners, and the queries the controllers run. */
 export class FakeElement {
   readonly nodeType = 1;
@@ -152,13 +158,15 @@ export class FakeElement {
     return out;
   }
 
-  /** Supports the shapes the controllers actually use: `[attr]`, `[attr='v']`, `.class`, `tag`, and lists. */
+  /** Supports the shapes the controllers actually use: `[attr]`, `[attr='v']`, `[attr="CSS-escaped"]`, `.class`, `tag`, and lists. */
   matches(selector: string): boolean {
     return selector.split(",").some((part) => {
       const one = part.trim();
       if (one === "*") return true;
       if (one.startsWith("#")) return this.id === one.slice(1);
       if (one.startsWith(".")) return (this.attrs.get("class") ?? "").split(/\s+/).includes(one.slice(1));
+      const quoted = /^\[([a-z-]+)="((?:[^"\\]|\\.)*)"\]$/.exec(one);
+      if (quoted !== null) return this.attrs.get(quoted[1] ?? "") === cssUnescape(quoted[2] ?? "");
       const attr = /^\[([a-z-]+)(?:~?=['"]?([^'"\]]*)['"]?)?\]$/.exec(one);
       if (attr === null) return one.toUpperCase() === this.tagName;
       const [, name = "", expected] = attr;

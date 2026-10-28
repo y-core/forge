@@ -179,11 +179,11 @@ same bytes.
 | `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it |
 | `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed |
 | `verify:deploy` | `forge verify --tier deploy` — what the remote runs on a tag |
-| `verify:release` | `forge verify --tier release` — sign-off, every browser spec on every engine |
+| `verify:release` | `forge verify --tier release` — sign-off: every runtime suite whole, plus every browser spec on each engine the application opts into |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |
 | `test` | `bun test` |
-| `test:browser` | `playwright test` |
+| `test:browser` | `playwright test --project=chromium` |
 | `dev` | The asset build, then `forge cf dev` |
 | `dev:forge` | The local library sync |
 | `build:assets` | `forge assets build all` |

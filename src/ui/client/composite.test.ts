@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { isDisabled, isNativeInput, leavesRing, mountRovingFocus } from "./composite";
+import { canTakeFocus, isDisabled, isNativeInput, mountRovingFocus } from "./composite";
 import { FakeEvent, fakeTree } from "./dom.fixture";
 import type { FakeElement } from "./dom.fixture";
 
@@ -50,22 +50,14 @@ describe("isDisabled", () => {
     expect(isDisabled(el("BUTTON", { "aria-disabled": "true" }) as unknown as HTMLElement)).toBe(true);
   });
 
-  // Where the predicates part company: `isDisabled` answers "may this be activated" and `leavesRing`
+  // Where the predicates part company: `isDisabled` answers "may this be activated" and `canTakeFocus`
   // answers "may arrow keys reach it", and `aria-disabled` is exactly the case that separates them.
   it("keeps an aria-disabled item in the ring while still calling it inert", () => {
     const { el } = fakeTree();
     const item = el("BUTTON", { "aria-disabled": "true" }) as unknown as HTMLElement;
 
     expect(isDisabled(item)).toBe(true);
-    expect(leavesRing(item)).toBe(false);
-  });
-
-  it("takes a natively disabled item out of the ring", () => {
-    const { el } = fakeTree();
-    const item = el("BUTTON");
-    (item as unknown as { disabled: boolean }).disabled = true;
-
-    expect(leavesRing(item as unknown as HTMLElement)).toBe(true);
+    expect(canTakeFocus(item)).toBe(true);
   });
 
   it("treats aria-disabled='false' as enabled", () => {
@@ -78,6 +70,25 @@ describe("isDisabled", () => {
     const item = el("DIV");
     (item as unknown as { disabled: unknown }).disabled = "";
     expect(isDisabled(item as unknown as HTMLElement)).toBe(false);
+  });
+});
+
+describe("canTakeFocus", () => {
+  const item = (props: Record<string, unknown>, attrs: Record<string, string> = {}) => {
+    const { el } = fakeTree();
+    return Object.assign(el("BUTTON", attrs), props) as unknown as HTMLElement;
+  };
+
+  it("refuses a natively disabled item", () => {
+    expect(canTakeFocus(item({ disabled: true }))).toBe(false);
+  });
+
+  it("refuses an item that checkVisibility reports as not rendered", () => {
+    expect(canTakeFocus(item({ checkVisibility: () => false }))).toBe(false);
+  });
+
+  it("admits an item in a realm with no checkVisibility at all", () => {
+    expect(canTakeFocus(item({ checkVisibility: undefined }))).toBe(true);
   });
 });
 

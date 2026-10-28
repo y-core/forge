@@ -3,14 +3,17 @@ import { resolve } from "node:path";
 
 const CONFIG = resolve(import.meta.dir, "../playwright.config.ts");
 const ENDPOINT = "ws://playwright.test:3000/";
+const COMPAT = "ws://compat.test:3000/";
+
+type LoadedConfig = { workers?: unknown; projects?: { name: string; connectOptions?: unknown }[]; error?: string };
 
 // A fresh process per case: the config reads the environment once, at load.
-function loadConfig(env: Record<string, string | undefined>): { workers?: unknown; error?: string } {
+function loadConfig(env: Record<string, string | undefined>): LoadedConfig {
   const run = Bun.spawnSync(
     [
       "bun",
       "-e",
-      `import(${JSON.stringify(CONFIG)}).then((c) => console.log(JSON.stringify({ workers: c.default.workers })), (e) => console.log(JSON.stringify({ error: e.message })))`,
+      `import(${JSON.stringify(CONFIG)}).then((c) => console.log(JSON.stringify({ workers: c.default.workers, projects: c.default.projects.map((p) => ({ name: p.name, connectOptions: p.use?.connectOptions })) })), (e) => console.log(JSON.stringify({ error: e.message })))`,
     ],
     {
       env: Object.fromEntries(Object.entries({ PATH: process.env.PATH, ...env }).filter(([, value]) => value !== undefined)) as Record<
@@ -19,13 +22,47 @@ function loadConfig(env: Record<string, string | undefined>): { workers?: unknow
       >,
     },
   );
-  return JSON.parse(run.stdout.toString()) as { workers?: unknown; error?: string };
+  return JSON.parse(run.stdout.toString()) as LoadedConfig;
 }
 
 describe("playwright.config.ts", () => {
   it("takes its worker count from PLAYWRIGHT_SERVER_MAX_CLIENTS", () => {
-    expect(loadConfig({ PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT, PLAYWRIGHT_SERVER_MAX_CLIENTS: "8" })).toEqual({ workers: 8 });
+    expect(loadConfig({ PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT, PLAYWRIGHT_SERVER_MAX_CLIENTS: "8" }).workers).toBe(8);
   });
+
+  it("connects Firefox and WebKit to PLAYWRIGHT_COMPAT_WS_ENDPOINT, carrying the exposed network and headers, and leaves Chromium on the primary", () => {
+    const connectOptions = { wsEndpoint: COMPAT, exposeNetwork: "<loopback>", headers: { "x-token": "abc" } };
+
+    expect(
+      loadConfig({
+        PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT,
+        PLAYWRIGHT_SERVER_MAX_CLIENTS: "8",
+        PLAYWRIGHT_COMPAT_WS_ENDPOINT: COMPAT,
+        PW_TEST_CONNECT_EXPOSE_NETWORK: "<loopback>",
+        PW_TEST_CONNECT_HEADERS: '{"x-token":"abc"}',
+      }).projects,
+    ).toEqual([{ name: "chromium" }, { name: "firefox", connectOptions }, { name: "webkit", connectOptions }, { name: "workerd" }]);
+  });
+
+  it("connects the compat projects with the endpoint alone when no network or headers are stated", () => {
+    const connectOptions = { wsEndpoint: COMPAT };
+
+    expect(
+      loadConfig({ PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT, PLAYWRIGHT_SERVER_MAX_CLIENTS: "8", PLAYWRIGHT_COMPAT_WS_ENDPOINT: COMPAT }).projects,
+    ).toEqual([{ name: "chromium" }, { name: "firefox", connectOptions }, { name: "webkit", connectOptions }, { name: "workerd" }]);
+  });
+
+  for (const compat of [undefined, ""]) {
+    it(`declares neither Firefox nor WebKit with PLAYWRIGHT_COMPAT_WS_ENDPOINT ${compat === undefined ? "unset" : "empty"}`, () => {
+      const loaded = loadConfig({
+        PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT,
+        PLAYWRIGHT_SERVER_MAX_CLIENTS: "8",
+        PLAYWRIGHT_COMPAT_WS_ENDPOINT: compat,
+      });
+
+      expect(loaded.projects?.map((project) => project.name)).toEqual(["chromium", "workerd"]);
+    });
+  }
 
   for (const endpoint of [undefined, ""]) {
     it(`refuses to load with PW_TEST_CONNECT_WS_ENDPOINT ${endpoint === undefined ? "unset" : "empty"}`, () => {

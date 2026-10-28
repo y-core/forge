@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { mountNavDrawer } from "./drawer";
+import { MD_DOWN_QUERY } from "./viewport-disclosure";
 
 class FakeMediaQueryList {
   readonly listeners = new Set<() => void>();
@@ -106,8 +107,31 @@ class FakePanel extends FakeNode {
     return this.items;
   }
 
+  querySelector(_selector: string): FakeNode | null {
+    return this.items[0] ?? null;
+  }
+
   override contains(other: FakeNode | null): boolean {
     return other === this || (other !== null && this.items.includes(other));
+  }
+
+  readonly listeners = new Map<string, Set<(event: unknown) => void>>();
+
+  addEventListener(type: string, listener: (event: unknown) => void, options?: { signal?: AbortSignal }): void {
+    const signal = options?.signal;
+    if (signal?.aborted) return;
+    const set = this.listeners.get(type) ?? new Set<(event: unknown) => void>();
+    set.add(listener);
+    this.listeners.set(type, set);
+    signal?.addEventListener("abort", () => this.listeners.get(type)?.delete(listener), { once: true });
+  }
+
+  listenerCount(): number {
+    return [...this.listeners.values()].reduce((total, set) => total + set.size, 0);
+  }
+
+  fire(type: string, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 }
 
@@ -120,12 +144,13 @@ class FakeDocument {
 
   readonly frames = new FakeFrames();
   panelTransition = { transitionDuration: "0s", transitionDelay: "0s" };
+  detailsContentTransition = { transitionDuration: "0s", transitionDelay: "0s" };
 
   readonly defaultView: {
     matchMedia?: ((query: string) => FakeMediaQueryList) | undefined;
     requestAnimationFrame: (callback: (time: number) => void) => number;
     cancelAnimationFrame: (id: number) => void;
-    getComputedStyle: (element: unknown) => { transitionDuration: string; transitionDelay: string };
+    getComputedStyle: (element: unknown, pseudo?: string) => { transitionDuration: string; transitionDelay: string };
   };
 
   constructor(media: FakeMediaQueryList, queries: string[]) {
@@ -136,7 +161,8 @@ class FakeDocument {
       },
       requestAnimationFrame: this.frames.request,
       cancelAnimationFrame: this.frames.cancel,
-      getComputedStyle: () => this.panelTransition,
+      getComputedStyle: (_element: unknown, pseudo?: string) =>
+        pseudo === "::details-content" ? this.detailsContentTransition : this.panelTransition,
     };
   }
 
@@ -155,6 +181,10 @@ class FakeDocument {
 
   listenerCount(): number {
     return [...this.listeners.values()].reduce((total, set) => total + set.size, 0);
+  }
+
+  fire(type: string, event: unknown): void {
+    for (const listener of this.listeners.get(type) ?? []) listener(event);
   }
 
   press(key: string, shiftKey = false): { defaultPrevented: boolean } {
@@ -252,6 +282,20 @@ function fixture(matches: boolean, open = false, links = 3): Fixture {
   const doc = new FakeDocument(media, queries);
   const el = new FakeDetails(open, doc, links);
   return { el, doc, media, queries, element: el as unknown as Element, overflow: () => doc.documentElement.style.properties.get("overflow") };
+}
+
+function captureWarnings(run: () => void): string[] {
+  const warnings: string[] = [];
+  const original = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(" "));
+  };
+  try {
+    run();
+  } finally {
+    console.warn = original;
+  }
+  return warnings;
 }
 
 function siblingDrawer(f: Fixture, open = false): { el: FakeDetails; element: Element } {
@@ -461,6 +505,46 @@ describe("mountNavDrawer", () => {
     expect(f.doc.activeElement).toBe(elsewhere);
   });
 
+  it("returns focus to the summary when the panel dropped focus to the body before the toggle fired", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+    (f.el.panel.items[1] as FakeNode).focus();
+
+    f.el.panel.fire("focusout", { relatedTarget: null });
+    f.doc.activeElement = f.doc.body;
+    f.el.userToggle();
+
+    expect(f.doc.activeElement).toBe(f.el.summary);
+  });
+
+  it("leaves focus on the node it moved to when the panel lost it to a real target", () => {
+    const f = fixture(true);
+    const elsewhere = new FakeNode();
+    elsewhere.ownerDocument = f.doc;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.el.panel.fire("focusout", { relatedTarget: elsewhere });
+    elsewhere.focus();
+    f.el.userToggle();
+
+    expect(f.doc.activeElement).toBe(elsewhere);
+  });
+
+  it("leaves the body focused when focus landed somewhere else after the panel dropped it", () => {
+    const f = fixture(true);
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.el.panel.fire("focusout", { relatedTarget: null });
+    f.doc.fire("focusin", {});
+    f.doc.activeElement = f.doc.body;
+    f.el.userToggle();
+
+    expect(f.doc.activeElement).toBe(f.doc.body);
+  });
+
   it("closes on Escape", () => {
     const f = fixture(true);
     mountNavDrawer({ element: f.element });
@@ -598,7 +682,7 @@ describe("mountNavDrawer", () => {
     const b = fixture(true);
     mountNavDrawer({ element: b.element, query: "(max-width: 30rem)" });
 
-    expect(a.queries).toEqual(["(max-width: 47.99rem)"]);
+    expect(a.queries).toEqual([MD_DOWN_QUERY]);
     expect(b.queries).toEqual(["(max-width: 30rem)"]);
   });
 
@@ -620,8 +704,21 @@ describe("mountNavDrawer", () => {
 
     expect(f.media.listeners.size).toBe(0);
     expect(f.el.listenerCount()).toBe(0);
+    expect(f.el.panel.listenerCount()).toBe(0);
     expect(f.doc.listenerCount()).toBe(0);
     expect(mountNavDrawer({ element: f.element })).not.toBe(first);
+  });
+
+  it("warns once when the resolved panel holds no focusable item", () => {
+    const warnings = captureWarnings(() => mountNavDrawer({ element: fixture(true, true, 0).element }));
+
+    expect(warnings).toEqual(["[nav-drawer] no panel with a focusable item resolved; Tab will cycle on the summary alone"]);
+  });
+
+  it("does not warn when the resolved panel holds a focusable item", () => {
+    const warnings = captureWarnings(() => mountNavDrawer({ element: fixture(true, true).element }));
+
+    expect(warnings).toEqual([]);
   });
 
   it("throws when there is no element", () => {
@@ -697,6 +794,22 @@ describe("mountNavDrawer — a panel still hidden when it opens", () => {
 
     expect(f.doc.frames.pending.size).toBe(0);
     expect(f.doc.activeElement).toBeNull();
+  });
+
+  it("keeps retrying for the disclosure's ::details-content transition when the panel itself has none", () => {
+    const f = fixture(true);
+    f.doc.detailsContentTransition = { transitionDuration: "200ms", transitionDelay: "0s" };
+    (f.el.panel.items[0] as FakeNode).refusesFocus = true;
+    mountNavDrawer({ element: f.element });
+    f.el.userToggle();
+
+    f.doc.frames.run(1000);
+    f.doc.frames.run(1199);
+    expect(f.doc.frames.pending.size).toBe(1);
+
+    f.doc.frames.run(1200);
+
+    expect(f.doc.frames.pending.size).toBe(0);
   });
 
   it("focuses an item that was not yet rendered when the disclosure opened, once it renders", () => {

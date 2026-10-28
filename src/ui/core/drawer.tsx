@@ -5,6 +5,8 @@ import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contra
 import { titleId } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { DialogNaming, PhysicalSide } from "../contracts/types";
+import { buttonBox } from "./button";
+import { mergeIdRefs } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
@@ -69,15 +71,17 @@ const DrawerRoot: FC<DrawerProps> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-labelledby": ownLabelledBy,
   ...props
 }) => (
   <dialog
     id={id}
     data-slot={slotToken("drawer", inherited)}
     {...dialogNameAttrs(id, { label, labelledby, titled })}
+    aria-labelledby={mergeIdRefs(ownLabelledBy, [dialogNameAttrs(id, { label, labelledby, titled })["aria-labelledby"]])}
     {...(open && !openModal ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
-    closedby='any'
+    {...(open && !openModal ? {} : { closedby: "any" })}
     class={cn(DRAWER_BASE, DRAWER_AXIS[side], cls)}
     {...stateAttrs({ side })}
     {...props}>
@@ -87,7 +91,13 @@ const DrawerRoot: FC<DrawerProps> = ({
 
 const DrawerTrigger: FC<DrawerTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => {
   return (
-    <button type='button' data-slot={slotToken("drawer-trigger", inherited)} command='show-modal' commandfor={target} class={cls} {...props}>
+    <button
+      type='button'
+      data-slot={slotToken("drawer-trigger", inherited)}
+      command='show-modal'
+      commandfor={target}
+      class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
+      {...props}>
       {children}
     </button>
   );
@@ -100,7 +110,7 @@ const DrawerClose: FC<DrawerCloseProps> = ({ for: target, request = false, class
       data-slot={slotToken("drawer-close", inherited)}
       command={request ? "request-close" : "close"}
       commandfor={target}
-      class={cls}
+      class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
       {...props}>
       {children}
     </button>

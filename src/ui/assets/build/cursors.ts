@@ -2,9 +2,12 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { CursorsConfig } from "../../../tooling/assets/types";
+import { splitLightDark } from "../../contracts/theme/theme-contract";
 import { parseColor, toHex } from "./color";
 import { readThemeTokens, resolveToken } from "./css-tokens";
-import { extractRootAttrs, sanitizeSVG, wrapRootAttrs } from "./svg-symbols";
+import { extractRootAttrs, splitSvgRoot, wrapRootAttrs } from "./svg-symbols";
+
+const MAX_COLOR_HOPS = 20;
 
 interface CursorMeta {
   viewBox: string;
@@ -13,11 +16,10 @@ interface CursorMeta {
 }
 
 function parseCursorSvg(content: string): CursorMeta | null {
-  const svgTagMatch = content.match(/<svg([^>]*)>/i);
-  const innerMatch = content.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
-  if (!svgTagMatch?.[1] || innerMatch?.[1] === undefined) return null;
+  const split = splitSvgRoot(content);
+  if (split === null) return null;
 
-  const rootTag = svgTagMatch[1];
+  const { rootTag } = split;
   const viewBoxMatch = rootTag.match(/viewBox="([^"]+)"/i);
   const viewBox = viewBoxMatch?.[1] ?? "0 0 24 24";
 
@@ -29,7 +31,7 @@ function parseCursorSvg(content: string): CursorMeta | null {
     dataMatch = dataRegex.exec(rootTag);
   }
 
-  meta.markup = wrapRootAttrs(sanitizeSVG(innerMatch[1]).trim(), extractRootAttrs(rootTag));
+  meta.markup = wrapRootAttrs(split.inner.trim(), extractRootAttrs(rootTag));
   return meta;
 }
 
@@ -41,9 +43,22 @@ function substitute(template: string, replacements: Record<string, string>, meta
   });
 }
 
-function resolveCssVars(svg: string, tokens: Map<string, string>, key: string): string {
+/** Resolves a token to its colour literal for one mode, taking the matching branch of each `light-dark()` on the way. */
+function resolveColor(name: string, tokens: Map<string, string>, dark: boolean): string | null {
+  let value = resolveToken(name, tokens);
+  for (let hops = 0; value !== null && hops < MAX_COLOR_HOPS; hops++) {
+    const branches = splitLightDark(value);
+    const picked = branches === undefined ? value : branches[dark ? 1 : 0];
+    const ref = picked.match(/^var\(\s*(--[a-zA-Z0-9-]+)\s*(?:,\s*([\s\S]+))?\)$/);
+    if (!ref?.[1]) return picked;
+    value = tokens.has(ref[1]) ? resolveToken(ref[1], tokens) : (ref[2]?.trim() ?? null);
+  }
+  return null;
+}
+
+function resolveCssVars(svg: string, tokens: Map<string, string>, dark: boolean, key: string): string {
   return svg.replace(/cssvar\(\s*(--[a-zA-Z0-9-]+)\s*\)/g, (_w, name: string) => {
-    const raw = resolveToken(name, tokens);
+    const raw = resolveColor(name, tokens, dark);
     if (raw === null) throw new Error(`[forge-assets] cursor "${key}" references missing token "${name}" via cssvar()`);
     const rgb = parseColor(raw);
     if (!rgb) throw new Error(`[forge-assets] cursor "${key}" token "${name}" resolved to an unparseable colour: ${raw}`);
@@ -93,10 +108,11 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
       const perTheme: Record<string, string> = {};
 
       for (const [theme, tokens] of Object.entries(themeTokens)) {
+        const dark = /^(only\s+)?dark$/.test(tokens.get("color-scheme") ?? "");
         const signalToken = meta.token;
         let signal = "#000000";
         if (signalToken !== undefined) {
-          const signalRaw = resolveToken(signalToken, tokens);
+          const signalRaw = resolveColor(signalToken, tokens, dark);
           if (signalRaw === null) {
             throw new Error(`[forge-assets] cursor "${entry.key}" references missing CSS token "${signalToken}" for theme "${theme}"`);
           }
@@ -110,7 +126,7 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
         const svg = substitute(templateContent, { viewBox: meta.viewBox, markup: meta.markup, signal }, meta);
         // A `--` inside an SVG comment is ill-formed XML and browsers silently drop the cursor.
         const uncommented = svg.replace(/<!--[\s\S]*?-->/g, "");
-        const resolved = resolveCssVars(uncommented, tokens, entry.key);
+        const resolved = resolveCssVars(uncommented, tokens, dark, entry.key);
         const encoded = encodeURIComponent(resolved);
 
         const hotspot = meta.hotspot ?? "0 0";

@@ -716,7 +716,7 @@ describe("resolveAuthView hands a host the props, the node and the status", () =
 });
 
 describe("AuthViewChrome", () => {
-  const CARD = "flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm";
+  const CARD = "flex flex-col rounded-box border-field border-border bg-card text-card-foreground shadow-sm";
 
   async function chromed(chrome: { class?: string; level?: 2 }): Promise<string> {
     const app = guardedApp(async (c) => {

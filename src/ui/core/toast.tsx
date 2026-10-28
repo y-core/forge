@@ -11,7 +11,7 @@ import type { PanelAppearance } from "./types";
 import type { ToastPosition } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { toneVariants } from "./utils/tone";
+import { toneSurfaceVariants } from "./utils/tone";
 
 type ToastContainerProps = JSX.IntrinsicElements["section"] & {
   position?: ToastPosition | undefined;
@@ -75,7 +75,7 @@ const ToastRoot: FC<ToastProps> = ({
       {...(interactive ? { "data-scope": TOAST_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify({ [TOAST_DURATION_KEY]: duration }) } : {})}
       class={cn(
         "pointer-events-auto relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg",
-        toneVariants({ tone, appearance }),
+        toneSurfaceVariants({ tone, appearance }),
         dismissible && "pe-10",
         cls,
       )}
@@ -89,7 +89,7 @@ const ToastRoot: FC<ToastProps> = ({
           data-slot='toast-close'
           aria-label={dismissLabel}
           {...scopeAttrs<"dismiss">({ onClick: "dismiss" })}
-          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded-sm focus-ring'>
+          class='absolute end-2 top-2 inline-flex size-8 items-center justify-center rounded-sm focus-ring hover:outline-1 hover:-outline-offset-1 hover:outline-current hover:outline-solid'>
           <span aria-hidden='true' class='text-sm leading-none'>
             ×
           </span>
@@ -106,7 +106,7 @@ const ToastTitle: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "d
 );
 
 const ToastDescription: FC<JSX.IntrinsicElements["div"]> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("toast-description", inherited)} class={cn("text-sm opacity-90", cls)} {...rest}>
+  <div data-slot={slotToken("toast-description", inherited)} class={cn("text-sm", cls)} {...rest}>
     {children}
   </div>
 );

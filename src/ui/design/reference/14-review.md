@@ -54,7 +54,7 @@ drawn where they are checkable rather than where they feel right.
 
 | Severity | Definition | Examples |
 | --- | --- | --- |
-| **P0** | A Floor violation, **or** a surface that cannot be used | Any rule in `floor.md`; a control unreachable by keyboard; an invisible focus ring; text under 4.5:1; a hit target below the `sm` box; a fabricated metric |
+| **P0** | A Floor violation, **or** a surface that cannot be used | Any rule in `floor.md`; a control unreachable by keyboard; an invisible focus ring; text under 4.5:1; a hit target below 28px; a fabricated metric |
 | **P1** | A state that does not exist, or a hierarchy inversion | No empty state on a collection that starts empty; no error rendering on a form that can fail; three `primary` buttons; a `destructive` `Alert` on a routine confirmation |
 | **P2** | A Default violation with a real, nameable cost | An arbitrary spacing value; a `Card` per row in a dense list; a `Badge default` on every row; an FAQ built from stacked cards |
 | **P3** | A taste note, correct but costless | A `gap-3` that would read better at `gap-4`; a heading that could be one step larger |

@@ -54,7 +54,7 @@ describe("VerifyView", () => {
   it("renders a six-cell numeric code field wired to the `code` field id", async () => {
     expect(tagOf(await verify(), 'id="field-code"')).toBe(
       '<input data-slot="otp-input" type="text" inputmode="numeric" autocomplete="one-time-code" data-size="md" ' +
-        'class="state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums text-base" ' +
+        'class="state-busy otp-editor -my-(--border-width) h-[calc(100%+2*var(--border-width))] shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums text-base" ' +
         'autofocus id="field-code" name="code" aria-describedby="field-code-description">',
     );
   });

@@ -23,7 +23,7 @@ audience: consumer
 - §1d Waiting on an htmx Swap: `htmx:after:swap` on `document`, once the new markup is live
 - §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
 - §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, on `createTestHarness` under node
-- §1g The Cross-Engine Subset: which specs also run in Firefox and WebKit, and how a skip on one engine is written
+- §1g The Cross-Engine Subset: which specs forge's release also runs in Firefox and WebKit, and how a skip on one engine is written
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -80,8 +80,8 @@ must be rejected.
 
 ### 1c. The Browser Set
 
-**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`, and §1g's subset also runs in Firefox and WebKit.**
-`playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it, never restate it here.
+**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`, and §1g's subset also runs in Firefox and WebKit at
+`release`.** `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it, never restate it here.
 
 **The set runs the installed binary under node — `playwright test` with one `--project` per engine, in the script and in `browserStep`'s argv alike
 — because under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox.** [`NAMESPACES.md`][namespaces-3c] §3c is
@@ -94,9 +94,9 @@ only legitimate ground for holding a step out of `unit`. Cost never is ([`TESTIN
 
 **A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
 
-**Every browser runs in the devctl Playwright container, and nothing falls back to a local one.** forge, the workspace and the container are
-one environment, so a missing piece fails loudly. `PW_TEST_CONNECT_WS_ENDPOINT` names the server. `PLAYWRIGHT_SERVER_MAX_CLIENTS` is its
-`--max-clients` and the config's worker count, because a worker past the limit only queues. The config refuses to load without either.
+**Every browser runs in a devctl Playwright container, and nothing falls back to a local one.** forge, the workspace and the containers are one
+environment, so a missing piece fails loudly. Chromium runs on `playwright`, and Firefox and WebKit on `playwright-compat`, which devctl starts
+only on request. `playwright.config.ts` owns the variable that names each server and the worker limit, and refuses to load without Chromium's.
 
 **A consequence accepted with it:** `validate-co-location` (`src/tooling/gate/checks/co-location.ts`) counts a `.browser.ts` as satisfying
 co-location, so `bun run verify:unit`, which runs no browser, can certify as tested a module whose only test it did not run. Demanding a second
@@ -204,6 +204,9 @@ ground the browser set runs there on (§1c).
 a machine with no runtime installed.
 
 ### 1g. The Cross-Engine Subset
+
+**forge's `release` always runs this subset on Firefox and WebKit, because forge ships the UI an application signs off against there.** For an
+application those engines are an opt-in that runs every spec ([`TESTING.md`][testing-apps-6e] §6e).
 
 **A spec joins the subset when its assertion reads something the engine computes rather than something forge's JavaScript wrote.** That covers CSS
 layout and anchor placement; top-layer, popover, dialog, invoker and light-dismiss behaviour; forced colors and UA styling; no-script platform
@@ -389,14 +392,8 @@ See [`TESTING.md`][testing-6] §6 for the one command and its tiers, the flag ta
 
 **A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, never a speed estimate**, and an omitted `tier` is `static`. `unit` adds
 `test`; `runtime` adds the runtime suites on Chromium and the database rows (§1c, §1f); `deploy` runs those whole and adds the rows that judge a
-finished change; `release` adds §1g's Firefox and WebKit rows. `test` covers every co-located suite that judges nothing external — `src/`,
+finished change; `release` adds §1g's Firefox and WebKit rows (§1c). `test` covers every co-located suite that judges nothing external — `src/`,
 `config/` and `warden/src/` — so `unit` runs those alone and the workerd set is reached only through its own step (§1f).
-
-The table is not the running order ([`TESTING.md`][testing-6c] §6c's tier-stable sort), so `browserStep` sitting above `dbSteps` in the file does
-not put Chromium ahead of the digest check.
-
-**forge's Firefox and WebKit rows run only §1g's `@cross-engine` subset; an application's run every spec** ([`TESTING.md`][testing-apps-6e] §6e),
-from a `playwright.config.ts` project per engine over the same specs and the same server (§1c). Both tables take the rows from `browserSteps`.
 
 **forge's browser and workerd rows run whole when a change reaches what a spec loads without importing it**: a module `mount`'s `expose` bundles
 from a string, a file named by `new URL(…, import.meta.url)`, or a Worker config with its `main`'s closure. `config/spec-reach.ts` is their
@@ -457,9 +454,6 @@ that reported no row rolls the batch back with the error a real D1 raises, so th
 ([`STORAGE_BINDINGS.md`][sb-1g] §1g). Supply the row count through `fakeD1(responder, { rowsWritten })` for a batch that should commit — the default
 is zero, and a guarded batch left on the default is meant to fail. A guard behind a _non-write_ stays inert, mirroring a real `changes()`, which
 reads through to the last write; [`STORAGE_BINDINGS.md`][sb-1g] §1g calls that shape a bug, and the fake does not diagnose it.
-
-The TTL _floor_ is a different thing from the TTL _expiry_: the floor is a constant and refuses the write, the expiry needs a clock and hides the
-value.
 
 `fakeD1` both controls results and records the queries issued: a caller-supplied responder drives the returned rows, and every prepared-and-bound
 statement is recorded, so one fake serves the arrange and the assert. `fakeR2` mirrors `fakeKV` over `R2BucketLike`, honouring `delimiter` and

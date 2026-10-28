@@ -66,11 +66,15 @@ Default: use the `focus-visible` variant, never bare `focus` — unless the cont
 to ignore it. `focus-visible` is the browser's own judgement about whether the user is navigating by keyboard, and it is a better judgement than any
 heuristic written at the call site.
 
+The one exception is WebKit, which does not count an arrow- or script-focused radio as `:focus-visible`, so a chip built on a visually hidden
+radio would lose its ring there. `focus-ring` therefore also matches `:has(:focus)` on WebKit alone, behind an `@supports` engine test, at the cost
+of a ring after a pointer press on WebKit. A ring on every engine and a script keyboard-modality flag were both rejected.
+
 ### 1c. Fixing an undersized target
 
 Default: fix an undersized target by moving up the `buttonVariants` size scale, never by adding padding to a smaller one — unless the control is not
 a button at all and the brief names its box.
-<!-- rule:forge-ui-interaction-size-from-button --> `sm` (`h-8`) is the Floor
+<!-- rule:forge-ui-interaction-size-from-button --> 28px (`h-7`) is the Floor, which every shipped shape's `sm` clears
 (`forge-ui-hit-target`). Which size an icon-only control takes is [`01-hierarchy.md`][hierarchy]'s (`forge-ui-hierarchy-icon-button-size`), and how
 the scale shifts under density is [`12-density.md`][density]'s (`forge-ui-density-button-size`); this rule is only about the remedy. Ad-hoc padding
 produces a row of controls whose boxes disagree by two or three pixels each — visible as a ragged edge, and untraceable to any one line.
@@ -138,9 +142,9 @@ composite whose items are the focus targets and wrong for a list a user reads wh
 control that genuinely needs an editable field over a filtered list is one you own end to end.
 
 Default: let the registered scope mount the controller for a shipped component — `Tabs`, `Menu`, `Tooltip` — rather than re-deriving its key
-handling — unless the markup sits somewhere a document-level `resume()` cannot reach, such as inside a shadow root, where you call `resume(root)` on
-that root. <!-- rule:forge-ui-interaction-named-controllers --> Under `@y-core/forge/ui/core/client` these are already registered as scopes, so the
-usual correct amount of code is the side-effect import and nothing else.
+handling — unless the markup sits somewhere a document-level `resume()` cannot reach, such as a shadow root attached after it ran, where you call
+`resume(root)` on that root. <!-- rule:forge-ui-interaction-named-controllers --> Under `@y-core/forge/ui/core/client` these are already
+registered as scopes, so the usual correct amount of code is the side-effect import and nothing else.
 
 ```tsx
 // Wrong — a bare row of buttons, with arrow keys wired up by a hand-written listener elsewhere.
@@ -257,13 +261,13 @@ state or an opacity-only fade. That includes the declarative `starting:` / `open
 // Costs: a modal that takes most of a second to become usable, and one that never stops moving for
 // a reader who asked the OS for less motion.
 
-// Right — no motion classes. The dialog already ships one response-length moment, off under reduced motion.
+// Right — no motion classes. The dialog already ships one response-length moment: a fade and scale, and the fade alone under reduced motion.
 <Dialog>
   <p class="text-sm">Delete this workspace?</p>
 </Dialog>
 
-// Right — an override of that default, which is per property: this dialog keeps the fade and only slows it.
-<Dialog class="motion-safe:duration-200">
+// Right — an override of that default, which is per property and per state: this dialog slows its enter and leaves its exit on the token.
+<Dialog class="open:duration-180">
   <p class="text-sm">Delete this workspace?</p>
 </Dialog>
 ```

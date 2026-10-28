@@ -3,10 +3,11 @@
 import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import type { Size } from "../contracts/types";
 import { presentationAttrs } from "../contracts/vocabulary";
+import { buttonBox } from "./button";
 import { fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { FIELD_SIZE, PRESSED_PAINT } from "./utils/recipes";
+import { PRESSED_PAINT } from "./utils/recipes";
 
 type ToggleProps = Omit<JSX.IntrinsicElements["input"], "children" | "size" | "type"> & {
   pressed?: boolean | undefined;
@@ -18,11 +19,8 @@ type ToggleProps = Omit<JSX.IntrinsicElements["input"], "children" | "size" | "t
 
 // Every state hook keys on `:has(:checked)` rather than on an attribute a controller would have to
 // maintain, which is what lets the paint stay truthful with no script running at all.
-const TOGGLE_BASE = cn(
-  "inline-flex items-center justify-center gap-2 rounded-field px-2.5 font-medium " +
-    "border-field border-input bg-transparent text-foreground " +
-    "focus-ring hover:bg-accent hover:text-accent-foreground " +
-    "state-busy state-disabled state-invalid",
+const TOGGLE_PAINT = cn(
+  "state-invalid border-input bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground",
   PRESSED_PAINT,
   "cursor-pointer",
 );
@@ -38,7 +36,7 @@ export const Toggle: FC<ToggleProps> = ({
   "data-slot": inherited,
   ...rest
 }) => (
-  <label data-slot='toggle' {...presentationAttrs({ size })} class={cn(TOGGLE_BASE, FIELD_SIZE[size], cls)}>
+  <label data-slot='toggle' {...presentationAttrs({ size })} class={cn(buttonBox({ size }), TOGGLE_PAINT, cls)}>
     {/* `sr-only`, not `hidden`: the input has to stay focusable and stay in the form's submission. */}
     <input
       data-slot={slotToken("toggle-input", inherited)}

@@ -14,10 +14,10 @@ const code = (props: Parameters<typeof OtpInput>[0] = {}) => render(<OtpInput na
 describe("OtpInput", () => {
   it("renders the whole frame and its editor exactly, caller class merged last and forwarded values escaped", async () => {
     expect(await render(<OtpInput name='code' value='123456' class='w-full' data-slot='pin' data-note='a&b' />)).toBe(
-      '<div data-slot="otp-input-wrapper" data-scope="otp-input" data-otp-length="6" data-size="md" class="state-disabled state-invalid focus-ring otp-cells inline-flex overflow-clip' +
+      '<div data-slot="otp-input-wrapper" data-scope="otp-input" data-otp-length="6" data-size="md" class="state-disabled state-invalid focus-ring otp-cells inline-flex overflow-x-clip' +
         ' rounded-field border-field border-input bg-background h-control-md [--otp-length:6] w-full">' +
         '<input data-slot="otp-input pin" type="text" inputmode="numeric" autocomplete="one-time-code" data-size="md"' +
-        ' class="state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none' +
+        ' class="state-busy otp-editor -my-(--border-width) h-[calc(100%+2*var(--border-width))] shrink-0 border-0 bg-transparent font-mono text-foreground outline-none' +
         ' tabular-nums text-base" name="code" value="123456" data-note="a&amp;b"></div>',
     );
   });

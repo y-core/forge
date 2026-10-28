@@ -76,6 +76,19 @@ describe("dialog scope", () => {
 
     expect({ errors, opened: modern.modalOpens }).toEqual({ errors: [], opened: 1 });
   });
+
+  it("drops the open-on-load marker once the dialog closes, so its next open is an ordinary one", () => {
+    const { doc } = fakeTree();
+    const marked = new FakeDialog({ [DIALOG_OPEN_MODAL_ATTR]: "" });
+    doc.root.append(marked);
+
+    const release = resume(doc as never);
+    const resumed = marked.hasAttribute(DIALOG_OPEN_MODAL_ATTR);
+    marked.dispatchEvent(new FakeEvent("close"));
+    release();
+
+    expect({ resumed, closed: marked.hasAttribute(DIALOG_OPEN_MODAL_ATTR) }).toEqual({ resumed: true, closed: false });
+  });
 });
 
 describe("toast scope — registration", () => {

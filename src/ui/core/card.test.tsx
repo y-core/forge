@@ -16,7 +16,7 @@ describe("Card", () => {
         </Card>,
       ),
     ).toBe(
-      '<div data-slot="card" class="flex flex-col rounded-box border border-border bg-card text-card-foreground shadow-sm" id="c1"' +
+      '<div data-slot="card" class="flex flex-col rounded-box border-field border-border bg-card text-card-foreground shadow-sm" id="c1"' +
         ' data-testid="card" data-note="R&amp;D&#39;s &lt;x&gt;">content</div>',
     );
   });

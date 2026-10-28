@@ -12,6 +12,7 @@ import {
   SHAPE_PROPERTIES,
   scaleVars,
   shapeVars,
+  splitLightDark,
   stepProperty,
 } from "./theme-contract";
 import type { DialValues } from "./types";
@@ -25,6 +26,39 @@ describe("lightDark", () => {
 
   it("collapses to the bare value when they agree, since there is nothing to select between", () => {
     expect(lightDark("#00000000", "#00000000")).toBe("#00000000");
+  });
+});
+
+describe("splitLightDark", () => {
+  it("splits the two branches of a plain value", () => {
+    expect(splitLightDark("light-dark(oklch(88.53% 0 0), oklch(34.85% 0 0))")).toEqual(["oklch(88.53% 0 0)", "oklch(34.85% 0 0)"]);
+  });
+
+  it("splits on the top-level comma, not the one inside a function", () => {
+    expect(splitLightDark("light-dark(rgba(0, 0, 0, 0.4), rgba(255, 255, 255, 0.4))")).toEqual(["rgba(0, 0, 0, 0.4)", "rgba(255, 255, 255, 0.4)"]);
+  });
+
+  it("splits a pair of var() references, which is what a contrast step is", () => {
+    expect(splitLightDark("light-dark(var(--gray-1), var(--gray-12))")).toEqual(["var(--gray-1)", "var(--gray-12)"]);
+  });
+
+  it("returns undefined for a value that is not a light-dark() at all", () => {
+    expect(splitLightDark("oklch(88.53% 0 0)")).toBeUndefined();
+    expect(splitLightDark("var(--gray-6)")).toBeUndefined();
+    expect(splitLightDark("#d9d9d9")).toBeUndefined();
+  });
+
+  it("returns undefined for a light-dark() carrying no top-level comma", () => {
+    expect(splitLightDark("light-dark(var(--gray-1))")).toBeUndefined();
+  });
+
+  it("splits a nested light-dark() at its own top-level comma, case-insensitively", () => {
+    expect(splitLightDark("LIGHT-DARK( var(--a, #fff) , light-dark(#111, #222) )")).toEqual(["var(--a, #fff)", "light-dark(#111, #222)"]);
+  });
+
+  it("returns undefined for an unclosed light-dark() and for an empty value", () => {
+    expect(splitLightDark("light-dark(#fff, #000")).toBeUndefined();
+    expect(splitLightDark("")).toBeUndefined();
   });
 });
 

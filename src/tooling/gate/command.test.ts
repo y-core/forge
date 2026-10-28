@@ -204,14 +204,14 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
 
   it("gives every browser step under one Playwright server the hint its one probe earned", async () => {
     const probes = {
-      env: { PW_TEST_CONNECT_WS_ENDPOINT: "ws://sidecar.test:3000/" },
+      env: { PLAYWRIGHT_COMPAT_WS_ENDPOINT: "ws://compat.test:3000/" },
       serverStatus: () => Promise.resolve({ state: "mismatch" as const, server: "1.64" }),
     };
     const { logs } = await run(
-      [passing("chromium", browserEnginesRequired(["chromium"], probes)), passing("others", browserEnginesRequired(["firefox", "webkit"], probes))],
+      [passing("firefox", browserEnginesRequired(["firefox"], probes)), passing("webkit", browserEnginesRequired(["webkit"], probes))],
       { tier: "unit" },
     );
-    const skips = logs.filter((line) => line.startsWith("○ chromium") || line.startsWith("○ others"));
+    const skips = logs.filter((line) => line.startsWith("○ firefox") || line.startsWith("○ webkit"));
 
     expect(skips).toHaveLength(2);
     expect(skips.every((line) => line.includes("the server runs Playwright 1.64"))).toBe(true);

@@ -226,3 +226,18 @@ describe("FakeElement.isConnected", () => {
     expect({ attached, removed: child.isConnected, unattached: el().isConnected }).toEqual({ attached: true, removed: false, unattached: false });
   });
 });
+
+describe("FakeElement.matches with a quoted attribute value", () => {
+  for (const { selector, expected } of [
+    { selector: '[aria-controls="\\31 \\"x"]', expected: true },
+    { selector: '[aria-controls="1\\"x"]', expected: true },
+    { selector: '[aria-controls="1"x"]', expected: false },
+    { selector: '[aria-controls="\\31 x"]', expected: false },
+  ]) {
+    it(`${selector} matching an element whose value is 1"x is ${expected}`, () => {
+      const { el } = fakeTree();
+
+      expect(el("BUTTON", { "aria-controls": '1"x' }).matches(selector)).toBe(expected);
+    });
+  }
+});

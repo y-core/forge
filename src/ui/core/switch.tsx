@@ -48,6 +48,7 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
 }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
   const state = fieldStateProps(invalid, busy);
+  const bare = children === undefined || children === null;
 
   return (
     <label
@@ -55,7 +56,12 @@ export const Switch: FC<PropsWithChildren<SwitchProps>> = ({
       {...stateAttrs({ orientation: "horizontal" })}
       data-label-position={labelPlacement}
       {...presentationAttrs({ size })}
-      class={cn("group/switch state-busy inline-flex items-center gap-2 state-invalid", labelPlacement === "before" && "flex-row-reverse", cls)}>
+      class={cn(
+        "group/switch state-busy inline-flex min-h-control-sm w-fit items-center gap-2 state-invalid",
+        bare && "min-w-control-sm justify-center",
+        labelPlacement === "before" && "flex-row-reverse",
+        cls,
+      )}>
       {/* oxlint-disable-next-line jsx-a11y/role-has-required-aria-props -- a native checkbox supplies `aria-checked` from its own checkedness; writing it would desync on toggle. */}
       <input data-slot={slotToken("switch-input", inherited)} type='checkbox' role='switch' class='peer sr-only' {...resolved} {...state} />
       <span data-slot='switch-track' aria-hidden='true' class={cn(SWITCH_TRACK, TRACK_SIZE[size])}>

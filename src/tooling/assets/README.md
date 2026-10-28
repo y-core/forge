@@ -412,6 +412,9 @@ cursors: {
 Alpha survives the bake: a resolved colour carrying alpha — `rgb(0 0 0 / 0.28)`, `rgba(…, 0.28)`, `oklch(L C H / a)` or `#rrggbbaa` — becomes an
 8-digit hex, so one token carries colour and opacity with no separate `fill-opacity`. An opaque colour bakes to 6 digits.
 
+A token written `light-dark(a, b)` bakes `b` for a theme whose stylesheet block declares `color-scheme: dark`, and `a` for every other theme,
+including one that declares no `color-scheme`.
+
 Comment freely in templates and cursor SVGs: XML comments are stripped before `cssvar()` resolution, so they never reach the data URI and a
 commented-out `cssvar(--x)` neither resolves nor throws. That also disarms a footgun — a `--` inside a comment is ill-formed XML, and browsers drop
 the whole cursor image without a word.

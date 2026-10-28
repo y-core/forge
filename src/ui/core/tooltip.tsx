@@ -6,11 +6,12 @@ import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import type { Align, PhysicalSide } from "../contracts/types";
-import { mergeDescribedBy } from "./field";
+import { buttonBox } from "./button";
+import { mergeIdRefs } from "./field";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
-interface TooltipRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+interface TooltipRootProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
   children?: JSXNode | undefined;
 }
 
@@ -24,7 +25,7 @@ interface TooltipTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   children?: JSXNode | undefined;
 }
 
-interface TooltipContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+interface TooltipContentProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
   id: string;
   side?: PhysicalSide | undefined;
   align?: Align | undefined;
@@ -32,9 +33,9 @@ interface TooltipContentProps extends Omit<JSX.IntrinsicElements["div"], "childr
 }
 
 const TooltipRoot: FC<TooltipRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("tooltip", inherited)} data-scope={TOOLTIP_SCOPE} class={cn("relative inline-block", cls)} {...rest}>
+  <span data-slot={slotToken("tooltip", inherited)} data-scope={TOOLTIP_SCOPE} class={cn("relative inline-block", cls)} {...rest}>
     {children}
-  </div>
+  </span>
 );
 
 const NAME_PROPS = ["aria-label", "aria-labelledby"] as const;
@@ -60,10 +61,9 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
   ...rest
 }) => {
   if (kind === "label") assertUnnamedTrigger(rest, asChild ? children : null);
-  const className = cn("cursor-default focus-ring", cls);
   const inert = rest.disabled === true || (asChild && isValidElement(children) && children.props.disabled === true);
   const childDescribedBy = asChild && isValidElement(children) ? children.props["aria-describedby"] : undefined;
-  const describedBy = mergeDescribedBy(typeof childDescribedBy === "string" ? childDescribedBy : undefined, [
+  const describedBy = mergeIdRefs(typeof childDescribedBy === "string" ? childDescribedBy : undefined, [
     ownDescribedBy,
     kind === "label" ? undefined : contentId,
   ]);
@@ -78,7 +78,7 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
   if (asChild) {
     return cloneAsChild(children, {
       slot,
-      class: className,
+      class: cn("cursor-default focus-ring", cls),
       props: attrs,
       type: rest.type,
       message:
@@ -87,14 +87,14 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
   }
 
   return (
-    <button type='button' data-slot={slot} class={className} {...attrs}>
+    <button type='button' data-slot={slot} class={cn(buttonBox({ size: "sm" }), "border-transparent", "cursor-default", cls)} {...attrs}>
       {children}
     </button>
   );
 };
 
 const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "center", class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div
+  <span
     id={id}
     role='tooltip'
     data-slot={slotToken("tooltip-content", inherited)}
@@ -103,7 +103,7 @@ const TooltipContent: FC<TooltipContentProps> = ({ id, side = "top", align = "ce
     class={cn("z-50 w-max max-w-xs rounded-field bg-foreground px-2 py-1 text-xs text-background shadow-md", cls)}
     {...rest}>
     {children}
-  </div>
+  </span>
 );
 
 /** Compound tooltip whose trigger is described or named by a hint popover shown on hover or keyboard focus. @public */

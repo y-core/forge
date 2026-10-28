@@ -1,30 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { checkDarkHoldsOnlySteps, parseThemeDeclarations, resolveStep, splitLightDark } from "./contrast-parse";
-
-describe("splitLightDark", () => {
-  it("splits the two branches of a plain value", () => {
-    expect(splitLightDark("light-dark(oklch(88.53% 0 0), oklch(34.85% 0 0))")).toEqual(["oklch(88.53% 0 0)", "oklch(34.85% 0 0)"]);
-  });
-
-  it("splits on the top-level comma, not the one inside a function", () => {
-    expect(splitLightDark("light-dark(rgba(0, 0, 0, 0.4), rgba(255, 255, 255, 0.4))")).toEqual(["rgba(0, 0, 0, 0.4)", "rgba(255, 255, 255, 0.4)"]);
-  });
-
-  it("splits a pair of var() references, which is what a contrast step is", () => {
-    expect(splitLightDark("light-dark(var(--gray-1), var(--gray-12))")).toEqual(["var(--gray-1)", "var(--gray-12)"]);
-  });
-
-  it("returns undefined for a value that is not a light-dark() at all", () => {
-    expect(splitLightDark("oklch(88.53% 0 0)")).toBeUndefined();
-    expect(splitLightDark("var(--gray-6)")).toBeUndefined();
-    expect(splitLightDark("#d9d9d9")).toBeUndefined();
-  });
-
-  it("returns undefined for a light-dark() carrying no top-level comma", () => {
-    expect(splitLightDark("light-dark(var(--gray-1))")).toBeUndefined();
-  });
-});
+import { checkDarkHoldsOnlySteps, parseThemeDeclarations, resolveStep } from "./contrast-parse";
 
 describe("parseThemeDeclarations", () => {
   const css = `:root {

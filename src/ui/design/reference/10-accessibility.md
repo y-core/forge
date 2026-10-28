@@ -175,9 +175,10 @@ right.
 
 ## 5. Motion and live regions
 
-Default: author motion inside `motion-safe:` and give `motion-reduce:` the settled state, rather than treating reduced motion as a later pass —
-unless the movement conveys information that has no static equivalent. <!-- rule:forge-ui-a11y-reduced-motion-pair --> `forge-ui-reduced-motion` is
-the Floor; this is where in the process it gets satisfied. Durations and the one-moment budget are [`09-interaction.md`][interaction]'s.
+Default: author a scale or slide inside `motion-safe:` and give `motion-reduce:` the settled state or an opacity fade in its place, rather than
+treating reduced motion as a later pass — unless the movement conveys information that has no static equivalent.
+<!-- rule:forge-ui-a11y-reduced-motion-pair --> `forge-ui-reduced-motion` is the Floor; this is where in the process it gets satisfied. Durations
+and the one-moment budget are [`09-interaction.md`][interaction]'s.
 
 ### 5a. One live region, and why `Toast` is not one
 

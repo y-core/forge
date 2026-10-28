@@ -525,25 +525,79 @@ describe("withOwner", () => {
   it("is a no-op to dispose an owned run twice", () => {
     const s = createSignal(0);
     let runs = 0;
-    const owned = withOwner(() =>
+    const owned = withOwner(() => {
       effect(() => {
         s.value;
         runs++;
-      }),
-    );
+      });
+      return computed(() => s.value + 1);
+    });
+    expect(owned.result.value).toBe(1);
     owned.dispose();
     owned.dispose();
     s.value = 1;
     expect(runs).toBe(1);
+    expect(owned.result.value).toBe(1);
   });
 
-  it("does not collect a computed created inside the callback — a lazy computed is not an effect", () => {
+  it("collects a computed created inside the callback, freezing it at its last value", () => {
     const a = createSignal(1);
     const owned = withOwner(() => computed(() => a.value * 2));
     expect(owned.result.value).toBe(2);
     owned.dispose();
     a.value = 5;
-    expect(owned.result.value).toBe(10);
+    expect(owned.result.value).toBe(2);
+  });
+
+  it("neither re-derives a disposed computed nor re-runs an outside effect that reads it", () => {
+    const a = createSignal(1);
+    let derives = 0;
+    const owned = withOwner(() =>
+      computed(() => {
+        derives++;
+        return a.value * 2;
+      }),
+    );
+    let seen = 0;
+    effect(() => {
+      seen = owned.result.value;
+    });
+    expect(derives).toBe(1);
+    expect(seen).toBe(2);
+
+    owned.dispose();
+    a.value = 5;
+    expect(derives).toBe(1);
+    expect(seen).toBe(2);
+  });
+
+  it("evaluates a computed disposed before its first read once, then holds that value", () => {
+    const a = createSignal(1);
+    let derives = 0;
+    const owned = withOwner(() =>
+      computed(() => {
+        derives++;
+        return a.value * 2;
+      }),
+    );
+    owned.dispose();
+    expect(owned.result.value).toBe(2);
+    a.value = 5;
+    expect(owned.result.value).toBe(2);
+    expect(derives).toBe(1);
+  });
+
+  it("leaves a computed created outside the owner live after the owner is disposed", () => {
+    const a = createSignal(1);
+    const doubled = computed(() => a.value * 2);
+    const owned = withOwner(() =>
+      effect(() => {
+        doubled.value;
+      }),
+    );
+    owned.dispose();
+    a.value = 5;
+    expect(doubled.value).toBe(10);
   });
 });
 

@@ -51,13 +51,12 @@ describe("Drawer", () => {
     });
   });
 
-  it("renders open and non-modal when open is set, which is the only openness markup can express", async () => {
+  it("renders open and non-modal when open is set, without the closedby that would dismiss it on any page click", async () => {
     expect(attrsOf(await render(<Drawer id='nav' titled open />))).toEqual({
       id: "nav",
       "data-slot": "drawer",
       "aria-labelledby": "nav-title",
       open: "",
-      closedby: "any",
       "data-side": "left",
     });
   });
@@ -134,15 +133,42 @@ describe("Drawer.Close", () => {
     });
   });
 
-  it("runs the cancelable close-request algorithm when asked, and wears the caller's class alone", async () => {
+  it("runs the cancelable close-request algorithm when asked", async () => {
     const html = await render(
-      <Drawer.Close for='nav' request class='text-sm'>
+      <Drawer.Close for='nav' request>
         Done
       </Drawer.Close>,
     );
 
     expect(attrOf(html, "command")).toBe("request-close");
-    expect(classesOf(html)).toEqual(["text-sm"]);
+  });
+});
+
+describe("Drawer.Trigger and Drawer.Close — the sm button box", () => {
+  const invokers = [Drawer.Trigger, Drawer.Close] as const;
+
+  it("clears the Floor bare, with the sm height, a focus ring and an unpainted border", async () => {
+    for (const Invoker of invokers) {
+      const classes = classesOf(await render(<Invoker for='nav'>Go</Invoker>));
+
+      for (const token of ["h-control-sm", "focus-ring", "border-transparent"]) expect(classes).toContain(token);
+    }
+  });
+
+  it("lets a caller's conflicting class evict the box's own while the height stays", async () => {
+    for (const Invoker of invokers) {
+      const classes = classesOf(
+        await render(
+          <Invoker for='nav' class='px-6 text-base'>
+            Go
+          </Invoker>,
+        ),
+      );
+
+      for (const token of ["px-6", "text-base", "h-control-sm"]) expect(classes).toContain(token);
+      expect(classes).not.toContain("px-3");
+      expect(classes).not.toContain("text-sm");
+    }
   });
 });
 
@@ -216,5 +242,17 @@ describe("Drawer — the name the root resolves to", () => {
 
     expect(named).toBe("filters-title");
     expect(tagOf(html, `id="${named}"`).startsWith("<h2 ")).toBe(true);
+  });
+});
+
+describe("Drawer — a caller's aria-labelledby joins the derived name rather than replacing it", () => {
+  it("lists the caller's id ahead of the title reference", async () => {
+    expect(attrOf(await render(<Drawer id='nav' titled aria-labelledby='extra' />), "aria-labelledby", 'data-slot="drawer"')).toBe(
+      "extra nav-title",
+    );
+  });
+
+  it("lists an id once when the caller repeats the one they named the drawer by", async () => {
+    expect(attrOf(await render(<Drawer id='nav' labelledby='t' aria-labelledby='t' />), "aria-labelledby", 'data-slot="drawer"')).toBe("t");
   });
 });

@@ -40,8 +40,10 @@ export {
 } from "./menu-contract";
 export type { MenuAction } from "./types";
 export type { MenuItemAttrsOptions } from "./types";
+export type { MenuItemAttrs } from "./types";
 export { applyFormat, INPUT_FORMAT_ATTR, INPUT_FORMAT_SCOPE, stripFormat } from "./input-format-contract";
 export { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "./navbar-contract";
+export type { NavbarAction } from "./types";
 export { NUMBER_FIELD_SCOPE } from "./number-field-contract";
 export { OTP_INPUT_SCOPE, OTP_LENGTH_ATTR } from "./otp-input-contract";
 export { ANCHOR_X_PROPERTY, ANCHOR_Y_PROPERTY, invokerAttrs, POPOVER_COORDS_ATTR, POPOVER_SCOPE } from "./overlay-contract";

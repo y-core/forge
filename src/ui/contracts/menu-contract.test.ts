@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { menuItemAttrs } from "./menu-contract";
+import type { MenuItemAttrs } from "./types";
 
 describe("menuItemAttrs", () => {
   it("describes a plain row with its role and slot, and nothing it does not need", () => {
@@ -57,5 +58,12 @@ describe("menuItemAttrs", () => {
     expect(attrs).not.toHaveProperty("data-on-click");
     expect(attrs).not.toHaveProperty("command");
     expect(attrs["aria-checked"]).toBe("true");
+  });
+
+  it("refuses a misspelt action on a checkable row", () => {
+    // @ts-expect-error — "chek" is not a MenuAction
+    const row: MenuItemAttrs = { role: "menuitemcheckbox", "data-slot": "menu-checkbox-item", "data-on-click": "chek" };
+
+    expect(row["data-on-click"]).toBe("chek");
   });
 });

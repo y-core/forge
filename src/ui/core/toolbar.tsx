@@ -1,15 +1,16 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
-import type { FC, JSX, JSXNode } from "../../render/jsx/types";
+import type { ComponentFn, FC, JSX, JSXNode } from "../../render/jsx/types";
 import { nameAttrs } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLBAR_ITEM_ATTR, TOOLBAR_SCOPE } from "../contracts/toolbar-contract";
-import type { ContainerNaming, Orientation } from "../contracts/types";
+import type { ContainerNaming, Orientation, Size } from "../contracts/types";
 import { buttonVariants } from "./button";
 import type { ButtonProps } from "./types";
 import { cloneAsChild, INERT_ANCHOR_PROPS, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { RULE } from "./utils/recipes";
+import { fillPartProps } from "./utils/part-props";
+import { CONTROL_PADDING, FIELD_SIZE, RULE } from "./utils/recipes";
 
 interface ToolbarItemStyling {
   tone?: ButtonProps["tone"] | undefined;
@@ -35,9 +36,10 @@ interface ToolbarLinkProps extends Omit<JSX.IntrinsicElements["a"], "children">,
   children?: JSXNode | undefined;
 }
 
-type ToolbarInputProps = Omit<JSX.IntrinsicElements["input"], "children">;
+type ToolbarInputProps = Omit<JSX.IntrinsicElements["input"], "children" | "size"> & { size?: Size | undefined };
 
 interface ToolbarGroupProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
+  orientation?: Orientation | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -82,7 +84,13 @@ const ToolbarRoot: FC<ToolbarRootProps> = ({
     aria-orientation={orientation}
     class={cn(ROOT_BASE, orientation === "vertical" && "flex-col", cls)}
     {...rest}>
-    {children}
+    {fillPartProps(
+      children,
+      new Map<ComponentFn, Record<string, unknown>>([
+        [ToolbarSeparator, { orientation: orientation === "vertical" ? "horizontal" : "vertical" }],
+        [ToolbarGroup, { orientation }],
+      ]),
+    )}
   </div>
 );
 
@@ -170,22 +178,21 @@ const ToolbarLink: FC<ToolbarLinkProps> = ({
 };
 
 /** A text field inside a toolbar. */
-const ToolbarInput: FC<ToolbarInputProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
+const ToolbarInput: FC<ToolbarInputProps> = ({ size = "sm", class: cls, "data-slot": inherited, ...rest }) => (
   <input
     data-slot={slotToken("toolbar-input", inherited)}
     {...itemAttrs(undefined)}
-    class={cn(
-      "rounded-field border border-input bg-background px-2 py-1 text-sm text-foreground",
-      "focus-ring placeholder:text-muted-foreground",
-      cls,
-    )}
+    class={cn("field-chrome w-auto focus-ring", FIELD_SIZE[size], CONTROL_PADDING[size], cls)}
     {...rest}
   />
 );
 
 /** Groups related items inside a toolbar. */
-const ToolbarGroup: FC<ToolbarGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <fieldset data-slot={slotToken("toolbar-group", inherited)} class={cn("m-0 inline-flex items-center gap-1 border-0 p-0", cls)} {...rest}>
+const ToolbarGroup: FC<ToolbarGroupProps> = ({ orientation = "horizontal", class: cls, children, "data-slot": inherited, ...rest }) => (
+  <fieldset
+    data-slot={slotToken("toolbar-group", inherited)}
+    class={cn("m-0 inline-flex items-center gap-1 border-0 p-0", orientation === "vertical" && "flex-col", cls)}
+    {...rest}>
     {children}
   </fieldset>
 );

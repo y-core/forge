@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { attrOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { buttonVariants } from "../core/button";
 import { ToggleGroup } from "./toggle-group";
@@ -100,5 +101,17 @@ describe("controls/ToggleGroup.Item", () => {
     expect(await render(<ToggleGroup label='Projection' data-ref='projection-group' />)).toBe(
       `${GROUP_OPEN} data-ref="projection-group"></fieldset>`,
     );
+  });
+});
+
+describe("controls/ToggleGroup — the root's type reaches a bound item", () => {
+  it("renders a checkbox under type=multiple", async () => {
+    const html = await render(
+      <ToggleGroup label='Marks' type='multiple'>
+        <ToggleGroup.Item bind='marks' value='bold' />
+      </ToggleGroup>,
+    );
+
+    expect(attrOf(html, "type", 'data-slot="toggle-group-input"')).toBe("checkbox");
   });
 });

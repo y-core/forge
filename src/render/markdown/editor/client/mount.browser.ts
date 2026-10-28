@@ -84,6 +84,8 @@ test("takes typing only in edit mode, and reports each change", async ({ page })
 });
 
 test("swaps in replaced text without reporting a change, keeping the cursor, and the reader's undo keeps it", async ({ page }) => {
+  await page.clock.install({ time: 0 });
+  await page.clock.pauseAt(1000);
   await mountViewport(page, "one\ntwo\nthree", "edit", "raw");
   await content(page).click();
   await page.keyboard.press("ControlOrMeta+End");

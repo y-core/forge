@@ -32,7 +32,6 @@ export const LICENCE_HEADERS: ReadonlyMap<string, string> = new Map([
 
 /** Modules exempt from needing a co-located test, each mapped to why. */
 export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
-  ["src/ui/contracts/bind-contract.ts", "its one function is covered where it is used, by `client/bind-display.test.ts`"],
   ["src/ui/contracts/alert-contract.ts", "declared contract constants — the markup that uses them is tested"],
   ["src/ui/contracts/announcer-contract.ts", "declared contract constants — the markup and the controller that use them are tested"],
   ["src/ui/contracts/composite-contract.ts", "declared contract constants — the markup that uses them is tested"],

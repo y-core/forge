@@ -5,6 +5,7 @@ import { describe, expect, it } from "bun:test";
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Table } from "./table";
+import { TONES } from "./utils/tone";
 
 const TABLE = 'data-slot="table"';
 
@@ -88,13 +89,29 @@ describe("Table", () => {
       ),
     ).toEqual({
       added: [
-        "[&amp;_tbody_tr:nth-child(even)]:bg-muted/40",
+        "[&amp;_tbody_tr:nth-child(even):not([data-selected],[data-tone])]:bg-muted/40",
         "[&amp;_thead_th]:sticky",
         "[&amp;_thead_th]:top-0",
         "[&amp;_thead_th]:bg-background",
       ],
       dropped: [],
     });
+  });
+
+  it("lets a pinned table's scroller take its height from the caller's wrapper, so the header has a box to stick in", async () => {
+    const scroll = 'data-slot="table-scroll"';
+
+    expect(
+      variantClasses(
+        await render(
+          <Table label='Projects' pinRows>
+            x
+          </Table>,
+        ),
+        await render(<Table label='Projects'>x</Table>),
+        scroll,
+      ),
+    ).toEqual({ added: ["max-h-[inherit]"], dropped: [] });
   });
 
   it("keeps its own slot token ahead of one handed down through props", async () => {
@@ -129,6 +146,11 @@ describe("Table.Row", () => {
     expect(variantClasses(html, await render(<Table.Row>r</Table.Row>))).toEqual({ added: ["bg-primary-soft"], dropped: [] });
   });
 
+  it("paints no hover fill on a toned row in any tone, since the row takes no pointer action", async () => {
+    const rows = await Promise.all(TONES.map((tone) => render(<Table.Row tone={tone}>r</Table.Row>)));
+    expect(rows.flatMap((html) => classesOf(html).filter((token) => token.startsWith("hover:")))).toEqual([]);
+  });
+
   it("paints a toned row in that tone's soft palette and names the tone on the attribute", async () => {
     const html = await render(<Table.Row tone='success'>r</Table.Row>);
 
@@ -145,7 +167,6 @@ describe("Table.Row", () => {
         "bg-(--tone-soft)",
         "text-(--tone-soft-fg)",
         "[--focus-ring:var(--color-ring)]",
-        "hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]",
       ],
       dropped: ["border-border"],
     });

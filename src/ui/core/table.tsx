@@ -7,7 +7,7 @@ import { presentationAttrs } from "../contracts/vocabulary";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
-import { toneVariants } from "./utils/tone";
+import { toneSurfaceVariants } from "./utils/tone";
 
 type TableProps = JSX.IntrinsicElements["table"] & {
   size?: Size | undefined;
@@ -52,13 +52,13 @@ const TableRoot: FC<TableProps> = ({
     aria-label={label}
     // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- WCAG 2.1.1 requires a scrollable region to be a keyboard tab stop; the rule does not model overflow.
     tabindex={0}
-    class='overflow-auto rounded-box border-field border-border focus-ring'>
+    class={cn("overflow-auto rounded-box border-field border-border focus-ring", pinRows && "max-h-[inherit]")}>
     <table
       data-slot={slotToken("table", inherited)}
       {...presentationAttrs({ size })}
       class={cn(
         tableBox({ size }),
-        zebra && "[&_tbody_tr:nth-child(even)]:bg-muted/40",
+        zebra && "[&_tbody_tr:nth-child(even):not([data-selected],[data-tone])]:bg-muted/40",
         pinRows && "[&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:bg-background",
         cls,
       )}
@@ -93,7 +93,12 @@ const TableRow: FC<TableRowProps> = ({ tone, selected, class: cls, children, "da
     data-slot={slotToken("table-row", inherited)}
     {...presentationAttrs({ tone })}
     {...stateAttrs({ selected: selected ?? false })}
-    class={cn("border-b border-border last:border-b-0", tone ? toneVariants({ tone, appearance: "soft" }) : "", selected && "bg-primary-soft", cls)}
+    class={cn(
+      "border-b border-border last:border-b-0",
+      tone ? toneSurfaceVariants({ tone, appearance: "soft" }) : "",
+      selected && "bg-primary-soft",
+      cls,
+    )}
     {...rest}>
     {children}
   </tr>

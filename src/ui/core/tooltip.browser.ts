@@ -6,6 +6,8 @@ import { render } from "../../testing/render";
 import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
 import { scopeAttrs } from "../contracts/scope-attrs";
 import { Resumable } from "../server/resumable";
+import { Button } from "./button";
+import { createIcon } from "./icon";
 import { Toolbar } from "./toolbar";
 import { Tooltip } from "./tooltip";
 
@@ -356,6 +358,68 @@ test.describe("Tooltip — an aria-disabled trigger fires nothing", { tag: "@cro
   }
 });
 
+test.describe("Tooltip — a busy trigger still shows its tooltip", { tag: "@cross-engine" }, () => {
+  const markup = () =>
+    render(
+      Resumable({
+        name: "editor",
+        children: jsx("form", {
+          id: "form",
+          children: Tooltip({
+            children: [
+              Tooltip.Trigger({
+                for: "busy-tip",
+                asChild: true,
+                children: Button({
+                  id: "busy",
+                  type: "submit",
+                  loading: true,
+                  loadingIcon: createIcon("/sprite.svg", { "icon-spinner": "0 0 16 16" }),
+                  ...scopeAttrs({ onClick: "act" }),
+                  children: "Save",
+                }),
+              }),
+              Tooltip.Content({ id: "busy-tip", children: "Saving" }),
+            ],
+          }),
+        }),
+      }),
+    );
+
+  async function arm(page: Page): Promise<void> {
+    const html = await markup();
+    await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
+    await page.evaluate(() => {
+      window.forgeResume.registerScope("editor", { on: { act: () => document.body.setAttribute("data-ran", "") } });
+      document.getElementById("form")?.addEventListener("submit", (event) => {
+        event.preventDefault();
+        document.body.setAttribute("data-submitted", "");
+      });
+      window.forgeResume.resume();
+    });
+  }
+
+  test("opens on hover through the state-busy styling a loading Button carries", async ({ page }) => {
+    await arm(page);
+    const box = await page.locator("#busy").boundingBox();
+    if (!box) throw new Error("#busy has no box to hover");
+
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+
+    await expect.poll(() => isOpen(page, "busy-tip"), { timeout: 3000 }).toBe(true);
+  });
+
+  test("a click on it runs no action and submits nothing", async ({ page }) => {
+    await arm(page);
+
+    await page.click("#busy", { force: true });
+
+    expect(
+      await page.evaluate(() => ({ action: document.body.hasAttribute("data-ran"), submit: document.body.hasAttribute("data-submitted") })),
+    ).toEqual({ action: false, submit: false });
+  });
+});
+
 type Tree = "light" | "shadow";
 
 function isShownIn(page: Page, tree: Tree): Promise<boolean> {
@@ -505,7 +569,7 @@ test.describe("Tooltip — anchored placement", { tag: "@cross-engine" }, () => 
 });
 
 test.describe("Tooltip — show motion", { tag: "@cross-engine" }, () => {
-  async function showAndRead(page: Page): Promise<{ transitions: string[]; opacity: number }> {
+  async function showAndRead(page: Page, padding = 120): Promise<{ transitions: string[]; opacity: number; flipped: boolean }> {
     const html = await render(
       Tooltip({
         children: [
@@ -514,30 +578,42 @@ test.describe("Tooltip — show motion", { tag: "@cross-engine" }, () => {
         ],
       }),
     );
-    await mount(page, html, { css: PLACEMENT_CSS.css });
+    await mount(page, `<div style="padding: ${padding}px">${html}</div>`, { css: PLACEMENT_CSS.css });
     return page.evaluate(() => {
       const tip = document.querySelector("#save-tip") as HTMLElement;
+      const trigger = document.querySelector("#save") as HTMLElement;
       tip.showPopover();
       return {
         transitions: tip.getAnimations().map((animation) => (animation as CSSTransition).transitionProperty),
         opacity: Number(getComputedStyle(tip).opacity),
+        flipped: tip.getBoundingClientRect().top > trigger.getBoundingClientRect().top,
       };
     });
   }
 
-  test("a shown tip fades and scales in from below half opacity", async ({ page, browserName }) => {
-    test.skip(browserName === "firefox", "bug-261022-75: the tip reads opacity 1 on the frame it is shown, so it never fades in");
+  test("a shown tip fades and scales in from below half opacity", async ({ page }) => {
     const frame = await showAndRead(page);
 
+    expect(frame.flipped, JSON.stringify(frame)).toBe(false);
     expect(frame.transitions, JSON.stringify(frame)).toEqual(expect.arrayContaining(["opacity", "scale"]));
+    expect(frame.opacity).toBeLessThan(0.5);
+  });
+
+  test("a tip flipped below its trigger still fades in", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox",
+      "Firefox drops a running transition's value while a position-try fallback is applied, so a flipped tip shows at full opacity",
+    );
+    const frame = await showAndRead(page, 0);
+
+    expect(frame.flipped, JSON.stringify(frame)).toBe(true);
     expect(frame.opacity).toBeLessThan(0.5);
   });
 
   test.describe("under reduced motion", () => {
     test.use({ reducedMotion: "reduce" });
 
-    test("a shown tip fades in without scaling", async ({ page, browserName }) => {
-      test.skip(browserName === "firefox", "bug-261022-75: the tip reads opacity 1 on the frame it is shown, so it never fades in");
+    test("a shown tip fades in without scaling", async ({ page }) => {
       const frame = await showAndRead(page);
 
       expect(frame.transitions).toEqual(["opacity"]);
@@ -584,5 +660,28 @@ test.describe("Tooltip — the warm window", { tag: "@cross-engine" }, () => {
     expect(await shown(page, "#c-tip"), "a cold tip opened before its delay").toBe(false);
     await expect.poll(() => shown(page, "#c-tip"), { timeout: 3000 }).toBe(true);
     expect(await page.evaluate(() => document.querySelector("#c-tip")?.hasAttribute("data-instant"))).toBe(false);
+  });
+});
+
+test.describe("Tooltip — inside a paragraph", { tag: "@cross-engine" }, () => {
+  test("stays inside the paragraph instead of splitting it", async ({ page }) => {
+    const tip = await render(
+      Tooltip({
+        children: [Tooltip.Trigger({ for: "para-tip", children: "Save" }), Tooltip.Content({ id: "para-tip", children: "Writes the file" })],
+      }),
+    );
+    await mount(page, `<p>text ${tip} more</p>`);
+
+    expect(
+      await page.evaluate(() => {
+        const paragraph = document.querySelector("p");
+        return {
+          paragraphs: document.querySelectorAll("p").length,
+          keepsTail: paragraph?.textContent?.includes("more") ?? false,
+          holdsRoot: paragraph?.querySelector("[data-slot~='tooltip']") !== null,
+          holdsContent: paragraph?.querySelector("#para-tip") !== null,
+        };
+      }),
+    ).toEqual({ paragraphs: 1, keepsTail: true, holdsRoot: true, holdsContent: true });
   });
 });

@@ -1,17 +1,20 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
-import type { FC, JSX, JSXNode } from "../../render/jsx/types";
+import type { ComponentFn, FC, JSX, JSXNode } from "../../render/jsx/types";
 import { MENU_ITEM_CLASS, MENU_KEEP_OPEN_ATTR, MENU_SCOPE, menuItemAttrs } from "../contracts/menu-contract";
 import { nameAttrs, triggerId } from "../contracts/naming";
 import { invokerAttrs, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { MenuItemAttrsOptions } from "../contracts/types";
 import type { Align, MenuPopupNaming, Side } from "../contracts/types";
+import { buttonBox } from "./button";
+import { mergeIdRefs } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { fillPartProps } from "./utils/part-props";
 import { RULE } from "./utils/recipes";
 
-interface MenuRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+interface MenuRootProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
   children?: JSXNode | undefined;
 }
 
@@ -23,7 +26,7 @@ interface MenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], "childr
 
 type MenuPopupProps = MenuPopupNaming & MenuPopupOwnProps;
 
-interface MenuPopupOwnProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+interface MenuPopupOwnProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
   /** Element id — the `commandfor` target named by the matching `Menu.Trigger`. */
   id: string;
   /** Which side of its anchor the popup opens on. */
@@ -56,25 +59,27 @@ interface MenuSubmenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], 
   children?: JSXNode | undefined;
 }
 
-interface MenuGroupProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
+interface MenuGroupProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
+  /** Disable every row in the group that leaves its own `disabled` unset. */
+  disabled?: boolean | undefined;
   children?: JSXNode | undefined;
 }
 
-interface MenuGroupLabelProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
+interface MenuGroupLabelProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
   children?: JSXNode | undefined;
 }
 
-type MenuSeparatorProps = Omit<JSX.IntrinsicElements["hr"], "children">;
+type MenuSeparatorProps = Omit<JSX.IntrinsicElements["span"], "children">;
 
 // No `display` utility: the UA rule `[popover]:not(:popover-open){display:none}` is not
 // `!important`, so an author-origin `display` here leaves a closed popup permanently visible.
-const POPUP_BASE = "z-50 min-w-40 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
+const POPUP_BASE = "z-50 min-w-40 rounded-box border-field border-border bg-popover p-1 text-popover-foreground shadow-md outline-none";
 const ITEM_BASE = MENU_ITEM_CLASS;
 
 const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("menu", inherited)} class={cn("relative inline-block", cls)} {...rest}>
+  <span data-slot={slotToken("menu", inherited)} class={cn("relative inline-block", cls)} {...rest}>
     {children}
-  </div>
+  </span>
 );
 
 const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...rest }) => (
@@ -84,7 +89,7 @@ const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, class: cls, children, 
     command='toggle-popover'
     commandfor={target}
     {...invokerAttrs(target, "menu")}
-    class={cn("cursor-pointer focus-ring", cls)}
+    class={cn(buttonBox({ size: "sm" }), "border-transparent", "cursor-pointer", cls)}
     {...rest}
     // After `rest`, because the popup's `aria-labelledby` points here: a caller's own `id` would
     // leave `role="menu"` with no name at all, which is what it has today.
@@ -105,14 +110,17 @@ const MenuPopup: FC<MenuPopupProps> = ({
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-labelledby": ownLabelledBy,
   ...rest
 }) => (
-  <div
+  <span
     id={id}
     role='menu'
     // The derived reference is reachable only through `triggered`, which is the caller asserting the
     // forge trigger it points at: a popup opened from an invoker of their own has no such element.
-    {...(triggered ? { "aria-labelledby": triggerId(id) } : nameAttrs({ label, labelledby }))}
+    {...(triggered
+      ? { "aria-labelledby": mergeIdRefs(ownLabelledBy, [triggerId(id)]) }
+      : { ...nameAttrs({ label, labelledby }), ...(ownLabelledBy === undefined ? {} : { "aria-labelledby": ownLabelledBy }) })}
     data-slot={slotToken("menu-popup", inherited)}
     data-scope={MENU_SCOPE}
     popover='auto'
@@ -121,7 +129,7 @@ const MenuPopup: FC<MenuPopupProps> = ({
     class={cn(POPUP_BASE, cls)}
     {...rest}>
     {children}
-  </div>
+  </span>
 );
 
 // `menuItemAttrs` is published for rows an app builds in the browser; spending it here too is what
@@ -185,22 +193,31 @@ const MenuSubmenuTrigger: FC<MenuSubmenuTriggerProps> = ({ for: target, class: c
   </button>
 );
 
-/** A labelled section of a menu. `<fieldset>` for its implicit `group` role, with the UA box reset. */
-const MenuGroup: FC<MenuGroupProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <fieldset data-slot={slotToken("menu-group", inherited)} class={cn("m-0 flex flex-col border-0 p-0", cls)} {...rest}>
-    {children}
-  </fieldset>
+const DISABLED_ROWS = new Map<ComponentFn, Record<string, unknown>>(
+  [MenuItem, MenuCheckboxItem, MenuRadioItem, MenuSubmenuTrigger].map((row) => [row, { disabled: true }]),
+);
+
+/** A labelled section of a menu. */
+const MenuGroup: FC<MenuGroupProps> = ({ disabled = false, class: cls, children, "data-slot": inherited, ...rest }) => (
+  <span
+    data-slot={slotToken("menu-group", inherited)}
+    role='group'
+    {...(disabled ? { "aria-disabled": "true" } : {})}
+    class={cn("flex flex-col", cls)}
+    {...rest}>
+    {disabled ? fillPartProps(children, DISABLED_ROWS) : children}
+  </span>
 );
 
 /** Name a `Menu.Group` by giving this an `id` and pointing the group's `aria-labelledby` at it. */
 const MenuGroupLabel: FC<MenuGroupLabelProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("menu-group-label", inherited)} class={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", cls)} {...rest}>
+  <span data-slot={slotToken("menu-group-label", inherited)} class={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", cls)} {...rest}>
     {children}
-  </div>
+  </span>
 );
 
 const MenuSeparator: FC<MenuSeparatorProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
-  <hr data-slot={slotToken("menu-separator", inherited)} class={cn("my-1 h-px w-full", RULE, cls)} {...rest} />
+  <span data-slot={slotToken("menu-separator", inherited)} role='separator' class={cn("my-1 block h-px w-full", RULE, cls)} {...rest} />
 );
 
 /** Compound menu built on the native Popover and Invoker Commands APIs. @public */

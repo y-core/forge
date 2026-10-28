@@ -77,8 +77,8 @@ function nearMiss(utility: string, declared: ReadonlySet<string>): string | unde
   return longestOverlap(utility, declared);
 }
 
-/** What an unrecognised token has to look like for the literal holding it to still read as a class string. */
-const CLASS_SHAPED = /[-/[\]:@()]/;
+/** What an unrecognised token has to look like for the literal holding it to still read as a class string. @internal */
+export const CLASS_SHAPED = /[-/[\]:@()]/;
 
 /** Judges every class token in one file against the design system that has to produce CSS for it. @public */
 export function unknownTokens(file: string, source: string, known: (token: string) => boolean, declared: ReadonlySet<string>): Finding[] {

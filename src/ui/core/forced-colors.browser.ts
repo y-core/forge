@@ -283,6 +283,58 @@ test.describe("forced colors — a selected tab stays distinguishable from an un
     });
   });
 
+  test("a selected tab whose panel another has replaced without script draws its bar in Canvas", async ({ page }) => {
+    await forced(
+      page,
+      await render(
+        Tabs({
+          children: [
+            Tabs.List({
+              label: "Views",
+              children: [Tabs.Tab({ for: "p-a", selected: true, children: "Alpha" }), Tabs.Tab({ for: "p-b", children: "Beta" })],
+            }),
+            Tabs.Content({ id: "p-a", selected: true, children: "A" }),
+            Tabs.Content({ id: "p-b", children: "B" }),
+          ],
+        }),
+      ),
+    );
+
+    await page.evaluate(() => document.querySelector("#p-b")?.removeAttribute("hidden"));
+
+    const bar = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector("#p-a-tab") as Element);
+      return { width: style.borderBottomWidth, color: style.borderBottomColor };
+    });
+    expect(bar).toEqual({ width: "2px", color: await systemColor(page, "Canvas") });
+  });
+
+  test("a selected tab whose panel another tab's fragment has replaced without script draws its bar in Canvas", async ({ page }) => {
+    await forced(
+      page,
+      await render(
+        Tabs({
+          children: [
+            Tabs.List({
+              label: "Views",
+              children: [Tabs.Tab({ for: "p-a", selected: true, children: "Alpha" }), Tabs.Tab({ for: "p-b", children: "Beta" })],
+            }),
+            Tabs.Content({ id: "p-a", selected: true, children: "A" }),
+            Tabs.Content({ id: "p-b", children: "B" }),
+          ],
+        }),
+      ),
+    );
+
+    await page.locator('[role="tab"][aria-controls="p-b"]').click();
+
+    const bar = await page.evaluate(() => {
+      const style = getComputedStyle(document.querySelector("#p-a-tab") as Element);
+      return { width: style.borderBottomWidth, color: style.borderBottomColor };
+    });
+    expect(bar).toEqual({ width: "2px", color: await systemColor(page, "Canvas") });
+  });
+
   test("a selected tab paints a full-contrast change against an unselected one", async ({ page, browserName }) => {
     test.skip(browserName === "webkit", NO_FORCED_PALETTE);
     await forced(page, await tabSets());

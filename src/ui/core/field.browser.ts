@@ -47,11 +47,11 @@ test.describe("FormField — a vertical field leaves its direct children's width
     expect(await widthOf(page, "select-wrapper")).toBe(TAILWIND_W_40_PX);
   });
 
-  test("a w-fit Switch is as wide inside the field as outside it", async ({ page }) => {
-    await mountInContainer(page, createElement(Switch, { class: "w-fit", field: { name: "pick" }, children: "Pick" }));
+  test("a bare Switch is as wide inside the field as outside it", async ({ page }) => {
+    await mountInContainer(page, createElement(Switch, { field: { name: "pick" }, children: "Pick" }));
     const outside = await widthOf(page, "switch");
 
-    await mountInContainer(page, inField(createElement(Switch, { class: "w-fit", field: { name: "pick" }, children: "Pick" })));
+    await mountInContainer(page, inField(createElement(Switch, { field: { name: "pick" }, children: "Pick" })));
 
     expect(await widthOf(page, "switch")).toBe(outside);
   });

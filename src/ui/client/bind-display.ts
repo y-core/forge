@@ -1,4 +1,12 @@
-import { BIND_ATTR_ATTR, BIND_TEXT_ATTR, isBindAttrRefused, parseBindAttr, safeBindAttrValue } from "../contracts/bind-contract";
+import {
+  BIND_ATTR_ATTR,
+  BIND_TEXT_ATTR,
+  ENUMERATED_BOUND_ATTRS,
+  isBindAttrRefused,
+  isBoundScriptUrl,
+  parseBindAttr,
+  safeBindAttrValue,
+} from "../contracts/bind-contract";
 import { queryAcross } from "./dom";
 import { effect } from "./signal";
 import type { SignalRecord } from "./types";
@@ -44,6 +52,14 @@ export function bindText<T extends Record<string, unknown>>(
   });
 }
 
+/** The keyword a bound boolean is written as, or `undefined` where presence carries it. */
+function spellBoundBoolean(attribute: string, value: boolean): string | undefined {
+  const lower = attribute.toLowerCase();
+  if (lower.startsWith("aria-")) return String(value);
+  const spelling = ENUMERATED_BOUND_ATTRS.get(lower);
+  return spelling?.[value ? 0 : 1];
+}
+
 /** Binds every `[data-bind-attr]` under `root` to the signal it names, and returns a disposer. @public */
 export function bindAttr<T extends Record<string, unknown>>(root: HTMLElement, signals: SignalRecord<T>): () => void {
   return bindEach(root, BIND_ATTR_ATTR, (el, spec) => {
@@ -58,11 +74,17 @@ export function bindAttr<T extends Record<string, unknown>>(root: HTMLElement, s
     }
     const signal = resolve(signals, parsed.field, BIND_ATTR_ATTR);
     if (signal === undefined) return undefined;
+    let warnedScriptUrl = false;
     return effect(() => {
-      // WAI-ARIA is string-valued, so a boolean is spelled out: an absent `aria-*` means "not applicable",
-      // and `""` is not `"true"`. Any other boolean attribute is spelled by presence.
       const value = signal.value;
-      if (typeof value === "boolean" && parsed.attribute.toLowerCase().startsWith("aria-")) el.setAttribute(parsed.attribute, String(value));
+      if (isBoundScriptUrl(parsed.attribute, String(value))) {
+        el.removeAttribute(parsed.attribute);
+        if (!warnedScriptUrl) console.warn(`[${BIND_ATTR_ATTR}] "${parsed.attribute}" was removed: its bound value is a script URL`);
+        warnedScriptUrl = true;
+        return;
+      }
+      const spelled = typeof value === "boolean" ? spellBoundBoolean(parsed.attribute, value) : undefined;
+      if (spelled !== undefined) el.setAttribute(parsed.attribute, spelled);
       else if (value === false || value === null || value === undefined) el.removeAttribute(parsed.attribute);
       else el.setAttribute(parsed.attribute, value === true ? "" : safeBindAttrValue(parsed.attribute, String(value)));
     });

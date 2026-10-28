@@ -106,8 +106,8 @@ export function fieldItemId(name: string, value: string, scope?: string): string
   return derivable(name, scope) && derivable(value) && !FIELD_MESSAGE_SUFFIXES.has(value) ? `${fieldId(name, scope)}-${value}` : undefined;
 }
 
-/** One `aria-describedby` value, the existing ids first and each id once, `undefined` when none remain. @internal */
-export function mergeDescribedBy(existing: string | undefined, added: readonly (string | undefined)[]): string | undefined {
+/** One IDREF list, the existing ids first and each id once, `undefined` when none remain. @internal */
+export function mergeIdRefs(existing: string | undefined, added: readonly (string | undefined)[]): string | undefined {
   const ids = new Set([existing, ...added].flatMap((part) => (part === undefined ? [] : part.split(ASCII_WS))).filter((id) => id !== ""));
   return ids.size > 0 ? [...ids].join(" ") : undefined;
 }
@@ -118,7 +118,7 @@ export const FIELD_ITEM_SIZE = { sm: "size-3.5", md: "size-4", lg: "size-5" } as
 /** The `aria-describedby` value for a field, or `undefined` when nothing to point at renders. @public */
 export function fieldDescribedBy(name: string, options: FieldDescribedByOptions = {}): string | undefined {
   const named = derivable(name, options.scope);
-  return mergeDescribedBy(options.existing, [
+  return mergeIdRefs(options.existing, [
     named && options.description ? fieldDescriptionId(name, options.scope) : undefined,
     named && options.invalid ? fieldErrorId(name, options.scope) : undefined,
   ]);
@@ -136,7 +136,7 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
 
   const id = fieldControlId(props.id, field);
 
-  return {
+  const resolved: T = {
     ...props,
     ...(id !== undefined ? { id } : {}),
     name: props.name ?? field.name,
@@ -144,6 +144,8 @@ export function fieldControlProps<T extends FieldControlProps>(props: T, field: 
     ...(describedBy ? { "aria-describedby": describedBy } : {}),
     "aria-invalid": props["aria-invalid"] ?? (invalid ? true : undefined),
   };
+  if (describedBy === undefined) delete resolved["aria-describedby"];
+  return resolved;
 }
 
 /** A `<fieldset>` wrapper carrying a field's orientation and its invalid or disabled state to its parts. @internal */

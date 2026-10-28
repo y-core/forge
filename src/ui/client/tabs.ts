@@ -1,19 +1,21 @@
 import { applyStateAttrs } from "../contracts/state-attrs";
-import { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR } from "../contracts/tabs-contract";
+import { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR, TABS_SCOPE } from "../contracts/tabs-contract";
 import { isDisabled, mountRovingFocus } from "./composite";
 import { closestAcross, elementById, eventTarget } from "./dom";
 import type { TabsOptions } from "./types";
 
-function tabsIn(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>(TAB_SELECTOR)];
+const TABS_ROOT_SELECTOR = `[data-scope='${TABS_SCOPE}']`;
+
+function tabsIn(list: HTMLElement): HTMLElement[] {
+  return [...list.querySelectorAll<HTMLElement>(TAB_SELECTOR)].filter((tab) => (closestAcross(tab, TABLIST_SELECTOR) ?? list) === list);
 }
 
 function panelFor(tab: HTMLElement): HTMLElement | null {
   return elementById(tab, tab.getAttribute("aria-controls") ?? "");
 }
 
-function select(root: HTMLElement, chosen: HTMLElement): void {
-  for (const tab of tabsIn(root)) {
+function select(list: HTMLElement, chosen: HTMLElement): void {
+  for (const tab of tabsIn(list)) {
     const isChosen = tab === chosen;
     tab.setAttribute("aria-selected", String(isChosen));
     applyStateAttrs(tab, { selected: isChosen });
@@ -24,8 +26,8 @@ function select(root: HTMLElement, chosen: HTMLElement): void {
   }
 }
 
-function alignPanels(root: HTMLElement): void {
-  for (const tab of tabsIn(root)) {
+function alignPanels(list: HTMLElement): void {
+  for (const tab of tabsIn(list)) {
     const panel = panelFor(tab);
     if (panel) panel.hidden = tab.getAttribute("aria-selected") !== "true";
   }
@@ -33,8 +35,9 @@ function alignPanels(root: HTMLElement): void {
 
 /** Mounts a `Tabs` root and returns a disposer. */
 export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => void {
-  const list = root.querySelector<HTMLElement>(TABLIST_SELECTOR) ?? root;
-  const vertical = root.getAttribute("data-orientation") === "vertical";
+  const list =
+    [...root.querySelectorAll<HTMLElement>(TABLIST_SELECTOR)].find((l) => (closestAcross(l, TABS_ROOT_SELECTOR) ?? root) === root) ?? root;
+  const vertical = list.getAttribute("aria-orientation") === "vertical";
   const activation = options.activation ?? (root.getAttribute("data-activation") === "manual" ? "manual" : "automatic");
 
   const disposeFocus = mountRovingFocus(list, { items: TAB_SELECTOR, orientation: vertical ? "vertical" : "horizontal", loop: true });
@@ -43,7 +46,7 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
     const tab = closestAcross(eventTarget(event) as Node | null, TAB_SELECTOR);
     if (!tab || !list.contains(tab)) return;
     if (tab.getAttribute("aria-disabled") === "true") return;
-    select(root, tab);
+    select(list, tab);
   };
 
   // The tab is an `<a href="#panel">` so it works with no script, but once this controller is live
@@ -82,7 +85,7 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
   if (activation === "manual") list.addEventListener("keydown", onKeyDown, { signal });
   list.addEventListener("focusout", onFocusOut, { signal });
 
-  alignPanels(root);
+  alignPanels(list);
   root.setAttribute(TABS_MOUNTED_ATTR, "");
 
   return () => {

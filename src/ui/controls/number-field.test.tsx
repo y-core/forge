@@ -6,8 +6,9 @@ import { render } from "../../testing/render";
 import { NumberField } from "./number-field";
 
 const STEPPER_CLASS =
-  "inline-flex size-8 items-center justify-center rounded-field border border-input bg-background " +
-  "cursor-pointer text-foreground focus-ring hover:bg-accent state-disabled";
+  "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium " +
+  "whitespace-nowrap focus-ring motion-safe:transition-colors h-control-md text-sm w-control-md px-0 border-input " +
+  "bg-background text-foreground hover:bg-accent cursor-pointer";
 
 const DECREMENT = `<button type="button" data-slot="number-field-decrement" aria-label="Decrement" tabindex="-1" class="${STEPPER_CLASS}">−</button>`;
 

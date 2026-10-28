@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Alert } from "./alert";
+import { TONES } from "./utils/tone";
 
 const callout = (props: Parameters<typeof Alert>[0] = {}) => render(<Alert {...props}>Message</Alert>);
 const textNodes = (html: string) => html.split(/<[^>]+>/).filter(Boolean);
@@ -14,7 +15,7 @@ describe("Alert", () => {
         " pe-4 text-sm [--tone:var(--color-foreground)] [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)]" +
         " [--tone-soft:var(--color-muted)] [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)]" +
         " border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)]" +
-        ' hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]" id="a1" data-note="a&amp;b">R&amp;D&#39;s</div>',
+        '" id="a1" data-note="a&amp;b">R&amp;D&#39;s</div>',
     );
   });
 
@@ -46,22 +47,16 @@ describe("Alert", () => {
     expect(added.length).toBe(dropped.length);
   });
 
+  it("paints no hover fill on the panel in any tone or appearance, since the panel takes no pointer action", async () => {
+    const appearances = ["solid", "soft"] as const;
+    const panels = await Promise.all(TONES.flatMap((tone) => appearances.map((appearance) => callout({ tone, appearance }))));
+    expect(panels.flatMap((html) => classesOf(html).filter((token) => token.startsWith("hover:")))).toEqual([]);
+  });
+
   it("gives the solid appearance its own fill and evicts the soft one it conflicts with", async () => {
     expect(variantClasses(await callout({ tone: "success", appearance: "solid" }), await callout({ tone: "success" }))).toEqual({
-      added: [
-        "border-transparent",
-        "bg-(--tone)",
-        "text-(--tone-fg)",
-        "[--focus-ring:var(--tone-fg)]",
-        "hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]",
-      ],
-      dropped: [
-        "border-(--tone-soft-border)",
-        "bg-(--tone-soft)",
-        "text-(--tone-soft-fg)",
-        "[--focus-ring:var(--color-ring)]",
-        "hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]",
-      ],
+      added: ["border-transparent", "bg-(--tone)", "text-(--tone-fg)", "[--focus-ring:var(--tone-fg)]"],
+      dropped: ["border-(--tone-soft-border)", "bg-(--tone-soft)", "text-(--tone-soft-fg)", "[--focus-ring:var(--color-ring)]"],
     });
   });
 
@@ -117,6 +112,10 @@ describe("Alert", () => {
       "justify-center",
       "rounded-sm",
       "focus-ring",
+      "hover:outline-1",
+      "hover:-outline-offset-1",
+      "hover:outline-current",
+      "hover:outline-solid",
     ]);
   });
 

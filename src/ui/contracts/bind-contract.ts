@@ -18,6 +18,15 @@ export const URL_BOUND_ATTRS: ReadonlySet<string> = new Set([
   "xml:base",
 ]);
 
+/** Attributes whose bound boolean is spelled as a keyword pair, mirroring the JSX renderer's `ENUMERATED_ATTRS`. @internal */
+export const ENUMERATED_BOUND_ATTRS: ReadonlyMap<string, readonly [whenTrue: string, whenFalse: string]> = new Map([
+  ["draggable", ["true", "false"]],
+  ["spellcheck", ["true", "false"]],
+  ["contenteditable", ["true", "false"]],
+  ["translate", ["yes", "no"]],
+  ["autocapitalize", ["on", "off"]],
+]);
+
 /** URL schemes a bound value may carry. Everything else collapses to `"#"`. */
 const SAFE_BOUND_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 
@@ -26,14 +35,33 @@ const SAFE_BOUND_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 // oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars, which browsers ignore when resolving a scheme
 const BOUND_URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
 
-/** Whether an attribute may never be driven by a signal: a handler name, bare or any `hx-on` spelling, plus `srcdoc` and `style`. @public */
-export function isBindAttrRefused(attribute: string): boolean {
+const HX_SCRIPT_ATTRS: ReadonlySet<string> = new Set(["hx-vals", "hx-headers", "hx-confirm", "hx-trigger"]);
+
+const HX_REQUEST_ATTRS: ReadonlySet<string> = new Set(["hx-action", "hx-get", "hx-post", "hx-put", "hx-patch", "hx-delete", "hx-query"]);
+
+/** An htmx attribute's name with case, one `data-` prefix and any `:inherited`/`:append` suffix removed. */
+function hxBaseName(attribute: string): string {
   const lower = attribute.toLowerCase();
   const unprefixed = lower.startsWith("data-") ? lower.slice("data-".length) : lower;
+  return unprefixed.split(":")[0] ?? unprefixed;
+}
+
+/** Whether an attribute may never be driven by a signal: a handler name, bare or any `hx-on` spelling, an htmx attribute htmx evaluates as script, plus `srcdoc` and `style`. @public */
+export function isBindAttrRefused(attribute: string): boolean {
+  const lower = attribute.toLowerCase();
+  const base = hxBaseName(attribute);
   // `hx-on` is refused although `docs/HTMX.md` §7b ratifies it in the renderer: that ratification
   // is about source a developer typed, and here the signal supplies the body htmx would execute.
-  const isHxOn = unprefixed.startsWith("hx-on");
-  return lower.startsWith("on") || isHxOn || lower === "srcdoc" || lower === "style";
+  const isHxOn = base.startsWith("hx-on");
+  const isHxScript = HX_SCRIPT_ATTRS.has(base);
+  return lower.startsWith("on") || isHxOn || isHxScript || lower === "srcdoc" || lower === "style";
+}
+
+/** Whether a bound value would make an htmx request attribute run script rather than send a request. @internal */
+export function isBoundScriptUrl(attribute: string, value: string): boolean {
+  if (!HX_REQUEST_ATTRS.has(hxBaseName(attribute))) return false;
+  const normalized = value.replace(BOUND_URL_NOISE, "").toLowerCase();
+  return normalized.startsWith("js:") || normalized.startsWith("javascript:");
 }
 
 /** A bound value with any scheme outside http/https/mailto/tel collapsed to `"#"`. @public */

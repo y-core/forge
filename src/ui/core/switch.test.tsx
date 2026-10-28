@@ -15,7 +15,7 @@ describe("Switch", () => {
   it("renders the whole control exactly, the label text escaped", async () => {
     expect(await render(<Switch>{`R&D's "grid" <x>`}</Switch>)).toBe(
       '<label data-slot="switch" data-orientation="horizontal" data-label-position="after" data-size="md"' +
-        ' class="group/switch state-busy inline-flex items-center gap-2 state-invalid">' +
+        ' class="group/switch state-busy inline-flex min-h-control-sm w-fit items-center gap-2 state-invalid">' +
         '<input data-slot="switch-input" type="checkbox" role="switch" class="peer sr-only">' +
         '<span data-slot="switch-track" aria-hidden="true" class="relative shrink-0 rounded-selector bg-track peer-checked:bg-primary' +
         ' peer-focus-visible:ring-2 peer-focus-visible:ring-ring peer-disabled:opacity-50 motion-safe:transition-colors h-5 w-9">' +
@@ -97,6 +97,16 @@ describe("Switch", () => {
 
     expect(html.endsWith("Snap to grid</label>")).toBe(true);
     expect(classesOf(html)).not.toContain("flex-row-reverse");
+  });
+
+  it("a Switch with no label text grows its label to the sm control on both axes and centres the track", async () => {
+    const { added, dropped } = variantClasses(await render(<Switch aria-label='Bluetooth' />), await render(<Switch>Wi-Fi</Switch>));
+
+    expect({ added: added.toSorted(), dropped }).toEqual({ added: ["justify-center", "min-w-control-sm"], dropped: [] });
+  });
+
+  it("a labelled Switch keeps its content at the start", async () => {
+    expect(classesOf(await render(<Switch>Wi-Fi</Switch>))).not.toContain("justify-center");
   });
 
   it("emits no value attribute by default, and the caller's when one is given", async () => {

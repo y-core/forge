@@ -18,7 +18,7 @@ before you call the work done; hold **Refuse** (§2) the whole time you are gene
 - §1c Status Is Never Colour Alone: the token plus an icon plus text, and the two attributes a field needs
 - §1d Focus Stays Visible: the ring against `--ring`, and why `outline-none` alone is a deleted affordance
 - §1e Every Suppressed Affordance Is Replaced: what each suppression utility deletes, and what forge puts back
-- §1f Hit Target and Reduced Motion: the `Button` `sm` box as the floor, and motion that honours the preference
+- §1f Hit Target and Reduced Motion: an absolute 28px floor on both axes, and motion that honours the preference
 - §1g The Designed Empty State: an empty collection is a state, not an absence
 - §1h Accessible Names and Label Association: a control with no name, and a label wired to nothing
 - §1i Heading Order: never skip a level, and the `level` prop that keeps a compound honest
@@ -92,10 +92,10 @@ call site or the build fails.
 
 ### 1f. Hit Target and Reduced Motion
 
-**Keep every interactive target at or above the `Button` `sm` box.** <!-- rule:forge-ui-hit-target --> `sm` is the floor of the size scale, which
-`shape` squares off rather than resizes. A control does not shrink below it to make a layout fit; the layout gives way. The target is the box a
-pointer activates — the element, or the `<label>` that activates it, whichever is larger — and the floor holds on both axes. A link inside a
-sentence is the one exception, as WCAG 2.5.8 grants it: its box is the line of text it sits in.
+**Keep every interactive target at or above an absolute 28px (`1.75rem`, `h-7`) on both axes.** <!-- rule:forge-ui-hit-target --> The floor is
+a number and not a token, so no shape file can lower it; every shipped shape's `sm` box clears it. A control does not shrink below it to make a
+layout fit; the layout gives way. The target is the box a pointer activates — the element, or the `<label>` that activates it, whichever is
+larger. A link inside a sentence is the one exception, as WCAG 2.5.8 grants it: its box is the line of text it sits in.
 
 **Honour `prefers-reduced-motion` on every authored motion**, by removing the motion or by replacing a scale or slide with an opacity fade.
 <!-- rule:forge-ui-reduced-motion --> Applies to `motion-safe:` / `motion-reduce:`

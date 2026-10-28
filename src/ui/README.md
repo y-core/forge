@@ -142,12 +142,22 @@ never specificity is [`UI_CLASS_COMPOSITION.md`][ucc-2e] §2e.
 
 ### Retime or remove the open and close motion
 
-A modal `Dialog`, a `Popover`, a `Menu`, a `Tooltip` and a `Toolbar` flyout fade and scale as they open and close, and a `Toast` fades in as it
-arrives. A dismissed toast or alert fades out before it is removed. When the reader's system asks for reduced motion, they fade without scaling or
-sliding. To retime every one of them, set `--forge-motion-enter` and `--forge-motion-exit` in your own `:root`. To change one, put utilities on the
-component — `<Popover.Content class="transition-none">` opens it instantly, and a `duration-*` or `ease-*` replaces only the timing. A custom motion
-that leaves `scale` out of `transition-property` also sets `--forge-motion-scale: 1` on the component, or the closed scale snaps on exit. One that
-leaves `opacity` out, such as a slide, sets `--forge-motion-opacity: 1` the same way, or the panel turns invisible on the first exit frame.
+A modal `Dialog`, a `Popover`, a `Menu`, a `Tooltip` and a `Toolbar` flyout fade and scale as they open and close, a `Drawer` slides in from its
+edge, and a `Toast` fades in as it arrives. A dismissed toast or alert fades out before it is removed. A `Dialog` or `Drawer` rendered with
+`openModal` is already open when the page paints, so it opens without motion and moves only when it closes. When the reader's system asks for
+reduced motion, they fade without scaling or sliding.
+
+To retime every one of them, `Collapsible` and `Accordion` included, set `--forge-motion-enter` and `--forge-motion-exit` in your own `:root`. To
+change one, put utilities on the component — `<Popover.Content class="transition-none">` opens it instantly, and a `duration-*` replaces the timing
+in both directions. An `ease-*` does the same, except on a `<Dialog open>`: there it also replaces the `step-end` that holds the panel in place
+while it fades, so a closing one jumps out of place partway through. Retime a non-modal dialog with `duration-*` alone; on Firefox and WebKit a
+retimed one closes without the fade either way.
+
+A custom `transition-property` list names `display` and `overlay` beside its own properties, with `transition-discrete`, or the panel stops painting
+on the first exit frame. A custom motion that leaves `scale` out of `transition-property` also sets `--forge-motion-scale: 1` on the component, or
+the closed scale snaps on exit. One that leaves `opacity` out, such as a slide, sets `--forge-motion-opacity: 1` the same way, or the panel turns
+invisible on the first exit frame. A centre-aligned `Popover`, `Menu` or `Tooltip` spends `translate` on centring itself, so a custom slide on one
+replaces it and the panel leaves diagonally — slide only start- or end-aligned popups.
 
 ### Get dark mode
 
@@ -263,6 +273,26 @@ where a native `disabled` would drop it, and refuses the button's own scope acti
 `aria-disabled` is advisory, and the platform submits the form on Enter regardless, so a second press during the request dispatches a second submit.
 The `challenge="submit"` controller already does both to the submitter it holds.
 
+### Set orientation, type or size once on the root
+
+A compound root passes its own setting down to the parts that depend on it. You set the prop on the root rather than on each part:
+
+```tsx
+<Tabs orientation='vertical'>
+  <Tabs.List label='Settings'>…</Tabs.List>
+</Tabs>
+```
+
+`Tabs` passes its `orientation` to `Tabs.List`, and `ToggleGroup` passes its `type` to each `.Item`. `RadioGroup` and `CheckboxGroup` pass
+their `size` to each `.Item`, and a vertical `Toolbar` stacks each `.Group` and turns each `.Separator` to run across it. The bound
+`ToggleGroup`, `RadioGroup` and `CheckboxGroup` from [`ui/controls`](#y-coreforgeuicontrols) do the same.
+
+**A prop you set on the part wins.** The root fills in only the props the part leaves unset.
+
+**The root cannot reach a part inside your own component.** It sees only the parts written directly in its children. Plain elements and fragments
+between them are fine, but a component of yours that renders a `Tabs.List` hides that List from the root. In that case, pass the prop to the part
+yourself.
+
 ### Attach your own `data-*` and `aria-*` attributes
 
 Every component forwards **unrecognized props** onto its root (or designated inner) element, so a client-side binding convention attaches without
@@ -287,8 +317,9 @@ none of the three does not compile — single-pass SSR cannot see whether you wr
 overlay would open unnamed.
 
 `openModal` on a `Dialog` asks for the centred modal mode; `open` is the platform's non-modal mode and flows inline. On a `Drawer`, `open` docks
-the panel at its edge above the page, with no backdrop and the page still usable. The rulings behind the choices are
-[`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
+the panel at its edge above the page, with no backdrop and the page still usable. **A non-modal `open` surface is closed only by a control you
+render**, such as a `.Close`, never by an outside click or Escape, so the reader can work beside it. A modal one closes on Escape or a
+backdrop click, except an `alert` `Dialog`, which closes on Escape alone. The rulings behind the choices are [`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
 
 ### Make a keyboard-driven component actually respond
 
@@ -377,8 +408,9 @@ const className = buttonVariants({ tone, appearance, size, shape, class: cls });
 <button class={buttonVariants({ tone: "primary", class: cn(isLoading && "opacity-50", cls) })}>Click</button>;
 ```
 
-The `tone` × `appearance` paint every toned component composes over is published as
-`toneVariants`, for markup of your own that must sit in the same palette ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e).
+The `tone` × `appearance` paint every toned control composes over is published as
+`toneVariants`, for markup of your own that must sit in the same palette. It carries a hover fill, so put it on something the pointer acts on,
+never on a static panel ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e).
 
 ### Put a glyph inside a file input
 
@@ -397,6 +429,30 @@ class (`class='pe-10'`), and lay the glyph over that gutter as an `aria-hidden`,
 
 `pointer-events-none` is what keeps the glyph from swallowing the click that opens the file picker, and `aria-hidden` keeps it out of a name the
 control's own label already carries.
+
+### Keep a table's header in view while its rows scroll
+
+Set `pinRows` and put the `Table` directly inside an element with a `max-height`. The table's scroll wrapper copies its direct parent's
+`max-height`, so that limit is what turns the wrapper into a scroller and the header into a sticky one:
+
+```tsx
+import { Table } from "@y-core/forge/ui/core";
+
+<div class='max-h-96'>
+  <Table label='Orders' pinRows>
+    <Table.Header>
+      <Table.Row>
+        <Table.Head>Order</Table.Head>
+        <Table.Head>Total</Table.Head>
+      </Table.Row>
+    </Table.Header>
+    <Table.Body>{rows}</Table.Body>
+  </Table>
+</div>;
+```
+
+A parent sized with `h-96` instead, or a `max-h-96` one level further up, pins nothing: the table grows to its full height and the header scrolls
+away with the page ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h).
 
 ### Take a one-time code
 
@@ -444,7 +500,7 @@ app.
 
 **`format` and `bind` do not compose.** A bound control's signal _is_ its state, and re-spacing the value would lie to every reader that parses it
 back — `Number("1,234.50")` is `NaN`. The `ui/controls` `Input` does not accept `format`, so passing both is a type error; a `ui/core` `Input`
-given `data-field` by hand and a `format` is refused at runtime with one warning and left alone.
+given `data-field` by hand and a `format` renders its value raw, and the client refuses the format with one warning and leaves it alone.
 
 **Pair it with `tabular-nums` as a caller class** — `class='max-w-xs tabular-nums'` — so the groups do not shift width as digits change. It is
 deliberately not in the component's own classes, which every consumer wears.
@@ -588,6 +644,8 @@ panel will not compile. Prefer `labelledby` pointing at the trigger's own text, 
   </Popover.Content>
 </Popover>
 ```
+
+`Popover.Trigger` already renders a control-height button box, so restyle it through `class` rather than wrapping it in a `Button`.
 
 `role` is not forwardable either. The trigger always says `aria-haspopup="dialog"`, so a re-roled panel would leave the pair disagreeing; a
 menu-role popup is `Menu.Popup`, which comes with a trigger that agrees with it.
@@ -763,6 +821,9 @@ resume(); // install the delegated island listener, and hydrate every eager scop
 resumed. Call it after every `registerScope` and after every scope-registering side-effect import, since the eager pass only hydrates what is
 registered by then.
 
+**Call `resume(shadowRoot)` for a shadow root you attach after `resume()` ran.** Without it, a click or an input inside it still reaches its
+handler, but a `change`, `submit`, `reset` or `command` does not ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
+
 Narrower calls exist for markup that arrives later: `resumeScope(root)` resumes one scope element now and answers with its signal state, and
 `disposeScopesIn(el)` disposes the scope at an element and every scope below it — call it **before** you remove scoped markup yourself. An htmx swap
 needs no call: [`ui/client/htmx`](#y-coreforgeuiclienthtmx) disposes every scope a swap removed ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
@@ -793,7 +854,8 @@ you, so do not repeat them. Without an `<Announcer />` the call does nothing and
 
 A write flushes the graph before it returns, so every dependent has already observed the settled value on the next line. A `computed` derives on
 **read**, never on write: its body never runs if nothing reads it, and no reader can observe a derived value assembled before one of its sources
-moved. The guarantees and what they cost are [`UI_CLIENT_RUNTIME.md`][ucr-3a] §3a.
+moved. A `computed` created in a scope's `setup` is released with the scope, as an effect is, and from then on reads its last value without
+following its sources. The guarantees and what they cost are [`UI_CLIENT_RUNTIME.md`][ucr-3a] §3a.
 
 `signalRecord(initial)` is the shape the island runtime and `bindControls` both speak: one independent signal per key, with `writeSignal` as the
 typed per-key writer.
@@ -822,9 +884,10 @@ registerScope("counter", {
 resume(); // returns a disposer for the scopes this call resumed
 ```
 
-**The effect above needs no disposer, and that is the contract, not an omission.** Every effect created while a `setup` runs is owned by the runtime
-and disposed with the scope; a `setup` returns a disposer only for what the runtime cannot see — listeners, observers, timers, controller handles —
-and it runs _after_ the scope's effects are disposed. An effect created in an `on` handler, or after an `await`, belongs to whoever created it.
+**The effect above needs no disposer, and that is the contract, not an omission.** Every effect and `computed` created while a `setup` runs is owned
+by the runtime and disposed with the scope; a `setup` returns a disposer only for what the runtime cannot see — listeners, observers, timers,
+controller handles — and it runs _after_ the scope's effects are disposed. An effect created in an `on` handler, or after an `await`, belongs to
+whoever created it.
 `setup` also receives a `signal`, aborted when the scope is disposed: hand it to `fetch` and to `addEventListener`, and neither needs a disposer.
 
 Set `eager: true` when the markup carries no `data-on-*` action at all, since nothing would otherwise trigger a lazy resume. When to reach for
@@ -839,20 +902,24 @@ DOM → signal resolves the nearest `[data-field]` across shadow boundaries, abs
 value's type from what the signal currently holds**: `boolean` reads `checked`, `number` goes through `Number()`, a `string[]` toggles membership of
 the item's value, anything else is the string. So seed the record with the type you want back. Signal → DOM paints `checked` / `value` and the
 pressed state, guarded by a differs-check so a paint never fights a drag in progress. A form reset, whether scripted or from a reset button, and
-whether the form sits inside the root or wraps it, repaints every bound control from its signal, because the signal is the state.
+whether the form sits inside the root or wraps it, repaints every bound control from its signal, because the signal is the state. Inside a shadow
+root, `change` and `reset` are heard only in one that was open under the root when `bindControls` ran.
 
 **The signal is the state and the DOM is a paint of it**, so the pressed state is never read back — which is what lets a repaint restore a group
 after its markup was replaced wholesale ([`UI_SSR_COMPONENTS.md`][usc-2a] §2a). A `data-field` naming no signal reports and is skipped.
 
 `bindText` and `bindAttr` are the one-way siblings, for markup that only _displays_ a signal — text content, or one named attribute. Bound to a
-boolean, an `aria-*` attribute is written `"true"` or `"false"`, as the renderer writes it; any other attribute is present for `true` and removed
-for `false`.
+boolean, an `aria-*` attribute or `draggable`, `contenteditable` or `spellcheck` is written `"true"` or `"false"`, `translate` is written `"yes"`
+or `"no"`, and `autocapitalize` is written `"on"` or `"off"`, as the renderer writes them; any other attribute is present for `true` and removed for
+`false`.
 
-**`bindAttr` sanitizes exactly as the renderer does**, because a signal is seeded from `data-island-state` and so is as reachable as a request
-parameter. A value bound to `href`, `src`, `data` or any other URL attribute has a scheme outside http/https/mailto/tel collapsed to `"#"`; a bare
-`on*` name, `srcdoc`, or `style` — which the renderer drops under the shipped `style-src 'self'` — is refused outright, reported and skipped.
-`bindAttrAttr` from `ui/contracts`, which stamps the binding at render time, throws on those names instead. No `hx-*` attribute is sanitized,
-for the reason [`HTMX.md`][htmx-7a] §7a gives.
+**`bindAttr` sanitizes at least as strictly as the renderer does**, because a signal is seeded from `data-island-state` and so is as reachable as a
+request parameter. A value bound to `href`, `src`, `data` or any other URL attribute has a scheme outside http/https/mailto/tel collapsed to `"#"`;
+a bare `on*` name, any `hx-on` spelling, `hx-vals`, `hx-headers`, `hx-confirm` or `hx-trigger` in either prefix, `srcdoc`, or `style` — which the
+renderer drops under the shipped `style-src 'self'` — is refused outright, reported and skipped. htmx evaluates those `hx-*` values as script
+([`HTMX.md`][htmx-7b] §7b). `bindAttrAttr` from `ui/contracts`, which stamps the binding at render time, throws on those names instead. A value
+bound to `hx-action` or a request verb such as `hx-get` that begins `js:` or `javascript:` removes the attribute, with one warning, until a safe
+value arrives ([`HTMX.md`][htmx-7a] §7a). No other `hx-*` value is sanitized, for the reason that section gives.
 
 ### Write a controller that survives an iframe, a shadow root or a foreign realm
 
@@ -873,8 +940,8 @@ The node-resolved replacements are `ownerDocument` / `ownerWindow`, `eventTarget
 though the property is present — only a real access answers, so the helper returns the store or `null`.
 
 **Every controller returns a disposer, and that is a contract** ([`UI_CLIENT_RUNTIME.md`][ucr-2d] §2d). Return it from a scope's `setup` and
-`resume()`'s teardown runs it. The runtime owns effects, not listeners, so a `setup`'s own disposer covers the controllers and listeners it
-installed and never the effects it created.
+`resume()`'s teardown runs it. The runtime owns effects and computeds, not listeners, so a `setup`'s own disposer covers the controllers and
+listeners it installed and never the effects or computeds it created.
 
 **A platform constructor is read off the resolved window too.** A realm **may not have the constructor at all**, and reading it off the resolved
 window doubles as the feature check, so the controller degrades to a no-op disposer rather than throwing; and an observer, timer id or media-query
@@ -921,7 +988,10 @@ rather than blanking the row mid-flick, and adds **no autoplay**: the strip is s
 and **stops driving it the moment the user toggles it themselves**, per mount and not persisted. It **throws** when the element it was told to drive
 is absent or is not a disclosure, and **reports** when the realm has no `matchMedia`. `mountNavDrawer` is its off-canvas sibling: it gives an open
 `<details>` its modal behaviour — Escape, scroll lock, focus trap — for as long as its media query matches. On open it moves focus to the panel's
-first focusable control, waiting out the panel's own transition.
+first focusable control, waiting out the disclosure's open transition (`::details-content` as well as the panel's own). **The panel is the first
+child of the `<details>` that holds a focusable control**, skipping the `<summary>` and a `navbar-backdrop` slot, so an unmarked backdrop placed
+before the panel is passed over; pass `panelSelector` when your panel is not a direct child. When nothing focusable resolves, it **warns** rather
+than throws, since a menu with no links is valid markup and the chrome mounts drawers itself.
 
 `mountRovingFocus` makes a composite you render one tab stop, and resolves its **items live on every interaction**, so a composite whose items are
 swapped, filtered or reordered needs no re-registration. The ring's rules: arrow keys inside a text field belong to the caret until its edge;
@@ -954,9 +1024,10 @@ import "@y-core/forge/ui/client/htmx"; // side-effect only — no exports used
 ```
 
 It loads htmx onto `window`, removes htmx's built-in indicator stylesheet so forge's own busy states are the only ones painted, and wires scopes and
-the announcer to every swap. It re-exports `htmx` for the rare call site that needs the instance directly, but the bare side-effect import is the
-canonical usage. Mark the import so esbuild does not tree-shake it, and **never load htmx from a CDN** — this entry pins the version through forge
-([`UI_CLIENT_RUNTIME.md`][ucr-4] §4).
+the announcer to every swap. **A morph never changes an element's `style` attribute**: a style your script wrote survives it, and a `style`
+the server sends on that element is neither applied nor removed, so change a morphed element's look through a class. It re-exports `htmx` for
+the rare call site that needs the instance directly, but the bare side-effect import is the canonical usage. Mark the import so esbuild does not
+tree-shake it, and **never load htmx from a CDN** — this entry pins the version through forge ([`UI_CLIENT_RUNTIME.md`][ucr-4] §4).
 
 ### Enforce Trusted Types on an htmx page
 
@@ -1040,6 +1111,9 @@ wrapper.
 sink's id with or without its `#`. Reach for it when the invoker is outside the scope root — the delegated listener only sees events inside it — or
 when the platform's own command event is the mechanism you want.
 
+The handler that runs is the one on the scope holding the `commandfor` target, wherever the invoker sits, and its `el` is the invoker. An invoker
+inside one scope that names an element in another runs the other scope's handler.
+
 ---
 
 ## `@y-core/forge/ui/chrome`
@@ -1117,10 +1191,32 @@ parent supplying the definite height the `h-full` chain inside resolves against;
 browser without `:has()` keeps the full column. The rulings are `forge-ui-nav-rail-flex-item`, `forge-ui-nav-rail-persists` and
 `forge-ui-nav-rail-collapsed-width` in [`ui/design/reference/08-navigation.md`][navigation].
 
+### Keep the bar on screen
+
+**A `top` or `bottom` bar sticks from the outermost box `Navbar` renders**, so render it as a direct child of the element that scrolls — usually
+`<body>`. A wrapper of your own around it is exactly the bar's height and leaves it nothing to stick within. `class`, `id` and every other
+attribute you pass land on the inner `<details>`: they dress the bar, and do not change where it sticks.
+
+**A top or bottom bar sizes its row from `--forge-navbar-height`, and its height is reserved as the page's scroll padding**, so a focused control
+scrolls clear of it. On a phone a `left` bar pins to the top edge and a `right` bar to the bottom, and each is sized and reserved the same way; at
+`md` and up it is a column and reserves nothing. Resize the bar by setting the token on `html`, never with a height class, which the reserve cannot
+see. The bar's row and its reserve never go below 1.75rem, the 28px [Floor][floor] (§1f), whatever the token is set to. An inline bar opened on a
+phone is taller than its reserve while it is open. A drawer's toggle fills that row on a phone, a rail's included, and the open panel starts below
+it, or ends above it on a bottom bar, so the toggle never covers a link; a rail still reserves no scroll padding.
+
 `Dock` is the phone-width alternative: a fixed bottom bar of three to five equal-weight destinations, hidden above a breakpoint you choose. It is
 markup only — no scope, no controller. While the bar shows, forge's stylesheet reserves its height at the foot of the page: as scroll padding, so a
-focused control scrolls clear of it, and as `<body>` padding, so the last one can. A `pb-*` on your `<body>` replaces that padding, so include the
-bar's height in it. A class that sets the bar's own height breaks the match.
+focused control scrolls clear of it, and as `<body>` padding, so the last one can. A bottom `Navbar` reserves its height at the same edge, and its
+reserve adds to the Dock's.
+
+**Render one `Dock` per page, and resize it with `--forge-dock-height` on `html` and nothing else.** The reserve reads the token, never the bar,
+so each of these leaves it wrong:
+
+- **A class that changes the bar's position, such as `static`** — the page still reserves the fixed bar's height. forge has no in-flow Dock;
+  render a `<nav>` of your own for one.
+- **A class that sets the bar's height, such as `h-20`** — the reserve stays at the token. Set `--forge-dock-height` on `html` instead.
+- **More than one `Dock`** — the reserve follows whichever `size` and `hideAbove` rules match, not the bar that shows. Render one.
+- **A `pb-*` on your `<body>`** — it replaces the reserve's padding. Include the bar's height in it.
 
 ### Describe a toolbar as data
 
@@ -1182,7 +1278,8 @@ effect(() => renderer.setBackground(isDark.value ? "#111" : "#fff"));
 ```
 
 `isDark` is a `ReadonlySignal<boolean>` and a **stable binding** — a fixed object whose `.value` getter delegates to whichever signal is currently
-live — so it is safe to capture before `resume()` runs, reading `false` until a theme scope resumes.
+live — so it is safe to capture before `resume()` runs. It reads `false` until a theme scope resumes, and an effect that read it earlier re-runs
+then.
 
 **The preference belongs to the document, not to a toggle:** every `theme` scope in a document shares one preference signal, and the media listener
 plus the two effects that paint `<html>` are installed once per document by whichever scope resumes first. A navbar toggle beside a settings one is
@@ -1200,7 +1297,9 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 
 [ap-2c]: ../../docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
 [cr-1]: ../../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
+[floor]: ./design/floor.md#1f-hit-target-and-reduced-motion
 [htmx-7a]: ../../docs/HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
+[htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [navigation]: ./design/reference/08-navigation.md
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value
 [sh-2g]: ../../docs/SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy

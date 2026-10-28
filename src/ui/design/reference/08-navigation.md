@@ -390,6 +390,15 @@ navigation.
 **Default: hide a `Tabs` whose panels are all empty.** <!-- rule:forge-ui-nav-tabs-empty --> The empty-state rule in `07-states.md` —
 `forge-ui-state-hide-empty-controls` — covers the general case; this is that case for `Tabs`.
 
+**Without script, the cue follows the panel on screen and the announced selection does not.** Following another tab's fragment, or a
+find-in-page match in a hidden panel, shows that panel, hides the selected one and takes the cue off the server's tab, so no tab looks selected.
+`aria-selected` still names the server's tab to assistive technology until `mountTabs` runs, and no stylesheet can change it.
+
+**Without script, a set reads only its own parts, by position: each `Tabs.Content` written directly inside `Tabs`, and each `Tabs.Tab` directly
+inside `Tabs.List`.** So a nested set's reveal leaves the outer panel that holds it on screen, and following an outer tab leaves the inner set's
+selected panel in place. A `Tabs.Content` you wrap in an element of your own switches once `mountTabs` runs, but without script a wrapped panel
+that is revealed shows beside the selected one instead of replacing it.
+
 ---
 
 ## 6. Theme
@@ -404,7 +413,7 @@ navigation.
 | `DEFAULT_THEME_PREF` | The server-side default, resolved client-side |
 | `FOUC_SCRIPT` | The inline script that sets both before first paint |
 
-**Default: embed `FOUC_SCRIPT` in a nonce'd `<script>` in the `<head>`.**
+**Default: embed `FOUC_SCRIPT` in an inline `<script>` in the `<head>`, and list its hash in the CSP `script-src`.**
 <!-- rule:forge-ui-nav-fouc-script -->
 
 Without it, a user whose stored preference is dark gets one light frame on every navigation. That is a design defect, not a build detail: it is

@@ -4,7 +4,8 @@ import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
 import { descriptionId, titleId } from "../contracts/naming";
 import type { DialogNaming } from "../contracts/types";
-import { mergeDescribedBy } from "./field";
+import { buttonBox } from "./button";
+import { mergeIdRefs } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
@@ -70,6 +71,7 @@ const DialogRoot: FC<DialogProps> = ({
   children,
   "data-slot": inherited,
   "aria-describedby": describedBy,
+  "aria-labelledby": ownLabelledBy,
   ...props
 }) => (
   <dialog
@@ -77,13 +79,14 @@ const DialogRoot: FC<DialogProps> = ({
     data-slot={slotToken("dialog", inherited)}
     {...(alert ? { role: "alertdialog" } : {})}
     {...dialogNameAttrs(id, { label, labelledby, titled })}
+    aria-labelledby={mergeIdRefs(ownLabelledBy, [dialogNameAttrs(id, { label, labelledby, titled })["aria-labelledby"]])}
     // Emitted on the caller's word, exactly as the title reference is: a description that resolves to
     // nothing suppresses `aria-description` and `title` rather than merely being ignored.
-    aria-describedby={mergeDescribedBy(describedBy, [described ? descriptionId(id) : undefined])}
+    aria-describedby={mergeIdRefs(describedBy, [described ? descriptionId(id) : undefined])}
     {...(open && !openModal ? { open: true } : {})}
     {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
-    closedby='any'
-    class={cn("rounded-box border border-border bg-popover text-popover-foreground shadow-lg", cls)}
+    {...(open && !openModal ? {} : { closedby: alert ? "closerequest" : "any" })}
+    class={cn("rounded-box border-field border-border bg-popover text-popover-foreground shadow-lg", cls)}
     {...props}>
     {children}
   </dialog>
@@ -91,7 +94,13 @@ const DialogRoot: FC<DialogProps> = ({
 
 const DialogTrigger: FC<DialogTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => {
   return (
-    <button type='button' data-slot={slotToken("dialog-trigger", inherited)} command='show-modal' commandfor={target} class={cls} {...props}>
+    <button
+      type='button'
+      data-slot={slotToken("dialog-trigger", inherited)}
+      command='show-modal'
+      commandfor={target}
+      class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
+      {...props}>
       {children}
     </button>
   );
@@ -104,7 +113,7 @@ const DialogClose: FC<DialogCloseProps> = ({ for: target, request = false, class
       data-slot={slotToken("dialog-close", inherited)}
       command={request ? "request-close" : "close"}
       commandfor={target}
-      class={cls}
+      class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
       {...props}>
       {children}
     </button>

@@ -62,6 +62,12 @@ describe("Breadcrumbs.Link", () => {
     expect(attrsOf(html)).toEqual({ "data-slot": "breadcrumbs-link", href: "/" });
   });
 
+  it("gives the link a control-height box of its own, so its hit target is not its text line", async () => {
+    const box = ["inline-flex", "min-h-control-sm", "items-center"];
+
+    expect(classesOf(await render(<Breadcrumbs.Link href='/'>Home</Breadcrumbs.Link>)).filter((token) => box.includes(token))).toEqual(box);
+  });
+
   it("lets a caller radius evict its own rather than sitting behind it", async () => {
     const html = await render(
       <Breadcrumbs.Link href='/a' class='rounded-lg'>

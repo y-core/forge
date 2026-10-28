@@ -123,6 +123,8 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
 
   const disposers = (Object.keys(signals) as Array<keyof T>).map((field) => effect(() => paintField(field, signals[field].value)));
 
+  const doc = ownerDocument(root);
+  const lifetime = new AbortController();
   const onReset = (event: Event) => {
     const form = event.target as Node | null;
     if (!form) return;
@@ -136,11 +138,12 @@ export function bindControls<T extends Record<string, unknown>>(root: HTMLElemen
       for (const field of Object.keys(signals) as Array<keyof T>) paintField(field, signals[field].value);
     }, 0);
   };
-  const doc = ownerDocument(root);
-  const lifetime = new AbortController();
-  // Capture, because `reset` is dispatched at the form: a bubble-phase listener on the document sees
-  // it, but only a capture one is guaranteed to when the form sits inside a shadow tree.
   doc.addEventListener("reset", onReset, { capture: true, signal: lifetime.signal });
+  for (const tree of trees) {
+    if (tree.nodeType !== 11) continue;
+    tree.addEventListener("change", onInteract, { signal: lifetime.signal });
+    tree.addEventListener("reset", onReset, { capture: true, signal: lifetime.signal });
+  }
 
   root.addEventListener("input", onInteract, { signal: lifetime.signal });
   root.addEventListener("change", onInteract, { signal: lifetime.signal });

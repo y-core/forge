@@ -20,8 +20,9 @@ type OtpInputProps = Omit<JSX.IntrinsicElements["input"], "size" | "type" | "max
 
 // Two elements because the cell grid must end at the field's border while the editor runs `--otp-pad`
 // past it, to hold the caret after the last glyph's own letter-spacing.
-const FRAME = "state-disabled state-invalid focus-ring otp-cells inline-flex overflow-clip rounded-field border-field border-input bg-background";
-const EDITOR = "state-busy otp-editor h-full shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums";
+const FRAME = "state-disabled state-invalid focus-ring otp-cells inline-flex overflow-x-clip rounded-field border-field border-input bg-background";
+const EDITOR =
+  "state-busy otp-editor -my-(--border-width) h-[calc(100%+2*var(--border-width))] shrink-0 border-0 bg-transparent font-mono text-foreground outline-none tabular-nums";
 
 const FRAME_SIZE: Record<Size, string> = { sm: "h-control-sm", md: "h-control-md", lg: "h-control-lg" };
 const EDITOR_SIZE: Record<Size, string> = { sm: "text-sm", md: "text-base", lg: "text-lg" };

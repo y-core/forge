@@ -1,17 +1,15 @@
 import { activeElement, contains, ownerDocument, ownerWindow } from "./dom";
 import type { NavDrawerOptions } from "./types";
-
-// Below Tailwind's `md` breakpoint (`48rem`), the width the drawer's markup is written for.
-const DEFAULT_QUERY =
-  "(max-width: 47.99rem)"; /* modern-css-allow: forge-ui-platform-container-query — this arms a focus trap and a scroll lock, which are behaviour rather than style, and `@container` can only drive style; the decision is a page-chrome one taken against the viewport by design. */
-
-const DEFAULT_PANEL_SELECTOR = ":scope > div:not([data-slot~='navbar-backdrop'])";
+import { MD_DOWN_QUERY, resolveDisclosure, trackViewport } from "./viewport-disclosure";
 
 // The platform closes these on Escape after `keydown` is dispatched, so one is still open when the handler runs.
 const OPEN_SURFACE = ":popover-open,dialog:modal";
 
 const FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
+
+// An app's backdrop is a sibling `div` like the panel, so the default keys on what a panel holds rather than on markup it may not carry.
+const DEFAULT_PANEL_SELECTOR = `:scope > :not(summary, [data-slot~='navbar-backdrop']):has(${FOCUSABLE})`;
 
 const mountedDrawers = new WeakMap<Element, () => void>();
 
@@ -57,33 +55,21 @@ function releaseScrollLock(doc: Document): void {
 
 /** Gives an open off-canvas disclosure its modal behaviour — Escape, scroll lock, focus trap — while `query` matches, and returns a disposer. @public */
 export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
-  const noop = () => {};
-  const found = options.element ?? (options.selector ? ownerDocument(options.within).querySelector(options.selector) : null);
-  const el = found as HTMLDetailsElement | null;
-  // Duck-typed rather than `instanceof HTMLDetailsElement`, which is false for an element from
-  // another realm and rejects a disclosure a consumer implemented some other way.
-  if (!el || typeof el.open !== "boolean") {
-    const named = options.element !== undefined ? "the given `element`" : `\`${options.selector ?? "(none)"}\``;
-    throw new Error(`mountNavDrawer: ${named} did not resolve to a disclosure with an \`open\` property`);
-  }
+  const el = resolveDisclosure("mountNavDrawer", options);
 
   const existing = mountedDrawers.get(el);
   if (existing) return existing;
 
-  const win = ownerWindow(el);
-  if (typeof win.matchMedia !== "function") {
-    console.warn("[nav-drawer] matchMedia is unavailable in this realm; the disclosure will not behave as a drawer");
-    return noop;
-  }
-  const query = win.matchMedia(options.query ?? DEFAULT_QUERY);
-  if (typeof query.addEventListener !== "function") {
-    console.warn("[nav-drawer] this realm's MediaQueryList has no addEventListener; the disclosure will not behave as a drawer");
-    return noop;
-  }
+  const query = trackViewport("nav-drawer", el, options.query ?? MD_DOWN_QUERY);
+  if (query === null) return () => {};
 
+  const win = ownerWindow(el);
   const doc = ownerDocument(el);
   const summary = el.querySelector<HTMLElement>("summary");
   const panel = el.querySelector<HTMLElement>(options.panelSelector ?? DEFAULT_PANEL_SELECTOR);
+  if (!panel?.querySelector(FOCUSABLE)) {
+    console.warn("[nav-drawer] no panel with a focusable item resolved; Tab will cycle on the summary alone");
+  }
 
   const isActive = () => query.matches && el.open;
 
@@ -151,7 +137,7 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
       return first !== undefined && activeElement(el) === first;
     };
     if (attempt()) return;
-    const budget = transitionSpan(win.getComputedStyle(panel));
+    const budget = Math.max(transitionSpan(win.getComputedStyle(panel)), transitionSpan(win.getComputedStyle(el, "::details-content")));
     let start: number | undefined;
     const retry = (time: number) => {
       pendingFocus = 0;
@@ -163,9 +149,12 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     pendingFocus = win.requestAnimationFrame(retry);
   };
 
+  let focusDropped = false;
+
   const applyState = () => {
     cancelPendingFocus();
     if (isActive()) {
+      focusDropped = false;
       lock();
       isolate();
       focusFirstItem();
@@ -173,7 +162,9 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
     }
     unlock();
     release();
-    if (contains(panel, activeElement(el))) summary?.focus();
+    const active = activeElement(el);
+    if (contains(panel, active) || (focusDropped && (active === null || active === doc.body))) summary?.focus();
+    focusDropped = false;
   };
 
   const onKeydown = (event: Event) => {
@@ -207,6 +198,20 @@ export function mountNavDrawer(options: NavDrawerOptions = {}): () => void {
   el.addEventListener("toggle", applyState, { signal });
   query.addEventListener("change", applyState, { signal });
   doc.addEventListener("keydown", onKeydown, { signal });
+  doc.addEventListener(
+    "focusin",
+    () => {
+      focusDropped = false;
+    },
+    { signal },
+  );
+  panel?.addEventListener(
+    "focusout",
+    (event) => {
+      focusDropped = (event as FocusEvent).relatedTarget === null;
+    },
+    { signal },
+  );
   if (isActive()) {
     lock();
     isolate();

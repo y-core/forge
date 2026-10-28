@@ -40,7 +40,7 @@ function state(page: Page) {
   });
 }
 
-test.describe("Dialog", () => {
+test.describe("Dialog", { tag: "@cross-engine" }, () => {
   test("starts closed", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
@@ -116,6 +116,49 @@ test.describe("Dialog", () => {
     expect(await state(page)).toEqual({ nativeOpen: true });
   });
 
+  test("a non-modal <Dialog open> survives a click into a nearby input and an Escape outside it", async ({ page }) => {
+    await mount(page, `<input id="outside">${await markup(true)}`, EXPOSE);
+    await start(page);
+
+    await page.click("#outside");
+    await page.keyboard.press("Escape");
+
+    expect(await state(page)).toEqual({ nativeOpen: true });
+  });
+
+  test("a modal opened by its trigger still closes on a backdrop click", async ({ page }) => {
+    await mount(page, await markup(), EXPOSE);
+    await start(page);
+
+    await page.click("#open-it");
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
+    await page.mouse.click(5, 5);
+
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false });
+  });
+
+  test("an alert dialog ignores a backdrop click and closes on Escape", async ({ page }) => {
+    const html = await render([
+      Dialog.Trigger({ for: "confirm", id: "open-it", children: "Delete…" }),
+      Dialog({
+        id: "confirm",
+        label: "Delete project?",
+        alert: true,
+        children: Dialog.Close({ for: "confirm", id: "close-it", children: "Cancel" }),
+      }),
+    ]);
+    await mount(page, html, EXPOSE);
+    await start(page);
+
+    await page.click("#open-it");
+    await expect.poll(async () => (await state(page)).nativeOpen).toBe(true);
+    await page.mouse.click(5, 5);
+    expect(await state(page)).toEqual({ nativeOpen: true });
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => state(page)).toEqual({ nativeOpen: false });
+  });
+
   // `open` + `openModal` used to render both attributes, and `showModal()` on an already-open dialog
   // throws `InvalidStateError` — a console exception and no dialog, invisible to any markup check.
   test("an SSR modal asked for both openings resumes modal, throwing nothing", async ({ page }) => {
@@ -186,7 +229,7 @@ function box(page: Page): Promise<Box> {
   });
 }
 
-test.describe("Dialog — the viewport gutter", () => {
+test.describe("Dialog — the viewport gutter", { tag: "@cross-engine" }, () => {
   test("a caller's own max-width in a later layer still leaves the gutter, and stays centred", async ({ page }) => {
     await openDialog(page, CALLER_WIDTH, OVERSIZED);
 
@@ -229,6 +272,7 @@ test.describe("Dialog — the viewport gutter", () => {
 interface MotionRead {
   panel: string[];
   backdrop: string[];
+  backdropOpacity: number;
   opacity: number;
   display: string;
 }
@@ -241,29 +285,45 @@ function actAndRead(page: Page, act: "showModal" | "close" | "none"): Promise<Mo
     const running = el.getAnimations({ subtree: true }) as CSSTransition[];
     const on = (pseudo: string | null) =>
       running.filter((animation) => (animation.effect as KeyframeEffect).pseudoElement === pseudo).map((animation) => animation.transitionProperty);
-    return { panel: on(null), backdrop: on("::backdrop"), opacity: Number(getComputedStyle(el).opacity), display: getComputedStyle(el).display };
+    return {
+      panel: on(null),
+      backdrop: on("::backdrop"),
+      backdropOpacity: Number(getComputedStyle(el, "::backdrop").opacity),
+      opacity: Number(getComputedStyle(el).opacity),
+      display: getComputedStyle(el).display,
+    };
   }, act);
 }
 
 const CONSUMER_SLIDE =
   "[--forge-motion-opacity:1] [--forge-motion-scale:1] not-open:translate-y-2 motion-safe:starting:open:translate-y-2 motion-safe:transition-[translate,display,overlay] motion-safe:transition-discrete motion-safe:duration-300";
 
+const MODAL_EXIT_FIREFOX =
+  "Firefox implements neither overlay nor a display transition, so a closing modal leaves the top layer and stops rendering at once";
+const MODAL_EXIT_WEBKIT = "WebKit does not implement overlay, so a closing modal leaves the top layer and stops rendering at once";
+const NO_DISPLAY_TRANSITION = "Firefox does not transition display, even with allow-discrete";
+const LONGHAND_EXIT_WEBKIT =
+  "WebKit drops a closing dialog's display transition once its open style sets a transition longhand, so the exit paints no frame";
+
 async function mountStyled(page: Page, html: string): Promise<void> {
   await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
 }
 
-test.describe("Dialog — open and close motion", () => {
+test.describe("Dialog — open and close motion", { tag: "@cross-engine" }, () => {
   test("a modal open fades and scales the panel and fades the backdrop", async ({ page }) => {
     await mountStyled(page, await markup());
 
     const frame = await actAndRead(page, "showModal");
 
     expect(frame.panel, JSON.stringify(frame)).toEqual(expect.arrayContaining(["opacity", "scale"]));
-    expect(frame.backdrop, JSON.stringify(frame)).toContain("opacity");
     expect(frame.opacity).toBeLessThan(0.5);
+    expect(frame.backdropOpacity).toBe(0);
+    await expect.poll(() => actAndRead(page, "none").then((settled) => settled.backdropOpacity)).toBe(1);
   });
 
-  test("a close fades out while the panel is still painted", async ({ page }) => {
+  test("a close fades out while the panel is still painted", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+    test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
     await mountStyled(page, await markup());
     await actAndRead(page, "showModal");
     await expect.poll(() => actAndRead(page, "none").then((frame) => frame.opacity)).toBe(1);
@@ -280,11 +340,17 @@ test.describe("Dialog — open and close motion", () => {
 
     const frame = await actAndRead(page, "none");
 
-    expect(frame).toEqual({ panel: [], backdrop: [], opacity: 1, display: "block" });
+    expect({ panel: frame.panel, backdrop: frame.backdrop, opacity: frame.opacity, display: frame.display }).toEqual({
+      panel: [],
+      backdrop: [],
+      opacity: 1,
+      display: "block",
+    });
   });
 
   // A close leaves a modal and a non-modal dialog in the same `:not([open])` state, so CSS gives both the exit.
-  test("closing a non-modal <Dialog open> fades it out like a modal", async ({ page }) => {
+  test("closing a non-modal <Dialog open> fades it out like a modal", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", NO_DISPLAY_TRANSITION);
     await mountStyled(page, await markup(true));
 
     const frame = await actAndRead(page, "close");
@@ -293,7 +359,9 @@ test.describe("Dialog — open and close motion", () => {
     expect(frame.display).not.toBe("none");
   });
 
-  test("a <Dialog open> closed and reopened as a modal still fades out on its next close", async ({ page }) => {
+  test("a <Dialog open> closed and reopened as a modal still fades out on its next close", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+    test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
     await mountStyled(page, await markup(true));
     await actAndRead(page, "close");
     await expect.poll(() => actAndRead(page, "none").then((frame) => frame.display)).toBe("none");
@@ -315,7 +383,9 @@ test.describe("Dialog — open and close motion", () => {
     expect(await closedOpacity()).toBe(0.5);
   });
 
-  test("a custom slide that sets --forge-motion-opacity to 1 stays visible on every exit frame", async ({ page }) => {
+  test("a custom slide that sets --forge-motion-opacity to 1 stays visible on every exit frame", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+    test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
     const html = await render(Dialog({ id: "confirm", label: "Delete project?", class: CONSUMER_SLIDE, children: "Body" }));
     await mountStyled(page, html);
     await actAndRead(page, "showModal");
@@ -357,20 +427,128 @@ test.describe("Dialog — open and close motion", () => {
 
       const frame = await actAndRead(page, "showModal");
 
-      expect({ panel: frame.panel, backdrop: frame.backdrop }).toEqual({ panel: ["opacity"], backdrop: ["opacity"] });
-      await expect.poll(() => actAndRead(page, "none").then((settled) => settled.opacity)).toBe(1);
+      expect({ panel: frame.panel, backdropOpacity: frame.backdropOpacity }).toEqual({ panel: ["opacity"], backdropOpacity: 0 });
+      await expect
+        .poll(() => actAndRead(page, "none").then((settled) => ({ opacity: settled.opacity, backdropOpacity: settled.backdropOpacity })))
+        .toEqual({ opacity: 1, backdropOpacity: 1 });
     });
 
-    test("a Drawer fades on its 200ms rather than sliding", async ({ page }) => {
+    test("a Drawer fades on --forge-motion-enter rather than sliding", async ({ page }) => {
       await mountStyled(page, await render(Drawer({ id: "nav", side: "left", label: "Navigation", children: "Links" })));
 
       const frame = await actAndRead(page, "showModal");
 
       expect(frame.panel, JSON.stringify(frame)).toEqual(["opacity"]);
       expect(await page.evaluate(() => getComputedStyle(document.querySelector("#nav") as HTMLElement).transitionDuration)).toBe(
-        "0.2s, 0.2s, 0.2s",
+        "0.15s, 0.15s, 0.15s",
       );
     });
+  });
+});
+
+interface ResumedRead {
+  modal: boolean;
+  opacity: number;
+  backdropOpacity: number;
+  left: number;
+  running: string[];
+}
+
+function resumeAndRead(page: Page): Promise<ResumedRead> {
+  return page.evaluate(() => {
+    window.forgeResume.resume();
+    const el = document.querySelector("dialog") as HTMLDialogElement;
+    return {
+      modal: el.matches(":modal"),
+      opacity: Number(getComputedStyle(el).opacity),
+      backdropOpacity: Number(getComputedStyle(el, "::backdrop").opacity),
+      left: Math.round(el.getBoundingClientRect().left),
+      running: el.getAnimations({ subtree: true }).map((animation) => (animation as CSSTransition).transitionProperty),
+    };
+  });
+}
+
+async function mountResumable(page: Page, html: string): Promise<void> {
+  await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
+}
+
+const openModalDialog = (className?: string): Promise<string> =>
+  render(Dialog({ id: "confirm", label: "Delete project?", openModal: true, ...(className ? { class: className } : {}), children: "Body" }));
+
+const openModalDrawer = (): Promise<string> => render(Drawer({ id: "nav", side: "left", label: "Navigation", openModal: true, children: "Links" }));
+
+const SETTLED = { modal: true, opacity: 1, backdropOpacity: 1, running: [] };
+
+function durations(page: Page, act: "showModal" | "close"): Promise<string[]> {
+  return page.evaluate((call) => {
+    const el = document.querySelector("dialog") as HTMLDialogElement;
+    el[call]();
+    return [...new Set(getComputedStyle(el).transitionDuration.split(", "))];
+  }, act);
+}
+
+test.describe("Dialog and Drawer — rendered open as a modal", { tag: "@cross-engine" }, () => {
+  for (const reducedMotion of ["no-preference", "reduce"] as const) {
+    test.describe(reducedMotion === "reduce" ? "under reduced motion" : "with motion", () => {
+      test.use({ reducedMotion });
+
+      test("a Dialog rendered with openModal is already settled on the frame it resumes", async ({ page }) => {
+        await mountResumable(page, await openModalDialog());
+
+        const frame = await resumeAndRead(page);
+
+        expect(frame).toEqual({ ...SETTLED, left: expect.any(Number) });
+      });
+
+      test("a Drawer rendered with openModal is already against its edge on the frame it resumes", async ({ page }) => {
+        await mountResumable(page, await openModalDrawer());
+
+        const frame = await resumeAndRead(page);
+
+        expect(frame).toEqual({ ...SETTLED, left: 0 });
+      });
+    });
+  }
+
+  test("closed and reopened, it fades in like any modal", async ({ page }) => {
+    await mountResumable(page, await openModalDialog());
+    await resumeAndRead(page);
+    await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const el = document.querySelector("dialog") as HTMLDialogElement;
+          el.addEventListener("close", resolve, { once: true });
+          el.close();
+        }),
+    );
+    await expect.poll(() => actAndRead(page, "none").then((frame) => frame.display)).toBe("none");
+
+    const frame = await actAndRead(page, "showModal");
+
+    expect(frame.panel, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.opacity).toBeLessThan(0.5);
+  });
+
+  test("a Dialog rendered with openModal still fades out when it closes", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+    test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
+    await mountResumable(page, await openModalDialog());
+    await resumeAndRead(page);
+    await expect.poll(() => actAndRead(page, "none").then((frame) => frame.opacity)).toBe(1);
+
+    const frame = await actAndRead(page, "close");
+
+    expect(frame.panel, JSON.stringify(frame)).toContain("opacity");
+    expect(frame.display).not.toBe("none");
+  });
+
+  test("open:duration-180 slows only the enter", async ({ page }) => {
+    await mountStyled(page, await render(Dialog({ id: "confirm", label: "Delete project?", class: "open:duration-180", children: "Body" })));
+
+    const entering = await durations(page, "showModal");
+    const exiting = await durations(page, "close");
+
+    expect({ entering, exiting }).toEqual({ entering: ["0.18s"], exiting: ["0.1s"] });
   });
 });
 
@@ -420,21 +598,26 @@ function centred(frames: ExitFrames): void {
   }
 }
 
-test.describe("Dialog — placement through the exit fade", () => {
-  test("a closing modal stays centred in the viewport", async ({ page }) => {
+test.describe("Dialog — placement through the exit fade", { tag: "@cross-engine" }, () => {
+  test("a closing modal stays centred in the viewport", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+    test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
     await mountTall(page, await markup());
 
     centred(await readExitFrames(page, "showModal"));
   });
 
-  test("a modal closed on a scrolled page stays centred in the viewport", async ({ page }) => {
+  test("a modal closed on a scrolled page stays centred in the viewport", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+    test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
     await mountTall(page, await markup());
     await page.evaluate(() => window.scrollTo(0, 1500));
 
     centred(await readExitFrames(page, "showModal"));
   });
 
-  test("a non-modal <Dialog open> fades out where it sits in the page", async ({ page }) => {
+  test("a non-modal <Dialog open> fades out where it sits in the page", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", NO_DISPLAY_TRANSITION);
     await mountTall(page, await markup(true));
     await page.evaluate(() => window.scrollTo(0, 2800));
 
@@ -446,10 +629,38 @@ test.describe("Dialog — placement through the exit fade", () => {
     }
   });
 
+  test("a duration-* on a non-modal <Dialog open> keeps the closing panel where it sits through the fade", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", NO_DISPLAY_TRANSITION);
+    test.skip(browserName === "webkit", LONGHAND_EXIT_WEBKIT);
+    await mountTall(page, await render(Dialog({ id: "confirm", label: "Delete project?", open: true, class: "duration-300", children: "Body" })));
+    await page.evaluate(() => window.scrollTo(0, 2800));
+
+    const frames = await readExitFrames(page, "none");
+
+    expect(frames.closing.length, "no frame caught the panel after close()").toBeGreaterThan(0);
+    for (const frame of frames.closing) {
+      expect(near(frame.x, frames.settled.x) && near(frame.y, frames.settled.y), JSON.stringify(frames)).toBe(true);
+    }
+  });
+
+  test("an ease-* on a non-modal <Dialog open> lets the closing panel leave its place before the fade ends", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", NO_DISPLAY_TRANSITION);
+    test.skip(browserName === "webkit", LONGHAND_EXIT_WEBKIT);
+    await mountTall(page, await render(Dialog({ id: "confirm", label: "Delete project?", open: true, class: "ease-linear", children: "Body" })));
+    await page.evaluate(() => window.scrollTo(0, 2800));
+
+    const frames = await readExitFrames(page, "none");
+    const moved = frames.closing.filter((frame) => !near(frame.x, frames.settled.x) || !near(frame.y, frames.settled.y));
+
+    expect(moved.length, `every closing frame held the panel where it sat: ${JSON.stringify(frames)}`).toBeGreaterThan(0);
+  });
+
   test.describe("under reduced motion", () => {
     test.use({ reducedMotion: "reduce" });
 
-    test("a closing modal keeps its whole rect, unscaled", async ({ page }) => {
+    test("a closing modal keeps its whole rect, unscaled", async ({ page, browserName }) => {
+      test.skip(browserName === "firefox", MODAL_EXIT_FIREFOX);
+      test.skip(browserName === "webkit", MODAL_EXIT_WEBKIT);
       await mountTall(page, await markup());
 
       const frames = await readExitFrames(page, "showModal");

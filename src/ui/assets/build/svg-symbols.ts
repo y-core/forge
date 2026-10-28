@@ -255,12 +255,20 @@ function admitsAttr(attr: SvgAttr): boolean {
   return !scheme.startsWith("javascript:") && !scheme.startsWith("data:text/html");
 }
 
+/** An `&` that opens no character reference. */
+const BARE_AMPERSAND = /&(?!(?:#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]*);)/gi;
+
+/** Escapes text so no `<` or `>` in it can join a neighbour into markup once an element between them is dropped. */
+function escapeSvgText(text: string): string {
+  return text.replace(BARE_AMPERSAND, "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+
 /** Writes the tokens back out, keeping only the attributes `admitsAttr` allows. */
 function serialize(tokens: readonly SvgToken[]): string {
   let out = "";
   for (const token of tokens) {
     if (token.kind === "text") {
-      out += token.text;
+      out += escapeSvgText(token.text);
     } else if (token.kind === "end") {
       if (!DROPPED_ELEMENTS.has(token.name.toLowerCase())) out += `</${token.name}>`;
     } else {
@@ -278,15 +286,36 @@ export function sanitizeSVG(content: string): string {
 
 const PROPAGATABLE_ATTRS = ["fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"] as const;
 
-/** Reads the presentation attributes on a root `<svg>` tag that propagate to its shapes. @internal */
-export function extractRootAttrs(svgTag: string): Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> {
-  const attrs: Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>> = {};
-  for (const attr of PROPAGATABLE_ATTRS) {
-    // The leading boundary is what keeps `data-stroke="…"` from being read as `stroke`.
-    const match = svgTag.match(new RegExp(`(?:^|\\s)${attr}="([^"]+)"`, "i"));
-    if (match?.[1]) attrs[attr] = match[1];
+type RootPresentationAttrs = Partial<Record<(typeof PROPAGATABLE_ATTRS)[number], string>>;
+
+/** ARIA attributes whose value is a list of element ids. */
+const IDREF_LIST_ATTRS = new Set([
+  "aria-activedescendant",
+  "aria-controls",
+  "aria-describedby",
+  "aria-details",
+  "aria-errormessage",
+  "aria-flowto",
+  "aria-labelledby",
+  "aria-owns",
+]);
+
+/** SMIL timing attributes, whose `id.event` values name another element. */
+const SMIL_TIMING_ATTRS = new Set(["begin", "end"]);
+
+/** Picks the propagating presentation attributes out of a root's attributes, the first spelling of each winning. */
+function pickRootAttrs(attrs: readonly SvgAttr[]): RootPresentationAttrs {
+  const picked: RootPresentationAttrs = {};
+  for (const name of PROPAGATABLE_ATTRS) {
+    const value = attrs.find((attr) => attr.name.toLowerCase() === name)?.value;
+    if (value) picked[name] = value;
   }
-  return attrs;
+  return picked;
+}
+
+/** Reads the presentation attributes on a root `<svg>` tag that propagate to its shapes. @internal */
+export function extractRootAttrs(svgTag: string): RootPresentationAttrs {
+  return pickRootAttrs(readAttrs(svgTag, 0).attrs);
 }
 
 /** Wraps inner markup in one `<g>` carrying the transform and the root presentation attributes, so SVG inheritance resolves nested overrides. @internal */
@@ -295,16 +324,80 @@ export function wrapRootAttrs(inner: string, rootAttrs: Partial<Record<string, s
   if (transform !== undefined) attrs.push(`transform="${transform}"`);
   for (const attr of PROPAGATABLE_ATTRS) {
     const value = rootAttrs[attr];
-    if (value !== undefined) attrs.push(`${attr}="${value}"`);
+    if (value !== undefined) attrs.push(`${attr}="${value.replaceAll('"', "&quot;")}"`);
   }
   return attrs.length === 0 ? inner : `<g ${attrs.join(" ")}>${inner}</g>`;
 }
 
-/** Converts an SVG document into a sanitized `<symbol>` with a zero-origin viewBox, or null when it has no content. @public */
-export function svgToSymbol(svgContent: string, key: string, prefix: string): { id: string; symbol: string } | null {
-  const viewBoxMatch = svgContent.match(/viewBox="([^"]+)"/i);
-  const rawViewBox = viewBoxMatch?.[1] ?? "0 0 24 24";
+/** The tokens after the root start tag up to its matching close, or to the end when it never closes. */
+function readRootChildren(tokens: readonly SvgToken[], from: number): readonly SvgToken[] {
+  let depth = 1;
+  for (let i = from; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === undefined || token.kind === "text" || token.name.toLowerCase() !== "svg") continue;
+    if (token.kind === "end") depth--;
+    else if (!token.selfClosing) depth++;
+    if (depth === 0) return tokens.slice(from, i);
+  }
+  return tokens.slice(from);
+}
 
+/** The root `<svg>` start token and the tokens it encloses, or null when the tokens hold none. */
+function readSvgRoot(tokens: readonly SvgToken[]): { root: SvgToken & { kind: "start" }; children: readonly SvgToken[] } | null {
+  const rootAt = tokens.findIndex((token) => token.kind === "start" && token.name.toLowerCase() === "svg");
+  const root = tokens[rootAt];
+  if (root?.kind !== "start") return null;
+  return { root, children: root.selfClosing ? [] : readRootChildren(tokens, rootAt + 1) };
+}
+
+/** Splits SVG markup into its root `<svg>` tag's attributes and the sanitized markup that root encloses, or null when it has none. @internal */
+export function splitSvgRoot(content: string): { rootTag: string; inner: string } | null {
+  const read = readSvgRoot(tokenize(content));
+  if (read === null) return null;
+  return { rootTag: read.root.attrs.map((attr) => attr.source).join(" "), inner: serialize(read.children) };
+}
+
+/** Rewrites every id the tokens declare to `${symbolId}__${id}`, along with each reference to one of them. */
+function prefixIds(tokens: readonly SvgToken[], symbolId: string): SvgToken[] {
+  const ids = new Set(
+    tokens.flatMap((token) =>
+      token.kind === "start" ? token.attrs.filter((attr) => attr.name.toLowerCase() === "id").map((attr) => attr.value) : [],
+    ),
+  );
+  if (ids.size === 0) return [...tokens];
+  const scope = (id: string): string => (ids.has(id) ? `${symbolId}__${id}` : id);
+
+  const rewriteValue = (name: string, value: string): string => {
+    if (name === "id") return scope(value);
+    if (name === "href" || name === "xlink:href") return value.startsWith("#") ? `#${scope(value.slice(1))}` : value;
+    if (IDREF_LIST_ATTRS.has(name)) return value.replace(/[^\s]+/g, scope);
+    if (SMIL_TIMING_ATTRS.has(name))
+      return value.replace(/(^|;)(\s*)([^;\s.]+)\./g, (_, lead: string, space: string, id: string) => `${lead}${space}${scope(id)}.`);
+    return value.replace(/url\(\s*(["']?)#([^"')\s]+)\1\s*\)/g, (match, quote: string, id: string) =>
+      ids.has(id) ? `url(${quote}#${scope(id)}${quote})` : match,
+    );
+  };
+
+  return tokens.map((token) => {
+    if (token.kind !== "start") return token;
+    const attrs = token.attrs.map((attr) => {
+      const value = rewriteValue(attr.name.toLowerCase(), attr.value);
+      return value === attr.value ? attr : { name: attr.name, value, source: `${attr.name}="${value.replaceAll('"', "&quot;")}"` };
+    });
+    return { ...token, attrs };
+  });
+}
+
+/** Converts an SVG document into a sanitized `<symbol>` with a zero-origin viewBox, or null when it has no root `<svg>`. @public */
+export function svgToSymbol(svgContent: string, key: string, prefix: string): { id: string; symbol: string } | null {
+  const read = readSvgRoot(tokenize(svgContent));
+  if (read === null) return null;
+
+  const id = `${prefix}${key}`;
+  const [root, ...children] = prefixIds([read.root, ...read.children], id);
+  const rootAttrs = root?.kind === "start" ? root.attrs : [];
+
+  const rawViewBox = rootAttrs.find((attr) => attr.name.toLowerCase() === "viewbox" && attr.value.trim() !== "")?.value ?? "0 0 24 24";
   // `<use>` renders at (0,0), so a non-zero viewBox origin must be zeroed and translated back.
   const [minX = 0, minY = 0, w = 24, h = 24] = rawViewBox
     .trim()
@@ -313,14 +406,6 @@ export function svgToSymbol(svgContent: string, key: string, prefix: string): { 
   const hasOffset = minX !== 0 || minY !== 0;
   const viewBox = `0 0 ${w} ${h}`;
 
-  const svgTagMatch = svgContent.match(/<svg([^>]*)>/i);
-  const innerMatch = svgContent.match(/<svg[^>]*>([\s\S]*?)<\/svg>/i);
-  if (innerMatch?.[1] === undefined) return null;
-
-  const rootAttrs = svgTagMatch?.[1] ? extractRootAttrs(svgTagMatch[1]) : {};
-  const sanitized = sanitizeSVG(innerMatch[1]).trim();
-  const inner = wrapRootAttrs(sanitized, rootAttrs, hasOffset ? `translate(${-minX} ${-minY})` : undefined);
-
-  const id = `${prefix}${key}`;
+  const inner = wrapRootAttrs(serialize(children).trim(), pickRootAttrs(rootAttrs), hasOffset ? `translate(${-minX} ${-minY})` : undefined);
   return { id, symbol: `  <symbol id="${id}" viewBox="${viewBox}">${inner}</symbol>` };
 }

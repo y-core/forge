@@ -29,6 +29,7 @@ const EXPOSE = { expose: { forgeHtmx: "./ui/client/htmx", forgeAnnounce: "./ui/c
 
 const POLITE = `[data-slot='${ANNOUNCER_REGION_SLOTS.polite}']`;
 const ASSERTIVE = `[data-slot='${ANNOUNCER_REGION_SLOTS.assertive}']`;
+const PAUSE_HORIZON_MS = 86_400_000;
 
 const icon = createIcon("/sprite.svg", { "icon-spinner": "0 0 24 24" });
 
@@ -67,7 +68,7 @@ async function answer(page: Page, respond: (route: Route) => Promise<void>): Pro
 /** Clicks the button with the page's clock paused until htmx fires `answered`, so the response always lands inside the announcer's settle. */
 async function clickWithinSettle(page: Page, answered: string): Promise<void> {
   await page.clock.install();
-  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + PAUSE_HORIZON_MS);
   await page.evaluate((event) => {
     window.htmxAnswered = new Promise((resolve) => document.addEventListener(event, () => resolve(), { once: true }));
     document.querySelector<HTMLElement>("#load")?.click();

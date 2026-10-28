@@ -19,7 +19,7 @@ describe("Indicator", () => {
       ),
     ).toBe(
       '<div data-slot="indicator" class="relative block" id="i1" data-note="a&amp;b"><span>x</span>' +
-        '<span data-slot="indicator-item" data-placement="top-end" class="absolute z-10 end-0 top-0 translate-x-1/2 -translate-y-1/2">R&amp;D&#39;s</span></div>',
+        '<span data-slot="indicator-item" data-placement="top-end" class="absolute z-10 end-0 top-0 translate-x-1/2 -translate-y-1/2 rtl:-translate-x-1/2">R&amp;D&#39;s</span></div>',
     );
   });
 
@@ -42,8 +42,8 @@ describe("Indicator", () => {
 
   it("moves an item to the opposite inline edge rather than pinning it to both", async () => {
     expect(variantClasses(await pip({ placement: "top-start" }), await pip())).toEqual({
-      added: ["start-0", "-translate-x-1/2"],
-      dropped: ["end-0", "translate-x-1/2"],
+      added: ["start-0", "-translate-x-1/2", "rtl:translate-x-1/2"],
+      dropped: ["end-0", "translate-x-1/2", "rtl:-translate-x-1/2"],
     });
   });
 
@@ -56,8 +56,8 @@ describe("Indicator", () => {
 
   it("swaps both axes at once for the far corner, leaving neither edge of the default behind", async () => {
     expect(variantClasses(await pip({ placement: "bottom-start" }), await pip())).toEqual({
-      added: ["start-0", "bottom-0", "-translate-x-1/2", "translate-y-1/2"],
-      dropped: ["end-0", "top-0", "translate-x-1/2", "-translate-y-1/2"],
+      added: ["start-0", "bottom-0", "-translate-x-1/2", "translate-y-1/2", "rtl:translate-x-1/2"],
+      dropped: ["end-0", "top-0", "translate-x-1/2", "-translate-y-1/2", "rtl:-translate-x-1/2"],
     });
   });
 

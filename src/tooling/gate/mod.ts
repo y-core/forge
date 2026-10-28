@@ -92,7 +92,6 @@ export {
   mergeThemes,
   parseThemeDeclarations,
   resolveStep,
-  splitLightDark,
 } from "./checks/contrast-parse";
 export type { ClassDeclaration } from "./checks/types";
 export { findClassDeclarations, findSourceDirectives, isClassAnchor } from "./checks/css-parse";

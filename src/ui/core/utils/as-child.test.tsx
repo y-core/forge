@@ -7,7 +7,7 @@ import type { FC, JSX } from "../../../render/jsx/types";
 import { attrOf, attrsOf } from "../../../testing/markup";
 import { render } from "../../../testing/render";
 import { MENU_ITEM_CLASS } from "../../contracts/menu-contract";
-import { Button, buttonVariants } from "../button";
+import { Button, buttonBox, buttonVariants } from "../button";
 import { Input } from "../input";
 import { Link } from "../link";
 import { Menu } from "../menu";
@@ -31,10 +31,12 @@ const TOOLBAR_ITEM_CLASS = ghostItem();
 const BUTTON_ICON_CLASS = ghostItem({ shape: "icon" });
 const BUTTON_DEFAULT_CLASS = buttonVariants();
 
-const MENU_WITH_TOOLTIP_CLASS = "cursor-default focus-ring";
-const POPOVER_WITH_TOOLTIP_CLASS = "list-none cursor-default focus-ring";
-const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS = cn(TOOLBAR_ITEM_CLASS, MENU_WITH_TOOLTIP_CLASS);
-const MENU_ITEM_WITH_TOOLTIP_CLASS = cn(MENU_ITEM_CLASS, MENU_WITH_TOOLTIP_CLASS);
+const TOOLTIP_TRIGGER_CLASS = "cursor-default focus-ring";
+const TRIGGER_BOX_CLASS = cn(buttonBox({ size: "sm" }), "border-transparent");
+const MENU_WITH_TOOLTIP_CLASS = cn(TRIGGER_BOX_CLASS, "cursor-pointer", TOOLTIP_TRIGGER_CLASS);
+const POPOVER_WITH_TOOLTIP_CLASS = cn(TRIGGER_BOX_CLASS, "cursor-pointer list-none", TOOLTIP_TRIGGER_CLASS);
+const TOOLBAR_ITEM_WITH_TOOLTIP_CLASS = cn(TOOLBAR_ITEM_CLASS, TOOLTIP_TRIGGER_CLASS);
+const MENU_ITEM_WITH_TOOLTIP_CLASS = cn(MENU_ITEM_CLASS, TOOLTIP_TRIGGER_CLASS);
 const MENU_WITH_TOOLBAR_WITH_TOOLTIP_CLASS = TOOLBAR_ITEM_WITH_TOOLTIP_CLASS;
 
 describe("cloneAsChild — button options the compound never set", () => {

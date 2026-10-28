@@ -10,6 +10,7 @@ import { buttonVariants } from "./button";
 import type { ToggleGroupType } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { fillPartProps } from "./utils/part-props";
 import { PRESSED_PAINT } from "./utils/recipes";
 
 type ToggleGroupProps = ContainerNaming &
@@ -60,7 +61,7 @@ const ToggleGroupRoot: FC<PropsWithChildren<ToggleGroupProps>> = ({
     {...stateAttrs({ orientation })}
     class={cn(GROUP_BASE, orientation === "vertical" && "flex-col", cls)}
     {...rest}>
-    {children}
+    {fillPartProps(children, new Map([[ToggleGroupItem, { type }]]))}
   </fieldset>
 );
 

@@ -19,7 +19,7 @@ describe("Dialog", () => {
       ),
     ).toBe(
       '<dialog id="confirm" data-slot="dialog" aria-labelledby="confirm-title" closedby="any"' +
-        ' class="rounded-box border border-border bg-popover text-popover-foreground shadow-lg w-96" data-note="a&amp;b&#39;s">' +
+        ' class="rounded-box border-field border-border bg-popover text-popover-foreground shadow-lg w-96" data-note="a&amp;b&#39;s">' +
         "R&amp;D&#39;s &lt;plan&gt;</dialog>",
     );
   });
@@ -51,6 +51,14 @@ describe("Dialog", () => {
 
     expect(attrs.open).toBe("");
     expect(attrs["data-scope"]).toBeUndefined();
+  });
+
+  it("leaves a plain open dialog without closedby, so an outside click or a stray Escape cannot dismiss it", async () => {
+    expect(attrsOf(await render(<Dialog id='confirm' titled open />)).closedby).toBeUndefined();
+  });
+
+  it("dismisses an alert dialog on a close request only, never on a backdrop click", async () => {
+    expect(attrsOf(await render(<Dialog id='confirm' titled alert />)).closedby).toBe("closerequest");
   });
 });
 
@@ -115,17 +123,33 @@ describe("Dialog.Close", () => {
       ),
     ).toBe("request-close");
   });
+});
 
-  it("wears the caller's class and nothing of its own, since a close button is styled where it sits", async () => {
-    expect(
-      classesOf(
+describe("Dialog.Trigger and Dialog.Close — the sm button box", () => {
+  const invokers = [Dialog.Trigger, Dialog.Close] as const;
+
+  it("clears the Floor bare, with the sm height, a focus ring and an unpainted border", async () => {
+    for (const Invoker of invokers) {
+      const classes = classesOf(await render(<Invoker for='confirm'>Go</Invoker>));
+
+      for (const token of ["h-control-sm", "focus-ring", "border-transparent"]) expect(classes).toContain(token);
+    }
+  });
+
+  it("lets a caller's conflicting class evict the box's own while the height stays", async () => {
+    for (const Invoker of invokers) {
+      const classes = classesOf(
         await render(
-          <Dialog.Close for='confirm' class='text-sm'>
-            Cancel
-          </Dialog.Close>,
+          <Invoker for='confirm' class='px-6 text-base'>
+            Go
+          </Invoker>,
         ),
-      ),
-    ).toEqual(["text-sm"]);
+      );
+
+      for (const token of ["px-6", "text-base", "h-control-sm"]) expect(classes).toContain(token);
+      expect(classes).not.toContain("px-3");
+      expect(classes).not.toContain("text-sm");
+    }
   });
 });
 
@@ -269,5 +293,17 @@ describe("Dialog — a caller's aria-describedby joins the description reference
 
   it("emits no reference for a blank caller id when the dialog renders no description", async () => {
     expect(attrsOf(await render(<Dialog id='confirm' titled aria-describedby='  ' />))).not.toHaveProperty("aria-describedby");
+  });
+});
+
+describe("Dialog — a caller's aria-labelledby joins the derived name rather than replacing it", () => {
+  it("lists the caller's id ahead of the title reference", async () => {
+    expect(attrOf(await render(<Dialog id='confirm' titled aria-labelledby='extra' />), "aria-labelledby", 'data-slot="dialog"')).toBe(
+      "extra confirm-title",
+    );
+  });
+
+  it("lists an id once when the caller repeats the one they named the dialog by", async () => {
+    expect(attrOf(await render(<Dialog id='confirm' labelledby='t' aria-labelledby='t' />), "aria-labelledby", 'data-slot="dialog"')).toBe("t");
   });
 });

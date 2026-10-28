@@ -1,11 +1,13 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { createElement } from "../../render/jsx/element";
 import { render } from "../../testing/render";
 import { compiledCss, mount, paintedHex, renderedClasses, withCompiledCss } from "../client/browser.fixture";
 import { ACTIVE_COMPOSITE_ITEM } from "../contracts/composite-contract";
 import { contrastRatio } from "../contracts/theme/color";
 import { CRITERION } from "../contracts/theme/contrast-pairs";
+import type { Orientation } from "../contracts/types";
 import { Tabs } from "./tabs";
 
 declare global {
@@ -56,6 +58,41 @@ function tabsMarkup({ activation, orientation, selected = "a" }: Fixture = {}): 
   );
 }
 
+function axisMarkup(root: Orientation | undefined, list: Orientation | undefined): Promise<string> {
+  return render(
+    createElement(Tabs, {
+      ...(root ? { orientation: root } : {}),
+      children: [
+        createElement(Tabs.List, {
+          label: "Views",
+          ...(list ? { orientation: list } : {}),
+          children: [
+            createElement(Tabs.Tab, { for: "p-a", selected: true, children: "Alpha" }),
+            createElement(Tabs.Tab, { for: "p-b", children: "Beta" }),
+          ],
+        }),
+        createElement(Tabs.Content, { id: "p-a", selected: true, children: "A" }),
+        createElement(Tabs.Content, { id: "p-b", children: "B" }),
+      ],
+    }),
+  );
+}
+
+function wrappedPanelMarkup(): Promise<string> {
+  return render(
+    Tabs({
+      children: [
+        Tabs.List({
+          label: "Views",
+          children: [Tabs.Tab({ for: "p-a", selected: true, children: "Alpha" }), Tabs.Tab({ for: "p-b", children: "Beta" })],
+        }),
+        Tabs.Content({ id: "p-a", selected: true, children: "A" }),
+        createElement("div", { children: Tabs.Content({ id: "p-b", children: "B" }) }),
+      ],
+    }),
+  );
+}
+
 function tabsState(page: Page) {
   return page.evaluate(() => ({
     selected: [...document.querySelectorAll("[role='tab']")].filter((el) => el.getAttribute("aria-selected") === "true").map((el) => el.id),
@@ -98,6 +135,17 @@ test.describe("Tabs", () => {
       ["p-c", "none", ""],
       ["p-d", "none", ""],
     ]);
+  });
+
+  test("a panel wrapped in the caller's own element is selected in place of the selected one once mounted", async ({ page }) => {
+    await mount(page, await withCompiledCss(await wrappedPanelMarkup()), EXPOSE);
+    await start(page);
+
+    await page.click("#p-b-tab");
+
+    expect(await tabsState(page)).toEqual({ selected: ["p-b-tab"], dataSelected: ["p-b-tab"], visiblePanels: ["p-b"] });
+    await expect(page.locator("#p-b")).toBeVisible();
+    await expect(page.locator("#p-a")).toBeHidden();
   });
 
   test("is one Tab stop", async ({ page }) => {
@@ -239,6 +287,15 @@ test.describe("Tabs", () => {
     await page.keyboard.press("ArrowDown");
     expect(await focusedId(page)).toBe("p-b-tab");
   });
+
+  test("a vertical list under a default root takes its axis from the list", async ({ page }) => {
+    await mount(page, await axisMarkup(undefined, "vertical"), EXPOSE);
+    await start(page);
+
+    await page.focus("#p-a-tab");
+    await page.keyboard.press("ArrowDown");
+    expect((await tabsState(page)).selected).toEqual(["p-b-tab"]);
+  });
 });
 
 test.describe("Tabs — the boot tab stop follows the selection", () => {
@@ -345,39 +402,85 @@ test.describe("Tabs — panels follow the selection inside a shadow root", () =>
   });
 });
 
+test.describe("Tabs — a nested set is left alone", () => {
+  async function nestedMarkup(): Promise<string> {
+    const inner = Tabs({
+      children: [
+        Tabs.List({ label: "Inner", children: [Tabs.Tab({ for: "p-x", selected: true, children: "X" }), Tabs.Tab({ for: "p-y", children: "Y" })] }),
+        Tabs.Content({ id: "p-x", selected: true, children: "X" }),
+        Tabs.Content({ id: "p-y", children: "Y" }),
+      ],
+    });
+    return render(
+      Tabs({
+        children: [
+          Tabs.List({
+            label: "Outer",
+            children: [Tabs.Tab({ for: "p-a", selected: true, children: "Alpha" }), Tabs.Tab({ for: "p-b", children: "Beta" })],
+          }),
+          Tabs.Content({ id: "p-a", selected: true, children: inner }),
+          Tabs.Content({ id: "p-b", children: "B" }),
+        ],
+      }),
+    );
+  }
+
+  test("arrowing onto an outer tab leaves the inner selection and panels intact", async ({ page }) => {
+    await mount(page, await nestedMarkup(), EXPOSE);
+    await start(page);
+
+    await page.focus("#p-a-tab");
+    await page.keyboard.press("ArrowRight");
+
+    expect(await tabsState(page)).toEqual({
+      selected: ["p-b-tab", "p-x-tab"],
+      dataSelected: ["p-b-tab", "p-x-tab"],
+      visiblePanels: ["p-x", "p-b"],
+    });
+  });
+});
+
 test.describe("Tabs — the selected tab's cue is not colour alone", { tag: "@cross-engine" }, () => {
-  for (const dark of [false, true]) {
-    test(`the selected tab draws a bar the unselected one leaves transparent, clearing 1.4.11 against its fill and the page in ${dark ? "dark" : "light"}`, async ({
+  for (const [dark, vertical] of [
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ] as const) {
+    test(`the selected ${vertical ? "vertical" : "horizontal"} tab draws a bar the unselected one leaves transparent, clearing 1.4.11 against its fill and the page in ${dark ? "dark" : "light"}`, async ({
       page,
     }) => {
-      const html = await tabsMarkup();
+      const html = vertical ? await axisMarkup("vertical", undefined) : await tabsMarkup();
       await mount(
         page,
         `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
       );
       if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
 
-      const read = await page.evaluate(() => {
-        const style = (selector: string) => getComputedStyle(document.querySelector(selector) as Element);
-        const alpha = (color: string) => {
-          const context = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D;
-          context.fillStyle = color;
-          context.fillRect(0, 0, 1, 1);
-          return context.getImageData(0, 0, 1, 1).data[3];
-        };
-        const selected = style("#p-a-tab");
-        const unselected = style("#p-b-tab");
-        return {
-          selected: {
-            width: selected.borderBottomWidth,
-            alpha: alpha(selected.borderBottomColor),
-            color: selected.borderBottomColor,
-            fill: selected.backgroundColor,
-          },
-          unselected: { width: unselected.borderBottomWidth, color: unselected.borderBottomColor },
-          surface: style("main").backgroundColor,
-        };
-      });
+      const read = await page.evaluate(
+        (side) => {
+          const style = (selector: string) => getComputedStyle(document.querySelector(selector) as Element);
+          const alpha = (color: string) => {
+            const context = document.createElement("canvas").getContext("2d") as CanvasRenderingContext2D;
+            context.fillStyle = color;
+            context.fillRect(0, 0, 1, 1);
+            return context.getImageData(0, 0, 1, 1).data[3];
+          };
+          const selected = style("#p-a-tab");
+          const unselected = style("#p-b-tab");
+          return {
+            selected: {
+              width: selected[`${side}Width`],
+              alpha: alpha(selected[`${side}Color`]),
+              color: selected[`${side}Color`],
+              fill: selected.backgroundColor,
+            },
+            unselected: { width: unselected[`${side}Width`], color: unselected[`${side}Color`] },
+            surface: style("main").backgroundColor,
+          };
+        },
+        vertical ? ("borderInlineEnd" as const) : ("borderBottom" as const),
+      );
       expect({ selected: { width: read.selected.width, alpha: read.selected.alpha }, unselected: read.unselected }).toEqual({
         selected: { width: "2px", alpha: 255 },
         unselected: { width: "2px", color: "rgba(0, 0, 0, 0)" },

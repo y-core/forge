@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
-import type { FC, JSXElement } from "../../render/jsx/types";
+import type { ComponentFn, FC, JSXElement } from "../../render/jsx/types";
+import { aliasPart } from "../core/utils/part-props";
 import { fieldAttr } from "../server/field-attr";
 
 /** A `ui/core` component and the statics hung off it. @internal */
@@ -25,5 +26,9 @@ export function createBoundCompound<P, S extends object, O extends object = Reco
   overrides: O = {} as O,
 ): FC<P> & Omit<S, keyof O> & O {
   const Root: FC<P> = (props) => <Core {...props} />;
+  for (const [key, override] of Object.entries(overrides)) {
+    const part = (Core as Record<string, unknown>)[key];
+    if (typeof override === "function" && typeof part === "function") aliasPart(override as ComponentFn, part as ComponentFn);
+  }
   return carry(Root, Core, overrides);
 }

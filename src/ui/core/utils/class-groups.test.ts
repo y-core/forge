@@ -51,10 +51,10 @@ describe("classGroup bare functional roots", () => {
   const cases: { utility: string; expected: string }[] = [
     { utility: "rounded", expected: "border-radius" },
     { utility: "border", expected: "border-style,border-width" },
-    { utility: "ring", expected: "--tw-ring-shadow" },
-    { utility: "shadow", expected: "--tw-shadow" },
+    { utility: "ring", expected: "--tw-ring-shadow,box-shadow" },
+    { utility: "shadow", expected: "--tw-shadow,box-shadow" },
     { utility: "outline", expected: "outline-style,outline-width" },
-    { utility: "backdrop-blur", expected: "--tw-backdrop-blur" },
+    { utility: "backdrop-blur", expected: "--tw-backdrop-blur,-webkit-backdrop-filter,backdrop-filter" },
   ];
 
   for (const { utility, expected } of cases) {
@@ -82,11 +82,11 @@ describe("classGroup functional values", () => {
     { utility: "inset-y-2", expected: "inset-block" },
     { utility: "top-0", expected: "top" },
     { utility: "left-1/2", expected: "left" },
-    { utility: "leading-none", expected: "--tw-leading" },
-    { utility: "tracking-tight", expected: "--tw-tracking" },
-    { utility: "translate-x-4", expected: "--tw-translate-x" },
+    { utility: "leading-none", expected: "--tw-leading,line-height" },
+    { utility: "tracking-tight", expected: "--tw-tracking,letter-spacing" },
+    { utility: "translate-x-4", expected: "--tw-translate-x,translate" },
     { utility: "animate-spin", expected: "animation" },
-    { utility: "duration-200", expected: "--tw-duration" },
+    { utility: "duration-200", expected: "--tw-duration,transition-duration" },
     { utility: "object-top", expected: "object-position" },
     { utility: "rounded-lg", expected: "border-radius" },
     { utility: "rounded-tl-md", expected: "border-top-left-radius" },
@@ -121,14 +121,14 @@ describe("classGroup value discriminators", () => {
     { utility: "text-ellipsis", expected: "text-overflow" },
     { utility: "text-shadow-md", expected: "text-shadow" },
     { utility: "text-shadow-red-500", expected: "--tw-text-shadow-color" },
-    { utility: "ring-2", expected: "--tw-ring-shadow" },
+    { utility: "ring-2", expected: "--tw-ring-shadow,box-shadow" },
     { utility: "ring-ring", expected: "--tw-ring-color" },
     { utility: "ring-inset", expected: "--tw-ring-inset" },
     { utility: "ring-offset-2", expected: "--tw-ring-offset-shadow,--tw-ring-offset-width" },
     { utility: "ring-offset-red-500", expected: "--tw-ring-offset-color" },
-    { utility: "shadow-lg", expected: "--tw-shadow" },
+    { utility: "shadow-lg", expected: "--tw-shadow,box-shadow" },
     { utility: "shadow-black", expected: "--tw-shadow-color" },
-    { utility: "font-bold", expected: "--tw-font-weight" },
+    { utility: "font-bold", expected: "--tw-font-weight,font-weight" },
     { utility: "font-mono", expected: "font-family" },
     { utility: "outline-2", expected: "outline-style,outline-width" },
     { utility: "outline-ring", expected: "outline-color" },
@@ -141,8 +141,8 @@ describe("classGroup value discriminators", () => {
     { utility: "border-b-red-500", expected: "border-bottom-color" },
     { utility: "border-be-2", expected: "border-block-end-style,border-block-end-width" },
     { utility: "inset-be-4", expected: "inset-block-end" },
-    { utility: "ordinal", expected: "--tw-ordinal" },
-    { utility: "tabular-nums", expected: "--tw-numeric-spacing" },
+    { utility: "ordinal", expected: "--tw-ordinal,font-variant-numeric" },
+    { utility: "tabular-nums", expected: "--tw-numeric-spacing,font-variant-numeric" },
   ];
 
   for (const { utility, expected } of cases) {

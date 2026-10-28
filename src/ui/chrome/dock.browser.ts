@@ -6,9 +6,19 @@ import { mount, withCompiledCss } from "../client/browser.fixture";
 import type { Size } from "../contracts/types";
 import { createIcon } from "../core/icon";
 import { Dock } from "./dock";
-import type { DockHideAbove, DockItem } from "./types";
+import { Navbar } from "./navbar";
+import type { DockHideAbove, DockItem, NavDefinition } from "./types";
 
-const icon = createIcon("/sprite.svg", { "icon-home": "0 0 24 24", "icon-search": "0 0 24 24", "icon-user": "0 0 24 24" });
+const icon = createIcon("/sprite.svg", {
+  "icon-home": "0 0 24 24",
+  "icon-search": "0 0 24 24",
+  "icon-user": "0 0 24 24",
+  "icon-chevron-down": "0 0 16 16",
+  "icon-hamburger": "0 0 22 22",
+  "icon-close": "0 0 22 22",
+});
+
+const NAV: NavDefinition = { sections: [{ items: [{ label: "Home", href: "home" }] }] };
 
 const ITEMS: DockItem<"home" | "search" | "user">[] = [
   { label: "Home", href: "home", icon: "home", current: true },
@@ -49,13 +59,11 @@ test.describe("Dock — a focused control is never hidden beneath the bar", { ta
     await mount(page, await withCompiledCss(html));
     await page.locator("#b1").focus();
 
-    const seen = [await focusedAndHit(page)];
+    await expect.poll(() => focusedAndHit(page)).toEqual({ focused: "b1", hit: "b1" });
     for (let n = 2; n <= BUTTONS; n++) {
       await page.keyboard.press("Tab");
-      seen.push(await focusedAndHit(page));
+      await expect.poll(() => focusedAndHit(page)).toEqual({ focused: `b${n}`, hit: `b${n}` });
     }
-
-    expect(seen).toEqual(Array.from({ length: BUTTONS }, (_, i) => ({ focused: `b${i + 1}`, hit: `b${i + 1}` })));
   });
 
   for (const size of ["sm", "md", "lg"] as const) {
@@ -92,5 +100,48 @@ test.describe("Dock — gives the clearance back above its breakpoint", { tag: "
     const { nav, scroll, body } = await clearance(page);
     expect({ scroll, body }).toEqual({ scroll: nav, body: nav });
     expect(nav).toBeGreaterThan(0);
+  });
+});
+
+async function mountBeside(page: Page, placement: "top" | "bottom"): Promise<void> {
+  const navbar = await render(Navbar({ config: NAV, resolveHref: (k: string) => `#${k}`, icon, placement }));
+  const docked = await dock({ hideAbove: "never" });
+  await mount(page, await withCompiledCss(placement === "top" ? `${navbar}${MAIN}${docked}` : `${MAIN}${navbar}${docked}`));
+}
+
+function edges(page: Page): Promise<{ navbar: number; dock: number; top: number; bottom: number }> {
+  return page.evaluate(() => ({
+    navbar: (document.querySelector("[data-slot~='navbar']") as Element).getBoundingClientRect().height,
+    dock: (document.querySelector("[data-slot~='dock']") as Element).getBoundingClientRect().height,
+    top: parseFloat(getComputedStyle(document.documentElement).scrollPaddingTop),
+    bottom: parseFloat(getComputedStyle(document.documentElement).scrollPaddingBottom),
+  }));
+}
+
+test.describe("Dock — shares the foot of the page with a bottom Navbar", { tag: "@cross-engine" }, () => {
+  test.use({ viewport: { width: 375, height: 667 } });
+
+  test("a bottom Navbar and a Dock add their heights into the page's scroll-padding-bottom", async ({ page }) => {
+    await mountBeside(page, "bottom");
+
+    const { navbar, dock: docked, bottom } = await edges(page);
+
+    expect(bottom).toBe(navbar + docked);
+    expect(Math.min(navbar, docked)).toBeGreaterThan(0);
+  });
+
+  test("a top Navbar reserves the top edge and leaves the foot of the page to the Dock", async ({ page }) => {
+    await mountBeside(page, "top");
+
+    const { navbar, dock: docked, top, bottom } = await edges(page);
+
+    expect({ top, bottom }).toEqual({ top: navbar, bottom: docked });
+    expect(Math.min(navbar, docked)).toBeGreaterThan(0);
+  });
+
+  test("an app's --forge-dock-height on html resizes the bar, its scroll padding and its body padding together", async ({ page }) => {
+    await mount(page, `${await withCompiledCss(`${MAIN}${await dock()}`)}<style>html{--forge-dock-height:5rem}</style>`);
+
+    expect(await clearance(page)).toEqual({ nav: 80, scroll: 80, body: 80 });
   });
 });

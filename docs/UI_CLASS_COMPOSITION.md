@@ -20,8 +20,8 @@ audience: consumer
 - §1 Class Utilities: ratified public composition helpers
 - §1a Conflict Resolution, the Fail-Open Boundary, and the Memo: what the resolver decides, where it stops, the ratified inversion, and the cache
 - §1b Class Order Is Not Load-Bearing Within a Literal: the fixed-point invariant the gate enforces, and what a sorter cannot reach
-- §1c The Table Is Derived From the Compiled Design System: the generator, the drift gate, the scale probe and its agreement condition, the
-  equal-reach throw
+- §1c The Table Is Derived From the Compiled Design System: the generator, the signature rule and its selector context, the integer slot, the
+  arbitrary background kinds, the drift gate, the scale probe and its agreement condition, the equal-reach throw
 - §1d A Narrower Later Utility Layers Rather Than Displaces: why `text-size-hero` and `text-size-[20px]` both survive
 - §1e The `@utility` Recipe Layer: one name per state or chrome recipe, why it is a utility and not a class, the subset-group argument rule, the
   admission test that rules out a paint recipe, and the `--tone` mechanism
@@ -129,9 +129,28 @@ each utility actually writes, and renders `class-groups.ts` from the answers —
 approximation of it. `src/tooling/gate/checks/class-groups-parse.ts` is the derivation, and is authoritative over what it authors rather than
 derives — the signature rule and the shorthand closure immediately below.
 
-**A group id is the CSS signature a utility writes: the `--tw-*` custom properties it sets when it sets any, and its ordinary CSS properties
-otherwise.** Variables take precedence because `ring-2` and `shadow-md` both write `box-shadow` and must not conflict; the variables are what tell
-them apart.
+**A group id is the CSS signature a utility writes: every `--tw-*` custom property and every ordinary CSS property it sets, together.** The
+variables tell apart `ring-2` and `shadow-md`, which both write `box-shadow`; the ordinary properties tell apart utilities that share a variable but
+paint different things. A signature built from either half alone merges utilities that do not conflict.
+
+**Each property carries the selector and at-rules it is set under, unless that is the utility's own class alone.** The utility's class is written
+`&` inside the tag. `divide-solid` sets `border-style` on the element's children and `border-dashed` sets it on the element itself, so the two keep
+different groups. `outline-hidden` sets `outline-offset` only under `@media (forced-colors: active)`, so it does not displace an `outline-offset-2`
+that sets it everywhere.
+
+**No override edge is derived onto a group made only of `--tw-*` variables.** Such a utility is a modifier read by another utility, not a paint of
+its own. `space-x-reverse` sets only the variable that `space-x-4` also sets, so a subset edge would delete it, and the two are meant to be used
+together.
+
+**A root whose bare integers reach a different group from its named values gains an integer slot.** Tailwind accepts any bare integer for a width,
+so `border-3` compiles, but the class list enumerates only the listed widths, and an unlisted integer would otherwise take the named group: the
+`border-color` of `border-red-500`. The derivation compiles two integers outside the class list. When both land in one group and it differs from the
+named group, every bare integer on that root resolves to it.
+
+**An arbitrary background value is grouped by the kind of value it holds.** `bg-[image:…]`, `bg-[size:…]` and `bg-[position:…]` each reach their own
+property, and an untyped gradient (`linear-`, `radial-` or `conic-gradient`, repeating or not) is read as an image. None of them displaces the
+background colour that `bg-background` sets. `class-groups-parse.ts` holds the probe values, and `src/ui/core/utils/cn.test.ts` pins each pair that
+must survive a merge.
 
 **`GROUP_OVERRIDES` names which of those signatures a CSS shorthand swallows**, property identity being unable to see that `padding` hides
 `padding-left`. That closure is CSS-standard fact rather than a Tailwind one, so — unlike everything else in the table — it does not move when
@@ -183,7 +202,8 @@ wins — the relationship [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises for eve
 invisible to the resolver, making the caller's utility fight the cascade instead.
 
 **`focus-ring` reaches a wrapped control through `:has()`.** `Toggle`, `Switch` and `ToggleGroup.Item` put the focus on a visually hidden input
-inside a label, and `&:has(:focus-visible)` paints the label, so the recipe covers the focused element and its wrapper alike. The one spelling it
+inside a label, and `&:has(:focus-visible)` paints the label, so the recipe covers the focused element and its wrapper alike. WebKit also needs
+`:has(:focus)` there, for the reason [`09-interaction.md`][interaction] §1b records. The one spelling it
 cannot reach is a _sibling_ — `Switch`'s track is not an ancestor of its input — which keeps `peer-focus-visible:ring-2` on that track alone, with a
 one-line reason at the site.
 
@@ -191,29 +211,35 @@ one-line reason at the site.
 the recipe sits on the wrapping label is the ordinary shape here, not the exception. A recipe without the branch leaves `<Switch busy>` and
 `<Toggle busy>` silently inert, so a new state recipe carries it from the start.
 
-**A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** A recipe that paints nothing in the base state takes the
-group `forge:<name>` rather than its compiled signature; `config/steps.ts` names them through `FORGE_STATE_RECIPES`. `reach()` finds no CSS property
-in such a key, so no override edge is derived into or out of one either.
+**A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** A recipe that paints under a state selector — at base scope
+it sets at most `outline-style`, as `focus-ring` and `focus-ring-outset` do through `outline-none` — takes the group `forge:<name>` rather than
+its compiled signature; `config/steps.ts` names them through `FORGE_STATE_RECIPES`. `reach()` finds no CSS property in such a key, so no override
+edge is derived into or out of one either.
 
-**A compiled signature groups a state recipe wrongly in both directions.** `signature()` prefers a utility's `--tw-*` variables over the CSS
-properties it also sets, so `state-invalid` — `border-color` _and_ `--tw-ring-color` — collapses to the group every `ring-*` takes, and since a
-caller's `class` is always last under last-wins `cn`, `<Input class="ring-primary">` would drop the invalid border and leave a control announcing
-`aria-invalid` while looking valid; the reverse holds too, `state-busy`'s group subsuming a caller's `cursor-wait`. Neither is a real conflict — a
-recipe painting only under `&[aria-invalid]` cannot contend with one that paints unconditionally. **A state recipe therefore travels as one token of
-the base literal, never as a second `cn` argument**: slot-keyed, it contends with nothing, so its own argument buys no separation. What earns one is
-a base-scope token that does contend — `cursor-pointer` takes its own argument because `state-busy` paints `cursor: progress`.
+**A state recipe must contend with no base-scope utility.** `state-invalid` sets `border-color` and `--tw-ring-color` only under
+`&[aria-invalid="true"]` and its siblings. A caller's `class` is always last under last-wins `cn`, so if `<Input class="ring-primary">`
+displaced the recipe, the control would announce `aria-invalid` while looking valid. Equally, `state-busy` must not displace a caller's
+`cursor-wait`. The slot key guarantees both, and the selector tag on a compiled signature (§1c) separates the same pairs. **A state recipe
+therefore travels as one token of the base literal, never as a second `cn` argument**: slot-keyed, it contends with nothing, so its own
+argument buys no separation. What earns one is a base-scope token that does contend — `cursor-pointer` takes its own argument because
+`state-busy` paints `cursor: progress`.
 
 **The paint recipes keep their compiled signature, deliberately.** A recipe such as `field-chrome` declares its whole payload at base scope, so a
 consumer's later `rounded-lg`, `h-auto` or `w-20` should win — the override [`UI_SSR_COMPONENTS.md`][usc-1c] §1c promises. A **paint** recipe would
-still be wrong as an `@utility`: a pressed toggle's `background-color` is exactly what its resting state sets, so a `state-pressed` would delete the
-`bg-transparent` beside it. **What works there is a shared class const** passed as its own `cn` argument (`PRESSED_PAINT`), since each token then
-keeps its own scope. Every signature and scope is pinned in `src/tooling/gate/checks/state-recipes.test.ts`.
+still be wrong as an `@utility`: a `state-pressed` would key its `background-color` under its own selector tag, and a caller's
+`has-[:checked]:bg-accent` keys it under a modifier prefix (§1a), so `cn` would keep both and leave the cascade to choose. **What works there is a
+shared class const** passed as its own `cn` argument (`PRESSED_PAINT`): its tokens carry the same modifier prefix a caller writes, so the caller's
+later token replaces them. Every signature and scope is pinned in `src/tooling/gate/checks/state-recipes.test.ts`.
 
 **`--tone` is a companion mechanism, not an `@utility`.** `toneVariants` in `src/ui/core/utils/tone.ts` sets the per-tone custom properties and one
 recipe per appearance reads them, so one recipe covers every tone. Each property is its own `cn` conflict group (`arb:--tone`), which is what lets a
 caller re-tone a component by passing `[--tone:…]` after it. Every cell is measured against the 1.4.3 floor in `tone.browser.ts`, and the `warning`
 tone's text property deliberately reads its step-11 rather than its fill because the fill does not clear it — [`THEME_GENERATION.md`][tg-3a] §3a
 owns the audited pairs behind each property.
+
+**A toned surface the pointer cannot act on takes the paint without the hover fill**, because a panel that recolours on hover reads as a button,
+and the fill can drop a glyph on it below 4.5:1. `tone.ts` keeps the paint and the hover as separate tables, so the control resolver and the
+surface resolver derive from one source.
 
 ### 1f. Which Utility Composes a Class, and In What Order
 
@@ -341,6 +367,7 @@ header and `src/ui/README.md`.
 [boundaries]: ../warden/canon/libs/BOUNDARIES.md
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [cr-1]: ../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
+[interaction]: ../src/ui/design/reference/09-interaction.md
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [tg]: ./THEME_GENERATION.md
 [tg-3a]: ./THEME_GENERATION.md#3a-audited-pairs-and-criteria

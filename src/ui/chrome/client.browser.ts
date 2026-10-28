@@ -5,7 +5,7 @@ import { render } from "../../testing/render";
 import { mount } from "../client/browser.fixture";
 import { createIcon } from "../core/icon";
 import { Navbar } from "./navbar";
-import { DARK_CLASS, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
+import { DARK_CLASS, FOUC_SCRIPT, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 import { ThemeToggle } from "./theme-toggle";
 
 declare global {
@@ -167,11 +167,10 @@ test.describe("theme scope — two toggles on one page", () => {
     await mountThemePair(page, "light");
     await page.evaluate((key) => {
       window.forgeThemeWrites = 0;
-      const storage = window.localStorage;
-      const write = storage.setItem.bind(storage);
-      storage.setItem = (name: string, value: string) => {
-        if (name === key) window.forgeThemeWrites += 1;
-        write(name, value);
+      const write = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (this: Storage, name: string, value: string) {
+        if (this === window.localStorage && name === key) window.forgeThemeWrites += 1;
+        write.call(this, name, value);
       };
       window.forgeResume.resume();
       window.forgeThemeWrites = 0;
@@ -228,6 +227,41 @@ test.describe("theme scope — two toggles on one page", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await toggle(page, 1).click();
     expect((await themeState(page)).pref).toBe("light");
+  });
+});
+
+test.describe("theme scope — storage it cannot trust", () => {
+  test("a stored value naming no theme still renders one named icon after the FOUC script and resume", async ({ page }) => {
+    await mount(page, await render(ThemeToggle({ icon })), { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] });
+    await page.evaluate(([key]) => localStorage.setItem(key as string, "auto"), [THEME_STORAGE_KEY] as const);
+    await page.addScriptTag({ content: FOUC_SCRIPT });
+    await page.evaluate(() => window.forgeResume.resume());
+
+    const shown = await page.evaluate(() =>
+      [".theme-light-icon", ".theme-dark-icon", ".theme-system-icon"].filter((sel) => {
+        const span = document.querySelector(sel);
+        return span !== null && getComputedStyle(span).display !== "none";
+      }),
+    );
+
+    expect({ pref: (await themeState(page)).pref, shown }).toEqual({ pref: "system", shown: [".theme-system-icon"] });
+    expect(await page.locator("[data-on-click='cycleTheme']").innerText()).toContain("currently system");
+  });
+
+  test("a full quota leaves the toggle cycling", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "light" });
+    await mount(page, await render(ThemeToggle({ icon })), EXPOSE);
+    await seed(page, "light");
+    await page.evaluate(() => {
+      Storage.prototype.setItem = () => {
+        throw new DOMException("full", "QuotaExceededError");
+      };
+      window.forgeResume.resume();
+    });
+
+    await page.click("[data-on-click='cycleTheme']");
+
+    expect(await themeState(page)).toEqual({ pref: "dark", dark: true, stored: "light" });
   });
 });
 

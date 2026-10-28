@@ -75,28 +75,58 @@ export const SHORTHAND_CLOSURE: ReadonlyMap<string, readonly string[]> = new Map
   ["place-self", ["align-self", "justify-self"]],
 ]);
 
-function collect(nodes: readonly CssNode[], into: Set<string>): void {
+const OWN_CLASS = /\.(?:\\.|[-\w])+/;
+
+function selectorContext(selector: string | undefined, parent: string): string {
+  if (selector === undefined) return parent;
+  const nested = parent === "" ? selector : selector.replaceAll("&", parent);
+  if (nested === "&" || nested.match(OWN_CLASS)?.[0] === nested) return "";
+  return joinList(nested.replace(OWN_CLASS, "&"));
+}
+
+const joinList = (list: string): string => list.replace(/\s*,\s*/g, "|");
+
+interface DeclarationScope {
+  selector: string;
+  atRules: string;
+}
+
+function scopeContext(scope: DeclarationScope): string {
+  return [scope.atRules, scope.selector].filter((part) => part !== "").join(";");
+}
+
+function enterScope(node: CssNode, scope: DeclarationScope): DeclarationScope {
+  if (node.kind === "rule") return { ...scope, selector: selectorContext(node.selector, scope.selector) };
+  if (node.kind !== "at-rule" || node.name === undefined) return scope;
+  const prelude = joinList(node.params === undefined || node.params === "" ? node.name : `${node.name} ${node.params}`);
+  return { ...scope, atRules: scope.atRules === "" ? prelude : `${scope.atRules};${prelude}` };
+}
+
+function collect(nodes: readonly CssNode[], into: Set<string>, scope: DeclarationScope): void {
   for (const node of nodes) {
     if (node.kind === "declaration") {
-      if (node.property !== undefined) into.add(node.property);
+      const context = scopeContext(scope);
+      if (node.property !== undefined) into.add(context === "" ? node.property : `${node.property}@${context}`);
     } else if (node.kind === "at-rule" && node.name === "@property") continue;
-    else if (node.nodes !== undefined) collect(node.nodes, into);
+    else if (node.nodes !== undefined) collect(node.nodes, into, enterScope(node, scope));
   }
 }
 
-/** The properties that identify a compiled utility: its `--tw-*` variables when it sets any, else its CSS properties. */
+const propertyOf = (token: string): string => token.split("@", 1)[0] as string;
+
+/** The `--tw-*` variables and CSS properties a compiled utility sets, each tagged `@` the at-rules and selector it is set under when those are not the utility's own class alone. */
 export function signature(nodes: readonly CssNode[]): string {
   const properties = new Set<string>();
-  collect(nodes, properties);
-  const vars = [...properties].filter((property) => property.startsWith("--tw-"));
-  const real = [...properties].filter((property) => !property.startsWith("--"));
-  return (vars.length > 0 ? vars : real).sort().join(",");
+  collect(nodes, properties, { selector: "", atRules: "" });
+  return [...properties]
+    .filter((token) => propertyOf(token).startsWith("--tw-") || !token.startsWith("--"))
+    .sort()
+    .join(",");
 }
 
-/** Every property a group reaches once CSS shorthands are expanded. */
-export function reach(group: string): ReadonlySet<string> {
-  const out = new Set(group.split(","));
-  const queue = [...out];
+function expandShorthand(property: string): ReadonlySet<string> {
+  const out = new Set([property]);
+  const queue = [property];
   while (queue.length > 0) {
     for (const child of SHORTHAND_CLOSURE.get(queue.pop() as string) ?? []) {
       if (out.has(child)) continue;
@@ -107,6 +137,19 @@ export function reach(group: string): ReadonlySet<string> {
   return out;
 }
 
+/** Every property a group reaches once CSS shorthands are expanded, each keeping its selector context. */
+export function reach(group: string): ReadonlySet<string> {
+  const out = new Set<string>();
+  for (const token of group.split(",")) {
+    const property = propertyOf(token);
+    const context = token.slice(property.length);
+    for (const reached of expandShorthand(property)) out.add(`${reached}${context}`);
+  }
+  return out;
+}
+
+const isVariableOnly = (group: string): boolean => group.split(",").every((token) => propertyOf(token).startsWith("--tw-"));
+
 const ARBITRARY_PROBES: readonly (readonly [string, string])[] = [
   ["color", "[#abcdef]"],
   ["length", "[3px]"],
@@ -114,6 +157,9 @@ const ARBITRARY_PROBES: readonly (readonly [string, string])[] = [
   ["percentage", "[10%]"],
   ["url", "[url(a.png)]"],
   ["other", "[foo]"],
+  ["image", "[image:url(a.png)]"],
+  ["size", "[size:10px]"],
+  ["position", "[position:center]"],
 ];
 
 const SR_ONLY_GROUP = "sr-only";
@@ -146,6 +192,8 @@ const bare = (root: string): string => (root.startsWith("-") ? root.slice(1) : r
 // is asked directly whether it takes a scale value — as the bare roots above already are.
 const SCALE_PROBES: readonly string[] = ["0", "4"];
 
+const INTEGER_PROBES: readonly string[] = ["3", "13"];
+
 function deriveOverrides(groups: readonly string[]): Map<string, readonly string[]> {
   const reaches = new Map(groups.map((group) => [group, reach(group)]));
   const out = new Map<string, readonly string[]>();
@@ -153,7 +201,7 @@ function deriveOverrides(groups: readonly string[]): Map<string, readonly string
     const own = reaches.get(group) as ReadonlySet<string>;
     const covered = groups
       .filter((other) => {
-        if (other === group) return false;
+        if (other === group || isVariableOnly(other)) return false;
         const theirs = reaches.get(other) as ReadonlySet<string>;
         if (![...theirs].every((property) => own.has(property))) return false;
         if (theirs.size === own.size) {
@@ -229,6 +277,13 @@ export function deriveClassGroups(ds: DesignSystem, stateRecipes: readonly strin
     if (only !== undefined) scaleGroups.set(unlisted[i] as string, only);
   }
 
+  const integerSignatures = signatures(functional.flatMap((root) => INTEGER_PROBES.map((value) => `${root}-${value}`)));
+  const integerGroups = new Map<string, string>();
+  for (let i = 0; i < functional.length; i += 1) {
+    const found = INTEGER_PROBES.map((_, j) => integerSignatures[i * INTEGER_PROBES.length + j]);
+    if (found[0] !== undefined && found.every((group) => group === found[0])) integerGroups.set(functional[i] as string, found[0]);
+  }
+
   statics.set("sr-only", SR_ONLY_GROUP);
   statics.set("not-sr-only", SR_ONLY_GROUP);
 
@@ -248,9 +303,12 @@ export function deriveClassGroups(ds: DesignSystem, stateRecipes: readonly strin
     const values = named.get(root) as Map<string, string>;
     const namedDefault = values.size > 0 ? modal(tally(values.values())) : scaleGroups.get(root);
     const arbitraryDefault = modal(tally(arbitraryGroups.values()));
-    if (namedDefault === undefined && arbitraryDefault === undefined) continue;
+    const integer = integerGroups.get(root);
+    const integerDefault = integer !== namedDefault ? integer : undefined;
+    if (namedDefault === undefined && arbitraryDefault === undefined && integerDefault === undefined) continue;
 
     const row: RootRow = {};
+    if (integerDefault !== undefined) row.integer = integerDefault;
     if (namedDefault !== undefined) {
       row.named = namedDefault;
       const minority = [...values].filter(([, group]) => group !== namedDefault);
@@ -288,7 +346,7 @@ export function deriveClassGroups(ds: DesignSystem, stateRecipes: readonly strin
 
   const groups = new Set<string>(statics.values());
   for (const row of roots.values()) {
-    for (const group of [row.named, row.arbitrary, row.exceptions?.group, ...Object.values(row.kinds ?? {})]) {
+    for (const group of [row.named, row.integer, row.arbitrary, row.exceptions?.group, ...Object.values(row.kinds ?? {})]) {
       if (group !== undefined) groups.add(group);
     }
   }
@@ -318,6 +376,7 @@ function renderRoots(table: ClassGroupTable): { valueSets: string; roots: string
   const rows = [...table.roots].map(([root, row]) => {
     const parts: string[] = [];
     if (row.named !== undefined) parts.push(`n: ${quote(row.named)}`);
+    if (row.integer !== undefined) parts.push(`i: ${quote(row.integer)}`);
     if (row.exceptions !== undefined) parts.push(`x: [${sets.index(row.exceptions.values.join(" "))}, ${quote(row.exceptions.group)}]`);
     if (row.arbitrary !== undefined) parts.push(`a: ${quote(row.arbitrary)}`);
     if (row.kinds !== undefined) {
@@ -334,6 +393,7 @@ const BANNER = "/** class-groups.ts — GENERATED — do not edit; run `bun run 
 
 const RESOLVER = `interface RootRow {
   readonly n?: string;
+  readonly i?: string;
   readonly x?: readonly [number, string];
   readonly a?: string;
   readonly k?: Readonly<Record<string, string>>;
@@ -345,6 +405,8 @@ const COLOR_FUNCTIONS = ["rgb(", "rgba(", "hsl(", "hsla(", "oklch(", "oklab(", "
 const LENGTH = /^-?[\\d.]+(?:px|rem|em|ch|ex|vw|vh|vmin|vmax|pt|pc|in|cm|mm|q)$/;
 const NUMBER = /^-?[\\d.]+$/;
 const PERCENTAGE = /^-?[\\d.]+%$/;
+const INTEGER = /^\\d+$/;
+const GRADIENTS = ["linear-gradient(", "radial-gradient(", "conic-gradient("];
 
 function arbitraryKind(value: string): string {
   const inner = value.slice(1, -1);
@@ -352,6 +414,7 @@ function arbitraryKind(value: string): string {
   if (colon !== -1) return inner.slice(0, colon);
   if (inner.startsWith("#") || COLOR_FUNCTIONS.some((fn) => inner.startsWith(fn))) return "color";
   if (inner.startsWith("url(")) return "url";
+  if (GRADIENTS.some((fn) => inner.startsWith(fn) || inner.startsWith(\`repeating-\${fn}\`))) return "image";
   if (LENGTH.test(inner)) return "length";
   if (PERCENTAGE.test(inner)) return "percentage";
   if (NUMBER.test(inner)) return "number";
@@ -360,6 +423,7 @@ function arbitraryKind(value: string): string {
 
 function rootGroup(row: RootRow, value: string): string | undefined {
   if (value.startsWith("[") || value.startsWith("(")) return row.k?.[arbitraryKind(value)] ?? row.a;
+  if (row.i !== undefined && INTEGER.test(value)) return row.i;
   if (row.x !== undefined && (SETS[row.x[0]] as ReadonlySet<string>).has(value)) return row.x[1];
   return row.n;
 }

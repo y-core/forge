@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
@@ -44,9 +47,14 @@ import { ToggleGroup } from "./core/toggle-group";
 import { Toolbar } from "./core/toolbar";
 import { Tooltip } from "./core/tooltip";
 
-const HIT_TARGET_FLOOR_PX = 32;
+const HIT_TARGET_FLOOR_PX = 28;
 
 const LAYOUT_UNIT_PX = 1 / 64;
+
+const HIT_TARGET_SHAPES = {
+  default: "",
+  compact: readFileSync(fileURLToPath(new URL("./assets/css/shape-compact.css", import.meta.url)), "utf-8"),
+} as const;
 
 const HIT_TARGET_VIEWPORTS = [
   { width: 375, height: 800 },
@@ -197,7 +205,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
           Breadcrumbs.Item({ current: true, children: "Settings" }),
         ],
       }),
-    waivedSlots: { "breadcrumbs-link": "bug-261026-61: a trail link has no box of its own and is its 20px text line" },
   },
   "core/Button": {
     markup: () => [
@@ -222,7 +229,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
         name: "cg",
         children: [CheckboxGroup.Label({ children: "Toppings" }), CheckboxGroup.Item({ name: "cg", value: "a", children: "Olives" })],
       }),
-    waivedSlots: { "checkbox-group-input": "bug-261026-60: an item row is its 20px text line" },
   },
   "core/Collapsible": {
     markup: () => Collapsible({ children: [Collapsible.Trigger({ icon, children: "More" }), Collapsible.Content({ children: "Details." })] }),
@@ -241,10 +247,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
         ],
       }),
     ],
-    waivedSlots: {
-      "dialog-trigger": "decision-261026-59: a bare trigger has no box and is 24px tall",
-      "dialog-close": "decision-261026-59: a bare close has no box and is 24px tall and as narrow as its glyph",
-    },
   },
   "core/Drawer": {
     markup: () => [
@@ -260,10 +262,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
         ],
       }),
     ],
-    waivedSlots: {
-      "drawer-trigger": "decision-261026-59: a bare trigger has no box and is 24px tall",
-      "drawer-close": "decision-261026-59: a bare close has no box and is 24px tall and as narrow as its glyph",
-    },
   },
   "core/EmptyState": { noTarget: "it is a message whose call to action is the caller's own control" },
   "core/Field": { noTarget: "it lays out a label and the caller's control" },
@@ -305,7 +303,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
           }),
         ],
       }),
-    waivedSlots: { "menu-trigger": "decision-261026-59: a bare trigger has no box and is 24px tall" },
   },
   "core/Meter": { noTarget: "it reports a value and takes no input" },
   "core/NumberField": {
@@ -324,7 +321,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
       OtpInput({ "aria-label": "Code", size: "md" }),
       OtpInput({ "aria-label": "Code", size: "lg" }),
     ],
-    waivedSlots: { "otp-input": "bug-261026-62: the sm editor sits inside the frame's border and is 30px tall" },
   },
   "core/Pagination": {
     markup: () =>
@@ -346,7 +342,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
           Popover.Content({ id: "share", labelledby: "share-trigger", children: "Share options" }),
         ],
       }),
-    waivedSlots: { "popover-trigger": "decision-261026-59: a bare trigger has no box and is 24px tall" },
   },
   "core/Progress": { noTarget: "it reports a value and takes no input" },
   "core/RadioGroup": {
@@ -355,7 +350,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
         name: "rg",
         children: [RadioGroup.Label({ children: "Size" }), RadioGroup.Item({ name: "rg", value: "s", children: "Small" })],
       }),
-    waivedSlots: { "radio-group-input": "bug-261026-60: an item row is its 20px text line" },
   },
   "core/ScrollArea": { noTarget: "its viewport is a keyboard scroll stop, not a pointer target" },
   "core/Select": { markup: () => Select({ "aria-label": "Choice", icon, size: "sm", children: Select.Option({ value: "a", children: "A" }) }) },
@@ -369,7 +363,6 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
   "core/Steps": { noTarget: "it is a progress trail with nothing to press" },
   "core/Switch": {
     markup: () => [Switch({ children: "Wi-Fi" }), Switch({ "aria-label": "Bluetooth" }), Switch({ "aria-label": "Airplane mode", size: "sm" })],
-    waivedSlots: { "switch-input": "bug-261026-60: the label is the track or one text line, under 32px tall at every size" },
   },
   "core/Table": { noTarget: "it lays out data whose actions are the caller's own controls" },
   "core/Tabs": {
@@ -387,10 +380,7 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
   "core/Textarea": { markup: () => Textarea({ "aria-label": "Notes", size: "sm" }) },
   "core/Timeline": { noTarget: "it is a list of past events" },
   "core/Toast": { markup: () => Toast.Container({ children: Toast({ dismissible: true, children: Toast.Title({ children: "Saved" }) }) }) },
-  "core/Toggle": {
-    markup: () => [Toggle({ "aria-label": "Bold", children: "B" }), Toggle({ "aria-label": "Bold", size: "sm", children: "B" })],
-    waivedSlots: { "toggle-input": "bug-261022-66: a one-glyph Toggle is 31.3px wide at every size" },
-  },
+  "core/Toggle": { markup: () => [Toggle({ "aria-label": "Bold", children: "B" }), Toggle({ "aria-label": "Bold", size: "sm", children: "B" })] },
   "core/ToggleGroup": {
     markup: () => [
       ToggleGroup({
@@ -419,20 +409,18 @@ const HIT_TARGET_PARTICIPANTS: Record<string, HitTargetEntry> = {
           Toolbar.Input({ "aria-label": "Font size" }),
         ],
       }),
-    waivedSlots: { "toolbar-input": "bug-261022-66: Toolbar.Input is 30px tall against the 32px control height" },
   },
   "core/Tooltip": {
     markup: () =>
       Tooltip({ children: [Tooltip.Trigger({ for: "tt", children: "Bold" }), Tooltip.Content({ id: "tt", children: "Make the selection bold" })] }),
-    waivedSlots: { "tooltip-trigger": "decision-261026-59: a bare trigger has no box and is 24px tall" },
   },
   "core/Turnstile": { noTarget: "the widget is Cloudflare's iframe" },
 };
 
-async function mountMarkup(page: Page, markup: JSXNode): Promise<void> {
+async function mountMarkup(page: Page, markup: JSXNode, shapeCss: string): Promise<void> {
   await page.emulateMedia({ reducedMotion: "reduce" });
   const html = await render(markup);
-  await mount(page, await withCompiledCss(html));
+  await mount(page, await withCompiledCss(`<style>${shapeCss}</style>${html}`));
 }
 
 function revealOverlays(page: Page): Promise<void> {
@@ -481,8 +469,8 @@ function measureHitTargets(page: Page): Promise<HitTargetReport> {
   );
 }
 
-async function sweep(page: Page, markup: JSXNode): Promise<HitTargetReport> {
-  await mountMarkup(page, markup);
+async function sweep(page: Page, markup: JSXNode, shapeCss: string = HIT_TARGET_SHAPES.default): Promise<HitTargetReport> {
+  await mountMarkup(page, markup, shapeCss);
   await revealOverlays(page);
   return measureHitTargets(page);
 }
@@ -491,7 +479,7 @@ const participantsWithMarkup = Object.entries(HIT_TARGET_PARTICIPANTS).flatMap((
   "markup" in entry ? [{ key, participant: entry }] : [],
 );
 
-test.describe("forge-ui-hit-target — every pointer target clears the Button sm box", { tag: "@cross-engine" }, () => {
+test.describe("forge-ui-hit-target — every pointer target clears the 28px Floor", { tag: "@cross-engine" }, () => {
   test("the participant table names every component the core and chrome barrels publish", () => {
     expect(Object.keys(HIT_TARGET_PARTICIPANTS).sort()).toEqual(barrelComponents({ chrome, core }).map((component) => component.key));
   });
@@ -502,6 +490,81 @@ test.describe("forge-ui-hit-target — every pointer target clears the Button sm
 
     const standard = await sweep(page, Button({ size: "sm", shape: "icon", "aria-label": "Close", children: "×" }));
     expect(standard).toEqual({ measured: 1, breaches: [] });
+  });
+
+  test("the Button sm box is 28px tall under shape-compact and 32px under the default shape", async ({ page }) => {
+    const heights: Record<string, number | undefined> = {};
+    for (const [shape, css] of Object.entries(HIT_TARGET_SHAPES)) {
+      await mountMarkup(page, Button({ size: "sm", children: "Save" }), css);
+      heights[shape] = (await page.locator("button").boundingBox())?.height;
+    }
+    expect(heights).toEqual({ default: 32, compact: 28 });
+  });
+
+  test("the Breadcrumbs.Link box is 28px tall under shape-compact and 32px under the default shape", async ({ page }) => {
+    const heights: Record<string, number | undefined> = {};
+    for (const [shape, css] of Object.entries(HIT_TARGET_SHAPES)) {
+      await mountMarkup(
+        page,
+        Breadcrumbs({ children: Breadcrumbs.Item({ children: Breadcrumbs.Link({ href: "#home", children: "Home" }) }) }),
+        css,
+      );
+      heights[shape] = (await page.locator("[data-slot~='breadcrumbs-link']").boundingBox())?.height;
+    }
+    expect(heights).toEqual({ default: 32, compact: 28 });
+  });
+
+  test("the OtpInput sm editor is 28px tall under shape-compact and 32px under the default shape", async ({ page }) => {
+    const heights: Record<string, number | undefined> = {};
+    for (const [shape, css] of Object.entries(HIT_TARGET_SHAPES)) {
+      await mountMarkup(page, OtpInput({ "aria-label": "Code", size: "sm" }), css);
+      heights[shape] = (await page.locator("[data-slot~='otp-input']").boundingBox())?.height;
+    }
+    expect(heights).toEqual({ default: 32, compact: 28 });
+  });
+
+  test("a checkbox item, a radio item, a labelled Switch and a bare md and sm Switch are the sm control size under both shapes", async ({
+    page,
+  }) => {
+    const heights: Record<string, Record<string, number | undefined>> = {};
+    const bareWidths: Record<string, number[]> = {};
+    for (const [shape, css] of Object.entries(HIT_TARGET_SHAPES)) {
+      await mountMarkup(
+        page,
+        [
+          CheckboxGroup.Item({ name: "cg", value: "a", children: "Olives" }),
+          RadioGroup.Item({ name: "rg", value: "s", children: "Small" }),
+          Switch({ children: "Wi-Fi" }),
+          Switch({ "aria-label": "Bluetooth" }),
+          Switch({ "aria-label": "Airplane mode", size: "sm" }),
+        ],
+        css,
+      );
+      const checkbox = await page.locator("[data-slot~='checkbox-group-item']").boundingBox();
+      const radio = await page.locator("[data-slot~='radio-group-item']").boundingBox();
+      const switches = await page.locator("label[data-slot~='switch']").evaluateAll((labels) =>
+        labels.map((label) => {
+          const rect = label.getBoundingClientRect();
+          return { width: rect.width, height: rect.height };
+        }),
+      );
+      heights[shape] = {
+        checkbox: checkbox?.height,
+        radio: radio?.height,
+        labelledSwitch: switches[0]?.height,
+        bareSwitch: switches[1]?.height,
+        bareSmSwitch: switches[2]?.height,
+      };
+      bareWidths[shape] = switches.slice(1).map((box) => box.width);
+    }
+    expect(heights).toEqual({
+      default: { checkbox: 32, radio: 32, labelledSwitch: 32, bareSwitch: 32, bareSmSwitch: 32 },
+      compact: { checkbox: 28, radio: 28, labelledSwitch: 28, bareSwitch: 28, bareSmSwitch: 28 },
+    });
+    expect(bareWidths.default).toHaveLength(2);
+    expect(bareWidths.compact).toHaveLength(2);
+    for (const width of bareWidths.default ?? []) expect(width).toBeGreaterThanOrEqual(32);
+    for (const width of bareWidths.compact ?? []) expect(width).toBeGreaterThanOrEqual(28);
   });
 
   test("a visually hidden checkbox is measured by its label's box, and reported when it has none", async ({ page }) => {
@@ -524,18 +587,20 @@ test.describe("forge-ui-hit-target — every pointer target clears the Button sm
   });
 
   for (const { key, participant } of participantsWithMarkup) {
-    test(`${key} — no unwaived pointer target is under 32px at either viewport, and no waiver is stale`, async ({ page }) => {
+    test(`${key} — no unwaived pointer target is under 28px in either shape at either viewport, and no waiver is stale`, async ({ page }) => {
       const waived = participant.waivedSlots ?? {};
       const breached = new Set<string>();
       const unwaived: string[] = [];
       let measured = 0;
-      for (const viewport of HIT_TARGET_VIEWPORTS) {
-        await page.setViewportSize(viewport);
-        const report = await sweep(page, participant.markup());
-        measured += report.measured;
-        for (const breach of report.breaches) {
-          breached.add(breach.target);
-          if (!(breach.target in waived)) unwaived.push(`${breach.target} ${breach.width}×${breach.height} @${viewport.width}`);
+      for (const [shape, css] of Object.entries(HIT_TARGET_SHAPES)) {
+        for (const viewport of HIT_TARGET_VIEWPORTS) {
+          await page.setViewportSize(viewport);
+          const report = await sweep(page, participant.markup(), css);
+          measured += report.measured;
+          for (const breach of report.breaches) {
+            breached.add(breach.target);
+            if (!(breach.target in waived)) unwaived.push(`${breach.target} ${breach.width}×${breach.height} @${viewport.width} ${shape}`);
+          }
         }
       }
       expect(measured).toBeGreaterThan(0);

@@ -29,7 +29,7 @@ interface BreadcrumbsSeparatorProps extends Omit<JSX.IntrinsicElements["li"], "c
 
 const LIST_BASE = "flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground";
 const ITEM_BASE = "inline-flex items-center gap-1.5";
-const LINK_BASE = "focus-ring rounded-sm hover:text-foreground";
+const LINK_BASE = "focus-ring inline-flex min-h-control-sm items-center rounded-sm hover:text-foreground";
 
 const BreadcrumbsRoot: FC<BreadcrumbsRootProps> = ({
   label = LABEL_DEFAULTS.breadcrumbs,

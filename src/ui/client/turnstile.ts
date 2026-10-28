@@ -29,7 +29,7 @@ type HtmxRequestDetail = {
 type Hold = { release: () => void; submitter: HTMLElement | null };
 
 const HTMX_SUBMISSION =
-  "[hx-action],[hx-post],[hx-put],[hx-patch],[hx-delete],[data-hx-action],[data-hx-post],[data-hx-put],[data-hx-patch],[data-hx-delete]";
+  "[hx-action],[hx-get],[hx-post],[hx-put],[hx-patch],[hx-delete],[hx-query],[data-hx-action],[data-hx-get],[data-hx-post],[data-hx-put],[data-hx-patch],[data-hx-delete],[data-hx-query]";
 
 declare global {
   interface Window {

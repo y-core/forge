@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Meter, meterState } from "./meter";
+import type { MeterState } from "./types";
 
 const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
@@ -112,12 +113,10 @@ describe("meterState — HTML's own banding, which decides the fill colour", () 
     expect(meterState({ value: 0.9, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("poor");
   });
 
-  // HTML's `GetGaugeRegion` puts `value <= low` in the low region and `value >= high` in the high
-  // one, so strict comparisons would read both boundaries one band too optimistic.
-  it("puts a value sitting exactly on a threshold in that threshold's own band", () => {
+  it("counts a value on a threshold as on the optimum's side of it", () => {
     expect(meterState({ value: 0.3, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("optimum");
-    expect(meterState({ value: 0.8, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("poor");
-    expect(meterState({ value: 0.3, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("poor");
+    expect(meterState({ value: 0.8, low: 0.3, high: 0.8, optimum: 0.2 })).toBe("suboptimum");
+    expect(meterState({ value: 0.3, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("suboptimum");
     expect(meterState({ value: 0.8, low: 0.3, high: 0.8, optimum: 0.95 })).toBe("optimum");
   });
 
@@ -142,4 +141,27 @@ describe("meterState — HTML's own banding, which decides the fill colour", () 
     expect(meterState({ value: 200, min: 0, max: 100, low: 30, high: 10, optimum: 0 })).toBe("poor");
     expect(meterState({ value: Number.NaN, min: 0, max: 100, low: 30, high: 90, optimum: 100 })).toBe("poor");
   });
+
+  const thresholds = { low: 0.3, high: 0.8 };
+  const regionRows: { attrs: Parameters<typeof meterState>[0]; state: MeterState }[] = [
+    ...(
+      [
+        [0.2, ["optimum", "optimum", "suboptimum", "suboptimum", "poor"]],
+        [0.3, ["suboptimum", "optimum", "optimum", "optimum", "suboptimum"]],
+        [0.5, ["suboptimum", "optimum", "optimum", "optimum", "suboptimum"]],
+        [0.8, ["suboptimum", "optimum", "optimum", "optimum", "suboptimum"]],
+        [0.95, ["poor", "suboptimum", "suboptimum", "optimum", "optimum"]],
+      ] as const
+    ).flatMap(([optimum, states]) =>
+      [0, 0.3, 0.5, 0.8, 1].map((value, index) => ({ attrs: { value, optimum, ...thresholds }, state: states[index] as MeterState })),
+    ),
+    ...[0, 0.5, 1].map((value) => ({ attrs: { value }, state: "optimum" as const })),
+    ...[0, 1].flatMap((optimum) => [0, 1].map((value) => ({ attrs: { value, optimum }, state: "optimum" as const }))),
+  ];
+
+  for (const { attrs, state } of regionRows) {
+    it(`reads ${JSON.stringify(attrs)} as ${state}, as the browser's own meter does`, () => {
+      expect(meterState(attrs)).toBe(state);
+    });
+  }
 });

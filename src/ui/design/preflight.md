@@ -20,7 +20,7 @@ Where a command is given, run the command. Scope it to the files you changed.
 
 - §1 Block 1 — Floor: non-negotiable items, each a count or a grep with an expected result
 - §1a Design Read, Measure and Contrast: the three-part read, capped copy, and every pair's measured ratio
-- §1b Status, Focus, Hit Target and Motion: colour-only status, the replacement ring, the `sm` box, and gated motion
+- §1b Status, Focus, Hit Target and Motion: colour-only status, the replacement ring, the 28px Floor, and gated motion
 - §1c Empty States, Names and Heading Order: one empty state per collection, a name per control, no skipped level
 - §1d Tokens, Inline Style, Scale and Viewport Units: the greps for literals, `style=`, arbitrary values and `h-screen`
 - §1e Cards, Foreground Pairing, Colour Budget and Radius: nesting, partners, two text colours, one radius family
@@ -58,9 +58,11 @@ Non-negotiable, no overrides, and a failure here outranks everything in Block 2.
 4. **Count** status indications carried by colour with no icon and no word beside them. Expect 0. `forge-ui-not-color-alone`
 5. **Grep** `rg 'outline-none'` and, for each hit, name the replacement ring on the same element. Expect every hit paired with
    `focus-visible:ring-2 focus-visible:ring-ring`. `forge-ui-focus-ring`
-6. **Count** interactive elements whose box is smaller than the `Button` `sm` box. Expect 0. `forge-ui-hit-target`
-7. **Count** authored motion declarations, then count those gated by `motion-safe:` with a `motion-reduce:` settled state. Expect the two numbers
-   equal: `rg -o 'transition-|animate-' | wc -l` against `rg -o 'motion-safe:' | wc -l`. `forge-ui-reduced-motion`
+6. **Count** interactive elements whose box is under 28px on either axis. Expect 0. `forge-ui-hit-target`
+7. **Count** authored motion utilities, then count those whose variant chain carries `motion-safe:` or `motion-reduce:` — a scale or slide behind
+   `motion-safe:`, and reduced motion given the settled state or an opacity fade such as `motion-reduce:transition-opacity`. Expect the two numbers
+   equal: `rg -oI '[\w:-]*(?:transition|animate-)[\w\[\],.-]*' | rg -v -- '-none$' | wc -l` against the same pipeline ending
+   `| rg -c 'motion-(?:safe|reduce):'`. `forge-ui-reduced-motion`
 
 ### 1c. Empty States, Names and Heading Order
 
@@ -92,7 +94,7 @@ Non-negotiable, no overrides, and a failure here outranks everything in Block 2.
 20. **Name** the source of every number, person, company and quote on the surface. Expect a real supplied value for each, and 0 unsourced.
     `forge-ui-no-fabricated-data`
 21. **Grep** `rg 'appearance-none|list-none|\bp-0\b|\bborder-0\b'` and, for each hit, name the replacement drawn in its place — a track and thumb,
-    an arrow, a `Separator` or a deliberate gap, a size clearing the `Button` `sm` box, or a `border-*` token. Expect every hit paired with a named
+    an arrow, a `Separator` or a deliberate gap, a size clearing the 28px Floor, or a `border-*` token. Expect every hit paired with a named
     replacement, and 0 bare. `forge-ui-affordance-replacement`
 22. **Count** utilities in a `class` prop on a forge component that the component's own classes already set. Expect 0; pass only the difference,
     which `cn` merges last and lets win. `forge-ui-class-no-restate`

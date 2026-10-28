@@ -279,13 +279,7 @@ describe("browserStep()", () => {
   });
 
   it("names one --project flag per engine it is given, in order", () => {
-    expect(browserStep({ projects: ["chromium", "firefox", "webkit"] }).cmd).toEqual([
-      "playwright",
-      "test",
-      "--project=chromium",
-      "--project=firefox",
-      "--project=webkit",
-    ]);
+    expect(browserStep({ projects: ["firefox", "webkit"] }).cmd).toEqual(["playwright", "test", "--project=firefox", "--project=webkit"]);
   });
 
   it("never routes through a resolver that could fetch a binary from the registry", () => {
@@ -294,6 +288,16 @@ describe("browserStep()", () => {
 
   it("carries the browser requirement when the caller states none", () => {
     expect(browserStep().requires?.probe).toBeFunction();
+  });
+
+  it("refuses projects that span both Playwright servers, since one row connects to one", () => {
+    expect(() => browserStep({ projects: ["chromium", "firefox"] })).toThrow(
+      'browserStep: "chromium" and "firefox" run on different Playwright servers; give each engine its own row with browserSteps',
+    );
+  });
+
+  it("takes Firefox and WebKit together, which share the compat server", () => {
+    expect(() => browserStep({ projects: ["firefox", "webkit"] })).not.toThrow();
   });
 
   it("refuses a project that is not a browser engine, which no browser probe can answer for", () => {
@@ -335,7 +339,7 @@ describe("browserEnginesRequired() — a Playwright server named by PW_TEST_CONN
         return Promise.resolve(status);
       },
     };
-    return { requires: browserEnginesRequired(["chromium", "firefox"], probes), calls };
+    return { requires: browserEnginesRequired(["chromium"], probes), calls };
   }
 
   it("names the server as the prerequisite, since under a connection no local browser is launched", () => {
@@ -396,6 +400,83 @@ describe("browserEnginesRequired() — a Playwright server named by PW_TEST_CONN
   });
 });
 
+describe("browserEnginesRequired() — Firefox and WebKit on the compat server", () => {
+  const PRIMARY = "ws://playwright:3000/";
+  const COMPAT = "ws://compat.test:3000/";
+  const COMPAT_UNSET = [
+    "Playwright compat server",
+    "`PLAYWRIGHT_COMPAT_WS_ENDPOINT` is unset; Firefox and WebKit run on the playwright-compat server — start it with `devctl infra up playwright-compat` and set the variable to its ws:// URL",
+  ];
+
+  function servers(projects: readonly string[], env: Record<string, string>, status: PlaywrightServerStatus = { state: "ready" }) {
+    const calls: { endpoint: string; headers: Readonly<Record<string, string>> | undefined }[] = [];
+    const probes = {
+      env,
+      serverStatus: (endpoint: string, _client: string, headers?: Readonly<Record<string, string>>) => {
+        calls.push({ endpoint, headers });
+        return Promise.resolve(status);
+      },
+    };
+    return { requires: browserEnginesRequired(projects, probes), calls };
+  }
+
+  it("fails with the compat server's hint when only the primary server is named", async () => {
+    const { requires, calls } = servers(["firefox"], { PW_TEST_CONNECT_WS_ENDPOINT: PRIMARY });
+
+    expect(await requires.probe?.()).toBe(false);
+    expect([requires.tool, requires.hint]).toEqual(COMPAT_UNSET);
+    expect(calls).toEqual([]);
+  });
+
+  it("treats an empty compat endpoint as unset", async () => {
+    const { requires, calls } = servers(["webkit"], { PW_TEST_CONNECT_WS_ENDPOINT: PRIMARY, PLAYWRIGHT_COMPAT_WS_ENDPOINT: "" });
+
+    expect(await requires.probe?.()).toBe(false);
+    expect([requires.tool, requires.hint]).toEqual(COMPAT_UNSET);
+    expect(calls).toEqual([]);
+  });
+
+  it("asks the compat server alone for Firefox and WebKit, never the primary", async () => {
+    const { requires, calls } = servers(["firefox", "webkit"], { PW_TEST_CONNECT_WS_ENDPOINT: PRIMARY, PLAYWRIGHT_COMPAT_WS_ENDPOINT: COMPAT });
+
+    expect(requires.tool).toBe("Playwright compat server at ws://compat.test:3000/");
+    expect(await requires.probe?.()).toBe(true);
+    expect(calls.map((call) => call.endpoint)).toEqual([COMPAT]);
+  });
+
+  it("asks the primary server alone for Chromium, with the compat server also named", async () => {
+    const { requires, calls } = servers(["chromium"], { PW_TEST_CONNECT_WS_ENDPOINT: PRIMARY, PLAYWRIGHT_COMPAT_WS_ENDPOINT: COMPAT });
+
+    expect(requires.tool).toBe("Playwright server at ws://playwright:3000/");
+    expect(await requires.probe?.()).toBe(true);
+    expect(calls.map((call) => call.endpoint)).toEqual([PRIMARY]);
+  });
+
+  it("fails when the compat server does not answer, with a hint naming how to bring it up", async () => {
+    const { requires } = servers(
+      ["firefox"],
+      { PW_TEST_CONNECT_WS_ENDPOINT: PRIMARY, PLAYWRIGHT_COMPAT_WS_ENDPOINT: "ws://playwright-compat:3000/" },
+      { state: "unreachable", reason: "connect ECONNREFUSED" },
+    );
+
+    expect(await requires.probe?.()).toBe(false);
+    expect(requires.hint).toBe(
+      "nothing answered at ws://playwright-compat:3000/ (connect ECONNREFUSED); check the playwright-compat server is up (`devctl infra up playwright-compat`) and that NO_PROXY includes `playwright-compat`",
+    );
+  });
+
+  it("carries PW_TEST_CONNECT_HEADERS to the compat server", async () => {
+    const { requires, calls } = servers(["webkit"], {
+      PW_TEST_CONNECT_WS_ENDPOINT: PRIMARY,
+      PLAYWRIGHT_COMPAT_WS_ENDPOINT: COMPAT,
+      PW_TEST_CONNECT_HEADERS: '{"x-token":"abc"}',
+    });
+    await requires.probe?.();
+
+    expect(calls).toEqual([{ endpoint: COMPAT, headers: { "x-token": "abc" } }]);
+  });
+});
+
 describe("browserSteps()", () => {
   const ALL = { engines: ["chromium", "firefox", "webkit"] } as const;
 
@@ -416,6 +497,27 @@ describe("browserSteps()", () => {
 
     expect(rows.every((step) => typeof step.requires?.probe === "function")).toBe(true);
     expect(rows.map(narrowing)).toEqual(Array(3).fill({ args: ["--only-changed"], wide: ["playwright.config.ts", "css/**"], probe: LISTING }));
+  });
+
+  it("puts Chromium behind the primary server and Firefox and WebKit behind the compat server", () => {
+    const saved = { primary: process.env.PW_TEST_CONNECT_WS_ENDPOINT, compat: process.env.PLAYWRIGHT_COMPAT_WS_ENDPOINT };
+    process.env.PW_TEST_CONNECT_WS_ENDPOINT = "ws://playwright.test:3000/";
+    process.env.PLAYWRIGHT_COMPAT_WS_ENDPOINT = "ws://compat.test:3000/";
+    try {
+      expect(browserSteps(ALL).map((step) => step.requires?.tool)).toEqual([
+        "Playwright server at ws://playwright.test:3000/",
+        "Playwright compat server at ws://compat.test:3000/",
+        "Playwright compat server at ws://compat.test:3000/",
+      ]);
+    } finally {
+      for (const [name, value] of [
+        ["PW_TEST_CONNECT_WS_ENDPOINT", saved.primary],
+        ["PLAYWRIGHT_COMPAT_WS_ENDPOINT", saved.compat],
+      ] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
   });
 
   it("emits the same row for Chromium alone as browserStep does", () => {

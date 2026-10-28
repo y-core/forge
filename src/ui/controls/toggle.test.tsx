@@ -6,10 +6,10 @@ import { render } from "../../testing/render";
 import { Toggle } from "./toggle";
 
 const TOGGLE_CLASS =
-  "inline-flex items-center justify-center gap-2 rounded-field px-2.5 font-medium border-field " +
-  "border-input bg-transparent text-foreground focus-ring hover:bg-accent hover:text-accent-foreground " +
-  "state-busy state-disabled state-invalid has-[:checked]:bg-primary has-[:checked]:text-primary-foreground " +
-  "has-[:checked]:hover:bg-primary cursor-pointer h-control-md text-sm";
+  "state-busy state-disabled inline-flex items-center justify-center gap-2 rounded-field border-field font-medium " +
+  "whitespace-nowrap focus-ring motion-safe:transition-colors h-control-md px-4 text-sm state-invalid border-input " +
+  "bg-transparent text-foreground hover:bg-accent hover:text-accent-foreground has-[:checked]:bg-primary " +
+  "has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary cursor-pointer";
 
 const TOGGLE_OPEN = `<label data-slot="toggle" data-size="md" class="${TOGGLE_CLASS}">`;
 

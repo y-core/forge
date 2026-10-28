@@ -15,11 +15,20 @@ export function axis(point: number, size: number, extent: number, margin: number
   return clamp(preferred, margin, Math.max(margin, extent - size - margin));
 }
 
+const ORIGIN_X_PROPERTY = "--forge-origin-x";
+const ORIGIN_Y_PROPERTY = "--forge-origin-y";
+
 // `offsetWidth`, not the bounding rect: the opening frame is still scaled down by the enter motion.
 function place(el: HTMLElement, win: Window, x: number, y: number, margin: number, flip: boolean): void {
-  el.style.setProperty(ANCHOR_X_PROPERTY, `${axis(x, el.offsetWidth, win.innerWidth, margin, flip)}px`);
-  el.style.setProperty(ANCHOR_Y_PROPERTY, `${axis(y, el.offsetHeight, win.innerHeight, margin, flip)}px`);
+  const left = axis(x, el.offsetWidth, win.innerWidth, margin, flip);
+  const top = axis(y, el.offsetHeight, win.innerHeight, margin, flip);
+  el.style.setProperty(ANCHOR_X_PROPERTY, `${left}px`);
+  el.style.setProperty(ANCHOR_Y_PROPERTY, `${top}px`);
+  el.style.setProperty(ORIGIN_X_PROPERTY, x - left > el.offsetWidth / 2 ? "right" : "left");
+  el.style.setProperty(ORIGIN_Y_PROPERTY, y - top > el.offsetHeight / 2 ? "bottom" : "top");
 }
+
+const stampedMarkers = new WeakSet<HTMLElement>();
 
 /** The pending deferred show per element, so a second call cancels the first. */
 const pendingArms = new WeakMap<HTMLElement, () => void>();
@@ -31,6 +40,9 @@ function clearClosedPlacement(el: HTMLElement): void {
   if (el.matches(":popover-open")) return;
   el.style.removeProperty(ANCHOR_X_PROPERTY);
   el.style.removeProperty(ANCHOR_Y_PROPERTY);
+  el.style.removeProperty(ORIGIN_X_PROPERTY);
+  el.style.removeProperty(ORIGIN_Y_PROPERTY);
+  if (stampedMarkers.delete(el)) el.removeAttribute(POPOVER_COORDS_ATTR);
   // Chrome writes a pending CSSOM change back as `style=""` after removal unless the attribute is read first.
   if (el.getAttribute("style") === "") el.removeAttribute("style");
   el.removeEventListener("toggle", clearPlacementOnClose);
@@ -74,7 +86,10 @@ export function openPopoverAt(el: HTMLElement, x: number, y: number, options: Op
     // detached element throws.
     if (!el.isConnected) return;
 
-    el.setAttribute(POPOVER_COORDS_ATTR, "");
+    if (!el.hasAttribute(POPOVER_COORDS_ATTR)) {
+      el.setAttribute(POPOVER_COORDS_ATTR, "");
+      stampedMarkers.add(el);
+    }
     place(el, win, x, y, margin, flip);
 
     if (el.hasAttribute("popover") && !el.matches(":popover-open")) el.showPopover();

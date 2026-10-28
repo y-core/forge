@@ -36,8 +36,17 @@ describe("Popover.Trigger", () => {
     });
   });
 
-  it("gives a bare button the pointer and focus affordances a trigger needs", async () => {
-    expect(classesOf(await render(<Popover.Trigger for='p' />))).toEqual(["cursor-pointer", "list-none", "focus-ring"]);
+  it("clears the Floor bare, with the sm height, a focus ring and an unpainted border", async () => {
+    const classes = classesOf(await render(<Popover.Trigger for='p' />));
+
+    for (const token of ["h-control-sm", "focus-ring", "border-transparent", "cursor-pointer", "list-none"]) expect(classes).toContain(token);
+  });
+
+  it("lets a caller's padding evict the box's own while the height stays", async () => {
+    const classes = classesOf(await render(<Popover.Trigger for='p' class='px-6' />));
+
+    for (const token of ["px-6", "h-control-sm"]) expect(classes).toContain(token);
+    expect(classes).not.toContain("px-3");
   });
 
   it("keeps its own slot token ahead of one handed down through props", async () => {
@@ -70,10 +79,10 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<div id="menu-1" role="dialog" aria-label="Card &amp; tools" data-slot="popover-content" data-scope="popover" popover="auto"' +
+      '<span id="menu-1" role="dialog" aria-label="Card &amp; tools" data-slot="popover-content" data-scope="popover" popover="auto"' +
         ' data-side="bottom" data-align="start"' +
-        ' class="z-50 min-w-32 rounded-box border border-border bg-popover p-1 text-popover-foreground shadow-md"' +
-        ' data-note="a&amp;b">Items</div>',
+        ' class="z-50 min-w-32 rounded-box border-field border-border bg-popover p-1 text-popover-foreground shadow-md"' +
+        ' data-note="a&amp;b">Items</span>',
     );
   });
 
@@ -180,5 +189,18 @@ describe("Popover.Content — the name a reader entering the panel gets", () => 
   // panel would leave the pair disagreeing. A menu-role popup is `Menu.Popup`, which has a trigger.
   it("keeps its role off the forwarded props, so the trigger's aria-haspopup cannot be made to lie", async () => {
     expect(attrOf(await render(<Popover.Content id='p' label='Tools' />), "role")).toBe("dialog");
+  });
+});
+
+describe("Popover — phrasing content", () => {
+  it("renders its root and its content as spans, so neither splits an enclosing paragraph", async () => {
+    expect(await render(<Popover />)).toStartWith("<span");
+    expect(
+      await render(
+        <Popover.Content id='p' label='Tips'>
+          Body
+        </Popover.Content>,
+      ),
+    ).toStartWith("<span");
   });
 });

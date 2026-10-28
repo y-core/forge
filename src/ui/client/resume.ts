@@ -1,7 +1,7 @@
 import { ISLAND_STATE_ATTR, ISLAND_STATE_KEY } from "../contracts/island-contract";
 import { SCOPE_EVENTS } from "../contracts/scope-events";
 import { isDisabled } from "./composite";
-import { closestAcross, eventTarget, ownerDocument } from "./dom";
+import { asElement, closestAcross, eventTarget, ownerDocument, queryTrees, shadowTrees } from "./dom";
 import { createSignal, withOwner } from "./signal";
 import type { Signal } from "./types";
 import type { ScopeDefinition } from "./types";
@@ -15,8 +15,11 @@ export function registerScope<A extends string = string>(name: string, def: Scop
   scopes.set(name, { ...def, on: def.on ?? {} } as ScopeDefinition);
 }
 
+type ScopeTree = Element | Document | DocumentFragment;
+
 interface Delegation {
   remove: () => void;
+  listenIn: (trees: readonly ScopeTree[]) => void;
   holders: number;
 }
 
@@ -34,9 +37,16 @@ function delegate(doc: Document): Delegation {
     doc.addEventListener(type, handler);
     handlers.push([type, handler, false]);
   }
+  const commanded = new WeakSet<Event>();
+  // Chromium flags a shadow-tree `command` composed yet never delivers it to the document, so only
+  // the event's identity can say whether another listener already ran it.
+  const commandHandler: EventListener = (event) => {
+    if (commanded.has(event)) return;
+    commanded.add(event);
+    dispatchCommand(event);
+  };
   // The platform dispatches `command` with `bubbles:false`, so this must listen in the capture
   // phase — a bubble-phase delegated listener never sees it and every custom action goes dead.
-  const commandHandler: EventListener = (event) => dispatchCommand(event);
   doc.addEventListener("command", commandHandler, { capture: true });
   handlers.push(["command", commandHandler, true]);
   // `aria-disabled` is advisory: the platform still submits, navigates and fires `command` on click,
@@ -45,10 +55,31 @@ function delegate(doc: Document): Delegation {
   doc.addEventListener("click", inertGuard, { capture: true });
   handlers.push(["click", inertGuard, true]);
 
+  const lifetime = new AbortController();
+  const listened = new WeakSet<ScopeTree>();
+  const listenIn = (trees: readonly ScopeTree[]) => {
+    for (const tree of trees) {
+      if (tree.nodeType !== 11 || listened.has(tree)) continue;
+      listened.add(tree);
+      for (const type of SCOPE_EVENTS) {
+        tree.addEventListener(
+          type,
+          (event) => {
+            if (!event.composed) dispatch(type, event);
+          },
+          { signal: lifetime.signal },
+        );
+      }
+      tree.addEventListener("command", commandHandler, { capture: true, signal: lifetime.signal });
+    }
+  };
+
   const installed: Delegation = {
     holders: 1,
+    listenIn,
     remove: () => {
       for (const [type, handler, capture] of handlers) doc.removeEventListener(type, handler, capture);
+      lifetime.abort();
       delegated.delete(doc);
     },
   };
@@ -63,7 +94,11 @@ export function resume(within?: Node): () => void {
 
   const mine: HTMLElement[] = [];
   const warnedUnknown = new Set<string>();
-  for (const el of findScopes(scanRoot(within, doc))) {
+  const walkRoot = scanRoot(within, doc);
+  const trees = shadowTrees(walkRoot as ScopeTree);
+  delegation.listenIn(trees);
+  sweepDetachedScopes();
+  for (const el of findScopes(walkRoot, trees)) {
     const name = el.dataset.scope ?? "";
     const def = scopes.get(name);
     if (!def) {
@@ -105,24 +140,9 @@ export function scanRoot(within: Node | undefined, doc: Document): ParentNode {
 }
 
 /** Every `[data-scope]` at or below `root`, descending into open shadow roots. @internal */
-export function findScopes(root: ParentNode): HTMLElement[] {
-  const found: HTMLElement[] = [];
-  const trees: ParentNode[] = [root];
-  for (let i = 0; i < trees.length; i += 1) {
-    const tree = trees[i];
-    if (!tree) continue;
-    // `querySelectorAll` reports descendants only, so a walk root carrying `data-scope` itself has
-    // to be checked separately.
-    const self = tree as Partial<HTMLElement>;
-    if (self.dataset?.scope !== undefined) found.push(tree as HTMLElement);
-    // One native query rather than an `el.dataset.scope` per element, which materialises a
-    // `DOMStringMap` for every node in the tree. The `*` walk survives only for shadow discovery.
-    for (const el of tree.querySelectorAll<HTMLElement>("[data-scope]")) found.push(el);
-    for (const el of tree.querySelectorAll<HTMLElement>("*")) {
-      if (el.shadowRoot) trees.push(el.shadowRoot);
-    }
-  }
-  return found;
+export function findScopes(root: ParentNode, trees: readonly ScopeTree[] = shadowTrees(root as ScopeTree)): HTMLElement[] {
+  const self = (root as Partial<HTMLElement>).dataset?.scope !== undefined ? [root as HTMLElement] : [];
+  return [...self, ...queryTrees<HTMLElement>(trees, "[data-scope]")];
 }
 
 function disposeScope(root: HTMLElement): void {
@@ -152,8 +172,6 @@ export function disposeScopesIn(el: HTMLElement): void {
 }
 
 function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
-  // A removal outside htmx gives no notice, so sweeping here too bounds `active` to live scopes without the htmx entry.
-  sweepDetachedScopes();
   let state = resumed.get(root);
   if (!state) {
     const signals = hydrateState(root.dataset[ISLAND_STATE_KEY]);
@@ -180,18 +198,23 @@ function ensureResumed(root: HTMLElement, def: ScopeDefinition): Record<string, 
 /** Resumes a single scope now and returns its signal state, or `undefined` when its `data-scope` names no registered scope. @public */
 export function resumeScope(root: HTMLElement): Record<string, Signal<unknown>> | undefined {
   const def = scopes.get(root.dataset.scope ?? "");
-  return def ? ensureResumed(root, def) : undefined;
+  return def ? resumeOnDemand(root, def) : undefined;
 }
 
-function runAction(action: string, el: HTMLElement, event: Event): void {
+function resumeOnDemand(root: HTMLElement, def: ScopeDefinition): Record<string, Signal<unknown>> {
+  if (!resumed.has(root)) sweepDetachedScopes();
+  return ensureResumed(root, def);
+}
+
+function runAction(action: string, el: HTMLElement, event: Event, from: Node | null = el): void {
   if (isDisabled(el)) return;
   // `closestAcross`, not `closest`: a trigger inside a shadow root would otherwise never find the
   // scope root that encloses its host.
-  let scopeEl = closestAcross<HTMLElement>(el, "[data-scope]");
+  let scopeEl = closestAcross<HTMLElement>(from, "[data-scope]");
   while (scopeEl) {
     const def = scopes.get(scopeEl.dataset.scope ?? "");
     if (def) {
-      const state = ensureResumed(scopeEl, def);
+      const state = resumeOnDemand(scopeEl, def);
       const handler = def.on?.[action];
       if (handler) {
         handler({ root: scopeEl, el, state }, event);
@@ -222,7 +245,7 @@ function dispatchCommand(event: Event): void {
   if (command?.slice(0, 2) !== "--") return;
   const source = (event as CommandEvent).source as HTMLElement | null;
   if (!source) return;
-  runAction(command.slice(2), source, event);
+  runAction(command.slice(2), source, event, asElement(eventTarget(event)));
 }
 
 /** Rebuilds `data-island-state` into signals, throwing unless the payload is a JSON object. @internal */

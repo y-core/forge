@@ -32,7 +32,7 @@ async function mountVisibilityPanel(page: Page): Promise<void> {
 
 const scrollY = (page: Page): Promise<number> => page.evaluate(() => Math.round(window.scrollY));
 
-test.describe("mountNavDrawer — a panel that transitions `visibility` on open", () => {
+test.describe("mountNavDrawer — a panel that transitions `visibility` on open", { tag: "@cross-engine" }, () => {
   test.use({ reducedMotion: "no-preference" });
 
   test("focus lands on the panel's first item once it shows, and the page does not scroll", async ({ page }) => {
@@ -50,7 +50,7 @@ const COLLAPSIBLE_FIXTURE = `<details id="drawer" data-slot="collapsible">
   <div data-slot="collapsible-content"><a id="first" href="#first">First</a><a href="#second">Second</a></div>
 </details>`;
 
-test.describe("mountNavDrawer — a forge `Collapsible` transitioning `::details-content` on open", () => {
+test.describe("mountNavDrawer — a forge `Collapsible` transitioning `::details-content` on open", { tag: "@cross-engine" }, () => {
   test.use({ reducedMotion: "no-preference" });
 
   test("focus lands on the panel's first item once the disclosure has opened", async ({ page }) => {
@@ -63,6 +63,39 @@ test.describe("mountNavDrawer — a forge `Collapsible` transitioning `::details
 
     await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("first");
   });
+
+  test("transitions the disclosure's ::details-content rather than its panel", async ({ page }) => {
+    await mount(page, COLLAPSIBLE_FIXTURE, { css: ["./ui/assets/css/forge-ui.css"] });
+
+    const duration = await page.evaluate(
+      () => getComputedStyle(document.querySelector("#drawer") as Element, "::details-content").transitionDuration,
+    );
+
+    expect(duration).toBe("0.1s, 0.1s");
+  });
+});
+
+const UNMARKED_BACKDROP_FIXTURE = `<details id="drawer">
+  <summary>Menu</summary>
+  <div class="backdrop"></div>
+  <div id="panel"><a id="first" href="#first">First</a><a href="#second">Second</a></div>
+</details>`;
+
+test.describe("mountNavDrawer — an unmarked backdrop before the panel", { tag: "@cross-engine" }, () => {
+  test("Tab from the summary reaches the panel's first link rather than cycling on the summary", async ({ page }) => {
+    await mount(page, UNMARKED_BACKDROP_FIXTURE, { expose: { forgeDrawer: "./ui/client/drawer" } });
+    await page.evaluate(() => window.forgeDrawer.mountNavDrawer({ selector: "#drawer", query: "all" }));
+    const opening = await page.evaluateHandle(() => ({
+      toggled: new Promise((resolve) => document.querySelector("#drawer")?.addEventListener("toggle", resolve, { once: true })),
+    }));
+
+    await page.click("summary");
+    await opening.evaluate(({ toggled }) => toggled.then(() => undefined));
+    await page.focus("summary");
+    await page.keyboard.press("Tab");
+
+    await expect.poll(() => page.evaluate(() => document.activeElement?.id)).toBe("first");
+  });
 });
 
 const POPOVER_FIXTURE = `<details id="drawer" open>
@@ -70,7 +103,7 @@ const POPOVER_FIXTURE = `<details id="drawer" open>
   <div id="panel"><button id="opener" popovertarget="menu">Open menu</button><div id="menu" popover><button id="item">Item</button></div></div>
 </details>`;
 
-test.describe("mountNavDrawer — a popover open inside the panel", () => {
+test.describe("mountNavDrawer — a popover open inside the panel", { tag: "@cross-engine" }, () => {
   test("leaves the Escape that light-dismisses the popover to it, and closes on the next", async ({ page }) => {
     await mount(page, POPOVER_FIXTURE, { expose: { forgeDrawer: "./ui/client/drawer" } });
     await page.evaluate(() => window.forgeDrawer.mountNavDrawer({ selector: "#drawer", query: "all", panelSelector: "#panel" }));
@@ -91,7 +124,7 @@ test.describe("mountNavDrawer — a popover open inside the panel", () => {
   });
 });
 
-test.describe("mountNavDrawer — a surface Escape does not close, open inside the panel", () => {
+test.describe("mountNavDrawer — a surface Escape does not close, open inside the panel", { tag: "@cross-engine" }, () => {
   for (const [name, surface] of [
     ["a manual popover", `<div id="surface" popover="manual">Pinned</div>`],
     ["a manual popover spelled in another case", `<div id="surface" popover="Manual">Pinned</div>`],

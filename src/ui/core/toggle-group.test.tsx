@@ -160,3 +160,28 @@ describe("ToggleGroup.Item", () => {
     ]);
   });
 });
+
+describe("ToggleGroup — the root's type reaches its items", () => {
+  const inputTypes = (html: string) => [...html.matchAll(/<input[^>]*>/g)].map((match) => attrOf(match[0] as string, "type"));
+
+  it("renders checkboxes under type=multiple without each item repeating it", async () => {
+    const html = await render(
+      <ToggleGroup label='Marks' type='multiple'>
+        <ToggleGroup.Item name='marks' value='bold' />
+        <ToggleGroup.Item name='marks' value='italic' />
+      </ToggleGroup>,
+    );
+
+    expect(inputTypes(html)).toEqual(["checkbox", "checkbox"]);
+  });
+
+  it("keeps an item's own type over the root's", async () => {
+    const html = await render(
+      <ToggleGroup label='Marks' type='multiple'>
+        <ToggleGroup.Item name='marks' value='bold' type='single' />
+      </ToggleGroup>,
+    );
+
+    expect(inputTypes(html)).toEqual(["radio"]);
+  });
+});

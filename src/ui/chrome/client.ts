@@ -9,14 +9,14 @@ import type { ReadonlySignal, Signal } from "../client/types";
 import { mountViewportCollapse } from "../client/viewport-collapse";
 import { NAVBAR_DRAWER_ATTR, NAVBAR_FILTERS_EVENT, NAVBAR_SCOPE } from "../contracts/navbar-contract";
 import { THEME_SCOPE } from "../contracts/theme-toggle-contract";
-import type { ThemeAction } from "../contracts/types";
-import { DARK_CLASS, DEFAULT_THEME_PREF, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
+import type { NavbarAction, ThemeAction } from "../contracts/types";
+import { DARK_CLASS, DEFAULT_THEME_PREF, THEME_ATTR, THEME_PREFS, THEME_STORAGE_KEY } from "./theme";
 
-const CONSTANT_FALSE: ReadonlySignal<boolean> = {
-  get value() {
-    return false;
-  },
-};
+const THEME_CYCLE: ReadonlyMap<string, string | undefined> = new Map(
+  THEME_PREFS.map((pref, index) => [pref, THEME_PREFS[(index + 1) % THEME_PREFS.length]]),
+);
+
+const isThemePref = (value: string): boolean => (THEME_PREFS as readonly string[]).includes(value);
 
 interface ThemeDocument {
   pref: Signal<string>;
@@ -29,19 +29,38 @@ const themes = new WeakMap<Document, ThemeDocument>();
 
 const liveThemes: ThemeDocument[] = [];
 
+const activeTheme = createSignal<ThemeDocument | null>(null);
+
 /** Whether the active resolved theme is dark. `false` until a theme scope resumes. @public */
 export const isDark: ReadonlySignal<boolean> = {
   get value() {
-    return (liveThemes.at(-1)?.dark ?? CONSTANT_FALSE).value;
+    return activeTheme.value?.dark.value ?? false;
   },
 };
+
+function readThemePref(storage: Storage | null): string {
+  try {
+    const stored = storage?.getItem(THEME_STORAGE_KEY);
+    return stored != null && isThemePref(stored) ? stored : DEFAULT_THEME_PREF;
+  } catch {
+    return DEFAULT_THEME_PREF;
+  }
+}
+
+function writeThemePref(storage: Storage | null, pref: string): void {
+  try {
+    storage?.setItem(THEME_STORAGE_KEY, pref);
+  } catch (error) {
+    console.warn("[theme] the preference could not be persisted", error);
+  }
+}
 
 function createThemeDocument(doc: Document): ThemeDocument {
   const win = ownerWindow(doc);
   const storage = safeStorage(win);
   // The FOUC script already applied the stored preference, so the signal is seeded from storage
   // rather than the other way round.
-  const pref = createSignal(storage?.getItem(THEME_STORAGE_KEY) ?? DEFAULT_THEME_PREF);
+  const pref = createSignal(readThemePref(storage));
 
   // A realm without `matchMedia` still gets a working explicit light/dark preference; only the
   // `system` branch degrades, so this reports and carries on with a signal nothing ever moves.
@@ -54,20 +73,23 @@ function createThemeDocument(doc: Document): ThemeDocument {
   };
   mql?.addEventListener("change", onMediaChange);
 
-  const dark = computed(() => pref.value === "dark" || (pref.value === DEFAULT_THEME_PREF && mqlDark.value));
-
-  // Nested inside the owner the resuming scope installed, so these effects land in a bag that scope's
-  // disposal does not empty — the first of two toggles to go away must not stop the painting.
+  // Nested inside the owner the resuming scope installed, so this computed and these effects land in a
+  // bag that scope's disposal does not empty — the first of two toggles to go away must not stop the painting.
   const owned = withOwner(() => {
+    const dark = computed(() => pref.value === "dark" || (pref.value === DEFAULT_THEME_PREF && mqlDark.value));
+
     effect(() => {
       doc.documentElement.setAttribute(THEME_ATTR, pref.value);
-      storage?.setItem(THEME_STORAGE_KEY, pref.value);
+      writeThemePref(storage, pref.value);
     });
 
     effect(() => {
       doc.documentElement.classList.toggle(DARK_CLASS, dark.value);
     });
+
+    return dark;
   });
+  const dark = owned.result;
 
   const theme: ThemeDocument = {
     pref,
@@ -79,10 +101,12 @@ function createThemeDocument(doc: Document): ThemeDocument {
       themes.delete(doc);
       const index = liveThemes.indexOf(theme);
       if (index !== -1) liveThemes.splice(index, 1);
+      activeTheme.value = liveThemes.at(-1) ?? null;
     },
   };
   themes.set(doc, theme);
   liveThemes.push(theme);
+  activeTheme.value = theme;
   return theme;
 }
 
@@ -110,14 +134,13 @@ registerScope<ThemeAction>(THEME_SCOPE, {
     cycleTheme({ root }) {
       const theme = themes.get(ownerDocument(root));
       if (!theme) return;
-      const cycle: Record<string, string> = { dark: "system", light: "dark", system: "light" };
-      theme.pref.value = cycle[theme.pref.value] ?? DEFAULT_THEME_PREF;
+      theme.pref.value = THEME_CYCLE.get(theme.pref.value) ?? DEFAULT_THEME_PREF;
     },
   },
 });
 
-// Eager: the navbar emits no `data-on-*`, so a lazy scope would never resume.
-registerScope<"closeNav">(NAVBAR_SCOPE, {
+// Eager: an inline bar emits no `data-on-*`, and every bar's filters listener must be live before any interaction.
+registerScope<NavbarAction>(NAVBAR_SCOPE, {
   eager: true,
   setup: ({ root, state }) => {
     const filters = state.filters;

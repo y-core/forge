@@ -6,7 +6,9 @@ import {
   BIND_TEXT_ATTR,
   bindAttrAttr,
   bindTextAttr,
+  ENUMERATED_BOUND_ATTRS,
   isBindAttrRefused,
+  isBoundScriptUrl,
   parseBindAttr,
   safeBindAttrValue,
   URL_BOUND_ATTRS,
@@ -42,6 +44,10 @@ describe("bindTextAttr / bindAttrAttr", () => {
       expect(() => bindAttrAttr(attribute, "handler")).toThrow(/may not be bound to a signal/);
     }
   });
+
+  it("throws on a prefixed htmx attribute htmx evaluates as script", () => {
+    expect(() => bindAttrAttr("data-hx-vals", "x")).toThrow(/may not be bound to a signal/);
+  });
 });
 
 describe("isBindAttrRefused", () => {
@@ -75,15 +81,59 @@ describe("isBindAttrRefused", () => {
     expect(isBindAttrRefused("hx-on_click")).toBe(true);
   });
 
-  it("admits the htmx attributes that carry no script body", () => {
+  it("refuses every spelling of the htmx attributes htmx evaluates as script", () => {
+    for (const base of ["hx-vals", "hx-headers", "hx-confirm", "hx-trigger"]) {
+      for (const attribute of [base, `data-${base}`, `${base}:inherited`, `${base}:append`, base.toUpperCase()]) {
+        expect(isBindAttrRefused(attribute)).toBe(true);
+      }
+    }
+  });
+
+  it("admits htmx attributes outside the script-evaluating set", () => {
     expect(isBindAttrRefused("hx-swap")).toBe(false);
     expect(isBindAttrRefused("data-hx-get")).toBe(false);
     expect(isBindAttrRefused("hx-disable")).toBe(false);
   });
 
+  it("admits an htmx attribute that only shares a prefix with a refused one", () => {
+    expect(isBindAttrRefused("hx-target")).toBe(false);
+    expect(isBindAttrRefused("data-hx-swap:inherited")).toBe(false);
+    expect(isBindAttrRefused("hx-triggered")).toBe(false);
+  });
+
   it("admits ordinary attributes, including one whose name merely contains a handler's letters", () => {
     expect(isBindAttrRefused("href")).toBe(false);
     expect(isBindAttrRefused("data-online")).toBe(false);
+  });
+});
+
+describe("isBoundScriptUrl", () => {
+  const requestAttributes = ["hx-get", "HX-POST", "data-hx-put", "hx-delete:inherited", "data-hx-query:inherited:append", "hx-action", "hx-patch"];
+
+  it("matches a js: or javascript: value on every spelling of an htmx request attribute", () => {
+    for (const attribute of requestAttributes) {
+      for (const value of ["js:alert(1)", "JS:x", " javascript:x"]) {
+        expect(isBoundScriptUrl(attribute, value)).toBe(true);
+      }
+    }
+  });
+
+  it("passes an ordinary URL on a request attribute", () => {
+    for (const attribute of requestAttributes) {
+      expect(isBoundScriptUrl(attribute, "/items?id=1")).toBe(false);
+      expect(isBoundScriptUrl(attribute, "https://x/y")).toBe(false);
+    }
+  });
+
+  it("ignores an htmx attribute outside the request set", () => {
+    expect(isBoundScriptUrl("hx-push-url", "js:alert(1)")).toBe(false);
+  });
+});
+
+describe("ENUMERATED_BOUND_ATTRS", () => {
+  it("holds exactly the attributes and keyword pairs the JSX renderer spells a boolean with", async () => {
+    const { ENUMERATED_ATTRS } = await import("../../render/jsx/render-to-string");
+    expect(Object.fromEntries(ENUMERATED_BOUND_ATTRS)).toEqual(Object.fromEntries(ENUMERATED_ATTRS));
   });
 });
 

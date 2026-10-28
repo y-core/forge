@@ -195,6 +195,27 @@ describe("bindAttr", () => {
     expect(painted).toEqual(["false", "true", "false"]);
   });
 
+  for (const [attribute, trueSpelling, falseSpelling] of [
+    ["draggable", "true", "false"],
+    ["contenteditable", "true", "false"],
+    ["spellcheck", "true", "false"],
+    ["Draggable", "true", "false"],
+    ["translate", "yes", "no"],
+    ["Autocapitalize", "on", "off"],
+  ] as const) {
+    it(`spells a bound ${attribute} boolean as "${trueSpelling}" and "${falseSpelling}"`, () => {
+      const el = new FakeElement({ "data-bind-attr": `${attribute}:on` });
+      const state = signals({ on: true });
+
+      bindAttr(root(el), state);
+      const painted = [el.getAttribute(attribute)];
+      state.on.value = false;
+      painted.push(el.getAttribute(attribute));
+
+      expect(painted).toEqual([trueSpelling, falseSpelling]);
+    });
+  }
+
   it("removes the attribute for null and undefined too", () => {
     for (const empty of [null, undefined]) {
       const el = new FakeElement({ "data-bind-attr": "title:label" });
@@ -265,13 +286,32 @@ describe("bindAttr", () => {
     expect([src.getAttribute("src"), xlink.getAttribute("xlink:href")]).toEqual(["#", "#"]);
   });
 
-  it("leaves an hx-get value alone — `#` would be a live same-origin request (docs/HTMX.md §7a)", () => {
-    const el = new FakeElement({ "data-bind-attr": "hx-get:url" });
+  for (const attribute of ["hx-get", "data-hx-post:inherited"]) {
+    it(`removes ${attribute} with one warning while its bound value is a js: URL, and restores it for a safe one`, () => {
+      const el = new FakeElement({ "data-bind-attr": `${attribute}:url`, [attribute]: "/seed" });
+      const state = signals({ url: "/items?id=1" });
 
-    bindAttr(root(el), signals({ url: "javascript:alert(1)" }));
+      const warnings: unknown[] = [];
+      const original = console.warn;
+      console.warn = (...args: unknown[]) => warnings.push(args[0]);
+      try {
+        bindAttr(root(el), state);
+        const painted = [el.getAttribute(attribute)];
+        state.url.value = "js:alert(1)";
+        painted.push(el.getAttribute(attribute));
+        state.url.value = "javascript:alert(2)";
+        painted.push(el.getAttribute(attribute));
+        state.url.value = "/next";
+        painted.push(el.getAttribute(attribute));
 
-    expect(el.getAttribute("hx-get")).toBe("javascript:alert(1)");
-  });
+        expect(painted).toEqual(["/items?id=1", null, null, "/next"]);
+      } finally {
+        console.warn = original;
+      }
+
+      expect(warnings).toEqual([`[data-bind-attr] "${attribute}" was removed: its bound value is a script URL`]);
+    });
+  }
 
   it("refuses a handler name, srcdoc and style, and leaves the rest bound", () => {
     const handler = new FakeElement({ "data-bind-attr": "onclick:payload" });
@@ -297,5 +337,21 @@ describe("bindAttr", () => {
     ]);
     expect([handler.attrs.has("onclick"), frame.attrs.has("srcdoc"), styled.attrs.has("style")]).toEqual([false, false, false]);
     expect(good.getAttribute("title")).toBe("alert(1)");
+  });
+
+  it("refuses hx-vals, whose value htmx evaluates as script", () => {
+    const el = new FakeElement({ "data-bind-attr": "hx-vals:payload" });
+
+    const warnings: unknown[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args[0]);
+    try {
+      bindAttr(root(el), signals({ payload: "js:alert(1)" }));
+    } finally {
+      console.warn = original;
+    }
+
+    expect(warnings).toEqual(['[data-bind-attr] "hx-vals" may not be bound to a signal']);
+    expect(el.attrs.has("hx-vals")).toBe(false);
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
-import { stringLiterals } from "../../tooling/gate/checks/class-tokens";
+import { CLASS_SHAPED, stringLiterals } from "../../tooling/gate/checks/class-tokens";
 import { loadDesignSystem } from "../../tooling/gate/checks/design-system";
 import { utilityOf } from "./utils/cn";
 
@@ -49,6 +49,31 @@ function radiusOffenders(file: string, source: string): string[] {
   );
 }
 
+function readsBorderToken(value: string): boolean {
+  return value === "0" || value === "0px" || value.includes("var(--border-width");
+}
+
+/** `file:line token` for every all-sides border width in `source` that no shape token sets. */
+function borderOffenders(file: string, source: string): string[] {
+  return stringLiterals(source).flatMap(({ line, text }) => {
+    const compiled = text
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((token) => ({ token, css: designSystem.candidatesToCss([utilityOf(token)])[0] }));
+    const isClassString =
+      compiled.some(({ css }) => typeof css === "string") &&
+      compiled.every(({ token, css }) => typeof css === "string" || CLASS_SHAPED.test(token));
+    if (!isClassString) return [];
+    return compiled
+      .filter(
+        ({ css }) =>
+          typeof css === "string" &&
+          [...css.matchAll(/(?:^|[\s;{])border-width\s*:\s*([^;]+);/g)].some((match) => !readsBorderToken((match[1] as string).trim())),
+      )
+      .map(({ token }) => `${file}:${line} ${token}`);
+  });
+}
+
 // Scope is string literals in TypeScript: forge's CSS carries no `@apply rounded…`, so none is parsed.
 const sources = (readdirSync(UI_DIR, { recursive: true }) as string[])
   .filter(SCANNED)
@@ -83,5 +108,33 @@ describe("the radius a ui recipe reads", () => {
     expect(
       radiusOffenders("fixture.tsx", `const recipe = "rounded-field rounded-sm rounded-full rounded-none rounded-s-field rounded-[inherit]";`),
     ).toEqual([]);
+  });
+});
+
+describe("the border width a ui recipe reads", () => {
+  it("comes from `--border-width` in every shipped source", () => {
+    expect(sources.flatMap(({ file, source }) => borderOffenders(file, source))).toEqual([]);
+  });
+
+  it("refuses bare `border`, a fixed 1px, naming the token", () => {
+    expect(borderOffenders("fixture.tsx", `const r = "flex border px-1";`)).toEqual(["fixture.tsx:1 border"]);
+  });
+
+  it("refuses `border-2`, an arbitrary width and a variant-prefixed `border`", () => {
+    expect(borderOffenders("fixture.tsx", `const r = "border-2 border-[3px] hover:border";`)).toEqual([
+      "fixture.tsx:1 border-2",
+      "fixture.tsx:1 border-[3px]",
+      "fixture.tsx:1 hover:border",
+    ]);
+  });
+
+  it("passes the shape's width, zero, one-sided dividers and border colours", () => {
+    expect(
+      borderOffenders("fixture.tsx", `const r = "border-field border-0 border-b border-e-2 border-s border-input border-transparent";`),
+    ).toEqual([]);
+  });
+
+  it("leaves a prose sentence that says border alone", () => {
+    expect(borderOffenders("fixture.tsx", `const reason = "the border only bounds them";`)).toEqual([]);
   });
 });

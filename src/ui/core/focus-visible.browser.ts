@@ -61,7 +61,7 @@ function outlineStyle(page: Page, slot: string): Promise<string> {
 }
 
 for (const control of CONTROLS) {
-  test.describe(`${control.name} — focus-visible`, () => {
+  test.describe(`${control.name} — focus-visible`, { tag: "@cross-engine" }, () => {
     test("emits a focus-visible ring rather than a bare focus: one", async () => {
       const classes = classesOf(await control.html(), control.slot);
 
@@ -81,7 +81,11 @@ for (const control of CONTROLS) {
       expect(await outlineStyle(page, control.slot)).toBe(MARKER_OUTLINE_STYLE);
     });
 
-    test(`${control.focusVisibleOnPointer ? "keeps" : "withholds"} the ring on a pointer press`, async ({ page }) => {
+    test(`${control.focusVisibleOnPointer ? "keeps" : "withholds"} the ring on a pointer press`, async ({ page, browserName }) => {
+      test.skip(
+        browserName === "firefox" && control.slot === "select",
+        "Firefox's :focus-visible heuristic does not match a mouse-clicked native <select>",
+      );
       const html = await control.html();
       const css = focusVisibleRule(classesOf(html, control.slot));
       await mount(page, html);

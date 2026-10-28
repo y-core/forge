@@ -18,8 +18,8 @@ describe("Select", () => {
         </Select>,
       ),
     ).toBe(
-      '<div data-slot="select-wrapper" class="group/select relative w-full has-[select:disabled]:opacity-50">' +
-        '<select data-slot="select" data-size="md" class="state-busy state-disabled state-invalid field-chrome appearance-none pe-10 focus-ring' +
+      '<div data-slot="select-wrapper" class="group/select relative w-full state-disabled">' +
+        '<select data-slot="select" data-size="md" class="state-busy state-invalid field-chrome appearance-none pe-10 focus-ring' +
         ' h-control-md text-sm"><option data-slot="select-option" value="a">Option A</option></select>' +
         '<span aria-hidden="true" data-slot="select-icon" class="pointer-events-none absolute inset-y-0 end-3 flex items-center' +
         ' text-muted-foreground"><svg data-slot="icon" width="16" height="16" viewBox="0 0 16 16" class="" aria-hidden="true"' +
@@ -180,6 +180,22 @@ describe("Select — size, invalid and busy", () => {
       "data-size": "md",
       "data-busy": "",
       "aria-busy": "true",
+    });
+  });
+
+  it("keeps aria-disabled on the select alone in either spelling, leaving the generic wrapper without it", async () => {
+    const rendered = await Promise.all([true, "true" as const].map((value) => render(<Select icon={icon} aria-disabled={value} />)));
+
+    expect(rendered.map((html) => attrsOf(html, 'data-slot="select"')["aria-disabled"])).toEqual(["true", "true"]);
+    expect(rendered.map((html) => attrsOf(html, 'data-slot="select-wrapper"'))).toEqual([
+      { "data-slot": "select-wrapper" },
+      { "data-slot": "select-wrapper" },
+    ]);
+  });
+
+  it("leaves the wrapper without aria-disabled when the caller marks the select aria-disabled false", async () => {
+    expect(attrsOf(await render(<Select icon={icon} aria-disabled='false' />), 'data-slot="select-wrapper"')).toEqual({
+      "data-slot": "select-wrapper",
     });
   });
 });

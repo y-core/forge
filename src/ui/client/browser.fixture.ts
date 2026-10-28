@@ -42,7 +42,7 @@ export function bundleModules(expose: Record<string, string>): Promise<string> {
 /** Loads `html` into the page, applies the requested stylesheets, then publishes the requested modules on `window`. */
 export async function mount(page: Page, html: string, options: MountOptions = {}): Promise<void> {
   await givePageAnOrigin(page, options.origin ?? ORIGIN);
-  await page.setContent(html);
+  await page.setContent(/^\s*<!doctype/i.test(html) ? html : `<!doctype html>${html}`);
   for (const href of options.css ?? []) {
     await page.addStyleTag({ path: new URL(href, `file://${SRC_ROOT}`).pathname });
   }

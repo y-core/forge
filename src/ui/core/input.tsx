@@ -33,8 +33,9 @@ export const Input: FC<InputProps> = ({
 }) => {
   const resolved = field ? fieldControlProps(props, field) : props;
   // The server paints the formatted value itself, so a no-JS render and a post-blur render agree by construction.
+  const bound = props["data-field"] !== undefined;
   const painted =
-    format && (typeof resolved.value === "string" || typeof resolved.value === "number")
+    format && !bound && (typeof resolved.value === "string" || typeof resolved.value === "number")
       ? { ...resolved, value: applyFormat(format, String(resolved.value)) }
       : resolved;
 

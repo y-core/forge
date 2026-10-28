@@ -155,7 +155,7 @@ export function effect(fn: () => void): () => void {
   return dispose;
 }
 
-/** Derives a read-only signal, evaluated on read and re-derived only when a source it read has moved. @public */
+/** Derives a read-only signal, evaluated on read and re-derived only when a source it read has moved; disposing its owner freezes it. @public */
 export function computed<T>(fn: () => T): ReadonlySignal<T> {
   let value = undefined as T;
   let evaluated = false;
@@ -168,7 +168,7 @@ export function computed<T>(fn: () => T): ReadonlySignal<T> {
     refresh() {
       // Pull-based evaluation makes reading a computed from its own body unbounded recursion.
       if (node.computing) throw new Error("signal: a computed read its own value — the graph is cyclic");
-      if (evaluated && !stale(node)) return;
+      if (evaluated && (node.disposed || !stale(node))) return;
       node.computing = true;
       const prev = activeNode;
       activeNode = node;
@@ -188,6 +188,11 @@ export function computed<T>(fn: () => T): ReadonlySignal<T> {
       }
     },
   };
+  const dispose = () => {
+    node.disposed = true;
+    cleanup(node);
+  };
+  owner?.push(dispose);
 
   return {
     get value() {
@@ -202,7 +207,7 @@ function disposeAll(disposers: Array<() => void>): void {
   for (const dispose of disposers) dispose();
 }
 
-/** Runs `fn` with an effect owner installed, returning its value and a disposer for every effect created inside it. */
+/** Runs `fn` with an effect owner installed, returning its value and a disposer for every effect and computed created inside it. */
 export function withOwner<T>(fn: () => T): OwnedRun<T> {
   const collected: Array<() => void> = [];
   const previous = owner;

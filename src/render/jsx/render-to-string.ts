@@ -62,7 +62,14 @@ export const URL_ATTRS: ReadonlySet<string> = new Set([
   "xml:base",
 ]);
 
-const ENUMERATED_ATTRS = new Set(["draggable", "spellcheck", "contenteditable"]);
+/** Attributes whose boolean is spelled as a keyword pair rather than by presence. @internal */
+export const ENUMERATED_ATTRS: ReadonlyMap<string, readonly [whenTrue: string, whenFalse: string]> = new Map([
+  ["draggable", ["true", "false"]],
+  ["spellcheck", ["true", "false"]],
+  ["contenteditable", ["true", "false"]],
+  ["translate", ["yes", "no"]],
+  ["autocapitalize", ["on", "off"]],
+]);
 
 const VALID_ATTR_NAME = /^[A-Za-z_:][\w.:-]*$/;
 
@@ -93,15 +100,10 @@ function renderAttributes(props: Record<string, unknown>): string {
     // outside this test and stays verbatim (`docs/HTMX.md` §7b).
     if (lowerName.startsWith("on")) continue;
 
-    if (ENUMERATED_ATTRS.has(lowerName)) {
-      if (value === true) {
-        attrs += ` ${attrName}="true"`;
-        continue;
-      }
-      if (value === false) {
-        attrs += ` ${attrName}="false"`;
-        continue;
-      }
+    const spelling = ENUMERATED_ATTRS.get(lowerName);
+    if (spelling && typeof value === "boolean") {
+      attrs += ` ${attrName}="${spelling[value ? 0 : 1]}"`;
+      continue;
     }
 
     // WAI-ARIA is string-valued, so `false` is serialized rather than dropped: an absent

@@ -8,6 +8,7 @@ import { presentationAttrs } from "../contracts/vocabulary";
 import { blankMessage, FIELD_ITEM_SIZE, FieldDescription, FieldError, fieldDescribedBy, fieldItemId, fieldStateProps } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { fillPartProps } from "./utils/part-props";
 
 interface CheckboxGroupRootProps extends Omit<JSX.IntrinsicElements["fieldset"], "children"> {
   /** Shared `name` for every checkbox in the group, and the key its ids are derived from. */
@@ -62,9 +63,9 @@ const CheckboxGroupRoot: FC<PropsWithChildren<CheckboxGroupRootProps>> = ({
       aria-describedby={describedBy}
       {...presentationAttrs({ size })}
       {...stateAttrs({ disabled, orientation, invalid, busy })}
-      class={cn("state-busy m-0 flex gap-2 border-0 state-invalid p-0", orientation === "vertical" ? "flex-col" : "flex-row flex-wrap", cls)}
+      class={cn("state-busy m-0 flex gap-x-2 border-0 state-invalid p-0", orientation === "vertical" ? "flex-col" : "flex-row flex-wrap", cls)}
       {...rest}>
-      {children}
+      {fillPartProps(children, new Map([[CheckboxGroupItem, { size }]]))}
     </fieldset>
   );
 };
@@ -94,7 +95,7 @@ const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
 }) => {
   const id = fieldItemId(name, value, scope);
   return (
-    <label data-slot='checkbox-group-item' class={cn("inline-flex items-center gap-2 text-sm text-foreground", cls)}>
+    <label data-slot='checkbox-group-item' class={cn("inline-flex min-h-control-sm items-center gap-2 text-sm text-foreground", cls)}>
       <input
         type='checkbox' /* modern-css-allow: forge-ui-platform-accent-color — `appearance-none` redraws the box entirely, and accent-color only tints the native control's own shape, so it cannot express this design. */
         data-slot={slotToken("checkbox-group-input", inherited)}
@@ -102,7 +103,7 @@ const CheckboxGroupItem: FC<PropsWithChildren<CheckboxGroupItemProps>> = ({
         name={name}
         value={value}
         class={cn(
-          "state-busy state-disabled shrink-0 appearance-none rounded-sm border state-invalid border-input bg-background focus-ring-outset checked:bg-primary",
+          "state-busy state-disabled shrink-0 appearance-none rounded-sm border-field state-invalid border-input bg-background focus-ring-outset checked:bg-primary",
           FIELD_ITEM_SIZE[size],
         )}
         {...rest}

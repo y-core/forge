@@ -12,10 +12,10 @@ const indicatorItem = cva({
   base: "absolute z-10",
   variants: {
     placement: {
-      "top-start": "start-0 top-0 -translate-x-1/2 -translate-y-1/2",
-      "top-end": "end-0 top-0 translate-x-1/2 -translate-y-1/2",
-      "bottom-start": "start-0 bottom-0 -translate-x-1/2 translate-y-1/2",
-      "bottom-end": "end-0 bottom-0 translate-x-1/2 translate-y-1/2",
+      "top-start": "start-0 top-0 -translate-x-1/2 -translate-y-1/2 rtl:translate-x-1/2",
+      "top-end": "end-0 top-0 translate-x-1/2 -translate-y-1/2 rtl:-translate-x-1/2",
+      "bottom-start": "start-0 bottom-0 -translate-x-1/2 translate-y-1/2 rtl:translate-x-1/2",
+      "bottom-end": "end-0 bottom-0 translate-x-1/2 translate-y-1/2 rtl:-translate-x-1/2",
     },
   },
   defaultVariants: { placement: "top-end" },

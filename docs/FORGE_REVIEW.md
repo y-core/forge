@@ -85,7 +85,7 @@ one as the delta.
 | Every corpus rule the lint plugin owns — `src/tooling/lint/rules/` is the list | `bun run verify --only lint` |
 | The corpus against forge's API, and both rule registers against the plugin | `bun run verify --only validate-design` |
 | ARIA vocabulary validity — attribute names, role names, value shapes | `bun run verify --only lint` |
-| A pointer target under the `Button` `sm` box (`forge-ui-hit-target`) | `bun run test:browser src/ui/hit-target.browser.ts` |
+| A pointer target under the absolute 28px Floor (`forge-ui-hit-target`) | `bun run test:browser src/ui/hit-target.browser.ts` |
 | The comment budget ([`CODE_RULES.md`][cr-5a] §5a, [`CODE_RULES.md`][cr-5f] §5f) | `bun run verify --only validate-comment-budget` |
 | Behaviour of the changed unit | `bun test <path>` |
 
@@ -98,8 +98,8 @@ one as the delta.
 **Hand-spelled focus ring or disabled paint in `src/ui`**
 
 ```bash
-rg -n 'focus-visible:ring-2|has-\[:focus-visible\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\[:disabled\]:opacity' src/ui \
-  --glob '!*.test.*' --glob '!forge-ui.css' --glob '!src/ui/design/**'
+rg -n 'focus-visible:ring-2|has-\[:focus-visible\]:ring|peer-focus-visible:ring|disabled:opacity-50|has-\[:disabled\]:opacity|has-\[select:disabled\]:opacity' \
+  src/ui --glob '!*.test.*' --glob '!forge-ui.css' --glob '!src/ui/design/**'
 ```
 
 _Triage:_ any hit is a component re-spelling a recipe `forge-ui.css` publishes as an `@utility` (`focus-ring`, `state-disabled`, `state-invalid`,

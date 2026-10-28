@@ -24,6 +24,7 @@ export const WIRING_ATTRS: Record<string, string> = {
   "data-content": "the tooltip text a controller lifts into its popup",
   "data-position": "where a fixed container sits on the viewport",
   "data-hide-above": "the breakpoint above which a dock hides and gives back its page clearance",
+  "data-narrow-edge": "the block edge a side Navbar pins to below md, which keys that edge's page clearance",
   "data-placement": "where a decoration sits relative to its host",
   "data-label-position": "which side of a control its label sits on",
   "data-responsive": "whether a field collapses by width",

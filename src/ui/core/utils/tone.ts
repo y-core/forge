@@ -31,18 +31,35 @@ const TONE_VARS: Record<Tone, string> = {
 
 // The ring is read against the appearance's own surface, so every recipe names its own
 // `--focus-ring` and none inherits a solid ancestor's (`THEME_GENERATION.md` §3d).
-const APPEARANCE_RECIPES: Record<Appearance, string> = {
-  solid:
-    "border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)] hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]",
-  soft: "border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]",
-  outline: "border-(--tone-text) bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)] hover:bg-(--tone-soft)",
-  ghost: "border-transparent bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)] hover:bg-(--tone-soft)",
-  link: "border-transparent bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)] underline-offset-4 hover:underline",
+const APPEARANCE_PAINT: Record<Appearance, string> = {
+  solid: "border-transparent bg-(--tone) text-(--tone-fg) [--focus-ring:var(--tone-fg)]",
+  soft: "border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) [--focus-ring:var(--color-ring)]",
+  outline: "border-(--tone-text) bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)]",
+  ghost: "border-transparent bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)]",
+  link: "border-transparent bg-transparent text-(--tone-text) [--focus-ring:var(--color-ring)] underline-offset-4",
 };
 
-/** Resolves the `tone` × `appearance` paint every toned component composes over. @public */
+const APPEARANCE_HOVER: Record<Appearance, string> = {
+  solid: "hover:bg-[color-mix(in_oklab,var(--tone),var(--color-background)_12%)]",
+  soft: "hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]",
+  outline: "hover:bg-(--tone-soft)",
+  ghost: "hover:bg-(--tone-soft)",
+  link: "hover:underline",
+};
+
+const APPEARANCE_RECIPES = Object.fromEntries(
+  APPEARANCES.map((appearance) => [appearance, `${APPEARANCE_PAINT[appearance]} ${APPEARANCE_HOVER[appearance]}`]),
+) as Record<Appearance, string>;
+
+/** Resolves the `tone` × `appearance` paint every toned control composes over, its hover feedback included. @public */
 export const toneVariants = cva({
   variants: { tone: TONE_VARS, appearance: APPEARANCE_RECIPES },
+  defaultVariants: { tone: "neutral", appearance: "solid" },
+});
+
+/** Resolves the same paint as {@link toneVariants} without the hover feedback, for a toned surface the pointer cannot act on. @internal */
+export const toneSurfaceVariants = cva({
+  variants: { tone: TONE_VARS, appearance: APPEARANCE_PAINT },
   defaultVariants: { tone: "neutral", appearance: "solid" },
 });
 

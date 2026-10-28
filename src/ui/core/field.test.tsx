@@ -15,7 +15,7 @@ import {
   fieldErrorId,
   fieldId,
   fieldItemId,
-  mergeDescribedBy,
+  mergeIdRefs,
 } from "./field";
 import { FormField } from "./field-layout";
 import { Field } from "./field-stack";
@@ -426,6 +426,19 @@ describe("Field ids — the empty string is not a missing value", () => {
 
   it("fieldControlProps omits the aria-describedby key entirely rather than setting it undefined", () => {
     expect(fieldControlProps({}, { name: "email" })).toStrictEqual({
+      id: "field-email",
+      name: "email",
+      disabled: undefined,
+      "aria-invalid": undefined,
+    });
+  });
+
+  it("a blank caller aria-describedby with no derived ids renders no attribute", async () => {
+    expect(attrsOf(await render(<Input aria-describedby='  ' field={{ name: "email" }} />))).not.toHaveProperty("aria-describedby");
+  });
+
+  it("fieldControlProps removes an empty caller aria-describedby key rather than passing it through", () => {
+    expect(fieldControlProps({ "aria-describedby": "" }, { name: "email" })).toStrictEqual({
       id: "field-email",
       name: "email",
       disabled: undefined,
@@ -945,7 +958,7 @@ describe("CheckboxGroup and RadioGroup — the fieldset marks and describes only
   });
 });
 
-describe("mergeDescribedBy — one IDREF list, the caller's ids first and each id once", () => {
+describe("mergeIdRefs — one IDREF list, the caller's ids first and each id once", () => {
   const cases = [
     { existing: "hint", added: ["field-email-description"], expected: "hint field-email-description" },
     { existing: "a a b", added: ["b", "c", "a"], expected: "a b c" },
@@ -958,7 +971,7 @@ describe("mergeDescribedBy — one IDREF list, the caller's ids first and each i
   ];
 
   it("merges each pair into the list a reader resolves", () => {
-    expect(cases.map(({ existing, added }) => mergeDescribedBy(existing, added))).toEqual(cases.map(({ expected }) => expected));
+    expect(cases.map(({ existing, added }) => mergeIdRefs(existing, added))).toEqual(cases.map(({ expected }) => expected));
   });
 });
 

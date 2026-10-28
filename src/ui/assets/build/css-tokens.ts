@@ -34,11 +34,11 @@ function extractSelectorBlocks(cssText: string, selector: string): string[] {
 
 function parseDeclarations(block: string, into: Map<string, string>): void {
   // Minifiers omit the final declaration's `;`, so `$` must also terminate a declaration.
-  const declRegex = /--([a-zA-Z0-9-]+)\s*:\s*([^;}{]+?)\s*(?:;|$)/g;
+  const declRegex = /(?<![\w-])(--[a-zA-Z0-9-]+|color-scheme)\s*:\s*([^;}{]+?)\s*(?:;|$)/g;
   let match = declRegex.exec(block);
   while (match !== null) {
     if (match[1] && match[2] !== undefined) {
-      into.set(`--${match[1]}`, match[2].trim());
+      into.set(match[1], match[2].trim());
     }
     match = declRegex.exec(block);
   }

@@ -79,7 +79,7 @@ Each script is a tier, and each tier runs everything the one above it in this ta
 | On a machine with no runtime installed | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
 | Closing a task | `bun run verify` | The runtime rows — browser, workerd, database — on their primary engine, over your pending changes |
 | Running CI on a tag | `bun run verify:deploy` | Every runtime row whole, plus the rows that judge a finished change: changelog, deployed bundle, features |
-| Signing off a release | `bun run verify:release` | The browser set again on every other engine |
+| Signing off a release | `bun run verify:release` | The browser set again on each other engine you list, on the compat server |
 
 Which tier a row belongs to is decided by [`TESTING.md`][testing-6c] §6c's lines, never by how long it takes. `forge verify --list` prints the
 rows a tier resolves to.
@@ -446,15 +446,17 @@ a request can find.
 Probe for the **thing**, not the CLI that uses it — `hasWorkerd` answers for the runtime rather than for `bun`. Probing the CLI instead would pass
 vacuously and let every spec fail at launch.
 
-**`browserStep` requires the Playwright server `PW_TEST_CONNECT_WS_ENDPOINT` names, and never a local browser.** With the variable unset the step
-fails rather than letting Playwright launch one. Otherwise it asks the server whether the installed `@playwright/test` may connect, and a failure
-prints a hint naming its cause:
+**`browserStep` requires the Playwright server its engine runs on, and never a local browser**: `PW_TEST_CONNECT_WS_ENDPOINT` names Chromium's,
+and `PLAYWRIGHT_COMPAT_WS_ENDPOINT` names the `playwright-compat` server Firefox and WebKit run on. A step whose projects span both is refused.
+With its variable unset the step fails rather than letting Playwright launch one. Otherwise it asks the server whether the installed
+`@playwright/test` may connect, and a failure prints a hint naming its cause:
 
 ```text
 ✗ test:browser — Playwright server not found; `PW_TEST_CONNECT_WS_ENDPOINT` is unset; set it to the Playwright container's ws:// URL
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; nothing answered at ws://playwright:3000/ (connect ECONNREFUSED 172.18.0.12:3000); check the Playwright sidecar is running and that NO_PROXY includes `playwright`
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; the server runs Playwright 1.64 and `@playwright/test` is 1.60.0; pin `@playwright/test` to 1.64
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; `@playwright/test` cannot be resolved (Cannot find package '@playwright/test'); add it as a devDependency at the server's Playwright version
+✗ test:browser:firefox — Playwright compat server not found; `PLAYWRIGHT_COMPAT_WS_ENDPOINT` is unset; Firefox and WebKit run on the playwright-compat server — start it with `devctl infra up playwright-compat` and set the variable to its ws:// URL
 ```
 
 **`browserStep` spawns `playwright test --project=chromium` and `workerdStep` spawns `playwright test --project=workerd` — the installed binary
@@ -466,6 +468,8 @@ off `binDir`, whose shebang is node.** Not `bunx`, which installs from the regis
 
 ## Running the browser set on more than one engine
 
+Chromium is the browser set. Add Firefox and WebKit when your application needs wider compatibility, as its final sign-off.
+
 `browserSteps` gives each engine its own row. The primary engine's row is `test:browser` and runs from `runtime`, so a task closes on one engine;
 every other engine's row is `test:browser:<engine>` and runs only at `release`. The primary engine is Chromium when you list it and the first
 engine otherwise; `primary` names another. Your `playwright.config.ts` declares a project per engine.
@@ -474,6 +478,39 @@ engine otherwise; `primary` names another. Your `playwright.config.ts` declares 
 // config/steps.ts
 ...browserSteps({ engines: ["chromium", "firefox", "webkit"] }),
 ```
+
+Those engines run on `playwright-compat`, which devctl starts only on request (`devctl infra up playwright-compat`). Playwright reads only
+`PW_TEST_CONNECT_WS_ENDPOINT`, and a project's `connectOptions` replaces that connection whole, so your config carries `exposeNetwork` and
+`headers` itself and declares the two projects only when the variable is set:
+
+```ts
+// playwright.config.ts
+const endpoint = process.env.PLAYWRIGHT_COMPAT_WS_ENDPOINT;
+const exposeNetwork = process.env.PW_TEST_CONNECT_EXPOSE_NETWORK;
+const headers = process.env.PW_TEST_CONNECT_HEADERS;
+const compat = endpoint
+  ? {
+      wsEndpoint: endpoint,
+      ...(exposeNetwork ? { exposeNetwork } : {}),
+      ...(headers ? { headers: JSON.parse(headers) } : {}),
+    }
+  : undefined;
+
+export default defineConfig({
+  projects: [
+    { name: "chromium", use: { ...devices["Desktop Chrome"] } },
+    ...(compat
+      ? [
+          { name: "firefox", use: { ...devices["Desktop Firefox"], connectOptions: compat } },
+          { name: "webkit", use: { ...devices["Desktop Safari"], connectOptions: compat } },
+        ]
+      : []),
+  ],
+});
+```
+
+Every spec runs on them: an application's sign-off is the whole browser set on each engine, never a subset ([`TESTING.md`][testing-apps-6e]
+§6e).
 
 `browserSteps` takes the `narrow` described above, and only the primary engine's row uses it: the other rows run at `release`, where every row
 runs whole.
@@ -634,4 +671,5 @@ and reading it as "select no steps" would refuse every unscoped run.
 [testing-6]: ../../../docs/TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../../../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
+[testing-apps-6e]: ../../../warden/canon/apps/TESTING.md#6e-one-tier-per-moment
 [ui-scan]: ../../ui/README.md#tell-tailwind-which-directories-to-scan

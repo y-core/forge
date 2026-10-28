@@ -68,10 +68,10 @@ describe("EmailChangeView once the confirmation has gone out", () => {
         "text-sm [--tone:var(--color-success)] [--tone-fg:var(--color-success-foreground)] [--tone-text:var(--color-success-text)] " +
         "[--tone-soft:var(--color-status-success-subtle)] [--tone-soft-fg:var(--color-status-success-subtle-foreground)] " +
         "[--tone-soft-border:var(--color-status-success-border)] border-(--tone-soft-border) bg-(--tone-soft) text-(--tone-soft-fg) " +
-        '[--focus-ring:var(--color-ring)] hover:bg-[color-mix(in_oklab,var(--tone-soft),var(--tone)_8%)]">' +
+        '[--focus-ring:var(--color-ring)]">' +
         '<svg data-slot="icon" class="size-4" aria-hidden="true"><use href="/assets/icons.svg#icon-mail"></use></svg>' +
         '<div data-slot="alert-title" class="leading-none font-medium tracking-tight">Confirmation sent</div>' +
-        '<div data-slot="alert-description" class="text-sm leading-relaxed text-pretty opacity-90">Open the link we sent to ' +
+        '<div data-slot="alert-description" class="text-sm leading-relaxed text-pretty">Open the link we sent to ' +
         "grace@example.com. Until then you keep signing in with ada@example.com.</div></div>",
     );
   });

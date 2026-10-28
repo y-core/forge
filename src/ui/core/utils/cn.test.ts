@@ -355,6 +355,30 @@ describe("cn — the @utility recipes", () => {
 const PADDING_PAIR = "p-4 p-8";
 const HEIGHT_PAIR = "h-full h-5";
 
+describe("cn utilities that compile to different properties", () => {
+  const cases: { input: [string, string]; expected: string }[] = [
+    { input: ["border-2", "border-3"], expected: "border-3" },
+    { input: ["border-red-500", "border-3"], expected: "border-red-500 border-3" },
+    { input: ["ring-ring", "ring-3"], expected: "ring-ring ring-3" },
+    { input: ["outline-ring", "outline-3"], expected: "outline-ring outline-3" },
+    { input: ["decoration-red-500", "decoration-4"], expected: "decoration-red-500 decoration-4" },
+    { input: ["stroke-current", "stroke-4"], expected: "stroke-current stroke-4" },
+    { input: ["space-x-4", "space-x-reverse"], expected: "space-x-4 space-x-reverse" },
+    { input: ["space-x-reverse", "space-x-4"], expected: "space-x-reverse space-x-4" },
+    { input: ["border-dashed", "divide-solid"], expected: "border-dashed divide-solid" },
+    { input: ["bg-background", "bg-[linear-gradient(red,blue)]"], expected: "bg-background bg-[linear-gradient(red,blue)]" },
+    { input: ["bg-background", "bg-[image:url(a.png)]"], expected: "bg-background bg-[image:url(a.png)]" },
+    { input: ["bg-background", "bg-[size:10px]"], expected: "bg-background bg-[size:10px]" },
+    { input: ["outline-offset-2", "outline-hidden"], expected: "outline-offset-2 outline-hidden" },
+  ];
+
+  for (const { input, expected } of cases) {
+    it(`cn("${input[0]}", "${input[1]}") === "${expected}"`, () => {
+      expect(cn(input[0], input[1])).toBe(expected);
+    });
+  }
+});
+
 describe("cn memoisation", () => {
   it("returns the same string for a repeated call as for a fresh one", () => {
     expect(cn("flex", "items-center", "gap-2")).toBe("flex items-center gap-2");

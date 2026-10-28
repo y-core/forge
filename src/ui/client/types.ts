@@ -59,7 +59,7 @@ export interface NavDrawerOptions {
   within?: Node;
   /** Media query that, for as long as it matches, makes the open disclosure a modal drawer. */
   query?: string;
-  /** Selector for the sliding panel inside the disclosure. */
+  /** Selector for the sliding panel; defaults to the first child that is neither the `summary` nor a `navbar-backdrop` slot and holds a focusable. */
   panelSelector?: string;
 }
 
@@ -191,7 +191,7 @@ export interface ReadonlySignal<T> {
   get value(): T;
 }
 
-/** What `withOwner` returns: the callback's value, and a disposer for the effects it created. */
+/** What `withOwner` returns: the callback's value, and a disposer for the effects and computeds it created. */
 export interface OwnedRun<T> {
   result: T;
   dispose: () => void;

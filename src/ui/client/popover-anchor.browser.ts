@@ -77,7 +77,7 @@ function box(page: Page) {
 
 const viewport = (page: Page) => page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
 
-test.describe("openPopoverAt", () => {
+test.describe("openPopoverAt", { tag: "@cross-engine" }, () => {
   test("opens the popup and puts its top-left corner on the given point", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await sizeIt(page);
@@ -190,7 +190,7 @@ test.describe("openPopoverAt", () => {
   });
 });
 
-test.describe("openPopoverAt with flip", () => {
+test.describe("openPopoverAt with flip", { tag: "@cross-engine" }, () => {
   async function openFlipped(page: Page, x: number, y: number): Promise<void> {
     await page.evaluate(
       // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
@@ -251,7 +251,7 @@ test.describe("openPopoverAt with flip", () => {
   });
 });
 
-test.describe("openPopoverAt placement after close", () => {
+test.describe("openPopoverAt placement after close", { tag: "@cross-engine" }, () => {
   test("keeps a caller's own inline property and drops only the coordinates", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await sizeIt(page);
@@ -273,7 +273,7 @@ test.describe("openPopoverAt placement after close", () => {
   });
 });
 
-test.describe("openPopoverAt under forge's own CSS and default motion", () => {
+test.describe("openPopoverAt under forge's own CSS and default motion", { tag: "@cross-engine" }, () => {
   const FORGE_CSS = { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] };
   const SIZE_RULE = `<style>[popover] { border: 0; padding: 0; } #ctx { box-sizing: border-box; width: 120px; height: 80px; }</style>`;
 
@@ -312,7 +312,12 @@ test.describe("openPopoverAt under forge's own CSS and default motion", () => {
       return { x: el?.style.getPropertyValue("--anchor-x"), y: el?.style.getPropertyValue("--anchor-y"), style: el?.getAttribute("style") ?? null };
     });
 
-  test("holds the exit fade at the click point rather than jumping to the viewport origin", async ({ page }) => {
+  test("holds the exit fade at the click point rather than jumping to the viewport origin", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox",
+      "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+    );
+    test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
     await mountForge(page);
     await openAt(page, 200, 150);
     await settle(page);
@@ -392,6 +397,93 @@ test.describe("openPopoverAt under forge's own CSS and default motion", () => {
   });
 });
 
+test.describe("openPopoverAt's marker and origin under forge's own CSS", { tag: "@cross-engine" }, () => {
+  const MENU_FORGE_CSS = { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] };
+  const SIZE_RULE = `<style>[popover] { border: 0; padding: 0; } #ctx { box-sizing: border-box; width: 120px; height: 80px; }</style>`;
+
+  async function mountMenu(page: Page, coords: boolean): Promise<void> {
+    const menu = await render(
+      Menu({
+        children: [
+          Menu.Trigger({ for: "ctx", children: "Open" }),
+          Menu.Popup({
+            label: "Context actions",
+            id: "ctx",
+            ...(coords ? { coords: true } : {}),
+            children: Menu.Item({ id: "row", for: "ctx", children: "Row" }),
+          }),
+        ],
+      }),
+    );
+    await mount(page, `${SIZE_RULE}<div style="margin:200px 300px">${menu}</div>`, MENU_FORGE_CSS);
+  }
+
+  async function settle(page: Page): Promise<void> {
+    await page.evaluate(async () => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      await Promise.allSettled(el?.getAnimations().map((animation) => animation.finished) ?? []);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+  }
+
+  async function dismissAndSettle(page: Page): Promise<void> {
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#ctx")).not.toBeVisible();
+    await settle(page);
+  }
+
+  const hasMarker = (page: Page) => page.evaluate(() => document.querySelector("#ctx")?.hasAttribute("data-coords") ?? null);
+
+  test("a trigger open after a context-menu open and Escape lands under the trigger, not at the viewport origin", async ({ page }) => {
+    await mountMenu(page, false);
+    await openAt(page, 700, 450);
+    await settle(page);
+    await dismissAndSettle(page);
+
+    await page.click("[data-slot~='menu-trigger']");
+    await expect(page.locator("#ctx")).toBeVisible();
+    await settle(page);
+
+    const trigger = await page.evaluate(() => document.querySelector("[data-slot~='menu-trigger']")?.getBoundingClientRect().toJSON());
+    const rect = await box(page);
+    expect(await hasMarker(page)).toBe(false);
+    expect(rect?.left).toBe(trigger.left);
+    expect(rect?.top).toBeGreaterThanOrEqual(trigger.bottom);
+  });
+
+  test("a coords marker from the markup survives an open, a close and the exit fade", async ({ page }) => {
+    await mountMenu(page, true);
+    await openAt(page, 200, 150);
+    await settle(page);
+    expect(await hasMarker(page)).toBe(true);
+
+    await dismissAndSettle(page);
+
+    expect(await hasMarker(page)).toBe(true);
+  });
+
+  test("a menu flipped at the bottom-right corner grows from its bottom-right corner", async ({ page }) => {
+    await mountMenu(page, false);
+    const { w, h } = await viewport(page);
+
+    await page.evaluate(
+      // oxlint-disable-next-line eslint/no-shadow -- the callback runs in the browser realm and cannot close over the Node-side binding; the matching name is what documents the marshalled argument
+      ({ w, h }) => {
+        const el = document.querySelector<HTMLElement>("#ctx");
+        if (el) window.forgePopoverAnchor.openPopoverAt(el, w - 10, h - 10, { flip: true });
+      },
+      { w, h },
+    );
+    await settle(page);
+
+    const origin = await page.evaluate(() => {
+      const el = document.querySelector<HTMLElement>("#ctx");
+      return el ? getComputedStyle(el).transformOrigin : null;
+    });
+    expect(origin).toBe("120px 80px");
+  });
+});
+
 const ORIGIN = "https://forge.test";
 
 const FORGE_CSS_PATH = new URL("../assets/css/forge-ui.css", import.meta.url).pathname;
@@ -454,7 +546,7 @@ const ctxState = (page: Page) =>
     return { style: el?.getAttribute("style") ?? null, coords: el?.hasAttribute("data-coords") ?? null };
   });
 
-test.describe("openPopoverAt under forge's own CSP across an htmx swap", () => {
+test.describe("openPopoverAt under forge's own CSP across an htmx swap", { tag: "@cross-engine" }, () => {
   test("a closed popover carries no style attribute, and swapping its region raises no violation", async ({ page }) => {
     await openForgeCspSite(page);
 
@@ -463,11 +555,15 @@ test.describe("openPopoverAt under forge's own CSP across an htmx swap", () => {
     const afterClose = await ctxState(page);
     await swapRegionAndSettle(page);
 
-    expect(afterClose).toEqual({ style: null, coords: true });
+    expect(afterClose).toEqual({ style: null, coords: false });
     expect(await page.evaluate(() => window.anchorViolations)).toEqual([]);
   });
 
-  test("a placement whose clear was released by the disposer is copied by the settle and reported", async ({ page }) => {
+  test("a placement whose clear was released by the disposer is not copied by the settle, so nothing is reported", async ({
+    page,
+    browserName,
+  }) => {
+    test.skip(browserName === "webkit", "WebKit neither blocks nor reports style-src-attr for a style attribute on a node parsed from a template");
     await openForgeCspSite(page);
 
     await page.evaluate(() => {
@@ -479,7 +575,7 @@ test.describe("openPopoverAt under forge's own CSP across an htmx swap", () => {
     await swapRegionAndSettle(page);
 
     expect(afterClose.style).not.toBeNull();
-    expect(await page.evaluate(() => window.anchorViolations)).toEqual([{ directive: "style-src-attr", blockedURI: "inline" }]);
+    expect(await page.evaluate(() => window.anchorViolations)).toEqual([]);
   });
 
   test("a superseded call's disposer leaves the newer placement's clear armed", async ({ page }) => {
@@ -496,11 +592,16 @@ test.describe("openPopoverAt under forge's own CSP across an htmx swap", () => {
     const afterClose = await ctxState(page);
     await swapRegionAndSettle(page);
 
-    expect(afterClose).toEqual({ style: null, coords: true });
+    expect(afterClose).toEqual({ style: null, coords: false });
     expect(await page.evaluate(() => window.anchorViolations)).toEqual([]);
   });
 
-  test("a swap during the exit fade under forge's CSS and default motion raises no violation", async ({ page }) => {
+  test("a swap during the exit fade under forge's CSS and default motion raises no violation", async ({ page, browserName }) => {
+    test.skip(
+      browserName === "firefox",
+      "Firefox implements neither overlay nor a display transition, so a closing popup leaves the top layer and stops rendering at once",
+    );
+    test.skip(browserName === "webkit", "WebKit does not implement overlay, so a closing popup leaves the top layer and stops rendering at once");
     await openForgeCspSite(page, true);
     await openAt(page, 200, 150);
 

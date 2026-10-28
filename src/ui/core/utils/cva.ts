@@ -6,7 +6,10 @@ export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
   const base = config.base ?? "";
   const variants = config.variants;
   const defaultVariants = config.defaultVariants ?? ({} as DefaultVariants<V>);
-  const compounds = config.compoundVariants ?? [];
+  const compoundRules = (config.compoundVariants ?? []).map(({ class: cls, ...conditions }) => ({
+    cls,
+    conditions: Object.entries(conditions) as [keyof V, keyof V[keyof V] | ReadonlyArray<keyof V[keyof V]>][],
+  }));
   const variantKeys = variants ? (Object.keys(variants) as (keyof V)[]) : [];
 
   return (props?: CVAProps<V>): string => {
@@ -21,9 +24,8 @@ export function cva<V extends VariantConfig>(config: CVADefinition<V>) {
       if (variantMap[value]) parts.push(variantMap[value]);
     }
 
-    for (const compound of compounds) {
-      const { class: cls, ...conditions } = compound;
-      const matches = (Object.entries(conditions) as [keyof V, keyof V[keyof V] | ReadonlyArray<keyof V[keyof V]>][]).every(([key, wanted]) =>
+    for (const { cls, conditions } of compoundRules) {
+      const matches = conditions.every(([key, wanted]) =>
         Array.isArray(wanted) ? (wanted as ReadonlyArray<string>).includes(resolved[key] as string) : resolved[key] === wanted,
       );
       if (matches && cls) parts.push(cls);

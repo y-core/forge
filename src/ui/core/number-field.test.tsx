@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { buttonBox } from "./button";
 import { NumberField } from "./number-field";
 
 const textOf = (html: string) => html.replaceAll(/<[^>]*>/g, "");
@@ -172,7 +173,20 @@ describe("NumberField.Decrement", () => {
 
     expect(attrOf(html, "aria-label")).toBe("Fewer R&amp;D&#39;s");
     expect(attrOf(html, "data-slot")).toBe("number-field-decrement quantity-down");
-    expect(variantClasses(html, await render(<NumberField.Decrement />))).toEqual({ added: ["size-6"], dropped: ["size-8"] });
+    expect(variantClasses(html, await render(<NumberField.Decrement />))).toEqual({ added: ["size-6"], dropped: ["h-control-md", "w-control-md"] });
+  });
+});
+
+describe("NumberField — a stepper is Button's icon box at its size", () => {
+  it("holds for both steppers at sm, md and lg, and stamps no size attribute", async () => {
+    const sizes = ["sm", "md", "lg"] as const;
+    const boxes = sizes.map((size) => buttonBox({ size, shape: "icon" }).split(" "));
+    const steppers = await Promise.all(
+      sizes.map(async (size) => [await render(<NumberField.Decrement size={size} />), await render(<NumberField.Increment size={size} />)]),
+    );
+
+    expect(steppers.map((pair, i) => pair.map((html) => classesOf(html).slice(0, boxes[i]?.length)))).toEqual(boxes.map((box) => [box, box]));
+    expect(steppers.flat().filter((html) => "size" in attrsOf(html))).toEqual([]);
   });
 });
 

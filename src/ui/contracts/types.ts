@@ -10,6 +10,9 @@ export type AnnouncePoliteness = "polite" | "assertive";
 /** The actions a checkable menu row names in `data-on-click` and the client scope handles. @public */
 export type MenuAction = "check" | "select";
 
+/** The action the navbar's drawer backdrop names in `data-on-click`. @public */
+export type NavbarAction = "closeNav";
+
 /** What {@link menuItemAttrs} needs to know about the row it is describing. */
 export interface MenuItemAttrsOptions {
   // Omit for a disabled row or a submenu header: the platform runs an invoker command regardless
@@ -22,6 +25,18 @@ export interface MenuItemAttrsOptions {
   readonly disabled?: boolean;
   /** Initial checked state of a `menuitemcheckbox` or `menuitemradio`. @default false */
   readonly checked?: boolean;
+}
+
+/** The attributes {@link menuItemAttrs} returns for one row. @public */
+export interface MenuItemAttrs {
+  readonly role: NonNullable<MenuItemAttrsOptions["role"]>;
+  readonly "data-slot": "menu-item" | "menu-checkbox-item" | "menu-radio-item";
+  readonly "aria-checked"?: "true" | "false";
+  readonly "data-checked"?: "";
+  readonly "data-on-click"?: MenuAction;
+  readonly "aria-disabled"?: "true";
+  readonly command?: "hide-popover";
+  readonly commandfor?: string;
 }
 
 /** How a `<dialog>` root is named. `dialog` takes no name from its contents, so one of the three is required. @public */

@@ -40,12 +40,53 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   unchanged.
 - **The chrome `Toolbar` no longer adds an `active` class to an action whose `active` is set.** The item is marked by `aria-pressed` and
   `data-pressed`, which forge now paints. Move any `.active` rule of your own to `[data-pressed]`.
+- **`Tooltip`, `Popover` and `Menu` render their roots and panels as `<span>`, and `Menu.GroupLabel` as `<span>`, instead of `<div>`**, so one
+  placed inside a `<p>` no longer splits the paragraph. A selector of yours that names the tag, such as `div[data-slot="menu"]`, stops matching;
+  key it on `[data-slot]` alone.
+- **An `alert` `Dialog` closes on Escape alone, and a backdrop click no longer closes it.** It renders `closedby="closerequest"`, following APG's
+  alert dialog.
+- **`mountTabs` reads the arrow-key axis from the tablist's `aria-orientation`**, and no longer from the root's `data-orientation`. Hand-written
+  `Tabs` markup must set `aria-orientation="vertical"` on the `role="tablist"` element for ArrowUp and ArrowDown to move between vertical tabs.
+  Markup that `Tabs` renders already does this.
+- **`Menu.Group` renders `<span role="group">` and `Menu.Separator` renders `<span role="separator">`, instead of `<fieldset>` and `<hr>`**, so a
+  grouped or separated menu inside a `<p>` no longer splits the paragraph. A selector of yours on `fieldset` or `hr` inside a menu stops
+  matching; use `[data-slot~="menu-group"]` or `[data-slot~="menu-separator"]`. `MENU_GROUP_SELECTOR` no longer matches `fieldset`.
+  `Menu.Group`'s `disabled` still disables its rows: it sets `aria-disabled` on the group and passes `disabled` to each `Menu.Item`,
+  `.CheckboxItem`, `.RadioItem` and `.SubmenuTrigger` that leaves its own unset. A `Menu.LinkItem` is not disabled by its group.
+- **`bindAttr` and `bindAttrAttr` refuse `hx-vals`, `hx-headers`, `hx-confirm` and `hx-trigger`**, in the `hx-` and `data-hx-` spellings and
+  with a `:inherited` or `:append` suffix, because htmx evaluates their values as script. `bindAttrAttr` throws on one and `bindAttr` warns and
+  skips it. Write these attributes in markup, or bind a signal to an attribute htmx does not evaluate.
+- **A custom `--command` runs the handler of the scope holding its `commandfor` target**, with `el` still the invoker. Before, the handler was
+  looked up from the invoker, so an invoker inside one scope that names an element in another now runs the other scope's handler.
+- **`splitLightDark` is no longer exported from `@y-core/forge/tooling/gate`.** Import it from `@y-core/forge/ui/contracts/theme`, beside
+  `lightDark`, which is now its only home.
+- **`FOUC_SCRIPT` has changed.** A CSP that lists its hash in `script-src` must list the new one; compute it from the exported constant.
+- **`Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`, `Popover.Trigger`, `Menu.Trigger` and a bare `Tooltip.Trigger`
+  render the `sm` button box**: a control height, padding, a transparent border and the focus ring, where they used to render an unstyled button
+  24px tall. Your `class` is merged over it, so your padding still wins while the height holds the 28px Floor. A trigger you styled as a link or
+  sized below 28px renders taller; restyle it through `class`.
+- **A chrome `Toolbar` flyout is built from `Popover`'s parts, and its `data-side` names the side the panel opens on**, no longer the rail's
+  edge: a `left` rail's flyout carries `data-side="right"`. A stylesheet of yours keyed on the old value must swap it for its opposite. The flyout
+  root is a `<span>` whose `data-slot` also holds `popover`; the panel's holds `popover-content` and the panel carries `data-scope="popover"` and
+  `data-align="start"`; the trigger's holds `popover-trigger`. A selector naming `div[data-slot~="toolbar-popover"]` stops matching; key it on
+  `[data-slot]` alone.
+- **A `Navbar`'s position classes are on its outermost `<div data-scope="navbar">`**; a `class` passed to `Navbar` no longer changes where it
+  sticks.
+- **`Toolbar.Input` takes a `size` of `sm`, `md` or `lg`** (default `sm`, matching the toolbar's buttons) in place of the native numeric `size`
+  attribute; set a width with `class` instead.
+- **A Firefox or WebKit row from `browserSteps` probes `PLAYWRIGHT_COMPAT_WS_ENDPOINT`**, devctl's `playwright-compat` server, instead of
+  `PW_TEST_CONNECT_WS_ENDPOINT`, and fails naming it when unset or unreachable. An app listing those engines points its `firefox` and `webkit`
+  projects there through `use.connectOptions`, as the `tooling/gate` README shows.
+- **`browserStep` refuses `projects` that run on different Playwright servers**, such as `["chromium", "firefox"]`. Give each engine its own row
+  with `browserSteps`.
 
 ### Added
 
 - **`RULE_ENFORCER` routes `forge-ui-hit-target` to a new `"browser"` enforcer**, in `@y-core/forge/tooling/lint`, and `RuleId` and
   `RuleEnforcer` gain the matching members. Forge's browser set now measures every published `ui/core` and `ui/chrome` pointer target against the
-  `Button` `sm` box.
+  absolute 28px Floor, under both the default shape and `shape-compact.css`.
+- **`NavbarAction` and `MenuItemAttrs` types in `@y-core/forge/ui/contracts`**; `menuItemAttrs` returns `MenuItemAttrs`.
+- **A sticky top `Navbar` reserves its height as `scroll-padding-top`**; `--forge-navbar-height` sizes the bar and the reserve.
 
 ### Changed
 
@@ -62,9 +103,19 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`forge-ui-focus-ring` and the other class rules judge a module-scope `*_CLASS` or `*_CLASSES` string where it is declared**, and follow a
   chain of same-file constants to the class list it names. A class constant that suppresses the outline with no ring is reported even when nothing
   in its own file uses it.
+- **Hovering a `Toast` or `Alert` dismiss draws a 1px outline in the glyph's colour.** There is no background tint, so the glyph's contrast is the
+  same hovered as at rest.
+- **The `Navbar` drawer opens and closes on Drawer's `--forge-motion-enter` / `--forge-motion-exit`**, and fades in place under reduced motion
+  instead of snapping.
+- **`Navbar` renders `data-side` with its placement on its `<details>`.**
+- **`NumberField`'s steppers take a `size` and are as tall as an input of that size**: a default stepper is now 40px rather than 32px.
+- **`Toggle` and `Toolbar.Input` use `Button`'s padding scale**: padding follows the size (12/16/24px). A `Toggle` label no longer wraps, and its
+  colour changes transition.
 
 ### Fixed
 
+- **A `--forge-navbar-height` under 1.75rem no longer shrinks a `Navbar` below the 28px Floor.** The bar's row, its drawer toggle, the
+  panel's clearance and the scroll-padding reserve hold at 1.75rem.
 - **Every flash call in one request reaches the next page, including calls made together.** `createFlash` merges them into one `Set-Cookie` in call order, dropping the oldest
   messages past 4096 bytes; before, the browser kept only the last.
 - **`Input`'s `format` no longer deletes a digit literal's digit from the value.** With `format='+1 (###) ###-####'`, `4155551212` now groups as
@@ -106,10 +157,18 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **A caller's `aria-describedby` no longer replaces the ids forge derives.** `Tooltip.Trigger` (plain and `asChild`), the `CheckboxGroup` and
   `RadioGroup` roots and `Dialog` now merge it into one list, the caller's ids first and each id once, so the tooltip, the group's error and the
   dialog's description stay announced. An empty or whitespace-only `aria-describedby` on one of them that leaves nothing behind is omitted rather
-  than rendered as `""`. `fieldDescribedBy` and `fieldControlProps` also drop an id the caller repeats.
+  than rendered as `""`. `fieldDescribedBy` and `fieldControlProps` also drop an id the caller repeats, and a field control (`Input`, `Select`,
+  `Textarea` and the rest built on `fieldControlProps`) omits a blank `aria-describedby` the same way.
+- **A caller's `aria-labelledby` no longer replaces the id forge derives.** `Dialog`, `Drawer`, a triggered `Menu.Popup` and `Tabs.Content` merge
+  it the same way, the caller's ids first, so the dialog's title, the menu's trigger and the panel's tab still name them.
 - **The selected `Tabs.Tab` is marked by more than colour.** It draws a 2px bottom rule in its own text colour, clearing 3:1 against its fill and
   the page in both themes, and under forced colors that rule is `CanvasText` while an unselected tab draws none. Before, its only cue was a 1.08:1
   fill, and in High Contrast every tab looked the same. Every tab is 2px taller, so selecting one never shifts the row.
+- **Without script, revealing another `Tabs.Content` by its fragment or by find-in-page hides the server-selected panel**, and its tab drops the
+  selected fill, text colour and bar, under forced colors too; `aria-selected` is unchanged until `mountTabs` runs. A caller's override of the
+  selected fill now needs `data-selected:not-tabs-revealed:`, because an `aria-selected:` class no longer replaces `Tabs.Tab`'s own. Each set
+  reacts only to its own panels — a `Tabs.Content` directly inside `Tabs`, a `Tabs.Tab` directly inside `Tabs.List` — so revealing a nested set's
+  panel no longer hides the outer panel that holds it, and following an outer tab no longer hides the inner set's selected panel.
 - **A focused menu row draws forge's focus ring.** `Menu.Item`, `.CheckboxItem`, `.RadioItem`, `.LinkItem`, `.SubmenuTrigger` and any row
   wearing `MENU_ITEM_CLASS` show a 2px ring inside the row. Before, focus was only a 1.1:1 tint.
 - **A checked `Menu.CheckboxItem` or `Menu.RadioItem` shows a tick.** Every checkable row keeps room for it, so checking a row never moves its
@@ -119,6 +178,132 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   identical.
 - **The current link in a `Navbar` dropdown, and any `Menu.LinkItem` with `aria-current`, is set semibold on the accent fill**, as the bar's own
   links are.
+- **`Alert.Description` and `Toast.Description` paint at full strength**, clearing 4.5:1 on every soft tone in both themes. At 90% opacity the
+  light secondary tone measured about 4.2:1.
+- **Opening a `Navbar` drawer always moves focus into the panel.** `mountNavDrawer` timed its wait from the panel, which has no transition, rather
+  than from `::details-content`, so focus sometimes stayed on the summary.
+- **An arrow key pressed on a control that is not one of a composite's items reaches that control.** A `<select>` or radio inside an open
+  `Toolbar` flyout keeps its own arrow keys; before, the toolbar swallowed them and moved focus to a rail button.
+- **Disabling the item that holds a composite's tab stop at runtime moves the tab stop to the next enabled item.** Before, Tab skipped the
+  composite.
+- **A `Menu` whose first item is hidden opens with focus on the first visible item.** Before, focus stayed on the trigger and ArrowDown did
+  nothing.
+- **A popup opened by `openPopoverAt` is anchored to its trigger again the next time the trigger opens it.** `openPopoverAt` removes the
+  `data-coords` it added once the popup has closed, and keeps one set in markup. Before, every later trigger open landed at the viewport's top-left
+  corner.
+- **A context menu that `flip` or the viewport clamp moved grows from the corner nearest the pointer**, rather than always from its top-left.
+- **Selecting a tab leaves a nested `Tabs` alone, and checking a radio row leaves a submenu's radios alone.** Before, the outer set deselected
+  every inner tab and hid its panel, and the parent menu unchecked the submenu's choice.
+- **A composite revealed after focus moved into it keeps its tab stop on the focused item.** Before, a `Menu` whose `toggle` handler focused a row
+  reset the stop to the first row once shown, so the next arrow key started from there.
+- **`mountNavDrawer`'s default panel is the first child of the disclosure holding a focusable control**, skipping the `<summary>` and a
+  `navbar-backdrop` slot. Before, an unmarked backdrop placed before the panel was taken for it, and Tab cycled on the summary alone. It now warns
+  when no panel with a focusable control resolves.
+- **A non-modal `open` `Dialog` or `Drawer` stays open on an outside click and on Escape.** Before, clicking a nearby input or pressing Escape
+  anywhere closed it; a modal open still light-dismisses.
+- **A busy trigger under `Tooltip.Trigger` shows its tooltip on hover**, as a disabled one does. Before, `state-busy` blocked the pointer events
+  that open it.
+- **An open trigger is highlighted over its own utilities.** A `Toolbar` flyout trigger and a `Menu.SubmenuTrigger` paint the open state while
+  their panel is open, where their own transparent fill used to win.
+- **A compound root's `type`, `orientation` and `size` now reach its parts.** These props are fill-ins only: a prop set on the part itself
+  still wins. The same holds for the bound `ToggleGroup` and `RadioGroup` from `@y-core/forge/ui/controls`.
+  - `ToggleGroup type='multiple'` renders checkboxes. Before, it rendered radios.
+  - `Tabs orientation='vertical'` renders a vertical `Tabs.List`, and ArrowDown moves the selection. The selected tab draws its cue on the
+    inline-end side.
+  - A vertical `Toolbar`'s `.Separator` runs across the toolbar. Before, it ran along it.
+  - `RadioGroup`'s `size` sizes its items.
+- **`CheckboxGroup`'s `size` sizes its items**, and the bound `CheckboxGroup` from `@y-core/forge/ui/controls` does the same. Before, a root
+  `size` never reached them.
+- **On WebKit, a `Filter` chip or single-select `ToggleGroup` chip reached by an arrow key shows the focus ring.** WebKit does not count that
+  focus as `:focus-visible`, so the chip used to show none.
+- **On Firefox, closing a `Navbar` drawer with Escape returns focus to its toggle.** Before, focus sometimes landed on `<body>`. A click on the
+  backdrop also returns focus to the toggle.
+- **A `computed` created in a scope's `setup` is released when the scope is disposed**, as an effect already was, and keeps its last value from
+  then on. Before, every swapped-out island left its computeds subscribed to any signal that outlived it.
+- **An htmx swap no longer copies a `style` attribute your script wrote onto the new element**, which raised a CSP `style-src-attr` violation on
+  every swap. A morph never applies or removes a `style` attribute, so a style your script wrote survives it.
+- **`Turnstile` counts `hx-get` and `hx-query` as an htmx submission**, in the plain and `data-hx-` spellings, as htmx 4 does. A form using one
+  is held in submit mode and reset after its submission, and no longer warns that it has no htmx submission. A GET form carries the token in its
+  URL.
+- **An outer `Tabs` drives its own tablist when a nested `Tabs`' tablist comes first in the document.** Before, it mounted on the nested one and
+  drove the inner set.
+- **A custom `--command` from an invoker outside every scope reaches its target's handler**, so a `Toolbar` action with `dispatch: "command"` placed
+  outside the scope it names now runs. Before, it ran nothing.
+- **`change`, `submit`, `reset` and a custom `command` fired inside an open shadow root reach the scope's handler.** These events never leave the
+  shadow tree, so the document's listener never saw them. `resume()` now also listens inside every open shadow root it finds; call
+  `resume(shadowRoot)` for one attached later. `bindControls` likewise reads a `change` and repaints on a `reset` inside the open shadow roots under
+  its root when it mounts.
+- **`resume()` sweeps detached scopes once per call**, rather than once for every scope it resumes, so boot no longer slows with the square of
+  the number of scopes.
+- **An effect that reads `isDark` before `resume()` re-runs when a theme scope resumes and whenever the theme changes.** Before, it recorded `false`
+  and never ran again.
+- **A stored theme other than `light`, `dark` or `system` is read as `system`**, by `FOUC_SCRIPT` and by `ThemeToggle`, so the toggle keeps its icon
+  and accessible name. Storage that throws on read or write, or is full, no longer breaks the toggle, and `FOUC_SCRIPT` no longer throws in a
+  realm without `matchMedia`.
+- **`bindAttr` writes a boolean bound to `draggable`, `contenteditable` or `spellcheck` as `"true"` or `"false"`**, as the renderer does. Before,
+  `true` wrote `""`, which leaves `draggable` in its default state rather than on.
+- **Security: `bindAttr` removes `hx-action`, `hx-get`, `hx-post`, `hx-put`, `hx-patch`, `hx-delete` or `hx-query` while its bound value is a
+  `js:` or `javascript:` URL**, and warns once, so htmx sends nothing; a later safe value writes it back. This covers the `data-hx-` spelling, any
+  `:inherited` or `:append` suffix and any case. Before, htmx ran the bound value as script on the next request. Values the renderer emits are
+  unchanged.
+- **A closed `Menu` adds no document listeners and starts no roving-focus observers.** Both start on the first open, and the document listeners
+  are removed on close, so a click no longer costs a query per menu on the page.
+- **A popover's open state reaches only the invokers whose `aria-controls` names it**, found by one lookup rather than a scan of every
+  `[aria-controls]` on the page.
+- **A `ui/core` `Input` given `data-field` by hand and a `format` renders its value raw**, so it no longer regroups and then ungroups as the
+  binding mounts. It keeps `data-format`, and the client still warns once that format and bind do not compose.
+- **`translate={false}` renders `translate="no"`, and `true` renders `"yes"`; `autocapitalize` takes a boolean as `"on"` or `"off"`.** Before,
+  `false` dropped the attribute. `bindAttr` writes both the same way, and both props accept a boolean.
+- **`cn` keeps utilities that set different properties.** `space-x-4` with `space-x-reverse`, `border-dashed` with `divide-solid`,
+  `outline-offset-2` with `outline-hidden`, and `bg-background` with an arbitrary gradient, `bg-[image:…]`, `bg-[size:…]` or `bg-[position:…]`
+  now all survive a merge. A bare integer width that Tailwind accepts but does not list, such as `border-3`, `ring-3`, `outline-3`,
+  `decoration-4` or `stroke-4`, replaces the root's width and no longer its colour. Before, `cn` dropped one class of each pair.
+- **`buildCursors` bakes a token written `light-dark(a, b)`**, taking `b` for a theme whose stylesheet declares `color-scheme: dark` and `a` for
+  every other. Before, it threw. A cursor SVG containing a nested `<svg>` is no longer cut short at the inner `</svg>`.
+- **Sprite icons no longer break or recolour one another.** The sprite builder prefixes every id inside an icon with the icon's symbol id and
+  rewrites the references to it, so two icons that both declare `id="grad"` keep their own gradients. It also reads the `viewBox` and the
+  presentation attributes from the root `<svg>`, in either quote style, rather than from the first match in the file, and keeps the content after
+  a nested `</svg>`.
+- **Security: the sprite and cursor SVG sanitizer writes a `<`, a `>` or a bare `&` in text as `&lt;`, `&gt;` or `&amp;`**, so a stray `<` beside
+  an element it drops can no longer join the following text into a live tag such as `<img onerror>`. This flaw predates this release cycle.
+- **`Table`'s `zebra` stripes skip a selected row and a toned row**, so neither is hidden under the stripe. Under `pinRows` the scroll wrapper
+  takes its parent's `max-height`, so the header sticks inside a parent of bounded height; before, it scrolled away.
+- **`Button shape="square"` renders square**, as wide as its container and as tall as it is wide. Before, it kept the control height.
+- **`Meter` paints the region HTML's own `<meter>` reports.** Some combinations change colour: a `value` at `max` with no thresholds is now
+  optimum rather than suboptimum, and where `optimum` lies outside `low`..`high`, a `value` on the far threshold is suboptimum, as Chromium and
+  WebKit paint it.
+- **A disabled `Select` is dimmed once, to half opacity**, matching a disabled `Input`. Before, it was dimmed twice.
+- **`Indicator` placements mirror in a right-to-left context.** Before, every placement sat about one item width off.
+- **A bare `Switch` in a vertical `FormField` keeps its own width**, so its click target no longer spans the row.
+- **A chrome `Toolbar` flyout trigger is the same 40px as the rail's actions**, where it rendered 32px, and the flyout opens 0.375rem from the
+  rail. **The flyout's accessible name is its label alone**; a `titleAction` no longer joins it, as in "Layers Add layer". **A toolbar action given
+  a `data-slot` in `data` keeps `toolbar-action` beside it**, where the caller's value used to replace it.
+- **`Breadcrumbs.Link` is a control-height target**, 32px tall, or 28px under `shape-compact.css`, where it was the 20px text line. A trail row grows
+  to match.
+- **A small `OtpInput` is a 32px hit target**, or 28px under `shape-compact.css`. The editor now reaches over the frame's border, where it sat
+  inside it and lost two border widths at every size.
+- **`CheckboxGroup.Item`, `RadioGroup.Item` and `Switch` clear the 28px Floor**: the label is at least the `sm` control height (32px, or 28px
+  under `shape-compact.css`), and a Switch with no label text is that wide as well. The track is unchanged. A vertical group's items now sit with
+  no gap between their taller rows.
+- **`Alert`, `Toast`, `Badge` and a toned `Table` row no longer recolour on hover.** They took the hover fill meant for a toned button, which read as
+  a button and, on a light solid primary panel, dropped the dismiss glyph to 4.28:1. `toneVariants` keeps its hover fill.
+- **`Navbar` with `placement` `top` or `bottom` now sticks to its edge.**
+- **A bottom `Navbar` reserves its height at the foot of the page**, and beside a `Dock` the two reserves add up instead of one replacing the
+  other.
+- **A `left` or `right` `Navbar` on a phone reserves its height at the edge it pins to**, so a focused control scrolls clear of it. Below `md` it
+  sits on the top or bottom edge and is sized from `--forge-navbar-height`; at `md` and up it is a column and reserves nothing.
+- **An open `Navbar` drawer's first and last links are clear of its toggle on a phone.** The toggle used to cover the edge of the link nearest the
+  bar, so a tap there closed the drawer. The toggle now fills the bar's `--forge-navbar-height` row, and the panel starts below it, or ends above
+  it on a bottom bar.
+- **A `collapsible="always"` left or right `Navbar` rail opened as a drawer on a phone no longer hides its first link under the toggle.** Below
+  `md` the rail's toggle is `--forge-navbar-height` tall, and the open panel starts below it; at `md` and up the toggle is unchanged.
+- **`Card`, `Dialog`, `Popover.Content`, `Menu.Popup`, the chrome `Toolbar` flyout, the `NumberField` steppers, `Toolbar.Input` and the
+  `CheckboxGroup` / `RadioGroup` boxes follow `--border-width`** instead of staying 1px under a shape that thickens borders. `Toolbar.Input` is the
+  toolbar's 32px control height rather than 30px.
+- **The testing canon names Chromium as the browser set's engine and Firefox and WebKit as opt-in sign-off.** The apps `TESTING.md` §6e and
+  `CONFIG_BASELINE.md` said every spec runs on every engine at release, while `cloudflareWorkerSteps({ browser: true })` emits Chromium alone.
+  `CONFIG_BASELINE.md`'s `test:browser` script now matches `browserStep`'s argv.
+
 
 ---
 

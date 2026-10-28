@@ -42,7 +42,7 @@ const CONFIG: ToolbarDefinition = {
 
 async function mountRail(page: Page, placement: ToolbarPlacement = "left", config: ToolbarDefinition = CONFIG): Promise<void> {
   const html = await render(Toolbar({ config, icon, placement }));
-  await mount(page, `<div data-scope="app"><button id="before">before</button>${html}</div>`, EXPOSE);
+  await mount(page, `<div data-scope="app"><button id="before">before</button>${html}<button id="after">after</button></div>`, EXPOSE);
   await page.evaluate(() => {
     window.activations = [];
     window.forgeResume.registerScope("app", {
@@ -66,7 +66,7 @@ function tabIndexes(page: Page): Promise<number[]> {
   return page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[data-toolbar-item]")].map((el) => el.tabIndex));
 }
 
-test.describe("chrome Toolbar — anatomy", () => {
+test.describe("chrome Toolbar — anatomy", { tag: "@cross-engine" }, () => {
   test("announces itself as a toolbar with the orientation its placement implies", async ({ page }) => {
     await mountRail(page, "left");
 
@@ -101,7 +101,28 @@ test.describe("chrome Toolbar — anatomy", () => {
   });
 });
 
-test.describe("chrome Toolbar — one tab stop", () => {
+test.describe("chrome Toolbar — the flyout trigger and its panel", { tag: "@cross-engine" }, () => {
+  test("the trigger is as tall as the rail's actions", async ({ page }) => {
+    const html = await render(Toolbar({ config: CONFIG, icon }));
+    await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
+
+    const heights = await page.evaluate(() =>
+      ["select", "layers"].map((ref) => Math.round((document.querySelector(`[data-ref="${ref}"]`) as Element).getBoundingClientRect().height)),
+    );
+
+    expect(heights).toEqual([40, 40]);
+  });
+
+  test("the open panel is a dialog named by its label alone, not by its title action", async ({ page }) => {
+    await mountRail(page);
+
+    await page.click("[data-ref='layers']");
+
+    await expect(page.getByRole("dialog", { name: "Layers", exact: true })).toBeVisible();
+  });
+});
+
+test.describe("chrome Toolbar — one tab stop", { tag: "@cross-engine" }, () => {
   test("every rail stop is a focus stop and only one is tabbable", async ({ page }) => {
     await mountRail(page);
 
@@ -115,7 +136,7 @@ test.describe("chrome Toolbar — one tab stop", () => {
     await page.keyboard.press("Tab");
     expect(await focusedRef(page)).toBe("select");
     await page.keyboard.press("Tab");
-    expect(await focusedRef(page)).toBeNull();
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe("after");
   });
 
   test("the arrows a vertical rail claims move between its items", async ({ page }) => {
@@ -147,7 +168,7 @@ test.describe("chrome Toolbar — one tab stop", () => {
   });
 });
 
-test.describe("chrome Toolbar — the scope on the rail is transparent to app actions", () => {
+test.describe("chrome Toolbar — the scope on the rail is transparent to app actions", { tag: "@cross-engine" }, () => {
   test("a rail action still reaches the enclosing app scope", async ({ page }) => {
     await mountRail(page);
 
@@ -186,10 +207,10 @@ const PLACEMENT_STYLE = `<style>
   [data-slot~="toolbar-flyout"] { width: 180px; height: 90px; }
 </style>`;
 
-const RAIL_GAP = 8; // 0.5rem
+const RAIL_GAP = 6; // 0.375rem
 
 // The rect is read the instant the flyout opens, before a scale-in would have settled.
-test.describe("Toolbar — flyout placement", () => {
+test.describe("Toolbar — flyout placement", { tag: "@cross-engine" }, () => {
   test.use({ reducedMotion: "reduce" });
 
   async function openFlyout(page: Page, placement: ToolbarPlacement) {
@@ -272,7 +293,7 @@ async function openingTransitions(page: Page): Promise<string[]> {
   });
 }
 
-test.describe("Toolbar — flyout motion", () => {
+test.describe("Toolbar — flyout motion", { tag: "@cross-engine" }, () => {
   test("the flyout fades and scales in like every other popup", async ({ page }) => {
     const transitions = await openingTransitions(page);
 

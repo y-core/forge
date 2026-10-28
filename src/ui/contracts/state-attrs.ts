@@ -26,27 +26,20 @@ export const STATE_ATTRS = {
 } as const;
 
 // Literal keys, never `STATE_ATTRS.pressed`: a runtime reference would retain the whole table in
-// every bundle that spreads one of these hooks.
-const PRESSED_HOOK = { "data-pressed": "" };
-const CHECKED_HOOK = { "data-checked": "" };
-const SELECTED_HOOK = { "data-selected": "" };
-const DISABLED_HOOK = { "data-disabled": "" };
-const INVALID_HOOK = { "data-invalid": "" };
-const BUSY_HOOK = { "data-busy": "" };
-
+// every bundle that calls `stateAttrs`.
 /** Builds the state attributes for an SSR element, to be spread onto it. @public */
 export function stateAttrs(state: StateAttrsProps): Record<string, string> {
-  return {
-    ...(state.pressed ? PRESSED_HOOK : {}),
-    ...(state.checked ? CHECKED_HOOK : {}),
-    ...(state.selected ? SELECTED_HOOK : {}),
-    ...(state.disabled ? DISABLED_HOOK : {}),
-    ...(state.invalid ? INVALID_HOOK : {}),
-    ...(state.busy ? BUSY_HOOK : {}),
-    ...(state.orientation ? { "data-orientation": state.orientation } : {}),
-    ...(state.side ? { "data-side": state.side } : {}),
-    ...(state.align ? { "data-align": state.align } : {}),
-  };
+  const attrs: Record<string, string> = {};
+  if (state.pressed) attrs["data-pressed"] = "";
+  if (state.checked) attrs["data-checked"] = "";
+  if (state.selected) attrs["data-selected"] = "";
+  if (state.disabled) attrs["data-disabled"] = "";
+  if (state.invalid) attrs["data-invalid"] = "";
+  if (state.busy) attrs["data-busy"] = "";
+  if (state.orientation) attrs["data-orientation"] = state.orientation;
+  if (state.side) attrs["data-side"] = state.side;
+  if (state.align) attrs["data-align"] = state.align;
+  return attrs;
 }
 
 // `location` is the in-page marker: the reader moved *within* a page that never navigated, which is

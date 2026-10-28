@@ -8,6 +8,7 @@ import { render } from "../../testing/render";
 import { Button } from "./button";
 import { Link } from "./link";
 import { Toolbar } from "./toolbar";
+import { CONTROL_PADDING } from "./utils/recipes";
 
 const defaultItem = () => render(<Toolbar.Button>Bold</Toolbar.Button>);
 
@@ -85,8 +86,8 @@ describe("Toolbar.Button", () => {
 
   it("sizes to its container with `square`", async () => {
     expect(variantClasses(await render(<Toolbar.Button shape='square'>B</Toolbar.Button>), await defaultItem())).toEqual({
-      added: ["aspect-square", "w-full", "p-0"],
-      dropped: ["px-3"],
+      added: ["aspect-square", "h-auto", "w-full", "p-0"],
+      dropped: ["h-control-sm", "px-3"],
     });
   });
 
@@ -254,18 +255,27 @@ describe("Toolbar.Input", () => {
     const html = await render(<Toolbar.Input placeholder='Search' />);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "toolbar-input", "data-toolbar-item": "", placeholder: "Search" });
-    expect(classesOf(html)).toEqual([
-      "rounded-field",
-      "border",
-      "border-input",
-      "bg-background",
-      "px-2",
-      "py-1",
-      "text-sm",
-      "text-foreground",
-      "focus-ring",
-      "placeholder:text-muted-foreground",
-    ]);
+    expect(classesOf(html)).toEqual(["field-chrome", "w-auto", "focus-ring", "h-control-sm", "text-sm", "px-3"]);
+  });
+
+  it("takes a size like the toolbar's buttons, never as the native size attribute", async () => {
+    const html = await render(<Toolbar.Input size='lg' aria-label='Find' />);
+
+    expect(attrsOf(html)).toEqual({ "data-slot": "toolbar-input", "data-toolbar-item": "", "aria-label": "Find" });
+    expect(variantClasses(html, await render(<Toolbar.Input aria-label='Find' />))).toEqual({
+      added: ["h-control-lg", "text-base", "px-6"],
+      dropped: ["h-control-sm", "text-sm", "px-3"],
+    });
+  });
+
+  it("pads at each size with the class Button takes at that size, both read from one scale", async () => {
+    const sizes = ["sm", "md", "lg"] as const;
+    const padded = (html: string, size: (typeof sizes)[number]) => classesOf(html).includes(CONTROL_PADDING[size]);
+
+    for (const size of sizes) {
+      expect(padded(await render(<Toolbar.Input size={size} aria-label='Find' />), size)).toBe(true);
+      expect(padded(await render(<Button size={size}>Go</Button>), size)).toBe(true);
+    }
   });
 });
 
@@ -368,5 +378,54 @@ describe("Toolbar.Button asChild — an intrinsic button child's type", () => {
         ),
       ),
     ).toEqual({ type: "submit", "data-slot": "toolbar-button", "data-toolbar-item": "" });
+  });
+});
+
+describe("Toolbar — a separator runs across the toolbar's own axis", () => {
+  it("lays a vertical toolbar's separator horizontally", async () => {
+    const html = await render(
+      <Toolbar label='Tools' orientation='vertical'>
+        <Toolbar.Button>Bold</Toolbar.Button>
+        <Toolbar.Separator />
+      </Toolbar>,
+    );
+    const separator = 'data-slot="toolbar-separator"';
+
+    expect(attrOf(html, "aria-orientation", separator)).toBe("horizontal");
+    expect(classesOf(html, separator).slice(0, 2)).toEqual(["h-px", "w-full"]);
+  });
+});
+
+describe("Toolbar — a group stacks along the toolbar's own axis", () => {
+  const group = 'data-slot="toolbar-group"';
+  const inToolbar = (orientation: "horizontal" | "vertical", part = <Toolbar.Group>x</Toolbar.Group>) =>
+    render(
+      <Toolbar label='Tools' orientation={orientation}>
+        {part}
+      </Toolbar>,
+    );
+
+  it("stacks a vertical toolbar's group into a column", async () => {
+    expect(variantClasses(await inToolbar("vertical"), await inToolbar("horizontal"), group)).toEqual({ added: ["flex-col"], dropped: [] });
+  });
+
+  it("reaches a separator inside a vertical toolbar's group and lays it across the column", async () => {
+    const html = await inToolbar(
+      "vertical",
+      <Toolbar.Group>
+        <Toolbar.Button>Bold</Toolbar.Button>
+        <Toolbar.Separator />
+      </Toolbar.Group>,
+    );
+    expect(attrOf(html, "aria-orientation", 'data-slot="toolbar-separator"')).toBe("horizontal");
+  });
+
+  it("keeps a group the caller set horizontal as a row, inside a vertical toolbar", async () => {
+    const html = await inToolbar("vertical", <Toolbar.Group orientation='horizontal'>x</Toolbar.Group>);
+    expect(classesOf(html, group)).not.toContain("flex-col");
+  });
+
+  it("leaves a horizontal toolbar's group a row", async () => {
+    expect(classesOf(await inToolbar("horizontal"), group)).not.toContain("flex-col");
   });
 });

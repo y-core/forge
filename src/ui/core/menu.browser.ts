@@ -470,6 +470,17 @@ test.describe("Menu — opening focuses a row the ring can reach", () => {
     );
     expect(stops).toBe(1);
   });
+
+  test("skips a hidden first row, and ArrowDown moves on from the row it chose", async ({ page }) => {
+    await mountMenu(page, [{ id: "undo", label: "Undo" }, ...ROWS]);
+    await page.evaluate(() => document.querySelector("#undo")?.setAttribute("hidden", ""));
+
+    await page.click("[data-slot~='menu-trigger']");
+    await expect.poll(() => focusedId(page)).toBe("new");
+
+    await page.keyboard.press("ArrowDown");
+    expect(await focusedId(page)).toBe("open");
+  });
 });
 
 test.describe("Menu — link items", () => {
@@ -1168,5 +1179,74 @@ test.describe("Menu — a row's focus and state cues are not colour alone", { ta
     });
 
     expect(starts.on).toBe(starts.off);
+  });
+});
+
+test.describe("Menu — inside a paragraph", () => {
+  test("stays inside the paragraph instead of splitting it", async ({ page }) => {
+    const menu = await render(
+      Menu({
+        children: [
+          Menu.Trigger({ for: "para-menu", children: "File" }),
+          Menu.Popup({
+            triggered: true,
+            id: "para-menu",
+            children: [Menu.GroupLabel({ children: "Recent" }), Menu.Item({ for: "para-menu", children: "Open" })],
+          }),
+        ],
+      }),
+    );
+    await mount(page, `<p>text ${menu} more</p>`);
+
+    expect(
+      await page.evaluate(() => {
+        const paragraph = document.querySelector("p");
+        return {
+          paragraphs: document.querySelectorAll("p").length,
+          keepsTail: paragraph?.textContent?.includes("more") ?? false,
+          holdsRoot: paragraph?.querySelector("[data-slot~='menu']") !== null,
+          holdsPopup: paragraph?.querySelector("#para-menu") !== null,
+        };
+      }),
+    ).toEqual({ paragraphs: 1, keepsTail: true, holdsRoot: true, holdsPopup: true });
+  });
+
+  test("a group and a separator stay inside the paragraph and the group keeps its name", async ({ page }) => {
+    const menu = await render(
+      Menu({
+        children: [
+          Menu.Trigger({ for: "grouped-menu", children: "View" }),
+          Menu.Popup({
+            triggered: true,
+            id: "grouped-menu",
+            children: [
+              Menu.Group({
+                "aria-labelledby": "g",
+                children: [
+                  Menu.GroupLabel({ id: "g", children: "Recent" }),
+                  Menu.RadioItem({ for: "grouped-menu", checked: true, children: "Small" }),
+                  Menu.RadioItem({ for: "grouped-menu", children: "Large" }),
+                ],
+              }),
+              Menu.Separator({}),
+            ],
+          }),
+        ],
+      }),
+    );
+    await mount(page, `<p>text ${menu} more</p>`);
+    await page.locator("#grouped-menu-trigger").click();
+
+    expect(
+      await page.evaluate(() => {
+        const paragraph = document.querySelector("p");
+        return {
+          paragraphs: document.querySelectorAll("p").length,
+          keepsTail: paragraph?.textContent?.includes("more") ?? false,
+          holdsPopup: paragraph?.querySelector("#grouped-menu") !== null,
+        };
+      }),
+    ).toEqual({ paragraphs: 1, keepsTail: true, holdsPopup: true });
+    await expect(page.getByRole("group", { name: "Recent" })).toBeVisible();
   });
 });

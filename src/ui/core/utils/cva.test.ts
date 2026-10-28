@@ -97,4 +97,22 @@ describe("cva — compoundVariants", () => {
     expect(merged()).toBe("px-4");
     expect(merged({ class: "px-5" })).toBe("px-5");
   });
+
+  it("reads each compound's conditions once per definition, never per call", () => {
+    let reads = 0;
+    const compound = new Proxy(
+      { size: "lg" as const, class: "x" },
+      {
+        ownKeys(target) {
+          reads += 1;
+          return Reflect.ownKeys(target);
+        },
+      },
+    );
+    const sized = cva({ variants: { size: { sm: "s", lg: "l" } }, compoundVariants: [compound] });
+    const readsAtDefinition = reads;
+
+    expect([sized({ size: "lg" }), sized({ size: "sm" }), sized({ size: "lg" })]).toEqual(["l x", "s", "l x"]);
+    expect(reads).toBe(readsAtDefinition);
+  });
 });
