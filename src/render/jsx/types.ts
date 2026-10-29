@@ -29,23 +29,52 @@ interface AriaAttributes {
   "aria-label"?: string | undefined;
   "aria-labelledby"?: string | undefined;
   "aria-describedby"?: string | undefined;
+  "aria-roledescription"?: string | undefined;
+  "aria-details"?: string | undefined;
   "aria-expanded"?: boolean | "true" | "false" | undefined;
   "aria-controls"?: string | undefined;
+  "aria-owns"?: string | undefined;
+  "aria-flowto"?: string | undefined;
+  "aria-activedescendant"?: string | undefined;
   "aria-haspopup"?: boolean | "true" | "false" | "menu" | "listbox" | "tree" | "grid" | "dialog" | undefined;
   "aria-hidden"?: boolean | "true" | "false" | undefined;
+  "aria-modal"?: boolean | "true" | "false" | undefined;
   "aria-live"?: "off" | "assertive" | "polite" | undefined;
   "aria-atomic"?: boolean | "true" | "false" | undefined;
+  "aria-relevant"?:
+    | "additions"
+    | "additions removals"
+    | "additions removals text"
+    | "additions text"
+    | "additions text removals"
+    | "all"
+    | "removals"
+    | "removals additions"
+    | "removals additions text"
+    | "removals text"
+    | "removals text additions"
+    | "text"
+    | "text additions"
+    | "text additions removals"
+    | "text removals"
+    | "text removals additions"
+    | undefined;
   "aria-required"?: boolean | "true" | "false" | undefined;
   "aria-invalid"?: boolean | "true" | "false" | "grammar" | "spelling" | undefined;
+  "aria-errormessage"?: string | undefined;
   "aria-selected"?: boolean | "true" | "false" | undefined;
   "aria-checked"?: boolean | "true" | "false" | "mixed" | undefined;
+  "aria-pressed"?: boolean | "true" | "false" | "mixed" | undefined;
   "aria-disabled"?: boolean | "true" | "false" | undefined;
+  "aria-readonly"?: boolean | "true" | "false" | undefined;
   "aria-current"?: boolean | "page" | "step" | "location" | "date" | "time" | undefined;
   "aria-busy"?: boolean | "true" | "false" | undefined;
   "aria-orientation"?: "horizontal" | "vertical" | undefined;
   "aria-placeholder"?: string | undefined;
+  "aria-keyshortcuts"?: string | undefined;
   "aria-autocomplete"?: "none" | "list" | "inline" | "both" | undefined;
   "aria-multiline"?: boolean | "true" | "false" | undefined;
+  "aria-multiselectable"?: boolean | "true" | "false" | undefined;
   "aria-valuemin"?: number | undefined;
   "aria-valuemax"?: number | undefined;
   "aria-valuenow"?: number | undefined;
@@ -59,6 +88,7 @@ interface AriaAttributes {
   "aria-colcount"?: number | undefined;
   "aria-colindex"?: number | undefined;
   "aria-colspan"?: number | undefined;
+  "aria-sort"?: "none" | "ascending" | "descending" | "other" | undefined;
 }
 
 interface HtmxAttributes {

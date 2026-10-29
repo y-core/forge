@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
+import { oklchToPaintedHex, parseOklch } from "../../../tooling/gate/checks/color";
+import { validateCommentBudget } from "../../../tooling/gate/checks/comment-budget-parse";
 import {
   buildTheme,
   DIALS,
@@ -11,13 +13,14 @@ import {
   SCHEME_PRESETS,
   SHAPE_PROPERTIES,
   scaleVars,
+  schemeCss,
   shapeVars,
   splitLightDark,
   stepProperty,
 } from "./theme-contract";
-import type { DialValues } from "./types";
+import type { DialValues, ScaleFamily } from "./types";
 
-const DEFAULTS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
+const DEFAULTS = { grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 115, radius: 10, radiusField: 10, radiusBox: 16, controlH: 40 };
 
 describe("lightDark", () => {
   it("writes both branches when the modes differ", () => {
@@ -99,12 +102,12 @@ describe("scaleVars", () => {
 
   it("writes both branches for the accent solid step, which the two ramps no longer agree on", () => {
     const accent = scaleVars("accent", buildTheme(DEFAULTS).accent);
-    expect(accent[8]).toEqual(["--accent-9", "light-dark(oklch(52.00% 0.1950 267.0), oklch(50.75% 0.1950 267.0))"]);
+    expect(accent[8]).toEqual(["--accent-9", "light-dark(oklch(52.00% 0.1150 267.0), oklch(50.75% 0.1150 267.0))"]);
   });
 });
 
 describe("liveRatios", () => {
-  // No dial position fails a floor any more, so the failing branch is only reachable from a theme the
+  // No dial position fails a floor, so the failing branch is only reachable from a theme the
   // customiser cannot produce. Built here rather than swept for, so the branch stays covered.
   it("marks a pair that misses its floor with ✗", () => {
     const theme = buildTheme(DEFAULTS);
@@ -142,9 +145,16 @@ describe("shapeVars", () => {
   });
 });
 
+describe("schemeCss", () => {
+  it("emits a file forge's own stylesheet comment budget passes, with the layer waiver still on line 1", () => {
+    const css = schemeCss(buildTheme(DEFAULTS), DEFAULTS);
+
+    expect(validateCommentBudget("theme-custom.css", css)).toEqual([]);
+    expect(css.split("\n")[0]?.startsWith("/* modern-css-allow: forge-ui-platform-layer — ")).toBe(true);
+  });
+});
+
 describe("dialQuery — a dial that is not a finite number", () => {
-  // `??` passes a NaN straight through, so a share URL came out `?ah=NaN` — a link that reproduces
-  // nothing, and that `Number()` on the way back in turns into another NaN.
   it("falls back for a NaN dial rather than writing it into the URL", () => {
     const dials: DialValues = {};
     for (const dial of DIALS) dials[dial.field] = Number.NaN;
@@ -153,5 +163,38 @@ describe("dialQuery — a dial that is not a finite number", () => {
 
     expect(query.includes("NaN")).toBe(false);
     expect(query).toBe(dialQuery({}));
+  });
+});
+
+describe("buildTheme against what its own scheme file paints", () => {
+  const unpainted = (family: ScaleFamily, field: "accentChroma" | "grayChroma", hueField: "accentHue" | "grayHue"): string[] => {
+    const dial = DIALS.find((row) => row.field === field);
+    if (dial === undefined) throw new Error(`no dial named ${field}`);
+    const found: string[] = [];
+    for (let hue = 0; hue < 360; hue += 3) {
+      for (let chroma = dial.min; chroma <= dial.max; chroma += dial.step) {
+        const theme = buildTheme({ ...DEFAULTS, [hueField]: hue, [field]: chroma });
+        for (const mode of ["light", "dark"] as const) {
+          const { solid, oklch } = theme[family][mode];
+          oklch.forEach((value, step) => {
+            const point = parseOklch(value);
+            const painted = point === null ? `unparsed ${value}` : oklchToPaintedHex(point.l, point.c, point.h);
+            if (painted !== solid[step])
+              found.push(`${family} hue=${hue} chroma=${chroma} ${mode} step ${step + 1}: ${value} paints ${painted}, reported ${solid[step]}`);
+          });
+        }
+      }
+    }
+    return found;
+  };
+
+  it("reports the hex every accent step paints, at every accent chroma", () => {
+    const found = unpainted("accent", "accentChroma", "accentHue");
+    expect({ count: found.length, first: found.slice(0, 3) }).toEqual({ count: 0, first: [] });
+  });
+
+  it("reports the hex every gray step paints, at every gray tint", () => {
+    const found = unpainted("gray", "grayChroma", "grayHue");
+    expect({ count: found.length, first: found.slice(0, 3) }).toEqual({ count: 0, first: [] });
   });
 });

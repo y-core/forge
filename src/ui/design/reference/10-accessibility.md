@@ -44,10 +44,12 @@ What belongs here is the sequencing: those are decisions taken _while choosing t
 than repaired. The example below is what the failure looks like when contrast and `forge-ui-not-color-alone` are both deferred.
 
 ```tsx
+import { Alert } from "@y-core/forge/ui/core";
+
 // Wrong — two damped values against each other, and status carried by colour alone.
 <div class="rounded-md bg-muted p-4">
   <p class="text-muted-foreground">Sync failed</p>
-</div>
+</div>;
 
 // Costs: a line that is hard to read in one theme and unreadable in the other, and a failure a
 // colour-blind reader never sees as a failure.
@@ -57,7 +59,7 @@ than repaired. The example below is what the failure looks like when contrast an
   <AppIcon name="close" aria-hidden="true" />
   <Alert.Title>Sync failed</Alert.Title>
   <Alert.Description class="max-w-prose">Last attempt was rejected by the upstream API.</Alert.Description>
-</Alert>
+</Alert>;
 ```
 
 ---
@@ -105,8 +107,10 @@ could be described actually renders, so the markup never carries a dangling IDRE
 ignoring.
 
 ```tsx
+import { FormField, Input } from "@y-core/forge/ui/core";
+
 // Wrong — a placeholder standing in for a label, and an error reference invented by hand.
-<Input name="email" placeholder="Email address" aria-describedby="email-error" />
+<Input name="email" placeholder="Email address" aria-describedby="email-error" />;
 
 // Costs: the name disappears the moment the reader types, and the reference points at whatever
 // happens to own that id today.
@@ -116,7 +120,7 @@ ignoring.
   <FormField.Label name="email">Email address</FormField.Label>
   <Input name="email" type="email" field={{ name: "email", error: errors.email }} />
   <FormField.Error name="email">{errors.email}</FormField.Error>
-</FormField>
+</FormField>;
 ```
 
 ### 3b. Naming a control with no visible text
@@ -215,8 +219,10 @@ that a skeleton-only region announces nothing at all. A region that swaps under 
 is never spoken at all. The label is the utterance, so give it a real one rather than the `Loading…` default.
 
 ```tsx
+import { Skeleton, Spinner } from "@y-core/forge/ui/core";
+
 // Wrong — a shimmering block and nothing at all for a reader who cannot see it shimmer.
-<div class="space-y-2"><Skeleton class="h-4 w-full" /><Skeleton class="h-4 w-2/3" /></div>
+<div class="space-y-2"><Skeleton class="h-4 w-full" /><Skeleton class="h-4 w-2/3" /></div>;
 
 // Costs: sighted readers know the content is coming; everyone else hears silence and then, later,
 // content that appeared from nowhere.
@@ -228,7 +234,7 @@ is never spoken at all. The label is the utterance, so give it a real one rather
     <Skeleton class="h-4 w-full" />
     <Skeleton class="h-4 w-2/3" />
   </div>
-</div>
+</div>;
 ```
 
 ---
@@ -244,10 +250,10 @@ reads attributes. The prop still reaches the element; what is lost is every lint
 
 ```tsx
 // Wrong — the label is correct at runtime and invisible to every a11y rule that would check it.
-<button {...(label !== undefined ? { "aria-label": label } : {})} />
+<button {...(label !== undefined ? { "aria-label": label } : {})} />;
 
 // Right — the declaration admits `undefined`, so the attribute stays an attribute.
-<button aria-label={label} />
+<button aria-label={label} />;
 ```
 
 The omit-when-false spread — `{...(open ? { open: true } : {})}` — is a different construct and stays: it encodes an HTML boolean-attribute semantic

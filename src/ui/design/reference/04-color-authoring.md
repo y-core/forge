@@ -16,13 +16,13 @@ Read it when a brief introduces a brand hue, or when a per-mode value has to cha
 
 - §1 The scale, and what a step means: a token names a step, and the step holds the value
 - §1a A token names a step, and the step holds the value: one declaration, both modes, no `.dark` block
-- §1b The twelve positions and their published roles: Radix's vocabulary, and where forge's mapping differs
-- §1c The namespaces the scale runs in: the greys, the absolute alphas, `--accent-12`, the fixed status hues
+- §1b The scale positions and their published roles: Radix's vocabulary, and where forge's mapping differs
+- §1c The namespaces the scale runs in: the greys, the absolute alphas, the accent ramp, the fixed status hues
 - §1d Overriding a per-mode value on the step: why overriding the semantic token fails silently
 - §2 Authoring a scale for a brand hue: the steps are operands of a mapping already written
 - §2a Author in a space that carries lightness: why every repair is a lightness move
 - §2b Keeping the tint at the ends and through the middle: a scale that bleaches its ends publishes a grey page
-- §2c How far a scheme leans: the measured ladder the four shipped schemes sit on, and the free dial
+- §2c How far a scheme leans: the ladder of tint strength the shipped schemes sit on, and the free dial
 - §2d Measuring the authored scale: the pairs `theme-base.css` consumes, and the repair that is not chroma
 - §3 Sources: the texts these two files' values and reasoning rest on
 - §3a Radix for lightness, Tailwind for chroma and hue: numbers taken, not packages, in both directions
@@ -46,7 +46,7 @@ A step is a single declaration whichever mode is showing. There is no second blo
 same element, so a scheme imported after forge's would beat one half and silently keep the other. The gate fails any `.dark` rule declaring a custom
 property.
 
-### 1b. The twelve positions and their published roles
+### 1b. The scale positions and their published roles
 
 The numbering is Radix's twelve-step scale, and so is the **lightness** of every step in every scheme. `theme-neutral.css` is achromatic, so its
 steps are Radix's `gray` unchanged; `theme-stone.css`, `theme-gray.css` and `theme-slate.css` keep those same lightnesses and take their chroma and
@@ -79,15 +79,17 @@ The scale runs in namespaces, and each is declared in full:
   saving.
 - `--black-a1` … `--black-a12` and `--white-a1` … `--white-a12` — absolute alphas, declared once because a scrim has to darken whatever is behind it
   in both modes and so cannot be a gray step.
-- `--accent-12` — an alias of `--gray-12`. Forge ships no brand hue, so the accent is the gray, and an application supplies a real one by
-  re-declaring this. That extension point is why the alias exists rather than `--primary` naming a gray step directly.
+- `--accent-1` … `--accent-12` and `--accent-contrast` — the accent ramp, declared in `theme-neutral.css` at hue 267 and left in place by every
+  other shipped scheme. `--primary` reads step 9, and the soft family reads steps 3, 6 and 12. An application supplies its brand by authoring the
+  ramp (§2), or by re-pointing `--primary` alone, which then holds in both modes.
 - the fixed status hues — `--red-*`, `--blue-*`, `--emerald-*`, `--yellow-*` — plus the functional `--red-contrast`, `--blue-contrast`,
   `--emerald-contrast` and `--yellow-contrast`, Radix's name for the foreground that sits on step 9. Only the greys moved: these are still Tailwind
   stops, because a status colour is not a thing an application re-themes.
 
-Step 9 is the fill and is **held** across modes — one palette stop, no `light-dark()` — so the foreground on it has to be near-white in both, which
-is what `light-dark(var(--gray-1), var(--gray-12))` spells: step 1 in light and step 12 in dark are the same near-white seen from either mode. That
-is `--accent-contrast`'s shape, and the reason step 11 exists to carry the hue as text where the fill cannot ([`THEME_GENERATION.md`][tg-4] §4).
+Step 9 is the fill and is **held** across modes — a status hue's is one palette stop with no `light-dark()`, and `--accent-9` changes between modes
+only by a contrast nudge, never an inversion — so the foreground on it has to be near-white in both, which is what
+`light-dark(var(--gray-1), var(--gray-12))` spells: step 1 in light and step 12 in dark are the same near-white seen from either mode. That is
+`--accent-contrast`'s shape, and the reason step 11 exists to carry the hue as text where the fill cannot ([`THEME_GENERATION.md`][tg-4] §4).
 `--yellow-contrast` inverts instead — near-white on `--yellow-9` measures 1.83, so its foreground stays near-black in _both_ modes: `--gray-12` in
 light, `--gray-1` in dark.
 
@@ -141,18 +143,16 @@ brief fixes untinted greys, usually because a second brand colour has to sit bes
 
 **How much tint is a question of what else carries the identity.** A neutral calibrated to sit under a saturated accent only has to lean toward it,
 because the accent is doing the work; a scheme that is _all_ there is has to carry the identity itself, and a lean that reads as deliberate under an
-accent reads as a rendering artifact without one. Forge is the second case — `--accent-12` aliases `--gray-12`, near-black — and the headers of the
-tinted scheme files carry the measurement that settled how far their steps had to move. Measured as max−min across R/G/B at step 11, the muted-text
-step, they form a ladder: `theme-neutral.css` 0, `theme-stone.css` 12, `theme-gray.css` 20, `theme-slate.css` 42. `theme-gray.css` exists because
-the schemes before it clustered at the bottom of that ladder — neutral and stone sit twelve units apart and read as almost the same scheme — so a
-rung at every strength is what the fourth buys, not a closing of that gap.
+accent reads as a rendering artifact without one. Forge's tinted schemes are calibrated as the second case — the accent ramp is a placeholder an
+application replaces — so the shipped schemes form a ladder of tint strength: `theme-neutral.css` at none, then `theme-stone.css`, `theme-gray.css`
+and `theme-slate.css` leaning progressively further. Rungs that sit close together read as one scheme rather than as a choice between them.
 
-**How far a scheme leans is a dial, and turning it is free.** `theme-gray.css` is the first scheme to scale its chroma rather than take the Tailwind
-ramp at full strength — Tailwind's `gray` lands at 26 here, which read as more blue than a scheme called grey should be, so its chroma is scaled to
-0.8 and it lands at 20. Across the whole dial from full chroma down to 0.5, no audited ratio moves by more than 0.05: hue and chroma are free
-parameters in this construction, because every contrast measurement depends on lightness alone and the lightness ramp is shared. Re-tuning a
-scheme's character therefore costs no re-measurement, and adding a scheme costs no new contract row. The scheme file owns the factor and the values
-it produced.
+**How far a scheme leans is a dial, and turning it is free.** A scheme need not take the Tailwind ramp at full strength: `theme-gray.css` scales its
+chroma down, because full-strength Tailwind `gray` reads too blue for a scheme called grey. Across the whole dial from full chroma down to 0.5, no
+audited ratio moves by more than 0.05: hue and chroma are free parameters in this construction, because every contrast measurement depends on
+lightness alone and the lightness ramp is shared. Re-tuning a scheme's character therefore costs no re-measurement, and adding a scheme costs no new
+contract row. Each scheme's dial position is `SCHEME_PRESETS` in `src/ui/contracts/theme/theme-contract.ts`, and `color.test.ts` beside it rebuilds
+every shipped scheme file from it.
 
 ### 2d. Measuring the authored scale
 

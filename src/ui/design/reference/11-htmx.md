@@ -34,7 +34,7 @@ parent's layout — unless the fragment is a single inline value such as a count
 The handler that renders it can be hit directly — by a bookmark, by a retry, by a reload — and what comes back has to be legible on its own.
 
 Default: give every swappable region three states of its own — empty, in-flight, and error — before writing the success case — unless the region can
-never be any of the three. <!-- rule:forge-ui-htmx-fragment-states --> `forge-ui-empty-state` is the Floor for the empty one; this rule extends the
+never be in any of them. <!-- rule:forge-ui-htmx-fragment-states --> `forge-ui-empty-state` is the Floor for the empty one; this rule extends the
 obligation to the other two, because a fragment's error path is a _response body_, not an exception the page handles.
 
 Default: return the empty state from the fragment handler itself rather than branching in the parent — unless the parent must also collapse a
@@ -60,20 +60,23 @@ the first response pushes everything below it down, and a reader mid-click on so
 region a height before the network is involved at all.
 
 ```tsx
+import { liveSearch } from "@y-core/forge/render/htmx";
+import { Input, Skeleton } from "@y-core/forge/ui/core";
+
 // Wrong — the target empties on request, so the page jumps twice per search keystroke.
-<Input name="q" {...liveSearch({ get: "/search", target: "#results" })} />
-<div id="results" />
+<Input name="q" {...liveSearch({ get: "/search", target: "#results" })} />;
+<div id="results" />;
 
 // Costs: every debounced keystroke reflows the page below the results, and a reader who cannot see
 // the spinner has no signal at all.
 
 // Right — the box is held open at the shape of what is coming, and the wait is announced once.
-<Input name="q" {...liveSearch({ get: "/search", target: "#results" })} />
+<Input name="q" {...liveSearch({ get: "/search", target: "#results" })} />;
 <div id="results" class="min-h-48 space-y-2" aria-busy="false">
   <Skeleton class="h-16 w-full" />
   <Skeleton class="h-16 w-full" />
   <Skeleton class="h-16 w-full" />
-</div>
+</div>;
 ```
 
 ---
@@ -133,11 +136,14 @@ being replaced. <!-- rule:forge-ui-htmx-restore-focus --> This is usually free: 
 the search field, or the row's content rather than the row.
 
 ```tsx
+import { formSubmit, SWAP } from "@y-core/forge/render/htmx";
+import { Button, Form, Input } from "@y-core/forge/ui/core";
+
 // Wrong — outerHTML on the form replaces the submit button the reader just pressed.
 <Form {...formSubmit({ post: "/subscribe", target: "#subscribe-form" })} id="subscribe-form">
   <Input name="email" type="email" />
   <Button type="submit">Subscribe</Button>
-</Form>
+</Form>;
 
 // Costs: on every submit, success or failure, focus lands on <body>. A keyboard reader has to Tab
 // back through the whole page to reach the error message about their own email address.
@@ -146,8 +152,8 @@ the search field, or the row's content rather than the row.
 <Form {...formSubmit({ post: "/subscribe", target: "#subscribe-result", swap: SWAP.innerHtml })}>
   <Input name="email" type="email" />
   <Button type="submit">Subscribe</Button>
-</Form>
-<div id="subscribe-result" class="min-h-10" />
+</Form>;
+<div id="subscribe-result" class="min-h-10" />;
 ```
 
 Where the triggering control genuinely must be inside the swap — an inline edit that becomes a display row — the replacement has to place focus

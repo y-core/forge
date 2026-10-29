@@ -15,10 +15,10 @@ const labels = (tier: GateTier): string[] => {
 };
 
 /** The steps that need a runtime, and so exist nowhere below `runtime`. */
-const RUNTIME_ROWS = ["test:browser", "test:workerd", "db:lint", "db:schema"];
+const RUNTIME_ROWS = ["test:workerd", "db:lint", "db:schema"];
 
-/** The steps a deploy is the first run to reach. */
-const DEPLOY_ONLY = ["validate-changelog"];
+/** The steps a deploy is the first run to reach; the Chromium suite is one, too slow for the run a task closes on. */
+const DEPLOY_ONLY = ["validate-changelog", "test:browser"];
 
 /** The engine matrix, which a release is the only run to reach. */
 const RELEASE_ONLY = ["test:browser:firefox", "test:browser:webkit"];
@@ -50,17 +50,17 @@ describe("the gate a release runs", () => {
     expect(RELEASE_ONLY.filter((label) => labels("deploy").includes(label))).toEqual([]);
   });
 
-  it("publishes a script per tier something runs, the bare one running the runtime tier", () => {
+  it("publishes a script per tier, the bare one running the runtime tier", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
     const gate = "bun run src/tooling/root/bin.ts verify";
 
-    expect([scripts.verify, scripts["verify:static"], scripts["verify:unit"], scripts["verify:release"]]).toEqual([
+    expect([scripts.verify, scripts["verify:static"], scripts["verify:unit"], scripts["verify:deploy"], scripts["verify:release"]]).toEqual([
       gate,
       `${gate} --tier static`,
       `${gate} --tier unit`,
+      `${gate} --tier deploy`,
       `${gate} --tier release`,
     ]);
-    expect(scripts["verify:deploy"]).toBeUndefined();
     expect(scripts.prepublishOnly).toBe("bun run verify:release");
   });
 

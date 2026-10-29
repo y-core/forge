@@ -4,6 +4,7 @@ import type { Page } from "@playwright/test";
 import { render } from "../../testing/render";
 import { mount, withCompiledCss } from "../client/browser.fixture";
 import type { Size } from "../contracts/types";
+import { Drawer } from "../core/drawer";
 import { createIcon } from "../core/icon";
 import { Dock } from "./dock";
 import { Navbar } from "./navbar";
@@ -103,7 +104,7 @@ test.describe("Dock — gives the clearance back above its breakpoint", { tag: "
   });
 });
 
-async function mountBeside(page: Page, placement: "top" | "bottom"): Promise<void> {
+async function mountBeside(page: Page, placement: "top" | "bottom" | "right"): Promise<void> {
   const navbar = await render(Navbar({ config: NAV, resolveHref: (k: string) => `#${k}`, icon, placement }));
   const docked = await dock({ hideAbove: "never" });
   await mount(page, await withCompiledCss(placement === "top" ? `${navbar}${MAIN}${docked}` : `${MAIN}${navbar}${docked}`));
@@ -130,6 +131,25 @@ test.describe("Dock — shares the foot of the page with a bottom Navbar", { tag
     expect(Math.min(navbar, docked)).toBeGreaterThan(0);
   });
 
+  for (const placement of ["bottom", "right"] as const) {
+    test(`a ${placement} Navbar rests on top of the Dock, so its toggle is the element at its own centre`, async ({ page }) => {
+      await mountBeside(page, placement);
+
+      const stack = await page.evaluate(() => {
+        const toggle = document.querySelector("[data-slot~='navbar-toggle']") as HTMLElement;
+        const box = toggle.getBoundingClientRect();
+        const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return {
+          toggleHit: hit?.closest("[data-slot~='navbar-toggle']") === toggle,
+          navbarBottom: Math.round((document.querySelector("[data-slot~='navbar']") as Element).getBoundingClientRect().bottom),
+          dockTop: Math.round((document.querySelector("[data-slot~='dock']") as Element).getBoundingClientRect().top),
+        };
+      });
+
+      expect({ toggleHit: stack.toggleHit, navbarBottom: stack.navbarBottom }).toEqual({ toggleHit: true, navbarBottom: stack.dockTop });
+    });
+  }
+
   test("a top Navbar reserves the top edge and leaves the foot of the page to the Dock", async ({ page }) => {
     await mountBeside(page, "top");
 
@@ -143,5 +163,49 @@ test.describe("Dock — shares the foot of the page with a bottom Navbar", { tag
     await mount(page, `${await withCompiledCss(`${MAIN}${await dock()}`)}<style>html{--forge-dock-height:5rem}</style>`);
 
     expect(await clearance(page)).toEqual({ nav: 80, scroll: 80, body: 80 });
+  });
+});
+
+async function mountSheet(page: Page, modal: boolean): Promise<void> {
+  const sheet = await render(
+    Drawer({
+      id: "sheet",
+      side: "bottom",
+      open: !modal,
+      label: "Sheet",
+      children: Drawer.Footer({ children: Drawer.Close({ for: "sheet", id: "sheet-close", children: "Done" }) }),
+    }),
+  );
+  await mount(page, await withCompiledCss(`${MAIN}${sheet}${await dock({ hideAbove: "never" })}`));
+  if (modal) await page.evaluate(() => (document.querySelector("#sheet") as HTMLDialogElement).showModal());
+}
+
+function sheetStack(page: Page): Promise<{ closeHit: boolean; panelBottom: number; dockTop: number }> {
+  return page.evaluate(() => {
+    const close = document.querySelector("#sheet-close") as HTMLElement;
+    const box = close.getBoundingClientRect();
+    return {
+      closeHit: document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest("#sheet-close") === close,
+      panelBottom: Math.round((document.querySelector("#sheet") as Element).getBoundingClientRect().bottom),
+      dockTop: Math.round((document.querySelector("[data-slot~='dock']") as Element).getBoundingClientRect().top),
+    };
+  });
+}
+
+test.describe("Dock — a bottom Drawer rests on top of it", { tag: "@cross-engine" }, () => {
+  test.use({ viewport: { width: 375, height: 667 }, reducedMotion: "reduce" });
+
+  test("a non-modal bottom Drawer rests on top of the Dock, so its last control is the element at its own centre", async ({ page }) => {
+    await mountSheet(page, false);
+
+    const stack = await sheetStack(page);
+    expect({ closeHit: stack.closeHit, panelBottom: stack.panelBottom }).toEqual({ closeHit: true, panelBottom: stack.dockTop });
+  });
+
+  test("a modal bottom Drawer rests on top of the Dock too, its last control still the element at its own centre", async ({ page }) => {
+    await mountSheet(page, true);
+
+    const stack = await sheetStack(page);
+    expect({ closeHit: stack.closeHit, panelBottom: stack.panelBottom }).toEqual({ closeHit: true, panelBottom: stack.dockTop });
   });
 });

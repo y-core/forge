@@ -131,6 +131,36 @@ describe("mountTooltip", () => {
     expect(content.calls).toEqual([]);
   });
 
+  it("closes on Escape with the focus elsewhere, leaving the key's default to the page", () => {
+    const { doc, root, content, win } = tooltip();
+    const real = content.matches.bind(content);
+    content.matches = (selector: string) => selector === ":popover-open" || real(selector);
+    const elsewhere = doc.createElement("INPUT");
+    doc.body.append(elsewhere);
+    elsewhere.focus();
+    mountTooltip(root as never);
+
+    const escape = new FakeEvent("keydown", { key: "Escape" });
+    elsewhere.dispatchEvent(escape);
+    win.flush();
+
+    expect({ prevented: escape.defaultPrevented, calls: content.calls }).toEqual({ prevented: false, calls: ["hide"] });
+  });
+
+  it("claims Escape when the focus is on the trigger", () => {
+    const { root, trigger, content, win } = tooltip();
+    const real = content.matches.bind(content);
+    content.matches = (selector: string) => selector === ":popover-open" || real(selector);
+    trigger.focus();
+    mountTooltip(root as never);
+
+    const escape = new FakeEvent("keydown", { key: "Escape" });
+    trigger.dispatchEvent(escape);
+    win.flush();
+
+    expect({ prevented: escape.defaultPrevented, calls: content.calls }).toEqual({ prevented: true, calls: ["hide"] });
+  });
+
   it("arms no timer for any pointer event on the trigger or the content once disposed", () => {
     const { root, trigger, content, win } = tooltip();
     mountTooltip(root as never)();

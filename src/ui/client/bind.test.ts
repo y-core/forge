@@ -1,5 +1,6 @@
 import { describe, expect, it, spyOn } from "bun:test";
 
+import { applyStateAttrs } from "../contracts/state-attrs";
 import { bindControls, isChosen, paintControl, readControl } from "./bind";
 import { FakeEvent, fakeTree, installCssEscape } from "./dom.fixture";
 import type { FakeElement } from "./dom.fixture";
@@ -16,7 +17,7 @@ function surrogate(value?: string) {
     getAttribute: (name: string) => attrs.get(name) ?? null,
     setAttribute: (name: string, next: string) => attrs.set(name, next),
     hasAttribute: (name: string) => attrs.has(name),
-    toggleAttribute: (name: string, force: boolean) => (force ? attrs.set(name, "") : attrs.delete(name)),
+    removeAttribute: (name: string) => attrs.delete(name),
     attrs,
   };
 }
@@ -148,6 +149,17 @@ describe("paintControl", () => {
     paintControl(item as unknown as Control, ["a"]);
     expect(item.getAttribute("aria-pressed")).toBe("false");
     expect(item.hasAttribute("data-pressed")).toBe(false);
+  });
+
+  it("writes a surrogate's pressed state through the state-attribute writer, then clears it", () => {
+    const written = surrogate();
+    applyStateAttrs(written as unknown as Element, { pressed: true });
+    const item = surrogate("b");
+
+    paintControl(item as unknown as Control, ["b"]);
+    expect(item.getAttribute("data-pressed")).toBe(written.getAttribute("data-pressed"));
+    paintControl(item as unknown as Control, ["a"]);
+    expect(item.getAttribute("data-pressed")).toBe(null);
   });
 
   it("paints a real input's checkedness and leaves its ARIA alone", () => {

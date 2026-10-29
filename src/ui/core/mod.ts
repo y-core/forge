@@ -73,4 +73,4 @@ export type { TurnstileProps } from "./types";
 export { cn } from "./utils/cn";
 export { cva } from "./utils/cva";
 export type { CompoundVariant, VariantProps } from "./utils/types";
-export { toneVariants } from "./utils/tone";
+export { toneSurface, toneVariants } from "./utils/tone";

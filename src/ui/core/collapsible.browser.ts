@@ -84,7 +84,7 @@ test.describe("Collapsible", () => {
   });
 });
 
-test.describe("Collapsible — nested, under its real stylesheet", () => {
+test.describe("Collapsible — nested, under its real stylesheet", { tag: "@cross-engine" }, () => {
   test.use({ reducedMotion: "reduce" });
 
   const nested = () =>

@@ -13,8 +13,6 @@ export const PRESENTATION_ATTRS = {
   appearance: "data-appearance",
   /** The control height, one of {@link Size}. */
   size: "data-size",
-  /** A component-local enum a stylesheet reads. Never a serialized payload — that is `data-island-state`. */
-  state: "data-state",
 } as const;
 
 /** Builds the presentational attributes for an SSR element, to be spread onto it. @public */
@@ -25,6 +23,5 @@ export function presentationAttrs(presentation: PresentationAttrsProps): Record<
     ...(presentation.tone === undefined ? {} : { "data-tone": presentation.tone }),
     ...(presentation.appearance === undefined ? {} : { "data-appearance": presentation.appearance }),
     ...(presentation.size === undefined ? {} : { "data-size": presentation.size }),
-    ...(presentation.state === undefined ? {} : { "data-state": presentation.state }),
   };
 }

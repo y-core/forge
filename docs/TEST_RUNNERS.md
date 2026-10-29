@@ -59,24 +59,15 @@ decoded the way a deployed Worker decodes it. None substitutes for another, and 
 
 ### 1a. bun:test Primitives
 
-**Import all test utilities from `bun:test`** — never from a third-party test library. The one exception is the browser set, which imports
-`@playwright/test` (§1c): driving a real browser needs a browser driver, and there is no forge-owned equivalent to reach for instead. The ban is on
-_assertion and mocking_ libraries layered over a runner that already has both, and that ban is unchanged.
-
-**Keep `describe` nesting to at most two levels.** Deeper nesting costs more readability than the grouping buys.
+See [`TESTING.md`][testing-1a] §1a for the import source and the nesting limit. forge's runner is `bun:test`, and its one external test dependency
+is the browser set's driver, `@playwright/test` (§1c).
 
 Runner commands and lifecycle-hook usage are in `src/testing/README.md`.
 
 ### 1b. Custom bun:test Stub — No bun-types
 
-Forge uses a hand-written stub at `.types/bun-test.d.ts` rather than the `bun-types` package. This is a hard requirement:
-
-- `bun-types` overrides DOM's `fetch` signature with Bun-specific properties.
-- That override breaks type-checking of `fetch` in Worker code and test fakes.
-- The stub is the list of what a suite may import from `bun:test`.
-
-**Do NOT install `@types/bun` or `bun-types`, and do not reference them in `tsconfig.json` or `package.json`.** A change that adds these packages
-must be rejected.
+See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is `.types/bun-test.d.ts`, and it replaces `bun-types` and `@types/bun`:
+**never install either, or reference one from `tsconfig.json` or `package.json`.** The stub is the list of what a suite may import from `bun:test`.
 
 ### 1c. The Browser Set
 
@@ -88,9 +79,8 @@ must be rejected.
 that ruling's single home. The bare name is resolved off the runner's `binDir`, as every command step's is — a gate never reaches a registry to
 find what it runs.
 
-**The set runs from the `runtime` tier, and the reason is a prerequisite, not cost.** It needs the Playwright server, and a prerequisite is the
-only legitimate ground for holding a step out of `unit`. Cost never is ([`TESTING.md`][testing-6c] §6c). Chromium's row runs under a bare
-`bun run verify`, narrowed to the specs the pending changes reach; §1g's Firefox and WebKit rows run only at `release`.
+**Chromium's row runs from `deploy`, whole, for the reason [`TESTING.md`][testing-1c] §1c gives**; §1g's Firefox and WebKit rows run only at
+`release`.
 
 **A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
 
@@ -102,29 +92,12 @@ only on request. `playwright.config.ts` owns the variable that names each server
 co-location, so `bun run verify:unit`, which runs no browser, can certify as tested a module whose only test it did not run. Demanding a second
 unit file would buy a fake one, which is worse.
 
-**`bun test` is untouched by it.** The two never share a process, so no global is ever redefined and forge's Cloudflare `Request` / `Response` /
-`fetch` semantics stay exactly as the runtime ships them — which matters, because forge is a Workers framework and those semantics _are_ the
-product. File discovery cannot collide either: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is neither.
+**`bun test` and the browser set never share a process, and forge registers no DOM shim**, for the reasons [`TESTING.md`][testing-1c] §1c gives.
+File discovery cannot collide either: `bun test` matches `*.test.*` / `*.spec.*`, and `*.browser.ts` is neither.
 
-**This is also why forge registers no DOM shim.** Registering one defines hundreds of globals and shadows Bun natives the rest of the suite
-exercises, and a shim that models the platform imperfectly certifies a component against features the real browser has and the model does not.
-
-**What each runner is sufficient evidence for:**
-
-| Claim | Proven by |
-| --- | --- |
-| the server emitted this exact markup | `bun test`, exact-HTML assertion (§3) |
-| a pure function returns this value | `bun test` |
-| a controller moves focus / writes an attribute / consumes a key | **the browser set only** |
-| a request is decoded the way a deployed Worker decodes it | **the workerd set only** (§1f) |
-
-**An SSR string is not sufficient evidence for a controller**, and a behaviour test does not subsume an exact-HTML test — a component can behave
-correctly while emitting markup no stylesheet matches. Where a rebuild changes markup, the exact-HTML test is _updated_, never replaced by a
-behaviour test.
-
-**A case in the browser set asserts a DOM or focus state, never a call count.** It builds real markup — rendered by the real SSR components wherever
-possible — dispatches a real event through the browser's own input path, and reads what resulted. A test that counts calls is testing the test's own
-fixture.
+**What each runner is sufficient evidence for** is [`TESTING.md`][testing-1c] §1c's table, and forge adds a row: a request decoded the way a
+deployed Worker decodes it is proven by **the workerd set only** (§1f). A browser case renders its markup with the real SSR components wherever
+possible.
 
 **`mount`'s `css` option cannot prove an `@utility`, and a spec that seems to is passing for another reason.** The option serves the stylesheets
 **raw, with no Tailwind build**, so a `state-busy` or a `focus-ring` in the mounted markup resolves to nothing at all — a computed-style assertion
@@ -196,8 +169,8 @@ wrote under `--persist-to`, which the harness cannot read, so it serves no Worke
 **The compose cases run on a bounded pool, `CASE_CONCURRENCY` in `tests/workerd/db-compose.workerd.ts`.** Each case spawns wrangler many times
 over, so running every case at once exhausts memory and the OOM killer takes the gate down; a small pool keeps most of the wall-clock win.
 
-**The set runs from the `runtime` tier, narrowed to the specs the pending changes reach, and the reason is a prerequisite, not cost** — the same
-ground the browser set runs there on (§1c).
+**The set runs from the `runtime` tier, narrowed to the specs the pending changes reach, and the reason is a prerequisite, not cost**
+([`TESTING.md`][testing-6c] §6c).
 `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
 
 **`test` does not reach `tests/workerd/`, so that this set is not also `unit`'s.** A spec here needs a runtime start, and `unit` is the run for
@@ -209,14 +182,21 @@ a machine with no runtime installed.
 application those engines are an opt-in that runs every spec ([`TESTING.md`][testing-apps-6e] §6e).
 
 **A spec joins the subset when its assertion reads something the engine computes rather than something forge's JavaScript wrote.** That covers CSS
-layout and anchor placement; top-layer, popover, dialog, invoker and light-dismiss behaviour; forced colors and UA styling; no-script platform
-defaults; and the focus and `:focus-visible` heuristics. Engines disagree there, and a Chromium-only run is green wherever they do.
+layout and anchor placement; top-layer, popover, dialog, invoker and light-dismiss behaviour; forced colors and UA styling; resolved colour and
+contrast, which forge's tokens reach through `light-dark()` and `color-mix()`; no-script platform defaults; and the focus and `:focus-visible`
+heuristics. Engines disagree there, and a Chromium-only run is green wherever they do.
 
 **A spec stays Chromium-only when a second engine could not tell it anything, or could not run it:** forge's own DOM logic — signals, binding,
 htmx glue, resume — and a spec needing a Chromium-only Playwright capability, CDP's virtual WebAuthn authenticator or the accessibility tree.
 
-**The tag is `@cross-engine`, on every top-level `describe` or bare `test` of the file.** The `firefox` and `webkit` projects select it by `grep`;
-the `chromium` project has no `grep` and runs everything. A file tagged in part leaves its untagged cases silently Chromium-only.
+**The tag is `{ tag: "@cross-engine" }` on a top-level `describe` or bare top-level `test`, and that block is the unit.** A block is judged by
+what its own assertions read, so one file may hold tagged and untagged blocks side by side, and a `describe` or `test` inside a top-level `for` is a
+block of its own. The `firefox` and `webkit` projects select the tag by `grep`; the `chromium` project has no `grep` and runs everything.
+**`validate-cross-engine-tags` holds the unit:** it fails an untagged block that makes one of the engine reads
+`src/tooling/gate/checks/cross-engine-tags.ts` names, directly or through a helper in its file or a `*.fixture.ts` it imports, and fails
+`@cross-engine` written anywhere else, in a title or on a nested case. **A block it flags wrongly is tagged, never excused** — an extra engine run
+costs time, and a missed one hides a defect. It cannot tell an engine's focus heuristic from forge moving focus itself, so a block that reads
+`document.activeElement` is tagged by the test above, not by the check.
 
 **A skip on one engine is either a forge defect or a missing platform behaviour, and its reason says which.** A forge defect is filed as a `bug`
 task before the skip is written, and the reason reads `"<task-id>: <symptom on this engine>"`, so the task that fixes it is the one that removes it.
@@ -255,14 +235,9 @@ The JSX renderer escapes **every** string child, static and interpolated alike. 
 | `>` (greater-than) | `&gt;` |
 | `"` in attributes | `&#34;` or `&quot;` |
 
-**Static text in the JSX source is escaped exactly as an interpolated value is** — `<p>Tom & Co</p>` and `<p>{name}</p>` produce the same entities.
-Never assert raw `&`, `<`, `>`, `'` or `"` on the strength of a literal being written in the source.
-
-**The one bypass is `SafeHtml`:** a child that passed through `rawHtml` is emitted verbatim. Assert the unescaped form there, and only there. See
-`src/render/jsx/render-to-string.ts`.
-
-**URL-bearing attributes are a further exception:** the renderer routes `href` / `src` / `action` through `safeUrl`, so a `javascript:` URL renders
-as `"#"`. Assert the sanitized form.
+See [`TESTING.md`][testing-3a] §3a for the rule and its two bypasses; the table above is the map it defers to. In forge the trusted value is a
+`SafeHtml` from `rawHtml`, and every attribute in `URL_ATTRS` (`src/render/jsx/render-to-string.ts`) passes through `safeUrl`, so a `javascript:`
+URL renders as `"#"`.
 
 ### 3b. Exact Match — Never Substring Matching
 
@@ -270,7 +245,8 @@ See [`TESTING.md`][testing-3b] §3b for the exact-match rule and why a substring
 
 ### 3c. Render Once, Assert Once
 
-**Render through `render()` from `@y-core/forge/testing` (§7c) and assert the full markup with one `toBe`.**
+See [`TESTING.md`][testing-3c] §3c for the rule. In forge the shared helper is `render()` from `@y-core/forge/testing` (§7c), and the one exact
+assertion is a `toBe`:
 
 ```ts
 import { render } from "@y-core/forge/testing"
@@ -281,9 +257,6 @@ it("renders the exact button markup", async () => {
   )
 })
 ```
-
-**Do not call the private `render/jsx` render path, do not render twice to assert two fragments, and do not fall back to `toContain` / `toMatch`.**
-A single entity-aware `toBe` on the full output is the only accepted shape.
 
 **One whole-element assertion per `ui/core` component test file, and it is the HTML-escaping case.** Every other case in the file reads back only
 the attributes or the classes it is actually about, through `attrsOf`, `attrOf`, `classesOf` or `variantClasses` from `src/testing/markup.ts`.
@@ -298,9 +271,9 @@ See [`TESTING.md`][testing-3d] §3d for the delete-the-mechanism check, the fail
 with its having been armed. Here, the disposal guard is `if (disposed) return;` in a lazy-loading controller, and the absent subject is
 `expect(probe?.[0]).not.toBe("x")`, which passes once `probe` has been deleted outright.
 
-This does not weaken §1c's rule that a browser case asserts a DOM state rather than a call count. What is counted here is the **platform's** own
-invocation — a timer callback firing, a property being read — which _is_ the mechanism. §1c bans substituting a count of calls into the test's own
-fixture for the DOM state a controller was supposed to produce; where the subject is a DOM state, assert the DOM state.
+This does not weaken [`TESTING.md`][testing-1c] §1c's rule that a browser case asserts a DOM state rather than a call count. What is counted here is
+the **platform's** own invocation — a timer callback firing, a property being read — which _is_ the mechanism. That rule bans substituting a count
+of calls into the test's own fixture for the DOM state a controller was supposed to produce; where the subject is a DOM state, assert the DOM state.
 
 **The `page.clock` corollary.** Instrumentation of a page global — a wrapped `setTimeout`, an accessor over a third-party global — is installed
 **after** the harness's `mount` and after `page.clock.install()`. `setContent` replaces the document and discards every window mutation made before
@@ -390,15 +363,14 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 See [`TESTING.md`][testing-6] §6 for the one command and its tiers, the flag table, the lines between the tiers, and the scoped-run rule.
 `config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
-**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, never a speed estimate**, and an omitted `tier` is `static`. `unit` adds
-`test`; `runtime` adds the runtime suites on Chromium and the database rows (§1c, §1f); `deploy` runs those whole and adds the rows that judge a
+**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, never a speed estimate**, and an omitted `tier` is `static`. `unit` adds `test`;
+`runtime` adds the workerd suite and the database rows (§1f); `deploy` runs those whole and adds the Chromium set (§1c) and the rows that judge a
 finished change; `release` adds §1g's Firefox and WebKit rows (§1c). `test` covers every co-located suite that judges nothing external — `src/`,
 `config/` and `warden/src/` — so `unit` runs those alone and the workerd set is reached only through its own step (§1f).
 
-**forge's browser and workerd rows run whole when a change reaches what a spec loads without importing it**: a module `mount`'s `expose` bundles
-from a string, a file named by `new URL(…, import.meta.url)`, or a Worker config with its `main`'s closure. `config/spec-reach.ts` is their
-`widen`, and refuses any such site it cannot read as a literal. A fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`
-on both. The ruling is forge's own, because `mount` is a fixture forge does not publish.
+**forge's workerd row runs whole when a change reaches what a spec loads without importing it**: a file named by `new URL(…, import.meta.url)`,
+or a Worker config with its `main`'s closure. `config/spec-reach.ts` is its `widen`, and refuses any such site it cannot read as a literal. A
+fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`.
 
 **forge's tag runs `unit` on the remote, not `deploy`**: `forge release` refuses to tag a tree `verify:release` has not passed, and that answers
 `deploy` ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
@@ -582,9 +554,14 @@ not. `key` is `barrel/component`, the spelling a coverage manifest's own keys us
 [sb-2c]: ./STORAGE_BINDINGS.md#2c-kvstore-operations
 [sot-2a]: ./SOURCE_OF_TRUTH.md#2a-package-and-configuration-facts
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
+[testing-1a]: ../warden/canon/libs/TESTING.md#1a-runner-primitives
+[testing-1b]: ../warden/canon/libs/TESTING.md#1b-no-runtime-specific-type-package
+[testing-1c]: ../warden/canon/libs/TESTING.md#1c-the-browser-set
 [testing-2]: ../warden/canon/libs/TESTING.md#2-co-located-test-files
 [testing-2c]: ../warden/canon/libs/TESTING.md#2c-import-concrete-files-in-tests
+[testing-3a]: ../warden/canon/libs/TESTING.md#3a-assert-the-escaped-form
 [testing-3b]: ../warden/canon/libs/TESTING.md#3b-exact-match--never-substring-matching
+[testing-3c]: ../warden/canon/libs/TESTING.md#3c-render-once-assert-once
 [testing-3d]: ../warden/canon/libs/TESTING.md#3d-assert-the-mechanism-not-an-outcome-a-second-mechanism-also-guarantees
 [testing-4]: ../warden/canon/libs/TESTING.md#4-fakes-over-mocks
 [testing-4a]: ../warden/canon/libs/TESTING.md#4a-fake-pattern--implement-the-interface

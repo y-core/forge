@@ -18,7 +18,7 @@ description: "Leverage the shared library before writing app code, never bypass 
 - §1 Leverage the Library First: check before implementing any cross-cutting concern
 - §1a The Check, Before Writing Code: what to search and in what order
 - §1b Capability Classes the Library Owns: where the answer is almost always yes
-- §1c What Application Code Is For: the four legitimate categories
+- §1c What Application Code Is For: the legitimate categories
 - §1d The Gate Steps Are a Capability Too: wiring a published step builder, and the one that gates the comment budget
 - §2 Never Bypass the Facade: one import path per dependency
 - §2a Import Through the Library Subpath, Always: the rule

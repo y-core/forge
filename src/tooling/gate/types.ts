@@ -147,7 +147,7 @@ export interface CloudflareWorkerStepOptions {
   root?: string;
   /** Whether to emit the `forge db` rows: the digests in `static`, the lint and the replay in `runtime`. Defaults to `false`. */
   db?: boolean;
-  /** `true` emits the `runtime`-tier `test:browser` row on Chromium; `engines` is handed to {@link browserSteps}. Defaults to `false`. */
+  /** `true` emits the `deploy`-tier `test:browser` row on Chromium; `engines` is handed to {@link browserSteps}. Defaults to `false`. */
   browser?: boolean | { engines: readonly [BrowserEngine, ...BrowserEngine[]] };
   /** Whether to emit the `runtime`-tier `test:workerd` step. Defaults to `false`. */
   workerd?: boolean;
@@ -229,6 +229,46 @@ export interface GateReceipt {
   labels: readonly string[];
 }
 
+/** How a step ended in a reported run: `setup` when the suite never reached a test, `skipped` when a dependency absent below `runtime` excused it, `unreached` when an earlier step failed first. @public */
+export type StepStatus = "passed" | "failed" | "setup" | "skipped" | "untouched" | "unreached";
+
+/** One failing test, as a step's results file records it. @public */
+export interface TestFailure {
+  /** The Playwright project the test ran under. */
+  engine: string;
+  /** As the runner names it, relative to its test directory. */
+  spec: string;
+  /** Every enclosing `describe` and then the test, joined by ` › `. */
+  title: string;
+  /** The first line of the first error, bounded. */
+  error: string;
+}
+
+/** One step's line in `report.json`. @public */
+export interface StepReport {
+  label: string;
+  status: StepStatus;
+  durationMs: number;
+  /** The step's whole output, as a file name inside the report directory; absent for a step that never ran. */
+  log?: string;
+  /** Present only on a step that declares `results` and whose file recorded a test result. */
+  failures?: readonly TestFailure[];
+}
+
+/** What `--report <dir>` writes as `report.json`, whatever the verdict. @public */
+export interface GateRunReport {
+  tier: GateTier;
+  /** The `HEAD` commit; absent in a repository with no commit. */
+  head?: string;
+  /** `git write-tree` over the working tree; absent outside a git work tree. */
+  tree?: string;
+  /** ISO 8601. */
+  startedAt: string;
+  durationMs: number;
+  verdict: "pass" | "fail";
+  steps: readonly StepReport[];
+}
+
 /** A parsed `major.minor.patch` version. @public */
 export interface SemVer {
   major: number;
@@ -308,7 +348,19 @@ export interface CommandStep extends StepBase {
   leavesNoTemp?: boolean;
   /** Globs naming the TMPDIR entries the step keeps by design, which `leavesNoTemp` never reports. */
   tempCaches?: readonly string[];
+  /** Asked for only under `--report`, so a failed run names its failing tests rather than only its output. */
+  results?: StepResults;
   run?: never;
+}
+
+/** A machine-readable results file a command step writes into its TMPDIR, read before that TMPDIR is removed. @public */
+export interface StepResults {
+  /** Appended to `cmd`, so the tool writes the file. */
+  args: readonly string[];
+  /** Set to the file's path. */
+  env: string;
+  /** The failing tests the file records, or `undefined` when it records no test result at all. */
+  read: (text: string) => readonly TestFailure[] | undefined;
 }
 
 /** A step run in-process, reported from the findings it returns rather than from captured text. @public */

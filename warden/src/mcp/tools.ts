@@ -32,11 +32,10 @@ export interface ToolSpec {
 const STRING = { type: "string" } as const;
 
 function reading(title: string): ToolAnnotations {
-  // The corpus is on disk beside the repository: nothing is fetched, so the world is closed.
   return { title, readOnlyHint: true, destructiveHint: false, openWorldHint: false, idempotentHint: true };
 }
 
-/** The five tools, described against the corpus this index actually holds. @public */
+/** The tools, described against the corpus this index actually holds. @public */
 export function knowledgeTools(knowledge: Knowledge): readonly ToolSpec[] {
   const covers = coverage(knowledge.db);
   return [
@@ -173,8 +172,6 @@ export function callTool(knowledge: Knowledge, name: string, args: Record<string
     case "knowledge_search": {
       const query = typeof args.query === "string" ? args.query : "";
       if (query.trim() === "") return failure("knowledge_search needs a `query`");
-      // A misspelled corpus would reach SQL as a literal matching no row, and an empty result is
-      // this tool's contract for "nothing here governs the question".
       const corpus = typeof args.corpus === "string" ? parseCorpus(args.corpus) : undefined;
       if (typeof args.corpus === "string" && corpus === undefined) {
         return failure(`knowledge_search: \`corpus\` must be one of ${CORPORA.join(", ")}, not "${args.corpus}"`);

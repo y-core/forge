@@ -6,14 +6,14 @@ import { nameAttrs, tabId } from "../contracts/naming";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TABS_SCOPE } from "../contracts/tabs-contract";
 import type { ContainerNaming, Orientation } from "../contracts/types";
-import { mergeIdRefs } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { mergeIdRefs } from "./utils/id-refs";
 import { fillPartProps } from "./utils/part-props";
 
 interface TabsRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   orientation?: Orientation | undefined;
-  /** Select a tab as soon as it receives focus; `manual` waits for Enter, Space or a click. @default "automatic" */
+  /** Select a tab as soon as it receives focus; `manual` waits for Enter, Space or a click; defaults to `"automatic"`. */
   activation?: "automatic" | "manual" | undefined;
   children?: JSXNode | undefined;
 }

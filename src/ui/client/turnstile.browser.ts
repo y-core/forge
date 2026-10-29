@@ -48,7 +48,7 @@ declare global {
     turnstileFocusActs: string[];
     /** Fires the on-cue fake's focus grab, so the steal can be placed after a deliberate focus. */
     turnstileSteal?: () => void;
-    /** What the mount put on the form and gave back, so a dropped removal has somewhere to show. */
+    /** What the mount put on the form and gave back. */
     turnstileTeardown: { listeners: Record<string, number>; disconnects: number; timers: Array<{ id: number; delay: number }>; cleared: number[] };
     /** Every `securitypolicyviolation` the page raised, by directive and sample. */
     turnstileViolations: string[];
@@ -69,7 +69,6 @@ const FAKE_SCRIPT = `
       el.appendChild(frame);
       return "widget-1";
     },
-    // Records only: the real challenge answers later, which is what completeChallenge stands in for.
     execute: function () { window.turnstileCalls.executes += 1; },
     reset: function () {
       window.turnstileCalls.resets += 1;
@@ -95,7 +94,7 @@ function formMarkup(load: "eager" | "focus" = "focus"): Promise<string> {
   );
 }
 
-/** The same form with a second field, so a deliberate move has somewhere legitimate to land. */
+/** The same form with a second field. */
 function twoFieldFormMarkup(): Promise<string> {
   return render(
     jsx("form", {
@@ -109,7 +108,7 @@ function twoFieldFormMarkup(): Promise<string> {
   );
 }
 
-/** A form that submits itself with htmx, which is what gives the reset a URL to test against. */
+/** A form that submits itself with htmx. */
 function htmxFormMarkup(): Promise<string> {
   return render(
     jsx("form", {
@@ -228,7 +227,7 @@ const submitState = (page: Page) =>
     };
   });
 
-/** The callbacks the controller wired, sorted, so the assertion does not depend on key order. */
+/** The callbacks the controller wired, sorted. */
 const callbackKeys = (page: Page) =>
   page.evaluate(() =>
     Object.keys(window.turnstileCalls.params ?? {})
@@ -298,7 +297,7 @@ const FAKE_SCRIPT_BLURRING_FOCUS_ASYNC = `${FAKE_SCRIPT}
   };
 `;
 
-/** Grabs focus into the widget only when the test asks, so the steal can be placed after a focus of the reader's. */
+/** Grabs focus into the widget only when the test asks. */
 const FAKE_SCRIPT_STEALING_FOCUS_ON_CUE = `${FAKE_SCRIPT}
   window.turnstileFocusActs = [];
   var renderThenWait = window.turnstile.render;
@@ -315,7 +314,7 @@ const FAKE_SCRIPT_STEALING_FOCUS_ON_CUE = `${FAKE_SCRIPT}
   };
 `;
 
-/** A `render` that throws, and a `remove` that throws — the two Cloudflare calls forge wraps. */
+/** A `render` that throws, and a `remove` that throws — the Cloudflare calls forge wraps. */
 const FAKE_SCRIPT_THROWING_ON_RENDER = `${FAKE_SCRIPT}
   window.turnstile.render = function () { throw new Error('render failed'); };
 `;
@@ -347,9 +346,9 @@ const FAKE_SCRIPT_BODIES: Record<Exclude<ScriptOutcome, "abort" | "hang">, strin
   "blurs-focus-async": FAKE_SCRIPT_BLURRING_FOCUS_ASYNC,
 };
 
-/** Serve the fake Cloudflare script, and seed the recorder so assertions never read `undefined`. */
+/** Serve the fake Cloudflare script. */
 async function serveScript(page: Page, outcome: ScriptOutcome = "ok"): Promise<void> {
-  // A URL predicate, not the exact URL: the controller injects `?render=explicit`, and two cases
+  // A URL predicate, not the exact URL: the controller injects `?render=explicit`, and some cases
   // plant a bare-URL script of their own to stand in for one an app already loaded.
   await page.route(
     (url) => url.href.startsWith(TURNSTILE_SCRIPT_SRC),
@@ -362,7 +361,7 @@ async function serveScript(page: Page, outcome: ScriptOutcome = "ok"): Promise<v
   );
 }
 
-/** Reset the recorder before the script has a chance to define it, so every case can read it. */
+/** Reset the recorder before the script has a chance to define it. */
 async function seedRecorder(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.turnstileCalls = { renders: [], resets: 0, removes: 0, executes: 0, params: null };
@@ -372,8 +371,6 @@ async function seedRecorder(page: Page): Promise<void> {
 async function mountController(page: Page, selector = "#form"): Promise<void> {
   await page.evaluate(
     ({ root, event }) => {
-      // Listened for on the document, which is where a consuming app's own handler would sit: the
-      // event is dispatched on the form and bubbles.
       window.turnstileAbandoned = [];
       document.addEventListener(event, (fired) => {
         const detail = (fired as CustomEvent<{ reason: string; submitter: HTMLElement | null }>).detail;
@@ -400,8 +397,6 @@ async function engage(page: Page): Promise<void> {
   await page.evaluate(() => document.querySelector("#field")?.dispatchEvent(new FocusEvent("focusin", { bubbles: true })));
 }
 
-// A `disposed` flag inside every handler, the theme observer's callback included, makes a dropped
-// removal behaviourally invisible — so the removal itself is the only thing left to assert.
 /** Records the form's listener balance per type, observer disconnects, and every timer armed and cleared. */
 async function recordTeardown(page: Page, selector = "#form"): Promise<void> {
   await page.evaluate((root) => {
@@ -508,7 +503,7 @@ async function countTurnstileReads(page: Page): Promise<void> {
   });
 }
 
-/** Zero the read counter, so the next assertion speaks only about what happened after this point. */
+/** Zero the read counter. */
 async function zeroTurnstileReads(page: Page): Promise<void> {
   await page.evaluate(() => {
     window.forgeTurnstileReads.count = 0;
@@ -583,8 +578,6 @@ test.describe("mountTurnstile — the eager default", () => {
     await serveScript(page, "steals-focus");
     await mount(page, await formMarkup("eager"), EXPOSE);
     await countTimerFirings(page);
-    // Focused first, so the eager load starts with the user's focus already in the form: what a
-    // `resume()` after an htmx swap does, and the one case where an eager render has focus to protect.
     await page.locator("#field").focus();
     await mountController(page);
     await expect.poll(() => page.evaluate(() => window.turnstileCalls?.renders.length ?? 0)).toBe(1);
@@ -679,7 +672,6 @@ test.describe("mountTurnstile — rendering", () => {
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    // Forwarded, not dropped: `verifyTurnstile` stays the single point that decides an action.
     expect(await page.evaluate(() => window.turnstileCalls.params?.action)).toBe("contact form!");
     expect(warnings).toEqual([
       `[turnstile] action "contact form!" is outside Cloudflare's ${TURNSTILE_ACTION_PATTERN.source}; it is forwarded anyway and may be refused`,
@@ -729,7 +721,6 @@ test.describe("mountTurnstile — rendering", () => {
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    // Forwarded, not dropped: `verifyTurnstile`'s `expectedCData` stays the single point that decides it.
     expect(await page.evaluate(() => window.turnstileCalls.params?.cData)).toBe("order 4821!");
     expect(warnings).toEqual([
       `[turnstile] cData "order 4821!" is outside Cloudflare's ${TURNSTILE_CDATA_PATTERN.source}; it is forwarded anyway and may be refused`,
@@ -825,7 +816,6 @@ test.describe("mountTurnstile — rendering", () => {
     await page.evaluate(() => document.documentElement.classList.add("dark"));
 
     await expect.poll(() => page.evaluate(() => window.turnstileCalls.renders.map((each) => each.theme))).toEqual(["light", "dark"]);
-    // The old widget goes first, or the container would carry two.
     expect(await page.evaluate(() => window.turnstileCalls.removes)).toBe(1);
   });
 
@@ -988,7 +978,6 @@ test.describe("mountTurnstile — the post-render focus guard", () => {
     await page.clock.install();
     await serveScript(page);
     await mount(page, await formMarkup(), EXPOSE);
-    // Instrumented here and not a line earlier: see `countTimerFirings`.
     await countTimerFirings(page);
     await mountController(page);
     await page.locator("#field").focus();
@@ -1008,7 +997,6 @@ test.describe("mountTurnstile — the post-render focus guard", () => {
     await expect.poll(() => renderCount(page)).toBe(1);
     expect(await page.evaluate(() => document.activeElement?.tagName)).toBe("BODY");
 
-    // The reader reaches the first field in the beat between `render` returning and the steal.
     await page.locator("#field").focus();
     await page.evaluate(() => window.turnstileSteal?.());
 
@@ -1056,8 +1044,6 @@ test.describe("mountTurnstile — the reset is scoped to the form's own submissi
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    // A field-triggered reshape, bubbling to the form exactly as the submission does: burning the
-    // single-use token here is what made every reshape cost the reader a fresh challenge.
     expect(await finallyRequest(page, { status: 200, from: "#field" })).toEqual({ resets: 0, value: "typed@example.com" });
   });
 
@@ -1151,8 +1137,6 @@ test.describe("mountTurnstile — fails visible", () => {
     await mount(page, await formMarkup(), EXPOSE);
     await seedRecorder(page);
 
-    // A script injected by something else on the page and still in flight: the controller finds it,
-    // injects none of its own, and polls.
     await page.evaluate((src) => {
       const script = document.createElement("script");
       script.src = src;
@@ -1168,8 +1152,6 @@ test.describe("mountTurnstile — fails visible", () => {
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeVisible();
   });
 
-  // `clearTimers()` on the poll's success path retires the give-up timer armed beside the poll.
-  // Narrowed to a bare `clearInterval`, it fires under a rendered widget and shows "could not load".
   test("keeps the fallback hidden after a widget renders off the poll rather than the load event", async ({ page }) => {
     await page.clock.install();
     await serveScript(page, "hang");
@@ -1186,7 +1168,6 @@ test.describe("mountTurnstile — fails visible", () => {
     await engage(page);
     expect(await scriptCount(page)).toBe(1);
 
-    // The pre-existing script finally defines the API, some way into the poll rather than at load.
     await page.clock.fastForward(300);
     await page.addScriptTag({ content: FAKE_SCRIPT });
     await page.clock.fastForward(100);
@@ -1250,7 +1231,6 @@ test.describe("mountTurnstile — fails visible", () => {
       "This browser cannot run the security challenge. Please try again in a current version of Chrome, Edge, Firefox or Safari.",
     );
     await expect(page.locator(`[data-slot='${ANNOUNCER_REGION_SLOTS.assertive}']`)).toHaveText(LABEL_DEFAULTS.turnstileUnsupported);
-    // The blocker advice stays down: nothing the visitor disables would help.
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
   });
 
@@ -1268,8 +1248,6 @@ test.describe("mountTurnstile — fails visible", () => {
     expect(warnings.map((text) => text.split(";")[0])).toEqual(["[turnstile] turnstile.render() threw"]);
   });
 
-  // Scoped to the default mode: `challenge="submit"` holds the press for a bounded window by design,
-  // and its own suite below asserts that the window always ends with the button pressable again.
   test("under the default challenge='render' the submit affordance is never gated on the challenge", async ({ page }) => {
     await serveScript(page, "abort");
     const html = await render(
@@ -1314,7 +1292,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await expect.poll(() => rendered(page)).toBe(1);
 
     expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
-    // The window itself: no request yet, no token yet, and a button that says it is working.
     expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: true, busy: "true", token: null });
 
     await completeChallenge(page);
@@ -1330,7 +1307,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await pressSubmit(page);
     expect(await pressSubmit(page)).toEqual({ prevented: true, executes: 1 });
-    // Re-armed on the second press, and the first is reported lost rather than silently dropped.
     expect(await abandonments(page)).toEqual([{ reason: "superseded", submitter: "submit" }]);
 
     await completeChallenge(page);
@@ -1395,8 +1371,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     await fireCallback(page, "error-callback", 300010);
 
-    // Unheld: htmx issues the request itself and `verifyTurnstile` refuses the token-less POST,
-    // rather than the press sitting disabled for the whole execute budget on a widget that is dead.
     expect(await pressSubmit(page)).toEqual({ prevented: false, executes: 0 });
     expect(await submitState(page)).toEqual({ replayed: [], executes: 0, disabled: false, busy: null, token: null });
   });
@@ -1412,7 +1386,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await fireCallback(page, "before-interactive-callback");
     expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
 
-    // Well past the budget that would have discarded the submission out from under the visitor.
     await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS * 2);
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
     expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
@@ -1453,8 +1426,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
     await pressSubmit(page);
 
     await fireCallback(page, "before-interactive-callback");
-    // The second press re-arms the hold, and must not re-arm it on the 15s budget the visitor is
-    // in the middle of being asked to beat.
     await pressSubmit(page);
     await page.clock.fastForward(TURNSTILE_EXECUTE_TIMEOUT_MS * 2);
 
@@ -1542,8 +1513,6 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
 
     expect(await submitState(page)).toEqual({ replayed: [], executes: 1, disabled: false, busy: null, token: null });
     await expect(page.locator("[data-ref='turnstile-fallback']")).toBeHidden();
-    // Silently: teardown runs mid-swap, and the listener the event would reach is on a page that is
-    // already going away.
     expect(await abandonments(page)).toEqual([]);
   });
 
@@ -1576,7 +1545,7 @@ test.describe("mountTurnstile — the challenge runs at submit under challenge='
   });
 });
 
-test.describe("mountTurnstile — challenge='submit' against real htmx", () => {
+test.describe("mountTurnstile — challenge='submit' against real htmx", { tag: "@cross-engine" }, () => {
   const EXPOSE_HTMX = { expose: { forgeTurnstile: "./ui/client/turnstile", forgeHtmx: "./ui/client/htmx" } };
 
   /** Mounts `markup` under htmx itself, answering `/contact` with 200 and recording every request body it is sent. */
@@ -1625,7 +1594,7 @@ test.describe("mountTurnstile — challenge='submit' against real htmx", () => {
     });
   });
 
-  test("replays a press Turnstile answers inside execute() itself, sending one POST with the token @cross-engine", async ({ page }) => {
+  test("replays a press Turnstile answers inside execute() itself, sending one POST with the token", async ({ page }) => {
     const posts = await mountUnderHtmx(page, await submitModeMarkup());
     await page.evaluate(() => {
       const api = window.turnstile;
@@ -1744,7 +1713,7 @@ function reservedBoxMarkup(): Promise<string> {
   ).then(withCompiledCss);
 }
 
-test.describe("mountTurnstile — the reserved box @cross-engine", () => {
+test.describe("mountTurnstile — the reserved box", { tag: "@cross-engine" }, () => {
   const submitTop = (page: Page) => page.evaluate(() => document.querySelector("#submit")?.getBoundingClientRect().top ?? Number.NaN);
   const bottomOf = (page: Page, selector: string) =>
     page.evaluate((one) => document.querySelector(one)?.getBoundingClientRect().bottom ?? Number.NaN, selector);
@@ -1800,7 +1769,6 @@ test.describe("the turnstile scope — the capability arrives with the component
       if (message.type() === "warning") warnings.push(message.text());
     });
     await serveScript(page);
-    // A page of the 598 that have no CAPTCHA: no widget markup, so no scope, so no controller.
     await mount(page, await render(jsx("form", { id: "form", children: jsx("input", { id: "field" }) })), EXPOSE_SCOPE);
 
     await resumeOnly(page);
@@ -1876,7 +1844,6 @@ test.describe("mountTurnstile — scoped to the node it is given", () => {
       return { removes: window.turnstileCalls.removes, resets: window.turnstileCalls.resets };
     });
 
-    // One removal and one reset: A's controller is gone, and only B's still answers a submission.
     expect(after).toEqual({ removes: 1, resets: 1 });
   });
 });
@@ -1923,8 +1890,6 @@ test.describe("mountTurnstile — lifecycle", () => {
     await engage(page);
     await page.waitForFunction(() => window.turnstileCalls?.renders.length === 1);
 
-    // A second mount after the throwing teardown: it is only handed a fresh controller if the
-    // WeakMap entry was deleted, which is what the throw used to skip.
     const remounted = await page.evaluate(() => {
       const form = document.querySelector("#form") as HTMLElement;
       const first = window.turnstileCleanup;
@@ -1942,7 +1907,6 @@ test.describe("mountTurnstile — lifecycle", () => {
     await serveScript(page, "hang");
     await mount(page, await formMarkup(), EXPOSE);
     await seedRecorder(page);
-    // Instrumented here and not a line earlier: see `countTimerFirings`.
     await countTimerFirings(page);
     await mountController(page);
     await engage(page);
@@ -1960,7 +1924,6 @@ test.describe("mountTurnstile — lifecycle", () => {
     await serveScript(page, "hang");
     await mount(page, await formMarkup(), EXPOSE);
     await seedRecorder(page);
-    // Instrumented here and not a line earlier: see `countTimerFirings`.
     await countTurnstileReads(page);
 
     await page.evaluate((src) => {
@@ -1973,7 +1936,6 @@ test.describe("mountTurnstile — lifecycle", () => {
     await engage(page);
     expect(await scriptCount(page)).toBe(1);
 
-    // The poll, evidenced live before it is stopped: three ticks of the 100ms interval.
     await zeroTurnstileReads(page);
     await page.clock.fastForward(300);
     const polled = await page.evaluate(() => window.forgeTurnstileReads.count);
@@ -2020,7 +1982,6 @@ test.describe("mountTurnstile — lifecycle", () => {
     await serveScript(page);
     await mount(page, await render(Turnstile({ siteKey: "site-key" })), EXPOSE);
 
-    // The scope root *is* the widget, so this also covers the self-match the scope wiring relies on.
     const threw = await page.evaluate(() => {
       try {
         window.forgeTurnstile.mountTurnstile(document.querySelector("[data-ref='turnstile']") as HTMLElement)();
@@ -2066,8 +2027,6 @@ test.describe("mountTurnstile — the teardown surface", () => {
     expect({ before, after: await page.evaluate(() => window.turnstileTeardown.disconnects) }).toEqual({ before: 0, after: 1 });
   });
 
-  // Without the clear in `releaseHeld`, which cleanup runs, the timer outlives the mount and fires
-  // `onExecuteFailure` against a form htmx has already swapped away.
   test("clears the execute budget of a held press on dispose", async ({ page }) => {
     await page.clock.install();
     await serveScript(page);
@@ -2088,8 +2047,6 @@ test.describe("mountTurnstile — the teardown surface", () => {
     expect(await page.evaluate(() => window.turnstileTeardown.cleared)).toContain(budget);
   });
 
-  // The settle tick's callback bails on `disposed`, so only the clear itself distinguishes a retired
-  // timer from an inert one.
   test("clears the focus-guard settle tick that is still pending at dispose", async ({ page }) => {
     await serveScript(page);
     await mount(page, await twoFieldFormMarkup(), EXPOSE);

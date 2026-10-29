@@ -80,13 +80,15 @@ the scale shifts under density is [`12-density.md`][density]'s (`forge-ui-densit
 produces a row of controls whose boxes disagree by two or three pixels each — visible as a ragged edge, and untraceable to any one line.
 
 ```tsx
+import { Button } from "@y-core/forge/ui/core";
+
 // Wrong — a hand-built box that is neither on the scale nor the same height as its neighbours.
-<button class="rounded-md px-2.5 py-1.5 text-sm focus:outline-none">Retry</button>
+<button class="rounded-md px-2.5 py-1.5 text-sm focus:outline-none">Retry</button>;
 
 // Costs: a ragged control row, a focus ring that flashes on mouse clicks, and a target under the floor.
 
 // Right.
-<Button tone="neutral" appearance="outline" size="sm">Retry</Button>
+<Button tone="neutral" appearance="outline" size="sm">Retry</Button>;
 ```
 
 ---
@@ -162,7 +164,7 @@ registered as scopes, so the usual correct amount of code is the side-effect imp
 import { Toolbar } from "@y-core/forge/ui/core";
 import { ACTIVE_COMPOSITE_ITEM } from "@y-core/forge/ui/contracts";
 
-<Toolbar aria-label='Tools'>
+<Toolbar label='Tools'>
   {tools.map((t) => (
     <Toolbar.Button {...(t.id === activeTool ? { [ACTIVE_COMPOSITE_ITEM]: "" } : {})}>{t.label}</Toolbar.Button>
   ))}
@@ -253,23 +255,25 @@ Every authored moment is subject to `forge-ui-reduced-motion`, which is Floor: g
 state or an opacity-only fade. That includes the declarative `starting:` / `open:` motion above.
 
 ```tsx
+import { Dialog } from "@y-core/forge/ui/core";
+
 // Wrong — an unbounded duration, an oversized scale and slide, and no reduced-motion path.
-<Dialog class="transition-all duration-700 starting:scale-50 starting:opacity-0 starting:translate-y-8">
+<Dialog id="delete-workspace" label="Delete workspace" class="transition-all duration-700 starting:scale-50 starting:opacity-0 starting:translate-y-8">
   <p class="text-sm">Delete this workspace?</p>
-</Dialog>
+</Dialog>;
 
 // Costs: a modal that takes most of a second to become usable, and one that never stops moving for
 // a reader who asked the OS for less motion.
 
 // Right — no motion classes. The dialog already ships one response-length moment: a fade and scale, and the fade alone under reduced motion.
-<Dialog>
+<Dialog id="delete-workspace" label="Delete workspace">
   <p class="text-sm">Delete this workspace?</p>
-</Dialog>
+</Dialog>;
 
 // Right — an override of that default, which is per property and per state: this dialog slows its enter and leaves its exit on the token.
-<Dialog class="open:duration-180">
+<Dialog id="delete-workspace" label="Delete workspace" class="open:duration-180">
   <p class="text-sm">Delete this workspace?</p>
-</Dialog>
+</Dialog>;
 ```
 
 [density]: ./12-density.md

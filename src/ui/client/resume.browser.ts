@@ -79,8 +79,6 @@ test.describe("resume — delegation", () => {
     expect(log).toEqual(["act"]);
   });
 
-  // Each call owns what it resumed, so the disposers are distinct — but the delegation underneath is
-  // shared and refcounted, so a second call installs no second listener and the action fires once.
   test("a second resume() shares the delegation rather than doubling it", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "act"), EXPOSE);
 
@@ -232,7 +230,6 @@ test.describe("resume — the disposer contract", () => {
       if (!host) return null;
       const roots: HTMLElement[] = [];
       for (let i = 0; i < 5; i += 1) {
-        // What an htmx swap does to a scope: the previous markup is detached with no notice.
         host.innerHTML = html;
         const root = host.querySelector<HTMLElement>("[data-scope]");
         if (!root) return null;
@@ -318,8 +315,6 @@ test.describe("resume — the disposer contract", () => {
       const first = host.querySelector<HTMLElement>("[data-scope]");
       if (!first) return null;
       const firstState = window.forgeResume.resumeScope(first);
-      // What an htmx swap does: the previous markup is detached with no notice, and the
-      // replacement's resume is what sweeps it.
       host.innerHTML = html;
       const second = host.querySelector<HTMLElement>("[data-scope]");
       if (!second) return null;
@@ -343,8 +338,6 @@ test.describe("resume — the disposer contract", () => {
           window.forgeSignal.effect(() => {
             root.dataset.out = String(state.n?.value);
           });
-          // A still-live effect would flush this write into `data-out`, which is the ordering
-          // expressed as DOM state.
           return () => {
             const n = state.n;
             if (n) n.value = 1;
@@ -504,7 +497,7 @@ test.describe("resume — hydration", () => {
     expect(result).toEqual({ beforeInteraction: [], afterInteraction: ["setup", "act"] });
   });
 
-  test("resumeScope hydrates data-state into signals once and is idempotent", async ({ page }) => {
+  test("resumeScope hydrates data-island-state into signals once and is idempotent", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "act", { query: "hello" }), EXPOSE);
 
     const result = await page.evaluate(() => {
@@ -703,7 +696,7 @@ test.describe("resume — shadow-root discovery", () => {
   });
 });
 
-test.describe("resume — Invoker Commands bridge", () => {
+test.describe("resume — Invoker Commands bridge", { tag: "@cross-engine" }, () => {
   test("an invoker inside its target scope reaches the scope handler with a native --command", async ({ page }) => {
     const html = await render(
       Resumable({ name: "demo", id: "sink", children: jsx("button", { id: "btn", commandfor: "sink", command: "--act", children: "go" }) }),
@@ -718,8 +711,6 @@ test.describe("resume — Invoker Commands bridge", () => {
       return calls;
     });
 
-    // Proves the capture-phase registration too: `command` does not bubble, so a bubble-phase
-    // delegated listener on `document` would never see it and this would be empty.
     expect(result).toEqual(["btn"]);
   });
 
@@ -803,7 +794,6 @@ test.describe("resume — an inert element's action never runs", () => {
     expect(await page.evaluate(() => document.body.hasAttribute("data-ran"))).toBe(false);
   });
 
-  // Gated in `runAction` rather than in `dispatch`, which is what closes this second route with it.
   test("refuses the --command route", async ({ page }) => {
     const html = await render(
       Resumable({
@@ -896,8 +886,6 @@ test.describe("resume — a throwing setup is contained", () => {
     await mount(page, html, EXPOSE);
   }
 
-  // Before: the first throw aborted the eager loop, so every later scope stayed dead — and because
-  // the teardown was assigned before the loop, a retry short-circuited and never re-ran the pass.
   test("a sibling still resumes, the teardown disposes it, and a second resume re-attempts the thrower", async ({ page }) => {
     await twoScopes(page);
 
@@ -936,9 +924,7 @@ test.describe("resume — a throwing setup is contained", () => {
     expect(result.finalLog.at(-1), "the sibling did not come back on the second resume").toBe("sibling-setup");
   });
 
-  // Malformed `data-state` is server-authored markup, so it throws — and the throw is contained to
-  // its own scope by the per-scope catch above.
-  test("a scope with malformed data-state throws without taking the page down", async ({ page }) => {
+  test("a scope with malformed data-island-state never sets up, and its sibling still resumes", async ({ page }) => {
     const html = `<div data-scope="broken" data-island-state="{nope"></div><div data-scope="sibling"></div>`;
     await mount(page, html, EXPOSE);
 
@@ -965,8 +951,6 @@ test.describe("resume — a throwing setup is contained", () => {
 });
 
 test.describe("resume — installing listeners and resuming a tree are two jobs", () => {
-  // Before: `resume()` returned early on the second call, so the shadow subtree was never scanned
-  // and a web component resuming its own tree came back silently inert.
   test("resume() then resume(host.shadowRoot) runs the inner setup", async ({ page }) => {
     const inner = await render(Resumable({ name: "inner", children: jsx("span", { id: "deep", children: "deep" }) }));
     await mount(page, `<div id="host"></div><template id="source">${inner}</template>`, EXPOSE);
@@ -993,7 +977,6 @@ test.describe("resume — installing listeners and resuming a tree are two jobs"
     expect(log, "the shadow subtree was never visited").toEqual(["inner-setup"]);
   });
 
-  // Refcounted per document: the first teardown must not strip the listeners the second call relies on.
   test("the first teardown leaves the second call's delegation installed", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "ping"), EXPOSE);
 
@@ -1012,8 +995,6 @@ test.describe("resume — installing listeners and resuming a tree are two jobs"
     expect(calls, "the first disposer tore down delegation the second holder still needed").toEqual(["ping"]);
   });
 
-  // A lazily-resumed scope belongs to no call's `mine`, so without the last-holder sweep its effects
-  // outlive the runtime that stopped listening for them.
   test("the last disposer stops a lazily-hydrated scope's effects", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
 
@@ -1045,8 +1026,6 @@ test.describe("resume — installing listeners and resuming a tree are two jobs"
     });
   });
 
-  // The sweep is the last holder's job alone: a disposer that swept unconditionally would kill a
-  // scope the remaining holder still owns.
   test("disposing one of two holders leaves a lazily-hydrated scope live", async ({ page }) => {
     await mount(page, await scopeMarkup("demo", "act", { n: 0 }), EXPOSE);
 

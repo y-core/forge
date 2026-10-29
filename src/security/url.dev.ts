@@ -1,4 +1,4 @@
-import { isDevBuildArmed, whenArmed } from "../context/armed.dev";
+import { isDevBuildArmed, whenArmed } from "../relax/armed";
 import type { RelaxExtraOrigins } from "./types";
 import { isHttpsOrLoopback, LOOPBACK_ALLOWANCE } from "./url";
 import { devExtraOrigins as admitNoExtraOrigins } from "./url.strict";

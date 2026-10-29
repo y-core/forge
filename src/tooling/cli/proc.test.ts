@@ -243,6 +243,10 @@ describe("captureStreams()", () => {
     expect(result.code).toBe(1);
     expect(Date.now() - started).toBeLessThan(2_500);
   });
+
+  it("reads a real child's stdout as a string through the default spawner", () => {
+    expect(captureStreams("echo", ["hi"], {})).toEqual({ code: 0, exited: true, stdout: "hi\n", stderr: "" });
+  });
 });
 
 describe("timeoutMs on the spawning helpers", () => {

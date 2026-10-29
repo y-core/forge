@@ -47,6 +47,7 @@ restated, and the entry carries only what the Floor does not: why the pattern ge
 - §5c A `Spinner` Where a `Skeleton` Belongs: shape-agnostic, therefore always available, and a reflow
 - §5d The Modal Reflex: the most recognisable container becoming the answer to "put this somewhere"
 - §5e Motion on Everything: motion added per element rather than authored as a moment
+- §5f Geometry Keyed on the Open State: the panel is described where it is first seen, so it collapses while its exit is still fading
 
 ---
 
@@ -64,9 +65,9 @@ when a brief supplies a brand gradient, which is then declared in a theme file a
 
 A saturated purple `--primary` nobody chose, with a coloured `shadow` behind the hero control. It reads as generated because it is a default that
 was never a decision — the hue arrives with the output rather than with the product, and the glow is a light source the rest of the page does not
-have. Default: `--primary` is `--accent-12`, which forge aliases to `--gray-12` — the loaded scheme's near-black, not a hue anyone typed — and an
-accent surface is `bg-primary text-primary-foreground` with no coloured shadow behind it. <!-- rule:forge-ui-tell-neon-accent --> Override when a
-brief names the brand hue, which is set once by re-mapping `--primary` in the app's stylesheet rather than per element.
+have. Default: an accent surface is `bg-primary text-primary-foreground` with no coloured shadow behind it, and `--primary` is the theme's —
+`--accent-9`, the muted hue-267 blue `theme-neutral.css` ships, until a brief names the brand. <!-- rule:forge-ui-tell-neon-accent --> Override when
+a brief names the brand hue, which is set once by re-mapping `--primary` in the app's stylesheet rather than per element.
 
 ### 1c. A Pure Black Page
 
@@ -279,5 +280,14 @@ day pays for all of it. Default: one authored motion moment per interaction, on 
 motion at all, per `forge-ui-density-motion-budget`. <!-- rule:forge-ui-tell-motion-everywhere --> Override under a brief raising the motion dial
 for a named marketing surface, where `forge-ui-marketing-motion-ceiling` still bounds it. Every moment stays subject to `forge-ui-reduced-motion`,
 which is Floor.
+
+### 5f. Geometry Keyed on the Open State
+
+A popover or dialog whose `width`, `max-height`, `padding` or `inset` sits in its `:popover-open` or `[open]` rule rather than its base rule. It
+reads as generated because the open state is where the panel is first seen, so every property describing it is written there — but forge keeps an
+overlay painted through its exit fade after that state stops matching, so the panel collapses to its closed geometry while it is still fading out.
+Default: the base selector carries the panel's geometry and the open-state rule carries only `opacity`, `overlay` and `display`, per
+`forge-ui-platform-exit-geometry` and `forge-ui-interaction-transition-controller`. <!-- rule:forge-ui-tell-open-state-geometry --> Override when
+the geometry change is itself the motion and the exit transitions it, as `Collapsible`'s `block-size` does.
 
 [floor]: ./floor.md

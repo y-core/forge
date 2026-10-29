@@ -102,6 +102,7 @@ export const Slider: FC<SliderProps> = ({
     );
   }
 
+  const bound = typeof resolved["data-field"] === "string" ? resolved["data-field"] : undefined;
   const control = (
     <input
       data-slot={slotToken("slider", inherited)}
@@ -109,21 +110,19 @@ export const Slider: FC<SliderProps> = ({
       {...presentationAttrs({ size })}
       {...axis}
       class={sliderCls}
-      {...scopeAttrs<SliderAction>({ onInput: "sync" })}
+      {...(bound === undefined ? scopeAttrs<SliderAction>({ onInput: "sync" }) : {})}
       {...resolved}
       {...state}
     />
   );
   const readout = sanitizeRangeValue(resolved);
-  const bound = resolved["data-field"];
   return (
-    <div data-slot='slider-wrapper' data-scope={SLIDER_SCOPE} class={cn("flex gap-2", isVertical ? "flex-col items-center" : "items-center")}>
+    <div
+      data-slot='slider-wrapper'
+      data-scope={bound === undefined ? SLIDER_SCOPE : undefined}
+      class={cn("flex gap-2", isVertical ? "flex-col items-center" : "items-center")}>
       {control}
-      <output
-        data-slot='slider-output'
-        aria-live='off'
-        data-field={typeof bound === "string" ? bound : undefined}
-        class='text-sm text-muted-foreground tabular-nums'>
+      <output data-slot='slider-output' aria-live='off' data-field={bound} class='text-sm text-muted-foreground tabular-nums'>
         {readout}
       </output>
     </div>

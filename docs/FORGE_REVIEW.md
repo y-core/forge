@@ -77,6 +77,7 @@ one as the delta.
 | Barrel discipline, `export *` ban, export-map drift, `@public` symbols reaching their barrel | `bun run verify --only validate-exports` |
 | Leaf/integration classification, undeclared cross-namespace imports, stale declared edges | `bun run verify --only validate-namespace-graph` |
 | JSX pragma present and correct in every `.tsx` | `bun run verify --only validate-jsx` |
+| A top-level browser spec block that reads an engine-computed value carries `{ tag: "@cross-engine" }` | `bun run verify --only validate-cross-engine-tags` |
 | A literal `data-slot` written before a bare-identifier spread | `bun run verify --only lint` |
 | Browser-only `ui/client` import reaching a Worker-executed `src/ui` file | `bun run verify --only validate-ssr-boundary` |
 | No-sibling-barrel rule (oxlint `no-restricted-imports`) | `bun run verify --only lint` |
@@ -86,7 +87,7 @@ one as the delta.
 | The corpus against forge's API, and both rule registers against the plugin | `bun run verify --only validate-design` |
 | ARIA vocabulary validity — attribute names, role names, value shapes | `bun run verify --only lint` |
 | A pointer target under the absolute 28px Floor (`forge-ui-hit-target`) | `bun run test:browser src/ui/hit-target.browser.ts` |
-| The comment budget ([`CODE_RULES.md`][cr-5a] §5a, [`CODE_RULES.md`][cr-5f] §5f) | `bun run verify --only validate-comment-budget` |
+| The comment budget ([`CODE_RULES.md`][cr-5a] §5a, [`CODE_RULES.md`][cr-5f] §5f), stylesheets included ([`FORGE_STRUCTURE.md`][la-10] §10) | `bun run verify --only validate-comment-budget` |
 | Behaviour of the changed unit | `bun test <path>` |
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.**
@@ -234,7 +235,6 @@ re-derived. Their sentences are [`floor.md`][floor] and [`reference/10-accessibi
 | `forge-ui-a11y-required-marker` | `Label`'s `required` prop already emits the marker, so no residual shape is left to match |
 | `forge-ui-a11y-reduced-motion-pair` | Depends on whether the settled state is already the untransitioned default |
 | `forge-ui-a11y-spinner-announces` | Scoped to "the region", a boundary source text does not delimit |
-| `forge-ui-a11y-state-attrs-source` | **A mechanical form exists** — an `aria-*` Tailwind variant naming a state `STATE_ATTRS` registers — and is unadopted only because it fires twice on `TAB_BASE` in `src/ui/core/tabs.tsx`. When that site changes, the finder lands and this line moves to §3a |
 
 ---
 
@@ -382,6 +382,7 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [htmx-7b]: ./HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [iv-1a]: ./INPUT_VALIDATION.md#1a-v-namespace--complete-valibot-re-export
 [iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
+[la-10]: ./FORGE_STRUCTURE.md#10-stylesheets-take-the-source-comment-forms
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-4a]: ./FORGE_STRUCTURE.md#4a-re-export-rules-for-facade-namespaces

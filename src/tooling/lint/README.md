@@ -108,7 +108,7 @@ The register turns a rule id into the document that justifies it, and back again
 import { corpusIdOf, lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "@y-core/forge/tooling/lint";
 
 RULE_CORPUS_PATH["forge-ui-color-token-only"]; // "src/ui/design/floor.md"
-RULE_ENFORCER["forge-ui-color-token-only"]; // "lint"
+RULE_ENFORCER["forge-ui-color-token-only"]; // ["lint"]
 
 lintKeyOf("forge-ui-color-token-only"); // "color-token-only" — the oxlint rule key
 corpusIdOf("color-token-only"); // "forge-ui-color-token-only" | undefined
@@ -117,8 +117,9 @@ corpusIdOf("color-token-only"); // "forge-ui-color-token-only" | undefined
 The `forge-ui-` prefix is the whole of the mapping, and `validate-design` fails when the register and `.oxlintrc.json` disagree, so a rule cannot
 drift away from the document that states it.
 
-`RULE_ENFORCER` says which side a row is held against: a `gate` rule against the gate's own detectors, a `lint` rule against `.oxlintrc.json`,
-`contrast` against the measured colour pairs, and `browser` against the boxes a browser spec measures.
+`RULE_ENFORCER` lists every side a row is held against: a `lint` rule against `.oxlintrc.json`, `contrast` against the measured colour pairs,
+`faded-text` against the fades a class string or stylesheet writes, and `browser` against the boxes a browser spec measures. A rule whose parts read
+different things lists one enforcer per part. Its type refuses `gate`, because the gate detects no corpus rule.
 
 ---
 

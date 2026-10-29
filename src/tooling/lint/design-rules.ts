@@ -18,34 +18,34 @@ export const RULE_CORPUS_PATH: Readonly<Record<RuleId, string>> = {
   "forge-ui-a11y-one-live-region": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-a11y-aria-beside-data": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-a11y-heading-size-by-class": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-a11y-state-attrs-source": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-reduced-motion": "src/ui/design/floor.md",
   "forge-ui-focus-ring": "src/ui/design/floor.md",
   "forge-ui-optional-prop-undefined": "src/ui/design/reference/10-accessibility.md",
 };
 
-// This is what keeps a `RULE_CORPUS_PATH` row from asserting nothing once its detector has moved:
-// `checkDesign` reads the enforcer to decide which side it holds the row against.
-/** The mechanism that enforces each rule. @public */
-export const RULE_ENFORCER: Readonly<Record<RuleId, RuleEnforcer>> = {
-  "forge-ui-color-token-only": "lint",
-  "forge-ui-color-theme-no-raw-utility": "lint",
-  "forge-ui-no-inline-style": "lint",
-  "forge-ui-spacing-scale-only": "lint",
-  "forge-ui-no-nested-card": "lint",
-  "forge-ui-interaction-focus-visible": "lint",
-  "forge-ui-interaction-filter-group-required": "lint",
-  "forge-ui-catalog-wrong-raw-input": "lint",
-  "forge-ui-contrast-floor": "contrast",
-  "forge-ui-hit-target": "browser",
-  "forge-ui-a11y-label-association": "lint",
-  "forge-ui-a11y-live-politeness": "lint",
-  "forge-ui-a11y-no-aria-readonly-on-button": "lint",
-  "forge-ui-a11y-one-live-region": "lint",
-  "forge-ui-a11y-aria-beside-data": "lint",
-  "forge-ui-a11y-heading-size-by-class": "lint",
-  "forge-ui-reduced-motion": "lint",
-  "forge-ui-focus-ring": "lint",
-  "forge-ui-optional-prop-undefined": "lint",
+/** Every mechanism that enforces each rule. @public */
+export const RULE_ENFORCER: Readonly<Record<RuleId, readonly [Exclude<RuleEnforcer, "gate">, ...Exclude<RuleEnforcer, "gate">[]]>> = {
+  "forge-ui-color-token-only": ["lint"],
+  "forge-ui-color-theme-no-raw-utility": ["lint"],
+  "forge-ui-no-inline-style": ["lint"],
+  "forge-ui-spacing-scale-only": ["lint"],
+  "forge-ui-no-nested-card": ["lint"],
+  "forge-ui-interaction-focus-visible": ["lint"],
+  "forge-ui-interaction-filter-group-required": ["lint"],
+  "forge-ui-catalog-wrong-raw-input": ["lint"],
+  "forge-ui-contrast-floor": ["contrast", "faded-text"],
+  "forge-ui-hit-target": ["browser"],
+  "forge-ui-a11y-label-association": ["lint"],
+  "forge-ui-a11y-live-politeness": ["lint"],
+  "forge-ui-a11y-no-aria-readonly-on-button": ["lint"],
+  "forge-ui-a11y-one-live-region": ["lint"],
+  "forge-ui-a11y-aria-beside-data": ["lint"],
+  "forge-ui-a11y-heading-size-by-class": ["lint"],
+  "forge-ui-a11y-state-attrs-source": ["lint"],
+  "forge-ui-reduced-motion": ["lint"],
+  "forge-ui-focus-ring": ["lint"],
+  "forge-ui-optional-prop-undefined": ["lint"],
 };
 
 const PREFIX = "forge-ui-";

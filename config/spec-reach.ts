@@ -36,21 +36,11 @@ function specsIn(root: string, accept: (path: string) => boolean): string[] {
   return files.filter((path) => accept(path) && existsSync(`${root}/${path}`));
 }
 
-async function specReach(root: string, specs: readonly string[], exposeFrom?: string): Promise<string[]> {
+async function specReach(root: string, specs: readonly string[]): Promise<string[]> {
   const read = specs.map((file) => ({ file, ...readSpecReferences(readFileSync(`${root}/${file}`, "utf-8"), file) }));
   const references = [...new Set(read.flatMap(({ file, urls }) => urlReferences(root, urls, file)))];
-  const specifiers = exposeFrom === undefined ? [] : [...new Set(read.flatMap((spec) => spec.specifiers))];
-  const reached = await Promise.all([...references.map((path) => referenceReach(root, path)), importClosure(root, specifiers, exposeFrom ?? root)]);
+  const reached = await Promise.all(references.map((path) => referenceReach(root, path)));
   return [...new Set(reached.flat())].sort();
-}
-
-/** Every path, relative to `root`, a browser spec reaches without importing it: the modules it exposes, the Workers it serves and the files it names, each with its import closure. */
-export function browserSpecReach(root: string): Promise<string[]> {
-  return specReach(
-    root,
-    specsIn(root, (path) => path.startsWith("src/") && path.endsWith(".browser.ts")),
-    `${root}/src`,
-  );
 }
 
 /** Every path, relative to `root`, a workerd spec or its helpers reach without importing them: the Workers they serve and the files they name, each with its import closure. */

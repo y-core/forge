@@ -315,12 +315,13 @@ describe("forge's own production barrels", () => {
     );
   }
 
-  it("bundle no `*.dev.ts` module", async () => {
+  it("bundle no `*.dev.ts` module and no arming check", async () => {
     const inputs = await bundledInputs();
 
     const guards = ["src/security/cop.ts", "src/security/origin.ts", "src/security/rate-limit.ts"];
     expect(guards.filter((guard) => inputs.includes(guard))).toEqual(guards);
     expect(inputs.filter((input) => /\.dev\.tsx?$/.test(input))).toEqual([]);
+    expect(inputs.includes("src/relax/armed.ts")).toBe(false);
   });
 
   it("bundle every hook's development module, and the arming check, under `forge-dev`", async () => {
@@ -328,12 +329,12 @@ describe("forge's own production barrels", () => {
 
     expect(inputs.filter((input) => /\.dev\.tsx?$/.test(input)).toSorted()).toEqual([
       "src/app/error-page.dev.ts",
-      "src/context/armed.dev.ts",
       "src/form/turnstile.dev.ts",
       "src/security/cop.dev.ts",
       "src/security/rate-limit.dev.ts",
       "src/security/url.dev.ts",
     ]);
+    expect(inputs).toContain("src/relax/armed.ts");
   });
 });
 
@@ -391,13 +392,14 @@ describe("the `#relax` imports map, bundled for real", () => {
     "src/security/url.strict.ts",
   ];
 
-  it("resolves every alias to its strict stub under wrangler's conditions, bundling no `*.dev.ts`", async () => {
+  it("resolves every alias to its strict stub under wrangler's conditions, bundling no `*.dev.ts` and no arming check", async () => {
     const inputs = contributing(await bundleWorker(FORGE_ROOT, ENTRY));
 
-    expect({ stubs: STRICT_STUBS.filter((stub) => inputs.includes(stub)), dev: inputs.filter((input) => /\.dev\.tsx?$/.test(input)) }).toEqual({
-      stubs: STRICT_STUBS,
-      dev: [],
-    });
+    expect({
+      stubs: STRICT_STUBS.filter((stub) => inputs.includes(stub)),
+      dev: inputs.filter((input) => /\.dev\.tsx?$/.test(input)),
+      armingCheck: inputs.includes("src/relax/armed.ts"),
+    }).toEqual({ stubs: STRICT_STUBS, dev: [], armingCheck: false });
   });
 
   it("resolves every alias to its development module under `forge-dev`, with the arming check beside them", async () => {
@@ -405,12 +407,12 @@ describe("the `#relax` imports map, bundled for real", () => {
 
     expect(inputs.filter((input) => /\.dev\.tsx?$/.test(input)).toSorted()).toEqual([
       "src/app/error-page.dev.ts",
-      "src/context/armed.dev.ts",
       "src/form/turnstile.dev.ts",
       "src/security/cop.dev.ts",
       "src/security/rate-limit.dev.ts",
       "src/security/url.dev.ts",
     ]);
+    expect(inputs).toContain("src/relax/armed.ts");
   });
 
   async function runBundle(conditions: readonly string[], define: Record<string, string>): Promise<unknown> {

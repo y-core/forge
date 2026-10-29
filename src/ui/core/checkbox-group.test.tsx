@@ -212,7 +212,7 @@ describe("CheckboxGroup — size, invalid and busy", () => {
     ]).toEqual([ROOT, { ...ROOT, "data-size": "sm" }, { ...ROOT, "data-size": "lg" }]);
   });
 
-  it("stamps invalidity for a stylesheet but keeps aria-invalid off, which the group role forbids", async () => {
+  it("stamps invalidity for a stylesheet but keeps aria-invalid off, which ARIA 1.2 deprecates on the group role", async () => {
     expect(attrsOf(await render(<CheckboxGroup name='c' error='Required' />))).toEqual({
       ...ROOT,
       "aria-describedby": "field-c-error",
@@ -220,8 +220,8 @@ describe("CheckboxGroup — size, invalid and busy", () => {
     });
   });
 
-  it("stamps busyness for a stylesheet but keeps aria-busy off, which the group role forbids", async () => {
-    expect(attrsOf(await render(<CheckboxGroup name='c' busy />))).toEqual({ ...ROOT, "data-busy": "" });
+  it("marks busyness for a stylesheet and for assistive technology, since aria-busy is a global state", async () => {
+    expect(attrsOf(await render(<CheckboxGroup name='c' busy />))).toEqual({ ...ROOT, "data-busy": "", "aria-busy": "true" });
   });
 
   it("a caller's own aria attribute survives the state spread", async () => {

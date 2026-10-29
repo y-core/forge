@@ -31,7 +31,6 @@ const BAR_DISCLOSURE = cn(`${BAR_LINK} w-full list-none justify-between [&::-web
 /** Stamps `data-filter` (always) and an initial server-side `hidden` (when no active token matches). @internal */
 export function filterAttrs(item: { filters?: string[] | undefined }, activeFilters: string[]): Record<string, unknown> {
   // An absent list is "not filtered"; an empty one is "no token can ever match", which must hide.
-  // Collapsing the two showed a `requiredRoles()` lookup miss to every viewer.
   const filters = item.filters;
   if (filters === undefined) return {};
   const visible = filters.some((f) => activeFilters.includes(f));
@@ -43,7 +42,7 @@ export function filterAttrs(item: { filters?: string[] | undefined }, activeFilt
 /** The chevron every menu trigger carries. */
 function chevron(ctx: NavRenderCtx, cls?: string): JSXNode {
   return (
-    <span aria-hidden='true' class={cn("text-xs opacity-70", cls)}>
+    <span aria-hidden='true' class={cn("text-xs", cls)}>
       <ctx.icon
         name='chevron-down'
         width={16}

@@ -11,11 +11,11 @@ import type { PanelAppearance } from "./types";
 import type { ToastPosition } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { toneSurfaceVariants } from "./utils/tone";
+import { toneSurface } from "./utils/tone";
 
 type ToastContainerProps = JSX.IntrinsicElements["section"] & {
   position?: ToastPosition | undefined;
-  /** Accessible name for the notification region. @default LABEL_DEFAULTS.toast */
+  /** Accessible name for the notification region; defaults to `LABEL_DEFAULTS.toast`. */
   label?: string | undefined;
 };
 
@@ -24,7 +24,7 @@ type ToastProps = JSX.IntrinsicElements["div"] & {
   appearance?: PanelAppearance | undefined;
   dismissible?: boolean | undefined;
   duration?: number | undefined;
-  /** Accessible name for the dismiss button. @default LABEL_DEFAULTS.toastDismiss */
+  /** Accessible name for the dismiss button; defaults to `LABEL_DEFAULTS.toastDismiss`. */
   dismissLabel?: string | undefined;
 };
 
@@ -75,7 +75,7 @@ const ToastRoot: FC<ToastProps> = ({
       {...(interactive ? { "data-scope": TOAST_SCOPE, [ISLAND_STATE_ATTR]: JSON.stringify({ [TOAST_DURATION_KEY]: duration }) } : {})}
       class={cn(
         "pointer-events-auto relative flex w-full items-start gap-3 rounded-box border-field py-4 ps-4 pe-4 shadow-lg",
-        toneSurfaceVariants({ tone, appearance }),
+        toneSurface({ tone, appearance }),
         dismissible && "pe-10",
         cls,
       )}

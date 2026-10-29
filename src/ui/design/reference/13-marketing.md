@@ -59,9 +59,9 @@ Forge ships no marketing-specific components, and none are needed. A landing pag
 | Section | Component | How it is used |
 | --- | --- | --- |
 | Feature group | `Card` | One `Card` per feature, `Card.Title` + `Card.Description`, no footer button per card |
-| Status or category label | `Badge` | `outline` for a category, `default` for the one thing genuinely new |
+| Status or category label | `Badge` | `appearance="outline"` for a category, `tone="primary"` for the one thing genuinely new |
 | FAQ | `Accordion` | `Accordion.Item` / `.Trigger` / `.Content` — native `<details>`, so it works with no JavaScript |
-| Announcement or notice bar | `Alert` | `default` for news, `info` for a neutral fact; `warning` and `destructive` are not marketing tones |
+| Announcement or notice bar | `Alert` | `neutral` for news, `info` for a neutral fact; `warning` and `destructive` are not marketing tones |
 | Email or trial capture | `Dialog` | `Dialog.Trigger` opens it; the platform owns backdrop and Escape |
 | A named person | `Avatar` | Only with a real person's real image or initials via `Avatar.Fallback` |
 | Section separation | `Separator` | Between bands, in place of a border on each `Card` |
@@ -72,7 +72,7 @@ feature links to a materially different destination. <!-- rule:forge-ui-marketin
 Default: an FAQ renders as an `Accordion` rather than as stacked `Card`s, unless every answer is short enough that all of them fit on screen at
 once. <!-- rule:forge-ui-marketing-accordion-faq -->
 
-Default: a notice bar uses `Alert` with `default` or `info`, unless the notice reports a real service failure, which is the one case `destructive`
+Default: a notice bar uses `Alert` with `neutral` or `info`, unless the notice reports a real service failure, which is the one case `destructive`
 is earned. <!-- rule:forge-ui-marketing-alert-notice -->
 
 Default: a capture form opens in a `Dialog` triggered by an explicit control, and never on a timer, a scroll position, or an exit-intent listener,

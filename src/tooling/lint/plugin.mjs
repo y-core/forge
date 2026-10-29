@@ -18,30 +18,32 @@ var RULE_CORPUS_PATH = {
   "forge-ui-a11y-one-live-region": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-a11y-aria-beside-data": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-a11y-heading-size-by-class": "src/ui/design/reference/10-accessibility.md",
+  "forge-ui-a11y-state-attrs-source": "src/ui/design/reference/10-accessibility.md",
   "forge-ui-reduced-motion": "src/ui/design/floor.md",
   "forge-ui-focus-ring": "src/ui/design/floor.md",
   "forge-ui-optional-prop-undefined": "src/ui/design/reference/10-accessibility.md"
 };
 var RULE_ENFORCER = {
-  "forge-ui-color-token-only": "lint",
-  "forge-ui-color-theme-no-raw-utility": "lint",
-  "forge-ui-no-inline-style": "lint",
-  "forge-ui-spacing-scale-only": "lint",
-  "forge-ui-no-nested-card": "lint",
-  "forge-ui-interaction-focus-visible": "lint",
-  "forge-ui-interaction-filter-group-required": "lint",
-  "forge-ui-catalog-wrong-raw-input": "lint",
-  "forge-ui-contrast-floor": "contrast",
-  "forge-ui-hit-target": "browser",
-  "forge-ui-a11y-label-association": "lint",
-  "forge-ui-a11y-live-politeness": "lint",
-  "forge-ui-a11y-no-aria-readonly-on-button": "lint",
-  "forge-ui-a11y-one-live-region": "lint",
-  "forge-ui-a11y-aria-beside-data": "lint",
-  "forge-ui-a11y-heading-size-by-class": "lint",
-  "forge-ui-reduced-motion": "lint",
-  "forge-ui-focus-ring": "lint",
-  "forge-ui-optional-prop-undefined": "lint"
+  "forge-ui-color-token-only": ["lint"],
+  "forge-ui-color-theme-no-raw-utility": ["lint"],
+  "forge-ui-no-inline-style": ["lint"],
+  "forge-ui-spacing-scale-only": ["lint"],
+  "forge-ui-no-nested-card": ["lint"],
+  "forge-ui-interaction-focus-visible": ["lint"],
+  "forge-ui-interaction-filter-group-required": ["lint"],
+  "forge-ui-catalog-wrong-raw-input": ["lint"],
+  "forge-ui-contrast-floor": ["contrast", "faded-text"],
+  "forge-ui-hit-target": ["browser"],
+  "forge-ui-a11y-label-association": ["lint"],
+  "forge-ui-a11y-live-politeness": ["lint"],
+  "forge-ui-a11y-no-aria-readonly-on-button": ["lint"],
+  "forge-ui-a11y-one-live-region": ["lint"],
+  "forge-ui-a11y-aria-beside-data": ["lint"],
+  "forge-ui-a11y-heading-size-by-class": ["lint"],
+  "forge-ui-a11y-state-attrs-source": ["lint"],
+  "forge-ui-reduced-motion": ["lint"],
+  "forge-ui-focus-ring": ["lint"],
+  "forge-ui-optional-prop-undefined": ["lint"]
 };
 var PREFIX = "forge-ui-";
 function lintKeyOf(id) {
@@ -140,6 +142,13 @@ var MODERN_CSS_RULES = {
     replacement: "@starting-style with transition-behavior: allow-discrete",
     verify: "the starting style applies on the first style change after insertion, so an element already in the DOM never enters",
     enforcer: "lint"
+  },
+  "forge-ui-platform-exit-geometry": {
+    tier: "B",
+    severity: "warn",
+    corpus: CORPUS,
+    replacement: "geometry on the base selector, with only opacity, overlay and display keyed on the open state",
+    verify: "a declaration moved to the base selector applies while closed too, so a closed state that must differ \u2014 a drawer docked off-screen \u2014 keys that difference on :not([open])"
   },
   "forge-ui-platform-parent-state": {
     tier: "B",
@@ -698,6 +707,42 @@ var a11yOneLiveRegion = {
         }
       }
     };
+  }
+};
+
+// src/tooling/lint/rules/a11y-state-attrs-source.ts
+var STATE_ATTR_KEYS = [
+  "pressed",
+  "checked",
+  "selected",
+  "disabled",
+  "invalid",
+  "busy",
+  "orientation",
+  "side",
+  "align",
+  "instant",
+  "dismissing",
+  "state"
+];
+var ARIA_STATE = new RegExp(`(?<![a-z0-9])aria-\\[?(${STATE_ATTR_KEYS.join("|")})(?![a-z0-9-])`);
+var a11yStateAttrsSource = {
+  meta: {
+    type: "problem",
+    docs: { description: "State is read in CSS from the `data-*` hook `STATE_ATTRS` registers, never from its `aria-*` counterpart." }
+  },
+  create(context) {
+    const report = reporter(context, "forge-ui-a11y-state-attrs-source");
+    return classLiteralVisitor((found) => {
+      const hits = /* @__PURE__ */ new Map();
+      for (const token of found.text.split(/\s+/)) {
+        const state = ARIA_STATE.exec(token.slice(0, Math.max(token.lastIndexOf(":"), 0)))?.[1];
+        if (state !== void 0) hits.set(token, state);
+      }
+      for (const [token, state] of hits) {
+        report(`\`${token}\` styles from \`aria-${state}\` \u2014 read the state from \`data-${state}\`, which \`STATE_ATTRS\` registers`, found.loc);
+      }
+    });
   }
 };
 
@@ -1371,20 +1416,20 @@ function unwrap(node) {
 function isFunction(node) {
   return node?.type === "ArrowFunctionExpression" || node?.type === "FunctionExpression" || node?.type === "FunctionDeclaration";
 }
-function producesList(node, lists) {
+function producesList(node, isList) {
   const value = unwrap(node);
   if (value == null) return false;
   if (value.type === "ArrayExpression") return true;
-  if (value.type === "Identifier") return lists.has(value.name);
+  if (value.type === "Identifier") return isList(value);
   if (value.type === "LogicalExpression" || value.type === "ConditionalExpression") {
     const branches = value.type === "LogicalExpression" ? ["left", "right"] : ["consequent", "alternate"];
-    return branches.some((key) => producesList(value[key], lists));
+    return branches.some((key) => producesList(value[key], isList));
   }
   if (value.type !== "CallExpression") return false;
   const callee = value.callee;
   const method = memberName(callee);
   if (method !== void 0 && LIST_METHODS.has(method)) return true;
-  if (lists.has(nameOf(callee) ?? "")) return true;
+  if (isList(callee)) return true;
   return method === "from" && nameOf(callee.object) === "Array";
 }
 function annotatesList(node) {
@@ -1401,22 +1446,22 @@ function annotatesList(node) {
   return false;
 }
 var returnTypeOf = (node) => node.returnType;
-function blockReturnsList(node, lists) {
+function blockReturnsList(node, isList) {
   return childrenOf(node).some((child) => {
     if (isFunction(child)) return false;
-    if (child.type === "ReturnStatement") return producesList(child.argument, lists);
-    return blockReturnsList(child, lists);
+    if (child.type === "ReturnStatement") return producesList(child.argument, isList);
+    return blockReturnsList(child, isList);
   });
 }
-function yieldsList(node, lists) {
+function yieldsList(node, isList) {
   const value = unwrap(node);
   if (value == null) return false;
   if (isFunction(value)) {
     const body = value.body;
-    return annotatesList(returnTypeOf(value)) || yieldsList(body, lists);
+    return annotatesList(returnTypeOf(value)) || yieldsList(body, isList);
   }
-  if (value.type === "BlockStatement") return blockReturnsList(value, lists);
-  return producesList(value, lists);
+  if (value.type === "BlockStatement") return blockReturnsList(value, isList);
+  return producesList(value, isList);
 }
 function assertsAbsence(node) {
   const asserted = node.parent;
@@ -1429,11 +1474,28 @@ function assertsAbsence(node) {
   const value = argument?.type === "Literal" ? argument.value : void 0;
   return value === negated;
 }
-function reachesMarkup(node, names) {
+function declarationOf(identifier, sourceCode) {
+  const name = nameOf(identifier);
+  if (name === void 0) return void 0;
+  for (let scope = sourceCode.getScope?.(identifier) ?? null; scope !== null; scope = scope.upper) {
+    const variable = scope.set.get(name);
+    if (variable !== void 0) return variable.defs[0]?.node;
+  }
+  return void 0;
+}
+function reachesMarkup(node, markup, resolve) {
   if (node === void 0) return false;
-  if (node.type === "CallExpression" && names.functions.has(nameOf(node.callee) ?? "")) return true;
-  if (node.type === "Identifier" && names.values.has(node.name)) return true;
-  return childrenOf(node).some((child) => reachesMarkup(child, names));
+  if (node.type === "CallExpression") {
+    const callee = node.callee;
+    if (SEED_RENDERER.test(nameOf(callee) ?? "")) return true;
+    const declared = resolve(callee);
+    if (declared !== void 0 && markup.functions.has(declared)) return true;
+  }
+  if (node.type === "Identifier") {
+    const declared = resolve(node);
+    if (declared !== void 0 && markup.values.has(declared)) return true;
+  }
+  return childrenOf(node).some((child) => reachesMarkup(child, markup, resolve));
 }
 var exactMarkupAssertion = {
   meta: {
@@ -1441,10 +1503,22 @@ var exactMarkupAssertion = {
     docs: { description: "`toContain`, `toMatch` and `.includes` on rendered markup pass on markup that moved to the wrong element." }
   },
   create(context) {
-    const names = { functions: /* @__PURE__ */ new Set(), values: /* @__PURE__ */ new Set() };
-    const lists = new Set(LIST_HELPERS);
+    const markup = { functions: /* @__PURE__ */ new Set(), values: /* @__PURE__ */ new Set() };
+    const lists = /* @__PURE__ */ new Set();
+    const resolved = /* @__PURE__ */ new Map();
     const bindings = [];
     const candidates = [];
+    const resolve = (identifier) => {
+      if (resolved.has(identifier)) return resolved.get(identifier);
+      const declared = declarationOf(identifier, context.sourceCode);
+      resolved.set(identifier, declared);
+      return declared;
+    };
+    const isList = (identifier) => {
+      if (LIST_HELPERS.includes(nameOf(identifier) ?? "")) return true;
+      const declared = resolve(identifier);
+      return declared !== void 0 && lists.has(declared);
+    };
     const addCandidate = (node) => {
       const callee = node.callee;
       const method = memberName(callee);
@@ -1462,35 +1536,31 @@ var exactMarkupAssertion = {
     };
     return {
       CallExpression(node) {
-        const name = nameOf(node.callee);
-        if (name !== void 0 && SEED_RENDERER.test(name)) names.functions.add(name);
         addCandidate(node);
       },
       VariableDeclarator(node) {
         const declarator = node;
-        const name = nameOf(declarator.id);
-        if (name === void 0 || declarator.init == null) return;
-        bindings.push({ name, body: declarator.init, fn: isFunction(unwrap(declarator.init)) });
+        if (nameOf(declarator.id) === void 0 || declarator.init == null) return;
+        bindings.push({ declaration: node, body: declarator.init, fn: isFunction(unwrap(declarator.init)) });
       },
       FunctionDeclaration(node) {
         const declared = node;
-        const name = nameOf(declared.id);
-        if (name !== void 0 && declared.body !== void 0) {
-          bindings.push({ name, body: declared.body, fn: true, returnType: returnTypeOf(node) });
+        if (nameOf(declared.id) !== void 0 && declared.body !== void 0) {
+          bindings.push({ declaration: node, body: declared.body, fn: true, returnType: returnTypeOf(node) });
         }
       },
       "Program:exit"() {
-        for (let size = -1; size !== names.functions.size + names.values.size + lists.size; ) {
-          size = names.functions.size + names.values.size + lists.size;
+        for (let size = -1; size !== markup.functions.size + markup.values.size + lists.size; ) {
+          size = markup.functions.size + markup.values.size + lists.size;
           for (const binding of bindings) {
-            if (annotatesList(binding.returnType) || yieldsList(binding.body, lists)) lists.add(binding.name);
-            if (!reachesMarkup(binding.body, names)) continue;
-            if (binding.fn) names.functions.add(binding.name);
-            else if (!lists.has(binding.name)) names.values.add(binding.name);
+            if (annotatesList(binding.returnType) || yieldsList(binding.body, isList)) lists.add(binding.declaration);
+            if (!reachesMarkup(binding.body, markup, resolve)) continue;
+            if (binding.fn) markup.functions.add(binding.declaration);
+            else if (!lists.has(binding.declaration)) markup.values.add(binding.declaration);
           }
         }
         for (const { subject, matcher, loc } of candidates) {
-          if (producesList(subject, lists) || !reachesMarkup(subject, names)) continue;
+          if (producesList(subject, isList) || !reachesMarkup(subject, markup, resolve)) continue;
           context.report({
             message: `\`${matcher}\` on rendered markup \u2014 assert the exact string: a substring assertion passes on markup that moved, so the attribute may have landed on the wrong element. \`toBe\` the whole render, or extract the fragment and \`toBe\` that (TESTING.md \xA73b)`,
             loc
@@ -1750,7 +1820,7 @@ var GATED = /(?<![\w-])motion-(?:safe|reduce):/;
 var reducedMotion = {
   meta: {
     type: "problem",
-    docs: { description: "Authored motion is written inside `motion-safe:`, with `motion-reduce:` given the settled state." }
+    docs: { description: "Authored motion is written inside `motion-safe:`, with `motion-reduce:` given the settled state or an opacity fade." }
   },
   create(context) {
     const report = reporter(context, "forge-ui-reduced-motion");
@@ -1763,7 +1833,7 @@ var reducedMotion = {
       }
       for (const hit of hits) {
         report(
-          `\`${hit}\` runs whatever the reader has asked for \u2014 author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state`,
+          `\`${hit}\` runs whatever the reader has asked for \u2014 author it inside \`motion-safe:\` and give \`motion-reduce:\` either the settled state or an opacity fade`,
           found.loc
         );
       }
@@ -1972,6 +2042,7 @@ var lintPlugin = {
     "a11y-live-politeness": a11yLivePoliteness,
     "a11y-no-aria-readonly-on-button": a11yNoAriaReadonlyOnButton,
     "a11y-one-live-region": a11yOneLiveRegion,
+    "a11y-state-attrs-source": a11yStateAttrsSource,
     "catalog-wrong-raw-input": catalogWrongRawInput,
     "color-theme-no-raw-utility": colorThemeNoRawUtility,
     "color-token-only": colorTokenOnly,

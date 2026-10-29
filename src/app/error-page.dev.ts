@@ -1,4 +1,4 @@
-import { isDevBuildArmed, whenArmed } from "../context/armed.dev";
+import { isDevBuildArmed, whenArmed } from "../relax/armed";
 import { disclosedErrorMessage as discloseNothing } from "./error-page.strict";
 import type { RelaxErrorDisclosure } from "./types";
 

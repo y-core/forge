@@ -1,18 +1,6 @@
 /* modern-css-allow: forge-ui-platform-layer — an unlayered rule beats every layered one, so layering forge's sheets while the consuming app's own rules stay unlayered would invert the order forge relies on; the layer belongs to the app that owns the whole cascade. */
-/* To use a web font, uncomment the Tailwind v4 defaults and prepend your own:
-     --font-sans: "Inter", var(--theme-font-sans);
-:root {
-  --theme-font-sans:  ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  --theme-font-mono:  ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  --theme-font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
-}
-*/
 
 :root {
-  color-scheme: light;
-
-  /* ── Shape tokens — the one non-colour set, and not a scheme ──────────────
-     `shape-compact.css` re-declares exactly these; a colour scheme never does. */
   --radius: 0.625rem;
   --radius-field: var(--radius);
   --radius-box: calc(var(--radius) + 6px);
@@ -22,8 +10,11 @@
   --control-h-lg: 3rem;
   --border-width: 1px;
   --elevation: 1;
+}
 
-  /* ── Semantic tokens — declared once, for both modes ───────────────────── */
+:root {
+  color-scheme: light;
+
   --background: var(--gray-1);
   --foreground: var(--gray-12);
 
@@ -96,15 +87,8 @@
   --status-info-border: var(--blue-6);
 }
 
-/* `color-scheme` is what selects a scheme's `light-dark()` branch, and it lives here rather than in a
-   scheme file: a scheme is the file a consumer replaces, and this is the file they do not. Without it
-   the branch would follow the operating system, which forge refuses to do — see the
-   `@custom-variant` note in `forge.css`. It also hands the mode to the user agent, so scrollbars and
-   the controls forge cannot paint follow the theme rather than contradicting it.
-
-   It must stay *after* `:root`, which weighs the same 0-1-0 and would otherwise win. That this rule
-   carries no custom property is what keeps it clear of the one-declaration-site contract: there is
-   no value here a consumer's own scheme could half-supply. */
+/* `color-scheme` picks each step's `light-dark()` branch, and this rule must follow `:root`, whose
+   equal 0-1-0 weight would otherwise win. */
 .dark {
   color-scheme: dark;
 }
@@ -183,9 +167,8 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* `rounded-field` / `rounded-box` / `rounded-selector` and `h-control-*` / `size-control-*` /
-     `w-control-*`: the shape utilities every recipe reaches for. `border-field` is an `@utility` in
-     `forge-ui.css`, because a `--border-width-*` token lands in the overloaded `border-*` namespace. */
+  /* `border-field` is an `@utility` in `forge-ui.css` instead, because a `--border-width-*` token
+     lands in the overloaded `border-*` namespace. */
   --radius-field: var(--radius-field);
   --radius-box: var(--radius-box);
   --radius-selector: var(--radius-selector);
@@ -193,18 +176,8 @@
   --spacing-control-md: var(--control-h-md);
   --spacing-control-lg: var(--control-h-lg);
 
-  /* Tailwind's own shadow geometry, unchanged, with every colour slot re-pointed at the elevation
-     families in `theme-colors.css` — so light renders exactly as it did, and dark, where the cast
-     layers resolve to `transparent`, is carried instead by a 1px inset rim and a soft outer falloff
-     whose radius is the level. Both are white at 10% and 5%: a clean edge, not a glow.
-
-     All seven sizes are defined, not the five forge renders, because a consumer's `shadow-2xl` on a
-     forge page would otherwise be the one elevation that still vanishes in dark. `--shadow-2xl`'s
-     alpha moves from Tailwind's off-grid 0.25 to the ramp's 0.2 — the one light-mode change here,
-     and lighter rather than absent.
-
-     Mode-free by construction: every `light-dark()` sits one hop away, in the step. Every length is
-     multiplied by the `--elevation` shape token, so `0` paints nothing and `1` is the geometry above. */
+  /* Every size, not only those forge renders, so a consumer's `shadow-2xl` does not vanish in dark;
+     each colour slot reads the elevation families in `theme-colors.css`. */
   --shadow-2xs: 0 calc(1px * var(--elevation)) var(--cast-a1);
   --shadow-xs: 0 calc(1px * var(--elevation)) calc(2px * var(--elevation)) 0 var(--cast-a1);
 

@@ -45,6 +45,14 @@ describe("checkCommentBudget()", () => {
     expect(checkCommentBudget({ root, sources: ["src", "!src/vendor"] }).findings.map((finding) => finding.file)).toEqual(["src/a.ts"]);
   });
 
+  it("walks `.css` beside `.ts`, holding a stylesheet comment to the inline-why cap", () => {
+    const root = fixtureRoot({ "src/a.ts": "export const a = 1;\n", "src/b.css": "/* one\n   two\n   three */\n.b { color: red; }\n" });
+
+    expect(checkCommentBudget({ root, sources: ["src"] }).findings.map((finding) => [finding.file, finding.line, finding.message])).toEqual([
+      ["src/b.css", 1, "inline why spans 3 lines — §5a form 3 caps one at two"],
+    ]);
+  });
+
   it("waives the leading run of a listed licence header", () => {
     expect(messages({ "src/a.ts": `${LICENCE}export const a = 1;\n` }, new Map([["src/a.ts", "upstream (MIT)"]]))).toEqual([]);
   });

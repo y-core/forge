@@ -97,7 +97,7 @@ test.describe("Accordion", () => {
   });
 });
 
-test.describe("Accordion — nested, under its real stylesheet", () => {
+test.describe("Accordion — nested, under its real stylesheet", { tag: "@cross-engine" }, () => {
   test.use({ reducedMotion: "reduce" });
 
   const nested = () =>

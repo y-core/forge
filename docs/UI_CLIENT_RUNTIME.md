@@ -317,8 +317,9 @@ exactly one `toggle`, in order, whereas a comparison reads the user toggling _ba
 **The disposer restores the state it found — unless the user has taken over.** Once they have, what is on screen is theirs, and restoring the
 server's state at teardown would be a second override at the worst possible moment.
 
-It fails quiet when the element is absent, is not a disclosure, or the realm has no `matchMedia`, and the element is duck-typed on its `open`
-property rather than through `instanceof`, for the cross-realm reason `src/ui/README.md`'s controller primitives give.
+It throws when the element is absent or is not a disclosure, naming itself and the selector. Where the realm has no `matchMedia`, or a
+`MediaQueryList` without `addEventListener`, it warns and returns a no-op disposer, leaving the disclosure as the markup rendered it. The element is
+duck-typed on its `open` property rather than through `instanceof`, for the cross-realm reason `src/ui/README.md`'s controller primitives give.
 
 ### 2m. `announce` — The Page's One Voice
 
@@ -430,9 +431,9 @@ call's disposer owns only the scopes that call resumed, and the release that rem
 document — a lazily-resumed scope belongs to no call's set and would otherwise outlive its only route to teardown.
 
 **One scope's `setup` cannot take the page down.** A throw from an eager `setup` is reported against the scope's name and the loop continues, so
-later scopes still resume and a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_ on malformed `data-state`
-rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` would produce a scope whose every
-signal is missing.
+later scopes still resume and a subsequent `resume()` re-attempts the one that threw. `hydrateState` therefore _throws_ on malformed
+`data-island-state` rather than degrading to `{}` — that markup is server-authored and deterministic per render, and a silent `{}` would produce a
+scope whose every signal is missing.
 
 **A removal is not a resume, so the htmx entry sweeps after every swap.** Detached scopes are otherwise swept only once per `resume()` call and as
 a lazy scope first resumes, so a swap that removes scoped markup and introduces none never reaches the sweep — and a retained scope keeps its

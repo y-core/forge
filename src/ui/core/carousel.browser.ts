@@ -50,7 +50,7 @@ function geometry(page: Page, id: string): Promise<Geometry> {
   }, id);
 }
 
-test("a dot anchor scrolls its slide to the strip's start with no script", async ({ page }) => {
+test("a dot anchor scrolls its slide to the strip's start with no script", { tag: "@cross-engine" }, async ({ page }) => {
   await mountCarousel(page, "start");
   expect((await geometry(page, "c-1")).scrollLeft).toBe(0);
 
@@ -60,7 +60,7 @@ test("a dot anchor scrolls its slide to the strip's start with no script", async
   expect(Math.abs(after.scrollLeft - (after.itemLeft - after.stripLeft))).toBeLessThanOrEqual(1);
 });
 
-test("a centre-snapping slide settles on the strip's centre", async ({ page }) => {
+test("a centre-snapping slide settles on the strip's centre", { tag: "@cross-engine" }, async ({ page }) => {
   await mountCarousel(page, "center");
   await page.click("a[href='#c-2']");
   const after = await geometry(page, "c-2");
@@ -70,7 +70,7 @@ test("a centre-snapping slide settles on the strip's centre", async ({ page }) =
 
 // Chromium focuses a scrollable element even without `tabindex`, so this proves the behaviour WCAG
 // 2.1.1 requires and not the attribute, which `carousel.test.tsx` asserts instead.
-test("the strip takes focus from the keyboard and scrolls with the arrow keys", async ({ page }) => {
+test("the strip takes focus from the keyboard and scrolls with the arrow keys", { tag: "@cross-engine" }, async ({ page }) => {
   await mountCarousel(page, "start");
 
   await page.focus("[data-slot='carousel-strip']");

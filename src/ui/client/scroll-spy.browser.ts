@@ -114,7 +114,7 @@ test.describe("mountScrollSpy", () => {
   });
 });
 
-test.describe("mountScrollSpy under a sticky header", () => {
+test.describe("mountScrollSpy under a sticky header", { tag: "@cross-engine" }, () => {
   test("marks the section a fragment jump lands, not the tail of the one above hidden behind the header", async ({ page }) => {
     await mountSpy(page, STICKY_FIXTURE);
 

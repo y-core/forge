@@ -14,8 +14,6 @@ import type { AuthFactorKind, PasskeyMode } from "../types";
 import type { AuthRequestSurface, AuthTurnstileCheck, AuthTurnstileFlow, AuthTurnstileOptions, AuthWebOptions } from "./types";
 import type { AuthPasskeyContract, AuthTurnstileWidget } from "./views/types";
 
-// One request runs a guard, a loader and often an action, each asking for these services. The
-// promise is memoised rather than the value, so two parallel callers share one build.
 const authServicesCtx = contextVar<Promise<AuthRequestSurface>>("auth.services");
 
 /** This request's services, built once however many times this request asks for them. @internal */
@@ -46,8 +44,6 @@ export function authReturnPath<Bindings>(c: AppContext<Bindings>, options: AuthW
   return safeRedirectPath(asked, authSettledPath(options));
 }
 
-// The sign-in flow spans three requests, and only the last one is in a position to honour the
-// return-to: without carrying it forward, `requireAuth` mints a destination nothing ever reads.
 /** `path` carrying this request's return-to, when it asked for one that is safe to follow. @internal */
 export function authReturnQuery<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, path: string): string {
   const param = options.returnParam ?? "next";
@@ -56,7 +52,6 @@ export function authReturnQuery<Bindings>(c: AppContext<Bindings>, options: Auth
   return safe === "" ? path : `${path}?${new URLSearchParams({ [param]: safe }).toString()}`;
 }
 
-// Omitted when it is the default, so a deployment that renamed nothing renders byte-identical markup.
 /** The header a rendered form must send its token on, absent when `csrfProtection` uses the default. @internal */
 export function authCsrfHeader<Bindings>(c: AppContext<Bindings>): { csrfHeader?: string } {
   const csrfHeader = csrfHeaderCtx.getOptional(c);
@@ -74,7 +69,7 @@ export function authEnrollable(services: AuthRequestSurface, kind: AuthFactorKin
   return ok(service);
 }
 
-/** Mints the two path-bound tokens a ceremony needs and packs them with the contract the controller reads. @internal */
+/** Mints the path-bound tokens a ceremony needs and packs them with the contract the controller reads. @internal */
 export async function authPasskeyContract<Bindings>(
   c: AppContext<Bindings>,
   mode: PasskeyMode,
@@ -90,7 +85,6 @@ export async function authPasskeyContract<Bindings>(
     optionsToken: await mintCsrf(c, optionsPath),
     verifyToken: await mintCsrf(c, verifyPath),
     redirect,
-    // Omitted when it matches the controller's own default, so the attribute stays absent in the common case.
     ...(csrfHeader !== undefined && csrfHeader !== PASSKEY_CSRF_HEADER_DEFAULT ? { csrfHeader } : {}),
   };
 }

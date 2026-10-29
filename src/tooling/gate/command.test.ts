@@ -13,7 +13,7 @@ import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
 import { clearReceipt, readReceipt, recordReceipt } from "./receipt";
-import type { CommandStep, Step } from "./types";
+import type { CommandStep, GateRunReport, Step, StepResults, TestFailure } from "./types";
 
 const roots: string[] = [];
 
@@ -1135,4 +1135,161 @@ describe("createGateCommand() — a spawned step's temp dir", () => {
 
     expect(readdirSync(systemTmp).filter((entry) => join(systemTmp, entry) !== root)).toEqual([]);
   });
+});
+
+describe("createGateCommand() — --report", () => {
+  // A red step also writes its log under the system TMPDIR, so each case gets one of its own.
+  const saved = process.env.TMPDIR;
+  let systemTmp = "";
+
+  beforeEach(() => {
+    systemTmp = mkdtempSync(join(tmpdir(), "forge-report-tmp-"));
+    process.env.TMPDIR = systemTmp;
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.TMPDIR;
+    else process.env.TMPDIR = saved;
+    rmSync(systemTmp, { recursive: true, force: true });
+  });
+
+  const reportDir = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-report-"));
+    roots.push(dir);
+    return dir;
+  };
+  const readReport = (dir: string): GateRunReport => JSON.parse(readFileSync(join(dir, "report.json"), "utf-8")) as GateRunReport;
+  const shell = (label: string, script: string, extra: Partial<CommandStep> = {}): CommandStep => ({
+    label,
+    tail: 5,
+    cmd: ["sh", "-c", script],
+    ...extra,
+  });
+
+  const FAILURE: TestFailure = { engine: "chromium", spec: "a.browser.ts", title: "a › opens", error: "Expected 1" };
+  const results = (args: readonly string[] = ["--results"]): StepResults => ({
+    args,
+    env: "RESULTS_FILE",
+    read: (text) => (text === "none" ? undefined : text === "clean" ? [] : [FAILURE]),
+  });
+  const writing = (label: string, written: string | undefined, exit: number): CommandStep =>
+    shell(label, `${written === undefined ? "" : `printf '%s' ${written} > "$RESULTS_FILE"; `}exit ${exit}`, { results: results([]) });
+
+  it("records each step's status, its whole log and the run's verdict for a green run", async () => {
+    const root = worktreeRoot();
+    const dir = reportDir();
+    const { code } = await run([shell("say", "echo hello"), passing("check")], { report: dir }, { cwd: root });
+
+    const report = readReport(dir);
+    expect(code).toBeUndefined();
+    expect([report.tier, report.verdict, report.head]).toEqual(["runtime", "pass", worktreeHead(root)]);
+    expect(report.steps.map((step) => [step.label, step.status, step.log])).toEqual([
+      ["say", "passed", "say.log"],
+      ["check", "passed", "check.log"],
+    ]);
+    expect(readFileSync(join(dir, "say.log"), "utf-8")).toBe("hello\n");
+    expect(Number.isNaN(Date.parse(report.startedAt))).toBe(false);
+  });
+
+  it("writes the report on a red run, naming the failing step and every step after it as unreached", async () => {
+    const dir = reportDir();
+    const { code } = await run([shell("broken", "echo why; exit 2"), shell("later", "true"), failing("never")], { report: dir });
+
+    const report = readReport(dir);
+    expect(code).toBe(1);
+    expect(report.verdict).toBe("fail");
+    expect(report.steps.map((step) => [step.label, step.status])).toEqual([
+      ["broken", "failed"],
+      ["later", "unreached"],
+      ["never", "unreached"],
+    ]);
+    expect(readFileSync(join(dir, "broken.log"), "utf-8")).toBe("why\n");
+  });
+
+  it("writes a failed check's findings into its log", async () => {
+    const dir = reportDir();
+    await run([failing("check")], { report: dir });
+
+    expect(readFileSync(join(dir, "check.log"), "utf-8")).toContain("no good");
+  });
+
+  it("records the failing tests a step's results file names", async () => {
+    const dir = reportDir();
+    await run([writing("test:browser", "failed", 1)], { report: dir });
+
+    expect(readReport(dir).steps).toMatchObject([{ label: "test:browser", status: "failed", failures: [FAILURE] }]);
+  });
+
+  it("records a red step whose results file holds no test result as setup, not as a test failure", async () => {
+    const dir = reportDir();
+    await run([writing("test:browser", "none", 1)], { report: dir });
+
+    expect(readReport(dir).steps[0]?.status).toBe("setup");
+    expect(readReport(dir).steps[0]?.failures).toBeUndefined();
+  });
+
+  it("records a red step that wrote no results file at all as setup", async () => {
+    const dir = reportDir();
+    await run([writing("test:browser", undefined, 1)], { report: dir });
+
+    expect(readReport(dir).steps[0]?.status).toBe("setup");
+  });
+
+  it("records a red step whose results file names no failing test as failed with no failures", async () => {
+    const dir = reportDir();
+    await run([writing("test:browser", "clean", 1)], { report: dir });
+
+    expect(readReport(dir).steps[0]).toMatchObject({ status: "failed" });
+    expect(readReport(dir).steps[0]?.failures).toBeUndefined();
+  });
+
+  it("never counts the results file against leavesNoTemp", async () => {
+    const dir = reportDir();
+    const { code } = await run([{ ...writing("test:browser", "clean", 0), leavesNoTemp: true }], { report: dir });
+
+    expect(code).toBeUndefined();
+  });
+
+  it("appends the results arguments only to a reported run", async () => {
+    const root = fixtureRoot();
+    const record = join(root, "argv");
+    // The trailing `sh` is `$0`, so every appended argument lands in `$*`.
+    const step: CommandStep = {
+      label: "echo",
+      tail: 5,
+      cmd: ["sh", "-c", `printf '%s' "$*" > "${record}"`, "sh"],
+      results: results(["--reporter=json"]),
+    };
+
+    await run([step], {}, { cwd: root });
+    const bare = readFileSync(record, "utf-8");
+    await run([step], { report: reportDir() }, { cwd: root });
+
+    expect([bare, readFileSync(record, "utf-8")]).toEqual(["", "--reporter=json"]);
+  });
+
+  it("records a dependency that fails a runtime run as setup", async () => {
+    const dir = reportDir();
+    await run([passing("needs", ABSENT)], { report: dir });
+
+    expect(readReport(dir).steps.map((step) => step.status)).toEqual(["setup"]);
+  });
+
+  it("records a dependency a unit run excuses as skipped", async () => {
+    const dir = reportDir();
+    await run([passing("needs", ABSENT), passing("other")], { report: dir, tier: "unit" });
+
+    expect(readReport(dir).steps.map((step) => step.status)).toEqual(["skipped", "passed"]);
+  });
+
+  for (const flag of ["fix", "list", "reuse", "affected"] as const) {
+    it(`refuses --${flag}, which runs no whole set of steps to record`, async () => {
+      const dir = reportDir();
+      const { logs, code } = await run([passing("a")], { report: dir, [flag]: true });
+
+      expect(code).toBe(1);
+      expect(logs).toContain(`--report records the steps a run executes, so it takes no --${flag}.`);
+      expect(existsSync(join(dir, "report.json"))).toBe(false);
+    });
+  }
 });

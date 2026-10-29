@@ -329,6 +329,8 @@ Under `forge cf dev`, and under nothing else:
 
 A plain `wrangler dev` gets none of these, and neither does `wrangler deploy`, so a local run that behaves like production is one command away.
 
+Code of your own that should behave differently under `forge cf dev` goes on your app's `#app/relax` pair ([`src/relax/README.md`][relax-readme]).
+
 **With several `-c` configs, put the app's first.** Only the first config's Worker is armed:
 
 ```bash
@@ -338,67 +340,6 @@ forge cf dev -- -c wrangler.jsonc -c ../auth-worker/wrangler.jsonc
 **Never export `forge-dev` in `WRANGLER_BUILD_CONDITIONS` yourself.** `forge cf dev` sets it in wrangler's own process and leaves your shell
 alone. A deploy from a shell that carries it bundles every development module, and `validate-dev-bundle` fails on the variable before that can
 happen ([`src/tooling/gate/README.md`][gate-readme]).
-
----
-
-## Keeping your own dev-only code out of the deploy
-
-When code the shared path calls should behave differently in development — a debug banner, a dev-only CSP source — put it behind an `imports`
-alias of your own. A deploy resolves the alias's `default` target, so the development module never reaches the bundle.
-
-Map the alias in your `package.json`:
-
-```json
-{
-  "imports": {
-    "#app/debug-banner": {
-      "forge-dev": "./src/debug-banner.dev.ts",
-      "default": "./src/debug-banner.strict.ts"
-    }
-  }
-}
-```
-
-Declare the shape once, and annotate both targets with it:
-
-```ts
-// src/types.ts
-export type DebugBanner = () => string | undefined;
-```
-
-```ts
-// src/debug-banner.strict.ts
-import type { DebugBanner } from "./types";
-
-export const debugBanner: DebugBanner = () => undefined;
-```
-
-```ts
-// src/debug-banner.dev.ts
-import type { DebugBanner } from "./types";
-
-declare const __FORGE_DEV__: boolean | undefined;
-
-export const debugBanner: DebugBanner = () => (typeof __FORGE_DEV__ !== "undefined" && __FORGE_DEV__ === true ? "development build" : undefined);
-```
-
-Import the alias, never either file, from the shared code:
-
-```ts
-import { debugBanner } from "#app/debug-banner";
-```
-
-Then run the app with the `forge cf dev` script above.
-
-**The annotation is what keeps the two targets in step.** `tsc` checks the code importing the alias against the `default` target only, so without
-the shared type the development module could change shape and nothing would say so.
-
-**The development module checks `__FORGE_DEV__` itself.** The condition picks the module, and the define is what lets it answer: a bundle built
-under `forge-dev` without `__FORGE_DEV__` set to `true` still answers as the strict target does. `forge cf dev` sets both.
-
-**`validate-dev-bundle` is the check.** On the `deploy` tier it bundles your deployed `main` and fails when a `*.dev.ts` reaches it — a `default`
-pointing at the development file, say. `validate-dev-boundary` fails a production module importing `./debug-banner.dev` directly. Both are
-[`src/tooling/gate/README.md`][gate-readme]'s.
 
 ---
 
@@ -474,6 +415,7 @@ destroyed. A splice that fails its own verification writes nothing, `--force` in
 [keyring-readme]: ../../crypto/keyring/README.md#rotating-the-root-secret
 [ns-3c]: ../../../docs/NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [ns-5i]: ../../../docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
+[relax-readme]: ../../relax/README.md
 [security-origins]: ../../security/README.md#deriving-allowed-origins-from-base_url
 [session-readme]: ../../session/README.md#rotating-a-signing-secret
 [site-readme]: ../../site/README.md

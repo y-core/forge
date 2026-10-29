@@ -236,15 +236,13 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   const workerConfig = options.workerConfig ?? "wrangler.jsonc";
   const assetConfig = options.assetConfig;
   const workerTrace = (cwd: string): Promise<string[]> => workerMainClosure(cwd, workerConfig);
-  const widen =
-    assetConfig === undefined ? workerTrace : (cwd: string): Promise<string[]> => unionReach([workerTrace(cwd), assetReach(cwd, assetConfig)]);
   const workerdWiden =
     assetConfig === undefined
       ? workerTrace
       : (cwd: string): Promise<string[]> => unionReach([workerTrace(cwd), servedAssetReach(cwd, workerConfig, assetConfig)]);
   if (options.db) steps.push(...dbSteps({ root }));
-  if (options.browser === true) steps.push(...browserSteps({ engines: ["chromium"], widen }));
-  else if (options.browser !== undefined && options.browser !== false) steps.push(...browserSteps({ engines: options.browser.engines, widen }));
+  if (options.browser === true) steps.push(...browserSteps({ engines: ["chromium"] }));
+  else if (options.browser !== undefined && options.browser !== false) steps.push(...browserSteps({ engines: options.browser.engines }));
   if (options.workerd) steps.push(workerdStep({ widen: workerdWiden }));
   if (options.features !== undefined) {
     const assets = options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut };

@@ -71,7 +71,8 @@ function packageStylesheet(id: string, base: string): string | undefined {
 }
 
 // Tailwind's loader resolves a package from the importing stylesheet with the `style` condition, never from this module.
-function stylesheetPath(id: string, base: string): string {
+/** The real path of the stylesheet an `@import` of `id` names, resolved from the importing stylesheet's directory `base`. @internal */
+export function stylesheetPath(id: string, base: string): string {
   if (id.startsWith(".") || id.startsWith("/")) return resolve(base, id);
   const path = packageStylesheet(id, base);
   if (path === undefined || !existsSync(path)) throw new Error(`\`@import "${id}"\` resolves to no stylesheet from ${base}.`);

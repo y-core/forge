@@ -32,7 +32,7 @@ async function measure(page: Page): Promise<Boxes> {
   }, SEPARATOR);
 }
 
-test("a vertical separator in an auto-height flex row has a visible height", async ({ page }) => {
+test("a vertical separator in an auto-height flex row has a visible height", { tag: "@cross-engine" }, async ({ page }) => {
   const html = await render(Separator({ orientation: "vertical" }));
   await mount(page, await markup(html, ""));
 
@@ -42,7 +42,7 @@ test("a vertical separator in an auto-height flex row has a visible height", asy
   expect(boxes.separator.width).toBeGreaterThan(0);
 });
 
-test("a vertical separator in a definite-height flex row still fills the line", async ({ page }) => {
+test("a vertical separator in a definite-height flex row still fills the line", { tag: "@cross-engine" }, async ({ page }) => {
   const html = await render(Separator({ orientation: "vertical" }));
   await mount(page, await markup(html, "height: 72px"));
 
@@ -52,7 +52,7 @@ test("a vertical separator in a definite-height flex row still fills the line", 
   expect(boxes.separator.height).toBeLessThanOrEqual(boxes.rowContent);
 });
 
-test("a caller's explicit height wins over the base, which emits both", async ({ page }) => {
+test("a caller's explicit height wins over the base, which emits both", { tag: "@cross-engine" }, async ({ page }) => {
   const html = await render(Separator({ orientation: "vertical", class: "h-5" }));
   await mount(page, await markup(html, "height: 72px"));
 

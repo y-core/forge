@@ -33,14 +33,14 @@ function state(page: Page) {
     const panel = document.querySelector<HTMLElement>("#tips");
     return {
       nativeOpen: panel?.matches(":popover-open"),
-      // The exact selector `forge-ui.css` §4 lights the trigger with — matching it is the whole
+      // The exact selector `forge-ui.css` lights the trigger with — matching it is the whole
       // mechanism, so the assertion needs no stylesheet.
       triggerLit: document.querySelector("[data-slot~='popover']:has(> [data-slot~='popover-content']:popover-open)") !== null,
     };
   });
 }
 
-test.describe("Popover", () => {
+test.describe("Popover", { tag: "@cross-engine" }, () => {
   test("resumes to the state the element is actually in, not to a rendered guess", async ({ page }) => {
     await mount(page, await markup(), EXPOSE);
     await start(page);
@@ -75,6 +75,23 @@ test.describe("Popover", () => {
     await page.click("[data-ref='trigger']");
 
     await expect.poll(() => page.evaluate(() => document.querySelector("[data-ref='trigger']")?.getAttribute("aria-expanded"))).toBe("true");
+  });
+
+  test("the trigger's aria-expanded follows open, Escape and a second toggle", async ({ page }) => {
+    const expanded = () => page.evaluate(() => document.querySelector("[data-ref='trigger']")?.getAttribute("aria-expanded"));
+    await mount(page, await markup(), EXPOSE);
+    expect(await expanded()).toBe("false");
+    await start(page);
+
+    await page.click("[data-ref='trigger']");
+    await expect.poll(expanded).toBe("true");
+    await page.keyboard.press("Escape");
+    await expect.poll(expanded).toBe("false");
+    await page.click("[data-ref='trigger']");
+    await expect.poll(expanded).toBe("true");
+    await page.click("[data-ref='trigger']");
+
+    await expect.poll(expanded).toBe("false");
   });
 
   test("light-dismiss is the platform's, and the attributes follow it", async ({ page }) => {

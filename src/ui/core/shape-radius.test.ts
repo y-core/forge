@@ -13,9 +13,8 @@ const CSS_DIR = resolve(UI_DIR, "assets/css");
 const SCANNED = (name: string): boolean => /\.tsx?$/.test(name) && !/\.(test|browser)\.tsx?$/.test(name) && !name.endsWith("class-groups.ts");
 
 function shapeBlock(css: string): string {
-  const start = css.indexOf("── Shape tokens");
-  const end = css.indexOf("/* ──", start + 1);
-  return css.slice(start, end === -1 ? undefined : end);
+  const at = css.indexOf("--radius:");
+  return css.slice(css.lastIndexOf("{", at) + 1, css.indexOf("}", at));
 }
 
 const SHAPE_RADII = new Set(

@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
 import { render } from "../../testing/render";
-import { classesOf, compiledCss, mount, pasteText, SECURE_ORIGIN } from "../client/browser.fixture";
+import { classesOf, compiledCss, mount, paintedHex, pasteText, SECURE_ORIGIN } from "../client/browser.fixture";
 import { OtpInput } from "./otp-input";
 
 interface Editor {
@@ -45,6 +45,39 @@ async function mountOtp(page: Page, { container = [], secure = false }: { contai
 
 function frameWidth(page: Page): Promise<number> {
   return page.evaluate(() => document.querySelector("[data-slot~='otp-input-wrapper']")?.getBoundingClientRect().width ?? 0);
+}
+
+async function ruleRuns(page: Page): Promise<{ runs: number[]; expected: number[] }> {
+  const hex = await paintedHex(page, "var(--color-input)");
+  const rgb = [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16)).join(",");
+  const png = Array.from(await page.screenshot({ type: "png" }));
+  return page.evaluate(
+    async ({ shot, rule }) => {
+      const bitmap = await createImageBitmap(new Blob([new Uint8Array(shot)], { type: "image/png" }));
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d") as OffscreenCanvasRenderingContext2D;
+      context.drawImage(bitmap, 0, 0);
+      const data = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      const scale = bitmap.width / document.documentElement.clientWidth;
+      const wrapper = document.querySelector("[data-slot~='otp-input-wrapper']") as HTMLElement;
+      const frame = wrapper.getBoundingClientRect();
+      const border = parseFloat(getComputedStyle(wrapper).borderLeftWidth);
+      const length = Number(getComputedStyle(wrapper).getPropertyValue("--otp-length") || 6);
+      const cell = (frame.width - 2 * border) / length;
+      const y = Math.round((frame.top + frame.height / 2) * scale);
+      const runs: number[] = [];
+      let inside = false;
+      for (let x = Math.floor(frame.left * scale) - 2; x < Math.ceil(frame.right * scale) + 2; x++) {
+        const i = (y * bitmap.width + x) * 4;
+        const on = `${data[i]},${data[i + 1]},${data[i + 2]}` === rule;
+        if (on && !inside) runs.push(Math.round(x / scale - frame.left));
+        inside = on;
+      }
+      const interior = Array.from({ length: length - 1 }, (_, k) => Math.round(border + (k + 1) * cell));
+      return { runs, expected: [0, ...interior, Math.round(frame.width - border)] };
+    },
+    { shot: png, rule: rgb },
+  );
 }
 
 test.describe("OtpInput", { tag: "@cross-engine" }, () => {
@@ -90,6 +123,13 @@ test.describe("OtpInput", { tag: "@cross-engine" }, () => {
 
     await mountOtp(page, { container: STRETCHING_CONTAINER });
     expect(await frameWidth(page)).toBe(intrinsic);
+  });
+
+  test("rules each interior cell boundary in the field's border colour, and neither outer edge", async ({ page }) => {
+    await mountOtp(page);
+    const { runs, expected } = await ruleRuns(page);
+    expect(runs).toEqual(expected);
+    expect(expected).toHaveLength(7);
   });
 
   test("with no script, a pasted `123 456` is kept whole and the form is valid, so the server receives it to reduce", async ({

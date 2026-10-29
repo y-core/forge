@@ -14,8 +14,6 @@ function needsTagging(level: PdfArchival): boolean {
   return level.endsWith("a");
 }
 
-// One table read twice: `auditPdf` reports these before a render and `preparePdfRender` refuses on
-// them. A prohibition living in only one of the two is what lets a file declare what it is not.
 /** Every prohibition an option set and its pages break for the level asked for. @internal */
 export function conformanceViolations(
   pages: readonly PdfPage[],
@@ -45,8 +43,7 @@ export function conformanceViolations(
   if (hollow.length > 0) {
     say("font-supplied", `PDF/A embeds every face, and ${hollow.join(", ")} carries no sfnt bytes — load the face's file into sfnt`);
   }
-  // The base-14 faces are never embedded, so a run set in one is a run whose glyphs the file does
-  // not carry — the one prohibition reachable from a document that supplies no fonts at all.
+  // The base-14 faces are never embedded, so a run set in one is a run whose glyphs the file does not carry.
   const base14 = pages.some((page) => page.nodes.some((node) => node.kind === "text" && node.embedded === undefined));
   if (base14) {
     say("font-embedded", `PDF/A embeds every face, and a run is set in the base-14 pair — supply fonts and a defaultFont covering every run`);

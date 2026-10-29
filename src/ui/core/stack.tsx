@@ -14,8 +14,8 @@ interface StackProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
 const stackVariants = cva({
   base:
     "grid place-items-center [&>*]:w-full [&>*]:[grid-area:1/1] " +
-    "[&>*:nth-child(1)]:z-20 [&>*:nth-child(2)]:z-10 [&>*:nth-child(2)]:scale-95 [&>*:nth-child(2)]:opacity-90 " +
-    "[&>*:nth-child(3)]:z-0 [&>*:nth-child(3)]:scale-90 [&>*:nth-child(3)]:opacity-80",
+    "[&>*:nth-child(1)]:z-20 [&>*:nth-child(2)]:z-10 [&>*:nth-child(2)]:scale-95 " +
+    "[&>*:nth-child(3)]:z-0 [&>*:nth-child(3)]:scale-90",
   variants: {
     placement: {
       top: "[&>*:nth-child(2)]:-translate-y-2 [&>*:nth-child(3)]:-translate-y-4",

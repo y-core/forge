@@ -46,8 +46,8 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §6a One Command, Nested Tiers: the lines between them, and what an absent prerequisite means
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
-- §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: the three, and who overrides which
-- §6e One Tier per Moment: which tier each moment of a task takes, and where an opted-in engine comes in
+- §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: what each half is, and who overrides which
+- §6e One Tier per Moment: which tier each moment takes, why the browser set waits for `deploy`, and the nightly run
 
 ---
 
@@ -395,12 +395,13 @@ warning" — is a failure.
 | Line | A step is above it when |
 | --- | --- |
 | `static` \| `unit` | it runs the code rather than judging the source |
-| `unit` \| `runtime` | it needs a runtime prerequisite — a Playwright server, workerd, a local database |
-| `runtime` \| `deploy` | it runs whole: below `deploy` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here |
+| `unit` \| `runtime` | it needs a runtime prerequisite — workerd, a local database |
+| `runtime` \| `deploy` | it runs whole: below `deploy` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here, as does the browser set (§6e) |
 | `deploy` \| `release` | it re-runs a suite another row already ran, on another engine |
 
-"This suite got slow" has no bearing on any of them. **An absent prerequisite is a skip below `runtime` and a failure from `runtime` up**, because
-those tiers promise that a runtime ran, and a task may not close on a step nobody ran.
+"This suite got slow" has no bearing on any of them, with one stated exception: the browser set, whose placement §6e owns. **An absent prerequisite
+is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a task may not close on a step
+nobody ran.
 
 **The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
@@ -440,10 +441,10 @@ the backstop for a reach the derivation missed. A row whose tool cannot be asked
 
 **A spec reaches the application through the server it starts and the assets that server serves, so a runtime row's reach includes both.** The
 server half is the import graph of the Worker's entry. The asset half is what the asset build reads: each bundle's inputs, and every file the
-stylesheets' source declarations cover. Both are derived from what the build already declares, never listed beside it. Wherever the application
-has an asset build, a browser row takes the asset half, because the browser loads the built assets whatever serves them. A Worker-runtime row
-takes it only when the Worker serves the assets. A stylesheet left on automatic source detection covers the whole tree, so every change runs the
-browser row whole — narrowing comes from the stylesheet naming its sources.
+stylesheets' source declarations cover. Both are derived from what the build already declares, never listed beside it. A Worker-runtime row takes
+the asset half only when the Worker serves the assets. A stylesheet left on automatic source detection covers the whole tree, so every change runs
+the row whole — narrowing comes from the stylesheet naming its sources. **A browser row has no reach to derive**: it starts at `deploy`, where
+every row runs whole (§6e).
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
 and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
@@ -486,14 +487,22 @@ the exception with its compensating control, rather than leaving the reuse undoc
 | Moment | Command | Runs |
 | --- | --- | --- |
 | Write | `bun run verify:static`, plus `bun test <file>` | every row that judges the source; one test file |
-| Task close | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch, on Chromium |
-| Tag | `bun run verify:deploy`, on the remote | every runtime row whole, plus the rows that judge a finished change |
+| Task close | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no browser spec |
+| Tag | `bun run verify:deploy`, on the remote | every runtime row whole, every browser spec on Chromium, and the rows that judge a finished change |
 | Sign-off | `bun run verify:release`, before a release ships | the above, plus every browser spec on each other engine the application opts into |
+| Nightly | `bun run verify:release`, run by the ledger host | the sign-off run, over the default branch as committed |
 
-**No task asks whether it touches UI.** A bare `verify` takes the Chromium row whenever a pending change falls within the row's derived reach (§6c),
-the Worker's import graph and the asset build's inputs, so a change to a view, a stylesheet or a controller reaches the browser set without anyone
-deciding it should. While iterating, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and it is a scoped run that
-closes nothing (§6c).
+**The browser set starts at `deploy`, and that is the one tier line drawn by cost.** §6a's rule holds for every other row. The whole browser set
+is the slowest row in the gate and the one a change least often breaks, and narrowing it at `runtime` bought almost nothing: its reach was the
+Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. **The price is stated rather than hidden: a
+broken page is found by the next nightly run, not at task close.** A tag still never ships without the set, because `deploy` runs it. While
+iterating on a page, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and it is a scoped run that closes nothing
+(§6c).
+
+**The nightly run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
+default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes a task in
+the project it ran for, kept to one open task that each later failure rewrites in place; a run that never reached a test — the server it needs did
+not come up — is logged and filed as nothing, because it says nothing about the code.
 
 **Chromium is the browser set's engine, and `test:browser` is its row.** `browser: true` emits that row alone. An application that needs wider
 compatibility lists `engines`, and the preset adds `test:browser:firefox` and `test:browser:webkit` at `release` as its final sign-off; `--only`

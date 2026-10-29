@@ -3,14 +3,13 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { checkDocs } from "./docs";
+import { checkDocs, findCodeFences, stripFences } from "./docs";
 
 const roots: string[] = [];
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-/** A throwaway repository root holding exactly the files given. */
 function fixtureRoot(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), "forge-docs-check-"));
   roots.push(root);
@@ -330,7 +329,6 @@ describe("checkDocs() — a required frontmatter key", () => {
     expect(withRule(repo("audience: consumer\n"))).toEqual([]);
   });
 
-  // A new document must fail closed rather than default into a consumer's index.
   it("fails a document that declares nothing", () => {
     expect(withRule(repo(""))).toEqual(["frontmatter is missing `audience` — one of `consumer` and `internal`"]);
   });
@@ -359,7 +357,6 @@ describe("checkDocs() — a required frontmatter key on one file name", () => {
     expect(withRule(readme('title: HTTP Responses\ndescription: "One sentence."\naudience: consumer'))).toEqual([]);
   });
 
-  // Keys collapsed onto one line read as a single `title`, so the index lists a garbage title and no description.
   it("fails a source README whose keys are collapsed onto one line", () => {
     expect(withRule(readme('title: HTTP Responses description: "One sentence." audience: consumer'))).toEqual([
       "frontmatter is missing `audience` — one of `consumer` and `internal`",
@@ -400,6 +397,13 @@ describe("checkDocs() — historical phrasing", () => {
     "what changed is",
     "was rejected",
     "was split out of",
+    "that settled",
+    "is the first scheme to",
+    "was introduced to",
+    "until recently",
+    "back then",
+    "at the time of writing",
+    "in an earlier release",
   ];
 
   for (const phrase of phrases) {
@@ -423,8 +427,13 @@ describe("checkDocs() — historical phrasing", () => {
     });
   }
 
-  // The classes the phrase list deliberately excludes, each a word a live vocabulary owns.
-  for (const kept of ["The legacy zone WAF rejects it.", "The API is deprecated upstream.", "No backward-compatible path is shipped."]) {
+  for (const kept of [
+    "The legacy zone WAF rejects it.",
+    "The API is deprecated upstream.",
+    "No backward-compatible path is shipped.",
+    "The certificate was trusted at the time.",
+    "Focus lands on the first control to render.",
+  ]) {
     it(`does not report \`${kept}\``, () => {
       const root = fixtureRoot({
         ".decisions/governance/TESTING.md": doc("Testing", kept),
@@ -487,6 +496,8 @@ describe("checkDocs() — inventory counts", () => {
     ["It walks its four states in order.", "four states"],
     ["Two further directories are permitted members of the tree.", "Two further directories"],
     ["The mounting doc owns the three route builders.", "three route builders"],
+    ["Each mode takes the same four, in order.", "the same four"],
+    ["It never holds any of the three.", "the three"],
   ];
 
   for (const [body, count] of counted) {
@@ -524,6 +535,9 @@ describe("checkDocs() — inventory counts", () => {
     'There are two flag types — `"boolean"` and `"string"`.',
     'Forbidden: "five agents", "the same seven flags", "three runners".',
     "Forbidden: “five agents”, “the same seven flags”, “three runners”.",
+    "Take one of the four: lint, types, unit and browser.",
+    "A surface holds at most four.",
+    "Pick the two, then stop.",
   ];
 
   for (const body of kept) {
@@ -537,7 +551,7 @@ describe("checkDocs() — inventory counts", () => {
     });
   }
 
-  it("leaves a heading and the Quick Reference line mirroring it alone", () => {
+  it("reports a count in a heading and in the Quick Reference line mirroring it", () => {
     const counting = [
       "---",
       "title: Testing",
@@ -547,13 +561,13 @@ describe("checkDocs() — inventory counts", () => {
       "## 0. Quick Reference",
       "",
       "- §1 One: what it decides",
-      "- §1a One Command, Three Modes: how the gate runs",
+      "- §1a The Three Modes: how the gate runs",
       "",
       "## 1. One",
       "",
       "Body.",
       "",
-      "### 1a. One Command, Three Modes",
+      "### 1a. The Three Modes",
       "",
       "Body.",
       "",
@@ -564,7 +578,11 @@ describe("checkDocs() — inventory counts", () => {
       "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
     });
 
-    expect(run(root).findings).toEqual([]);
+    const message = "inventory count `Three Modes` — a governing doc records that a thing exists, not how many";
+    expect(run(root).findings).toEqual([
+      { level: "fail", message, file: ".decisions/governance/TESTING.md", line: 9 },
+      { level: "fail", message, file: ".decisions/governance/TESTING.md", line: 15 },
+    ]);
   });
 });
 
@@ -915,7 +933,6 @@ describe("checkDocs() — what indentation hides", () => {
 });
 
 describe("checkDocs() — Quick Reference agreement", () => {
-  /** A document whose Quick Reference line for §1 is `entry` and whose §1 heading is `heading`. */
   function drifted(heading: string, entry: string): string {
     return [
       "---",
@@ -1086,5 +1103,72 @@ describe("checkDocs() — binding a subpath to its governance", () => {
     });
 
     expect(result.findings.map((f) => f.message)).toEqual([]);
+  });
+});
+
+describe("findCodeFences()", () => {
+  it("reports each fence's info-string language and the markdown line its body starts on", () => {
+    const source = [
+      "# Title",
+      "",
+      "```tsx",
+      "<Badge />;",
+      "```",
+      "",
+      "Prose.",
+      "",
+      "``` html",
+      "<p>x</p>",
+      "<p>y</p>",
+      "```",
+      "",
+      "```",
+      "plain",
+      "```",
+    ].join("\n");
+
+    expect(findCodeFences(source)).toEqual([
+      { lang: "tsx", line: 4, body: "<Badge />;" },
+      { lang: "html", line: 10, body: "<p>x</p>\n<p>y</p>" },
+      { lang: "", line: 15, body: "plain" },
+    ]);
+  });
+
+  it("covers exactly the lines stripFences blanks, on one shared source", () => {
+    const source = [
+      "# Title",
+      "",
+      "```ts",
+      "const a = 1;",
+      "const b = 2;",
+      "```",
+      "",
+      "- A list item:",
+      "",
+      "  ```tsx",
+      "  <Card />;",
+      "  ```",
+      "",
+      "Prose after.",
+    ].join("\n");
+    const lines = source.split("\n");
+    const blanked = stripFences(source).flatMap((text, row) => (text === lines[row] ? [] : [row + 1]));
+    const fenced = findCodeFences(source).flatMap(({ line, body }) =>
+      Array.from({ length: body.split("\n").length + 2 }, (_, offset) => line - 1 + offset),
+    );
+
+    expect(fenced).toEqual(blanked);
+  });
+
+  it("drops a fence that is never closed", () => {
+    const source = ["```tsx", "<Badge />;", "```", "", "```tsx", "<Card />;", "", "Prose the open fence swallowed."].join("\n");
+
+    expect(findCodeFences(source)).toEqual([{ lang: "tsx", line: 2, body: "<Badge />;" }]);
+  });
+
+  it("keeps an indented fence's body verbatim, indentation included", () => {
+    const source = ["1. Step one:", "", "   ```tsx", "   <Stack>", "     <Badge />", "   </Stack>;", "   ```"].join("\n");
+
+    expect(findCodeFences(source)).toEqual([{ lang: "tsx", line: 4, body: "   <Stack>\n     <Badge />\n   </Stack>;" }]);
   });
 });

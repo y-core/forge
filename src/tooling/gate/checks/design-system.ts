@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 
+import { stylesheetPath } from "../../assets/css-declaration";
 import type { DesignSystem } from "./types";
 
 /** Whether `tailwindcss` can be resolved — a derivation is unrunnable without it, and it is an optional peer. @public */
@@ -28,9 +29,7 @@ export async function loadDesignSystem(entry: string): Promise<DesignSystem> {
   };
 
   const loadStylesheet = async (id: string, base: string): Promise<{ path: string; base: string; content: string }> => {
-    const path = isBareSpecifier(id)
-      ? fileURLToPathish(import.meta.resolve(id === "tailwindcss" ? "tailwindcss/index.css" : id))
-      : resolve(base, id);
+    const path = stylesheetPath(id, base);
     return { path, base: dirname(path), content: readFileSync(path, "utf-8") };
   };
 

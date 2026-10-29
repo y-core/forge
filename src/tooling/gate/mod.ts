@@ -16,6 +16,7 @@ export {
   commentBudgetStep,
   compatibilityStep,
   contrastStep,
+  crossEngineTagsStep,
   cssCoverageStep,
   cssSourcesStep,
   cssTokensStep,
@@ -24,6 +25,7 @@ export {
   devBundleStep,
   exportsStep,
   exposureStep,
+  fadedTextStep,
   formatStep,
   jsxStep,
   menuNamingStep,
@@ -83,6 +85,8 @@ export type { PackagingCheckConfig } from "./checks/types";
 export { compositeOver, contrastRatio, oklchToPaintedHex, parseOklch, relativeLuminance } from "./checks/color";
 export type { ContrastCheckConfig, ContrastCriterion, ContrastPairInput, Measurement, Unresolved } from "./checks/types";
 export { checkContrast, measurePairs, parsePalette, resolveColor } from "./checks/contrast";
+export type { FadedTextCheckConfig } from "./checks/types";
+export { checkFadedText, fadedText } from "./checks/faded-text";
 export type { AcceptedRow, Declaration, Mode, ParsedTheme } from "./checks/types";
 export {
   checkAccepted,
@@ -132,6 +136,14 @@ export { checkJsx, resolveJsxSources, validateJsxSource } from "./checks/jsx";
 
 export type { MenuNamingCheckConfig } from "./checks/types";
 export { checkMenuNaming, triggeredPopupIds, triggerTargets, validateMenuNaming } from "./checks/menu-naming";
+export type { CrossEngineTagsCheckConfig, CrossEngineUnit } from "./checks/types";
+export {
+  checkCrossEngineTags,
+  findCrossEngineUnits,
+  findEngineReaders,
+  resolveFixtureReaders,
+  validateCrossEngineTags,
+} from "./checks/cross-engine-tags";
 export type { StubGlobalsCheckConfig } from "./checks/types";
 export { checkStubGlobals, declaredStubGlobals, findStubGlobalReferences } from "./checks/stub-globals";
 export type { BundleCheckConfig, IccProfileCheckConfig, NodeBundle, NodeExportsCheckConfig, NodeManifest } from "./checks/types";
@@ -208,6 +220,7 @@ export {
   collectSource,
   excludedBy,
   findComments,
+  findStylesheetComments,
   isTestSource,
   lineAt,
   listDirectories,
@@ -226,6 +239,7 @@ export { checkResult, fail, formatCheckResult, formatFinding, reportCheck, scann
 export type { CloudflareWorkerDesignOptions, CloudflareWorkerStepOptions, GatePackage, LibraryStepOptions } from "./types";
 export { cloudflareWorkerSteps, forgeChecks } from "./presets";
 export { workerMainClosure } from "./closure";
-export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepProbe, StepReach, StepRequirement } from "./types";
+export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepProbe, StepReach, StepRequirement, StepResults } from "./types";
+export type { GateRunReport, StepReport, StepStatus, TestFailure } from "./types";
 export { DEFAULT_GATE_INPUTS, isCheckStep, selectSteps } from "./steps";
 export { GATE_TIERS } from "./types";

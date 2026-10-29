@@ -2,11 +2,11 @@ import type { AnnouncePoliteness } from "../contracts/types";
 
 /** Options for {@link announce}. @public */
 export interface AnnounceOptions {
-  /** The stream a message coalesces within: a later message on it replaces one still settling. @default "default" */
+  /** The stream a message coalesces within: a later message on it replaces one still settling; defaults to `"default"`. */
   channel?: string | undefined;
-  /** Which announcer region speaks it; `assertive` interrupts, so keep it for a failure that stops the reader's task. @default "polite" */
+  /** Which announcer region speaks it; `assertive` interrupts, so keep it for a failure that stops the reader's task; defaults to `"polite"`. */
   politeness?: AnnouncePoliteness | undefined;
-  /** Speaks a message identical to the one this channel last spoke, which is otherwise skipped. @default false */
+  /** Speaks a message identical to the one this channel last spoke, which is otherwise skipped; defaults to `false`. */
   repeat?: boolean | undefined;
   /** A node in the document whose `<Announcer />` speaks, for a frame other than the ambient one. */
   within?: Node | undefined;
@@ -14,7 +14,7 @@ export interface AnnounceOptions {
 
 /** Options for {@link bindText}. */
 export interface BindTextOptions {
-  /** Renders a signal's value as the text to write. @default String */
+  /** Renders a signal's value as the text to write; defaults to `String`. */
   format?: (value: unknown) => string;
 }
 
@@ -23,7 +23,7 @@ export interface MountOptions {
   expose?: Record<string, string>;
   /** Stylesheets to load into the page, as paths resolved from `src/`, served raw with no Tailwind build. */
   css?: string[];
-  /** The origin the fixture is served from. Pass `SECURE_ORIGIN` where Chromium gates an API on a secure context. @default ORIGIN */
+  /** The origin the fixture is served from. Pass `SECURE_ORIGIN` where Chromium gates an API on a secure context; defaults to `ORIGIN`. */
   origin?: string;
 }
 
@@ -31,7 +31,7 @@ export interface MountOptions {
 export interface CarouselDotsOptions {
   /** The `Carousel.Dots` nav whose anchors point at the slides. */
   root: Element;
-  /** Narrows which anchors under `root` are driven. @default "a[href^='#']" */
+  /** Narrows which anchors under `root` are driven; defaults to `"a[href^='#']"`. */
   dotSelector?: string;
 }
 
@@ -39,13 +39,13 @@ export interface CarouselDotsOptions {
 export interface RovingFocusOptions {
   /** Selector for the composite's items, resolved **live** against `root` on every interaction. */
   items: string;
-  /** Which arrows navigate. `both` claims all four. @default "horizontal" */
+  /** Which arrows navigate. `both` claims all four; defaults to `"horizontal"`. */
   orientation?: "horizontal" | "vertical" | "both";
-  /** Wrap from the last item to the first and back. @default true */
+  /** Wrap from the last item to the first and back; defaults to `true`. */
   loop?: boolean;
-  /** Jump to an item by typing the start of its text. @default false */
+  /** Jump to an item by typing the start of its text; defaults to `false`. */
   typeahead?: boolean;
-  /** Idle time before the typeahead buffer resets. @default 500 */
+  /** Idle time before the typeahead buffer resets; defaults to `500`. */
   typeaheadTimeout?: number;
 }
 
@@ -132,17 +132,17 @@ export interface LazyImportOptions<T> {
 
 /** Options for {@link mountMenu}. */
 export interface MenuOptions {
-  /** Wrap from the last item to the first. @default true */
+  /** Wrap from the last item to the first; defaults to `true`. */
   loop?: boolean;
 }
 
 /** Options for {@link openPopoverAt}. */
 export interface OpenPopoverAtOptions {
-  /** Keep this many pixels between the popup and each viewport edge. @default 0 */
+  /** Keep this many pixels between the popup and each viewport edge; defaults to `0`. */
   margin?: number;
-  /** Open away from the point on an axis where the popup would not fit, instead of clamping it back on screen. @default false */
+  /** Open away from the point on an axis where the popup would not fit, instead of clamping it back on screen; defaults to `false`. */
   flip?: boolean;
-  /** Hold the show back until the pointer button currently held down is released. @default false */
+  /** Hold the show back until the pointer button currently held down is released; defaults to `false`. */
   afterPointerUp?: boolean;
 }
 
@@ -171,7 +171,7 @@ export interface ScopeDefinition<A extends string = string> {
 export interface ScrollSpyOptions {
   /** The nav subtree holding the fragment links. */
   root: Element;
-  /** Narrows which links under `root` are spied on. @default "a[href^='#']" */
+  /** Narrows which links under `root` are spied on; defaults to `"a[href^='#']"`. */
   linkSelector?: string;
   /** `rootMargin` for the observer; by default the band opens just below the offset the page declares with `scroll-padding-top` and its targets' `scroll-margin-top`. */
   rootMargin?: string;
@@ -198,7 +198,7 @@ export interface OwnedRun<T> {
 }
 
 export interface TabsOptions {
-  /** Select a tab as soon as focus reaches it. @default read from the root's `data-activation` */
+  /** Select a tab as soon as focus reaches it; defaults to the root's `data-activation`. */
   activation?: "automatic" | "manual";
 }
 
@@ -212,9 +212,9 @@ export interface FakeRequest {
 }
 
 export interface TooltipOptions {
-  /** @default 400 */
+  /** Defaults to `400`. */
   showDelayMs?: number;
-  /** @default 100 */
+  /** Defaults to `100`. */
   hideDelayMs?: number;
 }
 

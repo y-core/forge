@@ -16,7 +16,7 @@ description: "Barrel discipline and the export-star ban, the no-sibling-barrel r
 ## 0. Quick Reference
 
 - §1 Barrel Rules and Export Discipline: one barrel per namespace, named exports only
-- §1a Barrel Convention: the three rules a barrel obeys
+- §1a Barrel Convention: the rules a barrel obeys
 - §1b Export Star Ban: why all three spellings are rejected
 - §1c What the Export Gate Proves: read the check, not a prose copy
 - §2 No-Sibling-Barrel Import Rule: the guard against circular dependencies
@@ -30,10 +30,10 @@ description: "Barrel discipline and the export-star ban, the no-sibling-barrel r
 - §3d A Directory Is a Namespace Only With a Subpath: classify by published surface
 - §3e Duplication Across a Leaf Boundary: an accepted cost, not an oversight
 - §4 Exported Symbol Naming Convention: verbs and type suffixes
-- §4a Factory and Accessor Verbs: the value-constructor exception to the three verbs
+- §4a Factory and Accessor Verbs: the value-constructor exception to the verb rule
 - §4b Option and Shape Type Suffixes: `*Config`, `*Options`, `*Definition`, `*Descriptor`
 - §5 When to Add a New Namespace: criteria and checklist
-- §5a Criteria for a New Namespace: the four tests
+- §5a Criteria for a New Namespace: the tests a new namespace passes
 - §5b Checklist Before Merge: what must be true
 - §5c Extraction Triggers: when an existing namespace has outgrown its concern
 

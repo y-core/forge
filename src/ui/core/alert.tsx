@@ -9,13 +9,13 @@ import { presentationAttrs } from "../contracts/vocabulary";
 import type { PanelAppearance } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { toneSurfaceVariants } from "./utils/tone";
+import { toneSurface } from "./utils/tone";
 
 type AlertProps = JSX.IntrinsicElements["div"] & {
   tone?: Tone | undefined;
   appearance?: PanelAppearance | undefined;
   dismissible?: boolean | undefined;
-  /** Accessible name for the dismiss button. @default LABEL_DEFAULTS.alertDismiss */
+  /** Accessible name for the dismiss button; defaults to `LABEL_DEFAULTS.alertDismiss`. */
   dismissLabel?: string | undefined;
 };
 
@@ -35,7 +35,7 @@ const AlertRoot: FC<AlertProps> = ({
     {...(dismissible ? { "data-scope": ALERT_SCOPE } : {})}
     class={cn(
       "relative grid gap-1.5 rounded-box border-field py-3 ps-4 pe-4 text-sm",
-      toneSurfaceVariants({ tone, appearance }),
+      toneSurface({ tone, appearance }),
       dismissible && "pe-10",
       cls,
     )}

@@ -122,7 +122,7 @@ import { Badge, Button, Card, ScrollArea, Separator } from "@y-core/forge/ui/cor
 <Card>
   <Card.Content class='p-0'>
     <ScrollArea class='max-h-96'>
-      <ScrollArea.Viewport class='flex flex-col'>
+      <ScrollArea.Viewport label='Jobs' class='flex flex-col'>
         {jobs.map((job, i) => (
           <>
             {i > 0 && <Separator />}

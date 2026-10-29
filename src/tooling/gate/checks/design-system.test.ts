@@ -1,7 +1,8 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { canonical, fileURLToPathish, hasTailwind, isBareSpecifier, loadDesignSystem } from "./design-system";
 
@@ -11,12 +12,20 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-/** A throwaway root holding each `name: contents` pair, and the absolute path of `entry` within it. */
-function stylesheet(files: Record<string, string>, entry: string): string {
-  const dir = mkdtempSync(resolve(tmpdir(), "forge-design-system-"));
-  roots.push(dir);
-  for (const [name, contents] of Object.entries(files)) writeFileSync(resolve(dir, name), contents, "utf-8");
-  return resolve(dir, entry);
+const TAILWIND = dirname(fileURLToPath(import.meta.resolve("tailwindcss/index.css")));
+
+function stylesheet(files: Record<string, string>, entry: string, { linkTailwind = true } = {}): string {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "forge-design-system-")));
+  roots.push(root);
+  if (linkTailwind) {
+    mkdirSync(join(root, "node_modules"));
+    symlinkSync(TAILWIND, join(root, "node_modules/tailwindcss"));
+  }
+  for (const [name, contents] of Object.entries(files)) {
+    mkdirSync(dirname(join(root, name)), { recursive: true });
+    writeFileSync(join(root, name), contents, "utf-8");
+  }
+  return join(root, entry);
 }
 
 describe("hasTailwind()", () => {
@@ -111,10 +120,42 @@ describe("loadDesignSystem()", () => {
     expect(ds.candidatesToCss(["text-brand"])[0]).toBe(".text-brand {\n  color: var(--color-brand);\n}\n");
   });
 
-  it.skipIf(!hasTailwind())("reports an unresolvable bare @import as a package that cannot be found, not as a missing sibling file", async () => {
+  it.skipIf(!hasTailwind())("resolves a package found only in the app's node_modules, from the importing stylesheet's directory", async () => {
+    const entry = stylesheet(
+      {
+        "styles/entry.css": '@import "tailwindcss";\n@import "@acme/tokens/tokens.css";\n',
+        "node_modules/@acme/tokens/package.json": JSON.stringify({ exports: { "./tokens.css": { style: "./tokens.css" } } }),
+        "node_modules/@acme/tokens/tokens.css": "@theme {\n  --color-brand: #123456;\n}\n",
+      },
+      "styles/entry.css",
+    );
+
+    const ds = await loadDesignSystem(entry);
+
+    expect(ds.candidatesToCss(["text-brand"])[0]).toBe(".text-brand {\n  color: var(--color-brand);\n}\n");
+  });
+
+  it.skipIf(!hasTailwind())("takes tailwindcss's stylesheet from the app's install, not forge's", async () => {
+    const entry = stylesheet(
+      {
+        "node_modules/tailwindcss/package.json": JSON.stringify({ exports: { ".": { style: "./index.css" } } }),
+        "node_modules/tailwindcss/index.css": "@tailwind utilities;\n@theme {\n  --color-app-copy: #abcdef;\n}\n",
+        "entry.css": '@import "tailwindcss";\n',
+      },
+      "entry.css",
+      { linkTailwind: false },
+    );
+
+    const ds = await loadDesignSystem(entry);
+
+    expect([...ds.theme.entries()].map(([key]) => key)).toEqual(["--color-app-copy"]);
+    expect(ds.candidatesToCss(["text-app-copy"])[0]).toBe(".text-app-copy {\n  color: var(--color-app-copy);\n}\n");
+  });
+
+  it.skipIf(!hasTailwind())("rejects a bare @import the importing stylesheet cannot reach, naming the import", async () => {
     const entry = stylesheet({ "entry.css": '@import "tailwindcss";\n@import "@acme/absent/tokens.css";\n' }, "entry.css");
 
-    expect(loadDesignSystem(entry)).rejects.toThrow(/Cannot find (package|module)/);
+    await expect(loadDesignSystem(entry)).rejects.toThrow('`@import "@acme/absent/tokens.css"` resolves to no stylesheet');
   });
 
   it.skipIf(!hasTailwind())("returns null for a candidate the compiled system produces no CSS for", async () => {
@@ -142,12 +183,12 @@ describe("loadDesignSystem()", () => {
   it.skipIf(!hasTailwind())("throws rather than stubbing when the stylesheet loads a plugin", async () => {
     const entry = stylesheet({ "entry.css": '@import "tailwindcss";\n@plugin "./thing.js";\n' }, "entry.css");
 
-    expect(loadDesignSystem(entry)).rejects.toThrow(
+    await expect(loadDesignSystem(entry)).rejects.toThrow(
       "`./thing.js` was loaded as a module: this design system is expected to use no `@plugin` or `@config`.",
     );
   });
 
   it.skipIf(!hasTailwind())("throws when the entry stylesheet does not exist, rather than compiling an empty system", async () => {
-    expect(loadDesignSystem(resolve(tmpdir(), "forge-design-system-absent", "entry.css"))).rejects.toThrow("ENOENT");
+    await expect(loadDesignSystem(resolve(tmpdir(), "forge-design-system-absent", "entry.css"))).rejects.toThrow("ENOENT");
   });
 });

@@ -2,8 +2,10 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { fail } from "../../../src/tooling/gate/finding";
+import { lintKeyOf } from "../../../src/tooling/lint/design-rules";
 import plugin from "../../../src/tooling/lint/plugin";
 import { checkDesign } from "./design";
 
@@ -19,6 +21,18 @@ function oxlintConfig(trailing: string): string {
     .join("\n");
   return `{\n  "rules": {\n${rules.replace(/,$/, "")}\n  }\n}\n`;
 }
+
+function scopedConfig(scoped: string, override: boolean): string {
+  const rules = Object.fromEntries(
+    Object.keys(plugin.rules)
+      .filter((key) => key !== scoped)
+      .map((key) => [`forge/${key}`, "error"]),
+  );
+  const overrides = override ? [{ files: ["**/*.tsx"], rules: { [`forge/${scoped}`]: "error" } }] : [];
+  return JSON.stringify({ rules, overrides });
+}
+
+const SCOPED = lintKeyOf("forge-ui-no-inline-style");
 
 /** A throwaway root carrying only the oxlint config the check reads. */
 function root(config: string): string {
@@ -60,6 +74,16 @@ describe("checkDesign() — reading the oxlint config", () => {
 
   it("reports a config that is genuinely unparseable rather than guessing at its rules", () => {
     expect(configFindings("{ not json")).toEqual(["could not be read, so no plugin rule could be held against it"]);
+  });
+
+  it("counts a rule enabled only inside an `overrides` block as enabled", () => {
+    expect(configFindings(scopedConfig(SCOPED, true)).filter((message) => message.includes("is not enabled"))).toEqual([]);
+  });
+
+  it("reports the same rule as not enabled when no block turns it on", () => {
+    expect(configFindings(scopedConfig(SCOPED, false))).toContain(
+      `\`forge/${SCOPED}\` is not enabled — a registered rule that no config turns on reports nothing`,
+    );
   });
 });
 
@@ -128,5 +152,139 @@ describe("checkDesign() — rule markers", () => {
         line: 3,
       },
     ]);
+  });
+});
+
+describe("checkDesign() — tsx fences compile against the exports", () => {
+  const forgeFile = (path: string): string => fileURLToPath(new URL(`../../../src/${path}`, import.meta.url));
+  const fenceExports = { "./ui/core": forgeFile("ui/core/mod.ts"), "./render/jsx/jsx-runtime": forgeFile("render/jsx/jsx-runtime.ts") };
+  const consumerTsconfig = fileURLToPath(new URL("../../../tests/fixtures/workers-consumer/tsconfig.json", import.meta.url));
+  const fence = (lang: string, ...body: string[]): string => ["```" + lang, ...body, "```"].join("\n");
+
+  /** The findings blamed on a markdown file, from a corpus and root files written as given. */
+  function fenceFindings(
+    files: Record<string, string>,
+    fencedDocs: readonly string[] = [],
+  ): { file: string | undefined; line: number | undefined; message: string }[] {
+    const dir = root(oxlintConfig(","));
+    for (const [path, source] of Object.entries(files)) writeFileSync(join(dir, path), source, "utf-8");
+    const result = checkDesign({
+      root: dir,
+      packageName: "@y-core/forge",
+      exports: fenceExports,
+      designDir: "design",
+      cssDir: "css",
+      sourceDir: "src",
+      fencedDocs,
+      tsconfig: consumerTsconfig,
+    });
+    return result.findings.filter(({ file }) => file?.endsWith(".md")).map(({ file, line, message }) => ({ file, line, message }));
+  }
+
+  it("fails an unknown prop at the markdown line of its tag", () => {
+    const source = [
+      "# Dialogs",
+      "",
+      fence("tsx", 'import { Dialog } from "@y-core/forge/ui/core";', "", "<Dialog modal label='x'>", "  Body", "</Dialog>;"),
+    ].join("\n");
+    const findings = fenceFindings({ "design/dialogs.md": source });
+
+    expect(findings.map(({ file, line }) => ({ file, line }))).toEqual([{ file: "design/dialogs.md", line: 6 }]);
+    expect(findings[0]?.message).toContain("Property 'modal' does not exist");
+    expect(findings[0]?.message).toEndWith("(TS2322)");
+  });
+
+  it("fails a prop value outside the prop's type", () => {
+    const source = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone='default'>New</Badge>;");
+    const findings = fenceFindings({ "design/badges.md": source });
+
+    expect(findings.map(({ file, line }) => ({ file, line }))).toEqual([{ file: "design/badges.md", line: 3 }]);
+    expect(findings[0]?.message).toContain(`'"default"'`);
+    expect(findings[0]?.message).toEndWith("(TS2322)");
+  });
+
+  it("fails an unknown compound member once, though its closing tag repeats the diagnostic", () => {
+    const source = fence("tsx", 'import { Card } from "@y-core/forge/ui/core";', "<Card.Subtitle>t</Card.Subtitle>;");
+    const findings = fenceFindings({ "design/cards.md": source });
+
+    expect(findings.map(({ file, line }) => ({ file, line }))).toEqual([{ file: "design/cards.md", line: 3 }]);
+    expect(findings[0]?.message).toContain("Property 'Subtitle'");
+    expect(findings[0]?.message).toEndWith("(TS2339)");
+  });
+
+  it("names the subpath that exports a forge name the fence uses without importing", () => {
+    const source = ["# Icons", "", fence("tsx", "<Icon symbol='x' />;")].join("\n");
+
+    expect(fenceFindings({ "design/icons.md": source })).toEqual([
+      { file: "design/icons.md", line: 4, message: "`Icon` is not imported — `@y-core/forge/ui/core` exports it" },
+    ]);
+  });
+
+  it("passes names forge does not export as app context, declared by the check rather than the fence", () => {
+    const source = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone={tone}>{label}</Badge>;");
+
+    expect(fenceFindings({ "design/context.md": source })).toEqual([]);
+  });
+
+  it("contains a parse failure to its own fence, so the next fence's type error is still reported", () => {
+    const broken = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge>One</Badge>", "<Badge>Two</Badge>;");
+    const typed = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone='default'>New</Badge>;");
+    const findings = fenceFindings({ "design/mixed.md": [broken, "", typed].join("\n") });
+
+    expect(findings.map(({ line, message }) => ({ line, kind: /\(TS(\d+)\)$/.exec(message)?.[1] }))).toEqual([
+      { line: 3, kind: "2657" },
+      { line: 9, kind: "2322" },
+    ]);
+  });
+
+  it("fails an unclosed brace at its fence's last line, though tsc raises it past the body, and still reports the next fence", () => {
+    const truncated = fence("tsx", "function f() {", "  const x = 1;");
+    const typed = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', '<Badge tone="default">New</Badge>;');
+    const findings = fenceFindings({ "design/truncated.md": [truncated, "", typed].join("\n") });
+
+    expect(findings.map(({ line, message }) => ({ line, kind: /\(TS(\d+)\)$/.exec(message)?.[1] }))).toEqual([
+      { line: 3, kind: "1005" },
+      { line: 8, kind: "2322" },
+    ]);
+  });
+
+  it("blames the true markdown line for a fence indented inside a list item", () => {
+    const source = [
+      "- Step one:",
+      "",
+      "  ```tsx",
+      '  import { Badge } from "@y-core/forge/ui/core";',
+      "",
+      "  <Badge tone='default'>New</Badge>;",
+      "  ```",
+    ].join("\n");
+    const findings = fenceFindings({ "design/list.md": source });
+
+    expect(findings.map(({ file, line }) => ({ file, line }))).toEqual([{ file: "design/list.md", line: 6 }]);
+  });
+
+  it("compiles a listed `fencedDocs` file and blames it, but not the same fence in an unlisted one", () => {
+    const source = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone='default'>New</Badge>;");
+    const findings = fenceFindings({ "README.md": source, "OTHER.md": source }, ["README.md"]);
+
+    expect(findings.map(({ file, line }) => ({ file, line }))).toEqual([{ file: "README.md", line: 3 }]);
+  });
+
+  it("reports a `fencedDocs` entry naming a file that does not exist", () => {
+    expect(fenceFindings({}, ["MISSING.md"])).toEqual([
+      { file: "MISSING.md", line: undefined, message: "is listed in `fencedDocs` but does not exist" },
+    ]);
+  });
+
+  it("leaves a non-tsx fence uncompiled, however invalid", () => {
+    const source = [fence("ts", "const count: number = 'one'"), "", fence("html", "<Badge tone='default'>")].join("\n");
+
+    expect(fenceFindings({ "design/other.md": source })).toEqual([]);
+  });
+
+  it("passes a fence that imports what it uses and compiles clean", () => {
+    const source = fence("tsx", 'import { Badge } from "@y-core/forge/ui/core";', "<Badge tone='neutral'>x</Badge>;");
+
+    expect(fenceFindings({ "design/clean.md": source })).toEqual([]);
   });
 });

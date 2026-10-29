@@ -51,8 +51,6 @@ describe("base64urlDecodeOrNull", () => {
   });
 });
 
-// `base64urlEncode` is defined as `base64Encode` with the three substitutions, so this is the
-// relationship the shared implementation rests on rather than an incidental one.
 describe("base64urlEncode against base64Encode", () => {
   it("is the standard encoding with +, / and = substituted", () => {
     for (let len = 0; len <= 32; len++) {

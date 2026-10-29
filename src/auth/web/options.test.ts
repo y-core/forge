@@ -3,11 +3,15 @@ import { describe, expect, it } from "bun:test";
 import { RequestContext } from "@remix-run/fetch-router";
 
 import type { AppContext } from "../../context/types";
+import { CSRF_HEADER_DEFAULT } from "../../form/constants";
 import { csrfMinterCtx } from "../../form/csrf";
+import { csrfHeaderCtx } from "../../form/csrf-context";
 import { createTestContext } from "../../testing/context";
 import { TURNSTILE_ACTION_PATTERN } from "../../ui/contracts/turnstile-contract";
+import { PASSKEY_CSRF_HEADER_DEFAULT } from "../passkey-contract";
 import {
   AUTH_TURNSTILE_ACTIONS,
+  authCsrfHeader,
   authNow,
   authPasskeyContract,
   authReturnPath,
@@ -34,8 +38,6 @@ describe("authNow", () => {
   });
 });
 
-// `resolveServices` rebuilds every store, and one request runs a guard, a loader and often an
-// action — each of which asked for them separately.
 describe("authServices", () => {
   it("builds this request's services once, however many callers ask for them", async () => {
     let calls = 0;
@@ -114,8 +116,6 @@ describe("authReturnQuery", () => {
     expect(carried).toBe("/auth/signin?next=%2Faccount%2Ftotp");
   });
 
-  // The value lands in a rendered `action=`, so an off-origin one would be an open redirect the
-  // page itself offers.
   it("drops an off-origin return-to rather than rendering it into a form action", () => {
     const options = fakeAuthWebOptions();
     expect(authReturnQuery(context("http://localhost/auth/signin?next=https%3A%2F%2Fevil.example"), options, "/auth/signin")).toBe("/auth/signin");
@@ -146,6 +146,28 @@ describe("authPasskeyContract", () => {
       verifyToken: "csrf-for:/finish",
       redirect: "/home",
     });
+  });
+
+  it("leaves the header off when it is the controller's own default, and names one the app renamed", async () => {
+    const contractUnder = async (header: string) => {
+      const c = context("http://localhost/auth/signin");
+      csrfHeaderCtx.set(c, header);
+      return (await authPasskeyContract(c, "authentication", "/begin", "/finish", "/home")).csrfHeader;
+    };
+
+    expect([await contractUnder(PASSKEY_CSRF_HEADER_DEFAULT), await contractUnder("X-Csrf")]).toEqual([undefined, "X-Csrf"]);
+  });
+});
+
+describe("authCsrfHeader", () => {
+  it("answers nothing for csrfProtection's default header, and the header for a renamed one", () => {
+    const headerUnder = (header?: string) => {
+      const c = context("http://localhost/auth/signin");
+      if (header !== undefined) csrfHeaderCtx.set(c, header);
+      return authCsrfHeader(c);
+    };
+
+    expect([headerUnder(), headerUnder(CSRF_HEADER_DEFAULT), headerUnder("X-Csrf")]).toEqual([{}, {}, { csrfHeader: "X-Csrf" }]);
   });
 });
 

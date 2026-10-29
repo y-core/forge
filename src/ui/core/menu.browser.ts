@@ -74,7 +74,7 @@ const ROWS: Row[] = [
   { id: "quit", label: "Quit" },
 ];
 
-test.describe("Menu — anatomy", () => {
+test.describe("Menu — anatomy", { tag: "@cross-engine" }, () => {
   test("announces the menu and its items with the ARIA menu roles", async ({ page }) => {
     await mountMenu(page, ROWS);
 
@@ -146,7 +146,7 @@ test.describe("Menu — anatomy", () => {
   });
 });
 
-test.describe("Menu — the platform opens and closes it", () => {
+test.describe("Menu — the platform opens and closes it", { tag: "@cross-engine" }, () => {
   test("the trigger's native command opens the popup and publishes the open state", async ({ page }) => {
     await mountMenu(page, ROWS);
 
@@ -175,7 +175,7 @@ test.describe("Menu — the platform opens and closes it", () => {
   });
 });
 
-test.describe("Menu — keyboard", () => {
+test.describe("Menu — keyboard", { tag: "@cross-engine" }, () => {
   test("focuses the first item when it opens", async ({ page }) => {
     await mountMenu(page, ROWS);
 
@@ -252,7 +252,7 @@ test.describe("Menu — keyboard", () => {
   });
 });
 
-test.describe("Menu — activation", () => {
+test.describe("Menu — activation", { tag: "@cross-engine" }, () => {
   test("Enter activates the focused item and the platform closes the menu", async ({ page }) => {
     await mountMenu(page, ROWS);
     await page.click("[data-slot~='menu-trigger']");
@@ -333,7 +333,7 @@ test.describe("Menu — focus restoration", () => {
 
 // APG's Menu pattern makes Tab an exit that closes the menu; `popover="auto"` light-dismisses on
 // pointer-down outside and on Escape only, so nothing in the platform closes a menu focus has left.
-test.describe("Menu — Tab leaves and closes", () => {
+test.describe("Menu — Tab leaves and closes", { tag: "@cross-engine" }, () => {
   async function mountWithTrailingStop(page: Page): Promise<void> {
     const inner = await menuMarkup(ROWS);
     await mount(page, `<div data-scope="demo">${inner}<button id="after">after</button></div>`, EXPOSE);
@@ -364,7 +364,7 @@ test.describe("Menu — Tab leaves and closes", () => {
   });
 });
 
-test.describe("Menu — the trigger toggles it", () => {
+test.describe("Menu — the trigger toggles it", { tag: "@cross-engine" }, () => {
   function expanded(page: Page): Promise<string | null | undefined> {
     return page.evaluate(() => document.querySelector("[data-slot~='menu-trigger']")?.getAttribute("aria-expanded"));
   }
@@ -483,7 +483,7 @@ test.describe("Menu — opening focuses a row the ring can reach", () => {
   });
 });
 
-test.describe("Menu — link items", () => {
+test.describe("Menu — link items", { tag: "@cross-engine" }, () => {
   test("a link row is a menu item and stays a real anchor", async ({ page }) => {
     const html = await render(
       Menu.Popup({
@@ -546,7 +546,7 @@ test.describe("Menu — link items", () => {
   });
 });
 
-test.describe("Menu — submenus", () => {
+test.describe("Menu — submenus", { tag: "@cross-engine" }, () => {
   async function nestedMarkup(): Promise<string> {
     const submenu = Menu.Popup({
       triggered: true,
@@ -730,7 +730,7 @@ test.describe("Menu — submenus", () => {
   });
 });
 
-test.describe("Menu — Tab out of a submenu closes the whole chain", () => {
+test.describe("Menu — Tab out of a submenu closes the whole chain", { tag: "@cross-engine" }, () => {
   async function chainMarkup(placement: "nested" | "detached"): Promise<string> {
     const submenu = Menu.Popup({ triggered: true, id: "recent-menu", children: submenuRows() });
     const popup = Menu.Popup({
@@ -799,7 +799,7 @@ const DIRECTIONS = [
   { dir: "rtl", toward: "ArrowLeft", away: "ArrowRight" },
 ] as const;
 
-test.describe("Menu — submenu keys mirror with the writing direction", () => {
+test.describe("Menu — submenu keys mirror with the writing direction", { tag: "@cross-engine" }, () => {
   async function openParentIn(page: Page, dir: "ltr" | "rtl", dirOn: "wrapper" | "popup" = "wrapper"): Promise<void> {
     await mount(page, await submenuMarkup(dir, dirOn), EXPOSE);
     await start(page);
@@ -914,7 +914,7 @@ async function lightParentShadowSubmenuMarkup(): Promise<string> {
   return `${outer}<template id="source">${inner}${panel}</template>`;
 }
 
-test.describe("Menu — a submenu across a shadow boundary", () => {
+test.describe("Menu — a submenu across a shadow boundary", { tag: "@cross-engine" }, () => {
   async function attachAndResume(page: Page, hostSelector: string): Promise<void> {
     await page.evaluate((selector) => {
       const host = document.querySelector(selector);
@@ -1004,7 +1004,7 @@ test.describe("Menu — a submenu across a shadow boundary", () => {
   });
 });
 
-test.describe("Menu — items replaced between openings", () => {
+test.describe("Menu — items replaced between openings", { tag: "@cross-engine" }, () => {
   test("navigates a rebuilt item set without re-mounting", async ({ page }) => {
     await mountMenu(page, ROWS);
 

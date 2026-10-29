@@ -66,8 +66,9 @@
 
 ```bash
 bun run verify:static          # the loop to write in — every row that judges the source
-bun run verify                 # the gate a task closes on — runtime suites on Chromium, narrowed to pending changes
-bun run verify:release         # sign-off — every runtime suite whole, every browser spec on each engine you opt into
+bun run verify                 # the gate a task closes on — runtime suites narrowed to pending changes; no browser spec
+bun run verify:deploy          # every runtime suite whole, plus every browser spec on Chromium
+bun run verify:release         # sign-off — the above, plus every browser spec on each engine you opt into
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
 bun run dev                    # asset build + forge cf dev

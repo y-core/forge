@@ -8,9 +8,9 @@ import { stateAttrs } from "../contracts/state-attrs";
 import type { MenuItemAttrsOptions } from "../contracts/types";
 import type { Align, MenuPopupNaming, Side } from "../contracts/types";
 import { buttonBox } from "./button";
-import { mergeIdRefs } from "./field";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { mergeIdRefs } from "./utils/id-refs";
 import { fillPartProps } from "./utils/part-props";
 import { RULE } from "./utils/recipes";
 

@@ -9,7 +9,7 @@ export type { SchemaHealthState, SchemaObject } from "../../storage/db/types";
 /** Where a database lives: the app's own local state, a second local database, the deployed one, or its preview. @public */
 export type Place = "local" | "standby" | "remote" | "preview";
 
-/** A database, addressed as `place[:database]`. `database` is null when the caller accepts the config's single entry. @public */
+/** A database, addressed as `place[:database]`, whose `database` is null when the caller accepts the config's single entry. @public */
 export interface DbTarget {
   readonly place: Place;
   readonly database: string | null;
@@ -318,7 +318,7 @@ export type ForgeSchemaName = "auth";
 
 /** The `config/db.ts` default export: every position `forge db` reads, each named on purpose. @public */
 export interface DbHostConfig {
-  /** Every desired-state file or directory the app composes from, in load order — its own and each library's. Nothing is read that is not named here. */
+  /** Every desired-state file or directory the app composes from, its own and each library's, in load order and with nothing read beyond them. */
   readonly schemas?: readonly string[];
   /** Every seeds directory, in run order. */
   readonly seeds?: readonly string[];
@@ -411,7 +411,7 @@ export interface DbConfigRequest {
 export interface SynthesizeOptions {
   label: string;
   database: string;
-  /** Where the config is written. Local state lives under it unless `persistTo` says otherwise. */
+  /** Where the config is written, with local state under it unless `persistTo` says otherwise. */
   dir: string;
   /** Overrides the state directory, so a `--to` cut applies into the real database. */
   persistTo?: string | undefined;
@@ -465,7 +465,7 @@ export interface FakeD1Rule {
   reply: Record<string, unknown>[] | ((statement: string, home: Home) => Record<string, unknown>[]);
 }
 
-/** An in-memory `DbIo`: a map for the filesystem, a rule table for each of the two effects, and every call recorded. @internal */
+/** An in-memory `DbIo`: a map for the filesystem, a rule table for each effect, and every call recorded. @internal */
 export interface FakeDbIo extends DbIo {
   files: Map<string, string>;
   calls: string[][];

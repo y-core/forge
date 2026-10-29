@@ -1,10 +1,13 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 
+import { MODERN_CSS_RULES } from "../../lint/modern-css-rules";
 import { gateFixtureRoot } from "./gate.fixture";
 import { checkModernCss } from "./modern-css";
 import type { ModernCssCheckConfig } from "./types";
 import type { DeferredFinding } from "./types";
+
+const RULES = Object.keys(MODERN_CSS_RULES).length;
 
 const roots: string[] = [];
 
@@ -35,7 +38,7 @@ describe("checkModernCss() — the tree it walks", () => {
     const result = run(root);
 
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe("1 files scanned against 40 rules, 0 deferred.");
+    expect(result.summary).toBe(`1 files scanned against ${RULES} rules, 0 deferred.`);
   });
 
   it("fails rather than passing vacuously when the sources match no file", () => {
@@ -79,7 +82,7 @@ describe("checkModernCss() — the tree it walks", () => {
       "src/ui/a.css": LAYERED(".b {\n  color: red;\n}\n"),
     });
 
-    expect(run(root).summary).toBe("1 files scanned against 40 rules, 0 deferred.");
+    expect(run(root).summary).toBe(`1 files scanned against ${RULES} rules, 0 deferred.`);
   });
 
   it("reports the file and 1-indexed line of each violation", () => {
@@ -112,7 +115,7 @@ describe("checkModernCss() — the deferral list", () => {
     const result = run(root, { deferred: [deferral] });
 
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe("1 files scanned against 40 rules, 1 deferred.");
+    expect(result.summary).toBe(`1 files scanned against ${RULES} rules, 1 deferred.`);
   });
 
   it("defers every file under a directory prefix", () => {

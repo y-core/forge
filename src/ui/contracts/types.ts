@@ -4,7 +4,7 @@ import type { APPEARANCES } from "./vocabulary";
 import type { PRESENTATION_ATTRS } from "./vocabulary";
 import type { TONES } from "./vocabulary";
 
-/** Which of the page's two announcer regions a message is spoken through. @public */
+/** Which of the page's announcer regions a message is spoken through. @public */
 export type AnnouncePoliteness = "polite" | "assertive";
 
 /** The actions a checkable menu row names in `data-on-click` and the client scope handles. @public */
@@ -19,11 +19,11 @@ export interface MenuItemAttrsOptions {
   // of `aria-disabled`, so such a row would dismiss a menu that must stay open.
   /** id of the enclosing menu popup, which emits the `hide-popover` invoker command. */
   readonly closes?: string | false | undefined;
-  /** `menuitemcheckbox` / `menuitemradio` instead of a plain `menuitem`. @default "menuitem" */
+  /** `menuitemcheckbox` / `menuitemradio` instead of a plain `menuitem`; defaults to `"menuitem"`. */
   readonly role?: "menuitem" | "menuitemcheckbox" | "menuitemradio";
   /** Marks the row `aria-disabled`, keeping it focusable and in the navigation ring. */
   readonly disabled?: boolean;
-  /** Initial checked state of a `menuitemcheckbox` or `menuitemradio`. @default false */
+  /** Initial checked state of a `menuitemcheckbox` or `menuitemradio`; defaults to `false`. */
   readonly checked?: boolean;
 }
 
@@ -39,7 +39,7 @@ export interface MenuItemAttrs {
   readonly commandfor?: string;
 }
 
-/** How a `<dialog>` root is named. `dialog` takes no name from its contents, so one of the three is required. @public */
+/** How a `<dialog>` root is named. `dialog` takes no name from its contents, so one of these is required. @public */
 export type DialogNaming =
   /** Literal accessible name, for a root that renders no `.Title`. */
   | { readonly label: string; readonly labelledby?: never; readonly titled?: never }
@@ -48,14 +48,22 @@ export type DialogNaming =
   /** This root renders a `.Title` whose `for` is the root's own id, and is named by it. */
   | { readonly titled: true; readonly label?: never; readonly labelledby?: never };
 
-/** How a container role — `toolbar`, `region` — is named. It takes no name from its contents, so one of the two is required. @public */
+/** The flags that make a `<dialog>` root an alert dialog, a described one, or both. @internal */
+export interface DialogAlertFlags {
+  /** Announce as an alert dialog — a message interrupting the reader's work, which APG asks be described. */
+  alert?: boolean | undefined;
+  /** This root renders a `.Description` whose `for` is its own id, and points `aria-describedby` at it. */
+  described?: boolean | undefined;
+}
+
+/** How a container role — `toolbar`, `region` — is named. It takes no name from its contents, so one of these is required. @public */
 export type ContainerNaming =
   /** Literal accessible name. */
   | { readonly label: string; readonly labelledby?: never }
   /** id of an element elsewhere on the page that names this container. */
   | { readonly labelledby: string; readonly label?: never };
 
-/** How a `role="menu"` popup is named. It takes no name from its rows, so one of the three is required. @public */
+/** How a `role="menu"` popup is named. It takes no name from its rows, so one of these is required. @public */
 export type MenuPopupNaming =
   /** A forge `Menu.Trigger` or `Menu.SubmenuTrigger` targets this popup, and is what names it. */
   | { readonly triggered: true; readonly label?: never; readonly labelledby?: never }
@@ -104,6 +112,7 @@ export interface StateAttrsProps {
   orientation?: Orientation | undefined;
   side?: Side | undefined;
   align?: Align | undefined;
+  state?: string | undefined;
 }
 
 /** The action a theme toggle names in `data-on-click`. @public */
@@ -121,7 +130,7 @@ export type Tone = (typeof TONES)[number];
 /** One of {@link APPEARANCES}. @public */
 export type Appearance = (typeof APPEARANCES)[number];
 
-/** The three control heights, read from `--control-h-*`. @public */
+/** The control heights, read from `--control-h-*`. @public */
 export type Size = "sm" | "md" | "lg";
 
 /** A button's footprint beyond its size: text, an icon-only square, a full-width square, or a circle. @public */
@@ -135,5 +144,4 @@ export interface PresentationAttrsProps {
   tone?: Tone | undefined;
   appearance?: Appearance | undefined;
   size?: Size | undefined;
-  state?: string | undefined;
 }

@@ -195,10 +195,10 @@ export function requireApproval<Bindings = Record<string, unknown>>(
     const mark = resolveApprovalMark(session);
     if (
       mark !== null &&
-      stepUpHolds(mark.at, approval.ttlMs, Date.now()) &&
+      stepUpHolds(mark.presentedAt, approval.ttlMs, Date.now()) &&
       (await approvalCodeMatches(await approval.ring(context), mark.digest, code))
     ) {
-      approvalCtx.set(context, mark.at);
+      approvalCtx.set(context, mark.presentedAt);
       return next();
     }
     return refuse(options.medium, APPROVAL_OWED, 403, () => redirectWithReturn(context, approval.path, APPROVAL_RETURN_PARAM));

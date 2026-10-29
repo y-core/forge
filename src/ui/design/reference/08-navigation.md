@@ -24,13 +24,13 @@ primitive the rail is built from). The one-barrel rule in `06-forms.md` applies 
 ## 0. Quick Reference
 
 - §1 `Navbar`: the destinations bar, built from a `NavDefinition` rather than from children
-- §1a The definition and its four item shapes: `NavLink`, `NavMenu`, `NavSlot`, `NavGroup`, and the roles they carry
+- §1a The definition and its item shapes: what each shape is for, and where a `NavGroup` may sit
 - §1b One bar, built from a definition: one per application, two or three sections, destinations only
 - §1c Menus, groups and megamenus: when a dropdown hides the list the reader came to survey
 - §1d Placement and the collapsible rail: what `collapsible="always"` resolves `placement` to, and why
 - §1e The rail's box in the layout: width and `shrink-0` on the scope root, and the height chain scrolling needs
 - §1f The collapsed rail's width: 56px, the toggle's edge, and the narrow width as an override over a wide base
-- §1g The collapsed panel below `md`: `collapsedAs="drawer"`, its four dismissals, and the containing-block trap
+- §1g The collapsed panel below `md`: `collapsedAs="drawer"`, its dismissals, and the containing-block trap
 - §1h Labelling destinations: name a destination for what the user wants, and carry visible text
 - §1i Indicating the current location: the bar does not know the request, so the app renders the marker
 - §2 `Dock`: three to five equal top-level destinations at phone width, and when it is a `Navbar` instead
@@ -43,7 +43,7 @@ primitive the rail is built from). The one-barrel rule in `06-forms.md` applies 
 
 ## 1. `Navbar`
 
-### 1a. The definition and its four item shapes
+### 1a. The definition and its item shapes
 
 `Navbar` is built from a `NavDefinition`, not from JSX children: `NavDefinition` holds `sections`, and each `NavSection` holds `items`, typed
 `NavSectionItem` — any `NavItem`, plus `NavGroup`.
@@ -53,7 +53,8 @@ primitive the rail is built from). The one-barrel rule in `06-forms.md` applies 
 | `NavLink` | A destination. Its `href` is a route-map **key**, resolved through `resolveHref` |
 | `NavMenu` | A group of destinations behind one trigger |
 | `NavSlot` | Anything that is not a destination — identity, a search box, a `ThemeToggle` |
-| `NavGroup` | A heading over destinations that stay **visible**. Section level only |
+| `NavMegaMenu` | A wide panel of `NavGroup` columns opened from one bar trigger — §1c says when it earns its place |
+| `NavGroup` | A heading over destinations that stay **visible**. At section level, or as a `NavMegaMenu` column |
 
 `filters` is a visibility convenience and never a permission: every filtered item's label and `href` reach every viewer, and only its painting is
 suppressed. Reach for it to keep a bar uncluttered, never to keep a destination secret — the route needs its own guard either way. An empty list
@@ -134,8 +135,8 @@ mobile-first surface, and `right` a rail on the trailing edge; each of those is 
 up, so a side rail under it cannot be collapsed at all at the widths where it takes the most room — and a rail is the placement where reclaiming
 that room matters most. `"always"` keeps the toggle and the vertical panel at every breakpoint, which is the rail shape, so `placement` resolves to
 `"left"` under it rather than to the top strip a never-expanding full-width bar would otherwise be. Pair it with `defaultOpen` when the rail should
-start expanded; there is no controller behind that prop, so the state it renders is the state the user sees. Override with `placement="right"` for a
-trailing-edge rail, or with an explicit horizontal placement for the rare bar that stays collapsed at every width.
+start expanded; below `md` the `navbar` scope closes it at resume, so it decides a wide viewport's first state and not a phone's. Override with
+`placement="right"` for a trailing-edge rail, or with an explicit horizontal placement for the rare bar that stays collapsed at every width.
 
 ### 1e. The rail's box in the layout
 
@@ -169,6 +170,9 @@ open rail does not reserve a column for a panel that is not in it. State the nar
 clips the open panel. Override under a brief for a collapsed state that shows glyphs with labels, which needs more than one button of width.
 
 ```tsx
+import { Navbar } from "@y-core/forge/ui/chrome";
+import { Resumable } from "@y-core/forge/ui/server";
+
 // Wrong — the layout classes land on the `<details>`, not on the box the flex row lays out.
 <Resumable name='app-rail'>
   <Navbar config={rail} resolveHref={routes.url} icon={AppIcon} collapsible='always' defaultOpen class='w-64 shrink-0' />
@@ -224,6 +228,8 @@ destination, so a drawer missing one traps whoever reached for it.
 Override for a bar whose panel stays `inline`. Only a fixed-position drawer is captured by a filtered or transformed ancestor.
 
 ```tsx
+import { Navbar } from "@y-core/forge/ui/chrome";
+
 // Wrong — the blurred header is the panel's containing block, so the drawer opens inside the header.
 <header class='sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-lg'>
   <Navbar config={nav} resolveHref={hrefFor} icon={AppIcon} collapsedAs='drawer' />
@@ -234,6 +240,8 @@ Costs: the drawer's `inset-y-0` resolves against the header's own box, so the pa
 recovers it — the trap is geometric, not paint order.
 
 ```tsx
+import { Navbar } from "@y-core/forge/ui/chrome";
+
 // Right — the blur on a sibling layer behind the content, leaving the header itself an ordinary box.
 <header class='sticky top-0 z-50 border-b border-border'>
   <div class='absolute inset-0 -z-10 bg-background/80 backdrop-blur-lg' aria-hidden='true' />
@@ -259,10 +267,12 @@ not have on their first visit, and each one then needs its own accessible name u
 
 ### 1i. Indicating the current location
 
-`NavLink` has no current-page flag: the bar is rendered from configuration and does not know the request. Render the indicator yourself, through the
-shape that exists for content the definition cannot express.
+A `NavLink` item takes `current`, which sets `aria-current="page"` and `data-selected` on its link and gives a bar link its current-page cue. The
+bar is rendered from configuration and does not know the request, so the app sets the flag from the route it is rendering.
 
 ```tsx
+import type { NavDefinition } from "@y-core/forge/ui/chrome";
+
 // Wrong — the bar renders, and nothing on the page says where you are.
 const config: NavDefinition = {
   sections: [
@@ -279,27 +289,15 @@ const config: NavDefinition = {
 Costs: on any page reached from a link rather than from the bar, the user has no anchor at all.
 
 ```tsx
-// Right — the active destination rendered as a slot the app controls.
+// Right — the active destination flagged on the item the app already describes.
 import type { NavDefinition } from "@y-core/forge/ui/chrome";
 
 const config: NavDefinition = {
   sections: [
     {
       items: [
-        {
-          slot: (
-            <a href={hrefFor("projects")} aria-current={here === "projects" ? "page" : undefined}>
-              Projects
-            </a>
-          ),
-        },
-        {
-          slot: (
-            <a href={hrefFor("team")} aria-current={here === "team" ? "page" : undefined}>
-              Team
-            </a>
-          ),
-        },
+        { label: "Projects", href: "projects", current: here === "projects" },
+        { label: "Team", href: "team", current: here === "team" },
       ],
     },
   ],
@@ -328,7 +326,8 @@ page's navigation.
 ## 2. `Dock`
 
 A `Dock` is the phone-width primary navigation: a fixed bottom bar of three to five top-level destinations of equal weight, each a glyph over a
-one-word label. It hides at `md:` and the `Navbar` takes over, so the two are never visible at once.
+one-word label. It hides from the `hideAbove` breakpoint up — `md` by default, or `lg` — and the `Navbar` takes over there, so the two are never
+visible at once; `hideAbove="never"` keeps it at every width.
 
 Default: reach for `Dock` only when every destination is a top-level one and there are at most five; a sixth belongs behind the `Navbar`'s menu, and
 a bar that must also hold a user slot or a search box is a bottom-placed `Navbar`. <!-- rule:forge-ui-nav-dock-when -->
@@ -368,7 +367,8 @@ link to, and return to, is a slide worth paging; a strip with no stable slides i
 
 ## 5. `Tabs`, and when it is a router in disguise
 
-`Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden`, so the first render is correct with no JavaScript.
+`Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden="until-found"`, so the first render is correct with no JavaScript,
+and it becomes a plain `hidden` that find-in-page cannot reach once `mountTabs` runs.
 
 | Given | Choose |
 | --- | --- |

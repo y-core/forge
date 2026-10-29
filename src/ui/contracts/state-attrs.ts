@@ -19,6 +19,8 @@ export const STATE_ATTRS = {
   side: "data-side",
   /** How a popup is aligned along that side. Valued. */
   align: "data-align",
+  /** A component-local enum a stylesheet reads. Valued. Never a serialized payload — that is `data-island-state`. */
+  state: "data-state",
   /** Present while a tooltip opened inside the warm window, so its enter skips the fade. */
   instant: "data-instant",
   /** Present from a dismissal until the element is removed — what the exit fade keys on. */
@@ -39,6 +41,7 @@ export function stateAttrs(state: StateAttrsProps): Record<string, string> {
   if (state.orientation) attrs["data-orientation"] = state.orientation;
   if (state.side) attrs["data-side"] = state.side;
   if (state.align) attrs["data-align"] = state.align;
+  if (state.state) attrs["data-state"] = state.state;
   return attrs;
 }
 

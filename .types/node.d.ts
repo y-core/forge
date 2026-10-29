@@ -35,6 +35,7 @@ declare const process: {
   env: Record<string, string | undefined>;
   exitCode?: number;
   readonly pid: number;
+  readonly execPath: string;
   readonly stdin: NodeStdioStream;
   readonly stdout: NodeStdioStream;
   readonly stderr: NodeStdioStream;

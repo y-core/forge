@@ -257,11 +257,11 @@ async function mountDrawer(page: Page, config: NavDefinition = CONFIG): Promise<
 
 const isDrawerOpen = (page: Page) => page.evaluate(() => document.querySelector<HTMLDetailsElement>("[data-slot~='navbar']")?.open ?? null);
 
-/** The trap's own candidate list, resolved against the live panel rather than restated as a label. */
+/** The trap's own candidate list. */
 const PANEL_FOCUSABLE =
   "a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),summary,[tabindex]:not([tabindex='-1'])";
 
-/** Focuses the last panel item the browser renders and reports its text, so no test hardcodes which it is. */
+/** Focuses the last panel item the browser renders and reports its text. */
 const focusLastPanelItem = (page: Page): Promise<string | undefined> =>
   page.evaluate(
     ([selector, focusable]) => {
@@ -275,7 +275,7 @@ const focusLastPanelItem = (page: Page): Promise<string | undefined> =>
     [PANEL, PANEL_FOCUSABLE] as [string, string],
   );
 
-/** How many links the panel holds inside a disclosure that is shut, which no keyboard can reach. */
+/** How many links the panel holds inside a disclosure that is shut. */
 const shutDisclosureLinks = (page: Page): Promise<number> =>
   page.evaluate((selector) => document.querySelectorAll(`${selector} details[data-slot~='navbar-disclosure']:not([open]) a[href]`).length, PANEL);
 
@@ -308,14 +308,11 @@ test.describe("Navbar — the drawer at phone width", { tag: "@cross-engine" }, 
     await page.click(TOGGLE);
 
     const open = await geometry(page, PANEL);
-    // The defect this mode exists to fix: an in-flow panel pushes the content down by its height.
     expect(open.contentY).toBe(closed.contentY);
     expect({ visibility: open.panelVisibility, x: open.panel.x, width: open.panel.width }).toEqual({ visibility: "visible", x: 0, width: 288 });
     expect(open.panel.height).toBe(open.viewport.height);
   });
 
-  // The panel starts at the same edge as the toggle, so an equal stacking order buried the one
-  // control that shuts the drawer with JavaScript off. The toggle sits above both layers.
   test("keeps its own toggle clickable while open, which is the JavaScript-off way back out", async ({ page }) => {
     await mountDrawer(page);
     await page.click(TOGGLE);
@@ -373,8 +370,6 @@ test.describe("Navbar — the drawer at phone width", { tag: "@cross-engine" }, 
     expect(await page.evaluate(() => document.documentElement.style.getPropertyValue("overflow"))).toBe("");
   });
 
-  // The summary is a sibling of the panel and draws the only visible way out, so a trap scoped to
-  // the panel leaves a reader who does not know Escape with no exit at all — WCAG 2.1.2.
   test("cycles Tab through its own toggle, so the visible close is reachable", async ({ page }) => {
     await mountDrawer(page);
     await page.click(TOGGLE);
@@ -406,7 +401,7 @@ test.describe("Navbar — the drawer at phone width", { tag: "@cross-engine" }, 
     await mountDrawer(page);
     await page.click(TOGGLE);
     expect(await isDrawerOpen(page)).toBe(true);
-    // Same wait as the two trap tests above: the open handler moves focus into the panel a task
+    // Same wait as the trap tests above: the open handler moves focus into the panel a task
     // later, so taking the last item before it lands lets it steal focus back to "Home".
     await expect.poll(() => focusedText(page)).toBe("Home");
 
@@ -418,8 +413,6 @@ test.describe("Navbar — the drawer at phone width", { tag: "@cross-engine" }, 
     await expect.poll(() => isDrawerOpen(page)).toBe(false);
   });
 
-  // The Tab trap is keyboard-only, and a screen reader's swipe is not a Tab keydown: without `inert`
-  // a reader swipes past the last link into the content under the backdrop and can activate it.
   test("makes the page behind it inert while open, and gives it back on close and on dispose", async ({ page }) => {
     await mountDrawer(page);
     const outsideIsInert = () => page.evaluate(() => document.getElementById("page")?.inert ?? null);
@@ -428,7 +421,6 @@ test.describe("Navbar — the drawer at phone width", { tag: "@cross-engine" }, 
     await page.click(TOGGLE);
     await expect.poll(() => focusedText(page)).toBe("Home");
     expect(await outsideIsInert()).toBe(true);
-    // Not merely marked: an inert subtree refuses focus outright, which is the whole claim.
     await page.evaluate(() => document.querySelector<HTMLAnchorElement>("#before")?.focus());
     expect(await page.evaluate(() => document.activeElement?.id)).not.toBe("before");
 
@@ -540,7 +532,7 @@ const TRAILING = "#toc";
 const LEADING_TOGGLE = `${LEADING} > ${TOGGLE}`;
 const LEADING_PANEL = `${LEADING} > ${PANEL}`;
 
-/** Two server-open drawer rails under a sticky header, styled by Tailwind itself rather than a hand-written stand-in. */
+/** Two server-open drawer rails under a sticky header, styled by Tailwind. */
 async function mountStyledRails(page: Page): Promise<void> {
   const rail = (id: string, placement: "left" | "right") =>
     render(
@@ -564,7 +556,7 @@ async function mountStyledRails(page: Page): Promise<void> {
   );
 }
 
-/** Whether focus sits on the first item the panel offers, resolved against the live panel. */
+/** Whether focus sits on the first item the panel offers. */
 const focusIsOnFirstPanelItem = (page: Page): Promise<boolean> =>
   page.evaluate(
     ([selector, focusable]) => {

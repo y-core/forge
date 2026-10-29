@@ -13,6 +13,7 @@ import { checkCoLocation } from "./checks/co-location";
 import { checkCommentBudget } from "./checks/comment-budget";
 import { checkCompatibility } from "./checks/compatibility";
 import { checkContrast } from "./checks/contrast";
+import { checkCrossEngineTags } from "./checks/cross-engine-tags";
 import { checkCssCoverage } from "./checks/css-coverage";
 import { checkCssSources } from "./checks/css-sources";
 import { checkCssTokens } from "./checks/css-tokens";
@@ -22,6 +23,7 @@ import { checkDevBoundary } from "./checks/dev-boundary";
 import { checkDevBundle } from "./checks/dev-bundle";
 import { checkExports } from "./checks/exports";
 import { checkExposure } from "./checks/exposure";
+import { checkFadedText } from "./checks/faded-text";
 import { checkFeatures } from "./checks/features";
 import { checkIccProfile } from "./checks/icc-profile";
 import { checkImportBoundary } from "./checks/import-boundary";
@@ -44,9 +46,11 @@ import type { CoLocationCheckConfig } from "./checks/types";
 import type { CommentBudgetCheckConfig } from "./checks/types";
 import type { CompatibilityCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
+import type { CrossEngineTagsCheckConfig } from "./checks/types";
 import type { CssCoverageCheckConfig } from "./checks/types";
 import type { CssSourcesCheckConfig } from "./checks/types";
 import type { CssTokensCheckConfig } from "./checks/types";
+import type { FadedTextCheckConfig } from "./checks/types";
 import type { DesignScaleCheckConfig } from "./checks/types";
 import type { DevBoundaryCheckConfig } from "./checks/types";
 import type { DevBundleCheckConfig } from "./checks/types";
@@ -65,6 +69,7 @@ import type { FeaturesCheckConfig } from "./checks/types";
 import type { BrowserEngine } from "./checks/types";
 import type { DeclaredGraph } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
+import { PLAYWRIGHT_RESULTS } from "./playwright-results";
 import type { BrowserProbes, CheckStep, CommandStep, GateTier, StepBase, StepRequirement } from "./types";
 import type { SourceStepOptions, StepOptions } from "./types";
 
@@ -324,14 +329,12 @@ export function browserEnginesRequired(projects: readonly string[], probes: Part
   });
 }
 
-/** `playwright test` under node over the named `projects` (default `["chromium"]`), defaulting to the `runtime` tier: it needs the Playwright server. Narrowed by `--only-changed`, untouched when `--list` shows that selects no spec, and run whole when `playwright.config.ts`, a `narrow.wide` glob or a `widen` path changes. Throws on a project that is not a browser engine unless `requires` is stated, or on projects that run on different Playwright servers. @public */
-export function browserStep(
-  options: { projects?: readonly [string, ...string[]]; narrow?: NarrowOptions } & WidenOption & StepOptions = {},
-): CommandStep {
+/** `playwright test` under node over the named `projects` (default `["chromium"]`), defaulting to the `deploy` tier: it needs the Playwright server, and the whole suite is too slow for the run a task closes on. Always run whole. Throws on a project that is not a browser engine unless `requires` is stated, or on projects that run on different Playwright servers. @public */
+export function browserStep(options: { projects?: readonly [string, ...string[]] } & StepOptions = {}): CommandStep {
   const projects = options.projects ?? ["chromium"];
   return {
     label: "test:browser",
-    ...tier(options.tier, "runtime"),
+    ...tier(options.tier, "deploy"),
     tail: 120,
     // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
     // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
@@ -340,15 +343,13 @@ export function browserStep(
     // present, so probing it would pass vacuously and let every spec fail at connect.
     ...prerequisite(options.requires, options.requires === undefined ? browserEnginesRequired(projects) : undefined),
     ...watching(options.watches),
-    ...widening(options.widen),
-    ...playwrightNarrowing(options.narrow),
+    results: PLAYWRIGHT_RESULTS,
   };
 }
 
-/** One browser row per engine: `test:browser` on `primary` at the `runtime` tier, and `test:browser:<engine>` for each other engine at `release`. `primary` defaults to Chromium when listed, else the first engine. Throws on an empty list, an unknown or repeated engine, or a `primary` not listed. @public */
+/** One browser row per engine: `test:browser` on `primary` at the `deploy` tier, and `test:browser:<engine>` for each other engine at `release`. `primary` defaults to Chromium when listed, else the first engine. Throws on an empty list, an unknown or repeated engine, or a `primary` not listed. @public */
 export function browserSteps(
-  options: { engines: readonly [BrowserEngine, ...BrowserEngine[]]; primary?: BrowserEngine; narrow?: NarrowOptions } & WidenOption &
-    Omit<StepOptions, "tier">,
+  options: { engines: readonly [BrowserEngine, ...BrowserEngine[]]; primary?: BrowserEngine } & Omit<StepOptions, "tier">,
 ): CommandStep[] {
   const { engines, primary: named, ...shared } = options;
   if (engines.length === 0) throw new Error("browserSteps: `engines` is empty; name at least one engine");
@@ -538,6 +539,13 @@ export function menuNamingStep(config: MenuNamingCheckConfig, options: StepOptio
   return checkStep("validate-menu-naming", () => checkMenuNaming(config), options, { watches: sourceWatches(config.sources ?? ["src"]) });
 }
 
+/** Checks every top-level browser spec block that reads an engine-computed value carries the `@cross-engine` tag. @public */
+export function crossEngineTagsStep(config: CrossEngineTagsCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-cross-engine-tags", () => checkCrossEngineTags(config), options, {
+    watches: sourceWatches(config.sources ?? ["src"]),
+  });
+}
+
 /** Checks that no shipped module names a global only the repository's private type stubs declare. @public */
 export function stubGlobalsStep(config: StubGlobalsCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-stub-globals", () => checkStubGlobals(config), options, {
@@ -555,6 +563,11 @@ const esbuildRequired = (): StepRequirement => ({ tool: "esbuild", probe: hasEsb
 export function contrastStep(config: ContrastCheckConfig, options: StepOptions = {}): CheckStep {
   const defaults = config.palettePath === undefined ? {} : { requires: tailwindRequired() };
   return checkStep("validate-contrast", () => checkContrast(config), options, defaults);
+}
+
+/** Fails an `opacity-*` that fades a class's text below full strength, unless a disabled variant or an audited alpha pair holds it. @public */
+export function fadedTextStep(config: FadedTextCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-faded-text", () => checkFadedText(config), options, { watches: sourceWatches(config.sources) });
 }
 
 /** Regenerates `cn`'s conflict table from the design system and fails on any drift from the committed copy. @public */

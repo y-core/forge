@@ -31,7 +31,7 @@ async function acrossToggle(page: Page, selector: string, property: string): Pro
   );
 }
 
-test.describe("Switch — the checked paint reaches both halves of the control", () => {
+test.describe("Switch — the checked paint reaches both halves of the control", { tag: "@cross-engine" }, () => {
   for (const [size, travel] of [
     ["sm", "12px"],
     ["md", "16px"],
@@ -73,7 +73,7 @@ test.describe("Switch — the checked paint reaches both halves of the control",
 
 // The thumb rests at the inline start and travels to the inline end; written physically, that
 // geometry mirrors under `dir="rtl"` and reads as a switch that is on when it is off.
-test.describe("Switch — the thumb follows the reader's direction", () => {
+test.describe("Switch — the thumb follows the reader's direction", { tag: "@cross-engine" }, () => {
   async function thumbTravel(page: Page, dir: "ltr" | "rtl"): Promise<{ restsAtStart: boolean; travelsTowardEnd: boolean }> {
     const html = await markup();
     // Reduced motion makes this a geometry assertion: `motion-safe:transition-transform` would

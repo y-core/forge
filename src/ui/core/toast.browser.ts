@@ -97,7 +97,7 @@ test.describe("toast scope — focus rehomed by a dismiss", () => {
   });
 });
 
-test.describe("Toast — arrival motion", () => {
+test.describe("Toast — arrival motion", { tag: "@cross-engine" }, () => {
   async function insertAndRead(page: import("@playwright/test").Page): Promise<{ transitions: string[]; opacity: number }> {
     const html = await render(Toast({ id: "saved", dismissible: true, children: "Saved" }));
     await mount(page, "<main></main>", { css: ["./ui/assets/css/forge-ui.css"], ...EXPOSE });
@@ -112,6 +112,21 @@ test.describe("Toast — arrival motion", () => {
     }, html);
   }
 
+  function dismissAndRead(
+    page: Page,
+  ): Promise<{ present: boolean; dismissing: boolean | null; inert: boolean | null; transitions: string[] | null }> {
+    return page.evaluate(() => {
+      (document.querySelector("#saved [data-slot~='toast-close']") as HTMLButtonElement).click();
+      const toast = document.querySelector("#saved") as HTMLElement | null;
+      return {
+        present: toast !== null,
+        dismissing: toast?.hasAttribute("data-dismissing") ?? null,
+        inert: toast?.inert ?? null,
+        transitions: toast?.getAnimations().map((animation) => (animation as CSSTransition).transitionProperty) ?? null,
+      };
+    });
+  }
+
   test("an inserted toast fades in from below half opacity", async ({ page }) => {
     const frame = await insertAndRead(page);
 
@@ -123,13 +138,7 @@ test.describe("Toast — arrival motion", () => {
     await insertAndRead(page);
     await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.querySelector("#saved") as HTMLElement).opacity))).toBe(1);
 
-    const atClick = await page.evaluate(() => {
-      (document.querySelector("#saved [data-slot~='toast-close']") as HTMLButtonElement).click();
-      const toast = document.querySelector("#saved") as HTMLElement | null;
-      return { present: toast !== null, dismissing: toast?.hasAttribute("data-dismissing") ?? null, inert: toast?.inert ?? null };
-    });
-
-    expect(atClick).toEqual({ present: true, dismissing: true, inert: true });
+    expect(await dismissAndRead(page)).toEqual({ present: true, dismissing: true, inert: true, transitions: ["opacity"] });
     await expect.poll(() => page.evaluate(() => document.querySelector("#saved") === null)).toBe(true);
   });
 
@@ -147,19 +156,13 @@ test.describe("Toast — arrival motion", () => {
       await insertAndRead(page);
       await expect.poll(() => page.evaluate(() => Number(getComputedStyle(document.querySelector("#saved") as HTMLElement).opacity))).toBe(1);
 
-      const atClick = await page.evaluate(() => {
-        (document.querySelector("#saved [data-slot~='toast-close']") as HTMLButtonElement).click();
-        const toast = document.querySelector("#saved") as HTMLElement | null;
-        return { dismissing: toast?.hasAttribute("data-dismissing") ?? null, inert: toast?.inert ?? null };
-      });
-
-      expect(atClick).toEqual({ dismissing: true, inert: true });
+      expect(await dismissAndRead(page)).toEqual({ present: true, dismissing: true, inert: true, transitions: ["opacity"] });
       await expect.poll(() => page.evaluate(() => document.querySelector("#saved") === null)).toBe(true);
     });
   });
 });
 
-test.describe("FlashContainer — taps reach what lies beneath it", () => {
+test.describe("FlashContainer — taps reach what lies beneath it", { tag: "@cross-engine" }, () => {
   async function mountOver(page: Page, html: string): Promise<void> {
     await mount(page, `<style>${await compiledCss(renderedClasses(html))}</style>${html}`, EXPOSE);
     await page.evaluate(() => window.forgeResume.resume());
@@ -234,116 +237,140 @@ test.describe("FlashContainer — taps reach what lies beneath it", () => {
 });
 
 for (const dark of [false, true]) {
-  test(`every soft tone's close glyph paints at full opacity and clears the 1.4.3 floor in ${dark ? "dark" : "light"}`, async ({ page }) => {
-    const html = (
-      await Promise.all(TONES.map((tone) => render(Toast({ id: tone, tone, appearance: "soft", dismissible: true, children: "Saved" }))))
-    ).join("");
-    await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
-    if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+  test(
+    `every soft tone's close glyph paints at full opacity and clears the 1.4.3 floor in ${dark ? "dark" : "light"}`,
+    { tag: "@cross-engine" },
+    async ({ page }) => {
+      const html = (
+        await Promise.all(TONES.map((tone) => render(Toast({ id: tone, tone, appearance: "soft", dismissible: true, children: "Saved" }))))
+      ).join("");
+      await mount(
+        page,
+        `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
+      );
+      if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
 
-    const failing: string[] = [];
-    for (const tone of TONES) {
-      const read = await page.evaluate((id) => {
-        const panel = document.getElementById(id) as HTMLElement;
-        const button = panel.querySelector("[data-slot~='toast-close']") as HTMLElement;
-        const glyph = button.querySelector("span") as HTMLElement;
-        return { opacity: getComputedStyle(button).opacity, fg: getComputedStyle(glyph).color, bg: getComputedStyle(panel).backgroundColor };
-      }, tone);
-      const fg = await paintedHex(page, read.fg);
-      const bg = await paintedHex(page, read.bg);
-      const ratio = Number(contrastRatio(fg, bg).toFixed(2));
-      if (read.opacity !== "1" || ratio < CRITERION["1.4.3"].floor) failing.push(`${tone} opacity=${read.opacity} ${fg} on ${bg} = ${ratio}`);
-    }
+      const failing: string[] = [];
+      for (const tone of TONES) {
+        const read = await page.evaluate((id) => {
+          const panel = document.getElementById(id) as HTMLElement;
+          const button = panel.querySelector("[data-slot~='toast-close']") as HTMLElement;
+          const glyph = button.querySelector("span") as HTMLElement;
+          return { opacity: getComputedStyle(button).opacity, fg: getComputedStyle(glyph).color, bg: getComputedStyle(panel).backgroundColor };
+        }, tone);
+        const fg = await paintedHex(page, read.fg);
+        const bg = await paintedHex(page, read.bg);
+        const ratio = Number(contrastRatio(fg, bg).toFixed(2));
+        if (read.opacity !== "1" || ratio < CRITERION["1.4.3"].floor) failing.push(`${tone} opacity=${read.opacity} ${fg} on ${bg} = ${ratio}`);
+      }
 
-    expect(failing).toEqual([]);
-  });
+      expect(failing).toEqual([]);
+    },
+  );
 }
 
 for (const dark of [false, true]) {
-  test(`every solid and soft tone's close button outlines itself on hover in a colour clearing the 1.4.11 floor, its glyph still clearing 1.4.3, in ${dark ? "dark" : "light"}`, async ({
-    page,
-  }) => {
-    const panels = TONES.flatMap((tone) => (["solid", "soft"] as const).map((appearance) => ({ id: `${appearance}-${tone}`, tone, appearance })));
-    const html = (await Promise.all(panels.map((panel) => render(Toast({ ...panel, dismissible: true, children: "Saved" }))))).join("");
-    await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
-    if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+  test(
+    `every solid and soft tone's close button outlines itself on hover in a colour clearing the 1.4.11 floor, its glyph still clearing 1.4.3, in ${dark ? "dark" : "light"}`,
+    { tag: "@cross-engine" },
+    async ({ page }) => {
+      const panels = TONES.flatMap((tone) => (["solid", "soft"] as const).map((appearance) => ({ id: `${appearance}-${tone}`, tone, appearance })));
+      const html = (await Promise.all(panels.map((panel) => render(Toast({ ...panel, dismissible: true, children: "Saved" }))))).join("");
+      await mount(
+        page,
+        `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
+      );
+      if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
 
-    const failing: string[] = [];
-    for (const { id } of panels) {
-      const button = `#${id} [data-slot~='toast-close']`;
-      const rest = await readDismissPaint(page, button);
-      await page.hover(button);
-      const hovered = await readDismissPaint(page, button);
-      const panel = await paintedHex(page, hovered.panel);
-      const ring = Number(contrastRatio(await paintedHex(page, hovered.ring), panel).toFixed(2));
-      const glyph = Number(contrastRatio(await paintedHex(page, hovered.glyph), panel).toFixed(2));
-      const shown = hovered.outline !== rest.outline && !hovered.outline.startsWith("none");
-      if (!shown || ring < CRITERION["1.4.11"].floor || glyph < CRITERION["1.4.3"].floor)
-        failing.push(`${id} ${rest.outline} -> ${hovered.outline}: ring ${ring}, glyph ${glyph}`);
-    }
+      const failing: string[] = [];
+      for (const { id } of panels) {
+        const button = `#${id} [data-slot~='toast-close']`;
+        const rest = await readDismissPaint(page, button);
+        await page.hover(button);
+        const hovered = await readDismissPaint(page, button);
+        const panel = await paintedHex(page, hovered.panel);
+        const ring = Number(contrastRatio(await paintedHex(page, hovered.ring), panel).toFixed(2));
+        const glyph = Number(contrastRatio(await paintedHex(page, hovered.glyph), panel).toFixed(2));
+        const shown = hovered.outline !== rest.outline && !hovered.outline.startsWith("none");
+        if (!shown || ring < CRITERION["1.4.11"].floor || glyph < CRITERION["1.4.3"].floor)
+          failing.push(`${id} ${rest.outline} -> ${hovered.outline}: ring ${ring}, glyph ${glyph}`);
+      }
 
-    expect(failing).toEqual([]);
-  });
+      expect(failing).toEqual([]);
+    },
+  );
 }
 
 for (const dark of [false, true]) {
-  test(`hovering the panel leaves its background as at rest, and its dismiss glyph clears the 1.4.3 floor there, in ${dark ? "dark" : "light"}`, async ({
-    page,
-  }) => {
-    const panels = TONES.flatMap((tone) => (["solid", "soft"] as const).map((appearance) => ({ id: `${appearance}-${tone}`, tone, appearance })));
-    const html = (await Promise.all(panels.map((panel) => render(Toast({ ...panel, dismissible: true, children: "Saved" }))))).join("");
-    await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
-    if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+  test(
+    `hovering the panel leaves its background as at rest, and its dismiss glyph clears the 1.4.3 floor there, in ${dark ? "dark" : "light"}`,
+    { tag: "@cross-engine" },
+    async ({ page }) => {
+      const panels = TONES.flatMap((tone) => (["solid", "soft"] as const).map((appearance) => ({ id: `${appearance}-${tone}`, tone, appearance })));
+      const html = (await Promise.all(panels.map((panel) => render(Toast({ ...panel, dismissible: true, children: "Saved" }))))).join("");
+      await mount(
+        page,
+        `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
+      );
+      if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
 
-    const failing: string[] = [];
-    for (const { id } of panels) {
-      const button = `#${id} [data-slot~='toast-close']`;
-      const rest = await readDismissPaint(page, button);
-      await page.hover(`#${id}`, { position: { x: 4, y: 4 } });
-      const hovered = await readDismissPaint(page, button);
-      const glyph = await paintedHex(page, hovered.glyph);
-      const panel = await paintedHex(page, hovered.panel);
-      const ratio = Number(contrastRatio(glyph, panel).toFixed(2));
-      if (hovered.panel !== rest.panel || ratio < CRITERION["1.4.3"].floor)
-        failing.push(`${id} ${rest.panel} -> ${hovered.panel}: ${glyph} on ${panel} = ${ratio}`);
-    }
+      const failing: string[] = [];
+      for (const { id } of panels) {
+        const button = `#${id} [data-slot~='toast-close']`;
+        const rest = await readDismissPaint(page, button);
+        await page.hover(`#${id}`, { position: { x: 4, y: 4 } });
+        const hovered = await readDismissPaint(page, button);
+        const glyph = await paintedHex(page, hovered.glyph);
+        const panel = await paintedHex(page, hovered.panel);
+        const ratio = Number(contrastRatio(glyph, panel).toFixed(2));
+        if (hovered.panel !== rest.panel || ratio < CRITERION["1.4.3"].floor)
+          failing.push(`${id} ${rest.panel} -> ${hovered.panel}: ${glyph} on ${panel} = ${ratio}`);
+      }
 
-    expect(failing).toEqual([]);
-  });
+      expect(failing).toEqual([]);
+    },
+  );
 }
 
 for (const dark of [false, true]) {
-  test(`every soft tone's description paints at full opacity and clears the 1.4.3 floor in ${dark ? "dark" : "light"}`, async ({ page }) => {
-    const html = (
-      await Promise.all(
-        TONES.map((tone) =>
-          render(Toast({ id: tone, tone, appearance: "soft", children: Toast.Description({ children: "Your changes were saved." }) })),
-        ),
-      )
-    ).join("");
-    await mount(page, `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`);
-    if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
+  test(
+    `every soft tone's description paints at full opacity and clears the 1.4.3 floor in ${dark ? "dark" : "light"}`,
+    { tag: "@cross-engine" },
+    async ({ page }) => {
+      const html = (
+        await Promise.all(
+          TONES.map((tone) =>
+            render(Toast({ id: tone, tone, appearance: "soft", children: Toast.Description({ children: "Your changes were saved." }) })),
+          ),
+        )
+      ).join("");
+      await mount(
+        page,
+        `<style>${await compiledCss([...renderedClasses(html), "bg-background"])}</style><main class="bg-background">${html}</main>`,
+      );
+      if (dark) await page.evaluate(() => document.documentElement.classList.add("dark"));
 
-    const failing: string[] = [];
-    for (const tone of TONES) {
-      const read = await page.evaluate((id) => {
-        const panel = document.getElementById(id) as HTMLElement;
-        const description = panel.querySelector("[data-slot~='toast-description']") as HTMLElement;
-        const style = getComputedStyle(description);
-        let effective = 1;
-        for (let node: HTMLElement | null = description; node !== null && node !== panel; node = node.parentElement) {
-          effective *= Number(getComputedStyle(node).opacity);
-        }
-        return { opacity: style.opacity, effective, fg: style.color, bg: getComputedStyle(panel).backgroundColor };
-      }, tone);
-      const bg = await paintedHex(page, read.bg);
-      const fg = compositeOver(await paintedHex(page, read.fg), bg, read.effective);
-      const ratio = Number(contrastRatio(fg, bg).toFixed(2));
-      if (read.opacity !== "1" || ratio < CRITERION["1.4.3"].floor) failing.push(`${tone} opacity=${read.opacity} ${fg} on ${bg} = ${ratio}`);
-    }
+      const failing: string[] = [];
+      for (const tone of TONES) {
+        const read = await page.evaluate((id) => {
+          const panel = document.getElementById(id) as HTMLElement;
+          const description = panel.querySelector("[data-slot~='toast-description']") as HTMLElement;
+          const style = getComputedStyle(description);
+          let effective = 1;
+          for (let node: HTMLElement | null = description; node !== null && node !== panel; node = node.parentElement) {
+            effective *= Number(getComputedStyle(node).opacity);
+          }
+          return { opacity: style.opacity, effective, fg: style.color, bg: getComputedStyle(panel).backgroundColor };
+        }, tone);
+        const bg = await paintedHex(page, read.bg);
+        const fg = compositeOver(await paintedHex(page, read.fg), bg, read.effective);
+        const ratio = Number(contrastRatio(fg, bg).toFixed(2));
+        if (read.opacity !== "1" || ratio < CRITERION["1.4.3"].floor) failing.push(`${tone} opacity=${read.opacity} ${fg} on ${bg} = ${ratio}`);
+      }
 
-    expect(failing).toEqual([]);
-  });
+      expect(failing).toEqual([]);
+    },
+  );
 }
 
 test.describe("Toast — the close target", { tag: "@cross-engine" }, () => {

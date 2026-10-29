@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import type { JSX, JSXNode } from "../../render/jsx/types";
-import { attrOf, attrsOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, elementOf, innerOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { CheckboxGroup } from "./checkbox-group";
 import {
@@ -15,7 +15,6 @@ import {
   fieldErrorId,
   fieldId,
   fieldItemId,
-  mergeIdRefs,
 } from "./field";
 import { FormField } from "./field-layout";
 import { Field } from "./field-stack";
@@ -32,10 +31,6 @@ const CONTROL = { "data-slot": "input", "data-size": "md" };
 
 function slotsOf(html: string): string[] {
   return [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1] ?? "");
-}
-
-function contentOf(html: string, tag: string): string {
-  return new RegExp(`<${tag}[^>]*>(.*)</${tag}>`).exec(html)?.[1] ?? "";
 }
 
 describe("fieldId helpers", () => {
@@ -227,7 +222,7 @@ describe("Field primitives", () => {
 
     expect(slotsOf(html)).toEqual(["field-set", "field-legend"]);
     expect(attrsOf(html, 'data-slot="field-legend"')).toEqual({ "data-slot": "field-legend", "data-as": "legend" });
-    expect(contentOf(html, "legend")).toBe("Contact details");
+    expect(innerOf(elementOf(html, "legend"))).toBe("Contact details");
   });
 
   it("renders Field.Title and Field.Separator with explicit slots, the separator carrying its own content", async () => {
@@ -254,7 +249,7 @@ describe("Field primitives", () => {
       "field-separator-content",
     ]);
     expect(attrsOf(html, 'data-slot="field-separator"')).toEqual({ "data-content": "true", "data-slot": "field-separator" });
-    expect(contentOf(html, "span")).toBe("or");
+    expect(innerOf(elementOf(html, "span"))).toBe("or");
   });
 
   it("renders an error with no live-region role, because `announce()` speaks a failed submission's first error", async () => {
@@ -773,7 +768,7 @@ describe("FormField.Error — a blank message renders no element, so nothing nam
     it(`still renders the error paragraph for ${label}, its content intact`, async () => {
       const html = await render(element);
 
-      expect([attrsOf(html), contentOf(html, "p")]).toEqual([{ "data-slot": "field-error", id: "field-email-error" }, content]);
+      expect([attrsOf(html), innerOf(elementOf(html, "p"))]).toEqual([{ "data-slot": "field-error", id: "field-email-error" }, content]);
     });
   }
 
@@ -955,23 +950,6 @@ describe("CheckboxGroup and RadioGroup — the fieldset marks and describes only
       [false, false],
       [false, false],
     ]);
-  });
-});
-
-describe("mergeIdRefs — one IDREF list, the caller's ids first and each id once", () => {
-  const cases = [
-    { existing: "hint", added: ["field-email-description"], expected: "hint field-email-description" },
-    { existing: "a a b", added: ["b", "c", "a"], expected: "a b c" },
-    { existing: "\t a \n\f\r b ", added: [" c  d "], expected: "a b c d" },
-    { existing: `a${NBSP}b`, added: ["c"], expected: `a${NBSP}b c` },
-    { existing: undefined, added: [undefined, "", "  "], expected: undefined },
-    { existing: "", added: [], expected: undefined },
-    { existing: " hint  help ", added: [], expected: "hint help" },
-    { existing: undefined, added: ["tip"], expected: "tip" },
-  ];
-
-  it("merges each pair into the list a reader resolves", () => {
-    expect(cases.map(({ existing, added }) => mergeIdRefs(existing, added))).toEqual(cases.map(({ expected }) => expected));
   });
 });
 

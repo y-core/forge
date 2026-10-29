@@ -859,7 +859,7 @@ const retiredRing = await importKeyRing([retiredSecret]);
 
 function approvedUnder(ring: KeyRing): Parameters<Forge["use"]>[1] {
   return async (context, next) => {
-    markApproval(sessionCtx.get(context), { at: Date.now(), digest: await signApprovalCode(ring, FAKE_APPROVAL_CODE) });
+    markApproval(sessionCtx.get(context), { presentedAt: Date.now(), digest: await signApprovalCode(ring, FAKE_APPROVAL_CODE) });
     return next();
   };
 }

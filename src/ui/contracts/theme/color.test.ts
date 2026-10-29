@@ -2,44 +2,42 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { oklchToSrgb, toHex } from "../../assets/build/color";
-import { ACCENT_RAMP, buildScale, CHROMA_MAX, contrastRatio, GRAY_RAMP, hexToOklch, oklchToHex, relativeLuminance } from "./color";
-import { ACCENT_CONTRAST, CONTRAST_PAIRS, CRITERION, scalePairs, sideStep } from "./contrast-pairs";
-import { buildTheme, DIALS, liveRatios, SCHEME_PRESETS } from "./theme-contract";
-import type { Mode, Scale, ScaleFamily } from "./types";
-import type { ScalePair } from "./types";
+import { CHROMA_MAX, contrastRatio, hexToOklch, oklchCss, oklchToHex, relativeLuminance, schemeOklch, toSrgbGamut } from "./color";
+import { ACCENT_CONTRAST, CONTRAST_PAIRS, scalePairs, sideStep } from "./contrast-pairs";
+import { buildTheme, DIALS, liveRatios, ratioKey, SCHEME_PRESETS } from "./theme-contract";
+import type { GeneratedTheme, LiveRatio, Mode, Scale, ScaleFamily } from "./types";
 
-/** A dial's shipped default — where `theme-neutral.css`'s accent position actually lives. */
 function fallback(field: string): number {
   const dial = DIALS.find((row) => row.field === field);
   if (dial === undefined) throw new Error(`no dial named ${field}`);
   return dial.fallback;
 }
 
-/** The pairs a sweep of the *gray* dials describes — an accent side measured on a gray ramp describes nothing. */
-function grayPairs(): readonly ScalePair[] {
-  return scalePairs().filter((pair) => pair.foreground.family === "gray" && pair.background.family === "gray");
+function solidScale(family: ScaleFamily, mode: Mode, hue: number, chroma: number): Scale<string> {
+  const dials = family === "gray" ? { grayHue: hue, grayChroma: chroma } : { accentHue: hue, accentChroma: chroma };
+  return buildTheme(dials)[family][mode].solid;
 }
 
-/** One gray pair's ratio on a single built scale. */
-function grayRatio(scale: Scale<string>, pair: ScalePair, mode: Mode): number {
-  return contrastRatio(scale[sideStep(pair.foreground, mode)] ?? "", scale[sideStep(pair.background, mode)] ?? "");
+function grayRatios(theme: GeneratedTheme): readonly LiveRatio[] {
+  const keys = new Set(
+    scalePairs()
+      .filter((pair) => pair.foreground.family === "gray" && pair.background.family === "gray")
+      .flatMap((pair) => (["light", "dark"] as const).map((mode) => ratioKey(pair.token, pair.background.token, mode))),
+  );
+  return liveRatios(theme).filter((row) => keys.has(row.key));
 }
 
-/** The scheme files this module claims to reproduce, transcribed from `theme-neutral.css`. */
 const NEUTRAL: Readonly<Record<Mode, Scale<string>>> = {
   light: ["#f9f9f9", "#fcfcfc", "#f0f0f0", "#e8e8e8", "#e0e0e0", "#d9d9d9", "#cecece", "#bbbbbb", "#8d8d8d", "#838383", "#646464", "#202020"],
   dark: ["#111111", "#191919", "#222222", "#2a2a2a", "#313131", "#3a3a3a", "#484848", "#606060", "#6e6e6e", "#7b7b7b", "#b4b4b4", "#eeeeee"],
 };
 
-/** An `oklch(L% C H)` literal back to the hex it names, so a declared step can be compared to a built one. */
 function declaredHex(value: string): string {
   const parsed = /^oklch\(([0-9.]+)% ([0-9.]+) ([0-9.]+)\)$/.exec(value.trim());
   if (parsed === null) throw new Error(`not an oklch() literal: ${value}`);
   return oklchToHex(Number(parsed[1]) / 100, Number(parsed[2]), Number(parsed[3]));
 }
 
-// A scheme declares each step once, so light and dark are read off the argument positions of one
-// `light-dark()` rather than off two blocks; a step equal in both modes is written bare.
 function shippedScale(file: string, family: ScaleFamily = "gray"): Record<Mode, readonly string[]> {
   const text = readFileSync(new URL(`../../assets/css/${file}`, import.meta.url).pathname, "utf-8");
   const start = text.indexOf(":root {");
@@ -57,7 +55,6 @@ function shippedScale(file: string, family: ScaleFamily = "gray"): Record<Mode, 
   return scale;
 }
 
-/** The largest per-channel gap between two `#rrggbb` literals, in bytes out of 255. */
 function channelDistance(a: string, b: string): number {
   let worst = 0;
   for (let i = 1; i < 7; i += 2) {
@@ -66,7 +63,6 @@ function channelDistance(a: string, b: string): number {
   return worst;
 }
 
-/** A grid over the whole space the dials can reach, plus the degenerate ends. */
 function sample(): { l: number; c: number; h: number }[] {
   const points: { l: number; c: number; h: number }[] = [];
   for (let l = 0; l <= 1.0001; l += 0.1) {
@@ -107,6 +103,41 @@ describe("oklchToHex", () => {
     const mapped = hexToOklch(oklchToHex(0.7, 0.4, 150));
     expect(mapped.h).toBeCloseTo(150, 0);
     expect(mapped.c).toBeLessThan(0.4);
+  });
+});
+
+describe("oklchCss", () => {
+  it("prints the hue when the colour carries chroma", () => {
+    expect(oklchCss({ l: 0.52, c: 0.195, h: 267 })).toBe("oklch(52.00% 0.1950 267.0)");
+  });
+
+  it("drops the hue at zero chroma, so identical greys print identically whatever hue they carry", () => {
+    const printed = [0, 90, 217, 359].map((h) => oklchCss({ l: 0.5032, c: 0.00004, h }));
+    expect(new Set(printed)).toEqual(new Set(["oklch(50.32% 0 0)"]));
+  });
+});
+
+describe("schemeOklch", () => {
+  it("cuts chroma toward zero to the printed places, where rounding would print it higher", () => {
+    const mapped = toSrgbGamut(0.5075, 0.171, 37);
+    expect(oklchCss(mapped)).toBe("oklch(50.75% 0.1701 37.0)");
+    expect(oklchCss(schemeOklch(mapped))).toBe("oklch(50.75% 0.1700 37.0)");
+  });
+
+  it("leaves the printed coordinate inside the gamut it was mapped to, where the rounded one leaves it", () => {
+    const mapped = toSrgbGamut(0.5075, 0.171, 37);
+    const cut = schemeOklch(mapped);
+    const rounded = { ...mapped, c: Number(mapped.c.toFixed(4)) };
+    expect(toSrgbGamut(cut.l, cut.c, cut.h)).toEqual(cut);
+    expect(toSrgbGamut(rounded.l, rounded.c, rounded.h).c).toBeLessThan(rounded.c);
+  });
+
+  it("keeps a chroma already at the printed places, and the lightness and hue untouched", () => {
+    expect(schemeOklch({ l: 0.52, c: 0.115, h: 267 })).toEqual({ l: 0.52, c: 0.115, h: 267 });
+  });
+
+  it("cuts a chroma below the printed places to zero, which prints as a gray", () => {
+    expect(oklchCss(schemeOklch({ l: 0.5032, c: 0.00004, h: 90 }))).toBe("oklch(50.32% 0 0)");
   });
 });
 
@@ -152,10 +183,10 @@ describe("relativeLuminance / contrastRatio", () => {
   });
 });
 
-describe("buildScale", () => {
+describe("buildTheme's solid scale", () => {
   it("reproduces theme-neutral.css byte for byte at chroma 0", () => {
     for (const mode of ["light", "dark"] as const) {
-      expect(buildScale(GRAY_RAMP[mode], { hue: 0, chroma: 0 })).toEqual(NEUTRAL[mode]);
+      expect(solidScale("gray", mode, 0, 0)).toEqual(NEUTRAL[mode]);
     }
   });
 
@@ -164,7 +195,7 @@ describe("buildScale", () => {
     for (const preset of SCHEME_PRESETS) {
       const declared = shippedScale(preset.file);
       for (const mode of ["light", "dark"] as const) {
-        const generated = buildScale(GRAY_RAMP[mode], { hue: preset.grayHue, chroma: preset.grayChroma / 1000 });
+        const generated = solidScale("gray", mode, preset.grayHue, preset.grayChroma);
         generated.forEach((hex, step) => {
           const target = declared[mode][step] ?? "";
           const bytes = channelDistance(hex, target);
@@ -178,26 +209,24 @@ describe("buildScale", () => {
     expect(drift).toEqual([]);
   });
 
-  // The preset sweep above covers gray only — no preset carries accent dials — so `ACCENT_RAMP` could
-  // move without the stylesheet following it. This is the tie between the two.
+  it("ladders the shipped schemes' gray tint strictly upward from neutral through stone and gray to slate", () => {
+    const ladder = ["neutral", "stone", "gray", "slate"].map((id) => SCHEME_PRESETS.find((preset) => preset.id === id)?.grayChroma ?? Number.NaN);
+    const rises = ladder.slice(1).map((chroma, step) => chroma > (ladder[step] ?? Number.NaN));
+    expect(rises).toEqual([true, true, true]);
+  });
+
   it("reconstructs theme-neutral.css's accent block from ACCENT_RAMP and the dials' fallbacks", () => {
     const declared = shippedScale("theme-neutral.css", "accent");
-    const dials = { hue: fallback("accentHue"), chroma: fallback("accentChroma") / 1000 };
     for (const mode of ["light", "dark"] as const) {
-      expect(buildScale(ACCENT_RAMP[mode], dials)).toEqual(declared[mode]);
+      expect(solidScale("accent", mode, fallback("accentHue"), fallback("accentChroma"))).toEqual(declared[mode]);
     }
   });
 
   it("holds every audited floor for each shipped scheme as the preset generates it", () => {
     const failures: string[] = [];
     for (const preset of SCHEME_PRESETS) {
-      for (const mode of ["light", "dark"] as const) {
-        const scale = buildScale(GRAY_RAMP[mode], { hue: preset.grayHue, chroma: preset.grayChroma / 1000 });
-        for (const pair of grayPairs()) {
-          const ratio = grayRatio(scale, pair, mode);
-          const { floor } = CRITERION[pair.criterion];
-          if (ratio < floor) failures.push(`${preset.id} ${mode} ${pair.token}: ${ratio.toFixed(2)} < ${floor}`);
-        }
+      for (const row of grayRatios(buildTheme({ grayHue: preset.grayHue, grayChroma: preset.grayChroma }))) {
+        if (row.value < row.floor) failures.push(`${preset.id} ${row.key}: ${row.value.toFixed(2)} < ${row.floor}`);
       }
     }
     expect(failures).toEqual([]);
@@ -205,17 +234,17 @@ describe("buildScale", () => {
 
   it("ignores the hue entirely when chroma is 0", () => {
     for (const hue of [0, 90, 217, 359]) {
-      expect(buildScale(GRAY_RAMP.light, { hue, chroma: 0 })).toEqual(NEUTRAL.light);
+      expect(solidScale("gray", "light", hue, 0)).toEqual(NEUTRAL.light);
     }
   });
 
   it("keeps light steps 1 and 2 non-monotone, as forge's swap requires", () => {
-    const scale = buildScale(GRAY_RAMP.light, { hue: 250, chroma: 0.045 });
+    const scale = solidScale("gray", "light", 250, 45);
     expect(relativeLuminance(scale[1])).toBeGreaterThan(relativeLuminance(scale[0]));
   });
 
   it("holds one hue across the steps that carry enough chroma to have one", () => {
-    const scale = buildScale(GRAY_RAMP.light, { hue: 256, chroma: 0.045 });
+    const scale = solidScale("gray", "light", 256, 45);
     const drift = (step: number) => Math.abs(hexToOklch(scale[step] ?? "").h - 256);
 
     for (let step = 2; step < 12; step++) expect(drift(step)).toBeLessThan(2.5);
@@ -224,8 +253,8 @@ describe("buildScale", () => {
   });
 
   it("gives the accent a materially darker step 9 than the gray ramp", () => {
-    const gray = hexToOklch(buildScale(GRAY_RAMP.light, { hue: 267, chroma: 0.045 })[8]);
-    const accent = hexToOklch(buildScale(ACCENT_RAMP.light, { hue: 267, chroma: 0.195 })[8]);
+    const gray = hexToOklch(solidScale("gray", "light", 267, 45)[8]);
+    const accent = hexToOklch(solidScale("accent", "light", 267, 195)[8]);
     expect(gray.l - accent.l).toBeGreaterThan(0.08);
   });
 
@@ -244,7 +273,7 @@ describe("buildScale", () => {
       "#3a5bc7",
       "#1f2d5c",
     ];
-    const built = buildScale(ACCENT_RAMP.light, { hue: 267, chroma: 0.1954 });
+    const built = solidScale("accent", "light", 267, 195.4);
 
     const channel = (hex: string, ch: number) => Number.parseInt(hex.slice(1 + ch * 2, 3 + ch * 2), 16);
     const delta = (i: number) => Math.max(...[0, 1, 2].map((ch) => Math.abs(channel(indigo[i] ?? "", ch) - channel(built[i] ?? "", ch))));
@@ -260,20 +289,16 @@ describe("buildScale", () => {
     expect(relativeLuminance(built[8] ?? "")).toBeLessThan(relativeLuminance(indigo[8] ?? ""));
   });
 
-  // `--accent-contrast` is `light-dark(--gray-1, --gray-12)` and never reads step 9, so a
-  // mode-identical solid would serve both foregrounds and leave dark the smaller headroom.
   it("gives the accent solid a darker step 9 in dark than in light, which is what buys dark its headroom", () => {
-    const dials = { hue: 267, chroma: 0.195 };
-    const light = buildScale(ACCENT_RAMP.light, dials)[8];
-    const dark = buildScale(ACCENT_RAMP.dark, dials)[8];
+    const light = solidScale("accent", "light", 267, 195)[8];
+    const dark = solidScale("accent", "dark", 267, 195)[8];
     expect(dark).not.toBe(light);
     expect(relativeLuminance(dark)).toBeLessThan(relativeLuminance(light));
   });
 
   it("keeps step 10 a visible hover on step 9, in the right direction for each mode", () => {
-    const dials = { hue: 267, chroma: 0.195 };
-    const light = buildScale(ACCENT_RAMP.light, dials);
-    const dark = buildScale(ACCENT_RAMP.dark, dials);
+    const light = solidScale("accent", "light", 267, 195);
+    const dark = solidScale("accent", "dark", 267, 195);
     expect(relativeLuminance(light[9])).toBeLessThan(relativeLuminance(light[8]));
     expect(relativeLuminance(dark[9])).toBeGreaterThan(relativeLuminance(dark[8]));
     expect(contrastRatio(light[8], light[9])).toBeGreaterThan(1.1);
@@ -288,15 +313,10 @@ describe("the gray dials' safety claim", () => {
 
     for (let hue = 0; hue < 360; hue += 5) {
       for (const chroma of [0, 0.02, 0.045, CHROMA_MAX.gray]) {
-        for (const mode of ["light", "dark"] as const) {
-          const scale = buildScale(GRAY_RAMP[mode], { hue, chroma });
-          for (const pair of grayPairs()) {
-            const ratio = grayRatio(scale, pair, mode);
-            const { floor } = CRITERION[pair.criterion];
-            const detail = `${pair.token} ${mode} hue=${hue} chroma=${chroma} — ${ratio.toFixed(2)}:1 against ${floor}:1`;
-            if (ratio < floor) failures.push(detail);
-            if (ratio - floor < tightest.margin) tightest = { margin: ratio - floor, detail };
-          }
+        for (const row of grayRatios(buildTheme({ grayHue: hue, grayChroma: chroma * 1000 }))) {
+          const detail = `${row.key} hue=${hue} chroma=${chroma} — ${row.value.toFixed(2)}:1 against ${row.floor}:1`;
+          if (row.value < row.floor) failures.push(detail);
+          if (row.value - row.floor < tightest.margin) tightest = { margin: row.value - row.floor, detail };
         }
       }
     }
@@ -347,19 +367,14 @@ describe("a per-mode contrast side", () => {
 // `--accent-contrast` is `--gray-1` in light but the darker `--gray-12` in dark, so the dark side
 // has the smaller headroom at any given step 9.
 describe("the accent dials against the --primary-foreground floor", () => {
-  const pair = scalePairs().find((row) => row.token === "--primary-foreground");
-  if (pair === undefined) throw new Error("--primary-foreground is not a scale pair");
-
   const worst = (mode: Mode) => {
-    // The gray dials sit at their defaults: this sweeps the hue and chroma the finding is about, and the
-    // foreground step is read through the same resolver the page uses.
-    const foreground = NEUTRAL[mode][sideStep(pair.foreground, mode)] ?? "";
     let low = { ratio: Number.POSITIVE_INFINITY, hue: 0, chroma: 0 };
     for (let hue = 0; hue < 360; hue += 2) {
       for (let chroma = 0; chroma <= CHROMA_MAX.accent + 1e-9; chroma += 0.01) {
-        const background = buildScale(ACCENT_RAMP[mode], { hue, chroma })[sideStep(pair.background, mode)] ?? "";
-        const ratio = contrastRatio(foreground, background);
-        if (ratio < low.ratio) low = { ratio, hue, chroma };
+        const theme = buildTheme({ grayHue: 0, grayChroma: 0, accentHue: hue, accentChroma: chroma * 1000 });
+        const row = liveRatios(theme).find((entry) => entry.token === "--primary-foreground" && entry.mode === mode);
+        if (row === undefined) throw new Error("--primary-foreground is not a scale pair");
+        if (row.value < low.ratio) low = { ratio: row.value, hue, chroma };
       }
     }
     return low;
@@ -380,7 +395,7 @@ describe("the accent dials against the --primary-foreground floor", () => {
   });
 
   it("is safe at the shipped defaults, in both modes", () => {
-    const theme = buildTheme({ grayHue: 0, grayChroma: 0, accentHue: 267, accentChroma: 195, radius: 10 });
+    const theme = buildTheme({ grayHue: 0, grayChroma: 0, accentHue: fallback("accentHue"), accentChroma: fallback("accentChroma"), radius: 10 });
     for (const entry of liveRatios(theme).filter((row) => row.token === "--primary-foreground")) {
       expect(entry.value).toBeGreaterThan(4.5);
       expect(entry.text).toContain("✓");
@@ -421,11 +436,31 @@ describe("the elevation families", () => {
     for (const [property, value] of declared) {
       const layers = (value ?? "").split(",").map((layer) => layer.trim().replace(/\s+/g, " "));
       for (const layer of layers) {
-        // A layer whose colour is a literal has no `var()` tail, so it fails as its whole self —
-        // which is the regression: a mode-blind shadow reintroduced into the family.
         const colour = /var\(--[a-z0-9-]+\)$/.exec(layer)?.[0] ?? `${property}: ${layer}`;
         expect(colour).toMatch(/^var\(--(?:cast|rim)-a\d{1,2}\)$/);
       }
     }
+  });
+});
+
+describe("the primary family", () => {
+  const css = (file: string) => readFileSync(new URL(`../../assets/css/${file}`, import.meta.url).pathname, "utf-8");
+
+  it("reads --primary off accent step 9 and the soft text off step 12", () => {
+    const base = css("theme-base.css");
+    const declared = (property: string) => new RegExp(`${property}:\\s*([^;]+);`).exec(base)?.[1]?.trim();
+
+    expect([declared("--primary"), declared("--primary-soft-foreground")]).toEqual(["var(--accent-9)", "var(--accent-12)"]);
+  });
+
+  it("leaves the accent ramp to theme-neutral.css, so every other scheme inherits its hue", () => {
+    const schemes = ["theme-neutral.css", "theme-stone.css", "theme-gray.css", "theme-slate.css"];
+
+    expect(schemes.map((file) => [file, /--accent-[a-z0-9]+\s*:/.test(css(file))])).toEqual([
+      ["theme-neutral.css", true],
+      ["theme-stone.css", false],
+      ["theme-gray.css", false],
+      ["theme-slate.css", false],
+    ]);
   });
 });

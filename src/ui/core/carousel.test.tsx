@@ -82,6 +82,11 @@ describe("Carousel — translating the role descriptions", () => {
   it("announces a slide by a caller's roledescription", async () => {
     expect(attrOf(await render(<Carousel.Item label='Un' aria-roledescription='diapositive' />), "aria-roledescription")).toBe("diapositive");
   });
+
+  it("refuses a roledescription that is not a string, so a translation seam is type-checked", async () => {
+    // @ts-expect-error -- `aria-roledescription` is a string
+    expect(attrOf(await render(<Carousel label='x' aria-roledescription={3} />), "aria-roledescription")).toBe("3");
+  });
 });
 
 describe("Carousel.Item", () => {

@@ -1,4 +1,6 @@
-import { nameAttrs, titleId } from "./naming";
+import { descriptionId, nameAttrs, titleId } from "./naming";
+import type { DialogAlertFlags } from "./types";
+
 /** Resumable-scope name a `Dialog` asked to open modally stamps. Eager. @public */
 export const DIALOG_SCOPE = "dialog";
 
@@ -17,4 +19,18 @@ export function dialogNameAttrs(
   const named = nameAttrs(naming);
   if (Object.keys(named).length > 0) return named;
   return naming.titled === true ? { "aria-labelledby": titleId(id) } : {};
+}
+
+// Emitted on the caller's word, exactly as the title reference is: a description that resolves to
+// nothing suppresses `aria-description` and `title` rather than merely being ignored.
+/** The role, description reference and close mode a `<dialog>` root's alert flags decide. @internal */
+export function dialogAlertAttrs(
+  id: string,
+  flags: DialogAlertFlags,
+): { role: "alertdialog" | undefined; "aria-describedby": string | undefined; closedby: "closerequest" | "any" } {
+  return {
+    role: flags.alert ? "alertdialog" : undefined,
+    "aria-describedby": flags.described ? descriptionId(id) : undefined,
+    closedby: flags.alert ? "closerequest" : "any",
+  };
 }

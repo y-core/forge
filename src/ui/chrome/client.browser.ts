@@ -59,6 +59,15 @@ function themeState(page: Page): Promise<{ pref: string | null; dark: boolean; s
   );
 }
 
+function shownIcons(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [".theme-light-icon", ".theme-dark-icon", ".theme-system-icon"].filter((sel) => {
+      const span = document.querySelector(sel);
+      return span !== null && getComputedStyle(span).display !== "none";
+    }),
+  );
+}
+
 test.describe("theme scope — the cycle", () => {
   test("a click advances light to dark to system and back to light", async ({ page }) => {
     await page.emulateMedia({ colorScheme: "light" });
@@ -123,7 +132,7 @@ test.describe("theme scope — the system preference", () => {
   });
 });
 
-test.describe("theme scope — two toggles on one page", () => {
+test.describe("theme scope — two toggles on one page", { tag: "@cross-engine" }, () => {
   /** Two `ThemeToggle`s, exactly as a navbar toggle beside a settings toggle would render. */
   async function mountThemePair(page: Page, pref: string): Promise<void> {
     const one = await render(ThemeToggle({ icon }));
@@ -142,7 +151,6 @@ test.describe("theme scope — two toggles on one page", () => {
     await toggle(page, 0).click();
     expect(await themeState(page)).toEqual({ pref: "dark", dark: true, stored: "dark" });
 
-    // The regression: the second toggle used to hold its own signal, still on `light`.
     await toggle(page, 1).click();
     expect(await themeState(page)).toEqual({ pref: "system", dark: false, stored: "system" });
 
@@ -230,19 +238,14 @@ test.describe("theme scope — two toggles on one page", () => {
   });
 });
 
-test.describe("theme scope — storage it cannot trust", () => {
+test.describe("theme scope — storage it cannot trust", { tag: "@cross-engine" }, () => {
   test("a stored value naming no theme still renders one named icon after the FOUC script and resume", async ({ page }) => {
     await mount(page, await render(ThemeToggle({ icon })), { ...EXPOSE, css: ["./ui/assets/css/forge-ui.css"] });
     await page.evaluate(([key]) => localStorage.setItem(key as string, "auto"), [THEME_STORAGE_KEY] as const);
     await page.addScriptTag({ content: FOUC_SCRIPT });
     await page.evaluate(() => window.forgeResume.resume());
 
-    const shown = await page.evaluate(() =>
-      [".theme-light-icon", ".theme-dark-icon", ".theme-system-icon"].filter((sel) => {
-        const span = document.querySelector(sel);
-        return span !== null && getComputedStyle(span).display !== "none";
-      }),
-    );
+    const shown = await shownIcons(page);
 
     expect({ pref: (await themeState(page)).pref, shown }).toEqual({ pref: "system", shown: [".theme-system-icon"] });
     expect(await page.locator("[data-on-click='cycleTheme']").innerText()).toContain("currently system");
@@ -263,6 +266,20 @@ test.describe("theme scope — storage it cannot trust", () => {
 
     expect(await themeState(page)).toEqual({ pref: "dark", dark: true, stored: "light" });
   });
+});
+
+test.describe("theme toggle — exactly one icon paints, the one the preference on html names", { tag: "@cross-engine" }, () => {
+  for (const pref of ["light", "dark", "system", undefined] as const) {
+    test(`${pref === undefined ? "a page with no preference attribute" : `data-theme-preference="${pref}"`} paints the ${pref ?? "system"} icon alone`, async ({
+      page,
+    }) => {
+      await mount(page, await render(ThemeToggle({ icon })), { css: ["./ui/assets/css/forge-ui.css"] });
+      if (pref !== undefined)
+        await page.evaluate(([attr, value]) => document.documentElement.setAttribute(attr, value), [THEME_ATTR, pref] as const);
+
+      expect(await shownIcons(page)).toEqual([`.theme-${pref ?? "system"}-icon`]);
+    });
+  }
 });
 
 test.describe("theme toggle — the accessible name follows the theme", () => {

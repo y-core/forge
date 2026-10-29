@@ -85,6 +85,10 @@ export function renderedClasses(html: string): string[] {
 /** The `#rrggbb` a CSS colour value paints as — `"var(--gray-11)"`, an `oklch()`, a hex. */
 export function paintedHex(page: Page, value: string): Promise<string> {
   return page.evaluate((color) => {
+    const root = getComputedStyle(document.documentElement);
+    for (const [, name = ""] of color.matchAll(/var\(\s*(--[\w-]+)/g)) {
+      if (root.getPropertyValue(name).trim() === "") throw new Error(`paintedHex: ${name} has no computed value on the root element`);
+    }
     const probe = document.createElement("div");
     probe.style.color = color;
     document.body.append(probe);

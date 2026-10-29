@@ -11,7 +11,6 @@ import { checkGoldenQueries, type GoldenCheckConfig } from "./gate/queries";
 import { GOLDEN_STEP_LABEL, type GoldenStep } from "./gate/step-sets";
 import { checkWarden, type WardenCheckConfig } from "./gate/warden";
 
-// `bun:sqlite` is a Bun builtin: present wherever the gate runs under Bun, absent under Node.
 const SQLITE: StepRequirement = { tool: "bun:sqlite", probe: () => typeof Bun !== "undefined", hint: "run the gate under Bun — `bun run verify`" };
 
 /** Checks the governing documents against the subpaths they are required to cite. @public */
@@ -39,8 +38,6 @@ export function wardenStep(config: WardenCheckConfig, options: StepOptions = {})
 
 /** Runs the golden retrieval set against a freshly built index. @public */
 export function wardenQueriesStep(config: GoldenCheckConfig, options: StepOptions = {}): GoldenStep {
-  // The *effective* sets, not the caller's: `warden probe` reads them off this row, so a repository
-  // taking the shipped pair is measured against the shipped pair.
   return {
     ...checkStep(GOLDEN_STEP_LABEL, (tier) => checkGoldenQueries(config, tier), options, { requires: SQLITE }),
     golden: config.queries ?? GOLDEN,
@@ -53,9 +50,9 @@ export function duplicatesStep(config: DuplicateCheckConfig, options: StepOption
   return checkStep("warden:duplicates", () => checkDuplicates(config), options);
 }
 
-/** What a consuming application needs to state to take the four warden rows. @public */
+/** What a consuming application needs to state to take the warden rows. @public */
 export interface WardenAppStepOptions {
-  /** Repository root. Every check resolves and reports its paths against it. */
+  /** Repository root that every check resolves and reports its paths against. */
   root: string;
   /** The consuming package's name, for the subpath half of the docs check. */
   packageName: string;

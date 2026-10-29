@@ -1,16 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
-import type { FC, PropsWithChildren } from "../../render/jsx/types";
 import { ToggleGroup as CoreToggleGroup } from "../core/toggle-group";
-import { fieldAttr } from "../server/field-attr";
-import { createBoundCompound } from "./create-bound-control";
-
-type CoreItemProps = Parameters<typeof CoreToggleGroup.Item>[0];
-type BoundItemProps = Omit<CoreItemProps, "name"> & { bind: string; value: string; name?: string | undefined };
-
-const BoundItem: FC<PropsWithChildren<BoundItemProps>> = ({ bind, value, name, ...props }) => (
-  <CoreToggleGroup.Item {...props} name={name ?? bind} value={value} {...fieldAttr(bind)} data-value={value} />
-);
+import { createBoundCompound, createBoundItem } from "./create-bound-control";
 
 /** Pre-bound `ToggleGroup` whose `.Item` stamps `data-field` + `data-value`. @public */
-export const ToggleGroup = createBoundCompound(CoreToggleGroup, { Item: BoundItem });
+export const ToggleGroup = createBoundCompound(CoreToggleGroup, { Item: createBoundItem(CoreToggleGroup.Item) });

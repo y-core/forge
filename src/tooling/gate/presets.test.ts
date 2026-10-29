@@ -93,10 +93,10 @@ describe("cloudflareWorkerSteps() — shape", () => {
     ]);
   });
 
-  it("adds test:browser to the runtime tier once the browser opt-in is taken", () => {
-    const held = cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === "runtime");
+  it("adds test:browser to the deploy tier, not runtime, once the browser opt-in is taken", () => {
+    const at = (tier: string): string[] => labelsOf(cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === tier));
 
-    expect(held.map((step) => step.label)).toEqual(["test:browser"]);
+    expect([at("runtime"), at("deploy")]).toEqual([[], ["validate-dev-bundle", "test:browser"]]);
   });
 });
 
@@ -210,12 +210,12 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the browser row", () => {
-  it("puts test:browser last, on the runtime tier and behind the Playwright server", () => {
+  it("puts test:browser last, on the deploy tier and behind the Playwright server", () => {
     const steps = cloudflareWorkerSteps({ browser: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
     const browser = steps.at(-1);
 
     expect(browser?.label).toBe("test:browser");
-    expect(browser?.tier).toBe("runtime");
+    expect(browser?.tier).toBe("deploy");
     expect(browser?.requires?.probe).toBeFunction();
     expect(browser !== undefined && !isCheckStep(browser) ? browser.cmd : undefined).toEqual(["playwright", "test", "--project=chromium"]);
   });
@@ -263,13 +263,13 @@ describe("cloudflareWorkerSteps() — the rows a spec reaches through the served
         .map(async (step): Promise<[string, readonly string[] | undefined]> => [step.label, await step.widen?.(root)]),
     );
 
-  it("runs the browser and workerd rows whole for a change to the app Worker's closure, read from the default config", async () => {
+  it("runs the workerd row whole for a change to the app Worker's closure, read from the default config, and widens no browser row", async () => {
     const root = gateFixtureRoot(APP);
     const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, browser: { engines: ["chromium", "firefox"] }, workerd: true });
 
     expect(await traced(steps, root)).toEqual([
-      ["test:browser", ["src/routes.ts", "src/worker.ts"]],
-      ["test:browser:firefox", ["src/routes.ts", "src/worker.ts"]],
+      ["test:browser", undefined],
+      ["test:browser:firefox", undefined],
       ["test:workerd", ["src/routes.ts", "src/worker.ts"]],
     ]);
     rmSync(root, { recursive: true, force: true });
@@ -277,9 +277,9 @@ describe("cloudflareWorkerSteps() — the rows a spec reaches through the served
 
   it("traces the Worker the app's own `workerConfig` names", async () => {
     const root = gateFixtureRoot(APP);
-    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, workerConfig: "wrangler.staging.jsonc", browser: true });
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, workerConfig: "wrangler.staging.jsonc", workerd: true });
 
-    expect(await traced(steps, root)).toEqual([["test:browser", ["src/staging.ts"]]]);
+    expect(await traced(steps, root)).toEqual([["test:workerd", ["src/staging.ts"]]]);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -329,16 +329,6 @@ describe("cloudflareWorkerSteps() — the rows a spec reaches through the served
   const REACHED = ["src/client/helper.ts", "src/views/page.tsx"];
   const reachedOf = (paths: readonly string[] | undefined): string[] | undefined => paths?.filter((path) => REACHED.includes(path));
 
-  it("runs the browser row whole for a change to a client bundle input or a covered CSS source", async () => {
-    const root = repo();
-    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, assetConfig: "config/assets.ts", browser: true });
-
-    const paths = await widened(steps, "test:browser", root);
-
-    expect(reachedOf(paths)).toEqual(REACHED);
-    expect(paths).toContain("src/worker.ts");
-  });
-
   it("widens the workerd row by the asset inputs only when the wrangler config serves assets", async () => {
     const root = repo();
     const served = cloudflareWorkerSteps({
@@ -354,20 +344,25 @@ describe("cloudflareWorkerSteps() — the rows a spec reaches through the served
     expect(await widened(unserved, "test:workerd", root)).toEqual(["src/worker.ts"]);
   });
 
-  it("leaves both rows on the Worker's closure without an `assetConfig`", async () => {
+  it("leaves the workerd row on the Worker's closure without an `assetConfig`", async () => {
     const root = repo();
-    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, workerConfig: "wrangler.assets.jsonc", browser: true, workerd: true });
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, workerConfig: "wrangler.assets.jsonc", workerd: true });
 
-    expect(await widened(steps, "test:browser", root)).toEqual(["src/worker.ts"]);
     expect(await widened(steps, "test:workerd", root)).toEqual(["src/worker.ts"]);
   });
 
-  it("rejects the browser trace when an asset input does not resolve, so the row runs whole", async () => {
+  it("rejects the workerd trace when a served asset input does not resolve, so the row runs whole", async () => {
     const root = repo();
     writeFileSync(join(root, "src/client/helper.ts"), 'export { gone } from "./gone";\n');
-    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, assetConfig: "config/assets.ts", browser: true });
+    const steps = cloudflareWorkerSteps({
+      root,
+      wranglerTypes: false,
+      assetConfig: "config/assets.ts",
+      workerConfig: "wrangler.assets.jsonc",
+      workerd: true,
+    });
 
-    await expect(Promise.resolve(widened(steps, "test:browser", root))).rejects.toThrow();
+    await expect(Promise.resolve(widened(steps, "test:workerd", root))).rejects.toThrow();
   });
 });
 

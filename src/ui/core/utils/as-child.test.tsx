@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { escapeHtml } from "../../../html/escape";
 import { createElement } from "../../../render/jsx/element";
 import type { FC, JSX } from "../../../render/jsx/types";
 import { attrOf, attrsOf } from "../../../testing/markup";
@@ -406,7 +407,7 @@ describe("data-slot composition through an unrendered component child", () => {
       ),
     ).toBe(
       '<button type="button" role="menuitem" data-slot="menu-submenu-trigger tooltip-trigger" command="toggle-popover" ' +
-        `commandfor="more" aria-controls="more" aria-expanded="false" aria-haspopup="menu" class="${MENU_ITEM_WITH_TOOLTIP_CLASS}" aria-describedby="tip" id="more-trigger">More</button>`,
+        `commandfor="more" aria-controls="more" aria-expanded="false" aria-haspopup="menu" class="${escapeHtml(MENU_ITEM_WITH_TOOLTIP_CLASS)}" aria-describedby="tip" id="more-trigger">More</button>`,
     );
   });
 
@@ -471,5 +472,65 @@ describe("a caller's own data-slot on an asChild compound", () => {
         </Button>,
       ),
     ).toBe('<button type="button" data-slot="inner button caller" ' + `class="${BUTTON_DEFAULT_CLASS}">Go</button>`);
+  });
+});
+
+describe("cloneAsChild — a compound's IDREF list joins the child's", () => {
+  it("keeps the child's aria-describedby and appends the compound's after it", async () => {
+    const html = await render(
+      <Button asChild aria-describedby='compound'>
+        <a href='/x' aria-describedby='own'>
+          x
+        </a>
+      </Button>,
+    );
+
+    expect(attrOf(html, "aria-describedby")).toBe("own compound");
+  });
+
+  it("keeps the child's aria-labelledby and appends the compound's after it", async () => {
+    const html = await render(
+      <Button asChild aria-labelledby='compound'>
+        <a href='/x' aria-labelledby='own'>
+          x
+        </a>
+      </Button>,
+    );
+
+    expect(attrOf(html, "aria-labelledby")).toBe("own compound");
+  });
+
+  it("names an id the child and the compound share once", async () => {
+    const html = await render(
+      <Button asChild aria-describedby='shared'>
+        <a href='/x' aria-describedby='own shared'>
+          x
+        </a>
+      </Button>,
+    );
+
+    expect(attrOf(html, "aria-describedby")).toBe("own shared");
+  });
+
+  it("emits neither attribute when neither side sets one", async () => {
+    const html = await render(
+      <Button asChild>
+        <a href='/x'>x</a>
+      </Button>,
+    );
+
+    expect(attrsOf(html)).toEqual({ href: "/x", "data-slot": "button" });
+  });
+
+  it("merges through Link asChild as well as Button", async () => {
+    const html = await render(
+      <Link asChild aria-labelledby='compound'>
+        <a href='/x' aria-labelledby='own'>
+          x
+        </a>
+      </Link>,
+    );
+
+    expect(attrOf(html, "aria-labelledby")).toBe("own compound");
   });
 });

@@ -888,8 +888,6 @@ describe("checkSchemaArtifact()", () => {
     ]);
   });
 
-  // The load-bearing rule: route full loads this file and then data.sql, so a schema that grew rows
-  // would restore them twice.
   it("reports every INSERT, naming the table each one carries a row of", () => {
     const grown = [...SCHEMA_DUMP, `INSERT INTO "projects" VALUES('p');`, `INSERT INTO "sqlite_sequence" VALUES('counted_rows',124);`];
 
@@ -1072,8 +1070,6 @@ describe("checkDataArtifact()", () => {
     expect(checkDataArtifact([...DATA_DUMP, "ALTER TABLE tasks ADD COLUMN x TEXT;"].join("\n"), APP_TABLES)).toEqual([{ line: 4, reason }]);
   });
 
-  // The judgement is an allowlist and not a list of verbs somebody thought of: the file is handed to
-  // `wrangler d1 execute --file`, and each of these returned no fault while it was a denylist.
   it("refuses a verb no arm names, because only the preamble and an allowed INSERT pass", () => {
     const refused = [
       "REPLACE INTO tasks VALUES(1);",
@@ -1089,8 +1085,6 @@ describe("checkDataArtifact()", () => {
     }
   });
 
-  // The verb was matched against the raw text, so a comment ahead of it matched no arm at all — not
-  // the INSERT arm that checks the table, and not one of the denied ones either.
   it("reads an INSERT behind a comment rather than passing it, whatever table it names", () => {
     const faults = checkDataArtifact([...DATA_DUMP, "/*c*/INSERT INTO orders VALUES(1);"].join("\n"), APP_TABLES);
 
@@ -1106,8 +1100,6 @@ describe("checkDataArtifact()", () => {
   });
 });
 
-// A line scan reads a crafted dump as one INSERT and stops there; the artifact is what `wrangler d1
-// execute --file` is handed, so every statement on the line has to be judged, not just the first.
 describe("checkDataArtifact() — a second statement hidden on an INSERT's line", () => {
   it("reports a row removal written after an allowed INSERT on the same line", () => {
     const line = `INSERT INTO "tasks" (id) VALUES (1); DROP TABLE "orders";`;
@@ -1502,8 +1494,6 @@ describe("verifyBackupArtifact()", () => {
     expect(() => verifyBackupArtifact(io(files("/b")), "/b", artifact())).not.toThrow();
   });
 
-  // `takeBackup` writes both files for every backup, unconditionally, so a manifest declaring none
-  // is not something this tool produced. The loop this replaced had nothing to iterate and passed.
   it("refuses a manifest that declares no files at all, rather than verifying it vacuously", () => {
     expect(() => verifyBackupArtifact(io(files("/b")), "/b", artifact({ artifacts: [] }))).toThrow(/declares no schema.sql and no data.sql/);
   });
@@ -1529,7 +1519,6 @@ describe("verifyBackupArtifact()", () => {
     );
   });
 
-  // Route `migrations` executes what it finds in here, so the rule has to reach one directory down.
   it("refuses an undeclared .sql under migrations/, which a restore executes by listing it", () => {
     const seeded = {
       ...files("/b"),
@@ -1544,6 +1533,18 @@ describe("verifyBackupArtifact()", () => {
     const seeded = { ...files("/b"), "/b/migrations/0001_init.sql": "CREATE TABLE tasks (uuid TEXT);\n" };
 
     expect(() => verifyBackupArtifact(io(seeded), "/b", artifact())).not.toThrow();
+  });
+
+  it("accepts a data.sql carrying rows of forge's companion tables beside the app's own", () => {
+    const data = `${DATA_SQL}INSERT INTO "_forge_migrations" VALUES(1,'0001_init','ab',0,NULL);\n`;
+
+    expect(() =>
+      verifyBackupArtifact(
+        io({ ...files("/b"), "/b/data.sql": data }),
+        "/b",
+        artifact({ artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", data)] }),
+      ),
+    ).not.toThrow();
   });
 
   it("still refuses a declared file whose bytes do not hash to what the manifest says", () => {

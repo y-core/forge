@@ -25,7 +25,7 @@ audience: consumer
 - §1 ui/core Component Contract: the rules every SSR component obeys
 - §1a Dropped and Unsanitized Pass-Through Attributes: why `style` never arrives, and the one family left unsanitized
 - §1c Button and the asChild Invariant: the ratified throw, and the `data-slot` token list
-- §1e Switch and Slider — CSS-Only Controls: the `peer-*` trap, the sanitized readout and who keeps it true, the declined formatter seam
+- §1e Switch and Slider — Painted Native Inputs: the `peer-*` trap, the sanitized readout and who keeps it true, the declined formatter seam
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
 - §1g Composite Widgets: the markers that make many focusable items one tab stop
 - §1h Overlays and Disclosures: native popover and `<details>`; the box a Trigger or Close carries; naming a panel; which opens light-dismiss;
@@ -132,7 +132,7 @@ spread of a **bare identifier** (`{...rest}`, `{...props}`, `{...attrs}`). A com
 rule: it is built at the call site out of values the component controls, so no caller token can hide inside it. It is off for `*.test.tsx` alone,
 where a probe overrides its own caller token on purpose.
 
-### 1e. Switch and Slider — CSS-Only Controls
+### 1e. Switch and Slider — Painted Native Inputs
 
 **Never reach for `peer-*` from an element nested inside another — the failure is silent.** `peer-*` compiles to a general-sibling combinator, so it
 reaches only siblings of the input. The track is one and uses `peer-checked:` directly; the **thumb is a child of the track**, so a `peer-` utility
@@ -144,13 +144,14 @@ selector instead.
 before any script runs. The algorithm is module-local to `slider.tsx` and takes the serialized attribute string rather than the prop, so it parses
 byte-for-byte what the browser parses. This is §1h's "stamp only what the server can keep true" resolving _toward_ stamping.
 
-**After the first paint, the client keeps the readout true.** The `slider` scope in `ui/core/client` mirrors the thumb's value into the `<output>`
-on every `input`. A bound `Slider` also stamps its `data-field` on the `<output>`, so `bindControls` paints the readout from the signal through
-`HTMLOutputElement.value`, and a signal write moves the readout with the thumb.
+**After the first paint, the client keeps the readout true.** An unbound readout `Slider` stamps the lazy `slider` scope and a `data-on-input`
+action, so `ui/core/client` mirrors the thumb's value into the `<output>` on every `input`. A bound `Slider` stamps neither: its `<output>` carries
+the `data-field`, and `bindControls` paints it from the signal on every input and every signal write (§2c).
 
 **`output` stays a boolean, and the unformatted readout is a decision rather than a gap** — no formatting hook, no locale, no unit. A consumer
-wanting `"50%"` composes their own `<output>`, as `Meter.Value`'s caller-supplied children already make presenting a number composition rather than
-configuration. **Hand any future formatter seam the _sanitized_ string, never the raw prop.**
+wanting `"50%"` composes their own `<output>`, as `Meter.Value`'s caller-supplied children already make presenting a number composition rather
+than configuration. That `<output>` takes `aria-live="off"`, as `Slider`'s readout does: a bare `<output>` is an implicit `status` region, and
+`forge-ui-a11y-one-live-region` reports it. **Hand any future formatter seam the _sanitized_ string, never the raw prop.**
 
 ### 1f. Turnstile — Server-Rendered Mount Point
 
@@ -180,8 +181,8 @@ for the parent's arrow navigation to skip.
 segmented control as a toolbar and offer the wrong interaction model. Its `type` prop publishes as `data-multiple`, present exactly when several
 items may be pressed at once, and that is what the client reads to decide whether a click replaces the pressed item or adds to it (§2a).
 
-An unselected `Tabs.Content` is `hidden` — the platform's own mechanism, so the initial render is correct with no JavaScript and the controller
-flips the same attribute.
+An unselected `Tabs.Content` is `hidden="until-found"` — the platform's own mechanism, so the initial render is correct with no JavaScript — and
+the controller flips the same attribute, leaving a plain `hidden` once `mountTabs` runs.
 
 ### 1h. Overlays and Disclosures
 
@@ -220,16 +221,19 @@ tooltip explaining why it is unavailable could never be shown. `Tooltip.Trigger`
 `aria-disabled="true"` with the disabled state hook; the paint stays, the stylesheet leaves the trigger slot hoverable, and the click the platform
 would still act on is cancelled by the runtime ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
 
-**Stamp no scope on an overlay whose behaviour is wholly the platform's.** `Dialog`, `Popover`, `Accordion` and `Collapsible` ship neither scope nor
+**Stamp no scope on an overlay whose behaviour is wholly the platform's.** `Dialog`, `Accordion` and `Collapsible` ship neither scope nor
 controller. The one exception is `Dialog`'s `openModal`: a modal has no markup spelling at all, so `showModal()` has to run on resume, and that prop
 alone stamps the dialog scope and an eager controller. It also suppresses `open`, which would otherwise render the dialog non-modal and make that
 `showModal()` throw. `Menu` and `Tooltip` stamp one because they add a keyboard layer, eager by necessity rather than taste
-([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
+([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). `Popover` stamps an eager scope on `Popover.Content` for one job: its trigger's `aria-expanded`, which the
+platform does not keep in step.
 
 **Stamp only what the server can keep true.** Placement is decided at render and fixed for the element's life, so stamp it. **Never stamp open
-state** — that asserts a fact the platform owns and the component cannot follow. Read open state from the element itself: `:popover-open`, or
-`[open]` on a `<dialog>` or `<details>`, the one source that cannot drift. Forward an initial `open`, which the server genuinely sets and the
-platform maintains from there.
+state** — that asserts a fact the platform owns and the component cannot follow. The one exception is a `Popover` or `Menu` trigger's
+`aria-expanded`, which ARIA asks of the trigger. It renders `"false"`, which is true at first paint because no popover is ever server-open, and the
+eager scope moves it on every `beforetoggle` and `toggle`. Without `ui/core/client` it stays `"false"` while the popup is open. Read open state from
+the element itself: `:popover-open`, or `[open]` on a `<dialog>` or `<details>`, the one source that cannot drift. Forward an initial `open`, which
+the server genuinely sets and the platform maintains from there.
 
 **Keep physical and logical spellings in one value space.** A side is stamped at SSR, where the Worker cannot know the reader's direction, so `Side`
 carries both (`src/ui/contracts/state-attrs.ts`). Keep the physical members — a popup that must _not_ mirror needs them — and add no separate
@@ -337,7 +341,7 @@ degraded field rather than a broken one.
 
 **Treat a blank `scope` as no scope, and a whitespace-bearing one as neither.** Blank falls back to the unscoped id, because the caller named no
 scope. A non-blank scope that is not an id token **suppresses instead of falling back**: the unscoped id is precisely the one the scope exists to
-avoid colliding with, so falling back would re-create the cross-wiring the prop was introduced to fix.
+avoid colliding with, so falling back would re-create the cross-wiring the prop exists to prevent.
 
 **The rule governs references forge emits, not ids it merely declares.** An id that is declared and never named by any IDREF stays outside the rule
 and round-trips a `value` verbatim. Give any such id a reference and it must route through the same gate first.
@@ -461,8 +465,8 @@ it reports and the rest of the widget keeps working.
 ### 2c. `ui/controls` — Bound Variants
 
 **The static `ui/controls` barrel is the only bound-control API — there is no runtime factory to call.** The single-element wrappers come from an
-internal, unexported factory, so their shape is uniform. **`ToggleGroup` is bespoke rather than factory-built**: its binding lives on the `.Item`
-sub-component rather than the root and it stamps an extra `data-value`, which the single-element factory cannot express.
+internal, unexported factory, so their shape is uniform. **`ToggleGroup` comes from the compound factory with its own `.Item`**, because its
+binding lives on `.Item` and stamps an extra `data-value`.
 
 **No bound control stamps a `data-on-*` action** — `bindControls` listens once on the scope root instead, so a bound-control scope must be
 `eager: true`, which [`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c already requires of any markup carrying no `data-on-*` action of its own.

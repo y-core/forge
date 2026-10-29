@@ -52,7 +52,7 @@ async function paintState(page: Page): Promise<Array<{ background: string; check
   return Promise.all(items.map(async (item) => ({ ...item, background: await paintedHex(page, item.background) })));
 }
 
-test.describe("ToggleGroup — the pressed paint follows the click", () => {
+test.describe("ToggleGroup — the pressed paint follows the click", { tag: "@cross-engine" }, () => {
   test("clicking an item moves the painted state onto it", async ({ page }) => {
     const html = await groupMarkup(0);
     await page.emulateMedia({ reducedMotion: "reduce" });
@@ -108,7 +108,7 @@ async function itemEdges(page: Page, orientation: "horizontal" | "vertical"): Pr
   );
 }
 
-test.describe("ToggleGroup — a vertical group joins its items top to bottom", () => {
+test.describe("ToggleGroup — a vertical group joins its items top to bottom", { tag: "@cross-engine" }, () => {
   test("rounds only the outer corners of the column and draws one rule between items", async ({ page }) => {
     expect(await itemEdges(page, "vertical")).toEqual([
       { corners: [true, true, false, false], top: true, start: true },
@@ -118,7 +118,7 @@ test.describe("ToggleGroup — a vertical group joins its items top to bottom", 
   });
 });
 
-test.describe("ToggleGroup — a horizontal group joins its items start to end", () => {
+test.describe("ToggleGroup — a horizontal group joins its items start to end", { tag: "@cross-engine" }, () => {
   test("rounds only the outer corners of the row and draws one rule between items", async ({ page }) => {
     expect(await itemEdges(page, "horizontal")).toEqual([
       { corners: [true, false, false, true], top: true, start: true },

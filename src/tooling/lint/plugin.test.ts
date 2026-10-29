@@ -38,7 +38,7 @@ describe("plugin shape", () => {
       const id = corpusIdOf(key);
       return id === undefined ? [] : [id];
     });
-    const routed = Object.entries(RULE_ENFORCER).flatMap(([id, enforcer]) => (enforcer === "lint" ? [id] : []));
+    const routed = Object.entries(RULE_ENFORCER).flatMap(([id, enforcers]) => (enforcers.includes("lint") ? [id] : []));
 
     expect(registered.sort()).toEqual(routed.sort());
   });

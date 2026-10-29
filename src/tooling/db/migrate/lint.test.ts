@@ -121,6 +121,10 @@ describe("lintMigration() — flagged", () => {
     expect(sha256(`${header.split("\n")[0] ?? ""}\n-- forge:compose \nSELECT 1;`)).toContain(header.split('"body":"')[1]?.slice(0, 64));
   });
 
+  it("reports generated-edited when the stamp is not JSON, as a body that no longer hashes", () => {
+    expect(brief(lintMigration("m.sql", "-- Generated\n-- forge:compose {not json\nSELECT 1;"))).toEqual([["generated-edited", 2]]);
+  });
+
   it("reports generated-edited when the notice line is deleted, leaving the stamp on line 0", () => {
     const header = formatComposeHeader({ desired: { app: "d" }, baseline: "b", forge: "0" }, "SELECT 1;");
     const sql = `${header.split("\n")[1] ?? ""}\nSELECT 1;`;

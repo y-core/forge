@@ -48,8 +48,6 @@ import type { SignupViewProps } from "./views/types";
 import type { TotpEnrolViewProps } from "./views/types";
 import type { VerifyViewProps } from "./views/types";
 
-// The same lifetime `AuthWebOptions.resolveServices` has, for the same reason: a store built from a
-// Worker binding cannot exist until there is a request carrying `env`.
 /** Builds one of a guard's dependencies from the request it is guarding. @public */
 export type AuthGuardResolver<Bindings, T> = (c: AppContext<Bindings>) => T | Promise<T>;
 
@@ -77,9 +75,9 @@ export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
   readonly now?: () => number;
 }
 
-/** What the two enrolment guards need to tell an owed enrolment from an owed step-up from neither. @public */
+/** What the enrolment guards need to tell an owed enrolment from an owed step-up from neither. @public */
 export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
-  /** Built per request, for the same reason the user store is: the registry is assembled from Worker bindings. */
+  /** Built per request, since the registry is assembled from Worker bindings. */
   readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve">>;
   /** Where a user who still owes an enrolment is sent, by the kind they owe — spell it `authEnrolmentPaths(paths.auth)`. */
   readonly enrolmentPaths: Partial<Record<AuthFactorKind, string>>;
@@ -115,8 +113,6 @@ export interface AuthRouteMaps {
 /** What `createAuthGuards` needs to wire `AUTH_ROUTE_GROUPS` onto a middleware chain. @public */
 export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   readonly routes: AuthRouteMaps;
-  // The step-up half of `AuthGuardOptions` is omitted because `enrolment` already states it: the
-  // chain reads it from there, so a consumer writes the factor registry and its paths once.
   readonly auth: Omit<AuthGuardOptions<Bindings>, "factors" | "stepUpPath" | "stepUpMaxAgeMs" | "clearsStepUp">;
   readonly enrolment: AuthEnrolmentGuardOptions<Bindings>;
   /** Group table to wire. Defaults to `AUTH_ROUTE_GROUPS`. */
@@ -160,8 +156,7 @@ export interface Approval<Bindings = Record<string, unknown>> extends Omit<Appro
 
 /** One administrator approval as a session holds it. @internal */
 export interface ApprovalMark {
-  /** When the code was presented. */
-  readonly at: number;
+  readonly presentedAt: number;
   /** The key ring's MAC of the presented code, as `kid.mac`. */
   readonly digest: string;
 }
@@ -194,14 +189,12 @@ export interface AuthRequestServices {
   readonly admin: AdminUserStore;
 }
 
-// The one service forge builds rather than receives: `AdminUserService` is the shape the write path
-// is written against, and deriving it here is what keeps a consumer from substituting another.
 /** This request's services, with the administrative surface built over the store. @internal */
 export interface AuthRequestSurface extends Omit<AuthRequestServices, "admin"> {
   readonly admin: AdminUserService;
 }
 
-/** The three href maps every loader and action reads its targets off, so no path literal is written twice. @public */
+/** The href maps every loader and action reads its targets off, so no path literal is written twice. @public */
 export interface AuthWebPaths {
   readonly auth: AuthEntryPaths;
   readonly account: AuthAccountPaths;
@@ -355,9 +348,8 @@ export interface AuthRecoveryStanding {
 /** One auth view resolved against this request. @public */
 export interface AuthViewResolved<Name extends AuthViewName> {
   readonly name: Name;
-  /** The resolved props — the escape hatch, for a host composing its own markup. */
   readonly props: AuthViewProps[Name];
-  /** `props` applied to `views[name] ?? forge's own view`. The ergonomic path. */
+  /** `props` applied to `views[name] ?? forge's own view`. */
   readonly node: JSXNode;
   /** The status this render carries; `undefined` means 200. */
   readonly status: number | undefined;
@@ -390,8 +382,6 @@ export interface AuthRouteGroup {
   readonly path: readonly string[];
   readonly guards: readonly AuthGuardName[];
   readonly medium: AuthMedium;
-  // Declared here rather than left out of the guard list, so a reader sees which endpoints are
-  // exempt and `routes.test.ts` asserts the set rather than trusting it.
   /** Set on a group whose routes exist to clear an owed step-up, which `require-auth` would otherwise lock a session out of. */
   readonly clearsStepUp?: boolean;
 }

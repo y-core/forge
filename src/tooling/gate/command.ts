@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, matchesGlob, relative, resolve, sep } from "node:path";
 import { env, exit } from "node:process";
@@ -31,7 +31,18 @@ import {
 } from "./report";
 import { failsWhenAbsent, isCheckStep, selectSteps } from "./steps";
 import { GATE_TIERS } from "./types";
-import type { CheckStep, CommandStep, GateTier, Step, StepReach, StepRequirement } from "./types";
+import type {
+  CheckStep,
+  CommandStep,
+  GateRunReport,
+  GateTier,
+  Step,
+  StepReach,
+  StepReport,
+  StepRequirement,
+  StepResults,
+  TestFailure,
+} from "./types";
 import type { GateCommandConfig } from "./types";
 
 /** Where `forge verify` looks for a step table when `--config` names none. @public */
@@ -50,6 +61,7 @@ const gateFlags = {
   fix: { type: "boolean" as const, description: "Run each selected step's fixer instead of the step" },
   reuse: { type: "boolean" as const, description: "Exit green at once when a passing run of this exact tree is on record at this tier or above" },
   affected: { type: "boolean" as const, description: "Run only the steps whose watched paths the working tree's changes touch (a scoped run)" },
+  report: { type: "string" as const, description: "Write report.json and every step's whole log into this directory, whatever the verdict" },
 };
 
 const binFlags = {
@@ -58,14 +70,18 @@ const binFlags = {
   root: { type: "string" as const, description: "Repository root every step runs in (default: the working directory)" },
 };
 
+// `test:browser` carries a colon, which is not a portable filename character.
+function logName(label: string): string {
+  return `${label.replace(/[^a-z0-9]+/gi, "-")}.log`;
+}
+
 // A filesystem refusal is swallowed: the gate's verdict must be reported even when the log cannot
 // be written.
 function writeFullLog(label: string, output: string, cwd: string): string | undefined {
   try {
     const dir = join(tmpdir(), "forge-gate-logs", createHash("sha256").update(resolve(cwd)).digest("hex").slice(0, 12));
     mkdirSync(dir, { recursive: true });
-    // `test:browser` carries a colon, which is not a portable filename character.
-    const file = join(dir, `${label.replace(/[^a-z0-9]+/gi, "-")}.log`);
+    const file = join(dir, logName(label));
     writeFileSync(file, output, "utf-8");
     return file;
   } catch {
@@ -73,11 +89,31 @@ function writeFullLog(label: string, output: string, cwd: string): string | unde
   }
 }
 
+type StepCapture = CaptureResult & { tests?: readonly TestFailure[] | "none" };
+
+// The results file is read and removed before the TMPDIR is listed, so asking for it never trips `leavesNoTemp`.
+function readResults(results: StepResults, file: string): readonly TestFailure[] | "none" {
+  if (!existsSync(file)) return "none";
+  const text = readFileSync(file, "utf-8");
+  rmSync(file, { force: true });
+  return results.read(text) ?? "none";
+}
+
 // One TMPDIR per step, removed when it exits.
-function captureStep(bin: string, args: string[], cwd: string, step: Pick<CommandStep, "leavesNoTemp" | "tempCaches">): CaptureResult {
+function captureStep(
+  bin: string,
+  args: string[],
+  cwd: string,
+  step: Pick<CommandStep, "leavesNoTemp" | "tempCaches">,
+  results?: StepResults,
+): StepCapture {
   const dir = mkdtempSync(join(tmpdir(), "forge-step-"));
   try {
-    const result = capture(bin, args, { cwd, env: { ...env, TMPDIR: dir } });
+    const file = join(dir, "forge-results.json");
+    const asked = results === undefined ? args : [...args, ...results.args];
+    const stepEnv = results === undefined ? { ...env, TMPDIR: dir } : { ...env, TMPDIR: dir, [results.env]: file };
+    const captured = capture(bin, asked, { cwd, env: stepEnv });
+    const result: StepCapture = results === undefined ? captured : { ...captured, tests: readResults(results, file) };
     const kept = step.tempCaches ?? [];
     const left =
       step.leavesNoTemp === true
@@ -162,14 +198,37 @@ function reportFailure(label: string, output: string, tail: number, cwd: string)
 
 // A check that throws is a defect in the check, not a verdict — but the gate still owes a summary
 // line, so the throw is reported as that step's failure rather than unwinding the whole run.
-async function runCheck(step: CheckStep, tier: GateTier, style: Colorize): Promise<{ ok: boolean; ms: number; report: string }> {
+async function runCheck(step: CheckStep, tier: GateTier, style: Colorize): Promise<{ ok: boolean; ms: number; report: string; plain: string }> {
   const started = Date.now();
   try {
     const result = await step.run(tier);
-    return { ok: result.ok, ms: Date.now() - started, report: formatFindingBlock(result.findings, style) };
+    return {
+      ok: result.ok,
+      ms: Date.now() - started,
+      report: formatFindingBlock(result.findings, style),
+      plain: formatFindingBlock(result.findings, PLAIN),
+    };
   } catch (error) {
-    return { ok: false, ms: Date.now() - started, report: `    ${error instanceof Error ? error.message : String(error)}` };
+    const thrown = `    ${error instanceof Error ? error.message : String(error)}`;
+    return { ok: false, ms: Date.now() - started, report: thrown, plain: thrown };
   }
+}
+
+function commandStatus(result: StepCapture): Pick<StepReport, "status" | "failures"> {
+  if (result.code === 0) return { status: "passed" };
+  if (result.tests === "none") return { status: "setup" };
+  return result.tests === undefined || result.tests.length === 0 ? { status: "failed" } : { status: "failed", failures: result.tests };
+}
+
+// Unlike the TMPDIR copy, a log the report names must exist, so a refusal here is the run's failure.
+function writeReportLog(dir: string, label: string, output: string): string {
+  const name = logName(label);
+  writeFileSync(join(dir, name), output, "utf-8");
+  return name;
+}
+
+function optional<K extends string>(key: K, value: string | undefined): Record<K, string> | Record<string, never> {
+  return value === undefined ? {} : ({ [key]: value } as Record<K, string>);
 }
 
 /** Builds the `verify` command over a project's step table. @public */
@@ -193,6 +252,18 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         quit(1);
       }
       const { tier } = resolved;
+      if (flags.report !== undefined) {
+        const clash = [
+          flags.fix === true && "fix",
+          flags.list === true && "list",
+          flags.reuse === true && "reuse",
+          flags.affected === true && "affected",
+        ].find((name) => name !== false);
+        if (clash !== undefined) {
+          console.error(`--report records the steps a run executes, so it takes no --${clash}.`);
+          quit(1);
+        }
+      }
       if (flags.reuse === true) {
         const clash = [
           (flags.only?.length ?? 0) > 0 && "only",
@@ -326,6 +397,12 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       const { reach, probes } = await settle();
       const labels = steps.filter((step) => reach[step.label] !== "untouched").map((step) => step.label);
 
+      const reportDir = flags.report === undefined ? undefined : resolve(cwd, flags.report);
+      if (reportDir !== undefined) mkdirSync(reportDir, { recursive: true });
+      const records: StepReport[] = [];
+      const logged = (label: string, output: string): { log: string } | Record<string, never> =>
+        reportDir === undefined ? {} : { log: writeReportLog(reportDir, label, output) };
+
       const started = Date.now();
       let passed = 0;
       let skipped = 0;
@@ -335,6 +412,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       for (const [index, step] of steps.entries()) {
         if (reach[step.label] === "untouched") {
           console.log(formatUntouched(step.label, pending?.length ?? 0, style, probes[step.label]));
+          records.push({ label: step.label, status: "untouched", durationMs: 0 });
           continue;
         }
 
@@ -342,18 +420,21 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         if (absent !== undefined) {
           console.log(formatMissingRequirement(step.label, absent.tool, absent.hint, tier, style));
           if (failsWhenAbsent(tier)) {
+            records.push({ label: step.label, status: "setup", durationMs: 0 });
             failedAt = { label: step.label, at: index + 1 };
             break;
           }
+          records.push({ label: step.label, status: "skipped", durationMs: 0 });
           skipped++;
           continue;
         }
 
         if (isCheckStep(step)) {
-          const { ok, ms, report } = await runCheck(step, tier, style);
+          const { ok, ms, report, plain } = await runCheck(step, tier, style);
           console.log(formatStepLine(step.label, ok, ms, style));
           // Warnings are worth printing on a pass too — they are the check's only voice.
           if (report !== "") console.log(report);
+          records.push({ label: step.label, status: ok ? "passed" : "failed", durationMs: ms, ...logged(step.label, plain) });
           if (!ok) {
             failedAt = { label: step.label, at: index + 1 };
             break;
@@ -364,8 +445,9 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
         const [bin, ...args] = step.cmd;
         const narrowed = reach[step.label] === "narrow" ? (step.narrow?.args ?? []) : [];
-        const result = captureStep(bin, [...args, ...narrowed], cwd, step);
+        const result = captureStep(bin, [...args, ...narrowed], cwd, step, reportDir === undefined ? undefined : step.results);
         console.log(formatStepLine(step.label, result.code === 0, result.ms, style));
+        records.push({ label: step.label, durationMs: result.ms, ...commandStatus(result), ...logged(step.label, result.output) });
         if (result.code !== 0) {
           reportFailure(step.label, result.output, step.tail, cwd);
           failedAt = { label: step.label, at: index + 1 };
@@ -391,6 +473,24 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       );
 
       const green = failedAt === undefined && passed > 0 && skipped === 0;
+      if (reportDir !== undefined) {
+        const reached = new Set(records.map((record) => record.label));
+        const report: GateRunReport = {
+          tier,
+          ...(base === undefined ? optional("head", worktreeHead(cwd)) : { head: base }),
+          ...(tree === undefined ? optional("tree", worktreeHash(cwd)) : { tree }),
+          startedAt: new Date(started).toISOString(),
+          durationMs: Date.now() - started,
+          verdict: green ? "pass" : "fail",
+          steps: [
+            ...records,
+            ...steps
+              .filter((step) => !reached.has(step.label))
+              .map((step): StepReport => ({ label: step.label, status: "unreached", durationMs: 0 })),
+          ],
+        };
+        writeFileSync(join(reportDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf-8");
+      }
       if (unscoped && tree !== undefined) {
         if (!green) clearReceipt(cwd);
         else if (worktreeHash(cwd) === tree) recordReceipt(cwd, { tree, tier, ...(base === undefined ? {} : { base }), labels });

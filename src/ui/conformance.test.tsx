@@ -36,7 +36,7 @@ const MESSAGE_INVALID = { invalid: undefined, error: "x" };
 /** The field name every bound control's probe binds to. */
 const BIND_FIELD = "b";
 
-/** The attribute a bound control stamps, read off the helper that writes it rather than restated. */
+/** The attribute a bound control stamps. */
 const FIELD_ATTR = Object.keys(fieldAttr(BIND_FIELD))[0] as string;
 
 interface Participant {
@@ -123,7 +123,6 @@ const CORE_PARTICIPANTS: Record<string, Participant> = {
   Toggle: {
     slot: "toggle-input",
     classSlot: "toggle",
-    // No `stateAttr` — the checkbox's own `:checked` is the state, so there is none to stamp.
     split: "same shape as Switch: the root is the label, props reach the sr-only checkbox inside it",
   },
   ToggleGroup: { slot: "toggle-group", stateAttr: "data-orientation" },
@@ -184,7 +183,7 @@ const TIER_NAMES = Object.keys(TIERS).sort();
 
 const COMPONENTS = barrelComponents({ controls, core });
 
-/** A tier-qualified component key, because `Input` names a component in both barrels. */
+/** A tier-qualified component key. */
 const KEYS: string[] = COMPONENTS.map((entry) => entry.key);
 
 function componentNames(tier: string): string[] {
@@ -231,7 +230,7 @@ async function renderProbe(key: string, participant: Participant, extra: Record<
   );
 }
 
-/** Every boolean state prop, set true, so the six presence hooks are reached. */
+/** Every boolean state prop, set true, so every presence hook is reached. */
 const STATEFUL_PROPS = { pressed: true, checked: true, selected: true, disabled: true, invalid: true, busy: true };
 
 const FORWARDING = KEYS.filter((key) => !participantOf(key)?.noForward);
@@ -301,8 +300,6 @@ describe("ui conformance — the sweep is derived from the barrels", () => {
   it("emits no data-* attribute that no declaration carries", () => {
     const declared = new Set<string>([...Object.values(STATE_ATTRS), ...Object.values(PRESENTATION_ATTRS), ISLAND_STATE_ATTR]);
     const offenders = new Set<string>();
-    // Both probes: the bare render never reaches the six presence hooks, and the stateful one is
-    // where an undeclared hook smuggled in behind a boolean prop would appear.
     for (const html of [...Object.values(RENDERED), ...Object.values(RENDERED_STATEFUL)]) {
       for (const { attrs } of openTags(html)) {
         for (const name of Object.keys(attrs)) {
@@ -314,8 +311,6 @@ describe("ui conformance — the sweep is derived from the barrels", () => {
       }
     }
 
-    // Asserted in this direction: filtering the rendered attributes down to the declared set before
-    // comparing would make the comparison unfalsifiable.
     expect([...offenders].sort()).toEqual([]);
   });
 
@@ -365,11 +360,9 @@ const FOREIGN_APPEARANCE: Record<string, string> = {
   "core/turnstile.tsx": "Cloudflare's widget render modes (`always` / `execute` / `interaction-only`) pass through verbatim",
 };
 
-/** The seven ratified presentational prop names, and the type each must resolve to. */
+/** The ratified presentational prop names, and the type each must resolve to. */
 const RATIFIED: Record<string, RegExp> = {
   tone: /Tone\b|ButtonProps\["tone"\]/,
-  // A `*Appearance` / `*Size` alias is an `Extract<>` narrowing of the ratified union, not a second
-  // vocabulary; an inline `"horizontal" | "vertical"` is the ratified orientation spelled out.
   appearance: /Appearance\b|ButtonProps\["appearance"\]/,
   size: /Size\b|ButtonProps\["size"\]/,
   shape: /Shape\b|ButtonProps\["shape"\]/,
@@ -384,15 +377,13 @@ const BANNED_PROP_NAMES = ["variant", "intent", "colour", "emphasis", "look"];
 describe("ui conformance — the prop vocabulary (UI_SSR_COMPONENTS.md §1m)", () => {
   const sources = componentSources();
 
-  it("declares no presentational prop outside the seven ratified names", () => {
+  it("declares no presentational prop outside the ratified names", () => {
     const offenders = Object.entries(sources).flatMap(([file, source]) =>
       BANNED_PROP_NAMES.filter((name) => new RegExp(`^\\s*${name}\\??:`, "m").test(source)).map((name) => `${file}: ${name}`),
     );
     expect(offenders).toEqual([]);
   });
 
-  // An allowlist, not a scan of the declaration text: an alias declares `orientation?: XOrientation`
-  // and so defeats any check looking for the union's shape.
   it("types every ratified prop on the union its name is ratified for", () => {
     const exempt: Record<string, Record<string, string>> = { size: FOREIGN_SIZE, appearance: FOREIGN_APPEARANCE };
     const offenders = Object.entries(sources).flatMap(([file, source]) =>
@@ -421,7 +412,7 @@ describe("ui conformance — the prop vocabulary (UI_SSR_COMPONENTS.md §1m)", (
   });
 });
 
-describe("ui conformance — the five contracts", () => {
+describe("ui conformance — the pass-through contracts", () => {
   it("forwards arbitrary data-* and aria-* props to the target element, HTML-escaped", () => {
     expect(
       Object.fromEntries(
@@ -473,8 +464,6 @@ describe("ui conformance — the five contracts", () => {
     ).toEqual(expected(FORWARDING, "forwarded / no-style"));
   });
 
-  // The expectation states the caller's value literally, so a change to `STATE_PARTICIPANTS` cannot
-  // silently rewrite what this demands.
   it("lets a caller's explicit state attribute beat the one the component computed", () => {
     const resolved = Object.entries(STATE_PARTICIPANTS).map(([key, attr]) => {
       const el = elementBySlot(OVERRIDDEN[key] as string, participantOf(key)?.slot as string);

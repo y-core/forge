@@ -1,6 +1,5 @@
 export {
   ACCENT_RAMP,
-  buildScale,
   CHROMA_MAX,
   contrastRatio,
   GRAY_RAMP,
@@ -12,7 +11,7 @@ export {
   srgbGamma,
   toSrgbGamut,
 } from "./color";
-export type { Dials, Mode, Oklch, Ramp } from "./types";
+export type { Mode, Oklch, Ramp } from "./types";
 export type { Scale } from "./types";
 export { ACCEPTED_CONTRAST } from "./contrast-accepted";
 export type { AcceptedContrastRow } from "./types";

@@ -13,7 +13,7 @@ machine-composed is usually four decisions: which sizes, which weights, how wide
 ## 0. Quick Reference
 
 - §1 Pick sizes that are obviously different: three or four steps with distance between them, and the responsive headline
-- §2 Two weights: one normal, one heavier, and what forge's primitives already set
+- §2 At most two weights: one normal, one heavier, and what forge's primitives already set
 - §2a Before / after — a card heading: three weights and a 2px gap, against the untouched pair
 - §3 Measure: the 45–75 character band `max-w-prose` lands inside
 - §4 Leading runs inverse to size: which leading each size takes, and where forge already sets it
@@ -51,7 +51,7 @@ host fixes its frame. <!-- rule:forge-ui-type-scale-viewport-ratio -->
 This is a size decision, not a hierarchy one: `forge-ui-type-scale-jump` still governs how many steps the surface uses, and the responsive pair
 counts as the one step it resolves to at any given width.
 
-## 2. Two weights
+## 2. At most two weights
 
 Default: a surface uses at most two font weights — a normal weight for body copy and one heavier weight for emphasis — unless a brief specifies a
 display face with its own weight range. <!-- rule:forge-ui-type-two-weights -->

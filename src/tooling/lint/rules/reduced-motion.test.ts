@@ -6,14 +6,12 @@ import { reducedMotion } from "./reduced-motion.ts";
 const CORPUS = "(forge-ui-reduced-motion — src/ui/design/floor.md)";
 
 const detail = (token: string): string =>
-  `\`${token}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state ${CORPUS}`;
+  `\`${token}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` either the settled state or an opacity fade ${CORPUS}`;
 
 describe("reduced-motion", () => {
   for (const [text, token] of [
     ["rounded-md bg-muted animate-pulse", "animate-pulse"],
     ["hover:animate-bounce", "hover:animate-bounce"],
-    // The union the merge settled on: `design-parse.ts` matched `animate-*` only, so this one was
-    // clean under it and reported under `modern-css-source-parse.ts`'s wider set.
     ["max-md:transition-[opacity,visibility]", "max-md:transition-[opacity,visibility]"],
     ["transition-colors duration-200", "transition-colors"],
   ] as const) {
@@ -27,9 +25,7 @@ describe("reduced-motion", () => {
     "motion-reduce:animate-none",
     "animate-none",
     "transition-none",
-    // The panel pattern: the motion is ungated on its own token and the settled state sits beside it.
     "max-md:transition-[transform,visibility] motion-reduce:max-md:transition-none",
-    // Replacing rather than removing: under reduce the slide gives way to an opacity-only fade.
     "motion-safe:transition-[opacity,translate] motion-reduce:transition-opacity",
     "max-md:transition-[transform,visibility] motion-reduce:max-md:transition-opacity",
   ]) {

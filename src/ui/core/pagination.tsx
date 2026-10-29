@@ -10,14 +10,14 @@ import { cloneAsChild, slotToken } from "./utils/as-child";
 
 interface PaginationRootProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   label?: string | undefined;
-  /** Render as a landmark the reader can jump to. Turn it off where the row is not site navigation. @default true */
+  /** Render as a landmark the reader can jump to. Turn it off where the row is not site navigation; defaults to `true`. */
   landmark?: boolean | undefined;
   children?: JSXNode | undefined;
 }
 
 interface PaginationItemProps extends Omit<JSX.IntrinsicElements["a"], "children"> {
   current?: boolean | undefined;
-  /** Which `aria-current` the current item carries — `location` for a link within the page. @default "page" */
+  /** Which `aria-current` the current item carries — `location` for a link within the page; defaults to `"page"`. */
   currentAs?: "page" | "location" | undefined;
   size?: Size | undefined;
   asChild?: boolean | undefined;
@@ -43,7 +43,7 @@ interface PaginationNextProps extends Omit<JSX.IntrinsicElements["a"], "children
 }
 
 interface PaginationEllipsisProps extends Omit<JSX.IntrinsicElements["li"], "children"> {
-  /** Accessible name for the gap, rendered `sr-only`. @default LABEL_DEFAULTS.paginationEllipsis */
+  /** Accessible name for the gap, rendered `sr-only`; defaults to `LABEL_DEFAULTS.paginationEllipsis`. */
   label?: string | undefined;
 }
 

@@ -193,15 +193,15 @@ file of its own:
 | `--card` | `--gray-2` | `#fcfcfc` | `#191919` |
 | `--muted` | `--gray-3` | `#f0f0f0` | `#222222` |
 | `--muted-foreground` | `--gray-11` | `#646464` | `#b4b4b4` |
-| `--primary` | `--accent-12` | `#202020` | `#eeeeee` |
+| `--primary` | `--accent-9` | `#4b65ab` | `#4861a7` |
 | `--border` | `--gray-6` | `#d9d9d9` | `#3a3a3a` |
 | `--input` | `--gray-10` | `#838383` | `#7b7b7b` |
 | `--ring` | `--gray-11` | `#646464` | `#b4b4b4` |
 
 Read the last two columns as the two branches of the _step's_ one declaration, not as the token's value. Each token in the first column is declared
 exactly once and means the same thing in both modes — `--background` is the app background whichever mode is on. That is why no mode-varying
-decision exists at the semantic layer, and why the override point for a per-mode value is the step. `--accent-12` is an alias of `--gray-12`, which
-is why `--primary` and `--foreground` read the same value here.
+decision exists at the semantic layer, and why the override point for a per-mode value is the step. `--primary` is the one row that resolves through
+the accent ramp rather than the greys, so it is the one that carries a hue.
 
 ### 4a. Why a raw utility is a defect
 

@@ -1,9 +1,8 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { rmSync } from "node:fs";
 
 import { worktreeFixture } from "../src/tooling/cli/worktree.fixture";
-import { browserSpecReach, urlReferences, workerdSpecReach } from "./spec-reach";
+import { urlReferences, workerdSpecReach } from "./spec-reach";
 
 const roots: string[] = [];
 
@@ -16,8 +15,6 @@ function repository(files: Record<string, string>): string {
   roots.push(root);
   return root;
 }
-
-const SPEC = "src/ui/client/menu.browser.ts";
 
 describe("urlReferences()", () => {
   it("resolves each path against the file naming it, and passes over a directory", () => {
@@ -46,47 +43,6 @@ const TREE = {
   "tests/fixtures/db/wrangler.jsonc": '{ "name": "db-only" }\n',
   "tests/fixtures/schema.sql": "CREATE TABLE t (id INTEGER);\n",
 };
-
-describe("browserSpecReach()", () => {
-  it("answers the closure of every exposed module and every Worker a spec serves", async () => {
-    const root = repository({
-      ...TREE,
-      [SPEC]: [
-        'const E = { expose: { forgeMenu: "./ui/client/menu", forgeSheet: "./ui/client/sheet.js" } };',
-        "await mount(page, html, E);",
-        'const CONFIG = new URL("../../../tests/fixtures/app/wrangler.jsonc", import.meta.url);',
-      ].join("\n"),
-    });
-
-    expect(await browserSpecReach(root)).toEqual([
-      "src/app/app.ts",
-      "src/ui/client/menu.ts",
-      "src/ui/client/sheet.ts",
-      "src/ui/client/signal.ts",
-      "tests/fixtures/app/worker.ts",
-      "tests/fixtures/app/wrangler.jsonc",
-    ]);
-  });
-
-  it("rejects when an exposed specifier does not resolve, so the row runs whole", async () => {
-    const root = repository({ ...TREE, [SPEC]: 'await mount(page, html, { expose: { forgeGone: "./ui/client/gone" } });\n' });
-
-    await expect(browserSpecReach(root)).rejects.toThrow();
-  });
-
-  it("rejects when a spec's `expose` cannot be read", async () => {
-    const root = repository({ ...TREE, [SPEC]: "await mount(page, html, { expose: { forgeMenu: specifier } });\n" });
-
-    await expect(browserSpecReach(root)).rejects.toThrow(`${SPEC}:1: `);
-  });
-
-  it("reads a spec the work tree holds before it is committed", async () => {
-    const root = repository(TREE);
-    writeFileSync(join(root, SPEC), 'await bundleModules({ forgeSheet: "./ui/client/sheet" });\n');
-
-    expect(await browserSpecReach(root)).toEqual(["src/ui/client/sheet.ts"]);
-  });
-});
 
 describe("workerdSpecReach()", () => {
   it("answers each served Worker's closure, a Worker config without a `main` itself alone, and every other file named", async () => {

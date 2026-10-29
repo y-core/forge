@@ -7,9 +7,9 @@ import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
 import type { Align, PhysicalSide } from "../contracts/types";
 import { buttonBox } from "./button";
-import { mergeIdRefs } from "./field";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
+import { mergeIdRefs } from "./utils/id-refs";
 
 interface TooltipRootProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
   children?: JSXNode | undefined;
@@ -62,11 +62,7 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
 }) => {
   if (kind === "label") assertUnnamedTrigger(rest, asChild ? children : null);
   const inert = rest.disabled === true || (asChild && isValidElement(children) && children.props.disabled === true);
-  const childDescribedBy = asChild && isValidElement(children) ? children.props["aria-describedby"] : undefined;
-  const describedBy = mergeIdRefs(typeof childDescribedBy === "string" ? childDescribedBy : undefined, [
-    ownDescribedBy,
-    kind === "label" ? undefined : contentId,
-  ]);
+  const describedBy = mergeIdRefs(ownDescribedBy, [kind === "label" ? undefined : contentId]);
   const attrs = {
     ...(kind === "label" ? { "aria-labelledby": contentId } : {}),
     ...(describedBy !== undefined ? { "aria-describedby": describedBy } : {}),

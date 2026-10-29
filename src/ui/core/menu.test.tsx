@@ -170,7 +170,7 @@ describe("a checkable row carries both halves of its state, in both tiers", () =
         " text-start text-sm text-popover-foreground bg-transparent border-0 cursor-pointer focus-ring hover:bg-accent" +
         " hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground" +
         " aria-[current]:bg-accent aria-[current]:font-semibold aria-[current]:text-accent-foreground" +
-        " aria-[checked]:before:size-4 aria-[checked]:before:shrink-0" +
+        " [&amp;:is([role=menuitemcheckbox],[role=menuitemradio]):not([data-checked])]:before:size-4 [&amp;:is([role=menuitemcheckbox],[role=menuitemradio])]:before:shrink-0" +
         " data-checked:before:mx-1.25 data-checked:before:mb-1 data-checked:before:h-2.5 data-checked:before:w-1.5" +
         " data-checked:before:rotate-45 rtl:data-checked:before:-scale-x-100 data-checked:before:border-e-2 data-checked:before:border-b-2" +
         ' state-disabled">Wrap</button>',

@@ -63,7 +63,7 @@ function toggleCount(page: Page): Promise<number> {
   return page.evaluate(() => window.forgeToggles);
 }
 
-test.describe("mountViewportCollapse", () => {
+test.describe("mountViewportCollapse", { tag: "@cross-engine" }, () => {
   test("closes the SSR-open rail below the breakpoint and reopens it above", async ({ page }) => {
     await mountRail(page, NARROW);
 

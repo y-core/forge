@@ -3,11 +3,9 @@
 import { describe, expect, it } from "bun:test";
 
 import type { JSXNode } from "../../render/jsx/types";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Drawer } from "./drawer";
-
-const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Drawer", () => {
   it("renders the whole panel exactly, caller class merged last and children escaped", async () => {
@@ -64,21 +62,61 @@ describe("Drawer", () => {
   // Both attributes together leaves `showModal()` skipped on resume, and the drawer renders non-modal
   // — no top layer, no inertness, no backdrop — with nothing in the markup to say so.
   it("drops the non-modal open attribute when the caller asks for a modal as well", async () => {
-    const attrs = attrsOf(await render(<Drawer id='nav' titled open openModal />));
+    const html = await render(<Drawer id='nav' titled open openModal />);
+    const attrs = attrsOf(html);
 
-    expect(attrs["data-open-modal"]).toBe("");
+    expect(tagOf(html, 'data-open-modal=""')).toBe(tagOf(html));
     expect(attrs["data-scope"]).toBe("dialog");
     expect(attrs.open).toBeUndefined();
   });
 
   it("stamps the dialog scope and the resume marker for openModal, and never the open attribute a modal must not carry", async () => {
-    expect(attrsOf(await render(<Drawer id='nav' titled openModal />))).toEqual({
+    const html = await render(<Drawer id='nav' titled openModal />);
+
+    expect(attrsOf(html)).toEqual({
       id: "nav",
       "data-slot": "drawer",
       "aria-labelledby": "nav-title",
       "data-scope": "dialog",
       "data-open-modal": "",
       closedby: "any",
+      "data-side": "left",
+    });
+    expect(tagOf(html, 'data-open-modal=""')).toBe(tagOf(html));
+  });
+});
+
+describe("Drawer — described by its own .Description", () => {
+  it("points aria-describedby at the Description derived from the drawer's id, which carries that id", async () => {
+    const html = await render(
+      <Drawer id='nav' titled described>
+        <Drawer.Description for='nav'>m</Drawer.Description>
+      </Drawer>,
+    );
+
+    expect(attrOf(html, "aria-describedby", 'data-slot="drawer"')).toBe("nav-description");
+    expect(attrOf(html, "id", 'data-slot="drawer-description"')).toBe("nav-description");
+  });
+
+  it("lists a caller's aria-describedby ahead of the Description reference rather than replacing it", async () => {
+    const html = await render(
+      <Drawer id='nav' titled described aria-describedby='hint'>
+        <Drawer.Description for='nav'>m</Drawer.Description>
+      </Drawer>,
+    );
+
+    expect(attrOf(html, "aria-describedby", 'data-slot="drawer"')).toBe("hint nav-description");
+  });
+});
+
+describe("Drawer — alert", () => {
+  it("announces as an alertdialog that only an explicit close request dismisses", async () => {
+    expect(attrsOf(await render(<Drawer id='nav' titled alert />))).toEqual({
+      id: "nav",
+      "data-slot": "drawer",
+      role: "alertdialog",
+      "aria-labelledby": "nav-title",
+      closedby: "closerequest",
       "data-side": "left",
     });
   });
@@ -109,7 +147,7 @@ describe("Drawer.Title", () => {
       expect(tagOf(html).startsWith(`<h${level} `)).toBe(true);
       expect(attrsOf(html)).toEqual({ "data-slot": "drawer-title", id: "nav-title" });
       expect(classesOf(html)).toEqual(classesOf(base));
-      expect(contentOf(html)).toBe("t");
+      expect(innerOf(html)).toBe("t");
     }
   });
 });
@@ -119,7 +157,7 @@ describe("Drawer.Trigger", () => {
     const html = await render(<Drawer.Trigger for='nav'>Menu</Drawer.Trigger>);
 
     expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "drawer-trigger", command: "show-modal", commandfor: "nav" });
-    expect(contentOf(html)).toBe("Menu");
+    expect(innerOf(html)).toBe("Menu");
   });
 });
 

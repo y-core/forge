@@ -33,7 +33,7 @@ function isOpen(page: Page): Promise<boolean | undefined> {
   return page.evaluate(() => document.querySelector("#tip")?.matches(":popover-open"));
 }
 
-test.describe("Tooltip — WCAG 2.1 SC 1.4.13 Hoverable", () => {
+test.describe("Tooltip — WCAG 2.1 SC 1.4.13 Hoverable", { tag: "@cross-engine" }, () => {
   test("stays open while the pointer travels from the trigger onto the tooltip", async ({ page }) => {
     await mount(page, await MARKUP(), { ...EXPOSE, css: CSS });
     await page.evaluate(() => window.forgeResume.resume());
@@ -81,7 +81,7 @@ const FALLBACK_TRIGGERS: ReadonlyArray<{ name: string; trigger: Partial<Paramete
   { name: "an aria-disabled trigger", trigger: { disabled: true } },
 ];
 
-test.describe("Tooltip — with scripting off", () => {
+test.describe("Tooltip — with scripting off", { tag: "@cross-engine" }, () => {
   test.use({ javaScriptEnabled: false });
 
   for (const { name, trigger } of FALLBACK_TRIGGERS) {

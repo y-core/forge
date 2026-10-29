@@ -94,15 +94,15 @@ describe("compositeOver()", () => {
   });
 });
 
-/** Every solid step the scheme files declared at v0.0.85, when each mode was its own block of hex. */
-const V0_0_85: Readonly<Record<string, Readonly<Record<Mode, readonly string[]>>>> = {
+/** The hex each shipped scheme step paints, per mode. */
+const PAINTED: Readonly<Record<string, Readonly<Record<Mode, readonly string[]>>>> = {
   "theme-neutral.css gray": {
     light: ["#f9f9f9", "#fcfcfc", "#f0f0f0", "#e8e8e8", "#e0e0e0", "#d9d9d9", "#cecece", "#bbbbbb", "#8d8d8d", "#838383", "#646464", "#202020"],
     dark: ["#111111", "#191919", "#222222", "#2a2a2a", "#313131", "#3a3a3a", "#484848", "#606060", "#6e6e6e", "#7b7b7b", "#b4b4b4", "#eeeeee"],
   },
   "theme-neutral.css accent": {
-    light: ["#fdfdfe", "#f7f9ff", "#edf2fe", "#e0e9ff", "#d1dfff", "#bed1ff", "#a6bff9", "#88a6ef", "#375bd7", "#2f50cc", "#3a5bc7", "#1d2d5c"],
-    dark: ["#0f141f", "#121826", "#17244a", "#1c2e63", "#243975", "#2d4385", "#365098", "#405db3", "#3457d3", "#476cde", "#96b4ff", "#d5e1ff"],
+    light: ["#fdfdfe", "#f8f9fd", "#eff2f9", "#e4e9f6", "#d6dff2", "#c6d2ed", "#b1bfe2", "#95a7d3", "#4b65ab", "#425ba0", "#4c63a0", "#25304b"],
+    dark: ["#11141b", "#141821", "#1d263c", "#253150", "#2f3c5f", "#38476d", "#43537d", "#4f6293", "#4861a7", "#5a73b4", "#a2b5e3", "#dae2f3"],
   },
   "theme-stone.css gray": {
     light: ["#f9f9f8", "#fcfcfb", "#f0f0ef", "#e9e8e6", "#e2dfde", "#dcd8d6", "#d1cdcb", "#bfbab7", "#938c87", "#89827c", "#69635d", "#231f1e"],
@@ -119,10 +119,10 @@ const V0_0_85: Readonly<Record<string, Readonly<Record<Mode, readonly string[]>>
 };
 
 describe("the shipped scheme files, read the way the audit reads them", () => {
-  it("paints every declared step to the hex its two-block predecessor carried", () => {
+  it("paints every declared step to its pinned hex", () => {
     const drift: string[] = [];
 
-    for (const [key, baseline] of Object.entries(V0_0_85)) {
+    for (const [key, baseline] of Object.entries(PAINTED)) {
       const [file = "", family = ""] = key.split(" ");
       const declared = parseThemeDeclarations(readFileSync(new URL(`../../../ui/assets/css/${file}`, import.meta.url).pathname, "utf-8"));
 
@@ -140,7 +140,7 @@ describe("the shipped scheme files, read the way the audit reads them", () => {
             return;
           }
           const painted = oklchToPaintedHex(oklch.l, oklch.c, oklch.h);
-          if (painted !== want) drift.push(`${file} ${mode} ${property}: \`${value}\` paints ${painted}, was ${want}`);
+          if (painted !== want) drift.push(`${file} ${mode} ${property}: \`${value}\` paints ${painted}, pinned ${want}`);
         });
       }
     }

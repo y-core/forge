@@ -36,7 +36,7 @@ audience: consumer
 - §3d A Focus Ring Is Read Against the Surface It Is Drawn On: the audited row, the fill the gray step fails, and why the choice is per-appearance
 - §4 A Status Hue Holds Its Fill: the accent ramp's shape applied to the status intents
 - §4a One Value Cannot Be Both a Fill and Text: the defect the hold fixes, and what flips instead
-- §4b Three Tokens Per Intent: the naming that follows, and the rows the audit gains
+- §4b The Token Set Per Intent: the naming that follows, and the rows the audit gains
 - §4c Success Unifies on Emerald: one hue per intent
 
 ---
@@ -138,7 +138,10 @@ of dial numbers rather than a written-out palette.
 ([`UI_CLASS_COMPOSITION.md`][ucc-2a] §2a); the byte-quantised sRGB value beside it is what the contrast ratios and the preview swatches are computed
 in, because that is the colour a reader is actually shown. Deriving one from the other at measurement time would measure a colour no display paints.
 
-**Every emitted coordinate is gamut-mapped**, for the same reason: an audited ratio must describe the colour that renders.
+**Every emitted coordinate is gamut-mapped**, for the same reason: an audited ratio must describe the colour that renders. **Its chroma is then cut
+toward zero to the places the file prints, never rounded up, and the sRGB value is measured from that printed coordinate.** A chroma rounded up can
+leave the gamut it was mapped to, and a browser clips it where the generator would reduce chroma (§2b), so the readout would describe a colour a
+byte off what renders.
 
 ### 2b. The OKLab Conversion Has One Home, Two Gamut Policies
 
@@ -197,7 +200,9 @@ are declared beside it.
 
 **A side may record the opacity it is painted at.** A foreground with one is measured composited over its background (§2b), so a control drawn
 at half strength is judged at the contrast it actually has. A background with one is refused as unresolved: a translucent surface has no single
-colour without the surface beneath it.
+colour without the surface beneath it. A fade `validate-faded-text` judges ([`UI_DESIGN_GUIDANCE.md`][udg-4b] §4b) is held only when an
+audited pair's foreground carries that colour at that alpha; an `opacity-*` names no colour, so its class string must name one under the same
+variants.
 
 **The gate consumes that list rather than restating it.** `config/steps.ts` imports the pairs, the criteria and the exemptions and hands them to the
 contrast step, which resolves each token through the stylesheets and measures it. What the check asserts, in what order, with what message, is the
@@ -229,8 +234,8 @@ everywhere except at the boundary that matters.
 **A side names the family it is a step of, and may name a step per mode.** Both families are generated, so a side resolves as
 `theme[family][mode].solid[sideStep(side, mode)]` and nothing else reads `.step`. The per-mode form exists for exactly one side —
 `--accent-contrast`, which is `--gray-1` in light and `--gray-12` in dark — and that asymmetry is why dark carries less headroom than light at any
-given step 9. `ACCENT_RAMP.dark.lightness[8]` sits just below the light ramp's, and `--accent-9` is the one accent step the shipped scheme declares
-per mode.
+given step 9. `ACCENT_RAMP.dark.lightness[8]` sits just below the light ramp's, so `--accent-9` is a held fill nudged per mode (§4): the shipped
+scheme declares it with `light-dark()`, as it does every accent step.
 
 **Only the pairs whose two sides are both steps of a generated scale can be measured live**, and that boundary is in the data rather than in a
 comment: a pair resolving through a fixed token has no generated value to measure, because `buildTheme` generates scales and not the semantic layer
@@ -274,7 +279,7 @@ One token cannot answer for both roles across both modes: a step light enough to
 near-white on it does not clear. So `--tone` and `--tone-text` resolve to different tokens for every intent, `warning` included — its text role is
 step 11, which is the shape the other three take too.
 
-### 4b. Three Tokens Per Intent
+### 4b. The Token Set Per Intent
 
 Each intent owns three tokens, mirroring primary:
 
@@ -306,4 +311,5 @@ serves a status.
 [ucc-2f]: ./UI_CLASS_COMPOSITION.md#2f-a-reserved-root-where-a-utility-root-carries-two-concerns
 [ucr-2b]: ./UI_CLIENT_RUNTIME.md#2b-theme-controller-and-fouc-prevention
 [ucr-2i]: ./UI_CLIENT_RUNTIME.md#2i-openpopoverat--coordinate-placement
+[udg-4b]: ./UI_DESIGN_GUIDANCE.md#4b-enforcement-mechanisms
 [usc-1a]: ./UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes

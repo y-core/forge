@@ -24,7 +24,7 @@ audience: consumer
 - §1c The Caller Is Authoritative: class precedence and state precedence as one rule
 - §1d Busy Is Server-Stamped, and a Request Is Not: the writers, and what stays htmx's
 - §2 Presentational Attributes Are Declared Too: the enum half of the vocabulary, and the frozen-hook technique it keeps
-- §3 The Island Payload Is Not a Presentational Enum: why the serialized state carries its own attribute name
+- §3 The Island Payload Is Not a State Enum: why the serialized state carries its own attribute name
 - §4 The Sweep Is Closed-World: the inverted assertion, the stateful probe, and the independent override expectation
 - §5 The `data-slot` Token: the addressable root, and the wrapper splits that are declared rather than silent
 
@@ -54,7 +54,7 @@ announce a tab as a radio; and calling it structural rather than a state would b
 
 **Boolean states are emitted by presence, with an empty value — `data-selected=""`, never `data-selected="true"`.** `[data-selected]` is a cheaper
 and a more honest selector, and a false state emits nothing at all. The declaration marks the few valued attributes as such: they carry a choice
-rather than a flag.
+rather than a flag. `data-state` is the valued state a component computes from its own enum, and it is never a serialized payload (§3).
 
 **A state the platform already exposes is not in the table** ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h); republishing it as a `data-` flag would be a
 second copy of a fact forge does not own.
@@ -105,26 +105,25 @@ only stamp what it can keep true ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h); the ru
 ## 2. Presentational Attributes Are Declared Too
 
 **The enum half of the vocabulary is declared beside the state half, and is emitted through `presentationAttrs()` rather than hand-written at each
-call site.** These are the styling hooks that carry a _choice_ rather than a flag — `data-tone` and `data-state` among them — and
+call site.** These are the styling hooks that carry a _choice_ rather than a flag — `data-tone` and `data-size` among them — and
 spelling one as a string literal in the component that emits it is the same two-places-that-cannot-see-each-other problem §1 solves for the boolean
 states, with the same silent failure mode: a stylesheet is written against a name, and nothing holds a literal to a declaration.
 
 **They are the attribute mirror of the prop vocabulary** ([`UI_SSR_COMPONENTS.md`][usc-1m] §1m), so the declaration is one list and not two: a prop
-drawn from the ratified vocabulary becomes an attribute drawn from the same names. `data-state` is the one that carries no prop of its own — it is a
-component-local enum a stylesheet reads, and §3 is why it may be nothing else.
+drawn from the ratified vocabulary becomes an attribute drawn from the same names.
 
 **The frozen-hook technique from `state-attrs.ts` carries over unchanged.** A runtime member access on the declaration table retains the whole table
 in every consumer bundle, so the attribute names are reached as frozen module-scope constants and never by dynamic key.
 
-## 3. The Island Payload Is Not a Presentational Enum
+## 3. The Island Payload Is Not a State Enum
 
 **A serialized island payload is written to `data-island-state` and never to `data-state`.** One shared name would carry two grammars — a
-presentational enum and a JSON object — that the reader cannot tell apart: `hydrateState` throws unless the value parses to a JSON object, so a
+component's enum and a JSON object — that the reader cannot tell apart: `hydrateState` throws unless the value parses to a JSON object, so a
 component spreading `...rest` onto an element that also carries an enum would make `resume()` throw from markup that type-checks.
 
 **The split is by name, not by a parse-and-guess.** A tolerant reader that treated an unparseable value as "no state" would swallow a genuinely
-corrupt payload, which is the failure `resume()` exists to report. Giving the payload its own name makes the throw unreachable from a presentational
-enum by construction, and leaves `data-state` a declared member of §2's table.
+corrupt payload, which is the failure `resume()` exists to report. Giving the payload its own name makes the throw unreachable from a component's
+enum by construction, and leaves `data-state` a declared member of §1's table.
 
 ## 4. The Sweep Is Closed-World
 

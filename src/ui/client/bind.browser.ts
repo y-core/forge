@@ -529,6 +529,18 @@ test.describe("bindControls — the bound Slider's readout", () => {
 
     expect(painted).toEqual({ input: "90", output: "90" });
   });
+
+  test("a drag moves the readout with no slider scope registered", async ({ page }) => {
+    const html = await render(Resumable({ name: "demo", children: Slider({ bind: "fov", min: 1, max: 120, value: 60, output: true }) }));
+    await mount(page, html, EXPOSE);
+    await page.evaluate(() => {
+      window.forgeBind.bindControls(document.querySelector("[data-scope='demo']") as HTMLElement, window.forgeSignals.signalRecord({ fov: 60 }));
+    });
+
+    await page.fill("[data-slot~='slider']", "90");
+
+    await expect.poll(() => page.locator("[data-slot~='slider-output']").textContent()).toBe("90");
+  });
 });
 
 test.describe("bindControls — a scripted reset of a form the root wraps", () => {

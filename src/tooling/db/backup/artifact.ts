@@ -147,8 +147,6 @@ export class SqlReal {
   }
 }
 
-// A BLOB arrives as bytes: an array of byte values from `decodeReadRow`'s hex decode, or a
-// Uint8Array from a seed row.
 function toBlobBytes(value: unknown): readonly number[] | null {
   if (value instanceof Uint8Array) return [...value];
   if (!Array.isArray(value)) return null;
@@ -163,8 +161,6 @@ function toBlobHex(bytes: readonly number[]): string {
 /** One SQLite value as a string that cannot be confused with another, restoring the storage class a JavaScript value erases. @internal */
 export function canonicaliseValue(column: string, value: unknown): string {
   if (value === null) return "N";
-  // The length prefix is what makes a row's join injective: without it `["a:b","c"]` and
-  // `["a","b:c"]` encode identically, so a byte moved across a column boundary compares equal.
   if (typeof value === "string") return `S:${value.length}:${value}`;
   if (value instanceof SqlReal) {
     if (!Number.isFinite(value.value)) throw new UnsupportedValue(column, `${String(value.value)} is not a finite number`);
@@ -236,8 +232,6 @@ function compareKeyCells(left: string, right: string): number {
     const y = Number(right.slice(2));
     return x === y ? 0 : x < y ? -1 : 1;
   }
-  // Hex of equal-width bytes compares as memcmp does, and a shorter blob is a prefix of the
-  // longer one's hex — which is the same shorter-is-less BINARY already gives text.
   if (leftRank === 3) return compareCodePoints(left.slice(2), right.slice(2));
   return compareCodePoints(left.slice(left.indexOf(":", 2) + 1), right.slice(right.indexOf(":", 2) + 1));
 }
@@ -349,8 +343,6 @@ function fromBlobHex(column: string, hex: unknown): readonly number[] {
   return bytes;
 }
 
-// A tag the value cannot carry means the read lost the value, not the type: neither read carries
-// Infinity, so a stored one arrives as null under a `real` tag and would otherwise restore as NULL.
 function decodeTaggedValue(column: string, tag: unknown, value: unknown): unknown {
   if (tag === "blob") return fromBlobHex(column, value);
   if (tag === "null") {
@@ -435,7 +427,6 @@ export function checkSchemaArtifact(sql: string): readonly ArtifactFault[] {
     else faults.push({ line: number, reason: `an unexpected row-removal statement in a schema: ${`${statement.raw.trim()};`.slice(0, 80)}` });
   }
 
-  // A schema declaring nothing would let `data.sql` fail statement by statement instead of up front.
   if (tables === 0)
     faults.push({ line: lines.length, reason: "no CREATE TABLE at all — this cannot be the schema route full loads data.sql into" });
   if (clears.length > 1) {
@@ -463,8 +454,7 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
     const number = sqlLineAt(sql, statement.offset + Math.max(lead, 0));
     const text = `${statement.raw.trim()};`.slice(0, 80);
     if (statement.offset === 0 && statement.raw.trim() === PREAMBLE_STATEMENT) continue;
-    // Matched against the masked text, so a leading comment cannot walk a statement past the arm
-    // that judges it. The table is read off the raw INSERT for the reason `insertTarget` gives.
+    // Matched against the masked text, so a leading comment cannot walk a statement past the arm that judges it.
     if (INSERT_LINE.test(statement.masked)) {
       const table = insertTarget(statement.raw);
       if (table === null) faults.push({ line: number, reason: `an INSERT naming no table this scan can read: ${text}` });
@@ -483,8 +473,6 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
     if (new RegExp(`^\\s*(?:${ROW_REMOVAL.source})`, "i").test(statement.masked))
       faults.push({ line: number, reason: `a data-only artifact removes nothing: ${text}` });
     if (/\bsqlite_sequence\b/.test(statement.masked)) faults.push({ line: number, reason: SEQUENCE_FAULT });
-    // Nothing reached the allowlist, so it is refused for that and not for having been enumerated:
-    // REPLACE, UPDATE and ATTACH are all statements no arm above names and wrangler never dumps.
     if (faults.length === said) faults.push({ line: number, reason: `a data artifact carries only the preamble and INSERTs: ${text}` });
   }
   return faults;
@@ -507,7 +495,7 @@ function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
-/** A manifest's digest of itself, over the bytes it is written as with the field blanked. Detects damage, never tampering. @internal */
+/** A manifest's digest of itself over its written bytes with the field blanked, which detects damage and never tampering. @internal */
 export function manifestSelfDigest(manifest: BackupManifest): string {
   return sha256(JSON.stringify({ ...manifest, selfDigest: "" }, null, 2));
 }
@@ -589,7 +577,7 @@ export function validateManifest(value: unknown): readonly string[] {
   return problems;
 }
 
-/** The three schema bindings an artifact carries, checked against what is on disk now, reported by name. @internal */
+/** The schema bindings an artifact carries, checked against what is on disk now, reported by name. @internal */
 export function compareManifests(manifest: BackupManifest, onDisk: SchemaFacts): readonly string[] {
   const problems: string[] = [];
   const wanted = manifest.schema.migrations.join(", ");
@@ -628,7 +616,7 @@ function refuseFaults(file: string, what: string, faults: readonly ArtifactFault
   );
 }
 
-/** The `.sql` files a backup is, and the check each one is held to. `takeBackup` writes every one of them, always. */
+/** The `.sql` files a backup is, and the check each one is held to. */
 const REQUIRED_ARTIFACTS: Readonly<Record<string, (text: string, carried: readonly string[]) => readonly ArtifactFault[]>> = {
   "schema.sql": (text) => checkSchemaArtifact(text),
   "data.sql": (text, carried) => checkDataArtifact(text, carried),
@@ -646,8 +634,6 @@ export function verifyBackupArtifact(io: DbIo, directory: string, manifest: Back
     throw new CliError("invalid-args", `${manifestPath} does not hash to the selfDigest it carries — this artifact is damaged`);
   }
 
-  // Driven by what a route loads rather than by what the manifest lists, because a manifest listing
-  // nothing would otherwise verify by having nothing to check.
   const declared = new Map(manifest.artifacts.map((entry) => [entry.file, entry]));
   const undeclaredRequired = Object.keys(REQUIRED_ARTIFACTS).filter((file) => !declared.has(file));
   if (undeclaredRequired.length > 0) {
@@ -657,7 +643,6 @@ export function verifyBackupArtifact(io: DbIo, directory: string, manifest: Back
     );
   }
 
-  // The companion tables ride in `data.sql` beside the app's own, and route `migrations` creates them.
   const carried = [...manifest.tables.map((table) => table.name), ...COMPANION_TABLES];
   for (const entry of manifest.artifacts) {
     const check = REQUIRED_ARTIFACTS[entry.file];

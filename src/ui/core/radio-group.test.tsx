@@ -67,7 +67,7 @@ describe("RadioGroup — aria-describedby names only what renders", () => {
       </RadioGroup>,
     );
 
-    expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-plan-error", "data-invalid": "" });
+    expect(attrsOf(html)).toEqual({ ...ROOT, "aria-describedby": "field-plan-error", "data-invalid": "", "aria-invalid": "true" });
     expect(attrsOf(html, ERROR)).toEqual({ "data-slot": "field-error", id: "field-plan-error" });
   });
 
@@ -212,16 +212,17 @@ describe("RadioGroup — size, invalid and busy", () => {
     ]).toEqual([ROOT, { ...ROOT, "data-size": "sm" }, { ...ROOT, "data-size": "lg" }]);
   });
 
-  it("stamps invalidity for a stylesheet but keeps aria-invalid off, which the radiogroup role forbids", async () => {
+  it("marks invalidity for a stylesheet and for assistive technology, since the radiogroup role supports aria-invalid", async () => {
     expect(attrsOf(await render(<RadioGroup name='r' error='Required' />))).toEqual({
       ...ROOT,
       "aria-describedby": "field-r-error",
       "data-invalid": "",
+      "aria-invalid": "true",
     });
   });
 
-  it("stamps busyness for a stylesheet but keeps aria-busy off, which the radiogroup role forbids", async () => {
-    expect(attrsOf(await render(<RadioGroup name='r' busy />))).toEqual({ ...ROOT, "data-busy": "" });
+  it("marks busyness for a stylesheet and for assistive technology, since aria-busy is a global state", async () => {
+    expect(attrsOf(await render(<RadioGroup name='r' busy />))).toEqual({ ...ROOT, "data-busy": "", "aria-busy": "true" });
   });
 
   it("a caller's own aria attribute survives the state spread", async () => {
@@ -229,6 +230,7 @@ describe("RadioGroup — size, invalid and busy", () => {
       ...ROOT,
       "aria-describedby": "field-r-error",
       "data-invalid": "",
+      "aria-invalid": "true",
       "aria-label": "Plan",
     });
   });

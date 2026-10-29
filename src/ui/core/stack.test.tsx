@@ -18,8 +18,8 @@ describe("Stack", () => {
       ),
     ).toBe(
       '<div data-slot="stack pile" data-placement="bottom" class="grid place-items-center [&amp;&gt;*]:w-full [&amp;&gt;*]:[grid-area:1/1]' +
-        " [&amp;&gt;*:nth-child(1)]:z-20 [&amp;&gt;*:nth-child(2)]:z-10 [&amp;&gt;*:nth-child(2)]:scale-95 [&amp;&gt;*:nth-child(2)]:opacity-90" +
-        " [&amp;&gt;*:nth-child(3)]:z-0 [&amp;&gt;*:nth-child(3)]:scale-90 [&amp;&gt;*:nth-child(3)]:opacity-80" +
+        " [&amp;&gt;*:nth-child(1)]:z-20 [&amp;&gt;*:nth-child(2)]:z-10 [&amp;&gt;*:nth-child(2)]:scale-95" +
+        " [&amp;&gt;*:nth-child(3)]:z-0 [&amp;&gt;*:nth-child(3)]:scale-90" +
         ' [&amp;&gt;*:nth-child(2)]:translate-y-2 [&amp;&gt;*:nth-child(3)]:translate-y-4 w-40" data-note="a&amp;b">R&amp;D&#39;s</div>',
     );
   });

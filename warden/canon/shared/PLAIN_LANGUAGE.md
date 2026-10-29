@@ -39,7 +39,7 @@ description: "Reader-centred prose for governing documents and for what an agent
 - §6a Evaluate While Drafting: read the draft as the reader named in §3
 - §6b The Curse of Knowledge: why the author is the worst judge of their own clarity
 - §6c Evidence Over Belief — the Repeated Question: the one measurement available here
-- §7 The Four Principles Operate Together: the worked failure, one principle at a time
+- §7 The Principles Operate Together: the worked failure, one principle at a time
 - §8 Response Length and Proportion: length tracks substance, not effort
 - §9 Progress Narration During Work: one sentence up front, then findings only
 - §10 Corrections to Earlier Statements: correct what changes a decision, and nothing else
@@ -339,7 +339,7 @@ that broke.
 
 ---
 
-## 7. The Four Principles Operate Together
+## 7. The Principles Operate Together
 
 One worked failure, in repo terms. A rule about where a new capability belongs:
 

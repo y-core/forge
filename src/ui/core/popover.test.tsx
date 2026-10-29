@@ -185,10 +185,10 @@ describe("Popover.Content — the name a reader entering the panel gets", () => 
     expect(tagOf(html, `id="${named}"`)).not.toBe("");
   });
 
-  // The trigger's `aria-haspopup` is a fixed `dialog` with no way to say otherwise, so a re-roled
-  // panel would leave the pair disagreeing. A menu-role popup is `Menu.Popup`, which has a trigger.
-  it("keeps its role off the forwarded props, so the trigger's aria-haspopup cannot be made to lie", async () => {
+  it("keeps role off its props, so the trigger's aria-haspopup cannot be made to lie", async () => {
     expect(attrOf(await render(<Popover.Content id='p' label='Tools' />), "role")).toBe("dialog");
+    // @ts-expect-error -- `role` is not a `Popover.Content` prop
+    expect(<Popover.Content id='p' label='Tools' role='menu' />).toBeDefined();
   });
 });
 

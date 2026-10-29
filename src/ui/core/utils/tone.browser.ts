@@ -43,7 +43,7 @@ async function paintCells(page: Page, dark: boolean): Promise<Cell[]> {
 }
 
 for (const dark of [false, true]) {
-  test(`every tone × appearance cell clears the 1.4.3 floor in ${dark ? "dark" : "light"}`, async ({ page }) => {
+  test(`every tone × appearance cell clears the 1.4.3 floor in ${dark ? "dark" : "light"}`, { tag: "@cross-engine" }, async ({ page }) => {
     const floor = CRITERION["1.4.3"].floor;
     const failing = (await paintCells(page, dark))
       .map((cell) => ({ ...cell, ratio: Number(contrastRatio(cell.fg, cell.bg).toFixed(2)) }))

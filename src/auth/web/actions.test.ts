@@ -32,6 +32,7 @@ import {
   createSigninActions,
   createSignoutActions,
   createSignupActions,
+  createTotpEnrolActions,
   createTotpManageActions,
   createVerifyActions,
 } from "./actions";
@@ -82,8 +83,6 @@ function actionApp(seed: Seed = {}): Forge {
   app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
   app.use("*", async (context, next) => {
     const session = sessionCtx.get(context);
-    // Both, because a mounted route has both: the guards establish the identity every action reads,
-    // and the session is what a sign-out clears and a step-up marks.
     if (seed.userId !== undefined) {
       session.set(AUTH_SESSION_KEY, seed.userId);
       authCtx.set(context, {
@@ -196,8 +195,6 @@ describe("createSigninActions", () => {
     expect(res.headers.get("location")).toBe("/auth/verify");
   });
 
-  // The bare `catch` here blames the visitor's field for everything; a cap conflict is the app's own
-  // wiring and must reach the boundary instead of re-rendering the form with a generic refusal.
   it("rethrows a body-cap conflict rather than turning it into a field refusal", async () => {
     const options = fakeAuthWebOptions();
     const app = actionApp();
@@ -354,8 +351,6 @@ describe("createVerifyActions on a step-up", () => {
     }),
   };
 
-  // `signin.stepUp` excludes the primary factor, so showing the code field to a session owing an
-  // enrolment is a dead end: every correct code comes back as "That did not match".
   it("sends a signed-in session owing an enrolment to the page that can clear it, rather than asking for a code", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
@@ -523,8 +518,6 @@ describe("createVerifyActions on a step-up", () => {
     expect(res.headers.get("location")).toBe("/auth/verify?resent=1000");
   });
 
-  // The mark says a code was asked for, never that one was sent. Only a registered address can be
-  // inside the reissue window, so an answer that differed would bin an address list by pressing a button.
   it("answers a registered and an unknown address alike, so the resend tells nothing about either", async () => {
     const options = optionsWith(stepUpServices);
     const answer = async (pendingEmail: string) => {
@@ -910,7 +903,6 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
 
   /** The enrol app, its stores, and a `finish` driven through the real registration ceremony. */
   function enrolling() {
-    // The ceremony mints the WebAuthn handle on first enrolment, which the read-only fixture refuses.
     let held = signedIn;
     const minting: UserStore = {
       ...fakeAuthUserStore([signedIn]),
@@ -1171,7 +1163,6 @@ describe("the ceremony endpoints cap what they read", () => {
     expect(res.status).toBe(413);
   });
 
-  // The streaming count, not `Content-Length`, is what caps a chunked body whose header is absent.
   it("answers 413 on a streamed body that overruns the cap with no Content-Length to declare it", async () => {
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -1193,8 +1184,6 @@ describe("the ceremony endpoints cap what they read", () => {
     expect(res.status).toBe(400);
   });
 
-  // A `text/plain` form needs no preflight, so a cross-site page can post a JSON-shaped body to this
-  // endpoint. Parsing on shape alone reads it; only the declared type tells the two apart.
   it("answers 415 to a JSON-shaped body a cross-site form declared as text/plain", async () => {
     const res = await ceremonyApp().request(CEREMONY_PATH, {
       method: "POST",
@@ -1243,7 +1232,6 @@ describe("createPasskeyManageActions", () => {
     factors: fakeFactorRegistry(["passkey"]),
   });
 
-  // The store's own ownership scope, kept here so a rename across accounts is asserted end to end.
   function renaming(rows: AuthCredential[]): CredentialStore {
     return {
       ...fakeAuthCredentialStore(rows),
@@ -1307,7 +1295,6 @@ describe("createPasskeyManageActions", () => {
     expect(res.status).toBe(404);
   });
 
-  // The same withdrawal the passkey pages answer 404 for, against a credential this visitor owns.
   const withdrawn = optionsWith({ users: fakeAuthUserStore([signedIn]), credentials: fakeAuthCredentialStore([credential]) });
 
   it("changes nothing and answers 404 to a rename when the deployment offers no passkey factor", async () => {
@@ -1338,8 +1325,39 @@ describe("createPasskeyManageActions", () => {
   });
 });
 
+describe("createTotpEnrolActions", () => {
+  it("sends a confirmed enrolment on to the step-up the policy now owes, not to the account page", async () => {
+    const confirmed: AuthFactor = {
+      id: "f-totp-app",
+      userId: "u9",
+      kind: "totp-app",
+      secret: null,
+      lastCounter: null,
+      failedAttempts: 0,
+      lastVerifiedAt: null,
+      confirmedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const totp = { ...fakeFactorService("totp-app"), completeEnrolment: async () => ok(confirmed) } as AuthFactorService;
+    const options = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
+        offered: [
+          { service: fakeFactorService("email-otp"), role: "primary" },
+          { service: totp, role: "second", requirement: "mandatory" },
+          recoveryOffer(),
+        ],
+      }),
+    });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/enrol/totp", createTotpEnrolActions(options).totpEnrol);
+
+    const res = await app.request("/auth/enrol/totp", formBody({ code: "123456" }));
+    expect({ status: res.status, location: res.headers.get("location") }).toEqual({ status: 303, location: "/auth/verify" });
+  });
+});
+
 describe("createTotpManageActions", () => {
-  // The stock fake refuses every ceremony; this one gets far enough to show the confirmation form.
   const totpService = {
     ...fakeFactorService("totp-app"),
     beginEnrolment: async () => ok({ kind: "totp-app" as const, expiresAt: 1_000, options: { secret: "JBSWY3DP", uri: "otpauth://totp/x" } }),
@@ -1713,8 +1731,6 @@ describe("createAdminUserActions — resetFactors", () => {
 });
 
 describe("createEmailChangeActions", () => {
-  // The flow asks the address the account already holds, so the page names that inbox and not the
-  // one the visitor typed, which is empty until the old one approves.
   it("re-renders the page at 200 naming the address the confirmation actually went to", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
@@ -1791,8 +1807,6 @@ describe("createAdminUserActions", () => {
     });
   });
 
-  // No admin-service method takes the acting administrator's id, so with two admins the last-admin
-  // guard admits one of them locking out their own account.
   it("refuses an administrator deactivating their own account, writing nothing", async () => {
     const self = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
     const admin = fakeAdminUserStore([self]);
@@ -1857,8 +1871,6 @@ describe("createAdminUserActions", () => {
     expect(res.status).toBe(200);
   });
 
-  // A UUID is case-insensitive and the store returns a canonical one, so comparing the acting
-  // administrator against the raw route parameter lets an uppercased id name the same row past the guard.
   it("refuses a self-delete whose route parameter is the acting administrator's own id uppercased", async () => {
     const self = fakeAuthUser({ id: "3f2504e0-4f89-11d3-9a0c-0305e82c3301", email: "grace@example.com", isAdmin: true });
     let removals = 0;
@@ -1896,8 +1908,6 @@ describe("createAdminUserActions", () => {
   });
 });
 
-// The loader-side `refuseUnguarded` runs after the write commits, so a group that lost its guards
-// leaves these two handlers as the only thing between an anonymous request and an account deletion.
 describe("createAdminUserActions — the write path refuses an unprivileged request of its own accord", () => {
   const member = fakeAuthUser({ id: "u2", email: "member@example.com" });
 
@@ -1954,8 +1964,6 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     });
   });
 
-  // Signed in is not administered: `require-admin` is a loader-side guard, so a member posting
-  // straight at the write path would otherwise have their role change land before it ever ran.
   it("refuses a signed-in non-administrator's PATCH rather than writing the role it carries", async () => {
     let writes = 0;
     const admin = fakeAdminUserStore([member], {

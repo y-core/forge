@@ -6,6 +6,7 @@ import { a11yLabelAssociation } from "./rules/a11y-label-association.ts";
 import { a11yLivePoliteness } from "./rules/a11y-live-politeness.ts";
 import { a11yNoAriaReadonlyOnButton } from "./rules/a11y-no-aria-readonly-on-button.ts";
 import { a11yOneLiveRegion } from "./rules/a11y-one-live-region.ts";
+import { a11yStateAttrsSource } from "./rules/a11y-state-attrs-source.ts";
 import { catalogWrongRawInput } from "./rules/catalog-wrong-raw-input.ts";
 import { colorThemeNoRawUtility } from "./rules/color-theme-no-raw-utility.ts";
 import { colorTokenOnly } from "./rules/color-token-only.ts";
@@ -40,6 +41,7 @@ export const lintPlugin: LintPlugin = {
     "a11y-live-politeness": a11yLivePoliteness,
     "a11y-no-aria-readonly-on-button": a11yNoAriaReadonlyOnButton,
     "a11y-one-live-region": a11yOneLiveRegion,
+    "a11y-state-attrs-source": a11yStateAttrsSource,
     "catalog-wrong-raw-input": catalogWrongRawInput,
     "color-theme-no-raw-utility": colorThemeNoRawUtility,
     "color-token-only": colorTokenOnly,

@@ -182,7 +182,7 @@ test.describe("Toolbar — an aria-disabled item is focusable but inert", () => 
   });
 });
 
-test.describe("Toolbar — an aria-disabled command button", () => {
+test.describe("Toolbar — an aria-disabled command button", { tag: "@cross-engine" }, () => {
   test("toggles no popover on click or Enter until aria-disabled is lifted", async ({ page }) => {
     const toolbar = await render(
       Toolbar({

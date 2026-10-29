@@ -29,7 +29,6 @@ const FACE: PdfEmbeddedFont = {
   metrics: { unitsPerEm: 1000, ascent: 800, descent: -200, bbox: [0, 0, 1000, 1000], advances: new Map() },
 };
 
-// Every prohibition off, so a rule that fires is the one the case turned on and never a leftover.
 const CONFORMANT: PdfRendererOptions = {
   metadata: "standard",
   tagged: true,
@@ -94,6 +93,10 @@ describe("the one table the audit reports from and the renderer refuses on", () 
     expect(rules(LINE, { ...CONFORMANT, fonts: undefined, defaultFont: undefined })).toContain("font-embedded");
   });
 
+  test("refuses nothing but the base-14 run where a document supplies no fonts at all", () => {
+    expect(rules(LINE, { ...CONFORMANT, fonts: undefined, defaultFont: undefined })).toEqual(["font-embedded"]);
+  });
+
   test("refuses a link scheme an archive cannot follow on its own", () => {
     const mail = [Link({ to: { uri: "mailto:records@example.org" }, children: [Text({ children: "Write to us" })] })];
     expect(rules(mail)).toContain("link-scheme");
@@ -102,8 +105,6 @@ describe("the one table the audit reports from and the renderer refuses on", () 
   });
 });
 
-// Reachable and easy to miss: `image.ts` maps any four-component JPEG to `/DeviceCMYK`, and the
-// intent this wave embeds is sRGB — so the file would declare two different colour meanings.
 describe("a colour space the sRGB output intent cannot explain", () => {
   test("refuses a CMYK image and names re-saving it as the remedy", async () => {
     const cmyk = await createPdfImage(jpegBytes(8, 8, 4));

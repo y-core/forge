@@ -54,7 +54,7 @@ function stateOf(page: Page, id: string): Promise<{ aria: string | null | undefi
   }, `#${id}`);
 }
 
-test.describe("Menu checkable rows", () => {
+test.describe("Menu checkable rows", { tag: "@cross-engine" }, () => {
   test("a checkbox row flips both halves of its state, and flips back", async ({ page }) => {
     await open(page);
 

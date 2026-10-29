@@ -52,8 +52,6 @@ export function attrOf(html: string, selector: string, attr: string): string {
   return new RegExp(`\\s${rx(attr)}="([^"]*)"`).exec(tagOf(html, selector))?.[1] ?? "";
 }
 
-// One `toEqual` over the whole record is what turns "both tokens present, and different" into a
-// single assertion — two `attrOf` reads would pass on a view that emitted one token twice.
 /** Every attribute of the first element whose attributes include `selector`, name to exact value. @internal */
 export function attrsOf(html: string, selector: string): Record<string, string> {
   const attrs: Record<string, string> = {};
@@ -103,7 +101,7 @@ export function valuesOf(html: string, attr: string): string[] {
   return [...html.matchAll(new RegExp(`\\s${rx(attr)}="([^"]*)"`, "g"))].map((match) => match[1] ?? "");
 }
 
-/** A display string carrying every character the renderer escapes, so escaping is asserted the same way in both units. @internal */
+/** A display string carrying every character the renderer escapes. @internal */
 export const HOSTILE_TEXT = `Ada & "Bob" <script>'x'`;
 
 /** `HOSTILE_TEXT` exactly as the renderer emits it in a text node or an attribute value. @internal */
@@ -131,8 +129,7 @@ export const AUTH_FACTOR_SETS: readonly (readonly AuthFactorKind[])[] = [
   ["email-otp", "passkey", "totp-app"],
 ];
 
-// A requirement is per factor, so the full cross is 3ⁿ per offering. These four are the shapes that
-// differ in behaviour — nothing demanded, everything demanded, a mix, and a demand only a role carries.
+// A requirement is per factor, so the full cross is 3ⁿ per offering; these are the shapes that differ in behaviour.
 /** Every requirement assignment the factor matrix crosses. @internal */
 export const AUTH_FACTOR_ASSIGNMENTS: readonly AuthFactorAssignment[] = [
   { label: "all-optional", requirement: () => "optional" },
@@ -231,8 +228,6 @@ export function fakeChallengeStore(): ChallengeStore {
   return { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
 }
 
-// A fixture that refuses to build an illegal offer is the point: the grid states the ruling as data,
-// so a non-identifying kind must never reach `createFactorRegistry` wearing a primary offer.
 /** One offer of a kind, or of a service, in `role`; a primary offer of a non-identifying kind throws. @internal */
 export function fakeFactorOffer(
   offered: AuthFactorKind | AuthFactorService,
@@ -285,7 +280,7 @@ function authFactorOffers(
   return recoverable ? [...offers, recoveryOffer()] : offers;
 }
 
-/** Every offering crossed with every assignment, in a stable order — the matrix both view units assert across. @internal */
+/** Every offering crossed with every assignment, in a stable order. @internal */
 export function authFactorGrid(enrolled: readonly AuthFactorKind[] = []): AuthFactorCell[] {
   const store = fakeFactorStore(enrolled);
   const cells: AuthFactorCell[] = [];
@@ -425,7 +420,7 @@ export function fakeAuthEmailChangeFlow(overrides: Partial<AuthEmailChangeFlow> 
   return { request: async () => err("unavailable" as const), confirm: async () => err("unavailable" as const), ...overrides };
 }
 
-/** Every href map the loaders read, built from the three route builders at their default mounts. @internal */
+/** Every href map the loaders read, built from the route builders at their default mounts. @internal */
 export function fakeAuthWebPaths(): AuthWebPaths {
   return { auth: authPaths(authRoutes("/auth")), account: authPaths(accountRoutes("/account")), admin: authPaths(adminRoutes("/admin")) };
 }
@@ -473,7 +468,7 @@ export function fakeApproval(overrides: Partial<ApprovalOptions> = {}): Approval
 /** Middleware stamping every request's session as approved under `code` at `at`, which default to `FAKE_APPROVAL_CODE` and now. @internal */
 export function approvedSession(at?: number, code: string = FAKE_APPROVAL_CODE): Middleware {
   return async (context, next) => {
-    markApproval(sessionCtx.get(context), { at: at ?? Date.now(), digest: await signApprovalCode(fakeWebRing, code) });
+    markApproval(sessionCtx.get(context), { presentedAt: at ?? Date.now(), digest: await signApprovalCode(fakeWebRing, code) });
     return next();
   };
 }

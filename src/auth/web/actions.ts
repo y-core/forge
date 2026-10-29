@@ -147,7 +147,6 @@ export async function readAuthSubmission<schema extends v.GenericSchema, Binding
   try {
     form = await parseFormData(c);
   } catch (error) {
-    // The only throw here that is not about the submission: a field refusal would blame the visitor.
     if (isFormCapConflict(error)) throw error;
     return err({ cause: "submission", field: "", message: FIELD_REFUSAL_DEFAULT, values: {} });
   }
@@ -186,14 +185,13 @@ function readEnrolmentNickname(presented: unknown): Result<string | null, undefi
 }
 
 // A WebAuthn ceremony envelope is a few kilobytes; 64 KiB is generous for one and still a bound.
-// Without it these three endpoints read whatever a client cared to send, into a Worker's memory.
+// Without it a ceremony endpoint reads whatever a client cared to send, into a Worker's memory.
 /** The largest ceremony envelope a JSON endpoint reads before it answers 413. @internal */
 export const AUTH_CEREMONY_MAX_BYTES = 65_536;
 
 type CeremonyBody = { readonly ok: true; readonly body: unknown } | { readonly ok: false; readonly response: Response };
 
-// The stages `parseFormData` proves: refuse on a `Content-Length` that already says too much,
-// then meter the stream, because a chunked body's header may be absent or lying.
+// The stream is metered as well as the `Content-Length`, because a chunked body's header may be absent or lying.
 async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<CeremonyBody> {
   // `text/plain` is a form's `enctype` and needs no preflight, so a cross-site form can post a
   // JSON-shaped body. Parsing on shape alone would read it; only the declared type refuses it.
@@ -225,15 +223,11 @@ async function readCeremonyBody<Bindings>(c: AppContext<Bindings>): Promise<Cere
     const body: unknown = await new Response(c.request.body.pipeThrough(counter), { headers: c.request.headers }).json();
     return { ok: true, body };
   } catch {
-    // Malformed JSON is its own refusal, not an absent body: reporting them alike would answer a
-    // truncated envelope with the same 400 a client reads as "send the credential again".
     if (overflowed) return { ok: false, response: jsonResponse({ error: CEREMONY_TOO_LARGE }, 413) };
     return { ok: false, response: jsonResponse({ error: CEREMONY_REFUSED }, 400) };
   }
 }
 
-// The resolution's own `kinds` and never a fixed page: under a policy offering the authenticator app
-// and no passkey, the passkey page is one this deployment does not serve.
 function enrolTarget<Bindings>(options: AuthWebOptions<Bindings>, kinds: readonly AuthFactorKind[]): string {
   return authEnrolTarget(authEnrolmentPaths(options.paths.auth), kinds) ?? authSettledPath(options);
 }
@@ -317,11 +311,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       const session = sessionCtx.get(c, NO_SESSION);
       const at = authNow(options);
 
-      // The demand is resolved first: the schema's width is the presented factor's own, so a
-      // deployment configuring a wider code cannot have its page refuse every correct one.
       const demand = await resolveAuthVerifyDemand(c, services, resolveAuthViewer(c));
-      // Before the body is even read: a session owing an enrolment cannot step up, so accepting a
-      // code here would spend an attempt on a comparison `signin.stepUp` refuses to make.
       const detour = authVerifyDetour(c, options, demand);
       if (detour !== null) return detour;
 
@@ -428,7 +418,7 @@ export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>
 
 // The challenge is bound to the session's own `userId`, which `createPasskeyFactor.verifyChallenge`
 // re-checks against the assertion before it admits anything.
-/** The two JSON endpoints of a passkey step-up, held against the session that is already signed in. @public */
+/** The JSON endpoints of a passkey step-up, held against the session that is already signed in. @public */
 export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly begin: RequestHandler;
   readonly finish: RequestHandler;
@@ -508,8 +498,6 @@ function passkeyEnrolCeremony<Bindings>(
       const nickname = readEnrolmentNickname(body?.nickname);
       if (!nickname.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
-      // The whole envelope, not the credential alone: the name the visitor typed is passkey-specific,
-      // so it rides in this factor's opaque payload rather than in a parameter every factor carries.
       const envelope = JSON.stringify({ credential, nickname: nickname.data });
       const completed = await held.service.completeEnrolment(held.identity.userId, envelope, authNow(options));
       if (!completed.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
@@ -518,7 +506,7 @@ function passkeyEnrolCeremony<Bindings>(
   };
 }
 
-/** The two JSON endpoints of the passkey enrolment a sign-in still owes. @public */
+/** The JSON endpoints of the passkey enrolment a sign-in still owes. @public */
 export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly begin: RequestHandler;
   readonly finish: RequestHandler;
@@ -526,7 +514,7 @@ export function createPasskeyEnrolActions<Bindings>(options: AuthWebOptions<Bind
   return passkeyEnrolCeremony(options, authSettledPath(options));
 }
 
-/** The two JSON endpoints of a passkey enrolment made from the account pages, landing back on the passkey list. @public */
+/** The JSON endpoints of a passkey enrolment made from the account pages, landing back on the passkey list. @public */
 export function createPasskeyAccountEnrolActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly begin: RequestHandler;
   readonly finish: RequestHandler;
@@ -614,8 +602,6 @@ async function confirmTotp<Bindings>(
   return ok(identity);
 }
 
-// The enrolment group's mount, outside `account`, which `require-enrolment` refuses precisely while
-// the enrolment is owed — so this is the only POST an owed authenticator-app enrolment can clear.
 /** The POST that confirms the authenticator-app enrolment a sign-in still owes. @public */
 export function createTotpEnrolActions<Bindings>(options: AuthWebOptions<Bindings>): { readonly totpEnrol: RequestHandler } {
   return {
@@ -624,8 +610,6 @@ export function createTotpEnrolActions<Bindings>(options: AuthWebOptions<Binding
       const confirmed = await confirmTotp(c, options, loadEnrolTotp);
       if (!confirmed.ok) return confirmed.error;
 
-      // Whatever the policy demands now the factor is confirmed — the step-up it was enrolled for —
-      // rather than the account page, which the enrolment guard would only bounce back.
       const target = await signedInTarget(c, options, confirmed.data.userId, confirmed.data.isAdmin);
       return createAuthRedirect(c, target);
     },
@@ -662,8 +646,7 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
         const dropped = await services.enrolments.remove(factor.id, identity.userId);
         if (!dropped.ok) return unavailable();
       }
-      // Same reasoning as removing a passkey: a factor taken away must not leave a session that was
-      // admitted on the strength of it standing on another device.
+      // A factor taken away must not leave a session admitted on the strength of it standing on another device.
       const revoked = await revokeOtherSessions(services, sessionCtx.get(c, NO_SESSION), identity.userId, authNow(options));
       if (!revoked) return unavailable();
       return createAuthRedirect(c, options.paths.account.totp());

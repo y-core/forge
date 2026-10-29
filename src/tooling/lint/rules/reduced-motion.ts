@@ -4,7 +4,6 @@ import type { LintRule } from "../types.ts";
 
 const MOTION_BASE = /^(?:animate-|transition)/;
 
-// `-none` is the settled state the rule asks for, not motion that needs gating.
 const SETTLED = new Set(["animate-none", "transition-none"]);
 
 // Gated at the whole class expression, not the token: forge splits one class list across several
@@ -15,7 +14,7 @@ const GATED = /(?<![\w-])motion-(?:safe|reduce):/;
 export const reducedMotion: LintRule = {
   meta: {
     type: "problem",
-    docs: { description: "Authored motion is written inside `motion-safe:`, with `motion-reduce:` given the settled state." },
+    docs: { description: "Authored motion is written inside `motion-safe:`, with `motion-reduce:` given the settled state or an opacity fade." },
   },
   create(context) {
     const report = reporter(context, "forge-ui-reduced-motion");
@@ -28,7 +27,7 @@ export const reducedMotion: LintRule = {
       }
       for (const hit of hits) {
         report(
-          `\`${hit}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` the settled state`,
+          `\`${hit}\` runs whatever the reader has asked for — author it inside \`motion-safe:\` and give \`motion-reduce:\` either the settled state or an opacity fade`,
           found.loc,
         );
       }

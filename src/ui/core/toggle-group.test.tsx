@@ -72,10 +72,10 @@ describe("ToggleGroup.Item", () => {
         " [--tone-fg:var(--color-background)] [--tone-text:var(--color-foreground)] [--tone-soft:var(--color-muted)]" +
         " [--tone-soft-fg:var(--color-foreground)] [--tone-soft-border:var(--color-border)] [--focus-ring:var(--color-ring)] text-foreground" +
         " hover:bg-accent bg-transparent border-input cursor-pointer rounded-none hover:text-accent-foreground" +
-        " group-data-[orientation=horizontal]/toggle-group:border-s-0 group-data-[orientation=horizontal]/toggle-group:first:border-s" +
+        " group-data-[orientation=horizontal]/toggle-group:border-s-0 group-data-[orientation=horizontal]/toggle-group:first:border-s-(length:--border-width)" +
         " group-data-[orientation=horizontal]/toggle-group:first:rounded-s-field" +
         " group-data-[orientation=horizontal]/toggle-group:last:rounded-e-field group-data-[orientation=vertical]/toggle-group:border-t-0" +
-        " group-data-[orientation=vertical]/toggle-group:first:border-t group-data-[orientation=vertical]/toggle-group:first:rounded-t-field" +
+        " group-data-[orientation=vertical]/toggle-group:first:border-t-(length:--border-width) group-data-[orientation=vertical]/toggle-group:first:rounded-t-field" +
         " group-data-[orientation=vertical]/toggle-group:last:rounded-b-field has-[:checked]:bg-primary" +
         ' has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary extra-cls">' +
         '<input data-slot="toggle-group-input" type="radio" name="n" value="v" class="sr-only">R&amp;D&#39;s &lt;view&gt;</label>',

@@ -4,6 +4,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { stateAttrs } from "../contracts/state-attrs";
 import { Timeline } from "./timeline";
 
 const MARKER = 'data-slot="timeline-marker"';
@@ -103,6 +104,13 @@ describe("Timeline.Item", () => {
       "timeline-content",
     ]);
     expect(attrOf(html, "datetime", 'data-slot="timeline-time"')).toBe("2026-09-04");
+  });
+
+  it("emits every item state through the state-attribute builder", async () => {
+    const states = ["complete", "current", "upcoming"] as const;
+    const emitted = await Promise.all(states.map(async (state) => attrOf(await render(<Timeline.Item state={state} />), "data-state")));
+
+    expect(emitted).toEqual(states.map((state) => stateAttrs({ state })["data-state"]));
   });
 });
 

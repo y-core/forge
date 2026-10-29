@@ -101,7 +101,7 @@ function tabsState(page: Page) {
   }));
 }
 
-test.describe("Tabs", () => {
+test.describe("Tabs", { tag: "@cross-engine" }, () => {
   test("renders one selected tab and one visible panel", async ({ page }) => {
     await mount(page, await tabsMarkup(), EXPOSE);
     await start(page);

@@ -55,16 +55,10 @@ export const WIRING_ATTRS: Record<string, string> = {
   [ANNOUNCE_FAILURE_ATTR]: "the message a failure panel is announced with when it arrives",
 
   "data-filter": "the auth tokens an element is shown for",
-  "data-filters": "the active auth-token set a demo publishes",
-  "data-filter-item": "an element the filter controller shows or hides",
 
   "data-theme-preference": "the stored light/dark preference a page boots with",
-  "data-preset-picker": "the control naming which fitted preset the dials sit on",
-  "data-swatch": "one painted step in a generated ramp",
   "data-scale-row": "one family's row of steps in the scale readout",
   "data-hex": "the resolved hex a swatch publishes for its readout",
-  "data-readout": "a live value a customiser writes as the dials move",
-  "data-pair": "one audited foreground/background pair in the contrast table",
   "data-ratio": "the measured ratio a pair publishes",
   "data-scheme-output": "the generated scheme file the page prints",
   "data-share-url": "the query string the whole customiser state round-trips through",

@@ -20,6 +20,16 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Breaking Changes
 
+- **The browser set leaves the `runtime` tier: `test:browser` runs from `deploy`.** A bare `verify` runs no browser spec; `verify:deploy` is the
+  first tier with Chromium, and the other engines stay at `release`. The whole suite was the gate's slowest row, and narrowing it bought almost
+  nothing because its reach was the Worker's whole import graph. A broken page is now caught by a nightly `verify:release` rather than at task
+  close. No `config/steps.ts` change is needed: `cloudflareWorkerSteps` and `browserSteps` carry the new tier.
+- **`browserStep` and `browserSteps` take no `narrow` or `widen`.** Nothing narrows a row that starts at `deploy`. Delete either option from the
+  call.
+- **`buildScale` and the `Dials` type are no longer exported from `@y-core/forge/ui/contracts/theme`.** `buildScale` measured unfloored chroma,
+  so it disagreed by a byte with the hex a scheme file paints. Read `buildTheme(dials)[family][mode].solid` instead.
+- **`createBoundControl` and `createBoundCompound` are no longer exported from `@y-core/forge/ui/controls`.** They were internal factories; the
+  bound controls the barrel exports are the whole API.
 - **`applyFormat` from `@y-core/forge/ui/contracts` leaves a value with more characters than the template has slots unchanged**, instead of
   returning its bare characters, and a literal typed where the template has a slot is kept as content.
 - **`Turnstile` reserves the widget's box on an inner `[data-ref="turnstile-frame"]` element**, so a `class` passed to `Turnstile` no longer sizes
@@ -79,14 +89,53 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   projects there through `use.connectOptions`, as the `tooling/gate` README shows.
 - **`browserStep` refuses `projects` that run on different Playwright servers**, such as `["chromium", "firefox"]`. Give each engine its own row
   with `browserSteps`.
+- **`data-state` is a state attribute, not a presentational one.** `STATE_ATTRS.state` and `stateAttrs({ state })` replace
+  `PRESENTATION_ATTRS.state` and `presentationAttrs({ state })`, and an empty `state` now emits nothing.
+- **`RULE_ENFORCER` in `@y-core/forge/tooling/lint` maps each rule to a list of enforcers** instead of one, and `RuleEnforcer` gains
+  `"faded-text"`. `forge-ui-contrast-floor` lists `["contrast", "faded-text"]`. Read `RULE_ENFORCER[id].includes("lint")` where you compared
+  `RULE_ENFORCER[id] === "lint"`. Its value type excludes `"gate"`, which only a `MODERN_CSS_RULES` row carries, so routing a corpus rule to
+  the gate no longer compiles.
+- **An unselected `Tabs.Content` renders `hidden="until-found"` instead of a bare `hidden`.** This shipped in 0.5.15, whose section does not
+  record it. With no script, a find-in-page match inside an unselected panel reveals it, in an engine that implements `until-found`. Once
+  `mountTabs` runs, every unselected panel is a plain `hidden=""` again. A test of server-rendered markup that expects `hidden=""` must expect
+  `hidden="until-found"`.
 
 ### Added
 
+- **`validate-modern-css` warns on geometry keyed on `:popover-open` or `[open]`** (`forge-ui-platform-exit-geometry`). Since 0.5.15 an overlay
+  stays painted through its exit fade after the open state ends, so a `width`, `inset`, `padding` or `transform` declared there collapses mid-exit.
+  Move it to the base selector and key only `opacity`, `overlay` and `display` on the open state. A property the stylesheet transitions is not
+  reported.
+- **`forge verify --report <dir>`** writes `report.json` — tier, `HEAD`, tree, start time, duration, verdict, and each step's status, duration
+  and log — and every step's whole log into `<dir>`, whatever the verdict. A browser row also lists its failing tests by engine, spec, title and
+  first error line, read from Playwright's JSON reporter; a run that never reached a test is `setup` rather than `failed`. The types are
+  `GateRunReport`, `StepReport`, `StepStatus`, `TestFailure` and `StepResults` from `@y-core/forge/tooling/gate`.
+- **`bun run verify:deploy`** in forge's own scripts, the tier the canon names.
 - **`RULE_ENFORCER` routes `forge-ui-hit-target` to a new `"browser"` enforcer**, in `@y-core/forge/tooling/lint`, and `RuleId` and
   `RuleEnforcer` gain the matching members. Forge's browser set now measures every published `ui/core` and `ui/chrome` pointer target against the
   absolute 28px Floor, under both the default shape and `shape-compact.css`.
 - **`NavbarAction` and `MenuItemAttrs` types in `@y-core/forge/ui/contracts`**; `menuItemAttrs` returns `MenuItemAttrs`.
 - **A sticky top `Navbar` reserves its height as `scroll-padding-top`**; `--forge-navbar-height` sizes the bar and the reserve.
+- **`toneSurface` in `@y-core/forge/ui/core`** — `toneVariants`' paint without the hover fill, for a static toned panel.
+- **`fadedTextStep`, `checkFadedText` and `fadedText` in `@y-core/forge/tooling/gate`.** The `validate-faded-text` row fails a fade below full
+  strength — an `opacity-*` or a text colour's `/alpha` modifier on a class string, or either in a stylesheet's `@apply` — unless a disabled state
+  or an audited alpha pair holds it.
+- **`crossEngineTagsStep` and `checkCrossEngineTags` in `@y-core/forge/tooling/gate`.** The `validate-cross-engine-tags` row fails an untagged
+  top-level browser spec block that reads an engine-computed value, and `@cross-engine` spelled anywhere but a top-level block's
+  `{ tag: "@cross-engine" }`.
+- **JSX intrinsic elements type 13 more ARIA 1.2 attributes**, among them `aria-roledescription`, `aria-pressed`, `aria-modal` and `aria-sort`,
+  so a value of the wrong type is a compile error instead of passing unchecked.
+- **`forge/a11y-state-attrs-source` (`forge-ui-a11y-state-attrs-source`) reports a Tailwind variant that styles from an `aria-*` state
+  `STATE_ATTRS` gives a `data-*` hook**, such as `aria-selected:` or `aria-[checked]:`. `MENU_ITEM_CLASS` now reserves the checkable row's gutter
+  by role.
+- **`Drawer` takes `alert` and `described` and has a `.Description`**, as `Dialog` does.
+- **JSX types accept `hidden="until-found"`, and the renderer emits it as written on any element**; `hidden={true}` still renders a bare
+  `hidden`. Since 0.5.15, unrecorded there.
+- **`BrowserEngine`, `isBrowserEngine` and `StepReach` are exported from `@y-core/forge/tooling/gate`.** Since 0.5.15, unrecorded there.
+- **`@y-core/forge/relax` arms an app's own development relaxation.** It publishes `isDevBuildArmed` and `whenArmed`, so a dev module is
+  `whenArmed(isDevBuildArmed, relaxed, strict)` and no longer redeclares `__FORGE_DEV__`. It resolves under `forge cf dev` and in Bun, and a Worker
+  built without `forge-dev` fails to resolve it. Put an app's relaxations on one `#app/relax` pair (`src/app/relax.dev.ts` /
+  `src/app/relax.strict.ts`); see `src/relax/README.md`.
 
 ### Changed
 
@@ -111,9 +160,25 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`NumberField`'s steppers take a `size` and are as tall as an input of that size**: a default stepper is now 40px rather than 32px.
 - **`Toggle` and `Toolbar.Input` use `Button`'s padding scale**: padding follows the size (12/16/24px). A `Toggle` label no longer wraps, and its
   colour changes transition.
+- **`Stack`'s back layers no longer fade, and the `Navbar` menu chevron paints at full strength.**
+- **The comment budget reports a count with up to two words before its noun**, such as "the four shipped schemes", and a comma after the noun no
+  longer counts as the start of an enumeration.
+- **`forge-ui-platform-accent-color` in `validate-modern-css` reports an `<input type={…}>` whose binding is typed as `"checkbox"` or `"radio"`**,
+  such as a component factory's parameter, so a hand-styled checkable built through one is reported like a literal `type="checkbox"`, and a braced
+  string literal such as `type={"checkbox"}`.
+- **`schemeCss` emits no header comment beyond its `modern-css-allow` waiver**, the form forge's own scheme files take, so a generated scheme
+  passes forge's stylesheet comment budget. The dial values a file was made from travel in the `dialQuery` link instead.
+- **The default accent is desaturated.** `theme-neutral.css` declares the accent ramp at chroma 0.115 instead of 0.195, so the default
+  `--primary` paints `#4b65ab` in light and `#4861a7` in dark instead of `#375bd7` and `#3457d3`, and the accent chroma dial's fallback is 115.
+  To keep the old blue, generate a scheme at `accentChroma` 195 or re-declare `--primary`.
+- **`mountTabs` hides every panel its selected tab does not name when it mounts.** A panel that a fragment link or find-in-page revealed before
+  the controller ran is hidden again, so the server's selection is what shows. Since 0.5.15, unrecorded there.
 
 ### Fixed
 
+- **`buildTheme`'s `solid` hex is the colour its `oklch()` paints, at every dial.** Each step's chroma is cut toward zero to the places
+  `schemeCss` prints rather than rounded, and `solid` is measured from that printed coordinate, so the live readout and swatches no longer differ
+  from the pasted file by a byte. A generated chroma figure can print up to 0.0001 lower than before; `theme-neutral.css` is unchanged.
 - **A `--forge-navbar-height` under 1.75rem no longer shrinks a `Navbar` below the 28px Floor.** The bar's row, its drawer toggle, the
   panel's clearance and the scroll-padding reserve hold at 1.75rem.
 - **Every flash call in one request reaches the next page, including calls made together.** `createFlash` merges them into one `Set-Cookie` in call order, dropping the oldest
@@ -161,6 +226,8 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `Textarea` and the rest built on `fieldControlProps`) omits a blank `aria-describedby` the same way.
 - **A caller's `aria-labelledby` no longer replaces the id forge derives.** `Dialog`, `Drawer`, a triggered `Menu.Popup` and `Tabs.Content` merge
   it the same way, the caller's ids first, so the dialog's title, the menu's trigger and the panel's tab still name them.
+- **`asChild` on `Button`, `Link`, `Breadcrumbs`, `Pagination`, `Toolbar` and `Tooltip.Trigger` keeps the child's own `aria-describedby` /
+  `aria-labelledby`** and lists the compound's ids after it, instead of replacing it.
 - **The selected `Tabs.Tab` is marked by more than colour.** It draws a 2px bottom rule in its own text colour, clearing 3:1 against its fill and
   the page in both themes, and under forced colors that rule is `CanvasText` while an unselected tab draws none. Before, its only cue was a 1.08:1
   fill, and in High Contrast every tab looked the same. Every tab is 2px taller, so selecting one never shifts the row.
@@ -303,7 +370,23 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **The testing canon names Chromium as the browser set's engine and Firefox and WebKit as opt-in sign-off.** The apps `TESTING.md` §6e and
   `CONFIG_BASELINE.md` said every spec runs on every engine at release, while `cloudflareWorkerSteps({ browser: true })` emits Chromium alone.
   `CONFIG_BASELINE.md`'s `test:browser` script now matches `browserStep`'s argv.
-
+- **`ToggleGroup`'s first item follows `--border-width` on its leading edge**, where it stayed 1px under a shape that thickens borders.
+- **A bottom `Navbar`, a `right` one on a phone, and a `side="bottom"` `Drawer` panel rest on top of a showing `Dock`** instead of under it.
+- **An `OtpInput` paints its cell rules on Firefox**, where the frame showed its border and no rule between the cells.
+- **`validate-design` compiles a `tsx` fence against the step tsconfig's ambient `*.d.ts` files**, so a fence naming a workerd global such as
+  `ExecutionContext` is checked against its declaration, and a compiler diagnostic outside a fence now fails the check instead of being dropped.
+- **A busy `CheckboxGroup` or `RadioGroup` root emits `aria-busy="true"` beside `data-busy`, and an invalid `RadioGroup` root emits
+  `aria-invalid="true"`**, as ARIA 1.2 allows on those roles. A `CheckboxGroup` root still marks invalidity with `data-invalid` alone, because ARIA
+  1.2 deprecates `aria-invalid` on the `group` role.
+- **In an engine without `popover="hint"`, a `Tooltip` closes on Escape and on a press outside it, and opening one closes any other open
+  tip.** Since 0.5.15, unrecorded there.
+- **`Popover`, `Menu` and `Toolbar` flyout panels anchor to their trigger in an engine whose `position-anchor` initial value is `normal`**,
+  because the rule now names `position-anchor: auto`. Since 0.5.15, unrecorded there.
+- **A focused `focus-ring` element shows an indicator in forced-colors mode.** It draws a transparent 2px outline beside the inset ring, which is
+  a box shadow and does not render there. Since 0.5.15, unrecorded there.
+- **In forced-colors mode, forge's system-colour rules for `CheckboxGroup`, `RadioGroup`, `Switch`, `Toggle`, `ToggleGroup`, `Filter`, `Slider`
+  and `Table.Row` win over those components' own `bg-*` and `outline-none` utilities**, because the rules sit in `@layer utilities`. Since
+  0.5.15, unrecorded there.
 
 ---
 

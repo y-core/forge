@@ -21,15 +21,15 @@ const BAR_CLASS = "group bg-background/95 backdrop-blur";
 /** One responsive sticky class string per placement: a vertical mobile edge re-pinned horizontally at `md:`. */
 const PLACEMENT_PIN_CLASS: Record<NavPlacement, string> = {
   top: "sticky inset-y-0 left-0 md:inset-x-0 md:top-0 md:right-auto md:bottom-auto",
-  bottom: "sticky inset-y-0 right-0 md:inset-x-0 md:top-auto md:bottom-0 md:left-auto",
+  bottom: "sticky top-0 right-0 bottom-(--forge-dock-reserve,0px) md:inset-x-0 md:top-auto md:left-auto",
   left: "sticky inset-x-0 top-0 md:inset-y-0 md:right-auto md:bottom-auto md:left-0",
-  right: "sticky inset-x-0 bottom-0 md:inset-y-0 md:top-auto md:right-0 md:left-auto",
+  right: "sticky inset-x-0 bottom-(--forge-dock-reserve,0px) md:inset-y-0 md:top-auto md:right-0 md:left-auto",
 };
 
 /** The `collapsible="always"` counterpart: each placement is a single unconditional pin. */
 const RAIL_PIN_CLASS: Record<NavPlacement, string> = {
   top: "sticky inset-x-0 top-0",
-  bottom: "sticky inset-x-0 bottom-0",
+  bottom: "sticky inset-x-0 bottom-(--forge-dock-reserve,0px)",
   left: "sticky top-0 left-0 max-h-dvh overflow-y-auto",
   right: "sticky top-0 right-0 max-h-dvh overflow-y-auto",
 };

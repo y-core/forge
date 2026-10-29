@@ -7,7 +7,7 @@ import type { BadgeAppearance } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
-import { toneSurfaceVariants } from "./utils/tone";
+import { toneSurface } from "./utils/tone";
 
 type BadgeProps = JSX.IntrinsicElements["span"] & {
   tone?: Tone | undefined;
@@ -34,7 +34,7 @@ export const Badge: FC<BadgeProps> = ({
   <span
     data-slot={slotToken("badge", inherited)}
     {...presentationAttrs({ tone, appearance })}
-    class={cn(badgeBox({ size }), toneSurfaceVariants({ tone, appearance }), cls)}
+    class={cn(badgeBox({ size }), toneSurface({ tone, appearance }), cls)}
     {...rest}>
     {children}
   </span>

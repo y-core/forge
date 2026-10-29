@@ -1,6 +1,6 @@
 import { expect } from "@playwright/test";
 
-import { classesOf, mount, pasteText, renderedClasses, SECURE_ORIGIN, test, withCompiledCss } from "./browser.fixture";
+import { classesOf, compiledCss, mount, paintedHex, pasteText, renderedClasses, SECURE_ORIGIN, test, withCompiledCss } from "./browser.fixture";
 
 const NO_PREFERENCE_RULE = `<style>@media (prefers-reduced-motion: no-preference) { #probe { translate: 100px; } }</style><div id="probe">probe</div>`;
 
@@ -99,5 +99,32 @@ test.describe("pasteText", { tag: "@cross-engine" }, () => {
         value: (document.getElementById("target") as HTMLInputElement).value,
       })),
     ).toEqual({ heard: ["paste:true", "input:insertFromPaste"], value: "12 3-4" });
+  });
+});
+
+test.describe("paintedHex", { tag: "@cross-engine" }, () => {
+  test("paints a declared custom property as its hex colour", async ({ page }) => {
+    await mount(page, "<style>:root { --probe-red: rgb(255, 0, 0); }</style><div>probe</div>");
+    expect(await paintedHex(page, "var(--probe-red)")).toBe("#ff0000");
+  });
+
+  test("refuses a custom property nothing declares, naming it", async ({ page }) => {
+    await mount(page, "<div>probe</div>");
+    await expect(paintedHex(page, "var(--never-declared)")).rejects.toThrow("--never-declared");
+  });
+
+  test("refuses a declared custom property that resolves to nothing, naming it", async ({ page }) => {
+    await mount(page, "<style>:root { --probe-hollow: var(--never-declared); }</style><div>probe</div>");
+    await expect(paintedHex(page, "var(--probe-hollow)")).rejects.toThrow("--probe-hollow");
+  });
+
+  test("refuses a theme variable the Tailwind build did not emit, naming it", async ({ page }) => {
+    await mount(page, `<style>${await compiledCss([])}</style><div>probe</div>`);
+    await expect(paintedHex(page, "var(--color-input)")).rejects.toThrow("--color-input");
+  });
+
+  test("paints a colour with no custom property as its hex colour", async ({ page }) => {
+    await mount(page, "<div>probe</div>");
+    expect(await paintedHex(page, "rgb(0, 0, 255)")).toBe("#0000ff");
   });
 });

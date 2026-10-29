@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { worktreeFiles } from "../src/tooling/cli/worktree";
 import { declaredByName } from "../src/tooling/gate/checks/co-location";
+import { isBudgetedSource } from "../src/tooling/gate/checks/comment-budget";
 import { isBrowserSubpath } from "../src/tooling/gate/checks/exports";
 import { resolveSources } from "../src/tooling/gate/checks/source-scan";
 import { GATE_TIERS, type GateTier, selectSteps } from "../src/tooling/gate/mod";
@@ -33,12 +34,12 @@ describe("the gate's step table", () => {
     expect(selectSteps(STEPS, { tier: "release" }).ok).toBe(true);
   });
 
-  it("runs the browser suite on Chromium alone below release, and adds Firefox and WebKit there", () => {
+  it("keeps the browser suite out of runtime, runs it on Chromium from deploy, and adds Firefox and WebKit at release", () => {
     const browsers = (tier: GateTier): string[] => labels(tier).filter((label) => label.startsWith("test:browser"));
 
     expect([browsers("unit"), browsers("runtime"), browsers("deploy"), browsers("release")]).toEqual([
       [],
-      ["test:browser"],
+      [],
       ["test:browser"],
       ["test:browser", "test:browser:firefox", "test:browser:webkit"],
     ]);
@@ -68,7 +69,6 @@ describe("the gate's step table", () => {
     );
   });
 
-  // The script is how a row is run by hand, and the two disagreeing is a trap.
   it("runs each Playwright row with the same command its package script does", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
     for (const label of ["test:workerd", "test:browser"]) {
@@ -76,14 +76,15 @@ describe("the gate's step table", () => {
     }
   });
 
-  it("holds every tracked TypeScript file to the comment budget, root config files included", () => {
-    const tracked = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx"], { cwd: ROOT })
+  it("holds every tracked TypeScript and CSS file to the comment budget, root config files included", () => {
+    const tracked = Bun.spawnSync(["git", "ls-files", "*.ts", "*.tsx", "*.css"], { cwd: ROOT })
       .stdout.toString()
       .split("\n")
       .filter((file) => file !== "" && existsSync(join(ROOT, file)));
-    const scanned = new Set(resolveSources(ROOT, COMMENT_BUDGET_SOURCES, (name) => name.endsWith(".ts") || name.endsWith(".tsx")));
+    const scanned = new Set(resolveSources(ROOT, COMMENT_BUDGET_SOURCES, isBudgetedSource));
 
     expect(tracked).toContain("playwright.config.ts");
+    expect(tracked).toContain("src/ui/assets/css/forge-ui.css");
     expect(tracked.filter((file) => !scanned.has(file))).toEqual([]);
   });
 });
@@ -119,13 +120,13 @@ describe("the gate's watches", () => {
     ]);
   });
 
-  it("leaves every Playwright row to its probe rather than a hand-kept watch list", () => {
+  it("keeps a hand-kept watch list off every Playwright row, and narrows only the runtime one", () => {
     const playwright = STEPS.filter((step) => step.cmd?.[0] === "playwright");
 
     expect(playwright.map((step) => [step.label, step.watches, step.narrow?.probe?.args])).toEqual([
-      ["test:browser", undefined, ["--list"]],
-      ["test:browser:firefox", undefined, ["--list"]],
-      ["test:browser:webkit", undefined, ["--list"]],
+      ["test:browser", undefined, undefined],
+      ["test:browser:firefox", undefined, undefined],
+      ["test:browser:webkit", undefined, undefined],
       ["test:workerd", undefined, ["--list"]],
     ]);
   });
@@ -142,7 +143,6 @@ describe("the gate's watches", () => {
     const source = readFileSync(join(ROOT, "config/steps.ts"), "utf-8");
 
     expect(source.split(CSS_DIR).length - 1).toBe(1);
-    expect(STEPS.find((step) => step.label === "test:browser")?.narrow?.wide).toContain(`${CSS_DIR}/**`);
   });
 
   it("holds no gate input that matches no tracked file", () => {
@@ -165,33 +165,16 @@ describe("the runtime tier's narrowing", () => {
   const reach = (pending: readonly string[]): Record<string, string> => {
     const selection = selectSteps(STEPS, { tier: "runtime", pending, gateInputs: GATE_INPUTS });
     if (!selection.ok) return {};
-    const { "test:browser": browser = "", "test:workerd": workerd = "", "db:schema": db = "" } = selection.reach;
-    return { browser, workerd, db };
+    const { "test:workerd": workerd = "", "db:schema": db = "" } = selection.reach;
+    return { workerd, db };
   };
 
-  it("hands both Playwright rows to their probe for any edit, and runs a database row whole or not at all", () => {
-    expect(reach(["src/ui/core/button.tsx"])).toEqual({ browser: "narrow", workerd: "narrow", db: "untouched" });
-    expect(reach(["tests/workerd/x.workerd.ts"])).toEqual({ browser: "narrow", workerd: "narrow", db: "untouched" });
+  it("hands the workerd row to its probe for any edit, and runs a database row whole or not at all", () => {
+    expect(reach(["src/ui/core/button.tsx"])).toEqual({ workerd: "narrow", db: "untouched" });
+    expect(reach(["tests/workerd/x.workerd.ts"])).toEqual({ workerd: "narrow", db: "untouched" });
   });
 
   const traced = async (label: string): Promise<readonly string[]> => (await STEPS.find((step) => step.label === label)?.widen?.(ROOT)) ?? [];
-
-  it("traces every module a browser spec hands `mount`'s `expose`, which `--only-changed` cannot, so a change to one runs the Chromium set whole", async () => {
-    const browser = await traced("test:browser");
-
-    expect(browser).toContain("src/ui/client/popover-anchor.ts");
-    expect(browser).toContain("src/ui/client/menu.ts");
-    expect(browser).toContain("src/ui/client/signal.ts");
-    expect(browser).not.toContain("src/render/pdf/mod.ts");
-  });
-
-  it("traces the Worker a browser spec serves by its wrangler config, and the files it names by URL", async () => {
-    const browser = await traced("test:browser");
-
-    expect(browser).toContain("tests/fixtures/auth-web/wrangler.jsonc");
-    expect(browser).toContain("src/auth/journey.fixture.tsx");
-    expect(browser).toContain("src/auth/schema.sql");
-  });
 
   it("traces every Worker a workerd spec serves and every file it names by URL, so a change confined to one runs the row whole", async () => {
     const workerd = await traced("test:workerd");
@@ -223,13 +206,12 @@ describe("the runtime tier's narrowing", () => {
     expect(db.every((step) => step.watches?.includes("tests/fixtures/db-schema/**"))).toBe(true);
   });
 
-  it("runs the whole Chromium set for a stylesheet or a fixture, which specs read without importing", () => {
-    expect(reach(["src/ui/assets/css/theme-base.css"]).browser).toBe("whole");
-    expect(reach(["tests/fixtures/workers-form/worker.ts"]).browser).toBe("whole");
+  it("runs the whole workerd set for a fixture, which specs read without importing", () => {
+    expect(reach(["tests/fixtures/workers-form/worker.ts"]).workerd).toBe("whole");
   });
 
-  it("runs no database row for a documentation edit, and leaves the Playwright rows to their probe", () => {
-    expect(reach(["docs/TEST_RUNNERS.md"])).toEqual({ browser: "narrow", workerd: "narrow", db: "untouched" });
+  it("runs no database row for a documentation edit, and leaves the workerd row to its probe", () => {
+    expect(reach(["docs/TEST_RUNNERS.md"])).toEqual({ workerd: "narrow", db: "untouched" });
   });
 });
 

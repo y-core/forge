@@ -1,5 +1,5 @@
 import { childrenOf } from "../ast.ts";
-import type { AstNode, CallNode, IdentifierNode, LintRule, LiteralNode, VariableDeclaratorNode } from "../types.ts";
+import type { AstNode, CallNode, IdentifierNode, LintRule, LiteralNode, RuleContext, VariableDeclaratorNode } from "../types.ts";
 
 /** The SSR helpers markup comes out of, before any local wrapper is traced back to them. */
 const SEED_RENDERER = /^render(?:[A-Z]\w*)?$/;
@@ -41,22 +41,22 @@ function isFunction(node: AstNode | null | undefined): boolean {
 }
 
 /** Whether the value `node` evaluates to is a list rather than a string to match inside. */
-function producesList(node: AstNode | null | undefined, lists: ReadonlySet<string>): boolean {
+function producesList(node: AstNode | null | undefined, isList: (identifier: AstNode) => boolean): boolean {
   const value = unwrap(node);
   if (value == null) return false;
   if (value.type === "ArrayExpression") return true;
-  if (value.type === "Identifier") return lists.has((value as IdentifierNode).name);
+  if (value.type === "Identifier") return isList(value);
   // `a?.split(" ") ?? []` and `cond ? list : []` are lists on whichever branch is taken, and the
   // fallback branch is the one written precisely because the other yields a list too.
   if (value.type === "LogicalExpression" || value.type === "ConditionalExpression") {
     const branches = value.type === "LogicalExpression" ? ["left", "right"] : ["consequent", "alternate"];
-    return branches.some((key) => producesList((value as unknown as Record<string, AstNode | undefined>)[key], lists));
+    return branches.some((key) => producesList((value as unknown as Record<string, AstNode | undefined>)[key], isList));
   }
   if (value.type !== "CallExpression") return false;
   const callee = (value as CallNode).callee;
   const method = memberName(callee);
   if (method !== undefined && LIST_METHODS.has(method)) return true;
-  if (lists.has(nameOf(callee) ?? "")) return true;
+  if (isList(callee)) return true;
   return method === "from" && nameOf((callee as unknown as { object?: AstNode }).object) === "Array";
 }
 
@@ -79,24 +79,24 @@ function annotatesList(node: AstNode | null | undefined): boolean {
 const returnTypeOf = (node: AstNode): AstNode | null | undefined => (node as unknown as { returnType?: AstNode | null }).returnType;
 
 /** Whether any `return` this block owns yields a list — a nested function's returns are its own. */
-function blockReturnsList(node: AstNode, lists: ReadonlySet<string>): boolean {
+function blockReturnsList(node: AstNode, isList: (identifier: AstNode) => boolean): boolean {
   return childrenOf(node).some((child) => {
     if (isFunction(child)) return false;
-    if (child.type === "ReturnStatement") return producesList((child as unknown as { argument?: AstNode | null }).argument, lists);
-    return blockReturnsList(child, lists);
+    if (child.type === "ReturnStatement") return producesList((child as unknown as { argument?: AstNode | null }).argument, isList);
+    return blockReturnsList(child, isList);
   });
 }
 
 /** Whether the binding at `node` yields a list — as a value, or as what a helper hands back. */
-function yieldsList(node: AstNode | null | undefined, lists: ReadonlySet<string>): boolean {
+function yieldsList(node: AstNode | null | undefined, isList: (identifier: AstNode) => boolean): boolean {
   const value = unwrap(node);
   if (value == null) return false;
   if (isFunction(value)) {
     const body = (value as FunctionNode).body;
-    return annotatesList(returnTypeOf(value)) || yieldsList(body, lists);
+    return annotatesList(returnTypeOf(value)) || yieldsList(body, isList);
   }
-  if (value.type === "BlockStatement") return blockReturnsList(value, lists);
-  return producesList(value, lists);
+  if (value.type === "BlockStatement") return blockReturnsList(value, isList);
+  return producesList(value, isList);
 }
 
 // Absence is the one claim an exact match cannot make: `not.toContain` and an `includes` asserted
@@ -114,23 +114,42 @@ function assertsAbsence(node: AstNode): boolean {
   return value === negated;
 }
 
-/** The names a marked-up value can be reached through, grown until they stop growing. */
-interface MarkupNames {
-  functions: Set<string>;
-  values: Set<string>;
+/** The declaration `identifier` names from the scope it is read in — `undefined` for a global or an unresolved name. */
+function declarationOf(identifier: AstNode, sourceCode: RuleContext["sourceCode"]): AstNode | undefined {
+  const name = nameOf(identifier);
+  if (name === undefined) return undefined;
+  for (let scope = sourceCode.getScope?.(identifier) ?? null; scope !== null; scope = scope.upper) {
+    const variable = scope.set.get(name);
+    if (variable !== undefined) return variable.defs[0]?.node;
+  }
+  return undefined;
+}
+
+/** The declarations a marked-up value can be reached through, grown until they stop growing. */
+interface MarkupBindings {
+  functions: Set<AstNode>;
+  values: Set<AstNode>;
 }
 
 /** Whether the subtree at `node` reaches a renderer, by call or by a name already known to hold markup. */
-function reachesMarkup(node: AstNode | undefined, names: MarkupNames): boolean {
+function reachesMarkup(node: AstNode | undefined, markup: MarkupBindings, resolve: (identifier: AstNode) => AstNode | undefined): boolean {
   if (node === undefined) return false;
-  if (node.type === "CallExpression" && names.functions.has(nameOf((node as CallNode).callee) ?? "")) return true;
-  if (node.type === "Identifier" && names.values.has((node as IdentifierNode).name)) return true;
-  return childrenOf(node).some((child) => reachesMarkup(child, names));
+  if (node.type === "CallExpression") {
+    const callee = (node as CallNode).callee;
+    if (SEED_RENDERER.test(nameOf(callee) ?? "")) return true;
+    const declared = resolve(callee);
+    if (declared !== undefined && markup.functions.has(declared)) return true;
+  }
+  if (node.type === "Identifier") {
+    const declared = resolve(node);
+    if (declared !== undefined && markup.values.has(declared)) return true;
+  }
+  return childrenOf(node).some((child) => reachesMarkup(child, markup, resolve));
 }
 
-/** One name and the expression it is bound to — a declarator's initializer, or a function's body. */
+/** One declaration and the expression it binds — a declarator's initializer, or a function's body. */
 interface Binding {
-  name: string;
+  declaration: AstNode;
   body: AstNode;
   fn: boolean;
   /** A `function` declaration's annotation, which sits on the declaration rather than on its body. */
@@ -151,10 +170,24 @@ export const exactMarkupAssertion: LintRule = {
     docs: { description: "`toContain`, `toMatch` and `.includes` on rendered markup pass on markup that moved to the wrong element." },
   },
   create(context) {
-    const names: MarkupNames = { functions: new Set(), values: new Set() };
-    const lists = new Set<string>(LIST_HELPERS);
+    const markup: MarkupBindings = { functions: new Set(), values: new Set() };
+    const lists = new Set<AstNode>();
+    const resolved = new Map<AstNode, AstNode | undefined>();
     const bindings: Binding[] = [];
     const candidates: Candidate[] = [];
+
+    const resolve = (identifier: AstNode): AstNode | undefined => {
+      if (resolved.has(identifier)) return resolved.get(identifier);
+      const declared = declarationOf(identifier, context.sourceCode);
+      resolved.set(identifier, declared);
+      return declared;
+    };
+
+    const isList = (identifier: AstNode): boolean => {
+      if (LIST_HELPERS.includes(nameOf(identifier) ?? "")) return true;
+      const declared = resolve(identifier);
+      return declared !== undefined && lists.has(declared);
+    };
 
     const addCandidate = (node: AstNode): void => {
       const callee = (node as CallNode).callee;
@@ -175,40 +208,36 @@ export const exactMarkupAssertion: LintRule = {
 
     return {
       CallExpression(node: AstNode): void {
-        const name = nameOf((node as CallNode).callee);
-        if (name !== undefined && SEED_RENDERER.test(name)) names.functions.add(name);
         addCandidate(node);
       },
       VariableDeclarator(node: AstNode): void {
         const declarator = node as VariableDeclaratorNode;
-        const name = nameOf(declarator.id);
-        if (name === undefined || declarator.init == null) return;
-        bindings.push({ name, body: declarator.init, fn: isFunction(unwrap(declarator.init)) });
+        if (nameOf(declarator.id) === undefined || declarator.init == null) return;
+        bindings.push({ declaration: node, body: declarator.init, fn: isFunction(unwrap(declarator.init)) });
       },
       FunctionDeclaration(node: AstNode): void {
         const declared = node as FunctionNode;
-        const name = nameOf(declared.id);
-        if (name !== undefined && declared.body !== undefined) {
-          bindings.push({ name, body: declared.body, fn: true, returnType: returnTypeOf(node) });
+        if (nameOf(declared.id) !== undefined && declared.body !== undefined) {
+          bindings.push({ declaration: node, body: declared.body, fn: true, returnType: returnTypeOf(node) });
         }
       },
       "Program:exit"(): void {
         // A fixpoint rather than one pass: a wrapper may be declared after the wrapper it calls, and
-        // the chain is arbitrarily deep. The sets only grow, so the loop terminates on the name count.
-        for (let size = -1; size !== names.functions.size + names.values.size + lists.size;) {
-          size = names.functions.size + names.values.size + lists.size;
+        // the chain is arbitrarily deep. The sets only grow, so the loop terminates on the binding count.
+        for (let size = -1; size !== markup.functions.size + markup.values.size + lists.size;) {
+          size = markup.functions.size + markup.values.size + lists.size;
           for (const binding of bindings) {
             // A list is a list whether or not markup reaches it: the questions are independent,
             // and it is the listness that decides `toContain` is membership rather than a substring.
-            if (annotatesList(binding.returnType) || yieldsList(binding.body, lists)) lists.add(binding.name);
-            if (!reachesMarkup(binding.body, names)) continue;
-            if (binding.fn) names.functions.add(binding.name);
-            else if (!lists.has(binding.name)) names.values.add(binding.name);
+            if (annotatesList(binding.returnType) || yieldsList(binding.body, isList)) lists.add(binding.declaration);
+            if (!reachesMarkup(binding.body, markup, resolve)) continue;
+            if (binding.fn) markup.functions.add(binding.declaration);
+            else if (!lists.has(binding.declaration)) markup.values.add(binding.declaration);
           }
         }
 
         for (const { subject, matcher, loc } of candidates) {
-          if (producesList(subject, lists) || !reachesMarkup(subject, names)) continue;
+          if (producesList(subject, isList) || !reachesMarkup(subject, markup, resolve)) continue;
           context.report({
             message: `\`${matcher}\` on rendered markup — assert the exact string: a substring assertion passes on markup that moved, so the attribute may have landed on the wrong element. \`toBe\` the whole render, or extract the fragment and \`toBe\` that (TESTING.md §3b)`,
             loc,

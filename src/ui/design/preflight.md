@@ -33,7 +33,7 @@ Where a command is given, run the command. Scope it to the files you changed.
 - §2e Media: scrims, `alt`, controlled crops, glyph sizes
 - §2f Depth: stacked shadows, and one elevation step at a time
 - §2g Forms: the field wrapper, id helpers, the invalid triple, one barrel per name
-- §2h States and Swaps: the four states, one indicator, retry, reserved and focus-safe swap targets
+- §2h States and Swaps: every data state, one indicator, retry, reserved and focus-safe swap targets
 - §2i Interaction and Announcement: one live region, ARIA beside `data-*`, `focus-visible`, one moment, transform and opacity
 - §2j Tells: gradient text, glass, three-card rows, eyebrows
 - §2k Platform: the platform rules checked on every surface

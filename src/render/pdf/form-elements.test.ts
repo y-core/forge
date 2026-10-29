@@ -4,12 +4,26 @@ import { createCursor } from "./cursor";
 import { place } from "./elements";
 import { OptionGroup, TickList } from "./form";
 import { columnsElement, fieldsElement, gridTracks, headingElement, noteElement, optionsElement, ticksElement } from "./form-elements";
-import { COLUMN_GUTTER, MARGIN, PAGE_WIDTH, ROW_COLUMNS } from "./geometry";
+import {
+  BOLD_RUN,
+  COLUMN_GUTTER,
+  LABEL_GAP,
+  LABEL_SIZE,
+  LABEL_WIDTH,
+  MARGIN,
+  MARK_SIZE,
+  PAGE_WIDTH,
+  ROW_COLUMNS,
+  SIGNATURE_GUTTER,
+  TICK_GAP,
+  VALUE_SIZE,
+} from "./geometry";
 import { paginate } from "./paginate";
 import { createPdfRenderer } from "./renderer";
 import { structureTreeOf } from "./structure";
 import { spanOf, trackOffsets } from "./tracks";
-import type { PdfBox, PdfContent, PdfElement, PdfField, PdfSpan, PdfStructureNode } from "./types";
+import type { PdfBox, PdfContent, PdfElement, PdfField, PdfNode, PdfSpan, PdfStructureNode } from "./types";
+import { BASE14_TYPESETTING } from "./typesetting";
 
 const MEASURE: PdfBox = { x: MARGIN, width: PAGE_WIDTH - MARGIN * 2, height: 700 };
 
@@ -212,5 +226,78 @@ describe("an option group is the same list, asked as a question", () => {
     const found = pathsOf(treeOf([options])).filter((entry) => entry.path.includes("L"));
     expect(found.filter((entry) => entry.leaf.type === "Lbl").map((entry) => entry.leaf.alt)).toEqual(["ticked", "empty", "crossed"]);
     expect(found.filter((entry) => entry.leaf.type === "LBody")).toHaveLength(3);
+  });
+});
+
+function nodesOf(element: PdfElement): PdfNode[] {
+  const cursor = createCursor(undefined);
+  cursor.newPage();
+  place(cursor, element, MEASURE);
+  return cursor.pages[0]?.nodes ?? [];
+}
+
+function valueTexts(element: PdfElement): { x: number; text: string }[] {
+  return nodesOf(element).flatMap((node) => (node.kind === "text" && node.tag === "value" ? [{ x: node.x, text: node.run }] : []));
+}
+
+const RIGHT = MEASURE.x + MEASURE.width;
+
+describe("a printed mark leaves room to write in", () => {
+  test("draws every mark as an outline, never a fill", () => {
+    const marks = ticksElement([
+      { label: "Ticked", mark: "ticked" },
+      { label: "Empty", mark: "empty" },
+      { label: "Crossed", mark: "crossed" },
+    ]);
+    const paths = nodesOf(marks).filter((node) => node.kind === "path");
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((node) => node.paint === "stroke")).toBe(true);
+  });
+});
+
+describe("where an option group's boxes start", () => {
+  const OPTIONS = [
+    { label: "Yes", mark: "ticked" },
+    { label: "No", mark: "empty" },
+  ] as const;
+
+  test("sets a narrow group under a wrapping question flush right, ending where the measure ends", () => {
+    const values = valueTexts(optionsElement("In what capacity is the interest held by the declarant?", OPTIONS));
+    const last = values.at(-1);
+    expect(last?.text).toBe("No");
+    expect((last?.x ?? 0) + BASE14_TYPESETTING.width("No", VALUE_SIZE)).toBeCloseTo(RIGHT, 6);
+  });
+
+  test("starts a group under a one-line question at the value column", () => {
+    const values = valueTexts(optionsElement("Capacity?", OPTIONS));
+    expect(values[0]?.x).toBeCloseTo(MEASURE.x + LABEL_WIDTH + LABEL_GAP + MARK_SIZE + TICK_GAP, 6);
+  });
+});
+
+describe("a signature row's rules", () => {
+  function rulesOf(element: PdfElement): { x: number; width: number }[] {
+    return nodesOf(element).flatMap((node) => {
+      if (node.kind !== "path") return [];
+      const [from, to] = node.commands;
+      return from?.op === "move" && to?.op === "line" ? [{ x: from.x, width: to.x - from.x }] : [];
+    });
+  }
+
+  test("runs the last cell's rule to the margin, while every other stops a gutter short of its span", () => {
+    const rules = rulesOf(
+      columnsElement([
+        { label: "Signature", blank: true },
+        { label: "Date", blank: true },
+      ]),
+    );
+    expect(rules[0]?.width).toBeCloseTo(MEASURE.width / 2 - SIGNATURE_GUTTER, 6);
+    expect((rules[1]?.x ?? 0) + (rules[1]?.width ?? 0)).toBeCloseTo(RIGHT, 6);
+  });
+});
+
+describe("an inline label column", () => {
+  test("is as wide as its label measures, so the answer follows a short label a gap later", () => {
+    const values = valueTexts(fieldsElement([{ label: "Name", value: "Du Toit" }]));
+    expect(values[0]?.x).toBeCloseTo(MEASURE.x + BASE14_TYPESETTING.width("Name", LABEL_SIZE, BOLD_RUN) + LABEL_GAP, 6);
   });
 });

@@ -68,7 +68,7 @@ function focusedSlots(page: Page): Promise<string[]> {
   return page.evaluate(() => document.activeElement?.getAttribute("data-slot")?.split(" ") ?? []);
 }
 
-test.describe("nested overlays — a Menu inside a Dialog", () => {
+test.describe("nested overlays — a Menu inside a Dialog", { tag: "@cross-engine" }, () => {
   async function mountNested(page: Page): Promise<void> {
     const menu = Menu({
       children: [
@@ -131,7 +131,7 @@ test.describe("nested overlays — a Menu inside a Dialog", () => {
   });
 });
 
-test.describe("a trigger removed while its popup is open", () => {
+test.describe("a trigger removed while its popup is open", { tag: "@cross-engine" }, () => {
   async function mountMenu(page: Page): Promise<void> {
     const html = await render(
       Menu({
@@ -222,8 +222,6 @@ test.describe("a composite widget inside a form", () => {
     expect(await agreement(page)).toEqual({ dom: "in", signal: "in" });
   });
 
-  // A bound group item is a real radio, not a `<button>`, so the widget's own answer travels with
-  // the form.
   test("submission carries the widget's own value alongside the native controls", async ({ page }) => {
     await mountForm(page);
     await page.click("label:has(#u-cm)");
@@ -244,7 +242,7 @@ test.describe("a composite widget inside a form", () => {
     await page.evaluate(() => document.querySelector<HTMLFormElement>("#form")?.reset());
 
     expect(await page.evaluate(() => document.querySelector<HTMLInputElement>("#native")?.value)).toBe("start");
-    expect(await agreement(page)).toEqual({ dom: "in", signal: "in" });
+    await expect.poll(() => agreement(page)).toEqual({ dom: "in", signal: "in" });
   });
 
   test("clicking again after a reset still reconciles the whole group", async ({ page }) => {
@@ -263,8 +261,6 @@ test.describe("a composite widget inside a form", () => {
 });
 
 test.describe("widgets inside a shadow root", () => {
-  // The binding listens on the scope root, which is itself inside the shadow tree, so the click never
-  // has to cross the boundary — but the scope only exists at all if `resume` scanned into the tree.
   test("a click from inside a shadow root reaches the binding", async ({ page }) => {
     const group = BoundToggleGroup({
       label: "Units",

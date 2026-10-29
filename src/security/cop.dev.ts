@@ -1,4 +1,4 @@
-import { isDevBuildArmed, whenArmed } from "../context/armed.dev";
+import { isDevBuildArmed, whenArmed } from "../relax/armed";
 import { admitsMissingFetchMetadata as refuseMissingFetchMetadata } from "./cop.strict";
 import type { RelaxMissingFetchMetadata } from "./types";
 

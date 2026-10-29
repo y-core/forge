@@ -7,7 +7,7 @@ import { presentationAttrs } from "../contracts/vocabulary";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
-import { toneSurfaceVariants } from "./utils/tone";
+import { toneSurface } from "./utils/tone";
 
 type TableProps = JSX.IntrinsicElements["table"] & {
   size?: Size | undefined;
@@ -93,12 +93,7 @@ const TableRow: FC<TableRowProps> = ({ tone, selected, class: cls, children, "da
     data-slot={slotToken("table-row", inherited)}
     {...presentationAttrs({ tone })}
     {...stateAttrs({ selected: selected ?? false })}
-    class={cn(
-      "border-b border-border last:border-b-0",
-      tone ? toneSurfaceVariants({ tone, appearance: "soft" }) : "",
-      selected && "bg-primary-soft",
-      cls,
-    )}
+    class={cn("border-b border-border last:border-b-0", tone ? toneSurface({ tone, appearance: "soft" }) : "", selected && "bg-primary-soft", cls)}
     {...rest}>
     {children}
   </tr>

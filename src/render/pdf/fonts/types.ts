@@ -27,7 +27,7 @@ export interface PdfFontMetrics {
   advances: ReadonlyMap<number, number>;
   /** The glyph id the subset assigned each code point, which `Identity-H` addresses. */
   glyphs: ReadonlyMap<number, number>;
-  /** Pair adjustments pulled from GPOS at build time, keyed by the two code points. */
+  /** Pair adjustments pulled from GPOS at build time, keyed by the code-point pair. */
   kerning?: ReadonlyMap<string, number> | undefined;
 }
 

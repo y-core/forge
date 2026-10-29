@@ -1,7 +1,5 @@
-import type { Dials, Mode, Oklch, Ramp, Scale, ScaleFamily } from "./types";
+import type { Mode, Oklch, Ramp, ScaleFamily } from "./types";
 
-// Light steps 1 and 2 are non-monotone on purpose: forge swaps them so `--card` reads as raised
-// above `--background` without the semantic layer needing a `.dark` twin.
 /** The neutral scale's lightness, and the tint shape every scheme applies over it. @public */
 export const GRAY_RAMP: Readonly<Record<Mode, Ramp>> = {
   light: {
@@ -32,6 +30,8 @@ export const ACCENT_RAMP: Readonly<Record<Mode, Ramp>> = {
 export const CHROMA_MAX: Readonly<Record<ScaleFamily, number>> = { gray: 0.1, accent: 0.2 };
 
 const GAMUT_EPSILON = 1e-4;
+
+const CHROMA_PLACES = 4;
 
 /** The sRGB transfer function, linear-light to encoded. @public */
 export function srgbGamma(c: number): number {
@@ -70,8 +70,6 @@ function byte(c: number): string {
     .padStart(2, "0");
 }
 
-// Out-of-gamut colours are brought in by reducing chroma at constant lightness and hue, as CSS
-// Color 4 specifies; clipping channels instead would shift the hue.
 /** The nearest OKLCh coordinate sRGB can represent, reached by reducing chroma alone. @public */
 export function toSrgbGamut(l: number, c: number, h: number): Oklch {
   const hRad = (h * Math.PI) / 180;
@@ -92,13 +90,17 @@ export function toSrgbGamut(l: number, c: number, h: number): Oklch {
   return { l, c: lo, h };
 }
 
-// Hue is dropped at zero chroma rather than printed: it is noise there, and a varying number would
-// make two identical greys read as two colours.
 /** An OKLCh coordinate as the `oklch()` a scheme file carries. @public */
 export function oklchCss(color: Oklch): string {
   const lightness = `${(color.l * 100).toFixed(2)}%`;
-  const chroma = color.c.toFixed(4);
+  const chroma = color.c.toFixed(CHROMA_PLACES);
   return Number(chroma) === 0 ? `oklch(${lightness} 0 0)` : `oklch(${lightness} ${chroma} ${color.h.toFixed(1)})`;
+}
+
+/** `color` with its chroma cut toward zero to the places {@link oklchCss} prints. @internal */
+export function schemeOklch(color: Oklch): Oklch {
+  const scale = 10 ** CHROMA_PLACES;
+  return { l: color.l, c: Math.floor(color.c * scale) / scale, h: color.h };
 }
 
 /** OKLCh → `#rrggbb`. @public */
@@ -109,7 +111,7 @@ export function oklchToHex(l: number, c: number, h: number): string {
   return `#${byte(srgbGamma(r))}${byte(srgbGamma(g))}${byte(srgbGamma(b))}`;
 }
 
-/** The three sRGB channels of a `#rrggbb` literal, as 0–1. Throws on any other shape. */
+/** The sRGB channels of a `#rrggbb` literal, as 0–1. Throws on any other shape. */
 function channels(hex: string): [number, number, number] {
   const match = /^#([0-9a-fA-F]{6})$/.exec(hex.trim());
   if (match?.[1] === undefined) throw new Error(`not a #rrggbb colour: ${hex}`);
@@ -145,17 +147,4 @@ export function contrastRatio(a: string, b: string): number {
   const la = relativeLuminance(a);
   const lb = relativeLuminance(b);
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-}
-
-const STEPS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] as const;
-
-function twelve<T>(f: (index: number) => T): Scale<T> {
-  return STEPS.map(f) as unknown as Scale<T>;
-}
-
-// Lightness comes from the ramp and never from a dial, so no dial setting can move an audited
-// contrast pair across its WCAG floor.
-/** Twelve hex steps: the ramp's fixed lightness, its shape scaled by the chroma dial, at one hue. @public */
-export function buildScale(ramp: Ramp, dials: Dials): Scale<string> {
-  return twelve((i) => oklchToHex(ramp.lightness[i] ?? 0, (ramp.chroma[i] ?? 0) * dials.chroma, dials.hue));
 }

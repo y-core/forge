@@ -11,7 +11,7 @@ import { cn } from "./utils/cn";
 interface CarouselRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Accessible name; with it the root is a region announced as a carousel, without it a plain wrapper the strip sits in. */
   label?: string | undefined;
-  /** Accessible name for the scrolling strip itself, which is a keyboard tab stop. @default the root's `label`, else `LABEL_DEFAULTS.carouselStrip` */
+  /** Accessible name for the scrolling strip itself, which is a keyboard tab stop; defaults to the root's `label`, else `LABEL_DEFAULTS.carouselStrip`. */
   stripLabel?: string | undefined;
   children?: JSXNode | undefined;
 }
@@ -26,13 +26,13 @@ interface CarouselItemProps extends Omit<JSX.IntrinsicElements["div"], "children
 interface CarouselDotsProps extends Omit<JSX.IntrinsicElements["nav"], "children"> {
   /** The `id` of each item, in strip order — every dot is an anchor to one. */
   ids: readonly string[];
-  /** Names one dot from its one-based position. @default a position after `LABEL_DEFAULTS.carouselSlide` */
+  /** Names one dot from its one-based position; defaults to a position after `LABEL_DEFAULTS.carouselSlide`. */
   slideLabel?: ((position: number) => string) | undefined;
   /** Zero-based index of the item on show. */
   current?: number | undefined;
   size?: Size | undefined;
   label?: string | undefined;
-  /** Render the row as a landmark. Off by default: a dots row belongs to one carousel, not to the page. @default false */
+  /** Render the row as a landmark. Off by default: a dots row belongs to one carousel, not to the page. */
   landmark?: boolean | undefined;
 }
 

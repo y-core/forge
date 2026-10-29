@@ -149,6 +149,36 @@ test.describe("Tooltip — where popover=hint parses as manual", { tag: "@cross-
     await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
   });
 
+  test("Escape with the focus outside an open tip closes it and leaves the key's default to the page", async ({ page }) => {
+    await mountManual(page);
+    await page.evaluate(() => {
+      window.addEventListener("keydown", (event) => document.body.setAttribute("data-escape-prevented", String(event.defaultPrevented)));
+    });
+
+    await page.focus("#before");
+    await page.hover("#save");
+    await expect.poll(() => isOpen(page, "save-tip"), { timeout: 3000 }).toBe(true);
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
+    expect(await page.evaluate(() => document.body.getAttribute("data-escape-prevented"))).toBe("false");
+  });
+
+  test("Escape with the focus on the trigger is claimed by the tip", async ({ page }) => {
+    await mountManual(page);
+    await page.evaluate(() => {
+      window.addEventListener("keydown", (event) => document.body.setAttribute("data-escape-prevented", String(event.defaultPrevented)));
+    });
+
+    await page.focus("#before");
+    await page.keyboard.press("Tab");
+    await expect.poll(() => isOpen(page, "save-tip"), { timeout: 3000 }).toBe(true);
+    await page.keyboard.press("Escape");
+
+    await expect.poll(() => isOpen(page, "save-tip")).toBe(false);
+    expect(await page.evaluate(() => document.body.getAttribute("data-escape-prevented"))).toBe("true");
+  });
+
   test("Escape closes a tip inside a modal dialog and leaves the dialog open", async ({ page }) => {
     const html = (await render(tip("save"))).replaceAll('popover="hint"', 'popover="manual"');
     await mount(page, `<dialog id="dialog"><button id="before">b</button>${html}</dialog>`, EXPOSE);

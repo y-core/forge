@@ -20,7 +20,6 @@ function emitter(source: string, file: string): Emitter {
   return { file, lines: source.split("\n"), scanned: blankSourceComments(source), findings: [] };
 }
 
-/** The balanced argument list of every call whose head matches `pattern`; the pattern must end at the `(`. */
 function callRegions(source: string, pattern: RegExp): { start: number; body: string }[] {
   const out: { start: number; body: string }[] = [];
   for (const match of source.matchAll(pattern)) {
@@ -64,7 +63,6 @@ const DIALOG_ATTR = /(?<![\w-])(role)\s*=\s*["'](?:alert)?dialog["']|(?<![\w-])(
 
 const POPOVER_ATTR = /(?<![\w-])popover(?=[\s=])/;
 
-/** Whether the element enclosing `index` declares `popover`, and so already has the top layer the rule asks for. */
 function isPopoverElement(source: string, index: number): boolean {
   const open = source.lastIndexOf("<", index);
   if (open === -1) return false;
@@ -263,15 +261,29 @@ function findFieldSizingAdoption(out: Emitter): void {
   );
 }
 
+const CHECKABLE_BINDING = /(?<![\w$])([A-Za-z_$][\w$]*)\??\s*:\s*["'](?:checkbox|radio)["'](?:\s*\|\s*["'](?:checkbox|radio)["'])*(?!\s*\|)/g;
+const BOUND_TYPE = /type\s*=\s*\{\s*([A-Za-z_$][\w$]*)\s*\}/g;
+
 function findAccentColor(out: Emitter): void {
   if (/(?<![\w-])accent-/.test(out.scanned)) return;
   if (!/(?<![\w-])appearance-none(?![\w-])/.test(out.scanned)) return;
   scanLines(
     out,
     "forge-ui-platform-accent-color",
-    /type\s*=\s*["'](checkbox|radio)["']/g,
+    /type\s*=\s*\{?\s*["'`](checkbox|radio)["'`]/g,
     (hit) => `a hand-styled \`<input type="${hit}">\` — tint the native control with \`accent-color\``,
   );
+  const checkable = new Set([...out.scanned.matchAll(CHECKABLE_BINDING)].map((match) => match[1]));
+  for (const match of out.scanned.matchAll(BOUND_TYPE)) {
+    const name = match[1] ?? "";
+    if (!checkable.has(name) || enclosingTag(out.scanned, match.index) !== "input") continue;
+    emit(
+      out,
+      match.index,
+      "forge-ui-platform-accent-color",
+      `a hand-styled \`<input type={${name}}>\` — tint the native control with \`accent-color\``,
+    );
+  }
 }
 
 function findViewTransition(out: Emitter): void {
@@ -435,6 +447,64 @@ function findFixedHeightTransitions(out: Emitter): void {
   }
 }
 
+const OPEN_STATE = /:popover-open(?![\w-])|\[\s*open\s*(?:[~|^$*]?=[^\]]*)?\]/i;
+
+const SCOPED_STATE = /:(?:not|has)\(/g;
+
+const GEOMETRY =
+  /^(?:(?:min-|max-)?(?:width|height|inline-size|block-size)|inset(?:-.+)?|top|right|bottom|left|(?:margin|padding)(?:-.+)?|position|grid(?:-.+)?|translate|transform|scale|rotate)$/;
+
+function openStateOf(prelude: string): ":popover-open" | "[open]" | undefined {
+  let remainder = "";
+  let cursor = 0;
+  for (const match of prelude.matchAll(SCOPED_STATE)) {
+    if (match.index < cursor) continue;
+    const open = match.index + match[0].length - 1;
+    const close = balancedSpan(prelude, open);
+    remainder += prelude.slice(cursor, open);
+    cursor = close === -1 ? prelude.length : close + 1;
+  }
+  remainder += prelude.slice(cursor);
+  const state = OPEN_STATE.exec(remainder);
+  if (state === null) return undefined;
+  return state[0].startsWith(":") ? ":popover-open" : "[open]";
+}
+
+function transitionedProperties(scanned: string): Set<string> {
+  const tokens = new Set<string>();
+  for (const match of scanned.matchAll(/(?:^|[;{])\s*transition(?:-property)?\s*:([^;}]*)/g)) {
+    for (const token of (match[1] ?? "").matchAll(/(?<![\w-])[a-z][a-z-]*/g)) tokens.add(token[0]);
+  }
+  return tokens;
+}
+
+function findOpenStateGeometry(out: Emitter): void {
+  const transitioned = transitionedProperties(out.scanned);
+  const covered = (property: string): boolean =>
+    transitioned.has("all") || transitioned.has(property) || [...transitioned].some((token) => property.startsWith(`${token}-`));
+
+  for (const block of findCssBlocks(out.scanned)) {
+    const chain = [...block.ancestors, block.prelude];
+    if (chain.some((entry) => entry.startsWith("@starting-style"))) continue;
+    const state = chain
+      .filter((entry) => !entry.startsWith("@"))
+      .map(openStateOf)
+      .find((found) => found !== undefined);
+    if (state === undefined) continue;
+
+    for (const match of block.body.matchAll(/(?:^|;)\s*([a-z][a-z-]*)\s*:/g)) {
+      const property = match[1] ?? "";
+      if (!GEOMETRY.test(property) || covered(property)) continue;
+      emit(
+        out,
+        block.start + match.index + match[0].indexOf(property),
+        "forge-ui-platform-exit-geometry",
+        `\`${property}\` keyed on \`${state}\` collapses mid-exit, because the element stays painted through its exit fade after \`${state}\` stops matching — declare it on the base selector and key only \`opacity\`, \`overlay\` and \`display\` on the open state`,
+      );
+    }
+  }
+}
+
 const DERIVED_SUFFIX = /^(--[a-z0-9-]+)-(hover|active|light|dark|muted|subtle|soft|strong|emphasis|hint)$/;
 
 const COLOR_VALUE = /#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|oklch)\(/;
@@ -471,6 +541,7 @@ function findStyleViolations(source: string, file: string): ModernCssFinding[] {
   findScopeFamilies(out);
   findFixedHeightTransitions(out);
   findManualTintPairs(out);
+  findOpenStateGeometry(out);
   return out.findings;
 }
 

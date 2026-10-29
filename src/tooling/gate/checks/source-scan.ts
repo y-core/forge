@@ -130,7 +130,8 @@ function endOfQuoted(source: string, start: number): number {
   return -1;
 }
 
-function endOfRegex(source: string, start: number): number {
+/** Index just past the regex literal opening at `start`, or -1 when it never closes on its line. @internal */
+export function endOfRegex(source: string, start: number): number {
   let inClass = false;
   for (let i = start + 1; i < source.length; i++) {
     const char = source[i];
@@ -172,8 +173,8 @@ function scan(source: string, lineComments: boolean): CommentSpan[] {
 
   for (let i = 0; i < source.length; i++) {
     const char = source[i];
-    if (char === "'" || char === '"' || char === "`") {
-      const end = endOfQuoted(source, i);
+    if (char === "'" || char === '"' || (lineComments && char === "`")) {
+      const end = lineComments ? endOfQuoted(source, i) : endOfCssString(source, i);
       if (end !== -1) {
         i = end - 1;
         tail = "x";
@@ -234,6 +235,11 @@ export function findComments(source: string): CommentSpan[] {
   return scan(source, true);
 }
 
+/** Every block comment in a stylesheet, in source order, each with its 1-indexed opening line. @public */
+export function findStylesheetComments(source: string): CommentSpan[] {
+  return scan(source, false);
+}
+
 /** Replaces every block-comment body with spaces, so offsets and line numbers survive the blanking. @public */
 export function blankComments(source: string): string {
   return blank(source, false);
@@ -244,7 +250,8 @@ export function blankSourceComments(source: string): string {
   return blank(source, true);
 }
 
-function endOfString(source: string, start: number): number {
+/** Index just past the string literal opening at `start`, or -1 when it never closes. @internal */
+export function endOfString(source: string, start: number): number {
   const quote = source[start];
   for (let i = start + 1; i < source.length; i++) {
     const char = source[i];
@@ -258,6 +265,21 @@ function endOfString(source: string, start: number): number {
       if (close === -1) return -1;
       i = close;
     }
+  }
+  return -1;
+}
+
+/** Index just past the CSS string opening at `start`, the index of the unescaped newline that ends it as a bad string, or -1 at end of file. @internal */
+export function endOfCssString(source: string, start: number): number {
+  const quote = source[start];
+  for (let i = start + 1; i < source.length; i++) {
+    const char = source[i];
+    if (char === "\\") {
+      i++;
+      continue;
+    }
+    if (char === quote) return i + 1;
+    if (char === "\n") return i;
   }
   return -1;
 }

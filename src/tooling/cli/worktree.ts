@@ -61,7 +61,10 @@ function paths(out: string): string[] {
 /** Lists every file under `cwd` the work tree holds, tracked or untracked and never ignored, relative to `cwd`; `undefined` outside a work tree. */
 export function worktreeFiles(cwd: string): readonly string[] | undefined {
   const listing = git(cwd, ["ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
-  return listing.ok ? [...new Set(paths(listing.out))].sort() : undefined;
+  const deleted = git(cwd, ["ls-files", "-z", "--deleted"]);
+  if (!listing.ok || !deleted.ok) return undefined;
+  const absent = new Set(paths(deleted.out));
+  return [...new Set(paths(listing.out))].filter((path) => !absent.has(path)).sort();
 }
 
 /** Lists every path the working tree at `cwd` changes against `HEAD`, untracked files in and ignored ones out, relative to `cwd`. */

@@ -7,6 +7,7 @@ import type { FieldDescribedByOptions, FieldDescriptor } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 import { cva } from "./utils/cva";
+import { IDREF_SEPARATOR, mergeIdRefs } from "./utils/id-refs";
 
 interface FieldProps extends Omit<JSX.IntrinsicElements["fieldset"], "children" | "name"> {
   invalid?: boolean | undefined;
@@ -54,10 +55,6 @@ export const FIELD_LABEL_CLASSES = cn(
   "flex w-fit items-center gap-2 text-sm leading-snug font-medium text-foreground group-data-[disabled]/field:opacity-50",
 );
 
-// HTML's ASCII whitespace set, deliberately not JS `\s`: U+00A0 and the Unicode spaces are legal id
-// characters that no parser treats as a token separator.
-const ASCII_WS = /[\t\n\f\r ]/;
-
 const ASCII_WS_ONLY = /^[\t\n\f\r ]*$/;
 
 const FIELD_MESSAGE_SUFFIXES: ReadonlySet<string> = new Set(["description", "error"]);
@@ -73,7 +70,7 @@ export function blankMessage(node: unknown): boolean {
 }
 
 function idToken(value: string): boolean {
-  return value !== "" && !ASCII_WS.test(value);
+  return value !== "" && !IDREF_SEPARATOR.test(value);
 }
 
 /** Whether an id can be derived from this naming — every part must be a single id token. @internal */
@@ -104,12 +101,6 @@ export function fieldErrorId(name: string, scope?: string): string {
 /** The id of one item in a checkable group, `undefined` when either half cannot be derived. @internal */
 export function fieldItemId(name: string, value: string, scope?: string): string | undefined {
   return derivable(name, scope) && derivable(value) && !FIELD_MESSAGE_SUFFIXES.has(value) ? `${fieldId(name, scope)}-${value}` : undefined;
-}
-
-/** One IDREF list, the existing ids first and each id once, `undefined` when none remain. @internal */
-export function mergeIdRefs(existing: string | undefined, added: readonly (string | undefined)[]): string | undefined {
-  const ids = new Set([existing, ...added].flatMap((part) => (part === undefined ? [] : part.split(ASCII_WS))).filter((id) => id !== ""));
-  return ids.size > 0 ? [...ids].join(" ") : undefined;
 }
 
 /** The box a checkable group's item draws, per size — the same square in both groups. @internal */

@@ -20,6 +20,7 @@ import { NumberField } from "../../core/number-field";
 import { Popover } from "../../core/popover";
 import { RadioGroup } from "../../core/radio-group";
 import { Toggle } from "../../core/toggle";
+import { ToggleGroup } from "../../core/toggle-group";
 import { Toolbar } from "../../core/toolbar";
 
 const SHAPES = { default: "", compact: readFileSync(fileURLToPath(new URL("./shape-compact.css", import.meta.url)), "utf-8") } as const;
@@ -40,6 +41,8 @@ const BORDERED: Record<string, string> = {
   "checkbox-group-input": "[data-slot~='checkbox-group-input']",
   "radio-group-input": "[data-slot~='radio-group-input']",
   input: "[data-slot~='input']",
+  "toggle-group-item-horizontal": "#bordered-toggle-row > [data-slot~='toggle-group-item']:first-child",
+  "toggle-group-item-vertical": "#bordered-toggle-column > [data-slot~='toggle-group-item']:first-child",
 };
 
 const borderedSurfaces = (): JSXNode => [
@@ -66,6 +69,23 @@ const borderedSurfaces = (): JSXNode => [
   CheckboxGroup({ name: "cg", children: CheckboxGroup.Item({ name: "cg", value: "a", children: "Olives" }) }),
   RadioGroup({ name: "rg", children: RadioGroup.Item({ name: "rg", value: "s", children: "Small" }) }),
   Input({ "aria-label": "Name" }),
+  ToggleGroup({
+    id: "bordered-toggle-row",
+    label: "Alignment",
+    children: [
+      ToggleGroup.Item({ name: "tg-row", value: "start", children: "Start" }),
+      ToggleGroup.Item({ name: "tg-row", value: "end", children: "End" }),
+    ],
+  }),
+  ToggleGroup({
+    id: "bordered-toggle-column",
+    label: "View",
+    orientation: "vertical",
+    children: [
+      ToggleGroup.Item({ name: "tg-col", value: "list", children: "List" }),
+      ToggleGroup.Item({ name: "tg-col", value: "grid", children: "Grid" }),
+    ],
+  }),
 ];
 
 async function mountMarkup(page: Page, markup: JSXNode, css: string): Promise<void> {

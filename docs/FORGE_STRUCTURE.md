@@ -34,6 +34,8 @@ audience: internal
 - §8b What Enforces It: the plugin rules, and why neither ships with the toolchain
 - §9 A Test-Only Module Is Named `*.fixture.ts`: the one spelling that keeps it out of the tarball
 - §9a What Enforces It: the packaging gate, and the checks that read the same suffix
+- §10 Stylesheets Take the Source Comment Forms: forge's `.css` is judged as its TypeScript is, and a stylesheet comment's one prose form
+- §10a What Enforces It: the budget step's stylesheet lexer, the banner check, and the test that keeps `.css` scanned
 
 ---
 
@@ -258,9 +260,38 @@ and the boundary checks do not scan one, so a fixture may reach `src/testing`, a
 may not. The CSS source scan skips one, so a class string written to exercise the parser is not read as a declaration the stylesheet must cover; and
 the JSX pragma check skips one, because the pragma pair exists for a file compiling under a _consumer's_ tsconfig and a fixture reaches none.
 
+---
+
+## 10. Stylesheets Take the Source Comment Forms
+
+**Forge holds its own `.css` to the forms of [`CODE_RULES.md`][cr-5a] §5a.** The canon writes that comment budget for TypeScript; this is
+forge's local extension of it to stylesheets.
+
+**A stylesheet has one prose form: at most two lines carrying a form-3 why** — a browser or spec quirk a reader would otherwise "fix", in a
+block comment. A stylesheet exports no symbol, so it has no TSDoc form, and a header at the top of the file is held to the same two lines.
+
+**A directive is tooling input, and no form limits it.** That is a comment shaped `/* <marker>: <rule> — <reason> */`, such as a
+`modern-css-allow:` waiver, and its reason must read on its own ([`CODE_RULES.md`][cr-5a] §5a).
+
+**Everything [`CODE_RULES.md`][cr-5b] §5b forbids is forbidden here too** — banners, a file index, history, counts, commented-out rules, and usage
+that belongs in a README.
+
+### 10a. What Enforces It
+
+**`validate-comment-budget` walks `.css` beside `.ts` and `.tsx`.** `isBudgetedSource` decides which files it reads, and `config/steps.test.ts`
+checks every tracked file the step's sources cover against that function, so a stylesheet left unscanned fails a test.
+
+**The stylesheet lexer reads block comments only.** CSS has no line comment, so the `//` in `url(//…)` is data and never a finding.
+
+**A `/**` in a stylesheet earns nothing extra.** It is an ordinary block comment held to two lines, because there is no symbol for it to document.
+
+**A block comment that opens on a rule — a run of separator or box-drawing characters — is a banner**, and the step fails it whatever its length.
+
 [bt-1]: ./BUILD_TOOLING.md#1-toolingcli-namespace
 [bt-2j]: ./BUILD_TOOLING.md#2j-trunk-only-development-and-the-amend-floor
 [cr]: ../warden/canon/shared/CODE_RULES.md
+[cr-5a]: ../warden/canon/shared/CODE_RULES.md#5a-the-entire-permitted-budget
+[cr-5b]: ../warden/canon/shared/CODE_RULES.md#5b-forbidden-outright
 [fc-4c]: ../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
 [la-1]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1-core-architectural-principles
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability

@@ -379,9 +379,15 @@ the same name under one `@internal` `Relax*` type from the namespace's `types.ts
 relaxations; this section names none it would have to keep in step.
 
 **The condition selects the module, and the `__FORGE_DEV__` define arms it.** A dev module answers relaxed only in a build that defines
-`__FORGE_DEV__` as `true`; `src/context/armed.dev.ts` holds that check once, and each dev module routes its behaviour through `whenArmed` with the
-strict stub's export as the other branch, so the strict answer has one home. A bundle built under `forge-dev` without the define is still strict.
-`forge cf dev` sets both, in wrangler's child process only ([`src/tooling/cf/README.md`][cf-readme]).
+`__FORGE_DEV__` as `true`. `./relax` is that check's one home, and each dev module, forge's or an app's, routes its behaviour through `whenArmed`
+with the strict export as the other branch, so the strict answer has one home too. A bundle built under `forge-dev` without the define is still
+strict. `forge cf dev` sets both, in wrangler's child process only ([`src/tooling/cf/README.md`][cf-readme]).
+
+**The arming check is published on a subpath only a development build resolves.** `./relax` maps `types`, `forge-dev` and `bun`, and no
+`default`, so a Worker bundled without `forge-dev` fails to resolve it rather than shipping an arming check. Bun resolves it because an app's tests
+run there, and nothing defines `__FORGE_DEV__` in a test run, so it answers strict. A strict twin under `default` is refused: it would let a
+production module import the helper and deploy the relaxed function beside it. `forge.devOnly` lists `./relax`, so rule C below holds an app's
+import of it.
 
 **A hook keeps its public signature and takes no relaxation.** The relaxation enters through an `@internal` function that takes it as its last
 parameter, and it is bound where the `#relax` import is read: either the hook passes it in, as `rateLimit` does to `limitRequests`, or the function
@@ -398,9 +404,11 @@ still `validate-dev-bundle`'s to prove: on the `deploy` tier it bundles the depl
 directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every
 dev module.
 
-**An app's own dev-only code takes the same shape.** A route, a banner or a CSP source only development should see goes behind the app's own
-`imports` alias, and a fake binding is still `testing`'s rather than a relaxation's. The recipe is
-[`src/tooling/cf/README.md`][cf-readme-own].
+**An app has one relaxation alias, `#app/relax`, and a new relaxation is an export on its pair.** The app's `imports` map sends `forge-dev` to
+`./src/app/relax.dev.ts` and `default` to `./src/app/relax.strict.ts`. A route, a banner or a CSP source only development should see is one more
+export on that pair, never a new alias or a new pair. What a development build loosens is then auditable in one file pair, as forge's own `imports`
+map is the list of its relaxations. A fake binding is still `testing`'s rather than a relaxation's. The recipe is
+[`src/relax/README.md`][relax-readme].
 
 **Where a relaxation is legitimate in production, it stays an explicit literal.** `csrfProtection({ subject: false })` is the idiom — a grep finds
 every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). A `#relax` module is for the ones that are not legitimate, and the difference
@@ -535,7 +543,6 @@ second repository needs it.
 [bt-2i]: ./BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ./BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
 [cf-readme]: ../src/tooling/cf/README.md#running-the-app-locally
-[cf-readme-own]: ../src/tooling/cf/README.md#keeping-your-own-dev-only-code-out-of-the-deploy
 [cr]: ../warden/canon/shared/CODE_RULES.md
 [cr-7]: ../warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
 [dm]: ./DATABASE_MANAGEMENT.md
@@ -551,6 +558,7 @@ second repository needs it.
 [nd-5]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5-when-to-add-a-new-namespace
 [nd-5a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5a-criteria-for-a-new-namespace
 [ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
+[relax-readme]: ../src/relax/README.md
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2b]: ./SOURCE_OF_TRUTH.md#2b-enforced-rules
 [testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel

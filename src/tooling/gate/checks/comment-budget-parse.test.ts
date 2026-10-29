@@ -7,6 +7,8 @@ import type { CommentSpan } from "./types";
 const messages = (source: string, licensed = false): string[] =>
   validateCommentBudget("src/a.ts", source, licensed).map((finding) => finding.message);
 
+const messagesIn = (file: string, source: string): string[] => validateCommentBudget(file, source).map((finding) => finding.message);
+
 const lines = (source: string): (number | undefined)[] => validateCommentBudget("src/a.ts", source).map((finding) => finding.line);
 
 const only = (source: string): CommentSpan => findComments(source)[0] as CommentSpan;
@@ -31,8 +33,7 @@ describe("findComments() — the lexer, not a regex", () => {
     expect(findComments("// don't\nconst a = 1;\n").map((span) => span.text)).toEqual(["// don't"]);
   });
 
-  // Adversarial fixture: the regex holds three backticks, so a lexer that does not read a regex
-  // literal opens a template on the odd one and swallows every comment until the next backtick.
+  // The regex holds three backticks, so a lexer blind to regex literals opens a template on the odd one.
   it("opens no template literal on a backtick inside a regex", () => {
     const source = "const B = /`([^`]+)`/g;\n/** One.\n *  Two. */\nexport const a = 1;\n";
 
@@ -131,26 +132,46 @@ describe("validateCommentBudget() — §5a form 1, one line of TSDoc", () => {
   });
 });
 
-describe("validateCommentBudget() — §5a form 2, the visibility tags alone", () => {
+describe("validateCommentBudget() — §5a form 2, the allow-listed tags", () => {
   it("passes `@public` and `@internal`", () => {
     expect(messages("/** One. @public */\n/** Two. @internal */\n")).toEqual([]);
   });
 
   it("fails `@example`, whose usage belongs in the unit's README", () => {
     expect(messages("/** Builds a config. @example `buildConfig()` @public */\n")).toEqual([
-      "`@example` — §5a permits `@public` and `@internal` alone",
+      "`@example` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
     ]);
   });
 
   it("fails `@param` and `@defaultValue`, which restate the signature", () => {
     expect(messages("/** One. @param one - the first @public */\n/** Two. @defaultValue `0` */\n")).toEqual([
-      "`@param` — §5a permits `@public` and `@internal` alone",
-      "`@defaultValue` — §5a permits `@public` and `@internal` alone",
+      "`@param` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+      "`@defaultValue` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
     ]);
   });
 
   it("passes the inline `{@link}` cross-reference, which costs the reader no line", () => {
     expect(messages("/** A {@link ZoneConfig} whose `apex` is filled in. @public */\n")).toEqual([]);
+  });
+
+  it("fails `@default`, which no allow-list entry names", () => {
+    expect(messages("/** Two. @default 0 */\n")).toEqual([
+      "`@default` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+    ]);
+  });
+
+  it("fails a tag nobody has heard of, so the list permits rather than forbids", () => {
+    expect(messages("/** Two. @remarkable */\n")).toEqual([
+      "`@remarkable` — §5a permits only `@public`, `@internal`, `@jsxImportSource`, `@jsxRuntime` and an inline `{@link}`",
+    ]);
+  });
+
+  it("passes the JSX pragmas, which are compiler input rather than tags", () => {
+    expect(messages("/** @jsxRuntime automatic */\n/** @jsxImportSource @y-core/forge/render/jsx */\n")).toEqual([]);
+  });
+
+  it("passes an at-rule named inside a code span, which is prose about CSS rather than a tag", () => {
+    expect(messages("/** Reads `@source` and `@theme` out of the stylesheet. @public */\n")).toEqual([]);
   });
 
   it("passes a package scope, which is not a tag", () => {
@@ -222,6 +243,41 @@ describe("validateCommentBudget() — §5b, forbidden outright", () => {
       "`TODO`/`FIXME`/`XXX` in a comment — open a ledger task",
       "`TODO`/`FIXME`/`XXX` in a comment — open a ledger task",
     ]);
+  });
+});
+
+describe("validateCommentBudget() — a section banner in a block comment", () => {
+  it("fails a box-drawing rule opening a stylesheet comment", () => {
+    expect(messagesIn("src/a.css", "/* ── danger ──── */\n")).toEqual(["section banner — file structure is what files and exports are for"]);
+  });
+
+  it("fails an equals rule opening a TypeScript block comment", () => {
+    expect(messagesIn("src/a.ts", "/* ==== Types ==== */\n")).toEqual(["section banner — file structure is what files and exports are for"]);
+  });
+});
+
+describe("validateCommentBudget() — a stylesheet", () => {
+  it("reads no comment out of a `url(//…)`, so a TODO in the path is data", () => {
+    expect(messagesIn("src/a.css", "a { background: url(https://a.test/TODO.png); }\n")).toEqual([]);
+  });
+
+  it("holds a `/**` block to the inline-why cap, since a stylesheet exports nothing to document", () => {
+    expect(messagesIn("src/a.css", "/** One.\n   Two. */\n")).toEqual([]);
+    expect(messagesIn("src/a.css", "/** One.\n   Two.\n   Three. */\n")).toEqual(["inline why spans 3 lines — §5a form 3 caps one at two"]);
+  });
+
+  it("passes a `modern-css-allow:` directive", () => {
+    expect(
+      messagesIn("src/a.css", "/* modern-css-allow: forge-ui-platform-isolation — behind an ancestor on purpose */\n.a { isolation: isolate; }\n"),
+    ).toEqual([]);
+  });
+
+  it("passes a two-line block", () => {
+    expect(messagesIn("src/a.css", "/* yellow-500 inverts its foreground,\n   because white on it fails contrast. */\n")).toEqual([]);
+  });
+
+  it("reads no tag out of an at-rule a stylesheet comment names", () => {
+    expect(messagesIn("src/a.css", "/* Sits outside @layer on purpose. */\n")).toEqual([]);
   });
 });
 
@@ -297,6 +353,22 @@ describe("validateCommentBudget() — an inventory count", () => {
 
   it("passes a count the comment immediately enumerates", () => {
     expect(messages("// the four states — populated, empty, loading and failed\nconst a = 1;\n")).toEqual([]);
+  });
+
+  it("fails a count with modifier words between it and its noun", () => {
+    expect(messages("// The four shipped schemes, in order.\nconst a = 1;\n")).toEqual([
+      "inventory count `The four shipped schemes` — a comment records that a thing exists, not how many",
+    ]);
+  });
+
+  it("fails a count followed by a clause, which is not the items", () => {
+    expect(messages("// the four stores, so no method can lie\nconst a = 1;\n")).toEqual([
+      "inventory count `the four stores` — a comment records that a thing exists, not how many",
+    ]);
+  });
+
+  it("passes a modified count the comment immediately enumerates", () => {
+    expect(messages("// the four shipped schemes — light, dark, dim and contrast\nconst a = 1;\n")).toEqual([]);
   });
 
   it("judges a block comment by the same rule", () => {

@@ -224,7 +224,7 @@ unless the region is the page's primary content, where the document scroll is th
 import { ScrollArea } from "@y-core/forge/ui/core";
 
 <ScrollArea class='h-72'>
-  <ScrollArea.Viewport class='pr-3'>{rows}</ScrollArea.Viewport>
+  <ScrollArea.Viewport label='Rows' class='pr-3'>{rows}</ScrollArea.Viewport>
 </ScrollArea>;
 ```
 

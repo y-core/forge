@@ -5,7 +5,7 @@ import type { SchemaModel, SchemaSnapshot } from "./types";
 /** Bumped when the snapshot's fields change, so one written under another shape is recomposed rather than misread. @internal */
 export const SCHEMA_SNAPSHOT_VERSION = 6;
 
-/** True when parsed JSON carries the four object lists a schema model is, which a half-written scratch cache may not. @internal */
+/** True when parsed JSON carries the object lists a schema model is made of, which a half-written scratch cache may not. @internal */
 export function isSchemaModel(value: unknown): value is SchemaModel {
   if (typeof value !== "object" || value === null) return false;
   const model = value as Partial<Record<keyof SchemaModel, unknown>>;

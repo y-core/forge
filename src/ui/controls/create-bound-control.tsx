@@ -16,7 +16,7 @@ export function createBoundControl<P, S extends object, O extends object = Recor
   Core: Compound<P, S>,
   overrides: O = {} as O,
 ): FC<P & { bind: string }> & Omit<S, keyof O> & O {
-  const Bound: FC<P & { bind: string }> = ({ bind, ...props }) => <Core {...(props as P)} {...fieldAttr(bind)} />;
+  const Bound: FC<P & { bind: string }> = ({ bind, ...props }) => <Core {...(props as unknown as P)} {...fieldAttr(bind)} />;
   return carry(Bound, Core, overrides);
 }
 
@@ -31,4 +31,13 @@ export function createBoundCompound<P, S extends object, O extends object = Reco
     if (typeof override === "function" && typeof part === "function") aliasPart(override as ComponentFn, part as ComponentFn);
   }
   return carry(Root, Core, overrides);
+}
+
+/** Wraps a compound's `Item` so `bind` names its field, defaults its `name`, and stamps `data-value`. @internal */
+export function createBoundItem<P extends { name: string; value: string }>(
+  Item: FC<P>,
+): FC<Omit<P, "name"> & { bind: string; name?: string | undefined }> {
+  return ({ bind, value, name, ...props }) => (
+    <Item {...(props as unknown as P)} name={name ?? bind} value={value} {...fieldAttr(bind)} data-value={value} />
+  );
 }

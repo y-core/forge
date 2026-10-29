@@ -132,7 +132,6 @@ describe("definitionList()", () => {
         ],
         { indent: 2, gap: 1 },
       ),
-      // The four hard-coded paddings this replaces were `"  previous:  "` and `"  changelog: "`.
     ).toEqual(["  previous:  (none)", "  next:      1.0.0", "  changelog: skipped"]);
   });
 
@@ -160,8 +159,6 @@ describe("renderGrid() shrinking", () => {
     });
 
   it("takes width off the widest column rather than draining the wrapping one", () => {
-    // Draining it first is what produces a column of single letters: correct arithmetic, unreadable
-    // output. The two columns end up comparable instead.
     const lines = narrow(40);
     expect(lines[0]).toBe("binding-name-here  a detail sentence");
   });
@@ -172,7 +169,6 @@ describe("renderGrid() shrinking", () => {
   });
 
   it("overflows rather than shrink every column past its floor", () => {
-    // Honest, and legible. The alternative is a grid whose every cell is one character wide.
     expect(narrow(6)[0]?.length).toBeGreaterThan(6);
   });
 

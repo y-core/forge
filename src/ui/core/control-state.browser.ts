@@ -119,7 +119,7 @@ test.describe("Toast auto-dismiss", () => {
   });
 });
 
-test.describe("Dialog modality", () => {
+test.describe("Dialog modality", { tag: "@cross-engine" }, () => {
   test("openModal yields a real modal, matching what the trigger opens", async ({ page }) => {
     await mount(page, await render(Dialog({ id: "d", label: "Body", openModal: true, children: "Body" })), EXPOSE);
     await start(page);

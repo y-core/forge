@@ -73,12 +73,24 @@ export interface DisableDirective {
   node: unknown;
 }
 
+/** A binding a scope declares, as oxlint's scope manager models it. */
+export interface ScopeVariable {
+  defs: readonly { node: AstNode }[];
+}
+
+/** One lexical scope of the file under lint. */
+export interface RuleScope {
+  upper: RuleScope | null;
+  set: ReadonlyMap<string, ScopeVariable>;
+}
+
 /** What a rule is handed for the file under lint. */
 export interface RuleContext {
   report: (diagnostic: { message: string; node?: unknown; loc?: SourceLocation }) => void;
   sourceCode: {
     getDisableDirectives: () => { directives: readonly DisableDirective[] };
     getAllComments?: () => readonly { type: string; value: string; loc: SourceLocation }[];
+    getScope?: (node: AstNode) => RuleScope;
   };
 }
 
@@ -122,12 +134,13 @@ export type RuleId =
   | "forge-ui-a11y-one-live-region"
   | "forge-ui-a11y-aria-beside-data"
   | "forge-ui-a11y-heading-size-by-class"
+  | "forge-ui-a11y-state-attrs-source"
   | "forge-ui-reduced-motion"
   | "forge-ui-focus-ring"
   | "forge-ui-optional-prop-undefined";
 
 /** Which mechanism enforces a rule. @public */
-export type RuleEnforcer = "gate" | "lint" | "contrast" | "browser";
+export type RuleEnforcer = "gate" | "lint" | "contrast" | "faded-text" | "browser";
 
 /** A JSX opening element and the attributes it carries, in source order. */
 export interface JsxOpeningElementNode extends AstNode {
@@ -149,6 +162,7 @@ export type ModernCssRuleId =
   | "forge-ui-platform-native-popover"
   | "forge-ui-platform-native-details"
   | "forge-ui-platform-entry-motion"
+  | "forge-ui-platform-exit-geometry"
   | "forge-ui-platform-parent-state"
   | "forge-ui-platform-inert"
   | "forge-ui-platform-theme-detection"
@@ -178,8 +192,6 @@ export type ModernCssRuleId =
   | "forge-ui-platform-display-contents"
   | "forge-ui-platform-color-mix";
 
-// `UI_DESIGN_GUIDANCE.md` §3b makes a rule id permanent and corpus-unique, so a pattern the corpus
-// already names is reported under the id it already has rather than under a second one here.
 /** Rule ids the design corpus owns, which this check reports under rather than minting again. @public */
 export type ModernCssCitedRuleId = Extract<RuleId, "forge-ui-interaction-focus-visible">;
 

@@ -91,6 +91,14 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
     verify: "the starting style applies on the first style change after insertion, so an element already in the DOM never enters",
     enforcer: "lint",
   },
+  "forge-ui-platform-exit-geometry": {
+    tier: "B",
+    severity: "warn",
+    corpus: CORPUS,
+    replacement: "geometry on the base selector, with only opacity, overlay and display keyed on the open state",
+    verify:
+      "a declaration moved to the base selector applies while closed too, so a closed state that must differ — a drawer docked off-screen — keys that difference on :not([open])",
+  },
   "forge-ui-platform-parent-state": {
     tier: "B",
     severity: "warn",

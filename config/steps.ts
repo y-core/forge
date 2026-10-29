@@ -14,12 +14,14 @@ import {
   coLocationStep,
   commentBudgetStep,
   contrastStep,
+  crossEngineTagsStep,
   cssSourcesStep,
   cssTokensStep,
   dbSteps,
   designScaleStep,
   devBoundaryStep,
   exportsStep,
+  fadedTextStep,
   formatStep,
   iccProfileStep,
   importBoundaryStep,
@@ -56,7 +58,7 @@ import {
 } from "./exemptions";
 import MARKDOWN from "./markdown";
 import { EDGES, LEAF, PRIMITIVES } from "./namespaces";
-import { browserSpecReach, workerdSpecReach } from "./spec-reach";
+import { workerdSpecReach } from "./spec-reach";
 
 // Derived from this file's location, never `process.cwd()`: the paths must resolve the same whichever directory the gate ran from.
 /** Repository root. */
@@ -111,6 +113,7 @@ export const STEPS: readonly Step[] = [
   namespaceGraphStep({ root: ROOT, exports: EXPORTS, graph: GRAPH, sealedInternal: SEALED_INTERNAL, enumerationDoc: "docs/NAMESPACES.md" }),
   jsxStep({ root: ROOT }),
   menuNamingStep({ root: ROOT }),
+  crossEngineTagsStep({ root: ROOT }),
   coLocationStep({ root: ROOT, sources: ["src", "warden"], exempt: CO_LOCATION_EXEMPT }),
   commentBudgetStep({ root: ROOT, sources: COMMENT_BUDGET_SOURCES, licences: LICENCE_HEADERS }),
   packagingStep({
@@ -137,7 +140,7 @@ export const STEPS: readonly Step[] = [
     sources: ["src"],
     crossings: TOOLING_CROSSINGS,
   }),
-  devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/testing"] }),
+  devBoundaryStep({ root: ROOT, sources: ["src"], workerConfig: null, devOnlyDirs: ["src/relax", "src/testing"] }),
   stubGlobalsStep({
     root: ROOT,
     stubs: [".types"],
@@ -178,7 +181,16 @@ export const STEPS: readonly Step[] = [
     unboundSubpaths: ["./render/jsx/jsx-runtime", "./render/jsx/jsx-dev-runtime"],
   }),
   changelogStep({ root: ROOT, packageVersion: pkg.version }),
-  designStep({ root: ROOT, packageName: pkg.name, exports: EXPORTS, designDir: "src/ui/design", cssDir: CSS_DIR, oxlintConfig: ".oxlintrc.json" }),
+  designStep({
+    root: ROOT,
+    packageName: pkg.name,
+    exports: EXPORTS,
+    designDir: "src/ui/design",
+    cssDir: CSS_DIR,
+    oxlintConfig: ".oxlintrc.json",
+    fencedDocs: ["src/ui/README.md"],
+    tsconfig: "tests/fixtures/workers-consumer/tsconfig.json",
+  }),
   modernCssStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED] }),
   classOrderStep({ root: ROOT, sources: ["src", ...CN_FIXTURE_SPECS] }),
   classTokensStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED], stylesheet: STYLESHEET }),
@@ -201,6 +213,7 @@ export const STEPS: readonly Step[] = [
     },
     { watches: [`${CSS_DIR}/**`, "src/ui/contracts/theme/**"] },
   ),
+  fadedTextStep({ root: ROOT, sources: ["src/ui", DESIGN_CORPUS_EXCLUDED], pairs: CONTRAST_PAIRS }),
   cssSourcesStep({
     root: ROOT,
     uiDir: "src/ui",
@@ -220,11 +233,7 @@ export const STEPS: readonly Step[] = [
   wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { watches: CORPUS_WATCHES }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
-  ...browserSteps({
-    engines: ["chromium", "firefox", "webkit"],
-    narrow: { wide: [`${CSS_DIR}/**`, "tests/fixtures/**"] },
-    widen: browserSpecReach,
-  }),
+  ...browserSteps({ engines: ["chromium", "firefox", "webkit"] }),
   workerdStep({ leavesNoTemp: true, narrow: { wide: ["tests/fixtures/**"] }, widen: workerdSpecReach }),
   ...dbSteps({
     root: "tests/fixtures/db-schema",

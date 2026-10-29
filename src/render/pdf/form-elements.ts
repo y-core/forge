@@ -84,7 +84,7 @@ function section(of: PdfElement): PdfElement {
   return { ...of, startsSection: true };
 }
 
-/** The twelve uniform tracks a printed row divides its measure into. @internal */
+/** The uniform tracks a printed row divides its measure into. @internal */
 export function gridTracks(width: number): number[] {
   return resolveTracks(
     Array.from({ length: ROW_COLUMNS }, () => 1),
@@ -93,9 +93,7 @@ export function gridTracks(width: number): number[] {
   );
 }
 
-// Every mark is an outline: a fill would print as a solid block wherever the reader has to write.
 function drawMark(cursor: PdfCursor, x: number, y: number, mark: PdfMark): void {
-  // The box's state is the answer, and it is drawn rather than set — so a reader is told it.
   const drawn = (): void => {
     const bottom = y + MARK_DROP;
     cursor.roundedRect(x, bottom - MARK_SIZE, MARK_SIZE, MARK_RADIUS, MARK_WEIGHT);
@@ -224,8 +222,6 @@ export function optionsElement(label: string, options: readonly PdfTick[]): PdfE
   return element(runs, (box, set) => {
     const right = box.x + box.width;
     const total = options.reduce((width, option) => width + optionWidth(option, set) + OPTION_GUTTER, -OPTION_GUTTER);
-    // Set flush right, the last box ends where every rule on the page ends; anything else starts
-    // where a value starts, which is where the eye already is.
     const flush = total <= WIDE_OPTIONS_WIDTH && set.wrap(label, LABEL_SIZE, LABEL_WIDTH, BOLD_RUN).length > 1;
     const valueColumn = box.x + LABEL_WIDTH + LABEL_GAP;
     const valueX = flush ? right - total : valueColumn;
@@ -285,7 +281,7 @@ export function optionsElement(label: string, options: readonly PdfTick[]): PdfE
   });
 }
 
-/** A list of tick lines, set two to a row, each row breaking whole. @internal */
+/** A list of tick lines set in rows, each row breaking whole. @internal */
 export function ticksElement(items: readonly PdfTick[]): PdfElement {
   return element(
     items.map((item) => ({ text: item.label, size: VALUE_SIZE })),
@@ -294,8 +290,6 @@ export function ticksElement(items: readonly PdfTick[]): PdfElement {
       const width = span - COLUMN_GUTTER - MARK_SIZE - TICK_GAP;
       const laid = items.map((item) => ({ mark: item.mark, lines: set.wrap(item.label, VALUE_SIZE, width) }));
       const fragments: PdfFragment[] = [];
-      // Two items to a row is a layout fact with no structural meaning, so the row never becomes an
-      // element: the list is one `/L` across every fragment, and each item is a sibling `/LI`.
       const list: PdfScopeFrame = { kind: "list" };
       for (let index = 0; index < laid.length; index += TICK_COLUMNS) {
         const row = laid.slice(index, index + TICK_COLUMNS);
@@ -337,8 +331,6 @@ export function columnsElement(cells: readonly PdfCell[]): PdfElement {
     if (cells.length === 0) return [];
     const span = box.width / cells.length;
     const laid = cells.map((cell, column) => {
-      // The last cell runs to the margin: a gutter subtracted from every cell ends the right-hand
-      // rule short of the edge the rest of the page is set to.
       const width = column === cells.length - 1 ? box.x + box.width - (box.x + span * column) : span - SIGNATURE_GUTTER;
       return {
         width,
@@ -398,8 +390,6 @@ function placements(fields: readonly PdfField[]): Placement[] {
   });
 }
 
-// A column sized for the document's longest label leaves a run of white after a short one, which
-// reads as a missing answer, so the label takes what it measures and no more.
 function labelColumn(label: string, width: number, set: PdfTypesetting): number {
   return Math.min(LABEL_WIDTH, set.width(label, LABEL_SIZE, BOLD_RUN), width - LABEL_GAP - MIN_VALUE_WIDTH);
 }

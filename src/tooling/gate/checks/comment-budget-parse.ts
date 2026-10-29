@@ -1,54 +1,11 @@
 import { fail } from "../finding";
 import type { Finding } from "../types";
-import { findComments } from "./source-scan";
+import { findComments, findStylesheetComments } from "./source-scan";
 import type { CommentSpan } from "./types";
 
-/** The two visibility markers §5a permits; every other JSDoc tag is prose the budget does not cover. */
-const REJECTED_TAGS = new Set([
-  "alpha",
-  "async",
-  "augments",
-  "beta",
-  "class",
-  "constructor",
-  "decorator",
-  "defaultValue",
-  "deprecated",
-  "eventProperty",
-  "example",
-  "experimental",
-  "exports",
-  "file",
-  "fileoverview",
-  "function",
-  "inheritDoc",
-  "label",
-  "link",
-  "member",
-  "module",
-  "namespace",
-  "override",
-  "packageDocumentation",
-  "param",
-  "private",
-  "privateRemarks",
-  "property",
-  "protected",
-  "readonly",
-  "remarks",
-  "returns",
-  "sealed",
-  "see",
-  "since",
-  "template",
-  "throws",
-  "todo",
-  "type",
-  "typedef",
-  "typeParam",
-  "virtual",
-  "yields",
-]);
+const PERMITTED_TAGS = new Set(["public", "internal", "jsxImportSource", "jsxRuntime"]);
+
+const PERMITTED_FORMS = `${[...PERMITTED_TAGS].map((tag) => `\`@${tag}\``).join(", ")} and an inline \`{@link}\``;
 
 const TAG = /(?<![\w/])@([A-Za-z]+)/g;
 
@@ -63,10 +20,11 @@ const SUPPRESSION = /^\/\*\s*[a-z][a-z0-9-]*:\s*\S+\s+—\s+\S/;
 /** A TypeScript triple-slash directive — compiler input in comment syntax. */
 const TRIPLE_SLASH = /^\/\/\/\s*<(?:reference|amd-module|amd-dependency)\b/;
 
-/** A definite count of what exists, which goes stale the moment the population changes. */
-const TALLY = /\bthe\s+(?:both|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+([A-Za-z][A-Za-z-]{2,}s)\b/i;
+/** A definite count of what exists. */
+const TALLY =
+  /\bthe\s+(?:both|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,2}?([A-Za-z][A-Za-z-]{2,}s)\b/i;
 
-/** Words ending in `s` that are never a plural noun, so the count is not counting them. */
+/** Words ending in `s` that are never a plural noun. */
 const NOT_A_PLURAL = new Set([
   "always",
   "perhaps",
@@ -85,14 +43,14 @@ const NOT_A_PLURAL = new Set([
   "whereas",
 ]);
 
-/** A spec citation or a unit, either of which makes the number the fact rather than a tally of what exists. */
+/** A spec citation or a unit, which makes the number the fact rather than a tally. */
 const LOAD_BEARING_NUMBER = /\b(?:RFC|NIST|L3|WebAuthn|bytes|bits|ms|rem|digits|characters|columns)\b|§|\b\d+-bit\b/;
 
-/** The items themselves, following the count — drift a reader catches on the same line. */
-const ENUMERATION = /^\s*(?:[—:(]|-\s|,)/;
+/** The items themselves, following the count. */
+const ENUMERATION = /^\s*(?:[—:(]|-\s)/;
 
 /** A rule of dashes, equals signs, box-drawing or asterisks, with or without a title inside it. */
-const BANNER = /^\/\/\s*(?:[-=*#~_+]{3,}|[─-╿]{2,})/;
+const BANNER = /^(?:\/\/|\/\*+)\s*(?:[-=*#~_+]{3,}|[─-╿]{2,})/;
 
 /** A statement, not a sentence: a binding, a module edge, a declaration, or a lone closer. */
 const COMMENTED_OUT = [
@@ -113,7 +71,7 @@ function body(span: CommentSpan): string {
     .trim();
 }
 
-/** The `-- <marker>: <value>` form a check parses out of a whole line, so only a block can hold it. */
+/** The `-- <marker>: <value>` form a check parses out of a whole line. */
 const ANNOTATION = /^--[ \t]*[a-z][a-z0-9-]*:[ \t]*\S+$/;
 
 function isAnnotationBlock(span: CommentSpan): boolean {
@@ -137,14 +95,21 @@ export function isToolingDirective(span: CommentSpan): boolean {
 // of its own. The bare tag is prose, and is judged as one.
 const INLINE_LINK = /\{@link\s[^}]*\}/g;
 
+const CODE_SPAN = /`[^`\n]*`/g;
+
 function rejectedTags(span: CommentSpan): string[] {
-  return [...span.text.replace(INLINE_LINK, "").matchAll(TAG)].map((match) => match[1] ?? "").filter((tag) => REJECTED_TAGS.has(tag));
+  return [...span.text.replace(INLINE_LINK, "").replace(CODE_SPAN, "").matchAll(TAG)]
+    .map((match) => match[1] ?? "")
+    .filter((tag) => !PERMITTED_TAGS.has(tag));
 }
 
-function judgeBlock(file: string, span: CommentSpan): Finding[] {
+function judgeBlock(file: string, span: CommentSpan, stylesheet: boolean): Finding[] {
   const lines = span.text.split("\n").length;
-  const tsdoc = span.text.startsWith("/**");
+  const tsdoc = !stylesheet && span.text.startsWith("/**");
   const findings: Finding[] = [];
+  if (BANNER.test(span.text.trim())) {
+    findings.push(fail("section banner — file structure is what files and exports are for", { file, line: span.line }));
+  }
   if (lines > (tsdoc ? 1 : 2)) {
     findings.push(
       tsdoc
@@ -160,9 +125,9 @@ function judgeBlock(file: string, span: CommentSpan): Finding[] {
           }),
     );
   }
-  for (const tag of rejectedTags(span)) {
+  for (const tag of stylesheet ? [] : rejectedTags(span)) {
     findings.push(
-      fail(`\`@${tag}\` — §5a permits \`@public\` and \`@internal\` alone`, {
+      fail(`\`@${tag}\` — §5a permits only ${PERMITTED_FORMS}`, {
         file,
         line: span.line,
         detail: ["delete the tag; the signature is the parameter documentation, and usage belongs in the unit's `README.md`"],
@@ -182,7 +147,7 @@ function judgeLine(file: string, span: CommentSpan): Finding[] {
   return [];
 }
 
-/** Words that carry no fact of their own, so a gloss built from them plus the field name says nothing. */
+/** Words that carry no fact of their own. */
 const STOP_WORDS = new Set([
   "all",
   "an",
@@ -310,9 +275,12 @@ function judgeRuns(file: string, source: string, spans: readonly CommentSpan[], 
 
 /** Every way `file` exceeds the `CODE_RULES.md` §5a comment budget, in source order. @public */
 export function validateCommentBudget(file: string, source: string, licensed = false): Finding[] {
-  const spans = findComments(source).filter((span) => !isToolingDirective(span));
+  const stylesheet = file.endsWith(".css");
+  const spans = (stylesheet ? findStylesheetComments(source) : findComments(source)).filter((span) => !isToolingDirective(span));
   const perComment = spans.flatMap((span) => [
-    ...(span.kind === "block" ? [...judgeBlock(file, span), ...judgeGloss(file, source, span)] : judgeLine(file, span)),
+    ...(span.kind === "block"
+      ? [...judgeBlock(file, span, stylesheet), ...(stylesheet ? [] : judgeGloss(file, source, span))]
+      : judgeLine(file, span)),
     ...(UNACTIONABLE.test(span.text) ? [fail("`TODO`/`FIXME`/`XXX` in a comment — open a ledger task", { file, line: span.line })] : []),
     ...judgeTally(file, span),
   ]);

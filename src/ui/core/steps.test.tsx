@@ -4,6 +4,7 @@ import { describe, expect, it } from "bun:test";
 
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { stateAttrs } from "../contracts/state-attrs";
 import { Steps } from "./steps";
 
 const MARKER = 'data-slot="steps-marker"';
@@ -83,6 +84,13 @@ describe("Steps.Step", () => {
       "data-state": "upcoming",
       "data-note": "R&amp;D&#39;s &quot;n&quot; &lt;x&gt;",
     });
+  });
+
+  it("emits every step state through the state-attribute builder", async () => {
+    const states = ["complete", "current", "upcoming"] as const;
+    const emitted = await Promise.all(states.map(async (state) => attrOf(await render(<Steps.Step state={state} />), "data-state")));
+
+    expect(emitted).toEqual(states.map((state) => stateAttrs({ state })["data-state"]));
   });
 });
 

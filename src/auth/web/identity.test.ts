@@ -228,7 +228,7 @@ describe("establishAuthSession", () => {
 
   it("clears an administrator approval, so a sign-in never inherits one given before it, anonymously or to another user", () => {
     const session = createSession("sid-1");
-    markApproval(session, { at: Date.now(), digest: "k.mac" });
+    markApproval(session, { presentedAt: Date.now(), digest: "k.mac" });
     establishAuthSession(session, "u1", NOW, Date.now());
     expect([resolveApprovalMark(session), session.get(APPROVAL_CODE_SESSION_KEY)]).toEqual([null, undefined]);
   });
@@ -325,7 +325,7 @@ describe("clearAuthSession", () => {
 
   it("drops an administrator approval, so a sign-out leaves nothing approved behind", () => {
     const session = signedInSession("u1");
-    markApproval(session, { at: Date.now(), digest: "k.mac" });
+    markApproval(session, { presentedAt: Date.now(), digest: "k.mac" });
     clearAuthSession(session);
     expect([resolveApprovalMark(session), session.get(APPROVAL_CODE_SESSION_KEY)]).toEqual([null, undefined]);
   });
@@ -340,15 +340,15 @@ describe("clearAuthSession", () => {
 describe("markApproval and resolveApprovalMark", () => {
   it("rotates the session id when the approval is recorded, so a fixated id cannot inherit it", () => {
     const session = createSession("sid-1");
-    markApproval(session, { at: NOW, digest: "k.mac" });
+    markApproval(session, { presentedAt: NOW, digest: "k.mac" });
     expect(session.id).not.toBe("sid-1");
   });
 
   it("read back the moment the code was presented, under the approval's own key", () => {
     const session = createSession("sid-1");
-    markApproval(session, { at: NOW, digest: "k.mac" });
+    markApproval(session, { presentedAt: NOW, digest: "k.mac" });
     expect({ mark: resolveApprovalMark(session), stored: session.get(APPROVAL_SESSION_KEY) }).toEqual({
-      mark: { at: NOW, digest: "k.mac" },
+      mark: { presentedAt: NOW, digest: "k.mac" },
       stored: NOW,
     });
   });

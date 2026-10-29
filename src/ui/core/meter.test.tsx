@@ -1,11 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
+import { stateAttrs } from "../contracts/state-attrs";
 import { Meter, meterState } from "./meter";
 import type { MeterState } from "./types";
-
-const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Meter", () => {
   it("renders the whole wrapper exactly, every forwarded value escaped", async () => {
@@ -48,7 +47,7 @@ describe("Meter.Label", () => {
     const html = await render(<Meter.Label for='disk'>Disk usage</Meter.Label>);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "meter-label", for: "disk" });
-    expect(contentOf(html)).toBe("Disk usage");
+    expect(innerOf(html)).toBe("Disk usage");
   });
 
   it("appends a caller class last and an inherited slot token after its own", async () => {
@@ -90,6 +89,19 @@ describe("Meter.Track", () => {
     expect(variantClasses(html, await render(<Meter.Track value={0.5} />))).toEqual({ added: ["h-3"], dropped: ["h-2"] });
     expect(attrOf(html, "data-slot")).toBe("meter-track quota-track");
   });
+
+  it("emits every band through the state-attribute builder", async () => {
+    const bands: { value: number; state: MeterState }[] = [
+      { value: 0.1, state: "optimum" },
+      { value: 0.5, state: "suboptimum" },
+      { value: 0.9, state: "poor" },
+    ];
+    const emitted = await Promise.all(
+      bands.map(async ({ value }) => attrOf(await render(<Meter.Track value={value} low={0.3} high={0.8} optimum={0.2} />), "data-state")),
+    );
+
+    expect(emitted).toEqual(bands.map(({ state }) => stateAttrs({ state })["data-state"]));
+  });
 });
 
 describe("Meter.Value", () => {
@@ -97,11 +109,11 @@ describe("Meter.Value", () => {
     const html = await render(<Meter.Value>72%</Meter.Value>);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "meter-value" });
-    expect(contentOf(html)).toBe("72%");
+    expect(innerOf(html)).toBe("72%");
   });
 
   it("escapes interpolated children", async () => {
-    expect(contentOf(await render(<Meter.Value>{`>72% of R&D's quota`}</Meter.Value>))).toBe("&gt;72% of R&amp;D&#39;s quota");
+    expect(innerOf(await render(<Meter.Value>{`>72% of R&D's quota`}</Meter.Value>))).toBe("&gt;72% of R&amp;D&#39;s quota");
   });
 });
 

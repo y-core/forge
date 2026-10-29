@@ -5,6 +5,8 @@ import { delimiter, join } from "node:path";
 
 import type { CaptureResult, RunOutcome, SpawnSync, StreamCapture, ToolHints } from "./types";
 
+const defaultSpawn: SpawnSync = (command, args, options) => spawnSync(command, args, { ...options, encoding: "utf-8" });
+
 function spawnDeadline(timeoutMs: number | undefined): { timeout: number; killSignal: "SIGKILL" } | Record<string, never> {
   return timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: "SIGKILL" };
 }
@@ -17,17 +19,17 @@ export function insertPath(dir: string): void {
 }
 
 /** True when `cmd args` exits 0, with its output discarded. */
-export function probeOk(cmd: string, args: readonly string[], spawn: SpawnSync = spawnSync): boolean {
+export function probeOk(cmd: string, args: readonly string[], spawn: SpawnSync = defaultSpawn): boolean {
   return spawn(cmd, [...args], { stdio: "ignore", env: process.env }).status === 0;
 }
 
 /** True when `cmd --version` exits 0 — i.e. the tool is present and runnable. */
-export function hasTool(cmd: string, spawn: SpawnSync = spawnSync): boolean {
+export function hasTool(cmd: string, spawn: SpawnSync = defaultSpawn): boolean {
   return probeOk(cmd, ["--version"], spawn);
 }
 
 /** Asserts every tool is present, throwing `<cmd> not found — <hint>` on the first missing one. */
-export function requireTools(tools: ToolHints, spawn: SpawnSync = spawnSync): void {
+export function requireTools(tools: ToolHints, spawn: SpawnSync = defaultSpawn): void {
   for (const [cmd, hint] of Object.entries(tools)) {
     if (!hasTool(cmd, spawn)) throw new Error(`${cmd} not found — ${hint}`);
   }
@@ -38,7 +40,7 @@ export function runUnchecked(
   cmd: string,
   args: string[],
   opts?: { cwd?: string; env?: typeof process.env; timeoutMs?: number },
-  spawn: SpawnSync = spawnSync,
+  spawn: SpawnSync = defaultSpawn,
 ): RunOutcome {
   const r = spawn(cmd, args, {
     stdio: "inherit",
@@ -50,7 +52,7 @@ export function runUnchecked(
 }
 
 /** Spawns `cmd args` with inherited stdio, returning 0 or throwing naming the command and exit code. */
-export function run(cmd: string, args: string[], opts?: { cwd?: string; timeoutMs?: number }, spawn: SpawnSync = spawnSync): number {
+export function run(cmd: string, args: string[], opts?: { cwd?: string; timeoutMs?: number }, spawn: SpawnSync = defaultSpawn): number {
   const outcome = runUnchecked(cmd, args, opts, spawn);
   if (outcome.code !== 0) {
     const reason = outcome.spawnError === undefined ? "" : `: ${outcome.spawnError}`;
@@ -64,7 +66,7 @@ export function capture(
   cmd: string,
   args: string[],
   opts?: { cwd?: string; env?: typeof process.env; timeoutMs?: number },
-  spawn: SpawnSync = spawnSync,
+  spawn: SpawnSync = defaultSpawn,
 ): CaptureResult {
   // One temp-file fd for both streams keeps them interleaved; `stdio: "pipe"` yields two independent buffers and loses the order.
   const dir = mkdtempSync(join(tmpdir(), "forge-capture-"));
@@ -91,7 +93,7 @@ export function captureStreams(
   cmd: string,
   args: string[],
   opts: { cwd?: string; env?: typeof process.env; timeoutMs?: number; maxBuffer?: number },
-  spawn: SpawnSync = spawnSync,
+  spawn: SpawnSync = defaultSpawn,
 ): StreamCapture {
   const r = spawn(cmd, args, {
     stdio: ["ignore", "pipe", "pipe"],

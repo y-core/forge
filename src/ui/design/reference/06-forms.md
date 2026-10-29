@@ -56,7 +56,7 @@ no fieldset to put the label in.
 Both accept `name`, `scope`, `description`, `error`, `disabled` and `orientation`, and expose `.Label`, `.Item`, `.Description` and `.Error`.
 Override only for a group whose items are not a single question — a matrix of independent toggles, which is a stack of `Field` rows.
 
-**Default: `FormField.Legend` takes `appearance="legend"` when it heads a section of fields, and `appearance="label"` when it names one cluster.**
+**Default: `FormField.Legend` takes `as="legend"` when it heads a section of fields, and `as="label"` when it names one cluster.**
 <!-- rule:forge-ui-form-legend-variant --> `legend` renders at `text-base`, `label` at `text-sm` — a section heading versus a field label. Choosing
 by size instead of by role is what produces a legend that outranks the form's own heading. Override only under a brief that restates the form's type
 scale.
@@ -220,6 +220,8 @@ never went through `fieldControlProps` styles as invalid and announces nothing. 
 `forge-ui-not-color-alone`. Override never.
 
 ```tsx
+import { FormField, Input } from "@y-core/forge/ui/core";
+
 // Wrong — invalid signalled by a class alone.
 <FormField class='border-destructive'>
   <FormField.Label name='card'>Card number</FormField.Label>

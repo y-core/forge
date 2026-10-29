@@ -671,3 +671,60 @@ test.describe("the disclosure height animation", { tag: "@cross-engine" }, () =>
     ).toBe(true);
   });
 });
+
+test.describe("a Popover or Menu flipped by its position-try fallback", { tag: "@cross-engine" }, () => {
+  const FLIP_STYLE = `<style>
+  body { margin: 0; }
+  [data-slot~="popover-trigger"], [data-slot~="menu-trigger"] { position: fixed; top: 0; left: 120px; width: 90px; height: 30px; }
+  [data-slot~="popover-content"], [data-slot~="menu-popup"] { width: 160px; height: 80px; }
+</style>`;
+  const FIREFOX_FLIP =
+    "Firefox drops a running transition's value while a position-try fallback is applied, so a flipped popup shows at full opacity";
+
+  async function openFlipped(page: Page, html: string, trigger: string, popup: string): Promise<{ flipped: boolean; opacity: number }> {
+    await mount(page, `${FLIP_STYLE}${html}`, { css: ["./ui/assets/css/forge-ui.css"] });
+    return page.evaluate(
+      ({ triggerSelector, popupSelector }) => {
+        const opener = document.querySelector(triggerSelector) as HTMLElement;
+        const panel = document.querySelector(popupSelector) as HTMLElement;
+        opener.click();
+        return {
+          flipped: panel.getBoundingClientRect().top > opener.getBoundingClientRect().top,
+          opacity: Number(getComputedStyle(panel).opacity),
+        };
+      },
+      { triggerSelector: trigger, popupSelector: popup },
+    );
+  }
+
+  test("a Popover asked to open above a trigger at the viewport's top flips below and still fades in", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", FIREFOX_FLIP);
+    const html = await render(
+      Popover({
+        children: [
+          Popover.Trigger({ for: "tips", children: "Tips" }),
+          Popover.Content({ id: "tips", label: "Tips", side: "top", children: "Body" }),
+        ],
+      }),
+    );
+    const flip = await openFlipped(page, html, '[data-slot~="popover-trigger"]', "#tips");
+
+    expect(flip.flipped, JSON.stringify(flip)).toBe(true);
+    expect(flip.opacity).toBeLessThan(0.5);
+  });
+
+  test("a Menu asked to open above a trigger at the viewport's top flips below and still fades in", async ({ page, browserName }) => {
+    test.skip(browserName === "firefox", FIREFOX_FLIP);
+    const popup = Menu.Popup({
+      triggered: true,
+      id: "file-menu",
+      side: "top",
+      children: [Menu.Item({ id: "new", for: "file-menu", children: "New" })],
+    });
+    const html = await render(Menu({ children: [Menu.Trigger({ for: "file-menu", children: "File" }), popup] }));
+    const flip = await openFlipped(page, html, '[data-slot~="menu-trigger"]', "#file-menu");
+
+    expect(flip.flipped, JSON.stringify(flip)).toBe(true);
+    expect(flip.opacity).toBeLessThan(0.5);
+  });
+});

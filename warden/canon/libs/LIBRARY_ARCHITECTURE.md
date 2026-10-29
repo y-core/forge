@@ -15,7 +15,7 @@ description: "Structural principles: the dependency facade, the runtime-only no-
 
 ## 0. Quick Reference
 
-- §1 Core Architectural Principles: the six structural commitments
+- §1 Core Architectural Principles: the structural commitments
 - §1a Facade Over Dependencies: what the library wraps, and why
 - §1b Runtime-Only Library Constraint: raw TypeScript, no build step
 - §1c Demand Composition Principle: single-purpose namespaces

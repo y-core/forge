@@ -46,7 +46,7 @@ export type AdminUserEditViewProps = AuthViewChrome & {
   readonly user: AuthUser;
   /** Whether this account is the last admin who could still sign in, read off `AdminUserStore.countAdmins`. */
   readonly lastAdmin: boolean;
-  /** Whether the administrator reading this page *is* this account, which is what the two self-lockout controls are disabled on. */
+  /** Whether the administrator reading this page *is* this account, which is what the self-lockout controls are disabled on. */
   readonly self: boolean;
   /** What an administrative write last reported for this account, or `null` on a plain page load. */
   readonly outcome: AdminUserOutcome | null;
@@ -68,7 +68,7 @@ export type AdminUsersViewProps = AuthViewChrome & {
   readonly icon: ForgeIcon<"chevron-right">;
 };
 
-/** Where one factor stands on an account. `always` is an implicit factor, which offering _is_ enrolling. @public */
+/** Where one factor stands on an account, `always` being an implicit factor that offering alone enrols. @public */
 export type AuthFactorState = "always" | "enrolled" | "pending" | "none";
 
 /** One offered factor as a page reports it — never the stored secret, whoever is reading. @public */
@@ -271,7 +271,7 @@ export type AuthSignoutProps = {
   readonly class?: string | undefined;
 };
 
-/** Which of the authenticator app's two page states is rendering; only the enrolling one carries the secret. @public */
+/** Which authenticator-app page state is rendering; only the enrolling one carries the secret. @public */
 export type TotpEnrolState = ({ readonly status: "enrolling" } & TotpAppEnrolment) | { readonly status: "enrolled"; readonly enrolledAt: number };
 
 /** What the authenticator-app page renders. @public */
@@ -297,7 +297,7 @@ export type TotpEnrolViewProps = AuthViewChrome & {
 
 /** What the verification page renders. @public */
 export type VerifyViewProps = AuthViewChrome & {
-  /** Which enrolled factor is being presented. A step-up on `passkey` is a ceremony, not a code. */
+  /** Which enrolled factor is being presented; a `passkey` step-up is a ceremony, not a code. */
   readonly factor: AuthFactorKind;
   /** How wide the code field is, read off the factor being presented. Defaults to the six digits forge's own OTP uses. */
   readonly codeDigits?: OtpLength | undefined;
@@ -306,7 +306,7 @@ export type VerifyViewProps = AuthViewChrome & {
   /** Every confirmed factor this step-up may be met with, `factor` included; absent unless there is another to switch to. */
   readonly choices?: readonly VerifyChoice[] | undefined;
   readonly submitPath: string;
-  /** Where a new code is asked for. Only an emailed code can be re-sent. */
+  /** Where a new code is asked for, given only for an emailed code. */
   readonly resendPath?: string | undefined;
   readonly signinPath: string;
   readonly csrfToken: string;

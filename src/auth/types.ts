@@ -20,7 +20,7 @@ export interface AuthUser {
   readonly updatedAt: number;
 }
 
-/** Which credential a factor represents. Closed, so a new factor is a deliberate edit. @public */
+/** Which credential a factor represents. @public */
 export type AuthFactorKind = "email-otp" | "passkey" | "recovery-code" | "totp-app";
 
 /** Every store operation resolves to this: an outcome, or the one I/O error. @public */
@@ -40,7 +40,7 @@ export interface AuthUserPage {
   readonly after?: string;
 }
 
-/** An enrolled second or primary factor. `secret` is sealed at rest, never plaintext. @public */
+/** An enrolled second or primary factor, its `secret` sealed at rest. @public */
 export interface AuthFactor {
   readonly id: string;
   readonly userId: string;
@@ -138,7 +138,7 @@ export interface AuthChallenge {
   readonly userId?: string;
 }
 
-/** What an `AuthNotifier` is asked to deliver. Forge ships the contract and no transport. @public */
+/** What an `AuthNotifier` is asked to deliver. @public */
 export interface AuthMessage {
   readonly to: string;
   readonly kind: "email-change" | "otp";
@@ -147,7 +147,7 @@ export interface AuthMessage {
   readonly url?: string;
 }
 
-/** Reads and writes a sign-in service is allowed to make. Deleting a user is absent by design. @public */
+/** Reads and writes a sign-in service is allowed to make. @public */
 export interface UserStore {
   findById(id: string): Promise<AuthStoreResult<AuthUser | null>>;
   findByEmailKey(emailKey: string): Promise<AuthStoreResult<AuthUser | null>>;
@@ -156,11 +156,11 @@ export interface UserStore {
   setWebAuthnIdIfAbsent(id: string, webauthnId: Uint8Array<ArrayBuffer>, at: number): Promise<AuthStoreResult<AuthUser | null>>;
   markEmailVerified(id: string, at: number): Promise<AuthStoreResult<boolean>>;
   changeEmail(id: string, email: string, emailKey: string, at: number): Promise<AuthStoreResult<boolean>>;
-  /** Refuses every session established at or before `at`, which is how a change reaches the sessions this request cannot see. */
+  /** Refuses every session established at or before `at`. */
   revokeSessions(id: string, at: number): Promise<AuthStoreResult<boolean>>;
 }
 
-/** What an administrative write did to the row it named — one member per refusal, so each guard says which it was. @public */
+/** What an administrative write did to the row it named, with one member per refusal. @public */
 export type AdminUserOutcome =
   | "admin-exists"
   | "changed"
@@ -253,7 +253,7 @@ export interface IdentityLinkStore {
   unlink(id: string, userId: string): Promise<AuthStoreResult<boolean>>;
 }
 
-/** `take` is read-and-delete, which makes "clear the challenge even on failure" structural. @public */
+/** Stored ceremony challenges, where `take` reads and deletes in one step. @public */
 export interface ChallengeStore {
   put(key: string, challenge: AuthChallenge, ttlSeconds: number): Promise<AuthStoreResult<void>>;
   take(key: string): Promise<AuthStoreResult<AuthChallenge | null>>;
@@ -264,7 +264,7 @@ export interface NonceStore {
   markConsumed(key: string, ttlSeconds: number): Promise<AuthStoreResult<boolean>>;
 }
 
-/** The delivery seam. Forge ships this contract and no mailer — the transport is the consumer's. @public */
+/** The delivery seam a consumer implements over its own transport. @public */
 export interface AuthNotifier {
   send(message: AuthMessage, signal: AbortSignal): Promise<AuthStoreResult<void>>;
 }
@@ -277,7 +277,7 @@ export interface OtpState {
   readonly expiresAt: number;
 }
 
-/** The live email code for one identity — the two conditional writes the factor rests on. @public */
+/** The live email code for one identity — the conditional writes the factor rests on. @public */
 export interface OtpStateStore {
   /** Writes the code unless one was issued within `cooldownMs`; `false` is the cooldown refusing. */
   issue(userId: string, state: OtpState, cooldownMs: number): Promise<AuthStoreResult<boolean>>;

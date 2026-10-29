@@ -118,7 +118,7 @@ test("shows the raw text with no dialect drawn when raw", async ({ page }) => {
   await expect(content(page)).toContainText("[[id:7|Seven]]");
 });
 
-test("keeps the reader's line at the top when the rendering changes", async ({ page }) => {
+test("keeps the reader's line at the top when the rendering changes", { tag: "@cross-engine" }, async ({ page }) => {
   const markdown = Array.from({ length: 200 }, (_, line) => `line ${line + 1} with *marks*`).join("\n\n");
   await mountViewport(page, markdown, "view", "raw");
   await page.evaluate(() => {

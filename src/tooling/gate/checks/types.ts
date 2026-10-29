@@ -262,6 +262,15 @@ export interface ContrastCheckConfig {
   accepted?: readonly AcceptedRow[];
 }
 
+/** What the faded-text check reads. @public */
+export interface FadedTextCheckConfig {
+  root: string;
+  /** Files and directories to scan, relative to `root`; a `!`-prefixed entry excludes a subtree. */
+  sources: readonly string[];
+  /** The audited pairs; a foreground carrying an `alpha` holds a fade of that strength on that colour. */
+  pairs: readonly ContrastPairInput[];
+}
+
 /** Why a token could not be reduced to a colour. */
 export interface Unresolved {
   token: string;
@@ -465,6 +474,25 @@ export interface MenuNamingCheckConfig {
   root: string;
   /** Directories walked for modules rendering menus, relative to `root`. Defaults to `["src"]`. */
   sources?: readonly string[];
+}
+
+/** What the cross-engine-tags check walks. @public */
+export interface CrossEngineTagsCheckConfig {
+  /** Repository root; every reported path is relative to it. */
+  root: string;
+  /** Directories walked for `*.browser.ts` specs, relative to `root`. Defaults to `["src"]`. */
+  sources?: readonly string[];
+}
+
+/** One top-level `describe` or `test` of a browser spec, a top-level `for` loop's own included. @public */
+export interface CrossEngineUnit {
+  /** 1-indexed line the call opens on. */
+  line: number;
+  /** Offsets of the unit's text in the comment-blanked source, end exclusive. */
+  start: number;
+  end: number;
+  /** Offsets of its `{ tag: "@cross-engine" }` argument, or `null` when untagged. */
+  tag: { start: number; end: number } | null;
 }
 
 /** What the stub-globals check compares: the private declaration stubs against the shipped modules. @public */

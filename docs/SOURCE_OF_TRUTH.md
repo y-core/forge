@@ -94,6 +94,7 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 | `@source` coverage as _enforced_ | `src/tooling/gate/checks/css-sources.ts` |
 | The modern-CSS rule catalog as _enforced_ — every id, tier, severity, replacement, and which mechanism enforces it | `src/tooling/lint/modern-css-rules.ts` |
 | Token contrast mappings and their measured ratios, as _enforced_ | `src/tooling/gate/checks/contrast.ts` + `src/tooling/gate/checks/contrast-parse.ts` |
+| An `opacity-*` on a class string, held to the audited pairs | `src/tooling/gate/checks/faded-text.ts` |
 | Every corpus rule id, the corpus file that states it, and which mechanism enforces it | `src/tooling/lint/design-rules.ts` |
 | The design corpus's citations and its register round trip as _enforced_ | `warden/src/checks/design.ts` + `src/tooling/gate/checks/design-parse.ts` |
 | Every corpus rule about source, markup or class string, as _enforced_ | `src/tooling/lint/plugin.ts` and the rules under `src/tooling/lint/rules/` |
@@ -101,6 +102,7 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 | The slot-clobber ordering rule as _enforced_ | `src/tooling/lint/rules/data-slot-before-spread.ts` |
 | Test co-location, and the modules exempt from it, as _enforced_ | `src/tooling/gate/checks/co-location.ts` |
 | Which substring assertions on markup fail, and what suppresses one, as _enforced_ | `src/tooling/lint/rules/exact-markup-assertion.ts` |
+| Which reads put a browser spec block in the cross-engine subset, and where its tag is spelled, as _enforced_ | `src/tooling/gate/checks/cross-engine-tags.ts` |
 | The SSR/browser import boundary as _enforced_ | `src/tooling/gate/checks/ssr-boundary.ts` |
 | Changelog and package-version agreement as _enforced_ | `warden/src/checks/changelog.ts` |
 | Which documents warden indexes, and the retrieval weight each carries | `warden/src/corpus/source.ts` |
@@ -169,6 +171,7 @@ separates the two, and a ruling has a single home for the same reason a table do
 | The `render/pdf` rulings — the page ceiling, the document default face, what the engine refuses and what it is not | `src/render/pdf/README.md` |
 | The `crypto/keyring` namespace's rulings — the at-rest frame and its missing version byte, rotation by prepend, retirement, one ring per root secret | `src/crypto/keyring/README.md` |
 | The AES-GCM seal budget — the random-nonce bound per `(kid, purpose)` subkey, what crossing it costs, the rotation cadence it sets | [`AUTH_MOUNTING.md`][am-7] §7 |
+| Which forge files the comment budget holds, and a stylesheet comment's form | [`FORGE_STRUCTURE.md`][fs-10] §10 |
 
 **The README rows above own their namespace's rulings outright, because no `docs/` document covers them.** The alternative was a governing document
 per namespace whose whole content would have been what the README already said — a second copy of a ruling is the failure this register exists to
@@ -224,5 +227,6 @@ stylesheet that was never written would satisfy the shape and send a reader to a
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [am-7]: ./AUTH_MOUNTING.md#7-rotating-the-key-ring
 [cr-5]: ../warden/canon/shared/CODE_RULES.md#5-comment-budget-rule
+[fs-10]: ./FORGE_STRUCTURE.md#10-stylesheets-take-the-source-comment-forms
 [namespaces-3a]: ./NAMESPACES.md#3a-a-namespace-is-described-by-its-own-readme
 [namespaces-4]: ./NAMESPACES.md#4-namespace-classification

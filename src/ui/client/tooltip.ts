@@ -106,7 +106,8 @@ export function mountTooltip(root: HTMLElement, options: TooltipOptions = {}): (
 
   const onKeyDown = (event: Event) => {
     if ((event as KeyboardEvent).key !== "Escape" || !lacksHint() || !content.matches(":popover-open")) return;
-    event.preventDefault();
+    const focused = win.document.activeElement;
+    if (trigger.contains(focused) || content.contains(focused)) event.preventDefault();
     schedule(false, 0);
   };
 

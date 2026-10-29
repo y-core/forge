@@ -28,7 +28,7 @@ before you call the work done; hold **Refuse** (§2) the whole time you are gene
 - §2c The Spacing Scale, and Viewport Units: no arbitrary value where a step exists, and never `h-screen`
 - §2d No Nested Card: two borders and two elevations that encode nothing
 - §2e Foreground Pairing: every background token with its partner, and never an opacity guess
-- §2f Two Text Colours, One Radius: the colour budget, and the single radius everything derives from
+- §2f A Text-Colour Budget and One Radius: the colour budget, and the single radius everything derives from
 - §2g Icons from the Sprite: `Icon` and `createIcon`, never an emoji and never an inline `<svg>`
 - §2h Never Invent Data: no fabricated metrics, testimonials, or placeholder identities
 
@@ -195,7 +195,7 @@ ways — as text, as a border, and as a fill — and only the fill needs the par
 Pair within a tier, never across one: a `-strong` surface takes the `-strong-foreground`, and each of those pairs is measured on its own surface.
 `Alert`, `Toast` and `Badge` already hold the right pair inside each tone, so passing a `tone` is the shorter route to the same thing.
 
-### 2f. Two Text Colours, One Radius
+### 2f. A Text-Colour Budget and One Radius
 
 **Hold a surface to two text colors.** <!-- rule:forge-ui-text-color-budget --> `text-foreground` for the primary line, `text-muted-foreground` for
 everything supporting. A third is a hierarchy you are asserting with color that weight, size, or spacing should carry instead.

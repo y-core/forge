@@ -12,7 +12,7 @@ interface FieldSetProps extends Omit<JSX.IntrinsicElements["fieldset"], "childre
 
 interface FieldLegendProps extends Omit<JSX.IntrinsicElements["legend"], "children"> {
   children?: unknown | undefined;
-  /** Which of the two type scales the legend wears. Not the ratified `appearance` emphasis axis. */
+  /** Which type scale the legend wears. Not the ratified `appearance` emphasis axis. */
   as?: "label" | "legend" | undefined;
 }
 

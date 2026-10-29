@@ -2,8 +2,15 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { attrsOf } from "../../testing/markup";
 import { render } from "../../testing/render";
-import { createBoundCompound, createBoundControl } from "./create-bound-control";
+import { CheckboxGroup as CoreCheckboxGroup } from "../core/checkbox-group";
+import { RadioGroup as CoreRadioGroup } from "../core/radio-group";
+import { ToggleGroup as CoreToggleGroup } from "../core/toggle-group";
+import { CheckboxGroup } from "./checkbox-group";
+import { createBoundCompound, createBoundControl, createBoundItem } from "./create-bound-control";
+import { RadioGroup } from "./radio-group";
+import { ToggleGroup } from "./toggle-group";
 
 describe("createBoundControl", () => {
   it("adds a bind prop that becomes data-field, and forwards everything else", async () => {
@@ -58,5 +65,50 @@ describe("createBoundCompound", () => {
     expect(await render(<Bound id='x' />)).toBe('<span id="x"></span>');
     expect(await render(<Bound.Label />)).toBe("<b>L</b>");
     expect(await render(<Bound.Item />)).toBe("<u>bound</u>");
+  });
+});
+
+describe("createBoundItem", () => {
+  const Item = createBoundItem((props: { name: string; value: string; id?: string }) => <input {...props} />);
+
+  it("names the item after bind and stamps data-field and data-value", async () => {
+    expect(attrsOf(await render(<Item bind='plan' value='free' id='x' />))).toEqual({
+      id: "x",
+      name: "plan",
+      value: "free",
+      "data-field": "plan",
+      "data-value": "free",
+    });
+  });
+
+  it("lets a caller's name win over bind while data-field still follows bind", async () => {
+    expect(attrsOf(await render(<Item bind='plan' name='tier' value='free' />))).toEqual({
+      name: "tier",
+      value: "free",
+      "data-field": "plan",
+      "data-value": "free",
+    });
+  });
+});
+
+describe("createBoundItem — every bound group's Item is the shared one", () => {
+  const props = { bind: "plan", value: "free", children: "Free" };
+
+  it("CheckboxGroup.Item", async () => {
+    const Shared = createBoundItem(CoreCheckboxGroup.Item);
+
+    expect(await render(<CheckboxGroup.Item {...props} />)).toBe(await render(<Shared {...props} />));
+  });
+
+  it("RadioGroup.Item", async () => {
+    const Shared = createBoundItem(CoreRadioGroup.Item);
+
+    expect(await render(<RadioGroup.Item {...props} />)).toBe(await render(<Shared {...props} />));
+  });
+
+  it("ToggleGroup.Item", async () => {
+    const Shared = createBoundItem(CoreToggleGroup.Item);
+
+    expect(await render(<ToggleGroup.Item {...props} />)).toBe(await render(<Shared {...props} />));
   });
 });

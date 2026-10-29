@@ -2,9 +2,12 @@ import { cloneElement, Fragment, isValidElement } from "../../../render/jsx/elem
 import type { JSXElement, JSXNode } from "../../../render/jsx/types";
 import { stateAttrs } from "../../contracts/state-attrs";
 import { cn } from "./cn";
+import { mergeIdRefs } from "./id-refs";
 import type { AsChildOptions } from "./types";
 
 const present = (node: JSXNode | undefined): boolean => node !== undefined && node !== null;
+
+const idRefList = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 
 // `cloneElement` shallow-merges: spreading `{ type: undefined }` onto `<button type="button">`
 // erases the attribute and leaves a button that submits the surrounding form.
@@ -41,6 +44,10 @@ export function cloneAsChild(children: JSXNode, options: AsChildOptions): JSXEle
 
   return cloneElement(children, {
     ...options.props,
+    ...definedEntries({
+      "aria-describedby": mergeIdRefs(idRefList(children.props["aria-describedby"]), [idRefList(options.props["aria-describedby"])]),
+      "aria-labelledby": mergeIdRefs(idRefList(children.props["aria-labelledby"]), [idRefList(options.props["aria-labelledby"])]),
+    }),
     // `disabled` is button-only, and `rest` carries it through on compounds that do not destructure
     // it out, so an `<a>` would come out `<a disabled aria-disabled="true">`.
     ...(isButton || (childType === undefined && !isAnchor)

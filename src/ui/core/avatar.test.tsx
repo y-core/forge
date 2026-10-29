@@ -1,10 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Avatar } from "./avatar";
-
-const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Avatar", () => {
   it("renders the whole frame exactly, forwarded values escaped and placed after the class", async () => {
@@ -46,7 +44,7 @@ describe("Avatar", () => {
     );
 
     expect([...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1])).toEqual(["avatar", "avatar-fallback"]);
-    expect(contentOf(html).endsWith(">AB</span>")).toBe(true);
+    expect(innerOf(html).endsWith(">AB</span>")).toBe(true);
   });
 
   it("composes a caller data-slot onto its own token rather than replacing it", async () => {
@@ -72,7 +70,7 @@ describe("Avatar.Fallback", () => {
     const html = await render(<Avatar.Fallback>AB</Avatar.Fallback>);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "avatar-fallback" });
-    expect(contentOf(html)).toBe("AB");
+    expect(innerOf(html)).toBe("AB");
   });
 
   it("appends a caller class after its own, so the caller's wins a conflict", async () => {

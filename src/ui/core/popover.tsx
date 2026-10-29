@@ -21,8 +21,6 @@ interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   children?: JSXNode | undefined;
 }
 
-// `role` is not forwardable: the trigger's `aria-haspopup` says `dialog` and has no way to say
-// otherwise, so a re-roled panel would leave the pair disagreeing. A menu popup is `Menu.Popup`.
 type PopoverContentBase = Omit<JSX.IntrinsicElements["span"], "children" | "role">;
 
 /** A panel is `role="dialog"`, which is `nameFrom: author`, so a name is required rather than optional. */

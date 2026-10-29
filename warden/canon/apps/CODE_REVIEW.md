@@ -17,7 +17,7 @@ description: "How to review an application: the blocking invariants, tiered dete
 
 - §1 Review Workflow: what to do before and while reviewing
 - §1a Pre-Review Preparation: establish a green baseline and read the route map
-- §1b Review Output Format: the six fields a finding carries, impact first
+- §1b Review Output Format: the fields a finding carries, impact first
 - §2 Blocking Invariants: the violations that always block a merge
 - §3 Detection by Tier: how each rule is actually checked
 - §3a Tier 1 — Gated: rules a gate step already proves

@@ -23,7 +23,7 @@ declare global {
     forgePasskey: typeof import("./passkey");
     /** Every `passkey:outcome` the scope root dispatched, as `mode` and `reason`. */
     passkeyOutcomes: Array<{ mode: string; reason?: string }>;
-    /** Cleanup returned by the controller, parked so a later evaluate can call it. */
+    /** The disposer `mountPasskey` returned. */
     passkeyCleanup?: () => void;
     /** Hands each PRF result the page received to the spec, since in-page state dies at the navigation. */
     recordPrf: (result: RecordedPrf) => Promise<void>;
@@ -42,7 +42,7 @@ const OPTIONS_TOKEN = "token-for-options";
 const VERIFY_TOKEN = "token-for-verify";
 const RP_ID = "forge.test";
 
-/** base64url, in the page's own realm — the fixture routes answer with encoded buffers. */
+/** Encodes bytes as unpadded base64url, the form the fixture routes answer with. */
 const b64url = (bytes: number[]): string =>
   btoa(String.fromCharCode(...bytes))
     .replaceAll("+", "-")
@@ -88,7 +88,7 @@ async function addDiscoverableCredential(page: Page): Promise<void> {
 
 // Registered *after* `mount`: playwright matches routes newest-first, so the origin catch-all
 // `mount` installs would otherwise answer both endpoints with the empty fixture page.
-/** Serves the two ceremony endpoints, recording each request so the spec can read the tokens back. */
+/** Serves the ceremony endpoints, recording each request so the spec can read the tokens back. */
 async function routeCeremony(
   page: Page,
   options: {
@@ -191,8 +191,7 @@ test.describe("passkey controller — a real ceremony against a virtual authenti
 
     await page.click(`[data-ref='${PASSKEY.trigger}']`);
 
-    // The navigation *is* the success signal and it tears the page down, so it is what this test
-    // waits on; the outcome event that fires just before it is asserted under `bun test` instead.
+    // The navigation tears the page down, so it and not the outcome event is the success signal to wait on.
     await page.waitForURL("**/account/passkeys");
     expect(seen).toEqual([
       { url: OPTIONS_PATH, token: OPTIONS_TOKEN },
@@ -324,8 +323,6 @@ test.describe("passkey controller — a real ceremony against a virtual authenti
   });
 
   test("reveals the unsupported message before any press when the realm has no WebAuthn", async ({ page }) => {
-    // No virtual authenticator, and `PublicKeyCredential` deleted before the controller mounts:
-    // the realm a browser without WebAuthn presents.
     await mount(page, await fixture(), { expose: { forgePasskey: "./auth/client/passkey" }, origin: SECURE_ORIGIN });
     await page.evaluate(
       ({ eventName, scope }) => {

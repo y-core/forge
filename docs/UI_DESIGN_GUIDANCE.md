@@ -22,7 +22,7 @@ audience: consumer
 
 - §1 Corpus Purpose and Composition Gap: what a correct-but-low-craft UI looks like, and why the API reference cannot close it
 - §1a Termination in a Forge Primitive: the property that makes most rules grep-checkable
-- §2 Two Rule Tiers — Floor and Defaults: the only two strengths a corpus rule may have
+- §2 Rule Tiers — Floor and Defaults: the only two strengths a corpus rule may have
 - §2a Floor — Verify and Refuse: bare imperatives, split into the two halves
 - §2b Defaults — Rebuttable Aesthetic Guidance: the literal `Default:` opener and the mandatory override condition
 - §2c Override Authority — the Written Brief: who may rebut a Default, and who may not
@@ -33,6 +33,7 @@ audience: consumer
 - §4 Anti-Drift Contract with the Design Gate: the corpus may not describe an API forge lacks
 - §4a Gate Enforcement Across Both Tiers: the gate's second direction, and why a gated rule is not thereby a Floor rule
 - §4b Enforcement Mechanisms: the check steps, the oxlint plugin and the browser set, and the two registers that keep them honest
+- §4c Code Fences Compile Against the Exports: every tsx fence is a module; forge names imported, app context free
 - §5 Three-Way Documentation Boundary: which of three homes owns a given statement
 - §5a Routing Rule for a New Design Rule: design rules and anti-patterns never land in `docs/`
 - §6 The Corpus Is Subject to the Governing-Doc Format: numbering and a Quick Reference, because warden reads both
@@ -64,7 +65,7 @@ enforces.
 
 ---
 
-## 2. Two Rule Tiers — Floor and Defaults
+## 2. Rule Tiers — Floor and Defaults
 
 A corpus rule occupies exactly one of two tiers. There is no third strength, and a rule that cannot be placed in one of them is not yet a rule.
 
@@ -204,8 +205,8 @@ remove rather than an override to accept.
 
 ### 4b. Enforcement Mechanisms
 
-A corpus rule is enforced by one mechanism, and which one is a property of **what the rule has to read** rather than of its tier, or of
-whether its subject is markup or a class string.
+Which mechanism enforces a corpus rule is a property of **what the rule has to read** rather than of its tier, or of whether its subject is markup
+or a class string. A rule whose parts read different things has one mechanism per part, and the register lists each.
 
 **forge's oxlint plugin** — `@y-core/forge/tooling/lint`, run by the `lint` step — owns every rule a **parsed file settles**. That is both families:
 a class string, and markup structure. A tag name, an attribute, an ancestor chain and the body between two tags are all things `JSXOpeningElement`
@@ -218,6 +219,11 @@ one.
 **`validate-contrast`** owns a rule no source text states: `forge-ui-contrast-floor` is measured off resolved colours, so it reads no `.tsx` at
 all.
 
+**`validate-faded-text`** owns the part of that rule a class does state: a fade below full strength — an `opacity-*` or a text colour's `/alpha`
+modifier in a class string, or either one in a stylesheet's `@apply` — which the contrast audit measures at 100%. A fade that paints only the
+disabled state is exempt. What holds such a site is [`THEME_GENERATION.md`][tg-3a] §3a's. It is a gate step rather than a plugin rule because a
+site is held by the audited pair register under `ui/contracts/theme`, and `tooling/lint` is a leaf that may not import it.
+
 **The browser set** owns `forge-ui-hit-target`: a target's box exists only once an engine lays it out, so `src/ui/hit-target.browser.ts` measures
 every component the `core` and `chrome` barrels publish, in every engine.
 
@@ -226,11 +232,11 @@ against a barrel. oxlint judges one file at a time, which is why those checks st
 corpus against forge's API, and the two registers against the plugin, neither of which is a per-file question.
 
 The plugin's rule key is the corpus id minus its `forge-ui-` prefix, derived in both directions and never hand-kept. **The registers name the
-mechanism, one per rule family**, and an author adding a rule declares its enforcer in the register that already holds the rule:
+mechanisms, one register per rule family**, and an author adding a rule declares its enforcer in the register that already holds the rule:
 
-- `src/tooling/lint/design-rules.ts` routes every corpus rule, through `RULE_ENFORCER`. It imports nothing, deliberately: the plugin reaches it
-  through `lint/report.ts` and ships as raw TypeScript, so a module it loads may not drag `tailwindcss` or `oxlint` in behind it
-  ([`NAMESPACES.md`][namespaces-3c] §3c).
+- `src/tooling/lint/design-rules.ts` routes every corpus rule to each mechanism that enforces it, through `RULE_ENFORCER`. It imports nothing,
+  deliberately: the plugin reaches it through `lint/report.ts` and ships as raw TypeScript, so a module it loads may not drag `tailwindcss` or
+  `oxlint` in behind it ([`NAMESPACES.md`][namespaces-3c] §3c).
 - `src/tooling/lint/modern-css-rules.ts` routes every modern-platform rule, through the optional `enforcer` field on the rule's own row — absent
   meaning the modern-CSS check's own detector. `design-rules.ts` names no platform rule at all.
 
@@ -267,6 +273,25 @@ function is not resolved: a class list written there is not the shared recipe th
 other files to apply, and a rule reading only use sites never sees one. It is judged there and not again where the name is used, so it must carry
 its own ring. `DARK_CLASS` is exempt: it names the class the theme script toggles, not a class list. A name bound to another same-file constant is
 followed to the class list at the end of the chain.
+
+### 4c. Code Fences Compile Against the Exports
+
+**Every `tsx` fence in the corpus and in `src/ui/README.md` is consumer code**, and `validate-design` compiles each one as a module of its own under
+the consumer fixture's compiler options and its ambient declarations. A fence that does not compile describes an API forge lacks, which is the
+breach §4 forbids, written in code rather than in prose.
+
+- **A name forge exports is imported in the fence that uses it.** A missing import is a finding that names the subpath exporting it.
+- **Any other name a fence uses without defining is app context** — `errors`, `rows`, `hrefFor`, an `AppIcon` bound elsewhere. The check declares
+  it `any`; the fence never declares it.
+- **A top-level JSX expression ends in `;`**, or the next one parses as its continuation.
+- **A Wrong example still compiles.** It shows a design mistake, never an API forge lacks. Markup that is not TSX is tagged `html`, `ts` or
+  `text`, and is not compiled.
+- **A diagnostic outside a fence fails the check.** It means the run compiled something other than the fences: a missing ambient declaration, or a
+  forge source that breaks under consumer options.
+
+**There is no opt-out marker and no hidden prelude.** A marker is a second way to write a fence, and it exempts exactly the fence that goes stale.
+A prelude is an invisible second copy of the context the fence already shows. App context needs neither, because a name the compiler cannot find
+and forge does not export can only be the app's own.
 
 ---
 
@@ -381,6 +406,7 @@ The dials are Defaults, not Floor — each is rebuttable per §2b, and each rebu
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
 [ag-8]: ../warden/canon/shared/AGENT_GUIDE.md#8-single-home-rule-and-the-source-of-truth-register
 [namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
+[tg-3a]: ./THEME_GENERATION.md#3a-audited-pairs-and-criteria
 [ucc]: ./UI_CLASS_COMPOSITION.md
 [ucc-1c]: ./UI_CLASS_COMPOSITION.md#1c-the-table-is-derived-from-the-compiled-design-system
 [ucr]: ./UI_CLIENT_RUNTIME.md

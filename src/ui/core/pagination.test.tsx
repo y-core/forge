@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { attrsOf, classesOf, variantClasses } from "../../testing/markup";
+import { attrsOf, classesOf, elementOf, innerOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { createIcon } from "./icon";
 import { Pagination } from "./pagination";
@@ -18,10 +18,6 @@ const ITEM = 'data-slot="pagination-item"';
 const PREVIOUS = 'data-slot="pagination-previous"';
 const NEXT = 'data-slot="pagination-next"';
 const CURRENT = 'aria-current="page"';
-
-function contentOf(html: string, tag: string): string {
-  return new RegExp(`<${tag}[^>]*>(.*)</${tag}>`).exec(html)?.[1] ?? "";
-}
 
 function slotsOf(html: string): string[] {
   return [...html.matchAll(/data-slot="([^"]*)"/g)].map((match) => match[1] ?? "");
@@ -173,7 +169,7 @@ describe("Pagination.Item", () => {
     );
 
     expect(attrsOf(html, ITEM)).toEqual({ href: "/9", "aria-current": "page", "data-selected": "", "data-slot": "pagination-item" });
-    expect(contentOf(html, "a")).toBe("9");
+    expect(innerOf(elementOf(html, "a"))).toBe("9");
     expect(classesOf(html, ITEM)).toEqual(
       classesOf(
         await render(
@@ -202,7 +198,7 @@ describe("Pagination.Previous and Pagination.Next", () => {
     );
 
     expect(attrsOf(html, PREVIOUS)).toEqual({ "data-slot": "pagination-previous", href: "/0" });
-    expect(contentOf(html, "a")).toBe(`${LEFT}Prev<span class="sr-only">Previous page</span>`);
+    expect(innerOf(elementOf(html, "a"))).toBe(`${LEFT}Prev<span class="sr-only">Previous page</span>`);
   });
 
   it("puts the glyph after the visible text on the next link, the direction it points", async () => {
@@ -213,7 +209,7 @@ describe("Pagination.Previous and Pagination.Next", () => {
     );
 
     expect(attrsOf(html, NEXT)).toEqual({ "data-slot": "pagination-next", href: "/2" });
-    expect(contentOf(html, "a")).toBe(`Next<span class="sr-only">Next page</span>${RIGHT}`);
+    expect(innerOf(elementOf(html, "a"))).toBe(`Next<span class="sr-only">Next page</span>${RIGHT}`);
   });
 
   it("merges the previous-link chrome onto a single element child under asChild", async () => {
@@ -235,8 +231,8 @@ describe("Pagination.Previous and Pagination.Next", () => {
 describe("Pagination.Previous and Pagination.Next — the name is unavoidable", () => {
   it("names an icon-only step link even with no visible text", async () => {
     expect([
-      contentOf(await render(<Pagination.Previous icon={icon} label='Previous page' href='/0' />), "a"),
-      contentOf(await render(<Pagination.Next icon={icon} label='Next page' href='/2' />), "a"),
+      innerOf(elementOf(await render(<Pagination.Previous icon={icon} label='Previous page' href='/0' />), "a")),
+      innerOf(elementOf(await render(<Pagination.Next icon={icon} label='Next page' href='/2' />), "a")),
     ]).toEqual([`${LEFT}<span class="sr-only">Previous page</span>`, `<span class="sr-only">Next page</span>${RIGHT}`]);
   });
 });
@@ -297,7 +293,7 @@ describe("Pagination — the whole control", () => {
     );
 
     expect(attrsOf(html, PREVIOUS)).toEqual({ href: "/p/1", rel: "prev", "data-slot": "pagination-previous" });
-    expect(contentOf(html, "a")).toBe(`${LEFT}Previous<span class="sr-only">Previous page</span>`);
+    expect(innerOf(elementOf(html, "a"))).toBe(`${LEFT}Previous<span class="sr-only">Previous page</span>`);
   });
 
   it("renders the required icon on an asChild Next, after the child's own children", async () => {
@@ -308,6 +304,6 @@ describe("Pagination — the whole control", () => {
     );
 
     expect(attrsOf(html, NEXT)).toEqual({ href: "/p/3", rel: "next", "data-slot": "pagination-next" });
-    expect(contentOf(html, "a")).toBe(`<span class="sr-only">Next page</span>Next${RIGHT}`);
+    expect(innerOf(elementOf(html, "a"))).toBe(`<span class="sr-only">Next page</span>Next${RIGHT}`);
   });
 });

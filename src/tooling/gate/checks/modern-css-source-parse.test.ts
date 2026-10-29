@@ -1,15 +1,25 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
 
 import { findModernCssSourceViolations } from "./modern-css-source-parse";
 
 const TSX = "src/ui/core/fixture.tsx";
 const TS = "src/ui/client/fixture.ts";
 const CSS = "src/ui/assets/css/fixture.css";
+const FACTORY =
+  'function group(input: "checkbox" | "radio") {\n  return <input type={input} class="size-4 appearance-none rounded border" />;\n}\n';
+const SHIPPED = readFileSync(new URL("../../../ui/core/checkable-group.tsx", import.meta.url).pathname, "utf-8");
+const SHIPPED_CSS = readFileSync(new URL("../../../ui/assets/css/forge-ui.css", import.meta.url).pathname, "utf-8");
 
 const ids = (source: string, file: string): string[] => findModernCssSourceViolations(source, file).map((finding) => finding.ruleId);
 
 const lines = (source: string, file: string): string[] =>
   findModernCssSourceViolations(source, file).map((finding) => `${finding.line} ${finding.ruleId}`);
+
+const exit = (source: string): string[] =>
+  findModernCssSourceViolations(source, CSS)
+    .filter((finding) => finding.ruleId === "forge-ui-platform-exit-geometry")
+    .map((finding) => `${finding.line} ${finding.detail.split(" ")[0]}`);
 
 describe("findModernCssSourceViolations() — Tier B behaviour", () => {
   it("flags a dialog role on an element that is not a `<dialog>`", () => {
@@ -33,8 +43,6 @@ describe("findModernCssSourceViolations() — Tier B behaviour", () => {
     expect(ids("<dialog role='dialog' aria-modal='true'>", TSX)).toEqual([]);
   });
 
-  // A `popover` element is already in the top layer and already light-dismisses, so naming its role
-  // claims nothing the platform is not doing — which is the whole of what this rule looks for.
   it("does not flag the role on a popover panel, which has the top layer the rule asks for", () => {
     expect(ids("<div popover='auto' role='dialog' aria-labelledby='p-title'>", TSX)).toEqual([]);
   });
@@ -243,6 +251,70 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     expect(ids("<input type='checkbox' class='size-4 appearance-none accent-primary' />", TSX)).toEqual([]);
   });
 
+  it("flags a hand-styled checkbox whose type is a braced string literal", () => {
+    const source = `<input type={"checkbox"} class='size-4 appearance-none rounded border' />`;
+    expect(ids(source, TSX)).toEqual(["forge-ui-platform-accent-color"]);
+    expect(findModernCssSourceViolations(source, TSX)[0]?.detail).toBe(
+      'a hand-styled `<input type="checkbox">` — tint the native control with `accent-color`',
+    );
+  });
+
+  it("flags a braced radio literal in single quotes or a template literal", () => {
+    expect(ids("<input type={'radio'} class='appearance-none' />", TSX)).toEqual(["forge-ui-platform-accent-color"]);
+    expect(ids("<input type={`checkbox`} class='appearance-none' />", TSX)).toEqual(["forge-ui-platform-accent-color"]);
+  });
+
+  it("does not flag a braced literal that is not checkable", () => {
+    expect(ids(`<input type={"text"} class='appearance-none' />`, TSX)).toEqual([]);
+  });
+
+  it("does not flag a braced checkable literal already tinted with an accent utility", () => {
+    expect(ids(`<input type={"checkbox"} class='appearance-none accent-primary' />`, TSX)).toEqual([]);
+  });
+
+  it("flags a hand-styled input whose type is a checkbox-or-radio binding, as a checkable factory writes it", () => {
+    expect(lines(FACTORY, TSX)).toEqual(["2 forge-ui-platform-accent-color"]);
+    expect(findModernCssSourceViolations(FACTORY, TSX)[0]?.detail).toBe(
+      "a hand-styled `<input type={input}>` — tint the native control with `accent-color`",
+    );
+  });
+
+  it("flags a binding typed as one optional checkable", () => {
+    expect(ids("interface P { kind?: 'radio' }\nconst R = ({ kind }: P) => <input type={kind} class='appearance-none' />;\n", TSX)).toEqual([
+      "forge-ui-platform-accent-color",
+    ]);
+  });
+
+  it("does not flag a binding whose union admits a non-checkable type", () => {
+    expect(ids(FACTORY.replace('"checkbox" | "radio"', '"checkbox" | "radio" | "text"'), TSX)).toEqual([]);
+  });
+
+  it("does not flag a checkable binding on an element that is not an input", () => {
+    expect(ids(FACTORY.replace("<input", "<Choice"), TSX)).toEqual([]);
+  });
+
+  it("does not flag a checkable binding already tinted with an accent utility", () => {
+    expect(ids(FACTORY.replace("appearance-none", "appearance-none accent-primary"), TSX)).toEqual([]);
+  });
+
+  it("honours an allow directive on the line above a bound type", () => {
+    const source =
+      'function group(input: "radio") {\n  return (\n    <input\n      /* modern-css-allow: forge-ui-platform-accent-color — the mark is redrawn. */\n      type={input}\n      class="appearance-none"\n    />\n  );\n}\n';
+
+    expect(ids(source, TSX)).toEqual([]);
+  });
+
+  it("reports the shipped checkable group once its allow directive is removed", () => {
+    const stripped = SHIPPED.replace(/\/\* modern-css-allow: forge-ui-platform-accent-color — [^*]*\*\//, "");
+
+    expect(stripped).not.toBe(SHIPPED);
+    expect(ids(stripped, "src/ui/core/checkable-group.tsx")).toEqual(["forge-ui-platform-accent-color"]);
+  });
+
+  it("keeps the shipped checkable group quiet through its allow directive", () => {
+    expect(ids(SHIPPED, "src/ui/core/checkable-group.tsx")).toEqual([]);
+  });
+
   it("flags a full-page swap with no view transition", () => {
     expect(ids('win.location.href = "/next";', TS)).toEqual(["forge-ui-platform-view-transition"]);
   });
@@ -314,5 +386,227 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     ].join("\n");
 
     expect(ids(source, CSS)).toEqual([]);
+  });
+});
+
+describe("findModernCssSourceViolations() — open-state geometry", () => {
+  it("flags a size keyed on `:popover-open` at the declaration's line", () => {
+    const source = ["@layer base;", ".menu:popover-open {", "  inline-size: 20rem;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["3 `inline-size`"]);
+  });
+
+  it("names the property, the state and the move in its detail", () => {
+    const source = ["@layer base;", ".menu:popover-open {", "  inline-size: 20rem;", "}"].join("\n");
+
+    expect(findModernCssSourceViolations(source, CSS)).toEqual([
+      {
+        file: CSS,
+        line: 3,
+        ruleId: "forge-ui-platform-exit-geometry",
+        detail:
+          "`inline-size` keyed on `:popover-open` collapses mid-exit, because the element stays painted through its exit fade after `:popover-open` stops matching — declare it on the base selector and key only `opacity`, `overlay` and `display` on the open state",
+      },
+    ]);
+  });
+
+  it("flags a nested `&:popover-open` rule", () => {
+    const source = ["@layer base;", ".menu {", "  &:popover-open {", "    width: 20rem;", "  }", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["4 `width`"]);
+  });
+
+  it("flags an open-state rule inside `@media`", () => {
+    const source = [
+      "@layer base;",
+      "@media (prefers-reduced-motion: no-preference) {",
+      "  .menu:popover-open {",
+      "    width: 20rem;",
+      "  }",
+      "}",
+    ].join("\n");
+
+    expect(exit(source)).toEqual(["4 `width`"]);
+  });
+
+  it("flags a selector list with one open-state member", () => {
+    const source = ["@layer base;", ".a:popover-open, .b {", "  height: 10rem;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["3 `height`"]);
+  });
+
+  it("flags every geometry family once", () => {
+    const properties = [
+      "width",
+      "min-height",
+      "max-inline-size",
+      "inset-inline-start",
+      "top",
+      "margin-block",
+      "padding",
+      "position",
+      "grid-template-columns",
+      "translate",
+      "transform",
+      "scale",
+      "rotate",
+    ];
+    const source = ["@layer base;", ".menu:popover-open {", ...properties.map((property) => `  ${property}: 0;`), "}"].join("\n");
+
+    expect(exit(source)).toEqual(properties.map((property, offset) => `${offset + 3} \`${property}\``));
+  });
+
+  it("does not let a transition on another property exempt the geometry", () => {
+    const source = ["@layer base;", ".menu {", "  transition: opacity 150ms;", "}", ".menu:popover-open {", "  width: 20rem;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["6 `width`"]);
+  });
+
+  it("flags a size keyed on `[open]`", () => {
+    const source = ["@layer base;", "dialog[open] {", "  max-block-size: 80vh;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["3 `max-block-size`"]);
+  });
+
+  it("flags an `[open]` selector carrying a value", () => {
+    const source = ["@layer base;", 'details[open=""] {', "  padding: 1rem;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["3 `padding`"]);
+  });
+
+  it("flags a descendant of an open element", () => {
+    const source = ["@layer base;", ".dialog[open] .panel {", "  padding: 1rem;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["3 `padding`"]);
+  });
+
+  it("flags a nested `&[open]` rule", () => {
+    const source = ["@layer base;", ".dialog {", "  &[open] {", "    margin: auto;", "  }", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["4 `margin`"]);
+  });
+
+  it("flags a non-modal placement keyed on `[open]` with no transition behind it", () => {
+    const source = ["@layer base;", ".dialog[open]:not(:modal) {", "  position: static;", "  margin: 0;", "}"].join("\n");
+
+    expect(exit(source)).toEqual(["3 `position`", "4 `margin`"]);
+  });
+
+  it("does not flag the properties the open state is meant to carry", () => {
+    const source = [
+      "@layer base;",
+      ".menu:popover-open {",
+      "  opacity: 1;",
+      "  color: red;",
+      "  background-color: white;",
+      "  transition-duration: 150ms;",
+      "  overlay: auto;",
+      "  display: block;",
+      "}",
+    ].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("does not flag a colour keyed on `[open]`", () => {
+    expect(exit(["@layer base;", "details[open] {", "  color: red;", "}"].join("\n"))).toEqual([]);
+  });
+
+  it("does not flag geometry keyed on the closed state", () => {
+    expect(exit(["@layer base;", ".drawer:not([open]) {", "  translate: -100% 0;", "}"].join("\n"))).toEqual([]);
+  });
+
+  it("does not flag an open state that only scopes a sibling through `:has()`", () => {
+    expect(exit(["@layer base;", ":has(> .content:popover-open) > .trigger {", "  padding: 1rem;", "}"].join("\n"))).toEqual([]);
+  });
+
+  it("does not flag look-alike attribute and class names", () => {
+    const source = [
+      "@layer base;",
+      "[data-open] {",
+      "  width: 1rem;",
+      "}",
+      "[data-open-modal] {",
+      "  width: 1rem;",
+      "}",
+      ".popover-open {",
+      "  width: 1rem;",
+      "}",
+    ].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("does not flag a starting style", () => {
+    const source = ["@layer base;", "@starting-style {", "  .menu:popover-open {", "    translate: 0 -0.5rem;", "  }", "}"].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("does not flag a property the stylesheet transitions", () => {
+    const source = ["@layer base;", ".menu {", "  transition: scale 150ms, opacity 150ms;", "}", ".menu:popover-open {", "  scale: 1;", "}"].join(
+      "\n",
+    );
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("treats a transitioned shorthand as covering its longhands", () => {
+    const source = ["@layer base;", ".dialog {", "  transition: margin 150ms;", "}", ".dialog[open] {", "  margin-inline: auto;", "}"].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("treats `transition: all` as covering every property", () => {
+    const source = ["@layer base;", ".menu {", "  transition: all 150ms;", "}", ".menu:popover-open {", "  height: 10rem;", "}"].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("does not flag a non-modal placement whose exit transitions it", () => {
+    const source = [
+      "@layer base;",
+      ".dialog:not([open]) {",
+      "  transition: position 150ms step-end allow-discrete, margin 150ms step-end allow-discrete;",
+      "}",
+      ".dialog[open]:not(:modal) {",
+      "  position: static;",
+      "  margin: 0;",
+      "}",
+    ].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("does not flag geometry on the base selector", () => {
+    const source = ["@layer base;", ".menu {", "  inline-size: 20rem;", "}", ".menu:popover-open {", "  opacity: 1;", "}"].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("honours an allow directive on the line above", () => {
+    const source = [
+      "@layer base;",
+      ".menu:popover-open {",
+      "  /* modern-css-allow: forge-ui-platform-exit-geometry — the width change is the reveal */",
+      "  width: 20rem;",
+      "}",
+    ].join("\n");
+
+    expect(exit(source)).toEqual([]);
+  });
+
+  it("does not read a stylesheet rule out of a script file", () => {
+    const source = ["const css = `", ".menu:popover-open {", "  width: 20rem;", "}", "`;"].join("\n");
+
+    expect(ids(source, TS)).not.toContain("forge-ui-platform-exit-geometry");
+  });
+
+  it("does not flag a custom property", () => {
+    expect(exit(["@layer base;", ".menu:popover-open {", "  --menu-width: 20rem;", "}"].join("\n"))).toEqual([]);
+  });
+
+  it("keeps forge's own stylesheet quiet", () => {
+    expect(exit(SHIPPED_CSS)).toEqual([]);
   });
 });

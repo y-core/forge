@@ -27,7 +27,7 @@ function scrollTop(page: Page): Promise<number | undefined> {
   return page.evaluate(() => document.querySelector("#viewport")?.scrollTop);
 }
 
-test("scrolls with the wheel and no JavaScript loaded", async ({ page }) => {
+test("scrolls with the wheel and no JavaScript loaded", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, await markup());
 
   await page.hover("#viewport");
@@ -36,7 +36,7 @@ test("scrolls with the wheel and no JavaScript loaded", async ({ page }) => {
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0);
 });
 
-test("scrolls from the keyboard, which requires the viewport to be focusable", async ({ page }) => {
+test("scrolls from the keyboard, which requires the viewport to be focusable", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, await markup());
 
   await page.focus("#viewport");
@@ -45,7 +45,7 @@ test("scrolls from the keyboard, which requires the viewport to be focusable", a
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(0);
 });
 
-test("the viewport overflows rather than clipping", async ({ page }) => {
+test("the viewport overflows rather than clipping", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, await markup());
 
   const overflow = await page.evaluate(() => {
@@ -57,7 +57,7 @@ test("the viewport overflows rather than clipping", async ({ page }) => {
   expect(overflow).toEqual({ css: "auto", scrollable: true });
 });
 
-test("a root bounded by max-height scrolls instead of spilling its content past the root", async ({ page }) => {
+test("a root bounded by max-height scrolls instead of spilling its content past the root", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, await markup(BOUNDED_STYLES));
 
   const boxes = await page.evaluate(() => {

@@ -77,12 +77,13 @@ Each script is a tier, and each tier runs everything the one above it in this ta
 | --- | --- | --- |
 | Writing, between edits | `bun run verify:static` | Every row that judges the source rather than running it |
 | On a machine with no runtime installed | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
-| Closing a task | `bun run verify` | The runtime rows — browser, workerd, database — on their primary engine, over your pending changes |
-| Running CI on a tag | `bun run verify:deploy` | Every runtime row whole, plus the rows that judge a finished change: changelog, deployed bundle, features |
+| Closing a task | `bun run verify` | The runtime rows — workerd, database — over your pending changes. No browser spec |
+| Running CI on a tag | `bun run verify:deploy` | Every runtime row whole, the browser set on its primary engine, and the rows that judge a finished change: changelog, deployed bundle, features |
 | Signing off a release | `bun run verify:release` | The browser set again on each other engine you list, on the compat server |
 
-Which tier a row belongs to is decided by [`TESTING.md`][testing-6c] §6c's lines, never by how long it takes. `forge verify --list` prints the
-rows a tier resolves to.
+Which tier a row belongs to is decided by [`TESTING.md`][testing-6c] §6c's lines, never by how long it takes — with one exception, the browser set,
+which starts at `deploy` because the whole suite is too slow for the run a task closes on. A broken page is therefore caught by the nightly
+`verify:release` rather than at task close. `forge verify --list` prints the rows a tier resolves to.
 
 **At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. From `deploy` up
 every row runs whole.
@@ -91,21 +92,19 @@ every row runs whole.
 
 ## Deciding which runtime rows a change reaches
 
-**An application declares nothing for this by default.** At `runtime` the browser and workerd rows ask Playwright which specs your pending changes
-reach, and the database rows run on every change. The pending changes are the working tree against `HEAD`, read as `--affected` reads them (below).
-**The narrowed run is still the gate**, not a scoped run, and it records a receipt.
+**An application declares nothing for this by default.** At `runtime` the workerd row asks Playwright which specs your pending changes reach, and
+the database rows run on every change. The browser rows are not at `runtime`, so nothing narrows them. The pending changes are the working tree
+against `HEAD`, read as `--affected` reads them (below). **The narrowed run is still the gate**, not a scoped run, and it records a receipt.
 
-**Under `cloudflareWorkerSteps`, a change to your app's source runs the browser and workerd rows whole.** A spec reaches your app through the
-server it starts, never through an import, so the preset widens both rows by everything the `main` of your wrangler config imports. Only an edit
-confined to specs and their helpers narrows. A wrangler config that names no `main` runs the rows whole on every change.
+**Under `cloudflareWorkerSteps`, a change to your app's source runs the workerd row whole.** A spec reaches your app through the server it starts,
+never through an import, so the preset widens the row by everything the `main` of your wrangler config imports. Only an edit confined to specs and
+their helpers narrows. A wrangler config that names no `main` runs the row whole on every change.
 
-**Set `assetConfig` and a change to anything your asset build reads runs the browser rows whole too.** The browser loads what `build:assets`
-writes, not what the Worker imports, so the preset adds `assetInputs` from `@y-core/forge/tooling/assets` to their reach. That covers each JS
-bundle's inputs, every stylesheet your CSS entries load and every file their `@source` lines cover, the paths the config names, and the config's
-own imports. The workerd row takes the same set only when your wrangler config has an `assets` block, because only then does the Worker serve
-those files. Before you rely on it:
+**Set `assetConfig`, and give your wrangler config an `assets` block, and a change to anything your asset build reads runs the workerd row whole
+too.** The preset adds `assetInputs` from `@y-core/forge/tooling/assets` to its reach: each JS bundle's inputs, every stylesheet your CSS entries
+load and every file their `@source` lines cover, the paths the config names, and the config's own imports. Before you rely on it:
 
-- **A stylesheet that leaves Tailwind's automatic detection on covers every file in the tree**, so every change runs the browser rows whole.
+- **A stylesheet that leaves Tailwind's automatic detection on covers every file in the tree**, so every change runs the row whole.
   Import Tailwind with `source(none)` and name your directories with `@source` ([`src/ui/README.md`][ui-scan]) to get narrowing back.
 - **An asset input that does not resolve runs the rows whole on every change** — a config path missing from disk, or a stylesheet import that
   resolves to nothing. Fix the config and narrowing returns.
@@ -121,11 +120,11 @@ When it lists a spec, the row runs its command plus `--only-changed`; when the l
 same question, so it shows each row as narrowed, untouched or whole before anything runs. A Playwright row lists on every change it does not
 already run whole for, which is the price of deriving its reach rather than declaring it.
 
-**Declare `wide` for a file a spec reads without importing it.** `--only-changed` follows imports, so a stylesheet a page loads or a fixture a spec
-reads from disk reaches no spec when it changes. A change under a `wide` glob runs the row whole, and `playwright.config.ts` is always wide:
+**Declare `wide` for a file a spec reads without importing it.** `--only-changed` follows imports, so a fixture a spec reads from disk reaches no
+spec when it changes. A change under a `wide` glob runs the row whole, and `playwright.config.ts` is always wide:
 
 ```ts
-...browserSteps({ engines: ["chromium"], narrow: { wide: ["src/styles/**", "tests/fixtures/**"] } }),
+workerdStep({ narrow: { wide: ["tests/fixtures/**"] } }),
 ```
 
 **Pass `widen` for code a spec reaches without importing it** — a Worker it serves, or a module a fixture bundles from a string — which no glob can
@@ -135,13 +134,12 @@ whole, and so does a `widen` that rejects. The gate asks it of a row that would 
 
 ```ts
 import { importClosure } from "@y-core/forge/tooling/assets";
-import { browserSteps, workerdStep, workerMainClosure } from "@y-core/forge/tooling/gate";
+import { workerdStep } from "@y-core/forge/tooling/gate";
 
-...browserSteps({ engines: ["chromium"], widen: (cwd) => workerMainClosure(cwd, "workers/admin/wrangler.jsonc") }),
 workerdStep({ widen: (cwd) => importClosure(cwd, ["./tests/fixtures/queue-consumer.ts"]) }),
 ```
 
-`browserStep` and `workerdStep` take the same `widen`. **Leave `watches` off a Playwright row**: the listing already decides it, and a hand-kept
+**Leave `watches` off a Playwright row**: the listing already decides it, and a hand-kept
 list can only skip a row the listing would have run.
 
 **Every `watches` and `wide` glob must match a file in the work tree**, tracked or untracked. A glob that matches nothing — usually a directory you
@@ -214,7 +212,7 @@ Most rows are opt-in, and each option is a question about your repository rather
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's installed manifest, so an app
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Dev-only code of the
 app's own needs no option: name it `*.dev.ts`, and the row fails a production module importing it, a type import included, while a `*.dev.ts` may
-import another. Code the shared path does call goes behind the app's own `imports` alias instead ([`src/tooling/cf/README.md`][cf-own]); the row
+import another. Code the shared path does call goes behind the app's `#app/relax` alias instead ([`src/relax/README.md`][relax-readme]); the row
 fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. The bundle row
 below still proves the built Worker.
 
@@ -308,7 +306,15 @@ bun run verify --only lint,test    # narrow the run (branded as scoped)
 bun run verify --fix               # run each selected step's fixer instead
 bun run verify --reuse             # answer at once if this exact tree already passed
 bun run verify --affected          # run only the steps this change touches (branded as scoped)
+bun run verify:release --report out/   # write out/report.json and every step's whole log, whatever the verdict
 ```
+
+**`--report <dir>` is for a run nobody is watching**, such as a nightly one. `report.json` names the tier, the `HEAD` commit, the tree, the start
+time, the duration and the verdict, then each step's status — `passed`, `failed`, `setup`, `skipped`, `untouched` or `unreached` — with its
+duration and the log file beside it. A browser row also lists its failing tests by engine, spec, title and first error line, read from Playwright's
+JSON reporter, which the gate adds to the row only under `--report`. A browser row that never reached a test — `webServer` or `globalSetup`
+failed, or the Playwright server was absent — is `setup`, not `failed`, because it says nothing about the code. `--report` takes no `--list`,
+`--fix`, `--reuse` or `--affected`.
 
 `forge verify --help` lists every flag. An unknown `--tier` is refused, and an unknown `--only` label is refused with the known ones listed.
 `--root` is the directory every step runs in, and the base a relative `--config` resolves against.
@@ -470,7 +476,7 @@ off `binDir`, whose shebang is node.** Not `bunx`, which installs from the regis
 
 Chromium is the browser set. Add Firefox and WebKit when your application needs wider compatibility, as its final sign-off.
 
-`browserSteps` gives each engine its own row. The primary engine's row is `test:browser` and runs from `runtime`, so a task closes on one engine;
+`browserSteps` gives each engine its own row. The primary engine's row is `test:browser` and runs from `deploy`, so a tag runs one engine;
 every other engine's row is `test:browser:<engine>` and runs only at `release`. The primary engine is Chromium when you list it and the first
 engine otherwise; `primary` names another. Your `playwright.config.ts` declares a project per engine.
 
@@ -663,10 +669,10 @@ and reading it as "select no steps" would refuse every unscoped run.
 [bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ../../../docs/BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
-[cf-own]: ../cf/README.md#keeping-your-own-dev-only-code-out-of-the-deploy
 [cli-readme]: ../cli/README.md
 [lint-readme]: ../lint/README.md
 [namespaces-5i]: ../../../docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
+[relax-readme]: ../../relax/README.md
 [release-readme]: ../release/README.md
 [testing-6]: ../../../docs/TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers

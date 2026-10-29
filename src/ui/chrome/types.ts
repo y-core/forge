@@ -26,7 +26,7 @@ export interface DockProps<G extends string = string> extends Omit<JSX.Intrinsic
   /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
   resolveHref: (key: string) => string;
   icon: ForgeIcon<G>;
-  /** The bar's accessible name. @default LABEL_DEFAULTS.dock */
+  /** The bar's accessible name; defaults to `LABEL_DEFAULTS.dock`. */
   label?: string | undefined;
   size?: Size | undefined;
   hideAbove?: DockHideAbove | undefined;
@@ -136,9 +136,9 @@ export type NavbarProps = NavbarInlineProps | NavbarBarDrawerProps | NavbarRailD
 export interface ThemeToggleProps {
   /** Bound icon supplying the `sun`, `moon`, and `monitor` glyphs. */
   icon: ForgeIcon<"sun" | "moon" | "monitor">;
-  /** Control size, mapped to a 16 / 20 / 24 px icon. @default "md" */
+  /** Control size, mapped to a 16 / 20 / 24 px icon; defaults to `"md"`. */
   size?: Size | undefined;
-  /** The name read for each pane, one per theme. @default LABEL_DEFAULTS.themeLight / .themeDark / .themeSystem */
+  /** The name read for each pane, one per theme; defaults to `LABEL_DEFAULTS.themeLight` / `.themeDark` / `.themeSystem`. */
   labels?: { light?: string | undefined; dark?: string | undefined; system?: string | undefined } | undefined;
   /** Additional classes merged onto the toggle button. */
   class?: string | undefined;
@@ -250,9 +250,9 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
   placement?: NavPlacement | undefined;
   /** Which breakpoints the bar collapses behind its toggle at. */
   collapsible?: NavCollapsible | undefined;
-  /** Accessible name for the collapse toggle. @default LABEL_DEFAULTS.navbarToggle */
+  /** Accessible name for the collapse toggle; defaults to `LABEL_DEFAULTS.navbarToggle`. */
   toggleLabel?: string | undefined;
-  /** Renders the underlying `<details>` open on first paint. Attribute-only; there is no controller. */
+  /** Renders the underlying `<details>` open on first paint. */
   defaultOpen?: boolean | undefined;
   /** DOM id for the bar; also namespaces the generated menu ids. */
   id?: string | undefined;

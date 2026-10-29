@@ -220,31 +220,40 @@ the route once in development after you add it.
 
 ## Keeping dev-only sources out of the production policy
 
-Compute dev-only CSP sources — a live-reload hash, a local tooling origin — in a dev-only module behind your own `imports` alias, never in the
-shared base. The alias's `default` target returns `{}`, and the dev target answers only in a build `forge cf dev` armed; the alias, the shared type
-and the check are set up as in [Keeping your own dev-only code out of the deploy][cf-own]:
+Compute dev-only CSP sources — a live-reload hash, a local tooling origin — as one more export on your app's `#app/relax` pair, never in the shared
+base ([`src/relax/README.md`][relax-readme]). The strict file answers `{}`:
 
 ```ts
-// src/dev-csp.dev.ts — "#app/dev-csp" resolves here under forge cf dev, and to src/dev-csp.strict.ts otherwise
-import type { DevCspSources } from "./types";
+// src/app/relax.strict.ts
+import type { SecurityHeadersOptions } from "@y-core/forge/security";
 
-declare const __FORGE_DEV__: boolean | undefined;
+export const devCspSources = (): Partial<SecurityHeadersOptions> => ({});
+```
+
+The dev file answers with the extra sources only in a build `forge cf dev` armed:
+
+```ts
+// src/app/relax.dev.ts
+import { isDevBuildArmed, whenArmed } from "@y-core/forge/relax";
+import type { SecurityHeadersOptions } from "@y-core/forge/security";
+
+import { devCspSources as strictDevCspSources } from "./relax.strict";
 
 const WRANGLER_LIVE_RELOAD_HASH = "'sha256-g5a3SrOYIecCloZ8S7M4xdT1pbYi6e7mjHrmwphRxfE='";
 
-export const devCspSources: DevCspSources = () =>
-  typeof __FORGE_DEV__ !== "undefined" && __FORGE_DEV__ === true ? { scriptSrc: [WRANGLER_LIVE_RELOAD_HASH] } : {};
+export const liveReloadSources = (): Partial<SecurityHeadersOptions> => ({ scriptSrc: [WRANGLER_LIVE_RELOAD_HASH] });
+
+export const devCspSources: typeof strictDevCspSources = whenArmed(isDevBuildArmed, liveReloadSources, strictDevCspSources);
 ```
 
 ```ts
 // the shared app module
-import { devCspSources } from "#app/dev-csp";
+import { devCspSources } from "#app/relax";
 
 app.use("*", createSecurityHeaders(mergeSecurityHeaders(baseHeaders, devCspSources())));
 ```
 
-`DevCspSources` is `() => Partial<SecurityHeadersOptions>`, declared once in your `src/types.ts`. A deploy bundles the `default` target, so the
-hash never reaches production. The containment guarantee is [`SECURITY_HARDENING.md`][sh-2c] §2c's.
+A deploy bundles the strict file, so the hash never reaches production. The containment guarantee is [`SECURITY_HARDENING.md`][sh-2c] §2c's.
 
 ---
 
@@ -588,7 +597,6 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 [assets-readme]: ../tooling/assets/README.md
 [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [cf-dev]: ../tooling/cf/README.md#running-the-app-locally
-[cf-own]: ../tooling/cf/README.md#keeping-your-own-dev-only-code-out-of-the-deploy
 [eh-5b]: ../../docs/FORGE_ERRORS.md#5b-unexpected-errors--the-router-error-boundary
 [form-readme]: ../form/README.md
 [html-readme]: ../html/README.md
@@ -596,6 +604,7 @@ when the app sends one. Why the two headers behave differently is [`SECURITY_HAR
 [http-readme]: ../http/README.md
 [ram-3d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3d-security-middleware-placement
 [ram-3e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
+[relax-readme]: ../relax/README.md
 [sec-anchor]: #security
 [session-readme]: ../session/README.md
 [sh]: ../../docs/SECURITY_HARDENING.md

@@ -21,7 +21,7 @@ interface TimelineItemProps extends Omit<JSX.IntrinsicElements["li"], "children"
   state?: StepState | undefined;
   /** What the marker circle shows — a number, a glyph, a tick. */
   marker?: JSXNode | undefined;
-  /** The word read for this entry's state. @default STEP_STATE_LABELS[state] */
+  /** The word read for this entry's state; defaults to `STEP_STATE_LABELS[state]`. */
   stateLabel?: string | undefined;
   children?: JSXNode | undefined;
 }
@@ -56,7 +56,7 @@ const TimelineRoot: FC<TimelineRootProps> = ({
 );
 
 const TimelineItem: FC<TimelineItemProps> = ({ state = "upcoming", marker, stateLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <li data-slot={slotToken("timeline-item", inherited)} data-state={state} class={cn(ITEM, cls)} {...rest}>
+  <li data-slot={slotToken("timeline-item", inherited)} {...stateAttrs({ state })} class={cn(ITEM, cls)} {...rest}>
     <span data-slot='timeline-marker-column' aria-hidden='true' class={MARKER_COLUMN}>
       <span data-slot='timeline-marker' class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>
         {marker}

@@ -1,19 +1,17 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
 import type { FC, JSX, JSXNode } from "../../render/jsx/types";
-import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogNameAttrs } from "../contracts/dialog-contract";
-import { titleId } from "../contracts/naming";
+import { DIALOG_OPEN_MODAL_ATTR, DIALOG_SCOPE, dialogAlertAttrs, dialogNameAttrs } from "../contracts/dialog-contract";
 import { stateAttrs } from "../contracts/state-attrs";
-import type { DialogNaming, PhysicalSide } from "../contracts/types";
-import { buttonBox } from "./button";
-import { mergeIdRefs } from "./field";
+import type { DialogAlertFlags, DialogNaming, PhysicalSide } from "../contracts/types";
+import { createDialogParts } from "./dialog-parts";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { PANEL_FOOTER, PANEL_HEADER } from "./utils/recipes";
+import { mergeIdRefs } from "./utils/id-refs";
 
 type DrawerProps = DialogNaming & DrawerOwnProps;
 
-interface DrawerOwnProps extends Omit<JSX.IntrinsicElements["dialog"], "children"> {
+interface DrawerOwnProps extends Omit<JSX.IntrinsicElements["dialog"], "children">, DialogAlertFlags {
   /** Element id — the `commandfor` target named by `Drawer.Trigger` / `Drawer.Close`. */
   id: string;
   /** Viewport edge the panel is anchored to; physical because a drawer must not mirror with direction. */
@@ -24,30 +22,6 @@ interface DrawerOwnProps extends Omit<JSX.IntrinsicElements["dialog"], "children
   open?: boolean | undefined;
   /** Open as a modal on resume. Requires the client runtime; `showModal()` has no markup spelling. */
   openModal?: boolean | undefined;
-  children?: JSXNode | undefined;
-}
-
-type DrawerSectionProps = JSX.IntrinsicElements["div"];
-
-interface DrawerTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  /** id of the `Drawer` this button opens as a modal — its `commandfor` target. */
-  for: string;
-  children?: JSXNode | undefined;
-}
-
-interface DrawerCloseProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
-  /** id of the `Drawer` this button closes — its `commandfor` target. */
-  for: string;
-  /** Run the cancelable close-request algorithm (`request-close`) instead of `close`. */
-  request?: boolean | undefined;
-  children?: JSXNode | undefined;
-}
-
-interface DrawerTitleProps extends Omit<JSX.IntrinsicElements["h2"], "children" | "id"> {
-  /** id of the `Drawer` this heading names — the root's `aria-labelledby` target is derived from it. */
-  for: string;
-  /** Heading level, from where the drawer sits in the document. Defaults to `2`. */
-  level?: 1 | 2 | 3 | 4 | 5 | 6 | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -66,90 +40,36 @@ const DrawerRoot: FC<DrawerProps> = ({
   label,
   labelledby,
   titled,
+  alert = false,
+  described = false,
   open,
   openModal,
   class: cls,
   children,
   "data-slot": inherited,
+  "aria-describedby": describedBy,
   "aria-labelledby": ownLabelledBy,
   ...props
-}) => (
-  <dialog
-    id={id}
-    data-slot={slotToken("drawer", inherited)}
-    {...dialogNameAttrs(id, { label, labelledby, titled })}
-    aria-labelledby={mergeIdRefs(ownLabelledBy, [dialogNameAttrs(id, { label, labelledby, titled })["aria-labelledby"]])}
-    {...(open && !openModal ? { open: true } : {})}
-    {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
-    {...(open && !openModal ? {} : { closedby: "any" })}
-    class={cn(DRAWER_BASE, DRAWER_AXIS[side], cls)}
-    {...stateAttrs({ side })}
-    {...props}>
-    {children}
-  </dialog>
-);
-
-const DrawerTrigger: FC<DrawerTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => {
+}) => {
+  const alerting = dialogAlertAttrs(id, { alert, described });
   return (
-    <button
-      type='button'
-      data-slot={slotToken("drawer-trigger", inherited)}
-      command='show-modal'
-      commandfor={target}
-      class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
+    <dialog
+      id={id}
+      data-slot={slotToken("drawer", inherited)}
+      role={alerting.role}
+      {...dialogNameAttrs(id, { label, labelledby, titled })}
+      aria-labelledby={mergeIdRefs(ownLabelledBy, [dialogNameAttrs(id, { label, labelledby, titled })["aria-labelledby"]])}
+      aria-describedby={mergeIdRefs(describedBy, [alerting["aria-describedby"]])}
+      {...(open && !openModal ? { open: true } : {})}
+      {...(openModal ? { "data-scope": DIALOG_SCOPE, [DIALOG_OPEN_MODAL_ATTR]: "" } : {})}
+      {...(open && !openModal ? {} : { closedby: alerting.closedby })}
+      class={cn(DRAWER_BASE, DRAWER_AXIS[side], cls)}
+      {...stateAttrs({ side })}
       {...props}>
       {children}
-    </button>
+    </dialog>
   );
 };
-
-const DrawerClose: FC<DrawerCloseProps> = ({ for: target, request = false, class: cls, children, "data-slot": inherited, ...props }) => {
-  return (
-    <button
-      type='button'
-      data-slot={slotToken("drawer-close", inherited)}
-      command={request ? "request-close" : "close"}
-      commandfor={target}
-      class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
-      {...props}>
-      {children}
-    </button>
-  );
-};
-
-const DrawerTitle: FC<DrawerTitleProps> = ({ for: target, level, class: cls, children, "data-slot": inherited, ...rest }) => {
-  const Heading = `h${level ?? 2}` as "h2";
-  return (
-    <Heading data-slot={slotToken("drawer-title", inherited)} id={titleId(target)} class={cn("text-base font-semibold", cls)} {...rest}>
-      {children}
-    </Heading>
-  );
-};
-
-const DrawerHeader: FC<DrawerSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("drawer-header", inherited)} class={cn(PANEL_HEADER, cls)} {...rest}>
-    {children}
-  </div>
-);
-
-const DrawerContent: FC<DrawerSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("drawer-content", inherited)} class={cn("min-h-0 flex-1 overflow-y-auto px-6 py-5", cls)} {...rest}>
-    {children}
-  </div>
-);
-
-const DrawerFooter: FC<DrawerSectionProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <div data-slot={slotToken("drawer-footer", inherited)} class={cn(PANEL_FOOTER, cls)} {...rest}>
-    {children}
-  </div>
-);
 
 /** Edge-anchored modal panel built on the native `<dialog>` and Invoker Commands APIs. @public */
-export const Drawer = Object.assign(DrawerRoot, {
-  Trigger: DrawerTrigger,
-  Close: DrawerClose,
-  Title: DrawerTitle,
-  Header: DrawerHeader,
-  Content: DrawerContent,
-  Footer: DrawerFooter,
-});
+export const Drawer = Object.assign(DrawerRoot, createDialogParts("drawer", "min-h-0 flex-1 overflow-y-auto px-6 py-5"));

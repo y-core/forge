@@ -7,12 +7,15 @@ import { validateCommentBudget } from "./comment-budget-parse";
 import { resolveSources, unresolvedSourceEntries } from "./source-scan";
 import type { CommentBudgetCheckConfig } from "./types";
 
-const SCANNED = (name: string): boolean => name.endsWith(".ts") || name.endsWith(".tsx");
+/** Whether the comment budget walks a file of this name. @internal */
+export function isBudgetedSource(name: string): boolean {
+  return name.endsWith(".ts") || name.endsWith(".tsx") || name.endsWith(".css");
+}
 
 /** Fails on every comment the `CODE_RULES.md` §5a budget does not permit. @public */
 export function checkCommentBudget(config: CommentBudgetCheckConfig): CheckResult {
   const licences = config.licences ?? new Map<string, string>();
-  const files = resolveSources(config.root, config.sources, SCANNED);
+  const files = resolveSources(config.root, config.sources, isBudgetedSource);
   if (files.length === 0) return scannedNothing(`\`${config.sources.join("`, `")}\` matched no source`, "comment-budget");
   const unresolved = unresolvedSourceEntries(config.root, config.sources, "file or directory");
   if (unresolved.length > 0) return checkResult(unresolved, "");

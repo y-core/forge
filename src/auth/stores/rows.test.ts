@@ -55,8 +55,6 @@ describe("storeError", () => {
     expect([error.code, error.operation, error.constraint]).toEqual(["conflict", "users.create", "auth_users.email_key"]);
   });
 
-  // A CHECK is the schema refusing the caller's value — an address that NFKC-expanded past 254
-  // characters. Folded into `unavailable` it would render a client's own mistake as an outage.
   it("reports a CHECK failure as invalid, not as unavailable", () => {
     const cause = new Error("D1_ERROR: CHECK constraint failed: auth_users: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_CHECK)");
     const error = storeError("users.create", cause);
@@ -78,7 +76,7 @@ describe("storeError", () => {
 });
 
 describe("every write reports whether a row changed", () => {
-  /** One call per write on the four stores, so no method can quietly go back to reporting success. */
+  /** One call per write on every store, so no method can quietly go back to reporting success. */
   function everyWrite(client: D1Client): Promise<{ ok: boolean; data?: unknown }>[] {
     const users = createUserStore(client);
     const factors = createFactorStore(client);
@@ -109,8 +107,6 @@ describe("every write reports whether a row changed", () => {
   });
 });
 
-// `uuidToBytes` throws, and every call bound it as an argument to the query — outside the client's
-// `Result` boundary, so a crafted `?after=u9` left the Worker as a rejected promise and a 500.
 describe("an id that is not a canonical UUID", () => {
   const BAD_IDS = ["u9", "", "01a08574-257c-71bd-8eb7-f399ec130d3", "'; DROP TABLE auth_users; --"];
 
@@ -187,8 +183,6 @@ describe("an id that is not a canonical UUID", () => {
     expect(db.calls).toEqual([]);
   });
 
-  // An insert is the one shape whose contract has no in-band "no such row", so it reports the
-  // failure the foreign key would have reported.
   it("reports an insert against a malformed owner as reference, never as a throw", async () => {
     const [client] = writerOf(() => 1);
     const inserts = [
@@ -208,8 +202,6 @@ describe("an id that is not a canonical UUID", () => {
   });
 });
 
-// A decode runs in the `ok(read(row))` branch, so a column the schema cannot hold threw past the
-// `Result` and out of the Worker.
 describe("a row that will not decode", () => {
   const CORRUPT = { id: "not-bytes", user_id: "not-bytes", public_key: "not-bytes", transports: null, kind: "passkey", algorithm: -7 };
 
@@ -254,8 +246,6 @@ describe("a row that will not decode", () => {
   });
 });
 
-// SQLite reads `LIMIT -1` as no limit, so an unclamped page size is a whole-table read a query
-// string can ask for.
 describe("a page limit outside the range a statement may bind", () => {
   async function limitBoundBy(limit: number, search = false): Promise<unknown> {
     const [client, db] = clientOf(() => []);
@@ -279,8 +269,6 @@ describe("a page limit outside the range a statement may bind", () => {
   });
 });
 
-// The schema and the queries drift silently otherwise: nothing fails until a production query
-// names a column D1 does not have.
 describe("schema drift", () => {
   const schema = readFileSync(new URL("../schema.sql", import.meta.url).pathname, "utf-8");
 

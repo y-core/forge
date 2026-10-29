@@ -76,8 +76,12 @@ preference:
 **A browser test runs in a real browser under its own verb**, with its own config owning the discovery pattern, project list, and parallelism.
 
 **The set sits outside `unit`, and the reason is a prerequisite, not cost.** It needs a browser binary or server an install step provides, and a
-prerequisite is the only legitimate ground for a set to stand outside it (§6c). **Cost never is.** It runs from `runtime` up, the tiers that are
-permitted to carry a prerequisite.
+prerequisite is the only legitimate ground for a set to stand outside it (§6c).
+
+**It runs from `deploy` up rather than `runtime`, and that placement is the one a tier line makes by cost.** The whole set is the slowest row in
+any gate and the one a change least often breaks, and narrowing it bought almost nothing, because a spec's reach covers nearly every source file.
+**The price is stated rather than hidden: a broken behaviour is found by the next nightly run (§6a), not at task close.** A tag still never ships
+without the set. No other step may cite this as precedent; §6c's rule holds for each of them.
 
 **Chromium is the set's engine; another engine is an opt-in `release` row (§6c)**, for a library whose consumers need wider compatibility. Where the
 environment serves the other engines from their own server, the browser config routes those projects there and the gate probes the server each row
@@ -360,8 +364,12 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 **There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** Verbs
 sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
 `static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **`runtime` is what a bare invocation runs**, and it is what a task closes on; `static` is the loop to
-write in, `unit` is the run for a machine with no runtime installed, `deploy` is the run a remote makes before a version ships, and `release` is the
-gate a publish blocks on. What separates one tier from the next is §6c's.
+write in, `unit` is the run for a machine with no runtime installed, `deploy` is the run a remote makes before a version ships and the first to
+carry the browser set (§1c), and `release` is the gate a publish blocks on. What separates one tier from the next is §6c's.
+
+**Nightly — `verify:release`, run by the ledger host — is the periodic moment.** It gates a fresh checkout of the default branch, never a
+developer's work tree, with `--report`, and lands a failure as one open task in the ledger of the project it ran for, rewritten in place by each
+later failure while it stays open. A run that never reached a test is logged and filed as nothing.
 
 **A config file owns the step list** — every step, how it runs, and the tier it runs from. Read it there rather than trusting any prose copy. A
 step is one of two things: an external command, or a check the runner calls in-process.
@@ -386,6 +394,7 @@ of it too** — a green that skipped a step is not the green that ran it.
 | `--fix` | Run each selected step's fixer, then re-run to confirm |
 | `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this tier or higher; otherwise run the gate |
 | `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
+| `--report <dir>` | Write `report.json` — tier, commit, tree, verdict, and each step's status, duration, log and failing tests — and every step's whole log into `<dir>`, whatever the verdict |
 
 ### 6b. What Each Tool Catches
 
@@ -414,9 +423,10 @@ wrote.
 
 **The prerequisite line separates `unit` from `runtime`.** Every step below it works on any machine with the repository's dependencies installed —
 nothing to fetch, no binary or service beyond the declared dev dependencies. That is what makes those runs the gate anyone may run at any time, and
-**why cost is never grounds for moving a step across this line**. A step that needs a runtime — a browser server, a Worker runtime, a local
-database — runs from `runtime` up. Between them sits the step that declares a `requires` probe on an optional dependency: it runs wherever that
-dependency happens to be installed, and §6a's tier-decided verdict is what keeps that from weakening the gate a task closes on.
+**why cost is never grounds for moving a step across this line**. A step that needs a runtime — a Worker runtime, a local database — runs from
+`runtime` up; the browser set runs from `deploy`, for the reason §1c states. Between them sits the step that declares a `requires` probe on an
+optional dependency: it runs wherever that dependency happens to be installed, and §6a's tier-decided verdict is what keeps that from weakening the
+gate a task closes on.
 
 **The narrowing line separates `runtime` from `deploy`: below `deploy`, a step that declares how to narrow runs only over the pending changes; from
 `deploy` up it runs whole.** Under `runtime` such a step runs whole when a change touches one of the gate's own inputs or a path the step declares

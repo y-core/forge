@@ -1,6 +1,7 @@
 /** @jsxRuntime automatic */
 /** @jsxImportSource @y-core/forge/render/jsx */
 import type { FC, JSX, JSXNode } from "../../render/jsx/types";
+import { stateAttrs } from "../contracts/state-attrs";
 import type { MeterState } from "./types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -68,7 +69,7 @@ export function meterState(attrs: Pick<MeterTrackProps, "value" | "min" | "max" 
 const MeterTrack: FC<MeterTrackProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
   <meter
     data-slot={slotToken("meter-track", inherited)}
-    data-state={meterState(rest)}
+    {...stateAttrs({ state: meterState(rest) })}
     class={cn("h-2 w-full rounded-selector bg-border", cls)}
     {...rest}
   />

@@ -1,7 +1,7 @@
 /** The blocks a scheme file declares. Matches `Mode` in `src/tooling/gate/checks/contrast-parse.ts`. @public */
 export type Mode = "light" | "dark";
 
-/** A twelve-position scale, as a tuple rather than an array. @public */
+/** A twelve-position scale. @public */
 export type Scale<T> = readonly [T, T, T, T, T, T, T, T, T, T, T, T];
 
 /** A colour in OKLCh: lightness 0–1, chroma (0–0.4 in practice), hue in degrees. @public */
@@ -15,12 +15,6 @@ export interface Oklch {
 export interface Ramp {
   readonly lightness: Scale<number>;
   readonly chroma: Scale<number>;
-}
-
-/** The two free parameters. `hue` is degrees; `chroma` is the ramp's **peak** chroma. @public */
-export interface Dials {
-  readonly hue: number;
-  readonly chroma: number;
 }
 
 /** The scales a generated scheme declares. @public */
@@ -40,7 +34,7 @@ export interface AcceptedContrastRow {
   reason: string;
 }
 
-/** The WCAG success criterion a pair is bound by. Only these two appear in forge's audit. @public */
+/** The WCAG success criterion a pair is bound by. Only these appear in forge's audit. @public */
 export type Criterion = "1.4.3" | "1.4.11";
 
 /** A step on a generated scale: one index, or one per mode where the token re-points. @public */
@@ -63,7 +57,7 @@ export interface ContrastPair {
   readonly criterion: Criterion;
 }
 
-/** A pair whose two sides are both steps on a generated scale. @public */
+/** A pair whose sides are both steps on a generated scale. @public */
 export type ScalePair = ContrastPair & { foreground: ScaleSide; background: ScaleSide };
 
 /** One copy control: the element it reads, and what it can say. @public */
@@ -115,7 +109,7 @@ export interface SchemePreset {
 
 // `solid` is kept beside `oklch` rather than derived from it: the ratios and the preview both work
 // in the byte-quantised sRGB the hex names.
-/** Both families, both modes — everything a scheme declares, from five numbers. @public */
+/** Both families, both modes — everything a scheme declares. @public */
 export interface GeneratedTheme {
   readonly gray: Readonly<Record<Mode, { solid: Scale<string>; oklch: Scale<string> }>>;
   readonly accent: Readonly<Record<Mode, { solid: Scale<string>; oklch: Scale<string> }>>;

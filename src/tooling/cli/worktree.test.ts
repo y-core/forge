@@ -197,6 +197,13 @@ describe("worktreeFiles()", () => {
     expect(worktreeFiles(root)).toEqual([".gitignore", "a.txt", "new.txt", "src/b.txt"]);
   });
 
+  it("omits a tracked file deleted from the working tree but not staged", () => {
+    const root = worktreeClone();
+    rmSync(join(root, "a.txt"));
+
+    expect(worktreeFiles(root)).toEqual([".gitignore", "src/b.txt"]);
+  });
+
   it("lists only what lies under a subdirectory, relative to it", () => {
     expect(worktreeFiles(join(worktreeClone(), "src"))).toEqual(["b.txt"]);
   });

@@ -1,10 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { FormField } from "./field-layout";
-
-const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Field.Set", () => {
   it("is a real fieldset, so the grouping survives without CSS", async () => {
@@ -16,7 +14,7 @@ describe("Field.Set", () => {
 
     expect(tagOf(html).startsWith("<fieldset ")).toBe(true);
     expect(attrsOf(html)).toEqual({ "data-slot": "field-set" });
-    expect(contentOf(html)).toBe("<span>inner</span>");
+    expect(innerOf(html)).toBe("<span>inner</span>");
   });
 
   it("appends a caller class after its own, so the caller's wins a conflict", async () => {
@@ -30,7 +28,7 @@ describe("Field.Legend", () => {
 
     expect(tagOf(html).startsWith("<legend ")).toBe(true);
     expect(attrsOf(html)).toEqual({ "data-slot": "field-legend", "data-as": "legend" });
-    expect(contentOf(html)).toBe("Legend text");
+    expect(innerOf(html)).toBe("Legend text");
   });
 
   it("drops to the label type scale when asked to read as a label, and says so on the attribute", async () => {
@@ -54,7 +52,7 @@ describe("Field.Group", () => {
 
     expect(attrsOf(html)).toEqual({ "data-slot": "field-group" });
     expect(classesOf(html).filter((token) => token.startsWith("@container"))).toEqual(["@container/field-group"]);
-    expect(contentOf(html)).toBe("<span>inner</span>");
+    expect(innerOf(html)).toBe("<span>inner</span>");
   });
 });
 
@@ -67,7 +65,7 @@ describe("Field.Content", () => {
     );
 
     expect(attrsOf(html)).toEqual({ "data-slot": "field-content" });
-    expect(contentOf(html)).toBe("<p>content</p>");
+    expect(innerOf(html)).toBe("<p>content</p>");
   });
 });
 
@@ -76,7 +74,7 @@ describe("Field.Title", () => {
     const html = await render(<FormField.Title>My Title</FormField.Title>);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "field-title" });
-    expect(contentOf(html)).toBe("My Title");
+    expect(innerOf(html)).toBe("My Title");
   });
 });
 

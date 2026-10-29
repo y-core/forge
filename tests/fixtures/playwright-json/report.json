@@ -1,0 +1,260 @@
+{
+  "config": { "rootDir": "/repo" },
+  "suites": [
+    {
+      "title": "a.spec.ts",
+      "file": "a.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "top",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 3,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 1,
+                  "error": {
+                    "message": "Error: boom\nsecond line",
+                    "stack": "Error: boom\nsecond line\n    at /repo/a.spec.ts:6:27",
+                    "location": { "file": "/repo/a.spec.ts", "column": 27, "line": 6 },
+                    "snippet": "  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n> 6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });\n    |                           ^\n  7 |"
+                  },
+                  "errors": [
+                    {
+                      "location": { "file": "/repo/a.spec.ts", "column": 27, "line": 6 },
+                      "message": "Error: boom\nsecond line\n\n  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n> 6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });\n    |                           ^\n  7 |\n    at /repo/a.spec.ts:6:27"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:18:21.125Z",
+                  "annotations": [],
+                  "attachments": [
+                    { "name": "error-context", "contentType": "text/markdown", "path": "/repo/test-results/a-top-chromium/error-context.md" }
+                  ],
+                  "errorLocation": { "file": "/repo/a.spec.ts", "column": 27, "line": 6 }
+                }
+              ],
+              "status": "unexpected"
+            },
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "firefox",
+              "projectName": "firefox",
+              "results": [
+                {
+                  "workerIndex": 2,
+                  "parallelIndex": 1,
+                  "status": "failed",
+                  "duration": 1,
+                  "error": {
+                    "message": "Error: boom\nsecond line",
+                    "stack": "Error: boom\nsecond line\n    at /repo/a.spec.ts:6:27",
+                    "location": { "file": "/repo/a.spec.ts", "column": 27, "line": 6 },
+                    "snippet": "  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n> 6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });\n    |                           ^\n  7 |"
+                  },
+                  "errors": [
+                    {
+                      "location": { "file": "/repo/a.spec.ts", "column": 27, "line": 6 },
+                      "message": "Error: boom\nsecond line\n\n  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n> 6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });\n    |                           ^\n  7 |\n    at /repo/a.spec.ts:6:27"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-29T10:18:21.119Z",
+                  "annotations": [],
+                  "attachments": [
+                    { "name": "error-context", "contentType": "text/markdown", "path": "/repo/test-results/a-top-firefox/error-context.md" }
+                  ],
+                  "errorLocation": { "file": "/repo/a.spec.ts", "column": 27, "line": 6 }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "4bb17c2992a2b9ccc470-5a679294c6f9fa9330e1",
+          "file": "a.spec.ts",
+          "line": 6,
+          "column": 5
+        }
+      ],
+      "suites": [
+        {
+          "title": "menu",
+          "file": "a.spec.ts",
+          "line": 2,
+          "column": 6,
+          "specs": [
+            {
+              "title": "opens",
+              "ok": false,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "failed",
+                      "duration": 7,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at /repo/a.spec.ts:3:35",
+                        "location": { "file": "/repo/a.spec.ts", "column": 35, "line": 3 },
+                        "snippet": "  1 | import { expect, test } from \"@playwright/test\";\n  2 | test.describe(\"menu\", () => {\n> 3 |   test(\"opens\", () => { expect(1).toBe(2); });\n    |                                   ^\n  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n  6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });"
+                      },
+                      "errors": [
+                        {
+                          "location": { "file": "/repo/a.spec.ts", "column": 35, "line": 3 },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  1 | import { expect, test } from \"@playwright/test\";\n  2 | test.describe(\"menu\", () => {\n> 3 |   test(\"opens\", () => { expect(1).toBe(2); });\n    |                                   ^\n  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n  6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });\n    at /repo/a.spec.ts:3:35"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-29T10:18:20.756Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/repo/test-results/a-menu-opens-chromium/error-context.md"
+                        }
+                      ],
+                      "errorLocation": { "file": "/repo/a.spec.ts", "column": 35, "line": 3 }
+                    }
+                  ],
+                  "status": "unexpected"
+                },
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "workerIndex": 1,
+                      "parallelIndex": 1,
+                      "status": "failed",
+                      "duration": 8,
+                      "error": {
+                        "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m",
+                        "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n    at /repo/a.spec.ts:3:35",
+                        "location": { "file": "/repo/a.spec.ts", "column": 35, "line": 3 },
+                        "snippet": "  1 | import { expect, test } from \"@playwright/test\";\n  2 | test.describe(\"menu\", () => {\n> 3 |   test(\"opens\", () => { expect(1).toBe(2); });\n    |                                   ^\n  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n  6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });"
+                      },
+                      "errors": [
+                        {
+                          "location": { "file": "/repo/a.spec.ts", "column": 35, "line": 3 },
+                          "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32m2\u001b[39m\nReceived: \u001b[31m1\u001b[39m\n\n  1 | import { expect, test } from \"@playwright/test\";\n  2 | test.describe(\"menu\", () => {\n> 3 |   test(\"opens\", () => { expect(1).toBe(2); });\n    |                                   ^\n  4 |   test(\"closes\", () => { expect(1).toBe(1); });\n  5 | });\n  6 | test(\"top\", () => { throw new Error(\"boom\\nsecond line\"); });\n    at /repo/a.spec.ts:3:35"
+                        }
+                      ],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-29T10:18:20.751Z",
+                      "annotations": [],
+                      "attachments": [
+                        {
+                          "name": "error-context",
+                          "contentType": "text/markdown",
+                          "path": "/repo/test-results/a-menu-opens-firefox/error-context.md"
+                        }
+                      ],
+                      "errorLocation": { "file": "/repo/a.spec.ts", "column": 35, "line": 3 }
+                    }
+                  ],
+                  "status": "unexpected"
+                }
+              ],
+              "id": "4bb17c2992a2b9ccc470-c3912ba697f3ceeb6969",
+              "file": "a.spec.ts",
+              "line": 3,
+              "column": 7
+            },
+            {
+              "title": "closes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium",
+                  "projectName": "chromium",
+                  "results": [
+                    {
+                      "workerIndex": 3,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-29T10:18:21.091Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                },
+                {
+                  "timeout": 30000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "firefox",
+                  "projectName": "firefox",
+                  "results": [
+                    {
+                      "workerIndex": 2,
+                      "parallelIndex": 1,
+                      "status": "passed",
+                      "duration": 5,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-10-29T10:18:21.093Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "4bb17c2992a2b9ccc470-fcadc43130ee7d69d67d",
+              "file": "a.spec.ts",
+              "line": 4,
+              "column": 7
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": { "startTime": "2026-10-29T10:18:20.423Z", "duration": 726.2410000000001, "expected": 2, "skipped": 0, "unexpected": 4, "flaky": 0 }
+}

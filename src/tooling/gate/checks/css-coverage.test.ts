@@ -70,6 +70,13 @@ describe("checkCssCoverage — passing", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("passes a tree holding a committed class-declaring file deleted but not staged", async () => {
+    const root = repo({ "src/css/app.css": `${DETECTION_OFF}@source "../ui";\n`, "src/ui/card.tsx": CLASSES, "src/lib/page.tsx": CLASSES });
+    rmSync(join(root, "src/lib/page.tsx"));
+
+    expect(await findingsIn(root)).toEqual([]);
+  });
+
   it("covers a file through an imported stylesheet whose `@source` is relative to its own directory", async () => {
     const findings = await findingsOf({
       "src/css/app.css": `${DETECTION_OFF}@import "./parts/ui.css";\n`,

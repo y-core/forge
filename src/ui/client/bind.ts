@@ -1,3 +1,4 @@
+import { applyStateAttrs } from "../contracts/state-attrs";
 import { asElement, closestAcross, contains, eventTarget, ownerDocument, ownerWindow, queryTrees, shadowTrees } from "./dom";
 import { effect } from "./signal";
 import type { SignalRecord } from "./types";
@@ -57,7 +58,7 @@ export function paintControl(el: ControlElement, value: unknown): void {
       return;
     }
     if (el.getAttribute("aria-pressed") !== String(chosen)) el.setAttribute("aria-pressed", String(chosen));
-    if (el.hasAttribute("data-pressed") !== chosen) el.toggleAttribute("data-pressed", chosen);
+    if (el.hasAttribute("data-pressed") !== chosen) applyStateAttrs(el, { pressed: chosen });
     return;
   }
   if (typeof value === "boolean") {

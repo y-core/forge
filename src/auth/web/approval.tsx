@@ -97,7 +97,7 @@ async function submitPrompt<Bindings>(c: AppContext<Bindings>, approval: Approva
     return renderPrompt(c, approval, APPROVAL_REFUSED, 422);
   }
 
-  markApproval(session, { at: Date.now(), digest: await signApprovalCode(await approval.ring(c), expected) });
+  markApproval(session, { presentedAt: Date.now(), digest: await signApprovalCode(await approval.ring(c), expected) });
   return createAuthRedirect(c, safeRedirectPath(c.url.searchParams.get(APPROVAL_RETURN_PARAM), "/"));
 }
 

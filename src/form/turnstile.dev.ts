@@ -1,4 +1,4 @@
-import { isDevBuildArmed, whenArmed } from "../context/armed.dev";
+import { isDevBuildArmed, whenArmed } from "../relax/armed";
 import { admitsTestingSecret as refuseTestingSecret } from "./turnstile.strict";
 import type { RelaxTestingSecret } from "./types";
 

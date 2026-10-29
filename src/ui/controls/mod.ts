@@ -1,5 +1,4 @@
 export { CheckboxGroup } from "./checkbox-group";
-export { createBoundCompound, createBoundControl } from "./create-bound-control";
 export { FileInput } from "./file-input";
 export { Input } from "./input";
 export { NumberField } from "./number-field";

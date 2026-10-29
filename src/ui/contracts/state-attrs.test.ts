@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { PRESENCE_STATES } from "../../tooling/lint/rules/a11y-aria-beside-data";
+import { STATE_ATTR_KEYS } from "../../tooling/lint/rules/a11y-state-attrs-source";
 import { ISLAND_STATE_ATTR } from "./island-contract";
 import { applyStateAttrs, STATE_ATTRS, stateAttrs } from "./state-attrs";
 import type { Align, Orientation, Side, StateAttrsProps } from "./types";
@@ -18,6 +19,11 @@ function dataAttrNames(source: string): string[] {
   return [...source.matchAll(/data-\[?([a-z][a-z0-9-]*)/g)].map((match) => `data-${match[1]}`);
 }
 
+function unspelledWiringNames(names: readonly string[], files: readonly string[]): string[] {
+  const spelled = new Set(files.flatMap((file) => dataAttrNames(readFileSync(file, "utf-8"))));
+  return names.filter((name) => !spelled.has(name));
+}
+
 function collectSourceFiles(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -28,7 +34,7 @@ function collectSourceFiles(dir: string): string[] {
       continue;
     }
     if (!/\.tsx?$/.test(entry.name)) continue;
-    if (/\.(test|browser)\.tsx?$/.test(entry.name)) continue;
+    if (/\.(test|browser|fixture)\.tsx?$/.test(entry.name)) continue;
     out.push(full);
   }
   return out;
@@ -60,11 +66,17 @@ describe("stateAttrs", () => {
     });
   });
 
-  it("drops an empty valued state rather than emitting it as a presence flag", () => {
-    expect(stateAttrs({ orientation: "" as unknown as Orientation, side: "" as unknown as Side, align: "" as unknown as Align })).toEqual({});
+  it("carries a component-local state through verbatim", () => {
+    expect(stateAttrs({ state: "current" })).toEqual({ "data-state": "current" });
   });
 
-  // Open, closed, popup-open and the two transition phases are the platform's now — `:popover-open`,
+  it("drops an empty valued state rather than emitting it as a presence flag", () => {
+    expect(
+      stateAttrs({ orientation: "" as unknown as Orientation, side: "" as unknown as Side, align: "" as unknown as Align, state: "" }),
+    ).toEqual({});
+  });
+
+  // Open, closed, popup-open and the transition phases are the platform's — `:popover-open`,
   // `[open]`, `:has()` and `@starting-style` express every one of them without an attribute.
   it("declares exactly the names of the convention", () => {
     expect(Object.values(STATE_ATTRS).sort()).toEqual(
@@ -80,6 +92,7 @@ describe("stateAttrs", () => {
         "data-pressed",
         "data-selected",
         "data-side",
+        "data-state",
       ].sort(),
     );
   });
@@ -110,6 +123,22 @@ describe("applyStateAttrs", () => {
     applyStateAttrs(el, { pressed: true });
     applyStateAttrs(el, { pressed: false });
     expect(el.attrs.size).toBe(0);
+  });
+
+  it("writes a component-local state and removes it once the state is empty", () => {
+    const el = fakeElement();
+    applyStateAttrs(el, { state: "poor" });
+    expect(Object.fromEntries(el.attrs)).toEqual({ "data-state": "poor" });
+    applyStateAttrs(el, { state: "" });
+    expect(el.attrs.size).toBe(0);
+  });
+
+  it("leaves a component-local state alone when the key is omitted or undefined", () => {
+    const el = fakeElement();
+    applyStateAttrs(el, { state: "poor" });
+    applyStateAttrs(el, { pressed: false });
+    applyStateAttrs(el, { state: undefined });
+    expect(Object.fromEntries(el.attrs)).toEqual({ "data-state": "poor" });
   });
 
   const EVERY_SIDE: Record<Side, string> = {
@@ -166,15 +195,18 @@ describe("state-attribute conformance", () => {
   });
 
   it("holds no wiring name the source no longer spells, so the allowlist can only shrink", () => {
-    const spelled = new Set(files.flatMap((file) => dataAttrNames(readFileSync(file, "utf-8"))));
+    expect(unspelledWiringNames(Object.keys(WIRING_ATTRS), files)).toEqual([]);
+  });
 
-    expect(Object.keys(WIRING_ATTRS).filter((name) => !spelled.has(name))).toEqual([]);
+  it("reads no fixture, so a row only the fixture spells is reported", () => {
+    expect(files.filter((file) => /\.fixture\.tsx?$/.test(file))).toEqual([]);
+    expect(unspelledWiringNames(["data-unemitted"], files)).toEqual(["data-unemitted"]);
   });
 });
 
-// `forge/a11y-aria-beside-data` hand-lists these because `tooling/lint` is a leaf that may not
-// import `ui` (NAMESPACES.md §3c), so this is where the two lists are held together.
-describe("the presence hooks the lint rule forbids by hand", () => {
+// `tooling/lint` hand-lists these because it is a leaf that may not import `ui` (NAMESPACES.md §4a),
+// so this is where its lists are held against `STATE_ATTRS`.
+describe("the state names the lint rules hand-list", () => {
   const EVERY_STATE: Required<StateAttrsProps> = {
     pressed: true,
     checked: true,
@@ -185,6 +217,7 @@ describe("the presence hooks the lint rule forbids by hand", () => {
     orientation: "horizontal",
     side: "top",
     align: "start",
+    state: "current",
   };
 
   it("emits every attribute in the convention's order", () => {
@@ -198,6 +231,7 @@ describe("the presence hooks the lint rule forbids by hand", () => {
       "data-orientation",
       "data-side",
       "data-align",
+      "data-state",
     ]);
   });
 
@@ -207,5 +241,9 @@ describe("the presence hooks the lint rule forbids by hand", () => {
       .map(([name]) => name.slice("data-".length));
 
     expect([...PRESENCE_STATES].sort()).toEqual(emitted.sort());
+  });
+
+  it("names every state `STATE_ATTRS` registers, so the aria-variant rule misses none", () => {
+    expect([...STATE_ATTR_KEYS].sort()).toEqual(Object.keys(STATE_ATTRS).sort());
   });
 });

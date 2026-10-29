@@ -20,7 +20,9 @@ import { lintKeyOf, RULE_CORPUS_PATH, RULE_ENFORCER } from "../../../src/tooling
 import { MODERN_CSS_RULES } from "../../../src/tooling/lint/modern-css-rules";
 import plugin from "../../../src/tooling/lint/plugin";
 import type { RuleId } from "../../../src/tooling/lint/types";
+import { findCodeFences } from "./docs";
 import { findSubpathCitations } from "./docs-parse";
+import { compileFences, type FenceDiagnostic, type FenceSource, isParseDiagnostic, resolveCompiler, unresolvedName } from "./fence-compile";
 
 // Each states a rule a `docs/` doc owns rather than a corpus file, so neither register names
 // one and the round trip would otherwise read them as unrouted.
@@ -50,6 +52,10 @@ export interface DesignCheckConfig {
   sourceDir?: string;
   /** The oxlint config the plugin's rules must be enabled in, relative to `root`. Defaults to `.oxlintrc.json`. */
   oxlintConfig?: string;
+  /** Markdown outside `designDir` whose `tsx` fences compile too, relative to `root`. */
+  fencedDocs?: readonly string[];
+  /** The compiler options a fence compiles under, relative to `root`. Defaults to `tsconfig.json`. */
+  tsconfig?: string;
 }
 
 /** The rules an oxlint config turns on, or `undefined` when the file could not be read. */
@@ -61,9 +67,94 @@ function readEnabledRules(path: string): Set<string> | undefined {
   } catch {
     return undefined;
   }
-  // An override counts: a rule scoped to the paths its convention covers is enabled, not absent.
   const entries = [parsed, ...(parsed.overrides ?? [])].flatMap((block) => Object.entries(block.rules ?? {}));
   return new Set(entries.filter(([, level]) => (Array.isArray(level) ? level[0] : level) !== "off").map(([rule]) => rule));
+}
+
+/** Every `tsx` fence compiled against the exports, as findings, and how many compiled clean. */
+function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, string>): { findings: Finding[]; clean: number } {
+  const { root, packageName } = config;
+  const tsconfig = config.tsconfig ?? "tsconfig.json";
+  const findings: Finding[] = [];
+
+  const documents = new Map(sources);
+  for (const file of config.fencedDocs ?? []) {
+    const path = resolve(root, file);
+    if (!existsSync(path)) {
+      findings.push(fail("is listed in `fencedDocs` but does not exist", { file }));
+      continue;
+    }
+    documents.set(file, readFileSync(path, "utf-8"));
+  }
+  const fences: FenceSource[] = [...documents].flatMap(([file, source]) =>
+    findCodeFences(source)
+      .filter(({ lang }) => lang === "tsx")
+      .map(({ line, body }) => ({ file, line, body })),
+  );
+  if (fences.length === 0) return { findings, clean: 0 };
+
+  const compiler = resolveCompiler();
+  if (compiler === undefined) {
+    findings.push(fail("typescript does not resolve, so no `tsx` fence was compiled", { file: tsconfig }));
+    return { findings, clean: 0 };
+  }
+
+  const paths: Record<string, string[]> = {};
+  const owners = new Map<string, string[]>();
+  for (const [key, value] of Object.entries(config.exports)) {
+    const target = typeof value === "string" ? value : (value.import ?? value.types);
+    if (target === undefined || !/\.tsx?$/.test(target)) continue;
+    const specifier = `${packageName}${key.slice(1)}`;
+    paths[specifier] = [resolve(root, target)];
+    if (key.includes("*") || !existsSync(resolve(root, target))) continue;
+    for (const name of parseConsumerExportNames(readFileSync(resolve(root, target), "utf-8"))) {
+      owners.set(name, [...(owners.get(name) ?? []), specifier]);
+    }
+  }
+  const project = { tsconfig: resolve(root, tsconfig), paths };
+  const describe = (diagnostic: FenceDiagnostic): string => {
+    const name = unresolvedName(diagnostic);
+    const subpaths = name === undefined ? undefined : owners.get(name);
+    if (name !== undefined && subpaths !== undefined) {
+      return `\`${name}\` is not imported — ${subpaths.map((subpath) => `\`${subpath}\``).join(" or ")} exports it`;
+    }
+    return `\`tsx\` fence does not compile: ${diagnostic.message} (TS${diagnostic.code})`;
+  };
+  const report = (diagnostic: FenceDiagnostic): void => {
+    findings.push(fail(describe(diagnostic), { file: diagnostic.file, line: diagnostic.line }));
+  };
+
+  const notCompiled = (error: string): { findings: Finding[]; clean: number } => ({
+    findings: [...findings, fail(`no \`tsx\` fence was compiled — ${error}`, { file: tsconfig })],
+    clean: 0,
+  });
+
+  let live = fences;
+  let run = compileFences(compiler, live, project);
+  for (;;) {
+    if (!run.ok) return notCompiled(run.error);
+    const diagnostics = run.data;
+    const broken = new Set(diagnostics.filter(({ code }) => isParseDiagnostic(code)).map(({ fence }) => fence));
+    if (broken.size === 0) break;
+    for (const diagnostic of diagnostics) if (isParseDiagnostic(diagnostic.code)) report(diagnostic);
+    live = live.filter((_, index) => !broken.has(index));
+    if (live.length === 0) return { findings, clean: 0 };
+    run = compileFences(compiler, live, project);
+  }
+
+  const ambient = new Map<number, string[]>();
+  for (const diagnostic of run.data) {
+    const name = unresolvedName(diagnostic);
+    if (name === undefined || owners.has(name)) continue;
+    const names = ambient.get(diagnostic.fence) ?? [];
+    if (!names.includes(name)) ambient.set(diagnostic.fence, [...names, name]);
+  }
+
+  const final = compileFences(compiler, live, project, ambient);
+  if (!final.ok) return notCompiled(final.error);
+  const failing = final.data;
+  for (const diagnostic of failing) report(diagnostic);
+  return { findings, clean: live.length - new Set(failing.map(({ fence }) => fence)).size };
 }
 
 /** Run every check. @public */
@@ -183,8 +274,9 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
     }
   }
 
-  // Which side of the split enforces a rule, held against the side itself: without this a
-  // `RULE_CORPUS_PATH` row for a rule that migrated to the plugin would assert nothing.
+  const fenceCheck = checkFences(config, sources);
+  findings.push(...fenceCheck.findings);
+
   const registered = new Set(Object.keys(plugin.rules));
   const oxlintConfig = config.oxlintConfig ?? ".oxlintrc.json";
   const enabled = readEnabledRules(resolve(root, oxlintConfig));
@@ -199,16 +291,7 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
       findings.push(fail(`RULE_CORPUS_PATH routes \`${ruleId}\` to \`${corpusPath}\`, which is not a corpus file`, { file: table }));
     }
 
-    const enforcer = RULE_ENFORCER[ruleId];
-    if (enforcer === "gate") {
-      findings.push(
-        fail(
-          `RULE_ENFORCER calls \`${ruleId}\` a gate rule, but design-parse.ts detects no source rule — a corpus rule is \`lint\`, \`contrast\` or \`browser\``,
-          { file: table },
-        ),
-      );
-    }
-    if (enforcer !== "lint") continue;
+    if (!RULE_ENFORCER[ruleId].includes("lint")) continue;
 
     const key = lintKeyOf(ruleId);
     if (!registered.has(key))
@@ -217,7 +300,6 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
       findings.push(fail(`\`forge/${key}\` is not enabled — a registered rule that no config turns on reports nothing`, { file: oxlintConfig }));
     }
   }
-  // The same contract over the modern-platform register, which routes four of its ids to the plugin.
   const routed = new Set<string>();
   for (const [ruleId, rule] of Object.entries(MODERN_CSS_RULES)) {
     if (rule.enforcer !== "lint") continue;
@@ -232,9 +314,7 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
     }
   }
 
-  // And the other direction: a rule the plugin registers under no register's authority would print
-  // an id neither `RULE_CORPUS_PATH` nor `MODERN_CSS_RULES` states.
-  for (const [ruleId, enforcedBy] of Object.entries(RULE_ENFORCER)) if (enforcedBy === "lint") routed.add(lintKeyOf(ruleId));
+  for (const [ruleId, enforcers] of Object.entries(RULE_ENFORCER)) if (enforcers.includes("lint")) routed.add(lintKeyOf(ruleId));
   for (const key of registered) {
     if (STATES_NO_CORPUS_RULE.has(key) || routed.has(key)) continue;
     findings.push(fail(`the plugin registers \`forge/${key}\`, which no rule register routes to it`, { file: "lint.ts" }));
@@ -242,5 +322,8 @@ export function checkDesign(config: DesignCheckConfig): CheckResult {
 
   if (enabled === undefined) findings.push(fail("could not be read, so no plugin rule could be held against it", { file: oxlintConfig }));
 
-  return checkResult(findings, `${corpusFiles.length} corpus files and ${srcSources.length} sources agree on ${defined.size} rules.`);
+  return checkResult(
+    findings,
+    `${corpusFiles.length} corpus files and ${srcSources.length} sources agree on ${defined.size} rules; ${fenceCheck.clean} tsx fences compile.`,
+  );
 }

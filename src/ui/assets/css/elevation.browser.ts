@@ -27,7 +27,7 @@ function layersOf(page: Page, selector: string): Promise<{ inset: boolean; lengt
   }, selector);
 }
 
-test.describe("--elevation scales the whole shadow scale", () => {
+test.describe("--elevation scales the whole shadow scale", { tag: "@cross-engine" }, () => {
   for (const size of SIZES) {
     test(`${size} paints no length at --elevation: 0`, async ({ page }) => {
       await mountShadows(page, FLAT);

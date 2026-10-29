@@ -94,6 +94,14 @@ test.describe("Drawer", { tag: "@cross-engine" }, () => {
     expect(rect.left).toBeGreaterThan(0);
   });
 
+  test("data-side=bottom pins the panel to the bottom edge when no Dock is showing", async ({ page }) => {
+    await open(page, "bottom");
+    await page.click("#open-it");
+    await expect.poll(() => modal(page)).toBe(true);
+
+    expect((await box(page)).bottom).toBe(await page.evaluate(() => window.innerHeight));
+  });
+
   test("the open panel is as wide as its w-80 default", async ({ page }) => {
     await open(page);
     await page.click("#open-it");

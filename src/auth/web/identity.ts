@@ -88,9 +88,9 @@ export function markAuthStepUp(session: Session, at: number, now: number): void 
   session.set(AUTH_STEP_UP_SESSION_KEY, Math.min(at, now));
 }
 
-/** Records on `session` that the administrator code `mark.digest` names was presented at `mark.at`, rotating the session id. @internal */
+/** Records on `session` that the administrator code `mark.digest` names was presented at `mark.presentedAt`, rotating the session id. @internal */
 export function markApproval(session: Session, mark: ApprovalMark): void {
-  session.set(APPROVAL_SESSION_KEY, mark.at);
+  session.set(APPROVAL_SESSION_KEY, mark.presentedAt);
   session.set(APPROVAL_CODE_SESSION_KEY, mark.digest);
   // A privilege change on a session no sign-in may have rotated: a fixated id must not inherit it.
   session.regenerateId(true);
@@ -98,9 +98,9 @@ export function markApproval(session: Session, mark: ApprovalMark): void {
 
 /** The administrator approval `session` holds, or `null` when it holds none. @internal */
 export function resolveApprovalMark(session: Session): ApprovalMark | null {
-  const at = readStamp(session, APPROVAL_SESSION_KEY);
+  const presentedAt = readStamp(session, APPROVAL_SESSION_KEY);
   const digest = session.get(APPROVAL_CODE_SESSION_KEY);
-  return at === null || typeof digest !== "string" || digest.length === 0 ? null : { at, digest };
+  return presentedAt === null || typeof digest !== "string" || digest.length === 0 ? null : { presentedAt, digest };
 }
 
 /** Drops every auth key from `session`, leaving the session id alone. @internal */

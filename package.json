@@ -21,6 +21,7 @@
   },
   "forge": {
     "devOnly": [
+      "./relax",
       "./testing",
       "./testing/coverage",
       "./testing/d1",
@@ -55,6 +56,7 @@
     "verify": "bun run src/tooling/root/bin.ts verify",
     "verify:static": "bun run src/tooling/root/bin.ts verify --tier static",
     "verify:unit": "bun run src/tooling/root/bin.ts verify --tier unit",
+    "verify:deploy": "bun run src/tooling/root/bin.ts verify --tier deploy",
     "verify:release": "bun run src/tooling/root/bin.ts verify --tier release",
     "prepublishOnly": "bun run verify:release"
   },
@@ -218,6 +220,11 @@
     "./logging/viewer": {
       "types": "./src/logging/viewer/mod.ts",
       "import": "./src/logging/viewer/mod.ts"
+    },
+    "./relax": {
+      "types": "./src/relax/mod.ts",
+      "forge-dev": "./src/relax/mod.ts",
+      "bun": "./src/relax/mod.ts"
     },
     "./render/htmx": {
       "types": "./src/render/htmx/mod.ts",
@@ -477,6 +484,7 @@
     "src/html/",
     "src/http/",
     "src/logging/",
+    "src/relax/",
     "src/render/",
     "src/result/",
     "src/router/",

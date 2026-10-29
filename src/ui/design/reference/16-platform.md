@@ -32,7 +32,7 @@ at the line it excuses, carrying a written reason. A silent exception and a miss
 - §2 Tier B — behaviour the platform implements: adopting an implementation also adopts its semantics
 - §2a Modals and popovers: the native `<dialog>`, the Popover API, and light dismissal as the discriminator
 - §2b Disclosure and inertness: `<details>` reaching find-in-page, and `inert` over a `tabindex` sweep
-- §2c Entry and repeating motion: `@starting-style` over `requestAnimationFrame`, keyframes over `setInterval`
+- §2c Entry, exit and repeating motion: `@starting-style` over `requestAnimationFrame`, geometry on the base selector, keyframes over `setInterval`
 - §2d Paths, gradients and reveals: `offset-path`, a registered angle, a CSS mask, `animation-timeline`
 - §2e Layout the platform can drive: scrolling, snapping, `anchor()` and `field-sizing`
 - §2f Ancestors, counters and numbers: `:has()`, CSS counters, and an interpolated `@property`
@@ -109,10 +109,10 @@ than left to be inferred.
 
 ```tsx
 // Wrong — the older spelling of four separate things, in one card.
-<div class="relative ml-4" style="padding-bottom: 56.25%">
+<div class="relative ml-4 pb-[56.25%]">
   <img src={shot.url} alt="" class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
   <p class="pl-2 text-left -webkit-line-clamp-2">{shot.caption}</p>
-</div>
+</div>;
 
 // Costs: a ratio box that resolves against the wrong axis, a centring that breaks the moment the
 // card is transformed, a caption clamped only under a box type the layout did not ask for, and
@@ -122,7 +122,7 @@ than left to be inferred.
 <div class="relative ms-4 aspect-video">
   <img src={shot.url} alt="" class="size-full object-cover" />
   <p class="ps-2 text-start line-clamp-2">{shot.caption}</p>
-</div>
+</div>;
 ```
 
 ---
@@ -164,13 +164,21 @@ the subtree from the accessibility tree as well as from the tab order. <!-- rule
 for free and needs none of it. The sweep is what a hand-built panel does instead, and it is worse than it looks: it restores whatever it saved, so
 any element whose `tabindex` changed while the panel was open comes back wrong.
 
-### 2c. Entry and repeating motion
+### 2c. Entry, exit and repeating motion
 
 Default: express entry motion with `@starting-style` and `transition-behavior: allow-discrete` — the `starting:` and `transition-discrete` utilities
 `forge-ui-interaction-transition-controller` already fixes — rather than adding a class inside `requestAnimationFrame` to kick a transition off —
 unless the element was already in the document and is merely being revealed, which has no first style change after insertion for a starting style to
 apply to. <!-- rule:forge-ui-platform-entry-motion --> The `requestAnimationFrame` idiom exists to force a style recalculation between the insertion
 and the class, which is exactly the problem `@starting-style` was specified to remove.
+
+Default: declare an overlay's geometry — its size, inset, margin, padding, position, grid and transform — on the base selector, and key only
+`opacity`, `overlay` and `display` on `:popover-open` or `[open]` — unless the exit transitions that property too, as a disclosure's `block-size`
+and a closing dialog's `step-end` placement do. <!-- rule:forge-ui-platform-exit-geometry --> `transition-behavior: allow-discrete` keeps the
+element painted for the whole exit after the open state stops matching, so a declaration keyed on that state is gone on the exit's first frame and
+the panel collapses while it is still fading. `display` is the one property that belongs on the open state: on the base selector it outranks the
+rule hiding a closed popover, as `forge-ui-interaction-no-display-on-popup` states, and with `allow-discrete` and a `none` endpoint the open value
+holds until the exit ends.
 
 Default: declare a repeating motion as keyframes gated on `prefers-reduced-motion` rather than running a `setInterval` that mutates
 `style.transform`, `style.left`, `style.top` or `style.translate` — unless each step's value is computed from data that changed since the last one,
@@ -258,7 +266,7 @@ script's job by construction; a value that only ever follows the OS is not.
 // Wrong — a hand-built modal: the role claimed, the behaviour written, the tab order swept.
 <div role='dialog' aria-modal='true' class='fixed inset-0 z-50'>
   <div class='absolute top-1/2 left-1/2'>
-    <button type='button' aria-expanded={open} onclick='togglePanel()'>
+    <button type='button' aria-expanded={isOpen} data-on-click='togglePanel'>
       Details
     </button>
   </div>
@@ -268,11 +276,13 @@ script's job by construction; a value that only ever follows the OS is not.
 // behind that is reachable by Tab while the reader is told it is not.
 
 // Right.
-import { Dialog } from "@y-core/forge/ui/core";
+import { Collapsible, createIcon, Dialog } from "@y-core/forge/ui/core";
 
-<Dialog modal>
+const AppIcon = createIcon("/assets/icons.svg");
+
+<Dialog id='details' openModal label='Details'>
   <Collapsible>
-    <Collapsible.Trigger icon='chevron-down'>Details</Collapsible.Trigger>
+    <Collapsible.Trigger icon={AppIcon}>Details</Collapsible.Trigger>
     <Collapsible.Content>{detail}</Collapsible.Content>
   </Collapsible>
 </Dialog>;

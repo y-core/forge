@@ -61,7 +61,7 @@ async function measureTrack(page: Page, thickness: Thickness): Promise<number> {
   );
 }
 
-test("the track is the same thickness horizontal and vertical", async ({ page }) => {
+test("the track is the same thickness horizontal and vertical", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, await markup(await render(Slider({ min: 0, max: 10, value: 0 }))));
   const horizontal = await measureTrack(page, "vertical");
 

@@ -30,7 +30,7 @@ Forge's primitives already occupy each level of the ladder below, so the design 
 | Level | Surface | Primitive | What it means |
 | --- | --- | --- | --- |
 | 0 | Flat on `--background` | any `<div>` | Part of the page. Nothing sits above it. |
-| 1 | A hairline | `Separator`, `border-border` | Regions of one surface, told apart. |
+| 1 | A hairline | `Separator`, `border-border` | Regions of one surface, told apart. A hairline, including a one-sided `border-b` / `border-t` / `border-s` divider, stays independent of `--border-width`; `border-field` is for the edge of a bordered surface. |
 | 2 | `shadow-sm` on `--card` | `Card` | A grouped object you can point at. |
 | 3 | `shadow-md` on `--popover` | `Popover.Content`, `Menu.Popup` | Transient, tied to a trigger, dismissible. |
 | 4 | `shadow-lg` on `--popover` | `Dialog`, `Toast` | Above everything; blocks or interrupts. |
@@ -193,12 +193,13 @@ already models.
 
 ## 5. Radius
 
-Forge has one radius: `--radius`, declared in `src/ui/assets/css/theme-base.css`, with `--radius-sm`, `--radius-md`, `--radius-lg` and
-`--radius-xl` computed from it. `forge-ui-one-radius` holds as long as you take a step from the family rather than an arbitrary value.
+Forge has one radius: `--radius`, declared in `src/ui/assets/css/theme-base.css`. A control takes `--radius-field` and a surface `--radius-box`,
+both computed from it, and a selector takes the pill `--radius-selector`; the `--radius-sm` to `--radius-xl` steps are computed from it too.
+`forge-ui-one-radius` holds as long as you take a step from the family rather than an arbitrary value.
 
 **Default: let the radius step follow the elevation step rather than the element's size.**
 <!-- rule:forge-ui-depth-radius-tracks-level -->
 
-Level 2 and above are the larger steps (`Card` is `rounded-2xl`, `Dialog` `rounded-xl`, `Menu.Popup` `rounded-xl`); controls inside them take a
-smaller step (`Button` is `rounded-lg`, `Input` `rounded-lg`). Override under a brief that sets a flat or fully-pill radius, which moves `--radius`
+Level 2 and above take the box step (`Card`, `Dialog` and `Menu.Popup` are `rounded-box`); controls inside them take the field step (`Button`
+and `Input` are `rounded-field`). Override under a brief that sets a flat or fully-pill radius, which moves `--radius`
 once rather than per component.

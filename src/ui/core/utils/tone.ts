@@ -57,8 +57,8 @@ export const toneVariants = cva({
   defaultVariants: { tone: "neutral", appearance: "solid" },
 });
 
-/** Resolves the same paint as {@link toneVariants} without the hover feedback, for a toned surface the pointer cannot act on. @internal */
-export const toneSurfaceVariants = cva({
+/** Resolves the same paint as {@link toneVariants} without the hover feedback, for a toned surface the pointer cannot act on. @public */
+export const toneSurface = cva({
   variants: { tone: TONE_VARS, appearance: APPEARANCE_PAINT },
   defaultVariants: { tone: "neutral", appearance: "solid" },
 });

@@ -11,7 +11,7 @@ export type CspSourceValue = string | typeof NONCE | UnsafeCspSource;
 
 type CspValue = CspSourceValue[];
 
-/** Parsed URL parts (origin, hostname, protocol) derived from a base URL. @public */
+/** URL parts derived from a base URL. @public */
 export interface ParsedUrl {
   origin: string;
   hostname: string;
@@ -160,7 +160,7 @@ export interface WebhookSignOptions {
 
 /** A Standard Webhooks signer and verifier bound to the secrets it was created with. @public */
 export interface WebhookSigning {
-  /** Signs a body under every active secret, answering the three Standard Webhooks headers. */
+  /** Signs a body under every active secret, answering the Standard Webhooks headers. */
   sign(message: WebhookSignOptions): Promise<WebhookSignatureHeaders>;
   /** Checks a request against any active secret, answering the exact signed body bytes. */
   verify(request: Request): Promise<Result<VerifiedWebhook, WebhookRefusal>>;

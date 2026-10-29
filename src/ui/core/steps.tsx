@@ -21,7 +21,7 @@ interface StepProps extends Omit<JSX.IntrinsicElements["li"], "children"> {
   state?: StepState | undefined;
   /** What the marker circle shows — a number, a glyph, a tick. */
   marker?: JSXNode | undefined;
-  /** The word read for this step's state. @default STEP_STATE_LABELS[state] */
+  /** The word read for this step's state; defaults to `STEP_STATE_LABELS[state]`. */
   stateLabel?: string | undefined;
   children?: JSXNode | undefined;
 }
@@ -39,7 +39,7 @@ const StepsRoot: FC<StepsRootProps> = ({ orientation = "horizontal", tone = "pri
 const Step: FC<StepProps> = ({ state = "upcoming", marker, stateLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
   <li
     data-slot={slotToken("steps-step", inherited)}
-    data-state={state}
+    {...stateAttrs({ state })}
     {...(state === "current" ? { "aria-current": "step" } : {})}
     class={cn("flex items-center gap-2", cls)}
     {...rest}>

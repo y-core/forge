@@ -18,7 +18,7 @@ const STYLES = `
   </style>
 `;
 
-test("a presence selector matches an empty-valued state attribute", async ({ page }) => {
+test("a presence selector matches an empty-valued state attribute", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, `${STYLES}<div id="panel" data-checked=""></div>`, EXPOSE);
 
   const value = await page.evaluate(() => {
@@ -29,7 +29,7 @@ test("a presence selector matches an empty-valued state attribute", async ({ pag
   expect(value).toBe("checked");
 });
 
-test("applyStateAttrs moves a live element between states and the selectors follow", async ({ page }) => {
+test("applyStateAttrs moves a live element between states and the selectors follow", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, `${STYLES}<div id="panel"></div>`, EXPOSE);
 
   const timeline = await page.evaluate(() => {
@@ -47,7 +47,7 @@ test("applyStateAttrs moves a live element between states and the selectors foll
   expect(timeline).toEqual(["pressed", ""]);
 });
 
-test("applyStateAttrs leaves attributes owned by keys it was not given", async ({ page }) => {
+test("applyStateAttrs leaves attributes owned by keys it was not given", { tag: "@cross-engine" }, async ({ page }) => {
   await mount(page, `${STYLES}<div id="panel"></div>`, EXPOSE);
 
   const result = await page.evaluate(() => {

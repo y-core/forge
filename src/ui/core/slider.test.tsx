@@ -149,11 +149,17 @@ describe("Slider", () => {
 
   it("names the bound field on the readout as well as the control, so a signal write repaints both", async () => {
     expect(await render(<Slider output min={1} max={120} value={60} {...fieldAttr("fov")} />)).toBe(
-      '<div data-slot="slider-wrapper" data-scope="slider" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md"' +
+      '<div data-slot="slider-wrapper" class="flex gap-2 items-center"><input data-slot="slider" type="range" data-size="md"' +
         ' class="state-disabled state-busy state-invalid w-full appearance-none rounded-full bg-transparent focus-ring cursor-pointer h-control-md text-sm"' +
-        ' data-on-input="sync" min="1" max="120" value="60" data-field="fov"><output data-slot="slider-output" aria-live="off" data-field="fov"' +
+        ' min="1" max="120" value="60" data-field="fov"><output data-slot="slider-output" aria-live="off" data-field="fov"' +
         ' class="text-sm text-muted-foreground tabular-nums">60</output></div>',
     );
+  });
+
+  it("a bound readout stamps no data-on-input and no scope, leaving the readout to bindControls", async () => {
+    const html = await render(<Slider output {...fieldAttr("fov")} />);
+
+    expect([attrsOf(html), attrsOf(html, INPUT)]).toEqual([{ "data-slot": "slider-wrapper" }, { ...BARE, "data-field": "fov" }]);
   });
 
   it("the readout is not a live region, so the range input alone carries the value", async () => {

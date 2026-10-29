@@ -3,11 +3,9 @@
 import { describe, expect, it } from "bun:test";
 
 import type { JSXNode } from "../../render/jsx/types";
-import { attrOf, attrsOf, classesOf, tagOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Dialog } from "./dialog";
-
-const contentOf = (html: string): string => html.slice(tagOf(html).length, html.lastIndexOf("<"));
 
 describe("Dialog", () => {
   it("renders the whole dialog exactly, caller class merged last and children escaped", async () => {
@@ -87,7 +85,7 @@ describe("Dialog.Title", () => {
       expect(tagOf(html).startsWith(`<h${level} `)).toBe(true);
       expect(attrsOf(html)).toEqual({ "data-slot": "dialog-title", id: "confirm-title" });
       expect(classesOf(html)).toEqual(classesOf(base));
-      expect(contentOf(html)).toBe("t");
+      expect(innerOf(html)).toBe("t");
     }
   });
 });
@@ -97,7 +95,7 @@ describe("Dialog.Trigger", () => {
     const html = await render(<Dialog.Trigger for='confirm'>Open</Dialog.Trigger>);
 
     expect(attrsOf(html)).toEqual({ type: "button", "data-slot": "dialog-trigger", command: "show-modal", commandfor: "confirm" });
-    expect(contentOf(html)).toBe("Open");
+    expect(innerOf(html)).toBe("Open");
   });
 });
 

@@ -9,7 +9,11 @@ import {
   blankSourceComments,
   collectFiles,
   collectSource,
+  endOfCssString,
+  endOfRegex,
+  endOfString,
   excludedBy,
+  findStylesheetComments,
   isTestSource,
   listDirectories,
   listFiles,
@@ -62,6 +66,59 @@ describe("balancedSpan() — the bracket it closes", () => {
   });
 });
 
+describe("endOfString() — the index just past a literal", () => {
+  const closed: { label: string; literal: string }[] = [
+    { label: "a double-quoted string holding an escaped quote", literal: String.raw`"a\"b"` },
+    { label: "a template whose substitution holds a closing brace in a string", literal: '`x${ "}" }y`' },
+  ];
+
+  for (const { label, literal } of closed) {
+    it(`closes ${label}`, () => {
+      expect(endOfString(`${literal} + rest`, 0)).toBe(literal.length);
+    });
+  }
+
+  it("returns -1 for a string that never closes", () => {
+    expect(endOfString('"abc + rest', 0)).toBe(-1);
+  });
+});
+
+describe("endOfCssString() — where a stylesheet string ends", () => {
+  it("returns the index just past the closing quote", () => {
+    expect(endOfCssString(`'a\\'b'; rest`, 0)).toBe(6);
+  });
+
+  it("returns the index of an unescaped newline, which ends a bad string", () => {
+    expect(endOfCssString('"abc\n}', 0)).toBe(4);
+  });
+
+  it("continues past an escaped newline", () => {
+    expect(endOfCssString('"a\\\nb"; rest', 0)).toBe(6);
+  });
+
+  it("returns -1 for a string still open at end of file", () => {
+    expect(endOfCssString('"abc', 0)).toBe(-1);
+  });
+});
+
+describe("endOfRegex() — the index just past a regex literal and its flags", () => {
+  const closed: { label: string; literal: string }[] = [
+    { label: "a regex whose class holds a slash", literal: "/[/]x/" },
+    { label: "a regex holding an escaped slash", literal: String.raw`/a\/b/` },
+    { label: "a regex with its flags", literal: "/ab/giu" },
+  ];
+
+  for (const { label, literal } of closed) {
+    it(`closes ${label}`, () => {
+      expect(endOfRegex(`${literal}.test(rest)`, 0)).toBe(literal.length);
+    });
+  }
+
+  it("returns -1 for a regex a newline reaches before it closes", () => {
+    expect(endOfRegex("/ab\ncd/", 0)).toBe(-1);
+  });
+});
+
 describe("blankComments() — block comments only", () => {
   it("replaces the comment body with spaces and keeps the length", () => {
     expect(blankComments("a /* hi */ b")).toBe("a          b");
@@ -77,6 +134,39 @@ describe("blankComments() — block comments only", () => {
 
   it("leaves a /* inside a CSS string alone", () => {
     expect(blankComments('.a::after { content: "/*"; color: red; }')).toBe('.a::after { content: "/*"; color: red; }');
+  });
+
+  it('keeps the code after a `"` string a newline ended, blanking only the real comment', () => {
+    expect(blankComments('.a { content: "x /* y\n}\n/* real */\n')).toBe(`.a { content: "x /* y\n}\n${" ".repeat(10)}\n`);
+  });
+});
+
+describe("findStylesheetComments() — block comments only", () => {
+  it("finds each block with its offsets and opening line", () => {
+    expect(findStylesheetComments("/* one */\n.a { color: red; }\n/* two\n   lines */\n")).toEqual([
+      { kind: "block", start: 0, end: 9, line: 1, text: "/* one */" },
+      { kind: "block", start: 29, end: 47, line: 3, text: "/* two\n   lines */" },
+    ]);
+  });
+
+  it("opens no `//` comment in a `url(//…)`", () => {
+    expect(findStylesheetComments(".a { background: url(//cdn.test/x.png); }\n")).toEqual([]);
+  });
+
+  it("opens no comment on the `/**` inside a quoted `@source` glob", () => {
+    expect(findStylesheetComments('@source not "./**/*.{test,stories}.*";\n')).toEqual([]);
+  });
+
+  it('ends a `"` string at an unescaped newline, so a `/*` inside it opens no comment and the next real comment is found', () => {
+    expect(findStylesheetComments('.a { content: "x /* y\n}\n/* real */\n')).toEqual([
+      { kind: "block", start: 24, end: 34, line: 3, text: "/* real */" },
+    ]);
+  });
+
+  it("reads a backtick as no string delimiter, so a comment between two backticks is found", () => {
+    expect(findStylesheetComments(".a { --open: `; }\n/* real */\n.b { --close: `; }\n")).toEqual([
+      { kind: "block", start: 18, end: 28, line: 2, text: "/* real */" },
+    ]);
   });
 });
 

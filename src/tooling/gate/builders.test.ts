@@ -16,6 +16,7 @@ import {
   commentBudgetStep,
   compatibilityStep,
   contrastStep,
+  crossEngineTagsStep,
   cssCoverageStep,
   cssSourcesStep,
   cssTokensStep,
@@ -25,6 +26,7 @@ import {
   devBundleStep,
   exportsStep,
   exposureStep,
+  fadedTextStep,
   formatStep,
   iccProfileStep,
   importBoundaryStep,
@@ -80,6 +82,7 @@ const CHECK_STEPS: readonly Step[] = [
   }),
   cssSourcesStep({ root: "/nowhere", uiDir: "ui", cssDir: "css", sourceDir: "src", readme: "README.md", packageName: "pkg", exports: {} }),
   assetManifestStep({ root: "/nowhere", assetConfig: "assets.config.ts" }),
+  fadedTextStep({ root: "/nowhere", sources: ["src/ui", "!src/ui/design"], pairs: [] }),
 ];
 
 const COMMAND_STEPS: readonly Step[] = [typecheckStep(), lintStep(), formatStep(), testStep(), browserStep()];
@@ -107,6 +110,7 @@ describe("builders — the two step kinds", () => {
       "validate-contrast",
       "validate-css-sources",
       "validate-asset-manifest",
+      "validate-faded-text",
     ]);
   });
 });
@@ -222,36 +226,28 @@ describe("typeAwareLintStep()", () => {
 });
 
 describe("browserStep()", () => {
-  it("defaults to the runtime tier, because it needs a machine prerequisite", () => {
-    expect(browserStep().tier).toBe("runtime");
+  it("defaults to the deploy tier, so the run a task closes on never waits on the whole suite", () => {
+    expect(browserStep().tier).toBe("deploy");
   });
 
-  it("runs from the tier the caller states, over its runtime default", () => {
+  it("runs from the tier the caller states, over its deploy default", () => {
     expect(browserStep({ tier: "release" }).tier).toBe("release");
   });
 
-  it("narrows to the specs a pending change reaches, and runs whole when the Playwright config changes", () => {
-    expect(narrowing(browserStep())).toEqual({ args: ["--only-changed"], wide: ["playwright.config.ts"], probe: LISTING });
+  it("never narrows or widens, because only a runtime row follows the pending changes", () => {
+    expect([narrowing(browserStep()), browserStep().widen]).toEqual([undefined, undefined]);
   });
 
-  it("adds a caller's wide globs to the Playwright config, and takes a caller's narrowing arguments", () => {
-    expect(narrowing(browserStep({ narrow: { args: ["--last-failed"], wide: ["css/**"] } }))).toEqual({
-      args: ["--last-failed"],
-      wide: ["playwright.config.ts", "css/**"],
-      probe: LISTING,
-    });
+  it("asks Playwright for its JSON report beside the console's list, through the variable naming the file", () => {
+    const results = browserStep().results;
+
+    expect([results?.args, results?.env]).toEqual([["--reporter=list,json"], "PLAYWRIGHT_JSON_OUTPUT_FILE"]);
   });
+});
 
-  it("carries a caller's traced paths onto every Playwright row, and none by default", () => {
-    const widen = (): string[] => ["src/exposed.ts"];
-
-    expect([browserStep().widen, workerdStep().widen]).toEqual([undefined, undefined]);
-    expect([browserStep({ widen }).widen, workerdStep({ widen }).widen]).toEqual([widen, widen]);
-    expect(browserSteps({ engines: ["chromium", "webkit"], widen }).map((step) => step.widen)).toEqual([widen, widen]);
-  });
-
+describe("workerdStep() — its narrowing probe", () => {
   it("reads a listing as selecting nothing only from Playwright's zero-test total", () => {
-    const selects = browserStep().narrow?.probe?.selects ?? ((): boolean => true);
+    const selects = workerdStep().narrow?.probe?.selects ?? ((): boolean => true);
 
     expect(selects("Listing tests:\nTotal: 0 tests in 0 files\n")).toBe(false);
     expect(selects("Listing tests:\n  [chromium] › a.browser.ts:3:1 › a\nTotal: 1 test in 1 file\n")).toBe(true);
@@ -262,7 +258,7 @@ describe("browserStep()", () => {
   });
 
   it("reads a total that is not the zero-test line whole as selecting", () => {
-    const selects = browserStep().narrow?.probe?.selects ?? ((): boolean => false);
+    const selects = workerdStep().narrow?.probe?.selects ?? ((): boolean => false);
     const cases = [
       "Listing tests:\nTotal: 0 tests in 1 file\n",
       "Listing tests:\nTotal: 10 tests in 0 files\n",
@@ -273,7 +269,9 @@ describe("browserStep()", () => {
 
     expect(cases.filter((output) => !selects(output))).toEqual([]);
   });
+});
 
+describe("browserStep() — its command and requirement", () => {
   it("spawns the installed binary under node over the chromium project alone, so the workerd project stays its own row", () => {
     expect(browserStep().cmd).toEqual(["playwright", "test", "--project=chromium"]);
   });
@@ -484,19 +482,19 @@ describe("browserSteps()", () => {
     return steps.map((step) => [step.label, step.tier, step.cmd]);
   }
 
-  it("puts the primary engine on the runtime tier under the bare label, and every other engine on release under its own", () => {
+  it("puts the primary engine on the deploy tier under the bare label, and every other engine on release under its own", () => {
     expect(rowsOf(browserSteps(ALL))).toEqual([
-      ["test:browser", "runtime", ["playwright", "test", "--project=chromium"]],
+      ["test:browser", "deploy", ["playwright", "test", "--project=chromium"]],
       ["test:browser:firefox", "release", ["playwright", "test", "--project=firefox"]],
       ["test:browser:webkit", "release", ["playwright", "test", "--project=webkit"]],
     ]);
   });
 
-  it("puts every engine row behind the Playwright server and narrows each the same way", () => {
-    const rows = browserSteps({ ...ALL, narrow: { wide: ["css/**"] } });
+  it("puts every engine row behind the Playwright server, none of them narrowed", () => {
+    const rows = browserSteps(ALL);
 
     expect(rows.every((step) => typeof step.requires?.probe === "function")).toBe(true);
-    expect(rows.map(narrowing)).toEqual(Array(3).fill({ args: ["--only-changed"], wide: ["playwright.config.ts", "css/**"], probe: LISTING }));
+    expect(rows.map(narrowing)).toEqual([undefined, undefined, undefined]);
   });
 
   it("puts Chromium behind the primary server and Firefox and WebKit behind the compat server", () => {
@@ -524,17 +522,17 @@ describe("browserSteps()", () => {
     expect(rowsOf(browserSteps({ engines: ["chromium"] }))).toEqual(rowsOf([browserStep()]));
   });
 
-  it("makes the named primary the runtime row", () => {
+  it("makes the named primary the deploy row", () => {
     expect(rowsOf(browserSteps({ ...ALL, primary: "webkit" })).map(([label, tier]) => [label, tier])).toEqual([
       ["test:browser:chromium", "release"],
       ["test:browser:firefox", "release"],
-      ["test:browser", "runtime"],
+      ["test:browser", "deploy"],
     ]);
   });
 
   it("takes the first engine as primary when Chromium is not listed", () => {
     expect(rowsOf(browserSteps({ engines: ["webkit", "firefox"] })).map(([label, tier]) => [label, tier])).toEqual([
-      ["test:browser", "runtime"],
+      ["test:browser", "deploy"],
       ["test:browser:firefox", "release"],
     ]);
   });
@@ -549,13 +547,13 @@ describe("browserSteps()", () => {
     expect(selection.ok && selection.steps.map((step) => step.label)).toEqual(["test:browser"]);
   });
 
-  it("holds every engine row out of the unit tier, and the matrix out of runtime and deploy", () => {
+  it("holds every engine row out of the unit and runtime tiers, and the matrix out of deploy", () => {
     const labelsAt = (tier: GateTier): string[] => {
       const selection = selectSteps([typecheckStep(), ...browserSteps(ALL)], { tier });
       return selection.ok ? selection.steps.map((step) => step.label).filter((label) => label.startsWith("test:browser")) : [];
     };
 
-    expect([labelsAt("unit"), labelsAt("runtime"), labelsAt("deploy")]).toEqual([[], ["test:browser"], ["test:browser"]]);
+    expect([labelsAt("unit"), labelsAt("runtime"), labelsAt("deploy")]).toEqual([[], [], ["test:browser"]]);
   });
 
   it("refuses an empty engine list", () => {
@@ -811,11 +809,13 @@ describe("builders — derived watches", () => {
       [formatStep({ sources: ["."] }), ["**", ".oxfmtrc*", ".prettierignore", ".gitignore"]],
       [jsxStep({ root: "/nowhere" }), ["src", "src/**"]],
       [menuNamingStep({ root: "/nowhere", sources: ["app/"] }), ["app", "app/**"]],
+      [crossEngineTagsStep({ root: "/nowhere", sources: ["app/"] }), ["app", "app/**"]],
       [coLocationStep({ root: "/nowhere", sources: ["src", "warden"] }), ["src", "src/**", "warden", "warden/**"]],
       [commentBudgetStep({ root: "/nowhere", sources: ["src", "!**/.wrangler"] }), ["src", "src/**"]],
       [ssrBoundaryStep({ root: "/nowhere", clientDirs: [], sources: ["src/ui"], entryPoints: [] }), ["src/ui", "src/ui/**"]],
       [classOrderStep({ root: "/nowhere", sources: ["src"] }), ["src", "src/**"]],
       [modernCssStep({ root: "/nowhere", sources: ["src/ui"] }), ["src/ui", "src/ui/**"]],
+      [fadedTextStep({ root: "/nowhere", sources: ["src/ui", "!src/ui/design"], pairs: [] }), ["src/ui", "src/ui/**"]],
       [importBoundaryStep({ root: "/nowhere", guarded: ["src/tooling"] }), ["src", "src/**", "src/tooling", "src/tooling/**"]],
       [devBoundaryStep({ root: "/nowhere" }), ["src", "src/**", "wrangler.jsonc"]],
       [devBoundaryStep({ root: "/nowhere", workerConfig: "app/wrangler.jsonc" }), ["src", "src/**", "app/wrangler.jsonc"]],

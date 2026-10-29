@@ -1,5 +1,5 @@
-import { isDevBuildArmed, whenArmed } from "../context/armed.dev";
 import { createLogger } from "../logging/logger";
+import { isDevBuildArmed, whenArmed } from "../relax/armed";
 import { admitsAbsentLimiter as refuseAbsentLimiter } from "./rate-limit.strict";
 import type { RelaxAbsentLimiter } from "./types";
 

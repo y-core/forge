@@ -56,11 +56,11 @@
 | `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
 | `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 
-A bare `bun run verify` is the `runtime` tier — the run a task closes on, with the browser and workerd suites on Chromium narrowed to the pending
-changes. **`bun run verify:static` is the loop to write in**: every row that judges the source rather than running it, which is the whole gate bar
-the test suites, in about thirteen seconds. It holds the rules above that a
-step checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a finding lands in
-seconds instead of after a 16-second suite.
+A bare `bun run verify` is the `runtime` tier — the run a task closes on, with the workerd suite narrowed to the pending changes and no browser
+spec; `bun run verify:deploy` is the first tier with the Chromium set. **`bun run verify:static` is the loop to write in**: every row that judges
+the source rather than running it, which is the whole gate bar the test suites, in about thirteen seconds. It holds the rules above that a step
+checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a finding lands in seconds
+instead of after a 16-second suite.
 
 These flags are not findable from `package.json`:
 

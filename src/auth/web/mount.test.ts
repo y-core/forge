@@ -52,9 +52,6 @@ import {
   textOf,
 } from "./web.fixture";
 
-// This file is the mount AUTH_MOUNTING.md §1 points to, written out with no ellipsis and no free
-// variable, so the one copy of the wiring is held to the real signatures by the compiler.
-
 /** Exactly the bindings a Worker mounting auth declares. */
 interface MountEnv extends Record<string, unknown> {
   readonly DB: D1DatabaseLike;
@@ -78,8 +75,6 @@ function requestStores(c: AppContext<MountEnv>) {
     credentials: createCredentialStore(db),
     enrolments,
     challenges: createChallengeStore(createD1Client(c.env.DB as never)),
-    // The offered services are stubbed: assembling the real ones needs a key ring and a mailer, which
-    // are the consumer's own domain wiring and not the mount this file is about.
     factors: createFactorRegistry(enrolments, {
       offered: [
         { service: fakeFactorService("email-otp"), role: "primary" },
@@ -103,8 +98,6 @@ function resolveServices(c: AppContext<MountEnv>): AuthRequestServices {
 
 const options: AuthWebOptions<MountEnv> = { resolveServices, paths, icon: fakeAuthIcon };
 
-// The one departure from a real mount: the guard's resolver records the env it was handed, so the
-// per-request lifetime this file exists to hold is asserted and not merely typed.
 const guardEnvs: MountEnv[] = [];
 
 /** The whole mount, in the order AUTH_MOUNTING.md §1 gives it. */
@@ -174,8 +167,6 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     expect(res.headers.get("location")).toBe("/auth/signin?next=%2Faccount%2Fpasskeys");
   });
 
-  // The GET is what writes the cookie: without it the POST arrives with a new anonymous id, and the
-  // token's subject can never match.
   it("lets an anonymous visitor on a fresh profile complete the sign-up POST", async () => {
     const app = mount();
     const bindings = env();
@@ -208,8 +199,6 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     expect(res.status).toBe(403);
   });
 
-  // A store captured at bootstrap is captured before any `env` exists, so these are the assertions
-  // that the guards read the bindings of the request instead.
   it("builds the guard's user store from the bindings of the request being guarded", async () => {
     const app = mount();
     const first = env([{ id: ADA, email: "ada@example.com" }]);
@@ -219,20 +208,15 @@ describe("the AUTH_MOUNTING.md §1 mount, compiled", () => {
     await app.request("/account/passkeys", {}, first);
     await app.request("/account/passkeys", {}, second);
 
-    // One app instance, two `env` objects, one resolver call each carrying its own request's DB —
-    // which is precisely what a module-level latch cannot express.
     expect(guardEnvs).toHaveLength(2);
     expect(guardEnvs[0]).toBe(first);
     expect(guardEnvs[1]).toBe(second);
   });
 });
 
-// The falsifier for everything below: no test here sets `authCtx`, so an identity on `/auth/verify`
-// can only have come from the guard chain.
-
 const CODE = "123456";
 
-/** Accounts the flows can actually add to, since a sign-up that writes nowhere cannot be signed in to. */
+/** An in-memory user store the flows can add accounts to. */
 function memoryUsers(): UserStore {
   const rows: AuthUser[] = [];
   return {
@@ -266,7 +250,7 @@ function memoryUsers(): UserStore {
   };
 }
 
-/** Enrolment rows an enrolment ceremony can actually confirm, so the demand changes as the drive-through proceeds. */
+/** An in-memory factor store whose rows an enrolment ceremony can confirm. */
 function memoryFactors(): FactorStore {
   const rows: AuthFactor[] = [];
   return {
@@ -305,8 +289,6 @@ function memoryFactors(): FactorStore {
   };
 }
 
-// The ceremonies are stubbed and the mount is not: what this file is evidence about is the wiring
-// between the guard chain, the routes and the actions, never the cryptography under a factor.
 /** A factor service that accepts `CODE` and records its enrolment in `store`, and a passkey's in `credentials` under the name it carried. */
 function driveableFactor<kind extends AuthFactorKind>(kind: kind, store: FactorStore, credentials: AuthCredential[] = []): AuthFactorService<kind> {
   const base = {
@@ -378,8 +360,6 @@ function flowMount(
     ],
   });
 
-  // The decoy branch spends these; the mount drive-through never reaches it, so an in-memory pair
-  // that reports success is all it needs.
   const otpState: OtpStateStore = {
     issue: () => Promise.resolve(ok(true)),
     countAttempt: () => Promise.resolve(ok(null)),
@@ -430,8 +410,6 @@ function flowMount(
   registerAccount(app, accountMap, flowOptions);
   registerAdmin(app, adminMap, flowOptions);
 
-  // A consumer's own page, guarded with `requireAuth` alone. Every shipped group lists an enrolment
-  // guard beside it, so this is the only place the guard's own step-up enforcement is observable.
   app.use(
     "/app/*",
     requireAuth<MountEnv>({
@@ -455,7 +433,7 @@ function flowMount(
   };
 }
 
-/** One visitor keeping their cookie across requests, which is the only way a session-bound token verifies. */
+/** One visitor keeping their cookie across requests. */
 function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
   let cookie = "";
 
@@ -472,10 +450,9 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
   }
 
   /** Posts one of the page's forms, to its own action and with its own token, as a browser would. */
-  async function form(url: string, fields: Record<string, string>, posts?: string): Promise<Response> {
+  async function form(url: string, fields: Record<string, string>, actionPath?: string): Promise<Response> {
     const page = await get(url);
-    // A page may render more than one form, and the resend is the second: `posts` picks which.
-    const path = posts ?? new URL(url, "http://localhost").pathname;
+    const path = actionPath ?? new URL(url, "http://localhost").pathname;
     const html = await page.text();
     // The rendered action rather than the page path: the return-to the guard minted travels on it,
     // and a test that posts to the path instead proves nothing about whether it survives.
@@ -514,7 +491,7 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
     );
   }
 
-  /** The two ceremony calls a page's contract attributes promise, each ready to post whenever the visitor gets to it. */
+  /** The ceremony calls a page's contract attributes promise, each ready to post whenever the visitor gets to it. */
   async function contract(page: string) {
     const html = await (await get(page)).text();
     const attr = (name: string) => new RegExp(`${name}="([^"]*)"`).exec(html)?.[1] ?? "";
@@ -544,23 +521,17 @@ describe("a second factor, driven through the mount", () => {
       const mounted = flowMount(stepUp);
       const ada = visitor(mounted, env());
 
-      // Sign up, then answer the emailed code. The policy is `always`, so a correct sign-in ends
-      // owing an enrolment rather than settled.
       expect((await ada.form("/auth/signup", { email: "ada@example.com" })).headers.get("location")).toBe("/auth/verify");
       const signedIn = await ada.form("/auth/verify", { code: CODE });
       expect(signedIn.status).toBe(303);
       const enrolAt = stepUp === "totp-app" ? "/auth/enrol/totp" : "/auth/enrol/passkey";
       expect(signedIn.headers.get("location")).toBe(enrolAt);
 
-      // The mark cannot have been carried over a sign-in, so the guarded page is still refused.
       expect((await ada.get("/account/factors")).headers.get("location")).toBe(enrolAt);
 
-      // Enrol the factor the demand actually names.
       const enrolled = stepUp === "totp-app" ? await ada.form(enrolAt, { code: CODE }) : await ada.ceremony(enrolAt);
       expect(enrolled.status).toBe(stepUp === "totp-app" ? 303 : 200);
 
-      // Now the demand is the step-up the enrolment was for, and the verify page can satisfy it —
-      // which is unreachable unless the group's `resolve-auth` guard put an identity on the request.
       expect((await ada.get("/account/factors")).headers.get("location")).toBe("/auth/verify");
       const stepped = stepUp === "totp-app" ? await ada.form("/auth/verify", { code: CODE }) : await ada.ceremony("/auth/verify");
       expect(stepped.status).toBe(stepUp === "totp-app" ? 303 : 200);
@@ -571,8 +542,6 @@ describe("a second factor, driven through the mount", () => {
     });
   }
 
-  // `requireAuth` mints the return-to on the redirect it sends an anonymous visitor away with, and
-  // every later leg of the flow has to carry it or the last one has nothing to honour.
   it("returns a signed-in visitor to the page they were refused, not to the settled page", async () => {
     const mounted = flowMount("totp-app");
     const bindings = env();
@@ -596,8 +565,6 @@ describe("a second factor, driven through the mount", () => {
     expect(stepped.headers.get("location")).toBe("/account/recovery-codes?next=%2Fapp%2Fdashboard");
   });
 
-  // The branch a visitor takes when the first code never arrived: it reloads the same page, so it
-  // has to carry the return-to like every other leg or the flow settles somewhere else.
   it("keeps the return-to across a resend", async () => {
     const mounted = flowMount("totp-app");
     const bindings = env();
@@ -620,13 +587,10 @@ describe("a second factor, driven through the mount", () => {
     expect(stepped.headers.get("location")).toBe("/account/recovery-codes?next=%2Fapp%2Fdashboard");
   });
 
-  // The sign-in path, not the sign-up path: an account whose second factor is already confirmed
-  // completes its primary factor and owes a step-up, and `requireAuth` is on its own there.
   it("refuses a `requireAuth`-only page to a session that signed in and ignored the step-up it owes", async () => {
     const mounted = flowMount("totp-app");
     const bindings = env();
 
-    // Ada enrols, so the account the second visitor signs into has a confirmed mandatory factor.
     const ada = visitor(mounted, bindings);
     await ada.form("/auth/signup", { email: "ada@example.com" });
     await ada.form("/auth/verify", { code: CODE });
@@ -638,8 +602,6 @@ describe("a second factor, driven through the mount", () => {
     expect(signedIn.status).toBe(303);
     expect(signedIn.headers.get("location")).toBe("/auth/verify");
 
-    // The redirect is ignored, which is the whole attack: the session is established and the second
-    // factor is not proved, so the consumer's own page must not be served.
     const refused = await returning.get("/app/dashboard");
     expect(refused.status).toBe(303);
     expect(refused.headers.get("location")).toBe("/auth/verify");
@@ -655,8 +617,6 @@ describe("a second factor, driven through the mount", () => {
     await ada.form("/auth/verify", { code: CODE });
     await ada.form("/auth/enrol/totp", { code: CODE });
 
-    // `totp-app` is never the primary factor, so naming it is proof the page read an identity off
-    // the request: the sign-in branch could only ever have offered `email-otp`.
     const page = await (await ada.get("/auth/verify")).text();
     expect(page).toContain("Enter the current code from your authenticator app.");
   });

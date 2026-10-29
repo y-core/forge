@@ -26,6 +26,7 @@ const ids: RuleId[] = [
   "forge-ui-a11y-one-live-region",
   "forge-ui-a11y-aria-beside-data",
   "forge-ui-a11y-heading-size-by-class",
+  "forge-ui-a11y-state-attrs-source",
   "forge-ui-reduced-motion",
   "forge-ui-focus-ring",
   "forge-ui-optional-prop-undefined",
@@ -50,6 +51,21 @@ describe("RULE_CORPUS_PATH", () => {
 describe("RULE_ENFORCER", () => {
   it("names an enforcer for exactly the rules RULE_CORPUS_PATH routes", () => {
     expect(Object.keys(RULE_ENFORCER).sort()).toEqual(Object.keys(RULE_CORPUS_PATH).sort());
+  });
+
+  it("routes forge-ui-contrast-floor to the contrast audit and the faded-text gate", () => {
+    expect(RULE_ENFORCER["forge-ui-contrast-floor"]).toEqual(["contrast", "faded-text"]);
+  });
+
+  it("names no enforcer twice for one rule", () => {
+    expect(Object.entries(RULE_ENFORCER).filter(([, enforcers]) => new Set(enforcers).size !== enforcers.length)).toEqual([]);
+  });
+
+  it("cannot route a corpus rule to the gate", () => {
+    // @ts-expect-error -- the gate detects no corpus rule, so `gate` is not a corpus rule's enforcer
+    const routed: (typeof RULE_ENFORCER)[RuleId] = ["gate"];
+
+    expect(routed).toEqual(["gate"]);
   });
 });
 

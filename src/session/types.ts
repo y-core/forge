@@ -3,7 +3,7 @@ import type { KeyRing, KeyRingResolver } from "../crypto/keyring/types";
 
 /** Options for `sessionMiddleware`. @public */
 export interface SessionCookieOptions {
-  /** Re-issues the cookie on every request that carries one — the only way to push changed attributes (`Secure`, `SameSite`, `Path`, `Max-Age`) to clients holding a valid session; a deploy-window setting, since it makes every such response uncacheable. */
+  /** Re-issues the cookie on every request that carries one, pushing changed attributes to clients holding a valid session; makes every such response uncacheable. */
   reissue?: boolean;
   /** Overrides the cookie's own `rotating`: on, an unchanged session whose cookie the active key did not sign is re-issued, which is what completes a rotation; off, a retired signature is left in place. */
   rotating?: boolean;
@@ -58,7 +58,7 @@ export interface UnsignedCookie {
   serialize(value: string, attributes?: CookieAttributes): Promise<string>;
 }
 
-/** Per-call `Set-Cookie` attributes a signed cookie takes, minus the three it fixes itself. @public */
+/** Per-call `Set-Cookie` attributes a signed cookie takes, minus the attributes it fixes itself. @public */
 export type SignedCookieAttributes = Omit<CookieAttributes, "httpOnly" | "sameSite" | "secure">;
 
 /** A cookie whose value is HMAC-signed, verified on the way in under the key its key id names. @public */

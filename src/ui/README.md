@@ -196,7 +196,7 @@ import { Button, Form, FormField, Input } from "@y-core/forge/ui/core";
   <FormField invalid={Boolean(errors.name)}>
     <FormField.Label name='name'>Your name</FormField.Label>
     <Input name='name' field={{ name: "name", error: errors.name }} required />
-    {errors.name && <FormField.Error name='name'>{errors.name}</FormField.Error>}
+    <FormField.Error name='name'>{errors.name}</FormField.Error>
   </FormField>
   <Button type='submit'>Send message</Button>
 </Form>;
@@ -213,6 +213,8 @@ and a token in a URL reaches every log that records one. A DELETE form that must
 verb onto its button. A button reads no `hx-headers` from its form, so give it the header too:
 
 ```tsx
+import { Button, Form } from "@y-core/forge/ui/core";
+
 <Form csrfToken={token} action='/items/1'>
   <Button type='submit' hx-delete='/items/1' hx-headers={JSON.stringify({ "X-CSRF-Token": token })}>
     Remove
@@ -247,8 +249,8 @@ describes the fieldset by the same test. `FormField`'s own `invalid` only recolo
 
 When you are building the same wiring by hand — a control forge does not ship, inside a `FormField` — the id helpers exported beside `FormField`
 derive the same strings the components use, and `fieldControlProps` is the merge `Input` / `Select` / `Textarea` perform internally.
-An `aria-describedby` you pass yourself, to a control, a group root, a `Tooltip.Trigger` or a `Dialog`, is kept ahead of the ids forge adds, never
-replaced by them.
+An `aria-describedby` you pass yourself, to a control, a group root, a `Tooltip.Trigger`, a `Dialog` or a `Drawer`, is kept ahead of the ids forge
+adds, never replaced by them.
 
 ### Choose a tone, an appearance and a size
 
@@ -258,12 +260,12 @@ declared in [`ui/contracts`](#y-coreforgeuicontracts).
 
 | Prop | Values | Taken by |
 | --- | --- | --- |
-| `tone` | `neutral`, `primary`, `secondary`, `destructive`, `info`, `success`, `warning` | `Button`, `Badge`, `Alert`, `Toast` |
-| `appearance` | `solid`, `soft`, `outline`, `ghost`, `link` | the same four, each narrowed to what it can paint — `Badge` drops `ghost` and `link`, `Alert` and `Toast` keep `solid`/`soft` |
-| `size` | `sm`, `md`, `lg` | `Button`, `Avatar`, `Spinner`, `ToggleGroup`, chrome `ThemeToggle` / `Toolbar`, and every field control; `Badge` takes `sm`/`md` |
-| `shape` | `default`, `icon`, `square`, `circle` | `Button` — an icon-only button is `shape='icon'`, never a size |
-| `orientation` | `horizontal`, `vertical` | anything with a layout axis: `Tabs`, `Toolbar`, `ToggleGroup`, `Slider`, `Progress`, `Separator`, `ScrollArea`, `FormField`, `Field`, `CheckboxGroup`, `RadioGroup` |
-| `invalid`, `busy` | boolean | every field control, each emitting `aria-invalid` / `aria-busy` beside `data-invalid` / `data-busy`; `CheckboxGroup` and `RadioGroup` take an `error` message instead of `invalid`, while their `.Item` keeps `invalid`; `Button` writes `busy` through `loading` |
+| `tone` | `neutral`, `primary`, `secondary`, `destructive`, `info`, `success`, `warning` | `Button`, `Link`, `Badge`, `Alert`, `Toast`, `Status`, `Steps`, `Timeline`, `Table.Row`, core `Toolbar.Button` / `Toolbar.Link` |
+| `appearance` | `solid`, `soft`, `outline`, `ghost`, `link` | `Button` and core `Toolbar.Button` / `Toolbar.Link` take the whole set; the rest are narrowed to what they can paint — `Badge` takes `solid`/`soft`/`outline`, `Alert` and `Toast` take `solid`/`soft`, `Filter.Item` takes `soft`/`ghost` |
+| `size` | `sm`, `md`, `lg` | `Button`, `Avatar`, `Spinner`, `Kbd`, `Status`, `Table`, `Toggle`, `ToggleGroup.Item`, `Carousel.Dots`, the `Pagination` and `Filter` items, core `Toolbar.Button` / `.Link` / `.Input`, chrome `Dock` / `ThemeToggle` / `ToolbarAction`, and every field control; `Badge` takes `sm`/`md` |
+| `shape` | `default`, `icon`, `square`, `circle` | `Button` and core `Toolbar.Button` / `Toolbar.Link` — an icon-only button is `shape='icon'`, never a size |
+| `orientation` | `horizontal`, `vertical` | anything with a layout axis: `Tabs`, `Toolbar`, `ToggleGroup`, `Slider`, `Progress`, `Separator`, `ScrollArea`, `FormField`, `Field`, `CheckboxGroup`, `RadioGroup`, `Join`, `Steps`, `Timeline` |
+| `invalid`, `busy` | boolean | every field control, each emitting `aria-invalid` / `aria-busy` beside `data-invalid` / `data-busy`; `CheckboxGroup` and `RadioGroup` take an `error` message instead of `invalid`, while their `.Item` keeps `invalid`; a `CheckboxGroup` root stamps `data-invalid` without `aria-invalid`, which ARIA 1.2 deprecates on its `group` role, so mark its `.Item`s `invalid` to announce it; `Button` writes `busy` through `loading` |
 
 Some props deliberately sit outside it: `Switch`'s label side is `labelPlacement`, and `FormField`'s width-driven collapse is `responsive` — neither
 is an axis, so neither rides `orientation`. `Turnstile`'s `size` is Cloudflare's, passed through verbatim.
@@ -278,6 +280,8 @@ The `challenge="submit"` controller already does both to the submitter it holds.
 A compound root passes its own setting down to the parts that depend on it. You set the prop on the root rather than on each part:
 
 ```tsx
+import { Tabs } from "@y-core/forge/ui/core";
+
 <Tabs orientation='vertical'>
   <Tabs.List label='Settings'>…</Tabs.List>
 </Tabs>
@@ -304,12 +308,16 @@ CSSOM, never a generated `style` string.
 ### Open a dialog, menu, popover or tab panel with no JavaScript
 
 Overlays and disclosures are native: `<dialog>`, the Popover and Invoker Commands APIs, and `<details>`. Open, close, light-dismiss, Escape, the top
-layer and the backdrop are the platform's, and forge neither mirrors nor republishes the open state — assert on `[open]` and `:popover-open`, not on
-a forge attribute.
+layer and the backdrop are the platform's, and forge publishes no open state of its own — assert on `[open]` and `:popover-open`, not on a forge
+attribute. The one thing it mirrors is a `Popover` or `Menu` trigger's `aria-expanded`, which `ui/core/client` keeps in step with the popup.
 
 **The pairing you write is `for` on the trigger and `id` on the surface.** `Dialog`, `Drawer`, `Popover`, `Menu` and `Tabs` all take it that way,
-and a `Menu.Item`'s own `for` names the popup its selection closes — `false` leaves the popup open. An unselected `Tabs.Content` renders `hidden`,
-so the first paint is already correct.
+and a `Menu.Item`'s own `for` names the popup its selection closes — `false` leaves the popup open.
+
+**An unselected `Tabs.Content` renders `hidden="until-found"`, so the first paint is already correct.** With no script, following a tab's link
+shows its panel, and so does a find-in-page match inside it in an engine that implements `until-found`. Once `mountTabs` runs, every unselected
+panel is a plain `hidden=""` that find-in-page does not reach. So a test of server-rendered markup expects `hidden="until-found"`, and a test of a
+mounted page expects `hidden=""`.
 
 **A `Dialog` or `Drawer` must be named, and the type says so**: pass `titled` when you compose a `.Title`, and the root points `aria-labelledby` at
 that heading, so the overlay is named by what the reader sees; pass `label` or `labelledby` instead when there is no heading to point at. Naming
@@ -319,11 +327,12 @@ overlay would open unnamed.
 `openModal` on a `Dialog` asks for the centred modal mode; `open` is the platform's non-modal mode and flows inline. On a `Drawer`, `open` docks
 the panel at its edge above the page, with no backdrop and the page still usable. **A non-modal `open` surface is closed only by a control you
 render**, such as a `.Close`, never by an outside click or Escape, so the reader can work beside it. A modal one closes on Escape or a
-backdrop click, except an `alert` `Dialog`, which closes on Escape alone. The rulings behind the choices are [`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
+backdrop click, except an `alert` `Dialog` or `Drawer`, which closes on Escape alone. The rulings behind the choices are
+[`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
 
 ### Make a keyboard-driven component actually respond
 
-`Toolbar`, `Menu`, `Tabs`, `Tooltip`, `NumberField`, `ToggleGroup`, a modal `Dialog`, a `Popover.Content` and a readout `Slider` render a
+`Toolbar`, `Menu`, `Tabs`, `Tooltip`, `NumberField`, `ToggleGroup`, a modal `Dialog`, a `Popover.Content` and an unbound readout `Slider` render a
 `data-scope` and are **inert until `@y-core/forge/ui/core/client` is imported**: the markup stays valid and accessible, but the arrow keys are
 missing. That import is [the next section](#y-coreforgeuicoreclient). `Filter` is scoped too, and without the import its `×` falls back to a
 native reset: that empties a choice made on the page but restores one the server rendered, and inside your own form it resets the whole form.
@@ -333,6 +342,8 @@ native reset: that empties a choice made on the page but restores one the server
 `asChild` merges the button's classes and forwarded props onto a single JSX element child via `cloneElement` instead of rendering a `<button>`:
 
 ```tsx
+import { Button } from "@y-core/forge/ui/core";
+
 <Button asChild tone='neutral' appearance='ghost'>
   <a href='/docs'>Docs</a>
 </Button>;
@@ -350,6 +361,8 @@ Give the trigger `kind="label"` and the tooltip's text becomes the button's acce
 trigger carrying one throws.
 
 ```tsx
+import { Toolbar, Tooltip } from "@y-core/forge/ui/core";
+
 <Tooltip>
   <Tooltip.Trigger for='bold-tip' kind='label' asChild>
     <Toolbar.Button disabled={!canFormat}>
@@ -401,16 +414,26 @@ A `cva` resolver composes its stages through `cn` in precedence order — base, 
 own defaults, silently and only for the utilities that happen to collide.
 
 ```tsx
+import { buttonVariants, cn } from "@y-core/forge/ui/core";
+
 // A resolver takes the caller's class itself — this is what `Button` does with its own props.
 const className = buttonVariants({ tone, appearance, size, shape, class: cls });
 
 // A non-variant condition alongside a resolver is what `cn` is for, and the caller's class still comes last.
-<button class={buttonVariants({ tone: "primary", class: cn(isLoading && "opacity-50", cls) })}>Click</button>;
+<button aria-busy={isLoading} class={buttonVariants({ tone: "primary", class: cn(isLoading && "cursor-wait", cls) })}>Click</button>;
 ```
 
-The `tone` × `appearance` paint every toned control composes over is published as
-`toneVariants`, for markup of your own that must sit in the same palette. It carries a hover fill, so put it on something the pointer acts on,
-never on a static panel ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e).
+The `tone` × `appearance` paint every toned control composes over is published as `toneVariants`, for markup of your own that must sit in the
+same palette. It carries a hover fill, so put it on something the pointer acts on. A static panel takes `toneSurface`, the same paint without the
+hover fill ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e):
+
+```tsx
+import { toneSurface } from "@y-core/forge/ui/core";
+
+<section class={toneSurface({ tone: "info", appearance: "soft", class: "rounded-box border-field p-4 text-sm" })}>
+  Scheduled maintenance starts at 22:00 UTC.
+</section>;
+```
 
 ### Put a glyph inside a file input
 
@@ -419,10 +442,14 @@ an icon in the box is a composition _over_ the control rather than a child of it
 class (`class='pe-10'`), and lay the glyph over that gutter as an `aria-hidden`, `pointer-events-none` sibling.
 
 ```tsx
+import { createIcon, FileInput } from "@y-core/forge/ui/core";
+
+const AppIcon = createIcon("/assets/icons.svg");
+
 <div class='relative max-w-xs'>
   <FileInput name='avatar' class='pe-10' />
   <span aria-hidden='true' class='pointer-events-none absolute inset-y-0 end-3 flex items-center text-muted-foreground'>
-    <Icon name='upload' width={16} height={16} />
+    <AppIcon name='upload' width={16} height={16} />
   </span>
 </div>
 ```
@@ -465,7 +492,7 @@ import { formDigits, v } from "@y-core/forge/validation";
 <FormField invalid={Boolean(errors.code)}>
   <FormField.Label name='code'>Verification code</FormField.Label>
   <OtpInput length={6} field={{ name: "code", error: errors.code }} />
-  {errors.code && <FormField.Error name='code'>{errors.code}</FormField.Error>}
+  <FormField.Error name='code'>{errors.code}</FormField.Error>
 </FormField>;
 
 const schema = v.object({ code: v.pipe(formDigits(), v.length(6)) });
@@ -584,7 +611,7 @@ factory ([`UI_SSR_COMPONENTS.md`][usc-2c] §2c).
 
 ```tsx
 import { Slider, Switch } from "@y-core/forge/ui/controls";
-import { bindControls, registerScope, signalRecord } from "@y-core/forge/ui/client";
+import { bindControls, registerScope } from "@y-core/forge/ui/client";
 import { Resumable } from "@y-core/forge/ui/server";
 
 // Server:
@@ -596,20 +623,16 @@ import { Resumable } from "@y-core/forge/ui/server";
 </Resumable>;
 
 // Client:
-const sig = signalRecord(settings);
-registerScope("chrome", { eager: true, setup: ({ root }) => bindControls(root, sig) });
+registerScope("chrome", { eager: true, setup: ({ root, state }) => bindControls(root, state) });
 ```
 
-The required `bind` prop names the signal, and an optional `action` prop names a `data-on-<event>` handler. **The scope must be `eager: true`**,
+The required `bind` prop names the signal. **The scope must be `eager: true`**,
 because no bound control stamps a `data-on-*` action of its own — `bindControls` listens once on the scope root, so a bound control's markup names
 its field and nothing else.
 
 **Where `bind` lands differs for a compound**, and that is the only thing to remember about this barrel: a plain control binds on itself, while
 `CheckboxGroup`, `RadioGroup` and `ToggleGroup` pass their root through unchanged and bind on `.Item` — whose required `value` is stamped alongside,
 which is how `bindControls` tells one member from another. `NumberField` binds on `.Input` alone; its steppers are unchanged.
-
-When you need the same treatment for a control forge does not wrap, `createBoundControl` and `createBoundCompound` are the factories the wrappers
-themselves are built from — the second forwards the core statics for a compound whose binding lives on a static rather than the root.
 
 ### Decide between `bind` and `field`
 
@@ -635,6 +658,8 @@ rather than every table.
 panel will not compile. Prefer `labelledby` pointing at the trigger's own text, which is the name the reader saw before they opened it:
 
 ```tsx
+import { Popover } from "@y-core/forge/ui/core";
+
 <Popover>
   <Popover.Trigger for='share'>
     <span id='share-trigger'>Share</span>
@@ -679,10 +704,10 @@ yourself wherever a page renders more than one.
 
 **Boolean states are emitted by presence with an empty value — `data-selected=""`, never `"true"`** — while `aria-*` keeps its string form because
 WAI-ARIA requires it ([`STATE_ATTRIBUTES.md`][sa-1a] §1a and §1b). Assert the same grammar: `toHaveAttribute("data-selected", "")` for a forge
-state, and the platform's own `[open]` / `:popover-open` for anything native, since forge publishes no open state at all.
+state, and the platform's own `[open]` / `:popover-open` for anything native, since forge publishes no open state of its own.
 
-The full table of state names, and the presentational enums (`data-tone`, `data-appearance`, `data-size`, `data-state`) that sit beside them, are
-declared in this subpath rather than restated anywhere — a component emitting a state outside the table fails a conformance test.
+The full table of state names, `data-state` among them, and the presentational enums (`data-tone`, `data-appearance`, `data-size`) that sit
+beside them, are declared in this subpath rather than restated anywhere — a component emitting a state outside the table fails a conformance test.
 
 ### Build markup in the browser that forge's controllers will drive
 
@@ -806,8 +831,10 @@ The name tuple published here is the one to narrow or validate against when a gl
 
 ## `@y-core/forge/ui/client`
 
-**Browser-only.** These exports reference `document` / `window` / `localStorage` and throw if imported in Worker-executed SSR code. Restrict imports
-to your client esbuild entry.
+**Browser-only.** Importing this subpath touches no DOM, so it loads in a Worker without error. Calling an export that does — `resume()`,
+`announce()` — throws a `ReferenceError` there, inside a live request. Nothing at runtime stops the import, so keep it out of server code by path:
+import it only from your client esbuild entry, and set your gate preset's `ssrBoundary` option so `validate-ssr-boundary` fails a server file that
+reaches it ([gate presets][gate-presets]).
 
 ### Start the runtime
 
@@ -1070,13 +1097,16 @@ the element that sends the request, as in `hx-status:403='swap:innerHTML'`. An e
 ### Show a message on the page after a redirect
 
 ```tsx
-const flash = createFlash({ ring: await importKeyRing(parseKeyRingSecrets(env.SESSION_SECRET)) });
+import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+import { createFlash, FlashContainer, FlashOob } from "@y-core/forge/ui/server";
+
+const flash = createFlash({ ring: await importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET)) });
 
 await flash.success(c, "Profile saved.");   // in a POST handler, then redirect
 const messages = await flash.get(c);         // in the next loader; clears as it reads
 
-<FlashContainer messages={messages} position="bottom-right" />   {/* full page render */}
-<FlashOob messages={messages} />                                  {/* HTMX out-of-band swap */}
+<FlashContainer messages={messages} position="bottom-right" />; // full page render
+<FlashOob messages={messages} />; // HTMX out-of-band swap
 ```
 
 `createFlash` takes a key ring from `@y-core/forge/crypto/keyring` and returns a flasher over a cookie signed under it. The session's ring serves,
@@ -1131,9 +1161,9 @@ const nav: NavDefinition = {
 };
 
 <Navbar config={nav} resolveHref={routes.url} slots={{ user_name: <span>{user.name}</span> }}
-        activeFilters={user ? ["user"] : []} icon={AppIcon} />
-<Toolbar config={tools} icon={AppIcon} placement="left" />
-<ThemeToggle icon={AppIcon} />
+        activeFilters={user ? ["user"] : []} icon={AppIcon} />;
+<Toolbar config={tools} icon={AppIcon} placement="left" />;
+<ThemeToggle icon={AppIcon} />;
 ```
 
 ### Describe a navigation bar as data
@@ -1175,8 +1205,9 @@ therefore hides the item rather than showing it, so a token lookup that misses c
 
 `collapsible` decides which breakpoints the bar hides behind its toggle. `"mobile"` (the default) expands the panel and hides the toggle from `md:`
 up; `"always"` keeps both at every breakpoint, which is why `placement` defaults to `"left"` there. `defaultOpen` renders the underlying `<details>`
-open on first paint, attribute-only — pair it with `mountViewportCollapse` for a rail that should follow viewport width, and with `mountNavDrawer`
-for one that should behave as a modal off-canvas panel.
+open on first paint. The `navbar` scope `ui/chrome/client` registers mounts `mountViewportCollapse` on every bar, so below `md` an open bar closes
+at resume, and reopens on widening unless the reader toggled it. A `collapsedAs="drawer"` bar also gets `mountNavDrawer`. You call neither for a
+`Navbar`.
 
 **A drawer slides from the edge `placement` derives** — the leading edge for `top` and `left`, the trailing edge for `right` and `bottom` — and
 `drawerEdge` overrides it. Reach for it when the app keeps a drawer of its own on a top bar's leading edge: `drawerEdge="trailing"` opens the site
@@ -1206,8 +1237,9 @@ it, or ends above it on a bottom bar, so the toggle never covers a link; a rail 
 
 `Dock` is the phone-width alternative: a fixed bottom bar of three to five equal-weight destinations, hidden above a breakpoint you choose. It is
 markup only — no scope, no controller. While the bar shows, forge's stylesheet reserves its height at the foot of the page: as scroll padding, so a
-focused control scrolls clear of it, and as `<body>` padding, so the last one can. A bottom `Navbar` reserves its height at the same edge, and its
-reserve adds to the Dock's.
+focused control scrolls clear of it, and as `<body>` padding, so the last one can. A bottom `Navbar`, or a `right` one on a phone, reserves its
+height at the same edge, its reserve adds to the Dock's, and the Navbar rests on top of the Dock rather than beneath it; so does the panel of a
+`side="bottom"` `Drawer`.
 
 **Render one `Dock` per page, and resize it with `--forge-dock-height` on `html` and nothing else.** The reserve reads the token, never the bar,
 so each of these leaves it wrong:
@@ -1298,6 +1330,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ap-2c]: ../../docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
 [cr-1]: ../../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
 [floor]: ./design/floor.md#1f-hit-target-and-reduced-motion
+[gate-presets]: ../tooling/gate/README.md#starting-from-a-preset
 [htmx-7a]: ../../docs/HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
 [navigation]: ./design/reference/08-navigation.md
@@ -1328,7 +1361,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ucr-4]: ../../docs/UI_CLIENT_RUNTIME.md#4-htmx-bundle-import
 [ucr-4a]: ../../docs/UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
 [udg]: ../../docs/UI_DESIGN_GUIDANCE.md
-[udg-2]: ../../docs/UI_DESIGN_GUIDANCE.md#2-two-rule-tiers--floor-and-defaults
+[udg-2]: ../../docs/UI_DESIGN_GUIDANCE.md#2-rule-tiers--floor-and-defaults
 [usc]: ../../docs/UI_SSR_COMPONENTS.md
 [usc-1a]: ../../docs/UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes
 [usc-1c]: ../../docs/UI_SSR_COMPONENTS.md#1c-button-and-the-aschild-invariant
