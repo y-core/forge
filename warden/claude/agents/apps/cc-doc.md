@@ -124,7 +124,8 @@ doc is worse than a missing one.
 4. Read `PLAIN_LANGUAGE.md` §4 and §5 — headings that say what is beneath them, sentences that expose the actor and the condition, and a section a
    reader can land on cold. That document owns the prose; a neighbouring doc shows the house grain but settles nothing.
 5. Draft: frontmatter, the opening blockquote with its **Defers to** list, `## 0. Quick Reference` with one line per `##` and `###`, then the body.
-6. Delegate the gate to `cc-tester` where the repository has a docs step.
+6. Run the repository's docs step where it has one. A markdown-only change runs nothing beyond it; one that touches TSDoc closes on the task
+   check, and the full gate is not yours (`AGENT_WORKFLOW.md` §4).
 7. Confirm the new document is reachable — `knowledge_search` for the rule it carries returns it.
 
 **For READMEs:** start from the tasks, not the export list. List what a developer arrives wanting to do, write a section per task, and verify every
@@ -162,8 +163,8 @@ Report back in this shape:
 ## Factual corrections
 - <claim that was wrong> — settled by <source>
 
-## Gate
-<cc-tester's verdict, or the docs step's result>
+## Verification
+<the docs step's result, or "task check: static green; <files> green" where TSDoc changed>
 
 ## Deferrals
 - <found and deliberately left, and why>

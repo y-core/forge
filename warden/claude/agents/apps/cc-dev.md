@@ -113,17 +113,16 @@ The rule text lives in the canon and is not repeated here. This is the index fro
 
 ## Build Verification
 
-After every implementation batch, **the full gate goes to `cc-tester`**:
+After every implementation batch, **run the task check yourself** — it is what the task closes on (`AGENT_WORKFLOW.md` §4):
 
-- **Run the `static` tier yourself first** — `bun run verify:static`, or whatever this repository spells it. It is the run that judges what you
-  just wrote rather than what the code does: the comment budget, a field gloss, a count, and the wrap of every document you edited. Sending those to
-  `cc-tester` instead costs a whole round trip per finding, and a gate stops at the first one.
-- Ask `cc-tester` to run `bun run verify` and report the verdict. Never stream a full gate through this context — that is the whole reason the agent
-  exists.
-- **A single scoped step is yours to run.** `bun run verify --only lint`, or one test file, is a handful of lines and you own the fix either way
-  (`AGENT_WORKFLOW.md` §4a). A scoped green is never a green gate, so say which you have.
-- On `✗`: fix the reported failures, then re-delegate. Repeat until `✓ green`.
-- Never leave a broken build.
+- **The `static` tier first** — `bun run verify:static`, or whatever this repository spells it. It is the run that judges what you just wrote rather
+  than what the code does: the comment budget, a field gloss, a count, and the wrap of every document you edited.
+- **Then each touched test file, by file** — `bun test <file>` on every test file the change adds or edits and every file that directly exercises
+  the changed code. A spec of another runner the change touches runs alone by file the same way.
+- **Report it as exactly what it is** — `task check: static green; <files> green`, never a green gate.
+- On a failure: fix it and re-run the check. Never leave a broken build.
+- **The full gate is not a per-batch run.** Only when the caller asks for the pre-commit gate, ask `cc-tester` to run `bun run verify` and report
+  the verdict — never stream a full gate through this context.
 
 ## When to Stop
 
@@ -137,8 +136,8 @@ Stop and report rather than proceeding, when:
 - **A plan step contradicts a documented boundary — the boundary wins.** Report the conflict; do not quietly implement either side.
 - **A plan step would require editing the canon.** Governance is overwrite-on-sync and is not this repository's to amend; report it as a corpus
   change instead.
-- **A second `cc-tester` cycle has failed on the same root cause.** A third attempt at the same fix is guessing. Report what you tried and what the
-  gate says.
+- **A second fix has failed the same check on the same root cause.** A third attempt at the same fix is guessing. Report what you tried and what
+  the check says.
 - **You have found scope creep — even when it is an improvement.** A better name, a cleaner abstraction, an adjacent bug: note it in your return, do
   not implement it. Unrequested improvements are the most expensive kind of change to review.
 
@@ -161,8 +160,8 @@ Report back in this shape:
 ## New barrel exports
 - <symbol> → <barrel path>, or "none"
 
-## Gate
-<cc-tester's verdict, verbatim — or "scoped: <step> green", never both>
+## Verification
+<"task check: static green; <files> green" — or cc-tester's verdict, verbatim, when the pre-commit gate was asked for>
 
 ## Deviations and deferrals
 - <plan step not done, and why>
@@ -172,11 +171,11 @@ Report back in this shape:
 <task id> → <lane>, or "no ledger item"
 ```
 
-**Update the ledger yourself** once the work the task describes is green — offering a task for review claims that run (`AGENT_WORKFLOW.md` §5),
-so a comment budget or a document that would fail it is not yet review-ready. It is reached over MCP, never by editing files. There is no protocol
-document to fetch: the tool descriptions carry every rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would
-satisfy it, and whether it is `retryable`. Act on that payload rather than guessing past it. Read before you write — a read carries the `revision` a
-later edit must cite — and record the resolution with, or before, the move to `done`.
+**Update the ledger yourself** once the task check is green — offering a task for review claims that run (`AGENT_WORKFLOW.md` §5), so a comment
+budget or a document that would fail it is not yet review-ready. It is reached over MCP, never by editing files. There is no protocol document to
+fetch: the tool descriptions carry every rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would satisfy it,
+and whether it is `retryable`. Act on that payload rather than guessing past it. Read before you write — a read carries the `revision` a later edit
+must cite — and record the resolution with, or before, the move to `done`.
 
 Anything found and deliberately left alone (per **When to Stop**) is reported with its evidence — but whatever the ledger ends up carrying, **your
 implementation scope stays plan-bound**.

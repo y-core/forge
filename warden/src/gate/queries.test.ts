@@ -31,8 +31,6 @@ function repo(prefix: string): string {
   return root;
 }
 
-// `negative: []` and `aliases` by default so each case states its own: the shipped set and table
-// are written against the real corpus and measure nothing against a three-document fixture.
 const config = (root: string) => ({
   root,
   kind: "libs" as const,
@@ -47,9 +45,8 @@ const COVERING = [
   { query: "section numbering cited", expect: "canon:AGENT_GUIDE.md#1" },
 ];
 
-// One known term among seven the corpus has never seen: coverage lands at 0.045, under `FLOOR`, so
-// `search` refuses it and only an uncapped measurement can see the figure at all.
-const THIN = { query: "comment zqxj ywvk utrp snmb lkhg fdsa qpwo", expect: "canon:CODE_RULES.md#1" };
+// One carried term against eight other docs' words and one unseen word: a positive coverage far under `FLOOR`.
+const THIN = { query: "comment zqxj honeypot field rendered visibly section numbered cited never", expect: "canon:CODE_RULES.md#1" };
 
 /** A set large enough to arm the margin guard, thinnest-answered pinned by `THIN`. */
 const QUORUM = [...Array.from({ length: 19 }, () => COVERING[0] as (typeof COVERING)[number]), THIN];
@@ -91,8 +88,6 @@ describe("checkGoldenQueries()", () => {
       coverage: false,
     });
 
-    // `thinnest 0.000` rather than a refusal to say: the coverage is measured with the floor
-    // lifted, so an expectation nothing reached carries none of the query, which is a figure.
     expect(result.summary).toBe(
       "1 golden queries, 1 documents reached top-1, 1/1 alias bridges live, floor margin 0.000 answered / 0.000 refused; rationale worst miss / thinnest 0.000.",
     );
@@ -105,7 +100,6 @@ describe("checkGoldenQueries()", () => {
       aliases: new Map([["bot", ["honeypot", "turnstile"]]]),
     });
 
-    // A dead bridge is reported and does not fail: the table is the fleet's, not this repository's.
     expect(result.ok).toBe(true);
     expect(result.findings.map((finding) => finding.message)).toContain("alias bridge `bot` → `turnstile` reaches no chunk");
     expect(result.summary).toContain("1/2 alias bridges live");
@@ -141,8 +135,6 @@ describe("checkGoldenQueries()", () => {
       coverage: false,
     });
 
-    // The whole point of the uncapped second call: `search` refused this hit, so a figure read off
-    // the returned hits would have reported the untouched 1.000 and called the margin healthy.
     expect(result.summary).toContain("floor margin 0.045 answered / 0.000 refused");
   });
 

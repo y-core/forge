@@ -38,8 +38,8 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5a Both Pass and Fail Cases Required: the requirement matrix
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
-- §6 The Verification Gate: what must pass before a task is complete
-- §6a One Command, Nested Tiers: the writing loop, the gate a task closes on, and the release gate
+- §6 The Verification Gate: what must pass before a task closes, and before a commit
+- §6a One Command, Nested Tiers: the writing loop and the task check, the gate a commit closes on, and the release gate
 - §6b What Each Tool Catches: the failure classes
 - §6c The Lines Between the Tiers: kind, prerequisite, narrowing and engine
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
@@ -78,9 +78,9 @@ preference:
 **The set sits outside `unit`, and the reason is a prerequisite, not cost.** It needs a browser binary or server an install step provides, and a
 prerequisite is the only legitimate ground for a set to stand outside it (§6c).
 
-**It runs from `deploy` up rather than `runtime`, and that placement is the one a tier line makes by cost.** The whole set is the slowest row in
-any gate and the one a change least often breaks, and narrowing it bought almost nothing, because a spec's reach covers nearly every source file.
-**The price is stated rather than hidden: a broken behaviour is found by the next nightly run (§6a), not at task close.** A tag still never ships
+**It runs from `deploy` up rather than `runtime`, and that placement is the one a tier line makes by cost.** The whole set is the slowest row in any
+gate and the one a change least often breaks, and narrowing it bought almost nothing, because a spec's reach covers nearly every source file. **The
+price is stated rather than hidden: a broken behaviour is found by the next nightly run (§6a), not by the pre-commit gate.** A tag still never ships
 without the set. No other step may cite this as precedent; §6c's rule holds for each of them.
 
 **Chromium is the set's engine; another engine is an opt-in `release` row (§6c)**, for a library whose consumers need wider compatibility. Where the
@@ -363,9 +363,10 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 **There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** Verbs
 sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
-`static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **`runtime` is what a bare invocation runs**, and it is what a task closes on; `static` is the loop to
-write in, `unit` is the run for a machine with no runtime installed, `deploy` is the run a remote makes before a version ships and the first to
-carry the browser set (§1c), and `release` is the gate a publish blocks on. What separates one tier from the next is §6c's.
+`static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **`runtime` is what a bare invocation runs**, and it is the gate a commit closes on; `static` is the
+loop to write in and, with each touched test file run by file, the task check a task closes on (`AGENT_WORKFLOW.md` §4); `unit` is the run for a
+machine with no runtime installed, `deploy` is the run a remote makes before a version ships and the first to carry the browser set (§1c), and
+`release` is the gate a publish blocks on. What separates one tier from the next is §6c's.
 
 **Nightly — `verify:release`, run by the ledger host — is the periodic moment.** It gates a fresh checkout of the default branch, never a
 developer's work tree, with `--report`, and lands a failure as one open task in the ledger of the project it ran for, rewritten in place by each
@@ -379,7 +380,7 @@ warning" — is a failure.
 
 **A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
 Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
-same hint, because those tiers promise that a runtime ran, and a task close, a deploy or a release may not be assured by a step nobody ran. **A
+same hint, because those tiers promise that a runtime ran, and a commit, a deploy or a release may not be assured by a step nobody ran. **A
 run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
@@ -426,7 +427,7 @@ nothing to fetch, no binary or service beyond the declared dev dependencies. Tha
 **why cost is never grounds for moving a step across this line**. A step that needs a runtime — a Worker runtime, a local database — runs from
 `runtime` up; the browser set runs from `deploy`, for the reason §1c states. Between them sits the step that declares a `requires` probe on an
 optional dependency: it runs wherever that dependency happens to be installed, and §6a's tier-decided verdict is what keeps that from weakening the
-gate a task closes on.
+gate a commit closes on.
 
 **The narrowing line separates `runtime` from `deploy`: below `deploy`, a step that declares how to narrow runs only over the pending changes; from
 `deploy` up it runs whole.** Under `runtime` such a step runs whole when a change touches one of the gate's own inputs or a path the step declares

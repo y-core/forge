@@ -176,6 +176,8 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ### Fixed
 
+- **A `watches` glob whose directory exists but holds no matching file yet no longer fails the gate.** A glob is stale only when its literal
+  directory is gone, so a markdown source such as `src` with no `.md` in it passes, and a renamed `docs/` is still refused.
 - **`buildTheme`'s `solid` hex is the colour its `oklch()` paints, at every dial.** Each step's chroma is cut toward zero to the places
   `schemeCss` prints rather than rounded, and `solid` is measured from that printed coordinate, so the live readout and swatches no longer differ
   from the pasted file by a byte. A generated chroma figure can print up to 0.0001 lower than before; `theme-neutral.css` is unchanged.

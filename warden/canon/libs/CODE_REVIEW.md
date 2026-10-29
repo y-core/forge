@@ -33,8 +33,9 @@ description: "How to review: the blocking invariants, tiered detection with a co
 
 ### 1a. Pre-Review Preparation
 
-1. **Establish a green baseline** — run the gate with `--reuse` before reviewing, so pre-existing failures are not attributed to the change
-   ([`TESTING.md`][testing-6] §6). A passing run the gate recorded for these exact bytes answers at once; on any other tree the full gate runs.
+1. **Establish a green baseline** — run the static tier with `--reuse` and the task's touched test files by file before reviewing, so
+   pre-existing failures are not attributed to the change (`AGENT_WORKFLOW.md` §4). The author's static receipt for these exact bytes answers
+   the first at once; the full gate is not the reviewer's to run.
 2. Identify the affected namespaces and read their barrels — the public surface is where a change does lasting damage.
 3. Work §2, then §3a → §3b → §3c. **Verify per §5 before reporting; classify per §4.**
 
@@ -295,5 +296,4 @@ reads both.
 [testing-3d]: ./TESTING.md#3d-assert-the-mechanism-not-an-outcome-a-second-mechanism-also-guarantees
 [testing-3f]: ./TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
-[testing-6]: ./TESTING.md#6-the-verification-gate
 [testing-6a]: ./TESTING.md#6a-one-command-nested-tiers

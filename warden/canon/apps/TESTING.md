@@ -42,7 +42,7 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §5c Negative Case Structure: assert status and body
 - §5d No 200 on Guard Failure: never adjust the assertion to match
 - §5e No Mocking of Security Primitives: a testability signal, not a mocking one
-- §6 The Verification Gate: what must pass before a task is complete
+- §6 The Verification Gate: what must pass before a task closes, and before a commit
 - §6a One Command, Nested Tiers: the lines between them, and what an absent prerequisite means
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
@@ -383,8 +383,8 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 ### 6a. One Command, Nested Tiers
 
 **There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** They
-are nested: `static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **A bare invocation is `runtime`**, and that is the run a task closes on; §6e says which
-tier each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than
+are nested: `static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **A bare invocation is `runtime`**, and that is the gate a commit closes on; §6e says
+which tier each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than
 trusting any prose copy.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
@@ -400,8 +400,8 @@ warning" — is a failure.
 | `deploy` \| `release` | it re-runs a suite another row already ran, on another engine |
 
 "This suite got slow" has no bearing on any of them, with one stated exception: the browser set, whose placement §6e owns. **An absent prerequisite
-is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a task may not close on a step
-nobody ran.
+is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a commit may not be assured by a
+step nobody ran.
 
 **The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
@@ -482,12 +482,13 @@ the exception with its compensating control, rather than leaving the reuse undoc
 
 ### 6e. One Tier per Moment
 
-**Each moment of a task takes one tier of the same gate, and no moment takes a scoped run:**
+**Each moment takes one tier of the same gate.** The task check adds the touched test files, run by file, to `static` (`AGENT_WORKFLOW.md`
+§4); every later moment takes a whole tier and never a scoped run:
 
 | Moment | Command | Runs |
 | --- | --- | --- |
-| Write | `bun run verify:static`, plus `bun test <file>` | every row that judges the source; one test file |
-| Task close | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no browser spec |
+| Write and task close | `bun run verify:static`, plus `bun test <file>` on each touched test file | every row that judges the source; each test file the change adds, edits or directly exercises |
+| Commit | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no browser spec |
 | Tag | `bun run verify:deploy`, on the remote | every runtime row whole, every browser spec on Chromium, and the rows that judge a finished change |
 | Sign-off | `bun run verify:release`, before a release ships | the above, plus every browser spec on each other engine the application opts into |
 | Nightly | `bun run verify:release`, run by the ledger host | the sign-off run, over the default branch as committed |
@@ -495,9 +496,9 @@ the exception with its compensating control, rather than leaving the reuse undoc
 **The browser set starts at `deploy`, and that is the one tier line drawn by cost.** §6a's rule holds for every other row. The whole browser set
 is the slowest row in the gate and the one a change least often breaks, and narrowing it at `runtime` bought almost nothing: its reach was the
 Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. **The price is stated rather than hidden: a
-broken page is found by the next nightly run, not at task close.** A tag still never ships without the set, because `deploy` runs it. While
-iterating on a page, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and it is a scoped run that closes nothing
-(§6c).
+broken page is found by the next nightly run, not by the pre-commit gate.** A tag still never ships without the set, because `deploy` runs it. While
+iterating on a page, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and the task check runs a touched spec
+the same way; it is a scoped run, never a gate green (§6c).
 
 **The nightly run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
 default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes a task in

@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -7,6 +8,7 @@ import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
 import { coverage, documentFrequency, idf } from "./coverage";
+import { FLOOR } from "./search";
 
 const roots: string[] = [];
 afterAll(() => {
@@ -74,14 +76,17 @@ describe("coverage()", () => {
   });
 
   it("drags every candidate down when a term is absent from the corpus entirely", () => {
-    // `budget` is carried, `zarquon` is carried by nothing — so the best possible hit is partial,
-    // which is the verdict that lets a caller refuse the whole query.
     expect(Math.max(...of("zarquon budget"))).toBeLessThan(0.34);
   });
 
   it("credits a bridge term, so a paraphrase is not treated as an unanswered question", () => {
-    // `captcha` appears nowhere; `turnstile`, its alias, is in docs/C.md.
     expect(Math.max(...of("captcha"))).toBeGreaterThan(0);
+  });
+
+  it("does not count a rare term carried through its bridge as missed, so the paraphrase keeps its full bridge credit", () => {
+    const bridging = rowids.indexOf(db.query<{ rowid: number }, []>("SELECT rowid FROM chunk WHERE id = 'project:docs/C.md#1'").get()?.rowid ?? -1);
+
+    expect(of("captcha")[bridging]).toBe(0.5);
   });
 
   it("credits a typed term above the bridge that stands in for it", () => {
@@ -89,18 +94,18 @@ describe("coverage()", () => {
   });
 
   it("scores a multi-term aliased query exactly as term-by-term weighting would", () => {
-    // The batched posting-list read has to be arithmetically the same as one `documentFrequency`
-    // and one pool intersection per term — this is what pins that.
     const total = db.query<{ n: number }, []>("SELECT count(*) AS n FROM chunk").get()?.n ?? 0;
     const expected = rowids.map((rowid) => {
       let earned = 0;
+      let missed = 0;
       let whole = 0;
       for (const [term, alias] of [
         ["captcha", "turnstile"],
         ["budget", undefined],
         ["zarquon", undefined],
       ] as const) {
-        const weight = idf(total, documentFrequency(db, term));
+        const frequency = documentFrequency(db, term);
+        const weight = idf(total, frequency);
         whole += weight;
         const carries = (word: string) =>
           db
@@ -108,8 +113,9 @@ describe("coverage()", () => {
             .get(`"${word}"`, rowid)?.n === 1;
         if (carries(term)) earned += weight;
         else if (alias !== undefined && carries(alias)) earned += weight * 0.5;
+        else if (frequency / total <= 0.02) missed += weight;
       }
-      return Number((earned / whole).toFixed(3));
+      return Number(Math.max(0, (earned - 0.15 * missed) / whole).toFixed(3));
     });
 
     expect(of("captcha budget zarquon")).toEqual(expected);
@@ -119,3 +125,102 @@ describe("coverage()", () => {
     expect(of("!!!")).toEqual([0, 0, 0]);
   });
 });
+
+function statistics(
+  total: number,
+  carriers: Record<string, number>,
+  hits: Record<string, string>,
+): { db: Database; rowidOf: (id: string) => number } {
+  const measured = openDatabase(":memory:");
+  const named = Object.entries(hits);
+  const owed = new Map(
+    Object.entries(carriers).map(([term, df]) => [term, df - named.filter(([, body]) => body.split(" ").includes(term)).length]),
+  );
+  const bodies = [
+    ...named,
+    ...Array.from({ length: total - named.length }, (_, index): [string, string] => {
+      const words = [...owed].filter(([, count]) => index < count).map(([term]) => term);
+      return [`project:docs/FILLER.md#${index}`, words.length === 0 ? "filler" : words.join(" ")];
+    }),
+  ];
+
+  measured.transaction(() => {
+    const source = measured
+      .query<{ id: number }, []>(
+        "INSERT INTO source (corpus, tree, path, title, description, weight, size, mtime, hash) VALUES ('project', NULL, 'docs/FIXTURE.md', '', '', 1, 0, 0, '') RETURNING id",
+      )
+      .get()?.id;
+    const chunk = measured.prepare<{ rowid: number }, [string, number, string]>(
+      "INSERT INTO chunk (id, source_id, section, title, heading_path, gloss, rules, body, ordinal, searchable, line, end_line) VALUES (?, ?, '1', '', '', '', '', ?, 0, 1, 1, 1) RETURNING rowid",
+    );
+    const search = measured.prepare<never, [number, string]>(
+      "INSERT INTO chunk_fts (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, '', '', '', '', ?)",
+    );
+    for (const [id, body] of bodies) search.run(chunk.get(id, source ?? 0, body)?.rowid ?? 0, body);
+  })();
+
+  const rowidOf = (id: string) => measured.query<{ rowid: number }, [string]>("SELECT rowid FROM chunk WHERE id = ?").get(id)?.rowid ?? -1;
+  return { db: measured, rowidOf };
+}
+
+const IOS_QUERY = "how is an ios app store receipt validated";
+
+const COMMON_ONLY = ["docs/FORGE_ERRORS.md#5e", "docs/SECURITY_HARDENING.md#2a", "docs/SECURITY_HARDENING.md#2f", "docs/SECURITY_HARDENING.md#3f"];
+
+const BRIDGED = "docs/BRIDGED.md#1";
+
+const MEASURED = [
+  { corpus: "forge", prefix: "project:", total: 1403, carriers: { ios: 2, app: 220, store: 112, receipt: 7, validated: 121, purchase: 1 } },
+  {
+    corpus: "cad-forge",
+    prefix: "dependency:forge/",
+    total: 1091,
+    carriers: { ios: 4, app: 183, store: 118, receipt: 2, validated: 114, purchase: 1 },
+  },
+] as const;
+
+for (const { corpus, prefix, total, carriers } of MEASURED) {
+  describe(`coverage() against ${corpus}'s measured corpus statistics`, () => {
+    const hits = {
+      ...Object.fromEntries(COMMON_ONLY.map((id) => [`${prefix}${id}`, "app store validated"])),
+      [`${prefix}${BRIDGED}`]: "app store validated purchase",
+    };
+    const fixture = statistics(total, carriers, hits);
+    const common = COMMON_ONLY.map((id) => fixture.rowidOf(`${prefix}${id}`));
+    const weight = (term: keyof typeof carriers) => idf(total, carriers[term]);
+    const plain = weight("app") + weight("store") + weight("validated");
+    const whole = plain + weight("ios") + weight("receipt");
+
+    it("reproduces the measured chunk count and every query term's document frequency", () => {
+      expect(fixture.db.query<{ n: number }, []>("SELECT count(*) AS n FROM chunk").get()?.n).toBe(total);
+      expect(Object.fromEntries(Object.keys(carriers).map((term) => [term, documentFrequency(fixture.db, term)]))).toEqual(carriers);
+    });
+
+    it("reproduces the defect: a common-terms-only hit's plain IDF share clears the floor", () => {
+      expect(plain / whole).toBeGreaterThanOrEqual(FLOOR);
+    });
+
+    it("scores every hit carrying only the query's common terms below the floor", () => {
+      const scores = coverage(fixture.db, IOS_QUERY, common);
+
+      expect(Math.max(...common.map((rowid) => scores.get(rowid) ?? 1))).toBeLessThan(FLOOR);
+    });
+
+    it("gives a hit carrying every term of a query with no rare term the whole of it", () => {
+      expect(coverage(fixture.db, "app store validated", common).get(common[0] ?? -1)).toBe(1);
+    });
+
+    it("leaves a hit missing only a common term at its plain IDF share", () => {
+      const share = plain / (plain + idf(total, documentFrequency(fixture.db, "filler")));
+
+      expect(coverage(fixture.db, "app store validated filler", common).get(common[0] ?? -1)).toBeCloseTo(share, 10);
+    });
+
+    it("charges a hit that bridges a rare term only for the rare term it misses outright", () => {
+      const bridged = fixture.rowidOf(`${prefix}${BRIDGED}`);
+      const expected = (plain + weight("receipt") * 0.5 - weight("ios") * 0.15) / whole;
+
+      expect(coverage(fixture.db, IOS_QUERY, [bridged], new Map([["receipt", ["purchase"]]])).get(bridged)).toBeCloseTo(expected, 10);
+    });
+  });
+}

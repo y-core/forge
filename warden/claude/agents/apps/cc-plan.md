@@ -81,8 +81,10 @@ plan instead.
 
 - After the plan is approved, hand off to `cc-dev` with the full plan as context.
 - After `cc-dev`, hand off to `cc-test` with the Test Plan section and the changed signatures.
-- **The full verification gate goes to `cc-tester`** — request it and act on the compact verdict rather than streaming `bun run verify` through this
-  context. A single scoped step you need in order to answer a design question is yours to run (`AGENT_WORKFLOW.md` §4a).
+- **Each task closes on the task check `cc-dev` and `cc-test` run; the full gate runs once, before a commit, and goes to `cc-tester`**
+  (`AGENT_WORKFLOW.md` §4). Request it only when the caller asks for the pre-commit gate, and act on the compact verdict rather than streaming
+  `bun run verify` through this context. A single scoped step you need in order to answer a design question is yours to run (`AGENT_WORKFLOW.md`
+  §4a).
 - If testing reveals an architecture problem, be available to re-plan rather than letting `cc-dev` improvise.
 - **A post-implementation review goes through the `warden-review` skill**, which reaches `CODE_REVIEW.md` through the index and holds a finding to
   the field set §1b sets. Do not re-derive a review procedure here.
@@ -164,7 +166,7 @@ up; left out, it is an afterthought nobody owns, and the claim leaves the system
 5. **Route** — the route entry, then the handler and middleware binding
 6. **Middleware** — the guards the route needs, in the order `BOUNDARIES.md` §2c sets
 7. **Tests** — through the composition root's request entry (delegate to `cc-test`)
-8. **Delegate the gate to `cc-tester`** and act on the verdict
+8. **Close on the task check** — the full gate waits for the commit (`AGENT_WORKFLOW.md` §4)
 
 Do not reorder these. `APP_ARCHITECTURE.md` §5a owns the sequence; steps 1 and 2 exist to prevent work that must be undone.
 

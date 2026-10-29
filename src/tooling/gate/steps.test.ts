@@ -441,6 +441,19 @@ describe("selectSteps() — the paths a change touches", () => {
     );
   });
 
+  it("accepts a glob whose literal directory exists but holds no matching file yet, and refuses one whose directory is gone", () => {
+    const files = ["src/a.ts", "config/steps.ts", "README.md"];
+    const refusal = (watches: string[]): string => {
+      const result = selectSteps([{ label: "md", tail: 10, cmd: ["x"], watches }], { tier: "static", files });
+      return result.ok ? "" : result.error;
+    };
+
+    expect(refusal(["src/**/*.md", "config/**/*.md", "**/*.md"])).toBe("");
+    expect(refusal(["src/**/*.md", "docs/**/*.md"])).toBe(
+      'Step "md" declares `watches` glob "docs/**/*.md", which matches no file in the work tree — a renamed path no longer reaches the step, so update the glob.',
+    );
+  });
+
   it("accepts a root-level name, a path above the root, and either half of a file-or-directory pair that matches", () => {
     const step: Step = { label: "lint", tail: 10, cmd: ["x"], watches: [".oxlintignore", "../shared/**", "src", "src/**", "README.md/**"] };
 

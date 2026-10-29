@@ -37,7 +37,7 @@ audience: consumer
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
 - §5d Security Matrix — Row-to-Test Coverage Map: where each row is covered
-- §6 The Verification Gate: what must pass before a task is complete
+- §6 The Verification Gate: what must pass before a task closes, and before a commit
 - §7 Testing Namespace Utilities: the shared fixtures
 - §7a Declared Integration Edge: why `testing` may import `app` and `render/jsx`
 - §7b In-Memory Storage Fakes: `fakeKV`, `fakeD1`, `fakeR2`
@@ -375,10 +375,10 @@ fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`
 **forge's tag runs `unit` on the remote, not `deploy`**: `forge release` refuses to tag a tree `verify:release` has not passed, and that answers
 `deploy` ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
 
-**The reviewer's baseline is a reuse run, and the developer's closing run is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the reviewer run
-the gate with `--reuse`. `cc-tester` closes a task on `verify`, whose receipt names the tree and commit it judged, so a reviewer on the same bytes
-and commit gets a one-line verdict; anything that moved runs the gate. A test that writes into the tree withholds the receipt, so every baseline
-after it pays for a whole run.
+**The reviewer's baseline is a static reuse run, and the developer's task check is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the
+reviewer run `verify --tier static --reuse` and the task's touched test files. The task check's `static` run records a receipt naming the tree it
+judged, so a reviewer on the same bytes gets a one-line verdict; anything that moved runs the static tier. A test that writes into the tree moves
+the bytes that receipt names, so every baseline after it pays for a whole static run.
 
 **`GATE_INPUTS` in `config/steps.ts` holds the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and the
 `result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can

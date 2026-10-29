@@ -30,11 +30,13 @@ function matchesAnyFile(glob: string, files: readonly string[]): boolean {
 }
 
 // A root-level name may be an optional tool config the row must notice being created, and a path above the root is
-// outside the listing; `X` and `X/**` answer for each other, since a source entry may be a file or a directory.
+// outside the listing. A rename removes a glob's literal directory, so a source tree holding no matching file yet is live.
 function isDeadGlob(glob: string, files: readonly string[]): boolean {
-  if (!glob.includes("/") || glob.startsWith("../")) return false;
-  const tree = glob.endsWith("/**") ? glob.slice(0, -3) : `${glob}/**`;
-  return !matchesAnyFile(glob, files) && !matchesAnyFile(tree, files);
+  if (!glob.includes("/") || glob.startsWith("../") || matchesAnyFile(glob, files)) return false;
+  const segments = glob.split("/");
+  const wild = segments.findIndex((segment) => /[*?[{]/.test(segment));
+  const base = (wild === -1 ? segments : segments.slice(0, wild)).join("/");
+  return base !== "" && !files.some((path) => path === base || path.startsWith(`${base}/`));
 }
 
 function deadGlob(steps: readonly Step[], files: readonly string[]): string | undefined {

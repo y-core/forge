@@ -6,6 +6,12 @@ import { terms as queryTerms } from "./query";
 /** The fraction of a typed word's weight a bridge term earns in its place. */
 const BRIDGE_CREDIT = 0.5;
 
+/** The largest share of the corpus a term may appear in and still count as rare. */
+const RARE_SHARE = 0.02;
+
+/** What a hit forfeits for each part of the query's weight held by rare terms it does not carry. */
+const RARE_MISS_PENALTY = 0.15;
+
 /** Quotes one term as an FTS5 string literal, so no term can be read as syntax. */
 function quote(term: string): string {
   return `"${term.replace(/"/g, '""')}"`;
@@ -43,11 +49,13 @@ export function coverage(db: Database, query: string, rowids: readonly number[],
   let whole = 0;
 
   const pool = new Set(rowids);
+  const missed = new Map<number, number>();
 
   for (const term of typed) {
     const carriers = matching(db, quote(term));
     const weight = idf(total, carriers.length);
     whole += weight;
+    const rare = carriers.length / total <= RARE_SHARE;
 
     const own = new Set(carriers.filter((rowid) => pool.has(rowid)));
     const bridges = aliases.get(term.toLowerCase()) ?? [];
@@ -57,10 +65,13 @@ export function coverage(db: Database, query: string, rowids: readonly number[],
     for (const rowid of rowids) {
       const earned = own.has(rowid) ? weight : bridged.has(rowid) ? weight * BRIDGE_CREDIT : 0;
       if (earned > 0) scores.set(rowid, (scores.get(rowid) ?? 0) + earned);
+      if (rare && earned === 0) missed.set(rowid, (missed.get(rowid) ?? 0) + weight);
     }
   }
 
   if (whole === 0) return scores;
-  for (const rowid of rowids) scores.set(rowid, (scores.get(rowid) ?? 0) / whole);
+  for (const rowid of rowids) {
+    scores.set(rowid, Math.max(0, ((scores.get(rowid) ?? 0) - RARE_MISS_PENALTY * (missed.get(rowid) ?? 0)) / whole));
+  }
   return scores;
 }

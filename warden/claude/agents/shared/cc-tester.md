@@ -1,19 +1,20 @@
 ---
 name: cc-tester
 description: >
-  Verification-gate runner — runs the full local gate (`bun run verify` and any extra
-  cross-cutting suite) and returns a compact pass/fail verdict, never the full stream. cc-plan /
-  cc-dev / cc-doc / cc-test send every full-gate run here so voluminous output never fills their
-  context; they may run a single scoped step themselves. Runs gates; does NOT fix failures —
-  reports the minimal excerpt back to the owning agent.
+  Verification-gate runner — runs the pre-commit full gate (`bun run verify` and any extra
+  cross-cutting suite) once a set of changes is ready to commit, and returns a compact pass/fail
+  verdict, never the full stream. cc-plan / cc-dev / cc-doc / cc-test send that run here so
+  voluminous output never fills their context; each task closes on a task check they run
+  themselves. Runs gates; does NOT fix failures — reports the minimal excerpt back to the owning
+  agent.
 
   Not for direct invocation by a person, not for general exploration, and never for fixing what
   it reports — it is dispatched by an owning agent and returns to it.
 
   Examples of when to invoke:
   - "Run bun run verify and report the verdict"
-  - "Verify the current change passes the full gate"
-  - "Run the export and docs steps after the barrel change"
+  - "Run the pre-commit gate on the finished set of changes"
+  - "Run bun run verify:deploy before the tag"
   - "Re-run the gate after cc-dev's fix and confirm it is green"
 tools: Read, Grep, Glob, LSP, Bash, Agent
 model: sonnet
@@ -34,13 +35,13 @@ This agent exists to absorb them — _not_ because an agent cannot be trusted to
 
 That rationale is also the boundary:
 
-- **The full cross-cutting gate comes here.** `bun run verify`, the run a task closes on; `bun run verify:deploy`, the first tier that runs the
-  browser set; `bun run verify:release`, the sign-off a release blocks on; any suite whose output is voluminous or whose failure could belong to
-  more than one owner. A caller that names no tier gets a bare `verify`, which runs no browser spec — so a verdict on a bare run never says a page
-  works in a browser.
-- **A single scoped step does not have to.** An owning agent may run `bun run verify --only lint` or one test file itself: the output is small and
-  it owns the fix either way. Routing a few lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
-- **A scoped green is never a green gate**, whoever ran it.
+- **The full cross-cutting gate comes here, once per commit, tag or release.** `bun run verify`, the gate a commit closes on;
+  `bun run verify:deploy`, the first tier that runs the browser set; `bun run verify:release`, the sign-off a release blocks on; any suite whose
+  output is voluminous or whose failure could belong to more than one owner. A caller that names no tier gets a bare `verify`, which runs no browser
+  spec — so a verdict on a bare run never says a page works in a browser.
+- **The task check does not.** An owning agent closes each task on the `static` tier plus its touched test files, run by file, itself: the output is
+  small and it owns the fix either way (`AGENT_WORKFLOW.md` §4). Routing a few lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
+- **A scoped green is never a green gate**, whoever ran it — a task check reads `task check: static green; <files> green`.
 
 ## The Step List Is Not Yours to Know
 

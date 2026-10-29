@@ -31,9 +31,10 @@
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS give every source file its own co-located test (`*.test.ts` / `*.test.tsx`) — an `@internal` helper file included, and covering it through
   a caller does not satisfy the check ([`CODE_RULES.md`][cr-4] §4, [`TESTING.md`][tl-2] §2)
-- ALWAYS run local verification after changes — **the full gate goes to `cc-tester`**; a single scoped step is yours to run (`AGENT_WORKFLOW.md` §4)
-- ALWAYS write inside `bun run verify:static`, and never offer a task for review without a green gate behind it — the lane is a claim about a run
-  (`AGENT_WORKFLOW.md` §5), and a budget or document failing there is one the reviewer now spends their pass on
+- ALWAYS close a task on the task check — `bun run verify:static` plus `bun test` on each touched test file, run by file, which is yours to
+  run — and send the full gate to `cc-tester` once, before a commit (`AGENT_WORKFLOW.md` §4)
+- ALWAYS write inside `bun run verify:static`, and never offer a task for review without a green task check behind it — the lane is a claim about a
+  run (`AGENT_WORKFLOW.md` §5), and a budget or document failing there is one the reviewer now spends their pass on
 - ALWAYS write for the reader, not the record (`PLAIN_LANGUAGE.md` §2, §3d, §8)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (`AGENT_WORKFLOW.md` §3), and keep a command in a shape the
   harness can parse (`AGENT_WORKFLOW.md` §3a)
@@ -56,9 +57,10 @@
 | `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
 | `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 
-A bare `bun run verify` is the `runtime` tier — the run a task closes on, with the workerd suite narrowed to the pending changes and no browser
-spec; `bun run verify:deploy` is the first tier with the Chromium set. **`bun run verify:static` is the loop to write in**: every row that judges
-the source rather than running it, which is the whole gate bar the test suites, in about thirteen seconds. It holds the rules above that a step
+A bare `bun run verify` is the `runtime` tier — the gate a commit closes on, with the workerd suite narrowed to the pending changes and no browser
+spec; `bun run verify:deploy` is the first tier with the Chromium set. **`bun run verify:static` is the loop to write in**, and with `bun test` on
+each touched test file it is the task check a task closes on: every row that judges the source rather than running it, which is the whole gate bar
+the test suites, in about thirteen seconds. It holds the rules above that a step
 checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a finding lands in seconds
 instead of after a 16-second suite.
 
@@ -77,8 +79,8 @@ Gate philosophy, the tiers, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. T
 
 ## Agents
 
-The roster is `.claude/agents/`: `cc-plan` → `cc-dev` → `cc-test`, with `cc-doc` outside that pipeline. `cc-tester` is the full gate runner.
-`warden sync --check` reconciles the names here against the directory in both directions.
+The roster is `.claude/agents/`: `cc-plan` → `cc-dev` → `cc-test`, with `cc-doc` outside that pipeline. `cc-tester` runs the full gate before a
+commit. `warden sync --check` reconciles the names here against the directory in both directions.
 
 **The session handoff.** Development and review run in **two sessions on one machine**, started under fixed names so each can address the other:
 

@@ -33,8 +33,9 @@ description: "How to review an application: the blocking invariants, tiered dete
 
 ### 1a. Pre-Review Preparation
 
-1. **Establish a green baseline** — run the gate with `--reuse` before reviewing, so pre-existing failures are not attributed to the change
-   ([`TESTING.md`][testing-6] §6). A passing run the gate recorded for these exact bytes answers at once; on any other tree the full gate runs.
+1. **Establish a green baseline** — run the static tier with `--reuse` and the task's touched test files by file before reviewing, so
+   pre-existing failures are not attributed to the change (`AGENT_WORKFLOW.md` §4). The author's static receipt for these exact bytes answers
+   the first at once; the full gate is not the reviewer's to run.
 2. **Read the route map, then the controller binding.** Together they answer "which routes exist and what guards each one" — the single question
    most review findings turn on.
 3. **Read each changed handler end to end** before judging any line in it.
@@ -378,6 +379,5 @@ reviewer reads both.
 [testing-3f]: ./TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
 [testing-5b]: ./TESTING.md#5b-one-test-per-rejection-path
-[testing-6]: ./TESTING.md#6-the-verification-gate
 [wp-2c]: ./WORKERS_PLATFORM.md#2c-cover-every-started-promise
 [wp-3b]: ./WORKERS_PLATFORM.md#3b-an-absent-limiter-fails-closed
