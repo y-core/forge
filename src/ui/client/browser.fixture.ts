@@ -5,6 +5,7 @@ import { test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { build } from "esbuild";
 
+import { stylesheetPath } from "../../tooling/assets/css-declaration";
 import type { MountOptions } from "./types";
 
 /** The root every bundled specifier resolves from, so a spec in any directory names a module the same way. */
@@ -135,9 +136,7 @@ export async function compiledCss(candidates: readonly string[]): Promise<string
     compile: (css: string, options: unknown) => Promise<{ build: (candidates: string[]) => string }>;
   };
   const loadStylesheet = async (id: string, base: string): Promise<{ path: string; base: string; content: string }> => {
-    const path = id.startsWith("tailwindcss")
-      ? new URL(import.meta.resolve(id === "tailwindcss" ? "tailwindcss/index.css" : id)).pathname
-      : resolve(base, id);
+    const path = stylesheetPath(id, base);
     return { path, base: dirname(path), content: readFileSync(path, "utf-8") };
   };
   const sheet = await compile(readFileSync(TAILWIND_ENTRY, "utf-8"), { base: dirname(TAILWIND_ENTRY), loadStylesheet });

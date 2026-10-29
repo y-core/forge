@@ -1406,6 +1406,11 @@ function memberName(node) {
   if (node?.type !== "MemberExpression" || node.computed === true) return void 0;
   return nameOf(node.property);
 }
+function spellsName(node, child) {
+  if (memberName(node) !== void 0) return child === node.property;
+  const property = node;
+  return node.type === "Property" && property.computed !== true && property.shorthand !== true && child === property.key;
+}
 function unwrap(node) {
   if (node?.type === "AwaitExpression") return unwrap(node.argument);
   if (node?.type === "TSAsExpression" || node?.type === "TSNonNullExpression" || node?.type === "ChainExpression") {
@@ -1495,7 +1500,7 @@ function reachesMarkup(node, markup, resolve) {
     const declared = resolve(node);
     if (declared !== void 0 && markup.values.has(declared)) return true;
   }
-  return childrenOf(node).some((child) => reachesMarkup(child, markup, resolve));
+  return childrenOf(node).some((child) => !spellsName(node, child) && reachesMarkup(child, markup, resolve));
 }
 var exactMarkupAssertion = {
   meta: {

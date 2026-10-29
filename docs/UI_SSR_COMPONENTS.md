@@ -182,7 +182,7 @@ segmented control as a toolbar and offer the wrong interaction model. Its `type`
 items may be pressed at once, and that is what the client reads to decide whether a click replaces the pressed item or adds to it (§2a).
 
 An unselected `Tabs.Content` is `hidden="until-found"` — the platform's own mechanism, so the initial render is correct with no JavaScript — and
-the controller flips the same attribute, leaving a plain `hidden` once `mountTabs` runs.
+the controller writes the same value, selecting a panel's tab on `beforematch`; a disabled tab's panel alone becomes a plain `hidden`.
 
 ### 1h. Overlays and Disclosures
 

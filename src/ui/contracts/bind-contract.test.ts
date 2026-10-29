@@ -81,12 +81,16 @@ describe("isBindAttrRefused", () => {
     expect(isBindAttrRefused("hx-on_click")).toBe(true);
   });
 
-  it("refuses every spelling of the htmx attributes htmx evaluates as script", () => {
-    for (const base of ["hx-vals", "hx-headers", "hx-confirm", "hx-trigger"]) {
+  it("refuses every spelling of the htmx attributes htmx evaluates as script or swap configuration", () => {
+    for (const base of ["hx-vals", "hx-headers", "hx-confirm", "hx-trigger", "hx-status", "hx-config"]) {
       for (const attribute of [base, `data-${base}`, `${base}:inherited`, `${base}:append`, base.toUpperCase()]) {
         expect(isBindAttrRefused(attribute)).toBe(true);
       }
     }
+  });
+
+  it("refuses an hx-status rule for any status code", () => {
+    for (const attribute of ["hx-status:404", "hx-status:5xx", "data-hx-status:2xx"]) expect(isBindAttrRefused(attribute)).toBe(true);
   });
 
   it("admits htmx attributes outside the script-evaluating set", () => {
@@ -99,6 +103,7 @@ describe("isBindAttrRefused", () => {
     expect(isBindAttrRefused("hx-target")).toBe(false);
     expect(isBindAttrRefused("data-hx-swap:inherited")).toBe(false);
     expect(isBindAttrRefused("hx-triggered")).toBe(false);
+    expect(isBindAttrRefused("hx-statusx")).toBe(false);
   });
 
   it("admits ordinary attributes, including one whose name merely contains a handler's letters", () => {

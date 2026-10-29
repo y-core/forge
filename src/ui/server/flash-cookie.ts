@@ -2,7 +2,10 @@ import type { RequestContext } from "@remix-run/fetch-router";
 
 import { contextVar } from "../../context/accessor";
 import { pendingCookieValue, replacePendingCookie } from "../../context/pending-headers";
+import { getAppContext } from "../../context/types";
+import type { KeyRing } from "../../crypto/keyring/types";
 import { createSignedCookie } from "../../session/cookie";
+import type { SignedCookie } from "../../session/types";
 import type { FlashMessage, FlashType } from "./types";
 import type { FlashCookieOptions, Flasher } from "./types";
 
@@ -19,13 +22,23 @@ function inTurn<T>(c: RequestContext<any, any>, step: () => Promise<T>): Promise
 }
 
 /** Creates a `Flasher` backed by a signed cookie cleared on read. @public */
-export function createFlash(options: FlashCookieOptions): Flasher {
+export function createFlash<Bindings = Record<string, unknown>>(options: FlashCookieOptions<Bindings>): Flasher {
   const name = options.name ?? "flash";
   const path = options.path ?? "/";
   const maxAge = options.maxAge ?? 60;
   const sameSite = options.sameSite ?? "Lax";
 
-  const cookie = createSignedCookie(name, { ring: options.ring, path, maxAge, sameSite });
+  const cookies = new WeakMap<KeyRing, SignedCookie>();
+
+  // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
+  async function cookieFor(c: RequestContext<any, any>): Promise<SignedCookie> {
+    const ring = await options.ring(getAppContext<Bindings>(c));
+    const known = cookies.get(ring);
+    if (known !== undefined) return known;
+    const cookie = createSignedCookie(name, { ring, path, maxAge, sameSite });
+    cookies.set(ring, cookie);
+    return cookie;
+  }
 
   function parseMessages(raw: string | null): FlashMessage[] {
     if (raw === null) return [];
@@ -40,6 +53,7 @@ export function createFlash(options: FlashCookieOptions): Flasher {
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   function set(c: RequestContext<any, any>, messages: FlashMessage[]): Promise<void> {
     return inTurn(c, async () => {
+      const cookie = await cookieFor(c);
       const queued = pendingCookieValue(c, name);
       const earlier = queued === null ? [] : parseMessages((await cookie.read(`${name}=${queued}`))?.value ?? null);
       let kept = [...earlier, ...messages];
@@ -57,6 +71,7 @@ export function createFlash(options: FlashCookieOptions): Flasher {
 
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings irrelevant
   async function get(c: RequestContext<any, any>): Promise<FlashMessage[]> {
+    const cookie = await cookieFor(c);
     const reading = await cookie.read(c.request.headers.get("cookie") ?? null);
     // The clear is keyed on the cookie being present, not on its value verifying: one past its expiry
     // reads as `null`, and leaving it uncleared means the browser re-sends and re-fails it forever.

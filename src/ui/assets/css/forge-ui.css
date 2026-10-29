@@ -172,6 +172,16 @@
     background-color: var(--accent);
     color: var(--accent-foreground);
   }
+  /* A `display` would stop find-in-page revealing the panel, so its box is zeroed and taken out of the
+     root's `gap` instead — in `utilities`, where a caller's `p-4` cannot reopen it. */
+  [data-slot~="tabs-content"][hidden="until-found"] {
+    position: absolute;
+    margin: 0;
+    padding: 0;
+    border-width: 0;
+    block-size: 0;
+    min-block-size: 0;
+  }
 }
 
 @layer components {
@@ -575,12 +585,8 @@
     }
   }
 
-  /* Preflight's `!important` `[hidden]` exempts `until-found`, which fragment navigation reveals;
-     `:target` covers an engine without it, until `data-tabs-mounted` retires these rules. */
-  [data-slot~="tabs-content"][hidden="until-found"] {
-    display: none;
-  }
-
+  /* Fragment navigation reveals an `until-found` panel itself; `:target` covers an engine without it,
+     until `data-tabs-mounted` retires these rules. */
   [data-slot~="tabs"]:not([data-tabs-mounted]) [data-slot~="tabs-content"]:target {
     display: block;
   }

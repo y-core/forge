@@ -211,7 +211,10 @@ const MenuGroup: FC<MenuGroupProps> = ({ disabled = false, class: cls, children,
 
 /** Name a `Menu.Group` by giving this an `id` and pointing the group's `aria-labelledby` at it. */
 const MenuGroupLabel: FC<MenuGroupLabelProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <span data-slot={slotToken("menu-group-label", inherited)} class={cn("px-2 py-1.5 text-xs font-medium text-muted-foreground", cls)} {...rest}>
+  <span
+    data-slot={slotToken("menu-group-label", inherited)}
+    class={cn("block px-2 py-1.5 text-xs font-medium text-muted-foreground", cls)}
+    {...rest}>
     {children}
   </span>
 );

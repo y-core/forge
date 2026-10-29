@@ -1,10 +1,11 @@
 import type { RequestContext } from "@remix-run/fetch-router";
 
-import type { KeyRing } from "../../crypto/keyring/types";
+import type { KeyRingResolver } from "../../crypto/keyring/types";
 
 /** Options for `createFlash`. @public */
-export interface FlashCookieOptions {
-  ring: KeyRing;
+export interface FlashCookieOptions<Bindings = Record<string, unknown>> {
+  /** Resolves the key ring that signs the cookie from the request env; its active key signs and every key on it verifies. */
+  ring: KeyRingResolver<Bindings>;
   name?: string;
   path?: string;
   maxAge?: number;

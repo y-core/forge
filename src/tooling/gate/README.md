@@ -306,7 +306,7 @@ bun run verify --only lint,test    # narrow the run (branded as scoped)
 bun run verify --fix               # run each selected step's fixer instead
 bun run verify --reuse             # answer at once if this exact tree already passed
 bun run verify --affected          # run only the steps this change touches (branded as scoped)
-bun run verify:release --report out/   # write out/report.json and every step's whole log, whatever the verdict
+bun run verify:release --report tmp/gate/   # write tmp/gate/report.json and every step's whole log, whatever the verdict
 ```
 
 **`--report <dir>` is for a run nobody is watching**, such as a nightly one. `report.json` names the tier, the `HEAD` commit, the tree, the start

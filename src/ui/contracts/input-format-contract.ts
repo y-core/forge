@@ -6,10 +6,12 @@ export const INPUT_FORMAT_ATTR = "data-format";
 
 const SLOT = "#";
 const WHITESPACE = new Set([" ", "\t", "\n", "\r", "\f", "\v"]);
+const CONTENT = /^[\p{L}\p{N}]$/u;
 
-/** `value` with each literal removed only where the template places it, and whitespace anywhere — what makes formatting idempotent. @public */
+/** `value` with whitespace and the template's separators removed anywhere, and a letter or digit literal only where the template places it. @public */
 export function stripFormat(template: string, value: string): string {
   const templateChars = [...template];
+  const separators = new Set(templateChars.filter((char) => char !== SLOT && !CONTENT.test(char)));
   let cursor = 0;
   let significant = "";
   for (const char of value) {
@@ -19,7 +21,7 @@ export function stripFormat(template: string, value: string): string {
       cursor = at + 1;
       continue;
     }
-    if (WHITESPACE.has(char)) continue;
+    if (WHITESPACE.has(char) || separators.has(char)) continue;
     cursor = at < templateChars.length ? at + 1 : templateChars.length;
     significant += char;
   }

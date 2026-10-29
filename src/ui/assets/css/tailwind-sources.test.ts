@@ -1,21 +1,26 @@
-import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { afterAll, describe, expect, it } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-import { fileURLToPathish, isBareSpecifier } from "../../../tooling/gate/checks/design-system";
+import { stylesheetPath } from "../../../tooling/assets/css-declaration";
 
 const { compile } = await import("tailwindcss");
 
-const ROOT = resolve(import.meta.dir, "../../../..");
+const ROOT = realpathSync(resolve(import.meta.dir, "../../../.."));
 const CSS_DIR = resolve(ROOT, "src/ui/assets/css");
-const APP_DIR = "/srv/consumer-app";
+const APP_DIR = realpathSync(mkdtempSync(join(tmpdir(), "forge-tailwind-sources-")));
+mkdirSync(join(APP_DIR, "node_modules/@y-core"), { recursive: true });
+symlinkSync(dirname(fileURLToPath(import.meta.resolve("tailwindcss/index.css"))), join(APP_DIR, "node_modules/tailwindcss"));
+symlinkSync(ROOT, join(APP_DIR, "node_modules/@y-core/forge"));
+
+afterAll(() => rmSync(APP_DIR, { recursive: true, force: true }));
 
 const EXCLUDED = "*.{test,browser,fixture}.*";
 
-const resolvePackage = (id: string): string => fileURLToPathish(import.meta.resolve(id === "tailwindcss" ? "tailwindcss/index.css" : id));
-
 const loadStylesheet = async (id: string, base: string): Promise<{ path: string; base: string; content: string }> => {
-  const path = isBareSpecifier(id) ? resolvePackage(id) : resolve(base, id);
+  const path = stylesheetPath(id, base);
   return { path, base: dirname(path), content: readFileSync(path, "utf-8") };
 };
 
@@ -45,7 +50,7 @@ for (const namespace of ["auth", "render/htmx", "logging", "app"]) {
     const subpath = `@y-core/forge/${namespace}/sources.css`;
 
     it("resolves through the export map to the namespace's own directory", () => {
-      expect(resolvePackage(subpath)).toBe(resolve(directory, "sources.css"));
+      expect(stylesheetPath(subpath, APP_DIR)).toBe(resolve(directory, "sources.css"));
     });
 
     it("scans its namespace directory, minus tests, browser specs and fixtures, whatever the app's base", async () => {

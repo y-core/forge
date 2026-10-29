@@ -361,6 +361,12 @@ describe("validateCommentBudget() — an inventory count", () => {
     ]);
   });
 
+  it("fails a count with three modifier words between it and its noun", () => {
+    expect(messages("/** The seven ratified presentational prop names. */\nexport const a = 1;\n")).toEqual([
+      "inventory count `The seven ratified presentational prop names` — a comment records that a thing exists, not how many",
+    ]);
+  });
+
   it("fails a count followed by a clause, which is not the items", () => {
     expect(messages("// the four stores, so no method can lie\nconst a = 1;\n")).toEqual([
       "inventory count `the four stores` — a comment records that a thing exists, not how many",

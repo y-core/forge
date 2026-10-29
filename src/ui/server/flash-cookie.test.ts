@@ -16,7 +16,7 @@ function extractCookieValue(setCookieHeader: string | null): string | null {
 
 describe("createFlash", () => {
   it("names the ring's active key id on the wire", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.set(c, [{ type: "info", text: "kid" }]);
@@ -27,9 +27,47 @@ describe("createFlash", () => {
   });
 });
 
+describe("ring", () => {
+  it("hands the resolver the request's context, env included", async () => {
+    const seen: unknown[] = [];
+    const flash = createFlash<{ FLASH_SECRET: string }>({
+      ring: (c) => {
+        seen.push(c.env.FLASH_SECRET);
+        return ring;
+      },
+    });
+    const app = new Forge<{ FLASH_SECRET: string }>();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.success(c, "env");
+      return new Response("ok");
+    });
+    await app.request("/", {}, { FLASH_SECRET: "from-env" });
+    expect(seen).toEqual(["from-env"]);
+  });
+
+  it("signs each request under the ring its resolver returns then", async () => {
+    const other = await importKeyRing(["8a51f3c09e27b4d6105c7ea3f9b28d4e6c0a17f5b3e9d2c48f6a0b1e7d3c5a92"]);
+    const rings = [ring, other];
+    const flash = createFlash({ ring: () => rings.shift() ?? ring });
+    const app = new Forge();
+    mapHandler(app, "GET", "/", async (c) => {
+      await flash.info(c, "kid");
+      return new Response("ok");
+    });
+    const kids = [];
+    for (let i = 0; i < 2; i++)
+      kids.push(
+        extractCookieValue((await app.request("/")).headers.get("Set-Cookie"))
+          ?.split(".")
+          .at(-2),
+      );
+    expect(kids).toEqual([ring.activeKeyId, other.activeKeyId]);
+  });
+});
+
 describe("set", () => {
   it("writes a signed Set-Cookie header with correct attributes", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.set(c, [{ type: "success", text: "Hello" }]);
@@ -49,7 +87,7 @@ describe("set", () => {
 
 describe("get", () => {
   it("round-trips a message array", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const messages: FlashMessage[] = [
       { type: "info", text: "test message" },
       { type: "warning", text: "watch out" },
@@ -71,7 +109,7 @@ describe("get", () => {
   });
 
   it("clears the cookie after reading (read-once)", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
 
     const setApp = new Forge();
     mapHandler(setApp, "GET", "/", async (c) => {
@@ -92,7 +130,7 @@ describe("get", () => {
   });
 
   it("returns empty array when no flash cookie is present", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
     const res = await app.request("/");
@@ -100,7 +138,7 @@ describe("get", () => {
   });
 
   it("returns empty array for a tampered cookie value", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
 
     const setApp = new Forge();
     mapHandler(setApp, "GET", "/", async (c) => {
@@ -125,7 +163,7 @@ describe("get", () => {
   // The clear is keyed on the cookie being present, not on its value verifying: a value the server
   // now refuses is re-sent by the browser on every request, and would be re-refused forever.
   it("clears a cookie the signed expiry has since put out of reach", async () => {
-    const flash = createFlash({ ring, maxAge: 1 });
+    const flash = createFlash({ ring: () => ring, maxAge: 1 });
 
     const setApp = new Forge();
     mapHandler(setApp, "GET", "/", async (c) => {
@@ -143,7 +181,7 @@ describe("get", () => {
   });
 
   it("emits no clear at all where the request carried no flash cookie", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => Response.json(await flash.get(c)));
     const res = await app.request("/", { headers: { Cookie: "other=1" } });
@@ -161,7 +199,7 @@ describe("convenience methods", () => {
 
   for (const { name, type } of cases) {
     it(`${name}() stores exactly one message of type "${type}"`, async () => {
-      const flash = createFlash({ ring });
+      const flash = createFlash({ ring: () => ring });
 
       const setApp = new Forge();
       mapHandler(setApp, "GET", "/", async (c) => {
@@ -199,7 +237,7 @@ async function readBack(flash: ReturnType<typeof createFlash>, setCookie: string
 
 describe("one cookie per response", () => {
   it("merges a success then a warning into one cookie that reads back as both, in order", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.success(c, "Saved");
@@ -215,7 +253,7 @@ describe("one cookie per response", () => {
   });
 
   it("appends a later set to an earlier set of several, keeping call order", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.set(c, [
@@ -235,7 +273,7 @@ describe("one cookie per response", () => {
   });
 
   it("replaces the read's clear with a set made after it, carrying only the new messages", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const incoming = await wireFor(flash, [{ type: "info", text: "from last page" }]);
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
@@ -250,7 +288,7 @@ describe("one cookie per response", () => {
   });
 
   it("keeps a set made before the read instead of queuing the read's clear", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const incoming = await wireFor(flash, [{ type: "info", text: "from last page" }]);
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
@@ -264,7 +302,7 @@ describe("one cookie per response", () => {
   });
 
   it("queues a single clear when the flash is read twice", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const incoming = await wireFor(flash, [{ type: "info", text: "from last page" }]);
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
@@ -278,7 +316,7 @@ describe("one cookie per response", () => {
   });
 
   it("merges two flash calls made together into one cookie, in the order they were called", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await Promise.all([flash.success(c, "a"), flash.warning(c, "b")]);
@@ -293,7 +331,7 @@ describe("one cookie per response", () => {
   });
 
   it("a refused call between two others leaves both of their messages queued", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       const settled = await Promise.allSettled([flash.success(c, "a"), flash.info(c, "a".repeat(4000)), flash.warning(c, "b")]);
@@ -311,7 +349,7 @@ describe("one cookie per response", () => {
   });
 
   it("a read made alongside two calls neither clears nor drops them", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const incomingMessages: FlashMessage[] = [{ type: "info", text: "from last page" }];
     const incoming = await wireFor(flash, incomingMessages);
     const app = new Forge();
@@ -334,7 +372,7 @@ describe("past 4096 bytes", () => {
   const long = (lead: string) => lead + "a".repeat(1200);
 
   it("drops the oldest message when a third call would overflow the cookie", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.info(c, long("1"));
@@ -351,7 +389,7 @@ describe("past 4096 bytes", () => {
   });
 
   it("drops the oldest of one oversized batch rather than failing the request", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await flash.set(c, [
@@ -372,7 +410,7 @@ describe("past 4096 bytes", () => {
   });
 
   it("refuses a lone message too large for the cookie", async () => {
-    const flash = createFlash({ ring });
+    const flash = createFlash({ ring: () => ring });
     const app = new Forge();
     mapHandler(app, "GET", "/", async (c) => {
       await expect(flash.info(c, "a".repeat(4000))).rejects.toThrow(/at most 4096 bytes/);

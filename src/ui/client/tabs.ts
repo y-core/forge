@@ -14,6 +14,14 @@ function panelFor(tab: HTMLElement): HTMLElement | null {
   return elementById(tab, tab.getAttribute("aria-controls") ?? "");
 }
 
+// `until-found` keeps an unselected panel searchable but leaves it focusable, so it also leaves the tab
+// sequence; a disabled tab's panel stays plain `hidden`, which find-in-page never reveals.
+function showPanel(panel: HTMLElement, tab: HTMLElement, shown: boolean): void {
+  if (shown) panel.removeAttribute("hidden");
+  else panel.setAttribute("hidden", isDisabled(tab) ? "" : "until-found");
+  panel.tabIndex = shown ? 0 : -1;
+}
+
 function select(list: HTMLElement, chosen: HTMLElement): void {
   for (const tab of tabsIn(list)) {
     const isChosen = tab === chosen;
@@ -21,7 +29,7 @@ function select(list: HTMLElement, chosen: HTMLElement): void {
     applyStateAttrs(tab, { selected: isChosen });
     const panel = panelFor(tab);
     if (!panel) continue;
-    panel.hidden = !isChosen;
+    showPanel(panel, tab, isChosen);
     applyStateAttrs(panel, { selected: isChosen });
   }
 }
@@ -29,7 +37,7 @@ function select(list: HTMLElement, chosen: HTMLElement): void {
 function alignPanels(list: HTMLElement): void {
   for (const tab of tabsIn(list)) {
     const panel = panelFor(tab);
-    if (panel) panel.hidden = tab.getAttribute("aria-selected") !== "true";
+    if (panel) showPanel(panel, tab, tab.getAttribute("aria-selected") === "true");
   }
 }
 
@@ -84,6 +92,17 @@ export function mountTabs(root: HTMLElement, options: TabsOptions = {}): () => v
   list.addEventListener("click", onClick, { signal });
   if (activation === "manual") list.addEventListener("keydown", onKeyDown, { signal });
   list.addEventListener("focusout", onFocusOut, { signal });
+  for (const tab of tabsIn(list)) {
+    panelFor(tab)?.addEventListener(
+      "beforematch",
+      () => {
+        if (isDisabled(tab)) return;
+        select(list, tab);
+        for (const other of tabsIn(list)) other.tabIndex = other === tab ? 0 : -1;
+      },
+      { signal },
+    );
+  }
 
   alignPanels(list);
   root.setAttribute(TABS_MOUNTED_ATTR, "");

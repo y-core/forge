@@ -30,9 +30,10 @@ interface Fixture {
   activation?: "manual";
   orientation?: "vertical";
   selected?: "a" | "b";
+  panelClass?: string;
 }
 
-function tabsMarkup({ activation, orientation, selected = "a" }: Fixture = {}): Promise<string> {
+function tabsMarkup({ activation, orientation, selected = "a", panelClass }: Fixture = {}): Promise<string> {
   const isSelected = (key: string) => key === selected;
   return render(
     Tabs({
@@ -49,10 +50,10 @@ function tabsMarkup({ activation, orientation, selected = "a" }: Fixture = {}): 
             Tabs.Tab({ for: "p-d", children: "Delta" }),
           ],
         }),
-        Tabs.Content({ id: "p-a", selected: isSelected("a"), children: "A" }),
-        Tabs.Content({ id: "p-b", selected: isSelected("b"), children: "B" }),
-        Tabs.Content({ id: "p-c", children: "C" }),
-        Tabs.Content({ id: "p-d", children: "D" }),
+        Tabs.Content({ id: "p-a", ...(panelClass ? { class: panelClass } : {}), selected: isSelected("a"), children: "A" }),
+        Tabs.Content({ id: "p-b", ...(panelClass ? { class: panelClass } : {}), selected: isSelected("b"), children: "B" }),
+        Tabs.Content({ id: "p-c", ...(panelClass ? { class: panelClass } : {}), disabled: true, children: "C" }),
+        Tabs.Content({ id: "p-d", ...(panelClass ? { class: panelClass } : {}), children: "D" }),
       ],
     }),
   );
@@ -109,14 +110,40 @@ test.describe("Tabs", { tag: "@cross-engine" }, () => {
     expect(await tabsState(page)).toEqual({ selected: ["p-a-tab"], dataSelected: ["p-a-tab"], visiblePanels: ["p-a"] });
   });
 
-  test("keeps a server-hidden panel out of the layout once mounted, before any selection", async ({ page }) => {
+  test("keeps a server-hidden panel out of the layout once mounted, a caller's padding, border and margin included", async ({ page }) => {
+    await mount(page, await withCompiledCss(await tabsMarkup({ panelClass: "my-6 border-4 p-8" })), EXPOSE);
+    await start(page);
+
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("[role='tabpanel']")].map((el) => {
+          const style = getComputedStyle(el);
+          const spaced =
+            style.display !== "none" && (el.getBoundingClientRect().height > 0 || style.marginTop !== "0px" || style.marginBottom !== "0px");
+          return [el.id, spaced];
+        }),
+      ),
+    ).toEqual([
+      ["p-a", true],
+      ["p-b", false],
+      ["p-c", false],
+      ["p-d", false],
+    ]);
+  });
+
+  test("puts the visible panel at the same offset whichever tab is selected", async ({ page }) => {
     await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
     await start(page);
 
-    expect(await page.locator("#p-b").evaluate((el) => getComputedStyle(el).display)).toBe("none");
+    const visibleTop = () =>
+      page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[role='tabpanel']")].find((el) => !el.hidden)?.getBoundingClientRect().top);
+    const first = await visibleTop();
+    await page.click("#p-d-tab");
+
+    expect(await visibleTop()).toBe(first);
   });
 
-  test("hides a panel revealed before mount, and leaves no until-found for the platform to reveal again", async ({ page }) => {
+  test("leaves every unselected panel until-found once mounted, a disabled tab's excepted, whatever revealed it before", async ({ page }) => {
     await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
     await page.evaluate(() => document.querySelector("#p-b")?.removeAttribute("hidden"));
     await start(page);
@@ -125,16 +152,57 @@ test.describe("Tabs", { tag: "@cross-engine" }, () => {
       await page.evaluate(() =>
         [...document.querySelectorAll<HTMLElement>("[role='tabpanel']")].map((el) => [
           el.id,
-          getComputedStyle(el).display,
           el.getAttribute("hidden"),
+          el.getBoundingClientRect().height > 0,
         ]),
       ),
     ).toEqual([
-      ["p-a", "block", null],
-      ["p-b", "none", ""],
-      ["p-c", "none", ""],
-      ["p-d", "none", ""],
+      ["p-a", null, true],
+      ["p-b", "until-found", false],
+      ["p-c", "", false],
+      ["p-d", "until-found", false],
     ]);
+  });
+
+  test("selects the tab whose panel the platform reveals on fragment navigation", async ({ page }) => {
+    await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
+    await start(page);
+
+    await page.evaluate(() => {
+      location.hash = "p-d";
+    });
+
+    await expect(page.locator("#p-d")).toBeVisible();
+    expect(await tabsState(page)).toEqual({ selected: ["p-d-tab"], dataSelected: ["p-d-tab"], visiblePanels: ["p-d"] });
+  });
+
+  test("selects a panel's tab on beforematch, handing it the tab stop and leaving focus where it was", async ({ page }) => {
+    await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
+    await start(page);
+
+    await page.evaluate(() => document.querySelector("#p-b")?.dispatchEvent(new Event("beforematch", { bubbles: true })));
+
+    expect({
+      state: await tabsState(page),
+      tabIndex: await page.evaluate(() => [...document.querySelectorAll<HTMLElement>("[role='tab']")].map((el) => el.tabIndex)),
+      focusOnBody: await page.evaluate(() => document.activeElement === document.body),
+      hiddenA: await page.locator("#p-a").getAttribute("hidden"),
+    }).toEqual({
+      state: { selected: ["p-b-tab"], dataSelected: ["p-b-tab"], visiblePanels: ["p-b"] },
+      tabIndex: [-1, 0, -1, -1],
+      focusOnBody: true,
+      hiddenA: "until-found",
+    });
+  });
+
+  test("takes Tab from the selected panel past every hidden one", async ({ page }) => {
+    await mount(page, await withCompiledCss(await tabsMarkup()), EXPOSE);
+    await start(page);
+
+    await page.focus("#p-a");
+    await page.keyboard.press("Tab");
+
+    expect(["p-b", "p-c", "p-d"]).not.toContain(await focusedId(page));
   });
 
   test("a panel wrapped in the caller's own element is selected in place of the selected one once mounted", async ({ page }) => {

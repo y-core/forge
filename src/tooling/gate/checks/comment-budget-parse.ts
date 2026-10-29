@@ -22,7 +22,7 @@ const TRIPLE_SLASH = /^\/\/\/\s*<(?:reference|amd-module|amd-dependency)\b/;
 
 /** A definite count of what exists. */
 const TALLY =
-  /\bthe\s+(?:both|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,2}?([A-Za-z][A-Za-z-]{2,}s)\b/i;
+  /\bthe\s+(?:both|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:[A-Za-z][A-Za-z-]*\s+){0,3}?([A-Za-z][A-Za-z-]{2,}s)\b/i;
 
 /** Words ending in `s` that are never a plural noun. */
 const NOT_A_PLURAL = new Set([

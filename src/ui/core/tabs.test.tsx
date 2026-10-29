@@ -61,7 +61,7 @@ describe("Tabs", () => {
     expect(slotsOf(html)).toEqual(["tabs", "tabs-list", "tab", "tab", "tabs-content", "tabs-content"]);
     expect([attrsOf(html, 'id="panel-a"'), attrsOf(html, 'id="panel-b"')]).toEqual([
       { id: "panel-a", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-a-tab", "data-selected": "" },
-      { id: "panel-b", role: "tabpanel", "data-slot": "tabs-content", tabindex: "0", "aria-labelledby": "panel-b-tab", hidden: "until-found" },
+      { id: "panel-b", role: "tabpanel", "data-slot": "tabs-content", tabindex: "-1", "aria-labelledby": "panel-b-tab", hidden: "until-found" },
     ]);
   });
 });
@@ -186,15 +186,28 @@ describe("Tabs.Tab", () => {
 });
 
 describe("Tabs.Content", () => {
-  it("hides an unselected panel with the platform's own attribute", async () => {
+  it("hides an unselected panel with the platform's own attribute, out of the tab sequence", async () => {
     expect(attrsOf(await render(<Tabs.Content id='panel-b'>Second</Tabs.Content>))).toEqual({
       id: "panel-b",
       role: "tabpanel",
       "data-slot": "tabs-content",
-      tabindex: "0",
+      tabindex: "-1",
       "aria-labelledby": "panel-b-tab",
       hidden: "until-found",
     });
+  });
+
+  it("hides a disabled tab's panel with a plain hidden that find-in-page never reveals", async () => {
+    expect(
+      attrOf(
+        await render(
+          <Tabs.Content id='panel-c' disabled>
+            Third
+          </Tabs.Content>,
+        ),
+        "hidden",
+      ),
+    ).toBe("");
   });
 
   it("shows the selected panel and carries the CSS hook instead", async () => {

@@ -77,6 +77,10 @@ const includes = (receiver: AstNode): AstNode => callOn(member(receiver, "includ
 /** A module whose statements the rule walks in order, ending at `Program:exit`. */
 const program = (...statements: AstNode[]): AstNode => other("Program", ...statements);
 
+/** `{ key: value }`'s one property, written `{ key }` when `shorthand`. */
+const property = (key: AstNode, value: AstNode, shorthand = false): AstNode =>
+  ({ type: "Property", loc: key.loc, key, value, computed: false, shorthand }) as unknown as AstNode;
+
 /** `const out = render("<b />")` — the seed every trace starts from. */
 const rendered = (): AstNode => declaration(declarator("out", call("render", literal("<b />"))));
 
@@ -190,6 +194,31 @@ describe("exact-markup-assertion", () => {
 
   it("leaves an exact matcher on markup alone — that is the form the rule asks for", () => {
     expect(lint(program(rendered(), assertion(identifier("out"), "toBe")))).toEqual([]);
+  });
+
+  it("leaves `x.out` alone beside a markup binding named `out` — the property is spelled, not read", () => {
+    const read = declaration(declarator("text", member(identifier("x"), "out")));
+
+    expect(lint(program(rendered(), read, assertion(identifier("text"), "toContain")))).toEqual([]);
+  });
+
+  it("leaves an object key named like a markup binding alone", () => {
+    const keyed = other("ObjectExpression", property(identifier("out"), literal("Save")));
+
+    expect(lint(program(rendered(), assertion(keyed, "toContain")))).toEqual([]);
+  });
+
+  it("reports `x[out]`, whose computed property reads the markup binding", () => {
+    const computed = { ...member(identifier("x"), "out"), computed: true } as unknown as AstNode;
+
+    expect(lint(program(rendered(), assertion(computed, "toContain")))).toHaveLength(1);
+  });
+
+  it("reports a shorthand `{ out }`, whose one node is both key and value", () => {
+    const value = identifier("out");
+    const shorthand = other("ObjectExpression", property(value, value, true));
+
+    expect(lint(program(rendered(), assertion(shorthand, "toContain")))).toHaveLength(1);
   });
 
   it("reports only the assertion on its own case's markup binding, not a same-named plain value in another case", () => {

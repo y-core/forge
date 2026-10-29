@@ -37,6 +37,8 @@ interface TabProps extends Omit<JSX.IntrinsicElements["a"], "children" | "href">
 interface TabsContentProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   id: string;
   selected?: boolean | undefined;
+  /** Pairs the panel with a disabled `Tabs.Tab`, hiding it as `hidden=""` so find-in-page cannot reveal it before `mountTabs` runs. */
+  disabled?: boolean | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -109,6 +111,7 @@ const Tab: FC<TabProps> = ({ for: panelId, selected = false, disabled = false, c
 const TabsContent: FC<TabsContentProps> = ({
   id,
   selected = false,
+  disabled = false,
   class: cls,
   children,
   "data-slot": inherited,
@@ -119,9 +122,9 @@ const TabsContent: FC<TabsContentProps> = ({
     id={id}
     role='tabpanel'
     data-slot={slotToken("tabs-content", inherited)}
-    tabindex={0}
+    tabindex={selected ? 0 : -1}
     aria-labelledby={mergeIdRefs(ownLabelledBy, [tabId(id)])}
-    {...(selected ? {} : { hidden: "until-found" as const })}
+    {...(selected ? {} : { hidden: disabled ? true : ("until-found" as const) })}
     {...stateAttrs({ selected })}
     class={cn("focus-ring", cls)}
     {...rest}>

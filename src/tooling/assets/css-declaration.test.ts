@@ -1,10 +1,10 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { cssSourceMatches, isCssSourceCovered, readCssDeclaration } from "./css-declaration";
+import { cssSourceMatches, isCssSourceCovered, readCssDeclaration, stylesheetPath } from "./css-declaration";
 import type { CssSourceDeclaration } from "./types";
 
 const TAILWIND_INDEX = fileURLToPath(import.meta.resolve("tailwindcss/index.css"));
@@ -212,6 +212,24 @@ describe("isCssSourceCovered", () => {
   for (const { name, sources, path, expected } of cases) {
     it(name, () => {
       expect(isCssSourceCovered(sources, path)).toBe(expected);
+    });
+  }
+});
+
+describe("stylesheetPath", () => {
+  it("resolves a scoped package id through the importing stylesheet's node_modules", () => {
+    const root = tree({ "node_modules/@acme/kit/package.json": '{ "style": "kit.css" }', "node_modules/@acme/kit/kit.css": "" });
+
+    expect(stylesheetPath("@acme/kit", join(root, "css"))).toBe(join(root, "node_modules/@acme/kit/kit.css"));
+  });
+
+  it("resolves an unscoped package id to its real path", () => {
+    expect(stylesheetPath("tailwindcss", tree({}))).toBe(realpathSync(TAILWIND_INDEX));
+  });
+
+  for (const id of ["./tokens.css", "../tokens.css", "/tmp/tokens.css"]) {
+    it(`resolves \`${id}\` as a path from the importing stylesheet's directory`, () => {
+      expect(stylesheetPath(id, "/srv/app/css")).toBe(resolve("/srv/app/css", id));
     });
   }
 });

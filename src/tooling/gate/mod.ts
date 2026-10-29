@@ -70,7 +70,7 @@ export { checkClassGroups, compareClassGroups, deriveTable, FORGE_STATE_RECIPES,
 export type { ClassGroupTable, RootRow } from "./checks/types";
 export { deriveClassGroups, reach, renderClassGroups, SHORTHAND_CLOSURE, signature } from "./checks/class-groups-parse";
 export type { CssNode, DesignSystem } from "./checks/types";
-export { canonical, fileURLToPathish, hasTailwind, isBareSpecifier, loadDesignSystem } from "./checks/design-system";
+export { canonical, fileURLToPathish, hasTailwind, loadDesignSystem } from "./checks/design-system";
 export type { ClassOrderCheckConfig } from "./checks/types";
 export { checkClassOrder, droppedToken, validateClassOrder } from "./checks/class-order";
 export type { ClassTokensCheckConfig, SourceLiteral } from "./checks/types";

@@ -16,9 +16,8 @@ function tabs(options: { activation?: string; selected?: number } = {}) {
   const made = ["a", "b", "c"].map((id, i) => {
     const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === selected), href: `#p-${id}` });
     const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
-    panel.hidden = i !== selected;
     if (i === selected) tab.setAttribute("data-selected", "");
-    else panel.setAttribute("hidden", "");
+    else panel.setAttribute("hidden", "until-found");
     list.append(tab);
     root.append(panel);
     return { tab, panel };
@@ -34,6 +33,8 @@ const fire = (el: FakeElement, type: string) => {
 };
 
 const selection = (list: FakeElement[]) => list.map((el) => el.getAttribute("aria-selected"));
+
+const hiddenOf = (list: FakeElement[]) => list.map((el) => el.getAttribute("hidden"));
 
 describe("mountTabs", () => {
   it("moves the styling hook with the ARIA state on every tab it repaints", () => {
@@ -89,12 +90,12 @@ describe("mountTabs", () => {
 
   it("hides every panel but the selected one on mount, whatever revealed it before", () => {
     const { root, panels } = tabs({ selected: 1 });
-    (panels[2] as FakeElement).hidden = false;
-    (panels[1] as FakeElement).hidden = true;
+    (panels[2] as FakeElement).removeAttribute("hidden");
+    (panels[1] as FakeElement).setAttribute("hidden", "");
 
     mountTabs(root as never);
 
-    expect(panels.map((panel) => panel.hidden)).toEqual([true, false, true]);
+    expect(hiddenOf(panels)).toEqual(["until-found", null, "until-found"]);
   });
 
   it("selects on focus under automatic activation, moving both halves of the state", () => {
@@ -104,7 +105,7 @@ describe("mountTabs", () => {
     fire(list[2] as FakeElement, "focusin");
 
     expect(selection(list)).toEqual(["false", "false", "true"]);
-    expect(panels.map((panel) => panel.hidden)).toEqual([true, true, false]);
+    expect(hiddenOf(panels)).toEqual(["until-found", "until-found", null]);
   });
 
   it("waits for a click under manual activation, ignoring focus alone", () => {
@@ -136,6 +137,49 @@ describe("mountTabs", () => {
     expect(list[2]?.getAttribute("aria-selected")).toBe("false");
   });
 
+  it("selects the tab whose panel find-in-page is about to reveal, handing it the tab stop without focus", () => {
+    const { root, tabs: list, panels } = tabs();
+    mountTabs(root as never);
+
+    fire(panels[2] as FakeElement, "beforematch");
+
+    expect({
+      selection: selection(list),
+      tabIndex: list.map((tab) => tab.tabIndex),
+      panelTabIndex: panels.map((panel) => panel.tabIndex),
+      focused: list.map((tab) => tab.focused),
+      hidden: hiddenOf(panels),
+    }).toEqual({
+      selection: ["false", "false", "true"],
+      tabIndex: [-1, -1, 0],
+      panelTabIndex: [-1, -1, 0],
+      focused: [false, false, false],
+      hidden: ["until-found", "until-found", null],
+    });
+  });
+
+  it("keeps a disabled tab's panel out of find-in-page, and ignores a beforematch dispatched on it", () => {
+    const { root, tabs: list, panels } = tabs();
+    list[2]?.setAttribute("aria-disabled", "true");
+    mountTabs(root as never);
+
+    fire(panels[2] as FakeElement, "beforematch");
+
+    expect({ selection: selection(list), hidden: hiddenOf(panels) }).toEqual({
+      selection: ["true", "false", "false"],
+      hidden: [null, "until-found", ""],
+    });
+  });
+
+  it("stops answering beforematch once disposed", () => {
+    const { root, tabs: list, panels } = tabs();
+    mountTabs(root as never)();
+
+    fire(panels[1] as FakeElement, "beforematch");
+
+    expect(selection(list)).toEqual(["true", "false", "false"]);
+  });
+
   it("stops selecting once disposed", () => {
     const { root, tabs: list } = tabs();
     mountTabs(root as never)();
@@ -162,7 +206,7 @@ describe("mountTabs", () => {
       const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === 0), href: `#p-${id}` });
       if (i === 0) tab.setAttribute("data-selected", "");
       const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
-      panel.hidden = i !== 0;
+      if (i !== 0) panel.setAttribute("hidden", "until-found");
       innerList.append(tab);
       innerRoot.append(panel);
       return { tab, panel };
@@ -177,9 +221,9 @@ describe("mountTabs", () => {
     expect({
       selected: x.tab.getAttribute("aria-selected"),
       hook: x.tab.hasAttribute("data-selected"),
-      shown: x.panel.hidden,
-      other: y.panel.hidden,
-    }).toEqual({ selected: "true", hook: true, shown: false, other: true });
+      shown: x.panel.getAttribute("hidden"),
+      other: y.panel.getAttribute("hidden"),
+    }).toEqual({ selected: "true", hook: true, shown: null, other: "until-found" });
   });
 
   it("drives its own tablist, not a nested Tabs' tablist that precedes it", () => {
@@ -190,7 +234,7 @@ describe("mountTabs", () => {
     const [x, y] = ["x", "y"].map((id, i) => {
       const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === 0), href: `#p-${id}` });
       const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
-      panel.hidden = i !== 0;
+      if (i !== 0) panel.setAttribute("hidden", "until-found");
       innerList.append(tab);
       innerRoot.append(panel);
       return tab;
@@ -201,7 +245,7 @@ describe("mountTabs", () => {
     const [, b] = ["a", "b"].map((id, i) => {
       const tab = el("A", { role: TAB_ROLE, "aria-controls": `p-${id}`, "aria-selected": String(i === 0), href: `#p-${id}` });
       const panel = el("DIV", { role: "tabpanel", id: `p-${id}` });
-      panel.hidden = i !== 0;
+      if (i !== 0) panel.setAttribute("hidden", "until-found");
       list.append(tab);
       root.append(panel);
       return tab;

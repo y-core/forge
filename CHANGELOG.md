@@ -28,10 +28,20 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   call.
 - **`buildScale` and the `Dials` type are no longer exported from `@y-core/forge/ui/contracts/theme`.** `buildScale` measured unfloored chroma,
   so it disagreed by a byte with the hex a scheme file paints. Read `buildTheme(dials)[family][mode].solid` instead.
+- **A mounted `Tabs` leaves an unselected panel `hidden="until-found"` with `tabindex="-1"`, not `hidden=""`**, and find-in-page or a fragment
+  link into it selects its tab. A disabled tab's panel is `hidden=""`. `forge-ui.css` no longer sets `display: none` on an `until-found` panel,
+  which kept find-in-page from revealing it; the panel is positioned out of flow and its padding, border and margin are zeroed instead, so the
+  root's `gap` does not count it. Update a test that expects `hidden=""`.
+- **`createFlash` takes `ring: KeyRingResolver<Bindings>` in place of a `KeyRing`**, resolved from each request's context as
+  `createAnonymousSession`'s is. Build the flasher once at module scope: `createFlash({ ring: createKeyRingResolver<Env>((c) => …) })`, or pass
+  `ring: () => ring` to keep a ring imported elsewhere.
+- **`isBareSpecifier` is no longer exported from `@y-core/forge/tooling/gate`.** An `@import` id that starts with neither `.` nor `/`
+  names a package; test that inline.
 - **`createBoundControl` and `createBoundCompound` are no longer exported from `@y-core/forge/ui/controls`.** They were internal factories; the
   bound controls the barrel exports are the whole API.
 - **`applyFormat` from `@y-core/forge/ui/contracts` leaves a value with more characters than the template has slots unchanged**, instead of
-  returning its bare characters, and a literal typed where the template has a slot is kept as content.
+  returning its bare characters, and a letter or digit literal typed where the template has a slot, such as the `1` of `+1`, is kept as content.
+  A separator is still removed wherever it is typed, so `123-4567` under `####-####` regroups as `1234-567`.
 - **`Turnstile` reserves the widget's box on an inner `[data-ref="turnstile-frame"]` element**, so a `class` passed to `Turnstile` no longer sizes
   the reserved box.
 - **`FormField` takes no `name`.** It never wired anything. Pass the `name` to `FormField.Label`, `.Description` and `.Error` and to the control's
@@ -63,8 +73,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   matching; use `[data-slot~="menu-group"]` or `[data-slot~="menu-separator"]`. `MENU_GROUP_SELECTOR` no longer matches `fieldset`.
   `Menu.Group`'s `disabled` still disables its rows: it sets `aria-disabled` on the group and passes `disabled` to each `Menu.Item`,
   `.CheckboxItem`, `.RadioItem` and `.SubmenuTrigger` that leaves its own unset. A `Menu.LinkItem` is not disabled by its group.
-- **`bindAttr` and `bindAttrAttr` refuse `hx-vals`, `hx-headers`, `hx-confirm` and `hx-trigger`**, in the `hx-` and `data-hx-` spellings and
-  with a `:inherited` or `:append` suffix, because htmx evaluates their values as script. `bindAttrAttr` throws on one and `bindAttr` warns and
+- **`bindAttr` and `bindAttrAttr` refuse `hx-vals`, `hx-headers`, `hx-confirm`, `hx-trigger`, `hx-config` and every `hx-status:*` rule**, in
+  the `hx-` and `data-hx-` spellings and with a `:inherited` or `:append` suffix, because htmx evaluates their values as script or swap
+  configuration. `bindAttrAttr` throws on one and `bindAttr` warns and
   skips it. Write these attributes in markup, or bind a signal to an attribute htmx does not evaluate.
 - **A custom `--command` runs the handler of the scope holding its `commandfor` target**, with `el` still the invoker. Before, the handler was
   looked up from the invoker, so an invoker inside one scope that names an element in another now runs the other scope's handler.
@@ -96,9 +107,8 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `RULE_ENFORCER[id] === "lint"`. Its value type excludes `"gate"`, which only a `MODERN_CSS_RULES` row carries, so routing a corpus rule to
   the gate no longer compiles.
 - **An unselected `Tabs.Content` renders `hidden="until-found"` instead of a bare `hidden`.** This shipped in 0.5.15, whose section does not
-  record it. With no script, a find-in-page match inside an unselected panel reveals it, in an engine that implements `until-found`. Once
-  `mountTabs` runs, every unselected panel is a plain `hidden=""` again. A test of server-rendered markup that expects `hidden=""` must expect
-  `hidden="until-found"`.
+  record it. With no script, a find-in-page match inside an unselected panel reveals it, in an engine that implements `until-found`. A test of
+  server-rendered markup that expects `hidden=""` must expect `hidden="until-found"`, except on a `Tabs.Content` given `disabled`.
 
 ### Added
 
@@ -119,10 +129,17 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`toneSurface` in `@y-core/forge/ui/core`** — `toneVariants`' paint without the hover fill, for a static toned panel.
 - **`fadedTextStep`, `checkFadedText` and `fadedText` in `@y-core/forge/tooling/gate`.** The `validate-faded-text` row fails a fade below full
   strength — an `opacity-*` or a text colour's `/alpha` modifier on a class string, or either in a stylesheet's `@apply` — unless a disabled state
-  or an audited alpha pair holds it.
+  or an audited alpha pair holds it. Its config type is `FadedTextCheckConfig`.
 - **`crossEngineTagsStep` and `checkCrossEngineTags` in `@y-core/forge/tooling/gate`.** The `validate-cross-engine-tags` row fails an untagged
   top-level browser spec block that reads an engine-computed value, and `@cross-engine` spelled anywhere but a top-level block's
-  `{ tag: "@cross-engine" }`.
+  `{ tag: "@cross-engine" }`. The parts are exported too: `validateCrossEngineTags` judges one spec, `findCrossEngineUnits` and
+  `findEngineReaders` read its blocks and engine reads, `resolveFixtureReaders` follows a `*.fixture.ts` import, and the types are
+  `CrossEngineTagsCheckConfig` and `CrossEngineUnit`.
+- **`Tabs.Content` takes `disabled`**, rendering `hidden=""` so find-in-page cannot reveal a disabled tab's panel before `mountTabs` runs. Pair it
+  with the `disabled` on that panel's `Tabs.Tab`.
+- **`findStylesheetComments` in `@y-core/forge/tooling/gate`** returns every block comment in a stylesheet with its opening line.
+- **`FILTER_SCOPE`, `OTP_INPUT_SCOPE` and `OTP_LENGTH_ATTR` in `@y-core/forge/ui/contracts`**, the scope names `Filter` and `OtpInput` stamp and
+  the attribute carrying an OTP field's length.
 - **JSX intrinsic elements type 13 more ARIA 1.2 attributes**, among them `aria-roledescription`, `aria-pressed`, `aria-modal` and `aria-sort`,
   so a value of the wrong type is a compile error instead of passing unchecked.
 - **`forge/a11y-state-attrs-source` (`forge-ui-a11y-state-attrs-source`) reports a Tailwind variant that styles from an `aria-*` state
@@ -161,7 +178,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`Toggle` and `Toolbar.Input` use `Button`'s padding scale**: padding follows the size (12/16/24px). A `Toggle` label no longer wraps, and its
   colour changes transition.
 - **`Stack`'s back layers no longer fade, and the `Navbar` menu chevron paints at full strength.**
-- **The comment budget reports a count with up to two words before its noun**, such as "the four shipped schemes", and a comma after the noun no
+- **The comment budget reports a count with up to three words before its noun**, such as "the four shipped schemes", and a comma after the noun no
   longer counts as the start of an enumeration.
 - **`forge-ui-platform-accent-color` in `validate-modern-css` reports an `<input type={…}>` whose binding is typed as `"checkbox"` or `"radio"`**,
   such as a component factory's parameter, so a hand-styled checkable built through one is reported like a literal `type="checkbox"`, and a braced

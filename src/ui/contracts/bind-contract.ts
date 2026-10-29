@@ -35,7 +35,7 @@ const SAFE_BOUND_SCHEMES = new Set(["http:", "https:", "mailto:", "tel:"]);
 // oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars, which browsers ignore when resolving a scheme
 const BOUND_URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
 
-const HX_SCRIPT_ATTRS: ReadonlySet<string> = new Set(["hx-vals", "hx-headers", "hx-confirm", "hx-trigger"]);
+const HX_SCRIPT_ATTRS: ReadonlySet<string> = new Set(["hx-vals", "hx-headers", "hx-confirm", "hx-trigger", "hx-status", "hx-config"]);
 
 const HX_REQUEST_ATTRS: ReadonlySet<string> = new Set(["hx-action", "hx-get", "hx-post", "hx-put", "hx-patch", "hx-delete", "hx-query"]);
 
@@ -46,7 +46,7 @@ function hxBaseName(attribute: string): string {
   return unprefixed.split(":")[0] ?? unprefixed;
 }
 
-/** Whether an attribute may never be driven by a signal: a handler name, bare or any `hx-on` spelling, an htmx attribute htmx evaluates as script, plus `srcdoc` and `style`. @public */
+/** Whether an attribute may never be driven by a signal: a handler name, bare or any `hx-on` spelling, an htmx attribute htmx evaluates as script or swap configuration, plus `srcdoc` and `style`. @public */
 export function isBindAttrRefused(attribute: string): boolean {
   const lower = attribute.toLowerCase();
   const base = hxBaseName(attribute);

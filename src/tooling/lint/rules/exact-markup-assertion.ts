@@ -27,6 +27,13 @@ function memberName(node: AstNode | null | undefined): string | undefined {
   return nameOf((node as unknown as { property?: AstNode }).property);
 }
 
+/** Whether `child` is a name `node` spells rather than reads — `x.out`'s `out`, or the key of `{ out: … }`. */
+function spellsName(node: AstNode, child: AstNode): boolean {
+  if (memberName(node) !== undefined) return child === (node as unknown as { property?: AstNode }).property;
+  const property = node as unknown as { key?: AstNode; computed?: boolean; shorthand?: boolean };
+  return node.type === "Property" && property.computed !== true && property.shorthand !== true && child === property.key;
+}
+
 /** `await x` and `(x)` say nothing about what `x` is, so a shape test looks through them. */
 function unwrap(node: AstNode | null | undefined): AstNode | null | undefined {
   if (node?.type === "AwaitExpression") return unwrap((node as unknown as { argument?: AstNode }).argument);
@@ -144,7 +151,7 @@ function reachesMarkup(node: AstNode | undefined, markup: MarkupBindings, resolv
     const declared = resolve(node);
     if (declared !== undefined && markup.values.has(declared)) return true;
   }
-  return childrenOf(node).some((child) => reachesMarkup(child, markup, resolve));
+  return childrenOf(node).some((child) => !spellsName(node, child) && reachesMarkup(child, markup, resolve));
 }
 
 /** One declaration and the expression it binds — a declarator's initializer, or a function's body. */

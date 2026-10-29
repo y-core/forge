@@ -367,8 +367,8 @@ link to, and return to, is a slide worth paging; a strip with no stable slides i
 
 ## 5. `Tabs`, and when it is a router in disguise
 
-`Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden="until-found"`, so the first render is correct with no JavaScript,
-and it becomes a plain `hidden` that find-in-page cannot reach once `mountTabs` runs.
+`Tabs` renders a tablist plus panels; an unselected `Tabs.Content` is `hidden="until-found"`, so the first render is correct with no JavaScript
+and find-in-page reaches every panel — once `mountTabs` runs, a match selects its panel's tab.
 
 | Given | Choose |
 | --- | --- |

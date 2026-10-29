@@ -314,10 +314,10 @@ attribute. The one thing it mirrors is a `Popover` or `Menu` trigger's `aria-exp
 **The pairing you write is `for` on the trigger and `id` on the surface.** `Dialog`, `Drawer`, `Popover`, `Menu` and `Tabs` all take it that way,
 and a `Menu.Item`'s own `for` names the popup its selection closes — `false` leaves the popup open.
 
-**An unselected `Tabs.Content` renders `hidden="until-found"`, so the first paint is already correct.** With no script, following a tab's link
-shows its panel, and so does a find-in-page match inside it in an engine that implements `until-found`. Once `mountTabs` runs, every unselected
-panel is a plain `hidden=""` that find-in-page does not reach. So a test of server-rendered markup expects `hidden="until-found"`, and a test of a
-mounted page expects `hidden=""`.
+**An unselected `Tabs.Content` renders `hidden="until-found"`, so the first paint is already correct and find-in-page can reach the panel.**
+Following a tab's link shows its panel, and so does a find-in-page match inside it; once `mountTabs` runs, the match also selects the panel's tab.
+An engine without `until-found` treats the panel as plain hidden. A disabled tab's panel is `hidden=""` once mounted, which find-in-page never
+reveals. So a test expects `hidden="until-found"` and `tabindex="-1"` on an unselected panel, with or without the controller.
 
 **A `Dialog` or `Drawer` must be named, and the type says so**: pass `titled` when you compose a `.Title`, and the root points `aria-labelledby` at
 that heading, so the overlay is named by what the reader sees; pass `label` or `labelledby` instead when there is no heading to point at. Naming
@@ -1097,10 +1097,10 @@ the element that sends the request, as in `hx-status:403='swap:innerHTML'`. An e
 ### Show a message on the page after a redirect
 
 ```tsx
-import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
+import { createKeyRingResolver, importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { createFlash, FlashContainer, FlashOob } from "@y-core/forge/ui/server";
 
-const flash = createFlash({ ring: await importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET)) });
+const flash = createFlash({ ring: createKeyRingResolver<Env>((c) => importKeyRing(parseKeyRingSecrets(c.env.SESSION_SECRET))) });
 
 await flash.success(c, "Profile saved.");   // in a POST handler, then redirect
 const messages = await flash.get(c);         // in the next loader; clears as it reads
@@ -1109,7 +1109,8 @@ const messages = await flash.get(c);         // in the next loader; clears as it
 <FlashOob messages={messages} />; // HTMX out-of-band swap
 ```
 
-`createFlash` takes a key ring from `@y-core/forge/crypto/keyring` and returns a flasher over a cookie signed under it. The session's ring serves,
+`createFlash` takes a key-ring resolver, as the session does, and returns a flasher over a cookie signed under the ring it resolves for each
+request — so build the flasher once at module scope, and let `createKeyRingResolver` import the ring once per env. The session's resolver serves,
 because each cookie name signs under a subkey of its own. The cookie's name, path, max-age and `sameSite` all have defaults, so pass one only when
 the app needs it to differ. `success` / `info` / `warning` / `error` are conveniences over `set`, and `get` clears as it reads.
 

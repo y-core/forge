@@ -217,6 +217,10 @@ describe("Menu — phrasing content", () => {
     expect(await render(<Menu.GroupLabel>Recent</Menu.GroupLabel>)).toStartWith("<span");
   });
 
+  it("lays a group label out as a block, so its padding holds directly inside the popup", async () => {
+    expect(classesOf(await render(<Menu.GroupLabel>Recent</Menu.GroupLabel>))).toContain("block");
+  });
+
   it("renders a group and a separator as spans carrying their roles", async () => {
     const group = await render(<Menu.Group aria-labelledby='g' />);
     const separator = await render(<Menu.Separator />);
