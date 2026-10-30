@@ -229,9 +229,9 @@ I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
 
 ### 2e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `deploy`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
-Requiring a written `[Unreleased]` entry on every run below `deploy` would fail every work-in-progress commit; `deploy` and `release` run exactly
-where the invariant bites, before `prepublishOnly` and before a tag exists.
+**`CHANGELOG.md` is checked by a `release`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
+Requiring a written `[Unreleased]` entry on every run below `release` would fail every work-in-progress commit; `release` runs exactly where the
+invariant bites, before `prepublishOnly` and before a tag exists.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
 with, and two parsers for one document is precisely the drift the gate exists to catch. One parser, two callers.

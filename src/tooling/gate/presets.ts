@@ -8,7 +8,7 @@ import { loadFeatures } from "../curate/config";
 import {
   assetManifestStep,
   assetRootStep,
-  browserSteps,
+  browserStep,
   checkStep,
   classOrderStep,
   classTokensStep,
@@ -29,7 +29,6 @@ import {
   modernCssStep,
   sourceWatches,
   ssrBoundaryStep,
-  featuresStep,
   testStep,
   typeAwareLintStep,
   typecheckStep,
@@ -173,24 +172,24 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
 
   // Opt-in for the same reason: which trees are one-way, and which files may cross into them, is a
   // repository's own rule.
-  const importBoundary = options.importBoundary;
-  if (importBoundary !== undefined && options.features !== undefined) {
+  if (options.importBoundary !== undefined) {
+    const { features, ...importBoundary } = options.importBoundary;
     steps.push(
-      checkStep(
-        "validate-import-boundary",
-        async () => {
-          try {
-            return checkImportBoundary({ root, ...importBoundary, features: await loadFeatures({ root }) });
-          } catch (error) {
-            if (!(error instanceof CliError)) throw error;
-            return checkResult([fail(error.message)], "");
-          }
-        },
-        { watches: sourceWatches([...(importBoundary.sources ?? ["src"]), ...importBoundary.guarded]) },
-      ),
+      features === true
+        ? checkStep(
+            "validate-import-boundary",
+            async () => {
+              try {
+                return checkImportBoundary({ root, ...importBoundary, features: await loadFeatures({ root }) });
+              } catch (error) {
+                if (!(error instanceof CliError)) throw error;
+                return checkResult([fail(error.message)], "");
+              }
+            },
+            { watches: sourceWatches([...(importBoundary.sources ?? ["src"]), ...importBoundary.guarded]) },
+          )
+        : importBoundaryStep({ root, ...importBoundary }),
     );
-  } else if (importBoundary !== undefined) {
-    steps.push(importBoundaryStep({ root, ...importBoundary }));
   }
 
   if (options.vendorDir !== undefined) {
@@ -228,7 +227,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
   const devTrees = { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] };
   steps.push(devBoundaryStep(devTrees));
-  // Deploy tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
+  // Release tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
   steps.push(devBundleStep(devTrees));
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.
@@ -241,13 +240,8 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
       ? workerTrace
       : (cwd: string): Promise<string[]> => unionReach([workerTrace(cwd), servedAssetReach(cwd, workerConfig, assetConfig)]);
   if (options.db) steps.push(...dbSteps({ root }));
-  if (options.browser === true) steps.push(...browserSteps({ engines: ["chromium"] }));
-  else if (options.browser !== undefined && options.browser !== false) steps.push(...browserSteps({ engines: options.browser.engines }));
+  if (options.browser === true) steps.push(browserStep());
   if (options.workerd) steps.push(workerdStep({ widen: workerdWiden }));
-  if (options.features !== undefined) {
-    const assets = options.assetConfig === undefined ? {} : { assetConfig: options.assetConfig, assetOut };
-    steps.push(featuresStep({ root, ...options.features, ...assets }));
-  }
 
   return steps;
 }

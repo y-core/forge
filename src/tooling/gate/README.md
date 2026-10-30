@@ -56,7 +56,6 @@ Then wire the scripts:
     "verify": "forge verify",
     "verify:static": "forge verify --tier static",
     "verify:unit": "forge verify --tier unit",
-    "verify:deploy": "forge verify --tier deploy",
     "verify:release": "forge verify --tier release",
     "lint": "forge verify --only lint",
     "fix": "forge verify --fix"
@@ -78,15 +77,14 @@ Each script is a tier, and each tier runs everything the one above it in this ta
 | Writing, between edits | `bun run verify:static` | Every row that judges the source rather than running it |
 | On a machine with no runtime installed | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
 | Closing a task | `bun run verify` | The runtime rows — workerd, database — over your pending changes. No browser spec |
-| Running CI on a tag | `bun run verify:deploy` | Every runtime row whole, the browser set on its primary engine, and the rows that judge a finished change: changelog, deployed bundle, features |
-| Signing off a release | `bun run verify:release` | The browser set again on each other engine you list, on the compat server |
+| Tagging a release, and the cron run | `bun run verify:release` | Every runtime row whole, the browser set on Chromium, and the rows that judge a finished change: changelog, deployed bundle |
 
 Which tier a row belongs to is decided by [`TESTING.md`][testing-6c] §6c's lines, never by how long it takes — with one exception, the browser set,
-which starts at `deploy` because the whole suite is too slow for the run a task closes on. A broken page is therefore caught by the nightly
-`verify:release` rather than at task close. `forge verify --list` prints the rows a tier resolves to.
+which starts at `release` because the whole suite is too slow for the run a task closes on. A broken page is therefore caught by the cron
+run's `verify:release` rather than at task close. `forge verify --list` prints the rows a tier resolves to.
 
-**At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. From `deploy` up
-every row runs whole.
+**At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. At `release` every
+row runs whole.
 
 ---
 
@@ -201,13 +199,12 @@ Most rows are opt-in, and each option is a question about your repository rather
 | `ui/*` components and a Tailwind stylesheet | `design` | The platform-CSS and class rows; `design.cssDir` adds `validate-css-tokens` |
 | Contrast pairs this repository actually draws | `contrast` | `validate-contrast` — the audit fails a run that measured no pairs |
 | A browser-only directory tier of your own | `ssrBoundary` | `validate-ssr-boundary`; `ssrBoundary.serverDirs` adds `validate-client-boundary`, which fails a module under `clientDirs` importing one of those directories at value |
-| A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; beside `features`, it also reads the feature manifest |
+| A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; `importBoundary.features: true` also reads the feature manifest |
 | A third-party tree copied into your source | `vendorDir` | `validate-vendor-boundary` — a module inside it may import the tree itself and packages, never a directory or source file beside it under its parent |
 | Markdown oxfmt has been told to ignore | `markdown` | `validate-markdown` |
 | A library's `.tsx` compiled under a consumer's tsconfig | `jsx` | `validate-jsx`; an application states `jsxImportSource` once instead |
 | Cloned `.claude/` trees | `warden: true` | The `warden sync --check` row |
 | D1 schemas, Playwright specs, workerd specs | `db`, `browser`, `workerd` | The prerequisite-bearing rows, last in the table |
-| A demonstrator with a `config/features.ts` manifest | `features: {}` | `validate-features` — curates into a temp tree once per distinct resolved profile (default: each feature alone, then all) and runs its `unit` gate there, last in the table |
 
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's installed manifest, so an app
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Dev-only code of the
@@ -216,14 +213,14 @@ import another. Code the shared path does call goes behind the app's `#app/relax
 fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. The bundle row
 below still proves the built Worker.
 
-**`validate-dev-bundle` follows it, on the `deploy` tier.** It bundles the Worker config's `main` with esbuild — from the project, or from
+**`validate-dev-bundle` follows it, on the `release` tier.** It bundles the Worker config's `main` with esbuild — from the project, or from
 wrangler's own dependency — and fails when a `*.dev.ts` module, the app's or a dependency's, or a module from a directory a `forge.devOnly` subpath
 is published from, contributes to the output. A module tree-shaking removed does not count. It also fails when the shell's
 `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every development module; `forge cf dev` sets it in
 wrangler's child process only ([`NAMESPACES.md`][namespaces-5i] §5i). It refuses a Worker config that sets `alias`, `build`, `define` or `rules`, or
 whose `compatibility_flags` carries `nodejs_compat` or `nodejs_compat_v2`, at the top level or in an `env.*` block, since it models none of them.
 
-**Only `test` and `validate-dev-bundle` default above the `static` tier** — `test` to `unit`, the bundle to `deploy`: every other row judges
+**Only `test` and `validate-dev-bundle` default above the `static` tier** — `test` to `unit`, the bundle to `release`: every other row judges
 the source rather than running it. `design.sources` does
 not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should
 inherit deferrals keyed to `src/ui/…` paths.
@@ -309,7 +306,7 @@ bun run verify --affected          # run only the steps this change touches (bra
 bun run verify:release --report tmp/gate/   # write tmp/gate/report.json and every step's whole log, whatever the verdict
 ```
 
-**`--report <dir>` is for a run nobody is watching**, such as a nightly one. `report.json` names the tier, the `HEAD` commit, the tree, the start
+**`--report <dir>` is for a run nobody is watching**, such as a cron one. `report.json` names the tier, the `HEAD` commit, the tree, the start
 time, the duration and the verdict, then each step's status — `passed`, `failed`, `setup`, `skipped`, `untouched` or `unreached` — with its
 duration and the log file beside it. A browser row also lists its failing tests by engine, spec, title and first error line, read from Playwright's
 JSON reporter, which the gate adds to the row only under `--report`. A browser row that never reached a test — `webServer` or `globalSetup`
@@ -378,8 +375,7 @@ something writes into the tree while the gate runs, the run records nothing and 
 receipt also lists the steps it ran, so a table that now selects a step the receipt does not name runs the gate again.
 
 **A `runtime` receipt also names the `HEAD` it read your changes against, and answers only on that commit.** What its runtime rows ran depended on
-those changes, so the same tree on another commit runs the gate again. A `deploy` or `release` receipt ran every row whole and carries no such
-limit.
+those changes, so the same tree on another commit runs the gate again. A `release` receipt ran every row whole and carries no such limit.
 
 **The receipt lives in the git directory**, at `git rev-parse --git-path forge-verify-receipt.json` — `.git/forge-verify-receipt.json`, and a
 linked worktree gets its own. Nothing in your `.gitignore` needs to change. Why it lives there is [`BUILD_TOOLING.md`][bt-2f] §2f's.
@@ -452,17 +448,15 @@ a request can find.
 Probe for the **thing**, not the CLI that uses it — `hasWorkerd` answers for the runtime rather than for `bun`. Probing the CLI instead would pass
 vacuously and let every spec fail at launch.
 
-**`browserStep` requires the Playwright server its engine runs on, and never a local browser**: `PW_TEST_CONNECT_WS_ENDPOINT` names Chromium's,
-and `PLAYWRIGHT_COMPAT_WS_ENDPOINT` names the `playwright-compat` server Firefox and WebKit run on. A step whose projects span both is refused.
-With its variable unset the step fails rather than letting Playwright launch one. Otherwise it asks the server whether the installed
-`@playwright/test` may connect, and a failure prints a hint naming its cause:
+**`browserStep` requires the Playwright server `PW_TEST_CONNECT_WS_ENDPOINT` names, and never a local browser.** With the variable unset the step
+fails rather than letting Playwright launch one. Otherwise it asks the server whether the installed `@playwright/test` may connect, and a failure
+prints a hint naming its cause:
 
 ```text
 ✗ test:browser — Playwright server not found; `PW_TEST_CONNECT_WS_ENDPOINT` is unset; set it to the Playwright container's ws:// URL
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; nothing answered at ws://playwright:3000/ (connect ECONNREFUSED 172.18.0.12:3000); check the Playwright sidecar is running and that NO_PROXY includes `playwright`
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; the server runs Playwright 1.64 and `@playwright/test` is 1.60.0; pin `@playwright/test` to 1.64
 ✗ test:browser — Playwright server at ws://playwright:3000/ not found; `@playwright/test` cannot be resolved (Cannot find package '@playwright/test'); add it as a devDependency at the server's Playwright version
-✗ test:browser:firefox — Playwright compat server not found; `PLAYWRIGHT_COMPAT_WS_ENDPOINT` is unset; Firefox and WebKit run on the playwright-compat server — start it with `devctl infra up playwright-compat` and set the variable to its ws:// URL
 ```
 
 **`browserStep` spawns `playwright test --project=chromium` and `workerdStep` spawns `playwright test --project=workerd` — the installed binary
@@ -472,18 +466,25 @@ off `binDir`, whose shebang is node.** Not `bunx`, which installs from the regis
 
 ---
 
-## Running the browser set on more than one engine
+## Running Firefox and WebKit on a cron table
 
-Chromium is the browser set. Add Firefox and WebKit when your application needs wider compatibility, as its final sign-off.
-
-`browserSteps` gives each engine its own row. The primary engine's row is `test:browser` and runs from `deploy`, so a tag runs one engine;
-every other engine's row is `test:browser:<engine>` and runs only at `release`. The primary engine is Chromium when you list it and the first
-engine otherwise; `primary` names another. Your `playwright.config.ts` declares a project per engine.
+The gate runs the browser set on Chromium alone. Firefox and WebKit are never a gate row: they run from a second step table, `config/cron.ts`,
+which the cron runs after `verify:release` and you can run by hand:
 
 ```ts
-// config/steps.ts
-...browserSteps({ engines: ["chromium", "firefox", "webkit"] }),
+// config/cron.ts
+import { crossEngineStep } from "@y-core/forge/tooling/gate";
+
+export default [crossEngineStep()];
 ```
+
+```json
+"verify:cron": "forge verify --config config/cron.ts --tier release"
+```
+
+`crossEngineStep()` is one row, `test:browser:cross-engine`, spawning `playwright test --project=firefox --project=webkit` at `release`. Under
+`--report` it lists each failing spec with its engine, as `test:browser` does. **A table other than `config/steps.ts` leaves the verify receipt
+alone**, so a red cron run never costs you a `--reuse`.
 
 Those engines run on `playwright-compat`, which devctl starts only on request (`devctl infra up playwright-compat`). Playwright reads only
 `PW_TEST_CONNECT_WS_ENDPOINT`, and a project's `connectOptions` replaces that connection whole, so your config carries `exposeNetwork` and
@@ -515,13 +516,8 @@ export default defineConfig({
 });
 ```
 
-Every spec runs on them: an application's sign-off is the whole browser set on each engine, never a subset ([`TESTING.md`][testing-apps-6e]
+Every spec runs on them: an application's cross-engine run is the whole browser set on each engine, never a subset ([`TESTING.md`][testing-apps-6e]
 §6e).
-
-`browserSteps` takes the `narrow` described above, and only the primary engine's row uses it: the other rows run at `release`, where every row
-runs whole.
-
-`cloudflareWorkerSteps({ browser: { engines } })` calls `browserSteps` for you; `browser: true` is Chromium alone.
 
 ---
 

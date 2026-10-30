@@ -18,7 +18,28 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`validate-features` is gone, with `featuresStep`, `checkFeatures`, `FeaturesCheckConfig` and the preset's `features` option.** It ran the
+  whole `unit` gate once per curated skeleton, and could not pass for an app with `design` set, since the skeleton is not a git work tree. To keep
+  the import boundary reading `config/features.ts`, move the flag onto it: `importBoundary: { guarded, features: true }`.
+- **The `deploy` tier is gone; its rows start at `release`.** `GATE_TIERS` is `static`, `unit`, `runtime`, `release`, and `--tier deploy` is
+  refused. `test:browser`, `validate-dev-bundle` and `validate-changelog` now run at `release`. Delete the `verify:deploy` script, and point a
+  tag's CI at `verify:release`.
+- **Firefox and WebKit are no longer a gate row at any tier.** `browserSteps`, `isBrowserEngine` and `BrowserEngine` are removed, and
+  `browserStep` takes no `projects`: it runs Chromium alone. The preset's `browser` option is a boolean; replace `browser: { engines }` with
+  `browser: true`. Run the other engines through a cron table: add `config/cron.ts` default-exporting `[crossEngineStep()]` and a
+  `"verify:cron": "forge verify --config config/cron.ts --tier release"` script.
+
+### Added
+
+- **`crossEngineStep()` runs Firefox and WebKit as one row, `test:browser:cross-engine`, behind the `playwright-compat` server.** It defaults to
+  `release`, runs whole, and its `report.json` entry lists each failing spec with its engine. It belongs in a table other than `config/steps.ts`.
+- **Forge's own `config/cron.ts` and `verify:cron`**, which replace the `test:browser:cross-engine` script. task-forge's cron runs
+  `verify:release` and then `verify:cron` on each repository that declares both.
+- **A table other than `config/steps.ts` leaves the verify receipt alone.** `forge verify --config config/cron.ts` neither records a green run
+  nor clears a standing one, so a red cron run never makes `--reuse` re-run the gate. `GateCommandConfig.receipt: false` does the same for a
+  table handed to `createGateCommand`.
 
 ---
 

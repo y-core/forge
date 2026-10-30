@@ -1,6 +1,5 @@
 import { checkResult, fail, scannedNothing, warn } from "../../../src/tooling/gate/finding";
 import type { CheckResult, Finding, GateTier } from "../../../src/tooling/gate/types";
-import { GATE_TIERS } from "../../../src/tooling/gate/types";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { build } from "../index/build";
@@ -181,7 +180,7 @@ export function checkGoldenQueries(config: GoldenCheckConfig, tier: GateTier = "
     const margin = thinnest - loudest;
     const guarded = config.queries === undefined || queries.length >= MARGIN_QUORUM;
     if (guarded && margin < MARGIN) {
-      const report = GATE_TIERS.indexOf(tier) >= GATE_TIERS.indexOf("deploy") ? fail : warn;
+      const report = tier === "release" ? fail : warn;
       findings.push(
         report(`the floor has ${margin.toFixed(3)} of room left, under ${MARGIN.toFixed(2)} — \`FLOOR\` is ${FLOOR} and sits between these two`, {
           file: "warden/src/search/search.ts",

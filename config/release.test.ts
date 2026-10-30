@@ -17,11 +17,8 @@ const labels = (tier: GateTier): string[] => {
 /** The steps that need a runtime, and so exist nowhere below `runtime`. */
 const RUNTIME_ROWS = ["test:workerd", "db:lint", "db:schema"];
 
-/** The steps a deploy is the first run to reach; the Chromium suite is one, too slow for the run a task closes on. */
-const DEPLOY_ONLY = ["validate-changelog", "test:browser"];
-
-/** The engine matrix, which a release is the only run to reach. */
-const RELEASE_ONLY = ["test:browser:firefox", "test:browser:webkit"];
+/** The steps a release is the only run to reach; the Chromium suite is one, too slow for the run a task closes on. */
+const RELEASE_ONLY = ["validate-changelog", "test:browser"];
 
 describe("the gate a release runs", () => {
   it("names the script rather than the binary, which is what tells an unrunnable gate from a failing one", () => {
@@ -44,23 +41,23 @@ describe("the gate a release runs", () => {
     expect(RUNTIME_ROWS.filter((label) => labels("unit").includes(label))).toEqual([]);
   });
 
-  it("reaches the deploy rows from deploy up and the engine matrix at release alone", () => {
-    expect([...DEPLOY_ONLY, ...RELEASE_ONLY].every((label) => labels("release").includes(label))).toBe(true);
-    expect(DEPLOY_ONLY.filter((label) => labels("runtime").includes(label))).toEqual([]);
-    expect(RELEASE_ONLY.filter((label) => labels("deploy").includes(label))).toEqual([]);
+  it("reaches the release rows at release alone", () => {
+    expect(RELEASE_ONLY.every((label) => labels("release").includes(label))).toBe(true);
+    expect(RELEASE_ONLY.filter((label) => labels("runtime").includes(label))).toEqual([]);
   });
 
   it("publishes a script per tier, the bare one running the runtime tier", () => {
     const scripts = (JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8")) as { scripts: Record<string, string> }).scripts;
     const gate = "bun run src/tooling/root/bin.ts verify";
 
-    expect([scripts.verify, scripts["verify:static"], scripts["verify:unit"], scripts["verify:deploy"], scripts["verify:release"]]).toEqual([
+    expect([scripts.verify, scripts["verify:static"], scripts["verify:unit"], scripts["verify:release"]]).toEqual([
       gate,
       `${gate} --tier static`,
       `${gate} --tier unit`,
-      `${gate} --tier deploy`,
       `${gate} --tier release`,
     ]);
+    expect(scripts["verify:cron"]).toBe(`${gate} --config config/cron.ts --tier release`);
+    expect(scripts["verify:deploy"]).toBeUndefined();
     expect(scripts.prepublishOnly).toBe("bun run verify:release");
   });
 

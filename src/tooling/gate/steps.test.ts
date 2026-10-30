@@ -54,7 +54,7 @@ describe("isCheckStep()", () => {
 
 describe("failsWhenAbsent()", () => {
   it("skips an absent prerequisite below runtime and fails it from runtime up", () => {
-    expect(GATE_TIERS.map(failsWhenAbsent)).toEqual([false, false, true, true, true]);
+    expect(GATE_TIERS.map(failsWhenAbsent)).toEqual([false, false, true, true]);
   });
 });
 
@@ -63,8 +63,7 @@ describe("selectSteps() — tier membership", () => {
     { label: "lint", tail: 10, cmd: ["l"] },
     { label: "test", tier: "unit", tail: 10, cmd: ["t"] },
     { label: "browser", tier: "runtime", tail: 10, cmd: ["b"] },
-    { label: "changelog", tier: "deploy", tail: 10, cmd: ["c"] },
-    { label: "browser:webkit", tier: "release", tail: 10, cmd: ["w"] },
+    { label: "changelog", tier: "release", tail: 10, cmd: ["c"] },
   ];
 
   function tierOf(tier: GateTier): string[] {
@@ -73,16 +72,10 @@ describe("selectSteps() — tier membership", () => {
   }
 
   it("adds exactly one tier's rows at each step up the ladder", () => {
-    expect(GATE_TIERS.map(tierOf)).toEqual([
-      ["lint"],
-      ["lint", "test"],
-      ["lint", "test", "browser"],
-      ["lint", "test", "browser", "changelog"],
-      ["lint", "test", "browser", "changelog", "browser:webkit"],
-    ]);
+    expect(GATE_TIERS.map(tierOf)).toEqual([["lint"], ["lint", "test"], ["lint", "test", "browser"], ["lint", "test", "browser", "changelog"]]);
   });
 
-  it("makes static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release for any table", () => {
+  it("makes static ⊆ unit ⊆ runtime ⊆ release for any table", () => {
     const runs = GATE_TIERS.map(tierOf);
 
     expect(runs.slice(1).every((run, index) => (runs[index] ?? []).every((label) => run.includes(label)))).toBe(true);
@@ -567,13 +560,12 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
     expect(reachAt("runtime", ["tools/gen.ts"], ["tools/**"])).toMatchObject({ browser: "whole", db: "whole" });
   });
 
-  it("runs every row whole below `runtime` and from `deploy` up, whatever is pending", () => {
+  it("runs every row whole below `runtime` and at `release`, whatever is pending", () => {
     const pending = ["src/ui/a.ts"];
 
     expect(GATE_TIERS.filter((tier) => tier !== "runtime").map((tier) => reachAt(tier, pending))).toEqual([
       { lint: "whole" },
       { lint: "whole", test: "whole" },
-      { lint: "whole", test: "whole", browser: "whole", db: "whole" },
       { lint: "whole", test: "whole", browser: "whole", db: "whole", webkit: "whole" },
     ]);
   });

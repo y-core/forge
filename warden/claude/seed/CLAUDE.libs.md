@@ -64,8 +64,8 @@
 ```bash
 bun run verify:static          # the loop to write in — every row that judges the source; with touched tests, the task check
 bun run verify                 # the gate a commit closes on — runtime suites narrowed to pending changes; no browser spec
-bun run verify:deploy          # every runtime suite whole, plus the browser set on its primary engine
-bun run verify:release         # the release gate — the above, plus each engine you opt into
+bun run verify:release         # the release gate — every runtime suite whole, plus the browser set on Chromium
+bun run verify:cron            # the cron table, run after verify:release — Firefox and WebKit
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
 bun run lint                   # check only, never write (`verify --only lint`)

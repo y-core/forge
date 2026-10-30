@@ -233,7 +233,7 @@ function optional<K extends string>(key: K, value: string | undefined): Record<K
 
 /** Builds the `verify` command over a project's step table. @public */
 export function createGateCommand(config: GateCommandConfig): Command<typeof gateFlags> {
-  const { cwd, steps: table, binDir = `${cwd}/node_modules/.bin`, gateInputs } = config;
+  const { cwd, steps: table, binDir = `${cwd}/node_modules/.bin`, gateInputs, receipt: keepsReceipt = true } = config;
 
   return createCommand({
     name: "verify",
@@ -491,7 +491,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         };
         writeFileSync(join(reportDir, "report.json"), `${JSON.stringify(report, null, 2)}\n`, "utf-8");
       }
-      if (unscoped && tree !== undefined) {
+      if (unscoped && tree !== undefined && keepsReceipt) {
         if (!green) clearReceipt(cwd);
         else if (worktreeHash(cwd) === tree) recordReceipt(cwd, { tree, tier, ...(base === undefined ? {} : { base }), labels });
         else console.log(formatReceiptWithheld(style));
@@ -527,7 +527,12 @@ export function createGateBinCommand(): Command<typeof binFlags> {
       }
       const table = relative(root, resolve(root, path)).split(sep).join("/");
 
-      await createGateCommand({ cwd: root, steps: loaded.value, gateInputs: [...(declared ?? []), table] }).run?.(args, flags, ctx);
+      await createGateCommand({
+        cwd: root,
+        steps: loaded.value,
+        gateInputs: [...(declared ?? []), table],
+        receipt: table === DEFAULT_STEPS_CONFIG,
+      }).run?.(args, flags, ctx);
     },
   });
 }

@@ -160,7 +160,7 @@ config nothing executes.
 
 **Ordering is never a reason to decline an opt-in.** The gate sorts by tier after filtering, so the lower tier always runs first and an appended
 `unit` row always runs ahead of a preset's `runtime` one ([`TESTING.md`][testing-6a] §6a). A repository that declines `browser: true` so it can
-append `browserSteps` itself, later in the table, is working around a problem the selector does not have.
+append `browserStep` itself, later in the table, is working around a problem the selector does not have.
 
 **The opt-ins an application takes are a statement about the application, not about its gate's shape:** `db` when it has a D1 binding, `browser`
 when it has a browser set, `workerd` when it has one, `design` when it uses `ui/*`, `warden` when it clones the governing corpus, and `markdown`
@@ -178,8 +178,8 @@ same bytes.
 | `verify` | `forge verify` — the `runtime` tier, the gate a commit closes on |
 | `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it |
 | `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed |
-| `verify:deploy` | `forge verify --tier deploy` — what the remote runs on a tag, and the first tier with the browser set |
-| `verify:release` | `forge verify --tier release` — sign-off: every runtime suite whole, plus every browser spec on each engine the application opts into |
+| `verify:release` | `forge verify --tier release` — what a tag and the cron run: every runtime suite whole, the browser set, and the rows that judge a finished change |
+| `verify:cron` | `forge verify --config config/cron.ts --tier release` — the cron table, which the cron runs after `verify:release`: Firefox and WebKit |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |
 | `test` | `bun test` |

@@ -7,6 +7,7 @@ import { worktreeFixture } from "../cli/worktree.fixture";
 import { createReleaseBinCommand } from "../release/release";
 import { PLAIN } from "../term/color";
 import { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
+import { readReceipt } from "./receipt";
 
 const roots: string[] = [];
 
@@ -149,5 +150,49 @@ describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
 
     expect(code).toBe(1);
     expect(logs).toContain("`gate/steps.ts` exports GATE_INPUTS, which must be an array of glob strings.");
+  });
+});
+
+describe("createGateBinCommand() — a table other than config/steps.ts", () => {
+  const ok = 'export default [{ label: "unit", run: () => ({ ok: true, findings: [], summary: "" }) }];\n';
+  const red =
+    'export default [{ label: "cross-engine", run: () => ({ ok: false, findings: [{ level: "fail", message: "no" }], summary: "" }) }];\n';
+
+  async function runBin(root: string, config?: string): Promise<number | undefined> {
+    let code: number | undefined;
+    const ctx: CliContext = {
+      io: {
+        stdout: () => undefined,
+        stderr: () => undefined,
+        exit: (exitCode: number): never => {
+          code = exitCode;
+          throw new Error("exit");
+        },
+      },
+      out: PLAIN,
+      err: PLAIN,
+      width: 80,
+    };
+    const original = console.log;
+    console.log = () => undefined;
+    try {
+      await GATE.run?.([], { root, ...(config === undefined ? {} : { config }), list: false, fix: false, only: [] } as never, ctx);
+    } catch (error) {
+      if (code === undefined) throw error;
+    } finally {
+      console.log = original;
+    }
+    return code;
+  }
+
+  it("leaves the gate's green receipt standing when it fails", async () => {
+    const root = worktreeFixture({ "config/steps.ts": ok, "config/cron.ts": red });
+    roots.push(root);
+
+    expect(await runBin(root)).toBeUndefined();
+    const standing = readReceipt(root);
+    expect(standing?.labels).toEqual(["unit"]);
+    expect(await runBin(root, "config/cron.ts")).toBe(1);
+    expect(readReceipt(root)).toEqual(standing);
   });
 });

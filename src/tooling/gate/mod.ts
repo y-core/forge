@@ -7,7 +7,6 @@ export {
   assetManifestStep,
   assetRootStep,
   browserStep,
-  browserSteps,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -16,6 +15,7 @@ export {
   commentBudgetStep,
   compatibilityStep,
   contrastStep,
+  crossEngineStep,
   crossEngineTagsStep,
   cssCoverageStep,
   cssSourcesStep,
@@ -39,7 +39,6 @@ export {
   packagingStep,
   ssrBoundaryStep,
   stubGlobalsStep,
-  featuresStep,
   testStep,
   typeAwareLintStep,
   checkStep,
@@ -60,8 +59,6 @@ export type { AssetManifestCheckConfig } from "./checks/types";
 export { checkAssetManifest } from "./checks/asset-manifest";
 export type { AssetRootCheckConfig } from "./checks/types";
 export { checkAssetRoot } from "./checks/asset-root";
-export type { BrowserEngine } from "./checks/types";
-export { isBrowserEngine } from "./checks/browser";
 export { hasWorkerd } from "./checks/workerd";
 export type { ImportBoundaryCheckConfig } from "./checks/types";
 export { checkImportBoundary, guardedSubpaths, isGuarded } from "./checks/import-boundary";
@@ -230,8 +227,6 @@ export {
 } from "./checks/source-scan";
 export { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./checks/ssr-boundary";
 export type { SsrBoundaryCheckConfig } from "./checks/types";
-export { checkFeatures } from "./checks/features";
-export type { FeaturesCheckConfig } from "./checks/types";
 export type { GateCommandConfig } from "./types";
 export { createGateBinCommand, createGateCommand, DEFAULT_STEPS_CONFIG } from "./command";
 export type { CheckResult, Finding, FindingLevel } from "./types";

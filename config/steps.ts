@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import pkg from "../package.json" with { type: "json" };
 import { resolveAppRoot } from "../src/tooling/cli/mod";
 import {
-  browserSteps,
+  browserStep,
   bundleStep,
   classGroupsStep,
   classOrderStep,
@@ -233,7 +233,7 @@ export const STEPS: readonly Step[] = [
   wardenStep({ root: ROOT, kind: "libs", catalogue: "warden/CATALOGUE.md", canonHome: true }, { watches: CORPUS_WATCHES }),
   wardenQueriesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
   duplicatesStep({ root: ROOT, kind: "libs" }, { watches: CORPUS_WATCHES }),
-  ...browserSteps({ engines: ["chromium", "firefox", "webkit"] }),
+  browserStep(),
   workerdStep({ leavesNoTemp: true, narrow: { wide: ["tests/fixtures/**"] }, widen: workerdSpecReach }),
   ...dbSteps({
     root: "tests/fixtures/db-schema",

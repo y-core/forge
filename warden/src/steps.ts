@@ -18,10 +18,10 @@ export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): Ch
   return checkStep("validate-docs", () => checkDocs(config), options);
 }
 
-/** Checks the changelog's headings against the current package version, on the `deploy` tier. @public */
+/** Checks the changelog's headings against the current package version, on the `release` tier. @public */
 export function changelogStep(config: ChangelogCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-changelog", () => checkChangelog(config), options, {
-    tier: "deploy",
+    tier: "release",
     watches: [config.file ?? "CHANGELOG.md", config.sectionsFile ?? "config/changelog-sections.json"],
   });
 }

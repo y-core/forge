@@ -23,7 +23,7 @@ audience: consumer
 - §1d Waiting on an htmx Swap: `htmx:after:swap` on `document`, once the new markup is live
 - §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
 - §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, on `createTestHarness` under node
-- §1g The Cross-Engine Subset: which specs forge's release also runs in Firefox and WebKit, and how a skip on one engine is written
+- §1g The Cross-Engine Subset: which specs also run in Firefox and WebKit, outside the gate, and how a skip on one engine is written
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -71,16 +71,17 @@ See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is 
 
 ### 1c. The Browser Set
 
-**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`, and §1g's subset also runs in Firefox and WebKit at
-`release`.** `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it, never restate it here.
+**A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`, and §1g's subset runs in Firefox and WebKit under `bun run
+verify:cron`, the cron table `config/cron.ts`.** `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it,
+never restate it here.
 
 **The set runs the installed binary under node — `playwright test` with one `--project` per engine, in the script and in `browserStep`'s argv alike
 — because under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox.** [`NAMESPACES.md`][namespaces-3c] §3c is
 that ruling's single home. The bare name is resolved off the runner's `binDir`, as every command step's is — a gate never reaches a registry to
 find what it runs.
 
-**Chromium's row runs from `deploy`, whole, for the reason [`TESTING.md`][testing-1c] §1c gives**; §1g's Firefox and WebKit rows run only at
-`release`.
+**Chromium's row runs at `release`, whole, for the reason [`TESTING.md`][testing-1c] §1c gives**; §1g's Firefox and WebKit run is no gate row
+at any tier.
 
 **A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
 
@@ -178,8 +179,9 @@ a machine with no runtime installed.
 
 ### 1g. The Cross-Engine Subset
 
-**forge's `release` always runs this subset on Firefox and WebKit, because forge ships the UI an application signs off against there.** For an
-application those engines are an opt-in that runs every spec ([`TESTING.md`][testing-apps-6e] §6e).
+**This subset runs on Firefox and WebKit by hand or on the cron run, through `verify:cron`, never in the gate**, because forge ships the UI an
+application signs off against there and an engine difference is rare enough that a tag need not wait on one. For an application those engines run
+every spec ([`TESTING.md`][testing-apps-6e] §6e).
 
 **A spec joins the subset when its assertion reads something the engine computes rather than something forge's JavaScript wrote.** That covers CSS
 layout and anchor placement; top-layer, popover, dialog, invoker and light-dismiss behaviour; forced colors and UA styling; resolved colour and
@@ -364,16 +366,16 @@ See [`TESTING.md`][testing-6] §6 for the one command and its tiers, the flag ta
 `config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
 **A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, never a speed estimate**, and an omitted `tier` is `static`. `unit` adds `test`;
-`runtime` adds the workerd suite and the database rows (§1f); `deploy` runs those whole and adds the Chromium set (§1c) and the rows that judge a
-finished change; `release` adds §1g's Firefox and WebKit rows (§1c). `test` covers every co-located suite that judges nothing external — `src/`,
+`runtime` adds the workerd suite and the database rows (§1f); `release` runs those whole and adds the Chromium set (§1c) and the rows that judge a
+finished change. `test` covers every co-located suite that judges nothing external — `src/`,
 `config/` and `warden/src/` — so `unit` runs those alone and the workerd set is reached only through its own step (§1f).
 
 **forge's workerd row runs whole when a change reaches what a spec loads without importing it**: a file named by `new URL(…, import.meta.url)`,
 or a Worker config with its `main`'s closure. `config/spec-reach.ts` is its `widen`, and refuses any such site it cannot read as a literal. A
 fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`.
 
-**forge's tag runs `unit` on the remote, not `deploy`**: `forge release` refuses to tag a tree `verify:release` has not passed, and that answers
-`deploy` ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
+**forge's tag runs `unit` on the remote, not `release`**: `forge release` refuses to tag a tree `verify:release` has not passed locally
+([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
 
 **The reviewer's baseline is a static reuse run, and the developer's task check is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the
 reviewer run `verify --tier static --reuse` and the task's touched test files. The task check's `static` run records a receipt naming the tree it

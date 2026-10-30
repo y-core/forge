@@ -8,7 +8,7 @@ import type { CliContext } from "../cli/types";
 import { worktreeHash, worktreeHead } from "../cli/worktree";
 import { cloneWorktree, worktreeFixture } from "../cli/worktree.fixture";
 import { PLAIN } from "../term/color";
-import { browserEnginesRequired } from "./builders";
+import { browserRequired, COMPAT_SERVER, PRIMARY_SERVER } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
@@ -78,13 +78,14 @@ function context(): { ctx: CliContext; logs: string[] } {
 async function run(
   steps: readonly Step[],
   flags: Record<string, unknown> = {},
-  opts: { cwd?: string; gateInputs?: readonly string[] } = {},
+  opts: { cwd?: string; gateInputs?: readonly string[]; receipt?: boolean } = {},
 ): Promise<{ logs: string[]; code: number | undefined }> {
   const { ctx, logs } = context();
   const command = createGateCommand({
     cwd: opts.cwd ?? fixtureRoot(),
     steps,
     ...(opts.gateInputs === undefined ? {} : { gateInputs: opts.gateInputs }),
+    ...(opts.receipt === undefined ? {} : { receipt: opts.receipt }),
   });
   const original = console.log;
   const originalError = console.error;
@@ -116,9 +117,9 @@ describe("createGateCommand() — the tier reaches a check", () => {
 
   it("hands a check the tier of the run, which a check may vary its strictness on", async () => {
     seen.length = 0;
-    for (const tier of ["static", "unit", "runtime", "deploy", "release"]) await run([recording], { tier });
+    for (const tier of ["static", "unit", "runtime", "release"]) await run([recording], { tier });
 
-    expect(seen).toEqual(["static", "unit", "runtime", "deploy", "release"]);
+    expect(seen).toEqual(["static", "unit", "runtime", "release"]);
   });
 
   it("resolves a bare run to runtime, so `verify` is the run a task closes on", async () => {
@@ -133,13 +134,13 @@ describe("createGateCommand() — resolving the tier", () => {
   const trivial: Step = { label: "alpha", run: () => checkResult([], "") };
   const flags = createGateCommand({ cwd: "/nowhere", steps: [trivial] }).flags;
 
-  it("refuses an unrecognised --tier, naming the five it knows and running nothing", async () => {
+  it("refuses an unrecognised --tier, the retired `deploy` included, naming the four it knows and running nothing", async () => {
     const called: string[] = [];
     const recording: Step = { label: "alpha", run: () => (called.push("alpha"), checkResult([], "")) };
-    const { logs, code } = await run([recording], { tier: "full" });
+    const { logs, code } = await run([recording], { tier: "deploy" });
 
     expect({ logs, code, called }).toEqual({
-      logs: ['Unknown --tier: "full". Known tiers: static, unit, runtime, deploy, release.'],
+      logs: ['Unknown --tier: "deploy". Known tiers: static, unit, runtime, release.'],
       code: 1,
       called: [],
     });
@@ -170,7 +171,7 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
   });
 
   it("fails it from the runtime tier up, which promise that a runtime ran", async () => {
-    for (const tier of ["runtime", "deploy", "release"]) {
+    for (const tier of ["runtime", "release"]) {
       const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier });
 
       expect(logs).toContain("✗ delta — tailwindcss not found; run `bun add -d tailwindcss`");
@@ -204,11 +205,26 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
 
   it("gives every browser step under one Playwright server the hint its one probe earned", async () => {
     const probes = {
+      env: { PW_TEST_CONNECT_WS_ENDPOINT: "ws://shared.test:3000/" },
+      serverStatus: () => Promise.resolve({ state: "mismatch" as const, server: "1.64" }),
+    };
+    const { logs } = await run(
+      [passing("journey", browserRequired(PRIMARY_SERVER, probes)), passing("layout", browserRequired(PRIMARY_SERVER, probes))],
+      { tier: "unit" },
+    );
+    const skips = logs.filter((line) => line.startsWith("○ journey") || line.startsWith("○ layout"));
+
+    expect(skips).toHaveLength(2);
+    expect(skips.every((line) => line.includes("the server runs Playwright 1.64"))).toBe(true);
+  });
+
+  it("gives every cross-engine row under the compat server the hint its one probe earned", async () => {
+    const probes = {
       env: { PLAYWRIGHT_COMPAT_WS_ENDPOINT: "ws://compat.test:3000/" },
       serverStatus: () => Promise.resolve({ state: "mismatch" as const, server: "1.64" }),
     };
     const { logs } = await run(
-      [passing("firefox", browserEnginesRequired(["firefox"], probes)), passing("webkit", browserEnginesRequired(["webkit"], probes))],
+      [passing("firefox", browserRequired(COMPAT_SERVER, probes)), passing("webkit", browserRequired(COMPAT_SERVER, probes))],
       { tier: "unit" },
     );
     const skips = logs.filter((line) => line.startsWith("○ firefox") || line.startsWith("○ webkit"));
@@ -427,6 +443,17 @@ describe("createGateCommand() — the receipt a passing run records", () => {
     });
   });
 
+  it("neither records nor clears a receipt when the table is not the gate's", async () => {
+    const { root, steps } = await recorded();
+    const standing = readReceipt(root);
+    await run([failing("cross-engine")], {}, { cwd: root, receipt: false });
+    expect(readReceipt(root)).toEqual(standing);
+
+    clearReceipt(root);
+    await run(steps, {}, { cwd: root, receipt: false });
+    expect(readReceipt(root)).toBeUndefined();
+  });
+
   it("answers --reuse on the same tree without calling a step, naming the hash", async () => {
     const { root, calls, steps } = await recorded();
     const { logs, code } = await run(steps, { reuse: true }, { cwd: root });
@@ -505,10 +532,10 @@ describe("createGateCommand() — the receipt a passing run records", () => {
 
     clearReceipt(root);
     calls.length = 0;
-    recordReceipt(root, { tree, tier: "deploy", base: "0".repeat(40), labels: ["alpha"] });
+    recordReceipt(root, { tree, tier: "release", base: "0".repeat(40), labels: ["alpha"] });
     const { logs } = await run(steps, { reuse: true }, { cwd: root });
     expect(calls).toEqual([]);
-    expect(logs).toEqual([`✓ verify — reused the passing deploy run of tree ${tree}; no step ran`]);
+    expect(logs).toEqual([`✓ verify — reused the passing release run of tree ${tree}; no step ran`]);
   });
 
   it("refuses a runtime receipt recorded against another HEAD, and reuses one recorded against this one", async () => {
@@ -822,14 +849,12 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
     expect({ probed, code }).toEqual({ probed: [], code: undefined });
   });
 
-  it("runs every row whole from the deploy tier up, whatever is pending", async () => {
-    for (const tier of ["deploy", "release"]) {
-      const root = worktreeClone();
-      writeFileSync(join(root, "docs/A.md"), "edited\n");
-      await run(table(), { tier }, { cwd: root });
+  it("runs every row whole at the release tier, whatever is pending", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "docs/A.md"), "edited\n");
+    await run(table(), { tier: "release" }, { cwd: root });
 
-      expect([spawnedWith(root, "browser"), spawnedWith(root, "db")]).toEqual(["whole", "whole"]);
-    }
+    expect([spawnedWith(root, "browser"), spawnedWith(root, "db")]).toEqual(["whole", "whole"]);
   });
 
   it("refuses a table whose nested glob matches no file in the work tree, before any row runs", async () => {
@@ -988,9 +1013,9 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     ]);
   });
 
-  it("never probes from the deploy tier up, where every row runs whole", async () => {
+  it("never probes at the release tier, where every row runs whole", async () => {
     const root = editedClone();
-    await run([probing("none")], { tier: "deploy" }, { cwd: root });
+    await run([probing("none")], { tier: "release" }, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: false, args: "whole" });
   });

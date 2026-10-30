@@ -4,7 +4,6 @@ import { isAbsolute } from "node:path";
 import { importClosure } from "../assets/closure";
 import { checkAssetManifest } from "./checks/asset-manifest";
 import { checkAssetRoot } from "./checks/asset-root";
-import { isBrowserEngine } from "./checks/browser";
 import { checkBundle, checkNodeExports, hasEsbuild } from "./checks/bundle";
 import { checkClassGroups } from "./checks/class-groups";
 import { checkClassOrder } from "./checks/class-order";
@@ -24,7 +23,6 @@ import { checkDevBundle } from "./checks/dev-bundle";
 import { checkExports } from "./checks/exports";
 import { checkExposure } from "./checks/exposure";
 import { checkFadedText } from "./checks/faded-text";
-import { checkFeatures } from "./checks/features";
 import { checkIccProfile } from "./checks/icc-profile";
 import { checkImportBoundary } from "./checks/import-boundary";
 import { checkJsx } from "./checks/jsx";
@@ -65,8 +63,6 @@ import type { ModernCssCheckConfig } from "./checks/types";
 import type { PackagingCheckConfig } from "./checks/types";
 import type { NamespaceGraphCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
-import type { FeaturesCheckConfig } from "./checks/types";
-import type { BrowserEngine } from "./checks/types";
 import type { DeclaredGraph } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
 import { PLAYWRIGHT_RESULTS } from "./playwright-results";
@@ -252,24 +248,22 @@ interface PlaywrightServer {
   running: string;
 }
 
-const PRIMARY_SERVER: PlaywrightServer = {
+/** The server Chromium runs on. @internal */
+export const PRIMARY_SERVER: PlaywrightServer = {
   variable: "PW_TEST_CONNECT_WS_ENDPOINT",
   tool: "Playwright server",
   unset: "set it to the Playwright container's ws:// URL",
   running: "check the Playwright sidecar is running",
 };
 
-const COMPAT_SERVER: PlaywrightServer = {
+/** The server Firefox and WebKit run on. @internal */
+export const COMPAT_SERVER: PlaywrightServer = {
   variable: "PLAYWRIGHT_COMPAT_WS_ENDPOINT",
   tool: "Playwright compat server",
   unset:
     "Firefox and WebKit run on the playwright-compat server — start it with `devctl infra up playwright-compat` and set the variable to its ws:// URL",
   running: "check the playwright-compat server is up (`devctl infra up playwright-compat`)",
 };
-
-function serverFor(engine: string): PlaywrightServer {
-  return engine === "chromium" ? PRIMARY_SERVER : COMPAT_SERVER;
-}
 
 // Every browser step under one endpoint names the same tool, and the gate probes a tool once, so the
 // answer is kept per endpoint: a step whose own probe never ran still prints what the server said.
@@ -302,21 +296,8 @@ function playwrightServerRequired(
   };
 }
 
-/** The browser step's requirement: the Playwright server its engines run on — PW_TEST_CONNECT_WS_ENDPOINT's for Chromium, PLAYWRIGHT_COMPAT_WS_ENDPOINT's for Firefox and WebKit — failing when it names none. @internal */
-export function browserEnginesRequired(projects: readonly string[], probes: Partial<BrowserProbes> = {}): StepRequirement {
-  for (const project of projects) {
-    if (!isBrowserEngine(project)) {
-      throw new Error(`browserStep: project "${project}" is not a browser engine; run it through its own step, or state \`requires\``);
-    }
-  }
-  const primaryProject = projects.find((project) => serverFor(project) === PRIMARY_SERVER);
-  const compatProject = projects.find((project) => serverFor(project) === COMPAT_SERVER);
-  if (primaryProject !== undefined && compatProject !== undefined) {
-    throw new Error(
-      `browserStep: "${primaryProject}" and "${compatProject}" run on different Playwright servers; give each engine its own row with browserSteps`,
-    );
-  }
-  const server = compatProject === undefined ? PRIMARY_SERVER : COMPAT_SERVER;
+/** A browser row's requirement: the Playwright server `server.variable` names, failing when it names none. @internal */
+export function browserRequired(server: PlaywrightServer, probes: Partial<BrowserProbes> = {}): StepRequirement {
   const env = probes.env ?? process.env;
   const endpoint = env[server.variable];
   if (endpoint === undefined || endpoint === "") {
@@ -329,42 +310,34 @@ export function browserEnginesRequired(projects: readonly string[], probes: Part
   });
 }
 
-/** `playwright test` under node over the named `projects` (default `["chromium"]`), defaulting to the `deploy` tier: it needs the Playwright server, and the whole suite is too slow for the run a task closes on. Always run whole. Throws on a project that is not a browser engine unless `requires` is stated, or on projects that run on different Playwright servers. @public */
-export function browserStep(options: { projects?: readonly [string, ...string[]] } & StepOptions = {}): CommandStep {
-  const projects = options.projects ?? ["chromium"];
+/** `playwright test --project=chromium` under node, defaulting to the `release` tier: it needs the Playwright server, and the whole suite is too slow for the run a task closes on. Always run whole. @public */
+export function browserStep(options: StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
-    ...tier(options.tier, "deploy"),
+    ...tier(options.tier, "release"),
     tail: 120,
     // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
     // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
-    cmd: ["playwright", "test", ...projects.map((project) => `--project=${project}`)],
+    cmd: ["playwright", "test", "--project=chromium"],
     // The probe targets the server, not the `playwright` CLI: the CLI is a devDependency and always
     // present, so probing it would pass vacuously and let every spec fail at connect.
-    ...prerequisite(options.requires, options.requires === undefined ? browserEnginesRequired(projects) : undefined),
+    ...prerequisite(options.requires, options.requires === undefined ? browserRequired(PRIMARY_SERVER) : undefined),
     ...watching(options.watches),
     results: PLAYWRIGHT_RESULTS,
   };
 }
 
-/** One browser row per engine: `test:browser` on `primary` at the `deploy` tier, and `test:browser:<engine>` for each other engine at `release`. `primary` defaults to Chromium when listed, else the first engine. Throws on an empty list, an unknown or repeated engine, or a `primary` not listed. @public */
-export function browserSteps(
-  options: { engines: readonly [BrowserEngine, ...BrowserEngine[]]; primary?: BrowserEngine } & Omit<StepOptions, "tier">,
-): CommandStep[] {
-  const { engines, primary: named, ...shared } = options;
-  if (engines.length === 0) throw new Error("browserSteps: `engines` is empty; name at least one engine");
-  const unknown = engines.find((engine) => !isBrowserEngine(engine));
-  if (unknown !== undefined) throw new Error(`browserSteps: "${unknown}" is not a browser engine`);
-  const repeated = engines.find((engine, index) => engines.indexOf(engine) !== index);
-  if (repeated !== undefined) throw new Error(`browserSteps: "${repeated}" is named twice`);
-  const primary = named ?? (engines.includes("chromium") ? "chromium" : engines[0]);
-  if (!engines.includes(primary)) throw new Error(`browserSteps: primary "${primary}" is not among the engines`);
-
-  return engines.map((engine) =>
-    engine === primary
-      ? browserStep({ ...shared, projects: [engine] })
-      : { ...browserStep({ ...shared, projects: [engine], tier: "release" }), label: `test:browser:${engine}` },
-  );
+/** `playwright test --project=firefox --project=webkit` on the compat server, defaulting to the `release` tier, for a cron table rather than the gate. Always run whole. @public */
+export function crossEngineStep(options: StepOptions = {}): CommandStep {
+  return {
+    label: "test:browser:cross-engine",
+    ...tier(options.tier, "release"),
+    tail: 120,
+    cmd: ["playwright", "test", "--project=firefox", "--project=webkit"],
+    ...prerequisite(options.requires, options.requires === undefined ? browserRequired(COMPAT_SERVER) : undefined),
+    ...watching(options.watches),
+    results: PLAYWRIGHT_RESULTS,
+  };
 }
 
 /** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `runtime` tier: it needs the workerd runtime installed. Narrowed and widened as {@link browserStep} is. @public */
@@ -390,11 +363,6 @@ export function workerdStep(
     ...widening(options.widen),
     ...playwrightNarrowing(options.narrow),
   };
-}
-
-/** Curates the demonstrator into a temporary tree and runs the skeleton's `unit` gate there, always in the `deploy` tier. @public */
-export function featuresStep(config: FeaturesCheckConfig, options: Omit<StepOptions, "tier"> = {}): CheckStep {
-  return checkStep("validate-features", () => checkFeatures(config), { ...options, tier: "deploy" });
 }
 
 /** Globs covering every namespace in `namespaces` and each one they reach through `graph`'s edges, primitives included; throws on a namespace the graph does not declare. */
@@ -518,7 +486,7 @@ export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOpt
 
 /** Bundles the deployed `main` and checks that no module in it is development code. @public */
 export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "deploy" });
+  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "release" });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */

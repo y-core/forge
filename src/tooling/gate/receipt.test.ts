@@ -187,7 +187,6 @@ describe("receiptCovers()", () => {
   });
 
   it("ignores the base of a receipt from any other tier, since none of them narrows", () => {
-    expect(receiptCovers(receipt({ tier: "deploy", base: OTHER }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
     expect(receiptCovers(receipt({ tier: "release", base: OTHER }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
     expect(receiptCovers(receipt({ tier: "release" }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
     expect(receiptCovers(receipt({ base: OTHER }), { ...wanted, base: TREE })).toBe(true);

@@ -170,7 +170,7 @@ describe("listLabel()", () => {
   it("states the dependency as required from the runtime tier up, where its absence is a failure", () => {
     const browser: Step = { label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } };
 
-    for (const tier of ["runtime", "deploy", "release"] as const) expect(listLabel(browser, tier)).toBe("test:browser (requires chromium)");
+    for (const tier of ["runtime", "release"] as const) expect(listLabel(browser, tier)).toBe("test:browser (requires chromium)");
   });
 
   it("leaves a step with no dependency its bare label in every tier", () => {
@@ -215,7 +215,7 @@ describe("formatFixSummary()", () => {
 
 describe("formatMissingRequirement()", () => {
   it("fails the step from the runtime tier up, naming the absent tool and the remedy verbatim", () => {
-    for (const tier of ["runtime", "deploy", "release"] as const) {
+    for (const tier of ["runtime", "release"] as const) {
       expect(formatMissingRequirement("test:browser", "Playwright server", "set `PW_TEST_CONNECT_WS_ENDPOINT`", tier)).toBe(
         "✗ test:browser — Playwright server not found; set `PW_TEST_CONNECT_WS_ENDPOINT`",
       );

@@ -14,7 +14,7 @@ description: >
   Examples of when to invoke:
   - "Run bun run verify and report the verdict"
   - "Run the pre-commit gate on the finished set of changes"
-  - "Run bun run verify:deploy before the tag"
+  - "Run bun run verify:release before the tag"
   - "Re-run the gate after cc-dev's fix and confirm it is green"
 tools: Read, Grep, Glob, LSP, Bash, Agent
 model: sonnet
@@ -36,7 +36,7 @@ This agent exists to absorb them — _not_ because an agent cannot be trusted to
 That rationale is also the boundary:
 
 - **The full cross-cutting gate comes here, once per commit, tag or release.** `bun run verify`, the gate a commit closes on;
-  `bun run verify:deploy`, the first tier that runs the browser set; `bun run verify:release`, the sign-off a release blocks on; any suite whose
+  `bun run verify:release`, the gate a tag and a release block on and the one tier that runs the browser set; any suite whose
   output is voluminous or whose failure could belong to more than one owner. A caller that names no tier gets a bare `verify`, which runs no browser
   spec — so a verdict on a bare run never says a page works in a browser.
 - **The task check does not.** An owning agent closes each task on the `static` tier plus its touched test files, run by file, itself: the output is

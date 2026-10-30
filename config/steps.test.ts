@@ -34,15 +34,16 @@ describe("the gate's step table", () => {
     expect(selectSteps(STEPS, { tier: "release" }).ok).toBe(true);
   });
 
-  it("keeps the browser suite out of runtime, runs it on Chromium from deploy, and adds Firefox and WebKit at release", () => {
+  it("keeps the browser suite out of runtime and runs it on Chromium alone at release", () => {
     const browsers = (tier: GateTier): string[] => labels(tier).filter((label) => label.startsWith("test:browser"));
 
-    expect([browsers("unit"), browsers("runtime"), browsers("deploy"), browsers("release")]).toEqual([
-      [],
-      [],
-      ["test:browser"],
-      ["test:browser", "test:browser:firefox", "test:browser:webkit"],
-    ]);
+    expect([browsers("unit"), browsers("runtime"), browsers("release")]).toEqual([[], [], ["test:browser"]]);
+  });
+
+  it("names no Firefox or WebKit project in any row, so the cross-engine subset runs only by hand or on a schedule", () => {
+    const projects = STEPS.flatMap((step) => step.cmd ?? []).filter((arg) => arg.startsWith("--project="));
+
+    expect(projects).toEqual(["--project=chromium", "--project=workerd"]);
   });
 
   it("fails the test row when the suite leaves anything in its TMPDIR", () => {
@@ -114,8 +115,6 @@ describe("the gate's watches", () => {
       "validate-docs",
       "validate-design",
       "test:browser",
-      "test:browser:firefox",
-      "test:browser:webkit",
       "test:workerd",
     ]);
   });
@@ -125,8 +124,6 @@ describe("the gate's watches", () => {
 
     expect(playwright.map((step) => [step.label, step.watches, step.narrow?.probe?.args])).toEqual([
       ["test:browser", undefined, undefined],
-      ["test:browser:firefox", undefined, undefined],
-      ["test:browser:webkit", undefined, undefined],
       ["test:workerd", undefined, ["--list"]],
     ]);
   });

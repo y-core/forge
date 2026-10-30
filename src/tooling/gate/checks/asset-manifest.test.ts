@@ -118,7 +118,7 @@ describe("checkAssetManifest", () => {
   it("fails a types-only artifact in every tier above static, where a green would ship an unbuilt tree", async () => {
     writeModule({ "js/main.js": "js/main.js" }, TYPES_HEADER);
 
-    for (const tier of ["unit", "runtime", "deploy"] as const) expect((await run(tier)).ok).toBe(false);
+    for (const tier of ["unit", "runtime"] as const) expect((await run(tier)).ok).toBe(false);
 
     const result = await run("release");
 

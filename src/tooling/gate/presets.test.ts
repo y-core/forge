@@ -5,7 +5,7 @@ import { join, resolve } from "node:path";
 
 import { worktreeFixture } from "../cli/worktree.fixture";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
-import { browserSteps, importBoundaryStep } from "./builders";
+import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
@@ -89,14 +89,14 @@ describe("cloudflareWorkerSteps() — shape", () => {
 
     expect(held.map((step) => [step.label, step.tier])).toEqual([
       ["test", "unit"],
-      ["validate-dev-bundle", "deploy"],
+      ["validate-dev-bundle", "release"],
     ]);
   });
 
-  it("adds test:browser to the deploy tier, not runtime, once the browser opt-in is taken", () => {
+  it("adds test:browser to the release tier, not runtime, once the browser opt-in is taken", () => {
     const at = (tier: string): string[] => labelsOf(cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === tier));
 
-    expect([at("runtime"), at("deploy")]).toEqual([[], ["validate-dev-bundle", "test:browser"]]);
+    expect([at("runtime"), at("release")]).toEqual([[], ["validate-dev-bundle", "test:browser"]]);
   });
 });
 
@@ -210,12 +210,12 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the browser row", () => {
-  it("puts test:browser last, on the deploy tier and behind the Playwright server", () => {
+  it("puts test:browser last, on the release tier and behind the Playwright server", () => {
     const steps = cloudflareWorkerSteps({ browser: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
     const browser = steps.at(-1);
 
     expect(browser?.label).toBe("test:browser");
-    expect(browser?.tier).toBe("deploy");
+    expect(browser?.tier).toBe("release");
     expect(browser?.requires?.probe).toBeFunction();
     expect(browser !== undefined && !isCheckStep(browser) ? browser.cmd : undefined).toEqual(["playwright", "test", "--project=chromium"]);
   });
@@ -223,26 +223,6 @@ describe("cloudflareWorkerSteps() — the browser row", () => {
   it("omits the row for an app with no browser suite", () => {
     expect(labelsOf(cloudflareWorkerSteps())).not.toContain("test:browser");
     expect(labelsOf(cloudflareWorkerSteps({ browser: false }))).not.toContain("test:browser");
-  });
-});
-
-describe("cloudflareWorkerSteps() — the browser rows per engine", () => {
-  function browserRows(steps: readonly Step[]): [string, string | undefined, readonly string[] | undefined, Step["narrow"]][] {
-    return steps
-      .filter((step) => step.label.startsWith("test:browser"))
-      .map((step) => [step.label, step.tier, isCheckStep(step) ? undefined : step.cmd, step.narrow]);
-  }
-
-  it("hands an engine list to browserSteps, so the matrix rows are exactly the builder's", () => {
-    const engines = ["chromium", "firefox", "webkit"] as const;
-
-    expect(browserRows(cloudflareWorkerSteps({ browser: { engines } }))).toEqual(browserRows(browserSteps({ engines })));
-  });
-
-  it("emits the same Chromium row for `true` as for an engine list naming Chromium alone", () => {
-    expect(browserRows(cloudflareWorkerSteps({ browser: true }))).toEqual(
-      browserRows(cloudflareWorkerSteps({ browser: { engines: ["chromium"] } })),
-    );
   });
 });
 
@@ -265,11 +245,10 @@ describe("cloudflareWorkerSteps() — the rows a spec reaches through the served
 
   it("runs the workerd row whole for a change to the app Worker's closure, read from the default config, and widens no browser row", async () => {
     const root = gateFixtureRoot(APP);
-    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, browser: { engines: ["chromium", "firefox"] }, workerd: true });
+    const steps = cloudflareWorkerSteps({ root, wranglerTypes: false, browser: true, workerd: true });
 
     expect(await traced(steps, root)).toEqual([
       ["test:browser", undefined],
-      ["test:browser:firefox", undefined],
       ["test:workerd", ["src/routes.ts", "src/worker.ts"]],
     ]);
     rmSync(root, { recursive: true, force: true });
@@ -392,57 +371,6 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
   });
 });
 
-describe("cloudflareWorkerSteps() — the features row", () => {
-  it("puts validate-features last, after test:workerd, on the deploy tier", () => {
-    const steps = cloudflareWorkerSteps({ features: {}, browser: true, workerd: true, db: true });
-
-    expect(labelsOf(steps).slice(-2)).toEqual(["test:workerd", "validate-features"]);
-    expect(steps.at(-1)?.tier).toBe("deploy");
-  });
-
-  it("omits the row for an app with no feature manifest to verify", () => {
-    expect(labelsOf(cloudflareWorkerSteps())).not.toContain("validate-features");
-  });
-
-  it("hands the row the preset's root, so a root with no manifest fails naming `config/features.ts`", async () => {
-    const root = gateFixtureRoot({ "README.md": "# app\n" }, "forge-gate-features-");
-    const row = cloudflareWorkerSteps({ root, features: {} }).at(-1);
-    if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
-    const result = await row.run("deploy");
-    rmSync(root, { recursive: true, force: true });
-
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((finding) => finding.message)).toEqual([
-      "No feature manifest at `config/features.ts` — forge curate needs one, default-exporting defineFeatures({...})",
-    ]);
-  });
-
-  it("hands the row the profiles it is given, so a profile naming no feature fails naming that profile", async () => {
-    const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
-    const row = cloudflareWorkerSteps({ root, features: { profiles: [["blog"]] } }).at(-1);
-    if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
-    const result = await row.run("deploy");
-    rmSync(root, { recursive: true, force: true });
-
-    expect(result.findings.map((finding) => finding.message)).toEqual([
-      "--drop blog: cannot drop unknown feature `blog` — the manifest names `showcase`, `contact`",
-    ]);
-  });
-
-  it("hands the row an empty profile list, so the row fails rather than passing having proved nothing", async () => {
-    const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
-    const row = cloudflareWorkerSteps({ root, features: { profiles: [] } }).at(-1);
-    if (row === undefined || !isCheckStep(row)) throw new Error("no features row");
-    const result = await row.run("deploy");
-    rmSync(root, { recursive: true, force: true });
-
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((finding) => finding.message)).toEqual([
-      "`profiles` is empty — the check would prove no skeleton; omit it for the defaults",
-    ]);
-  });
-});
-
 describe("cloudflareWorkerSteps() — the db rows", () => {
   it("emits the digests row on static, and the lint and replay rows on runtime, behind the installed runtime", () => {
     const rows = cloudflareWorkerSteps({ db: true }).filter((step) => step.label.startsWith("db:"));
@@ -482,13 +410,13 @@ describe("cloudflareWorkerSteps() — the db rows", () => {
 });
 
 describe("cloudflareWorkerSteps() — the dev-bundle row", () => {
-  it("emits validate-dev-bundle on the deploy tier, right after the dev-boundary row, with no machine prerequisite", () => {
+  it("emits validate-dev-bundle on the release tier, right after the dev-boundary row, with no machine prerequisite", () => {
     const steps = cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" });
     const labels = labelsOf(steps);
     const row = steps.find((step) => step.label === "validate-dev-bundle");
 
     expect(labels.indexOf("validate-dev-bundle")).toBe(labels.indexOf("validate-dev-boundary") + 1);
-    expect(row?.tier).toBe("deploy");
+    expect(row?.tier).toBe("release");
     expect(row?.requires).toBeUndefined();
   });
 
@@ -636,9 +564,11 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
-  it("reads the feature manifest when features are opted into too, so a root with none fails the row naming it", async () => {
+  it("reads the feature manifest when the row opts into features, so a root with none fails the row naming it", async () => {
     const root = gateFixtureRoot({ "src/showcase/mod.ts": "export const registerShowcase = () => 1;\n" });
-    const row = cloudflareWorkerSteps({ root, importBoundary: IMPORT, features: {} }).find((step) => step.label === "validate-import-boundary");
+    const row = cloudflareWorkerSteps({ root, importBoundary: { ...IMPORT, features: true } }).find(
+      (step) => step.label === "validate-import-boundary",
+    );
     if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
     const result = await row.run("static");
     rmSync(root, { recursive: true, force: true });
@@ -648,9 +578,9 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     ]);
   });
 
-  it("guards the feature manifest's directories when features are opted into too", async () => {
+  it("guards the feature manifest's directories when the row opts into features", async () => {
     const root = curateFixtureRepo(CURATE_FIXTURE_MANIFEST);
-    const row = cloudflareWorkerSteps({ root, importBoundary: { guarded: [] }, features: {} }).find(
+    const row = cloudflareWorkerSteps({ root, importBoundary: { guarded: [], features: true } }).find(
       (step) => step.label === "validate-import-boundary",
     );
     if (row === undefined || !isCheckStep(row)) throw new Error("no import-boundary row");
@@ -1115,13 +1045,12 @@ describe("cloudflareWorkerSteps() — watches", () => {
     markdown: {},
     design: DESIGN,
     ssrBoundary: { clientDirs: ["src/ui/client"], sources: ["src/"], entryPoints: ["mount.ts"], serverDirs: ["src/app"] },
-    importBoundary: { guarded: ["src/showcase"] },
+    importBoundary: { guarded: ["src/showcase"], features: true },
     vendorDir: "src/vendor",
     contrast: { cssDir: "src/assets", tokenFiles: [], mappingFile: "src/assets/theme.css", pairs: [], criteria: {} },
     db: true,
     browser: true,
     workerd: true,
-    features: {},
   };
 
   const watchesOf = (steps: readonly Step[]): Record<string, readonly string[] | undefined> =>
@@ -1168,7 +1097,6 @@ describe("cloudflareWorkerSteps() — watches", () => {
       "db:schema",
       "test:browser",
       "test:workerd",
-      "validate-features",
     ]);
   });
 
@@ -1177,7 +1105,7 @@ describe("cloudflareWorkerSteps() — watches", () => {
   });
 
   it("gives the features import-boundary row the watches the plain row derives for the same config", () => {
-    const featured = cloudflareWorkerSteps({ importBoundary: { guarded: ["src/showcase"] }, features: {} });
+    const featured = cloudflareWorkerSteps({ importBoundary: { guarded: ["src/showcase"], features: true } });
     const plain = importBoundaryStep({ root: "/nowhere", guarded: ["src/showcase"] });
 
     expect(featured.find((step) => step.label === "validate-import-boundary")?.watches).toEqual(plain.watches);

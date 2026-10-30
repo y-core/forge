@@ -22,8 +22,8 @@ describe("warden steps", () => {
     for (const step of STEPS) expect(isCheckStep(step)).toBe(true);
   });
 
-  it("puts the changelog on the `deploy` tier alone, and leaves the rest on `static`", () => {
-    expect(STEPS.map((step) => step.tier)).toEqual([undefined, "deploy", undefined]);
+  it("puts the changelog on the `release` tier alone, and leaves the rest on `static`", () => {
+    expect(STEPS.map((step) => step.tier)).toEqual([undefined, "release", undefined]);
   });
 
   it("lets a project pull the changelog into the static run, overriding the default", () => {

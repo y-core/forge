@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { resolve } from "node:path";
 
+import pkg from "../package.json" with { type: "json" };
+
 const CONFIG = resolve(import.meta.dir, "../playwright.config.ts");
 const ENDPOINT = "ws://playwright.test:3000/";
 const COMPAT = "ws://compat.test:3000/";
@@ -50,6 +52,11 @@ describe("playwright.config.ts", () => {
     expect(
       loadConfig({ PW_TEST_CONNECT_WS_ENDPOINT: ENDPOINT, PLAYWRIGHT_SERVER_MAX_CLIENTS: "8", PLAYWRIGHT_COMPAT_WS_ENDPOINT: COMPAT }).projects,
     ).toEqual([{ name: "chromium" }, { name: "firefox", connectOptions }, { name: "webkit", connectOptions }, { name: "workerd" }]);
+  });
+
+  it("runs the compat projects through the cron table's script, since no gate row names them", () => {
+    expect(pkg.scripts["verify:cron"]).toBe("bun run src/tooling/root/bin.ts verify --config config/cron.ts --tier release");
+    expect(Object.hasOwn(pkg.scripts, "test:browser:cross-engine")).toBe(false);
   });
 
   for (const compat of [undefined, ""]) {

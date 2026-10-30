@@ -47,7 +47,7 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
 - §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: what each half is, and who overrides which
-- §6e One Tier per Moment: which tier each moment takes, why the browser set waits for `deploy`, and the nightly run
+- §6e One Tier per Moment: which tier each moment takes, why the browser set waits for `release`, and the cron run
 
 ---
 
@@ -382,8 +382,8 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ### 6a. One Command, Nested Tiers
 
-**There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** They
-are nested: `static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **A bare invocation is `runtime`**, and that is the gate a commit closes on; §6e says
+**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `release` — are selected with `--tier`, not commands.** They are
+nested: `static ⊆ unit ⊆ runtime ⊆ release`. **A bare invocation is `runtime`**, and that is the gate a commit closes on; §6e says
 which tier each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than
 trusting any prose copy.
 
@@ -396,8 +396,7 @@ warning" — is a failure.
 | --- | --- |
 | `static` \| `unit` | it runs the code rather than judging the source |
 | `unit` \| `runtime` | it needs a runtime prerequisite — workerd, a local database |
-| `runtime` \| `deploy` | it runs whole: below `deploy` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here, as does the browser set (§6e) |
-| `deploy` \| `release` | it re-runs a suite another row already ran, on another engine |
+| `runtime` \| `release` | it runs whole: below `release` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here, as does the browser set (§6e) |
 
 "This suite got slow" has no bearing on any of them, with one stated exception: the browser set, whose placement §6e owns. **An absent prerequisite
 is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a commit may not be assured by a
@@ -433,17 +432,17 @@ so its green is a gate green. What it ran depends on that commit, so its receipt
 same commit.
 
 **A runtime row's reach is derived, never declared by hand.** The runner asks the row's tool what the narrowed run would select: the row runs
-nothing when the answer is nothing, runs narrowed when it is something, and runs whole when the answer cannot be read. A change to one of the
-gate's own inputs, or to a path the row declares wide, runs it whole. The only hand-kept list names what the tool's graph cannot see — a file a spec
-reads without importing it, or a module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that
-leaves one of its globs matching nothing is refused rather than silently narrowing the row. **`deploy` runs every row whole on every tag**, which is
-the backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
+nothing when the answer is nothing, runs narrowed when it is something, and runs whole when the answer cannot be read. A change to one of the gate's
+own inputs, or to a path the row declares wide, runs it whole. The only hand-kept list names what the tool's graph cannot see — a file a spec reads
+without importing it, or a module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that leaves
+one of its globs matching nothing is refused rather than silently narrowing the row. **`release` runs every row whole on every tag**, which is the
+backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
 
 **A spec reaches the application through the server it starts and the assets that server serves, so a runtime row's reach includes both.** The
 server half is the import graph of the Worker's entry. The asset half is what the asset build reads: each bundle's inputs, and every file the
 stylesheets' source declarations cover. Both are derived from what the build already declares, never listed beside it. A Worker-runtime row takes
 the asset half only when the Worker serves the assets. A stylesheet left on automatic source detection covers the whole tree, so every change runs
-the row whole — narrowing comes from the stylesheet naming its sources. **A browser row has no reach to derive**: it starts at `deploy`, where
+the row whole — narrowing comes from the stylesheet naming its sources. **A browser row has no reach to derive**: it starts at `release`, where
 every row runs whole (§6e).
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
@@ -489,30 +488,28 @@ the exception with its compensating control, rather than leaving the reuse undoc
 | --- | --- | --- |
 | Write and task close | `bun run verify:static`, plus `bun test <file>` on each touched test file | every row that judges the source; each test file the change adds, edits or directly exercises |
 | Commit | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no browser spec |
-| Tag | `bun run verify:deploy`, on the remote | every runtime row whole, every browser spec on Chromium, and the rows that judge a finished change |
-| Sign-off | `bun run verify:release`, before a release ships | the above, plus every browser spec on each other engine the application opts into |
-| Nightly | `bun run verify:release`, run by the ledger host | the sign-off run, over the default branch as committed |
+| Tag | `bun run verify:release`, on the remote | every runtime row whole, every browser spec on Chromium, and the rows that judge a finished change |
+| Cron | `bun run verify:release`, then `bun run verify:cron`, run by the ledger host | the tag's run, plus every browser spec on each other engine the application runs, over the default branch as committed |
 
-**The browser set starts at `deploy`, and that is the one tier line drawn by cost.** §6a's rule holds for every other row. The whole browser set
-is the slowest row in the gate and the one a change least often breaks, and narrowing it at `runtime` bought almost nothing: its reach was the
-Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. **The price is stated rather than hidden: a
-broken page is found by the next nightly run, not by the pre-commit gate.** A tag still never ships without the set, because `deploy` runs it. While
-iterating on a page, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and the task check runs a touched spec
-the same way; it is a scoped run, never a gate green (§6c).
+**The browser set starts at `release`, and that is the one tier line drawn by cost.** §6a's rule holds for every other row. The whole browser set is
+the slowest row in the gate and the one a change least often breaks, and narrowing it at `runtime` bought almost nothing: its reach was the Worker's
+whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. **The price is stated rather than hidden: a broken page
+is found by the next cron run, not by the pre-commit gate.** A tag still never ships without the set, because `release` runs it. While iterating
+on a page, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and the task check runs a touched spec the same way;
+it is a scoped run, never a gate green (§6c).
 
-**The nightly run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
+**The cron run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
 default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes a task in
 the project it ran for, kept to one open task that each later failure rewrites in place; a run that never reached a test — the server it needs did
 not come up — is logged and filed as nothing, because it says nothing about the code.
 
-**Chromium is the browser set's engine, and `test:browser` is its row.** `browser: true` emits that row alone. An application that needs wider
-compatibility lists `engines`, and the preset adds `test:browser:firefox` and `test:browser:webkit` at `release` as its final sign-off; `--only`
-matches a label exactly, so an engine token is refused under any lower tier.
+**Chromium is the browser set's engine, and `test:browser` is its row and the gate's only browser row.** `browser: true` emits it. An application
+that needs wider compatibility runs Firefox and WebKit by hand or on the cron run, from `config/cron.ts` default-exporting `[crossEngineStep()]`,
+never as a gate row.
 
 **Firefox and WebKit run on a second Playwright server, started only on request, whose endpoint `PLAYWRIGHT_COMPAT_WS_ENDPOINT` names.** The test
 runner reads only the primary server's variable, so the application's `playwright.config.ts` points its `firefox` and `webkit` projects at the
-second through `use.connectOptions`, which replaces the environment's connection whole, and declares them only when the variable is set. The
-release rows probe the same endpoint and fail naming it.
+second through `use.connectOptions`, which replaces the environment's connection whole, and declares them only when the variable is set.
 
 **An application that opts into Firefox and WebKit runs every spec on them; it tags no cross-engine subset.** An engine difference found there is
 fixed, or skipped as the first line of the case with `test.skip(browserName === "…", "<task-id>: <symptom on this engine>")`, the task filed before

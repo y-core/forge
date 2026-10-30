@@ -1,5 +1,5 @@
 import type { ValidationResult } from "../../result/types";
-import type { BrowserEngine, PlaywrightServerStatus } from "./checks/types";
+import type { PlaywrightServerStatus } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { DeferredFinding } from "./checks/types";
@@ -10,7 +10,6 @@ import type { ImportBoundaryCheckConfig } from "./checks/types";
 import type { JsxCheckConfig } from "./checks/types";
 import type { MarkdownCheckConfig } from "./checks/types";
 import type { SsrBoundaryCheckConfig } from "./checks/types";
-import type { FeaturesCheckConfig } from "./checks/types";
 
 export type { ImportBoundaryCheckConfig } from "./checks/types";
 
@@ -86,6 +85,8 @@ export interface GateCommandConfig {
   binDir?: string;
   /** Globs whose change selects every step under `--affected`, appended to `DEFAULT_GATE_INPUTS`. */
   gateInputs?: readonly string[];
+  /** Whether an unscoped run records or clears the verify receipt; `false` for a table whose verdict is not the gate's. Defaults to `true`. */
+  receipt?: boolean;
 }
 
 /** The severity of a finding: `fail` fails the check, `warn` is reported and does not. */
@@ -147,8 +148,8 @@ export interface CloudflareWorkerStepOptions {
   root?: string;
   /** Whether to emit the `forge db` rows: the digests in `static`, the lint and the replay in `runtime`. Defaults to `false`. */
   db?: boolean;
-  /** `true` emits the `deploy`-tier `test:browser` row on Chromium; `engines` is handed to {@link browserSteps}. Defaults to `false`. */
-  browser?: boolean | { engines: readonly [BrowserEngine, ...BrowserEngine[]] };
+  /** Whether to emit the `release`-tier `test:browser` row on Chromium. Defaults to `false`. */
+  browser?: boolean;
   /** Whether to emit the `runtime`-tier `test:workerd` step. Defaults to `false`. */
   workerd?: boolean;
   /** Omit to emit no JSX-pragma row. */
@@ -158,8 +159,8 @@ export interface CloudflareWorkerStepOptions {
     /** Omit to emit no client-boundary row; nothing under `clientDirs` may import these at value. */
     serverDirs?: readonly string[];
   };
-  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. With `features` set, the row also reads the feature manifest. */
-  importBoundary?: Omit<ImportBoundaryCheckConfig, "root" | "features">;
+  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. `features: true` also reads `config/features.ts`. */
+  importBoundary?: Omit<ImportBoundaryCheckConfig, "root" | "features"> & { features?: boolean };
   /** Omit to emit no vendor-boundary row; its modules may import nothing beside it under its parent directory. */
   vendorDir?: string;
   /** Omit to emit no contrast row. */
@@ -168,8 +169,6 @@ export interface CloudflareWorkerStepOptions {
   design?: CloudflareWorkerDesignOptions;
   /** The markdown conventions to hold prose to; omit to emit no row. */
   markdown?: Omit<MarkdownCheckConfig, "root">;
-  /** Omit to emit no features row; reads `config/features.ts`, and `{}` proves the default profiles. */
-  features?: Pick<FeaturesCheckConfig, "profiles">;
 }
 
 /** The fields `forgeChecks` reads from the consuming package's `package.json`. @public */
@@ -280,7 +279,7 @@ export interface SemVer {
 export type BumpKind = "major" | "minor" | "patch";
 
 /** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
-export const GATE_TIERS = ["static", "unit", "runtime", "deploy", "release"] as const;
+export const GATE_TIERS = ["static", "unit", "runtime", "release"] as const;
 
 /** How much of the table to run. @public */
 export type GateTier = (typeof GATE_TIERS)[number];
@@ -317,7 +316,7 @@ export interface StepBase {
   watches?: readonly string[];
   /** Resolves at the `runtime` tier, for a step that would otherwise narrow or stay untouched, the paths relative to `cwd` whose change runs it whole that no glob names ahead of time; a rejection runs it whole. */
   widen?: (cwd: string) => readonly string[] | Promise<readonly string[]>;
-  /** Narrows the step to pending changes at the `runtime` tier; from `deploy` up it runs whole. */
+  /** Narrows the step to pending changes at the `runtime` tier; at `release` it runs whole. */
   narrow?: {
     /** Appended to `cmd` when a pending change touches `watches`. */
     args: readonly string[];

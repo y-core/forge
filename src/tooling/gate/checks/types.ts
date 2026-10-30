@@ -843,18 +843,6 @@ export interface IccProfileCheckConfig {
   module: string;
 }
 
-/** What the features check needs to reproduce the skeleton and build it before gating it. @public */
-export interface FeaturesCheckConfig {
-  /** The demonstrator's working tree, holding `config/features.ts`. */
-  root: string;
-  /** Assets config path, relative to `root`; omit when the skeleton has no asset build to run first. */
-  assetConfig?: string;
-  /** Where the asset build writes its manifest. Defaults to `.forge/assets.ts`. */
-  assetOut?: string;
-  /** The `--drop` lists to prove, each a skeleton of its own. Defaults to each feature alone, then every feature together. */
-  profiles?: readonly (readonly string[])[];
-}
-
 /** The part of an esbuild metafile the dev-bundle check reads: each output's inputs and the bytes each contributed. @public */
 export interface BundleMetafile {
   outputs: Record<string, { inputs: Record<string, { bytesInOutput: number }> }>;
@@ -876,9 +864,6 @@ export interface DevBundleCheckConfig {
   /** The environment a deploy from this shell inherits, read for `WRANGLER_BUILD_CONDITIONS`. Defaults to `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
 }
-
-/** A browser engine Playwright downloads and launches. @public */
-export type BrowserEngine = "chromium" | "firefox" | "webkit";
 
 /** What one upgrade request learned about a Playwright server. @internal */
 export type PlaywrightServerStatus = { state: "ready" } | { state: "unreachable"; reason: string } | { state: "mismatch"; server: string };

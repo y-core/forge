@@ -78,14 +78,14 @@ preference:
 **The set sits outside `unit`, and the reason is a prerequisite, not cost.** It needs a browser binary or server an install step provides, and a
 prerequisite is the only legitimate ground for a set to stand outside it (§6c).
 
-**It runs from `deploy` up rather than `runtime`, and that placement is the one a tier line makes by cost.** The whole set is the slowest row in any
+**It runs at `release` rather than `runtime`, and that placement is the one a tier line makes by cost.** The whole set is the slowest row in any
 gate and the one a change least often breaks, and narrowing it bought almost nothing, because a spec's reach covers nearly every source file. **The
-price is stated rather than hidden: a broken behaviour is found by the next nightly run (§6a), not by the pre-commit gate.** A tag still never ships
+price is stated rather than hidden: a broken behaviour is found by the next cron run (§6a), not by the pre-commit gate.** A tag still never ships
 without the set. No other step may cite this as precedent; §6c's rule holds for each of them.
 
-**Chromium is the set's engine; another engine is an opt-in `release` row (§6c)**, for a library whose consumers need wider compatibility. Where the
-environment serves the other engines from their own server, the browser config routes those projects there and the gate probes the server each row
-will reach.
+**Chromium is the set's engine, and the gate's only one.** A library whose consumers need wider compatibility runs its other engines by hand or on
+the cron run (§6a), from a second step table, `config/cron.ts` run by `verify:cron`, never as a gate row (§6c). Where the environment serves the
+other engines from their own server, the browser config routes those projects there.
 
 **This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
 natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
@@ -361,16 +361,18 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ### 6a. One Command, Nested Tiers
 
-**There is one gate command, and its tiers — `static`, `unit`, `runtime`, `deploy` and `release` — are selected with `--tier`, not commands.** Verbs
-sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
-`static ⊆ unit ⊆ runtime ⊆ deploy ⊆ release`. **`runtime` is what a bare invocation runs**, and it is the gate a commit closes on; `static` is the
-loop to write in and, with each touched test file run by file, the task check a task closes on (`AGENT_WORKFLOW.md` §4); `unit` is the run for a
-machine with no runtime installed, `deploy` is the run a remote makes before a version ships and the first to carry the browser set (§1c), and
-`release` is the gate a publish blocks on. What separates one tier from the next is §6c's.
+**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `release` — are selected with `--tier`, not commands.** Verbs sharing
+every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
+`static ⊆ unit ⊆ runtime ⊆ release`. **`runtime` is what a bare invocation runs**, and it is the gate a commit closes on; `static` is the loop to
+write in and, with each touched test file run by file, the task check a task closes on (`AGENT_WORKFLOW.md` §4); `unit` is the run for a machine
+with no runtime installed, and `release` is the gate a tag and a publish block on, and the only one to carry the browser set (§1c). What separates
+one tier from the next is §6c's.
 
-**Nightly — `verify:release`, run by the ledger host — is the periodic moment.** It gates a fresh checkout of the default branch, never a
-developer's work tree, with `--report`, and lands a failure as one open task in the ledger of the project it ran for, rewritten in place by each
-later failure while it stays open. A run that never reached a test is logged and filed as nothing.
+**Cron — `verify:release` then `verify:cron`, run by the ledger host — is the periodic moment, and the one that also runs the other engines.** It
+gates a fresh checkout of the default branch, never a developer's work tree, with `--report` on each table, runs `verify:cron` whatever
+`verify:release` concluded (§1c), and lands
+a failure as one open task in the ledger of the project it ran for, rewritten in place by each later failure while it stays open. A run that never
+reached a test is logged and filed as nothing.
 
 **A config file owns the step list** — every step, how it runs, and the tier it runs from. Read it there rather than trusting any prose copy. A
 step is one of two things: an external command, or a check the runner calls in-process.
@@ -425,29 +427,28 @@ wrote.
 **The prerequisite line separates `unit` from `runtime`.** Every step below it works on any machine with the repository's dependencies installed —
 nothing to fetch, no binary or service beyond the declared dev dependencies. That is what makes those runs the gate anyone may run at any time, and
 **why cost is never grounds for moving a step across this line**. A step that needs a runtime — a Worker runtime, a local database — runs from
-`runtime` up; the browser set runs from `deploy`, for the reason §1c states. Between them sits the step that declares a `requires` probe on an
+`runtime` up; the browser set runs at `release`, for the reason §1c states. Between them sits the step that declares a `requires` probe on an
 optional dependency: it runs wherever that dependency happens to be installed, and §6a's tier-decided verdict is what keeps that from weakening the
 gate a commit closes on.
 
-**The narrowing line separates `runtime` from `deploy`: below `deploy`, a step that declares how to narrow runs only over the pending changes; from
-`deploy` up it runs whole.** Under `runtime` such a step runs whole when a change touches one of the gate's own inputs or a path the step declares
+**The narrowing line separates `runtime` from `release`: below `release`, a step that declares how to narrow runs only over the pending changes;
+at `release` it runs whole.** Under `runtime` such a step runs whole when a change touches one of the gate's own inputs or a path the step declares
 wide. Otherwise its tool is asked what the narrowed run would select: the step runs nothing when the answer is nothing, runs narrowed to the specs
 the changes reach when it is something, and runs whole when the answer cannot be read. A step that asks whether the tree is ready to ship
-— a written changelog entry, a bundle of what deploys, a gate over a derived tree — also starts at `deploy`, because it judges a finished change
+— a written changelog entry, a bundle of what deploys, a gate over a derived tree — also starts at `release`, because it judges a finished change
 rather than one in progress.
 
 **A step's reach is derived from a graph a check already holds — the tool's import graph, the declared namespace graph — and never from a path
 list kept by hand.** The only hand-kept list names what that graph cannot see: a file a spec reads without importing it, or a module it reaches
 through a specifier resolved at run time. That list is checked against the tree, so a rename that leaves one of its globs matching nothing is
-refused rather than silently narrowing the step. **`deploy` runs every step whole on every tag**, which is the backstop for a reach the
+refused rather than silently narrowing the step. **`release` runs every step whole on every tag**, which is the backstop for a reach the
 derivation missed.
 
-**The engine line separates `deploy` from `release`: a step that re-runs a suite another step already ran, on another engine, is `release`.** The
-primary engine proves the behaviour; each other engine proves only that it holds there too. The primary engine is Chromium, and another engine is
-added only by choice.
+**No step re-runs a suite another step already ran, on another engine.** Chromium proves the behaviour; another engine proves only that it holds
+there too, which is worth a scheduled run and not the minutes it would add to every tag.
 
-The lines compose rather than compete: a step is `static` unless it runs the code, `unit` unless it needs a runtime, `runtime` when it does,
-`deploy` when it judges a finished change, and `release` when it repeats a runtime suite on another engine.
+The lines compose rather than compete: a step is `static` unless it runs the code, `unit` unless it needs a runtime, `runtime` when it does, and
+`release` when it judges a finished change.
 
 That rank is also what orders the run. **Execution order is tier-stable rather than table order: within a tier the table's declared order holds,
 and across tiers the lower tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `release` row is
@@ -456,8 +457,6 @@ sub-second check rather than after minutes of browser — and why a repository n
 
 The tier enum is closed and ordered, and a step names **the lowest tier it runs in — a rank, not a set of tiers**. There is consequently no way to
 express a step a lower tier has and a higher one does not, so the nesting is structural rather than something a test has to catch after the fact.
-**`deploy` ranks below `release` by content, not by when it runs**: it is everything but the other engines, so a passing `release` answers
-`deploy` as well.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 

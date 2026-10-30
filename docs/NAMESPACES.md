@@ -400,7 +400,7 @@ request without Fetch Metadata.
 **The check holds it in two places.** Rule B of `validate-dev-boundary` fails a production module importing a `*.dev.ts`, a type import included;
 a `*.dev.ts` may import another. Rule C fails a value import of a dev-only subpath outside a `*.dev.ts` module. Both follow a `#` specifier to its
 deploy target, and rule B fails each `imports` entry whose deploy target is a `*.dev.ts`, and every importer that reaches it. The built bundle is
-still `validate-dev-bundle`'s to prove: on the `deploy` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a dev-only
+still `validate-dev-bundle`'s to prove: on the `release` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a dev-only
 directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every
 dev module.
 
