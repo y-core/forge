@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.6.2] — 2026-10-30
+
 ### Breaking Changes
 
 - **`validate-dev-boundary` fails an app `imports` entry other than `#app/relax` that carries `forge-dev`**, with the finding on `package.json`.
@@ -1233,6 +1239,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.6.2]: https://github.com/y-core/forge/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/y-core/forge/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/y-core/forge/compare/v0.5.16...v0.6.0
 [0.5.16]: https://github.com/y-core/forge/compare/v0.5.15...v0.5.16
