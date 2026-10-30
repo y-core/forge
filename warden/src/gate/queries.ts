@@ -180,7 +180,7 @@ export function checkGoldenQueries(config: GoldenCheckConfig, tier: GateTier = "
     const margin = thinnest - loudest;
     const guarded = config.queries === undefined || queries.length >= MARGIN_QUORUM;
     if (guarded && margin < MARGIN) {
-      const report = tier === "release" ? fail : warn;
+      const report = tier === "scheduled" ? fail : warn;
       findings.push(
         report(`the floor has ${margin.toFixed(3)} of room left, under ${MARGIN.toFixed(2)} — \`FLOOR\` is ${FLOOR} and sits between these two`, {
           file: "warden/src/search/search.ts",

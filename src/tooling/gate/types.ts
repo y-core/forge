@@ -148,7 +148,7 @@ export interface CloudflareWorkerStepOptions {
   root?: string;
   /** Whether to emit the `forge db` rows: the digests in `static`, the lint and the replay in `runtime`. Defaults to `false`. */
   db?: boolean;
-  /** Whether to emit the `release`-tier `test:browser` row on Chromium. Defaults to `false`. */
+  /** Whether to emit the `scheduled`-tier `test:browser` row on Chromium. Defaults to `false`. */
   browser?: boolean;
   /** Whether to emit the `runtime`-tier `test:workerd` step. Defaults to `false`. */
   workerd?: boolean;
@@ -279,7 +279,7 @@ export interface SemVer {
 export type BumpKind = "major" | "minor" | "patch";
 
 /** The tiers in ascending order, so the CLI, the docs and the selector share one order. @public */
-export const GATE_TIERS = ["static", "unit", "runtime", "release"] as const;
+export const GATE_TIERS = ["static", "unit", "runtime", "scheduled"] as const;
 
 /** How much of the table to run. @public */
 export type GateTier = (typeof GATE_TIERS)[number];
@@ -316,7 +316,7 @@ export interface StepBase {
   watches?: readonly string[];
   /** Resolves at the `runtime` tier, for a step that would otherwise narrow or stay untouched, the paths relative to `cwd` whose change runs it whole that no glob names ahead of time; a rejection runs it whole. */
   widen?: (cwd: string) => readonly string[] | Promise<readonly string[]>;
-  /** Narrows the step to pending changes at the `runtime` tier; at `release` it runs whole. */
+  /** Narrows the step to pending changes at the `runtime` tier; at `scheduled` it runs whole. */
   narrow?: {
     /** Appended to `cmd` when a pending change touches `watches`. */
     args: readonly string[];

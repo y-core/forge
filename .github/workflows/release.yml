@@ -58,7 +58,7 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      # `unit`, not `deploy`: `forge release` refuses to tag a tree `verify:release` has not passed (TEST_RUNNERS.md §6)
+      # `unit`, not `scheduled`: `forge release` refuses to tag a tree `verify:scheduled` has not passed (TEST_RUNNERS.md §6)
       - name: verify
         run: bun run verify:unit
 

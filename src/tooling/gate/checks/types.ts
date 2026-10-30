@@ -74,6 +74,8 @@ export interface DevBoundaryCheckConfig {
   devOnlyDirs?: readonly string[];
   /** Dependencies whose `package.json` declares `forge.devOnly`; their subpaths become forbidden specifiers. */
   packages?: readonly string[];
+  /** The only `imports` key an app may route `forge-dev` through; unset turns the rule off. */
+  relaxAlias?: string;
 }
 
 /** What a bundle-drift check needs to know about the project. @public */

@@ -96,7 +96,7 @@ const OriginSchema = v.pipe(
 Calling it is a statement about the message: that it describes the requirement and never interpolates the value. Nothing can check that statically,
 which is why a plain `v.check` still renders as `check` and adoption is one rule at a time ([`INPUT_VALIDATION.md`][iv-1b] §1b).
 
-**Write the requirement, not the variable.** `must use https`, not `BASE_URL must use https` — the refusal's own `<field>:` prefix already says
+**Write the requirement, not the variable.** `must use https`, not `SITE_ORIGIN must use https` — the refusal's own `<field>:` prefix already says
 where, and the env key is the consuming app's choice, so naming one sends an operator looking for a variable their repo may not have.
 
 ---

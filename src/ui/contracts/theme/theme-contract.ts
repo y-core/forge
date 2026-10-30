@@ -121,19 +121,38 @@ export const RADIUS_PROPERTY = "--radius";
 /** The other shape tokens a customiser writes, in the order both writers emit them. @public */
 export const SHAPE_PROPERTIES = ["--radius-field", "--radius-box", "--control-h-sm", "--control-h-md", "--control-h-lg"] as const;
 
+function rem(px: number): string {
+  return `${px / 16}rem`;
+}
+
+function fromRadius(px: number, radius: number): string {
+  const offset = px - radius;
+  return offset === 0 ? `var(${RADIUS_PROPERTY})` : `calc(var(${RADIUS_PROPERTY}) ${offset > 0 ? "+" : "-"} ${rem(Math.abs(offset))})`;
+}
+
 // One spelling of the ±8px step, so the painter and the emitted file cannot disagree about what
 // `sm` and `lg` are either side of the dialled `md`.
-/** Each of {@link SHAPE_PROPERTIES} as a `[property, value]` pair at these dials. @public */
+/** Each of {@link SHAPE_PROPERTIES} as a `[property, value]` pair at these dials, in theme-base's units. @public */
 export function shapeVars(dials: DialValues): readonly (readonly [string, string])[] {
   const control = dials.controlH ?? 40;
+  const radius = dials.radius ?? 10;
   const [field, box, small, medium, large] = SHAPE_PROPERTIES;
   return [
-    [field, `${dials.radiusField ?? 10}px`],
-    [box, `${dials.radiusBox ?? 16}px`],
-    [small, `${control - 8}px`],
-    [medium, `${control}px`],
-    [large, `${control + 8}px`],
+    [field, fromRadius(dials.radiusField ?? 10, radius)],
+    [box, fromRadius(dials.radiusBox ?? 16, radius)],
+    [small, rem(control - 8)],
+    [medium, rem(control)],
+    [large, rem(control + 8)],
   ];
+}
+
+// `--radius` rides along because the radii are written relative to it: without it, a field radius
+// would follow the consuming app's `--radius` rather than the one the customiser previewed.
+function shapeBlock(dials: DialValues): readonly (readonly [string, string])[] {
+  const declare = (values: DialValues) => [[RADIUS_PROPERTY, rem(values.radius ?? 10)] as const, ...shapeVars(values)];
+  const shape = declare(dials);
+  const shipped = declare({});
+  return shape.some(([, value], i) => value !== shipped[i]?.[1]) ? shape : [];
 }
 
 /** The custom property a 0-indexed step is declared under — `--gray-11`. @public */
@@ -207,6 +226,7 @@ function contrastVar(mode: Mode): string {
 /** The scheme as a `theme-*.css` file, ready to paste. @public */
 export function schemeCss(theme: GeneratedTheme, dials: DialValues): string {
   const declare = ([name, value]: readonly [string, string]) => `  ${name}: ${value};`;
+  const shape = shapeBlock(dials);
 
   return [
     // Line 1, not line 2: `findMissingLayer` reports at line 1 and a waiver only suppresses the
@@ -221,11 +241,9 @@ export function schemeCss(theme: GeneratedTheme, dials: DialValues): string {
     `  --accent-contrast: ${lightDark(contrastVar("light"), contrastVar("dark"))};`,
     "}",
     "",
-    "/* Shape — save as shape-custom.css beside the scheme, or fold into it */",
-    ":root {",
-    ...shapeVars(dials).map(declare),
-    "}",
-    "",
+    ...(shape.length === 0
+      ? []
+      : ["/* Shape — save as shape-custom.css beside the scheme, or fold into it */", ":root {", ...shape.map(declare), "}", ""]),
   ].join("\n");
 }
 

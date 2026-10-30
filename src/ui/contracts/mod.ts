@@ -61,7 +61,7 @@ export { THEME_SCOPE } from "./theme-toggle-contract";
 export type { ThemeAction } from "./types";
 export { TOAST_CONTAINER_SCOPE, TOAST_DURATION_KEY, TOAST_SCOPE } from "./toast-contract";
 export { APPEARANCES, PRESENTATION_ATTRS, presentationAttrs, TONES } from "./vocabulary";
-export type { Appearance, PresentationAttrName, PresentationAttrsProps, Shape, Size } from "./types";
+export type { Appearance, InvokerShape, PresentationAttrName, PresentationAttrsProps, Shape, Size } from "./types";
 export type { Tone } from "./types";
 export { TAB_SELECTOR, TABLIST_SELECTOR, TABS_MOUNTED_ATTR, TABS_SCOPE } from "./tabs-contract";
 export { FILTER_SCOPE, TOGGLE_GROUP_ITEM_SELECTOR, TOGGLE_GROUP_SCOPE, TOOLTIP_MOUNTED_ATTR, TOOLTIP_SCOPE } from "./toggle-contract";

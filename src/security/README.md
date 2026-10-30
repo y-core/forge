@@ -437,9 +437,9 @@ sent. With `trustCfHeaders: true` it adopts `CF-Ray`, falling back to a UUID whe
 
 ---
 
-## Deriving allowed origins from BASE_URL
+## Deriving allowed origins from SITE_ORIGIN
 
-One env var can feed every origin-aware guard. `BaseUrlConfigSchema` validates `BASE_URL` at boot and transforms it into a `BaseUrlConfig` — the
+One env var can feed every origin-aware guard. `BaseUrlConfigSchema` validates `SITE_ORIGIN` at boot and transforms it into a `BaseUrlConfig` — the
 parsed origin, hostname and protocol, plus the derived `allowedOrigins`. It refuses anything that is not `https:`, excepting `http://localhost` and
 `http://127.0.0.1` for local development.
 
@@ -447,15 +447,15 @@ parsed origin, hostname and protocol, plus the derived `allowedOrigins`. It refu
 import { BaseUrlConfigSchema } from "@y-core/forge/security";
 import { v } from "@y-core/forge/validation";
 
-const config = v.parse(BaseUrlConfigSchema, env.BASE_URL);
+const config = v.parse(BaseUrlConfigSchema, env.SITE_ORIGIN);
 app.use("/api/*", cors({ origins: config.allowedOrigins }));
 ```
 
 Feed the same `config.allowedOrigins` into `originGuard` and `originProtection` and one env change moves all three together.
 
 Without the schema, `parseUrl(input)` gives the `ParsedUrl` and `deriveAllowedOrigins(parsed, options?)` the list. `{ includeWww: true }` adds the
-`www.` variant of a non-`www` hostname, carrying the base origin's port — so a `BASE_URL` on a non-default port grants the `www` host on that same
-port and nothing else.
+`www.` variant of a non-`www` hostname, carrying the base origin's port — so a `SITE_ORIGIN` on a non-default port grants the `www` host on that
+same port and nothing else.
 
 ```ts
 deriveAllowedOrigins(parseUrl("https://example.com:8443"), { includeWww: true });
@@ -568,7 +568,7 @@ comes from `getNonce(c)` and from nowhere else.
 
 **Every write 403s locally while production is fine — the dev transport is the cause.** The origin guards compare origins by exact string, so a dev
 server speaking `http` behind a TLS-terminating proxy refuses the browser's `https` origin, its own forms included. Serve https at every hop in dev
-— the proxy's canonical origin, `BASE_URL`, and the dev server's own protocol all agreeing — and reach for `FORGE_DEV_ORIGINS` only in the
+— the proxy's canonical origin, `SITE_ORIGIN`, and the dev server's own protocol all agreeing — and reach for `FORGE_DEV_ORIGINS` only in the
 proxy-less case. The posture, including why the scheme is never patched up in middleware, is [`WORKERS_PLATFORM.md`][wp-4e] §4e's.
 
 **A pure predicate is not middleware.** `matchOrigin`, `verifyOrigin` and `checkCrossOriginProtection` reach a route only through the factory that

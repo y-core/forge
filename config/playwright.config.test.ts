@@ -55,7 +55,7 @@ describe("playwright.config.ts", () => {
   });
 
   it("runs the compat projects through the cron table's script, since no gate row names them", () => {
-    expect(pkg.scripts["verify:cron"]).toBe("bun run src/tooling/root/bin.ts verify --config config/cron.ts --tier release");
+    expect(pkg.scripts["verify:cron"]).toBe("bun run src/tooling/root/bin.ts verify --config config/cron.ts --tier scheduled");
     expect(Object.hasOwn(pkg.scripts, "test:browser:cross-engine")).toBe(false);
   });
 

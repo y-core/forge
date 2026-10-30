@@ -80,8 +80,8 @@ never restate it here.
 that ruling's single home. The bare name is resolved off the runner's `binDir`, as every command step's is — a gate never reaches a registry to
 find what it runs.
 
-**Chromium's row runs at `release`, whole, for the reason [`TESTING.md`][testing-1c] §1c gives**; §1g's Firefox and WebKit run is no gate row
-at any tier.
+**Chromium's row runs at `scheduled`, whole, because a step that starts a browser is heavy** ([`TESTING.md`][testing-6c] §6c). §1g's Firefox and
+WebKit row is a `scheduled` row too, but of its own table, `config/cron.ts`, run by `verify:cron` — never a row of the gate's table.
 
 **A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
 
@@ -365,17 +365,17 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 See [`TESTING.md`][testing-6] §6 for the one command and its tiers, the flag table, the lines between the tiers, and the scoped-run rule.
 `config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
-**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, never a speed estimate**, and an omitted `tier` is `static`. `unit` adds `test`;
-`runtime` adds the workerd suite and the database rows (§1f); `release` runs those whole and adds the Chromium set (§1c) and the rows that judge a
-finished change. `test` covers every co-located suite that judges nothing external — `src/`,
+**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines**, and an omitted `tier` is `static`. `unit` adds `test`;
+`runtime` adds the workerd suite and the database rows (§1f); `scheduled` runs those whole and adds the heavy rows — the Chromium set (§1c) — and
+the rows that judge a finished change. `test` covers every co-located suite that judges nothing external — `src/`,
 `config/` and `warden/src/` — so `unit` runs those alone and the workerd set is reached only through its own step (§1f).
 
 **forge's workerd row runs whole when a change reaches what a spec loads without importing it**: a file named by `new URL(…, import.meta.url)`,
 or a Worker config with its `main`'s closure. `config/spec-reach.ts` is its `widen`, and refuses any such site it cannot read as a literal. A
 fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`.
 
-**forge's tag runs `unit` on the remote, not `release`**: `forge release` refuses to tag a tree `verify:release` has not passed locally
-([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
+**forge's tag runs `unit` on the remote, not `scheduled`**: `forge release` runs `verify:scheduled` locally and refuses to tag a tree it has not
+passed ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
 
 **The reviewer's baseline is a static reuse run, and the developer's task check is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the
 reviewer run `verify --tier static --reuse` and the task's touched test files. The task check's `static` run records a receipt naming the tree it

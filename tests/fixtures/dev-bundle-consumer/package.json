@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "imports": {
-    "#app/debug-banner": {
-      "forge-dev": "./src/debug-banner.dev.ts",
-      "default": "./src/debug-banner.strict.ts"
+    "#app/relax": {
+      "forge-dev": "./src/app/relax.dev.ts",
+      "default": "./src/app/relax.strict.ts"
     }
   }
 }

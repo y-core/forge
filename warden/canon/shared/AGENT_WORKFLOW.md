@@ -162,6 +162,7 @@ about the code a change did not touch, so the two runs answer different question
   minute, and it is the claim the review lane carries (§5).
 - **The full gate runs once, when a set of changes is complete and ready to commit.** It is the whole `verify` command, any higher tier, and any
   cross-cutting suite. It runs neither per batch, nor per task, nor for a review handoff, and **a commit is preceded by a green full gate**.
+  The tier a tag and the daily cron run is `TESTING.md` §6's.
 - **The reviewer's baseline is the static tier with `--reuse`, plus the task's touched test files** — never the full gate. The author's static
   receipt for the same tree answers the first at once (`CODE_REVIEW.md` §1a).
 
@@ -171,7 +172,7 @@ excerpt. **Never the full stream.**
 **The reason is context isolation, not distrust.** A gate stream is thousands of lines the owning agent would otherwise carry for the rest of its
 turn, so the rule follows the size of the output rather than the question of who may be trusted to read a result:
 
-- **Cross-cutting or voluminous → the runner.** The full gate, the release tier, a whole suite.
+- **Cross-cutting or voluminous → the runner.** The full gate, the scheduled tier, a whole suite.
 - **The task check or a single scoped step → run it yourself.** The static tier, one step of the gate, or one test file is a handful of lines;
   routing it through a second agent buys nothing (§4a), and the delay is paid on every iteration of the inner loop.
 

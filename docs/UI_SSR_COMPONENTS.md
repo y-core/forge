@@ -203,10 +203,12 @@ buys it is everything §1h opens with: exclusive-open, the toggle, and correct f
 renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
 did would be asserting a structure the platform contradicts.
 
-**A Trigger or Close primitive carries the `sm` button box.** `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`,
-`Popover.Trigger`, `Menu.Trigger` and a bare `Tooltip.Trigger` render `buttonBox({ size: "sm" })` — its height, padding and `focus-ring`, with a
-transparent border and none of `buttonVariants`' paint — and merge the caller's `class` through `cn`, so a caller's padding wins while the height
-holds the 28px Floor (`src/ui/design/floor.md` §1f). An unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each
+**A Trigger or Close primitive carries the `sm` button box.** `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`, `Popover.Trigger`,
+`Menu.Trigger` and a bare `Tooltip.Trigger` render `buttonBox({ size: "sm" })` — its height, padding and `focus-ring`, with a transparent border and
+none of `buttonVariants`' paint — and merge the caller's `class` through `cn`, so a caller's padding wins while the height holds the 28px Floor
+(`src/ui/design/floor.md` §1f). **An icon-only one takes `shape="icon"`**, forwarded to the box, and never a `size-*` or padding override: `size-*`
+replaces the box's width and height but not its `px-3`, which squeezes the icon. The prop is `InvokerShape`, which has no `square`: that shape's
+`h-auto` would trade the height for the parent's width. An unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each
 caller has to remember. `asChild` is not offered on any of them except `Tooltip.Trigger`, whose `asChild` keeps its child's box: no forge caller
 needs one, and a child would hand the Floor back to the caller's choice of element.
 

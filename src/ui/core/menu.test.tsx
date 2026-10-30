@@ -44,6 +44,27 @@ describe("Menu.Trigger — the sm button box", () => {
     for (const token of ["px-6", "h-control-sm"]) expect(classes).toContain(token);
     expect(classes).not.toContain("px-3");
   });
+
+  it("keeps the sm height under every shape it accepts, and refuses the square that would trade it away", async () => {
+    for (const shape of ["default", "icon", "circle"] as const) {
+      expect(classesOf(await render(<Menu.Trigger for='m' shape={shape} />))).toContain("h-control-sm");
+    }
+    // @ts-expect-error -- `square` resolves to `h-auto`, so the box would no longer hold the Floor
+    void (<Menu.Trigger for='m' shape='square' />);
+  });
+
+  it('squares the box with no inline padding under shape="icon", so an icon child keeps its size', async () => {
+    const html = await render(
+      <Menu.Trigger for='m' shape='icon'>
+        <svg class='size-4' />
+      </Menu.Trigger>,
+    );
+    const classes = classesOf(html);
+
+    for (const token of ["w-control-sm", "px-0", "h-control-sm", "focus-ring"]) expect(classes).toContain(token);
+    expect(classes).not.toContain("px-3");
+    expect(attrsOf(html)).not.toHaveProperty("shape");
+  });
 });
 
 describe("Menu.SubmenuTrigger — data-slot", () => {

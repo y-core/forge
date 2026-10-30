@@ -176,9 +176,12 @@ than written out, so the steps the file declares are provably the ones the live 
 **The corner radius is driven directly rather than through a scale**, because it is not a colour and has no twelve steps; it is a dial whose whole
 output is one custom property.
 
-**Shape is emitted as a second block, under its own comment, rather than folded into the scheme.** The scheme block stays exactly what §1d says a
-scheme is — colour steps and nothing else — so the shape declarations `SHAPE_PROPERTIES` names follow it as a file a reader saves separately, the
-way `shape-compact.css` ships. `--radius` is not among them: a customiser paints it, and the file does not emit it.
+**Shape is emitted as a second block, under its own comment, rather than folded into the scheme, and only once a dial moves it off
+`theme-base.css`.** The scheme block stays exactly what §1d says a scheme is — colour steps and nothing else — so the shape declarations follow it
+as a file a reader saves separately, the way `shape-compact.css` ships. A scheme is imported after `theme-base.css`, so a block restating the
+default would still shadow it. **The block is written in `theme-base.css`'s own units**: control heights in rem, so they scale with the reader's
+root font size, and each radius as an offset from `--radius`. `--radius` itself heads the block, because a radius written relative to it would
+otherwise follow the consuming app's corner radius rather than the one previewed.
 
 ### 2d. No Generated Colour Reaches Markup
 

@@ -86,10 +86,11 @@ the application owns which of them run and over which directories. Wiring one is
 ```ts
 import { commentBudgetStep } from "@y-core/forge/tooling/gate";
 
-commentBudgetStep({ root: ROOT, sources: ["src", "config"] }, { tier: "unit" });
+commentBudgetStep({ root: ROOT, sources: ["src", "config"] });
 ```
 
-**`commentBudgetStep` is the one that makes the comment budget gated rather than reviewed.** Without it, [`CODE_REVIEW.md`][cr-3a] §3a has no step
+**`commentBudgetStep` is the one that makes the comment budget gated rather than reviewed**, and it runs at `static`, its default, because it
+judges the source rather than running it ([`TESTING.md`][testing-6a] §6a). Without it, [`CODE_REVIEW.md`][cr-3a] §3a has no step
 to route the rule to and every unbudgeted comment falls back on a reviewer's attention — which is how the rule loses. A step builder taken from the
 library is covered by the library's tests and moves with its rules; a check re-implemented locally is the divergence §1a warns about, applied to
 governance.
@@ -264,3 +265,4 @@ implementation** — they are named in the application's own design documentatio
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [cr-3a]: ./CODE_REVIEW.md#3a-tier-1--gated
 [testing-6]: ./TESTING.md#6-the-verification-gate
+[testing-6a]: ./TESTING.md#6a-one-command-nested-tiers

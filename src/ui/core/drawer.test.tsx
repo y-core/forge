@@ -208,6 +208,21 @@ describe("Drawer.Trigger and Drawer.Close — the sm button box", () => {
       expect(classes).not.toContain("text-sm");
     }
   });
+
+  it('squares the box with no inline padding under shape="icon", so an icon child keeps its size', async () => {
+    for (const Invoker of invokers) {
+      const html = await render(
+        <Invoker for='nav' shape='icon'>
+          <svg class='size-4' />
+        </Invoker>,
+      );
+      const classes = classesOf(html);
+
+      for (const token of ["w-control-sm", "px-0", "h-control-sm", "focus-ring"]) expect(classes).toContain(token);
+      expect(classes).not.toContain("px-3");
+      expect(attrsOf(html)).not.toHaveProperty("shape");
+    }
+  });
 });
 
 describe("Drawer sections", () => {

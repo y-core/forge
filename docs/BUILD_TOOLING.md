@@ -34,7 +34,7 @@ audience: internal
 - §2i Checks Are Functions, Not Scripts: the published validators, the verb vocabulary, and what a drift check compares
 - §2j Trunk-Only Development and the Amend Floor: why there are no branches, and what may still be rewritten
 - §2k `forge dev sync` Is Asked For, Never Automatic: why replacing a consumer's installed forge is a command and not a hook
-- §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:release` alone, and where component coverage is checked
+- §2l A Forge Release Never Waits on a Consumer: why the release gate is `verify:scheduled` alone, and where component coverage is checked
 - §2m The Bun Floor Is the Bun the Gate Runs On: why `engines.bun` equals `packageManager`, and what raising it takes
 - §2n A Node-Reached Export Is Declared Under `forge.node`: the one list every bundle, drift row and check is derived from
 - §3 The Compatibility-Flag Posture Every Forge App States: the flags, and why a compatibility date is not a posture
@@ -215,7 +215,7 @@ placeholder promotion itself writes. Empty plus commits since the tag is the ref
 `--allow-empty-changelog` is for a genuinely entry-free tooling release, and two properties keep it from becoming routine. **It does not license a
 malformed document** — an unparseable changelog is a separate refusal with no escape, because promotion has nothing to act on. **It still
 promotes**, so the section ships as a permanent `_Nothing yet._` entry in the released record; skipping promotion would leave the topmost released
-heading behind `package.json` and fail §2e on the next `bun run verify:release`.
+heading behind `package.json` and fail §2e on the next `bun run verify:scheduled`.
 
 **The link reference definition is best-effort.** Its base URL comes from `package.json`'s `repository` field, normalised by stripping a `git+`
 prefix and a `.git` suffix. Absent or unusable, the definition is omitted and the promotion still succeeds — a consumer with no known remote must
@@ -229,9 +229,9 @@ I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
 
 ### 2e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `release`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
-Requiring a written `[Unreleased]` entry on every run below `release` would fail every work-in-progress commit; `release` runs exactly where the
-invariant bites, before `prepublishOnly` and before a tag exists.
+**`CHANGELOG.md` is checked by a `scheduled`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
+Requiring a written `[Unreleased]` entry on every run below `scheduled` would fail every work-in-progress commit; `scheduled` runs exactly where
+the invariant bites, before `prepublishOnly` and before a tag exists.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
 with, and two parsers for one document is precisely the drift the gate exists to catch. One parser, two callers.
@@ -414,7 +414,7 @@ they asked for.
 tag is not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`) — an
 unpushed tag does not exist for a consumer, and `getLatestTag` would cut the next release on top of it regardless. Neither is a gate step: both are
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
-an offline `verify:release` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal.
+an offline `verify:scheduled` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal.
 
 These habits carry the rest:
 
@@ -445,8 +445,8 @@ the behaviour a consumer can reason about.
 
 ### 2l. A Forge Release Never Waits on a Consumer
 
-**The gate `config/release.ts` hands `forge release` is `verify:release`, and it reads nothing outside this checkout.** A consumer depends on forge,
-never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is the
+**The gate `config/release.ts` hands `forge release` is `verify:scheduled`, and it reads nothing outside this checkout.** A consumer depends on
+forge, never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is the
 dependency inverted.
 
 **A check that every published component is demonstrated belongs to the demonstrator.** Its own gate runs the coverage spec against the forge it

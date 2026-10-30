@@ -97,6 +97,27 @@ describe("Tooltip.Trigger — the sm button box on the bare form", () => {
     expect(classes).not.toContain("px-3");
   });
 
+  it("keeps the sm height under every shape it accepts, and refuses the square that would trade it away", async () => {
+    for (const shape of ["default", "icon", "circle"] as const) {
+      expect(classesOf(await render(<Tooltip.Trigger for='tip' shape={shape} />))).toContain("h-control-sm");
+    }
+    // @ts-expect-error -- `square` resolves to `h-auto`, so the box would no longer hold the Floor
+    void (<Tooltip.Trigger for='tip' shape='square' />);
+  });
+
+  it('squares the box with no inline padding under shape="icon", so an icon child keeps its size', async () => {
+    const html = await render(
+      <Tooltip.Trigger for='tip' aria-label='Save' shape='icon'>
+        <svg class='size-4' />
+      </Tooltip.Trigger>,
+    );
+    const classes = classesOf(html);
+
+    for (const token of ["w-control-sm", "px-0", "h-control-sm", "focus-ring"]) expect(classes).toContain(token);
+    expect(classes).not.toContain("px-3");
+    expect(attrsOf(html)).not.toHaveProperty("shape");
+  });
+
   it("leaves the box to the child under asChild", async () => {
     const html = await render(
       <Tooltip.Trigger for='tip' asChild>

@@ -82,6 +82,16 @@ export function importTargets(imports: PackageImports, specifier: string): strin
   return [...new Set(files)];
 }
 
+function namesCondition(value: unknown, condition: string): boolean {
+  if (!isConditions(value)) return false;
+  return Object.entries(value).some(([name, nested]) => name === condition || namesCondition(nested, condition));
+}
+
+/** Whether the `imports` entry `key` names `condition` at any depth of its conditions. @internal */
+export function importsCondition(imports: PackageImports, key: string, condition: string): boolean {
+  return Object.hasOwn(imports, key) && namesCondition(imports[key], condition);
+}
+
 /** The repo-relative file a `#` specifier resolves to in the deployed Worker bundle, or `null` when none does. @internal */
 export function deployTarget(imports: PackageImports, specifier: string): string | null {
   const match = matchImports(imports, specifier);

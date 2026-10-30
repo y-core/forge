@@ -44,6 +44,7 @@ import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
 
 /** The package whose `forge.devOnly` declaration the dev-boundary row reads — this one. */
 const PACKAGE = "@y-core/forge";
+const RELAX_ALIAS = "#app/relax";
 
 const RUNTIME_TYPES = "./.types/cloudflare.d.ts";
 
@@ -226,8 +227,8 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // Default-on and not opt-out: the forbidden specifiers are read from forge's own installed manifest,
   // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
   const devTrees = { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] };
-  steps.push(devBoundaryStep(devTrees));
-  // Release tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
+  steps.push(devBoundaryStep({ ...devTrees, relaxAlias: RELAX_ALIAS }));
+  // Scheduled tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
   steps.push(devBundleStep(devTrees));
 
   // Last, and stated at the call site so the table can be read without opening `builders.ts`.

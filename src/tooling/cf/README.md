@@ -416,7 +416,7 @@ destroyed. A splice that fails its own verification writes nothing, `--force` in
 [ns-3c]: ../../../docs/NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [ns-5i]: ../../../docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [relax-readme]: ../../relax/README.md
-[security-origins]: ../../security/README.md#deriving-allowed-origins-from-base_url
+[security-origins]: ../../security/README.md#deriving-allowed-origins-from-site_origin
 [session-readme]: ../../session/README.md#rotating-a-signing-secret
 [site-readme]: ../../site/README.md
 [sot-2f]: ../../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows

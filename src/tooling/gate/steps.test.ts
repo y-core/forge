@@ -63,7 +63,7 @@ describe("selectSteps() — tier membership", () => {
     { label: "lint", tail: 10, cmd: ["l"] },
     { label: "test", tier: "unit", tail: 10, cmd: ["t"] },
     { label: "browser", tier: "runtime", tail: 10, cmd: ["b"] },
-    { label: "changelog", tier: "release", tail: 10, cmd: ["c"] },
+    { label: "changelog", tier: "scheduled", tail: 10, cmd: ["c"] },
   ];
 
   function tierOf(tier: GateTier): string[] {
@@ -75,7 +75,7 @@ describe("selectSteps() — tier membership", () => {
     expect(GATE_TIERS.map(tierOf)).toEqual([["lint"], ["lint", "test"], ["lint", "test", "browser"], ["lint", "test", "browser", "changelog"]]);
   });
 
-  it("makes static ⊆ unit ⊆ runtime ⊆ release for any table", () => {
+  it("makes static ⊆ unit ⊆ runtime ⊆ scheduled for any table", () => {
     const runs = GATE_TIERS.map(tierOf);
 
     expect(runs.slice(1).every((run, index) => (runs[index] ?? []).every((label) => run.includes(label)))).toBe(true);
@@ -107,7 +107,7 @@ describe("selectSteps() — tier-stable order", () => {
   ];
 
   it("runs the cheaper tier first, whatever order the table declared", () => {
-    const result = selectSteps(INVERTED, { tier: "release" });
+    const result = selectSteps(INVERTED, { tier: "scheduled" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -121,7 +121,7 @@ describe("selectSteps() — tier-stable order", () => {
       { label: "browser", tier: "runtime", tail: 10, cmd: ["playwright"] },
       { label: "types:assets", tail: 10, cmd: ["forge"] },
     ];
-    const result = selectSteps(table, { tier: "release" });
+    const result = selectSteps(table, { tier: "scheduled" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -129,7 +129,7 @@ describe("selectSteps() — tier-stable order", () => {
   });
 
   it("sorts an --only selection the same way, so a scoped run is a prefix of the same order", () => {
-    const result = selectSteps(INVERTED, { tier: "release", only: ["browser", "lint:types"] });
+    const result = selectSteps(INVERTED, { tier: "scheduled", only: ["browser", "lint:types"] });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -137,7 +137,7 @@ describe("selectSteps() — tier-stable order", () => {
   });
 
   it("leaves the caller's table untouched, since a selection may not reorder what it was handed", () => {
-    selectSteps(INVERTED, { tier: "release" });
+    selectSteps(INVERTED, { tier: "scheduled" });
 
     expect(labelsOf([...INVERTED])).toEqual(["browser", "lint:types", "lint"]);
   });
@@ -145,7 +145,7 @@ describe("selectSteps() — tier-stable order", () => {
 
 describe("selectSteps() — --only filtering", () => {
   it("narrows to the named labels and marks the run scoped", () => {
-    const result = selectSteps(FIXTURE, { tier: "release", only: ["gamma", "alpha"] });
+    const result = selectSteps(FIXTURE, { tier: "scheduled", only: ["gamma", "alpha"] });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -154,7 +154,7 @@ describe("selectSteps() — --only filtering", () => {
   });
 
   it("preserves table order regardless of the order the labels were given", () => {
-    const result = selectSteps(FIXTURE, { tier: "release", only: ["gamma", "alpha"] });
+    const result = selectSteps(FIXTURE, { tier: "scheduled", only: ["gamma", "alpha"] });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -219,12 +219,12 @@ describe("selectSteps() — refusals", () => {
     expect(result.error).toBe("No steps selected for a unit run — refusing to report a green gate that ran nothing.");
   });
 
-  it("names the release tier in its refusal too", () => {
-    const result = selectSteps([], { tier: "release" });
+  it("names the scheduled tier in its refusal too", () => {
+    const result = selectSteps([], { tier: "scheduled" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
-    expect(result.error).toBe("No steps selected for a release run — refusing to report a green gate that ran nothing.");
+    expect(result.error).toBe("No steps selected for a scheduled run — refusing to report a green gate that ran nothing.");
   });
 });
 
@@ -275,7 +275,7 @@ describe("selectSteps() — table validity", () => {
       { label: "browser", tier: "runtime", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "install it" } },
     ];
 
-    expect(selectSteps(table, { tier: "release" }).ok).toBe(true);
+    expect(selectSteps(table, { tier: "scheduled" }).ok).toBe(true);
   });
 
   it("calls no probe, so selection stays pure and a machine cannot change which steps were chosen", () => {
@@ -301,12 +301,12 @@ describe("selectSteps() — table validity", () => {
     const tables: readonly (readonly Step[])[] = [
       [
         { label: "lint", tail: 10, cmd: ["l"] },
-        { label: "browser", tier: "release", tail: 10, cmd: ["a"] },
-        { label: "browser", tier: "release", tail: 10, cmd: ["b"] },
+        { label: "browser", tier: "scheduled", tail: 10, cmd: ["a"] },
+        { label: "browser", tier: "scheduled", tail: 10, cmd: ["b"] },
       ],
       [
         { label: "lint", tail: 10, cmd: ["l"] },
-        { label: "browser", tier: "release", tail: 10, cmd: ["b"], watches: [] },
+        { label: "browser", tier: "scheduled", tail: 10, cmd: ["b"], watches: [] },
       ],
     ];
 
@@ -352,9 +352,9 @@ describe("selectSteps() — the paths a change touches", () => {
 
   function affected(
     changed: readonly string[],
-    extra: { tier?: "static" | "release"; gateInputs?: readonly string[]; only?: readonly string[] } = {},
+    extra: { tier?: "static" | "scheduled"; gateInputs?: readonly string[]; only?: readonly string[] } = {},
   ): string[] {
-    const result = selectSteps(WATCHED, { tier: extra.tier ?? "release", changed, ...extra });
+    const result = selectSteps(WATCHED, { tier: extra.tier ?? "scheduled", changed, ...extra });
     return result.ok ? labelsOf(result.steps) : [`refused: ${result.error}`];
   }
 
@@ -378,14 +378,14 @@ describe("selectSteps() — the paths a change touches", () => {
   });
 
   it("selects nothing, and refuses nothing, for an empty change list", () => {
-    const result = selectSteps(WATCHED, { tier: "release", changed: [] });
+    const result = selectSteps(WATCHED, { tier: "scheduled", changed: [] });
 
     expect(result).toEqual({ ok: true, steps: [], reach: {}, total: 4, scoped: true });
   });
 
   it("gives an empty selection when no declared glob matches and every step declares one", () => {
     const declared = WATCHED.filter((step) => step.watches !== undefined);
-    const result = selectSteps(declared, { tier: "release", changed: ["scripts/x.sh"] });
+    const result = selectSteps(declared, { tier: "scheduled", changed: ["scripts/x.sh"] });
 
     expect(result.ok && labelsOf(result.steps)).toEqual([]);
   });
@@ -400,7 +400,7 @@ describe("selectSteps() — the paths a change touches", () => {
 
   it("refuses a duplicated label before looking at the change list", () => {
     const table: readonly Step[] = [...WATCHED, { label: "ui", tail: 10, cmd: ["x"] }];
-    const result = selectSteps(table, { tier: "release", changed: [] });
+    const result = selectSteps(table, { tier: "scheduled", changed: [] });
 
     expect(result.ok ? "" : result.error).toStartWith("Duplicate step label: ui.");
   });
@@ -422,7 +422,7 @@ describe("selectSteps() — the paths a change touches", () => {
   it("refuses a nested watches or wide glob that matches no file, naming the row, the field and the glob", () => {
     const files = ["src/ui/a.ts", "README.md"];
     const refusal = (step: Step): string => {
-      const result = selectSteps([step], { tier: "release", files });
+      const result = selectSteps([step], { tier: "scheduled", files });
       return result.ok ? "" : result.error;
     };
 
@@ -475,7 +475,7 @@ describe("selectSteps() — the paths a change touches", () => {
   it("refuses a dead glob on a row the run's tier and --only leave out, since the table is malformed for every run", () => {
     const table: readonly Step[] = [
       { label: "lint", tail: 10, cmd: ["l"] },
-      { label: "webkit", tier: "release", tail: 10, cmd: ["w"], narrow: { args: [], wide: ["src/gone/**"] } },
+      { label: "webkit", tier: "scheduled", tail: 10, cmd: ["w"], narrow: { args: [], wide: ["src/gone/**"] } },
     ];
     const result = selectSteps(table, { tier: "static", only: ["lint"], files: ["src/ui/a.ts"] });
 
@@ -491,13 +491,13 @@ describe("selectSteps() — the paths a change touches", () => {
       { label: "browser", tier: "runtime", tail: 10, cmd: ["b"], watches: ["src/**"] },
       { label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] },
     ];
-    const result = selectSteps(inverted, { tier: "release", changed: ["src/a.ts"] });
+    const result = selectSteps(inverted, { tier: "scheduled", changed: ["src/a.ts"] });
 
     expect(result.ok && labelsOf(result.steps)).toEqual(["lint", "browser"]);
   });
 
   it("marks the run scoped under a change list even when every step is selected", () => {
-    const result = selectSteps(WATCHED, { tier: "release", changed: ["package.json"] });
+    const result = selectSteps(WATCHED, { tier: "scheduled", changed: ["package.json"] });
 
     expect(result.ok && result.scoped).toBe(true);
   });
@@ -523,7 +523,7 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
       narrow: { args: ["--only-changed"], wide: ["playwright.config.ts", "src/css/**"] },
     },
     { label: "db", tier: "runtime", tail: 10, cmd: ["d"], watches: ["db/**"] },
-    { label: "webkit", tier: "release", tail: 10, cmd: ["w"], watches: ["src/**"], narrow: { args: ["--only-changed"] } },
+    { label: "webkit", tier: "scheduled", tail: 10, cmd: ["w"], watches: ["src/**"], narrow: { args: ["--only-changed"] } },
   ];
 
   function reachAt(tier: GateTier, pending: readonly string[] | undefined, gateInputs?: readonly string[]): Record<string, string> {
@@ -560,7 +560,7 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
     expect(reachAt("runtime", ["tools/gen.ts"], ["tools/**"])).toMatchObject({ browser: "whole", db: "whole" });
   });
 
-  it("runs every row whole below `runtime` and at `release`, whatever is pending", () => {
+  it("runs every row whole below `runtime` and at `scheduled`, whatever is pending", () => {
     const pending = ["src/ui/a.ts"];
 
     expect(GATE_TIERS.filter((tier) => tier !== "runtime").map((tier) => reachAt(tier, pending))).toEqual([

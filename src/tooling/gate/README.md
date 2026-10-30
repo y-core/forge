@@ -56,7 +56,7 @@ Then wire the scripts:
     "verify": "forge verify",
     "verify:static": "forge verify --tier static",
     "verify:unit": "forge verify --tier unit",
-    "verify:release": "forge verify --tier release",
+    "verify:scheduled": "forge verify --tier scheduled",
     "lint": "forge verify --only lint",
     "fix": "forge verify --fix"
   }
@@ -74,16 +74,16 @@ Each script is a tier, and each tier runs everything the one above it in this ta
 
 | When you are | Run | What it adds |
 | --- | --- | --- |
-| Writing, between edits | `bun run verify:static` | Every row that judges the source rather than running it |
+| Writing, and closing a task | `bun run verify:static`, then `bun test` on each test file you touched | Every row that judges the source rather than running it |
 | On a machine with no runtime installed | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
-| Closing a task | `bun run verify` | The runtime rows — workerd, database — over your pending changes. No browser spec |
-| Tagging a release, and the cron run | `bun run verify:release` | Every runtime row whole, the browser set on Chromium, and the rows that judge a finished change: changelog, deployed bundle |
+| Committing | `bun run verify` | The runtime rows — workerd, database — over your pending changes. No browser spec |
+| Tagging a release, and the daily cron run | `bun run verify:scheduled` | Every runtime row whole, the browser set on Chromium, and the rows that judge a finished change: changelog, deployed bundle |
 
-Which tier a row belongs to is decided by [`TESTING.md`][testing-6c] §6c's lines, never by how long it takes — with one exception, the browser set,
-which starts at `release` because the whole suite is too slow for the run a task closes on. A broken page is therefore caught by the cron
-run's `verify:release` rather than at task close. `forge verify --list` prints the rows a tier resolves to.
+Which tier a row belongs to is decided by [`TESTING.md`][testing-apps-6a] §6a's lines. **A heavy row runs at `scheduled`** — the browser set is
+one, because it starts a browser — by the rule in the library canon's [`TESTING.md`][testing-6c] §6c. A broken page is therefore caught by the
+cron run's `verify:scheduled`, or by the one before a tag, rather than at commit. `forge verify --list` prints the rows a tier resolves to.
 
-**At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. At `release` every
+**At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. At `scheduled` every
 row runs whole.
 
 ---
@@ -210,20 +210,22 @@ Most rows are opt-in, and each option is a question about your repository rather
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Dev-only code of the
 app's own needs no option: name it `*.dev.ts`, and the row fails a production module importing it, a type import included, while a `*.dev.ts` may
 import another. Code the shared path does call goes behind the app's `#app/relax` alias instead ([`src/relax/README.md`][relax-readme]); the row
-fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. The bundle row
-below still proves the built Worker.
+fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `package.json`, and every module that imports through it. It also fails
+any `imports` entry other than `#app/relax` that carries `forge-dev`, reported on `package.json`. The bundle row below still proves the built
+Worker.
 
-**`validate-dev-bundle` follows it, on the `release` tier.** It bundles the Worker config's `main` with esbuild — from the project, or from
+**`validate-dev-bundle` follows it, on the `scheduled` tier.** It bundles the Worker config's `main` with esbuild — from the project, or from
 wrangler's own dependency — and fails when a `*.dev.ts` module, the app's or a dependency's, or a module from a directory a `forge.devOnly` subpath
 is published from, contributes to the output. A module tree-shaking removed does not count. It also fails when the shell's
 `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every development module; `forge cf dev` sets it in
 wrangler's child process only ([`NAMESPACES.md`][namespaces-5i] §5i). It refuses a Worker config that sets `alias`, `build`, `define` or `rules`, or
 whose `compatibility_flags` carries `nodejs_compat` or `nodejs_compat_v2`, at the top level or in an `env.*` block, since it models none of them.
 
-**Only `test` and `validate-dev-bundle` default above the `static` tier** — `test` to `unit`, the bundle to `release`: every other row judges
-the source rather than running it. `design.sources` does
-not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no application should
-inherit deferrals keyed to `src/ui/…` paths.
+**A row the preset emits stays at `static` unless it runs something.** The `test` rows default to `unit`, the workerd row and the database rows
+that need workerd to `runtime`, and the browser set and `validate-dev-bundle` to `scheduled`.
+
+`design.sources` does not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no
+application should inherit deferrals keyed to `src/ui/…` paths.
 
 **`forgeChecks({ root, pkg })` — a library published under an `exports` map.** `pkg` is `{ name, version, exports, files }` verbatim from
 `package.json`, and `exports`, `jsx` and `classOrder` each merge over the config derived from it. Only checks whose config is derivable from `root`
@@ -296,14 +298,14 @@ Every rule id, its tier, its severity and the feature that replaces it are owned
 ## Running and narrowing a run
 
 ```bash
-bun run verify                     # the `runtime` tier, fail-fast — what a task closes on
+bun run verify                     # the `runtime` tier, fail-fast — what a commit closes on
 bun run verify --tier unit         # any other tier; the scripts above spell each one
 bun run verify --list              # print the resolved selection, run nothing
 bun run verify --only lint,test    # narrow the run (branded as scoped)
 bun run verify --fix               # run each selected step's fixer instead
 bun run verify --reuse             # answer at once if this exact tree already passed
 bun run verify --affected          # run only the steps this change touches (branded as scoped)
-bun run verify:release --report tmp/gate/   # write tmp/gate/report.json and every step's whole log, whatever the verdict
+bun run verify:scheduled --report tmp/gate/ # write tmp/gate/report.json and every step's whole log, whatever the verdict
 ```
 
 **`--report <dir>` is for a run nobody is watching**, such as a cron one. `report.json` names the tier, the `HEAD` commit, the tree, the start
@@ -326,7 +328,7 @@ Output is one line per step, then one verdict line:
 ✗ verify — failed at `lint` (step 2 of 5, 1.7s)
 ```
 
-**The verdict is the summary line**, not the raw tool output beneath it. A failing step exits 1, so `prepublishOnly: "bun run verify:release"`
+**The verdict is the summary line**, not the raw tool output beneath it. A failing step exits 1, so `prepublishOnly: "bun run verify:scheduled"`
 blocks a red gate. A failing step's untruncated output is written to one log per repository and step, overwritten by its next failure, and its path
 is printed under the excerpt, so a signal outside the `tail` window is still recoverable. A run filtered by `--only` or `--affected` brands its
 summary as scoped, so a scoped green never reads as a green gate.
@@ -352,7 +354,7 @@ await execute(createGateCommand({ cwd: resolveAppRoot(), steps: STEPS }));
 gate has a passing run of these exact bytes on record, it prints one line and exits 0**:
 
 ```text
-✓ verify — reused the passing release run of tree 9d1e5c2a07b4f36e8a51c0d9b2f7e4a6c3185d20; no step ran
+✓ verify — reused the passing scheduled run of tree 9d1e5c2a07b4f36e8a51c0d9b2f7e4a6c3185d20; no step ran
 ```
 
 Otherwise it says why and runs the gate as if the flag were absent:
@@ -370,12 +372,12 @@ the receipt alone.
 a new untracked file or a deletion each means the next `--reuse` runs the gate, and reverting the change makes the old receipt answer again. If
 something writes into the tree while the gate runs, the run records nothing and prints `○ the tree changed during the run — no receipt written`.
 
-**A receipt answers its own tier and every tier below it.** A `release` pass answers `verify --reuse` and `verify --tier static --reuse`; a
+**A receipt answers its own tier and every tier below it.** A `scheduled` pass answers `verify --reuse` and `verify --tier static --reuse`; a
 `static` pass never answers `verify --reuse`. A later lower-tier pass on the same tree keeps the higher-tier receipt rather than replacing it. The
 receipt also lists the steps it ran, so a table that now selects a step the receipt does not name runs the gate again.
 
 **A `runtime` receipt also names the `HEAD` it read your changes against, and answers only on that commit.** What its runtime rows ran depended on
-those changes, so the same tree on another commit runs the gate again. A `release` receipt ran every row whole and carries no such limit.
+those changes, so the same tree on another commit runs the gate again. A `scheduled` receipt ran every row whole and carries no such limit.
 
 **The receipt lives in the git directory**, at `git rev-parse --git-path forge-verify-receipt.json` — `.git/forge-verify-receipt.json`, and a
 linked worktree gets its own. Nothing in your `.gitignore` needs to change. Why it lives there is [`BUILD_TOOLING.md`][bt-2f] §2f's.
@@ -469,7 +471,7 @@ off `binDir`, whose shebang is node.** Not `bunx`, which installs from the regis
 ## Running Firefox and WebKit on a cron table
 
 The gate runs the browser set on Chromium alone. Firefox and WebKit are never a gate row: they run from a second step table, `config/cron.ts`,
-which the cron runs after `verify:release` and you can run by hand:
+which the cron runs after `verify:scheduled` and you can run by hand:
 
 ```ts
 // config/cron.ts
@@ -479,10 +481,10 @@ export default [crossEngineStep()];
 ```
 
 ```json
-"verify:cron": "forge verify --config config/cron.ts --tier release"
+"verify:cron": "forge verify --config config/cron.ts --tier scheduled"
 ```
 
-`crossEngineStep()` is one row, `test:browser:cross-engine`, spawning `playwright test --project=firefox --project=webkit` at `release`. Under
+`crossEngineStep()` is one row, `test:browser:cross-engine`, spawning `playwright test --project=firefox --project=webkit` at `scheduled`. Under
 `--report` it lists each failing spec with its engine, as `test:browser` does. **A table other than `config/steps.ts` leaves the verify receipt
 alone**, so a red cron run never costs you a `--reuse`.
 
@@ -567,7 +569,7 @@ const labels = (tier: GateTier) => {
 expect(labels("static").every((label) => labels("unit").includes(label))).toBe(true);
 
 // Selection calls no probe, so what a table selects never depends on the machine it runs on.
-expect(selectSteps(STEPS, { tier: "release" }).ok).toBe(true);
+expect(selectSteps(STEPS, { tier: "scheduled" }).ok).toBe(true);
 
 // `changed` is what `--affected` passes: assert which rows a given edit reaches.
 const touched = selectSteps(STEPS, { tier: "unit", changed: ["src/ui/x.tsx"] });
@@ -644,7 +646,7 @@ paths, so an allowlist or rule table imported from `src/…` is invisible to it,
 yourself, or add the module's path to `GATE_INPUTS`.
 
 **`--affected` drops a row whose `watches` miss the change before its `widen` is asked.** A database row can therefore skip a change to its
-`forge` entry's imports. The run is scoped and never the gate, so the gate a task closes on still runs it.
+`forge` entry's imports. The run is scoped and never the gate, so the gate a commit closes on still runs it.
 
 **An empty `--only` array is the flag's absence, not a request for nothing.** That is what a repeatable flag resolves to when it was never given,
 and reading it as "select no steps" would refuse every unscoped run.
@@ -673,5 +675,6 @@ and reading it as "select no steps" would refuse every unscoped run.
 [testing-6]: ../../../docs/TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../../../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
+[testing-apps-6a]: ../../../warden/canon/apps/TESTING.md#6a-one-command-nested-tiers
 [testing-apps-6e]: ../../../warden/canon/apps/TESTING.md#6e-one-tier-per-moment
 [ui-scan]: ../../ui/README.md#tell-tailwind-which-directories-to-scan

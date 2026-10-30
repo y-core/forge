@@ -178,8 +178,8 @@ same bytes.
 | `verify` | `forge verify` — the `runtime` tier, the gate a commit closes on |
 | `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it |
 | `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed |
-| `verify:release` | `forge verify --tier release` — what a tag and the cron run: every runtime suite whole, the browser set, and the rows that judge a finished change |
-| `verify:cron` | `forge verify --config config/cron.ts --tier release` — the cron table, which the cron runs after `verify:release`: Firefox and WebKit |
+| `verify:scheduled` | `forge verify --tier scheduled` — what a tag and the daily cron run: every runtime suite whole, every heavy row, and the rows that judge a finished change ([`TESTING.md`][testing-6a] §6a) |
+| `verify:cron` | `forge verify --config config/cron.ts --tier scheduled` — the cron table, which the cron runs after `verify:scheduled`: Firefox and WebKit |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |
 | `test` | `bun test` |

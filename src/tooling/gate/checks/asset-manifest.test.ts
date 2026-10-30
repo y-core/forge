@@ -120,7 +120,7 @@ describe("checkAssetManifest", () => {
 
     for (const tier of ["unit", "runtime"] as const) expect((await run(tier)).ok).toBe(false);
 
-    const result = await run("release");
+    const result = await run("scheduled");
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((f) => f.message)).toEqual([

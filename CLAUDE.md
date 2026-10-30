@@ -58,7 +58,7 @@
 | `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 
 A bare `bun run verify` is the `runtime` tier — the gate a commit closes on, with the workerd suite narrowed to the pending changes and no browser
-spec; `bun run verify:release` is the one tier with the Chromium set. **`bun run verify:static` is the loop to write in**, and with `bun test` on
+spec; `bun run verify:scheduled` is the one tier with the Chromium set. **`bun run verify:static` is the loop to write in**, and with `bun test` on
 each touched test file it is the task check a task closes on: every row that judges the source rather than running it, which is the whole gate bar
 the test suites, in about thirteen seconds. It holds the rules above that a step
 checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a finding lands in seconds

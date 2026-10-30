@@ -60,6 +60,7 @@ export const SHARED: AliasTable = new Map([
   ["docs", ["governing", "document", "citation"]],
   ["build", ["tooling", "pipeline", "asset"]],
   ["release", ["changelog", "version"]],
+  ["scheduled", ["cron", "tier"]],
   ["lint", ["rule", "gate"]],
   ["gate", ["verify", "step", "check"]],
 ]);

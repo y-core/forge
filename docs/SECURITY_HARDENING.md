@@ -32,7 +32,7 @@ audience: consumer
 - §3b originGuard — Strict Origin Allowlist: the Origin/Referer tier
 - §3d crossOriginProtection — Fetch Metadata: the `Sec-Fetch-Site` tier
 - §3e Origin-Guard Tiering — Which Guard When: pick one, never stack
-- §3f Deriving allowedOrigins in Dev: `BASE_URL` as the source, the `FORGE_DEV_ORIGINS` binding as the sole escape hatch
+- §3f Deriving allowedOrigins in Dev: `SITE_ORIGIN` as the source, the `FORGE_DEV_ORIGINS` binding as the sole escape hatch
 - §4 Rate Limiting with Workers Binding: the limiter middleware
 - §4a rateLimit Middleware Factory: per-route application
 - §4b A Missing Binding Under `forge cf dev`: the availability trade, and the build that alone may take it
@@ -375,7 +375,7 @@ policy a browser already holds, delete it in that browser's own HSTS settings. A
 a browser ignores the header on a connection with a certificate error (RFC 6797, section 8.1), so whether a policy was stored depends on whether
 the certificate was trusted at the time.
 
-**`BASE_URL` is the derivation source.** `deriveAllowedOrigins` (`src/security/url.ts`) builds the allowed-origin set from it, and
+**`SITE_ORIGIN` is the derivation source.** `deriveAllowedOrigins` (`src/security/url.ts`) builds the allowed-origin set from it, and
 `BaseUrlConfigSchema` validates it at boot. In dev that value is the canonical proxy origin — the same URL the browser is pointed at, https and all.
 
 **The `FORGE_DEV_ORIGINS` binding is the only escape hatch, and only a Worker run by `forge cf dev` reads it.** It exists for the proxy-less

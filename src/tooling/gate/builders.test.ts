@@ -227,11 +227,11 @@ describe("typeAwareLintStep()", () => {
 });
 
 describe("browserStep()", () => {
-  it("defaults to the release tier, so the run a task closes on never waits on the whole suite", () => {
-    expect(browserStep().tier).toBe("release");
+  it("defaults to the scheduled tier, so the run a task closes on never waits on the whole suite", () => {
+    expect(browserStep().tier).toBe("scheduled");
   });
 
-  it("runs from the tier the caller states, over its release default", () => {
+  it("runs from the tier the caller states, over its scheduled default", () => {
     expect(browserStep({ tier: "runtime" }).tier).toBe("runtime");
   });
 
@@ -388,8 +388,8 @@ describe("crossEngineStep()", () => {
     expect([step.label, step.cmd]).toEqual(["test:browser:cross-engine", ["playwright", "test", "--project=firefox", "--project=webkit"]]);
   });
 
-  it("defaults to the release tier, and runs from the tier the caller states over it", () => {
-    expect([crossEngineStep().tier, crossEngineStep({ tier: "runtime" }).tier]).toEqual(["release", "runtime"]);
+  it("defaults to the scheduled tier, and runs from the tier the caller states over it", () => {
+    expect([crossEngineStep().tier, crossEngineStep({ tier: "runtime" }).tier]).toEqual(["scheduled", "runtime"]);
   });
 
   it("never narrows or widens, so a cron run covers every spec", () => {
@@ -479,7 +479,7 @@ describe("workerdStep()", () => {
   });
 
   it("runs from the tier the caller states, over its runtime default", () => {
-    expect(workerdStep({ tier: "release" }).tier).toBe("release");
+    expect(workerdStep({ tier: "scheduled" }).tier).toBe("scheduled");
   });
 
   it("narrows and widens as the browser row does", () => {
@@ -522,13 +522,13 @@ describe("builders — tier", () => {
   });
 
   it("lets a project hold any check back to a higher tier", () => {
-    expect(jsxStep({ root: "/nowhere" }, { tier: "release" }).tier).toBe("release");
+    expect(jsxStep({ root: "/nowhere" }, { tier: "scheduled" }).tier).toBe("scheduled");
     expect(jsxStep({ root: "/nowhere" }, { tier: "unit" }).tier).toBe("unit");
   });
 
-  it("puts the test suite on the unit tier and the dev bundle on release", () => {
+  it("puts the test suite on the unit tier and the dev bundle on scheduled", () => {
     expect(testStep().tier).toBe("unit");
-    expect(devBundleStep({ root: "/nowhere" }).tier).toBe("release");
+    expect(devBundleStep({ root: "/nowhere" }).tier).toBe("scheduled");
   });
 
   it('omits the key rather than writing "static", so a static-tier step carries no key at all', () => {
@@ -702,9 +702,9 @@ describe("builders — derived watches", () => {
       [modernCssStep({ root: "/nowhere", sources: ["src/ui"] }), ["src/ui", "src/ui/**"]],
       [fadedTextStep({ root: "/nowhere", sources: ["src/ui", "!src/ui/design"], pairs: [] }), ["src/ui", "src/ui/**"]],
       [importBoundaryStep({ root: "/nowhere", guarded: ["src/tooling"] }), ["src", "src/**", "src/tooling", "src/tooling/**"]],
-      [devBoundaryStep({ root: "/nowhere" }), ["src", "src/**", "wrangler.jsonc"]],
-      [devBoundaryStep({ root: "/nowhere", workerConfig: "app/wrangler.jsonc" }), ["src", "src/**", "app/wrangler.jsonc"]],
-      [devBoundaryStep({ root: "/nowhere", workerConfig: null }), ["src", "src/**"]],
+      [devBoundaryStep({ root: "/nowhere" }), ["src", "src/**", "wrangler.jsonc", "package.json"]],
+      [devBoundaryStep({ root: "/nowhere", workerConfig: "app/wrangler.jsonc" }), ["src", "src/**", "app/wrangler.jsonc", "package.json"]],
+      [devBoundaryStep({ root: "/nowhere", workerConfig: null }), ["src", "src/**", "package.json"]],
       [
         stubGlobalsStep({ root: "/nowhere", stubs: [".types"], shared: [], sources: ["src", "!src/dev"] }),
         [".types", ".types/**", "src", "src/**"],

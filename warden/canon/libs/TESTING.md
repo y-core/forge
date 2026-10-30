@@ -39,9 +39,9 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task closes, and before a commit
-- §6a One Command, Nested Tiers: the writing loop and the task check, the gate a commit closes on, and the release gate
+- §6a One Command, Nested Tiers: which tier each moment runs, the daily cron, and an absent prerequisite
 - §6b What Each Tool Catches: the failure classes
-- §6c The Lines Between the Tiers: kind, prerequisite, narrowing and engine
+- §6c The Lines Between the Tiers: what a step needs, the heavy step, and the price of running it late
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
 
 ---
@@ -75,17 +75,13 @@ preference:
 
 **A browser test runs in a real browser under its own verb**, with its own config owning the discovery pattern, project list, and parallelism.
 
-**The set sits outside `unit`, and the reason is a prerequisite, not cost.** It needs a browser binary or server an install step provides, and a
-prerequisite is the only legitimate ground for a set to stand outside it (§6c).
-
-**It runs at `release` rather than `runtime`, and that placement is the one a tier line makes by cost.** The whole set is the slowest row in any
-gate and the one a change least often breaks, and narrowing it bought almost nothing, because a spec's reach covers nearly every source file. **The
-price is stated rather than hidden: a broken behaviour is found by the next cron run (§6a), not by the pre-commit gate.** A tag still never ships
-without the set. No other step may cite this as precedent; §6c's rule holds for each of them.
+**The set sits outside `unit` because it needs a browser binary or server an install step provides, and at `scheduled` because a step that
+starts a browser is heavy (§6c).** Narrowing it would buy almost nothing, because a spec's reach covers nearly every source file. A broken behaviour
+is therefore found by the next daily cron run or the next tag, not by the commit gate, and a tag still never ships without the set.
 
 **Chromium is the set's engine, and the gate's only one.** A library whose consumers need wider compatibility runs its other engines by hand or on
-the cron run (§6a), from a second step table, `config/cron.ts` run by `verify:cron`, never as a gate row (§6c). Where the environment serves the
-other engines from their own server, the browser config routes those projects there.
+the cron run (§6a), from a second step table, `config/cron.ts` run by `verify:cron`: a `scheduled` row of its own table, never a row of the
+gate's (§6c). Where the environment serves the other engines from their own server, the browser config routes those projects there.
 
 **This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
 natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
@@ -361,18 +357,24 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ### 6a. One Command, Nested Tiers
 
-**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `release` — are selected with `--tier`, not commands.** Verbs sharing
-every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
-`static ⊆ unit ⊆ runtime ⊆ release`. **`runtime` is what a bare invocation runs**, and it is the gate a commit closes on; `static` is the loop to
-write in and, with each touched test file run by file, the task check a task closes on (`AGENT_WORKFLOW.md` §4); `unit` is the run for a machine
-with no runtime installed, and `release` is the gate a tag and a publish block on, and the only one to carry the browser set (§1c). What separates
-one tier from the next is §6c's.
+**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** Verbs
+sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
+`static ⊆ unit ⊆ runtime ⊆ scheduled`. What each tier holds is §6c's. **Each moment runs one tier, and `runtime` is what a bare invocation
+runs:**
 
-**Cron — `verify:release` then `verify:cron`, run by the ledger host — is the periodic moment, and the one that also runs the other engines.** It
-gates a fresh checkout of the default branch, never a developer's work tree, with `--report` on each table, runs `verify:cron` whatever
-`verify:release` concluded (§1c), and lands
-a failure as one open task in the ledger of the project it ran for, rewritten in place by each later failure while it stays open. A run that never
-reached a test is logged and filed as nothing.
+| Moment | Runs |
+| --- | --- |
+| Write loop and task close | `verify:static`, plus each touched test file run by file (`AGENT_WORKFLOW.md` §4) |
+| Commit | `verify`, the `runtime` tier |
+| Tag | `verify:scheduled`, run by the release command before it tags; the remote CI then runs `verify:unit` on the tag |
+| Daily cron | `verify:scheduled`, then `verify:cron`, run by the ledger host |
+
+`unit` is the run for a machine with no runtime installed. No other moment exists to close on, an epic's end included.
+
+**The daily cron is the ledger host's, and its verdict lands in the ledger.** It gates a fresh checkout of the default branch, never a developer's
+work tree, with `--report` on each table, and runs `verify:cron` whatever `verify:scheduled` concluded (§1c). A failure lands as one open task in
+the ledger of the project it ran for, rewritten in place by each later failure while it stays open. A run that never reached a test is logged and
+filed as nothing.
 
 **A config file owns the step list** — every step, how it runs, and the tier it runs from. Read it there rather than trusting any prose copy. A
 step is one of two things: an external command, or a check the runner calls in-process.
@@ -382,7 +384,7 @@ warning" — is a failure.
 
 **A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
 Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
-same hint, because those tiers promise that a runtime ran, and a commit, a deploy or a release may not be assured by a step nobody ran. **A
+same hint, because those tiers promise that a runtime ran, and a commit or a tag may not be assured by a step nobody ran. **A
 run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
@@ -391,10 +393,10 @@ of it too** — a green that skipped a step is not the green that ran it.
 
 | Flag | Effect |
 | --- | --- |
-| `--tier <static\|unit\|runtime\|deploy\|release>` | Select the tier; omitted, the run is `runtime` |
+| `--tier <static\|unit\|runtime\|scheduled>` | Select the tier; omitted, the run is `runtime` |
 | `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
 | `--list` | Print the resolved selection and exit, running nothing |
-| `--fix` | Run each selected step's fixer, then re-run to confirm |
+| `--fix` | Run each selected step's fixer instead of the step, and name the steps that have none; a plain run then confirms |
 | `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this tier or higher; otherwise run the gate |
 | `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
 | `--report <dir>` | Write `report.json` — tier, commit, tree, verdict, and each step's status, duration, log and failing tests — and every step's whole log into `<dir>`, whatever the verdict |
@@ -415,44 +417,57 @@ a fail-fast run stops there without being told to.
 
 ### 6c. The Lines Between the Tiers
 
-**Each line is an objective property of a step rather than a judgement about it, and none is cost.** A tier a step was moved out of because
-somebody found it slow is a tier nobody can predict the membership of.
+**A tier names what a step needs, so a step's tier is predictable from the step alone:**
 
-**The kind line separates `static` from `unit`: a step that runs the code is `unit`, and a step that judges it is `static`.** Type checking,
-linting, formatting and every project validator read the source and say something about it; a test suite executes what the source builds. The
-distinction is what the step does, not what it costs — a type-aware lint that takes seconds stays in `static`, and a suite that happens to be quick
-is still `unit`. **A tier is therefore predictable from the step alone**, which is what lets a writer trust one run to judge everything they just
-wrote.
+| Tier | A step belongs here when it |
+| --- | --- |
+| `static` | judges the source and runs nothing |
+| `unit` | runs code in the test process, with nothing installed but the repository's dependencies |
+| `runtime` | needs a Worker runtime or a local database, and runs narrowed to the pending changes |
+| `scheduled` | is heavy, or judges a finished change; every row at this tier runs whole |
 
-**The prerequisite line separates `unit` from `runtime`.** Every step below it works on any machine with the repository's dependencies installed —
-nothing to fetch, no binary or service beyond the declared dev dependencies. That is what makes those runs the gate anyone may run at any time, and
-**why cost is never grounds for moving a step across this line**. A step that needs a runtime — a Worker runtime, a local database — runs from
-`runtime` up; the browser set runs at `release`, for the reason §1c states. Between them sits the step that declares a `requires` probe on an
-optional dependency: it runs wherever that dependency happens to be installed, and §6a's tier-decided verdict is what keeps that from weakening the
-gate a commit closes on.
+**The kind line is what a step does, not what it costs.** Type checking, linting, formatting and every project validator read the source and say
+something about it; a test suite executes what the source builds. A type-aware lint that takes seconds stays in `static`, and a suite that happens
+to be quick is still `unit`, which is what lets a writer trust one run to judge everything they just wrote. **Every step below `runtime` works on
+any machine with the repository's dependencies installed**, which makes those runs the gate anyone may run at any time. A step that declares a
+`requires` probe on an optional dependency runs wherever that dependency happens to be installed, and §6a's tier-decided verdict keeps that from
+weakening the gate a commit closes on.
 
-**The narrowing line separates `runtime` from `release`: below `release`, a step that declares how to narrow runs only over the pending changes;
-at `release` it runs whole.** Under `runtime` such a step runs whole when a change touches one of the gate's own inputs or a path the step declares
-wide. Otherwise its tool is asked what the narrowed run would select: the step runs nothing when the answer is nothing, runs narrowed to the specs
-the changes reach when it is something, and runs whole when the answer cannot be read. A step that asks whether the tree is ready to ship
-— a written changelog entry, a bundle of what deploys, a gate over a derived tree — also starts at `release`, because it judges a finished change
-rather than one in progress.
+**A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
+
+- it starts a browser;
+- it runs a Worker-runtime suite whole on every change, with no way to narrow;
+- it is a soak, a live-network or a deep property run;
+- its test set takes more than 60 seconds, or one test in it more than 10.
+
+That budget is stated here and nowhere else. **A step that is not heavy stays where what it needs puts it**, however slow it feels, because a tier
+whose membership follows taste is a tier nobody can predict. A step that asks whether the tree is ready to ship — a written changelog entry, a
+bundle of what deploys, a gate over a derived tree — also starts at `scheduled`, because it judges a finished change rather than one in progress.
+
+**A heavy test inside `unit` is split out, never dropped.** It becomes a test set of its own, declared at `{ tier: "scheduled" }`. It is never
+deleted, skipped or ignored out of every automated run.
+
+**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the commit gate.** A
+step worth proving only periodically goes in the cron table, `config/cron.ts`, and never blocks a tag. Another browser engine is that kind of step:
+Chromium proves the behaviour, and another engine proves only that it holds there too.
+
+**Every repository declares `verify:scheduled`.** The cron runs it, so a repository without it is outside the cron, and that is a gap rather than a
+choice.
+
+**Below `scheduled`, a step that declares how to narrow runs only over the pending changes; at `scheduled` it runs whole.** Under `runtime` such a
+step runs whole when a change touches one of the gate's own inputs or a path the step declares wide. Otherwise its tool is asked what the narrowed
+run would select: the step runs nothing when the answer is nothing, runs narrowed to the specs the changes reach when it is something, and runs
+whole when the answer cannot be read.
 
 **A step's reach is derived from a graph a check already holds — the tool's import graph, the declared namespace graph — and never from a path
 list kept by hand.** The only hand-kept list names what that graph cannot see: a file a spec reads without importing it, or a module it reaches
 through a specifier resolved at run time. That list is checked against the tree, so a rename that leaves one of its globs matching nothing is
-refused rather than silently narrowing the step. **`release` runs every step whole on every tag**, which is the backstop for a reach the
-derivation missed.
-
-**No step re-runs a suite another step already ran, on another engine.** Chromium proves the behaviour; another engine proves only that it holds
-there too, which is worth a scheduled run and not the minutes it would add to every tag.
-
-The lines compose rather than compete: a step is `static` unless it runs the code, `unit` unless it needs a runtime, `runtime` when it does, and
-`release` when it judges a finished change.
+refused rather than silently narrowing the step. **`scheduled` runs every step whole on every tag and every cron run**, which is the backstop for a
+reach the derivation missed.
 
 That rank is also what orders the run. **Execution order is tier-stable rather than table order: within a tier the table's declared order holds,
-and across tiers the lower tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `release` row is
-not where it runs, and a `unit` row appended after one still runs ahead of it. That is what makes a fail-fast `release` run fail on the
+and across tiers the lower tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `scheduled` row is
+not where it runs, and a `unit` row appended after one still runs ahead of it. That is what makes a fail-fast `scheduled` run fail on the
 sub-second check rather than after minutes of browser — and why a repository never re-declares a row it only wanted moved.
 
 The tier enum is closed and ordered, and a step names **the lowest tier it runs in — a rank, not a set of tiers**. There is consequently no way to

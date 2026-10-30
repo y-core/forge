@@ -400,15 +400,15 @@ request without Fetch Metadata.
 **The check holds it in two places.** Rule B of `validate-dev-boundary` fails a production module importing a `*.dev.ts`, a type import included;
 a `*.dev.ts` may import another. Rule C fails a value import of a dev-only subpath outside a `*.dev.ts` module. Both follow a `#` specifier to its
 deploy target, and rule B fails each `imports` entry whose deploy target is a `*.dev.ts`, and every importer that reaches it. The built bundle is
-still `validate-dev-bundle`'s to prove: on the `release` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a dev-only
-directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every
-dev module.
+still `validate-dev-bundle`'s to prove: on the `scheduled` tier it bundles the deployed `main` and fails when a `*.dev.ts` or a module from a
+dev-only directory contributes to it, and when the shell's `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would
+bundle every dev module.
 
 **An app has one relaxation alias, `#app/relax`, and a new relaxation is an export on its pair.** The app's `imports` map sends `forge-dev` to
 `./src/app/relax.dev.ts` and `default` to `./src/app/relax.strict.ts`. A route, a banner or a CSP source only development should see is one more
 export on that pair, never a new alias or a new pair. What a development build loosens is then auditable in one file pair, as forge's own `imports`
-map is the list of its relaxations. A fake binding is still `testing`'s rather than a relaxation's. The recipe is
-[`src/relax/README.md`][relax-readme].
+map is the list of its relaxations. `validate-dev-boundary` holds the rule for an app: it fails any other `imports` entry that carries `forge-dev`.
+A fake binding is still `testing`'s rather than a relaxation's. The recipe is [`src/relax/README.md`][relax-readme].
 
 **Where a relaxation is legitimate in production, it stays an explicit literal.** `csrfProtection({ subject: false })` is the idiom — a grep finds
 every call site that took it ([`INPUT_VALIDATION.md`][iv-3a] §3a). A `#relax` module is for the ones that are not legitimate, and the difference

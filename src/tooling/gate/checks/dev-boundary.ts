@@ -1,10 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import { DEV_CONDITION } from "../../cf/dev/conditions";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import { deployTarget, readPackageImports } from "./package-imports";
+import { deployTarget, importsCondition, readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource, resolveModuleFile, unresolvedSourceEntries } from "./source-scan";
 import type { DevBoundaryCheckConfig, PackageImports } from "./types";
 import { readWorkerConfig } from "./worker-config";
@@ -107,6 +108,22 @@ function judgeImportsMap(imports: PackageImports): Finding[] {
   });
 }
 
+/** Rule D, on the manifest: no `imports` entry but the app's relaxation alias routes through `forge-dev`. */
+function judgeRelaxAlias(imports: PackageImports, alias: string): Finding[] {
+  return Object.keys(imports).flatMap((key) => {
+    if (key === alias || !importsCondition(imports, key, DEV_CONDITION)) return [];
+    return [
+      fail(`\`imports\` entry \`${key}\` routes \`${DEV_CONDITION}\` through a second relaxation alias`, {
+        file: "package.json",
+        detail: [
+          "the app has one relaxation alias, so what a development build loosens is auditable in one file pair",
+          `move the export onto the \`${alias}\` pair and delete this entry`,
+        ],
+      }),
+    ];
+  });
+}
+
 /** Rule B: no production module imports a development one, not even for a type. */
 function judgeDevModuleImport(
   config: DevBoundaryCheckConfig,
@@ -168,7 +185,11 @@ export function checkDevBoundary(config: DevBoundaryCheckConfig): CheckResult {
   if (unresolved.length > 0) return checkResult(unresolved, "");
 
   const imports = readPackageImports(config.root);
-  const findings: Finding[] = [...judgeMain(config), ...judgeImportsMap(imports)];
+  const findings: Finding[] = [
+    ...judgeMain(config),
+    ...judgeImportsMap(imports),
+    ...(config.relaxAlias === undefined ? [] : judgeRelaxAlias(imports, config.relaxAlias)),
+  ];
 
   const forbidden = (config.packages ?? []).flatMap((packageName) => {
     const declared = devOnlySpecifiers(config.root, packageName);

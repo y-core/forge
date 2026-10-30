@@ -89,14 +89,14 @@ describe("cloudflareWorkerSteps() — shape", () => {
 
     expect(held.map((step) => [step.label, step.tier])).toEqual([
       ["test", "unit"],
-      ["validate-dev-bundle", "release"],
+      ["validate-dev-bundle", "scheduled"],
     ]);
   });
 
-  it("adds test:browser to the release tier, not runtime, once the browser opt-in is taken", () => {
+  it("adds test:browser to the scheduled tier, not runtime, once the browser opt-in is taken", () => {
     const at = (tier: string): string[] => labelsOf(cloudflareWorkerSteps({ browser: true, design: DESIGN }).filter((step) => step.tier === tier));
 
-    expect([at("runtime"), at("release")]).toEqual([[], ["validate-dev-bundle", "test:browser"]]);
+    expect([at("runtime"), at("scheduled")]).toEqual([[], ["validate-dev-bundle", "test:browser"]]);
   });
 });
 
@@ -207,15 +207,49 @@ describe("cloudflareWorkerSteps() — the dev-boundary row", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  const relaxApp = (key: string): Record<string, string> => ({
+    "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts" }\n',
+    "package.json": JSON.stringify({
+      name: "app",
+      imports: { [key]: { "forge-dev": "./src/app/relax.dev.ts", default: "./src/app/relax.strict.ts" } },
+    }),
+    "src/worker.ts": "export default {};\n",
+  });
+
+  it("fails an `imports` entry routing `forge-dev` through any alias but `#app/relax`, on the manifest", async () => {
+    const root = gateFixtureRoot(relaxApp("#app/debug-banner"), "forge-presets-");
+    try {
+      const result = await runRow(cloudflareWorkerSteps({ root }), "validate-dev-boundary");
+
+      expect(crossingsOf(result)).toContainEqual([
+        "package.json",
+        "`imports` entry `#app/debug-banner` routes `forge-dev` through a second relaxation alias",
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes the same entry under `#app/relax`", async () => {
+    const root = gateFixtureRoot(relaxApp("#app/relax"), "forge-presets-");
+    try {
+      const result = await runRow(cloudflareWorkerSteps({ root }), "validate-dev-boundary");
+
+      expect(crossingsOf(result).filter(([file]) => file === "package.json")).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("cloudflareWorkerSteps() — the browser row", () => {
-  it("puts test:browser last, on the release tier and behind the Playwright server", () => {
+  it("puts test:browser last, on the scheduled tier and behind the Playwright server", () => {
     const steps = cloudflareWorkerSteps({ browser: true, assetConfig: "src/assets/config.ts", workerConfig: "wrangler.workers.jsonc" });
     const browser = steps.at(-1);
 
     expect(browser?.label).toBe("test:browser");
-    expect(browser?.tier).toBe("release");
+    expect(browser?.tier).toBe("scheduled");
     expect(browser?.requires?.probe).toBeFunction();
     expect(browser !== undefined && !isCheckStep(browser) ? browser.cmd : undefined).toEqual(["playwright", "test", "--project=chromium"]);
   });
@@ -410,13 +444,13 @@ describe("cloudflareWorkerSteps() — the db rows", () => {
 });
 
 describe("cloudflareWorkerSteps() — the dev-bundle row", () => {
-  it("emits validate-dev-bundle on the release tier, right after the dev-boundary row, with no machine prerequisite", () => {
+  it("emits validate-dev-bundle on the scheduled tier, right after the dev-boundary row, with no machine prerequisite", () => {
     const steps = cloudflareWorkerSteps({ workerConfig: "wrangler.workers.jsonc" });
     const labels = labelsOf(steps);
     const row = steps.find((step) => step.label === "validate-dev-bundle");
 
     expect(labels.indexOf("validate-dev-bundle")).toBe(labels.indexOf("validate-dev-boundary") + 1);
-    expect(row?.tier).toBe("release");
+    expect(row?.tier).toBe("scheduled");
     expect(row?.requires).toBeUndefined();
   });
 
@@ -1074,7 +1108,7 @@ describe("cloudflareWorkerSteps() — watches", () => {
     expect(watches["validate-vendor-boundary"]).toEqual(["src", "src/**"]);
     expect(watches["validate-exposure"]).toEqual(["wrangler.jsonc"]);
     expect(watches["validate-compatibility"]).toEqual(["wrangler.jsonc"]);
-    expect(watches["validate-dev-boundary"]).toEqual(["src", "src/**", "wrangler.jsonc"]);
+    expect(watches["validate-dev-boundary"]).toEqual(["src", "src/**", "wrangler.jsonc", "package.json"]);
   });
 
   it("leaves undeclared every row whose inputs no path list bounds", () => {

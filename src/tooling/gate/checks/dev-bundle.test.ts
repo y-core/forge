@@ -14,11 +14,12 @@ const FORGE_MANIFEST = {
   name: "@y-core/forge",
   exports: {
     "./app": { import: "./src/app/mod.ts" },
+    "./relax": { "forge-dev": "./src/relax/mod.ts" },
     "./testing": { import: "./src/testing/mod.ts" },
     "./testing/node": { types: "./src/testing/node.d.ts" },
     "./tooling/gate": { import: "./src/tooling/gate/mod.ts" },
   },
-  forge: { devOnly: ["./testing", "./testing/node", "./tooling/*"] },
+  forge: { devOnly: ["./relax", "./testing", "./testing/node", "./tooling/*"] },
 };
 
 const roots: string[] = [];
@@ -29,10 +30,11 @@ afterAll(() => {
 
 function installForge(root: string, manifest: object = FORGE_MANIFEST): void {
   const dir = join(root, "node_modules", "@y-core", "forge");
-  for (const sub of ["app", "testing", "tooling/gate"]) mkdirSync(join(dir, "src", sub), { recursive: true });
+  for (const sub of ["app", "relax", "testing", "tooling/gate"]) mkdirSync(join(dir, "src", sub), { recursive: true });
   writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
   writeFileSync(join(dir, "src", "app", "mod.ts"), 'export function createApp(): string {\n  return "app";\n}\n');
   writeFileSync(join(dir, "src", "testing", "mod.ts"), "export function fakeKV(): object {\n  return {};\n}\n");
+  for (const file of ["mod.ts", "armed.ts"]) cpSync(resolve(import.meta.dir, "../../../relax", file), join(dir, "src", "relax", file));
 }
 
 function project(files: Record<string, string>, config: Partial<DevBundleCheckConfig> = {}): DevBundleCheckConfig {
@@ -220,7 +222,7 @@ describe("checkDevBundle — what it refuses to judge", () => {
 
 describe("checkDevBundle — the negative fixture, bundled for real", () => {
   const ENTRY = "src/worker.ts";
-  const BANNER_MODULES = ["src/debug-banner.dev.ts", "src/debug-banner.strict.ts"];
+  const RELAX_MODULES = ["src/app/relax.dev.ts", "src/app/relax.strict.ts"];
 
   function consumer(): string {
     const root = mkdtempSync(join(tmpdir(), "forge-dev-bundle-fixture-"));
@@ -246,16 +248,16 @@ describe("checkDevBundle — the negative fixture, bundled for real", () => {
     ]);
   });
 
-  it("resolves the app's own `#app/debug-banner` alias to its strict stub under wrangler's conditions", async () => {
+  it("resolves the app's own `#app/relax` alias to its strict stub under wrangler's conditions", async () => {
     const inputs = contributing(await bundleWorker(consumer(), ENTRY));
 
-    expect(BANNER_MODULES.filter((module) => inputs.includes(module))).toEqual(["src/debug-banner.strict.ts"]);
+    expect(RELAX_MODULES.filter((module) => inputs.includes(module))).toEqual(["src/app/relax.strict.ts"]);
   });
 
-  it("resolves the app's own `#app/debug-banner` alias to its development module under `forge-dev`", async () => {
+  it("resolves the app's own `#app/relax` alias to its development module, wrapping its strict twin, under `forge-dev`", async () => {
     const inputs = contributing(await bundleWorker(consumer(), ENTRY, [...WRANGLER_CONDITIONS, DEV_CONDITION]));
 
-    expect(BANNER_MODULES.filter((module) => inputs.includes(module))).toEqual(["src/debug-banner.dev.ts"]);
+    expect(RELAX_MODULES.filter((module) => inputs.includes(module))).toEqual(RELAX_MODULES);
   });
 
   async function runConsumer(conditions: readonly string[], define: Record<string, string>): Promise<unknown> {

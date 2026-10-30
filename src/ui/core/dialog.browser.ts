@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { jsx } from "../../render/jsx/jsx-runtime";
 import { render } from "../../testing/render";
-import { compiledCss, mount, renderedClasses } from "../client/browser.fixture";
+import { compiledCss, mount, renderedClasses, withCompiledCss } from "../client/browser.fixture";
 import { Dialog } from "./dialog";
 import { Drawer } from "./drawer";
 
@@ -228,6 +229,45 @@ function box(page: Page): Promise<Box> {
     };
   });
 }
+
+async function closeBoxes(page: Page, close: Record<string, string>): Promise<{ button: DOMRect; icon: DOMRect | undefined }[]> {
+  const glyph = () => jsx("svg", { class: "size-4", viewBox: "0 0 16 16", "aria-hidden": "true" });
+  const html = await render([
+    Dialog({ id: "d", open: true, label: "Panel", children: Dialog.Close({ for: "d", "aria-label": "Close", ...close, children: glyph() }) }),
+    Drawer({ id: "dr", open: true, label: "Panel", children: Drawer.Close({ for: "dr", "aria-label": "Close", ...close, children: glyph() }) }),
+  ]);
+  await mount(page, await withCompiledCss(html));
+  return page.evaluate(() =>
+    [...document.querySelectorAll("button:has(> svg)")].map((button) => ({
+      button: button.getBoundingClientRect().toJSON(),
+      icon: button.querySelector("svg")?.getBoundingClientRect().toJSON(),
+    })),
+  );
+}
+
+test.describe("Dialog and Drawer — an icon-only Close", { tag: "@cross-engine" }, () => {
+  test('under shape="icon" a 16px icon sits wholly inside a 32px square', async ({ page }) => {
+    const boxes = await closeBoxes(page, { shape: "icon" });
+
+    expect(boxes).toHaveLength(2);
+    for (const { button, icon } of boxes) {
+      if (icon === undefined) throw new Error("the Close lost its icon — the fixture proves nothing");
+      expect([button.width, button.height]).toEqual([32, 32]);
+      expect([icon.width, icon.height]).toEqual([16, 16]);
+      expect(icon.left).toBeGreaterThanOrEqual(button.left);
+      expect(icon.right).toBeLessThanOrEqual(button.right);
+      expect(icon.top).toBeGreaterThanOrEqual(button.top);
+      expect(icon.bottom).toBeLessThanOrEqual(button.bottom);
+    }
+  });
+
+  test("a size-8 override keeps the box's px-3 and squeezes the icon, which is what shape replaces", async ({ page }) => {
+    const boxes = await closeBoxes(page, { class: "size-8" });
+
+    expect(boxes).toHaveLength(2);
+    for (const { icon } of boxes) expect(icon?.width).toBeLessThan(16);
+  });
+});
 
 test.describe("Dialog — the viewport gutter", { tag: "@cross-engine" }, () => {
   test("a caller's own max-width in a later layer still leaves the gutter, and stays centred", async ({ page }) => {

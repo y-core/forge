@@ -4,7 +4,7 @@ import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { nameAttrs } from "../contracts/naming";
 import { invokerAttrs, POPOVER_SCOPE } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
-import type { PhysicalSide } from "../contracts/types";
+import type { InvokerShape, PhysicalSide } from "../contracts/types";
 import { buttonBox } from "./button";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -18,6 +18,8 @@ type PopoverAlign = "start" | "center" | "end";
 interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** id of the `Popover.Content` this trigger toggles — its `commandfor` target. */
   for: string;
+  /** `"icon"` squares the box and drops its inline padding, for a child that is only an icon. */
+  shape?: InvokerShape | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -38,14 +40,14 @@ const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, "data-slot": inhe
   </span>
 );
 
-const PopoverTrigger: FC<PopoverTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => (
+const PopoverTrigger: FC<PopoverTriggerProps> = ({ for: target, shape, class: cls, children, "data-slot": inherited, ...props }) => (
   <button
     type='button'
     data-slot={slotToken("popover-trigger", inherited)}
     command='toggle-popover'
     commandfor={target}
     {...invokerAttrs(target, "dialog")}
-    class={cn(buttonBox({ size: "sm" }), "border-transparent", "cursor-pointer list-none", cls)}
+    class={cn(buttonBox({ size: "sm", shape }), "border-transparent", "cursor-pointer list-none", cls)}
     {...props}>
     {children}
   </button>

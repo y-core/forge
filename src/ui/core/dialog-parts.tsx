@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { descriptionId, titleId } from "../contracts/naming";
+import type { InvokerShape } from "../contracts/types";
 import { buttonBox } from "./button";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -18,6 +19,8 @@ type DialogSectionProps = JSX.IntrinsicElements["div"];
 interface DialogTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** id of the `<dialog>` root this button opens as a modal — its `commandfor` target. */
   for: string;
+  /** `"icon"` squares the box and drops its inline padding, for a child that is only an icon. */
+  shape?: InvokerShape | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -26,6 +29,8 @@ interface DialogCloseProps extends Omit<JSX.IntrinsicElements["button"], "childr
   for: string;
   /** Run the cancelable close-request algorithm (`request-close`) instead of `close`. */
   request?: boolean | undefined;
+  /** `"icon"` squares the box and drops its inline padding, for a child that is only an icon. */
+  shape?: InvokerShape | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -50,28 +55,28 @@ export function createDialogParts(
   Content: FC<DialogSectionProps>;
   Footer: FC<DialogSectionProps>;
 } {
-  const Trigger: FC<DialogTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...props }) => {
+  const Trigger: FC<DialogTriggerProps> = ({ for: target, shape, class: cls, children, "data-slot": inherited, ...props }) => {
     return (
       <button
         type='button'
         data-slot={slotToken(`${prefix}-trigger`, inherited)}
         command='show-modal'
         commandfor={target}
-        class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
+        class={cn(buttonBox({ size: "sm", shape }), "border-transparent", cls)}
         {...props}>
         {children}
       </button>
     );
   };
 
-  const Close: FC<DialogCloseProps> = ({ for: target, request = false, class: cls, children, "data-slot": inherited, ...props }) => {
+  const Close: FC<DialogCloseProps> = ({ for: target, request = false, shape, class: cls, children, "data-slot": inherited, ...props }) => {
     return (
       <button
         type='button'
         data-slot={slotToken(`${prefix}-close`, inherited)}
         command={request ? "request-close" : "close"}
         commandfor={target}
-        class={cn(buttonBox({ size: "sm" }), "border-transparent", cls)}
+        class={cn(buttonBox({ size: "sm", shape }), "border-transparent", cls)}
         {...props}>
         {children}
       </button>

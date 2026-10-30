@@ -31,13 +31,13 @@ describe("the gate's step table", () => {
   });
 
   it("selects without calling a probe, so what it selects never depends on the machine", () => {
-    expect(selectSteps(STEPS, { tier: "release" }).ok).toBe(true);
+    expect(selectSteps(STEPS, { tier: "scheduled" }).ok).toBe(true);
   });
 
-  it("keeps the browser suite out of runtime and runs it on Chromium alone at release", () => {
+  it("keeps the browser suite out of runtime and runs it on Chromium alone at scheduled", () => {
     const browsers = (tier: GateTier): string[] => labels(tier).filter((label) => label.startsWith("test:browser"));
 
-    expect([browsers("unit"), browsers("runtime"), browsers("release")]).toEqual([[], [], ["test:browser"]]);
+    expect([browsers("unit"), browsers("runtime"), browsers("scheduled")]).toEqual([[], [], ["test:browser"]]);
   });
 
   it("names no Firefox or WebKit project in any row, so the cross-engine subset runs only by hand or on a schedule", () => {
@@ -97,7 +97,7 @@ describe("the gate's watches", () => {
     .filter((file) => file !== "");
 
   const affected = (changed: readonly string[]): string[] => {
-    const selection = selectSteps(STEPS, { tier: "release", changed, gateInputs: GATE_INPUTS });
+    const selection = selectSteps(STEPS, { tier: "scheduled", changed, gateInputs: GATE_INPUTS });
     return selection.ok ? selection.steps.map((step) => step.label) : [`refused: ${selection.error}`];
   };
 
@@ -130,7 +130,7 @@ describe("the gate's watches", () => {
 
   it("passes the gate's own refusal of a watches or wide glob that matches no file in the work tree", () => {
     const files = worktreeFiles(ROOT) ?? [];
-    const selection = selectSteps(STEPS, { tier: "release", files });
+    const selection = selectSteps(STEPS, { tier: "scheduled", files });
 
     expect(files).toContain("package.json");
     expect(selection.ok ? "" : selection.error).toBe("");
@@ -147,7 +147,7 @@ describe("the gate's watches", () => {
   });
 
   it("selects every step when the gate runner changes", () => {
-    expect(affected(["src/tooling/gate/command.ts"])).toEqual(labels("release"));
+    expect(affected(["src/tooling/gate/command.ts"])).toEqual(labels("scheduled"));
   });
 
   it("runs none of the slow rows a watch list bounds for a documentation edit", () => {

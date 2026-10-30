@@ -136,6 +136,9 @@ export type Size = "sm" | "md" | "lg";
 /** A button's footprint beyond its size: text, an icon-only square, a full-width square, or a circle. @public */
 export type Shape = "default" | "icon" | "square" | "circle";
 
+/** The shapes a Trigger or Close primitive accepts on its `sm` button box. @public */
+export type InvokerShape = Exclude<Shape, "square">;
+
 /** One of the declared presentational-attribute names. @public */
 export type PresentationAttrName = (typeof PRESENTATION_ATTRS)[keyof typeof PRESENTATION_ATTRS];
 

@@ -6,7 +6,7 @@ import { nameAttrs, triggerId } from "../contracts/naming";
 import { invokerAttrs, POPOVER_COORDS_ATTR } from "../contracts/overlay-contract";
 import { stateAttrs } from "../contracts/state-attrs";
 import type { MenuItemAttrsOptions } from "../contracts/types";
-import type { Align, MenuPopupNaming, Side } from "../contracts/types";
+import type { Align, InvokerShape, MenuPopupNaming, Side } from "../contracts/types";
 import { buttonBox } from "./button";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -21,6 +21,8 @@ interface MenuRootProps extends Omit<JSX.IntrinsicElements["span"], "children"> 
 interface MenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], "children"> {
   /** id of the `Menu.Popup` this trigger toggles — its `commandfor` target. */
   for: string;
+  /** `"icon"` squares the box and drops its inline padding, for a child that is only an icon. */
+  shape?: InvokerShape | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -82,14 +84,14 @@ const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inheri
   </span>
 );
 
-const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, class: cls, children, "data-slot": inherited, ...rest }) => (
+const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, shape, class: cls, children, "data-slot": inherited, ...rest }) => (
   <button
     type='button'
     data-slot={slotToken("menu-trigger", inherited)}
     command='toggle-popover'
     commandfor={target}
     {...invokerAttrs(target, "menu")}
-    class={cn(buttonBox({ size: "sm" }), "border-transparent", "cursor-pointer", cls)}
+    class={cn(buttonBox({ size: "sm", shape }), "border-transparent", "cursor-pointer", cls)}
     {...rest}
     // After `rest`, because the popup's `aria-labelledby` points here: a caller's own `id` would
     // leave `role="menu"` with no name at all, which is what it has today.

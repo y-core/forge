@@ -148,13 +148,13 @@ describe("checkGoldenQueries()", () => {
     expect(margin?.detail).toEqual([`thinnest answered 0.045  "${THIN.query}"`, 'loudest refused   0.000  ""']);
   });
 
-  it("fails the same margin at the release tier — a warning that fires daily is trained away", () => {
+  it("fails the same margin at the scheduled tier — a warning that fires daily is trained away", () => {
     const margin = (tier: GateTier) =>
       checkGoldenQueries({ ...config(repo("warden-golden-margin-fail-")), queries: QUORUM, coverage: false }, tier).findings.find(
         (finding) => finding.file === "warden/src/search/search.ts",
       )?.level;
 
-    expect([margin("runtime"), margin("release")]).toEqual(["warn", "fail"]);
+    expect([margin("runtime"), margin("scheduled")]).toEqual(["warn", "fail"]);
   });
 
   it("stands the margin guard down for a replacement set too small to have measured the corpus", () => {

@@ -70,6 +70,23 @@ for (const prefix of ["dialog", "drawer"] as const) {
       ).toBe("request-close");
     });
 
+    it("forwards shape to the Trigger's and Close's box without leaving it on the button", async () => {
+      for (const html of [await render(<parts.Trigger for='x' shape='icon' />), await render(<parts.Close for='x' shape='icon' />)]) {
+        for (const token of ["w-control-sm", "px-0", "h-control-sm"]) expect(classesOf(html)).toContain(token);
+        expect(classesOf(html)).not.toContain("px-3");
+        expect(attrsOf(html)).not.toHaveProperty("shape");
+      }
+    });
+
+    it("keeps the sm height under every shape it accepts, and refuses the square that would trade it away", async () => {
+      for (const shape of ["default", "icon", "circle"] as const) {
+        expect(classesOf(await render(<parts.Trigger for='x' shape={shape} />))).toContain("h-control-sm");
+        expect(classesOf(await render(<parts.Close for='x' shape={shape} />))).toContain("h-control-sm");
+      }
+      // @ts-expect-error -- `square` resolves to `h-auto`, so the box would no longer hold the Floor
+      void (<parts.Close for='x' shape='square' />);
+    });
+
     it("dresses the Content in the class it was built with, and lets a caller's conflicting token evict one of it", async () => {
       expect(classesOf(await render(<parts.Content>c</parts.Content>))).toEqual(["px-6", "overflow-y-auto"]);
       expect(classesOf(await render(<parts.Content class='px-2'>c</parts.Content>))).toEqual(["overflow-y-auto", "px-2"]);

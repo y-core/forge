@@ -170,7 +170,7 @@ describe("listLabel()", () => {
   it("states the dependency as required from the runtime tier up, where its absence is a failure", () => {
     const browser: Step = { label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } };
 
-    for (const tier of ["runtime", "release"] as const) expect(listLabel(browser, tier)).toBe("test:browser (requires chromium)");
+    for (const tier of ["runtime", "scheduled"] as const) expect(listLabel(browser, tier)).toBe("test:browser (requires chromium)");
   });
 
   it("leaves a step with no dependency its bare label in every tier", () => {
@@ -215,7 +215,7 @@ describe("formatFixSummary()", () => {
 
 describe("formatMissingRequirement()", () => {
   it("fails the step from the runtime tier up, naming the absent tool and the remedy verbatim", () => {
-    for (const tier of ["runtime", "release"] as const) {
+    for (const tier of ["runtime", "scheduled"] as const) {
       expect(formatMissingRequirement("test:browser", "Playwright server", "set `PW_TEST_CONNECT_WS_ENDPOINT`", tier)).toBe(
         "✗ test:browser — Playwright server not found; set `PW_TEST_CONNECT_WS_ENDPOINT`",
       );
@@ -232,7 +232,7 @@ describe("formatMissingRequirement()", () => {
   });
 
   it("prints a multi-route remedy unwrapped, since not every remedy is a single command", () => {
-    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `a`, or set `TAILWIND_PATH`", "release")).toBe(
+    expect(formatMissingRequirement("validate-class-groups", "tailwindcss", "run `a`, or set `TAILWIND_PATH`", "scheduled")).toBe(
       "✗ validate-class-groups — tailwindcss not found; run `a`, or set `TAILWIND_PATH`",
     );
   });
@@ -272,8 +272,8 @@ describe("formatReused()", () => {
   const tree = "0123456789abcdef0123456789abcdef01234567";
 
   it("names the tier and the full hash of the run it stands on, and says no step ran", () => {
-    expect(formatReused("verify", { tree, tier: "release", labels: ["lint"] })).toBe(
-      `✓ verify — reused the passing release run of tree ${tree}; no step ran`,
+    expect(formatReused("verify", { tree, tier: "scheduled", labels: ["lint"] })).toBe(
+      `✓ verify — reused the passing scheduled run of tree ${tree}; no step ran`,
     );
   });
 });
@@ -323,8 +323,8 @@ describe("formatNothingAffected()", () => {
   });
 
   it("says several changed paths touch no step, in the plural", () => {
-    expect(formatNothingAffected("verify --tier release --affected", { changed: 3, total: 40 })).toBe(
-      "○ verify --tier release --affected — 3 changed paths touch no step; nothing ran ⚠ scoped run (0 of 40 steps) — not the gate",
+    expect(formatNothingAffected("verify --tier scheduled --affected", { changed: 3, total: 40 })).toBe(
+      "○ verify --tier scheduled --affected — 3 changed paths touch no step; nothing ran ⚠ scoped run (0 of 40 steps) — not the gate",
     );
   });
 });

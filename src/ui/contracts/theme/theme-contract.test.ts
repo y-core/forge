@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import { oklchToPaintedHex, parseOklch } from "../../../tooling/gate/checks/color";
 import { validateCommentBudget } from "../../../tooling/gate/checks/comment-budget-parse";
@@ -124,24 +126,27 @@ describe("shapeVars", () => {
     expect(shapeVars(DEFAULTS).map(([name]) => name)).toEqual([...SHAPE_PROPERTIES]);
   });
 
-  it("puts the two outer control heights 8px either side of the dialled middle one", () => {
-    expect(shapeVars({ ...DEFAULTS, controlH: 48 })).toEqual([
-      ["--radius-field", "10px"],
-      ["--radius-box", "16px"],
-      ["--control-h-sm", "40px"],
-      ["--control-h-md", "48px"],
-      ["--control-h-lg", "56px"],
+  it("puts the two outer control heights 8px either side of the dialled middle one, in rem", () => {
+    expect(shapeVars({ ...DEFAULTS, controlH: 48 }).slice(2)).toEqual([
+      ["--control-h-sm", "2.5rem"],
+      ["--control-h-md", "3rem"],
+      ["--control-h-lg", "3.5rem"],
     ]);
   });
 
-  it("falls back to the shipped shape when a dial is absent", () => {
-    expect(shapeVars({})).toEqual([
-      ["--radius-field", "10px"],
-      ["--radius-box", "16px"],
-      ["--control-h-sm", "32px"],
-      ["--control-h-md", "40px"],
-      ["--control-h-lg", "48px"],
+  it("writes each radius as an offset from --radius, so it follows the corner radius", () => {
+    expect(shapeVars({ radius: 6, radiusField: 4, radiusBox: 12 }).slice(0, 2)).toEqual([
+      ["--radius-field", "calc(var(--radius) - 0.125rem)"],
+      ["--radius-box", "calc(var(--radius) + 0.375rem)"],
     ]);
+  });
+
+  it("falls back to exactly what theme-base.css declares when a dial is absent", () => {
+    const base = readFileSync(join(import.meta.dir, "../../assets/css/theme-base.css"), "utf-8");
+    const declared = (name: string) => base.match(new RegExp(`^\\s*${name}:\\s*([^;]+);`, "m"))?.[1];
+
+    expect(shapeVars({})).toEqual(SHAPE_PROPERTIES.map((name) => [name, declared(name)]));
+    expect(declared("--radius")).toBe("0.625rem");
   });
 });
 
@@ -151,6 +156,32 @@ describe("schemeCss", () => {
 
     expect(validateCommentBudget("theme-custom.css", css)).toEqual([]);
     expect(css.split("\n")[0]?.startsWith("/* modern-css-allow: forge-ui-platform-layer — ")).toBe(true);
+  });
+
+  it("declares no shape token for colour dials alone, or for shape dials at theme-base's values", () => {
+    const colour = { grayHue: 43, grayChroma: 11, accentHue: 120, accentChroma: 90 };
+
+    for (const dials of [colour, DEFAULTS]) expect(schemeCss(buildTheme(dials), dials)).not.toMatch(/--radius|--control-h|Shape/);
+  });
+
+  it("declares the whole shape block, --radius included, once a shape dial moves", () => {
+    const dials = { ...DEFAULTS, controlH: 44 };
+    const css = schemeCss(buildTheme(dials), dials);
+
+    expect(css.slice(css.indexOf("/* Shape"))).toBe(
+      [
+        "/* Shape — save as shape-custom.css beside the scheme, or fold into it */",
+        ":root {",
+        "  --radius: 0.625rem;",
+        "  --radius-field: var(--radius);",
+        "  --radius-box: calc(var(--radius) + 0.375rem);",
+        "  --control-h-sm: 2.25rem;",
+        "  --control-h-md: 2.75rem;",
+        "  --control-h-lg: 3.25rem;",
+        "}",
+        "",
+      ].join("\n"),
+    );
   });
 });
 

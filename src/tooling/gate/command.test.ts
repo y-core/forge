@@ -117,9 +117,9 @@ describe("createGateCommand() — the tier reaches a check", () => {
 
   it("hands a check the tier of the run, which a check may vary its strictness on", async () => {
     seen.length = 0;
-    for (const tier of ["static", "unit", "runtime", "release"]) await run([recording], { tier });
+    for (const tier of ["static", "unit", "runtime", "scheduled"]) await run([recording], { tier });
 
-    expect(seen).toEqual(["static", "unit", "runtime", "release"]);
+    expect(seen).toEqual(["static", "unit", "runtime", "scheduled"]);
   });
 
   it("resolves a bare run to runtime, so `verify` is the run a task closes on", async () => {
@@ -140,10 +140,16 @@ describe("createGateCommand() — resolving the tier", () => {
     const { logs, code } = await run([recording], { tier: "deploy" });
 
     expect({ logs, code, called }).toEqual({
-      logs: ['Unknown --tier: "deploy". Known tiers: static, unit, runtime, release.'],
+      logs: ['Unknown --tier: "deploy". Known tiers: static, unit, runtime, scheduled.'],
       code: 1,
       called: [],
     });
+  });
+
+  it("refuses the retired `release` tier, which is `scheduled` now, with no alias", async () => {
+    const { logs, code } = await run([trivial], { tier: "release" });
+
+    expect({ logs, code }).toEqual({ logs: ['Unknown --tier: "release". Known tiers: static, unit, runtime, scheduled.'], code: 1 });
   });
 
   it("knows neither --mode nor --full, so a retired spelling is refused as an unknown flag", () => {
@@ -155,7 +161,7 @@ describe("createGateCommand() — resolving the tier", () => {
     expect((await run([trivial], { tier: "static", list: true })).logs).toEqual(["verify --tier static — 1 step\n  alpha"]);
     expect((await run([trivial], { list: true })).logs).toEqual(["verify — 1 step\n  alpha"]);
     expect((await run([trivial], { tier: "runtime", list: true })).logs).toEqual(["verify — 1 step\n  alpha"]);
-    expect((await run([trivial], { tier: "release", list: true })).logs).toEqual(["verify --tier release — 1 step\n  alpha"]);
+    expect((await run([trivial], { tier: "scheduled", list: true })).logs).toEqual(["verify --tier scheduled — 1 step\n  alpha"]);
   });
 });
 
@@ -171,7 +177,7 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
   });
 
   it("fails it from the runtime tier up, which promise that a runtime ran", async () => {
-    for (const tier of ["runtime", "release"]) {
+    for (const tier of ["runtime", "scheduled"]) {
       const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier });
 
       expect(logs).toContain("✗ delta — tailwindcss not found; run `bun add -d tailwindcss`");
@@ -233,7 +239,7 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
     expect(skips.every((line) => line.includes("the server runs Playwright 1.64"))).toBe(true);
   });
 
-  it("runs it when the probe finds the dependency, in a static run as much as a release one", async () => {
+  it("runs it when the probe finds the dependency, in a static run as much as a scheduled one", async () => {
     const { logs, code } = await run([passing("delta", PRESENT)]);
 
     expect(logs.some((line) => line.startsWith("✓ delta"))).toBe(true);
@@ -241,10 +247,10 @@ describe("createGateCommand() — a step whose dependency is absent", () => {
     expect(code).toBeUndefined();
   });
 
-  it("fails the release gate rather than skipping, since `--tier release` is what a publish is checked by", async () => {
-    const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier: "release" });
+  it("fails the scheduled gate rather than skipping, since `--tier scheduled` is what a publish is checked by", async () => {
+    const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier: "scheduled" });
 
-    expect(logs.at(-1)?.startsWith("✗ verify --tier release — failed at `delta` (step 2 of 2")).toBe(true);
+    expect(logs.at(-1)?.startsWith("✗ verify --tier scheduled — failed at `delta` (step 2 of 2")).toBe(true);
     expect(code).toBe(1);
   });
 
@@ -287,7 +293,7 @@ describe("createGateCommand() — --fix", () => {
 
   // A step with no fixer was never going to spawn, so probing it would report a dependency this run
   // does not need.
-  it("asks the fixer question before the dependency question, even at the release tier", async () => {
+  it("asks the fixer question before the dependency question, even at the scheduled tier", async () => {
     const probed: string[] = [];
     const check: Step = {
       label: "validate-thing",
@@ -301,10 +307,10 @@ describe("createGateCommand() — --fix", () => {
         hint: "run `bun add -d tailwindcss`",
       },
     };
-    const { logs, code } = await run([check], { fix: true, tier: "release" });
+    const { logs, code } = await run([check], { fix: true, tier: "scheduled" });
 
     expect(probed).toEqual([]);
-    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify --tier release` to confirm.");
+    expect(logs.at(-1)).toBe("0 fixed, 1 without a fixer — re-run `bun run verify --tier scheduled` to confirm.");
     expect(code).toBeUndefined();
   });
 
@@ -389,10 +395,10 @@ describe("createGateCommand() — --list", () => {
     expect(code).toBeUndefined();
   });
 
-  it("states the dependency as required at the release tier, where its absence is a failure", async () => {
-    const { logs } = await run([exploding], { list: true, tier: "release" });
+  it("states the dependency as required at the scheduled tier, where its absence is a failure", async () => {
+    const { logs } = await run([exploding], { list: true, tier: "scheduled" });
 
-    expect(logs).toEqual(["verify --tier release — 1 step\n  validate-class-groups (requires tailwindcss)"]);
+    expect(logs).toEqual(["verify --tier scheduled — 1 step\n  validate-class-groups (requires tailwindcss)"]);
   });
 });
 
@@ -532,10 +538,10 @@ describe("createGateCommand() — the receipt a passing run records", () => {
 
     clearReceipt(root);
     calls.length = 0;
-    recordReceipt(root, { tree, tier: "release", base: "0".repeat(40), labels: ["alpha"] });
+    recordReceipt(root, { tree, tier: "scheduled", base: "0".repeat(40), labels: ["alpha"] });
     const { logs } = await run(steps, { reuse: true }, { cwd: root });
     expect(calls).toEqual([]);
-    expect(logs).toEqual([`✓ verify — reused the passing release run of tree ${tree}; no step ran`]);
+    expect(logs).toEqual([`✓ verify — reused the passing scheduled run of tree ${tree}; no step ran`]);
   });
 
   it("refuses a runtime receipt recorded against another HEAD, and reuses one recorded against this one", async () => {
@@ -713,9 +719,9 @@ describe("createGateCommand() — --affected", () => {
     const root = worktreeClone();
     writeFileSync(join(root, "package.json"), '{"name":"x"}\n');
     const { steps } = table();
-    const { logs } = await run(steps, { affected: true, tier: "release" }, { cwd: root });
+    const { logs } = await run(steps, { affected: true, tier: "scheduled" }, { cwd: root });
 
-    expect(logs.at(-1)).toStartWith("✓ verify --tier release --affected — 3 steps passed (");
+    expect(logs.at(-1)).toStartWith("✓ verify --tier scheduled --affected — 3 steps passed (");
     expect(logs.at(-1)).toEndWith("⚠ scoped run (3 of 3 steps) — not the gate");
   });
 
@@ -849,10 +855,10 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
     expect({ probed, code }).toEqual({ probed: [], code: undefined });
   });
 
-  it("runs every row whole at the release tier, whatever is pending", async () => {
+  it("runs every row whole at the scheduled tier, whatever is pending", async () => {
     const root = worktreeClone();
     writeFileSync(join(root, "docs/A.md"), "edited\n");
-    await run(table(), { tier: "release" }, { cwd: root });
+    await run(table(), { tier: "scheduled" }, { cwd: root });
 
     expect([spawnedWith(root, "browser"), spawnedWith(root, "db")]).toEqual(["whole", "whole"]);
   });
@@ -1013,9 +1019,9 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     ]);
   });
 
-  it("never probes at the release tier, where every row runs whole", async () => {
+  it("never probes at the scheduled tier, where every row runs whole", async () => {
     const root = editedClone();
-    await run([probing("none")], { tier: "release" }, { cwd: root });
+    await run([probing("none")], { tier: "scheduled" }, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: false, args: "whole" });
   });

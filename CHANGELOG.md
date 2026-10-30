@@ -18,7 +18,38 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`validate-dev-boundary` fails an app `imports` entry other than `#app/relax` that carries `forge-dev`**, with the finding on `package.json`.
+  `cloudflareWorkerSteps` applies it and it cannot be opted out of; `#app/relax/*` counts as a second alias too. Move each relaxation onto the
+  `#app/relax` pair, `src/app/relax.dev.ts` and `src/app/relax.strict.ts`, wrapping the dev export in `whenArmed` and annotating it `typeof` its
+  strict twin, then delete the old entry.
+- **The `release` tier is now `scheduled`, and `--tier release` is refused.** `GATE_TIERS` is `static`, `unit`, `runtime`, `scheduled`;
+  `test:browser`, `test:browser:cross-engine`, `validate-dev-bundle` and `validate-changelog` default to `scheduled`. Rename the `verify:release`
+  script to `verify:scheduled`, set `--tier scheduled` in `verify:cron`, and replace `{ tier: "release" }` with `{ tier: "scheduled" }`. The
+  `forge release` command keeps its name and runs `verify:scheduled` before it tags. task-forge's cron has to look for `verify:scheduled`.
+
+### Changed
+
+- **`validate-dev-boundary` watches `package.json`**, so `--affected` and a `runtime` run re-judge the `imports` map when it changes.
+
+### Changed
+
+- **The radii derived from `--radius` offset it in rem, not px**, so they scale with the root font size as `--radius` does: `--radius-box` is
+  `calc(var(--radius) + 0.375rem)`, `--radius-sm` to `--radius-xl` and `shape-compact.css` follow, and `shapeVars` writes the same. Every value
+  is unchanged at a 16px root.
+
+### Fixed
+
+- **A generated scheme no longer pins control heights and radii in px.** Since 0.3.1, `schemeCss` appended a shape block whatever the dials, and
+  `shapeVars` valued it in px. A scheme is imported after `theme-base.css`, so controls stopped scaling with the reader's root font size, and
+  `--radius-field` and `--radius-box` stopped following `--radius`. `schemeCss` now emits the block only when a shape dial differs from the default
+  shape, headed by `--radius`, and `shapeVars` writes control heights in rem and each radius as an offset from `--radius`. Regenerate a scheme
+  made on any earlier release, and delete its shape block if you never moved a shape dial.
+- **An icon-only `Dialog.Close` no longer has to squeeze its icon.** Since 0.6.0, `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`,
+  `Drawer.Close`, `Popover.Trigger`, `Menu.Trigger` and a bare `Tooltip.Trigger` render the `sm` button box, whose `px-3` survives a caller's
+  `size-*`: a `size-8` close leaves about 6px for a 16px icon. 0.6.0's Breaking Changes did not say so. Each now takes `shape`, as `Button` does,
+  except `square`, which would drop the height; replace a `size-8` or `p-0` override with `shape='icon'` for a 32px square with no inline padding.
 
 ---
 

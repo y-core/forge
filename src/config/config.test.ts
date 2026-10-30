@@ -23,16 +23,16 @@ describe("applyMapping", () => {
 
   it("maps a nested object shape", () => {
     const result = applyMapping(
-      { BASE_URL: "https://example.com", CSRF_SECRET: "abc" },
-      { site: { url: env("BASE_URL") }, security: { csrf: { secret: env("CSRF_SECRET") } } },
+      { SITE_ORIGIN: "https://example.com", CSRF_SECRET: "abc" },
+      { site: { url: env("SITE_ORIGIN") }, security: { csrf: { secret: env("CSRF_SECRET") } } },
     );
     expect(result).toEqual({ site: { url: "https://example.com" }, security: { csrf: { secret: "abc" } } });
   });
 
   it("produces undefined for env vars absent from the binding", () => {
     const result = applyMapping(
-      { BASE_URL: "https://example.com" },
-      { site: { url: env("BASE_URL") }, services: { email: { apiKey: env("EMAIL_API_KEY") } } },
+      { SITE_ORIGIN: "https://example.com" },
+      { site: { url: env("SITE_ORIGIN") }, services: { email: { apiKey: env("EMAIL_API_KEY") } } },
     );
     expect((result as { services: { email: { apiKey: unknown } } }).services.email.apiKey).toBeUndefined();
   });

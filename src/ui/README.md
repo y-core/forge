@@ -355,6 +355,26 @@ link. A disabled or loading `Button` rendered onto a link — an `<a>`, or a rou
 disabled, but loses its `href`, so it cannot navigate. When you need the button's paint on markup that is not a button at all — a pagination anchor,
 a bespoke control — the `buttonVariants` resolver returns the class string on its own.
 
+### Close a dialog with an icon
+
+Pass `shape="icon"` to the `.Close` and give it a name, since the icon has none. The button becomes the 32px square an icon action takes, with no
+inline padding, so the icon keeps its size:
+
+```tsx
+import { Dialog } from "@y-core/forge/ui/core";
+
+<Dialog.Header>
+  <Dialog.Title for='rename'>Rename</Dialog.Title>
+  <Dialog.Close for='rename' shape='icon' aria-label='Close'>
+    <AppIcon name='close' />
+  </Dialog.Close>
+</Dialog.Header>;
+```
+
+Do not shrink the button with `size-8` instead: that keeps the box's own padding and squeezes the icon. `Drawer.Close`, the `Dialog` and `Drawer`
+triggers, `Popover.Trigger`, `Menu.Trigger` and a bare `Tooltip.Trigger` take the same `shape`, bar `square`, which would give up the button's
+height.
+
 ### Name an icon-only button with a tooltip
 
 Give the trigger `kind="label"` and the tooltip's text becomes the button's accessible name, read once. Leave out `aria-label`: a label-mode
@@ -746,7 +766,8 @@ const css = schemeCss(theme, dials); // a paste-ready theme-*.css
 const ratios = liveRatios(theme); // every audited pair, measured
 ```
 
-`schemeCss` output is standalone-complete: paste it beside `forge.css` and import it after, exactly as a shipped scheme is imported. `dialQuery`
+`schemeCss` output is standalone-complete: paste it beside `forge.css` and import it after, exactly as a shipped scheme is imported. It adds a
+shape block only when the shape dials differ from forge's default shape. `dialQuery`
 turns the same dials into a query string, which is how a customiser makes a scheme shareable as a link with no storage of its own.
 
 **Chroma travels in thousandths** through the dial declarations, and `buildTheme` converts. Each dial carries its own range on its declaration, so a

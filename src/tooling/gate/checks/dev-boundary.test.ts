@@ -474,7 +474,7 @@ describe("checkDevBoundary — a `#` specifier through the `imports` map", () =>
   });
 });
 
-describe("checkDevBoundary — the `dev-bundle-consumer` fixture's `#app/debug-banner`", () => {
+describe("checkDevBoundary — the `dev-bundle-consumer` fixture's `#app/relax`", () => {
   function consumer(imports?: Record<string, unknown>): string {
     const root = mkdtempSync(join(tmpdir(), "forge-dev-consumer-"));
     roots.push(root);
@@ -483,21 +483,73 @@ describe("checkDevBoundary — the `dev-bundle-consumer` fixture's `#app/debug-b
     return root;
   }
 
-  const messages = (root: string): string[] =>
-    checkDevBoundary({ root, sources: ["src"], workerConfig: "wrangler.jsonc" }).findings.map((finding) => finding.message);
+  const messages = (root: string, config: Partial<DevBoundaryCheckConfig> = {}): string[] =>
+    checkDevBoundary({ root, sources: ["src"], workerConfig: "wrangler.jsonc", ...config }).findings.map((finding) => finding.message);
 
   it("reports only the fixture's direct `./grant.dev` import, leaving the strict-by-default entry alone", () => {
     expect(messages(consumer())).toEqual(["development module imported — `./grant.dev` resolves to `src/grant.dev.ts`"]);
   });
 
   it("reports the entry and its importer once `default` names the development banner", () => {
-    const root = consumer({ "#app/debug-banner": { "forge-dev": "./src/debug-banner.strict.ts", default: "./src/debug-banner.dev.ts" } });
+    const root = consumer({ "#app/relax": { "forge-dev": "./src/app/relax.strict.ts", default: "./src/app/relax.dev.ts" } });
 
     expect(messages(root)).toEqual([
-      "`imports` entry `#app/debug-banner` deploys the development module `src/debug-banner.dev.ts`",
-      "development module imported — `#app/debug-banner` resolves to `src/debug-banner.dev.ts`",
+      "`imports` entry `#app/relax` deploys the development module `src/app/relax.dev.ts`",
+      "development module imported — `#app/relax` resolves to `src/app/relax.dev.ts`",
       "development module imported — `./grant.dev` resolves to `src/grant.dev.ts`",
     ]);
+  });
+
+  it("reports no second relaxation alias once the rule names `#app/relax`", () => {
+    expect(messages(consumer(), { relaxAlias: "#app/relax" })).toEqual([
+      "development module imported — `./grant.dev` resolves to `src/grant.dev.ts`",
+    ]);
+  });
+});
+
+describe("checkDevBoundary — the one relaxation alias", () => {
+  const RELAX = { "forge-dev": "./src/app/relax.dev.ts", default: "./src/app/relax.strict.ts" };
+  const findings = (imports: Record<string, unknown>, config: Partial<DevBoundaryCheckConfig> = { relaxAlias: "#app/relax" }) =>
+    checkDevBoundary(
+      project(
+        { "package.json": JSON.stringify({ name: "app", imports }), "src/worker.ts": "export default {};\n" },
+        { workerConfig: null, ...config },
+      ),
+    ).findings.map((finding) => [finding.file, finding.message]);
+
+  it("fails a second key routing `forge-dev`, once, on the manifest, naming the key", () => {
+    expect(findings({ "#app/relax": RELAX, "#app/debug-banner": RELAX })).toEqual([
+      ["package.json", "`imports` entry `#app/debug-banner` routes `forge-dev` through a second relaxation alias"],
+    ]);
+  });
+
+  it("passes the relaxation alias alone", () => {
+    expect(findings({ "#app/relax": RELAX })).toEqual([]);
+  });
+
+  it("fails `forge-dev` nested under another condition", () => {
+    expect(findings({ "#app/debug-banner": { workerd: RELAX } })).toEqual([
+      ["package.json", "`imports` entry `#app/debug-banner` routes `forge-dev` through a second relaxation alias"],
+    ]);
+  });
+
+  it("passes a key that carries no `forge-dev`", () => {
+    expect(findings({ "#app/relax": RELAX, "#app/db": { default: "./src/db.ts" } })).toEqual([]);
+  });
+
+  it("fails a `*` key under the alias, which is a second alias by its exact key", () => {
+    expect(findings({ "#app/relax/*": { "forge-dev": "./src/app/*.dev.ts", default: "./src/app/*.strict.ts" } })).toEqual([
+      ["package.json", "`imports` entry `#app/relax/*` routes `forge-dev` through a second relaxation alias"],
+    ]);
+  });
+
+  it("passes forge's own `#relax/*` keys when no alias is named, so forge's gate is unaffected", () => {
+    const own = {
+      "#relax/cop": { "forge-dev": "./src/cop.dev.ts", default: "./src/cop.strict.ts" },
+      "#relax/origin": { "forge-dev": "./src/origin.dev.ts", default: "./src/origin.strict.ts" },
+    };
+
+    expect(findings(own, {})).toEqual([]);
   });
 });
 

@@ -310,11 +310,11 @@ export function browserRequired(server: PlaywrightServer, probes: Partial<Browse
   });
 }
 
-/** `playwright test --project=chromium` under node, defaulting to the `release` tier: it needs the Playwright server, and the whole suite is too slow for the run a task closes on. Always run whole. @public */
+/** `playwright test --project=chromium` under node, defaulting to the `scheduled` tier: it needs the Playwright server, and the whole suite is too slow for the run a task closes on. Always run whole. @public */
 export function browserStep(options: StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
-    ...tier(options.tier, "release"),
+    ...tier(options.tier, "scheduled"),
     tail: 120,
     // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
     // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
@@ -327,11 +327,11 @@ export function browserStep(options: StepOptions = {}): CommandStep {
   };
 }
 
-/** `playwright test --project=firefox --project=webkit` on the compat server, defaulting to the `release` tier, for a cron table rather than the gate. Always run whole. @public */
+/** `playwright test --project=firefox --project=webkit` on the compat server, defaulting to the `scheduled` tier, for a cron table rather than the gate. Always run whole. @public */
 export function crossEngineStep(options: StepOptions = {}): CommandStep {
   return {
     label: "test:browser:cross-engine",
-    ...tier(options.tier, "release"),
+    ...tier(options.tier, "scheduled"),
     tail: 120,
     cmd: ["playwright", "test", "--project=firefox", "--project=webkit"],
     ...prerequisite(options.requires, options.requires === undefined ? browserRequired(COMPAT_SERVER) : undefined),
@@ -340,7 +340,7 @@ export function crossEngineStep(options: StepOptions = {}): CommandStep {
   };
 }
 
-/** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `runtime` tier: it needs the workerd runtime installed. Narrowed and widened as {@link browserStep} is. @public */
+/** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `runtime` tier: it needs the workerd runtime installed. Narrowed to the pending changes, and widened, at `runtime`. @public */
 export function workerdStep(
   options: { hint?: string; leavesNoTemp?: boolean; narrow?: NarrowOptions } & WidenOption & SourceStepOptions = {},
 ): CommandStep {
@@ -480,13 +480,13 @@ export function importBoundaryStep(config: ImportBoundaryCheckConfig, options: S
 export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOptions = {}): CheckStep {
   const workerConfig = config.workerConfig === undefined ? ["wrangler.jsonc"] : config.workerConfig === null ? [] : [config.workerConfig];
   return checkStep("validate-dev-boundary", () => checkDevBoundary(config), options, {
-    watches: [...sourceWatches(config.sources ?? ["src"]), ...workerConfig],
+    watches: [...sourceWatches(config.sources ?? ["src"]), ...workerConfig, "package.json"],
   });
 }
 
 /** Bundles the deployed `main` and checks that no module in it is development code. @public */
 export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "release" });
+  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "scheduled" });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */

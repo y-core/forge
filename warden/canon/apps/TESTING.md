@@ -43,11 +43,11 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §5d No 200 on Guard Failure: never adjust the assertion to match
 - §5e No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task closes, and before a commit
-- §6a One Command, Nested Tiers: the lines between them, and what an absent prerequisite means
+- §6a One Command, Nested Tiers: what a step needs, the heavy step, and what an absent prerequisite means
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
 - §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: what each half is, and who overrides which
-- §6e One Tier per Moment: which tier each moment takes, why the browser set waits for `release`, and the cron run
+- §6e One Tier per Moment: which tier each moment takes, the browser set, and the cron run
 
 ---
 
@@ -128,7 +128,7 @@ neither runner, where the same file beside a `.spec.ts` would be.
 ```ts
 const MINIMUM_ENV = {
   ASSETS: { fetch: async () => new Response("", { status: 200 }) },
-  BASE_URL: "https://example.com",
+  SITE_ORIGIN: "https://example.com",
   CSRF_SECRET: "…64 hex characters…",
 };
 ```
@@ -382,32 +382,52 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 ### 6a. One Command, Nested Tiers
 
-**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `release` — are selected with `--tier`, not commands.** They are
-nested: `static ⊆ unit ⊆ runtime ⊆ release`. **A bare invocation is `runtime`**, and that is the gate a commit closes on; §6e says
-which tier each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than
-trusting any prose copy.
+**There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** They are
+nested: `static ⊆ unit ⊆ runtime ⊆ scheduled`. **A bare invocation is `runtime`**, and that is the gate a commit closes on; §6e says which tier
+each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than trusting
+any prose copy.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
 warning" — is a failure.
 
-**What separates one tier from the next is a property of the step alone, and never cost:**
+**A tier names what a step needs, so a step's tier is predictable from the step alone:**
 
-| Line | A step is above it when |
+| Tier | A step belongs here when it |
 | --- | --- |
-| `static` \| `unit` | it runs the code rather than judging the source |
-| `unit` \| `runtime` | it needs a runtime prerequisite — workerd, a local database |
-| `runtime` \| `release` | it runs whole: below `release` a runtime row runs only over the pending changes, and a row that judges a finished change — a changelog entry, the deployed bundle — starts here, as does the browser set (§6e) |
+| `static` | judges the source and runs nothing |
+| `unit` | runs code in the test process, with nothing installed but the application's dependencies |
+| `runtime` | needs workerd or a local database, and runs narrowed to the pending changes |
+| `scheduled` | is heavy, or judges a finished change — a changelog entry, the deployed bundle; every row at this tier runs whole |
 
-"This suite got slow" has no bearing on any of them, with one stated exception: the browser set, whose placement §6e owns. **An absent prerequisite
-is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a commit may not be assured by a
-step nobody ran.
+**A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
+
+- it starts a browser;
+- it runs a Worker-runtime suite whole on every change, with no way to narrow;
+- it is a soak, a live-network or a deep property run;
+- its test set takes more than 60 seconds, or one test in it more than 10.
+
+That budget is stated here and nowhere else. **A step that is not heavy stays where what it needs puts it**, however slow it feels, because a tier
+whose membership follows taste is a tier nobody can predict.
+
+**A heavy test inside `unit` is split out, never dropped.** The `unit` row's sources leave it out, which is the deliberate tier split §2b allows,
+and it runs as a test row of its own at `scheduled`: `testStep({ label, sources, tier: "scheduled" })`. It is never deleted, skipped or
+`#[ignore]`d out of every automated run.
+
+**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the commit gate.** A
+step worth proving only periodically — another browser engine — goes in the cron table, `config/cron.ts`, and never blocks a tag (§6e).
+
+**Every application declares `verify:scheduled`.** The cron runs it, so an application without it is outside the cron, and that is a gap rather
+than a choice (`CONFIG_BASELINE.md` §4).
+
+**An absent prerequisite is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a commit
+may not be assured by a step nobody ran.
 
 **The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
 
 **Execution order is tier-stable, not table order: within a tier the table's declared order holds, and across tiers the lower tier runs first.**
-The selector sorts by tier after filtering, so where a preset emits a `release` row is not where it runs — an appended `unit` row still runs ahead
-of it. That is what makes a fail-fast `release` run fail on the sub-second check rather than after minutes of browser. A repository consequently
+The selector sorts by tier after filtering, so where a preset emits a `scheduled` row is not where it runs — an appended `unit` row still runs ahead
+of it. That is what makes a fail-fast `scheduled` run fail on the sub-second check rather than after minutes of browser. A repository consequently
 never declines a preset's opt-in to get sensible ordering, and never re-declares a row it only wanted moved.
 
 ### 6b. What Each Tool Catches
@@ -435,15 +455,15 @@ same commit.
 nothing when the answer is nothing, runs narrowed when it is something, and runs whole when the answer cannot be read. A change to one of the gate's
 own inputs, or to a path the row declares wide, runs it whole. The only hand-kept list names what the tool's graph cannot see — a file a spec reads
 without importing it, or a module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that leaves
-one of its globs matching nothing is refused rather than silently narrowing the row. **`release` runs every row whole on every tag**, which is the
-backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
+one of its globs matching nothing is refused rather than silently narrowing the row. **`scheduled` runs every row whole on every tag and every
+cron run**, which is the backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
 
 **A spec reaches the application through the server it starts and the assets that server serves, so a runtime row's reach includes both.** The
 server half is the import graph of the Worker's entry. The asset half is what the asset build reads: each bundle's inputs, and every file the
 stylesheets' source declarations cover. Both are derived from what the build already declares, never listed beside it. A Worker-runtime row takes
 the asset half only when the Worker serves the assets. A stylesheet left on automatic source detection covers the whole tree, so every change runs
-the row whole — narrowing comes from the stylesheet naming its sources. **A browser row has no reach to derive**: it starts at `release`, where
-every row runs whole (§6e).
+the row whole — narrowing comes from the stylesheet naming its sources. **A browser row has no reach to derive**: it starts at `scheduled`,
+where every row runs whole (§6a).
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
 and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
@@ -488,15 +508,16 @@ the exception with its compensating control, rather than leaving the reuse undoc
 | --- | --- | --- |
 | Write and task close | `bun run verify:static`, plus `bun test <file>` on each touched test file | every row that judges the source; each test file the change adds, edits or directly exercises |
 | Commit | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no browser spec |
-| Tag | `bun run verify:release`, on the remote | every runtime row whole, every browser spec on Chromium, and the rows that judge a finished change |
-| Cron | `bun run verify:release`, then `bun run verify:cron`, run by the ledger host | the tag's run, plus every browser spec on each other engine the application runs, over the default branch as committed |
+| Tag | `bun run verify:scheduled`, run by `forge release` before it tags | every runtime row whole, every browser spec on Chromium, every heavy row, and the rows that judge a finished change; the remote CI then runs `verify:unit` on the tag |
+| Daily cron | `bun run verify:scheduled`, then `bun run verify:cron`, run by the ledger host | the tag's run, plus every browser spec on each other engine the application runs, over the default branch as committed |
 
-**The browser set starts at `release`, and that is the one tier line drawn by cost.** §6a's rule holds for every other row. The whole browser set is
-the slowest row in the gate and the one a change least often breaks, and narrowing it at `runtime` bought almost nothing: its reach was the Worker's
-whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. **The price is stated rather than hidden: a broken page
-is found by the next cron run, not by the pre-commit gate.** A tag still never ships without the set, because `release` runs it. While iterating
-on a page, one spec on one engine — `playwright test --project=chromium <spec>` — is the loop, and the task check runs a touched spec the same way;
-it is a scoped run, never a gate green (§6c).
+No other moment exists to close on, an epic's end included.
+
+**The browser set starts at `scheduled`, because a step that starts a browser is heavy (§6a).** Narrowing it at `runtime` bought almost nothing:
+its reach was the Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. A broken page is found by
+the next daily cron run or the next tag, and a tag never ships without the set. While iterating on a page, one spec on one engine —
+`playwright test --project=chromium <spec>` — is the loop, and the task check runs a touched spec the same way; it is a scoped run, never a gate
+green (§6c).
 
 **The cron run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
 default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes a task in

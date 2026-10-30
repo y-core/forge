@@ -98,15 +98,15 @@ describe("readReceipt()", () => {
 describe("recordReceipt()", () => {
   it("keeps a higher-tier receipt for the same tree over a lower-tier one", () => {
     const root = worktreeClone();
-    recordReceipt(root, receipt({ tier: "release" }));
+    recordReceipt(root, receipt({ tier: "scheduled" }));
     recordReceipt(root, receipt({ tier: "static" }));
 
-    expect(readReceipt(root)?.tier).toBe("release");
+    expect(readReceipt(root)?.tier).toBe("scheduled");
   });
 
   it("replaces a receipt for a different tree, whatever its tier", () => {
     const root = worktreeClone();
-    recordReceipt(root, receipt({ tier: "release" }));
+    recordReceipt(root, receipt({ tier: "scheduled" }));
     recordReceipt(root, receipt({ tree: OTHER, tier: "static" }));
 
     expect(readReceipt(root)).toEqual(receipt({ tree: OTHER, tier: "static" }));
@@ -115,9 +115,9 @@ describe("recordReceipt()", () => {
   it("replaces a receipt for the same tree with a higher-tier one", () => {
     const root = worktreeClone();
     recordReceipt(root, receipt({ tier: "static" }));
-    recordReceipt(root, receipt({ tier: "release" }));
+    recordReceipt(root, receipt({ tier: "scheduled" }));
 
-    expect(readReceipt(root)?.tier).toBe("release");
+    expect(readReceipt(root)?.tier).toBe("scheduled");
   });
 
   it("changes neither the tree hash nor git status, since it lives in the git directory", () => {
@@ -170,8 +170,8 @@ describe("receiptCovers()", () => {
     expect(receiptCovers(receipt(), wanted)).toBe(true);
   });
 
-  it("lets a release receipt cover a unit request", () => {
-    expect(receiptCovers(receipt({ tier: "release" }), wanted)).toBe(true);
+  it("lets a scheduled receipt cover a unit request", () => {
+    expect(receiptCovers(receipt({ tier: "scheduled" }), wanted)).toBe(true);
   });
 
   it("refuses a static receipt for a unit request", () => {
@@ -187,8 +187,8 @@ describe("receiptCovers()", () => {
   });
 
   it("ignores the base of a receipt from any other tier, since none of them narrows", () => {
-    expect(receiptCovers(receipt({ tier: "release", base: OTHER }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
-    expect(receiptCovers(receipt({ tier: "release" }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
+    expect(receiptCovers(receipt({ tier: "scheduled", base: OTHER }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
+    expect(receiptCovers(receipt({ tier: "scheduled" }), { ...wanted, tier: "runtime", base: TREE })).toBe(true);
     expect(receiptCovers(receipt({ base: OTHER }), { ...wanted, base: TREE })).toBe(true);
   });
 

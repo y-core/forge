@@ -2,7 +2,7 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
 
 import { gateFixtureRoot } from "./gate.fixture";
-import { deployTarget, importTargets, readPackageImports } from "./package-imports";
+import { deployTarget, importsCondition, importTargets, readPackageImports } from "./package-imports";
 import type { PackageImports } from "./types";
 
 const roots: string[] = [];
@@ -183,5 +183,29 @@ describe("deployTarget() — the first condition the deployed bundle sets, in wr
   it("returns null for a specifier no key matches", () => {
     expect(deployTarget({ "#a": "./src/a.ts" }, "#b")).toBeNull();
     expect(deployTarget({ "#a": "./src/a.ts" }, "valibot")).toBeNull();
+  });
+});
+
+describe("importsCondition() — whether an entry names a condition", () => {
+  const imports: PackageImports = {
+    "#app/relax": { "forge-dev": "./src/app/relax.dev.ts", default: "./src/app/relax.strict.ts" },
+    "#app/nested": { workerd: { "forge-dev": "./src/nested.dev.ts", default: "./src/nested.ts" } },
+    "#app/plain": "./src/plain.ts",
+  };
+
+  it("finds a condition at the top of the entry", () => {
+    expect(importsCondition(imports, "#app/relax", "forge-dev")).toBe(true);
+  });
+
+  it("finds a condition nested under another", () => {
+    expect(importsCondition(imports, "#app/nested", "forge-dev")).toBe(true);
+  });
+
+  it("finds none in a string target, which names no condition", () => {
+    expect(importsCondition(imports, "#app/plain", "forge-dev")).toBe(false);
+  });
+
+  it("finds none for a key the map does not hold", () => {
+    expect(importsCondition(imports, "#app/absent", "forge-dev")).toBe(false);
   });
 });

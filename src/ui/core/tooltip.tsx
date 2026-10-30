@@ -5,7 +5,7 @@ import { isValidElement } from "../../render/jsx/element";
 import type { FC, JSX, JSXNode } from "../../render/jsx/types";
 import { stateAttrs } from "../contracts/state-attrs";
 import { TOOLTIP_SCOPE } from "../contracts/toggle-contract";
-import type { Align, PhysicalSide } from "../contracts/types";
+import type { Align, InvokerShape, PhysicalSide } from "../contracts/types";
 import { buttonBox } from "./button";
 import { cloneAsChild, slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
@@ -22,6 +22,8 @@ interface TooltipTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   kind?: "description" | "label" | undefined;
   /** Render onto the caller's own element instead of forge's, which must be exactly one JSX element child. */
   asChild?: boolean | undefined;
+  /** `"icon"` squares the box and drops its inline padding, for a child that is only an icon. */
+  shape?: InvokerShape | undefined;
   children?: JSXNode | undefined;
 }
 
@@ -54,6 +56,7 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
   for: contentId,
   kind = "description",
   asChild = false,
+  shape,
   class: cls,
   children,
   "data-slot": inherited,
@@ -83,7 +86,7 @@ const TooltipTrigger: FC<TooltipTriggerProps> = ({
   }
 
   return (
-    <button type='button' data-slot={slot} class={cn(buttonBox({ size: "sm" }), "border-transparent", "cursor-default", cls)} {...attrs}>
+    <button type='button' data-slot={slot} class={cn(buttonBox({ size: "sm", shape }), "border-transparent", "cursor-default", cls)} {...attrs}>
       {children}
     </button>
   );

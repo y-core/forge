@@ -76,8 +76,8 @@ type `check`, so the type alone tells an operator nothing: a rule whose sentence
 `safeCheck(requirement, message)` registers `message` against the requirement function, and `describeEnvIssue` surfaces a registered one verbatim; a
 plain `v.check` still renders as `check`. Nothing can decide statically whether a message interpolates its input, so the author states it — and the
 default is the safe one, so forgetting it costs detail rather than disclosure. **A vouched message names the requirement, never an env key**: the
-schema validates a value, and which key supplies it is the consuming app's choice, so `BASE_URL must use https` sends an operator whose repo maps
-`SITE_ORIGIN` to a variable that does not exist. The `<field>:` prefix already locates it.
+schema validates a value, and which key supplies it is the consuming app's choice, so `SITE_ORIGIN must use https` sends an operator whose repo
+supplies it under another key looking for a variable that does not exist. The `<field>:` prefix already locates it.
 
 **Omit `abortEarly` (default `false`) when the response must enumerate every failing field** — an API response rather than a progressive form. An
 enumerating refusal is one a caller can lengthen by adding fields, so choose it deliberately rather than by omission.
