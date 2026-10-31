@@ -9,7 +9,7 @@ import { canonical, hasTailwind } from "./design-system";
 import type { ClassGroupsCheckConfig, ClassGroupTable } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
-// `stateRecipes` included, because the committed table is the one `config/steps.ts` derives: without
+// `stateRecipes` included, because the committed table is the one `config/steps.config.ts` derives: without
 // it this compares forge's table against a table forge never generates.
 const CONFIG: ClassGroupsCheckConfig = {
   root: ROOT,

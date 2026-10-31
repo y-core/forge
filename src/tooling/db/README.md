@@ -131,8 +131,8 @@ forge db seed status --check            # exit non-zero while a seed would run o
 forge db seed reset                     # forget the history; the rows the seeds wrote stay
 ```
 
-`--only` takes `<dir>:<name>`, or a bare name no two seeds directories share, and `--dir` runs one directory instead of every one `config/db.ts`
-names.
+`--only` takes `<dir>:<name>`, or a bare name no two seeds directories share, and `--dir` runs one directory instead of every one
+`config/db.config.ts` names.
 
 **A seed run refuses before anything is written** when a migration is pending (run `forge db migrate` first), when the schema moved since the last
 apply certified it (restore the database), on any lint finding (write each `INSERT` as `OR IGNORE` or `ON CONFLICT`), and on a seed that changes
@@ -211,21 +211,22 @@ why nothing it does can reach the local database's state, is [`DATABASE_MANAGEME
 
 ## Declaring what forge reads
 
-An optional `config/db.ts` default-exports a `DbHostConfig`. Every field is optional. Each is a path relative to the root, or a package
-specifier such as the one `forgeSchema` returns:
+An optional `config/db.config.ts` default-exports `defineDbConfig({...})`, typed by `DbHostConfig`. Every field is optional. Each is a path
+relative to the root, or a package specifier such as the one `forgeSchema` returns:
 
 ```ts
-import { forgeSchema, type DbHostConfig } from "@y-core/forge/tooling/db/host";
+import { defineDbConfig, forgeSchema } from "@y-core/forge/tooling/db/host";
 
-export default {
+export default defineDbConfig({
   // Loaded in this order, so a file with a FOREIGN KEY comes after the file declaring its target.
   schemas: [forgeSchema("auth"), "config/db/schema.sql"],
   seeds: ["config/db/seeds"],
-} satisfies DbHostConfig;
+});
 ```
 
-`openTestD1` loads `config/db.ts` under node too, and node cannot load this namespace's barrel, so the file imports from `/host`. That subpath
-exports `forgeSchema` and `DbHostConfig` and nothing else. Why it is published separately is [`docs/NAMESPACES.md`][ns-3c] §3c.
+`openTestD1` loads `config/db.config.ts` under node too, and node cannot load this namespace's barrel, so the file imports from `/host`. That
+subpath carries only what a host config needs, `defineDbConfig`, `forgeSchema` and their types, and it is published separately for the reason
+[`docs/NAMESPACES.md`][ns-3c] §3c gives.
 
 The default layout keeps everything under `config/db/`: `migrations` defaults to `config/db/migrations`, which is both where migrations are read
 from and where compose writes, and `snapshot` defaults to `config/db/schema.snapshot.json`. `backupsDir` defaults to `.forge/backups`. An entry in
@@ -291,7 +292,8 @@ await execute(root);
 ```
 
 It takes a `DbContextOverrides` — `io` and `host`, both optional. `io` is the seam every test in this namespace drives: pass a `DbIo` and no command
-touches a filesystem, spawns `wrangler` or opens a database. `host` supplies the `config/db.ts` that would otherwise be loaded from disk.
+touches a filesystem, spawns `wrangler` or opens a database. `host` supplies the `config/db.config.ts` that would otherwise be loaded from
+disk.
 
 A fake `DbIo` records what a run put to a local database apart from what it spawned, so a test can assert on each.
 
@@ -332,8 +334,8 @@ migration recorded there that forge never applied. `migrations_dir` and `migrati
 **Scratch databases live under `.forge/scratch/`.** Compose, rehearsal and backup verification are what build them; `--to` applies against the real
 home.
 
-**A drop that followed a file leaving `config/db.ts` names the file that declared it**, so the refusal is attributable rather than unexplained
-([`SCHEMA_COMPOSITION.md`][sc-3] §3).
+**A drop that followed a file leaving `config/db.config.ts` names the file that declared it**, so the refusal is attributable rather than
+unexplained ([`SCHEMA_COMPOSITION.md`][sc-3] §3).
 
 ---
 

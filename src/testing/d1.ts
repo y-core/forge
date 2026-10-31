@@ -15,7 +15,7 @@ export { sql } from "../storage/db/sql";
 /** Where `openTestD1` reads the app from; every path is relative to `root`, the current directory where unset. @public */
 export interface OpenTestD1Options {
   root?: string;
-  /** The `DbHostConfig` module naming the migrations directory; `config/db.ts` where unset. */
+  /** The `DbHostConfig` module naming the migrations directory; `config/db.config.ts` where unset. */
   hostConfig?: string;
   /** Overrides the migrations directory the host config names. */
   migrations?: string;

@@ -11,6 +11,7 @@ import { checkClassTokens } from "./checks/class-tokens";
 import { checkCoLocation } from "./checks/co-location";
 import { checkCommentBudget } from "./checks/comment-budget";
 import { checkCompatibility } from "./checks/compatibility";
+import { checkConfigFiles } from "./checks/config-files";
 import { checkContrast } from "./checks/contrast";
 import { checkCrossEngineTags } from "./checks/cross-engine-tags";
 import { checkCssCoverage } from "./checks/css-coverage";
@@ -42,6 +43,7 @@ import type { ClassOrderCheckConfig } from "./checks/types";
 import type { ClassTokensCheckConfig } from "./checks/types";
 import type { CoLocationCheckConfig } from "./checks/types";
 import type { CommentBudgetCheckConfig } from "./checks/types";
+import type { ConfigFileCheckConfig } from "./checks/types";
 import type { CompatibilityCheckConfig } from "./checks/types";
 import type { ContrastCheckConfig } from "./checks/types";
 import type { CrossEngineTagsCheckConfig } from "./checks/types";
@@ -66,38 +68,8 @@ import type { SsrBoundaryCheckConfig } from "./checks/types";
 import type { DeclaredGraph } from "./checks/types";
 import { hasWorkerd } from "./checks/workerd";
 import { PLAYWRIGHT_RESULTS } from "./playwright-results";
-import type { BrowserProbes, CheckStep, CommandStep, GateTier, StepBase, StepRequirement } from "./types";
+import type { BrowserProbes, CheckStep, CommandStep, StepRequirement } from "./types";
 import type { SourceStepOptions, StepOptions } from "./types";
-
-function tier(value: GateTier | undefined, fallback: GateTier = "static"): { tier: GateTier } | Record<string, never> {
-  const resolved = value ?? fallback;
-  return resolved === "static" ? {} : { tier: resolved };
-}
-
-type NarrowOptions = { args?: readonly string[]; wide?: readonly string[] };
-
-type WidenOption = { widen?: StepBase["widen"] };
-
-function playwrightListSelects(output: string): boolean {
-  const last = output.trimEnd().split("\n").at(-1);
-  return last !== "Total: 0 tests in 0 files";
-}
-
-function widening(widen: StepBase["widen"]): { widen: NonNullable<StepBase["widen"]> } | Record<string, never> {
-  return widen === undefined ? {} : { widen };
-}
-
-// `--only-changed` traces each spec's imports, so what a spec reads without importing it widens the run whole.
-// `--list` loads the specs without global setup or a browser, and Playwright exits 0 when `--only-changed` selects none.
-function playwrightNarrowing(options: NarrowOptions | undefined): { narrow: NonNullable<StepBase["narrow"]> } {
-  return {
-    narrow: {
-      args: options?.args ?? ["--only-changed"],
-      wide: ["playwright.config.ts", ...(options?.wide ?? [])],
-      probe: { args: ["--list"], selects: playwrightListSelects },
-    },
-  };
-}
 
 function prerequisite(
   override: StepRequirement | null | undefined,
@@ -135,26 +107,25 @@ function markdownWatches(entries: readonly string[]): string[] {
 
 const STYLESHEET_WATCHES = "**/*.css";
 
-/** Wraps a check function as a step, applying the tier and prerequisite an option table overrides. @public */
+/** Wraps a check function as a step, applying the prerequisite and watches an option table overrides. @public */
 export function checkStep(
   label: string,
   run: CheckStep["run"],
   options: StepOptions,
-  defaults: { tier?: GateTier; requires?: StepRequirement; fix?: CheckStep["fix"]; watches?: readonly string[] } = {},
+  defaults: { requires?: StepRequirement; fix?: CheckStep["fix"]; watches?: readonly string[] } = {},
 ): CheckStep {
   return {
     label,
     run,
     ...(defaults.fix === undefined ? {} : { fix: defaults.fix }),
-    ...tier(options.tier, defaults.tier),
     ...prerequisite(options.requires, defaults.requires),
     ...watching(options.watches, defaults.watches),
   };
 }
 
-/** `tsc --noEmit`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
+/** `bun check`. Belongs first in a table: a type failure cascades into misleading lint and test failures. @public */
 export function typecheckStep(options: StepOptions = {}): CommandStep {
-  return { label: "typecheck", tail: 20, cmd: ["tsc", "--noEmit"], ...tier(options.tier), ...watching(options.watches) };
+  return { label: "typecheck", tail: 20, cmd: ["bun", "check", "--no-script", "--no-pretty"], ...watching(options.watches) };
 }
 
 /** `oxlint` over `sources` (default `src/`), with `--fix` as its fixer. @public */
@@ -166,20 +137,18 @@ export function lintStep(options: SourceStepOptions = {}): CommandStep {
     // oxlint exits 0 on `warn`, so without this a green gate would not mean a clean tree.
     cmd: ["oxlint", "--deny-warnings", ...sources],
     fix: ["oxlint", "--fix", ...sources],
-    ...tier(options.tier),
     ...watching(options.watches, [...sourceWatches(sources), ".oxlintrc*", ".oxlintignore", ".gitignore"]),
   };
 }
 
-/** `oxfmt --check` over `sources` (default `src/`), with a bare `oxfmt` run as its fixer. Ordered after `lintStep` so the formatter owns the final byte layout. @public */
+/** `bun fmt --check` over `sources` (default `src/`), with a bare `bun fmt` run as its fixer. Ordered after `lintStep` so the formatter owns the final byte layout. @public */
 export function formatStep(options: SourceStepOptions = {}): CommandStep {
   const sources = options.sources ?? ["src/"];
   return {
     label: "format",
     tail: 20,
-    cmd: ["oxfmt", "--check", ...sources],
-    fix: ["oxfmt", ...sources],
-    ...tier(options.tier),
+    cmd: ["bun", "fmt", "--no-script", "--check", ...sources],
+    fix: ["bun", "fmt", "--no-script", ...sources],
     ...watching(options.watches, [...sourceWatches(sources), ".oxfmtrc*", ".prettierignore", ".gitignore"]),
   };
 }
@@ -193,19 +162,17 @@ export function typeAwareLintStep(options: SourceStepOptions = {}): CommandStep 
     // The unused-directive check rides here, not on `lint`: this run is a superset, so it is the only
     // one that can tell a stale directive from one that only a type-aware rule redeems.
     cmd: ["oxlint", "--type-aware", "--deny-warnings", "--report-unused-disable-directives-severity", "error", ...sources],
-    ...tier(options.tier),
     ...watching(options.watches),
   };
 }
 
-/** `bun test` over `sources`, or the whole project when none are named; defaults to `unit`, the tier that runs the code rather than judging it. @public */
+/** `bun test` over `sources`, or the whole project when none are named. @public */
 export function testStep(options: SourceStepOptions & { label?: string; leavesNoTemp?: boolean } = {}): CommandStep {
   return {
     label: options.label ?? "test",
     tail: 120,
     cmd: ["bun", "test", ...(options.sources ?? [])],
     ...(options.leavesNoTemp === true ? { leavesNoTemp: true } : {}),
-    ...tier(options.tier, "unit"),
     ...watching(options.watches),
   };
 }
@@ -310,11 +277,10 @@ export function browserRequired(server: PlaywrightServer, probes: Partial<Browse
   });
 }
 
-/** `playwright test --project=chromium` under node, defaulting to the `scheduled` tier: it needs the Playwright server, and the whole suite is too slow for the run a task closes on. Always run whole. @public */
+/** `playwright test --project=chromium` under node, behind the Playwright server. Always run whole. @public */
 export function browserStep(options: StepOptions = {}): CommandStep {
   return {
     label: "test:browser",
-    ...tier(options.tier, "scheduled"),
     tail: 120,
     // The installed binary off `binDir`, never `bunx`, which falls back to installing from the registry.
     // Its shebang is node: under bun a dev server playwright spawns binds where a sandboxed browser cannot reach it.
@@ -327,11 +293,10 @@ export function browserStep(options: StepOptions = {}): CommandStep {
   };
 }
 
-/** `playwright test --project=firefox --project=webkit` on the compat server, defaulting to the `scheduled` tier, for a cron table rather than the gate. Always run whole. @public */
+/** `playwright test --project=firefox --project=webkit` on the compat server. Always run whole. @public */
 export function crossEngineStep(options: StepOptions = {}): CommandStep {
   return {
     label: "test:browser:cross-engine",
-    ...tier(options.tier, "scheduled"),
     tail: 120,
     cmd: ["playwright", "test", "--project=firefox", "--project=webkit"],
     ...prerequisite(options.requires, options.requires === undefined ? browserRequired(COMPAT_SERVER) : undefined),
@@ -340,13 +305,10 @@ export function crossEngineStep(options: StepOptions = {}): CommandStep {
   };
 }
 
-/** `playwright test --project=workerd` over `sources` (default every spec the project matches), defaulting to the `runtime` tier: it needs the workerd runtime installed. Narrowed to the pending changes, and widened, at `runtime`. @public */
-export function workerdStep(
-  options: { hint?: string; leavesNoTemp?: boolean; narrow?: NarrowOptions } & WidenOption & SourceStepOptions = {},
-): CommandStep {
+/** `playwright test --project=workerd` over `sources` (default every spec the project matches), behind the workerd runtime. Always run whole. @public */
+export function workerdStep(options: { hint?: string; leavesNoTemp?: boolean } & SourceStepOptions = {}): CommandStep {
   return {
     label: "test:workerd",
-    ...tier(options.tier, "runtime"),
     tail: 120,
     // Node, never bun: under bun `createTestHarness` loses the `cf` blob miniflare's own `undici` carries, and no request is ever answered.
     cmd: ["playwright", "test", "--project=workerd", ...(options.sources ?? [])],
@@ -360,8 +322,6 @@ export function workerdStep(
       hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
     }),
     ...watching(options.watches),
-    ...widening(options.widen),
-    ...playwrightNarrowing(options.narrow),
   };
 }
 
@@ -390,10 +350,10 @@ function dbWatches(root: string | undefined, exercises: readonly string[] | unde
   return [...watched, `${root.replace(/\/+$/, "")}/**`];
 }
 
-/** The `forge db` rows: the schema digests in `static`; the lint, which reads the local database, and the schema replay in `runtime`, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. Watching a relative `root` and every namespace `exercises` reaches through `graph`, else every change; a source file in `forge` runs them whole when its import closure changes. @public */
+/** The `forge db` rows: the schema digests as `static` rows; the lint, which reads the local database, and the schema replay as `runtime` rows, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. Watching a relative `root` and every namespace `exercises` reaches through `graph`, else every change; a source file in `forge` runs them whole when its import closure changes. @public */
 export function dbSteps(
   options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string; exercises?: readonly string[]; graph?: DeclaredGraph } = {},
-): [CommandStep, CommandStep, CommandStep] {
+): { static: [CommandStep]; runtime: [CommandStep, CommandStep] } {
   const forge = options.forge ?? ["forge"];
   const root = options.root === undefined ? [] : ["--root", options.root];
   const watches = watching(dbWatches(options.root, options.exercises, options.graph));
@@ -404,19 +364,13 @@ export function dbSteps(
     probe: hasWorkerd,
     hint: options.hint ?? "run `bun install` — `wrangler` brings the workerd runtime with it",
   };
-  return [
-    { label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root], ...watches, ...traced },
-    { label: "db:lint", tier: "runtime", tail: 40, cmd: [...forge, "db", "lint", ...root], requires, ...watches, ...traced },
-    {
-      label: "db:schema",
-      tier: "runtime",
-      tail: 60,
-      cmd: [...forge, "db", "schema", "check", "--replay", ...root],
-      requires,
-      ...watches,
-      ...traced,
-    },
-  ];
+  return {
+    static: [{ label: "db:schema:digests", tail: 40, cmd: [...forge, "db", "schema", "check", ...root], ...watches, ...traced }],
+    runtime: [
+      { label: "db:lint", tail: 40, cmd: [...forge, "db", "lint", ...root], requires, ...watches, ...traced },
+      { label: "db:schema", tail: 60, cmd: [...forge, "db", "schema", "check", "--replay", ...root], requires, ...watches, ...traced },
+    ],
+  };
 }
 
 /** Audits the `exports` map against what is on disk and what is published. @public */
@@ -486,7 +440,12 @@ export function devBoundaryStep(config: DevBoundaryCheckConfig, options: StepOpt
 
 /** Bundles the deployed `main` and checks that no module in it is development code. @public */
 export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options, { tier: "scheduled" });
+  return checkStep("validate-dev-bundle", () => checkDevBundle(config), options);
+}
+
+/** Holds every `config/*.config.ts` to one default export that calls an imported `define*` helper. @public */
+export function configFileStep(config: ConfigFileCheckConfig, options: StepOptions = {}): CheckStep {
+  return checkStep("validate-config-files", () => checkConfigFiles(config), options, { watches: ["config/*.config.ts"] });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */

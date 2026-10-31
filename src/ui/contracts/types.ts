@@ -76,9 +76,7 @@ export type MenuPopupNaming =
 export type PopupKind = "dialog" | "menu";
 
 /** Typed `data-on-<event>` props for a `Resumable` scope, keyed by action name from `A`. @public */
-export type ScopeAttrsProps<A extends string = string> = {
-  [E in ScopeEvent as `on${Capitalize<E>}`]?: A;
-};
+export type ScopeAttrsProps<A extends string = string> = { [E in ScopeEvent as `on${Capitalize<E>}`]?: A };
 
 /** One of the delegated scope events. @public */
 export type ScopeEvent = (typeof SCOPE_EVENTS)[number];

@@ -3,13 +3,15 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { addCommand, createCommand } from "../../../src/tooling/cli/command";
+import { loadConfigModule } from "../../../src/tooling/cli/config-module";
 import { CliError } from "../../../src/tooling/cli/errors";
-import type { CommandBase } from "../../../src/tooling/cli/types";
+import type { CommandBase, LoadedConfigModule } from "../../../src/tooling/cli/types";
+import { DEFAULT_STEPS_CONFIG } from "../../../src/tooling/gate/command";
 import { type DependencyOptions, dependencyRootOf } from "../corpus/dependency";
 import { discover } from "../corpus/source";
 import { duplicatePairs } from "../gate/duplicates";
 import type { GoldenQuery } from "../gate/golden";
-import { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf } from "../gate/step-sets";
+import { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf, type WardenQueries } from "../gate/step-sets";
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import { packageNameOf, resolveRepoRoot } from "../paths";
@@ -171,26 +173,39 @@ export async function probeSetsOf(
   module: string | undefined,
   root: string,
 ): Promise<{ golden: readonly GoldenQuery[]; negative: readonly string[] }> {
-  const file = module === undefined ? resolve(root, "config/steps.ts") : resolve(module);
-  const loaded: unknown = await import(file).catch((error: unknown) => {
-    throw new CliError("invalid-args", `cannot load \`${file}\` — ${error instanceof Error ? error.message : String(error)}`);
-  });
-
-  if (module !== undefined) {
-    const exports = loaded as { GOLDEN?: readonly GoldenQuery[]; NEGATIVE?: readonly string[] };
-    if (exports.GOLDEN === undefined)
-      throw new CliError("invalid-args", `\`${file}\` exports no GOLDEN — name a module that does, or drop --golden`);
-    return { golden: exports.GOLDEN, negative: exports.NEGATIVE ?? [] };
+  const path = module ?? DEFAULT_STEPS_CONFIG;
+  const what = module === undefined ? "step table" : "warden query set";
+  let loaded: LoadedConfigModule<unknown> | undefined;
+  try {
+    loaded = await loadConfigModule<unknown>({ root, path, explicit: module !== undefined, what, option: "--golden" });
+  } catch (error) {
+    throw new CliError("invalid-args", `cannot load \`${path}\` — ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (loaded === undefined) {
+    throw new CliError(
+      "invalid-args",
+      `cannot load \`${path}\` — no step table there; pass --golden=<module default-exporting defineWardenQueries({...})>`,
+    );
   }
 
-  const steps = stepsOf(loaded);
+  if (module !== undefined) {
+    const queries = loaded.value as Partial<WardenQueries> | null;
+    if (typeof queries !== "object" || queries === null || !Array.isArray(queries.golden))
+      throw new CliError("invalid-args", `\`${path}\` default-exports no \`golden\` set — name a module that does, or drop --golden`);
+    return { golden: queries.golden, negative: queries.negative ?? [] };
+  }
+
+  const steps = stepsOf(loaded.value);
   if (steps === undefined)
-    throw new CliError("invalid-args", `\`${file}\` exports no step table as \`default\` or \`STEPS\` — pass --golden=<module exporting GOLDEN>`);
+    throw new CliError(
+      "invalid-args",
+      `\`${path}\` default-exports no defineSteps({...}) table — pass --golden=<module default-exporting defineWardenQueries({...})>`,
+    );
   const sets = goldenSetsOf(steps);
   if (sets === undefined)
     throw new CliError(
       "invalid-args",
-      `\`${file}\` declares no \`${GOLDEN_STEP_LABEL}\` row — add one, or pass --golden=<module exporting GOLDEN>`,
+      `\`${path}\` declares no \`${GOLDEN_STEP_LABEL}\` row — add one, or pass --golden=<module default-exporting defineWardenQueries({...})>`,
     );
   return sets;
 }
@@ -205,7 +220,11 @@ export function createProbeCommand(parent: CommandBase): void {
       flags: {
         root: ROOT_FLAG,
         kind: KIND_FLAG,
-        golden: { type: "string", description: "Module exporting GOLDEN and NEGATIVE (default: the `warden:queries` row of `config/steps.ts`)" },
+        golden: {
+          type: "string",
+          description:
+            "Module default-exporting defineWardenQueries({ golden, negative }) (default: the `warden:queries` row of `config/steps.config.ts`)",
+        },
         dependency: { type: "boolean", description: "Also index the installed library's consumer-facing documents" },
       },
       run: async (_args, flags) => {

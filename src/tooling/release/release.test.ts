@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { Mock } from "bun:test";
 
-import { createReleaseCommand } from "./release";
+import { createReleaseCommand, defineReleaseConfig } from "./release";
 import { ReleaseError } from "./types";
 import type { GateOutcome } from "./types";
 import type { VersionResult } from "./types";
@@ -1214,5 +1214,13 @@ describe("createReleaseCommand() — an unanswerable branch question and a gate 
     expect(() =>
       runCapturingLogs(() => void createReleaseCommand({ cwd: "/project", gateCommand: ["make", "check"] }, absent).run?.([], FLAGS)),
     ).toThrow("`make check` could not be run");
+  });
+});
+
+describe("defineReleaseConfig()", () => {
+  it("returns its argument unchanged", () => {
+    const config = { gateCommand: ["bun", "run", "verify:scheduled"] };
+
+    expect(defineReleaseConfig(config)).toBe(config);
   });
 });

@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import process, { env } from "node:process";
 
 import { resolveSiteConfig } from "../../../site/config";
@@ -6,8 +5,9 @@ import { SITE_FILES } from "../../../site/robots";
 import type { SiteConfig, ZoneRule } from "../../../site/types";
 import { buildAllowRule, buildRedirectRule } from "../../../site/zone";
 import { createCommand } from "../../cli/command";
+import { loadConfigModule } from "../../cli/config-module";
 import { CliError } from "../../cli/errors";
-import type { CliContext } from "../../cli/types";
+import type { CliContext, LoadedConfigModule } from "../../cli/types";
 import { PLAIN } from "../../term/color";
 import type { Colorize } from "../../term/types";
 import { styleAction } from "../account/commands";
@@ -47,7 +47,7 @@ interface PhasePlan {
 }
 
 const zoneFlags = {
-  config: { type: "string" as const, short: "c", description: "Path to the site config", default: "config/site.ts" },
+  config: { type: "string" as const, short: "c", description: "Path to the site config", default: "config/site.config.ts" },
   commit: { type: "boolean" as const, description: "Write the entry point rulesets. Without this flag nothing is written anywhere" },
   check: { type: "boolean" as const, description: "Exit non-zero when the zone is out of step with the config. For CI" },
   json: { type: "boolean" as const, description: "Print the run as a JSON document instead of a table. The only thing written to stdout" },
@@ -59,16 +59,14 @@ type LooseFlags = Record<string, string | string[] | boolean | undefined>;
 
 /** Loads the site config module and validates it. @internal */
 async function loadSiteConfigModule(root: string, configPath: string): Promise<ReturnType<typeof resolveSiteConfig>> {
-  const resolvedPath = resolve(root, configPath);
-  let mod: { default?: SiteConfig };
+  let loaded: LoadedConfigModule<SiteConfig> | undefined;
   try {
-    mod = (await import(resolvedPath)) as { default?: SiteConfig };
+    loaded = await loadConfigModule<SiteConfig>({ root, path: configPath, explicit: true, what: "site config" });
   } catch (error) {
     throw new CliError("invalid-args", `Could not load site config \`${configPath}\`: ${(error as Error).message}`);
   }
-  const raw = mod.default;
-  if (raw === undefined) throw new CliError("invalid-args", `\`${configPath}\` has no default export`);
-  return resolveSiteConfig(raw);
+  if (loaded === undefined) throw new CliError("invalid-args", `No site config at \`${configPath}\``);
+  return resolveSiteConfig(loaded.value);
 }
 
 /** The rules each phase should hold, derived from the config alone. @public */
@@ -166,7 +164,7 @@ function phaseRow(plan: PhasePlan, style: Colorize): TableRow {
 
 async function runSyncZone(flags: LooseFlags, ctx?: CliContext): Promise<void> {
   const style = ctx?.out ?? PLAIN;
-  const configPath = (flags.config as string | undefined) ?? "config/site.ts";
+  const configPath = (flags.config as string | undefined) ?? "config/site.config.ts";
   const zoneId = (flags["zone-id"] as string | undefined) ?? env.CLOUDFLARE_ZONE_ID;
   const apiToken = (flags["api-token"] as string | undefined) ?? env.CLOUDFLARE_API_TOKEN;
 
@@ -275,7 +273,7 @@ function describeFailure(error: CfApiClientError, phase: string): { error: strin
   return { error: `could not read the phase${code}`, errorDetail: upstream };
 }
 
-/** The `forge cf sync zone` subcommand: reconciles zone entry point rulesets against `config/site.ts`. @public */
+/** The `forge cf sync zone` subcommand: reconciles zone entry point rulesets against `config/site.config.ts`. @public */
 export function createSyncZoneCommand() {
   return createCommand({
     name: "zone",

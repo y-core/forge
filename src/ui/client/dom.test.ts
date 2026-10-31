@@ -95,6 +95,50 @@ describe("afterTransitions", () => {
 
     expect(ran).toBe(true);
   });
+
+  it("runs at once through the returned handle while a transition is running, and not again when it settles", async () => {
+    const { el } = fakeTree();
+    const { promise: finished, resolve } = Promise.withResolvers<undefined>();
+    const node = Object.assign(el(), { getAnimations: () => [{ transitionProperty: "opacity", finished }] });
+    let runs = 0;
+
+    const settle = afterTransitions(asRoot(node), () => {
+      runs += 1;
+    });
+    settle();
+    const early = runs;
+    resolve(undefined);
+    await finished;
+    await Promise.resolve();
+
+    expect({ early, after: runs }).toEqual({ early: 1, after: 1 });
+  });
+
+  it("runs once when the handle is called twice", () => {
+    const { el } = fakeTree();
+    const node = Object.assign(el(), { getAnimations: () => [{ transitionProperty: "opacity", finished: new Promise<undefined>(() => {}) }] });
+    let runs = 0;
+
+    const settle = afterTransitions(asRoot(node), () => {
+      runs += 1;
+    });
+    settle();
+    settle();
+
+    expect(runs).toBe(1);
+  });
+
+  it("does not run again through the handle when it already ran at once", () => {
+    const { el } = fakeTree();
+    let runs = 0;
+
+    const settle = afterTransitions(asRoot(el()), () => {
+      runs += 1;
+    });
+    settle();
+
+    expect(runs).toBe(1);
+  });
 });
 
 describe("isRtl", () => {

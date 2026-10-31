@@ -107,7 +107,7 @@ describe("runStandbyReset()", () => {
     run.host = { seeds: ["nowhere"] };
 
     await expect(runStandbyReset(run, OPTIONS)).rejects.toThrow(
-      "standby reset found no seeds in any directory config/db.ts names — add one, or pass --no-seed to build the standby database with every table empty",
+      "standby reset found no seeds in any directory config/db.config.ts names — add one, or pass --no-seed to build the standby database with every table empty",
     );
     expect([io.exists(STATE), io.d1Calls]).toEqual([true, []]);
   });

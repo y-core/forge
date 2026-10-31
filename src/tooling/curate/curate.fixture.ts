@@ -49,7 +49,7 @@ export const CURATE_FIXTURE_FEATURES: FeatureManifest = {
   contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },
 };
 
-/** `CURATE_FIXTURE_FEATURES` as a `config/features.ts` module, each feature's entry marked so a curation keeps exactly the remaining ones. */
+/** `CURATE_FIXTURE_FEATURES` as a `config/features.config.ts` module, each feature's entry marked so a curation keeps exactly the remaining ones. */
 export const CURATE_FIXTURE_MANIFEST = [
   "export default {",
   '  showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] }, // feature:showcase',
@@ -81,10 +81,10 @@ export function curateFixtureTemplate(): string {
   return root;
 }
 
-/** A git working tree holding tracked, untracked and ignored files, plus one tracked file since deleted from disk; `manifest` adds an untracked `config/features.ts`. */
+/** A git working tree holding tracked, untracked and ignored files, plus one tracked file since deleted from disk; `manifest` adds an untracked `config/features.config.ts`. */
 export function curateFixtureRepo(manifest?: string): string {
   const root = mkdtempSync(join(tmpdir(), "forge-curate-repo-"));
   cpSync(curateFixtureTemplate(), root, { recursive: true });
-  write(root, manifest === undefined ? UNTRACKED : { ...UNTRACKED, "config/features.ts": manifest });
+  write(root, manifest === undefined ? UNTRACKED : { ...UNTRACKED, "config/features.config.ts": manifest });
   return root;
 }

@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
+import { parseImports, publishedSubpaths, resolveSpecifier } from "./namespace-graph-parse";
 import { importTargets, readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource, unresolvedSourceEntries } from "./source-scan";
 import type { PackageImports, SsrBoundaryCheckConfig } from "./types";
@@ -33,17 +33,11 @@ export function boundaryViolation(file: string, config: Pick<SsrBoundaryCheckCon
 
 /** Every published subpath that reaches the browser runtime, as a consumer would spell it. @public */
 export function clientSubpaths(config: SsrBoundaryConfig): Map<string, string> {
-  const found = new Map<string, string>();
-  if (config.packageName === undefined || config.exports === undefined) return found;
-  for (const [subpath, value] of Object.entries(config.exports)) {
-    const target = typeof value === "string" ? value : (value.import ?? value.types);
-    if (target === undefined) continue;
-    const normalized = target.startsWith("./") ? target.slice(2) : target;
-    const base = normalized.slice(normalized.lastIndexOf("/") + 1);
-    if (!isClientOwned(normalized, config.clientDirs) && !config.entryPoints.includes(base)) continue;
-    found.set(`${config.packageName}${subpath.slice(1)}`, normalized);
-  }
-  return found;
+  return new Map(
+    [...publishedSubpaths(config.packageName, config.exports)].filter(
+      ([, target]) => isClientOwned(target, config.clientDirs) || config.entryPoints.includes(target.slice(target.lastIndexOf("/") + 1)),
+    ),
+  );
 }
 
 /** Judges one file's imports against the boundary. @public */

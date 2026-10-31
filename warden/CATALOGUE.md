@@ -12,7 +12,7 @@ Generated — run `warden catalogue --write` after adding, removing or re-descri
 - `APP_ARCHITECTURE.md` — Application Architecture: The composition-root factory, the layer stack and its dependency rules, dependency injection through config, concern-first placement, and the feature sequence.
 - `BOUNDARIES.md` — Application Boundaries: SSR versus browser, middleware ordering and guard placement, validate-at-boundary, no-PII logging, the fail-closed posture, and what a shared cache may store.
 - `CODE_REVIEW.md` — Code Review Standards: How to review an application: the blocking invariants, tiered detection with a command per rule, severity calibration, verification, and known false positives.
-- `CONFIG_BASELINE.md` — Application Configuration Baseline: The tsconfig flags, oxlint base and overrides, gate wiring, script set and tool pins every Worker application in this fleet shares, and the rule for what may vary.
+- `CONFIG_BASELINE.md` — Application Configuration Baseline: The tsconfig flags, oxlint base and overrides, gate wiring, script set, tool pins and config-module shape every Worker application in this fleet shares, and the rule for what may vary.
 - `ERROR_HANDLING.md` — Error Handling: The one Result primitive, how failures cross a layer boundary, the fragment-versus-page rendering decision, and the three-way error taxonomy.
 - `FORGE_CONSUMPTION.md` — Shared Library Consumption: Leverage the shared library before writing app code, never bypass its facade, and the test for working around a gap locally versus upstreaming a change.
 - `TESTING.md` — Testing Discipline: The app-request pattern, environment fixtures, exact-match assertions and entity encoding, fakes over mocks, fail-closed expectations, and the gate.

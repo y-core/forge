@@ -20,7 +20,8 @@ import { buildAllowRule, defineSiteConfig, renderRobotsTxt, renderSitemapXml } f
 
 ## Getting started
 
-Author a `site.config.ts` whose page list comes from the router, never from a literal.
+Author `config/site.config.ts`, where `forge cf sync zone` reads it, with a page list that comes from the router,
+never from a literal.
 
 ```ts
 import { routePaths } from "@y-core/forge/router";

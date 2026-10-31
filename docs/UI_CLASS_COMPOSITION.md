@@ -213,8 +213,8 @@ the recipe sits on the wrapping label is the ordinary shape here, not the except
 
 **A state recipe is keyed into a slot of its own, which no Tailwind utility can reach.** A recipe that paints under a state selector — at base scope
 it sets at most `outline-style`, as `focus-ring` and `focus-ring-outset` do through `outline-none` — takes the group `forge:<name>` rather than
-its compiled signature; `config/steps.ts` names them through `FORGE_STATE_RECIPES`. `reach()` finds no CSS property in such a key, so no override
-edge is derived into or out of one either.
+its compiled signature; `config/steps.config.ts` names them through `FORGE_STATE_RECIPES`. `reach()` finds no CSS property in such a key, so no
+override edge is derived into or out of one either.
 
 **A state recipe must contend with no base-scope utility.** `state-invalid` sets `border-color` and `--tw-ring-color` only under
 `&[aria-invalid="true"]` and its siblings. A caller's `class` is always last under last-wins `cn`, so if `<Input class="ring-primary">`

@@ -19,7 +19,7 @@ function refuseUndeclaredPath(run: DbRunContext, path: string): void {
   const named = sources.map((source) => source.declared).join(", ");
   throw new CliError(
     "invalid-args",
-    `${path} is outside every seeds directory \`config/db.ts\` names${named === "" ? "" : ` (${named})`} — a seed forge does not read is a file nothing applies`,
+    `${path} is outside every seeds directory \`config/db.config.ts\` names${named === "" ? "" : ` (${named})`} — a seed forge does not read is a file nothing applies`,
   );
 }
 

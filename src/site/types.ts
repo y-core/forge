@@ -52,7 +52,7 @@ const ZoneConfigSchema = v.object({
   allow: v.optional(ZoneAllowSchema),
 });
 
-/** The default export of a `site.config.ts`. @public */
+/** The default export of a `config/site.config.ts`. @public */
 export const SiteConfigSchema = v.object({
   origin: v.pipe(
     v.string(),
@@ -83,7 +83,7 @@ export type ZonePatternRefusal = "catch-all" | "host" | "search" | "malformed" |
 export type ZoneConfig = v.InferOutput<typeof ZoneConfigSchema>;
 /** A {@link ZoneConfig} whose `apex` has been filled in from the origin. @public */
 export type ResolvedZoneConfig = Omit<ZoneConfig, "apex"> & { apex: string };
-/** What a consumer writes in `site.config.ts`. @public */
+/** What a consumer writes in `config/site.config.ts`. @public */
 export type SiteConfig = v.InferInput<typeof SiteConfigSchema>;
 
 /** A site config with every optional block defaulted, as the renderers consume it. @public */

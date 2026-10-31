@@ -504,7 +504,7 @@ export function runSyncAccount(flags: LooseFlags, ctx?: CliContext): Promise<voi
 }
 
 /** Names the zone scope a defaulted account run did not touch, or null when none is declared. @internal */
-export function describeUntouchedZone(root: string, siteConfigPath = "config/site.ts"): string | null {
+export function describeUntouchedZone(root: string, siteConfigPath = "config/site.config.ts"): string | null {
   const path = resolve(root, siteConfigPath);
   if (!existsSync(path)) return null;
   // A textual probe, not an import: loading the site config would execute the app's route table to

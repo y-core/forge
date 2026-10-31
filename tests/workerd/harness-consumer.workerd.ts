@@ -60,12 +60,12 @@ const status = async (dev) => {
 console.log(JSON.stringify({ dev: await status(true), strict: await status(false) }));
 `;
 
-const HOST_CONFIG = `import { forgeSchema, type DbHostConfig } from "@y-core/forge/tooling/db/host";
+const HOST_CONFIG = `import { defineDbConfig, forgeSchema } from "@y-core/forge/tooling/db/host";
 
-export default {
+export default defineDbConfig({
   schemas: [forgeSchema("auth"), "config/db/schema.sql"],
   migrations: "db/migrations",
-} satisfies DbHostConfig;
+});
 `;
 
 const POSTS_MIGRATION = "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL);\nCREATE INDEX posts_user ON posts (user_id);\n";
@@ -159,12 +159,12 @@ test.describe("forge installed from its packed tarball", () => {
     test.beforeAll(() => {
       writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }));
       mkdirSync(join(root, "config"), { recursive: true });
-      writeFileSync(join(root, "config", "db.ts"), HOST_CONFIG);
+      writeFileSync(join(root, "config", "db.config.ts"), HOST_CONFIG);
       mkdirSync(join(root, "db", "migrations"), { recursive: true });
       writeFileSync(join(root, "db", "migrations", "0001_posts.sql"), POSTS_MIGRATION);
     });
 
-    test("opens a database with no options from a config/db.ts written as the tooling/db README shows", () => {
+    test("opens a database with no options from a config/db.config.ts written as the tooling/db README shows", () => {
       const run = runNode(root, DEFAULT_OPEN);
 
       expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");

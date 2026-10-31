@@ -73,7 +73,7 @@ export function readSchemaInputs(run: DbRunContext): SchemaInputs {
 export function missingSchemas(inputs: SchemaInputs): string[] {
   return inputs.schemas
     .filter((source) => !inputs.states.some((state) => state.source === source.declared))
-    .map((source) => `${source.declared} is declared in config/db.ts and no file is there to read`);
+    .map((source) => `${source.declared} is declared in config/db.config.ts and no file is there to read`);
 }
 
 /** The replayed model of every migration on disk, from the cache when the migrations have not changed. @internal */
@@ -82,7 +82,7 @@ export function baselineSchemaModel(run: DbRunContext, inputs: SchemaInputs, cac
   return cachedSchemaModel(run, "baseline", key, cache, async () => readScratchModel(run, await replayBaseline(run, inputs.migrations)));
 }
 
-/** Each declared schema's digest, keyed as `config/db.ts` declared it — what the snapshot records and `--check` compares against. @internal */
+/** Each declared schema's digest, keyed as `config/db.config.ts` declared it — what the snapshot records and `--check` compares against. @internal */
 export function declaredDigests(states: readonly DesiredState[]): Record<string, string> {
   return Object.fromEntries(states.map((state) => [state.source, state.digest]));
 }
@@ -148,7 +148,7 @@ function composeFromNoSchema(run: DbRunContext, inputs: SchemaInputs, dryRun: bo
       `${held.join(" and ")} — there is history to hold in step, so composing from no schema is refused:\n${NO_SCHEMAS}`,
     );
   }
-  if (!run.json) run.print("config/db.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose");
+  if (!run.json) run.print("config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose");
   return { path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun };
 }
 
@@ -207,14 +207,14 @@ export async function composeMigration(run: DbRunContext, options: ComposeOption
   const attributed = attributeDrops(inputs.snapshot, inputs.states, droppedObjectNames(diff));
   const causes = attributed.map(
     ({ source, objects }) =>
-      `${objects.join(", ")} ${objects.length === 1 ? "was" : "were"} declared by ${source}, which config/db.ts no longer declares or whose file is absent — nothing declares ${objects.length === 1 ? "it" : "them"} now`,
+      `${objects.join(", ")} ${objects.length === 1 ? "was" : "were"} declared by ${source}, which config/db.config.ts no longer declares or whose file is absent — nothing declares ${objects.length === 1 ? "it" : "them"} now`,
   );
   const forgotten = Object.keys(inputs.snapshot?.declared ?? {}).filter(
     (source) => !inputs.states.some((state) => state.source === source) && !attributed.some((attribution) => attribution.source === source),
   );
   const warnings = [
     ...diff.dataDependent.map((step) => `warning: ${formatDataDependentStep(step)}`),
-    ...forgotten.map((source) => `warning: ${source} is in ${inputs.snapshotPath} and config/db.ts no longer declares it`),
+    ...forgotten.map((source) => `warning: ${source} is in ${inputs.snapshotPath} and config/db.config.ts no longer declares it`),
   ];
   const warn = (line: string) => (run.json ? run.io.log(line) : run.print(line));
 

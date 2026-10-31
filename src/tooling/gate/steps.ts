@@ -1,7 +1,7 @@
 import { matchesGlob } from "node:path";
 
 import { splitList } from "../cli/parse";
-import type { CheckStep, GateTier, Selection, Step, StepReach } from "./types";
+import type { CheckStep, GateTier, ResolvedTiers, Selection, Step, StepReach } from "./types";
 import { GATE_TIERS } from "./types";
 
 /** Paths every step reads, so a change to one selects the whole table under `--affected`. @public */
@@ -57,12 +57,6 @@ function deadGlob(steps: readonly Step[], files: readonly string[]): string | un
 // The rule is a property of the table itself, so it is checked before the tier is applied — a
 // malformed table is refused whichever run was asked for, rather than only the run that trips it.
 function invalidTable(steps: readonly Step[], files: readonly string[] | undefined): string | undefined {
-  const labels = steps.map((step) => step.label);
-  const duplicated = [...new Set(labels.filter((label, index) => labels.indexOf(label) !== index))];
-  if (duplicated.length > 0) {
-    return `Duplicate step label: ${duplicated.join(", ")}. A label is the \`--only\` token and the name reported on failure, so it must name exactly one step.`;
-  }
-
   for (const step of steps) {
     if (step.watches === undefined) continue;
     if (step.watches.length === 0) return `Step "${step.label}" declares an empty \`watches\` — omit it to run the step on every change.`;
@@ -84,18 +78,18 @@ function matchesAny(changed: readonly string[], globs: readonly string[]): boole
   return changed.some((path) => globs.some((glob) => matchesGlob(path, glob)));
 }
 
-function reachOf(step: Step, tier: GateTier, pending: readonly string[] | undefined, gateWide: boolean): StepReach {
+function reachOf(step: Step, tier: GateTier, pending: readonly string[] | undefined, gateWide: boolean, home: GateTier | undefined): StepReach {
   if (tier !== "runtime" || pending === undefined) return "whole";
-  const followsChanges = step.narrow !== undefined || step.tier === "runtime";
+  const followsChanges = step.narrow !== undefined || home === "runtime";
   if (!followsChanges) return "whole";
   if (gateWide || matchesAny(pending, step.narrow?.wide ?? [])) return "whole";
   if (!touches(step, pending)) return "untouched";
   return step.narrow === undefined ? "whole" : "narrow";
 }
 
-/** Resolves which steps to run at `tier` and how each runs: cheaper tier first and declared order within a tier, filtered by `--only` and by the paths `changed` touches, at `runtime` narrowed to the `pending` changes, and refused when a nested glob matches none of `files`. @public */
+/** Resolves which rows of a resolved table to run at `tier` and how each runs: the tier's own order, filtered by `--only` and by the paths `changed` touches, at `runtime` narrowed to the `pending` changes for a row that narrows or whose home tier is `runtime`, and refused when a nested glob matches none of `files`. @public */
 export function selectSteps(
-  steps: readonly Step[],
+  table: ResolvedTiers,
   opts: {
     tier: GateTier;
     only?: readonly string[];
@@ -105,14 +99,15 @@ export function selectSteps(
     files?: readonly string[];
   },
 ): Selection {
-  const malformed = invalidTable(steps, opts.files);
+  const every = [...new Set(GATE_TIERS.flatMap((key) => table[key]?.steps ?? []))];
+  const malformed = invalidTable(every, opts.files);
   if (malformed !== undefined) return { ok: false, error: malformed };
 
-  // A rank comparison, so each tier is a superset of the one below it by construction. The sort is
-  // stable, so every intra-tier ordering the table states — `lint` before `format` — survives it.
-  const inTier = steps
-    .filter((step) => rank(step.tier ?? "static") <= rank(opts.tier))
-    .sort((a, b) => rank(a.tier ?? "static") - rank(b.tier ?? "static"));
+  const run = table[opts.tier];
+  if (run === undefined) {
+    return { ok: false, error: `The step table declares no ${opts.tier} tier — add a \`${opts.tier}\` key under \`tiers\`.` };
+  }
+  const inTier = run.steps;
   const known = inTier.map((step) => step.label);
 
   const only = opts.only !== undefined && opts.only.length === 0 ? undefined : opts.only;
@@ -142,7 +137,7 @@ export function selectSteps(
 
   const pending = opts.pending;
   const gateWide = pending !== undefined && matchesAny(pending, inputs);
-  const reach = Object.fromEntries(selected.map((step) => [step.label, reachOf(step, opts.tier, pending, gateWide)]));
+  const reach = Object.fromEntries(selected.map((step) => [step.label, reachOf(step, opts.tier, pending, gateWide, run.home[step.label])]));
 
   return { ok: true, steps: selected, reach, total: inTier.length, scoped: changed !== undefined || selected.length < inTier.length };
 }

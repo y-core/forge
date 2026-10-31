@@ -179,13 +179,36 @@ export interface MarkdownCode extends MarkdownSpan {
   segments: MarkdownSegments;
 }
 
-/** A list item; `checked` is a GFM task marker's state, or null for a plain item. */
+/** A list item; `checked` is a GFM task box's state and `box` the offset of its `[`, both null for a plain item. */
 export interface MarkdownListItem extends MarkdownSpan {
   type: "listItem";
   spread: boolean;
   checked: boolean | null;
+  box: number | null;
   children: MarkdownBlock[];
 }
+
+/** A GFM task box: the 1-based line it sits on, the source offset of its `[`, and its state. */
+export interface MarkdownTask {
+  line: number;
+  offset: number;
+  checked: boolean;
+}
+
+/** A stretch of a markdown text in absolute UTF-16 offsets, `from` never after `to`; a caret has both equal. */
+export interface MarkdownRange {
+  readonly from: number;
+  readonly to: number;
+}
+
+/** One replacement of `[from, to)` by `insert`, then the selection to set; null keeps the selection where the change maps it. */
+export interface MarkdownEdit extends MarkdownRange {
+  readonly insert: string;
+  readonly selection: MarkdownRange | null;
+}
+
+/** The inline construct `wrapSelection` writes around the selection, named as its node type. */
+export type MarkdownWrap = "strong" | "emphasis" | "inlineCode" | "link";
 
 /** A list nested inside another block; a top-level list is spread across units instead. */
 export interface MarkdownList extends MarkdownSpan, MarkdownListInfo {
@@ -260,6 +283,12 @@ export interface MarkdownUnitBounds {
   start: number;
   end: number;
   neutral: boolean;
+}
+
+/** A text being edited and its block unit bounds, kept current so a command parses only the unit it touches. */
+export interface MarkdownDraft {
+  readonly text: string;
+  readonly units: readonly MarkdownUnitBounds[];
 }
 
 /** A top-level block, or one item of a top-level list, with its node's offsets relative to `start`; `interrupting` marks one opened on a line that interrupted a paragraph. */
@@ -362,6 +391,15 @@ export interface HtmlSchema {
   url: (candidate: HtmlUrlCandidate) => string | null;
 }
 
+/** Answers whether a URL may stay on the attribute carrying it. */
+export type UrlPolicy = (candidate: Pick<HtmlUrlCandidate, "value" | "attribute">) => boolean;
+
+/** The protocols a URL policy admits, each lowercase without its colon: `linkProtocols` on `href` and `xlink:href`, `srcProtocols` on `src`. */
+export interface UrlPolicyOptions {
+  readonly linkProtocols: readonly string[];
+  readonly srcProtocols: readonly string[];
+}
+
 /** An element's attributes in the order they are written; `true` writes a bare boolean attribute and `false` omits it. */
 export type HtmlAttributes = readonly (readonly [name: string, value: string | boolean])[];
 
@@ -383,7 +421,12 @@ export interface MarkdownRenderContext {
   tight: boolean;
   topLevel: boolean;
   line: number;
-  task: boolean | null;
+  /** The box of the list item whose first child this is, on both `enter` and `leave`; null on every other node. */
+  task: MarkdownTask | null;
+  headingOffset: number;
+  breaks: boolean;
+  linkRel: string | null;
+  tasks: MarkdownTaskOptions | null;
   render: (node: MarkdownNode) => void;
 }
 
@@ -408,13 +451,30 @@ export interface MarkdownFootnoteOptions {
   emptyFlagValues?: boolean | undefined;
 }
 
+/** What `renderMarkdownHtml` writes on every link the source wrote. */
+export interface MarkdownLinkOptions {
+  rel?: string | undefined;
+}
+
+/** What makes `renderMarkdownHtml` write each task box as a form field in a `label`: posted under `name` with its `listTasks` line as value, and `disabled` if set. */
+export interface MarkdownTaskOptions {
+  name: string;
+  disabled?: boolean | undefined;
+}
+
 /** What `renderMarkdownHtml` renders with. */
 export interface MarkdownRenderOptions {
   schema: HtmlSchema;
   handlers?: MarkdownNodeHandlers | undefined;
   lineAnchors?: boolean | undefined;
   footnotes?: MarkdownFootnoteOptions | undefined;
+  links?: MarkdownLinkOptions | undefined;
+  tasks?: MarkdownTaskOptions | undefined;
   classNames?: Readonly<Record<string, string | null>> | undefined;
+  /** Added to every heading's level, an integer from 0 to 5; a level past 6 renders as `h6`, and any other value throws. */
+  headingOffset?: number | undefined;
+  /** Writes each soft line break as the `<br>` a hard break writes. */
+  breaks?: boolean | undefined;
 }
 
 /** A unit's parsed node, reusable for any unit with the same text while every label it looked up still resolves as it did. */

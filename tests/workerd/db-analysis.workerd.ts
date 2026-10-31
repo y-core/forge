@@ -40,7 +40,7 @@ function freshRoot(): string {
   roots.push(root);
   cpSync(join(FORGE, "tests", "fixtures", "db-compose", "wrangler.jsonc"), join(root, "wrangler.jsonc"));
   mkdirSync(join(root, "config"));
-  writeFileSync(join(root, "config", "db.ts"), 'export default { schemas: ["schema.sql"] };\n');
+  writeFileSync(join(root, "config", "db.config.ts"), 'export default { schemas: ["schema.sql"] };\n');
   return root;
 }
 

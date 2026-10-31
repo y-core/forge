@@ -10,8 +10,8 @@ Printing a table to a terminal is measurement, not string concatenation: a CJK c
 built from four code points is one cell. This namespace holds the measuring and the laying out, so nothing else in forge has to own a padding
 expression.
 
-Reach for it when output has to line up, fit a window, or carry colour. An application's own `config/commands.ts` renders with the same primitives
-forge does.
+Reach for it when output has to line up, fit a window, or carry colour. An application's own `config/commands.config.ts` renders with the same
+primitives forge does.
 
 ```ts
 import { createColorize, definitionList, renderGrid, resolveColorLevel, stringWidth } from "@y-core/forge/tooling/term";

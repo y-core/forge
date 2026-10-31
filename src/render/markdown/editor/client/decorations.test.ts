@@ -11,6 +11,7 @@ import { parseDialect } from "../../dialect.fixture";
 import { parseMarkdown } from "../../document";
 import { defineMarkdownSyntax } from "../../syntax";
 import { walkMarkdown } from "../../walk";
+import { viewportDraft } from "./commands";
 import { buildDecorations, toggleTaskAt } from "./decorations";
 import { viewportDialect } from "./dialect";
 import { DIALECT_CASES } from "./dialect-cases.fixture";
@@ -22,7 +23,7 @@ import { markdownSyntax } from "./syntax";
 import type { DocumentSpan } from "./types";
 import { renderedWidget } from "./widget-dom.fixture";
 
-const DIALECT_SYNTAX: Extension = [markdownSyntax(), viewportDialect.of(TEST_DIALECT)];
+const DIALECT_SYNTAX: Extension = [markdownSyntax(), viewportDialect.of(TEST_DIALECT), viewportDraft];
 const PAGE = "0190c7a0-0000-7000-8000-000000000001";
 const ATT = "0190c7a0-0000-7000-8000-0000000000aa";
 
@@ -322,6 +323,14 @@ describe("buildDecorations for a task", () => {
     expect(paint(doc)).toEqual([checkbox(doc, "[ ]", false, true)]);
   });
 
+  it("leaves the marker of an item holding only a box as text, since the parser reads no task there to toggle", () => {
+    const doc = "- [ ] a\n- [ ] \n- [ ] b";
+
+    const boxes = paint(doc).flatMap((painted) => ("widget" in painted ? [painted.from] : []));
+
+    expect(boxes).toEqual([doc.indexOf("["), doc.lastIndexOf("[")]);
+  });
+
   it("checks the checkbox for a task ticked with x", () => {
     const doc = "- [x] call";
 
@@ -362,7 +371,7 @@ const TOGGLES: readonly { readonly form: string; readonly doc: string; readonly 
 describe("toggleTaskAt", () => {
   for (const { form, doc, toggled } of TOGGLES) {
     it(`flips ${form}'s marker as one input edit`, () => {
-      const state = EditorState.create({ doc });
+      const state = EditorState.create({ doc, extensions: viewportDraft });
 
       const spec = toggleTaskAt(state, doc.indexOf("["));
       if (spec === null) throw new Error(`no toggle for ${JSON.stringify(doc)}`);
@@ -376,12 +385,30 @@ describe("toggleTaskAt", () => {
     it(`refuses in ${name}`, () => {
       const doc = "- [ ] call";
 
-      expect(toggleTaskAt(EditorState.create({ doc, extensions }), doc.indexOf("["))).toBeNull();
+      expect(toggleTaskAt(EditorState.create({ doc, extensions: [viewportDraft, extensions] }), doc.indexOf("["))).toBeNull();
     });
   }
 
   it("refuses a position where no task marker starts", () => {
-    expect(toggleTaskAt(EditorState.create({ doc: "- [ ] call" }), 0)).toBeNull();
+    expect(toggleTaskAt(EditorState.create({ doc: "- [ ] call", extensions: viewportDraft }), 0)).toBeNull();
+  });
+
+  for (const { where, doc } of [
+    { where: "a box inside a code fence", doc: "```\n- [ ] call\n```" },
+    { where: "a box in running text, outside any list item", doc: "see [ ] here" },
+  ]) {
+    it(`refuses ${where}, which the parser reads as no task`, () => {
+      expect(toggleTaskAt(EditorState.create({ doc, extensions: viewportDraft }), doc.indexOf("["))).toBeNull();
+    });
+  }
+
+  it("flips a task typed in before an existing line, at the offset it was typed to", () => {
+    const typed = EditorState.create({ doc: "notes", extensions: viewportDraft }).update({ changes: { from: 0, insert: "- [ ] call\n" } }).state;
+
+    const spec = toggleTaskAt(typed, typed.doc.toString().indexOf("["));
+    if (spec === null) throw new Error("no toggle for the typed task");
+
+    expect(typed.update(spec).state.doc.toString()).toBe("- [x] call\nnotes");
   });
 });
 

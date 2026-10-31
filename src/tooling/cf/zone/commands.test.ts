@@ -8,6 +8,7 @@ import { routePaths } from "../../../router/filter";
 import { resolveSiteConfig } from "../../../site/config";
 import type { SiteConfig, ZoneRule } from "../../../site/types";
 import { ZonePatternError } from "../../../site/zone";
+import { CliError } from "../../cli/errors";
 import { createSyncZoneCommand, phaseAction, planZoneRules, rulesInSync } from "./commands";
 
 const roots: string[] = [];
@@ -158,6 +159,22 @@ describe("phaseAction", () => {
 
   it("reports a phase that failed as error, written or not", () => {
     expect(phaseAction({ ...firewall, desired: [rule], remote: null, error: "auth failed" })).toBe("error");
+  });
+});
+
+describe("sync zone — the site config module", () => {
+  it("refuses a module with no default export, naming its path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-zone-"));
+    roots.push(dir);
+    const config = join(dir, "site.config.ts");
+    writeFileSync(config, `export const site = ${JSON.stringify(base)};\n`, "utf-8");
+
+    const cmd = createSyncZoneCommand();
+    const flags = { config, json: true, "zone-id": "zone", "api-token": "token" };
+    const run = cmd.run?.([], flags as Parameters<NonNullable<typeof cmd.run>>[1]);
+
+    await expect(run).rejects.toBeInstanceOf(CliError);
+    await expect(run).rejects.toThrow(`Could not load site config \`${config}\``);
   });
 });
 

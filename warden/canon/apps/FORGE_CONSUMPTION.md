@@ -81,15 +81,21 @@ Anything outside those four is a signal to look harder at §1a.
 ### 1d. The Gate Steps Are a Capability Too
 
 **An application's verification gate is assembled from the library's published step builders, not written locally.** The library owns the checks;
-the application owns which of them run and over which directories. Wiring one is a line in the application's own `config/steps.ts`:
+the application owns which of them run and over which directories. Wiring one is an entry in a tier of the application's own
+`config/steps.config.ts`:
 
 ```ts
-import { commentBudgetStep } from "@y-core/forge/tooling/gate";
+import { resolveAppRoot } from "@y-core/forge/tooling/cli";
+import { cloudflareWorkerSteps, commentBudgetStep, defineSteps, mergeTiers } from "@y-core/forge/tooling/gate";
 
-commentBudgetStep({ root: ROOT, sources: ["src", "config"] });
+const ROOT = resolveAppRoot();
+
+export default defineSteps({
+  tiers: mergeTiers(cloudflareWorkerSteps(), { static: [commentBudgetStep({ root: ROOT, sources: ["src", "config"] })] }),
+});
 ```
 
-**`commentBudgetStep` is the one that makes the comment budget gated rather than reviewed**, and it runs at `static`, its default, because it
+**`commentBudgetStep` is the one that makes the comment budget gated rather than reviewed**, and it is listed in the `static` tier, because it
 judges the source rather than running it ([`TESTING.md`][testing-6a] §6a). Without it, [`CODE_REVIEW.md`][cr-3a] §3a has no step
 to route the rule to and every unbudgeted comment falls back on a reviewer's attention — which is how the rule loses. A step builder taken from the
 library is covered by the library's tests and moves with its rules; a check re-implemented locally is the divergence §1a warns about, applied to

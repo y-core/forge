@@ -93,7 +93,7 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
         ...sharedDbFlags,
         // The verb refuses every other place, so the shared `local` default would only ever be a typo.
         target: { ...sharedDbFlags.target, default: "standby" },
-        dir: { type: "string" as const, description: "Seed just this directory, instead of every one `config/db.ts` names" },
+        dir: { type: "string" as const, description: "Seed just this directory, instead of every one `config/db.config.ts` names" },
         "no-seed": { type: "boolean" as const, description: "Stop after the migrations, leaving every table empty" },
       },
       run: async (_args, flags, ctx?: CliContext) => {

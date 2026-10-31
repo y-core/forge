@@ -14,6 +14,7 @@ export {
   coLocationStep,
   commentBudgetStep,
   compatibilityStep,
+  configFileStep,
   contrastStep,
   crossEngineStep,
   crossEngineTagsStep,
@@ -208,7 +209,15 @@ export type {
   ObservedEdge,
 } from "./checks/types";
 export type { SourceFile } from "./checks/types";
-export { buildGraph, diffGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier } from "./checks/namespace-graph-parse";
+export {
+  buildGraph,
+  diffEdgeModules,
+  diffGraph,
+  findEnumerations,
+  namespaceOf,
+  parseImports,
+  resolveSpecifier,
+} from "./checks/namespace-graph-parse";
 export {
   balancedSpan,
   blankComments,
@@ -237,4 +246,8 @@ export { workerMainClosure } from "./closure";
 export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepProbe, StepReach, StepRequirement, StepResults } from "./types";
 export type { GateRunReport, StepReport, StepStatus, TestFailure } from "./types";
 export { DEFAULT_GATE_INPUTS, isCheckStep, selectSteps } from "./steps";
+export { declaredSteps, defineSteps, isStepsConfig, mergeTiers, resolveTiers, tier } from "./tiers";
+export type { ResolvedTier, ResolvedTiers, StepsConfig, StepTiers, TierEntry, TierRef } from "./types";
+export type { ConfigFileCheckConfig } from "./checks/types";
+export { checkConfigFiles } from "./checks/config-files";
 export { GATE_TIERS } from "./types";

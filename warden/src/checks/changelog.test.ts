@@ -132,7 +132,7 @@ describe("validateChangelog() — link reference definitions", () => {
 });
 
 describe("checkChangelog()", () => {
-  it("passes a well-formed changelog and names what it covered", () => {
+  it("passes a well-formed changelog whose `[Unreleased]` is still empty, and names what it covered", () => {
     const result = checkChangelog({ root: root(VALID), packageVersion: "1.2.0" });
 
     expect(result.findings).toEqual([]);

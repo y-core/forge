@@ -23,7 +23,7 @@ subpath exports is its own `mod.ts`.
 | [`ui/assets`](#y-coreforgeuiassets) | Forge's self-owned icon asset manifest |
 | [`ui/assets/build`](#y-coreforgeuiassetsbuild) | The build-time computation behind those assets |
 | [`ui/assets/glyphs`](#y-coreforgeuiassetsglyphs) | Browser-safe sprite glyph parser |
-| [`ui/assets/css/*.css`](#y-coreforgeuiassetscsscss) | The entry stylesheet and the optional themes (a subpath **pattern**) |
+| [`ui/assets/css/*.css`](#y-coreforgeuiassetscsscss) | The entry stylesheet, the optional themes and the markdown sheet (a subpath **pattern**) |
 | [`ui/client`](#y-coreforgeuiclient) | Browser controllers, signals, and the island runtime |
 | [`ui/client/htmx`](#y-coreforgeuiclienthtmx) | The pinned HTMX bundle (side-effect import) |
 | [`ui/server`](#y-coreforgeuiserver) | SSR-only flash messages and island roots |
@@ -43,8 +43,8 @@ self-declares the runtime with a `/** @jsxImportSource @y-core/forge/render/jsx 
 
 ## `@y-core/forge/ui/assets/css/*.css`
 
-The stylesheet forge's components are painted by, and the scheme and shape files that re-point their colours. Every file here is CSS a consuming
-stylesheet `@import`s; nothing is imported from TypeScript.
+The stylesheet forge's components are painted by, the scheme and shape files that re-point their colours, and the sheet that styles rendered
+markdown. Every file here is CSS a consuming stylesheet `@import`s; nothing is imported from TypeScript.
 
 ### Import one stylesheet, and take one path only
 
@@ -134,6 +134,38 @@ spelling the class merges against `text-2xl` and coexists with `text-red-500`. T
 weight, so `font-display` reads as one and `cn("font-display", "font-semibold")` drops the face. Under the reserved spelling it merges against
 `font-sans` and coexists with `font-semibold`.
 
+### Style rendered markdown
+
+`markdown.css` styles the HTML [`render/markdown`][markdown-readme] writes — headings, lists, code, tables with their alignment, task boxes and
+footnotes — inside an element with the `markdown` class, and nothing outside one. Import it after forge, in the same stylesheet: its colours fall
+back to forge's theme variables, and Tailwind only emits those for a sheet it compiles.
+
+```css
+@import "@y-core/forge/ui/assets/css/tailwind.css";
+@import "@y-core/forge/ui/assets/css/markdown.css";
+```
+
+```html
+<article class="markdown"><!-- renderMarkdownHtml output --></article>
+```
+
+Its colours, code font and corner radius are `--markdown-*` properties `markdown.css` reads, each falling back to a theme variable. Set one on the
+wrapper or on `:root`:
+
+```css
+.markdown {
+  --markdown-link: var(--color-foreground);
+}
+```
+
+**Every rule has zero specificity and sits in no layer**, so any rule of yours with one class wins over it — while that rule is unlayered too. A
+layered rule loses to an unlayered one whatever its specificity, so to keep your overrides in `@layer app`, import the sheet into that layer:
+`@import "@y-core/forge/ui/assets/css/markdown.css" layer(app);`.
+
+**Renaming classes through `classNames` loses the rules on them.** The task list, task item, hidden footnote heading and code-language rules
+select on the classes the engine writes; an app that renames them, to `md-*` say, writes those rules itself. Footnotes and back-references are
+also matched by their `data-footnote*` attributes, so those rules survive.
+
 ### Override a component's own styling
 
 **Component rules sit in `@layer components`**, so a utility passed at the call site wins over a component default — `<Dialog class="max-w-sm">`
@@ -158,6 +190,27 @@ on the first exit frame. A custom motion that leaves `scale` out of `transition-
 the closed scale snaps on exit. One that leaves `opacity` out, such as a slide, sets `--forge-motion-opacity: 1` the same way, or the panel turns
 invisible on the first exit frame. A centre-aligned `Popover`, `Menu` or `Tooltip` spends `translate` on centring itself, so a custom slide on one
 replaces it and the panel leaves diagonally — slide only start- or end-aligned popups.
+
+### Empty an overlay's content after it closes
+
+An overlay stays painted while it fades out, so content you built into it is emptied in `afterTransitions` on close, never in the `toggle`
+handler itself — or the panel blanks mid-fade. Keep the handle it returns and call it first on the open path: a reopen cancels the exit fade,
+which settles at once, and a teardown still pending then empties the content you just built for the reopen.
+
+```ts
+import { afterTransitions } from "@y-core/forge/ui/client";
+
+let settle = () => {};
+menu.addEventListener("toggle", (event) => {
+  if (event.newState === "closed") settle = afterTransitions(menu, () => menu.replaceChildren());
+});
+
+function open(rows: Node[]) {
+  settle();
+  menu.replaceChildren(...rows);
+  menu.showPopover();
+}
+```
 
 ### Get dark mode
 
@@ -1355,6 +1408,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [gate-presets]: ../tooling/gate/README.md#starting-from-a-preset
 [htmx-7a]: ../../docs/HTMX.md#7a-url-valued-hx-attributes-are-deliberately-unsanitized
 [htmx-7b]: ../../docs/HTMX.md#7b-what-htmx-evaluates-hx-on-and-a-js-prefixed-hx-vals-or-hx-headers
+[markdown-readme]: ../render/markdown/README.md
 [navigation]: ./design/reference/08-navigation.md
 [sa-1a]: ../../docs/STATE_ATTRIBUTES.md#1a-presence-not-value
 [sh-2g]: ../../docs/SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy

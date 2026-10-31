@@ -6,7 +6,7 @@ import { featureGraph } from "../../curate/graph";
 import type { FeatureGraph, FeatureManifest } from "../../curate/types";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { parseImports, resolveSpecifier } from "./namespace-graph-parse";
+import { parseImports, publishedSubpaths, resolveSpecifier } from "./namespace-graph-parse";
 import { importTargets, readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource, resolveModuleFile, unresolvedSourceEntries } from "./source-scan";
 import type { ImportBoundaryCheckConfig, PackageImports } from "./types";
@@ -22,16 +22,7 @@ export function isGuarded(file: string, guarded: readonly string[]): boolean {
 
 /** Every published subpath whose target is a guarded module, as a consumer would spell it. @public */
 export function guardedSubpaths(config: Pick<ImportBoundaryCheckConfig, "packageName" | "exports" | "guarded">): Map<string, string> {
-  const found = new Map<string, string>();
-  if (config.packageName === undefined || config.exports === undefined) return found;
-  for (const [subpath, value] of Object.entries(config.exports)) {
-    const target = typeof value === "string" ? value : (value.import ?? value.types);
-    if (target === undefined) continue;
-    const normalized = target.startsWith("./") ? target.slice(2) : target;
-    if (!isGuarded(normalized, config.guarded)) continue;
-    found.set(`${config.packageName}${subpath.slice(1)}`, normalized);
-  }
-  return found;
+  return new Map([...publishedSubpaths(config.packageName, config.exports)].filter(([, target]) => isGuarded(target, config.guarded)));
 }
 
 function isCanonicalDir(dir: string): boolean {
@@ -68,8 +59,6 @@ function crossingTargets(root: string, scope: CrossingScope, file: string, speci
   }
   const mapped = importTargets(scope.imports, specifier).filter((target) => isGuarded(target, scope.guarded));
   if (mapped.length > 0) return mapped;
-  // A self-import by package name resolves to nothing relative, so it would otherwise walk straight
-  // past both the graph check and this one.
   const published = scope.published.get(specifier);
   return published === undefined ? [] : [published];
 }

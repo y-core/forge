@@ -2,7 +2,7 @@ import { v } from "../validation/mod";
 import type { ResolvedSiteConfig, SiteConfig } from "./types";
 import { SiteConfigSchema } from "./types";
 
-/** Types the default export of a `site.config.ts`. @public */
+/** Types the default export of a `config/site.config.ts`. @public */
 export function defineSiteConfig(config: SiteConfig): SiteConfig {
   return config;
 }

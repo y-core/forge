@@ -43,7 +43,7 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §5d No 200 on Guard Failure: never adjust the assertion to match
 - §5e No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task closes, and before a commit
-- §6a One Command, Nested Tiers: what a step needs, the heavy step, and what an absent prerequisite means
+- §6a One Command, Nested Tiers: what a step needs, the heavy step, what an absent prerequisite means, and how a table nests its tiers
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
 - §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: what each half is, and who overrides which
@@ -383,9 +383,9 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 ### 6a. One Command, Nested Tiers
 
 **There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** They are
-nested: `static ⊆ unit ⊆ runtime ⊆ scheduled`. **A bare invocation is `runtime`**, and that is the gate a commit closes on; §6e says which tier
-each other moment takes. A config file owns the step list: every step, how it runs, and the tier it runs from. Read it there rather than trusting
-any prose copy.
+nested: `static ⊆ unit ⊆ runtime ⊆ scheduled`. Each tier above `static` includes the tier below it, as its first entry. **A bare invocation is
+`runtime`**, and that is the gate a commit closes on; §6e says which tier each other moment takes. A config file owns the step table: every step,
+how it runs, and the tiers that list it. Read it there rather than trusting any prose copy.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
 warning" — is a failure.
@@ -397,11 +397,11 @@ warning" — is a failure.
 | `static` | judges the source and runs nothing |
 | `unit` | runs code in the test process, with nothing installed but the application's dependencies |
 | `runtime` | needs workerd or a local database, and runs narrowed to the pending changes |
-| `scheduled` | is heavy, or judges a finished change — a changelog entry, the deployed bundle; every row at this tier runs whole |
+| `scheduled` | is heavy, or judges a finished change — the deployed bundle; every row at this tier runs whole. An empty changelog entry is the release command's refusal, not a row |
 
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
 
-- it starts a browser;
+- it starts a browser, or runs any suite under Playwright — a Worker-runtime suite on Playwright included;
 - it runs a Worker-runtime suite whole on every change, with no way to narrow;
 - it is a soak, a live-network or a deep property run;
 - its test set takes more than 60 seconds, or one test in it more than 10.
@@ -410,11 +410,12 @@ That budget is stated here and nowhere else. **A step that is not heavy stays wh
 whose membership follows taste is a tier nobody can predict.
 
 **A heavy test inside `unit` is split out, never dropped.** The `unit` row's sources leave it out, which is the deliberate tier split §2b allows,
-and it runs as a test row of its own at `scheduled`: `testStep({ label, sources, tier: "scheduled" })`. It is never deleted, skipped or
-`#[ignore]`d out of every automated run.
+and it runs as a test row of its own, `testStep({ label, sources })` listed in the `scheduled` tier. It is never deleted, skipped or `#[ignore]`d
+out of every automated run.
 
 **The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the commit gate.** A
-step worth proving only periodically — another browser engine — goes in the cron table, `config/cron.ts`, and never blocks a tag (§6e).
+step worth proving only periodically — another browser engine — goes in the `scheduled` tier of `config/steps.config.ts`, which a tag and the cron
+both run (§6e).
 
 **Every application declares `verify:scheduled`.** The cron runs it, so an application without it is outside the cron, and that is a gap rather
 than a choice (`CONFIG_BASELINE.md` §4).
@@ -425,10 +426,14 @@ may not be assured by a step nobody ran.
 **The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
 
-**Execution order is tier-stable, not table order: within a tier the table's declared order holds, and across tiers the lower tier runs first.**
-The selector sorts by tier after filtering, so where a preset emits a `scheduled` row is not where it runs — an appended `unit` row still runs ahead
-of it. That is what makes a fail-fast `scheduled` run fail on the sub-second check rather than after minutes of browser. A repository consequently
-never declines a preset's opt-in to get sensible ordering, and never re-declares a row it only wanted moved.
+**A table declares each tier as its own list, in run order, and a tier includes a lower one by reference, expanded in place.** Nothing sorts a
+tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
+runs only the rows it lists. That reference is what nests the tiers, and it is what makes a fail-fast `scheduled` run fail on the sub-second
+check rather than after minutes of browser. A row moves to another tier by moving its entry, never by declaring it twice.
+
+**A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
+whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row narrows only in the tier that
+declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about narrowing it.
 
 ### 6b. What Each Tool Catches
 
@@ -458,12 +463,8 @@ without importing it, or a module it reaches through a specifier resolved at run
 one of its globs matching nothing is refused rather than silently narrowing the row. **`scheduled` runs every row whole on every tag and every
 cron run**, which is the backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
 
-**A spec reaches the application through the server it starts and the assets that server serves, so a runtime row's reach includes both.** The
-server half is the import graph of the Worker's entry. The asset half is what the asset build reads: each bundle's inputs, and every file the
-stylesheets' source declarations cover. Both are derived from what the build already declares, never listed beside it. A Worker-runtime row takes
-the asset half only when the Worker serves the assets. A stylesheet left on automatic source detection covers the whole tree, so every change runs
-the row whole — narrowing comes from the stylesheet naming its sources. **A browser row has no reach to derive**: it starts at `scheduled`,
-where every row runs whole (§6a).
+**A Playwright row has no reach to derive**: the browser set and the Worker-runtime suite both start at `scheduled`, where every row runs whole
+(§6a).
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
 and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
@@ -507,9 +508,9 @@ the exception with its compensating control, rather than leaving the reuse undoc
 | Moment | Command | Runs |
 | --- | --- | --- |
 | Write and task close | `bun run verify:static`, plus `bun test <file>` on each touched test file | every row that judges the source; each test file the change adds, edits or directly exercises |
-| Commit | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no browser spec |
-| Tag | `bun run verify:scheduled`, run by `forge release` before it tags | every runtime row whole, every browser spec on Chromium, every heavy row, and the rows that judge a finished change; the remote CI then runs `verify:unit` on the tag |
-| Daily cron | `bun run verify:scheduled`, then `bun run verify:cron`, run by the ledger host | the tag's run, plus every browser spec on each other engine the application runs, over the default branch as committed |
+| Commit | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no Playwright spec |
+| Tag | `bun run verify:scheduled`, run by `forge release` before it tags | every runtime row whole, every browser spec on Chromium and on each other engine the table declares, the Worker-runtime suite, every heavy row, and the rows that judge a finished change; the remote CI then runs `verify:unit` on the tag |
+| Daily cron | `bun run verify:scheduled`, run by the ledger host | the tag's run, over the default branch as committed |
 
 No other moment exists to close on, an epic's end included.
 
@@ -524,9 +525,9 @@ default branch, never a developer's work tree, and asks the gate for a structure
 the project it ran for, kept to one open task that each later failure rewrites in place; a run that never reached a test — the server it needs did
 not come up — is logged and filed as nothing, because it says nothing about the code.
 
-**Chromium is the browser set's engine, and `test:browser` is its row and the gate's only browser row.** `browser: true` emits it. An application
-that needs wider compatibility runs Firefox and WebKit by hand or on the cron run, from `config/cron.ts` default-exporting `[crossEngineStep()]`,
-never as a gate row.
+**Chromium is the browser set's engine, and `browser: true` emits its row, `test:browser`.** An application that needs wider compatibility merges
+`crossEngineStep()` into its `scheduled` tier. A tag and the cron run then each take Firefox and WebKit, and each needs the second Playwright
+server below, because an absent server fails a `scheduled` run (§6a).
 
 **Firefox and WebKit run on a second Playwright server, started only on request, whose endpoint `PLAYWRIGHT_COMPAT_WS_ENDPOINT` names.** The test
 runner reads only the primary server's variable, so the application's `playwright.config.ts` points its `firefox` and `webkit` projects at the

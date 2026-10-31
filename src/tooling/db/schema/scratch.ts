@@ -45,7 +45,7 @@ export async function replayBaseline(run: DbRunContext, migrations: readonly Mig
   return home;
 }
 
-/** Loads every declared schema into one empty scratch database in the order `config/db.ts` names them, naming the one that does not execute. @internal */
+/** Loads every declared schema into one empty scratch database in the order `config/db.config.ts` names them, naming the one that does not execute. @internal */
 export async function loadDesired(run: DbRunContext, desired: readonly DesiredState[], side: ScratchSide = "desired"): Promise<Home> {
   const dir = scratchDir(localScratchConfig(run.config), side);
   const filesDir = join(dir, "files");

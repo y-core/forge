@@ -83,7 +83,7 @@ plan would otherwise propose dropping tables nobody touched with nothing saying 
 declared file held (§6), and a dropped object whose declaring file has left `schemas` is printed with the plan, naming that file:
 
 ```text
-posts, posts_user were declared by @acme/blog/schema.sql, which config/db.ts no longer declares or whose file is absent — nothing declares them now
+posts, posts_user were declared by @acme/blog/schema.sql, which config/db.config.ts no longer declares or whose file is absent — nothing declares them now
 ```
 
 **The remembered names explain a drop; they never decide one.** The diff and the SQL are what they would be without them. What the reason does

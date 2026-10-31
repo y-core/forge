@@ -155,7 +155,7 @@ The primitive to reach for follows from what you intend to do with the outcome:
 | Make `node_modules/.bin` resolvable to everything you spawn afterwards | `insertPath(dir)` |
 
 ```ts
-const { code, output, ms } = capture("oxfmt", ["--check", "src/"], { cwd: repoRoot });
+const { code, output, ms } = capture("bun", ["fmt", "--check", "src/"], { cwd: repoRoot });
 if (code !== 0) console.error(output.trimEnd().split("\n").slice(-20).join("\n"));
 ```
 

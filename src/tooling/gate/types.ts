@@ -15,8 +15,6 @@ export type { ImportBoundaryCheckConfig } from "./checks/types";
 
 /** Overrides every pre-built step accepts; each builder documents the default it applies. @public */
 export interface StepOptions {
-  /** The lowest tier the step runs in. */
-  tier?: GateTier;
   /** Replaces the step's default dependency; `null` drops it, so a project that vendors one is not gated on probing it. */
   requires?: StepRequirement | null;
   /** Replaces the step's derived `watches`; `null` drops it, so the step runs on every change. */
@@ -79,8 +77,8 @@ export interface PromoteOptions {
 export interface GateCommandConfig {
   /** Repository root. Every step is spawned here, so a step's relative paths resolve. */
   cwd: string;
-  /** The table to resolve against — the project's own steps. */
-  steps: readonly Step[];
+  /** The project's table, resolved each run. */
+  tiers: StepTiers;
   /** Prepended to `PATH` so bare tool names resolve. Defaults to `${cwd}/node_modules/.bin`. */
   binDir?: string;
   /** Globs whose change selects every step under `--affected`, appended to `DEFAULT_GATE_INPUTS`. */
@@ -142,6 +140,8 @@ export interface CloudflareWorkerStepOptions {
   exposure?: Omit<ExposureCheckConfig, "root" | "workerConfig">;
   /** Overrides the flag set the compatibility row demands; omit to take forge's posture. Read only when `workerConfig` is set. */
   compatibility?: Omit<CompatibilityCheckConfig, "root" | "workerConfig">;
+  /** Whether to emit the config-files row, which fails a `config/` holding no `*.config.ts`. Defaults to `true`. */
+  configFiles?: boolean;
   /** Whether to check the synced `.claude/` trees against the installed corpus. Defaults to `false`. */
   warden?: boolean;
   /** Application root, needed by the asset-root and design checks. Defaults to `process.cwd()`. */
@@ -150,7 +150,7 @@ export interface CloudflareWorkerStepOptions {
   db?: boolean;
   /** Whether to emit the `scheduled`-tier `test:browser` row on Chromium. Defaults to `false`. */
   browser?: boolean;
-  /** Whether to emit the `runtime`-tier `test:workerd` step. Defaults to `false`. */
+  /** Whether to emit the scheduled-tier `test:workerd` row. Defaults to `false`. */
   workerd?: boolean;
   /** Omit to emit no JSX-pragma row. */
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
@@ -159,7 +159,7 @@ export interface CloudflareWorkerStepOptions {
     /** Omit to emit no client-boundary row; nothing under `clientDirs` may import these at value. */
     serverDirs?: readonly string[];
   };
-  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. `features: true` also reads `config/features.ts`. */
+  /** Omit to emit no import-boundary row: which trees are one-way is a repository's own rule. `features: true` also reads `config/features.config.ts`. */
   importBoundary?: Omit<ImportBoundaryCheckConfig, "root" | "features"> & { features?: boolean };
   /** Omit to emit no vendor-boundary row; its modules may import nothing beside it under its parent directory. */
   vendorDir?: string;
@@ -195,6 +195,8 @@ export interface LibraryStepOptions {
   jsx?: Omit<Partial<JsxCheckConfig>, "root">;
   /** Merged over the class-order config derived from `root`; `sources` defaults to `["src"]`. */
   classOrder?: Omit<Partial<ClassOrderCheckConfig>, "root">;
+  /** Whether to emit the config-files row, which fails a `config/` holding no `*.config.ts`. Defaults to `true`. */
+  configFiles?: boolean;
 }
 
 /** The counts and outcome a closing summary line is rendered from. @internal */
@@ -284,6 +286,44 @@ export const GATE_TIERS = ["static", "unit", "runtime", "scheduled"] as const;
 /** How much of the table to run. @public */
 export type GateTier = (typeof GATE_TIERS)[number];
 
+type TiersBelow<K extends GateTier, T extends readonly GateTier[] = typeof GATE_TIERS> = T extends readonly [
+  infer H extends GateTier,
+  ...infer R extends readonly GateTier[],
+]
+  ? H extends K
+    ? never
+    : H | TiersBelow<K, R>
+  : never;
+
+/** Includes another tier's resolved rows in place, as `tier()` builds it. @public */
+export interface TierRef<T extends GateTier = GateTier> {
+  readonly tier: T;
+}
+
+/** A row of tier `K`: a step, or a reference to a tier below `K`. @public */
+export type TierEntry<K extends GateTier> = Step | TierRef<TiersBelow<K>>;
+
+/** A step table by tier, each key listing its rows in run order. @public */
+export type StepTiers = { readonly [K in GateTier]?: readonly TierEntry<K>[] };
+
+/** What a `config/steps.config.ts` default-exports through `defineSteps`. @public */
+export interface StepsConfig {
+  /** Globs whose change selects every step under `--affected`, appended to `DEFAULT_GATE_INPUTS`. */
+  inputs?: readonly string[];
+  tiers: StepTiers;
+}
+
+/** One tier with every `tier()` reference expanded in place. @public */
+export interface ResolvedTier {
+  /** In run order. */
+  steps: readonly Step[];
+  /** The tier that declares each row directly, by label. */
+  home: Readonly<Record<string, GateTier>>;
+}
+
+/** Every tier a table declares, resolved. @public */
+export type ResolvedTiers = { readonly [K in GateTier]?: ResolvedTier };
+
 /** How a selected step runs: its whole command, its command plus `narrow.args`, or not at all because no pending change touches it. @public */
 export type StepReach = "whole" | "narrow" | "untouched";
 
@@ -308,8 +348,6 @@ export interface BrowserProbes {
 export interface StepBase {
   /** Stable identifier — the `--only` token, and the name reported on failure. */
   label: string;
-  /** The lowest tier this step runs in; omitted, it runs from `static` up. */
-  tier?: GateTier;
   /** Dependency probed before the step runs: absent, a run from `runtime` up fails and the lower tiers skip. */
   requires?: StepRequirement;
   /** Globs, relative to the runner's `cwd`, of every path the step reads; omitted, `--affected` runs it on any change. */

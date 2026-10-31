@@ -4,15 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import {
-  compileFences,
-  type FenceDiagnostic,
-  type FenceSource,
-  isParseDiagnostic,
-  readDiagnostics,
-  resolveCompiler,
-  unresolvedName,
-} from "./fence-compile";
+import { compileFences, type FenceDiagnostic, type FenceSource, isParseDiagnostic, readDiagnostics, unresolvedName } from "./fence-compile";
 
 const fakeFences: FenceSource[] = [
   { file: "design/forms.md", line: 10, body: "import { Badge } from '@y-core/forge/ui/core';\n\n<Badge tone='default'>New</Badge>;" },
@@ -129,17 +121,12 @@ describe("unresolvedName()", () => {
 });
 
 describe("compileFences()", () => {
-  const compiler = resolveCompiler();
   const project = { tsconfig: fileURLToPath(new URL("../../../tests/fixtures/workers-consumer/tsconfig.json", import.meta.url)), paths: {} };
   const fenceDirs = (): string[] => readdirSync(tmpdir()).filter((name) => name.startsWith("forge-fences-"));
 
-  it("resolves the installed compiler", () => {
-    expect(compiler).toBeString();
-  });
-
   it("reports a type error at the markdown line and removes its temp dir afterwards", () => {
     const before = fenceDirs();
-    const diagnostics = compileFences(compiler ?? "", [{ file: "design/types.md", line: 7, body: "const count: number = 'one';" }], project);
+    const diagnostics = compileFences([{ file: "design/types.md", line: 7, body: "const count: number = 'one';" }], project);
 
     expect(diagnostics).toEqual({
       ok: true,
@@ -151,17 +138,17 @@ describe("compileFences()", () => {
   it("declares a fence's ambient names, so app context compiles", () => {
     const fences = [{ file: "design/context.md", line: 3, body: "const count: number = rows.length;" }];
 
-    expect(compileFences(compiler ?? "", fences, project)).toEqual({
+    expect(compileFences(fences, project)).toEqual({
       ok: true,
       data: [{ fence: 0, file: "design/context.md", line: 3, code: 2304, message: "Cannot find name 'rows'." }],
     });
-    expect(compileFences(compiler ?? "", fences, project, new Map([[0, ["rows"]]]))).toEqual({ ok: true, data: [] });
+    expect(compileFences(fences, project, new Map([[0, ["rows"]]]))).toEqual({ ok: true, data: [] });
   });
 
   it("checks a fence against the step tsconfig's ambient declarations, so a wrong ExecutionContext fails", () => {
     const body = "const ctx: ExecutionContext = { waitUntil: (pending: number) => {}, passThroughOnException: () => {} };";
 
-    expect(compileFences(compiler ?? "", [{ file: "design/worker.md", line: 4, body }], project)).toEqual({
+    expect(compileFences([{ file: "design/worker.md", line: 4, body }], project)).toEqual({
       ok: true,
       data: [{ fence: 0, file: "design/worker.md", line: 4, code: 2322, message: "Type 'Promise<unknown>' is not assignable to type 'number'." }],
     });
@@ -170,7 +157,7 @@ describe("compileFences()", () => {
   it("passes a fence that uses ExecutionContext as workerd declares it", () => {
     const body = "const ctx: ExecutionContext = { waitUntil: () => {}, passThroughOnException: () => {} };";
 
-    expect(compileFences(compiler ?? "", [{ file: "design/worker.md", line: 4, body }], project)).toEqual({ ok: true, data: [] });
+    expect(compileFences([{ file: "design/worker.md", line: 4, body }], project)).toEqual({ ok: true, data: [] });
   });
 
   it("fails rather than dropping a diagnostic raised outside the fences", () => {
@@ -178,10 +165,10 @@ describe("compileFences()", () => {
     try {
       writeFileSync(join(dir, "broken.ts"), "export const count: number = 'one';\n");
       const fences = [{ file: "design/import.md", line: 5, body: "import { count } from 'broken';\ncount;" }];
-      const result = compileFences(compiler ?? "", fences, { ...project, paths: { broken: [join(dir, "broken.ts")] } });
+      const result = compileFences(fences, { ...project, paths: { broken: [join(dir, "broken.ts")] } });
 
       expect(result.ok).toBe(false);
-      expect(result.ok ? "" : result.error).toStartWith("tsc reported a diagnostic outside the fences: ");
+      expect(result.ok ? "" : result.error).toStartWith("bun check reported a diagnostic outside the fences: ");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -189,17 +176,22 @@ describe("compileFences()", () => {
 
   it("fails when the step tsconfig cannot be read", () => {
     const absent = { tsconfig: join(tmpdir(), "forge-fences-absent", "tsconfig.json"), paths: {} };
-    const result = compileFences(compiler ?? "", [{ file: "design/types.md", line: 7, body: "const count: number = 'one';" }], absent);
+    const result = compileFences([{ file: "design/types.md", line: 7, body: "const count: number = 'one';" }], absent);
 
     expect(result.ok).toBe(false);
     expect(result.ok ? "" : result.error).toStartWith("cannot read the step tsconfig ");
   });
 
   it("fails rather than reporting no diagnostic when the compiler exits non-zero without one", () => {
-    const missing = join(tmpdir(), "forge-fences-absent-compiler", "tsc.js");
-    const result = compileFences(missing, [{ file: "design/types.md", line: 7, body: "const count: number = 'one';" }], project);
+    const dir = mkdtempSync(join(tmpdir(), "forge-fence-empty-"));
+    try {
+      writeFileSync(join(dir, "tsconfig.json"), "{}");
+      const result = compileFences([], { tsconfig: join(dir, "tsconfig.json"), paths: {} });
 
-    expect(result.ok).toBe(false);
-    expect(result.ok ? "" : result.error).toStartWith("tsc exited ");
+      expect(result.ok).toBe(false);
+      expect(result.ok ? "" : result.error).toStartWith("bun check exited 1 with no diagnostic: ");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

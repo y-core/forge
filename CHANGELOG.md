@@ -18,7 +18,124 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`changelogStep` belongs in a table's `static` tier, and forge's is there**, so `verify:static` and every commit catch a hand-edited released
+  section or a malformed heading rather than the tag. An empty `[Unreleased]` is still refused by `forge release`, not by this row.
+- **`workerdStep` runs whole, and `cloudflareWorkerSteps({ workerd: true })` places it in `scheduled`, so a bare `verify` runs no Playwright
+  suite.** Its `narrow` and `widen` options are gone, and `cloudflareWorkerSteps({ workerd: true })` no longer traces the Worker or its assets for
+  it. A commit now reaches the workerd set only through `verify:scheduled`; a table that passed `narrow` or `widen` to `workerdStep` drops them.
+- **Every config module forge loads is `config/<concern>.config.ts`, and forge reads only its default export, a call to that concern's `define*`
+  helper.** Rename and wrap each one you have. `config/steps.ts` → `config/steps.config.ts` with `defineSteps` (`tooling/gate`).
+  `config/commands.ts` → `config/commands.config.ts` with `defineCommands` (`tooling/cli`). `config/release.ts` → `config/release.config.ts` with
+  `defineReleaseConfig` (`tooling/release`). `config/db.ts` → `config/db.config.ts` with `defineDbConfig` (`tooling/db/host`). `config/features.ts`
+  → `config/features.config.ts` with `defineFeatures` (`tooling/curate`). `config/site.ts` → `config/site.config.ts` with `defineSiteConfig`
+  (`site`). A root `assets.config.ts` → `config/assets.config.ts` with `defineAssetsConfig` (`tooling/assets`). `src/app/env.config.ts`'s named
+  `options` → `config/env.config.ts` default-exporting `defineEnvConfig` (`tooling/cf`). A named export beside the default is no longer read, and
+  `LoadedConfigModule` has no `exports`. `warden probe --golden` takes a module default-exporting `defineWardenQueries({ golden, negative })`,
+  resolved against the repository root.
+- **`validate-config-files` holds every `config/*.config.ts` to that shape, and `cloudflareWorkerSteps` and `forgeChecks` emit it in `static`.** It
+  fails a named export, a top-level statement other than an import or a `const`, `import.meta.main`, a default that is not a call to an imported
+  `define*` helper, and a `config/` holding no `*.config.ts`. A module that only holds data keeps a plain `.ts` name and is not read.
+  `configFileStep` and `checkConfigFiles` are its builder and check.
+- **A step table declares its tiers.** `config/steps.config.ts` default-exports `defineSteps({ inputs?, tiers: { static, unit, runtime, scheduled }
+  })`. Each tier lists its rows in run order, and `tier("unit")` as an entry includes that lower tier's rows in place. Replace `export default
+  STEPS` with the tiered table, and `export const GATE_INPUTS` with `inputs`. Nothing sorts a tier, so a tier above `static` leads with `tier()`
+  naming the one below. `createGateCommand` takes `tiers` in place of `steps`, and `selectSteps` takes the `data` of `resolveTiers(tiers)`.
+  `resolveTiers` refuses a reference to an undeclared or non-lower tier, and a label one tier holds twice. At `runtime` only a row the tier declares
+  itself, or one stating `narrow`, narrows; a row reached through `tier()` runs whole.
+- **No builder takes a `tier` option, and no step has a `tier` field or a default tier.** A row runs in the tiers that list it. Move each `{ tier:
+  "…" }` row into that tier's list.
+- **`dbSteps()` returns `{ static, runtime }` rather than an array**: the schema digests, then the lint and the replay. Merge it with `mergeTiers`,
+  or spread `.static` and `.runtime` into those tiers.
+- **`cloudflareWorkerSteps`, `forgeChecks` and `wardenAppSteps` return a `StepTiers` table rather than an array.** Use a complete preset as `tiers`
+  directly, or merge rows onto it with `mergeTiers`. `wardenAppSteps` declares rows only and merges onto a complete preset. Two complete presets
+  merged together are refused as a duplicate label.
+- **`config/cron.ts` and `verify:cron` are gone: Firefox and WebKit are a `scheduled` row.** Move `crossEngineStep()` into your table's `scheduled`
+  tier and delete the `verify:cron` script. `verify:scheduled`, the tag's run and the cron's, then needs the compat Playwright server as well, and
+  fails without it. Forge's own `verify:scheduled`, which `prepublishOnly` and `forge release` run, takes Firefox and WebKit.
+- **`src/auth/schema.sql`'s header comment names `config/db.config.ts`, so the file's digest moved.** An app that composes the auth schema sees
+  `db:schema:digests` report it moved since the last compose. Run `forge db migrate compose` once: it writes no migration and records the new digest
+  in the snapshot. Then commit the snapshot.
+- **`MarkdownRenderContext.task` is the box's `MarkdownTask` — its `line`, `offset` and `checked` — rather than its checked state**, and a handler
+  now sees it on `leave` as well as `enter`. A handler reading it as a boolean reads `task?.checked` instead.
+- **`sanitizeSvg` in `render/markdown` answers a `Result`** whose `error` is `"unparseable"`, rather than the drawing or `null`. A caller
+  checking `=== null` checks `.ok` instead and reads the drawing from `.data`.
+- **The markdown viewport's `"rendered"` rendering is now `"styled"`**, beside the new `"html"`, so `ViewportRendering` is `"raw" | "styled" |
+  "html"`. Replace every `"rendered"` passed to `mountMarkdownViewport` or `setRendering` with `"styled"`; nothing else about it changed.
+- **The gate type-checks with `bun check` and formats with `bun fmt`, so `cloudflareWorkerSteps` and `forgeChecks` need Bun 1.4.4 or later.**
+  `typecheckStep` runs `bun check --no-script --no-pretty` in place of `tsc --noEmit`, and `formatStep` runs `bun fmt --no-script --check` and
+  fixes with `bun fmt --no-script`, still configured by `.oxfmtrc.json`. `forge cf gen env` and `validate-design`'s fence compile use the same
+  two tools. Set `packageManager` to `bun@1.4.4`, drop the `typescript` and `oxfmt` devDependencies, then run `bun fmt --no-script` once and
+  commit it: under `objectWrap: "collapse"`, `bun fmt` writes a multi-line mapped type on one line where oxfmt kept it broken.
+
+### Added
+
+- **The markdown viewport shows your dialect's HTML as a third, read-only rendering.** Give `ViewportDialect` an `html(markdown)` that answers
+  `renderMarkdownHtml` output with `lineAnchors: true`, then mount in `"html"` or call `setRendering("html")`. The viewport writes the whole
+  document into a light-DOM `<div class="markdown" data-viewport-html>` slotted beside the editor, so your page's CSS and event delegation reach
+  it, and it rewrites it on each `replace` while it shows. The rendering is read-only whatever the mode, and a `setMode` call made during it
+  applies when you leave it. `topAnchor` and `scrollTo` keep the reader's line across the switch. Without `dialect.html`, both entries into
+  `"html"` throw a `TypeError`.
+- **`onHtml` on `ViewportOptions` runs with the `html` container after each write**, for wiring the new markup up, such as `htmx.process`.
+- **`MARKDOWN_TRUSTED_TYPES_POLICY` in `render/markdown` names the `forge-markdown` policy** that the viewport writes its HTML through. An app
+  that shows `"html"` under Trusted Types lists it in `trusted-types`. When the browser refuses it, the viewport logs a `console.error` naming
+  the fix, writes nothing, and marks the container `data-viewport-html="refused"`.
+- **`afterTransitions` in `ui/client` defers an overlay's teardown past its exit fade.** `afterTransitions(el, fn)` runs `fn` once every
+  transition on `el` settles, or at once when none is running, and returns a call that runs `fn` now if it has not run — the open path calls it
+  first, so a reopen is not emptied by the close before it.
+- **`listTasks` and `setTasks` in `render/markdown` read and toggle GFM task boxes in the source.** `listTasks(document)` answers each
+  box's 1-based `line`, source `offset` and `checked` state; `setTasks(source, document, checkedLines)` ticks exactly the given lines,
+  rewriting only the character between each box's brackets, and returns a `Result` whose `error` lists any given line that holds no box.
+  `MarkdownListItem` gains `box`, the unit-relative offset of its `[`.
+- **`headingOffset` on `MarkdownRenderOptions` moves every heading down by 0 to 5 levels**, with a level past six rendering as `h6`; any other value
+  throws.
+- **`breaks: true` on `MarkdownRenderOptions` writes every soft line break as `<br>`**, the same markup a hard break writes, in paragraphs, list
+  items, headings and blockquotes alike.
+- **`createUrlPolicy` and a `links.rel` render option in `render/markdown`.** `createUrlPolicy({ linkProtocols, srcProtocols })` returns a policy of
+  `isSafeUrl`'s shape for your own schemes, still refusing protocol-relative and backslash paths and schemes hidden behind control characters, and
+  `isSafeUrl` is now its default instance. `renderMarkdownHtml(document, { schema, links: { rel } })` writes `rel` on every link the source wrote,
+  autolinks included, for a schema whose `a` rule lists `rel`. A GFM `www.` autolink is written as `http://`, so `isSafeUrl` renders it as text.
+- **`tasks: { name }` on `MarkdownRenderOptions` renders GFM task boxes as form fields.** Each box is written inside a `<label>` with its text, as
+  `<input type="checkbox" name value>` whose `value` is the line `listTasks` reports, so a posted form's ticked lines go straight into `setTasks`;
+  `disabled: true` writes `disabled`. Without `tasks` the output is unchanged. Your schema must allow `label`, and `name` and `value` on `input`.
+- **`MARKDOWN_ELEMENTS` in `render/markdown` allows every element and attribute the default handlers write**, for spreading into
+  `HtmlSchema.elements` beside your own `url` policy: tables with alignment, footnotes, `language-*` classes, `data-line`, the task `label` and
+  `input`, and `rel` on links. It sends `href` and `src` through `schema.url`, carries no `patterns`, never allows `style`, and is frozen; replace a
+  rule by its key to tighten it.
+- **`markdown.css` in `ui/assets/css` styles `renderMarkdownHtml` output inside an element with the `markdown` class**, and nothing outside one:
+  headings, lists, code, tables with their alignment, task boxes and their labels, and footnotes with a hidden heading. Every rule has zero
+  specificity and sits in no layer, so an unlayered rule of yours with one class wins; colours, code font and radius are `--markdown-*` properties
+  falling back to forge's theme. Import it after `tailwind.css`. Classes renamed through `classNames` lose their rules.
+- **`continueList`, `wrapSelection` and `toggleTask` in `render/markdown` are editor commands for Enter, Mod-B/I/E/K and task boxes.** Each takes
+  the text and selection and answers one `MarkdownEdit` — `from`, `to`, `insert` and `selection` — or `null`. Enter continues a list only at the
+  end of an item, numbering on and keeping the bullet or delimiter, any `>` and indentation, and `[ ]` after a task; on an empty item it ends the
+  list. Items come from forge's parser over the one block unit being edited, which `createMarkdownDraft` and `reviseMarkdownDraft` keep current, so
+  a fence, a `* * *` rule or a `> - x` quote reads as the renderer reads it. `MARKDOWN_WRAP_KEYS` maps each shortcut's letter to its wrap.
+- **`mountMarkdownTextarea` in `render/markdown/editor/textarea/client` gives plain textareas markdown keys, with no CodeMirror.** Mounted on a
+  form or region, it serves every `textarea[data-markdown]` inside from one listener: Enter continues lists, Mod-B/I/E/K wrap the selection, and
+  Mod-Enter calls `onSubmit`. It returns a disposer. Edits go through the browser's editing so undo takes them back, and a key is left alone while
+  an input method composes, with Shift or Alt held, in a `readonly` textarea, or after another listener's `preventDefault()`.
+- **`DeclaredGraph.modules` narrows a declared edge to named files of its target.** `validate-namespace-graph` fails an import from the source
+  namespace, type-only included, that reaches any other file of the target, a narrowing `edges` does not declare, and a named file outside the
+  target.
+- **The markdown viewport continues lists on Enter and wraps the selection on Mod-B, Mod-I, Mod-E and Mod-K**, through `render/markdown`'s
+  `continueList` and `wrapSelection`, so it reads lists and markers as the renderer does. Enter is a plain line break wherever no list continues;
+  Mod-I replaces CodeMirror's select-parent-syntax binding. None of these keys edits in view mode or while an input method is composing.
+
+### Changed
+
+- **A task checkbox in the markdown viewport ticks a box only where `render/markdown`'s parser reads one**, through `toggleTask`, rather than
+  wherever the text reads `[ ]`.
+- **`warden/knowledge` reads a search term of three characters or fewer unstemmed, by prefix**, so `ios` reaches `ios` and no longer `io`. An
+  index built by an earlier version is rebuilt on its next open. `documentFrequency` counts a term the way `coverage` reads it; the new
+  `bridgeFrequency` counts a bridge term, and `UNSTEMMED_TOKENIZE` is the tokenizer a short term is read through.
+- **`warden`'s Zed settings no longer route formatting to an oxfmt language server**, and its native downloads no longer fetch oxfmt or the
+  TypeScript compiler.
+
+### Fixed
+
+- **`validate-docs` no longer reads a markdown link written inside a code span as a link**, so `` `[text](url)` `` reports no missing target.
 
 ---
 

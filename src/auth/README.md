@@ -629,10 +629,10 @@ A value you store rather than send belongs in [`@y-core/forge/crypto/keyring`][k
 file in its own host config with `forgeSchema`, alongside its own:
 
 ```ts
-// config/db.ts
-import { forgeSchema } from "@y-core/forge/tooling/db/host";
+// config/db.config.ts
+import { defineDbConfig, forgeSchema } from "@y-core/forge/tooling/db/host";
 
-export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] };
+export default defineDbConfig({ schemas: [forgeSchema("auth"), "config/db/schema.sql"] });
 ```
 
 Then compose the migration from every file named there, and apply it:

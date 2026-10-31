@@ -20,8 +20,8 @@ afterAll(() => {
 });
 
 describe("DEFAULT_GATE_COMMAND", () => {
-  // What a consuming app gets with no `config/release.ts`, which is why it names the one script
-  // every forge app declares. Forge's own gate is `config/release.ts`'s, asserted beside it.
+  // What a consuming app gets with no `config/release.config.ts`, which is why it names the one script
+  // every forge app declares. Forge's own gate is `config/release.config.ts`'s, asserted beside it.
   it("names a script a consuming app is certain to have, rather than a tier it may not declare", () => {
     expect([...DEFAULT_GATE_COMMAND]).toEqual(["bun", "run", "verify"]);
   });

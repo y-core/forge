@@ -1,5 +1,5 @@
 export { findAppRoot, installedAppRoot, resolveAppRoot } from "./app-root";
-export { addCommand, createCommand } from "./command";
+export { addCommand, createCommand, defineCommands } from "./command";
 export type { ConfirmOptions } from "./types";
 export { confirm } from "./confirm";
 export { CliError, formatError } from "./errors";

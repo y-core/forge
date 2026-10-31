@@ -14,7 +14,7 @@ const FIXTURE = join(FORGE, "tests", "fixtures", "db-compose");
 const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
 
 interface Case {
-  /** A second schema `config/db.ts` declares for the before state and no longer declares for the after one. */
+  /** A second schema `config/db.config.ts` declares for the before state and no longer declares for the after one. */
   lib?: string;
   seed: string;
   after?: string;
@@ -57,7 +57,7 @@ function freshRoot(): string {
 }
 
 function declare(root: string, schemas: readonly string[]): void {
-  writeFileSync(join(root, "config", "db.ts"), `export default { schemas: ${JSON.stringify(schemas)} };\n`);
+  writeFileSync(join(root, "config", "db.config.ts"), `export default { schemas: ${JSON.stringify(schemas)} };\n`);
 }
 
 const DIGEST = /--allow-destructive ([0-9a-f]{12})/;

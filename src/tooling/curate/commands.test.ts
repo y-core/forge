@@ -184,11 +184,11 @@ describe("curateTree() — a plain copy", () => {
       target,
       config: CURATE_FIXTURE_FEATURES,
       selection: { drop: [] },
-      manifest: "config/features.ts",
+      manifest: "config/features.config.ts",
     });
 
     expect(report.manifest).toBeUndefined();
-    expect(read(target, "config/features.ts")).toBe(CURATE_FIXTURE_MANIFEST);
+    expect(read(target, "config/features.config.ts")).toBe(CURATE_FIXTURE_MANIFEST);
   });
 });
 
@@ -424,22 +424,34 @@ describe("curateTree() — the manifest", () => {
   it("keeps the manifest while a feature remains, and removes the dropped feature's line from it", () => {
     const root = repo(CURATE_FIXTURE_MANIFEST);
     const target = freshTarget();
-    const report = curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, selection: { drop: ["showcase"] }, manifest: "config/features.ts" });
+    const report = curateTree({
+      root,
+      target,
+      config: CURATE_FIXTURE_FEATURES,
+      selection: { drop: ["showcase"] },
+      manifest: "config/features.config.ts",
+    });
 
     expect(report.manifest).toBeUndefined();
-    expect(report.files).toContain("config/features.ts");
-    expect(report.seams).toContainEqual({ file: "config/features.ts", removed: 1 });
-    expect(read(target, "config/features.ts")).toBe(lines(CURATE_FIXTURE_MANIFEST.split("\n"), [0, 2, 3, 4, 5, 6]));
+    expect(report.files).toContain("config/features.config.ts");
+    expect(report.seams).toContainEqual({ file: "config/features.config.ts", removed: 1 });
+    expect(read(target, "config/features.config.ts")).toBe(lines(CURATE_FIXTURE_MANIFEST.split("\n"), [0, 2, 3, 4, 5, 6]));
   });
 
   it("keeps the manifest while a feature remains, and removes the dropped feature's region from it", () => {
     const root = repo(CURATE_FIXTURE_MANIFEST);
     const target = freshTarget();
-    const report = curateTree({ root, target, config: CURATE_FIXTURE_FEATURES, selection: { drop: ["contact"] }, manifest: "config/features.ts" });
+    const report = curateTree({
+      root,
+      target,
+      config: CURATE_FIXTURE_FEATURES,
+      selection: { drop: ["contact"] },
+      manifest: "config/features.config.ts",
+    });
 
     expect(report.manifest).toBeUndefined();
-    expect(report.seams).toContainEqual({ file: "config/features.ts", removed: 3 });
-    expect(read(target, "config/features.ts")).toBe(lines(CURATE_FIXTURE_MANIFEST.split("\n"), [0, 1, 5, 6]));
+    expect(report.seams).toContainEqual({ file: "config/features.config.ts", removed: 3 });
+    expect(read(target, "config/features.config.ts")).toBe(lines(CURATE_FIXTURE_MANIFEST.split("\n"), [0, 1, 5, 6]));
   });
 
   it("leaves the manifest out once every feature is dropped, reports it, and leaves the source's copy as it was", () => {
@@ -450,14 +462,14 @@ describe("curateTree() — the manifest", () => {
       target,
       config: CURATE_FIXTURE_FEATURES,
       selection: { drop: ["showcase", "contact"] },
-      manifest: "config/features.ts",
+      manifest: "config/features.config.ts",
     });
 
-    expect(report.manifest).toBe("config/features.ts");
-    expect(report.files).not.toContain("config/features.ts");
-    expect(report.seams.map((seam) => seam.file)).not.toContain("config/features.ts");
-    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
-    expect(read(root, "config/features.ts")).toBe(CURATE_FIXTURE_MANIFEST);
+    expect(report.manifest).toBe("config/features.config.ts");
+    expect(report.files).not.toContain("config/features.config.ts");
+    expect(report.seams.map((seam) => seam.file)).not.toContain("config/features.config.ts");
+    expect(existsSync(join(target, "config/features.config.ts"))).toBe(false);
+    expect(read(root, "config/features.config.ts")).toBe(CURATE_FIXTURE_MANIFEST);
   });
 
   it("recognises the manifest by an absolute path inside the root", () => {
@@ -468,11 +480,11 @@ describe("curateTree() — the manifest", () => {
       target,
       config: CURATE_FIXTURE_FEATURES,
       selection: { drop: ["showcase", "contact"] },
-      manifest: join(root, "config/features.ts"),
+      manifest: join(root, "config/features.config.ts"),
     });
 
-    expect(report.manifest).toBe("config/features.ts");
-    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
+    expect(report.manifest).toBe("config/features.config.ts");
+    expect(existsSync(join(target, "config/features.config.ts"))).toBe(false);
   });
 
   it("leaves out nothing for a manifest outside the root", () => {
@@ -493,7 +505,9 @@ describe("curateTree() — the manifest", () => {
   it("refuses the manifest's markers when no manifest path is given, since the file is then a seam of no feature", () => {
     const message = refused({ root: repo(CURATE_FIXTURE_MANIFEST), config: CURATE_FIXTURE_FEATURES, selection: { drop: ["showcase"] } });
 
-    expect(message).toBe("`config/features.ts:2` marks feature `showcase`, but `config/features.ts` is not one of its seams in the manifest");
+    expect(message).toBe(
+      "`config/features.config.ts:2` marks feature `showcase`, but `config/features.config.ts` is not one of its seams in the manifest",
+    );
   });
 });
 
@@ -517,10 +531,10 @@ describe("curateTree() — refusals, each before anything is written", () => {
   });
 
   it("refuses a seam naming the manifest itself", () => {
-    const config = withFeature("contact", { directories: ["src/contact"], seams: ["config/features.ts"] });
+    const config = withFeature("contact", { directories: ["src/contact"], seams: ["config/features.config.ts"] });
 
-    expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, selection: { drop: [] }, manifest: "config/features.ts" })).toBe(
-      "seam file `config/features.ts` is the feature manifest, which every feature may mark without listing it",
+    expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, selection: { drop: [] }, manifest: "config/features.config.ts" })).toBe(
+      "seam file `config/features.config.ts` is the feature manifest, which every feature may mark without listing it",
     );
   });
 
@@ -531,10 +545,10 @@ describe("curateTree() — refusals, each before anything is written", () => {
   });
 
   it("refuses an owned file that is the manifest", () => {
-    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["config/features.ts"] });
+    const config = withFeature("contact", { ...CURATE_FIXTURE_FEATURES.contact!, files: ["config/features.config.ts"] });
 
-    expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, selection: { drop: [] }, manifest: "config/features.ts" })).toBe(
-      "owned file `config/features.ts` is the feature manifest, which no feature may own",
+    expect(refused({ root: repo(CURATE_FIXTURE_MANIFEST), config, selection: { drop: [] }, manifest: "config/features.config.ts" })).toBe(
+      "owned file `config/features.config.ts` is the feature manifest, which no feature may own",
     );
   });
 
@@ -887,12 +901,12 @@ describe("curateTree() — the feature graph", () => {
       target,
       config: CURATE_FIXTURE_FEATURES,
       selection: { keep: [] },
-      manifest: "config/features.ts",
+      manifest: "config/features.config.ts",
     });
 
     expect(report.kept).toEqual([]);
     expect(report.dropped).toEqual(["showcase", "contact"]);
-    expect(report.manifest).toBe("config/features.ts");
+    expect(report.manifest).toBe("config/features.config.ts");
     expect(read(target, "src/app.ts")).toBe("export const app = 1;\n");
   });
 
@@ -1081,7 +1095,7 @@ describe("createCurateCommand()", () => {
     expect(existsSync(target)).toBe(false);
   });
 
-  it("reads `config/features.ts` under --root, drops what --drop names and reports each row", async () => {
+  it("reads `config/features.config.ts` under --root, drops what --drop names and reports each row", async () => {
     const root = repo(CURATE_FIXTURE_MANIFEST);
     const target = freshTarget();
     const { cli, out, codes } = io();
@@ -1097,7 +1111,7 @@ describe("createCurateCommand()", () => {
       row("added:", "(none)"),
       row("removed:", "src/showcase"),
       row("scripts:", "showcase:demo"),
-      row("seams:", "README.md −3, config/features.ts −1, src/app.ts −2"),
+      row("seams:", "README.md −3, config/features.config.ts −1, src/app.ts −2"),
       row("regenerated:", "(none)"),
       row("manifest:", "(kept, or outside the working tree)"),
     ]);
@@ -1131,13 +1145,13 @@ describe("createCurateCommand()", () => {
 
     expect(codes).toEqual([]);
     expect(read(target, "src/app.ts")).toBe("export const app = 1;\n");
-    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
+    expect(existsSync(join(target, "config/features.config.ts"))).toBe(false);
     expect(out.slice(2, 5)).toEqual([
       row("dropped:", "showcase, contact"),
       row("added:", "(none)"),
       row("removed:", "src/showcase, src/contact, config/contact.toml"),
     ]);
-    expect(out.at(-1)).toBe(row("manifest:", "config/features.ts left out"));
+    expect(out.at(-1)).toBe(row("manifest:", "config/features.config.ts left out"));
   });
 
   it("reads the manifest --config names instead, and leaves that one out", async () => {
@@ -1159,7 +1173,9 @@ describe("createCurateCommand()", () => {
     await execute(createCurateCommand(), [target, "--root", repo()], cli);
 
     expect(codes).toEqual([1]);
-    expect(err).toEqual(["Error: No feature manifest at `config/features.ts` — forge curate needs one, default-exporting defineFeatures({...})"]);
+    expect(err).toEqual([
+      "Error: No feature manifest at `config/features.config.ts` — forge curate needs one, default-exporting defineFeatures({...})",
+    ]);
     expect(existsSync(target)).toBe(false);
   });
 
@@ -1272,9 +1288,9 @@ describe("createCurateCommand()", () => {
     await execute(createCurateCommand(), [target, "--root", root, "--keep", ""], cli);
 
     expect(codes).toEqual([]);
-    expect(existsSync(join(target, "config/features.ts"))).toBe(false);
+    expect(existsSync(join(target, "config/features.config.ts"))).toBe(false);
     expect(read(target, "src/app.ts")).toBe("export const app = 1;\n");
     expect(out.slice(1, 3)).toEqual([row("kept:", "(none)"), row("dropped:", "showcase, contact")]);
-    expect(out.at(-1)).toBe(row("manifest:", "config/features.ts left out"));
+    expect(out.at(-1)).toBe(row("manifest:", "config/features.config.ts left out"));
   });
 });

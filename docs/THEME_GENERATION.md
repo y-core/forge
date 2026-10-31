@@ -13,7 +13,7 @@ audience: consumer
 > It does not own how a scheme file is _declared_ — that is [`UI_CLASS_COMPOSITION.md`][ucc-2] §2.
 >
 > Defers to: `src/ui/contracts/theme/theme-contract.ts`, `src/ui/contracts/theme/color.ts`, `src/ui/contracts/theme/contrast-pairs.ts` and
-> `src/ui/contracts/theme/contrast-accepted.ts` for every value; `config/steps.ts` for the gate's configuration.
+> `src/ui/contracts/theme/contrast-accepted.ts` for every value; `config/steps.config.ts` for the gate's configuration.
 
 ---
 
@@ -48,8 +48,8 @@ verification gate that runs in neither. Forge ships the gate's reader and neithe
 duplicated across them drifts silently — the page keeps rendering, the browser keeps painting, and only the number a reader is shown becomes wrong.
 
 That is the argument [`STATE_ATTRIBUTES.md`][sa-1] §1 makes for state attributes, applied to a third reader. The data therefore lives in
-`ui/contracts`, which is a leaf namespace ([`NAMESPACES.md`][namespaces-4a] §4a), and the gate reaches it by importing it into `config/steps.ts`
-rather than by re-declaring it.
+`ui/contracts`, which is a leaf namespace ([`NAMESPACES.md`][namespaces-4a] §4a), and the gate reaches it by importing it into
+`config/steps.config.ts` rather than by re-declaring it.
 
 **Nothing in this document enumerates a dial, a pair, or a ramp.** The declaring modules named in the blockquote above are authoritative over any
 prose here; [`SOURCE_OF_TRUTH.md`][sot-2d] §2d registers the dial contract and the contrast pairs and exemptions among them.
@@ -207,9 +207,9 @@ colour without the surface beneath it. A fade `validate-faded-text` judges ([`UI
 audited pair's foreground carries that colour at that alpha; an `opacity-*` names no colour, so its class string must name one under the same
 variants.
 
-**The gate consumes that list rather than restating it.** `config/steps.ts` imports the pairs, the criteria and the exemptions and hands them to the
-contrast step, which resolves each token through the stylesheets and measures it. What the check asserts, in what order, with what message, is the
-check's own — [`SOURCE_OF_TRUTH.md`][sot-2b] §2b names the files, and this section names no assertion.
+**The gate consumes that list rather than restating it.** `config/steps.config.ts` imports the pairs, the criteria and the exemptions and hands them
+to the contrast step, which resolves each token through the stylesheets and measures it. What the check asserts, in what order, with what message,
+is the check's own — [`SOURCE_OF_TRUTH.md`][sot-2b] §2b names the files, and this section names no assertion.
 
 **A gate that measured nothing is a failure rather than a pass**: an empty pair list is refused, so deleting the audit cannot be mistaken for
 satisfying it.

@@ -54,7 +54,7 @@ async function loadConfigModule(request) {
   if (module.default === void 0) {
     throw new Error(`\`${path}\` has no default export \u2014 a ${what} module must \`export default\` the value it holds.`);
   }
-  return { value: module.default, exports: module };
+  return { value: module.default };
 }
 
 // src/tooling/cli/errors.ts
@@ -83,7 +83,7 @@ var D1EntrySchema = v.looseObject({
 });
 
 // src/tooling/db/declared.ts
-var DEFAULT_DB_CONFIG = "config/db.ts";
+var DEFAULT_DB_CONFIG = "config/db.config.ts";
 async function loadHostConfig(root, path, explicit, option) {
   const request = { root, path, explicit, what: "db host config", ...option === void 0 ? {} : { option } };
   const loaded = (await loadConfigModule(request))?.value ?? {};

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "bun:test";
 
-import { redo, undo } from "@codemirror/commands";
+import { insertNewline, insertNewlineAndIndent, redo, selectParentSyntax, undo } from "@codemirror/commands";
 import { EditorSelection } from "@codemirror/state";
 import type { EditorState, Transaction } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import type { WidgetType } from "@codemirror/view";
 import fc from "fast-check";
 
+import { continueListCommand, draftOf, viewportKeymap } from "./commands";
 import { buildDecorations } from "./decorations";
 import { TEST_DIALECT } from "./dialect.fixture";
 import { revealActiveLines } from "./hybrid";
@@ -20,12 +21,9 @@ interface Viewport {
   readonly rendering: ViewportRendering;
 }
 
-const STATES: readonly Viewport[] = [
-  { mode: "edit", rendering: "rendered" },
-  { mode: "edit", rendering: "raw" },
-  { mode: "view", rendering: "rendered" },
-  { mode: "view", rendering: "raw" },
-];
+const RENDERINGS: readonly ViewportRendering[] = ["styled", "raw", "html"];
+
+const STATES: readonly Viewport[] = (["edit", "view"] as const).flatMap((mode) => RENDERINGS.map((rendering) => ({ mode, rendering })));
 
 function opened(at: Viewport, markdown = ROUND_TRIP_MARKDOWN): EditorState {
   return createViewportState({ markdown, mode: at.mode, rendering: at.rendering, label: "Page body", dialect: TEST_DIALECT });
@@ -44,13 +42,10 @@ function behaviour(state: EditorState) {
   };
 }
 
+// The html rendering is read-only whatever mode was asked for.
 function expectedBehaviour(at: Viewport) {
-  return {
-    readOnly: at.mode === "view",
-    editable: at.mode === "edit",
-    reveal: at.mode === "edit",
-    atomicSources: at.rendering === "rendered" ? 1 : 0,
-  };
+  const editing = at.mode === "edit" && at.rendering !== "html";
+  return { readOnly: !editing, editable: editing, reveal: editing, atomicSources: at.rendering === "styled" ? 1 : 0 };
 }
 
 function typed(state: EditorState, text: string): EditorState {
@@ -87,10 +82,39 @@ const edit = fc.record({ from: fc.nat({ max: 200 }), to: fc.nat({ max: 200 }), i
 
 describe("createViewportState", () => {
   for (const at of STATES) {
-    it(`opens ${name(at)} read-only only in view, editable only in edit, revealing only in edit, rendered layer only when rendered`, () => {
+    it(`opens ${name(at)} editable and revealing only in edit outside html, and with the styled layer only when styled`, () => {
       expect(behaviour(opened(at))).toEqual(expectedBehaviour(at));
     });
   }
+
+  for (const at of STATES) {
+    it(`drafts the markdown it was given in ${name(at)}`, () => {
+      expect(draftOf(opened(at)).text).toBe(ROUND_TRIP_MARKDOWN);
+    });
+  }
+
+  it("runs list continuation on Enter ahead of the plain line break and CodeMirror's own Enter", () => {
+    const bindings = opened(STATES[0] as Viewport)
+      .facet(keymap)
+      .flat();
+
+    expect(bindings.filter((binding) => binding.key === "Enter").map((binding) => binding.run)).toEqual([
+      continueListCommand,
+      insertNewline,
+      insertNewlineAndIndent,
+    ]);
+  });
+
+  it("runs the emphasis wrap on Mod-i ahead of CodeMirror's select-parent-syntax", () => {
+    const bindings = opened(STATES[0] as Viewport)
+      .facet(keymap)
+      .flat();
+
+    expect(bindings.filter((binding) => binding.key === "Mod-i").map((binding) => binding.run)).toEqual([
+      viewportKeymap.find((binding) => binding.key === "Mod-i")?.run,
+      selectParentSyntax,
+    ]);
+  });
 
   it("holds the markdown it was given byte for byte", () => {
     expect(opened(STATES[0] as Viewport).doc.toString()).toBe(ROUND_TRIP_MARKDOWN);
@@ -99,7 +123,7 @@ describe("createViewportState", () => {
   it("edits applied to the viewport's state equal the same edits applied to a plain string, byte for byte", () => {
     fc.assert(
       fc.property(fc.string({ unit: fc.constantFrom(...EDIT_TOKENS), maxLength: 40 }), fc.array(edit, { maxLength: 20 }), (doc, edits) => {
-        let state = opened({ mode: "edit", rendering: "rendered" }, doc);
+        let state = opened({ mode: "edit", rendering: "styled" }, doc);
         let expected = doc;
         for (const { from, to, insert } of edits) {
           const start = Math.min(from, to, expected.length);
@@ -116,9 +140,9 @@ describe("createViewportState", () => {
 
 describe("viewportEffects", () => {
   for (const from of STATES) {
-    const neighbours = [
-      { mode: from.mode === "edit" ? "view" : "edit", rendering: from.rendering } satisfies Viewport,
-      { mode: from.mode, rendering: from.rendering === "rendered" ? "raw" : "rendered" } satisfies Viewport,
+    const neighbours: Viewport[] = [
+      { mode: from.mode === "edit" ? "view" : "edit", rendering: from.rendering },
+      ...RENDERINGS.filter((rendering) => rendering !== from.rendering).map((rendering) => ({ mode: from.mode, rendering })),
     ];
     for (const to of neighbours) {
       it(`switches ${name(from)} to ${name(to)} with the text byte-identical and the new behaviour in force`, () => {
@@ -130,15 +154,15 @@ describe("viewportEffects", () => {
   }
 
   it("disables the rendered task checkbox after a switch to view, and enables it again after the switch back to edit", () => {
-    const editing = opened({ mode: "edit", rendering: "rendered" }, "- [ ] call");
-    const viewing = switched(editing, { mode: "view", rendering: "rendered" });
-    const back = switched(viewing, { mode: "edit", rendering: "rendered" });
+    const editing = opened({ mode: "edit", rendering: "styled" }, "- [ ] call");
+    const viewing = switched(editing, { mode: "view", rendering: "styled" });
+    const back = switched(viewing, { mode: "edit", rendering: "styled" });
 
     expect([checkboxesDisabled(editing), checkboxesDisabled(viewing), checkboxesDisabled(back)]).toEqual([[false], [true], [false]]);
   });
 
   it("keeps the text byte-identical through every state twice over", () => {
-    let state = opened({ mode: "view", rendering: "rendered" });
+    let state = opened({ mode: "view", rendering: "styled" });
     const seen: string[] = [];
 
     for (const to of [...STATES, ...STATES]) {
@@ -146,14 +170,28 @@ describe("viewportEffects", () => {
       seen.push(state.doc.toString());
     }
 
-    expect(seen).toEqual(Array.from({ length: 8 }, () => ROUND_TRIP_MARKDOWN));
+    expect(seen).toEqual(Array.from({ length: STATES.length * 2 }, () => ROUND_TRIP_MARKDOWN));
   });
+});
+
+describe("the html rendering", () => {
+  it("leaves html for styled editable again under the edit mode it was opened with", () => {
+    const html = opened({ mode: "edit", rendering: "html" });
+
+    expect([behaviour(html).editable, behaviour(switched(html, { mode: "edit", rendering: "styled" })).editable]).toEqual([false, true]);
+  });
+
+  for (const dialect of [undefined, { ...TEST_DIALECT, html: undefined }]) {
+    it(`refuses to open in html ${dialect === undefined ? "with no dialect" : "with a dialect that renders no html"}`, () => {
+      expect(() => createViewportState({ markdown: "a", mode: "view", rendering: "html", label: "Page body", dialect })).toThrow(TypeError);
+    });
+  }
 });
 
 describe("the viewport's history", () => {
   it("undoes and redoes an edit made before a switch to view and back", () => {
-    const edited = typed(opened({ mode: "edit", rendering: "rendered" }), " Z");
-    const back = switched(switched(edited, { mode: "view", rendering: "rendered" }), { mode: "edit", rendering: "rendered" });
+    const edited = typed(opened({ mode: "edit", rendering: "styled" }), " Z");
+    const back = switched(switched(edited, { mode: "view", rendering: "styled" }), { mode: "edit", rendering: "styled" });
 
     const undone = ran(undo, back);
     const redone = ran(redo, undone.state);
@@ -167,14 +205,14 @@ describe("the viewport's history", () => {
   });
 
   it("undoes an edit made before a switch to raw", () => {
-    const edited = typed(opened({ mode: "edit", rendering: "rendered" }), " Z");
+    const edited = typed(opened({ mode: "edit", rendering: "styled" }), " Z");
 
     const undone = ran(undo, switched(edited, { mode: "edit", rendering: "raw" }));
 
     expect([undone.ran, undone.state.doc.toString()]).toEqual([true, ROUND_TRIP_MARKDOWN]);
   });
 
-  for (const rendering of ["rendered", "raw"] as const) {
+  for (const rendering of ["styled", "raw"] as const) {
     it(`refuses undo and redo in view + ${rendering}, leaving the edit in place`, () => {
       const edited = typed(opened({ mode: "edit", rendering }), " Z");
       const viewing = switched(edited, { mode: "view", rendering });
@@ -193,7 +231,7 @@ describe("the viewport's history", () => {
 });
 
 describe("replaceTransaction", () => {
-  const EDIT = { mode: "edit", rendering: "rendered" } as const;
+  const EDIT = { mode: "edit", rendering: "styled" } as const;
 
   function replaced(state: EditorState, markdown: string, preserveSelection?: boolean): EditorState {
     return state.update(replaceTransaction(state, markdown, preserveSelection === undefined ? {} : { preserveSelection })).state;

@@ -2,23 +2,26 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { type GateTier, selectSteps } from "../src/tooling/gate/mod";
-import release from "./release";
-import { STEPS } from "./steps";
+import { type GateTier, resolveTiers, selectSteps } from "../src/tooling/gate/mod";
+import release from "./release.config";
+import steps from "./steps.config";
 
 const ROOT = join(import.meta.dir, "..");
 
+const resolution = resolveTiers(steps.tiers);
+const TABLE = resolution.ok ? resolution.data : {};
+
 /** The steps a tier selects, by the label `--only` addresses. */
 const labels = (tier: GateTier): string[] => {
-  const selection = selectSteps(STEPS, { tier });
+  const selection = selectSteps(TABLE, { tier });
   return selection.ok ? selection.steps.map((step) => step.label) : [];
 };
 
 /** The steps that need a runtime, and so exist nowhere below `runtime`. */
-const RUNTIME_ROWS = ["test:workerd", "db:lint", "db:schema"];
+const RUNTIME_ROWS = ["db:lint", "db:schema"];
 
-/** The steps a scheduled run is the only run to reach; the Chromium suite is one, too slow for the run a task closes on. */
-const SCHEDULED_ONLY = ["validate-changelog", "test:browser"];
+/** The steps a scheduled run is the only run to reach; every Playwright suite is one, too slow for the run a commit closes on. */
+const SCHEDULED_ONLY = ["test:browser", "test:workerd", "test:browser:cross-engine"];
 
 describe("the gate a release runs", () => {
   it("names the script rather than the binary, which is what tells an unrunnable gate from a failing one", () => {
@@ -37,8 +40,15 @@ describe("the gate a release runs", () => {
   // A step whose `requires` probe fails is skipped below `runtime` and failed from it up, so re-tiering
   // a runtime row downward would not move it into the scheduled tier's reach — it would silence it.
   it("holds every runtime row out of the tiers that skip an absent runtime", () => {
+    expect(resolution.ok).toBe(true);
+    expect(RUNTIME_ROWS.map((label) => TABLE.runtime?.home[label])).toEqual(["runtime", "runtime"]);
     expect(RUNTIME_ROWS.every((label) => labels("runtime").includes(label))).toBe(true);
     expect(RUNTIME_ROWS.filter((label) => labels("unit").includes(label))).toEqual([]);
+  });
+
+  // A hand-edited released section is found at the edit, not at the tag.
+  it("checks the changelog in the static run", () => {
+    expect(labels("static")).toContain("validate-changelog");
   });
 
   it("reaches the scheduled rows at scheduled alone", () => {
@@ -56,7 +66,7 @@ describe("the gate a release runs", () => {
       `${gate} --tier unit`,
       `${gate} --tier scheduled`,
     ]);
-    expect(scripts["verify:cron"]).toBe(`${gate} --config config/cron.ts --tier scheduled`);
+    expect(scripts["verify:cron"]).toBeUndefined();
     expect(scripts["verify:deploy"]).toBeUndefined();
     expect(scripts.prepublishOnly).toBe("bun run verify:scheduled");
   });

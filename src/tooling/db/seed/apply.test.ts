@@ -46,7 +46,7 @@ function seedIo(root: string, history: SeedRecord[], files: Record<string, strin
   return io;
 }
 
-/** One history row for the one seeds directory `config/db.ts` declares. */
+/** One history row for the one seeds directory `config/db.config.ts` declares. */
 function record(name: string, hash: string): SeedRecord {
   return { source: "seeds", name, sha256: hash, appliedAt: 1 };
 }

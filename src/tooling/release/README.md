@@ -121,10 +121,10 @@ Add a config module only when a release has to touch something beyond `package.j
 a version constant in source:
 
 ```ts
-// config/release.ts — optional
-import type { ReleaseCommandConfig } from "@y-core/forge/tooling/release";
+// config/release.config.ts — optional
+import { defineReleaseConfig } from "@y-core/forge/tooling/release";
 
-export default { stageFiles: ["package.json", "CHANGELOG.md", "bun.lock"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
+export default defineReleaseConfig({ stageFiles: ["package.json", "CHANGELOG.md", "bun.lock"] });
 ```
 
 **`stageFiles` replaces the derived list rather than adding to it**, so name the changelog yourself if you still want it staged. The one file it
@@ -151,8 +151,8 @@ no version is left to reuse.
 The gate is `bun run verify` unless the release config names another, so a project whose script is called something else says so once:
 
 ```ts
-// config/release.ts
-export default { gateCommand: ["bun", "run", "check"] } satisfies Omit<ReleaseCommandConfig, "cwd">;
+// config/release.config.ts
+export default defineReleaseConfig({ gateCommand: ["bun", "run", "check"] });
 ```
 
 A consumer then depends on that tarball by URL, in the form [`FORGE_CONSUMPTION.md`][fc-4c] §4c names.

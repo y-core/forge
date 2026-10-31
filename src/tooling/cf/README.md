@@ -15,7 +15,7 @@ Reach for it before a deploy, in the gate, and as your `dev` script.
 ```bash
 forge cf sync                 # status for the account scope. Writes nothing
 forge cf sync --commit        # create the missing remotes, write the resolved ids back
-forge cf sync zone            # zone rules, read from config/site.ts
+forge cf sync zone            # zone rules, read from config/site.config.ts
 forge cf gen env              # emit env.schema.ts from wrangler.jsonc + .dev.vars
 forge cf dev                  # wrangler dev, with forge's development relaxations on
 ```
@@ -240,9 +240,9 @@ Cloudflare, and a token with edit rights is the last thing that should sit in a 
 ## Reconciling zone rules
 
 ```bash
-forge cf sync zone --config config/site.ts   # read-only report, the default
-forge cf sync zone --commit                  # writes the entry point rulesets
-forge cf sync zone --check                   # exit non-zero on drift, for the gate
+forge cf sync zone --config config/site.config.ts   # read-only report, the default
+forge cf sync zone --commit                         # writes the entry point rulesets
+forge cf sync zone --check                          # exit non-zero on drift, for the gate
 ```
 
 It reads the `zone` block of a [`@y-core/forge/site`][site-readme] config and reconciles two phase entry point rulesets:
@@ -273,8 +273,8 @@ only one.
 `type Env` — a schema-first replacement for the env half of `wrangler types`. It is one third of the standard three-part env setup, whose full guide
 is [`src/config/README.md`][config-readme]:
 
-1. **`src/app/env.config.ts`** — optional hand-written policy, a `Partial<GenOptions>`: `optional: new Set(["RATE_LIMITER"])` for bindings absent
-   under `wrangler dev`, or `refinements: { SESSION_SECRET: { minLength: 64 } }` for per-var constraints.
+1. **`config/env.config.ts`**: optional hand-written policy, default-exporting `defineEnvConfig({...})`: `optional: new Set(["RATE_LIMITER"])`
+   for bindings absent under `wrangler dev`, or `refinements: { SESSION_SECRET: { minLength: 64 } }` for per-var constraints.
 2. **`src/app/env.schema.ts`** — the generated module, committed and regenerated whenever `wrangler.jsonc` bindings change.
 3. **`validateBindings(EnvSchema)`** ([`@y-core/forge/app`][app-readme]) — registered as middleware, so the contract is enforced on the first
    request.
@@ -299,7 +299,7 @@ export const EnvSchema = v.object({
 export type Env = v.InferOutput<typeof EnvSchema>;
 ```
 
-The command emits the module and runs an oxfmt pass, so the generated file passes the lint gate.
+The command emits the module and runs a `bun fmt` pass, so the generated file passes the lint gate.
 
 ---
 

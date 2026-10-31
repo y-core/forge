@@ -14,10 +14,18 @@ function runUnderNode(script: string): unknown {
 }
 
 describe("the committed tooling/db/host bundle under node", () => {
-  it("exports forgeSchema and nothing else", () => {
+  it("exports defineDbConfig and forgeSchema and nothing else", () => {
     const names = runUnderNode(`console.log(JSON.stringify(Object.keys(await import(${JSON.stringify(BUNDLE_URL)}))));`);
 
-    expect(names).toEqual(["forgeSchema"]);
+    expect(names).toEqual(["defineDbConfig", "forgeSchema"]);
+  });
+
+  it("returns a db config through defineDbConfig unchanged", () => {
+    const config = runUnderNode(
+      `const { defineDbConfig } = await import(${JSON.stringify(BUNDLE_URL)}); console.log(JSON.stringify(defineDbConfig({ schemas: ["schema.sql"] })));`,
+    );
+
+    expect(config).toEqual({ schemas: ["schema.sql"] });
   });
 
   it("names a forge schema exactly as the source does", () => {

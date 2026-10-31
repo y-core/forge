@@ -25,19 +25,14 @@ describe("bindings()", () => {
   it("spells each family's platform suffix the way that family does", () => {
     expect(bindings("darwin-arm64")).toEqual([
       { parent: "oxlint", pkg: "@oxlint/binding-darwin-arm64" },
-      { parent: "oxfmt", pkg: "@oxfmt/binding-darwin-arm64" },
       { parent: "oxlint-tsgolint", pkg: "@oxlint-tsgolint/darwin-arm64" },
-      { parent: "typescript", pkg: "@typescript/typescript-darwin-arm64" },
     ]);
   });
 });
 
 describe("executables()", () => {
-  it("names only the two that are spawned as processes", () => {
-    expect(executables("linux-x64")).toEqual([
-      "node_modules/@typescript/typescript-linux-x64/lib/tsc",
-      "node_modules/@oxlint-tsgolint/linux-x64/tsgolint",
-    ]);
+  it("names only what is spawned as a process", () => {
+    expect(executables("linux-x64")).toEqual(["node_modules/@oxlint-tsgolint/linux-x64/tsgolint"]);
   });
 });
 

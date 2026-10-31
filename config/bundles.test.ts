@@ -4,8 +4,11 @@ import { resolve } from "node:path";
 import { collectFiles } from "../src/tooling/gate/checks/source-scan";
 import type { BundleCheckConfig } from "../src/tooling/gate/checks/types";
 import { isCheckStep } from "../src/tooling/gate/steps";
+import { declaredSteps } from "../src/tooling/gate/tiers";
 import { BUNDLE_FIXER, BUNDLES, writeBundles } from "./bundles";
-import { STEPS } from "./steps";
+import steps from "./steps.config";
+
+const STEPS = declaredSteps(steps.tiers);
 
 const ROOT = resolve(import.meta.dir, "..");
 

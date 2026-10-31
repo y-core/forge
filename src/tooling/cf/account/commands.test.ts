@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -750,6 +750,14 @@ describe("describeUntouchedZone", () => {
   it("is silent when the site config declares no zone — there is nothing to have missed", () => {
     const dir = withSite('export default { origin: "https://x.test" };');
     expect(describeUntouchedZone(dir, "site.ts")).toBeNull();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("reads `config/site.config.ts` when no path is named", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-untouched-"));
+    mkdirSync(join(dir, "config"));
+    writeFileSync(join(dir, "config", "site.config.ts"), 'export default { origin: "https://x.test", zone: { apex: "x.test" } };');
+    expect(describeUntouchedZone(dir)).toContain("forge cf sync zone");
     rmSync(dir, { recursive: true, force: true });
   });
 

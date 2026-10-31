@@ -1,9 +1,10 @@
 import { describe, expect, it } from "bun:test";
 
 import { checkResult } from "../../../src/tooling/gate/finding";
+import { tier } from "../../../src/tooling/gate/tiers";
 import type { Step } from "../../../src/tooling/gate/types";
 import type { GoldenQuery } from "./golden";
-import { goldenSetsOf, GOLDEN_STEP_LABEL, type GoldenStep, stepsOf } from "./step-sets";
+import { defineWardenQueries, goldenSetsOf, GOLDEN_STEP_LABEL, type GoldenStep, stepsOf } from "./step-sets";
 
 const QUERIES: readonly GoldenQuery[] = [{ query: "where do tests live", expect: "canon:TESTING.md#2a", dimension: "placement" }];
 
@@ -32,25 +33,29 @@ describe("goldenSetsOf()", () => {
 });
 
 describe("stepsOf()", () => {
-  it("reads the default export", () => {
-    const steps = [check("lint")];
+  it("reads every step a table declares directly, skipping tier references", () => {
+    const a = check("lint");
+    const b = check("test");
 
-    expect(stepsOf({ default: steps })).toBe(steps);
+    expect(stepsOf({ tiers: { static: [a], unit: [tier("static"), b] } })).toEqual([a, b]);
   });
 
-  it("falls back to a named STEPS export", () => {
-    const steps = [check("lint")];
+  it("returns undefined for a value that is no defineSteps table", () => {
+    const tiers = { static: [check("lint")] };
 
-    expect(stepsOf({ STEPS: steps })).toBe(steps);
+    expect([stepsOf([check("lint")]), stepsOf({ STEPS: [check("lint")] }), stepsOf({ default: { tiers } }), stepsOf(null)]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+    ]);
   });
+});
 
-  it("prefers the default export where a module carries both", () => {
-    const fallback = [check("format")];
+describe("defineWardenQueries()", () => {
+  it("returns its argument unchanged", () => {
+    const queries = { golden: QUERIES, negative: ["how do I file my taxes"] };
 
-    expect(stepsOf({ default: [check("lint")], STEPS: fallback })).not.toBe(fallback);
-  });
-
-  it("returns undefined where the module exports neither", () => {
-    expect(stepsOf({ GOLDEN: QUERIES })).toBeUndefined();
+    expect(defineWardenQueries(queries)).toBe(queries);
   });
 });

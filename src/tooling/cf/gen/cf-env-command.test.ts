@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { execute } from "../../cli/execute";
 import type { SpawnOptions, SpawnOutcome } from "../../cli/types";
 import { parseWranglerConfig } from "../config/parse";
-import { createGenEnvCommand, loadOptions } from "./cf-env-command";
+import { createGenEnvCommand, defineEnvConfig, loadOptions } from "./cf-env-command";
 import { collectBindings, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 
@@ -33,6 +33,21 @@ describe("loadOptions — error paths", () => {
 
   it("returns DEFAULT_OPTIONS when no path is given", async () => {
     expect(await loadOptions()).toBe(DEFAULT_OPTIONS);
+  });
+
+  it("refuses a module that carries its options only as a named export", async () => {
+    const configPath = join(tempDir(), "env.config.ts");
+    writeFileSync(configPath, `export const options = { optional: new Set(["CACHE"]) };`);
+
+    await expect(loadOptions(configPath)).rejects.toThrow("has no default export");
+  });
+});
+
+describe("defineEnvConfig()", () => {
+  it("returns its argument unchanged", () => {
+    const config = { optional: new Set(["CACHE"]) };
+
+    expect(defineEnvConfig(config)).toBe(config);
   });
 });
 
@@ -96,7 +111,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     const configPath = join(dir, "env.config.ts");
     const outPath = join(dir, "env.schema.ts");
     writeFileSync(wranglerPath, `{ "name": "app", "kv_namespaces": [{ "binding": "CACHE" }] }`);
-    writeFileSync(configPath, `export const options = { optional: new Set(["CACHE"]) };`);
+    writeFileSync(configPath, `export default { optional: new Set(["CACHE"]) };`);
 
     await execute(createGenEnvCommand(mockSpawnSync), [
       "--wrangler",
@@ -114,7 +129,7 @@ describe("createGenEnv — run handler end-to-end", () => {
     expect(generated).toContain("CACHE");
   });
 
-  it("invokes oxfmt through the spawner it was given", async () => {
+  it("invokes bun fmt through the spawner it was given", async () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
@@ -134,8 +149,8 @@ describe("createGenEnv — run handler end-to-end", () => {
 
     expect(mockSpawnSync).toHaveBeenCalled();
     const [cmd, args] = mockSpawnSync.mock.calls[0]!;
-    expect(cmd).toBe("oxfmt");
-    expect(args).toEqual([outPath]);
+    expect(cmd).toBe(process.execPath);
+    expect(args).toEqual(["fmt", "--no-script", outPath]);
   });
 });
 
@@ -159,7 +174,7 @@ describe("createGenEnv — a worker config it cannot load", () => {
   });
 });
 
-describe("createGenEnv — an oxfmt that never formatted", () => {
+describe("createGenEnv — a bun fmt that never formatted", () => {
   const origLog = console.log;
   const origError = console.error;
 
@@ -169,7 +184,7 @@ describe("createGenEnv — an oxfmt that never formatted", () => {
     mockSpawnSync.mockImplementation(() => ({ status: 0 }));
   });
 
-  it("falls back to the local binary and reports the failure rather than swallowing it", async () => {
+  it("reports the failure rather than swallowing it", async () => {
     const dir = tempDir();
     const wranglerPath = join(dir, "wrangler.jsonc");
     const outPath = join(dir, "env.schema.ts");
@@ -191,8 +206,8 @@ describe("createGenEnv — an oxfmt that never formatted", () => {
       join(dir, "absent.ts"),
     ]);
 
-    expect(mockSpawnSync.mock.calls.map((call) => call[0])).toEqual(["oxfmt", join(process.cwd(), "node_modules", ".bin", "oxfmt")]);
-    expect(err).toEqual([`[cf gen env] oxfmt failed; ${outPath} is unformatted`]);
+    expect(mockSpawnSync.mock.calls.map((call) => call[0])).toEqual([process.execPath]);
+    expect(err).toEqual([`[cf gen env] bun fmt failed; ${outPath} is unformatted`]);
     expect(readFileSync(outPath, "utf-8")).toBe(emit([]));
   });
 });

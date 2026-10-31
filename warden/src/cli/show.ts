@@ -10,7 +10,7 @@ export const SUBJECTS = {
   zed: {
     file: "share/zed-settings.json",
     destination: join(homedir(), ".config/zed/settings.json"),
-    summary: "Zed user settings — oxlint, oxfmt and typescript-ls, each resolved from the open project",
+    summary: "Zed user settings — oxlint and typescript-ls, each resolved from the open project",
   },
 } as const;
 

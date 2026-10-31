@@ -288,7 +288,12 @@ export function createReleaseCommand(
 }
 
 /** Where `forge release` looks for its configuration when `--config` names none. @public */
-export const DEFAULT_RELEASE_CONFIG = "config/release.ts";
+export const DEFAULT_RELEASE_CONFIG = "config/release.config.ts";
+
+/** Types the default export of a `config/release.config.ts`. @public */
+export function defineReleaseConfig(config: Omit<ReleaseCommandConfig, "cwd">): Omit<ReleaseCommandConfig, "cwd"> {
+  return config;
+}
 
 const releaseBinFlags = {
   ...releaseFlags,

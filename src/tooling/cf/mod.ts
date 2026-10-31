@@ -45,7 +45,7 @@ export { createDevCommand } from "./dev/command";
 export { diffConfig } from "./config/diff";
 export type { LoadedWranglerConfig, WriteOutcome } from "./config/types";
 export { loadWranglerConfig, parseWranglerConfig, stripJsonc, writeWranglerConfig } from "./config/parse";
-export { createGenEnvCommand, loadOptions } from "./gen/cf-env-command";
+export { createGenEnvCommand, defineEnvConfig, loadOptions } from "./gen/cf-env-command";
 export type { GenOptions } from "./gen/types";
 export type { TableSection } from "./types";
 export { renderSections, renderTable } from "./table";

@@ -13,15 +13,13 @@ export const DEFAULT_ARCH = "darwin-arm64";
 export function bindings(arch: string): Array<{ parent: string; pkg: string }> {
   return [
     { parent: "oxlint", pkg: `@oxlint/binding-${arch}` },
-    { parent: "oxfmt", pkg: `@oxfmt/binding-${arch}` },
     { parent: "oxlint-tsgolint", pkg: `@oxlint-tsgolint/${arch}` },
-    { parent: "typescript", pkg: `@typescript/typescript-${arch}` },
   ];
 }
 
-/** Spawned as processes rather than `dlopen`'d, so these two alone need the executable bit. @public */
+/** Spawned as processes rather than `dlopen`'d, so these alone need the executable bit. @public */
 export function executables(arch: string): string[] {
-  return [`node_modules/@typescript/typescript-${arch}/lib/tsc`, `node_modules/@oxlint-tsgolint/${arch}/tsgolint`];
+  return [`node_modules/@oxlint-tsgolint/${arch}/tsgolint`];
 }
 
 /** The version `root` declares for `name`, stripped of its range prefix; null when it declares none. @public */

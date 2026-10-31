@@ -24,9 +24,7 @@ export interface CVADefinition<V extends VariantConfig> {
   compoundVariants?: ReadonlyArray<CompoundVariant<V>>;
 }
 
-export type CVAProps<V extends VariantConfig> = {
-  [K in keyof V]?: keyof V[K] | undefined;
-} & { class?: string | undefined };
+export type CVAProps<V extends VariantConfig> = { [K in keyof V]?: keyof V[K] | undefined } & { class?: string | undefined };
 
 /** One variant axis: every value it accepts, mapped to the classes that value adds. @internal */
 export type VariantMap = Record<string, string>;

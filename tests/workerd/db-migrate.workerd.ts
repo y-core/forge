@@ -42,7 +42,10 @@ test.beforeAll(async () => {
   migrations = join(root, "config", "db", "migrations");
   cpSync(join(FIXTURE, "wrangler.jsonc"), join(root, "wrangler.jsonc"));
   mkdirSync(join(root, "config"));
-  writeFileSync(join(root, "config", "db.ts"), `export default { schemas: ${JSON.stringify([join(FORGE, "src", "auth", "schema.sql")])} };\n`);
+  writeFileSync(
+    join(root, "config", "db.config.ts"),
+    `export default { schemas: ${JSON.stringify([join(FORGE, "src", "auth", "schema.sql")])} };\n`,
+  );
   // Exit status first: it carries the command's own error, where the output assertion reports only
   // that a string is absent and throws the diagnostic away.
   const compose = forgeDb(["migrate", "compose", "init"]);

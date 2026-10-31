@@ -14,7 +14,8 @@ function movedSchemas(inputs: SchemaInputs, snapshot: SchemaSnapshot): string[] 
     else if (snapshot.desired[source] !== actual[source]) problems.push(`${source} moved since the last compose`);
   }
   for (const source of Object.keys(snapshot.desired)) {
-    if (actual[source] === undefined) problems.push(`${source} is in the snapshot and config/db.ts no longer declares it, or the file is absent`);
+    if (actual[source] === undefined)
+      problems.push(`${source} is in the snapshot and config/db.config.ts no longer declares it, or the file is absent`);
   }
   return problems;
 }
@@ -54,7 +55,7 @@ export async function checkSchema(run: DbRunContext, options: { replay: boolean;
 
 /** The check as the lines `forge db schema check` prints. @internal */
 export function formatSchemaCheck(report: SchemaCheckReport): string[] {
-  if (report.problems === null) return ["config/db.ts names no `schemas`, and there is no snapshot — nothing to hold in step"];
+  if (report.problems === null) return ["config/db.config.ts names no `schemas`, and there is no snapshot — nothing to hold in step"];
   if (report.snapshotPath === null) return [`${report.schemas.join(", ")} declare a schema and compose nothing`];
   if (report.problems.length === 0) return [`${report.schemas.join(", ")} match ${report.snapshotPath}`];
   return [`${report.snapshotPath}:`, ...report.problems.map((problem) => `  ${problem}`)];

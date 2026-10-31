@@ -12,7 +12,6 @@ export const LEAF: readonly string[] = [
   "html",
   "relax",
   "render/markdown",
-  "render/markdown/editor/client",
   "result",
   "router",
   "site",
@@ -64,6 +63,8 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
   },
   "render/htmx": { html: "value" },
   "render/jsx": { html: "value", http: "value" },
+  "render/markdown/editor/client": { "render/markdown": "value" },
+  "render/markdown/editor/textarea/client": { "render/markdown": "value", "ui/client": "value" },
   "render/pdf": { "render/jsx": "value" },
   "render/pdf/attachments": { "render/pdf": "type" },
   "render/pdf/audit": { "render/pdf": "value" },
@@ -115,4 +116,10 @@ export const EDGES: Record<string, Record<string, EdgeKind>> = {
     "ui/contracts": "value",
     "ui/core": "value",
   },
+};
+
+/** Declared edges narrowed to the only files of their target the source may import. */
+export const EDGE_MODULES: Record<string, Record<string, readonly string[]>> = {
+  "render/markdown/editor/client": { "render/markdown": ["src/render/markdown/editing.ts", "src/render/markdown/trusted-types.ts"] },
+  "render/markdown/editor/textarea/client": { "render/markdown": ["src/render/markdown/editing.ts"], "ui/client": ["src/ui/client/dom.ts"] },
 };

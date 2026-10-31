@@ -7,6 +7,7 @@ import {
   balancedSpan,
   blankComments,
   blankSourceComments,
+  blankSourceLiterals,
   collectFiles,
   collectSource,
   endOfCssString,
@@ -226,6 +227,31 @@ describe("blankSourceComments() — what it blanks", () => {
     expect(blanked.length).toBe(source.length);
     expect(blanked.split("\n").length).toBe(source.split("\n").length);
     expect(blanked.indexOf('const b = "x";')).toBe(source.indexOf('const b = "x";'));
+  });
+});
+
+describe("blankSourceLiterals() — what it blanks beyond comments", () => {
+  it("blanks a string's body and keeps its quotes", () => {
+    expect(blankSourceLiterals('const a = "import.meta.main";')).toBe(`const a = "${" ".repeat(16)}";`);
+  });
+
+  it("blanks a template's body across lines and keeps its backticks", () => {
+    expect(blankSourceLiterals("const a = `x\n(`;")).toBe("const a = ` \n `;");
+  });
+
+  it("blanks a regex's pattern and keeps its slashes and flags", () => {
+    expect(blankSourceLiterals("const re = /[(]/g;")).toBe("const re = /   /g;");
+  });
+
+  it("blanks comments as blankSourceComments does", () => {
+    expect(blankSourceLiterals("const a = 1; // ( note")).toBe(`const a = 1; ${" ".repeat(9)}`);
+  });
+
+  it("preserves every byte offset and the line count", () => {
+    const source = 'const a = "x";\nconst re = /\\)/;\nconst t = `a\nb`;\n';
+    const blanked = blankSourceLiterals(source);
+
+    expect([blanked.length, blanked.split("\n").length]).toEqual([source.length, source.split("\n").length]);
   });
 });
 

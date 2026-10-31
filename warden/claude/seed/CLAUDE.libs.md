@@ -55,27 +55,25 @@
 
 | Tool | Role |
 | --- | --- |
-| `bun` | Package manager and test runner |
-| `tsc` (`typescript` 7) | Type checker — the native compiler |
+| `bun` | Package manager, test runner, type checker (`bun check`) and formatter (`bun fmt`) |
 | `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
-| `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
 | {{ADDITIONAL_TOOL}} | {{ITS_ROLE}} |
 
 ```bash
 bun run verify:static          # the loop to write in — every row that judges the source; with touched tests, the task check
-bun run verify                 # the gate a commit closes on — runtime suites narrowed to pending changes; no browser spec
-bun run verify:scheduled       # the tag and daily cron gate — every runtime suite whole, every heavy row, the browser set on Chromium
-bun run verify:cron            # the cron table, run after verify:scheduled — Firefox and WebKit
+bun run verify                 # the gate a commit closes on — runtime rows narrowed to pending changes; no Playwright spec
+bun run verify:scheduled       # the tag and daily cron gate — every runtime row whole, every heavy row, every Playwright suite on each engine
 bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps, run none
 bun run lint                   # check only, never write (`verify --only lint`)
 bun run fix                    # every step's fixer (`verify --fix`)
 ```
 
-**One command with tiers**, not a command per tier. `{{STEPS_CONFIG_PATH}}` is the single source of truth for the gate's steps and the tier each
-runs from. Gate philosophy, the tiers, and the flags: `TESTING.md` §6.
+**One command with tiers**, not a command per tier. `{{STEPS_CONFIG_PATH}}` is the single source of truth for the gate's steps and the tiers that
+list each. Gate philosophy, the tiers, and the flags: `TESTING.md` §6.
 
-**Avoid:** runtime-specific type packages (use the hand-written stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`).
+**Avoid:** runtime-specific type packages (use the hand-written stub), `eslint` (use `oxlint`), `prettier` and `oxfmt` (use `bun fmt`), `tsc`
+(use `bun check`).
 
 **The task check, the full gate, its exit-status spelling, and who runs each are canon.** A task closes on the task check, which the owning
 agent runs itself; the full gate runs once, before a commit, and goes to `cc-tester`, which returns a terse verdict and never the stream

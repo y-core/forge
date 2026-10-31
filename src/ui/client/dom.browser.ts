@@ -396,6 +396,49 @@ test.describe("elementById", () => {
   });
 });
 
+const EXIT_FADE_FIXTURE = `
+  <style>
+    #menu { opacity: 0; transition: opacity 300ms, display 300ms allow-discrete, overlay 300ms allow-discrete; }
+    #menu:popover-open { opacity: 1; }
+  </style>
+  <div id="menu" popover><p>old</p></div>
+`;
+
+test.describe("afterTransitions", { tag: "@cross-engine" }, () => {
+  // Only Chromium transitions `overlay`, so elsewhere the popover leaves the top layer at once, no fade runs, and nothing is pending.
+  test("keeps a reopen's content when the handle settles the pending teardown first", async ({ page, browserName }) => {
+    await mount(page, EXIT_FADE_FIXTURE, EXPOSE);
+
+    const result = await page.evaluate(async () => {
+      const menu = document.querySelector<HTMLElement>("#menu");
+      if (!menu) return null;
+      const reopen = async (settleFirst: boolean) => {
+        menu.showPopover();
+        await Promise.all(menu.getAnimations().map((animation) => animation.finished));
+        menu.hidePopover();
+        const fading = menu.getAnimations().length > 0;
+        const settle = window.forgeDom.afterTransitions(menu, () => menu.replaceChildren());
+        if (settleFirst) settle();
+        const row = document.createElement("p");
+        row.textContent = "new";
+        menu.replaceChildren(row);
+        menu.showPopover();
+        await Promise.allSettled(menu.getAnimations().map((animation) => animation.finished));
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        const rows = menu.textContent;
+        menu.hidePopover();
+        return { fading, rows };
+      };
+      const utility = await reopen(true);
+      const bare = await reopen(false);
+      return { fading: utility.fading && bare.fading, utility: utility.rows, bare: bare.rows };
+    });
+
+    const fades = browserName === "chromium";
+    expect(result).toEqual({ fading: fades, utility: "new", bare: fades ? "" : "new" });
+  });
+});
+
 test.describe("resume — shadow delegation", () => {
   test("dispatches an action for a trigger inside a shadow root", async ({ page }) => {
     await mount(

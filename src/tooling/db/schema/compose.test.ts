@@ -207,25 +207,25 @@ describe("composeMigration()", () => {
     const { run } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT });
 
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
-      new CliError("invalid-args", "schema.sql is declared in config/db.ts and no file is there to read"),
+      new CliError("invalid-args", "schema.sql is declared in config/db.config.ts and no file is there to read"),
     );
   });
 
-  it("composes nothing and writes nothing when config/db.ts names no schemas and there is no history, as `schema check` passes it", async () => {
+  it("composes nothing and writes nothing when config/db.config.ts names no schemas and there is no history, as `schema check` passes it", async () => {
     const { run, io, out } = context({}, {});
 
     const outcome = await composeMigration(run, OPTIONS);
 
     expect(outcome).toEqual({ path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun: false });
-    expect(out).toEqual(["config/db.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"]);
+    expect(out).toEqual(["config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"]);
     expect([...io.files.keys()]).toEqual([]);
     expect(io.calls).toEqual([]);
   });
 
   describe("refuses an empty `schemas` over history, which composing nothing would drop", () => {
     const guidance =
-      "config/db.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
-      '  export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] } satisfies DbHostConfig;\n' +
+      "config/db.config.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
+      '  export default defineDbConfig({ schemas: [forgeSchema("auth"), "config/db/schema.sql"] });\n' +
       "Each entry is a file of plain `CREATE TABLE` text stating that schema once — write it, then compose.";
     const snapshot = formatSchemaSnapshot(buildSchemaSnapshot({ desired: { "schema.sql": "old" }, declared: {}, migrationsDigest: "old" }));
     const refusal = async (files: Record<string, string>) => {
@@ -667,12 +667,12 @@ describe("await composeMigration() — the union of every declared schema", () =
     expect(outcome.plan).toEqual(["create table users"]);
   });
 
-  it("reads nothing a dependency ships that config/db.ts does not name", async () => {
+  it("reads nothing a dependency ships that config/db.config.ts does not name", async () => {
     const { run, io } = context(libFiles(schemaText([USERS])), { schemas: ["schema.sql"] });
     wire(io, { baseline: [], desired: [] });
 
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
-      new CliError("invalid-args", "schema.sql is declared in config/db.ts and no file is there to read"),
+      new CliError("invalid-args", "schema.sql is declared in config/db.config.ts and no file is there to read"),
     );
   });
 
@@ -689,7 +689,7 @@ describe("await composeMigration() — the union of every declared schema", () =
   });
 });
 
-describe("await composeMigration() — a drop whose declaring file config/db.ts no longer names", () => {
+describe("await composeMigration() — a drop whose declaring file config/db.config.ts no longer names", () => {
   const LIB = "node_modules/acme-lib/schema.sql";
   const POSTS: Shape = {
     name: "posts",
@@ -708,7 +708,7 @@ describe("await composeMigration() — a drop whose declaring file config/db.ts 
     dataDependent: [],
     dropDependents: [],
   };
-  const CAUSE = `posts was declared by ${LIB}, which config/db.ts no longer declares or whose file is absent — nothing declares it now`;
+  const CAUSE = `posts was declared by ${LIB}, which config/db.config.ts no longer declares or whose file is absent — nothing declares it now`;
   const POSTS_LINE = '-- forge:drops table "posts"';
 
   const files = (declared: Record<string, string[]>): Record<string, string> => ({
@@ -765,7 +765,7 @@ describe("await composeMigration() — a drop whose declaring file config/db.ts 
 
     const outcome = await composeMigration(run, OPTIONS);
 
-    const warning = `warning: ${LIB} is in ${SNAPSHOT} and config/db.ts no longer declares it`;
+    const warning = `warning: ${LIB} is in ${SNAPSHOT} and config/db.config.ts no longer declares it`;
     expect(outcome.causes).toEqual([]);
     expect(outcome.warnings).toEqual([warning]);
     expect(out).toEqual([`no changes — ${MIGRATIONS} already produces every declared schema`, warning]);

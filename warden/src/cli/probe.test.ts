@@ -99,12 +99,12 @@ const PARSED = { query: "comment budget", expect: "canon:CODE_RULES.md#1", dimen
 /** A step table exporting one row under `label`, carrying the sets when `sets` is given. */
 function table(label: string, sets: boolean): string {
   const carried = sets ? `, golden: [${QUERY}], negative: ["taxes"]` : "";
-  return `export default [{ label: ${JSON.stringify(label)}, run: () => ({ ok: true, findings: [] })${carried} }];\n`;
+  return `export default { tiers: { static: [{ label: ${JSON.stringify(label)}, run: () => ({ ok: true, findings: [] })${carried} }] } };\n`;
 }
 
 describe("probeSetsOf()", () => {
   it("reads the sets off the step table's golden row", async () => {
-    const root = repo("warden-sets-table-", [["config/steps.ts", table("warden:queries", true)]]);
+    const root = repo("warden-sets-table-", [["config/steps.config.ts", table("warden:queries", true)]]);
 
     expect(await probeSetsOf(undefined, root)).toEqual({ golden: [PARSED], negative: ["taxes"] });
   });
@@ -115,29 +115,35 @@ describe("probeSetsOf()", () => {
     await expect(probeSetsOf(undefined, root)).rejects.toThrow("cannot load");
   });
 
-  it("names the fix when the module exports no step table", async () => {
-    const root = repo("warden-sets-notable-", [["config/steps.ts", "export const GOLDEN = [];\n"]]);
+  it("names the fix when the module default-exports no step table", async () => {
+    const root = repo("warden-sets-notable-", [["config/steps.config.ts", "export default [];\n"]]);
 
-    await expect(probeSetsOf(undefined, root)).rejects.toThrow("exports no step table");
+    await expect(probeSetsOf(undefined, root)).rejects.toThrow("default-exports no defineSteps");
   });
 
   it("names the fix when the table declares no golden row", async () => {
-    const root = repo("warden-sets-norow-", [["config/steps.ts", table("lint", false)]]);
+    const root = repo("warden-sets-norow-", [["config/steps.config.ts", table("lint", false)]]);
 
     await expect(probeSetsOf(undefined, root)).rejects.toThrow("declares no `warden:queries` row");
   });
 
   // Never a silent fall-through to the shipped pair: that is what let a renamed set be reported as a
   // corpus regression rather than as a missing file.
-  it("requires an explicit module to export GOLDEN", async () => {
-    const root = repo("warden-sets-explicit-", [["config/warden.ts", "export const NEGATIVE = [];\n"]]);
+  it("requires an explicit module to default-export a golden set", async () => {
+    const root = repo("warden-sets-explicit-", [["config/warden.config.ts", "export default { negative: [] };\n"]]);
 
-    await expect(probeSetsOf(join(root, "config/warden.ts"), root)).rejects.toThrow("exports no GOLDEN");
+    await expect(probeSetsOf(join(root, "config/warden.config.ts"), root)).rejects.toThrow("default-exports no `golden` set");
   });
 
   it("takes an explicit module's sets, defaulting its negative set to empty", async () => {
-    const root = repo("warden-sets-golden-", [["config/warden.ts", `export const GOLDEN = [${QUERY}];\n`]]);
+    const root = repo("warden-sets-golden-", [["config/warden.config.ts", `export default { golden: [${QUERY}] };\n`]]);
 
-    expect(await probeSetsOf(join(root, "config/warden.ts"), root)).toEqual({ golden: [PARSED], negative: [] });
+    expect(await probeSetsOf(join(root, "config/warden.config.ts"), root)).toEqual({ golden: [PARSED], negative: [] });
+  });
+
+  it("resolves a relative explicit module against the repository root", async () => {
+    const root = repo("warden-sets-relative-", [["config/warden.config.ts", `export default { golden: [${QUERY}] };\n`]]);
+
+    expect(await probeSetsOf("config/warden.config.ts", root)).toEqual({ golden: [PARSED], negative: [] });
   });
 });

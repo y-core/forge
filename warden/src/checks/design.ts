@@ -22,7 +22,7 @@ import plugin from "../../../src/tooling/lint/plugin";
 import type { RuleId } from "../../../src/tooling/lint/types";
 import { findCodeFences } from "./docs";
 import { findSubpathCitations } from "./docs-parse";
-import { compileFences, type FenceDiagnostic, type FenceSource, isParseDiagnostic, resolveCompiler, unresolvedName } from "./fence-compile";
+import { compileFences, type FenceDiagnostic, type FenceSource, isParseDiagnostic, unresolvedName } from "./fence-compile";
 
 // Each states a rule a `docs/` doc owns rather than a corpus file, so neither register names
 // one and the round trip would otherwise read them as unrouted.
@@ -93,12 +93,6 @@ function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, str
   );
   if (fences.length === 0) return { findings, clean: 0 };
 
-  const compiler = resolveCompiler();
-  if (compiler === undefined) {
-    findings.push(fail("typescript does not resolve, so no `tsx` fence was compiled", { file: tsconfig }));
-    return { findings, clean: 0 };
-  }
-
   const paths: Record<string, string[]> = {};
   const owners = new Map<string, string[]>();
   for (const [key, value] of Object.entries(config.exports)) {
@@ -130,7 +124,7 @@ function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, str
   });
 
   let live = fences;
-  let run = compileFences(compiler, live, project);
+  let run = compileFences(live, project);
   for (;;) {
     if (!run.ok) return notCompiled(run.error);
     const diagnostics = run.data;
@@ -139,7 +133,7 @@ function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, str
     for (const diagnostic of diagnostics) if (isParseDiagnostic(diagnostic.code)) report(diagnostic);
     live = live.filter((_, index) => !broken.has(index));
     if (live.length === 0) return { findings, clean: 0 };
-    run = compileFences(compiler, live, project);
+    run = compileFences(live, project);
   }
 
   const ambient = new Map<number, string[]>();
@@ -150,7 +144,7 @@ function checkFences(config: DesignCheckConfig, sources: ReadonlyMap<string, str
     if (!names.includes(name)) ambient.set(diagnostic.fence, [...names, name]);
   }
 
-  const final = compileFences(compiler, live, project, ambient);
+  const final = compileFences(live, project, ambient);
   if (!final.ok) return notCompiled(final.error);
   const failing = final.data;
   for (const diagnostic of failing) report(diagnostic);

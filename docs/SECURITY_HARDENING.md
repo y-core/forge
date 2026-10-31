@@ -254,10 +254,18 @@ createSecurityHeaders({ trustedTypes: { policies: [HTMX_TRUSTED_TYPES_POLICY, TU
 write: `TURNSTILE_SCRIPT_URL` into the `src` of the script it injects. Any other URL throws. When the browser refuses the policy or the write, the
 controller logs a `console.error` naming the `trusted-types` fix and shows the widget's fallback message instead of loading the script.
 
-**The policy returns its input unchanged, and that is acceptable because of what reaches it.** htmx fetches only from the page's own origin
-([`HTMX.md`][htmx-7a] §7a), and every body forge renders is escaped server-side markup. The policy therefore vouches only for markup the app's own
-server wrote. Trusted Types still guards everything else: an `innerHTML` write in app code, a third-party script, a string handed to `eval` — none
-of them has a policy, so the browser refuses each. `forge-htmx` is a named policy that only htmx holds, and forge creates no `default` policy.
+**The `forge-markdown` policy carries the markdown viewport's `html` rendering.** An app that shows that rendering under Trusted Types lists
+`forge-markdown` too, exported as `MARKDOWN_TRUSTED_TYPES_POLICY` from `@y-core/forge/render/markdown`, which a Worker can import without
+loading the editor. The viewport creates the policy once per window and uses it for one sink: the `innerHTML` of its own container. The only
+string that reaches it is what the app's `dialect.html` returns, and that is `renderMarkdownHtml` output, written by forge's allowlist writer under
+the app's schema. When the browser refuses the policy, the viewport logs a `console.error` naming the `trusted-types` fix, writes nothing, and
+marks the container `data-viewport-html="refused"`. A page without the Trusted Types API gets the write directly, as it gets every other one.
+
+**The `forge-htmx` policy returns its input unchanged, and that is acceptable because of what reaches it.** htmx fetches only from the page's
+own origin ([`HTMX.md`][htmx-7a] §7a), and every body forge renders is escaped server-side markup. The policy therefore vouches only for
+markup the app's own server wrote. Trusted Types still guards everything else: an `innerHTML` write in app code, a third-party script, a string
+handed to `eval` — none of them has a policy, so the browser refuses each. `forge-htmx` is a named policy that only htmx holds, and forge
+creates no `default` policy.
 
 **It fails closed.** When the browser refuses to create the policy — the name is missing from `trusted-types`, or something already created it and
 the list carries no `'allow-duplicates'` — the entry logs a `console.error` naming the `trusted-types` fix. It then gives htmx a policy that throws

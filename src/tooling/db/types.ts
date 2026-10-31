@@ -222,7 +222,7 @@ export interface StatusReport {
 
 /** One seed file: the directory it was declared under and its name are its identity, its hash is what decides whether it re-runs. @public */
 export interface Seed {
-  /** The seeds directory that declared it, as `config/db.ts` wrote it. */
+  /** The seeds directory that declared it, as `config/db.config.ts` wrote it. */
   readonly source: string;
   readonly name: string;
   readonly path: string;
@@ -271,7 +271,7 @@ export interface SeedOutcome {
 
 /** What one `forge db standby reset` run was asked to do. @public */
 export interface StandbyResetOptions {
-  /** Seed just this directory, instead of every one `config/db.ts` names. */
+  /** Seed just this directory, instead of every one `config/db.config.ts` names. */
   readonly dir?: string | undefined;
   readonly seed: boolean;
 }
@@ -287,7 +287,7 @@ export interface StandbyResetOutcome {
 
 /** What `composeSeedFixture` writes: where the file goes, the tables in load order, and the rows each holds. @public */
 export interface SeedFixtureOptions {
-  /** The file to write, under a seeds directory `config/db.ts` declares. */
+  /** The file to write, under a seeds directory `config/db.config.ts` declares. */
   readonly path: string;
   /** The tables to emit, in load order, so a foreign key points at a row already in. */
   readonly tables: readonly string[];
@@ -309,14 +309,14 @@ export interface SeedFixtureOutcome {
 export interface DeclaredPath {
   /** Absolute. */
   readonly path: string;
-  /** Relative to the root, exactly as `config/db.ts` wrote it. */
+  /** Relative to the root, exactly as `config/db.config.ts` wrote it. */
   readonly declared: string;
 }
 
 /** A schema forge ships, which `forgeSchema` names for `DbHostConfig.schemas`. @public */
 export type ForgeSchemaName = "auth";
 
-/** The `config/db.ts` default export: every position `forge db` reads, each named on purpose. @public */
+/** The `config/db.config.ts` default export: every position `forge db` reads, each named on purpose. @public */
 export interface DbHostConfig {
   /** Every desired-state file or directory the app composes from, its own and each library's, in load order and with nothing read beyond them. */
   readonly schemas?: readonly string[];
@@ -330,7 +330,7 @@ export interface DbHostConfig {
   readonly backupsDir?: string;
 }
 
-/** The shape `config/db.ts` must export, held at the boundary so a misspelt key or a bare string is refused by name. @internal */
+/** The shape `config/db.config.ts` must export, held at the boundary so a misspelt key or a bare string is refused by name. @internal */
 export const DbHostConfigSchema = v.strictObject({
   schemas: v.optional(v.array(v.string())),
   seeds: v.optional(v.array(v.string())),

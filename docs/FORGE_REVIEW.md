@@ -183,7 +183,7 @@ symbols. A bare `ForgeIcon` in a prop position is therefore never a deliberate w
 glyph that renders an empty `<use>`. **The command is anchored to a prop position** — `createIcon`'s own overloads return `ForgeIcon<string>`
 correctly, which is the one shape a looser pattern picks up as a false positive.
 
-**The unparameterised spelling never reaches review**: `ForgeIcon` declares no default for `Name`, so `tsc` rejects a bare `ForgeIcon` at the
+**The unparameterised spelling never reaches review**: `ForgeIcon` declares no default for `Name`, so `bun check` rejects a bare `ForgeIcon` at the
 declaration site and the gate's `typecheck` step fails before this command runs. The command stays because `ForgeIcon<string>` is still spellable,
 still compiles, and is still always wrong in a prop position.
 

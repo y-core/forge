@@ -12,15 +12,19 @@ export function ownerWindow(node?: Node | null): Window {
   return ownerDocument(node).defaultView ?? window;
 }
 
-/** Runs `fn` once every transition running on `el` settles, and synchronously when none is. @internal */
-export function afterTransitions(el: Element, fn: () => void): void {
+/** Runs `fn` once every transition on `el` settles, and at once when none is running; the returned call runs it now if it has not run. @public */
+export function afterTransitions(el: Element, fn: () => void): () => void {
+  let pending = true;
+  const settle = () => {
+    if (!pending) return;
+    pending = false;
+    fn();
+  };
   // Transitions only: a consumer's infinite `animate-*` never finishes, and would hold `fn` back forever.
   const running = typeof el.getAnimations === "function" ? el.getAnimations().filter((animation) => "transitionProperty" in animation) : [];
-  if (running.length === 0) {
-    fn();
-    return;
-  }
-  void Promise.allSettled(running.map((animation) => animation.finished)).then(() => fn());
+  if (running.length === 0) settle();
+  else void Promise.allSettled(running.map((animation) => animation.finished)).then(settle);
+  return settle;
 }
 
 /** Whether an element resolves to right-to-left writing direction. @public */

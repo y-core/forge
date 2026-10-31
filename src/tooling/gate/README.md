@@ -6,13 +6,14 @@ audience: internal
 
 # `@y-core/forge/tooling/gate`
 
-A project's verification gate is **one command over one table**. You declare the table in `config/steps.ts`; `forge verify` finds it, resolves which
-rows the requested tier wants, and runs them fail-fast. Nothing else is yours to write: no binding script, and no spawnable file per check.
+A project's verification gate is **one command over one table**. You declare the table in `config/steps.config.ts`; `forge verify` finds it,
+resolves which rows the requested tier wants, and runs them fail-fast. Nothing else is yours to write: no binding script, and no spawnable file per
+check.
 
 Reach for this namespace when you are wiring a repository's gate, adding a check to one, or reading a repository's version state.
 
 ```ts
-import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from "@y-core/forge/tooling/gate";
+import { cloudflareWorkerSteps, defineSteps, mergeTiers, tier, type StepTiers } from "@y-core/forge/tooling/gate";
 ```
 
 > **Node.js / Bun only.** This namespace shells out to your build tools via `node:child_process` and reads and writes files via `node:fs`. **Do not
@@ -24,29 +25,25 @@ import { cloudflareWorkerSteps, createGateCommand, forgeChecks, type Step } from
 
 ## Getting started
 
-**One file.** `config/steps.ts` holds your table and default-exports it. A pre-built step is a value, so the table stays the one place to read;
-anything forge ships no step for is an ordinary `cmd` row, as `check:bindings` is below.
+**One file.** `config/steps.config.ts` default-exports `defineSteps({ tiers })`, and nothing else. It is a config module, so the preset's
+`validate-config-files` row fails a named export or a top-level statement that runs ([`CONFIG_BASELINE.md`][cb-6] §6). Each tier is a key
+listing its rows in the order they run. A preset is a whole table, so the usual file is the preset plus your own rows. Anything forge ships no
+step for is an ordinary `cmd` row, as `check:bindings` is below.
 
 ```ts
-// config/steps.ts
-import { resolveAppRoot } from "@y-core/forge/tooling/cli";
-import { browserStep, cloudflareWorkerSteps, jsxStep, type Step } from "@y-core/forge/tooling/gate";
+// config/steps.config.ts
+import { cloudflareWorkerSteps, defineSteps, mergeTiers } from "@y-core/forge/tooling/gate";
 
-const ROOT = resolveAppRoot();
-
-export const STEPS: readonly Step[] = [
-  ...cloudflareWorkerSteps({ assetConfig: "assets.config.ts" }),
-  jsxStep({ root: ROOT }),
-  { label: "check:bindings", tail: 30, cmd: ["bun", "run", "tools/check-bindings.ts"] },
-  browserStep(),
-];
-
-export default STEPS;
+export default defineSteps({
+  tiers: mergeTiers(cloudflareWorkerSteps({ assetConfig: "config/assets.config.ts", browser: true }), {
+    static: [{ label: "check:bindings", tail: 30, cmd: ["bun", "run", "tools/check-bindings.ts"] }],
+  }),
+});
 ```
 
 A hand-written row states its `label` (the `--only` token and the name reported on failure), its `cmd`, and the `tail` of captured output to show
-when it fails. Add `fix` for what `--fix` should spawn instead, `tier` for the lowest tier it runs in, `requires` for a tool the machine
-may not have, and `watches` for the paths `--affected` should run it on.
+when it fails. Add `fix` for what `--fix` should spawn instead, `requires` for a tool the machine may not have, and `watches` for the paths
+`--affected` should run it on. Its tier is the key you list it under.
 
 Then wire the scripts:
 
@@ -63,25 +60,27 @@ Then wire the scripts:
 }
 ```
 
-`config/steps.ts` is the default path, published as `DEFAULT_STEPS_CONFIG`. **An absent default path is an error, not a silent empty gate** — and so
-is a `--config` naming a file that does not exist, so a typo can never read as a green run.
+`config/steps.config.ts` is the default path, published as `DEFAULT_STEPS_CONFIG`. **An absent default path is an error, not a silent empty
+gate.** So is a `--config` naming a file that does not exist, and so is a module whose default is not a `defineSteps` table, so a typo can never
+read as a green run.
 
 ---
 
 ## Picking the tier for the moment
 
-Each script is a tier, and each tier runs everything the one above it in this table runs:
+Each script is a tier, and in a table built from a preset each tier runs everything the one above it in this table runs:
 
 | When you are | Run | What it adds |
 | --- | --- | --- |
 | Writing, and closing a task | `bun run verify:static`, then `bun test` on each test file you touched | Every row that judges the source rather than running it |
 | On a machine with no runtime installed | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
-| Committing | `bun run verify` | The runtime rows — workerd, database — over your pending changes. No browser spec |
-| Tagging a release, and the daily cron run | `bun run verify:scheduled` | Every runtime row whole, the browser set on Chromium, and the rows that judge a finished change: changelog, deployed bundle |
+| Committing | `bun run verify` | The runtime rows — the database rows — over your pending changes. No Playwright spec |
+| Tagging a release, and the daily cron run | `bun run verify:scheduled` | Every runtime row whole, the browser set on Chromium (and on Firefox and WebKit where you added `crossEngineStep()`), the workerd set, and the rows that judge a finished change: the deployed bundle |
 
-Which tier a row belongs to is decided by [`TESTING.md`][testing-apps-6a] §6a's lines. **A heavy row runs at `scheduled`** — the browser set is
-one, because it starts a browser — by the rule in the library canon's [`TESTING.md`][testing-6c] §6c. A broken page is therefore caught by the
-cron run's `verify:scheduled`, or by the one before a tag, rather than at commit. `forge verify --list` prints the rows a tier resolves to.
+Which tier a row belongs to is decided by [`TESTING.md`][testing-apps-6a] §6a's lines. **A heavy row runs at `scheduled`** — every Playwright row is
+one: the browser set on each engine, and the workerd set — by the rule in the library canon's [`TESTING.md`][testing-6c] §6c. A broken page or a
+request workerd mishandles is therefore caught by the cron run's `verify:scheduled`, or by the one before a tag, rather than at commit. `forge
+verify --list` prints the rows a tier resolves to.
 
 **At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. At `scheduled` every
 row runs whole.
@@ -90,68 +89,25 @@ row runs whole.
 
 ## Deciding which runtime rows a change reaches
 
-**An application declares nothing for this by default.** At `runtime` the workerd row asks Playwright which specs your pending changes reach, and
-the database rows run on every change. The browser rows are not at `runtime`, so nothing narrows them. The pending changes are the working tree
-against `HEAD`, read as `--affected` reads them (below). **The narrowed run is still the gate**, not a scoped run, and it records a receipt.
+**An application declares nothing for this by default.** At `runtime` the database rows run on every change, and no Playwright row is at
+`runtime`, so nothing narrows one. The pending changes are the working tree against `HEAD`, read as `--affected` reads them (below). **The
+narrowed run is still the gate**, not a scoped run, and it records a receipt.
 
-**Under `cloudflareWorkerSteps`, a change to your app's source runs the workerd row whole.** A spec reaches your app through the server it starts,
-never through an import, so the preset widens the row by everything the `main` of your wrangler config imports. Only an edit confined to specs and
-their helpers narrows. A wrangler config that names no `main` runs the row whole on every change.
-
-**Set `assetConfig`, and give your wrangler config an `assets` block, and a change to anything your asset build reads runs the workerd row whole
-too.** The preset adds `assetInputs` from `@y-core/forge/tooling/assets` to its reach: each JS bundle's inputs, every stylesheet your CSS entries
-load and every file their `@source` lines cover, the paths the config names, and the config's own imports. Before you rely on it:
-
-- **A stylesheet that leaves Tailwind's automatic detection on covers every file in the tree**, so every change runs the row whole.
-  Import Tailwind with `source(none)` and name your directories with `@source` ([`src/ui/README.md`][ui-scan]) to get narrowing back.
-- **An asset input that does not resolve runs the rows whole on every change** — a config path missing from disk, or a stylesheet import that
-  resolves to nothing. Fix the config and narrowing returns.
-
-Before a Playwright row runs, the gate appends `--list` to its narrowed command, which loads the specs without starting a browser or global setup.
-When that lists nothing, the row runs nothing and says what it asked:
-
-```text
-○ test:workerd — untouched by 3 changes: `playwright test --project=workerd --only-changed --list` selects nothing
-```
-
-When it lists a spec, the row runs its command plus `--only-changed`; when the listing fails, the row runs whole. `forge verify --list` asks the
-same question, so it shows each row as narrowed, untouched or whole before anything runs. A Playwright row lists on every change it does not
-already run whole for, which is the price of deriving its reach rather than declaring it.
-
-**Declare `wide` for a file a spec reads without importing it.** `--only-changed` follows imports, so a fixture a spec reads from disk reaches no
-spec when it changes. A change under a `wide` glob runs the row whole, and `playwright.config.ts` is always wide:
-
-```ts
-workerdStep({ narrow: { wide: ["tests/fixtures/**"] } }),
-```
-
-**Pass `widen` for code a spec reaches without importing it** — a Worker it serves, or a module a fixture bundles from a string — which no glob can
-name ahead of time. `widen` takes the gate's working directory and returns paths relative to it; a pending change to one of them runs the row
-whole, and so does a `widen` that rejects. The gate asks it of a row that would otherwise run narrowed or stay untouched. Build it from
-`importClosure` or `workerMainClosure`, which resolve imports as esbuild bundles them and reject on anything they cannot resolve:
-
-```ts
-import { importClosure } from "@y-core/forge/tooling/assets";
-import { workerdStep } from "@y-core/forge/tooling/gate";
-
-workerdStep({ widen: (cwd) => importClosure(cwd, ["./tests/fixtures/queue-consumer.ts"]) }),
-```
-
-**Leave `watches` off a Playwright row**: the listing already decides it, and a hand-kept
-list can only skip a row the listing would have run.
+**Leave `watches` off a Playwright row**: a spec reaches your app through the server it starts, never through an import, so a hand-kept list can
+only drop a row that `--affected` should have run.
 
 **Every `watches` and `wide` glob must match a file in the work tree**, tracked or untracked. A glob that matches nothing — usually a directory you
 renamed — fails the gate before any row runs, naming the row, the field and the glob. A glob with no `/` is exempt, because it may name a
 root-level config you have not created yet, and so is one starting `../`, which lies outside the tree. `src/x` and `src/x/**` answer for each
 other.
 
-**The database rows run on every change unless you pass `exercises` and `graph`**, because `config/db.ts` can name a schema outside `root`. A
+**The database rows run on every change unless you pass `exercises` and `graph`**, because `config/db.config.ts` can name a schema outside `root`. A
 repository that checks a namespace graph with `namespaceGraphStep` passes the same graph and the namespaces the database tooling runs; the rows then
 watch each of those, every namespace they reach through the graph's edges, the graph's primitives, and `root`. An absolute `root` still runs them
-on every change:
+on every change. `dbSteps` returns its rows by tier, so merge it onto your table rather than taking `db: true`:
 
 ```ts
-...dbSteps({ root: "tests/fixtures/db-schema", exercises: ["tooling/db"], graph: GRAPH }),
+mergeTiers(cloudflareWorkerSteps(), dbSteps({ root: "tests/fixtures/db-schema", exercises: ["tooling/db"], graph: GRAPH }))
 ```
 
 A namespace the graph does not declare, or `exercises` without `graph`, throws when the table loads. When `forge` names a source file rather than
@@ -167,7 +123,10 @@ line in `src/tooling/gate/builders.ts` says what it proves; `forge verify --list
 its label from you, for a committed bundle that a node process loads.
 
 Tool rows such as `typecheckStep` and `testStep` carry no check and simply spawn; `testStep` takes a `label` of your own for one set of a split
-suite. `browserStep`, `workerdStep` and `dbSteps` spawn something a machine may not have. `dbSteps` lints against the local database's history to
+suite. `typecheckStep` spawns `bun check` and `formatStep` spawns `bun fmt`, so a table holding either, as `cloudflareWorkerSteps` and
+`forgeChecks` both do, needs the Bun that forge's `engines.bun` names, and no `typescript` or `oxfmt` install.
+
+`browserStep`, `workerdStep` and `dbSteps` spawn something a machine may not have. `dbSteps` lints against the local database's history to
 pick the pending files, and no row gates on its status: a fresh checkout has none, so every file is pending there, and the replay is what proves the
 migrations apply.
 
@@ -176,14 +135,28 @@ migrations apply.
 `playwright-transform-cache-*`, which the Playwright runner writes before any test starts, so a `miniflare-*` scratch directory is still reported.
 
 **The documentation, changelog, design and knowledge-index rows are warden's, not this namespace's.** They come from `@y-core/forge/warden/steps`,
-and an application appends the ones it needs through `wardenAppSteps`. No preset here can emit them: this namespace lives under `src/`, and nothing
-there may import warden. A table wanting both concatenates the two lists.
+and an application merges the ones it needs onto its table with `mergeTiers(…, wardenAppSteps(…))`. No preset here can emit them: this namespace
+lives under `src/`, and nothing there may import warden.
 
 ---
 
 ## Starting from a preset
 
-Presets compose the tables this fleet shares, so a repository names its policy rather than its rows.
+Presets compose the tables this fleet shares, so a repository names its policy rather than its rows. **Each returns a complete table by tier**:
+all four tiers, each above `static` leading with `tier()` naming the one below. A preset alone is a whole gate, `tiers: cloudflareWorkerSteps()`.
+`mergeTiers(preset, yours)` adds your rows after the preset's in each tier you name, and keeps every tier either table declares.
+
+**A merged row runs after the preset's rows of its tier, and before every row of the tiers above.** To put a row earlier in a tier, write that
+tier's list yourself. A tier's key is optional, so a preset's list is spread through `?? []`:
+
+```ts
+const preset = cloudflareWorkerSteps();
+
+export default defineSteps({ tiers: { ...preset, static: [myStep, ...(preset.static ?? [])] } });
+```
+
+**Merge one complete preset, never two.** Each includes its own lower tiers, so two of them hold those rows twice, and the gate refuses the table
+as a duplicate label. `wardenAppSteps` is built to merge: it declares rows and no reference.
 
 **`cloudflareWorkerSteps(options?)` — a Worker application.** Generation leads judgement in the order it declares, so a stale generated type
 surfaces as a type error rather than a mystery; `verify --list` prints the rows a given tier resolved to.
@@ -201,10 +174,10 @@ Most rows are opt-in, and each option is a question about your repository rather
 | A browser-only directory tier of your own | `ssrBoundary` | `validate-ssr-boundary`; `ssrBoundary.serverDirs` adds `validate-client-boundary`, which fails a module under `clientDirs` importing one of those directories at value |
 | A directory or source file the rest of `src/` may not import, save named files | `importBoundary` | `validate-import-boundary`; `importBoundary.features: true` also reads the feature manifest |
 | A third-party tree copied into your source | `vendorDir` | `validate-vendor-boundary` — a module inside it may import the tree itself and packages, never a directory or source file beside it under its parent |
-| Markdown oxfmt has been told to ignore | `markdown` | `validate-markdown` |
+| Markdown `bun fmt` has been told to ignore | `markdown` | `validate-markdown` |
 | A library's `.tsx` compiled under a consumer's tsconfig | `jsx` | `validate-jsx`; an application states `jsxImportSource` once instead |
 | Cloned `.claude/` trees | `warden: true` | The `warden sync --check` row |
-| D1 schemas, Playwright specs, workerd specs | `db`, `browser`, `workerd` | The prerequisite-bearing rows, last in the table |
+| D1 schemas, Playwright specs, workerd specs | `db`, `browser`, `workerd` | The prerequisite-bearing rows: the database rows close `static` and follow `tier("unit")` in `runtime`, and `test:browser` and `test:workerd` close `scheduled` |
 
 **`validate-dev-boundary` is the one row an app cannot opt out of.** It reads the forbidden specifiers from forge's installed manifest, so an app
 that configures nothing still fails on a deployed module importing `@y-core/forge/testing`, whose fakes lose every write. Dev-only code of the
@@ -221,15 +194,18 @@ is published from, contributes to the output. A module tree-shaking removed does
 wrangler's child process only ([`NAMESPACES.md`][namespaces-5i] §5i). It refuses a Worker config that sets `alias`, `build`, `define` or `rules`, or
 whose `compatibility_flags` carries `nodejs_compat` or `nodejs_compat_v2`, at the top level or in an `env.*` block, since it models none of them.
 
-**A row the preset emits stays at `static` unless it runs something.** The `test` rows default to `unit`, the workerd row and the database rows
-that need workerd to `runtime`, and the browser set and `validate-dev-bundle` to `scheduled`.
+**Each row sits in the tier [`TESTING.md`][testing-apps-6a] §6a's lines put it in.** The `test` rows are in `unit`, the database rows that need
+workerd in `runtime`, and the browser set, the workerd set and `validate-dev-bundle` in `scheduled`. Everything else is in `static`, including
+`validate-config-files`, which holds your `config/*.config.ts` modules ([`CONFIG_BASELINE.md`][cb-6] §6). It fails a `config/` holding none, so
+a repository that keeps its step table elsewhere passes `configFiles: false` to either preset.
 
 `design.sources` does not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no
 application should inherit deferrals keyed to `src/ui/…` paths.
 
 **`forgeChecks({ root, pkg })` — a library published under an `exports` map.** `pkg` is `{ name, version, exports, files }` verbatim from
 `package.json`, and `exports`, `jsx` and `classOrder` each merge over the config derived from it. Only checks whose config is derivable from `root`
-and the manifest live here; anything carrying project-specific policy is named alongside.
+and the manifest live here; anything carrying project-specific policy is named alongside. It returns all four tiers too, so it is a whole table
+on its own.
 
 ---
 
@@ -238,7 +214,7 @@ and the manifest live here; anything carrying project-specific policy is named a
 Configuration goes to the builder, in the step table itself — a check's allowlists live there rather than in a config file of their own.
 
 ```ts
-// config/steps.ts
+// config/steps.config.ts
 exportsStep({
   root: ROOT,
   packageName: pkg.name,
@@ -254,8 +230,8 @@ above because a subpath under a `client` segment is browser-only by its own name
 escapes — `browserOnly`, `sideEffectOnly`, `sealedInternal` — are each held to the tree they name: an entry the convention already derives, or
 one naming a subpath the map does not have, fails rather than sitting inert.
 
-Every builder takes `{ tier, requires, watches }` as its last argument, so a check can be raised to any tier whatever its default, its dependency
-replaced or dropped with `requires: null`, and the paths `--affected` reads it by replaced or dropped with `watches: null`.
+Every builder takes `{ requires, watches }` as its last argument: its dependency replaced, or dropped with `requires: null`, and the paths
+`--affected` reads it by replaced, or dropped with `watches: null`. A check's tier is the key you list it under, so moving it is moving its entry.
 
 ### Opting out of a markdown rule
 
@@ -343,7 +319,9 @@ command delegates to it as soon as the table is loaded:
 import { execute, resolveAppRoot } from "@y-core/forge/tooling/cli";
 import { createGateCommand } from "@y-core/forge/tooling/gate";
 
-await execute(createGateCommand({ cwd: resolveAppRoot(), steps: STEPS }));
+import steps from "./config/steps.config";
+
+await execute(createGateCommand({ cwd: resolveAppRoot(), tiers: steps.tiers }));
 ```
 
 ---
@@ -366,7 +344,7 @@ Otherwise it says why and runs the gate as if the flag were absent:
 **Only a green run of the whole gate records a receipt.** The run must be unscoped — no `--only` and no `--affected` — pass at least one step, fail
 none and skip none. `--fix` and `--list` never record one, and `--reuse` refuses to be combined with any of them, because it stands in for a whole
 gate run. A red or skipped unscoped run deletes the receipt it finds, so the newest verdict on a tree is the one that stands. A scoped run leaves
-the receipt alone.
+the receipt alone. A run of a table other than `config/steps.config.ts`, named with `--config`, neither records nor deletes one.
 
 **The receipt names a hash of the working tree.** Tracked and untracked files are both hashed and ignored files are not, so an edit,
 a new untracked file or a deletion each means the next `--reuse` runs the gate, and reverting the change makes the old receipt answer again. If
@@ -415,13 +393,13 @@ lintStep({ sources: ["src/"], watches: null }), // drops it, so the step runs on
 A table that declares `watches: []` or an entry starting with `!` is refused: a declaration may only widen what a step runs on, and either form
 would silently skip the step.
 
-**A change to a gate-wide input runs every step.** `DEFAULT_GATE_INPUTS` names the paths every step reads — the manifest and lockfile among them,
-and anything above the gate's root. `forge verify` adds the step-table module itself. To add paths of your own, export `GATE_INPUTS` from the
-table module; it is appended to the default and can never remove from it:
+**A change to a gate-wide input runs every step.** `DEFAULT_GATE_INPUTS` names the paths every step reads, the manifest and lockfile among them,
+and anything above the gate's root. `forge verify` adds the step-table module itself. To add paths of your own, list them as the table's `inputs`.
+They are appended to the default and can never remove from it:
 
 ```ts
-// config/steps.ts
-export const GATE_INPUTS: readonly string[] = ["tools/gate/**"];
+// config/steps.config.ts
+export default defineSteps({ inputs: ["tools/gate/**"], tiers: cloudflareWorkerSteps() });
 ```
 
 Embedding the gate through `createGateCommand` instead, pass the same list as `gateInputs`.
@@ -468,29 +446,24 @@ off `binDir`, whose shebang is node.** Not `bunx`, which installs from the regis
 
 ---
 
-## Running Firefox and WebKit on a cron table
+## Running Firefox and WebKit
 
-The gate runs the browser set on Chromium alone. Firefox and WebKit are never a gate row: they run from a second step table, `config/cron.ts`,
-which the cron runs after `verify:scheduled` and you can run by hand:
+Firefox and WebKit are one row, `test:browser:cross-engine`, which you merge into your `scheduled` tier. The tag's run and the daily cron run take
+it, and no tier below does:
 
 ```ts
-// config/cron.ts
-import { crossEngineStep } from "@y-core/forge/tooling/gate";
-
-export default [crossEngineStep()];
+mergeTiers(cloudflareWorkerSteps({ browser: true }), { scheduled: [crossEngineStep()] })
 ```
 
-```json
-"verify:cron": "forge verify --config config/cron.ts --tier scheduled"
-```
+`crossEngineStep()` spawns `playwright test --project=firefox --project=webkit`. Under `--report` it lists each failing spec with its engine, as
+`test:browser` does.
 
-`crossEngineStep()` is one row, `test:browser:cross-engine`, spawning `playwright test --project=firefox --project=webkit` at `scheduled`. Under
-`--report` it lists each failing spec with its engine, as `test:browser` does. **A table other than `config/steps.ts` leaves the verify receipt
-alone**, so a red cron run never costs you a `--reuse`.
+**The row requires the compat Playwright server, and at `scheduled` an absent requirement fails the run.** Once you add it, every
+`verify:scheduled`, the one before a tag included, needs `playwright-compat` up: `devctl infra up playwright-compat`, with
+`PLAYWRIGHT_COMPAT_WS_ENDPOINT` set to its URL (`ws://playwright-compat:3000/` in the devctl environment).
 
-Those engines run on `playwright-compat`, which devctl starts only on request (`devctl infra up playwright-compat`). Playwright reads only
-`PW_TEST_CONNECT_WS_ENDPOINT`, and a project's `connectOptions` replaces that connection whole, so your config carries `exposeNetwork` and
-`headers` itself and declares the two projects only when the variable is set:
+The compat server is started only on request. Playwright reads only `PW_TEST_CONNECT_WS_ENDPOINT`, and a project's `connectOptions` replaces that
+connection whole, so your config carries `exposeNetwork` and `headers` itself and declares the two projects only when the variable is set:
 
 ```ts
 // playwright.config.ts
@@ -552,36 +525,36 @@ A published function's prefix names the layer it belongs to; the vocabulary and 
 
 ## Testing your own step table
 
-`selectSteps` is pure — no disk, no spawning, no clock, and no probe — so the whole selection surface is assertable at zero step cost.
+`resolveTiers` and `selectSteps` are pure: no disk, no spawning, no clock, and no probe. So the whole selection surface is assertable at zero step
+cost.
 
 ```ts
-import { type GateTier, selectSteps } from "@y-core/forge/tooling/gate";
-import { STEPS } from "./steps";
+import { type GateTier, resolveTiers, selectSteps } from "@y-core/forge/tooling/gate";
+import steps from "./steps.config";
 
-const result = selectSteps(STEPS, { tier: "static" });
-if (result.ok) expect(result.steps.map((s) => s.label)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck", "lint"]);
+const resolved = resolveTiers(steps.tiers);
+if (!resolved.ok) throw new Error(resolved.error);
 
-// Each tier is a superset of the one below it, by construction — selection is a rank comparison.
 const labels = (tier: GateTier) => {
-  const selection = selectSteps(STEPS, { tier });
+  const selection = selectSteps(resolved.data, { tier });
   return selection.ok ? selection.steps.map((s) => s.label) : [];
 };
-expect(labels("static").every((label) => labels("unit").includes(label))).toBe(true);
+expect(labels("static").slice(0, 3)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck"]);
 
-// Selection calls no probe, so what a table selects never depends on the machine it runs on.
-expect(selectSteps(STEPS, { tier: "scheduled" }).ok).toBe(true);
+// A tier that leads with tier("static") runs every static row first, in the static tier's order.
+expect(labels("unit").slice(0, labels("static").length)).toEqual(labels("static"));
 
 // `changed` is what `--affected` passes: assert which rows a given edit reaches.
-const touched = selectSteps(STEPS, { tier: "unit", changed: ["src/ui/x.tsx"] });
+const touched = selectSteps(resolved.data, { tier: "unit", changed: ["src/ui/x.tsx"] });
 if (touched.ok) expect(touched.steps.map((s) => s.label)).not.toContain("validate-exposure");
 ```
 
-Refusals come back as `{ ok: false, error }` rather than a throw: a duplicate label, `watches: []` or a `!` entry in `watches`, a `watches` or
-`wide` glob matching none of the `files` you pass, an unknown `--only` label, and a selection of zero steps. **A zero-step selection is not
-refused when `changed` is given** — it comes back `ok` with no steps, and an empty `changed` selects nothing at all, not even a step with no
-`watches`.
-**The duplicate check is a property of the table**, so it runs before the tier is applied and before `--only` narrows — a malformed table is refused
-whichever run was asked for.
+Both answer `{ ok: false, error }` rather than throwing. `resolveTiers` refuses the whole table, whichever tier you go on to ask for: a `tier()`
+naming a tier the table does not declare or one not below the tier holding it, and a label one resolved tier holds twice. `selectSteps` refuses a
+tier the table does not declare, `watches: []` or a `!` entry in `watches`, a `watches` or `wide` glob matching none of the `files` you pass, an
+unknown `--only` label, and a selection of zero steps. **A zero-step selection is not refused when `changed` is given**: it comes back `ok` with
+no steps, and an empty `changed` selects nothing at all, not even a step with no `watches`. **The `watches` rules are a property of the table**, so
+they are checked over every tier before the run's tier is applied and before `--only` narrows.
 
 **A program compiled under `"types": []` — a Worker app's tests — takes a check's config and result types from
 `@y-core/forge/tooling/gate/types`.** The barrel pulls in Node-only modules, so importing a type from it fails that program's typecheck.
@@ -629,12 +602,12 @@ formatSemVer(bumpSemVer(parseSemVer("v1.2.3")!, "minor")); // "1.3.0"
 
 ## Gotchas
 
-**Tools that both claim markdown undo each other.** `oxfmt` pads every table cell to the widest column and has no option to stop, so a project
+**Tools that both claim markdown undo each other.** `bun fmt` pads every table cell to the widest column and has no option to stop, so a project
 running `validate-markdown` must put `**/*.md` in `.oxfmtrc.json`'s `ignorePatterns` — otherwise each tool reverses the other on every
 `bun run fix`.
 
 **A types-only assets artifact passes a `static` run alone.** `gen types` maps every logical name to itself and those files deliberately do not
-exist, which is what lets `tsc` run on a clean checkout — so `validate-asset-manifest` lets it through on `static` and fails it on every tier
+exist, which is what lets `bun check` run on a clean checkout — so `validate-asset-manifest` lets it through on `static` and fails it on every tier
 above, where passing on an artifact nobody built is exactly the 404 the check exists to prevent.
 
 **A `playwright.config.ts` reaches forge only through a `forge.node` subpath, never a barrel.** Node refuses to strip types from a file under
@@ -643,7 +616,7 @@ own package's Node-reached subpaths follow the same rule, and `nodeExportsStep` 
 
 **A value your table imports from outside `config/` is an input no builder can see.** `--affected` reads a builder's `watches` from its config
 paths, so an allowlist or rule table imported from `src/…` is invisible to it, and an edit there skips the step. State `watches` on that row
-yourself, or add the module's path to `GATE_INPUTS`.
+yourself, or add the module's path to the table's `inputs`.
 
 **`--affected` drops a row whose `watches` miss the change before its `widen` is asked.** A database row can therefore skip a change to its
 `forge` entry's imports. The run is scoped and never the gate, so the gate a commit closes on still runs it.
@@ -667,6 +640,7 @@ and reading it as "select no steps" would refuse every unscoped run.
 [bt-2f]: ../../../docs/BUILD_TOOLING.md#2f-creategatecommand--the-published-verification-gate
 [bt-2i]: ../../../docs/BUILD_TOOLING.md#2i-checks-are-functions-not-scripts
 [bt-2n]: ../../../docs/BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
+[cb-6]: ../../../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
 [cli-readme]: ../cli/README.md
 [lint-readme]: ../lint/README.md
 [namespaces-5i]: ../../../docs/NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
@@ -677,4 +651,3 @@ and reading it as "select no steps" would refuse every unscoped run.
 [testing-6c]: ../../../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
 [testing-apps-6a]: ../../../warden/canon/apps/TESTING.md#6a-one-command-nested-tiers
 [testing-apps-6e]: ../../../warden/canon/apps/TESTING.md#6e-one-tier-per-moment
-[ui-scan]: ../../ui/README.md#tell-tailwind-which-directories-to-scan

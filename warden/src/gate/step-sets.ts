@@ -1,5 +1,6 @@
 /** The golden sets a repository's step table already declares, read back off the table. */
 
+import { declaredSteps, isStepsConfig } from "../../../src/tooling/gate/tiers";
 import type { CheckStep, Step } from "../../../src/tooling/gate/types";
 import type { GoldenQuery } from "./golden";
 
@@ -25,9 +26,19 @@ export function goldenSetsOf(steps: readonly Step[]): { golden: readonly GoldenQ
   return step === undefined ? undefined : { golden: step.golden, negative: step.negative };
 }
 
-/** The step table a `config/steps.ts` exports, as `default` or `STEPS`; `undefined` where it exports neither. @public */
-export function stepsOf(module: unknown): readonly Step[] | undefined {
-  const exports = module as { default?: unknown; STEPS?: unknown };
-  for (const candidate of [exports.default, exports.STEPS]) if (Array.isArray(candidate)) return candidate as readonly Step[];
-  return undefined;
+/** Every step a loaded `defineSteps` table declares directly; `undefined` where the value is no such table. @public */
+export function stepsOf(config: unknown): readonly Step[] | undefined {
+  return isStepsConfig(config) ? declaredSteps(config.tiers) : undefined;
+}
+
+/** What a `--golden` module default-exports through `defineWardenQueries`. @public */
+export interface WardenQueries {
+  golden: readonly GoldenQuery[];
+  /** Questions the corpus must refuse; omitted, none. */
+  negative?: readonly string[];
+}
+
+/** Types the default export of a `--golden` module. @public */
+export function defineWardenQueries(queries: WardenQueries): WardenQueries {
+  return queries;
 }

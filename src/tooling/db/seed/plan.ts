@@ -59,7 +59,7 @@ function findSeed(seeds: readonly Seed[], only: string, place: Place | undefined
     throw new CliError("invalid-args", `${only} is excluded from ${place} — add a forge:places line naming it, and it runs there`);
   }
   const available =
-    seeds.length === 0 ? "config/db.ts names no `seeds`" : `available: ${seeds.map((seed) => `${seed.source}:${seed.name}`).join(", ")}`;
+    seeds.length === 0 ? "config/db.config.ts names no `seeds`" : `available: ${seeds.map((seed) => `${seed.source}:${seed.name}`).join(", ")}`;
   throw new CliError("invalid-args", `No seed named "${only}" — ${available}`);
 }
 

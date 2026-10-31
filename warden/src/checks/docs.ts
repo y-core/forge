@@ -697,11 +697,11 @@ export function checkDocs(config: DocsCheckConfig): CheckResult {
       const line = stripped[i];
       if (line === undefined) continue;
 
-      for (const match of line.matchAll(INLINE_HREF)) findings.push(...targetFindings(match[1] ?? "", i + 1));
-
-      // Scanned with the code spans blanked: `theme[a][b]` in backticks is a property path, and
-      // reading it as a reference use reports an id nobody wrote.
-      for (const match of line.replace(INLINE_CODE, " ").matchAll(REFERENCE_USE)) {
+      // Scanned with the code spans blanked: `theme[a][b]` or `[…](url)` in backticks is literal
+      // text, and reading it as a link reports a target or an id nobody wrote.
+      const outsideCode = line.replace(INLINE_CODE, " ");
+      for (const match of outsideCode.matchAll(INLINE_HREF)) findings.push(...targetFindings(match[1] ?? "", i + 1));
+      for (const match of outsideCode.matchAll(REFERENCE_USE)) {
         const id = (match[1] ?? "").toLowerCase();
         if (definitions.has(id)) usedIds.add(id);
         else findings.push(fail(`\`[${id}]\` is used as a link but nothing defines it`, { file, line: i + 1 }));

@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { v } from "../../validation/mod";
+import { loadConfigModule } from "../cli/config-module";
 import { iconTarget } from "./icons";
 import { assetUrlBase } from "./paths";
 import type {
@@ -16,7 +17,7 @@ import type {
 import { AssetsConfigSchema } from "./types";
 import type { LoadConfigOptions } from "./types";
 
-/** Types the default export of an `assets.config.ts`. @public */
+/** Types the default export of a `config/assets.config.ts`. @public */
 export function defineAssetsConfig(config: AssetsConfig): AssetsConfig {
   return config;
 }
@@ -65,12 +66,10 @@ export function assertIconPrefixOutsideAssets(publicPrefix: string, icons: Icons
 
 /** Imports, validates and normalises the asset config. @public */
 export async function loadConfig(options: LoadConfigOptions): Promise<ResolvedConfig> {
-  const { root, configPath = "assets.config.ts", env: envVars = {} } = options;
-  const resolvedPath = resolve(root, configPath);
-  // oxlint-disable-next-line typescript/no-explicit-any -- dynamic module has unknown shape
-  const mod = (await import(resolvedPath)) as any;
-  const raw: unknown = mod.default ?? mod;
-  const parsed = v.parse(AssetsConfigSchema, raw);
+  const { root, configPath = "config/assets.config.ts", env: envVars = {} } = options;
+  const loaded = await loadConfigModule<unknown>({ root, path: configPath, explicit: options.configPath !== undefined, what: "asset config" });
+  if (loaded === undefined) throw new Error(`No asset config at \`${configPath}\` — create it, or pass --config to name one elsewhere.`);
+  const parsed = v.parse(AssetsConfigSchema, loaded.value);
 
   const resolveEntry = <Built extends { entry: string; define?: Record<string, DefineValue> | undefined }>(built: Built) => {
     const { define: rawDefine, ...rest } = built;

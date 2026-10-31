@@ -126,7 +126,7 @@ describe("await composeSeedFixture()", () => {
     wire(io);
 
     await expect(composeSeedFixture(run, { ...OPTIONS, path: "/app/tmp/0001_ledger.sql" })).rejects.toThrow(
-      "/app/tmp/0001_ledger.sql is outside every seeds directory `config/db.ts` names (tests/fixtures/seeds)",
+      "/app/tmp/0001_ledger.sql is outside every seeds directory `config/db.config.ts` names (tests/fixtures/seeds)",
     );
     await expect(composeSeedFixture(run, { ...OPTIONS, path: "/app/tests/fixtures/seeds/ledger.txt" })).rejects.toThrow("is not a .sql file");
   });

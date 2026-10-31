@@ -280,3 +280,25 @@ describe("rescanUnitBounds", () => {
     expect(rescanUnitBounds("x\n\ny\n", [], 0, 0)).toEqual(boundsOf("x\n\ny\n"));
   });
 });
+
+describe("a task box offset", () => {
+  test("is the unit-relative offset of the box's bracket, nested items included", () => {
+    const source = "x\n\n- [ ] a\n  - [x] b";
+    const unit = scanBlocks(source).units[1];
+    const item = unit?.node.type === "listItem" ? unit.node : undefined;
+    const nestedList = item?.children[1];
+    const nested = nestedList?.type === "list" ? nestedList.children[0] : undefined;
+    const boxes = [item?.box, nested?.type === "listItem" ? nested.box : undefined];
+    const start = unit?.start ?? 0;
+
+    expect(boxes).toEqual([2, 12]);
+    expect(boxes.map((box) => source.slice(start + (box ?? 0), start + (box ?? 0) + 3))).toEqual(["[ ]", "[x]"]);
+  });
+
+  for (const source of ["- a", "- [ ]", "- [x]joined"]) {
+    test(`is null, as is checked, for ${JSON.stringify(source)}`, () => {
+      const node = scanBlocks(source).units[0]?.node;
+      expect(node?.type === "listItem" ? { box: node.box, checked: node.checked } : node?.type).toEqual({ box: null, checked: null });
+    });
+  }
+});

@@ -1,5 +1,8 @@
 import { parseDialect } from "../../dialect.fixture";
-import type { MarkdownNode } from "../../types";
+import { renderMarkdownHtml } from "../../html";
+import { MARKDOWN_ELEMENTS } from "../../html-schema";
+import type { HtmlSchema, MarkdownNode } from "../../types";
+import { isSafeUrl } from "../../url-policy";
 import { walkMarkdown } from "../../walk";
 import type { DialectSpan, ViewportDialect } from "./types";
 
@@ -39,5 +42,12 @@ export function testDialectSpans(text: string): DialectSpan[] {
   return spans;
 }
 
+const TEST_SCHEMA: HtmlSchema = { elements: MARKDOWN_ELEMENTS, url: (candidate) => (isSafeUrl(candidate) ? candidate.value : null) };
+
+/** The test dialect's whole-document HTML, line-anchored as the viewport's `html` rendering needs. */
+export function testDialectHtml(markdown: string): string {
+  return renderMarkdownHtml(parseDialect(markdown), { schema: TEST_SCHEMA, lineAnchors: true });
+}
+
 /** A viewport dialect built on forge's markdown constructs, as an app builds its own. */
-export const TEST_DIALECT: ViewportDialect = { spans: testDialectSpans, calloutKinds: TEST_CALLOUT_KINDS };
+export const TEST_DIALECT: ViewportDialect = { spans: testDialectSpans, calloutKinds: TEST_CALLOUT_KINDS, html: testDialectHtml };

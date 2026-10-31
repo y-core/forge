@@ -21,3 +21,8 @@ export function addCommand(parent: CommandBase, child: CommandBase): void {
   child.parent = parent;
   parent.commands.push(child);
 }
+
+/** Types the default export of a `config/commands.config.ts`. @public */
+export function defineCommands(commands: readonly CommandBase[]): readonly CommandBase[] {
+  return commands;
+}

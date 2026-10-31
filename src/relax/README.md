@@ -67,8 +67,8 @@ Run the app with `forge cf dev` ([`src/tooling/cf/README.md`][cf-local]). A depl
 Add an export to both files of the pair. Do not add a second alias or a second pair of files: one pair is the list of everything a development
 build loosens ([`NAMESPACES.md`][ns-5i] §5i).
 
-**Annotate each dev export with `typeof` its strict twin.** `tsc` checks the code importing `#app/relax` against the `default` target only, so a
-dev export that changed shape would go unnoticed. A dev export that is missing altogether fails the `forge cf dev` build with esbuild's
+**Annotate each dev export with `typeof` its strict twin.** `bun check` types the code importing `#app/relax` against the `default` target
+only, so a dev export that changed shape would go unnoticed. A dev export that is missing altogether fails the `forge cf dev` build with esbuild's
 `No matching export`, never the deploy, so add both halves together.
 
 ---

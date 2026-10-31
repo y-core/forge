@@ -21,7 +21,7 @@ test.beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "forge-test-d1-"));
   mkdirSync(join(root, "config", "db", "migrations"), { recursive: true });
   writeFileSync(join(root, "package.json"), '{ "type": "module" }\n');
-  writeFileSync(join(root, "config", "db.ts"), 'export default { migrations: "config/db/migrations" };\n');
+  writeFileSync(join(root, "config", "db.config.ts"), 'export default { migrations: "config/db/migrations" };\n');
   const write = (name: string, sql: string) => writeFileSync(join(root, "config", "db", "migrations", name), sql);
   // By name, `10_` sorts before `1_` and `2_`, and would index a table that does not exist yet.
   write("1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE);");

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -126,7 +126,8 @@ describe("loadConfig()", () => {
   function appRoot(source: string): string {
     const root = mkdtempSync(join(tmpdir(), "forge-assets-config-"));
     roots.push(root);
-    writeFileSync(join(root, "assets.config.ts"), source, "utf-8");
+    mkdirSync(join(root, "config"));
+    writeFileSync(join(root, "config", "assets.config.ts"), source, "utf-8");
     return root;
   }
 
@@ -136,6 +137,19 @@ describe("loadConfig()", () => {
 
   // The root is a temp directory and the test runs from the repository, so an output path resolved
   // against the working directory would not land under it.
+  it("refuses a config module with no default export", async () => {
+    const root = appRoot("export const config = {};");
+
+    await expect(loadConfig({ root })).rejects.toThrow("has no default export");
+  });
+
+  it("names the default path when no asset config is there", async () => {
+    const root = mkdtempSync(join(tmpdir(), "forge-assets-config-"));
+    roots.push(root);
+
+    await expect(loadConfig({ root })).rejects.toThrow("No asset config at `config/assets.config.ts`");
+  });
+
   it("defaults every path under the root rather than the working directory", async () => {
     const root = appRoot("export default {};");
     const config = await loadConfig({ root });

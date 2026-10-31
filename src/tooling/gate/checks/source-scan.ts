@@ -157,7 +157,7 @@ const OPENS_REGEX = /(?:=>|[({[,;:=!&|?+\-*%~^]|\b(?:return|typeof|instanceof|in
 
 // One pass over strings, regex literals and comments together, so none can start inside another —
 // including the odd backtick inside a regex, which a regex-blind lexer reads as a template opener.
-function scan(source: string, lineComments: boolean): CommentSpan[] {
+function scan(source: string, lineComments: boolean, onLiteral?: (start: number, end: number) => void): CommentSpan[] {
   const spans: CommentSpan[] = [];
   let line = 1;
   let counted = 0;
@@ -176,6 +176,7 @@ function scan(source: string, lineComments: boolean): CommentSpan[] {
     if (char === "'" || char === '"' || (lineComments && char === "`")) {
       const end = lineComments ? endOfQuoted(source, i) : endOfCssString(source, i);
       if (end !== -1) {
+        onLiteral?.(i + 1, end - 1);
         i = end - 1;
         tail = "x";
         continue;
@@ -208,6 +209,7 @@ function scan(source: string, lineComments: boolean): CommentSpan[] {
     if (lineComments && (tail.trim() === "" || OPENS_REGEX.test(tail))) {
       const end = endOfRegex(source, i);
       if (end !== -1) {
+        onLiteral?.(i + 1, source.lastIndexOf("/", end - 1));
         i = end - 1;
         tail = "x";
         continue;
@@ -218,15 +220,16 @@ function scan(source: string, lineComments: boolean): CommentSpan[] {
   return spans;
 }
 
-function blank(source: string, lineComments: boolean): string {
+function blank(source: string, lineComments: boolean, literals = false): string {
   // Split by code unit, never by code point: every index in this file is a UTF-16 offset, and an
   // astral character reassembled from a code-point split would move every offset after it.
   const out = source.split("");
-  for (const span of scan(source, lineComments)) {
-    for (let j = span.start; j < span.end; j++) {
+  const blankSpan = (start: number, end: number): void => {
+    for (let j = start; j < end; j++) {
       if (out[j] !== "\n") out[j] = " ";
     }
-  }
+  };
+  for (const span of scan(source, lineComments, literals ? blankSpan : undefined)) blankSpan(span.start, span.end);
   return out.join("");
 }
 
@@ -248,6 +251,11 @@ export function blankComments(source: string): string {
 /** `source` with block and `//` comments blanked space-for-space. @public */
 export function blankSourceComments(source: string): string {
   return blank(source, true);
+}
+
+/** `source` with comments and the bodies of string, template and regex literals blanked space-for-space, delimiters kept. @internal */
+export function blankSourceLiterals(source: string): string {
+  return blank(source, true, true);
 }
 
 /** Index just past the string literal opening at `start`, or -1 when it never closes. @internal */

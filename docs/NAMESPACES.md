@@ -1,6 +1,6 @@
 ---
 title: Namespace Design
-description: "Barrel rules, leaf-versus-integration classification, where a new concern belongs, and when to add a namespace."
+description: "Barrel rules, leaf-versus-integration classification, where concerns belong, and when to add a namespace."
 audience: internal
 ---
 
@@ -83,8 +83,8 @@ runtime namespace, so the README rule above reads `src/` namespaces only. `packa
 
 ### 3b. Internal Namespaces
 
-**`crypto/primitives` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.ts`. The allowlist
-is what lets a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
+**`crypto/primitives` is sealed-internal:** no export entry, and registered on the `sealedInternal` allowlist in `config/steps.config.ts`. The
+allowlist is what lets a barrel exist without an export subpath — **a barrel is valid only if it is exported or explicitly sealed.**
 
 **Never import `crypto/primitives` from outside forge.** There is no `@y-core/forge/crypto/primitives` subpath, and its parent `crypto` is a
 container with no barrel of its own (§5k).
@@ -187,6 +187,9 @@ annotation, which is why the gate checks it in both directions.
 
 **The gate fails a cycle of `value` edges of any length**, so three namespaces naming each other in a ring are held to the same rule as a pair.
 Every legal cycle in the declared graph is broken by a type edge.
+
+**A declared edge can be narrowed to named files of its target** in `config/namespaces.ts` as `EDGE_MODULES`, and `validate-namespace-graph`
+then fails any import from the source namespace, `import type` included, that reaches another file of the target.
 
 ### 4c. Foundational Primitive Namespaces — `result`, `crypto/primitives`, `context`, `validation`
 
@@ -374,9 +377,9 @@ chosen when the Worker is bundled, so whether a deployed Worker can relax is a f
 
 **Each hook imports its relaxation through forge's own `imports` map, and default resolution picks the strict stub.** Every `#relax/*` entry in
 `package.json` maps the `forge-dev` condition to a `*.dev.ts` beside the hook and `default` to a `*.strict.ts` stub that always answers strict. Bun,
-`tsc`, a plain `wrangler dev` and `wrangler deploy` resolve `default`, so a deployed bundle holds no relaxation logic at all. The two targets export
-the same name under one `@internal` `Relax*` type from the namespace's `types.ts`, so they cannot drift apart in shape. The map is the list of
-relaxations; this section names none it would have to keep in step.
+`bun check`, a plain `wrangler dev` and `wrangler deploy` resolve `default`, so a deployed bundle holds no relaxation logic at all. The two targets
+export the same name under one `@internal` `Relax*` type from the namespace's `types.ts`, so they cannot drift apart in shape. The map is the list
+of relaxations; this section names none it would have to keep in step.
 
 **The condition selects the module, and the `__FORGE_DEV__` define arms it.** A dev module answers relaxed only in a build that defines
 `__FORGE_DEV__` as `true`. `./relax` is that check's one home, and each dev module, forge's or an app's, routes its behaviour through `whenArmed`
@@ -424,8 +427,8 @@ edge, never an internal import, and the pair never points both ways at value.
 
 **A renderer goes in its own child, never in `http`.** `http` owns the _response_ — `htmlResponse` and `pdfResponse` are its, because handing a
 body to a client is an HTTP output concern (§5d) — and takes the body without knowing how it was made. That is what keeps the dependency one-way and
-lets a renderer carry a large engine without any of it reaching the response path. `render/jsx` and `render/htmx` escape through `html` (§5m);
-`render/markdown` keeps its own escaper, which writes the hex references CommonMark conformance expects, and stays a leaf.
+lets a renderer carry a large engine without any of it reaching the response path. `render/jsx` and `render/htmx` escape through `html`;
+`render/markdown` is the exception §5m names.
 
 **A component takes one props object, with `children` inside it** — or, for content laid out in a grid, in named props such as `render/pdf`'s
 `Table` `header` and `rows`, each cell lowered as `children` is. Never `Component(options, children)` — the single-argument shape is what forge's
@@ -449,13 +452,29 @@ sequences them, and a file importing both aliases one.
 **`@y-core/forge/render/markdown` holds the CommonMark and GFM engine and the dialect constructs any app could compose, and nothing that decides
 what a particular app's markdown means.** A construct is parameterised wherever an app would differ: callout kinds are an argument, an embed's id is
 what the app's `embedId` answers, and a wiki link's target stays the raw text the app resolves. A fixed set of kinds, an id format, a target
-resolver, a render schema or the handlers that write an app's classes stay in the app, because each is a decision about that app's pages. Every
-node type a construct produces is declared in the namespace's own types, so no consumer augments forge's tree across the package boundary.
+resolver, the schemes a `createUrlPolicy` is given and the `rel` a link carries, the elements only that app writes, and the handlers that write an
+app's classes stay in the app, because each is a decision about that app's pages. **An element and attribute allow-list covering what forge's own
+default handlers emit is forge's**, because it describes forge's output rather than any app's meaning: it is opt-in and frozen, and the caller
+spreads it into a schema that still carries the caller's own `url` policy. Every node type a construct produces is declared in the namespace's own
+types, so no consumer augments forge's tree across the package boundary.
 
 **`@y-core/forge/render/markdown/editor/client` is the CodeMirror viewport for the same markdown, and it sits under `render/markdown`, not `ui`.**
 Under `ui` it would belong in `ui/client` (§5f), and every `ui/client` consumer would then have to install CodeMirror. The editor is browser-only by
-its `client` segment ([`BOUNDARIES.md`][boundaries-1] §1), imports nothing from `render/markdown`, and takes the dialect it decorates as an injected
-option, so an app's constructs reach it without forge knowing them. CodeMirror is its optional peer dependency.
+its `client` segment ([`BOUNDARIES.md`][boundaries-1] §1), and takes the dialect it decorates as an injected option, so an app's constructs reach it
+without forge knowing them. CodeMirror is its optional peer dependency. **The editor imports exactly two modules from `render/markdown`: the pure
+editing core, `src/render/markdown/editing.ts`, and the Trusted Types policy name, `src/render/markdown/trusted-types.ts`.** That core continues
+lists, wraps a selection and toggles a task, and it finds them with forge's own parser over the one block unit being edited. It holds no DOM and no
+CodeMirror, so a Worker can import it as well. Sharing it means the viewport and a textarea adapter edit with the parser the renderer uses, never
+with line regexes that can disagree with it. The policy name is a constant with no imports, so an app's Worker reads it for its CSP without loading
+CodeMirror. **The viewport's `html` rendering takes its HTML from the dialect's `html` option, never from the renderer**, so an app decides where
+the renderer loads and a page that never shows `html` never pays for it. Every other module in `render/markdown`, its barrel included, stays out
+of the editor's imports, and an `import type` counts as an import. `EDGE_MODULES` in `config/namespaces.ts` narrows the edge to those two files, so
+`validate-namespace-graph` holds the limit (§4b).
+
+**`@y-core/forge/render/markdown/editor/textarea/client` binds the same core to a plain `<textarea>`, and sits beside the viewport rather than in
+`ui/client`.** It is a browser controller, which §5f sends to `ui/client`, but there it would give that namespace an edge into the markdown
+engine. Here it shares the viewport's one core and loads no CodeMirror, so an app without the peers can use it. It imports
+`src/render/markdown/editing.ts` and `src/ui/client/dom.ts` and nothing else from either namespace, and `EDGE_MODULES` narrows both edges.
 
 ### 5k. `crypto/keyring` — Values Signed or Sealed Under the App's Own Root Secret
 
@@ -498,6 +517,10 @@ component, building a fragment and answering a request are `render/*`'s and `htt
 
 **`html` is a leaf, and sits below both of its consumers.** `render/jsx` escapes through it and `http` types an HTML body with its `SafeHtml`, so
 holding the primitives in either would make the other depend on it for a function that is not its concern.
+
+**`render/markdown` keeps its own escaper and URL policy, and stays a leaf.** Its escaper writes the hex references CommonMark conformance
+expects. Its `UrlPolicy` keeps or drops an attribute under the protocols the caller lists, where `safeUrl` checks a fixed set and rewrites a miss
+to `#`. The contracts differ, so depending on `html` would give the engine an edge for a function it does not call.
 
 **Pre-styled markup is not a primitive.** The htmx status banners carry forge's status classes and answer a swap, so they are `render/htmx`'s, and
 `html` emits no class string.

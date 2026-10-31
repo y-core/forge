@@ -41,7 +41,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §6 The Verification Gate: what must pass before a task closes, and before a commit
 - §6a One Command, Nested Tiers: which tier each moment runs, the daily cron, and an absent prerequisite
 - §6b What Each Tool Catches: the failure classes
-- §6c The Lines Between the Tiers: what a step needs, the heavy step, and the price of running it late
+- §6c The Lines Between the Tiers: what a step needs, the heavy step, the price of running it late, and how a table nests its tiers
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
 
 ---
@@ -79,9 +79,9 @@ preference:
 starts a browser is heavy (§6c).** Narrowing it would buy almost nothing, because a spec's reach covers nearly every source file. A broken behaviour
 is therefore found by the next daily cron run or the next tag, not by the commit gate, and a tag still never ships without the set.
 
-**Chromium is the set's engine, and the gate's only one.** A library whose consumers need wider compatibility runs its other engines by hand or on
-the cron run (§6a), from a second step table, `config/cron.ts` run by `verify:cron`: a `scheduled` row of its own table, never a row of the
-gate's (§6c). Where the environment serves the other engines from their own server, the browser config routes those projects there.
+**Chromium is the set's engine, and another engine is a `scheduled` row of the same table**, so a tag and the cron run both take it (§6a, §6c).
+A library adds one when its consumers need wider compatibility. Where the environment serves the other engines from their own server, the browser
+config routes those projects there. A run at `scheduled` without that server fails rather than skipping (§6a).
 
 **This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
 natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
@@ -359,24 +359,23 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 **There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** Verbs
 sharing every flag and every line of behaviour, differing only in a membership filter, are tiers of one command by definition. They are nested,
-`static ⊆ unit ⊆ runtime ⊆ scheduled`. What each tier holds is §6c's. **Each moment runs one tier, and `runtime` is what a bare invocation
-runs:**
+`static ⊆ unit ⊆ runtime ⊆ scheduled`. Each tier above `static` includes the tier below it, as its first entry (§6c). What each tier holds is
+§6c's. **Each moment runs one tier, and `runtime` is what a bare invocation runs:**
 
 | Moment | Runs |
 | --- | --- |
 | Write loop and task close | `verify:static`, plus each touched test file run by file (`AGENT_WORKFLOW.md` §4) |
 | Commit | `verify`, the `runtime` tier |
 | Tag | `verify:scheduled`, run by the release command before it tags; the remote CI then runs `verify:unit` on the tag |
-| Daily cron | `verify:scheduled`, then `verify:cron`, run by the ledger host |
+| Daily cron | `verify:scheduled`, run by the ledger host |
 
 `unit` is the run for a machine with no runtime installed. No other moment exists to close on, an epic's end included.
 
 **The daily cron is the ledger host's, and its verdict lands in the ledger.** It gates a fresh checkout of the default branch, never a developer's
-work tree, with `--report` on each table, and runs `verify:cron` whatever `verify:scheduled` concluded (§1c). A failure lands as one open task in
-the ledger of the project it ran for, rewritten in place by each later failure while it stays open. A run that never reached a test is logged and
-filed as nothing.
+work tree, with `--report`. A failure lands as one open task in the ledger of the project it ran for, rewritten in place by each later failure while
+it stays open. A run that never reached a test is logged and filed as nothing.
 
-**A config file owns the step list** — every step, how it runs, and the tier it runs from. Read it there rather than trusting any prose copy. A
+**A config file owns the step table**: every step, how it runs, and the tiers that list it. Read it there rather than trusting any prose copy. A
 step is one of two things: an external command, or a check the runner calls in-process.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
@@ -435,21 +434,23 @@ weakening the gate a commit closes on.
 
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
 
-- it starts a browser;
+- it starts a browser, or runs any suite under Playwright — a Worker-runtime suite on Playwright included;
 - it runs a Worker-runtime suite whole on every change, with no way to narrow;
 - it is a soak, a live-network or a deep property run;
 - its test set takes more than 60 seconds, or one test in it more than 10.
 
 That budget is stated here and nowhere else. **A step that is not heavy stays where what it needs puts it**, however slow it feels, because a tier
-whose membership follows taste is a tier nobody can predict. A step that asks whether the tree is ready to ship — a written changelog entry, a
-bundle of what deploys, a gate over a derived tree — also starts at `scheduled`, because it judges a finished change rather than one in progress.
+whose membership follows taste is a tier nobody can predict. A step that asks whether the tree is ready to ship — a bundle of what deploys, a gate
+over a derived tree — also starts at `scheduled`, because it judges a finished change rather than one in progress. A changelog's shape is not that
+question: its headings and released sections are judged at `static`, and an empty `[Unreleased]` is refused by the release command when it tags, not
+by a row.
 
-**A heavy test inside `unit` is split out, never dropped.** It becomes a test set of its own, declared at `{ tier: "scheduled" }`. It is never
-deleted, skipped or ignored out of every automated run.
+**A heavy test inside `unit` is split out, never dropped.** It becomes a test set of its own, listed in the `scheduled` tier. It is never deleted,
+skipped or ignored out of every automated run.
 
 **The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the commit gate.** A
-step worth proving only periodically goes in the cron table, `config/cron.ts`, and never blocks a tag. Another browser engine is that kind of step:
-Chromium proves the behaviour, and another engine proves only that it holds there too.
+step worth proving only before a tag and on the cron run goes in the `scheduled` tier of `config/steps.config.ts`. Another browser engine is that
+kind of step: Chromium proves the behaviour, and another engine proves only that it holds there too.
 
 **Every repository declares `verify:scheduled`.** The cron runs it, so a repository without it is outside the cron, and that is a gap rather than a
 choice.
@@ -465,13 +466,14 @@ through a specifier resolved at run time. That list is checked against the tree,
 refused rather than silently narrowing the step. **`scheduled` runs every step whole on every tag and every cron run**, which is the backstop for a
 reach the derivation missed.
 
-That rank is also what orders the run. **Execution order is tier-stable rather than table order: within a tier the table's declared order holds,
-and across tiers the lower tier runs first.** The selector sorts by tier after filtering, so where a table happens to declare a `scheduled` row is
-not where it runs, and a `unit` row appended after one still runs ahead of it. That is what makes a fail-fast `scheduled` run fail on the
-sub-second check rather than after minutes of browser — and why a repository never re-declares a row it only wanted moved.
+**A table declares each tier as its own list, in run order, and a tier includes a lower one by reference, expanded in place.** Nothing sorts a
+tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
+runs only the rows it lists. That reference is what nests the tiers, and it is what makes a fail-fast `scheduled` run fail on the sub-second
+check rather than after minutes of browser. A row moves to another tier by moving its entry, never by declaring it twice.
 
-The tier enum is closed and ordered, and a step names **the lowest tier it runs in — a rank, not a set of tiers**. There is consequently no way to
-express a step a lower tier has and a higher one does not, so the nesting is structural rather than something a test has to catch after the fact.
+**A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
+whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row narrows only in the tier that
+declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about narrowing it.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 

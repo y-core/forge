@@ -326,8 +326,8 @@ governing-document rule that does not belong in a consumer-facing corpus, howeve
 
 ## 6. The Corpus Is Subject to the Governing-Doc Format
 
-`config/steps.ts` gives the docs check the corpus at `src/ui/design/` as an `extraDirs` entry marked `numbered`, which is what puts a tree outside
-`docs/` under the whole format rather than the per-line prose rules alone.
+`config/steps.config.ts` gives the docs check the corpus at `src/ui/design/` as an `extraDirs` entry marked `numbered`, which is what puts a tree
+outside `docs/` under the whole format rather than the per-line prose rules alone.
 
 **The corpus is fully subject to that format** — `## N.` numbered headings, a `## 0. Quick Reference` naming every one of them, the frontmatter
 fields, and the size thresholds — exactly as this document is.

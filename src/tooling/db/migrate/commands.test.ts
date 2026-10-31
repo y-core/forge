@@ -267,7 +267,7 @@ describe("forge db migrate compose", () => {
     const io = fakeDbIo({}, { now: NOW });
     wire(io);
     const result = await drive(io, ["migrate", "compose", "--root", root]);
-    expect(result).toEqual({ out: [], err: ["Error: schema.sql is declared in config/db.ts and no file is there to read"], code: 1 });
+    expect(result).toEqual({ out: [], err: ["Error: schema.sql is declared in config/db.config.ts and no file is there to read"], code: 1 });
   });
 
   it("refuses to compose when one of two declared schemas is missing, names only that one, and writes nothing", async () => {
@@ -276,23 +276,23 @@ describe("forge db migrate compose", () => {
     wire(io);
     const before = [...io.files.keys()];
     const result = await drive(io, ["migrate", "compose", "--root", root], { schemas: ["a.sql", "b.sql"] });
-    expect(result).toEqual({ out: [], err: ["Error: b.sql is declared in config/db.ts and no file is there to read"], code: 1 });
+    expect(result).toEqual({ out: [], err: ["Error: b.sql is declared in config/db.config.ts and no file is there to read"], code: 1 });
     expect([...io.files.keys()]).toEqual(before);
   });
 
-  it("exits 0 with nothing to compose when config/db.ts names no schemas and there is no history", async () => {
+  it("exits 0 with nothing to compose when config/db.config.ts names no schemas and there is no history", async () => {
     const root = appRoot();
     const io = fakeDbIo({}, { now: NOW });
     wire(io);
     const result = await drive(io, ["migrate", "compose", "--root", root], {});
     expect(result).toEqual({
-      out: ["config/db.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"],
+      out: ["config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"],
       err: [],
       code: null,
     });
   });
 
-  it("exits 1 when config/db.ts names no schemas and a migration is on disk", async () => {
+  it("exits 1 when config/db.config.ts names no schemas and a migration is on disk", async () => {
     const root = appRoot();
     const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: INIT }, { now: NOW });
     wire(io);

@@ -1,5 +1,3 @@
-import type { HtmlUrlCandidate } from "./types";
-
 /** The SVG elements an svg fence may keep, in their SVG case; `a` is written through the `svgA` rule. */
 export const SVG_TAGS: readonly string[] = [
   "svg",
@@ -76,35 +74,3 @@ export const SVG_ATTRIBUTES: Readonly<Record<string, readonly string[]>> = {
   pattern: [...SVG_SHAPE_ATTRIBUTES, "patternUnits", "patternContentUnits", "patternTransform", "href", "xlink:href"],
   use: [...SVG_SHAPE_ATTRIBUTES, "href", "xlink:href"],
 };
-
-const LINK_PROTOCOLS: readonly string[] = ["https", "mailto"];
-const URL_PROTOCOLS: Readonly<Record<string, readonly string[]>> = { href: LINK_PROTOCOLS, "xlink:href": LINK_PROTOCOLS, src: ["https"] };
-const URL_TAB_OR_NEWLINE = /[\t\n\r]/g;
-const PROTOCOL_RELATIVE = /^[\\/]{2}/;
-const URL_SCHEME = /^([a-z][a-z0-9+.-]*):/i;
-
-function trimControls(url: string): string {
-  const units = url.replace(URL_TAB_OR_NEWLINE, "");
-  let start = 0;
-  let end = units.length;
-  while (start < end && units.charCodeAt(start) <= 0x20) start++;
-  while (end > start && units.charCodeAt(end - 1) <= 0x20) end--;
-  return units.slice(start, end);
-}
-
-function hasListedProtocol(url: string, protocols: readonly string[]): boolean {
-  const colon = url.indexOf(":");
-  const blockers = ["?", "#", "/"].map((char) => url.indexOf(char)).filter((at) => at > -1);
-  if (colon < 0 || blockers.some((at) => colon > at)) return true;
-  return protocols.some((protocol) => colon === protocol.length && url.startsWith(protocol));
-}
-
-/** Reports whether a URL may stay on an attribute: relative, or https (and mailto for a link), never protocol-relative or hidden behind controls. */
-export function isSafeUrl({ value, attribute }: Pick<HtmlUrlCandidate, "value" | "attribute">): boolean {
-  const protocols = URL_PROTOCOLS[attribute] ?? [];
-  if (!hasListedProtocol(value, protocols)) return false;
-  const normalised = trimControls(value);
-  if (PROTOCOL_RELATIVE.test(normalised)) return false;
-  const scheme = URL_SCHEME.exec(normalised)?.[1];
-  return scheme === undefined || protocols.includes(scheme.toLowerCase());
-}

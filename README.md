@@ -188,18 +188,18 @@ const maybe = userCtx.getOptional(context); // undefined if unset
 
 ## The command layer
 
-`forge` assembles its command tree from the first-party commands plus whatever your own `config/commands.ts` default-exports, so an application's
-scripts are subcommands rather than a directory of loose files:
+`forge` assembles its command tree from the first-party commands plus whatever your own `config/commands.config.ts` default-exports through
+`defineCommands`, so an application's scripts are subcommands rather than a directory of loose files:
 
 ```bash
-forge verify                    # the gate, over config/steps.ts
+forge verify                    # the gate, over config/steps.config.ts
 forge assets build --minify     # hashed, cache-busted output plus a generated typed manifest
 forge db migrate                # apply pending migrations, forward-only and checksummed
 forge db backup                 # a verified artifact you can restore from
 forge cf sync                   # report account-binding drift; --commit to create and write back
 forge cf gen env                # emit env.schema.ts from wrangler.jsonc + .dev.vars
 forge release                   # resolve the version from git, promote the changelog, commit, tag
-forge curate ../skeleton        # copy the working tree minus config/features.ts's directories and marked lines
+forge curate ../skeleton        # copy the working tree minus config/features.config.ts's directories and marked lines
 ```
 
 Every verb that could change something reports by default and writes only when told to. `warden sync`, `warden search` and `warden serve` are the
@@ -231,7 +231,7 @@ bun run verify --list          # print the steps of the selected tier, run none
 ```
 
 `@y-core/forge/testing` ships the fixtures a consuming suite would otherwise hand-roll: a loaded request context, in-memory D1 and KV fakes, real
-CSRF minting, and an SSR render helper. Type checking uses `tsc` (`typescript` 7, the native compiler).
+CSRF minting, and an SSR render helper. Type checking uses `bun check`, so no `typescript` package is installed.
 
 ---
 

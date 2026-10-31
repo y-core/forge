@@ -229,9 +229,9 @@ I/O lives with the other readers in `src/tooling/release/pkg-json.ts`.
 
 ### 2e. Changelog Gate Invariants
 
-**`CHANGELOG.md` is checked by a `scheduled`-tier gate step** — `config/steps.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6] §6).
-Requiring a written `[Unreleased]` entry on every run below `scheduled` would fail every work-in-progress commit; `scheduled` runs exactly where
-the invariant bites, before `prepublishOnly` and before a tag exists.
+**`CHANGELOG.md` is checked by a `static`-tier gate step** — `config/steps.config.ts` owns the step table (see [`TEST_RUNNERS.md`][testing-6]
+§6). The step asks nothing of `[Unreleased]` beyond its place, so an empty one passes and a work-in-progress commit is never held for an entry. A
+drifted heading or an edited released section is caught on the run that introduced it, not at release.
 
 **It imports the parser from `src/tooling/gate/mod.ts` rather than adding a second changelog parser.** Release needs the same grammar to promote
 with, and two parsers for one document is precisely the drift the gate exists to catch. One parser, two callers.
@@ -244,6 +244,9 @@ Failing invariants:
 - **The topmost released heading equals `package.json`'s version.** This is the drift detector, and the reason the gate exists: it catches a heading
   hand-written for a version no tag was ever cut for.
 - Every link reference definition names a heading that exists.
+- **Every released section matches the digest the release recorded for it** in `config/changelog-sections.json`, and no digest outlives its
+  section. `[Unreleased]` is the only section to write in.
+- Every version whose tag exists, from the oldest heading up, still has a section. Only the oldest releases may be trimmed.
 
 A heading with _no_ link definition is a warning only — promotion writes the definition, and some entries legitimately lack one.
 
@@ -255,22 +258,28 @@ released versions carry none), **version contiguity** (a resolved version that n
 
 **One runner, one table per project.** The runner is published; the table is not. That split is the whole design: the fleet shares the selection
 logic, the fail-fast ordering, the `requires` probe and the full-log file, while each repository keeps its own steps as its own source of truth —
-forge's in `config/steps.ts` (see [`TESTING.md`][testing-6a] §6a).
+forge's in `config/steps.config.ts` (see [`TESTING.md`][testing-6a] §6a).
 
-**The bin is the entry point; the factory is the escape hatch.** `forge verify` resolves `config/steps.ts` (or `--config`) and delegates to
-`createGateCommand`, so a project needs no binding file of its own. The factory stays published for the case the bin cannot serve — a table
-assembled at run time, or a gate embedded in a larger CLI.
+**The bin is the entry point; the factory is the escape hatch.** `forge verify` resolves `config/steps.config.ts` (or `--config`) and delegates to
+`createGateCommand`, refusing a module whose default is not a `defineSteps` table, so a project needs no binding file of its own. The factory stays
+published for the case the bin cannot serve — a table assembled at run time, or a gate embedded in a larger CLI.
 
 **The tiers are [`TESTING.md`][testing-6a] §6a's, as one command.** Modelling them as separate verbs would cost a duplicated binding file per
-repo, a `gate` config field, and a superset invariant that must be _tested_ rather than being true by construction.
+repo and a `gate` config field.
 
 **A dependency's absence is answered by the tier, not the table** ([`TESTING.md`][testing-6a] §6a). That is what lets the design-system steps run
 on every machine that has `tailwindcss`, an optional peer, while a run from `runtime` up never skips them — a verdict hardcoded in the table could
 state only one of them. `--list` words a step's dependency per tier: conditional, or required.
 
-**`GateTier` is derived from the ordered `GATE_TIERS` tuple, and `Step.tier` names the lowest tier a step runs in** — the rank
-[`TESTING.md`][testing-6c] §6c requires, so the nesting is a shape the types make unsayable to break rather than a restriction the runner enforces
-at runtime.
+**A table declares each tier as a key, and `tier()` includes a lower tier's resolved rows in place**, so what a tier runs is read off the table, not
+computed from a default each builder carries. `GateTier` is derived from the ordered `GATE_TIERS` tuple, and an entry of tier `K` may reference
+only a tier below `K`, so a tier including itself or one above it is a type error. `resolveTiers` refuses the same through a cast or plain
+JavaScript, along with a reference to an undeclared tier and a label one resolved tier holds twice. It resolves every declared tier before any
+runs, so the refusal is the table's, whatever `--tier` asked for. Nothing sorts a tier, which is why each preset tier above `static` leads with
+its reference ([`TESTING.md`][testing-6c] §6c).
+
+**At `runtime`, a row narrows only in the tier that declares it**, or wherever it states `narrow`. The resolver records each row's home tier. A
+row `runtime` reaches through `tier("unit")` runs whole there, because the tier that declared it made no claim about narrowing it.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
 different prefix, and one config field is cheaper than a fork of the runner per app. The temp-directory prefix behind the full-log file stays
@@ -291,8 +300,11 @@ name it, and until one did, the receipt would sit inside the tree hash it record
 
 ### 2g. cloudflareWorkerSteps — the Fleet Preset
 
-**A preset is a factory returning ordinary `Step` rows, not a second kind of table.** It is spread into the app's own array and appended to; an app
-that outgrows it writes the rows out by hand and loses nothing. Nothing in the runner knows a preset exists.
+**A preset is a factory returning an ordinary `StepTiers` table, not a second kind of table.** It is the app's table, or is merged with the app's
+own rows by `mergeTiers`. An app that outgrows it writes the tiers out by hand and loses nothing. Nothing in the runner knows a preset exists. **A
+complete preset declares all four tiers, each above `static` leading with `tier()` naming the one below**, so a table built from it alone resolves
+every `--tier`. `wardenAppSteps` declares rows only, because it is merged onto a complete one. Merging one complete preset onto another includes the
+lower tiers twice, which the resolver refuses as a duplicate label.
 
 **Generation leads judgement**: the two `wrangler types` steps and the asset-types emitter all write files `typecheck` then reads, so they precede
 it — a stale binding type surfaces as a type error rather than as a green run over yesterday's bindings.
@@ -317,7 +329,7 @@ would bind every app at once.
 **No function in `tooling/gate` or `tooling/release` walks the disk to find out where the project is.** Not upward, not by probing for a marker
 file, not at all. A root arrives one of exactly two ways:
 
-- **Stated.** The caller passes it; forge's own bindings do this from `import.meta.url` (`ROOT` in `config/steps.ts`).
+- **Stated.** The caller passes it; forge's own bindings do this from `import.meta.url` (`ROOT` in `config/paths.ts`).
 - **Derived.** `installedAppRoot()` takes this module's own path and returns everything before its first `node_modules` segment — pure string
   arithmetic, reading no directory. When forge is installed under `<app>/node_modules/…`, that text _is_ `<app>`.
 
@@ -384,12 +396,14 @@ project before its first release. Each records that at the branch, which is wher
 the question a level should answer.
 
 **A drift check over a generated module compares content, not layout.** Layout is the formatter's business — every `gen:*` script pipes its written
-module through `oxfmt` — so both sides are canonicalised before comparison: whitespace removed, and the trailing comma the formatter adds when it
+module through `bun fmt` — so both sides are canonicalised before comparison: whitespace removed, and the trailing comma the formatter adds when it
 expands a literal dropped. Comparing raw text would fail the gate on formatting the generator is not responsible for.
 
 **Every check takes an explicit `root` (§2h) and every forge-specific allowlist as config**, which is what keeps it from being forge's script
-wearing a config parameter. **That configuration lives in the consuming repository's `config/steps.ts`**, beside the step table: that file already
-answers "what does this repository's gate do?", so a step is one entry in it — the builder for the check, and the config it runs with.
+wearing a config parameter. **That configuration lives in the consuming repository's `config/steps.config.ts`**, beside the step table: that file
+already answers "what does this repository's gate do?", so a step is one entry in it — the builder for the check, and the config it runs with. An
+allowlist too long to read inline goes in a plain-`.ts` data module beside the table, such as `config/exemptions.ts`, which the table imports. It is
+data, not a config module, so it keeps no `.config.ts` suffix ([`CONFIG_BASELINE.md`][cb-6] §6).
 
 **Where the tree already states a fact, the check derives it and the config field is the override.** A hand-kept path list is itself a drift
 surface: it rots silently on a rename, and the reason an entry exists ends up far from the file it excuses. So a check reads the convention the
@@ -445,13 +459,17 @@ the behaviour a consumer can reason about.
 
 ### 2l. A Forge Release Never Waits on a Consumer
 
-**The gate `config/release.ts` hands `forge release` is `verify:scheduled`, and it reads nothing outside this checkout.** A consumer depends on
-forge, never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is the
-dependency inverted.
+**The gate `config/release.config.ts` hands `forge release` is `verify:scheduled`, and it reads nothing outside this checkout.** A consumer depends
+on forge, never the reverse: running a consumer's suite in forge's release gate would let that consumer's progress block a forge release, which is
+the dependency inverted.
 
 **A check that every published component is demonstrated belongs to the demonstrator.** Its own gate runs the coverage spec against the forge it
 installs, so a release that publishes a new component turns the demonstrator red on upgrade, and the demo or its excuse lands there. To check ahead
 of a release, the demonstrator runs that spec after `forge dev sync` (§2k).
+
+**`verify:scheduled` holds the cross-engine row, so a release needs both Playwright servers up.** At `scheduled` an absent requirement fails, and
+`forge release` refuses to tag a tree its gate has not passed. A machine without `playwright-compat` cannot cut a release
+([`TEST_RUNNERS.md`][testing-6] §1g).
 
 ### 2m. The Bun Floor Is the Bun the Gate Runs On
 
@@ -514,6 +532,7 @@ different posture; forge itself ships the step rather than running it, having no
 
 [ap]: ./ASSET_PIPELINE.md
 [canon-testing-6]: ../warden/canon/libs/TESTING.md#6-the-verification-gate
+[cb-6]: ../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
 [fc-4c]: ../warden/canon/apps/FORGE_CONSUMPTION.md#4c-upgrading-the-library
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt

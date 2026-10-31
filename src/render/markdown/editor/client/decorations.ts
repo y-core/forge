@@ -3,11 +3,12 @@ import type { EditorState, Extension, Range, TransactionSpec } from "@codemirror
 import { Decoration, EditorView, ViewPlugin, WidgetType } from "@codemirror/view";
 import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 
+import { toggleTask, unitTaskBoxes } from "../../editing";
+import { draftOf, editTransaction, viewportDraft } from "./commands";
 import { calloutPattern, viewportDialect } from "./dialect";
 import { topLevelUnits } from "./syntax";
 import type { DialectSpan, DialectSpanCache, DocumentSpan, EditorSyntaxNode } from "./types";
 
-const TASK_MARKER = /^\[[ xX]\]$/;
 const ATX_HEADING = /^ATXHeading([1-6])$/;
 const MARKER_NODES = new Set(["EmphasisMark", "StrikethroughMark", "LinkMark", "QuoteMark"]);
 const SETEXT_HEADING: Readonly<Record<string, string>> = { SetextHeading1: "cm-md-h1", SetextHeading2: "cm-md-h2" };
@@ -66,12 +67,11 @@ function isEditable(state: EditorState): boolean {
   return state.facet(EditorView.editable) && !state.readOnly;
 }
 
-/** Flips the task marker starting at `pos`, or answers null when the state is not editable or no marker starts there. @internal */
+/** Flips the task box whose `[` sits at `pos`, or answers null when the state is not editable or `toggleTask` sees no box there. @internal */
 export function toggleTaskAt(state: EditorState, pos: number): TransactionSpec | null {
-  const marker = state.doc.sliceString(pos, pos + 3);
-  if (!isEditable(state) || !TASK_MARKER.test(marker)) return null;
-  const checked = marker[1] !== " ";
-  return { changes: { from: pos + 1, to: pos + 2, insert: checked ? " " : "x" }, userEvent: "input" };
+  if (!isEditable(state)) return null;
+  const edit = toggleTask(draftOf(state), pos);
+  return edit === null ? null : editTransaction(edit, "input");
 }
 
 class TaskCheckboxWidget extends WidgetType {
@@ -148,7 +148,21 @@ export function isCalloutMarker(state: EditorState, node: EditorSyntaxNode): boo
   return marker !== undefined && marker.from <= node.from && node.to <= marker.to;
 }
 
-function decorateNode(sink: DecorationSink, state: EditorState, ref: EditorSyntaxNode, editable: boolean): void {
+function taskBoxReader(state: EditorState): (pos: number) => boolean {
+  const known = new Set<number>();
+  return (pos) => {
+    if (!known.has(pos)) for (const box of unitTaskBoxes(draftOf(state), pos)) known.add(box);
+    return known.has(pos);
+  };
+}
+
+function decorateNode(
+  sink: DecorationSink,
+  state: EditorState,
+  ref: EditorSyntaxNode,
+  editable: boolean,
+  isTaskBox: (pos: number) => boolean,
+): void {
   const { name, from, to } = ref;
   const heading = ATX_HEADING.exec(name);
   if (heading) {
@@ -174,7 +188,7 @@ function decorateNode(sink: DecorationSink, state: EditorState, ref: EditorSynta
     return;
   }
   if (name === "TaskMarker") {
-    addReplace(sink, from, to, new TaskCheckboxWidget(/[xX]/.test(state.doc.sliceString(from, to)), editable));
+    if (isTaskBox(from)) addReplace(sink, from, to, new TaskCheckboxWidget(/[xX]/.test(state.doc.sliceString(from, to)), editable));
     return;
   }
   if (name === "Blockquote") {
@@ -217,13 +231,14 @@ export function buildDecorations(
   const next = new Map<string, readonly DialectSpan[]>();
   const editable = isEditable(state);
   const dialect = state.facet(viewportDialect);
+  const isTaskBox = taskBoxReader(state);
   for (const node of topLevelNodesIn(state, ranges)) {
     const base = state.doc.lineAt(node.from).from;
     const text = state.doc.sliceString(base, node.to);
     const spans = cache.get(text) ?? dialect.spans(text);
     next.set(text, spans);
     const cursor = node.cursor();
-    do if (!insideSpan(spans, base, cursor.from, cursor.to)) decorateNode(sink, state, cursor.node, editable);
+    do if (!insideSpan(spans, base, cursor.from, cursor.to)) decorateNode(sink, state, cursor.node, editable, isTaskBox);
     while (cursor.next() && cursor.from < node.to);
     decorateDialect(sink, spans, base);
   }
@@ -255,5 +270,5 @@ class MarkdownDecorations {
 /** Creates the view plugin that decorates markdown constructs without changing the text. @internal */
 export function decorations(): Extension {
   const plugin = ViewPlugin.fromClass(MarkdownDecorations, { decorations: (value) => value.all });
-  return [plugin, EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomic ?? Decoration.none)];
+  return [viewportDraft, plugin, EditorView.atomicRanges.of((view) => view.plugin(plugin)?.atomic ?? Decoration.none)];
 }

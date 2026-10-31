@@ -20,7 +20,7 @@ closes each way it does are this file's own rulings ([`SOURCE_OF_TRUTH.md`][sot-
 
 ## Writing the manifest
 
-Default-export a manifest from `features.ts` in your `config/` directory, naming each feature a copy may leave out:
+Default-export a manifest from `config/features.config.ts`, naming each feature a copy may leave out:
 
 ```ts
 import { defineFeatures } from "@y-core/forge/tooling/curate";
@@ -47,7 +47,7 @@ A file that must stay where a tool reads it, outside every feature's directory, 
 ```ts
 db: {
   directories: ["config/db/"],
-  files: ["config/db.ts"],
+  files: ["config/db.config.ts"],
   scripts: ["db:migrate", "db:reset"],
   seams: ["src/worker.ts"],
 },
@@ -140,7 +140,7 @@ forge curate out --config config/lite.ts         # a manifest other than the def
 | `--keep <a,b>` | Features to keep, comma-separated, with what they require; every other feature is dropped |
 | `--drop <a,b>` | Features to leave out, comma-separated, with what requires them (default: none) |
 | `--list` | Print the feature graph and copy nothing |
-| `--config <path>` | Manifest module, relative to the root (default: `features.ts` in `config/`) |
+| `--config <path>` | Manifest module, relative to the root (default: `config/features.config.ts`) |
 | `--root <path>` | The working tree to copy (default: the working directory) |
 
 The report accounts for every removal — each feature the graph `added` and why, each directory, owned file and script removed, and the lines each

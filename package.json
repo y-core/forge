@@ -6,7 +6,7 @@
     "warden": "./warden/src/bin.ts"
   },
   "type": "module",
-  "packageManager": "bun@1.4.0",
+  "packageManager": "bun@1.4.4",
   "description": "A Web standards platform for server-rendered web applications, built on a foundation of Web APIs for seamless deployment on Cloudflare Workers",
   "repository": {
     "type": "git",
@@ -14,7 +14,7 @@
   },
   "license": "MIT",
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.4"
   },
   "warden": {
     "kind": "libs"
@@ -45,9 +45,9 @@
   "scripts": {
     "fix": "bun run src/tooling/root/bin.ts verify --fix",
     "gen:bundles": "bun run config/bundles.ts",
-    "gen:icc": "bun run src/tooling/gate/checks/icc-profile.ts && oxfmt src/render/pdf/icc.ts",
-    "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && oxfmt src/ui/core/utils/class-groups.ts",
-    "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && oxfmt src/tooling/lint/data/design-scale.ts",
+    "gen:icc": "bun run src/tooling/gate/checks/icc-profile.ts && bun fmt --no-script src/render/pdf/icc.ts",
+    "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && bun fmt --no-script src/ui/core/utils/class-groups.ts",
+    "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && bun fmt --no-script src/tooling/lint/data/design-scale.ts",
     "lint": "bun run src/tooling/root/bin.ts verify --only lint",
     "release": "bun run src/tooling/root/bin.ts release",
     "test": "bun test",
@@ -57,7 +57,6 @@
     "verify:static": "bun run src/tooling/root/bin.ts verify --tier static",
     "verify:unit": "bun run src/tooling/root/bin.ts verify --tier unit",
     "verify:scheduled": "bun run src/tooling/root/bin.ts verify --tier scheduled",
-    "verify:cron": "bun run src/tooling/root/bin.ts verify --config config/cron.ts --tier scheduled",
     "prepublishOnly": "bun run verify:scheduled"
   },
   "sideEffects": [
@@ -87,11 +86,9 @@
     "esbuild": "^0.28.2",
     "fast-check": "4.10.2",
     "harfbuzzjs": "^1.6.3",
-    "oxfmt": "0.74.0",
     "oxlint": "1.89.0",
     "oxlint-tsgolint": "7.0.2004",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7.0.2",
     "wrangler": "^4.151.2"
   },
   "peerDependencies": {
@@ -254,6 +251,10 @@
     "./render/markdown/editor/client": {
       "types": "./src/render/markdown/editor/client/mod.ts",
       "import": "./src/render/markdown/editor/client/mod.ts"
+    },
+    "./render/markdown/editor/textarea/client": {
+      "types": "./src/render/markdown/editor/textarea/client/mod.ts",
+      "import": "./src/render/markdown/editor/textarea/client/mod.ts"
     },
     "./render/pdf": {
       "types": "./src/render/pdf/mod.ts",

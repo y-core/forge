@@ -30,6 +30,7 @@ import {
   formatUntouched,
 } from "./report";
 import { failsWhenAbsent, isCheckStep, selectSteps } from "./steps";
+import { isStepsConfig, resolveTiers } from "./tiers";
 import { GATE_TIERS } from "./types";
 import type {
   CheckStep,
@@ -46,7 +47,7 @@ import type {
 import type { GateCommandConfig } from "./types";
 
 /** Where `forge verify` looks for a step table when `--config` names none. @public */
-export const DEFAULT_STEPS_CONFIG = "config/steps.ts";
+export const DEFAULT_STEPS_CONFIG = "config/steps.config.ts";
 
 const DEFAULT_TIER: GateTier = "runtime";
 
@@ -66,7 +67,10 @@ const gateFlags = {
 
 const binFlags = {
   ...gateFlags,
-  config: { type: "string" as const, description: `Step table module, default-exporting readonly Step[] (default: ${DEFAULT_STEPS_CONFIG})` },
+  config: {
+    type: "string" as const,
+    description: `Step table module, default-exporting defineSteps({ tiers }) (default: ${DEFAULT_STEPS_CONFIG})`,
+  },
   root: { type: "string" as const, description: "Repository root every step runs in (default: the working directory)" },
 };
 
@@ -233,7 +237,7 @@ function optional<K extends string>(key: K, value: string | undefined): Record<K
 
 /** Builds the `verify` command over a project's step table. @public */
 export function createGateCommand(config: GateCommandConfig): Command<typeof gateFlags> {
-  const { cwd, steps: table, binDir = `${cwd}/node_modules/.bin`, gateInputs, receipt: keepsReceipt = true } = config;
+  const { cwd, tiers, binDir = `${cwd}/node_modules/.bin`, gateInputs, receipt: keepsReceipt = true } = config;
 
   return createCommand({
     name: "verify",
@@ -252,6 +256,11 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         quit(1);
       }
       const { tier } = resolved;
+      const table = resolveTiers(tiers);
+      if (!table.ok) {
+        console.error(table.error);
+        quit(1);
+      }
       if (flags.report !== undefined) {
         const clash = [
           flags.fix === true && "fix",
@@ -288,7 +297,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       }
 
       const files = worktreeFiles(cwd);
-      const selection = selectSteps(table, {
+      const selection = selectSteps(table.data, {
         tier,
         ...(flags.only === undefined ? {} : { only: flags.only }),
         ...(changed === undefined ? {} : { changed }),
@@ -513,25 +522,29 @@ export function createGateBinCommand(): Command<typeof binFlags> {
       const quit: (code: number) => never = ctx?.io.exit ?? exit;
       const root = flags.root ?? process.cwd();
       const path = flags.config ?? DEFAULT_STEPS_CONFIG;
-      const loaded = await loadConfigModule<readonly Step[]>({ root, path, explicit: flags.config !== undefined, what: "step table" });
+      const loaded = await loadConfigModule<unknown>({ root, path, explicit: flags.config !== undefined, what: "step table" });
 
       if (loaded === undefined) {
         console.error(`No step table at \`${path}\` — create it, or pass --config to name one elsewhere.`);
         quit(1);
       }
-
-      const declared = loaded.exports.GATE_INPUTS;
-      if (declared !== undefined && !(Array.isArray(declared) && declared.every((entry) => typeof entry === "string"))) {
-        console.error(`\`${path}\` exports GATE_INPUTS, which must be an array of glob strings.`);
+      if (!isStepsConfig(loaded.value)) {
+        console.error(`\`${path}\` must default-export defineSteps({ tiers: { … } }).`);
         quit(1);
       }
-      const table = relative(root, resolve(root, path)).split(sep).join("/");
+
+      const declared = loaded.value.inputs;
+      if (declared !== undefined && !(Array.isArray(declared) && declared.every((entry) => typeof entry === "string"))) {
+        console.error(`\`${path}\` declares \`inputs\`, which must be an array of glob strings.`);
+        quit(1);
+      }
+      const tablePath = relative(root, resolve(root, path)).split(sep).join("/");
 
       await createGateCommand({
         cwd: root,
-        steps: loaded.value,
-        gateInputs: [...(declared ?? []), table],
-        receipt: table === DEFAULT_STEPS_CONFIG,
+        tiers: loaded.value.tiers,
+        gateInputs: [...(declared ?? []), tablePath],
+        receipt: tablePath === DEFAULT_STEPS_CONFIG,
       }).run?.(args, flags, ctx);
     },
   });

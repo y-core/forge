@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import gfm from "../../../tests/fixtures/markdown/gfm.json";
 import spec from "../../../tests/fixtures/markdown/spec.json";
+import { GFM_TASK_LISTS } from "./gfm-task-lists.fixture";
 import { parseMarkdown, renderMarkdownHtml } from "./mod";
 import { normalizeHtml } from "./normalize.fixture";
 import { atSize, PATHOLOGICAL_SHAPES } from "./pathological.fixture";
@@ -31,18 +32,6 @@ const GFM_AUTOLINKED: Readonly<Record<number, string>> = {
 const MICROMARK_FTP: Readonly<Record<number, (html: string) => string>> = {
   628: (html) => html.replace('<a href="ftp://foo.bar.baz">ftp://foo.bar.baz</a>', "ftp://foo.bar.baz"),
 };
-
-// cmark-gfm marks its task list examples `disabled`, so the fixture drops them; they are copied here from its spec text.
-const TASK_LISTS: readonly { markdown: string; html: string }[] = [
-  {
-    markdown: "- [ ] foo\n- [x] bar\n",
-    html: '<ul>\n<li><input disabled="" type="checkbox"> foo</li>\n<li><input checked="" disabled="" type="checkbox"> bar</li>\n</ul>\n',
-  },
-  {
-    markdown: "- [x] foo\n  - [ ] bar\n  - [x] baz\n- [ ] bim\n",
-    html: '<ul>\n<li><input checked="" disabled="" type="checkbox"> foo\n<ul>\n<li><input disabled="" type="checkbox"> bar</li>\n<li><input checked="" disabled="" type="checkbox"> baz</li>\n</ul>\n</li>\n<li><input disabled="" type="checkbox"> bim</li>\n</ul>\n',
-  },
-];
 
 const GFM_SECTIONS = new Set(["Tables (extension)", "Strikethrough (extension)", "Autolinks (extension)", "Task list items (extension)"]);
 
@@ -77,7 +66,7 @@ describe("the GFM 0.29.0.gfm.13 extensions", () => {
     });
   }
 
-  for (const [index, { markdown, html }] of TASK_LISTS.entries()) {
+  for (const [index, { markdown, html }] of GFM_TASK_LISTS.entries()) {
     test(`task list example ${index + 1}`, () => {
       expect(comparable(render(markdown))).toBe(comparable(html));
     });

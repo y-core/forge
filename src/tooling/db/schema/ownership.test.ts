@@ -66,7 +66,7 @@ describe("attributeDrops()", () => {
     ]);
   });
 
-  it("attributes nothing to a file config/db.ts still declares, so an ordinary deletion is unattributed", () => {
+  it("attributes nothing to a file config/db.config.ts still declares, so an ordinary deletion is unattributed", () => {
     expect(attributeDrops(snapshot({ [APP]: ["users"] }), [state(APP)], ["users"])).toEqual([]);
   });
 

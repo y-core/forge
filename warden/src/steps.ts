@@ -1,6 +1,6 @@
 import { checkStep } from "../../src/tooling/gate/builders";
 import type { StepOptions } from "../../src/tooling/gate/types";
-import type { CheckStep, StepRequirement } from "../../src/tooling/gate/types";
+import type { CheckStep, StepRequirement, StepTiers } from "../../src/tooling/gate/types";
 import { type ChangelogCheckConfig, checkChangelog } from "./checks/changelog";
 import { checkDesign, type DesignCheckConfig } from "./checks/design";
 import { checkDocs, type DocsCheckConfig } from "./checks/docs";
@@ -18,10 +18,9 @@ export function docsStep(config: DocsCheckConfig, options: StepOptions = {}): Ch
   return checkStep("validate-docs", () => checkDocs(config), options);
 }
 
-/** Checks the changelog's headings against the current package version, on the `scheduled` tier. @public */
+/** Checks the changelog's headings against the current package version, and its released sections against their recorded digests. @public */
 export function changelogStep(config: ChangelogCheckConfig, options: StepOptions = {}): CheckStep {
   return checkStep("validate-changelog", () => checkChangelog(config), options, {
-    tier: "scheduled",
     watches: [config.file ?? "CHANGELOG.md", config.sectionsFile ?? "config/changelog-sections.json"],
   });
 }
@@ -72,24 +71,28 @@ export interface WardenAppStepOptions {
   requiredFrontmatter?: DocsCheckConfig["requiredFrontmatter"];
 }
 
-/** The rows every consuming application appends. @public */
-export function wardenAppSteps(options: WardenAppStepOptions): readonly CheckStep[] {
+/** The rows every consuming application merges into its table with `mergeTiers`. @public */
+export function wardenAppSteps(options: WardenAppStepOptions): StepTiers {
   const { root, queries } = options;
   const kind = options.kind ?? "apps";
   const scope = { root, kind, dependency: true } as const;
   const libraryDocs = libraryDocsDir(root);
-  return [
-    docsStep({
-      root,
-      packageName: options.packageName,
-      exports: options.exports ?? {},
-      kind,
-      citableDirs: libraryDocs === undefined ? options.citableDirs : [...options.citableDirs, libraryDocs],
-      ...(options.decisionsDir === undefined ? {} : { decisionsDir: options.decisionsDir }),
-      ...(options.requiredFrontmatter === undefined ? {} : { requiredFrontmatter: options.requiredFrontmatter }),
-    }),
-    wardenStep(scope, { tier: "unit" }),
-    wardenQueriesStep({ ...scope, queries, ...(options.negative === undefined ? {} : { negative: options.negative }) }, { tier: "unit" }),
-    duplicatesStep(scope, { tier: "unit" }),
-  ];
+  return {
+    static: [
+      docsStep({
+        root,
+        packageName: options.packageName,
+        exports: options.exports ?? {},
+        kind,
+        citableDirs: libraryDocs === undefined ? options.citableDirs : [...options.citableDirs, libraryDocs],
+        ...(options.decisionsDir === undefined ? {} : { decisionsDir: options.decisionsDir }),
+        ...(options.requiredFrontmatter === undefined ? {} : { requiredFrontmatter: options.requiredFrontmatter }),
+      }),
+    ],
+    unit: [
+      wardenStep(scope),
+      wardenQueriesStep({ ...scope, queries, ...(options.negative === undefined ? {} : { negative: options.negative }) }),
+      duplicatesStep(scope),
+    ],
+  };
 }

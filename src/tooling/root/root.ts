@@ -9,9 +9,9 @@ import { createGateBinCommand } from "../gate/command";
 import { createReleaseBinCommand } from "../release/release";
 
 /** Where `forge` looks for an application's own command table. @public */
-export const DEFAULT_COMMANDS_CONFIG = "config/commands.ts";
+export const DEFAULT_COMMANDS_CONFIG = "config/commands.config.ts";
 
-/** Assembles the `forge` command tree: the first-party commands, then whatever `config/commands.ts` default-exports. @public */
+/** Assembles the `forge` command tree: the first-party commands, then whatever `config/commands.config.ts` default-exports. @public */
 export async function createRootCommand(cwd: string = process.cwd()): Promise<CommandBase> {
   const root = createCommand({ name: "forge", description: "Build, verify, release, and provision a @y-core/forge application" });
 

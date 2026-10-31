@@ -57,14 +57,15 @@
 | Tool | Role |
 | --- | --- |
 | `oxlint` | Linter, incl. type-aware rules (use instead of `eslint`) |
-| `oxfmt` | Formatter and import sorter (use instead of `prettier`) |
+| `bun fmt` | Formatter and import sorter, configured by `.oxfmtrc.json` |
+| `bun check` | Type checker |
 
-A bare `bun run verify` is the `runtime` tier — the gate a commit closes on, with the workerd suite narrowed to the pending changes and no browser
-spec; `bun run verify:scheduled` is the one tier with the Chromium set. **`bun run verify:static` is the loop to write in**, and with `bun test` on
-each touched test file it is the task check a task closes on: every row that judges the source rather than running it, which is the whole gate bar
-the test suites, in about thirteen seconds. It holds the rules above that a step
-checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a finding lands in seconds
-instead of after a 16-second suite.
+A bare `bun run verify` is the `runtime` tier — the gate a commit closes on, with the database rows narrowed to the pending changes and no
+Playwright spec; `bun run verify:scheduled` is the one tier with the Playwright suites (Chromium, Firefox and WebKit, and workerd), and it fails
+unless both Playwright servers answer. **`bun run verify:static` is the loop to write in**, and with `bun test` on each touched test file it is the
+task check a task closes on: every row that judges the source rather than running it, which is the whole gate bar the test suites. It holds the
+rules above that a step checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a
+finding lands without waiting on a test suite.
 
 These flags are not findable from `package.json`:
 
@@ -73,9 +74,10 @@ bun run verify --only lint     # one step, for the dev loop (any step label)
 bun run verify --list          # print the steps of the selected tier, run none
 ```
 
-Gate philosophy, the tiers, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. The step list itself is `config/steps.ts`.
+Gate philosophy, the tiers, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. The step list itself is `config/steps.config.ts`.
 
-**Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` (use `oxfmt`), `biome` (retired — use `oxfmt`).
+**Avoid:** `bun-types` (use the custom stub), `eslint` (use `oxlint`), `prettier` and `oxfmt` (use `bun fmt`), `tsc` (use `bun check`),
+`biome` (retired — use `bun fmt`).
 
 ---
 

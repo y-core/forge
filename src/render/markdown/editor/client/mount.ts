@@ -4,12 +4,23 @@ import { Annotation, Compartment, EditorSelection, EditorState, Transaction } fr
 import type { Extension, Line, StateEffect, TransactionSpec } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 
+import { viewportDraft, viewportKeymap } from "./commands";
 import { viewportDialect } from "./dialect";
+import { createHtmlSurface } from "./html";
 import { hybridRendering, revealActiveLines } from "./hybrid";
 import { markdownSyntax } from "./syntax";
 import { textChanges } from "./text-changes";
 import { editorTheme } from "./theme";
-import type { ViewportAnchor, ViewportController, ViewportMode, ViewportOptions, ViewportRendering, ViewportReplaceOptions } from "./types";
+import type {
+  HtmlSurface,
+  ViewportAnchor,
+  ViewportController,
+  ViewportDialect,
+  ViewportMode,
+  ViewportOptions,
+  ViewportRendering,
+  ViewportReplaceOptions,
+} from "./types";
 
 const MODE = new Compartment();
 const RENDERING = new Compartment();
@@ -39,12 +50,21 @@ function modeExtension(mode: ViewportMode): Extension {
 }
 
 function renderingExtension(rendering: ViewportRendering): Extension {
-  return rendering === "rendered" ? hybridRendering() : [];
+  return rendering === "styled" ? hybridRendering() : [];
 }
 
-/** Answers the effects that reconfigure a viewport state to the given mode and rendering. @internal */
+function effectiveMode(mode: ViewportMode, rendering: ViewportRendering): ViewportMode {
+  return rendering === "html" ? "view" : mode;
+}
+
+function dialectHtml(dialect: ViewportDialect | undefined): (markdown: string) => string {
+  if (dialect?.html === undefined) throw new TypeError('[markdown viewport] the "html" rendering needs a dialect with `html`');
+  return dialect.html;
+}
+
+/** Answers the effects that reconfigure a viewport state to the given mode and rendering, read-only whatever the mode while it is `html`. @internal */
 export function viewportEffects(mode: ViewportMode, rendering: ViewportRendering): StateEffect<unknown>[] {
-  return [MODE.reconfigure(modeExtension(mode)), RENDERING.reconfigure(renderingExtension(rendering))];
+  return [MODE.reconfigure(modeExtension(effectiveMode(mode, rendering))), RENDERING.reconfigure(renderingExtension(rendering))];
 }
 
 /** Answers the one transaction that turns the viewport's text into `markdown`, changing only the lines that differ. @internal */
@@ -59,17 +79,19 @@ export function replaceTransaction(state: EditorState, markdown: string, options
 /** Creates the viewport's editor state, with mode and rendering each in its own compartment. @internal */
 export function createViewportState(options: ViewportStateOptions): EditorState {
   const { onChange } = options;
+  if (options.rendering === "html") dialectHtml(options.dialect);
   return EditorState.create({
     doc: options.markdown,
     extensions: [
       markdownSyntax(),
+      viewportDraft,
       history(),
-      keymap.of([{ key: "Enter", run: insertNewline }, ...historyKeymap, ...defaultKeymap]),
+      keymap.of([...viewportKeymap, { key: "Enter", run: insertNewline }, ...historyKeymap, ...defaultKeymap]),
       EditorView.lineWrapping,
       editorTheme,
       options.dialect === undefined ? [] : [viewportDialect.of(options.dialect), options.dialect.theme ?? []],
       EditorView.contentAttributes.of({ "aria-label": options.label, "aria-multiline": "true" }),
-      MODE.of(modeExtension(options.mode)),
+      MODE.of(modeExtension(effectiveMode(options.mode, options.rendering))),
       RENDERING.of(renderingExtension(options.rendering)),
       EditorView.updateListener.of((update) => {
         if (update.transactions.some((tr) => tr.docChanged && tr.annotation(REPLACED) === undefined)) onChange?.();
@@ -85,15 +107,32 @@ export function mountMarkdownViewport(host: HTMLElement, options: ViewportOption
   const { scroller } = options;
   let mode = options.mode;
   let rendering = options.rendering;
+  let surface: HtmlSurface | null = null;
   let placement = 0;
   let releasePlacement = (): void => {};
 
-  const isLaidOut = (): boolean => view.dom.getClientRects().length > 0;
+  const htmlSurface = (): HtmlSurface => (surface ??= createHtmlSurface(host, shadow, dialectHtml(options.dialect), options.onHtml));
+  const showingHtml = (): HtmlSurface | null => (rendering === "html" ? surface : null);
+
+  // Shown before it is written, so `onHtml` meets a laid-out container it can focus into.
+  const showRendering = (): void => {
+    view.dom.hidden = rendering === "html";
+    if (rendering !== "html") return surface?.show(false);
+    const shown = htmlSurface();
+    shown.show(true);
+    shown.render(view.state.doc.toString());
+  };
+
+  const isLaidOut = (): boolean => showingHtml()?.laidOut() ?? view.dom.getClientRects().length > 0;
 
   const topAnchor = (): ViewportAnchor => {
+    const html = showingHtml();
+    if (html !== null) return html.topAnchor(scroller);
+    const { doc } = view.state;
     const top = scroller.getBoundingClientRect().top;
-    const block = view.lineBlockAtHeight(top - view.documentTop);
-    return { line: view.state.doc.lineAt(block.from).number, top: view.documentTop + block.top };
+    let line = doc.lineAt(view.lineBlockAtHeight(top - view.documentTop).from);
+    while (line.text.trim() === "" && line.number < doc.lines) line = doc.line(line.number + 1);
+    return { line: line.number, top: view.documentTop + view.lineBlockAt(line.from).top };
   };
 
   const anchorLine = (anchor: ViewportAnchor): Line => {
@@ -139,42 +178,50 @@ export function mountMarkdownViewport(host: HTMLElement, options: ViewportOption
 
   const scrollTo = (anchor: ViewportAnchor): void => {
     cancelPlacement();
+    const html = showingHtml();
+    if (html !== null) return html.scrollTo(scroller, anchor);
     forceParsing(view, anchorLine(anchor).to, PARSE_BUDGET_MS);
     watchReader();
     placeAnchor(anchor, placement, PLACEMENT_FRAMES);
   };
 
-  const reconfigure = (): void => {
-    const effects = viewportEffects(mode, rendering);
-    if (!isLaidOut()) {
-      cancelPlacement();
-      view.dispatch({ effects });
-      return;
-    }
-    const anchor = topAnchor();
-    view.dispatch({ effects });
-    scrollTo(anchor);
+  // The anchor is read off the surface shown before the switch and placed on the one shown after it.
+  const reconfigure = (nextMode: ViewportMode, nextRendering: ViewportRendering): void => {
+    const anchor = isLaidOut() ? topAnchor() : null;
+    mode = nextMode;
+    rendering = nextRendering;
+    view.dispatch({ effects: viewportEffects(mode, rendering) });
+    showRendering();
+    if (anchor === null) cancelPlacement();
+    else scrollTo(anchor);
   };
+
+  showRendering();
 
   return {
     setMode: (next) => {
       if (next === mode) return;
-      mode = next;
-      reconfigure();
+      if (rendering === "html") mode = next;
+      else reconfigure(next, rendering);
     },
     setRendering: (next) => {
       if (next === rendering) return;
-      rendering = next;
-      reconfigure();
+      if (next === "html") dialectHtml(options.dialect);
+      reconfigure(mode, next);
     },
     topAnchor,
     scrollTo,
     getMarkdown: () => view.state.doc.toString(),
-    replace: (markdown, replaceOptions) => view.dispatch(replaceTransaction(view.state, markdown, replaceOptions)),
+    replace: (markdown, replaceOptions) => {
+      view.dispatch(replaceTransaction(view.state, markdown, replaceOptions));
+      showingHtml()?.render(view.state.doc.toString());
+    },
     destroy: () => {
       cancelPlacement();
       view.destroy();
       shadow.replaceChildren();
+      surface?.destroy();
+      surface = null;
     },
   };
 }

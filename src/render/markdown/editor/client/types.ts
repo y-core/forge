@@ -1,6 +1,8 @@
 import type { syntaxTree } from "@codemirror/language";
 import type { Extension } from "@codemirror/state";
 
+import type { createMarkdownDraft, wrapSelection } from "../../editing";
+
 /** The timer functions autosave runs on, injectable for tests. */
 export interface AutosaveTimers {
   setTimeout(fn: () => void, ms: number): number;
@@ -27,8 +29,8 @@ export interface Autosave {
 /** Whether the viewport takes typing or only shows the text. */
 export type ViewportMode = "edit" | "view";
 
-/** Whether the viewport hides markdown marks off the cursor's line or shows the raw text. */
-export type ViewportRendering = "rendered" | "raw";
+/** Whether the viewport shows the raw text, hides markdown marks off the cursor's line, or shows the dialect's read-only HTML. */
+export type ViewportRendering = "raw" | "styled" | "html";
 
 /** A source line and the client Y its top sits at. */
 export interface ViewportAnchor {
@@ -48,11 +50,13 @@ export type DialectSpan =
     }
   | { readonly kind: "embed"; readonly from: number; readonly to: number; readonly alt: string };
 
-/** The markdown dialect the viewport decorates: where its constructs sit in a unit, which callout kinds it reads, and its own styles. */
+/** The markdown dialect the viewport decorates: where its constructs sit in a unit, which callout kinds it reads, its own styles, and the HTML it renders. */
 export interface ViewportDialect {
   readonly spans: (text: string) => readonly DialectSpan[];
   readonly calloutKinds: readonly string[];
   readonly theme?: Extension | undefined;
+  /** The whole document as `renderMarkdownHtml` writes it under an allowlist schema with `lineAnchors: true`; the `html` rendering needs it. */
+  readonly html?: ((markdown: string) => string) | undefined;
 }
 
 /** How `mountMarkdownViewport` opens the viewport; with no `dialect` it decorates CommonMark and GFM alone. */
@@ -64,6 +68,8 @@ export interface ViewportOptions {
   readonly scroller: HTMLElement;
   readonly onChange: () => void;
   readonly dialect?: ViewportDialect | undefined;
+  /** Runs with the `html` rendering's container each time new HTML is written into it. */
+  readonly onHtml?: ((container: HTMLElement) => void) | undefined;
 }
 
 /** How `ViewportController.replace` treats the reader's selection. */
@@ -84,6 +90,18 @@ export interface ViewportController {
   destroy(): void;
 }
 
+/** The `html` rendering's light-DOM document, shown through the viewport's shadow root. @internal */
+export interface HtmlSurface {
+  readonly container: HTMLElement;
+  /** Writes `markdown`'s HTML unless it is the text written last. */
+  render(markdown: string): void;
+  show(shown: boolean): void;
+  laidOut(): boolean;
+  topAnchor(scroller: HTMLElement): ViewportAnchor;
+  scrollTo(scroller: HTMLElement, anchor: ViewportAnchor): void;
+  destroy(): void;
+}
+
 /** A span of the document, as CodeMirror's visible ranges are. @internal */
 export interface DocumentSpan {
   readonly from: number;
@@ -100,3 +118,12 @@ export type DialectSpanCache = ReadonlyMap<string, readonly DialectSpan[]>;
 
 /** A node of the editor's markdown syntax tree, typed off `syntaxTree` so no parser package is imported. @internal */
 export type EditorSyntaxNode = ReturnType<ReturnType<typeof syntaxTree>["resolveInner"]>;
+
+/** The editing core's draft, typed off `createMarkdownDraft` so the editor imports nothing from the core but its functions. @internal */
+export type EditorDraft = ReturnType<typeof createMarkdownDraft>;
+
+/** One edit the editing core answers. @internal */
+export type EditorEdit = NonNullable<ReturnType<typeof wrapSelection>>;
+
+/** An inline construct `wrapSelection` writes. @internal */
+export type EditorWrap = Parameters<typeof wrapSelection>[2];

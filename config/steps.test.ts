@@ -1,21 +1,30 @@
 import { describe, expect, it } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { dirname, join, matchesGlob } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, matchesGlob } from "node:path";
 
 import { worktreeFiles } from "../src/tooling/cli/worktree";
 import { declaredByName } from "../src/tooling/gate/checks/co-location";
 import { isBudgetedSource } from "../src/tooling/gate/checks/comment-budget";
+import { checkConfigFiles } from "../src/tooling/gate/checks/config-files";
 import { isBrowserSubpath } from "../src/tooling/gate/checks/exports";
 import { resolveSources } from "../src/tooling/gate/checks/source-scan";
-import { GATE_TIERS, type GateTier, selectSteps } from "../src/tooling/gate/mod";
+import { declaredSteps, GATE_TIERS, type GateTier, resolveTiers, type ResolvedTiers, selectSteps, type StepTiers } from "../src/tooling/gate/mod";
 import { BROWSER_ONLY, CO_LOCATION_EXEMPT } from "./exemptions";
-import { COMMENT_BUDGET_SOURCES, CSS_DIR, GATE_INPUTS, STEPS } from "./steps";
+import { COMMENT_BUDGET_SOURCES, CSS_DIR, ROOT } from "./paths";
+import steps from "./steps.config";
 
-const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+function resolved(tiers: StepTiers): ResolvedTiers {
+  const table = resolveTiers(tiers);
+  if (!table.ok) throw new Error(table.error);
+  return table.data;
+}
+
+const STEPS = declaredSteps(steps.tiers);
+const TABLE = resolved(steps.tiers);
+const GATE_INPUTS = steps.inputs ?? [];
 
 const labels = (tier: GateTier): string[] => {
-  const selection = selectSteps(STEPS, { tier });
+  const selection = selectSteps(TABLE, { tier });
   return selection.ok ? selection.steps.map((step) => step.label) : [];
 };
 
@@ -24,26 +33,40 @@ describe("the gate's step table", () => {
     expect(STEPS.map((step) => step.label).length).toBe(new Set(STEPS.map((step) => step.label)).size);
   });
 
-  it("selects each tier as a superset of the one below it", () => {
+  it("opens each tier above static with the whole tier below it, in its order", () => {
     const runs = GATE_TIERS.map(labels);
 
-    expect(runs.slice(1).every((run, index) => (runs[index] ?? []).every((label) => run.includes(label)))).toBe(true);
+    expect(runs.slice(1).map((run, index) => run.slice(0, runs[index]?.length).join() === runs[index]?.join())).toEqual([true, true, true]);
   });
 
   it("selects without calling a probe, so what it selects never depends on the machine", () => {
-    expect(selectSteps(STEPS, { tier: "scheduled" }).ok).toBe(true);
+    expect(selectSteps(TABLE, { tier: "scheduled" }).ok).toBe(true);
   });
 
-  it("keeps the browser suite out of runtime and runs it on Chromium alone at scheduled", () => {
-    const browsers = (tier: GateTier): string[] => labels(tier).filter((label) => label.startsWith("test:browser"));
+  it("keeps every Playwright row out of runtime and runs them at scheduled, the browser set on Chromium alone", () => {
+    const playwright = (tier: GateTier): string[] =>
+      labels(tier).filter((label) => STEPS.find((step) => step.label === label)?.cmd?.[0] === "playwright");
 
-    expect([browsers("unit"), browsers("runtime"), browsers("scheduled")]).toEqual([[], [], ["test:browser"]]);
+    expect([playwright("unit"), playwright("runtime"), playwright("scheduled")]).toEqual([
+      [],
+      [],
+      ["test:browser", "test:workerd", "test:browser:cross-engine"],
+    ]);
   });
 
-  it("names no Firefox or WebKit project in any row, so the cross-engine subset runs only by hand or on a schedule", () => {
-    const projects = STEPS.flatMap((step) => step.cmd ?? []).filter((arg) => arg.startsWith("--project="));
+  it("names Firefox and WebKit only in the cross-engine row, which only the scheduled tier resolves", () => {
+    const crossEngine = STEPS.filter((step) => (step.cmd ?? []).some((arg) => arg === "--project=firefox" || arg === "--project=webkit"));
 
-    expect(projects).toEqual(["--project=chromium", "--project=workerd"]);
+    expect(crossEngine.map((step) => step.label)).toEqual(["test:browser:cross-engine"]);
+    expect(GATE_TIERS.filter((tier) => labels(tier).includes("test:browser:cross-engine"))).toEqual(["scheduled"]);
+  });
+
+  it("declares the test row in the unit tier", () => {
+    expect(TABLE.scheduled?.home["test"]).toBe("unit");
+  });
+
+  it("declares the changelog row in the static tier, so every run holds the changelog", () => {
+    expect(TABLE.scheduled?.home["validate-changelog"]).toBe("static");
   });
 
   it("fails the test row when the suite leaves anything in its TMPDIR", () => {
@@ -97,7 +120,7 @@ describe("the gate's watches", () => {
     .filter((file) => file !== "");
 
   const affected = (changed: readonly string[]): string[] => {
-    const selection = selectSteps(STEPS, { tier: "scheduled", changed, gateInputs: GATE_INPUTS });
+    const selection = selectSteps(TABLE, { tier: "scheduled", changed, gateInputs: GATE_INPUTS });
     return selection.ok ? selection.steps.map((step) => step.label) : [`refused: ${selection.error}`];
   };
 
@@ -108,38 +131,40 @@ describe("the gate's watches", () => {
       "typecheck:workers-consumer-node",
       "typecheck:service-worker-consumer",
       "lint:types",
-      "test",
       "validate-exports",
       "validate-namespace-graph",
       "validate-packaging",
       "validate-docs",
       "validate-design",
+      "test",
       "test:browser",
       "test:workerd",
+      "test:browser:cross-engine",
     ]);
   });
 
-  it("keeps a hand-kept watch list off every Playwright row, and narrows only the runtime one", () => {
+  it("keeps a hand-kept watch list and any narrowing off every Playwright row", () => {
     const playwright = STEPS.filter((step) => step.cmd?.[0] === "playwright");
 
-    expect(playwright.map((step) => [step.label, step.watches, step.narrow?.probe?.args])).toEqual([
-      ["test:browser", undefined, undefined],
-      ["test:workerd", undefined, ["--list"]],
+    expect(playwright.map((step) => [step.label, step.watches, step.narrow, step.widen])).toEqual([
+      ["test:browser", undefined, undefined, undefined],
+      ["test:workerd", undefined, undefined, undefined],
+      ["test:browser:cross-engine", undefined, undefined, undefined],
     ]);
   });
 
   it("passes the gate's own refusal of a watches or wide glob that matches no file in the work tree", () => {
     const files = worktreeFiles(ROOT) ?? [];
-    const selection = selectSteps(STEPS, { tier: "scheduled", files });
+    const selection = selectSteps(TABLE, { tier: "scheduled", files });
 
     expect(files).toContain("package.json");
     expect(selection.ok ? "" : selection.error).toBe("");
   });
 
-  it("declares the stylesheet directory once, and derives every path beneath it", () => {
-    const source = readFileSync(join(ROOT, "config/steps.ts"), "utf-8");
+  it("declares the stylesheet directory once, in the shared paths, and derives every path beneath it", () => {
+    const occurrences = (file: string): number => readFileSync(join(ROOT, file), "utf-8").split(CSS_DIR).length - 1;
 
-    expect(source.split(CSS_DIR).length - 1).toBe(1);
+    expect([occurrences("config/paths.ts"), occurrences("config/steps.config.ts")]).toEqual([1, 0]);
   });
 
   it("holds no gate input that matches no tracked file", () => {
@@ -159,29 +184,16 @@ describe("the gate's watches", () => {
 });
 
 describe("the runtime tier's narrowing", () => {
-  const reach = (pending: readonly string[]): Record<string, string> => {
-    const selection = selectSteps(STEPS, { tier: "runtime", pending, gateInputs: GATE_INPUTS });
-    if (!selection.ok) return {};
-    const { "test:workerd": workerd = "", "db:schema": db = "" } = selection.reach;
-    return { workerd, db };
+  const reach = (pending: readonly string[]): string | undefined => {
+    const selection = selectSteps(TABLE, { tier: "runtime", pending, gateInputs: GATE_INPUTS });
+    return selection.ok ? selection.reach["db:schema"] : undefined;
   };
 
-  it("hands the workerd row to its probe for any edit, and runs a database row whole or not at all", () => {
-    expect(reach(["src/ui/core/button.tsx"])).toEqual({ workerd: "narrow", db: "untouched" });
-    expect(reach(["tests/workerd/x.workerd.ts"])).toEqual({ workerd: "narrow", db: "untouched" });
+  it("runs a database row whole or not at all", () => {
+    expect([reach(["src/ui/core/button.tsx"]), reach(["tests/workerd/x.workerd.ts"])]).toEqual(["untouched", "untouched"]);
   });
 
   const traced = async (label: string): Promise<readonly string[]> => (await STEPS.find((step) => step.label === label)?.widen?.(ROOT)) ?? [];
-
-  it("traces every Worker a workerd spec serves and every file it names by URL, so a change confined to one runs the row whole", async () => {
-    const workerd = await traced("test:workerd");
-
-    expect(workerd).toContain("src/app/forge-app.ts");
-    expect(workerd).toContain("tests/fixtures/harness-entry/worker.ts");
-    expect(workerd).toContain("src/auth/schema.sql");
-    expect(workerd).not.toContain("src/ui/client/menu.ts");
-    expect(STEPS.find((step) => step.label === "test:workerd")?.narrow?.wide).toEqual(["playwright.config.ts", "tests/fixtures/**"]);
-  });
 
   it("traces the command every database row runs, so a change to the CLI that loads `forge db` runs them whole", async () => {
     for (const label of ["db:lint", "db:schema"]) {
@@ -192,7 +204,7 @@ describe("the runtime tier's narrowing", () => {
 
   it("runs the database rows for a change to a namespace db tooling reaches through the graph, or the schema its fixture composes", () => {
     for (const path of ["src/tooling/db/sql.ts", "src/storage/db/sql.ts", "src/logging/mod.ts", "src/validation/mod.ts", "src/auth/schema.sql"]) {
-      expect([path, reach([path]).db]).toEqual([path, "whole"]);
+      expect([path, reach([path])]).toEqual([path, "whole"]);
     }
   });
 
@@ -203,12 +215,24 @@ describe("the runtime tier's narrowing", () => {
     expect(db.every((step) => step.watches?.includes("tests/fixtures/db-schema/**"))).toBe(true);
   });
 
-  it("runs the whole workerd set for a fixture, which specs read without importing", () => {
-    expect(reach(["tests/fixtures/workers-form/worker.ts"]).workerd).toBe("whole");
+  it("runs no database row for a documentation edit", () => {
+    expect(reach(["docs/TEST_RUNNERS.md"])).toBe("untouched");
   });
 
-  it("runs no database row for a documentation edit, and leaves the workerd row to its probe", () => {
-    expect(reach(["docs/TEST_RUNNERS.md"])).toEqual({ workerd: "narrow", db: "untouched" });
+  it("narrows only the rows the runtime tier declares itself, running every row it reaches from a lower tier whole", () => {
+    const selection = selectSteps(TABLE, { tier: "runtime", pending: ["docs/TEST_RUNNERS.md"], gateInputs: GATE_INPUTS });
+    const narrowed = selection.ok ? Object.entries(selection.reach).filter(([, how]) => how !== "whole") : [];
+
+    expect(narrowed).toEqual([
+      ["db:lint", "untouched"],
+      ["db:schema", "untouched"],
+    ]);
+  });
+});
+
+describe("forge's config modules", () => {
+  it("passes its own config-file check", () => {
+    expect(checkConfigFiles({ root: ROOT })).toMatchObject({ ok: true, findings: [] });
   });
 });
 

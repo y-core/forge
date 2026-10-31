@@ -14,9 +14,9 @@ export async function loadConfigModule<T>(request: ConfigModuleRequest): Promise
     return undefined;
   }
 
-  const module = (await import(pathToFileURL(resolved).href)) as Readonly<Record<string, unknown>> & { default?: T };
+  const module = (await import(pathToFileURL(resolved).href)) as { default?: T };
   if (module.default === undefined) {
     throw new Error(`\`${path}\` has no default export — a ${what} module must \`export default\` the value it holds.`);
   }
-  return { value: module.default, exports: module };
+  return { value: module.default };
 }

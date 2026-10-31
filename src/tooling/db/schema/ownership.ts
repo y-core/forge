@@ -14,7 +14,7 @@ export function declaredNamesBySource(claims: readonly OwnershipClaim[]): Record
 }
 
 // These names explain a drop the diff already decided on; nothing here keeps an object out of the diff or refuses one.
-/** Each dropped object a source in the snapshot declared that `config/db.ts` does not declare now, sources in snapshot order. @internal */
+/** Each dropped object a source in the snapshot declared that `config/db.config.ts` does not declare now, sources in snapshot order. @internal */
 export function attributeDrops(
   snapshot: SchemaSnapshot | null,
   states: readonly DesiredState[],

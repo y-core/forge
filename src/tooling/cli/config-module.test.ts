@@ -25,10 +25,10 @@ describe("loadConfigModule()", () => {
     expect((await loadConfigModule({ ...REQUEST, path }))?.value).toEqual([{ label: "typecheck" }]);
   });
 
-  it("carries the module's named exports beside its default, so a bin reads both through one import", async () => {
+  it("returns the default export alone, never the module's named exports", async () => {
     const path = write("named.ts", "export const GATE_INPUTS = ['src/**']; export default [];");
 
-    expect((await loadConfigModule({ ...REQUEST, path }))?.exports.GATE_INPUTS).toEqual(["src/**"]);
+    expect(await loadConfigModule({ ...REQUEST, path })).toEqual({ value: [] });
   });
 
   it("accepts an absolute path as readily as a relative one", async () => {

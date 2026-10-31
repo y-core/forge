@@ -5,9 +5,9 @@ import type { FeatureManifest } from "./types";
 import { FeatureManifestSchema } from "./types";
 
 /** Where `forge curate` looks for its manifest when `--config` names none. @public */
-export const DEFAULT_FEATURE_MANIFEST = "config/features.ts";
+export const DEFAULT_FEATURE_MANIFEST = "config/features.config.ts";
 
-/** Types the default export of a `config/features.ts`. @public */
+/** Types the default export of a `config/features.config.ts`. @public */
 export function defineFeatures(config: FeatureManifest): FeatureManifest {
   return config;
 }

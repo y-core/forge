@@ -7,7 +7,7 @@ audience: consumer
 # `@y-core/forge/render/markdown/editor/client`
 
 A markdown viewport for one document, and the one surface through which your page drives it. Mount it on a host element a single time, switch
-it between editing and viewing and between rendered and raw markdown, and nothing else on the page imports CodeMirror.
+it between editing and viewing and between raw markdown, styled markdown and your dialect's HTML, and nothing else on the page imports CodeMirror.
 
 ```ts
 import { createAutosave, mountMarkdownViewport } from "@y-core/forge/render/markdown/editor/client";
@@ -30,7 +30,7 @@ import { mountMarkdownViewport } from "@y-core/forge/render/markdown/editor/clie
 const viewport = mountMarkdownViewport(host, {
   markdown: page.markdown,
   mode: "edit",
-  rendering: "rendered",
+  rendering: "styled",
   label: "Page body",
   scroller,
   onChange: () => autosave.touch(),
@@ -50,6 +50,7 @@ With no `dialect`, the viewport decorates CommonMark and GFM alone. To draw your
   and a `tag`, `highlight` or `due` is marked. Nothing the viewport would otherwise decorate inside a span is decorated.
 - `calloutKinds` names the kinds a `> [!kind]` blockquote may open with; each line of one gets `cm-md-callout cm-md-callout-<kind>`.
 - `theme` is a CodeMirror extension added after the viewport's own, for styling those classes per kind.
+- `html(markdown)` answers the whole document as HTML, for the `html` rendering. See [Showing the HTML](#showing-the-html).
 
 Build `spans` on the same constructs you parse with, so the editor and your rendered page agree:
 
@@ -76,18 +77,54 @@ The viewport keeps each block's spans between passes while its text is unchanged
 
 ## Switching mode and rendering
 
-`setMode("edit")` lets the reader type and `setMode("view")` makes the text read-only. `setRendering("rendered")` hides markdown marks, showing
-them again only on the lines the cursor touches while editing, and `setRendering("raw")` shows every mark. Every combination shares one
-editor, which is never re-created, so undo history and the selection survive every switch. Switching never moves focus, and a call naming the
-current state does nothing.
+`setMode("edit")` lets the reader type and `setMode("view")` makes the text read-only. `setRendering("styled")` hides markdown marks, showing
+them again only on the lines the cursor touches while editing, `setRendering("raw")` shows every mark, and `setRendering("html")` shows your
+dialect's HTML in place of the editor. Every combination shares one editor, which is never re-created, so undo history and the selection survive
+every switch. Switching never moves focus, and a call naming the current state does nothing.
 
-A task's checkbox ticks the task in an editable viewport, and is disabled in a read-only one.
+## Showing the HTML
+
+The `html` rendering is always read-only. A `setMode` call made while it shows is remembered and applies when you switch to `raw` or `styled`.
+It needs `dialect.html`: mounting in `html` or calling `setRendering("html")` without it throws a `TypeError`.
+
+Render with `renderMarkdownHtml` under an allowlist schema, and pass `lineAnchors: true` so the viewport can keep the reader's place:
+
+```ts
+import { MARKDOWN_ELEMENTS, renderMarkdownHtml } from "@y-core/forge/render/markdown";
+
+const APP_DIALECT: ViewportDialect = {
+  spans,
+  calloutKinds,
+  html: (markdown) => renderMarkdownHtml(parseMarkdown(markdown, SYNTAX), { schema: APP_SCHEMA, lineAnchors: true }),
+};
+```
+
+The viewport never imports the renderer. A page that never shows `html` never loads it, so keep `html` in a module you load lazily.
+
+The HTML is one whole document, written into `<div class="markdown" data-viewport-html>`. That element is a light-DOM child of the host,
+slotted beside the editor, so your page's stylesheets and event delegation reach it. The viewport writes it when `html` is first shown, and again
+on each `replace` while it shows, but only when the text has changed since the last write. After each write it calls `onHtml(container)`. Use
+that to wire the new markup up, for example by handing it to `htmx.process`.
+
+Under Trusted Types, the write goes through a policy named `forge-markdown`, exported as `MARKDOWN_TRUSTED_TYPES_POLICY` from
+`@y-core/forge/render/markdown`. List it in your CSP's `trusted-types` directive. When the browser refuses the policy, the viewport logs a
+`console.error` naming that fix, writes nothing, and sets `data-viewport-html="refused"` on the container.
+
+## Typing lists and formatting
+
+Enter at the end of a list item starts the next one, numbered on, with the same bullet or delimiter, any `>` and indentation, and `[ ]` after a
+task. Enter on an empty item ends the list, and anywhere else it is a plain line break. Mod-B, Mod-I, Mod-E and Mod-K write `**`, `*`, a backtick
+or link brackets around the selection and keep it selected; a link selects `url`, ready to type over. Pressed over text its markers already
+surround, a key removes them, so select a link's label, not its `url`, to unwrap it. These keys read lists and markers with [the parser the
+renderer uses][editing], and do nothing in view mode or while an input method is composing.
+
+A task's checkbox ticks the task in an editable viewport wherever the renderer reads a box, and is disabled in a read-only one.
 
 ## Keeping the reader's place
 
 `topAnchor()` answers the source line at the top of `scroller` and the client Y its top sits at; `scrollTo(anchor)` scrolls `scroller` until that
-line sits there again. While the host is shown, `setMode` and `setRendering` keep the viewport's own place; while it is hidden they only
-reconfigure, and the place is yours to keep.
+line sits there again. In `html`, both read the top-level elements carrying `data-line`. While the host is shown, `setMode` and `setRendering`
+keep the viewport's own place, `html` included; while it is hidden they only reconfigure, and the place is yours to keep.
 
 When you swap the viewport for another surface or back, read the anchor from whatever is showing before the swap, switch, show the other
 surface, and only then place the anchor on it. Only the latest `scrollTo` lands, and none lands once the host is hidden. A placement gives way
@@ -137,15 +174,18 @@ It saves once the reader pauses for `AUTOSAVE_DEBOUNCE_MS`, and at the latest `A
 The viewport renders inside the host's open shadow root, so page classes and utilities do not reach it. It takes the page's CSS custom
 properties, which cross the shadow boundary: set forge's theme variables (`--foreground`, `--primary`, `--border` and the rest) on the host or
 an ancestor to restyle it, and dark mode follows on its own. Headings and code read `--md-h1-size` to `--md-h6-size`, `--md-h1-weight` to
-`--md-h6-weight` and `--md-code-font`. Size and space the host itself from the page.
+`--md-h6-weight` and `--md-code-font`. Size and space the host itself from the page. The `html` container is in the page's own DOM, so style it
+with `markdown.css` from `@y-core/forge/ui/assets/css` and your own rules for your dialect's classes.
 
 ## Tearing it down
 
-Call `destroy()` when the page goes away. It empties the shadow root, so the same host can mount again. Flush the autosave first:
-`dispose()` drops a touch still waiting out its debounce, and an in-app navigation fires no `pagehide`.
+Call `destroy()` when the page goes away. It empties the shadow root and removes the `html` container, so the same host can mount again.
+Flush the autosave first: `dispose()` drops a touch still waiting out its debounce, and an in-app navigation fires no `pagehide`.
 
 ```ts
 autosave.flush();
 autosave.dispose();
 viewport.destroy();
 ```
+
+[editing]: ../../README.md#editing-markdown-as-it-is-typed

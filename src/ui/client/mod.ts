@@ -9,6 +9,7 @@ export { mountRovingFocus } from "./composite";
 export type { RovingFocusOptions } from "./types";
 export {
   activeElement,
+  afterTransitions,
   asElement,
   closestAcross,
   contains,

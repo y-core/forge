@@ -93,8 +93,8 @@ the lookup runs from forge's own module and follows the install wherever it land
 
 Declaring it also makes forge's own palette **readable**. Tailwind v4 ships its default theme as CSS (`tailwindcss/theme.css`,
 `--color-red-700: oklch(…)`), which is what lets the contrast audit resolve the status hues rather than pinning a human's measurement of them
-(`src/tooling/gate/checks/contrast.ts`, pointed at that stylesheet by `config/steps.ts`). That capability is a consequence of the declaration, not
-its justification — the declaration was owed either way.
+(`src/tooling/gate/checks/contrast.ts`, pointed at that stylesheet by `config/steps.config.ts`). That capability is a consequence of the
+declaration, not its justification — the declaration was owed either way.
 
 ### 3d. CSS Source Scanning Stops at `ui/`
 
@@ -228,7 +228,7 @@ with the declaration rule off for `types.ts` itself and for specs — a fixture 
 exemption is one `overrides` entry naming the files, not a general escape —
 every other file in the namespace obeys the rule.
 
-Neither half is available off the shelf. `oxfmt` is a formatter and judges no structure at all; oxlint's builtin
+Neither half is available off the shelf. `bun fmt` is a formatter and judges no structure at all; oxlint's builtin
 `typescript/consistent-type-imports` only reports a type reached through a value import, which `verbatimModuleSyntax` already makes a compile error,
 and it accepts the inline specifier this rule exists to forbid. The lint plugin is where a rule of forge's own belongs ([`BUILD_TOOLING.md`][bt-1]
 §1).

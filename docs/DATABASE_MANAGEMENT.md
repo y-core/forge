@@ -442,12 +442,12 @@ release. The same rows give the same `sha256`, so "regenerate, then expect an em
 
 ## 8. Every Position Is Declared
 
-**The host config — a `db.ts` in the app's `config/` directory — names every file `forge db` reads, and nothing else is read.** An installed package
-contributes no DDL to your database because it happens to ship some; it contributes DDL because the app asked for it, by path, in a file a reviewer
-can see.
+**The host config, `db.config.ts` in the app's `config/` directory, default-exporting `defineDbConfig({...})`, names every file `forge db` reads,
+and nothing else is read.** An installed package contributes no DDL to your database because it happens to ship some; it contributes DDL because the
+app asked for it, by path, in a file a reviewer can see.
 
 It declares the desired-state files in load order, the seeds directories in run order, the one migrations directory, where the composed snapshot
-lives, and where backups go. The fields, their defaults and a worked `db.ts` are the README's; `DbHostConfig` in `src/tooling/db/types.ts` is
+lives, and where backups go. The fields, their defaults and a worked `db.config.ts` are the README's; `DbHostConfig` in `src/tooling/db/types.ts` is
 authoritative over both ([`SOURCE_OF_TRUTH.md`][sot] §2a).
 
 **These rulings hold whatever the fields say.** `schemas` is ordered and loaded into one empty database, so a file with a `FOREIGN KEY` comes after
@@ -480,9 +480,9 @@ forge db migrate status --check --target remote    # the deployed database agree
 (`SCHEMA_COMPOSITION.md` §6); the second asks whether the database has had them applied (§6c). Together they catch a deploy shipping code that
 expects a column no migration has applied, at the last cheap place to catch it.
 
-`dbSteps()` from `@y-core/forge/tooling/gate` is the first line as gate rows, with the lint every consumer would otherwise have to remember: the
-digest check in `static`, and `forge db lint` and `--replay` in `runtime`. An app on the shared Worker table takes the same rows from
-`cloudflareWorkerSteps({ db: true })`.
+`dbSteps()` from `@y-core/forge/tooling/gate` is the first line as gate rows, with the lint every consumer would otherwise have to remember. It
+returns them by tier: the digest check in `static`, and `forge db lint` and `--replay` in `runtime`. An app on the shared Worker table takes the
+same rows from `cloudflareWorkerSteps({ db: true })`.
 
 ### 9a. The Workers Builds Deploy Command
 

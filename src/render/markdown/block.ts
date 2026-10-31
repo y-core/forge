@@ -424,16 +424,19 @@ function scanContainers(
       case "blockquote":
         block.nodes.push({ type: "blockquote", start: block.start, end: block.end, children: childNodes(block) });
         break;
-      case "listItem":
+      case "listItem": {
+        const task = takeTaskMarker(block);
         block.nodes.push({
           type: "listItem",
           start: block.start,
           end: block.end,
           spread: hasGapBetweenChildren(block),
-          checked: takeTaskMarker(block),
+          checked: task?.checked ?? null,
+          box: task?.box ?? null,
           children: childNodes(block),
         });
         break;
+      }
       case "footnoteDefinition":
         block.nodes.push({ type: "footnoteDefinition", start: block.start, end: block.end, label: block.label, children: childNodes(block) });
         break;
@@ -450,7 +453,7 @@ function scanContainers(
     tip = block.parent ?? document;
   }
 
-  function takeTaskMarker(item: Open): boolean | null {
+  function takeTaskMarker(item: Open): { checked: boolean; box: number } | null {
     const first = item.children[0];
     const paragraph = first?.kind === "paragraph" && first.nodes.length === 1 ? first.nodes[0] : undefined;
     if (paragraph?.type !== "paragraph") return null;
@@ -467,7 +470,7 @@ function scanContainers(
     if (content === end && segments.length <= 3) return null;
     segments[0] = after;
     paragraph.start = segments[0] ?? paragraph.start;
-    return !isSpaceOrTab(mark);
+    return { checked: !isSpaceOrTab(mark), box: start };
   }
 
   function createRow(cells: number[]): MarkdownTableRow {
@@ -918,6 +921,7 @@ function rebase(node: MarkdownBlock, base: number): void {
         segments[index + 1] = (segments[index + 1] ?? 0) - base;
       }
     }
+    if (block.type === "listItem" && block.box !== null) block.box -= base;
     if ("children" in block && block.type !== "paragraph" && block.type !== "heading" && block.type !== "tableCell") {
       for (const child of block.children as MarkdownBlock[]) stack.push(child);
     }

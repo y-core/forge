@@ -9,7 +9,12 @@ import { DbHostConfigSchema } from "./types";
 import type { DbHostConfig, DbRunContext, DeclaredPath, ForgeSchemaName } from "./types";
 
 /** Where `forge db` looks for an application's optional host config. @internal */
-export const DEFAULT_DB_CONFIG = "config/db.ts";
+export const DEFAULT_DB_CONFIG = "config/db.config.ts";
+
+/** Types the default export of a `config/db.config.ts`. @public */
+export function defineDbConfig(config: DbHostConfig): DbHostConfig {
+  return config;
+}
 
 /** The host config module at `path` under the root, held to `DbHostConfigSchema` and refused by field; `{}` when a non-explicit path is absent. `option` is what an explicit path is quoted as. @internal */
 export async function loadHostConfig(root: string, path: string, explicit: boolean, option?: string): Promise<DbHostConfig> {
@@ -39,12 +44,12 @@ export function forgeSchema(name: ForgeSchemaName): string {
   return `@y-core/forge/${name}/schema.sql`;
 }
 
-/** Every desired-state file the app composes from, in the order `config/db.ts` names them. @internal */
+/** Every desired-state file the app composes from, in the order `config/db.config.ts` names them. @internal */
 export function declaredSchemas(run: DbRunContext): DeclaredPath[] {
   return (run.host.schemas ?? []).map((declared) => declaredPath(run.config.root, declared));
 }
 
-/** Every seeds directory the app runs, in the order `config/db.ts` names them. @internal */
+/** Every seeds directory the app runs, in the order `config/db.config.ts` names them. @internal */
 export function declaredSeeds(run: DbRunContext): DeclaredPath[] {
   return (run.host.seeds ?? []).map((declared) => declaredPath(run.config.root, declared));
 }
@@ -76,6 +81,6 @@ export function migrationsDirRefusal(run: DbRunContext, migrationsDir: string | 
 
 /** What `compose` says when refusing to compose from no schema while history exists. @internal */
 export const NO_SCHEMAS =
-  "config/db.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
-  '  export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] } satisfies DbHostConfig;\n' +
+  "config/db.config.ts names no `schemas` — every desired-state file is declared there, including a library's, so that nothing contributes DDL to this database without being asked for:\n" +
+  '  export default defineDbConfig({ schemas: [forgeSchema("auth"), "config/db/schema.sql"] });\n' +
   "Each entry is a file of plain `CREATE TABLE` text stating that schema once — write it, then compose.";

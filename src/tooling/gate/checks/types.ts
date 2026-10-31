@@ -749,10 +749,19 @@ export interface DeclaredGraph {
   leaf: readonly string[];
   /** Source namespace → target namespace → the declared kind. */
   edges: Record<string, Record<string, EdgeKind>>;
+  /** Source namespace → target namespace → the only target files its imports may reach, repo-relative with their extension. */
+  modules?: Record<string, Record<string, readonly string[]>>;
 }
 
 /** The ways the observed tree and the declaration can disagree. */
-export type GraphFindingKind = "undeclared-edge" | "absent-edge" | "leaf-edge" | "kind-mismatch" | "primitive-escape" | "unknown-namespace";
+export type GraphFindingKind =
+  | "undeclared-edge"
+  | "absent-edge"
+  | "leaf-edge"
+  | "kind-mismatch"
+  | "primitive-escape"
+  | "unknown-namespace"
+  | "module-edge";
 
 /** One disagreement, with the site that proves it where the observed tree supplies one. */
 export interface GraphFinding {
@@ -784,6 +793,8 @@ export interface NamespaceGraphCheckConfig {
   root: string;
   /** The `exports` map, verbatim from `package.json` — the namespace set is *derived* from it. */
   exports: ExportsMap;
+  /** This package's own name, so a self-import by published subpath is recognised as one. */
+  packageName?: string;
   /** The declared graph: primitives, leaf namespaces, and every edge with its kind. */
   graph: DeclaredGraph;
   /** Source root walked for imports, relative to `root`. Defaults to `"src"`. */
@@ -869,3 +880,9 @@ export interface DevBundleCheckConfig {
 
 /** What one upgrade request learned about a Playwright server. @internal */
 export type PlaywrightServerStatus = { state: "ready" } | { state: "unreachable"; reason: string } | { state: "mismatch"; server: string };
+
+/** What the config-file check reads. @public */
+export interface ConfigFileCheckConfig {
+  /** Repository root; the check reads the `*.config.ts` files directly under its `config/`. */
+  root: string;
+}

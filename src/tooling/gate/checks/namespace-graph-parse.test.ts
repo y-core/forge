@@ -1,7 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
-import { buildGraph, findEnumerations, namespaceOf, parseImports, resolveSpecifier } from "./namespace-graph-parse";
-import type { EdgeKind, PackageImports, SourceFile } from "./types";
+import {
+  buildGraph,
+  diffEdgeModules,
+  findEnumerations,
+  namespaceOf,
+  parseImports,
+  publishedSubpaths,
+  resolveSpecifier,
+} from "./namespace-graph-parse";
+import type { DeclaredGraph, EdgeKind, PackageImports, SourceFile } from "./types";
 
 function sites(source: string): [string, EdgeKind][] {
   return parseImports(source).map((ref) => [ref.specifier, ref.kind]);
@@ -13,9 +21,14 @@ function kindOf(statement: string): [string, EdgeKind] {
   return [statement, only === undefined ? (`expected exactly one site, got ${refs.length}` as EdgeKind) : only.kind];
 }
 
-function edges(files: readonly SourceFile[], dirs: readonly string[], imports: PackageImports = {}) {
+function edges(
+  files: readonly SourceFile[],
+  dirs: readonly string[],
+  imports: PackageImports = {},
+  published: ReadonlyMap<string, string> = new Map(),
+) {
   const rows: { from: string; to: string; kind: EdgeKind; file: string; line: number }[] = [];
-  for (const [from, targets] of buildGraph(files, dirs, imports)) {
+  for (const [from, targets] of buildGraph(files, dirs, imports, published)) {
     for (const [to, edge] of targets) rows.push({ from, to, kind: edge.kind, file: edge.file, line: edge.line });
   }
   return rows;
@@ -266,6 +279,37 @@ describe("buildGraph() — a `#` specifier through the `imports` map", () => {
   });
 });
 
+describe("publishedSubpaths() — the subpaths a self-import names", () => {
+  it("spells each subpath under the package name, mapped to the file it exports", () => {
+    const exports = { ".": "./src/app/mod.ts", "./beta": { types: "./src/beta/mod.ts", import: "./src/beta/mod.js" } };
+
+    expect([...publishedSubpaths("@y-core/forge", exports)]).toEqual([
+      ["@y-core/forge", "src/app/mod.ts"],
+      ["@y-core/forge/beta", "src/beta/mod.js"],
+    ]);
+  });
+
+  it("answers nothing without a package name", () => {
+    expect(publishedSubpaths(undefined, { "./beta": "./src/beta/mod.ts" }).size).toBe(0);
+  });
+});
+
+describe("buildGraph() — a self-import by package name", () => {
+  const published = publishedSubpaths("@y-core/forge", { "./beta": "./src/beta/mod.ts" });
+
+  it("records an edge to the namespace the published subpath exports", () => {
+    const files: SourceFile[] = [{ path: "src/alpha/a.ts", source: 'import { b } from "@y-core/forge/beta";' }];
+
+    expect(edges(files, ["alpha", "beta"], {}, published)).toEqual([{ from: "alpha", to: "beta", kind: "value", file: "src/alpha/a.ts", line: 1 }]);
+  });
+
+  it("records nothing for a third party's bare specifier", () => {
+    const files: SourceFile[] = [{ path: "src/alpha/a.ts", source: 'import { v } from "valibot";' }];
+
+    expect(edges(files, ["alpha", "beta"], {}, published)).toEqual([]);
+  });
+});
+
 describe("buildGraph() — kind is the AND over every site (the reader chasing the message)", () => {
   it("promotes a type edge to a value edge and moves the reported site onto the value import", () => {
     const files: SourceFile[] = [
@@ -317,6 +361,114 @@ describe("buildGraph() — kind is the AND over every site (the reader chasing t
       { from: "alpha", to: "beta", kind: "type", file: "src/alpha/a.ts", line: 1 },
       { from: "alpha", to: "gamma", kind: "value", file: "src/alpha/a.ts", line: 2 },
     ]);
+  });
+});
+
+describe("diffEdgeModules() — an edge admitted through named files", () => {
+  const dirs = ["editor", "markdown", "other"];
+  const declared: DeclaredGraph = {
+    primitives: [],
+    leaf: [],
+    edges: { editor: { markdown: "value" } },
+    modules: { editor: { markdown: ["src/markdown/editing.ts"] } },
+  };
+  const target: SourceFile[] = [
+    { path: "src/markdown/editing.ts", source: "" },
+    { path: "src/markdown/mod.ts", source: "" },
+    { path: "src/markdown/types.ts", source: "" },
+    { path: "src/other/x.ts", source: "" },
+  ];
+  const narrowedTo = (path: string, line: number) => ({
+    kind: "module-edge",
+    from: "editor",
+    to: "markdown",
+    file: "src/editor/keys.ts",
+    line,
+    detail: `\`editor\` imports \`${path}\`, but \`EDGE_MODULES\` admits \`editor\` into \`markdown\` only through \`src/markdown/editing.ts\` — import from it, or name the module there`,
+  });
+
+  it("passes an import of an admitted file", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { continueList } from "../markdown/editing.ts";' }];
+    expect(diffEdgeModules(files, declared, dirs)).toEqual([]);
+  });
+
+  it("passes an import of an admitted file written without its extension", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { continueList } from "../markdown/editing";' }];
+    expect(diffEdgeModules(files, declared, dirs)).toEqual([]);
+  });
+
+  it("fails an import of the target's barrel, at its site", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: '\nimport { continueList } from "../markdown/mod.ts";' }];
+    expect(diffEdgeModules(files, declared, dirs)).toEqual([narrowedTo("src/markdown/mod", 2)]);
+  });
+
+  it("fails a type-only import of another file of the target", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import type { MarkdownEdit } from "../markdown/types.ts";' }];
+    expect(diffEdgeModules(files, declared, dirs)).toEqual([narrowedTo("src/markdown/types", 1)]);
+  });
+
+  it("fails a `#` specifier the imports map resolves to a file the narrowing does not admit", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { scan } from "#markdown/types";' }];
+    expect(diffEdgeModules(files, declared, dirs, { "#markdown/*": "./src/markdown/*.ts" })).toEqual([narrowedTo("src/markdown/types.ts", 1)]);
+  });
+
+  it("passes a `#` specifier the imports map resolves to the admitted file", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { continueList } from "#markdown/editing";' }];
+    expect(diffEdgeModules(files, declared, dirs, { "#markdown/*": "./src/markdown/*.ts" })).toEqual([]);
+  });
+
+  it("fails a self-import by package name of a file the narrowing does not admit", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { continueList } from "@y-core/forge/markdown";' }];
+    const published = publishedSubpaths("@y-core/forge", { "./markdown": "./src/markdown/mod.ts" });
+    expect(diffEdgeModules(files, declared, dirs, {}, published)).toEqual([narrowedTo("src/markdown/mod.ts", 1)]);
+  });
+
+  it("passes a test source importing the target's barrel, which ships to nobody", () => {
+    const files = [...target, { path: "src/editor/keys.test.ts", source: 'import { continueList } from "../markdown/mod.ts";' }];
+    expect(diffEdgeModules(files, declared, dirs)).toEqual([]);
+  });
+
+  it("passes an import of a namespace the narrowing does not name", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { x } from "../other/x.ts";' }];
+    expect(diffEdgeModules(files, declared, dirs)).toEqual([]);
+  });
+
+  it("fails a narrowing of an edge EDGES does not declare", () => {
+    expect(diffEdgeModules(target, { ...declared, edges: {} }, dirs)).toEqual([
+      {
+        kind: "module-edge",
+        from: "editor",
+        to: "markdown",
+        detail:
+          '`EDGE_MODULES` narrows `editor` → `markdown`, which `EDGES` does not declare — declare the edge, or remove `EDGE_MODULES["editor"]["markdown"]`',
+      },
+    ]);
+  });
+
+  const misnamed: readonly { name: string; module: string }[] = [
+    { name: "a file that does not exist", module: "src/markdown/missing.ts" },
+    { name: "a file of another namespace", module: "src/other/x.ts" },
+    { name: "a test file of the target", module: "src/markdown/editing.test.ts" },
+  ];
+
+  for (const { name, module } of misnamed) {
+    it(`fails a narrowing that names ${name}`, () => {
+      const files = [...target, { path: "src/markdown/editing.test.ts", source: "" }];
+      expect(diffEdgeModules(files, { ...declared, modules: { editor: { markdown: [module] } } }, dirs)).toEqual([
+        {
+          kind: "module-edge",
+          from: "editor",
+          to: "markdown",
+          detail: `\`EDGE_MODULES["editor"]["markdown"]\` names \`${module}\`, which is no source of \`markdown\` — name a module inside it`,
+        },
+      ]);
+    });
+  }
+
+  it("answers nothing when no edge is narrowed", () => {
+    const files = [...target, { path: "src/editor/keys.ts", source: 'import { continueList } from "../markdown/mod.ts";' }];
+    const { modules: _narrowed, ...unnarrowed } = declared;
+    expect(diffEdgeModules(files, unnarrowed, dirs)).toEqual([]);
   });
 });
 

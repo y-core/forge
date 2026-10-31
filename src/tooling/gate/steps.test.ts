@@ -2,15 +2,36 @@ import { describe, expect, it } from "bun:test";
 
 import { checkResult } from "./finding";
 import { DEFAULT_GATE_INPUTS, failsWhenAbsent, isCheckStep, selectSteps } from "./steps";
+import { declaredSteps, resolveTiers, tier } from "./tiers";
 import { GATE_TIERS } from "./types";
-import type { GateTier, Step } from "./types";
+import type { GateTier, ResolvedTiers, Step, StepTiers } from "./types";
 
-const FIXTURE: readonly Step[] = [
-  { label: "alpha", tail: 10, cmd: ["a"] },
-  { label: "beta", tail: 10, cmd: ["b"], fix: ["b", "--write"] },
-  { label: "delta", tier: "unit", tail: 10, cmd: ["d"] },
-  { label: "gamma", tier: "runtime", tail: 10, cmd: ["c"] },
-];
+function resolved(tiers: StepTiers): ResolvedTiers {
+  const result = resolveTiers(tiers);
+  if (!result.ok) throw new Error(result.error);
+  return result.data;
+}
+
+function ladder(rows: { [K in GateTier]?: readonly Step[] }): ResolvedTiers {
+  return resolved({
+    static: [...(rows.static ?? [])],
+    unit: [tier("static"), ...(rows.unit ?? [])],
+    runtime: [tier("unit"), ...(rows.runtime ?? [])],
+    scheduled: [tier("runtime"), ...(rows.scheduled ?? [])],
+  });
+}
+
+const FIXTURE_TIERS: StepTiers = {
+  static: [
+    { label: "alpha", tail: 10, cmd: ["a"] },
+    { label: "beta", tail: 10, cmd: ["b"], fix: ["b", "--write"] },
+  ],
+  unit: [tier("static"), { label: "delta", tail: 10, cmd: ["d"] }],
+  runtime: [tier("unit"), { label: "gamma", tail: 10, cmd: ["c"] }],
+  scheduled: [tier("runtime")],
+};
+
+const FIXTURE = resolved(FIXTURE_TIERS);
 
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);
@@ -24,7 +45,7 @@ describe("isCheckStep()", () => {
   });
 
   it("leaves a command step to the spawning path", () => {
-    expect(FIXTURE.every((step) => !isCheckStep(step))).toBe(true);
+    expect(declaredSteps(FIXTURE_TIERS).every((step) => !isCheckStep(step))).toBe(true);
   });
 
   // A check's fixer is a function and a command's is an argument vector, so the narrowing is what
@@ -37,7 +58,7 @@ describe("isCheckStep()", () => {
   });
 
   it("selects check and command steps alike, since the distinction is how they run, not whether", () => {
-    const result = selectSteps([...FIXTURE, check], { tier: "static" });
+    const result = selectSteps(resolved({ ...FIXTURE_TIERS, static: [...(FIXTURE_TIERS.static ?? []), check] }), { tier: "static" });
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -45,8 +66,7 @@ describe("isCheckStep()", () => {
   });
 
   it("holds a check step back to its tier exactly as a command step is", () => {
-    const table: readonly Step[] = [{ ...check, tier: "runtime" }];
-    const result = selectSteps(table, { tier: "static" });
+    const result = selectSteps(ladder({ runtime: [check] }), { tier: "static" });
 
     expect(result.ok).toBe(false);
   });
@@ -58,27 +78,18 @@ describe("failsWhenAbsent()", () => {
   });
 });
 
-describe("selectSteps() — tier membership", () => {
-  const LADDER: readonly Step[] = [
-    { label: "lint", tail: 10, cmd: ["l"] },
-    { label: "test", tier: "unit", tail: 10, cmd: ["t"] },
-    { label: "browser", tier: "runtime", tail: 10, cmd: ["b"] },
-    { label: "changelog", tier: "scheduled", tail: 10, cmd: ["c"] },
-  ];
+describe("selectSteps() — the resolved tier's rows", () => {
+  it("runs the resolved tier's rows in that tier's order", () => {
+    const table = resolved({
+      static: [
+        { label: "lint", tail: 10, cmd: ["oxlint"] },
+        { label: "format", tail: 10, cmd: ["oxfmt"] },
+      ],
+      unit: [{ label: "test", tail: 10, cmd: ["bun"] }, tier("static")],
+    });
+    const result = selectSteps(table, { tier: "unit" });
 
-  function tierOf(tier: GateTier): string[] {
-    const result = selectSteps(LADDER, { tier });
-    return result.ok ? labelsOf(result.steps) : [];
-  }
-
-  it("adds exactly one tier's rows at each step up the ladder", () => {
-    expect(GATE_TIERS.map(tierOf)).toEqual([["lint"], ["lint", "test"], ["lint", "test", "browser"], ["lint", "test", "browser", "changelog"]]);
-  });
-
-  it("makes static ⊆ unit ⊆ runtime ⊆ scheduled for any table", () => {
-    const runs = GATE_TIERS.map(tierOf);
-
-    expect(runs.slice(1).every((run, index) => (runs[index] ?? []).every((label) => run.includes(label)))).toBe(true);
+    expect(result.ok && labelsOf(result.steps)).toEqual(["test", "lint", "format"]);
   });
 
   it("counts the tier's own rows as the total, and calls an unfiltered run unscoped", () => {
@@ -87,59 +98,10 @@ describe("selectSteps() — tier membership", () => {
     expect(result.ok && { total: result.total, scoped: result.scoped }).toEqual({ total: 3, scoped: false });
   });
 
-  it('treats an explicit `tier: "static"` as the same as declaring none', () => {
-    const table: readonly Step[] = [{ label: "alpha", tier: "static", tail: 10, cmd: ["a"] }];
-    const result = selectSteps(table, { tier: "static" });
+  it("refuses a run at a tier the table does not declare", () => {
+    const result = selectSteps(resolved({ static: [{ label: "alpha", tail: 10, cmd: ["a"] }] }), { tier: "unit" });
 
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(labelsOf(result.steps)).toEqual(["alpha"]);
-  });
-});
-
-describe("selectSteps() — tier-stable order", () => {
-  // The table a consumer writes is not the order it runs in: a preset emits its runtime rows where
-  // it happens to know about them, and an appended unit row must still run before them.
-  const INVERTED: readonly Step[] = [
-    { label: "browser", tier: "runtime", tail: 10, cmd: ["playwright"] },
-    { label: "lint:types", tier: "unit", tail: 10, cmd: ["oxlint"] },
-    { label: "lint", tail: 10, cmd: ["oxlint"] },
-  ];
-
-  it("runs the cheaper tier first, whatever order the table declared", () => {
-    const result = selectSteps(INVERTED, { tier: "scheduled" });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(labelsOf(result.steps)).toEqual(["lint", "lint:types", "browser"]);
-  });
-
-  it("keeps declared order within a tier, so `lint` before `format` survives the sort", () => {
-    const table: readonly Step[] = [
-      { label: "lint", tail: 10, cmd: ["oxlint"] },
-      { label: "format", tail: 10, cmd: ["oxfmt"] },
-      { label: "browser", tier: "runtime", tail: 10, cmd: ["playwright"] },
-      { label: "types:assets", tail: 10, cmd: ["forge"] },
-    ];
-    const result = selectSteps(table, { tier: "scheduled" });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(labelsOf(result.steps)).toEqual(["lint", "format", "types:assets", "browser"]);
-  });
-
-  it("sorts an --only selection the same way, so a scoped run is a prefix of the same order", () => {
-    const result = selectSteps(INVERTED, { tier: "scheduled", only: ["browser", "lint:types"] });
-
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(labelsOf(result.steps)).toEqual(["lint:types", "browser"]);
-  });
-
-  it("leaves the caller's table untouched, since a selection may not reorder what it was handed", () => {
-    selectSteps(INVERTED, { tier: "scheduled" });
-
-    expect(labelsOf([...INVERTED])).toEqual(["browser", "lint:types", "lint"]);
+    expect(result.ok ? "" : result.error).toBe("The step table declares no unit tier — add a `unit` key under `tiers`.");
   });
 });
 
@@ -204,7 +166,7 @@ describe("selectSteps() — refusals", () => {
   });
 
   it("rejects a tier with no steps rather than reporting an empty run green", () => {
-    const result = selectSteps([], { tier: "static" });
+    const result = selectSteps(resolved({ static: [] }), { tier: "static" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -212,7 +174,7 @@ describe("selectSteps() — refusals", () => {
   });
 
   it("names the unit tier in its refusal, so the message says which run was resolved", () => {
-    const result = selectSteps([], { tier: "unit" });
+    const result = selectSteps(resolved({ unit: [] }), { tier: "unit" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -220,7 +182,7 @@ describe("selectSteps() — refusals", () => {
   });
 
   it("names the scheduled tier in its refusal too", () => {
-    const result = selectSteps([], { tier: "scheduled" });
+    const result = selectSteps(resolved({ scheduled: [] }), { tier: "scheduled" });
 
     expect(result.ok).toBe(false);
     if (result.ok) return;
@@ -229,39 +191,10 @@ describe("selectSteps() — refusals", () => {
 });
 
 describe("selectSteps() — table validity", () => {
-  it("refuses a duplicated label, which would make --only name two steps at once", () => {
-    const table: readonly Step[] = [
-      { label: "lint", tail: 10, cmd: ["a"] },
-      { label: "lint", tail: 10, cmd: ["b"] },
-    ];
-    const result = selectSteps(table, { tier: "static" });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error).toBe(
-      "Duplicate step label: lint. A label is the `--only` token and the name reported on failure, so it must name exactly one step.",
-    );
-  });
-
-  it("names every duplicated label once, however many times each repeats", () => {
-    const table: readonly Step[] = [
-      { label: "a", tail: 10, cmd: ["x"] },
-      { label: "a", tail: 10, cmd: ["x"] },
-      { label: "a", tail: 10, cmd: ["x"] },
-      { label: "b", tail: 10, cmd: ["x"] },
-      { label: "b", tail: 10, cmd: ["x"] },
-    ];
-    const result = selectSteps(table, { tier: "static" });
-
-    expect(result.ok).toBe(false);
-    if (result.ok) return;
-    expect(result.error.startsWith("Duplicate step label: a, b.")).toBe(true);
-  });
-
   it("selects a step carrying a dependency in a static run, where an absent one is skipped rather than failed", () => {
-    const table: readonly Step[] = [
-      { label: "class-groups", run: () => checkResult([], ""), requires: { tool: "tailwindcss", hint: "install it" } },
-    ];
+    const table = resolved({
+      static: [{ label: "class-groups", run: () => checkResult([], ""), requires: { tool: "tailwindcss", hint: "install it" } }],
+    });
     const result = selectSteps(table, { tier: "static" });
 
     expect(result.ok).toBe(true);
@@ -270,54 +203,40 @@ describe("selectSteps() — table validity", () => {
   });
 
   it("allows a dependency on a runtime step too, since the tier decides what its absence means", () => {
-    const table: readonly Step[] = [
-      { label: "unit", tail: 10, cmd: ["bun"] },
-      { label: "browser", tier: "runtime", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "install it" } },
-    ];
+    const table = ladder({
+      static: [{ label: "unit", tail: 10, cmd: ["bun"] }],
+      runtime: [{ label: "browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "install it" } }],
+    });
 
     expect(selectSteps(table, { tier: "scheduled" }).ok).toBe(true);
   });
 
   it("calls no probe, so selection stays pure and a machine cannot change which steps were chosen", () => {
-    const table: readonly Step[] = [
-      {
-        label: "browser",
-        tail: 10,
-        cmd: ["playwright"],
-        requires: {
-          tool: "chromium",
-          probe: () => {
-            throw new Error("the probe belongs to the runner, not the selection");
+    const table = resolved({
+      static: [
+        {
+          label: "browser",
+          tail: 10,
+          cmd: ["playwright"],
+          requires: {
+            tool: "chromium",
+            probe: () => {
+              throw new Error("the probe belongs to the runner, not the selection");
+            },
+            hint: "install it",
           },
-          hint: "install it",
         },
-      },
-    ];
+      ],
+    });
 
     expect(selectSteps(table, { tier: "static" }).ok).toBe(true);
   });
 
   it("refuses a malformed row a lower tier never selects, whichever tier was asked for", () => {
-    const tables: readonly (readonly Step[])[] = [
-      [
-        { label: "lint", tail: 10, cmd: ["l"] },
-        { label: "browser", tier: "scheduled", tail: 10, cmd: ["a"] },
-        { label: "browser", tier: "scheduled", tail: 10, cmd: ["b"] },
-      ],
-      [
-        { label: "lint", tail: 10, cmd: ["l"] },
-        { label: "browser", tier: "scheduled", tail: 10, cmd: ["b"], watches: [] },
-      ],
-    ];
-
-    expect(tables.map((table) => selectSteps(table, { tier: "static" }).ok)).toEqual([false, false]);
-  });
-
-  it("holds a check step to the label rule, since it is not about how a step runs", () => {
-    const table: readonly Step[] = [
-      { label: "validate-docs", run: () => checkResult([], "") },
-      { label: "validate-docs", run: () => checkResult([], "") },
-    ];
+    const table = ladder({
+      static: [{ label: "lint", tail: 10, cmd: ["l"] }],
+      scheduled: [{ label: "browser", tail: 10, cmd: ["b"], watches: [] }],
+    });
 
     expect(selectSteps(table, { tier: "static" }).ok).toBe(false);
   });
@@ -343,12 +262,10 @@ describe("selectSteps() — the repeatable --only", () => {
 });
 
 describe("selectSteps() — the paths a change touches", () => {
-  const WATCHED: readonly Step[] = [
-    { label: "ui", tail: 10, cmd: ["u"], watches: ["src/ui/**"] },
-    { label: "docs", tail: 10, cmd: ["d"], watches: ["docs/**/*.md", "README.md"] },
-    { label: "everything", tail: 10, cmd: ["e"] },
-    { label: "browser", tier: "runtime", tail: 10, cmd: ["b"], watches: ["src/**"] },
-  ];
+  const UI: Step = { label: "ui", tail: 10, cmd: ["u"], watches: ["src/ui/**"] };
+  const DOCS: Step = { label: "docs", tail: 10, cmd: ["d"], watches: ["docs/**/*.md", "README.md"] };
+  const BROWSER: Step = { label: "browser", tail: 10, cmd: ["b"], watches: ["src/**"] };
+  const WATCHED = ladder({ static: [UI, DOCS, { label: "everything", tail: 10, cmd: ["e"] }], runtime: [BROWSER] });
 
   function affected(
     changed: readonly string[],
@@ -384,7 +301,7 @@ describe("selectSteps() — the paths a change touches", () => {
   });
 
   it("gives an empty selection when no declared glob matches and every step declares one", () => {
-    const declared = WATCHED.filter((step) => step.watches !== undefined);
+    const declared = ladder({ static: [UI, DOCS], runtime: [BROWSER] });
     const result = selectSteps(declared, { tier: "scheduled", changed: ["scripts/x.sh"] });
 
     expect(result.ok && labelsOf(result.steps)).toEqual([]);
@@ -398,21 +315,16 @@ describe("selectSteps() — the paths a change touches", () => {
     expect(affected(["src/ui/a.tsx"], { only: ["docs", "ui"] })).toEqual(["ui"]);
   });
 
-  it("refuses a duplicated label before looking at the change list", () => {
-    const table: readonly Step[] = [...WATCHED, { label: "ui", tail: 10, cmd: ["x"] }];
-    const result = selectSteps(table, { tier: "scheduled", changed: [] });
-
-    expect(result.ok ? "" : result.error).toStartWith("Duplicate step label: ui.");
-  });
-
   it("refuses an empty watches list, which would silently skip the step", () => {
-    const result = selectSteps([{ label: "lint", tail: 10, cmd: ["x"], watches: [] }], { tier: "static" });
+    const result = selectSteps(resolved({ static: [{ label: "lint", tail: 10, cmd: ["x"], watches: [] }] }), { tier: "static" });
 
     expect(result.ok ? "" : result.error).toBe('Step "lint" declares an empty `watches` — omit it to run the step on every change.');
   });
 
   it("refuses a negated watches entry, since a declaration only widens", () => {
-    const result = selectSteps([{ label: "lint", tail: 10, cmd: ["x"], watches: ["src/**", "!src/gen/**"] }], { tier: "static" });
+    const result = selectSteps(resolved({ static: [{ label: "lint", tail: 10, cmd: ["x"], watches: ["src/**", "!src/gen/**"] }] }), {
+      tier: "static",
+    });
 
     expect(result.ok ? "" : result.error).toBe(
       'Step "lint" declares `watches` entry "!src/gen/**" — a declaration only widens, so `!` exclusions are refused.',
@@ -422,7 +334,7 @@ describe("selectSteps() — the paths a change touches", () => {
   it("refuses a nested watches or wide glob that matches no file, naming the row, the field and the glob", () => {
     const files = ["src/ui/a.ts", "README.md"];
     const refusal = (step: Step): string => {
-      const result = selectSteps([step], { tier: "scheduled", files });
+      const result = selectSteps(resolved({ scheduled: [step] }), { tier: "scheduled", files });
       return result.ok ? "" : result.error;
     };
 
@@ -437,7 +349,7 @@ describe("selectSteps() — the paths a change touches", () => {
   it("accepts a glob whose literal directory exists but holds no matching file yet, and refuses one whose directory is gone", () => {
     const files = ["src/a.ts", "config/steps.ts", "README.md"];
     const refusal = (watches: string[]): string => {
-      const result = selectSteps([{ label: "md", tail: 10, cmd: ["x"], watches }], { tier: "static", files });
+      const result = selectSteps(resolved({ static: [{ label: "md", tail: 10, cmd: ["x"], watches }] }), { tier: "static", files });
       return result.ok ? "" : result.error;
     };
 
@@ -450,13 +362,13 @@ describe("selectSteps() — the paths a change touches", () => {
   it("accepts a root-level name, a path above the root, and either half of a file-or-directory pair that matches", () => {
     const step: Step = { label: "lint", tail: 10, cmd: ["x"], watches: [".oxlintignore", "../shared/**", "src", "src/**", "README.md/**"] };
 
-    expect(selectSteps([step], { tier: "static", files: ["src/a.ts", "README.md"] }).ok).toBe(true);
+    expect(selectSteps(resolved({ static: [step] }), { tier: "static", files: ["src/a.ts", "README.md"] }).ok).toBe(true);
   });
 
   it("pairs a nested path with the tree beneath it, so a directory named without `/**` is not dead", () => {
     const step: Step = { label: "lint", tail: 10, cmd: ["x"], watches: ["src/ui"] };
 
-    expect(selectSteps([step], { tier: "static", files: ["src/ui/a.ts"] }).ok).toBe(true);
+    expect(selectSteps(resolved({ static: [step] }), { tier: "static", files: ["src/ui/a.ts"] }).ok).toBe(true);
   });
 
   it("refuses a nested path that names neither a file nor a directory in the work tree", () => {
@@ -467,33 +379,33 @@ describe("selectSteps() — the paths a change touches", () => {
     ];
 
     for (const { watches, dead } of cases) {
-      const result = selectSteps([{ label: "lint", tail: 10, cmd: ["x"], watches }], { tier: "static", files: ["src/ui/a.ts"] });
+      const result = selectSteps(resolved({ static: [{ label: "lint", tail: 10, cmd: ["x"], watches }] }), {
+        tier: "static",
+        files: ["src/ui/a.ts"],
+      });
       expect(result.ok ? "" : result.error).toStartWith(`Step "lint" declares \`watches\` glob "${dead}", which matches no file`);
     }
   });
 
   it("refuses a dead glob on a row the run's tier and --only leave out, since the table is malformed for every run", () => {
-    const table: readonly Step[] = [
-      { label: "lint", tail: 10, cmd: ["l"] },
-      { label: "webkit", tier: "scheduled", tail: 10, cmd: ["w"], narrow: { args: [], wide: ["src/gone/**"] } },
-    ];
+    const table = ladder({
+      static: [{ label: "lint", tail: 10, cmd: ["l"] }],
+      scheduled: [{ label: "webkit", tail: 10, cmd: ["w"], narrow: { args: [], wide: ["src/gone/**"] } }],
+    });
     const result = selectSteps(table, { tier: "static", only: ["lint"], files: ["src/ui/a.ts"] });
 
     expect(result.ok ? "" : result.error).toStartWith('Step "webkit" declares `narrow.wide` glob "src/gone/**"');
   });
 
   it("checks no glob against the work tree when no file list is given", () => {
-    expect(selectSteps([{ label: "lint", tail: 10, cmd: ["x"], watches: ["gone/**"] }], { tier: "static" }).ok).toBe(true);
+    expect(selectSteps(resolved({ static: [{ label: "lint", tail: 10, cmd: ["x"], watches: ["gone/**"] }] }), { tier: "static" }).ok).toBe(true);
   });
 
   it("keeps the tier order under a change list", () => {
-    const inverted: readonly Step[] = [
-      { label: "browser", tier: "runtime", tail: 10, cmd: ["b"], watches: ["src/**"] },
-      { label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] },
-    ];
-    const result = selectSteps(inverted, { tier: "scheduled", changed: ["src/a.ts"] });
+    const table = resolved({ static: [{ label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] }], scheduled: [BROWSER, tier("static")] });
+    const result = selectSteps(table, { tier: "scheduled", changed: ["src/a.ts"] });
 
-    expect(result.ok && labelsOf(result.steps)).toEqual(["lint", "browser"]);
+    expect(result.ok && labelsOf(result.steps)).toEqual(["browser", "lint"]);
   });
 
   it("marks the run scoped under a change list even when every step is selected", () => {
@@ -503,7 +415,7 @@ describe("selectSteps() — the paths a change touches", () => {
   });
 
   it("matches a dotfile and a path above the root", () => {
-    const table: readonly Step[] = [{ label: "lint", tail: 10, cmd: ["l"], watches: [".oxlintrc*"] }];
+    const table = resolved({ static: [{ label: "lint", tail: 10, cmd: ["l"], watches: [".oxlintrc*"] }] });
 
     expect(selectSteps(table, { tier: "static", changed: [".oxlintrc.json"] })).toMatchObject({ ok: true, steps: [{ label: "lint" }] });
     expect(affected(["../other/x.ts"], { tier: "static" })).toEqual(["ui", "docs", "everything"]);
@@ -511,24 +423,25 @@ describe("selectSteps() — the paths a change touches", () => {
 });
 
 describe("selectSteps() — how each step reaches the pending changes", () => {
-  const RUNTIME: readonly Step[] = [
-    { label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] },
-    { label: "test", tier: "unit", tail: 10, cmd: ["t"] },
-    {
-      label: "browser",
-      tier: "runtime",
-      tail: 10,
-      cmd: ["b"],
-      watches: ["src/**"],
-      narrow: { args: ["--only-changed"], wide: ["playwright.config.ts", "src/css/**"] },
-    },
-    { label: "db", tier: "runtime", tail: 10, cmd: ["d"], watches: ["db/**"] },
-    { label: "webkit", tier: "scheduled", tail: 10, cmd: ["w"], watches: ["src/**"], narrow: { args: ["--only-changed"] } },
-  ];
+  const RUNTIME = ladder({
+    static: [{ label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] }],
+    unit: [{ label: "test", tail: 10, cmd: ["t"] }],
+    runtime: [
+      {
+        label: "browser",
+        tail: 10,
+        cmd: ["b"],
+        watches: ["src/**"],
+        narrow: { args: ["--only-changed"], wide: ["playwright.config.ts", "src/css/**"] },
+      },
+      { label: "db", tail: 10, cmd: ["d"], watches: ["db/**"] },
+    ],
+    scheduled: [{ label: "webkit", tail: 10, cmd: ["w"], watches: ["src/**"], narrow: { args: ["--only-changed"] } }],
+  });
 
-  function reachAt(tier: GateTier, pending: readonly string[] | undefined, gateInputs?: readonly string[]): Record<string, string> {
+  function reachAt(runTier: GateTier, pending: readonly string[] | undefined, gateInputs?: readonly string[]): Record<string, string> {
     const result = selectSteps(RUNTIME, {
-      tier,
+      tier: runTier,
       ...(pending === undefined ? {} : { pending }),
       ...(gateInputs === undefined ? {} : { gateInputs }),
     });
@@ -563,7 +476,7 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
   it("runs every row whole below `runtime` and at `scheduled`, whatever is pending", () => {
     const pending = ["src/ui/a.ts"];
 
-    expect(GATE_TIERS.filter((tier) => tier !== "runtime").map((tier) => reachAt(tier, pending))).toEqual([
+    expect(GATE_TIERS.filter((runTier) => runTier !== "runtime").map((runTier) => reachAt(runTier, pending))).toEqual([
       { lint: "whole" },
       { lint: "whole", test: "whole" },
       { lint: "whole", test: "whole", browser: "whole", db: "whole", webkit: "whole" },
@@ -581,5 +494,30 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
       labels: ["lint", "test", "browser", "db"],
       scoped: false,
     });
+  });
+});
+
+describe("selectSteps() — narrowing keys on a row's home tier", () => {
+  const DB: Step = { label: "db", tail: 10, cmd: ["d"], watches: ["db/**"] };
+  const NARROWS: Step = { label: "browser", tail: 10, cmd: ["b"], watches: ["src/**"], narrow: { args: ["--only-changed"] } };
+
+  function reachIn(table: ResolvedTiers): Readonly<Record<string, string>> {
+    const result = selectSteps(table, { tier: "runtime", pending: ["src/ui/a.ts"] });
+    return result.ok ? result.reach : { refused: result.error };
+  }
+
+  it("leaves a runtime-home row whose watches miss the pending changes untouched", () => {
+    expect(reachIn(ladder({ runtime: [DB] }))).toEqual({ db: "untouched" });
+  });
+
+  it('runs the same row whole when it is declared in static and reached through tier("static")', () => {
+    expect(reachIn(ladder({ static: [DB] }))).toEqual({ db: "whole" });
+  });
+
+  it("narrows a row carrying `narrow` whatever its home tier", () => {
+    expect([reachIn(ladder({ static: [NARROWS] })), reachIn(ladder({ runtime: [NARROWS] }))]).toEqual([
+      { browser: "narrow" },
+      { browser: "narrow" },
+    ]);
   });
 });

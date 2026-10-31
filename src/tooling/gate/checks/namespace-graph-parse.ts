@@ -2,7 +2,17 @@ import { posix } from "node:path";
 
 import { importTargets } from "./package-imports";
 import { isTestSource, lineAt } from "./source-scan";
-import type { DeclaredGraph, EdgeKind, EnumerationFinding, GraphFinding, ImportRef, ObservedEdge, PackageImports, SourceFile } from "./types";
+import type {
+  DeclaredGraph,
+  EdgeKind,
+  EnumerationFinding,
+  ExportsMap,
+  GraphFinding,
+  ImportRef,
+  ObservedEdge,
+  PackageImports,
+  SourceFile,
+} from "./types";
 
 /** Filler for masked comment and literal interiors: same length, never a quote, never whitespace. */
 const MASK = "\u0001";
@@ -208,11 +218,33 @@ export function resolveSpecifier(fromFile: string, specifier: string): string | 
   return extension ? joined.slice(0, -extension.length) : joined;
 }
 
+/** Every published subpath spelled as a self-import, to the repo-relative file it exports; empty without a package name. */
+export function publishedSubpaths(packageName: string | undefined, exports: ExportsMap | undefined): Map<string, string> {
+  const found = new Map<string, string>();
+  if (packageName === undefined || exports === undefined) return found;
+  for (const [subpath, value] of Object.entries(exports)) {
+    const target = typeof value === "string" ? value : (value.import ?? value.types);
+    if (target === undefined) continue;
+    found.set(`${packageName}${subpath.slice(1)}`, target.startsWith("./") ? target.slice(2) : target);
+  }
+  return found;
+}
+
+function specifierTargets(fromFile: string, specifier: string, imports: PackageImports, published: ReadonlyMap<string, string>): string[] {
+  const resolved = resolveSpecifier(fromFile, specifier);
+  if (resolved !== null) return [resolved];
+  const mapped = importTargets(imports, specifier);
+  if (mapped.length > 0) return mapped;
+  const self = published.get(specifier);
+  return self === undefined ? [] : [self];
+}
+
 /** The observed dependency graph: source namespace to target namespace to the edge between them. */
 export function buildGraph(
   files: readonly SourceFile[],
   dirs: readonly string[],
   imports: PackageImports = {},
+  published: ReadonlyMap<string, string> = new Map(),
 ): Map<string, Map<string, ObservedEdge>> {
   const graph = new Map<string, Map<string, ObservedEdge>>();
 
@@ -222,9 +254,7 @@ export function buildGraph(
     if (from === null) continue;
 
     for (const ref of parseImports(file.source)) {
-      const resolved = resolveSpecifier(file.path, ref.specifier);
-      const reached = resolved === null ? importTargets(imports, ref.specifier) : [resolved];
-      for (const path of reached) {
+      for (const path of specifierTargets(file.path, ref.specifier, imports, published)) {
         const to = namespaceOf(path, dirs);
         if (to === null || to === from) continue;
         recordEdge(graph, from, to, { kind: ref.kind, file: file.path, line: ref.line });
@@ -359,6 +389,73 @@ export function diffGraph(
         to,
         detail: `\`EDGES\` declares \`${from}\` → \`${to}\` but ${reason} — remove \`"${to}"\` from \`EDGES["${from}"]\``,
       });
+    }
+  }
+
+  return findings;
+}
+
+function stripSpecifierExtension(path: string): string {
+  const extension = SPECIFIER_EXTENSIONS.find((ext) => path.endsWith(ext));
+  return extension ? path.slice(0, -extension.length) : path;
+}
+
+/** Every import reaching a file of a narrowed edge's target that the narrowing does not admit, and every narrowing that names no real edge or file. */
+export function diffEdgeModules(
+  files: readonly SourceFile[],
+  declared: DeclaredGraph,
+  namespaces: readonly string[],
+  imports: PackageImports = {},
+  published: ReadonlyMap<string, string> = new Map(),
+): GraphFinding[] {
+  const modules = declared.modules ?? {};
+  const sources = new Set(files.filter((file) => !isTestSource(file.path)).map((file) => file.path));
+  const findings: GraphFinding[] = [];
+
+  for (const from of sortedKeys(modules)) {
+    const targets = modules[from] ?? {};
+    for (const to of sortedKeys(targets)) {
+      if (declared.edges[from]?.[to] === undefined) {
+        findings.push({
+          kind: "module-edge",
+          from,
+          to,
+          detail: `\`EDGE_MODULES\` narrows \`${from}\` → \`${to}\`, which \`EDGES\` does not declare — declare the edge, or remove \`EDGE_MODULES["${from}"]["${to}"]\``,
+        });
+      }
+      for (const module of targets[to] ?? []) {
+        if (sources.has(module) && namespaceOf(module, namespaces) === to) continue;
+        findings.push({
+          kind: "module-edge",
+          from,
+          to,
+          detail: `\`EDGE_MODULES["${from}"]["${to}"]\` names \`${module}\`, which is no source of \`${to}\` — name a module inside it`,
+        });
+      }
+    }
+  }
+
+  for (const file of files) {
+    if (isTestSource(file.path)) continue;
+    const from = namespaceOf(file.path, namespaces);
+    const targets = from === null ? undefined : modules[from];
+    if (from === null || targets === undefined) continue;
+
+    for (const ref of parseImports(file.source)) {
+      for (const path of specifierTargets(file.path, ref.specifier, imports, published)) {
+        const to = namespaceOf(path, namespaces);
+        const admitted = to === null || to === from ? undefined : targets[to];
+        if (to === null || admitted === undefined) continue;
+        if (admitted.some((module) => stripSpecifierExtension(module) === stripSpecifierExtension(path))) continue;
+        findings.push({
+          kind: "module-edge",
+          from,
+          to,
+          file: file.path,
+          line: ref.line,
+          detail: `\`${from}\` imports \`${path}\`, but \`EDGE_MODULES\` admits \`${from}\` into \`${to}\` only through ${admitted.map((module) => `\`${module}\``).join(", ")} — import from it, or name the module there`,
+        });
+      }
     }
   }
 

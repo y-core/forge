@@ -43,7 +43,7 @@ describe("planSeeds()", () => {
     expect(() => planSeeds(seeds, history, { only: "004_d", rerun: false })).toThrow(
       'No seed named "004_d" — available: config/seeds:001_a, config/seeds:002_b, config/seeds:003_c',
     );
-    expect(() => planSeeds([], history, { only: "004_d", rerun: false })).toThrow('No seed named "004_d" — config/db.ts names no `seeds`');
+    expect(() => planSeeds([], history, { only: "004_d", rerun: false })).toThrow('No seed named "004_d" — config/db.config.ts names no `seeds`');
   });
 
   it("takes `<dir>:<name>`, and refuses a bare name two directories both hold", () => {

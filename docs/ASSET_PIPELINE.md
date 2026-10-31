@@ -17,10 +17,10 @@ audience: internal
 
 ## 0. Quick Reference
 
-- §1 Assets Config: declaring and discovering the pipeline config
+- §1 Assets Config: declaring and loading the pipeline config
 - §1a defineAssetsConfig — Schema and Validation: the canonical entry point
 - §1b AssetsConfig Type Shape: who owns the field list, and the one field readers mis-guess
-- §1c loadConfig — Config Resolution: resolving `assets.config.ts` against cwd, and why you should pass it
+- §1c loadConfig — Config Resolution: resolving `assets.config.ts` under the root's `config/`, and refusing a missing one
 - §2 tooling/assets Pipeline: the build functions and change detection
 - §2a Build Functions — Orchestration: `buildAll`, the per-stage slice rule, and the absence of globs
 - §2b Hash and Change Detection: opt-in content hashing, and why the state helpers go unused
@@ -40,8 +40,8 @@ audience: internal
 
 ### 1a. defineAssetsConfig — Schema and Validation
 
-`defineAssetsConfig` is the canonical entry point: call it in an `assets.config.ts` at the project root and export the result as default.
-`src/tooling/assets/README.md` carries the example.
+`defineAssetsConfig` is the canonical entry point: `assets.config.ts`, in the app's `config/` directory, default-exports a call to it
+([`CONFIG_BASELINE.md`][cb-6] §6). `src/tooling/assets/README.md` carries the example.
 
 **It types, it does not validate.** It is the identity function over `AssetsConfig`; the schema runs in `loadConfig`, which `v.parse`s the imported
 module into a `ResolvedConfig` with every optional field defaulted. A mistyped config therefore fails at _load_ time, in the CLI — the only point at
@@ -60,10 +60,10 @@ One field is named here because readers reliably guess it wrong: **`sprites` is 
 
 ### 1c. loadConfig — Config Resolution
 
-**`loadConfig` resolves its argument against `process.cwd()`; it does not search.** An omitted argument means `assets.config.ts` in the current
-directory and nothing more — no walk up the tree, and a run from a subdirectory does not find the root's config. **Prefer passing the path**: it is
-the difference between a build whose inputs are stated and one whose inputs depend on where the command was typed.
-[`BUILD_TOOLING.md`][bt-2h] §2h states the rule this is an instance of.
+**`loadConfig` resolves `configPath` against the `root` it is handed; it does not search.** An omitted path means `assets.config.ts` in that root's
+`config/` directory and nothing more, with no walk up the tree. An absent default is refused, naming the path it looked for, and so is a
+`configPath` naming a file that does not exist, so a typo never reads as an empty pipeline. The CLI's root is `--root` or `FORGE_APP_ROOT`, else
+derived from the install path. [`BUILD_TOOLING.md`][bt-2h] §2h states the rule this is an instance of.
 
 ---
 
@@ -204,8 +204,8 @@ incidents:
 - **Cursors run after CSS.** Baking a cursor value means reading the emitted stylesheet for the custom properties it resolved, so the CSS stage must
   have produced a file the manifest can name.
 
-The first pass is why a _clean_ checkout still typechecks: `forge assets gen types` (§4b) writes the same module from the config alone, so `tsc`
-never depends on a toolchain having run.
+The first pass is why a _clean_ checkout still typechecks: `forge assets gen types` (§4b) writes the same module from the config alone, so
+`bun check` never depends on a toolchain having run.
 
 ### 4b. Build and Types Artifacts Are Shape-Identical
 
@@ -243,8 +243,8 @@ forge's default.
 
 **The guard keeps `gen types` from degrading the manifest; `validate-asset-manifest` catches it being ahead of the tree for any other reason** — a
 `public/` nobody rebuilt, a pruned hashed output, a hand-edited artifact. The check asserts one thing: every `DATA` value resolves to a file under
-`publicDir`. A types-only artifact passes a `static` run, because its identity paths deliberately do not exist — that is what lets `tsc` run on a
-clean checkout — and fails every tier above it, where a green on an artifact nobody built is the 404 it exists to prevent.
+`publicDir`. A types-only artifact passes a `static` run, because its identity paths deliberately do not exist — that is what lets `bun check`
+run on a clean checkout — and fails every tier above it, where a green on an artifact nobody built is the 404 it exists to prevent.
 
 ### 4c. The Emitted Glyph Union — the ForgeIcon Seam
 
@@ -262,6 +262,7 @@ components must name the glyphs they require without depending on any consumer's
 
 [bt]: ./BUILD_TOOLING.md
 [bt-2h]: ./BUILD_TOOLING.md#2h-roots-are-stated-or-derived-never-discovered
+[cb-6]: ../warden/canon/apps/CONFIG_BASELINE.md#6-config-modules
 [cr-3b]: ./FORGE_REVIEW.md#3b-tier-2--ripgrep-with-triage
 [la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability

@@ -35,7 +35,7 @@ export interface CreateTableParts {
 
 /** What one declared schema brings to the ownership decision: the names it declares. @internal */
 export interface OwnershipClaim {
-  /** The file, as `config/db.ts` declared it. */
+  /** The file, as `config/db.config.ts` declared it. */
   readonly source: string;
   /** Names declared in the file, or null when the path holds nothing. */
   readonly declared: readonly { readonly type: string; readonly name: string }[] | null;
@@ -174,7 +174,7 @@ export type ScratchSide = "baseline" | "desired" | "fixture" | "analysis" | "see
 /** Everything the schema verbs read from disk before any database is touched. @internal */
 export interface SchemaInputs {
   readonly migrations: readonly Migration[];
-  /** Every position `config/db.ts` names, in load order. */
+  /** Every position `config/db.config.ts` names, in load order. */
   readonly schemas: readonly DeclaredPath[];
   /** Each declared schema that is on disk, in the same order. */
   readonly states: readonly DesiredState[];
@@ -206,7 +206,7 @@ export interface RowSeed {
 
 /** One declared schema's DDL as read from disk. @internal */
 export interface DesiredState {
-  /** The file, as `config/db.ts` declared it. */
+  /** The file, as `config/db.config.ts` declared it. */
   readonly source: string;
   /** The declared file or directory, absolute. */
   readonly path: string;
@@ -219,7 +219,7 @@ export interface DesiredState {
 /** `schema.snapshot.json`: what the last compose or snapshot saw, which is what the deletion rule and `--check` read. @internal */
 export interface SchemaSnapshot {
   readonly version: number;
-  /** Every declared schema it was written from, keyed as `config/db.ts` declared it. */
+  /** Every declared schema it was written from, keyed as `config/db.config.ts` declared it. */
   readonly desired: Readonly<Record<string, string>>;
   /** The object names each declared schema held, as written and sorted — read to name who declared a dropped object, and never to decide what is dropped. */
   readonly declared: Readonly<Record<string, readonly string[]>>;
@@ -229,7 +229,7 @@ export interface SchemaSnapshot {
 
 /** The `-- forge:compose` line a generated migration carries. @public */
 export interface ComposeStamp {
-  /** The digest of every declared schema the compose read, keyed as `config/db.ts` declared it. */
+  /** The digest of every declared schema the compose read, keyed as `config/db.config.ts` declared it. */
   readonly desired: Readonly<Record<string, string>>;
   readonly baseline: string;
   readonly body: string;
@@ -257,7 +257,7 @@ export interface ComposeOutcome {
   readonly plan: readonly string[];
   /** Each advisory line printed with the plan, none of which aborts the compose. */
   readonly warnings: readonly string[];
-  /** Each dropped object the plan can attribute to a file `config/db.ts` no longer declares, one line per file. */
+  /** Each dropped object the plan can attribute to a file `config/db.config.ts` no longer declares, one line per file. */
   readonly causes: readonly string[];
   readonly sql: string;
   readonly dryRun: boolean;

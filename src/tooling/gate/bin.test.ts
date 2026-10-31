@@ -24,13 +24,13 @@ describe("createGateBinCommand()", () => {
   });
 
   it("keeps every flag the handed-a-table command takes, so the bin is not a lesser gate", () => {
-    const inner = Object.keys(createGateCommand({ cwd: "/nowhere", steps: [{ label: "x", tail: 1, cmd: ["x"] }] }).flags);
+    const inner = Object.keys(createGateCommand({ cwd: "/nowhere", tiers: { static: [{ label: "x", tail: 1, cmd: ["x"] }] } }).flags);
 
     expect(inner.every((flag) => Object.hasOwn(GATE.flags, flag))).toBe(true);
   });
 
   it("adds exactly the two flags a config-loading bin needs, and no more", () => {
-    const inner = Object.keys(createGateCommand({ cwd: "/nowhere", steps: [{ label: "x", tail: 1, cmd: ["x"] }] }).flags);
+    const inner = Object.keys(createGateCommand({ cwd: "/nowhere", tiers: { static: [{ label: "x", tail: 1, cmd: ["x"] }] } }).flags);
 
     expect(Object.keys(GATE.flags).filter((flag) => !inner.includes(flag))).toEqual(["config", "root"]);
   });
@@ -82,12 +82,11 @@ describe("the two bins agree on how a config module is named", () => {
   });
 });
 
-describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
-  function table(gateInputs: string): string {
+describe("createGateBinCommand() — the table module's inputs", () => {
+  function table(inputs: string): string {
     return [
-      `export const GATE_INPUTS = ${gateInputs};`,
       'const ok = { ok: true, findings: [], summary: "" };',
-      'export default [{ label: "src-only", run: () => ok, watches: ["src/**"] }];',
+      `export default { inputs: ${inputs}, tiers: { runtime: [{ label: "src-only", run: () => ok, watches: ["src/**"] }] } };`,
       "",
     ].join("\n");
   }
@@ -143,23 +142,24 @@ describe("createGateBinCommand() — the table module's GATE_INPUTS", () => {
     expect(logs.some((line) => line.startsWith("✓ src-only"))).toBe(true);
   });
 
-  it("refuses a GATE_INPUTS that is not an array of glob strings", async () => {
+  it("refuses an `inputs` that is not an array of glob strings", async () => {
     const root = worktreeFixture({ "gate/steps.ts": table('"assets/**"'), "src/a.ts": "a\n" });
     roots.push(root);
     const { logs, code } = await runBin(root);
 
     expect(code).toBe(1);
-    expect(logs).toContain("`gate/steps.ts` exports GATE_INPUTS, which must be an array of glob strings.");
+    expect(logs).toContain("`gate/steps.ts` declares `inputs`, which must be an array of glob strings.");
   });
 });
 
-describe("createGateBinCommand() — a table other than config/steps.ts", () => {
-  const ok = 'export default [{ label: "unit", run: () => ({ ok: true, findings: [], summary: "" }) }];\n';
-  const red =
-    'export default [{ label: "cross-engine", run: () => ({ ok: false, findings: [{ level: "fail", message: "no" }], summary: "" }) }];\n';
+describe("createGateBinCommand() — a table other than config/steps.config.ts", () => {
+  const tableOf = (row: string): string => `export default { tiers: { static: [${row}], runtime: [{ tier: "static" }] } };\n`;
+  const ok = tableOf('{ label: "unit", run: () => ({ ok: true, findings: [], summary: "" }) }');
+  const red = tableOf('{ label: "cross-engine", run: () => ({ ok: false, findings: [{ level: "fail", message: "no" }], summary: "" }) }');
 
-  async function runBin(root: string, config?: string): Promise<number | undefined> {
+  async function runBin(root: string, config?: string): Promise<{ code: number | undefined; errors: string[] }> {
     let code: number | undefined;
+    const errors: string[] = [];
     const ctx: CliContext = {
       io: {
         stdout: () => undefined,
@@ -174,25 +174,45 @@ describe("createGateBinCommand() — a table other than config/steps.ts", () => 
       width: 80,
     };
     const original = console.log;
+    const originalError = console.error;
     console.log = () => undefined;
+    console.error = (msg: string) => errors.push(msg);
     try {
       await GATE.run?.([], { root, ...(config === undefined ? {} : { config }), list: false, fix: false, only: [] } as never, ctx);
     } catch (error) {
       if (code === undefined) throw error;
     } finally {
       console.log = original;
+      console.error = originalError;
     }
-    return code;
+    return { code, errors };
   }
 
   it("leaves the gate's green receipt standing when it fails", async () => {
-    const root = worktreeFixture({ "config/steps.ts": ok, "config/cron.ts": red });
+    const root = worktreeFixture({ "config/steps.config.ts": ok, "config/browsers.config.ts": red });
     roots.push(root);
 
-    expect(await runBin(root)).toBeUndefined();
+    expect((await runBin(root)).code).toBeUndefined();
     const standing = readReceipt(root);
     expect(standing?.labels).toEqual(["unit"]);
-    expect(await runBin(root, "config/cron.ts")).toBe(1);
+    expect((await runBin(root, "config/browsers.config.ts")).code).toBe(1);
     expect(readReceipt(root)).toEqual(standing);
+  });
+
+  it("refuses a module whose default is an array rather than a defineSteps table", async () => {
+    const root = worktreeFixture({ "config/steps.config.ts": "export default [];\n" });
+    roots.push(root);
+
+    expect(await runBin(root)).toEqual({ code: 1, errors: ["`config/steps.config.ts` must default-export defineSteps({ tiers: { … } })."] });
+  });
+
+  it("refuses a run with no table at the default path", async () => {
+    const root = worktreeFixture({ "src/a.ts": "a\n" });
+    roots.push(root);
+
+    expect(await runBin(root)).toEqual({
+      code: 1,
+      errors: ["No step table at `config/steps.config.ts` — create it, or pass --config to name one elsewhere."],
+    });
   });
 });

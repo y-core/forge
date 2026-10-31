@@ -129,8 +129,8 @@ describe("createGenEnvCommand", () => {
     expect(cmd.flags.out).toEqual({ type: "string", default: "src/app/env.schema.ts", description: "Output module path" });
     expect(cmd.flags.config).toEqual({
       type: "string",
-      default: "src/app/env.config.ts",
-      description: "Host-policy module exporting a Partial<GenOptions>",
+      default: "config/env.config.ts",
+      description: "Host-policy module default-exporting defineEnvConfig({...})",
     });
   });
 });
@@ -144,7 +144,7 @@ describe("loadOptions", () => {
     const dir = mkdtempSync(join(tmpdir(), "forge-cfgen-"));
     roots.push(dir);
     const path = join(dir, "config.fixture.ts");
-    writeFileSync(path, 'export const options = { optional: new Set(["RATE_LIMITER"]), refinements: { SESSION_SECRET: { minLength: 32 } } };\n');
+    writeFileSync(path, 'export default { optional: new Set(["RATE_LIMITER"]), refinements: { SESSION_SECRET: { minLength: 32 } } };\n');
     const opts = await loadOptions(path);
     expect([...opts.optional]).toEqual(["RATE_LIMITER"]);
     expect(opts.refinements).toEqual({ SESSION_SECRET: { minLength: 32 } });

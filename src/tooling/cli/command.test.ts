@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { addCommand, createCommand } from "./command";
+import { addCommand, createCommand, defineCommands } from "./command";
 
 describe("createCommand()", () => {
   it("sets name and description", () => {
@@ -76,5 +76,13 @@ describe("addCommand()", () => {
     addCommand(parent, createCommand({ name: "b" }));
     addCommand(parent, createCommand({ name: "c" }));
     expect(parent.commands).toHaveLength(3);
+  });
+});
+
+describe("defineCommands()", () => {
+  it("returns its argument unchanged", () => {
+    const commands = [createCommand({ name: "foo" })];
+
+    expect(defineCommands(commands)).toBe(commands);
   });
 });

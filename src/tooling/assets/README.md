@@ -19,7 +19,7 @@ The architecture, the stage order and the artifact contract are [`ASSET_PIPELINE
 
 ## Getting started
 
-Write `assets.config.ts` at the project root, default-exporting `defineAssetsConfig`:
+Write `config/assets.config.ts`, default-exporting `defineAssetsConfig`:
 
 ```ts
 import { defineAssetsConfig } from "@y-core/forge/tooling/assets";
@@ -163,7 +163,7 @@ snippet fails under the app's config. Give it a `tsconfig.sw.json` of its own, a
 }
 ```
 
-Run both in the `typecheck` script: `tsc --noEmit && tsc --noEmit -p tsconfig.sw.json`.
+Run both in the `typecheck` script: `bun check && bun check -p tsconfig.sw.json`.
 
 **The shell is what a first page needs.** It holds every `css` output, every sprite sheet, and each `js.bundles` entry together with every chunk
 and stylesheet it statically imports. A chunk reached only through `import()` is left out. Set `precache: false` on a bundle a first visit does
@@ -244,7 +244,7 @@ dev and deploy:
   "scripts": {
     "build:assets": "forge assets build --minify",
     "dev:assets": "forge assets build",
-    "typecheck": "forge assets gen types && tsc --noEmit",
+    "typecheck": "forge assets gen types && bun check",
     "test": "forge assets gen types && bun test"
   }
 }
@@ -460,12 +460,12 @@ Pair `loadConfig` with `buildAll` to run the pipeline outside the CLI:
 ```ts
 import { buildAll, loadConfig } from "@y-core/forge/tooling/assets";
 
-const config = await loadConfig({ root: process.cwd(), configPath: "assets.config.ts", env: process.env });
+const config = await loadConfig({ root: process.cwd(), env: process.env });
 await buildAll(config, { minify: true, assetsPath: "src/generated/assets.ts" });
 ```
 
-`root` is required and `configPath` resolves against it; `env` is the source `env()` and `flag()` read, and defaults to nothing at all rather than
-to `process.env`, so a caller states what the build may see.
+`root` is required and `configPath` resolves against it, and an omitted `configPath` is `config/assets.config.ts`; `env` is the source `env()` and
+`flag()` read, and defaults to nothing at all rather than to `process.env`, so a caller states what the build may see.
 
 **Every path the config reads from comes back absolute, and every path it writes to comes back relative.** A CSS `input`, a bundle `entry`, a copy
 or raster `from`, and a local sprite or cursor source are resolved against `root`, so a build run from a subdirectory reads the tree `--root` names

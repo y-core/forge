@@ -15,14 +15,14 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-/** A throwaway project root, optionally carrying a `config/commands.ts` declaring one command. */
+/** A throwaway project root, optionally carrying a `config/commands.config.ts` declaring one command. */
 function project(name: string | null): string {
   const root = mkdtempSync(join(tmpdir(), "forge-root-"));
   roots.push(root);
   if (name !== null) {
     mkdirSync(join(root, "config"));
     const source = `import { createCommand } from "${KERNEL}";\nexport default [createCommand({ name: "${name}" })];\n`;
-    writeFileSync(join(root, "config/commands.ts"), source, "utf-8");
+    writeFileSync(join(root, "config/commands.config.ts"), source, "utf-8");
   }
   return root;
 }

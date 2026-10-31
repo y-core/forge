@@ -15,6 +15,7 @@ import {
   coLocationStep,
   commentBudgetStep,
   compatibilityStep,
+  configFileStep,
   contrastStep,
   crossEngineStep,
   crossEngineTagsStep,
@@ -48,6 +49,7 @@ import {
   typecheckStep,
   workerdStep,
 } from "./builders";
+import { checkConfigFiles } from "./checks/config-files";
 import { hasTailwind } from "./checks/design-system";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import type { PlaywrightServerStatus } from "./checks/types";
@@ -60,8 +62,6 @@ const EXPORTS = { ".": "./src/mod.ts" };
 const GRAPH = { primitives: ["p"], leaf: ["l"], edges: { a: { b: "value" }, b: { c: "type" }, d: { a: "value" } } } as const satisfies Parameters<
   typeof namespaceWatches
 >[1];
-
-const LISTING = ["--list"];
 
 // The probe's parse is a function, so a row's narrowing is compared with the probe reduced to its arguments.
 const narrowing = (step: Step): unknown => (step.narrow === undefined ? undefined : { ...step.narrow, probe: step.narrow.probe?.args });
@@ -121,16 +121,11 @@ describe("markdownStep()", () => {
     expect(typeof markdownStep({ root: "/nowhere" }).fix).toBe("function");
     expect(CHECK_STEPS.filter((step) => isCheckStep(step) && step.fix !== undefined)).toEqual([]);
   });
-
-  it("runs from the tier the caller states, defaulting to static like every other check", () => {
-    expect(markdownStep({ root: "/nowhere" }, { tier: "unit" }).tier).toBe("unit");
-    expect(markdownStep({ root: "/nowhere" }).tier).toBeUndefined();
-  });
 });
 
 describe("builders — the tool steps", () => {
   it("points the type checker at the whole project, with no source list to drift from lint's", () => {
-    expect(typecheckStep().cmd).toEqual(["tsc", "--noEmit"]);
+    expect(typecheckStep().cmd).toEqual(["bun", "check", "--no-script", "--no-pretty"]);
   });
 
   it("defaults lint to src/ alone", () => {
@@ -138,7 +133,7 @@ describe("builders — the tool steps", () => {
   });
 
   it("defaults format to src/ alone", () => {
-    expect(formatStep().cmd).toEqual(["oxfmt", "--check", "src/"]);
+    expect(formatStep().cmd).toEqual(["bun", "fmt", "--no-script", "--check", "src/"]);
   });
 
   it("fails lint on a warning, without letting the fixer inherit the flag", () => {
@@ -165,8 +160,8 @@ describe("builders — the tool steps", () => {
   it("threads sources through both the format command and its fixer, so the two cannot diverge", () => {
     const format = formatStep({ sources: ["src/", "scripts/"] });
 
-    expect(format.cmd).toEqual(["oxfmt", "--check", "src/", "scripts/"]);
-    expect(format.fix).toEqual(["oxfmt", "src/", "scripts/"]);
+    expect(format.cmd).toEqual(["bun", "fmt", "--no-script", "--check", "src/", "scripts/"]);
+    expect(format.fix).toEqual(["bun", "fmt", "--no-script", "src/", "scripts/"]);
   });
 
   // `lint` before `format`: under `--fix` the formatter must write last and own the final layout.
@@ -206,10 +201,6 @@ describe("builders — the tool steps", () => {
 });
 
 describe("typeAwareLintStep()", () => {
-  it("defaults to the static tier: it judges the source rather than running it, whatever it costs", () => {
-    expect(typeAwareLintStep().tier).toBeUndefined();
-  });
-
   it("reports unused suppression directives as errors", () => {
     expect(typeAwareLintStep().cmd).toEqual([
       "oxlint",
@@ -227,14 +218,6 @@ describe("typeAwareLintStep()", () => {
 });
 
 describe("browserStep()", () => {
-  it("defaults to the scheduled tier, so the run a task closes on never waits on the whole suite", () => {
-    expect(browserStep().tier).toBe("scheduled");
-  });
-
-  it("runs from the tier the caller states, over its scheduled default", () => {
-    expect(browserStep({ tier: "runtime" }).tier).toBe("runtime");
-  });
-
   it("never narrows or widens, because only a runtime row follows the pending changes", () => {
     expect([narrowing(browserStep()), browserStep().widen]).toEqual([undefined, undefined]);
   });
@@ -243,32 +226,6 @@ describe("browserStep()", () => {
     const results = browserStep().results;
 
     expect([results?.args, results?.env]).toEqual([["--reporter=list,json"], "PLAYWRIGHT_JSON_OUTPUT_FILE"]);
-  });
-});
-
-describe("workerdStep() — its narrowing probe", () => {
-  it("reads a listing as selecting nothing only from Playwright's zero-test total", () => {
-    const selects = workerdStep().narrow?.probe?.selects ?? ((): boolean => true);
-
-    expect(selects("Listing tests:\nTotal: 0 tests in 0 files\n")).toBe(false);
-    expect(selects("Listing tests:\n  [chromium] › a.browser.ts:3:1 › a\nTotal: 1 test in 1 file\n")).toBe(true);
-    expect(selects("Error: PW_TEST_CONNECT_WS_ENDPOINT is unset")).toBe(true);
-    expect(selects("")).toBe(true);
-    expect(selects("Total: 0 tests in 0 files\n  [chromium] › a.browser.ts:3:1 › a\nTotal: 1 test in 1 file\n")).toBe(true);
-    expect(selects("Listing tests:\nTotal: 0 tests in 0 files\nWarning: listing interrupted\n")).toBe(true);
-  });
-
-  it("reads a total that is not the zero-test line whole as selecting", () => {
-    const selects = workerdStep().narrow?.probe?.selects ?? ((): boolean => false);
-    const cases = [
-      "Listing tests:\nTotal: 0 tests in 1 file\n",
-      "Listing tests:\nTotal: 10 tests in 0 files\n",
-      "Listing tests:\n  Total: 0 tests in 0 files\n",
-      "Listing tests:\nTotal: 0 tests in 0 files (1 skipped)\n",
-      "Listing tests:\ntotal: 0 tests in 0 files\n",
-    ];
-
-    expect(cases.filter((output) => !selects(output))).toEqual([]);
   });
 });
 
@@ -388,10 +345,6 @@ describe("crossEngineStep()", () => {
     expect([step.label, step.cmd]).toEqual(["test:browser:cross-engine", ["playwright", "test", "--project=firefox", "--project=webkit"]]);
   });
 
-  it("defaults to the scheduled tier, and runs from the tier the caller states over it", () => {
-    expect([crossEngineStep().tier, crossEngineStep({ tier: "runtime" }).tier]).toEqual(["scheduled", "runtime"]);
-  });
-
   it("never narrows or widens, so a cron run covers every spec", () => {
     expect([narrowing(crossEngineStep()), crossEngineStep().widen]).toEqual([undefined, undefined]);
   });
@@ -474,16 +427,8 @@ describe("browserRequired() — Firefox and WebKit on the compat server", () => 
 });
 
 describe("workerdStep()", () => {
-  it("defaults to the runtime tier, because it is held back on a prerequisite the way the browser set is", () => {
-    expect(workerdStep().tier).toBe("runtime");
-  });
-
-  it("runs from the tier the caller states, over its runtime default", () => {
-    expect(workerdStep({ tier: "scheduled" }).tier).toBe("scheduled");
-  });
-
-  it("narrows and widens as the browser row does", () => {
-    expect(narrowing(workerdStep())).toEqual({ args: ["--only-changed"], wide: ["playwright.config.ts"], probe: LISTING });
+  it("declares no reach to narrow or widen, as the browser row does not", () => {
+    expect([narrowing(workerdStep()), workerdStep().widen]).toEqual([undefined, undefined]);
   });
 
   it("runs the workerd Playwright project under node, where createTestHarness answers HTTP", () => {
@@ -517,22 +462,20 @@ describe("workerdStep()", () => {
 });
 
 describe("builders — tier", () => {
-  it("puts every check this namespace still builds on the static tier", () => {
-    expect(CHECK_STEPS.filter((step) => step.tier !== undefined)).toEqual([]);
-  });
+  it("emits no tier on any step, since a table's tier keys place every row", () => {
+    const built: readonly Step[] = [
+      ...CHECK_STEPS,
+      ...COMMAND_STEPS,
+      typeAwareLintStep(),
+      crossEngineStep(),
+      workerdStep(),
+      devBundleStep({ root: "/nowhere" }),
+      configFileStep({ root: "/nowhere" }),
+      ...dbSteps().static,
+      ...dbSteps().runtime,
+    ];
 
-  it("lets a project hold any check back to a higher tier", () => {
-    expect(jsxStep({ root: "/nowhere" }, { tier: "scheduled" }).tier).toBe("scheduled");
-    expect(jsxStep({ root: "/nowhere" }, { tier: "unit" }).tier).toBe("unit");
-  });
-
-  it("puts the test suite on the unit tier and the dev bundle on scheduled", () => {
-    expect(testStep().tier).toBe("unit");
-    expect(devBundleStep({ root: "/nowhere" }).tier).toBe("scheduled");
-  });
-
-  it('omits the key rather than writing "static", so a static-tier step carries no key at all', () => {
-    expect(Object.hasOwn(typecheckStep(), "tier")).toBe(false);
+    expect(built.filter((step) => "tier" in step).map((step) => step.label)).toEqual([]);
   });
 });
 
@@ -559,13 +502,13 @@ describe("builders — conditional on tailwindcss", () => {
     cssTokensStep({ root: "/nowhere", stylesheet: "css/tailwind.css", cssDir: "css" }),
   ];
 
-  it("runs the design-system steps from the static tier up, naming tailwindcss and the command that installs it", () => {
-    expect(conditional().map((step) => [step.label, step.tier, step.requires?.tool, step.requires?.hint])).toEqual([
-      ["validate-class-groups", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
-      ["validate-design-scale", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
-      ["validate-class-tokens", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
-      ["validate-css-coverage", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
-      ["validate-css-tokens", undefined, "tailwindcss", "run `bun add -d tailwindcss`"],
+  it("names tailwindcss and the command that installs it on every design-system step", () => {
+    expect(conditional().map((step) => [step.label, step.requires?.tool, step.requires?.hint])).toEqual([
+      ["validate-class-groups", "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-design-scale", "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-class-tokens", "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-css-coverage", "tailwindcss", "run `bun add -d tailwindcss`"],
+      ["validate-css-tokens", "tailwindcss", "run `bun add -d tailwindcss`"],
     ]);
   });
 
@@ -760,22 +703,30 @@ describe("builders — derived watches", () => {
   it("watches the root and every namespace `exercises` reaches through the graph on every db row, primitives included", () => {
     const watched = ["src/a/**", "src/b/**", "src/c/**", "src/p/**", "db/fixture/**"];
 
-    expect(dbSteps({ root: "db/fixture/", exercises: ["a"], graph: GRAPH }).map((step) => step.watches)).toEqual([watched, watched, watched]);
+    const db = dbSteps({ root: "db/fixture/", exercises: ["a"], graph: GRAPH });
+
+    expect([...db.static, ...db.runtime].map((step) => step.watches)).toEqual([watched, watched, watched]);
   });
 
   it("watches every change for a db row with no `exercises`, or whose root is the project itself", () => {
-    expect(dbSteps().map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
-    expect(dbSteps({ root: "db/fixture" }).map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
-    expect(dbSteps({ root: "/app", exercises: ["a"], graph: GRAPH }).map((step) => Object.hasOwn(step, "watches"))).toEqual([false, false, false]);
+    const watching = (db: ReturnType<typeof dbSteps>) => [...db.static, ...db.runtime].map((step) => Object.hasOwn(step, "watches"));
+
+    expect(watching(dbSteps())).toEqual([false, false, false]);
+    expect(watching(dbSteps({ root: "db/fixture" }))).toEqual([false, false, false]);
+    expect(watching(dbSteps({ root: "/app", exercises: ["a"], graph: GRAPH }))).toEqual([false, false, false]);
   });
 
   it("traces the source file its command runs, resolved from the gate's root, and nothing for a bare binary", async () => {
-    const [digests, lint, replay] = dbSteps({ forge: ["bun", "run", "./bin.ts"] });
+    const {
+      static: [digests],
+      runtime: [lint, replay],
+    } = dbSteps({ forge: ["bun", "run", "./bin.ts"] });
     const root = gateFixtureRoot({ "bin.ts": 'import { a } from "./lib/a";\nexport { a };\n', "lib/a.ts": "export const a = 1;\n" });
 
     expect(await lint.widen?.(root)).toEqual(["bin.ts", "lib/a.ts"]);
     expect([digests.widen, replay.widen].every((widen) => widen === lint.widen)).toBe(true);
-    expect(dbSteps().map((step) => step.widen)).toEqual([undefined, undefined, undefined]);
+    const db = dbSteps();
+    expect([...db.static, ...db.runtime].map((step) => step.widen)).toEqual([undefined, undefined, undefined]);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -787,22 +738,44 @@ describe("builders — derived watches", () => {
   });
 
   it("puts the lint and the replay in runtime behind workerd, and the digests in static", () => {
-    expect(dbSteps().map((step) => [step.label, step.tier, step.requires?.tool])).toEqual([
-      ["db:schema:digests", undefined, undefined],
-      ["db:lint", "runtime", "workerd"],
-      ["db:schema", "runtime", "workerd"],
-    ]);
+    const db = dbSteps();
+
+    expect([db.static.map((step) => step.label), db.runtime.map((step) => step.label)]).toEqual([["db:schema:digests"], ["db:lint", "db:schema"]]);
+    expect([...db.static, ...db.runtime].map((step) => step.requires?.tool)).toEqual([undefined, "workerd", "workerd"]);
   });
 
   it("declares no narrowing on any db row, so each runs whole or not at all", () => {
-    expect(dbSteps().map((step) => step.narrow)).toEqual([undefined, undefined, undefined]);
+    const db = dbSteps();
+
+    expect([...db.static, ...db.runtime].map((step) => step.narrow)).toEqual([undefined, undefined, undefined]);
   });
 
   it("passes --root and the forge command to every row", () => {
-    expect(dbSteps({ root: "app", forge: ["bun", "x"] }).map((step) => step.cmd.join(" "))).toEqual([
+    const db = dbSteps({ root: "app", forge: ["bun", "x"] });
+
+    expect([...db.static, ...db.runtime].map((step) => step.cmd.join(" "))).toEqual([
       "bun x db schema check --root app",
       "bun x db lint --root app",
       "bun x db schema check --replay --root app",
     ]);
+  });
+});
+
+describe("configFileStep()", () => {
+  it("labels the row validate-config-files and watches the config modules, with no prerequisite", () => {
+    const step = configFileStep({ root: "/nowhere" });
+
+    expect([step.label, step.watches, Object.hasOwn(step, "requires")]).toEqual(["validate-config-files", ["config/*.config.ts"], false]);
+  });
+
+  it("replaces its watches with the caller's", () => {
+    expect(configFileStep({ root: "/nowhere" }, { watches: ["x/**"] }).watches).toEqual(["x/**"]);
+  });
+
+  it("runs the config-file check over the root it was given", async () => {
+    const root = gateFixtureRoot({ "config/x.config.ts": 'import { defineX } from "x";\nexport default defineX({});\n' });
+
+    expect(await configFileStep({ root }).run("static")).toEqual(checkConfigFiles({ root }));
+    rmSync(root, { recursive: true, force: true });
   });
 });

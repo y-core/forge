@@ -61,15 +61,18 @@ describe("documentFrequency()", () => {
     expect(documentFrequency(db, "ceiling")).toBe(1);
   });
 
+  it("reads a short term whole, so `com` is not carried by a chunk saying `comment`", () => {
+    expect(documentFrequency(db, "com")).toBe(0);
+  });
+
   it("returns zero for a term the corpus does not carry", () => {
     expect(documentFrequency(db, "zarquon")).toBe(0);
   });
 });
 
 describe("bridgeFrequency()", () => {
-  it("reads a bridge stemmed and whole, so a short target is not reached by prefix as a typed term is", () => {
+  it("reads a bridge stemmed and whole, so a short target reaches no longer word", () => {
     expect(bridgeFrequency(db, "com")).toBe(0);
-    expect(documentFrequency(db, "com")).toBe(1);
   });
 
   it("counts a bridge target the corpus carries", () => {
@@ -145,6 +148,7 @@ describe("a short typed term", () => {
     ["docs/IO.md", "Every io call is awaited."],
     ["docs/KEYS.md", "The keys rotate yearly."],
     ["docs/KEY.md", "A key is never logged."],
+    ["docs/KEYRING.md", "The keyring is sealed."],
   ] as const) {
     const file = join(shortRoot, path.replace("/", "-"));
     writeFileSync(file, doc(body), "utf-8");
@@ -159,7 +163,7 @@ describe("a short typed term", () => {
     expect(documentFrequency(short, "io")).toBe(1);
   });
 
-  it("is read by prefix, so `key` is carried by a chunk saying `keys`", () => {
+  it("is read with its plurals, so `key` is carried by a chunk saying `keys` and not by one saying only `keyring`", () => {
     expect(documentFrequency(short, "key")).toBe(2);
   });
 

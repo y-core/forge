@@ -55,6 +55,7 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ["src/test-setup.ts", "the preload that every spec runs under; it has no behaviour to assert"],
   ["src/tooling/lint/data/design-scale.ts", "generated from the stylesheet, and `designScaleStep` holds it against the source"],
   ["src/form/constants.ts", "declared data — the parsers that read the constants are tested"],
+  ["src/render/markdown/trusted-types.ts", "a declared policy name — the viewport's writes through it are tested in `html.browser.ts`"],
   ["src/auth/config.ts", "the declared algorithm list — the ceremony builders and the capability probe that read it are tested"],
   ["warden/src/cli/flags.ts", "declared flag tables — the command tree that shares them is dispatched in `commands.test.ts`"],
   [

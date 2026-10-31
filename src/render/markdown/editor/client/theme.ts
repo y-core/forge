@@ -6,6 +6,8 @@ const chip = { border: "1px solid var(--border)", borderRadius: "0.25rem", paddi
 /** The editor's look, drawn only from forge's theme variables so it follows the page's light and dark modes. @internal */
 export const editorTheme: Extension = EditorView.theme({
   "&": { color: "var(--foreground)", backgroundColor: "transparent", font: "inherit" },
+  // CodeMirror's base theme pins the editor to `display: flex !important`, which `hidden` alone does not beat.
+  "&[hidden]": { display: "none !important" },
   "&.cm-focused": { outline: "2px solid var(--ring)", outlineOffset: "2px" },
   ".cm-content": { fontFamily: "inherit", caretColor: "var(--foreground)", padding: "0.5rem 0" },
   ".cm-cursor, .cm-dropCursor": { borderInlineStartColor: "var(--foreground)" },

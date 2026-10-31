@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { WranglerConfig } from "../cf/types";
+import { checkConfigFiles } from "../gate/checks/config-files";
 import { PLAIN } from "../term/color";
 import { fakeDbIo } from "./db.fixture";
 import {
@@ -13,8 +14,10 @@ import {
   declaredPath,
   declaredSchemas,
   declaredSeeds,
+  defineDbConfig,
   forgeSchema,
   migrationsDirRefusal,
+  NO_SCHEMAS,
   snapshotPath,
 } from "./declared";
 import { appHome } from "./home";
@@ -133,7 +136,7 @@ describe("declaredPath() — a package specifier", () => {
     }
   });
 
-  it("refuses a specifier nothing under the root exports, naming config/db.ts and the entry", () => {
+  it("refuses a specifier nothing under the root exports, naming config/db.config.ts and the entry", () => {
     expect(() => declaredPath("/app", "@acme/missing/schema.sql")).toThrow(
       "@acme/missing/schema.sql names a module which no package installed under /app exports — install the package, or name the file by its path",
     );
@@ -186,6 +189,32 @@ describe("migrationsDirRefusal()", () => {
 
 describe("DEFAULT_DB_CONFIG", () => {
   it("is the path an app puts its db host config at", () => {
-    expect(DEFAULT_DB_CONFIG).toBe("config/db.ts");
+    expect(DEFAULT_DB_CONFIG).toBe("config/db.config.ts");
+  });
+});
+
+describe("defineDbConfig()", () => {
+  it("returns its argument unchanged", () => {
+    const config: DbHostConfig = { schemas: ["schema.sql"] };
+
+    expect(defineDbConfig(config)).toBe(config);
+  });
+});
+
+describe("NO_SCHEMAS", () => {
+  it("suggests a host config the config-files gate passes", () => {
+    const root = mkdtempSync(join(tmpdir(), "forge-declared-"));
+    try {
+      const suggested = NO_SCHEMAS.split("\n").find((line) => line.trimStart().startsWith("export default")) ?? "";
+      mkdirSync(join(root, "config"));
+      writeFileSync(
+        join(root, DEFAULT_DB_CONFIG),
+        `import { defineDbConfig, forgeSchema } from "@y-core/forge/tooling/db/host";\n\n${suggested.trim()}\n`,
+      );
+
+      expect(checkConfigFiles({ root }).findings).toEqual([]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

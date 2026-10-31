@@ -65,7 +65,7 @@ A fact that is stable and short — a naming convention, a posture, a boundary �
 | --- | --- |
 | Export subpath names | `package.json` `exports` |
 | Side-effectful modules | `package.json` `sideEffects` |
-| Verification gate steps, and every check's configuration | `config/steps.ts` |
+| Verification gate steps, the tiers that list each, and every check's configuration | `config/steps.config.ts` |
 | `lib` and `types` configuration | `tsconfig.json` |
 | Per-namespace export lists | `src/{ns}/mod.ts` |
 | What a namespace is and how to use it | The namespace's README, or the nearest containing one below `src/` ([`NAMESPACES.md`][namespaces-3a] §3a) |
@@ -101,6 +101,7 @@ commits its derived table, the committed module is the row — `class-groups.ts`
 | JSX pragma lines as _enforced_ | `src/tooling/gate/checks/jsx.ts` |
 | The slot-clobber ordering rule as _enforced_ | `src/tooling/lint/rules/data-slot-before-spread.ts` |
 | Test co-location, and the modules exempt from it, as _enforced_ | `src/tooling/gate/checks/co-location.ts` |
+| Which config modules are held to the config-module shape, and what each must hold, as _enforced_ | `src/tooling/gate/checks/config-files.ts` |
 | Which substring assertions on markup fail, and what suppresses one, as _enforced_ | `src/tooling/lint/rules/exact-markup-assertion.ts` |
 | Which reads put a browser spec block in the cross-engine subset, and where its tag is spelled, as _enforced_ | `src/tooling/gate/checks/cross-engine-tags.ts` |
 | The SSR/browser import boundary as _enforced_ | `src/tooling/gate/checks/ssr-boundary.ts` |

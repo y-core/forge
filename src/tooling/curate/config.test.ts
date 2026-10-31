@@ -9,7 +9,7 @@ import { defineFeatures, loadFeatures } from "./config";
 const roots: string[] = [];
 
 /** A root holding `source` at `path`, or no module at all. */
-function project(source: string | null, path = "config/features.ts"): string {
+function project(source: string | null, path = "config/features.config.ts"): string {
   const root = mkdtempSync(join(tmpdir(), "forge-curate-config-"));
   roots.push(root);
   if (source !== null) {
@@ -40,7 +40,7 @@ describe("defineFeatures()", () => {
 });
 
 describe("loadFeatures()", () => {
-  it("loads the default export of `config/features.ts`", async () => {
+  it("loads the default export of `config/features.config.ts`", async () => {
     const root = project('export default { showcase: { directories: ["src/showcase/"], seams: ["src/worker.ts"] } };\n');
     expect(await loadFeatures({ root })).toEqual({ showcase: { directories: ["src/showcase/"], seams: ["src/worker.ts"] } });
   });
@@ -54,7 +54,9 @@ describe("loadFeatures()", () => {
     const error = await refusal(loadFeatures({ root: project(null) }));
     expect(error).toBeInstanceOf(CliError);
     expect((error as CliError).kind).toBe("invalid-args");
-    expect(error.message).toBe("No feature manifest at `config/features.ts` — forge curate needs one, default-exporting defineFeatures({...})");
+    expect(error.message).toBe(
+      "No feature manifest at `config/features.config.ts` — forge curate needs one, default-exporting defineFeatures({...})",
+    );
   });
 
   it("refuses an explicit path naming a module that does not exist", async () => {
@@ -71,7 +73,7 @@ describe("loadFeatures()", () => {
     const error = await refusal(loadFeatures({ root: project('export default { showcase: { directories: [], seams: ["/abs.ts"] } };\n') }));
     expect(error).toBeInstanceOf(CliError);
     expect((error as CliError).kind).toBe("invalid-args");
-    expect(error.message).toBe("config/features.ts: showcase.seams.0: must be root-relative with no `..` segment");
+    expect(error.message).toBe("config/features.config.ts: showcase.seams.0: must be root-relative with no `..` segment");
   });
 
   it("joins every issue, each by its dot path", async () => {
@@ -81,7 +83,7 @@ describe("loadFeatures()", () => {
       }),
     );
     expect(error.message).toBe(
-      "config/features.ts: Demo: must be lowercase letters, digits and `-`, starting with a letter; contact: a feature must name something to remove",
+      "config/features.config.ts: Demo: must be lowercase letters, digits and `-`, starting with a letter; contact: a feature must name something to remove",
     );
   });
 });

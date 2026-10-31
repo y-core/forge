@@ -33,7 +33,7 @@ async function readSeedHistory(run: DbRunContext): Promise<SeedRecord[]> {
   }));
 }
 
-/** Every seed on disk: each declared directory's, in the order `config/db.ts` names them, with `--dir` overriding the lot. @public */
+/** Every seed on disk: each declared directory's, in the order `config/db.config.ts` names them, with `--dir` overriding the lot. @public */
 export function readSeeds(run: DbRunContext, dir?: string | undefined): readonly Seed[] {
   const sources = dir === undefined ? declaredSeeds(run) : [declaredPath(run.config.root, dir)];
   return sources.flatMap((source) => discoverSeeds(run.io, source));

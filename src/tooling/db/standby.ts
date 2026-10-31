@@ -17,7 +17,7 @@ export async function runStandbyReset(run: DbRunContext, options: StandbyResetOp
   if (options.seed && readSeeds(run, options.dir).length === 0) {
     throw new CliError(
       "invalid-args",
-      `standby reset found no seeds${options.dir === undefined ? " in any directory config/db.ts names" : ` in ${options.dir}`} — add one, or pass --no-seed to build the standby database with every table empty`,
+      `standby reset found no seeds${options.dir === undefined ? " in any directory config/db.config.ts names" : ` in ${options.dir}`} — add one, or pass --no-seed to build the standby database with every table empty`,
     );
   }
   await clearLocalState(run.io, run.home);

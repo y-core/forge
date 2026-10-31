@@ -1,6 +1,9 @@
+import { err, ok } from "../../result/result";
+import type { Result } from "../../result/types";
 import { decodeEntity } from "./entities";
-import { isSafeUrl, SVG_ATTRIBUTES, SVG_TAGS } from "./svg-schema";
+import { SVG_ATTRIBUTES, SVG_TAGS } from "./svg-schema";
 import type { HtmlWriter, SanitizedSvg, SvgElement, SvgNode } from "./types";
+import { isSafeUrl } from "./url-policy";
 
 const MAX_DEPTH = 64;
 const NAME = /[A-Za-z_][\w:.-]*/y;
@@ -258,13 +261,12 @@ function sanitizeChildren(children: readonly SvgNode[]): (SanitizedSvg | string)
   return out;
 }
 
-/** Sanitises an svg fence's source to the SVG subset, or answers null when it does not tokenize or no single `<svg>` root survives. */
-export function sanitizeSvg(source: string): SanitizedSvg | null {
+/** Sanitises an svg fence's source to the SVG subset, or answers `unparseable` for anything `tokenizeSvg` refuses. */
+export function sanitizeSvg(source: string): Result<SanitizedSvg, "unparseable"> {
   const root = tokenizeSvg(source);
-  if (root === null) return null;
-  const kept = sanitizeChildren([root]).filter((node) => typeof node !== "string" || node.trim() !== "");
-  const [only] = kept;
-  return kept.length === 1 && typeof only !== "string" && only?.tag === "svg" ? only : null;
+  if (root === null) return err("unparseable");
+  const [svg] = sanitizeChildren([root]);
+  return ok(svg as SanitizedSvg);
 }
 
 /** Writes a sanitised svg through the page's writer, an svg `<a>` through its own rule. */

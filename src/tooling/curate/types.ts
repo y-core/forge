@@ -37,7 +37,7 @@ const FeatureSchema = v.pipe(
   ),
 );
 
-/** The feature manifest `config/features.ts` default-exports. @public */
+/** The feature manifest `config/features.config.ts` default-exports. @public */
 export const FeatureManifestSchema = v.pipe(
   v.record(FeatureNameSchema, FeatureSchema),
   v.check((features) => Object.keys(features).length > 0, "a manifest must name a feature"),

@@ -3,11 +3,11 @@ import { dirname, resolve } from "node:path";
 
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { buildGraph, diffGraph, findEnumerations } from "./namespace-graph-parse";
+import { buildGraph, diffEdgeModules, diffGraph, findEnumerations, publishedSubpaths } from "./namespace-graph-parse";
 import { readPackageImports } from "./package-imports";
 import { collectFiles, isTestSource } from "./source-scan";
 import type { ExportsMap } from "./types";
-import type { DeclaredGraph, SourceFile } from "./types";
+import type { DeclaredGraph, GraphFinding, SourceFile } from "./types";
 import type { NamespaceGraphCheckConfig } from "./types";
 
 /** The directory of every `mod.ts` the exports map names, plus the sealed-internal barrels. @public */
@@ -30,6 +30,11 @@ function resolveSources(root: string, sourceDir: string): SourceFile[] {
   return collectFiles(root, sourceDir, (name) => /\.tsx?$/.test(name))
     .filter((path) => !isTestSource(path))
     .map((path) => ({ path, source: readFileSync(resolve(root, path), "utf-8") }));
+}
+
+function graphFindingToFailure(finding: GraphFinding): Finding {
+  if (finding.file === undefined) return fail(finding.detail, { file: "edges" });
+  return fail(finding.detail, finding.line === undefined ? { file: finding.file } : { file: finding.file, line: finding.line });
 }
 
 function valueTargets(edges: DeclaredGraph["edges"], from: string): string[] {
@@ -120,12 +125,14 @@ export function checkNamespaceGraph(config: NamespaceGraphCheckConfig): CheckRes
 
   const sources = resolveSources(config.root, sourceDir);
   if (sources.length === 0) return scannedNothing(`\`${sourceDir}\` matched no source`, "namespace-graph");
-  const observed = buildGraph(sources, namespaces, readPackageImports(config.root));
+  const imports = readPackageImports(config.root);
+  const published = publishedSubpaths(config.packageName, config.exports);
+  const observed = buildGraph(sources, namespaces, imports, published);
 
-  const findings: Finding[] = diffGraph(observed, config.graph, namespaces).map((finding) => {
-    if (finding.file === undefined) return fail(finding.detail, { file: "edges" });
-    return fail(finding.detail, finding.line === undefined ? { file: finding.file } : { file: finding.file, line: finding.line });
-  });
+  const findings: Finding[] = [
+    ...diffGraph(observed, config.graph, namespaces),
+    ...diffEdgeModules(sources, config.graph, namespaces, imports, published),
+  ].map(graphFindingToFailure);
 
   findings.push(...validateNoValueCycles(config.graph.edges));
 

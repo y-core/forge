@@ -115,7 +115,7 @@ filename and a section number exist in both corpora, so the prefix is what says 
 Warden's subpaths of `@y-core/forge` are each a barrel. `validate-exports` proves every `@public` symbol reaches the barrel it belongs
 to, in both directions, so the barrel is the export list — there is no table here to go stale beside it.
 
-**`@y-core/forge/warden/steps`** is the one to reach for: gate steps ready to drop into a repository's `config/steps.ts`.
+**`@y-core/forge/warden/steps`** is the one to reach for: gate steps ready to merge into a repository's `config/steps.config.ts`.
 
 **`@y-core/forge/warden/checks`** publishes each check as a pure function from a config to a result, plus the document parsers they are built out of
 — link definitions, numbered sections, fence stripping, frontmatter, the no-rot scan. Take it when you are calling a check outside a step, or
@@ -128,13 +128,19 @@ what makes an empty result an answer rather than a failure to match.
 **`@y-core/forge/warden/mcp`** is the server: the tool and resource surface, the JSON-RPC framing, and the stdio transport. Its request handler is
 separate from its transport, so the protocol is testable without one.
 
-**Take `steps` unless you have a reason not to.** It is the whole of what a consuming repository needs: `wardenAppSteps` spreads the rows every
-application appends, and `cloudflareWorkerSteps()` cannot emit them because it lives under `src/`, where nothing may import warden.
+**Take `steps` unless you have a reason not to.** It is the whole of what a consuming repository needs: `wardenAppSteps` declares the rows every
+application merges onto its table, and `cloudflareWorkerSteps()` cannot emit them because it lives under `src/`, where nothing may import warden.
 
 ```ts
+import { cloudflareWorkerSteps, defineSteps, mergeTiers } from "@y-core/forge/tooling/gate";
 import { wardenAppSteps } from "@y-core/forge/warden/steps";
 
-export const steps = [...cloudflareWorkerSteps({ root: ROOT }), ...wardenAppSteps({ root: ROOT, packageName: pkg.name, golden: GOLDEN })];
+export default defineSteps({
+  tiers: mergeTiers(
+    cloudflareWorkerSteps({ root: ROOT }),
+    wardenAppSteps({ root: ROOT, packageName: pkg.name, queries: QUERIES, citableDirs: ["docs"] }),
+  ),
+});
 ```
 
 Each step's label is fixed, because a label is the `--only` token a developer types.

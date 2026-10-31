@@ -44,13 +44,16 @@ function matching(db: Database, expression: string): number[] {
   return rows.map((row) => row.rowid);
 }
 
-/** The longest typed term read unstemmed by prefix. */
+/** The longest typed term read unstemmed, as itself and its plurals. */
 const SHORT_TERM = 3;
+
+const PLURAL_ENDINGS = ["", "s", "es"] as const;
 
 /** Every rowid carrying one typed term. */
 function carriers(db: Database, term: string): number[] {
   if (term.length > SHORT_TERM) return matching(db, quote(term));
-  const rows = db.query<{ rowid: number }, [string]>("SELECT rowid FROM chunk_exact WHERE chunk_exact MATCH ?").all(`${quote(term)}*`);
+  const forms = PLURAL_ENDINGS.map((ending) => quote(term + ending)).join(" OR ");
+  const rows = db.query<{ rowid: number }, [string]>("SELECT rowid FROM chunk_exact WHERE chunk_exact MATCH ?").all(forms);
   return rows.map((row) => row.rowid);
 }
 

@@ -1,7 +1,7 @@
 export { timeTravelInfo, timeTravelRestore } from "./bookmark";
 export { createDbCommands } from "./commands";
 export { confirmPrinter, resolveDbContext, withDbRun } from "./context";
-export { forgeSchema } from "./declared";
+export { defineDbConfig, forgeSchema } from "./declared";
 export type {
   ApplyPlan,
   BackupManifest,

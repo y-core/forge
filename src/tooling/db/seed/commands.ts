@@ -6,7 +6,7 @@ import { confirmPrinter, sharedDbFlags, withDbRun } from "../context";
 import type { DbContextOverrides, DbRunContext, SharedDbFlags } from "../types";
 import { runSeedApply, runSeedReset, runSeedStatus } from "./apply";
 
-const dirFlag = { type: "string" as const, description: "Run just this directory, instead of every one `config/db.ts` names" };
+const dirFlag = { type: "string" as const, description: "Run just this directory, instead of every one `config/db.config.ts` names" };
 
 function where(run: DbRunContext): { target: string; database: string } {
   return { target: run.config.target.place, database: run.home.database };

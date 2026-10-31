@@ -117,7 +117,7 @@ describe("checkSchema()", () => {
   const migration = { [`${MIGRATIONS}/0001_init.sql`]: INIT };
   const schemaAt = (path: string, shapes: readonly Shape[]) => ({ [`${ROOT}/${path}`]: schemaText(shapes) });
 
-  it("has nothing to hold in step when config/db.ts names no schemas and no snapshot exists", async () => {
+  it("has nothing to hold in step when config/db.config.ts names no schemas and no snapshot exists", async () => {
     const { run } = context(migration, {});
 
     expect(await checkSchema(run, NO_REPLAY)).toEqual({ snapshotPath: SNAPSHOT, schemas: [], problems: null });
@@ -125,10 +125,10 @@ describe("checkSchema()", () => {
 
   // An absent file is dropped on the way in, so the states count alone cannot tell a declaration
   // naming a missing file from no declaration at all — and reporting clean is the wrong answer.
-  it("reports a schema config/db.ts declares with no file behind it, rather than reporting clean", async () => {
+  it("reports a schema config/db.config.ts declares with no file behind it, rather than reporting clean", async () => {
     const { run } = context(migration);
 
-    expect((await checkSchema(run, NO_REPLAY)).problems).toEqual([`${SCHEMA} is declared in config/db.ts and no file is there to read`]);
+    expect((await checkSchema(run, NO_REPLAY)).problems).toEqual([`${SCHEMA} is declared in config/db.config.ts and no file is there to read`]);
   });
 
   it("names the compose that writes the first snapshot when a schema is declared and none exists", async () => {
@@ -139,7 +139,7 @@ describe("checkSchema()", () => {
     ]);
   });
 
-  it("reports a declared schema edited since the last compose, by the path config/db.ts names", async () => {
+  it("reports a declared schema edited since the last compose, by the path config/db.config.ts names", async () => {
     const { run } = context({ ...migration, ...schemaAt(SCHEMA, [USERS_WITH_NICKNAME]), [SNAPSHOT]: snapshotText([USERS], DIGESTS) });
 
     expect((await checkSchema(run, NO_REPLAY)).problems).toEqual([`${SCHEMA} moved since the last compose`]);
@@ -169,7 +169,7 @@ describe("checkSchema()", () => {
 
     expect((await checkSchema(run, NO_REPLAY)).problems).toEqual([
       `${SCHEMA} is declared and the snapshot has never seen it`,
-      `${LIB} is in the snapshot and config/db.ts no longer declares it, or the file is absent`,
+      `${LIB} is in the snapshot and config/db.config.ts no longer declares it, or the file is absent`,
     ]);
   });
 
@@ -229,7 +229,7 @@ describe("checkSchema()", () => {
 describe("formatSchemaCheck()", () => {
   it("says there is nothing to hold in step when nothing is declared", () => {
     expect(formatSchemaCheck({ snapshotPath: SNAPSHOT, schemas: [], problems: null })).toEqual([
-      "config/db.ts names no `schemas`, and there is no snapshot — nothing to hold in step",
+      "config/db.config.ts names no `schemas`, and there is no snapshot — nothing to hold in step",
     ]);
   });
 

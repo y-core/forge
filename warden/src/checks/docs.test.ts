@@ -106,6 +106,14 @@ describe("checkDocs() — nested document discovery", () => {
   });
 });
 
+describe("checkDocs() — link syntax inside an inline code span", () => {
+  it("reads a code span as literal text, and still reports the real broken link beside it", () => {
+    const root = fixtureRoot({ "CLAUDE.md": index("- wrap the selection as `[…](url)`, as [`ABSENT.md`](ABSENT.md) does") });
+
+    expect(run(root).findings).toEqual([{ level: "fail", message: "link target `ABSENT.md` does not exist", file: "CLAUDE.md", line: 5 }]);
+  });
+});
+
 describe("checkDocs() — cross-references across a subdirectory", () => {
   it("resolves a §N citation from one subdirectory into another", () => {
     const root = fixtureRoot({
@@ -240,11 +248,11 @@ describe("checkDocs() — backticked repository paths", () => {
   it("accepts `src/`, `config/`, and `.claude/` paths that exist on disk", () => {
     const root = fixtureRoot({
       "src/index.ts": "export {};\n",
-      "config/steps.ts": "export {};\n",
+      "config/steps.config.ts": "export {};\n",
       ".claude/settings.json": "{}\n",
       ".decisions/governance/TESTING.md": doc(
         "Testing",
-        "The gate reads `config/steps.ts`, the entry `src/index.ts`, and `.claude/settings.json`.",
+        "The gate reads `config/steps.config.ts`, the entry `src/index.ts`, and `.claude/settings.json`.",
       ),
       "CLAUDE.md": index("- [`TESTING.md`](.decisions/governance/TESTING.md): the testing rules"),
     });

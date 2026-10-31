@@ -13,7 +13,8 @@ import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
 import { clearReceipt, readReceipt, recordReceipt } from "./receipt";
-import type { CommandStep, GateRunReport, Step, StepResults, TestFailure } from "./types";
+import { tier } from "./tiers";
+import type { CommandStep, GateRunReport, Step, StepResults, StepTiers, TestFailure } from "./types";
 
 const roots: string[] = [];
 
@@ -74,16 +75,24 @@ function context(): { ctx: CliContext; logs: string[] } {
   };
 }
 
-/** Runs the gate over `steps`, capturing `console.log` and the exit code the runner asked for. */
+function isStepRows(table: readonly Step[] | StepTiers): table is readonly Step[] {
+  return Array.isArray(table);
+}
+
+function ladder(statics: readonly Step[], runtime: readonly Step[] = []): StepTiers {
+  return { static: statics, unit: [tier("static")], runtime: [tier("unit"), ...runtime], scheduled: [tier("runtime")] };
+}
+
+/** Runs the gate over `table`, capturing `console.log` and the exit code the runner asked for. */
 async function run(
-  steps: readonly Step[],
+  table: readonly Step[] | StepTiers,
   flags: Record<string, unknown> = {},
   opts: { cwd?: string; gateInputs?: readonly string[]; receipt?: boolean } = {},
 ): Promise<{ logs: string[]; code: number | undefined }> {
   const { ctx, logs } = context();
   const command = createGateCommand({
     cwd: opts.cwd ?? fixtureRoot(),
-    steps,
+    tiers: isStepRows(table) ? ladder(table) : table,
     ...(opts.gateInputs === undefined ? {} : { gateInputs: opts.gateInputs }),
     ...(opts.receipt === undefined ? {} : { receipt: opts.receipt }),
   });
@@ -109,15 +118,15 @@ describe("createGateCommand() — the tier reaches a check", () => {
   const seen: string[] = [];
   const recording: Step = {
     label: "validate-thing",
-    run: (tier) => {
-      seen.push(tier);
+    run: (runTier) => {
+      seen.push(runTier);
       return checkResult([], "");
     },
   };
 
   it("hands a check the tier of the run, which a check may vary its strictness on", async () => {
     seen.length = 0;
-    for (const tier of ["static", "unit", "runtime", "scheduled"]) await run([recording], { tier });
+    for (const runTier of ["static", "unit", "runtime", "scheduled"]) await run([recording], { tier: runTier });
 
     expect(seen).toEqual(["static", "unit", "runtime", "scheduled"]);
   });
@@ -132,7 +141,7 @@ describe("createGateCommand() — the tier reaches a check", () => {
 
 describe("createGateCommand() — resolving the tier", () => {
   const trivial: Step = { label: "alpha", run: () => checkResult([], "") };
-  const flags = createGateCommand({ cwd: "/nowhere", steps: [trivial] }).flags;
+  const flags = createGateCommand({ cwd: "/nowhere", tiers: { static: [trivial] } }).flags;
 
   it("refuses an unrecognised --tier, the retired `deploy` included, naming the four it knows and running nothing", async () => {
     const called: string[] = [];
@@ -152,6 +161,26 @@ describe("createGateCommand() — resolving the tier", () => {
     expect({ logs, code }).toEqual({ logs: ['Unknown --tier: "release". Known tiers: static, unit, runtime, scheduled.'], code: 1 });
   });
 
+  it("refuses a run tier the table does not declare, naming the key to add", async () => {
+    const { logs, code } = await run({ static: [trivial] }, { tier: "unit" });
+
+    expect({ logs, code }).toEqual({ logs: ["The step table declares no unit tier — add a `unit` key under `tiers`."], code: 1 });
+  });
+
+  it("refuses a label the resolved table holds twice, in any tier, before any step runs", async () => {
+    const called: string[] = [];
+    const recording: Step = { label: "alpha", run: () => (called.push("alpha"), checkResult([], "")) };
+    const { logs, code } = await run({ static: [recording], scheduled: [tier("static"), passing("alpha")] }, { tier: "static" });
+
+    expect({ logs, code, called }).toEqual({
+      logs: [
+        "Duplicate step label in the scheduled tier: alpha. A label is the `--only` token and the name reported on failure, so it must name exactly one step.",
+      ],
+      code: 1,
+      called: [],
+    });
+  });
+
   it("knows neither --mode nor --full, so a retired spelling is refused as an unknown flag", () => {
     expect(() => parseArgs(["--mode", "full"], flags)).toThrow("Unknown flag: --mode");
     expect(() => parseArgs(["--full"], flags)).toThrow("Unknown flag: --full");
@@ -167,18 +196,18 @@ describe("createGateCommand() — resolving the tier", () => {
 
 describe("createGateCommand() — a step whose dependency is absent", () => {
   it("skips it below the runtime tier but refuses to call the run green, and exits non-zero", async () => {
-    for (const tier of ["static", "unit"]) {
-      const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier });
+    for (const runTier of ["static", "unit"]) {
+      const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier: runTier });
 
       expect(logs).toContain("○ delta — skipped (tailwindcss not found; run `bun add -d tailwindcss`)");
-      expect(logs.at(-1)?.startsWith(`○ verify --tier ${tier} — 1 step passed, 1 step skipped`)).toBe(true);
+      expect(logs.at(-1)?.startsWith(`○ verify --tier ${runTier} — 1 step passed, 1 step skipped`)).toBe(true);
       expect(code).toBe(1);
     }
   });
 
   it("fails it from the runtime tier up, which promise that a runtime ran", async () => {
-    for (const tier of ["runtime", "scheduled"]) {
-      const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier });
+    for (const runTier of ["runtime", "scheduled"]) {
+      const { logs, code } = await run([passing("alpha"), passing("delta", ABSENT)], { tier: runTier });
 
       expect(logs).toContain("✗ delta — tailwindcss not found; run `bun add -d tailwindcss`");
       expect(logs.at(-1)).toContain("failed at `delta` (step 2 of 2");
@@ -777,18 +806,17 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
   const out = fixtureRoot();
   const recording = (label: string, watches: readonly string[], narrow?: CommandStep["narrow"]): CommandStep => ({
     label,
-    tier: "runtime",
     tail: 5,
     cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD")-${label}.args"`, "sh", "whole"],
     watches,
     ...(narrow === undefined ? {} : { narrow }),
   });
 
-  const table = (): Step[] => [
-    passing("lint"),
-    recording("browser", ["src/**"], { args: ["--only-changed"], wide: ["src/ui/theme.css"] }),
-    recording("db", ["db/**"]),
-  ];
+  const table = (): StepTiers =>
+    ladder(
+      [passing("lint")],
+      [recording("browser", ["src/**"], { args: ["--only-changed"], wide: ["src/ui/theme.css"] }), recording("db", ["db/**"])],
+    );
 
   const spawnedWith = (root: string, label: string): string | undefined => {
     const path = join(out, `${basename(root)}-${label}.args`);
@@ -850,7 +878,7 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
     writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
     const probed: string[] = [];
     const absent = { tool: "workerd", probe: () => (probed.push("db"), false), hint: "run `bun install`" };
-    const { code } = await run([passing("lint"), { ...recording("db", ["db/**"]), requires: absent }], {}, { cwd: root });
+    const { code } = await run(ladder([passing("lint")], [{ ...recording("db", ["db/**"]), requires: absent }]), {}, { cwd: root });
 
     expect({ probed, code }).toEqual({ probed: [], code: undefined });
   });
@@ -865,7 +893,7 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
 
   it("refuses a table whose nested glob matches no file in the work tree, before any row runs", async () => {
     const root = worktreeClone();
-    const { logs, code } = await run([passing("lint"), recording("db", ["database/**"])], {}, { cwd: root });
+    const { logs, code } = await run(ladder([passing("lint")], [recording("db", ["database/**"])]), {}, { cwd: root });
 
     expect(logs).toEqual([
       'Step "db" declares `watches` glob "database/**", which matches no file in the work tree — a renamed path no longer reaches the step, so update the glob.',
@@ -897,7 +925,6 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
   // Answers `--list` with `listing` and `exit`, recording that it was asked; any other run records its arguments.
   const probing = (listing: string, exit = 0, reach: { wide?: readonly string[]; widen?: Step["widen"] } = {}): CommandStep => ({
     label: "browser",
-    tier: "runtime",
     tail: 5,
     cmd: [
       "sh",
@@ -921,7 +948,7 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
 
   it("leaves a row its probe selects nothing for untouched, saying which probe found so, and records only the rows that ran", async () => {
     const root = editedClone();
-    const { logs, code } = await run([passing("lint"), probing("none")], {}, { cwd: root });
+    const { logs, code } = await run(ladder([passing("lint")], [probing("none")]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: true, args: undefined });
     expect(logs.find((line) => line.startsWith("○ browser"))).toMatch(
@@ -933,28 +960,28 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
 
   it("runs a row narrowed when its probe selects something", async () => {
     const root = editedClone();
-    await run([probing("one spec")], {}, { cwd: root });
+    await run(ladder([], [probing("one spec")]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: true, args: "whole --only-changed" });
   });
 
   it("runs a row whole when its probe exits non-zero, never untouched", async () => {
     const root = editedClone();
-    await run([probing("none", 1)], {}, { cwd: root });
+    await run(ladder([], [probing("none", 1)]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: true, args: "whole" });
   });
 
   it("runs a row whole without probing when a pending change is a path its `widen` traces", async () => {
     const root = editedClone("src/ui/exposed.ts");
-    await run([probing("none", 0, { widen: () => ["src/ui/exposed.ts"] })], {}, { cwd: root });
+    await run(ladder([], [probing("none", 0, { widen: () => ["src/ui/exposed.ts"] })]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: false, args: "whole" });
   });
 
   it("probes a row whose `widen` traces none of the pending changes", async () => {
     const root = editedClone();
-    await run([probing("none", 0, { widen: async () => ["src/ui/exposed.ts"] })], {}, { cwd: root });
+    await run(ladder([], [probing("none", 0, { widen: async () => ["src/ui/exposed.ts"] })]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: true, args: undefined });
   });
@@ -964,13 +991,12 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     const seen: string[] = [];
     const step: CommandStep = {
       label: "db",
-      tier: "runtime",
       tail: 5,
       cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD").args"`, "sh", "whole"],
       watches: ["docs/**"],
       widen: (cwd) => (seen.push(cwd), ["src/ui/exposed.ts"]),
     };
-    await run([step], {}, { cwd: root });
+    await run(ladder([], [step]), {}, { cwd: root });
 
     expect({ seen, args: outcome(root).args }).toEqual({ seen: [root], args: "whole" });
   });
@@ -980,14 +1006,14 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     const widen = (): string[] => {
       throw new Error("no bundler");
     };
-    await run([probing("none", 0, { widen })], {}, { cwd: root });
+    await run(ladder([], [probing("none", 0, { widen })]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: false, args: "whole" });
   });
 
   it("runs a row whole without probing when its `widen` rejects", async () => {
     const root = editedClone();
-    await run([probing("none", 0, { widen: () => Promise.reject(new Error("bundle failed")) })], {}, { cwd: root });
+    await run(ladder([], [probing("none", 0, { widen: () => Promise.reject(new Error("bundle failed")) })]), {}, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: false, args: "whole" });
   });
@@ -997,7 +1023,7 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     const unspawnable: CommandStep = { ...probing("none"), label: "absent", cmd: ["forge-no-such-binary", "test"] };
     const saved = process.env.TMPDIR;
     process.env.TMPDIR = mkdtempSync(join(tmpdir(), "forge-system-tmp-"));
-    const { logs, code } = await run([unspawnable], {}, { cwd: root }).finally(() => {
+    const { logs, code } = await run(ladder([], [unspawnable]), {}, { cwd: root }).finally(() => {
       rmSync(process.env.TMPDIR!, { recursive: true, force: true });
       if (saved === undefined) delete process.env.TMPDIR;
       else process.env.TMPDIR = saved;
@@ -1009,9 +1035,9 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
 
   it("runs a row whole without probing when a gate input or a `wide` glob changes", async () => {
     const gateInput = editedClone("docs/A.md");
-    await run([probing("none")], {}, { cwd: gateInput, gateInputs: ["docs/**"] });
+    await run(ladder([], [probing("none")]), {}, { cwd: gateInput, gateInputs: ["docs/**"] });
     const wide = editedClone("docs/A.md");
-    await run([probing("none", 0, { wide: ["docs/**"] })], {}, { cwd: wide });
+    await run(ladder([], [probing("none", 0, { wide: ["docs/**"] })]), {}, { cwd: wide });
 
     expect([outcome(gateInput), outcome(wide)]).toEqual([
       { probed: false, args: "whole" },
@@ -1021,7 +1047,7 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
 
   it("never probes at the scheduled tier, where every row runs whole", async () => {
     const root = editedClone();
-    await run([probing("none")], { tier: "scheduled" }, { cwd: root });
+    await run(ladder([], [probing("none")]), { tier: "scheduled" }, { cwd: root });
 
     expect(outcome(root)).toEqual({ probed: false, args: "whole" });
   });
@@ -1030,7 +1056,7 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     const root = editedClone();
     const probed: string[] = [];
     const absent = { tool: "playwright server", probe: () => (probed.push("browser"), false), hint: "start it" };
-    const { code } = await run([passing("lint"), { ...probing("none"), requires: absent }], {}, { cwd: root });
+    const { code } = await run(ladder([passing("lint")], [{ ...probing("none"), requires: absent }]), {}, { cwd: root });
 
     expect({ probed, code }).toEqual({ probed: [], code: undefined });
   });
@@ -1038,7 +1064,8 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
   it("lists the reach the probe and the trace settle on", async () => {
     const untouched = editedClone();
     const traced = editedClone("src/ui/exposed.ts");
-    const listed = async (root: string, step: CommandStep): Promise<string[]> => (await run([step], { list: true }, { cwd: root })).logs;
+    const listed = async (root: string, step: CommandStep): Promise<string[]> =>
+      (await run(ladder([], [step]), { list: true }, { cwd: root })).logs;
 
     expect(await listed(untouched, probing("none"))).toEqual(["verify — 1 step\n  browser (untouched)"]);
     expect(await listed(traced, probing("none", 0, { widen: () => ["src/ui/exposed.ts"] }))).toEqual(["verify — 1 step\n  browser"]);
@@ -1046,9 +1073,9 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
 
   it("reuses a receipt whose run the probe left the row out of, without probing again", async () => {
     const root = editedClone();
-    await run([passing("lint"), probing("none")], {}, { cwd: root });
+    await run(ladder([passing("lint")], [probing("none")]), {}, { cwd: root });
     rmSync(join(out, `${basename(root)}.probed`));
-    const { logs } = await run([passing("lint"), probing("none")], { reuse: true }, { cwd: root });
+    const { logs } = await run(ladder([passing("lint")], [probing("none")]), { reuse: true }, { cwd: root });
 
     expect(logs.at(-1)).toStartWith("✓ verify — reused the passing runtime run");
     expect(outcome(root).probed).toBe(false);

@@ -65,3 +65,23 @@ for (const namespace of ["auth", "render/htmx", "logging", "app"]) {
     });
   });
 }
+
+describe("markdown.css", () => {
+  it("resolves through the export map to the shipped sheet", () => {
+    expect(stylesheetPath("@y-core/forge/ui/assets/css/markdown.css", APP_DIR)).toBe(resolve(CSS_DIR, "markdown.css"));
+  });
+
+  it("compiled after tailwind.css, emits every theme variable its --markdown-* properties fall back to, and keeps its rules", async () => {
+    const sheet = readFileSync(resolve(CSS_DIR, "markdown.css"), "utf-8");
+    const fallbacks = [...new Set([...sheet.matchAll(/var\(--markdown-[a-z-]+, var\((--[a-z0-9-]+)\)\)/g)].map((match) => match[1] ?? ""))];
+    const css = (
+      await compileApp('@import "@y-core/forge/ui/assets/css/tailwind.css";\n@import "@y-core/forge/ui/assets/css/markdown.css";\n')
+    ).build([]);
+
+    expect({
+      fallbacks: fallbacks.length > 0,
+      missing: fallbacks.filter((name) => !new RegExp(`${name}\\s*:`).test(css)),
+      rules: css.includes(":where(.markdown"),
+    }).toEqual({ fallbacks: true, missing: [], rules: true });
+  });
+});

@@ -3,9 +3,9 @@
 -- This file is what the schema *is*, and this library ships no SQL that runs. Change a table here,
 -- and `bun run verify` loads it into a real database to prove it executes.
 --
--- A consumer reaches this file by naming it in its own `config/db.ts`, with `forgeSchema` — nothing here is
+-- A consumer reaches this file by naming it in its own `config/db.config.ts`, with `forgeSchema` — nothing here is
 -- discovered, so an app that does not ask for this schema does not get it:
---   export default { schemas: [forgeSchema("auth"), "config/db/schema.sql"] }
+--   export default defineDbConfig({ schemas: [forgeSchema("auth"), "config/db/schema.sql"] })
 -- `forge db migrate compose` then diffs every file it names against that app's own migrations and
 -- writes the difference into that app's own directory. A database that will never be migrated can
 -- take this file in one shot:

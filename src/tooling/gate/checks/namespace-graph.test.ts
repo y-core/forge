@@ -198,6 +198,23 @@ describe("checkNamespaceGraph() — the walk over a tree carrying a real violati
     expect(result.ok).toBe(true);
   });
 
+  it("fails a leaf reaching another namespace by the package's own name", () => {
+    const root = fixtureRoot({
+      "src/alpha/mod.ts": 'import { b } from "@y-core/forge/beta";\nexport const a = b;\n',
+      "src/beta/mod.ts": "export const b = 2;\n",
+    });
+
+    const result = checkNamespaceGraph({
+      root,
+      packageName: "@y-core/forge",
+      exports: EXPORTS,
+      graph: { primitives: [], leaf: ["alpha"], edges: { alpha: { beta: "value" } } },
+    });
+
+    expect(result.findings.map((finding) => [finding.file, finding.line])).toEqual([["src/alpha/mod.ts", 1]]);
+    expect(result.findings[0]?.message).toContain("`alpha` is declared leaf in `LEAF` but imports `beta`");
+  });
+
   it("finds a violating file nested below the namespace directory, so the walk must recurse", () => {
     const root = fixtureRoot({
       "src/alpha/mod.ts": "export const m = 1;\n",
@@ -263,6 +280,45 @@ describe("checkNamespaceGraph() — an edge reached through the `imports` map", 
     });
 
     expect(checkNamespaceGraph({ root, exports: EXPORTS, graph: EMPTY_GRAPH }).findings).toEqual([]);
+  });
+});
+
+describe("checkNamespaceGraph() — an edge narrowed to named files of its target", () => {
+  const files = {
+    "src/alpha/mod.ts": "export const m = 1;\n",
+    "src/alpha/a.ts": 'export const a = 1;\nimport { b } from "../beta/mod.ts";\nexport const c = b;\n',
+    "src/beta/mod.ts": 'export { b } from "./b";\n',
+    "src/beta/b.ts": "export const b = 2;\n",
+  };
+  const edges: DeclaredGraph["edges"] = { alpha: { beta: "value" } };
+
+  it("fails an import of the target's barrel, against the importing file and its line", () => {
+    const root = fixtureRoot(files);
+    const result = checkNamespaceGraph({
+      root,
+      exports: EXPORTS,
+      graph: { primitives: [], leaf: [], edges, modules: { alpha: { beta: ["src/beta/b.ts"] } } },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.findings).toEqual([
+      fail(
+        "`alpha` imports `src/beta/mod`, but `EDGE_MODULES` admits `alpha` into `beta` only through `src/beta/b.ts` — import from it, or name the module there",
+        { file: "src/alpha/a.ts", line: 2 },
+      ),
+    ]);
+  });
+
+  it("passes the same tree once the narrowing admits the barrel", () => {
+    const root = fixtureRoot(files);
+    const result = checkNamespaceGraph({
+      root,
+      exports: EXPORTS,
+      graph: { primitives: [], leaf: [], edges, modules: { alpha: { beta: ["src/beta/mod.ts"] } } },
+    });
+
+    expect(result.findings).toEqual([]);
+    expect(result.ok).toBe(true);
   });
 });
 

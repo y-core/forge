@@ -1,4 +1,4 @@
-/** Where an app keeps its migrations and its composed snapshot unless `config/db.ts` says otherwise. @internal */
+/** Where an app keeps its migrations and its composed snapshot unless `config/db.config.ts` says otherwise. @internal */
 export const DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json" } as const;
 
 // wrangler's own shape: a number, an underscore, a name, `.sql`.

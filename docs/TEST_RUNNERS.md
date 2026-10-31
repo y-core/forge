@@ -9,7 +9,7 @@ audience: consumer
 > Owns test file placement, the assertion rules, the fakes-over-mocks posture, the security-test requirements, and the verification gate. Other
 > documents link here rather than restating them.
 >
-> Defers to: `config/steps.ts` for the gate's step list; `src/testing/README.md` for the `testing` namespace's fixtures and their usage;
+> Defers to: `config/steps.config.ts` for the gate's step list; `src/testing/README.md` for the `testing` namespace's fixtures and their usage;
 > [`NAMESPACE_DESIGN.md`][nd-1c] §1c for what `validate-exports` proves.
 
 ---
@@ -23,7 +23,7 @@ audience: consumer
 - §1d Waiting on an htmx Swap: `htmx:after:swap` on `document`, once the new markup is live
 - §1e Media Options and the Harness `test`: the emulation options, and what keeps them honest
 - §1f The Workerd Set: forge inside the real Workers runtime, behind its own verb, on `createTestHarness` under node
-- §1g The Cross-Engine Subset: which specs also run in Firefox and WebKit, outside the gate, and how a skip on one engine is written
+- §1g The Cross-Engine Subset: which specs also run in Firefox and WebKit, at the scheduled tier, and how a skip on one engine is written
 - §2 Co-Located Test Files: tests live beside their source
 - §3 HTML Entity Exact-Match Assertion Rule: the encoding contract
 - §3a The Encoding Map: character to entity, and what is not escaped
@@ -72,8 +72,8 @@ See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is 
 ### 1c. The Browser Set
 
 **A `*.browser.ts` file runs in real Chromium under its own verb, `bun run test:browser`, and §1g's subset runs in Firefox and WebKit under `bun run
-verify:cron`, the cron table `config/cron.ts`.** `playwright.config.ts` owns the discovery pattern, the project list and the parallelism — cite it,
-never restate it here.
+verify:scheduled`, as the `test:browser:cross-engine` row of `config/steps.config.ts`.** `playwright.config.ts` owns the discovery pattern, the
+project list and the parallelism — cite it, never restate it here.
 
 **The set runs the installed binary under node — `playwright test` with one `--project` per engine, in the script and in `browserStep`'s argv alike
 — because under bun a dev server playwright spawns itself is unreachable from the browser in a sandbox.** [`NAMESPACES.md`][namespaces-3c] §3c is
@@ -81,7 +81,7 @@ that ruling's single home. The bare name is resolved off the runner's `binDir`, 
 find what it runs.
 
 **Chromium's row runs at `scheduled`, whole, because a step that starts a browser is heavy** ([`TESTING.md`][testing-6c] §6c). §1g's Firefox and
-WebKit row is a `scheduled` row too, but of its own table, `config/cron.ts`, run by `verify:cron` — never a row of the gate's table.
+WebKit row is a `scheduled` row of the same table.
 
 **A journey spec may start a Worker, and then needs workerd (§1f) as well as Chromium** — `src/auth/journey.browser.ts` is the case.
 
@@ -170,18 +170,18 @@ wrote under `--persist-to`, which the harness cannot read, so it serves no Worke
 **The compose cases run on a bounded pool, `CASE_CONCURRENCY` in `tests/workerd/db-compose.workerd.ts`.** Each case spawns wrangler many times
 over, so running every case at once exhausts memory and the OOM killer takes the gate down; a small pool keeps most of the wall-clock win.
 
-**The set runs from the `runtime` tier, narrowed to the specs the pending changes reach, and the reason is a prerequisite, not cost**
-([`TESTING.md`][testing-6c] §6c).
-`hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun install`.
+**The set runs at the `scheduled` tier, whole, because a Playwright run is heavy** ([`TESTING.md`][testing-6c] §6c). It also needs workerd
+installed: `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun
+install`.
 
 **`test` does not reach `tests/workerd/`, so that this set is not also `unit`'s.** A spec here needs a runtime start, and `unit` is the run for
 a machine with no runtime installed.
 
 ### 1g. The Cross-Engine Subset
 
-**This subset runs on Firefox and WebKit by hand or on the cron run, through `verify:cron`, never in the gate**, because forge ships the UI an
-application signs off against there and an engine difference is rare enough that a tag need not wait on one. For an application those engines run
-every spec ([`TESTING.md`][testing-apps-6e] §6e).
+**This subset runs on Firefox and WebKit as `test:browser:cross-engine`, a `scheduled` row of `config/steps.config.ts`, so a tag and the cron run
+both take it, and neither passes without the compat server (§1c).** A tag waits on it because forge ships the UI an application signs off against
+there. For an application those engines run every spec ([`TESTING.md`][testing-apps-6e] §6e).
 
 **A spec joins the subset when its assertion reads something the engine computes rather than something forge's JavaScript wrote.** That covers CSS
 layout and anchor placement; top-layer, popover, dialog, invoker and light-dismiss behaviour; forced colors and UA styling; resolved colour and
@@ -363,16 +363,12 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 ## 6. The Verification Gate
 
 See [`TESTING.md`][testing-6] §6 for the one command and its tiers, the flag table, the lines between the tiers, and the scoped-run rule.
-`config/steps.ts` owns forge's step list and its per-step tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
+`config/steps.config.ts` owns forge's step table, tier by tier ([`SOURCE_OF_TRUTH.md`][sot-2a] §2a).
 
-**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines**, and an omitted `tier` is `static`. `unit` adds `test`;
-`runtime` adds the workerd suite and the database rows (§1f); `scheduled` runs those whole and adds the heavy rows — the Chromium set (§1c) — and
-the rows that judge a finished change. `test` covers every co-located suite that judges nothing external — `src/`,
+**A step's tier follows [`TESTING.md`][testing-6c] §6c's lines, and each tier above `static` includes the one below first.** `unit` adds `test`;
+`runtime` adds the database rows; `scheduled` runs every row whole and adds the heavy rows (the Chromium set (§1c), the workerd suite (§1f) and the
+cross-engine row (§1g)) and the rows that judge a finished change. `test` covers every co-located suite that judges nothing external — `src/`,
 `config/` and `warden/src/` — so `unit` runs those alone and the workerd set is reached only through its own step (§1f).
-
-**forge's workerd row runs whole when a change reaches what a spec loads without importing it**: a file named by `new URL(…, import.meta.url)`,
-or a Worker config with its `main`'s closure. `config/spec-reach.ts` is its `widen`, and refuses any such site it cannot read as a literal. A
-fixture path built with `join()` is not traced, so `tests/fixtures/**` is `wide`.
 
 **forge's tag runs `unit` on the remote, not `scheduled`**: `forge release` runs `verify:scheduled` locally and refuses to tag a tree it has not
 passed ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
@@ -382,8 +378,8 @@ reviewer run `verify --tier static --reuse` and the task's touched test files. T
 judged, so a reviewer on the same bytes gets a one-line verdict; anything that moved runs the static tier. A test that writes into the tree moves
 the bytes that receipt names, so every baseline after it pays for a whole static run.
 
-**`GATE_INPUTS` in `config/steps.ts` holds the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and the
-`result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can
+**The `inputs` of `config/steps.config.ts` hold the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and
+the `result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can
 change any row's verdict — so under `--affected` a change to one runs every step. **A row stays undeclared and runs on every change when no path
 list bounds what it reads** — the whole type program, an unbounded import graph, every path a document names, or the whole surface the exports map
 declares. `config/steps.test.ts` pins that set, so declaring one of these rows is a decision the test makes visible.

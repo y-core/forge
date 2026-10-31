@@ -1,6 +1,5 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 
@@ -36,19 +35,6 @@ const CONTINUATION = /^\s+(\S.*)$/;
 const UNRESOLVED_CODES = new Set([2304, 2552, 18004]);
 const QUOTED_NAME = /'([^']+)'/;
 
-/** The installed `tsc` entry point, or `undefined` when typescript does not resolve. @internal */
-export function resolveCompiler(): string | undefined {
-  let manifestPath: string;
-  try {
-    manifestPath = createRequire(import.meta.url).resolve("typescript/package.json");
-  } catch {
-    return undefined;
-  }
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as { bin?: string | Record<string, string> };
-  const entry = typeof manifest.bin === "string" ? manifest.bin : manifest.bin?.tsc;
-  return entry === undefined ? undefined : resolve(dirname(manifestPath), entry);
-}
-
 /** The step tsconfig's own `include` entries that are ambient declarations, resolved against its directory. */
 function ambientIncludes(tsconfig: string): Result<string[], string> {
   try {
@@ -67,7 +53,6 @@ function ambientIncludes(tsconfig: string): Result<string[], string> {
 
 /** Compiles each fence as its own module, declaring each fence's `ambient` names as `any`. @internal */
 export function compileFences(
-  compiler: string,
   fences: readonly FenceSource[],
   project: FenceProject,
   ambient: ReadonlyMap<number, readonly string[]> = new Map(),
@@ -86,22 +71,22 @@ export function compileFences(
       include: ["*.tsx", ...ambientFiles.data],
     };
     writeFileSync(join(dir, "tsconfig.json"), JSON.stringify(tsconfig));
-    const run = spawnSync(process.execPath, [compiler, "--noEmit", "--pretty", "false", "-p", "tsconfig.json"], { cwd: dir, encoding: "utf-8" });
-    if (run.error !== undefined) return err(`tsc did not start: ${run.error.message}`);
+    const run = spawnSync(process.execPath, ["check", "--no-script", "--no-pretty", "-p", "tsconfig.json"], { cwd: dir, encoding: "utf-8" });
+    if (run.error !== undefined) return err(`bun check did not start: ${run.error.message}`);
     const stdout = run.stdout ?? "";
     if (run.status !== 0 && !stdout.split("\n").some((text) => LOCATED_DIAGNOSTIC.test(text))) {
       const output = `${stdout}\n${run.stderr ?? ""}`.trim().split("\n")[0] ?? "";
-      return err(`tsc exited ${String(run.status)} with no diagnostic: ${output}`);
+      return err(`bun check exited ${String(run.status)} with no diagnostic: ${output}`);
     }
     const foreign = stdout.split("\n").find((text) => LOCATED_DIAGNOSTIC.test(text) && !DIAGNOSTIC_HEAD.test(text));
-    if (foreign !== undefined) return err(`tsc reported a diagnostic outside the fences: ${foreign}`);
+    if (foreign !== undefined) return err(`bun check reported a diagnostic outside the fences: ${foreign}`);
     return ok(readDiagnostics(stdout, fences));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 }
 
-/** Parses `tsc --pretty false` output, keeping only diagnostics raised in a fence file. @internal */
+/** Parses `bun check --no-pretty` output, keeping only diagnostics raised in a fence file. @internal */
 export function readDiagnostics(stdout: string, fences: readonly FenceSource[]): FenceDiagnostic[] {
   const raw: { fence: number; row: number; code: number; message: string }[] = [];
   let current: (typeof raw)[number] | undefined;

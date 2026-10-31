@@ -87,7 +87,7 @@ describe("resolveDbContext()", () => {
     expect(io.files.has(join(root, ".forge", "standby", "app-db-standby", "wrangler.jsonc"))).toBe(true);
   });
 
-  it("loads the host config from config/db.ts under the root", async () => {
+  it("loads the host config from config/db.config.ts under the root", async () => {
     const run = await resolveDbContext(flags({ root: appRoot('export default { seeds: ["fixtures/seeds"] };\n') }), undefined, { io: fakeDbIo() });
     expect(run.host).toEqual({ seeds: ["fixtures/seeds"] });
   });
@@ -95,11 +95,13 @@ describe("resolveDbContext()", () => {
   it("refuses a host config whose field is the wrong shape, naming the file and the field", async () => {
     const bare = appRoot('export default { schemas: "schema.sql" };\n');
     await expect(resolveDbContext(flags({ root: bare }), undefined, { io: fakeDbIo() })).rejects.toThrow(
-      'config/db.ts: schemas: Invalid type: Expected Array but received "schema.sql"',
+      'config/db.config.ts: schemas: Invalid type: Expected Array but received "schema.sql"',
     );
 
     const typo = appRoot('export default { seedsDir: "fixtures/seeds" };\n');
-    await expect(resolveDbContext(flags({ root: typo }), undefined, { io: fakeDbIo() })).rejects.toThrow("config/db.ts: seedsDir: Invalid key");
+    await expect(resolveDbContext(flags({ root: typo }), undefined, { io: fakeDbIo() })).rejects.toThrow(
+      "config/db.config.ts: seedsDir: Invalid key",
+    );
   });
 
   it("is an empty host config when the app declares none", async () => {

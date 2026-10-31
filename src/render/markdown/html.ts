@@ -1,4 +1,5 @@
 import { lineAtOffset } from "./source";
+import { readListItemTask } from "./task-list";
 import type {
   HtmlAttributes,
   HtmlSchema,
@@ -17,6 +18,8 @@ import type {
   MarkdownRenderOptions,
   MarkdownTable,
   MarkdownTableRow,
+  MarkdownTask,
+  MarkdownTaskOptions,
   MarkdownUnit,
   WalkNode,
 } from "./types";
@@ -152,8 +155,34 @@ function writeElement(tag: string, attributes: HtmlAttributes = []): MarkdownNod
   return { enter: (_node, { writer }) => writer.open(tag, attributes), leave: (_node, { writer }) => writer.close(), layout: "inline" };
 }
 
-function headingTag(node: MarkdownNode): string {
-  return node.type === "heading" ? `h${node.depth}` : "p";
+function relAttribute(rel: string | null): HtmlAttributes {
+  return rel === null ? [] : [["rel", rel]];
+}
+
+function headingTag(node: MarkdownNode, offset: number): string {
+  return node.type === "heading" ? `h${Math.min(node.depth + offset, 6)}` : "p";
+}
+
+function writeHardBreak(writer: HtmlWriter): void {
+  writer.open("br");
+  writer.close();
+  writer.text("\n");
+}
+
+function taskBoxAttributes(task: MarkdownTask, tasks: MarkdownTaskOptions | null): HtmlAttributes {
+  if (tasks === null)
+    return [
+      ["type", "checkbox"],
+      ["checked", task.checked],
+      ["disabled", true],
+    ];
+  return [
+    ["type", "checkbox"],
+    ["name", tasks.name],
+    ["value", String(task.line)],
+    ["checked", task.checked],
+    ["disabled", tasks.disabled === true],
+  ];
 }
 
 function freezeHandlers(handlers: Record<string, MarkdownNodeHandler>): MarkdownNodeHandlers {
@@ -163,25 +192,25 @@ function freezeHandlers(handlers: Record<string, MarkdownNodeHandler>): Markdown
 /** The stateless renderings a custom handler can fall back to, never `table`, `linkReference`, `imageReference` or `footnoteReference`, whose handlers need per-render state. */
 export const DEFAULT_MARKDOWN_HANDLERS: MarkdownNodeHandlers = freezeHandlers({
   paragraph: {
-    enter: (node, context) => {
-      const { writer, tight, task } = context;
+    enter: (node, { writer, tight, task, tasks }) => {
       if (!tight) writer.open("p");
       if (task === null) return;
-      context.task = null;
-      writer.open("input", [
-        ["type", "checkbox"],
-        ["checked", task],
-        ["disabled", true],
-      ]);
+      if (tasks !== null) writer.open("label");
+      writer.open("input", taskBoxAttributes(task, tasks));
       writer.close();
       if (node.type === "paragraph" && node.children.length > 0) writer.text(" ");
     },
-    leave: (_node, { writer, tight }) => {
+    leave: (_node, { writer, tight, task, tasks }) => {
+      if (task !== null && tasks !== null) writer.close();
       if (!tight) writer.close();
     },
     layout: "inline",
   },
-  heading: { enter: (node, { writer }) => writer.open(headingTag(node)), leave: (_node, { writer }) => writer.close(), layout: "inline" },
+  heading: {
+    enter: (node, { writer, headingOffset }) => writer.open(headingTag(node, headingOffset)),
+    leave: (_node, { writer }) => writer.close(),
+    layout: "inline",
+  },
   thematicBreak: {
     enter: (_node, { writer }) => {
       writer.open("hr");
@@ -210,8 +239,10 @@ export const DEFAULT_MARKDOWN_HANDLERS: MarkdownNodeHandlers = freezeHandlers({
   definition: { enter: () => undefined },
   footnoteDefinition: { enter: () => undefined, children: () => null },
   text: {
-    enter: (node, { writer }) => {
-      if (node.type === "text") writer.text(node.value.replace(TRIM_LINES, "$1"));
+    enter: (node, { writer, breaks }) => {
+      if (node.type !== "text") return;
+      if (!breaks) writer.text(node.value.replace(TRIM_LINES, "$1"));
+      else node.value.split(TRIM_LINES).forEach((part, index) => (index % 2 === 0 ? writer.text(part) : writeHardBreak(writer)));
     },
   },
   inlineCode: {
@@ -222,20 +253,13 @@ export const DEFAULT_MARKDOWN_HANDLERS: MarkdownNodeHandlers = freezeHandlers({
       writer.close();
     },
   },
-  break: {
-    enter: (_node, { writer }) => {
-      writer.open("br");
-      writer.close();
-      writer.text("\n");
-    },
-  },
+  break: { enter: (_node, { writer }) => writeHardBreak(writer) },
   emphasis: writeElement("em"),
   strong: writeElement("strong"),
   delete: writeElement("del"),
   link: {
-    enter: (node, { writer }) => {
-      if (node.type !== "link") return;
-      writer.open("a", [["href", normalizeUrl(node.url)], ...titleAttribute(node.title)]);
+    enter: (node, { writer, linkRel }) => {
+      if (node.type === "link") writer.open("a", [["href", normalizeUrl(node.url)], ...titleAttribute(node.title), ...relAttribute(linkRel)]);
     },
     leave: (_node, { writer }) => writer.close(),
     layout: "inline",
@@ -278,7 +302,7 @@ interface Frame {
   children: readonly MarkdownNode[];
   index: number;
   layout: MarkdownChildLayout | "item";
-  task: boolean | null;
+  task: MarkdownTask | null;
   entryTight: boolean;
   childTight: boolean;
   rendered: number;
@@ -324,6 +348,10 @@ function renameClasses(writer: HtmlWriter, classNames: Readonly<Record<string, s
 }
 
 function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptions) {
+  const headingOffset = options.headingOffset ?? 0;
+  if (!Number.isInteger(headingOffset) || headingOffset < 0 || headingOffset > 5)
+    throw new Error("renderMarkdownHtml: headingOffset needs an integer from 0 to 5.");
+  const breaks = options.breaks === true;
   const writer = renameClasses(createHtmlWriter(options.schema), options.classNames);
   const referenceBudget = Math.max(64 * 1024, 2 * document.source.length);
   let referenceSpent = 0;
@@ -332,6 +360,8 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
   const idPrefix = footnoteOptions.idPrefix ?? "user-content-";
   const labelId = footnoteOptions.labelId ?? "footnote-label";
   const footnoteFlag: string | boolean = footnoteOptions.emptyFlagValues === true ? "" : true;
+  const linkRel = options.links?.rel ?? null;
+  const tasks = options.tasks ?? null;
   const footnoteDefinitions = collectFootnoteDefinitions(document);
   const footnoteOrder: string[] = [];
   const footnoteNumbers = new Map<string, number>();
@@ -352,7 +382,7 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
       enter: (node, { writer: out }) => {
         const target = node.type === "linkReference" ? resolveReference(node.label) : null;
         openedReferences.push(target !== null);
-        if (target !== null) out.open("a", [["href", normalizeUrl(target.url)], ...titleAttribute(target.title)]);
+        if (target !== null) out.open("a", [["href", normalizeUrl(target.url)], ...titleAttribute(target.title), ...relAttribute(linkRel)]);
       },
       leave: (_node, { writer: out }) => {
         if (openedReferences.pop() === true) out.close();
@@ -480,17 +510,21 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
     if (node.type === "listItem") {
       context.writer.open("li", node.checked === null ? [] : [["class", "task-list-item"]]);
       const frame = createFrame(node, null, node.children, "item", tight, tight);
-      frame.task = node.checked;
+      frame.task = readListItemTask(document, node, context.unit.start);
       frames.push(frame);
       return;
     }
     const handler = handlers[node.type];
     if (handler === undefined) throw new Error(`renderMarkdownHtml: no handler for a \`${node.type}\` node.`);
+    const task = context.task;
     handler.enter(node, context);
     const children = handler.children === undefined ? childrenOf(node) : handler.children(node, context);
     const layout = handler.layout ?? "inline";
     if (layout === "loose") context.writer.text("\n");
-    if (children !== null || handler.leave !== undefined) frames.push(createFrame(node, handler, children ?? [], layout, tight, false));
+    if (children === null && handler.leave === undefined) return;
+    const frame = createFrame(node, handler, children ?? [], layout, tight, false);
+    frame.task = task;
+    frames.push(frame);
   }
 
   function startChild(frame: Frame, child: MarkdownNode): void {
@@ -519,7 +553,9 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
       return;
     }
     if (frame.layout === "loose" && frame.rendered > 0) context.writer.text("\n");
+    context.task = frame.task;
     frame.handler?.leave?.(frame.node, context);
+    context.task = null;
   }
 
   function childTightness(frame: Frame, child: MarkdownNode): boolean {
@@ -531,7 +567,20 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
     const line = root === unit.node && unit.start > 0 ? unit.line : lineAtOffset(document.lineStarts, unit.start + root.start);
     const out = anchor ? createAnchoredWriter(writer, line) : writer;
     currentUnit = unit;
-    const context: MarkdownRenderContext = { writer: out, document, unit, tight, topLevel: anchor, line, task: null, render: renderInline };
+    const context: MarkdownRenderContext = {
+      writer: out,
+      document,
+      unit,
+      tight,
+      topLevel: anchor,
+      line,
+      task: null,
+      headingOffset,
+      breaks,
+      linkRel,
+      tasks,
+      render: renderInline,
+    };
     const frames: Frame[] = [];
     enter(root, context, frames, tight);
     while (frames.length > 0) {

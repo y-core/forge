@@ -1,15 +1,16 @@
 ---
 title: Application Configuration Baseline
-description: "The tsconfig flags, oxlint base and overrides, gate wiring, script set and tool pins every Worker application in this fleet shares, and the rule for what may vary."
+description: "The tsconfig flags, oxlint base and overrides, gate wiring, script set, tool pins and config-module shape every Worker application in this fleet shares, and the rule for what may vary."
 ---
 
 # Application Configuration Baseline
 
 > Owns the toolchain configuration an application repository is held to: the compiler flags, the linter's base and where it may be overridden, what
-> the gate table is wired from, which `package.json` scripts exist, and who owns a version pin. Repositories reached different answers, with no
-> principle behind the divergence; this is the one answer.
+> the gate table is wired from, which `package.json` scripts exist, who owns a version pin, and the shape of a config module. Repositories reached
+> different answers, with no principle behind the divergence; this is the one answer.
 >
-> **Diffed by hand.** No gate check enforces this document — each section is written concrete enough to hold a repository against without tooling.
+> **Diffed by hand, save §6.** No gate check enforces the rest of this document, so each section is written concrete enough to hold a repository
+> against without tooling. §6 is held by `validate-config-files`.
 >
 > Defers to: [`TESTING.md`][testing-6] §6 for what the gate tiers mean and what a step's tier is; [`FORGE_CONSUMPTION.md`][fc] for the
 > application-to-library relationship, which is a different subject from the toolchain.
@@ -22,9 +23,10 @@ description: "The tsconfig flags, oxlint base and overrides, gate wiring, script
 - §2 The oxlint Base and Its Overrides: one base every repository shares, variation only in `overrides`
 - §2a The Base: plugins, categories, ignore patterns, rules, and the type-aware block
 - §2b Overrides Are Scoped and Reasoned: the spec override, and what a legitimate second one looks like
-- §3 Gate Wiring: the preset is the table, and a hand-appended row is a defect
+- §3 Gate Wiring: the preset is the table, merged with only the repository's own rows
 - §4 The Script Set: the scripts every repository has, and the sets conditional on what it holds
 - §5 Version Pins: one fleet version, forge's pin is the fleet's pin
+- §6 Config Modules: one default export through a `define*` helper, no top-level work, and the row that holds it
 
 ---
 
@@ -143,29 +145,33 @@ is a disagreement with the base, and it belongs in the base or nowhere.
 
 ## 3. Gate Wiring
 
-**`cloudflareWorkerSteps()` is the table.** A repository's `config/steps.ts` spreads the preset and appends only rows that are genuinely its own —
-a check over its own data, a build its own pipeline needs.
+**`cloudflareWorkerSteps()` is the table.** A repository's `config/steps.config.ts` default-exports `defineSteps({ tiers })` whose tiers are the
+preset's. Rows that are genuinely its own, such as a check over its own data or a build its own pipeline needs, are merged in with `mergeTiers`,
+each into the tier [`TESTING.md`][testing-6a] §6a puts it in.
 
-**`wardenAppSteps()` is the second half of the table, and appending it is not an exception.** The rows it emits — `validate-docs`, `warden:index`,
-`warden:queries`, `warden:duplicates` — cannot come from the first preset, which lives under the library's `src/` where nothing may import warden.
-It is spread, not hand-assembled: a repository writing those builder calls out again has one place per row for the `dependency` flag and the tier to
-drift.
+**`wardenAppSteps()` is the second half of the table, and merging it is not an exception.** The rows it declares are `validate-docs` in `static`
+and `warden:index`, `warden:queries` and `warden:duplicates` in `unit`. They cannot come from the first preset, which lives under the library's
+`src/`, where nothing may import warden. It declares rows only and no `tier()` reference, so it is merged onto a complete preset rather than
+standing alone. It is merged, not hand-assembled: a repository writing those builder calls out again has one place per row for the `dependency`
+flag and the tier to drift.
 
-**The preset emits `lint:types` at the `static` tier**, immediately after `format`. An application never hand-appends `typeAwareLintStep`: the
-selector refuses a duplicate label, so a local row is not an addition but a failure. A repository that was appending one deletes it when it takes
-the preset that emits it.
+**The preset emits `lint:types` in its `static` tier**, immediately after `format`. An application never adds `typeAwareLintStep` itself: the
+gate refuses a label one tier holds twice, so a local row is not an addition but a failure. A repository that was adding one deletes it when it
+takes the preset that emits it.
 
 **`oxlint-tsgolint` is therefore a required devDependency**, pinned exactly like `oxlint` itself. Without it the type-aware rules in §2a are a
 config nothing executes.
 
-**Ordering is never a reason to decline an opt-in.** The gate sorts by tier after filtering, so the lower tier always runs first and an appended
-`unit` row always runs ahead of a preset's `runtime` one ([`TESTING.md`][testing-6a] §6a). A repository that declines `browser: true` so it can
-append `browserStep` itself, later in the table, is working around a problem the selector does not have.
+**Ordering is never a reason to decline an opt-in.** A tier runs in the order it declares, and each preset tier above `static` leads with `tier()`
+naming the tier below, which expands in place. So a merged `unit` row runs after the preset's `unit` rows and ahead of every `runtime` one
+([`TESTING.md`][testing-6a] §6a). A repository that declines `browser: true` so it can place `browserStep` itself is working around a problem the
+table does not have.
 
 **The opt-ins an application takes are a statement about the application, not about its gate's shape:** `db` when it has a D1 binding, `browser`
 when it has a browser set, `workerd` when it has one, `design` when it uses `ui/*`, `warden` when it clones the governing corpus, and `markdown`
 when it wants its prose normalized — which also requires ignoring markdown in `.oxfmtrc.json`, since otherwise the formatter and the check own the
-same bytes.
+same bytes. Firefox and WebKit are not a preset option. An application that runs them merges `crossEngineStep()` into its `scheduled` tier
+([`TESTING.md`][testing-6e] §6e).
 
 ---
 
@@ -178,8 +184,7 @@ same bytes.
 | `verify` | `forge verify` — the `runtime` tier, the gate a commit closes on |
 | `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it |
 | `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed |
-| `verify:scheduled` | `forge verify --tier scheduled` — what a tag and the daily cron run: every runtime suite whole, every heavy row, and the rows that judge a finished change ([`TESTING.md`][testing-6a] §6a) |
-| `verify:cron` | `forge verify --config config/cron.ts --tier scheduled` — the cron table, which the cron runs after `verify:scheduled`: Firefox and WebKit |
+| `verify:scheduled` | `forge verify --tier scheduled`, what a tag and the daily cron run: every runtime suite whole, every heavy row (the browser set on each engine the table declares among them), and the rows that judge a finished change ([`TESTING.md`][testing-6a] §6a) |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |
 | `test` | `bun test` |
@@ -210,15 +215,41 @@ apart is what keeps a `lint` from being the command that quietly rewrote your tr
 **One fleet version per tool, and forge's pin is the fleet's pin.** A bump lands in forge first — where the gate, the lint plugin and the design
 corpus that the tools read all live — and then propagates to every application in one sweep. An application never leads a bump.
 
-**The linters are pinned exactly, with no range.** `oxlint` and `oxfmt` both reformat and re-classify between patch releases, so a caret would make
-a green gate a property of when `bun install` last ran. `oxlint-tsgolint` is pinned exactly alongside `oxlint`, at whatever version that `oxlint`
-peer-requires.
+**The toolchain is pinned exactly, with no range.** Bun is the type checker (`bun check`) and the formatter (`bun fmt`) as well as the runtime,
+so `packageManager` names one exact Bun and `engines.bun` names that same version as its floor. `oxlint` re-classifies between patch releases, so
+a caret would make a green gate a property of when `bun install` last ran. `oxlint-tsgolint` is pinned exactly alongside `oxlint`, at whatever
+version that `oxlint` peer-requires.
 
-**Everything else takes a caret**, because the range is the point: `typescript`, `wrangler`, `@playwright/test`, `tailwindcss`, `esbuild`.
+**Everything else takes a caret**, because the range is the point: `wrangler`, `@playwright/test`, `tailwindcss`, `esbuild`.
 
 **A pin nothing uses is deleted rather than carried.** A devDependency present in a repository and reached by nothing in it is one more thing to
 update and nothing to gain.
 
+---
+
+## 6. Config Modules
+
+**Every module a tool loads by convention is `config/<concern>.config.ts`, and its one export is `export default define<Concern>({...})`.** The
+`define*` helper is the library's, imported from the subpath that owns the concern. It types the value and returns it unchanged, so a mistyped key
+fails the type check rather than the tool. A named export beside the default is a second thing the module offers that no loader reads. Which
+concerns a tool loads, and the default path of each, is that tool's own README.
+
+**A config module declares, and does nothing else at the top level**: imports, `const` declarations and the default export. A statement that runs,
+such as a call, an `if` or an `import.meta.main` block, runs whenever any tool loads the module, the gate on every run included. Work done there
+happens where nobody looks for it.
+
+**A module that only holds data the config modules import keeps a plain `.ts` name**: a shared path, an allowlist too long to read inline. No tool
+loads it by convention, and the `.config.ts` suffix is what tells a reader which files are entry points.
+
+**A third-party tool's config keeps the name and place its tool reads**: `playwright.config.ts`, `wrangler.jsonc`, `.oxlintrc.json`. The
+convention covers what the library's tools load.
+
+**`validate-config-files` holds the convention**, and `cloudflareWorkerSteps()` emits it in `static`. It reads every `*.config.ts` directly under
+`config/` and fails a named export, a top-level statement other than an import or a `const`, `import.meta.main`, and a default that is not a call
+to an imported `define*` helper. A `config/` holding no `*.config.ts` fails too, because a check that read nothing has nothing to report green
+about.
+
 [fc]: ./FORGE_CONSUMPTION.md
 [testing-6]: ./TESTING.md#6-the-verification-gate
 [testing-6a]: ./TESTING.md#6a-one-command-nested-tiers
+[testing-6e]: ./TESTING.md#6e-one-tier-per-moment

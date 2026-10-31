@@ -53,12 +53,13 @@ A production app has two layers, and they have different owners.
 `validateBindings(EnvSchema)` enforces the result on the first request. Wire the generator as a script and re-run it when bindings change:
 
 ```ts
-// src/app/env.config.ts — hand-written policy, optional
-import type { GenOptions } from "@y-core/forge/tooling/cf";
-export const options: Partial<GenOptions> = {
+// config/env.config.ts — hand-written policy, optional
+import { defineEnvConfig } from "@y-core/forge/tooling/cf";
+
+export default defineEnvConfig({
   optional: new Set(["RATE_LIMITER"]),
   refinements: { SESSION_SECRET: { minLength: 64 } },
-};
+});
 ```
 
 Layer 2 — the `Config` stores below — then consumes already-validated vars, and never re-checks that a binding exists.

@@ -2,8 +2,9 @@ import { describe, expect, it } from "bun:test";
 
 import { createHtmlWriter } from "./html";
 import { sanitizeSvg, tokenizeSvg, writeSvg } from "./svg";
-import { isSafeUrl, SVG_ATTRIBUTES, SVG_TAGS } from "./svg-schema";
+import { SVG_ATTRIBUTES, SVG_TAGS } from "./svg-schema";
 import type { ElementRule, HtmlSchema } from "./types";
+import { isSafeUrl } from "./url-policy";
 
 const SVG_SCHEMA: HtmlSchema = {
   elements: Object.fromEntries(
@@ -17,9 +18,9 @@ const SVG_SCHEMA: HtmlSchema = {
 
 function written(markup: string): string {
   const clean = sanitizeSvg(markup);
-  if (clean === null) return "null";
+  if (!clean.ok) return clean.error;
   const writer = createHtmlWriter(SVG_SCHEMA);
-  writeSvg(clean, writer);
+  writeSvg(clean.data, writer);
   return writer.html();
 }
 
@@ -53,7 +54,7 @@ describe("tokenizeSvg", () => {
     ["nesting past 64 levels", "<svg>" + "<g>".repeat(64) + "</g>".repeat(64) + "</svg>"],
   ] as const) {
     it(`refuses ${name}, so the fence renders as code`, () => {
-      expect(written(markup)).toBe("null");
+      expect(written(markup)).toBe("unparseable");
     });
   }
 
@@ -79,12 +80,12 @@ describe("sanitizeSvg", () => {
     expect(written('<?xml version="1.0"?><!-- a --><svg><!-- b --><g></g></svg><!-- c -->')).toBe("<svg><g></g></svg>");
   });
 
-  it("answers null when the root is not an svg", () => {
-    expect(written("<g><text>a</text></g>")).toBe("null");
+  it("answers unparseable when the root is not an svg", () => {
+    expect(written("<g><text>a</text></g>")).toBe("unparseable");
   });
 
-  it("answers null when the root is a disallowed element", () => {
-    expect(written("<foreignObject><text>a</text></foreignObject>")).toBe("null");
+  it("answers unparseable when the root is a disallowed element", () => {
+    expect(written("<foreignObject><text>a</text></foreignObject>")).toBe("unparseable");
   });
 
   it("strips script, style and foreignObject with their content", () => {
@@ -99,20 +100,20 @@ describe("sanitizeSvg", () => {
     );
   });
 
-  it("answers null for two svg roots", () => {
-    expect(written("<svg></svg><svg></svg>")).toBe("null");
+  it("answers unparseable for two svg roots", () => {
+    expect(written("<svg></svg><svg></svg>")).toBe("unparseable");
   });
 
-  it("answers null for text beside the svg root", () => {
-    expect(written("x <svg></svg>")).toBe("null");
+  it("answers unparseable for text beside the svg root", () => {
+    expect(written("x <svg></svg>")).toBe("unparseable");
   });
 
   it("answers the one svg root when only a comment and whitespace surround it", () => {
     expect(written("<!-- c -->\n<svg><text>a</text></svg>\n")).toBe("<svg><text>a</text></svg>");
   });
 
-  it("answers null for an HTML element that would carry a browser out of the svg", () => {
-    expect(written("<svg><p><style>*{x:y}</style></p><text>a</text></svg>")).toBe("null");
+  it("answers unparseable for an HTML element that would carry a browser out of the svg", () => {
+    expect(written("<svg><p><style>*{x:y}</style></p><text>a</text></svg>")).toBe("unparseable");
   });
 
   it("keeps an HTML element inside an integration point, which is stripped with it", () => {

@@ -1,9 +1,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { posix, resolve } from "node:path";
 
-import { assetInputs } from "../assets/inputs";
 import { CliError } from "../cli/errors";
-import { worktreeFiles } from "../cli/worktree";
 import { loadFeatures } from "../curate/config";
 import {
   assetManifestStep,
@@ -13,6 +11,7 @@ import {
   classOrderStep,
   classTokensStep,
   compatibilityStep,
+  configFileStep,
   contrastStep,
   cssCoverageStep,
   cssTokensStep,
@@ -36,10 +35,9 @@ import {
 } from "./builders";
 import { checkImportBoundary } from "./checks/import-boundary";
 import { isTestSource } from "./checks/source-scan";
-import { isRecord, readWorkerConfig } from "./checks/worker-config";
-import { workerMainClosure } from "./closure";
 import { checkResult, fail } from "./finding";
-import type { Step } from "./types";
+import { tier } from "./tiers";
+import type { Step, StepTiers } from "./types";
 import type { CloudflareWorkerStepOptions, LibraryStepOptions } from "./types";
 
 /** The package whose `forge.devOnly` declaration the dev-boundary row reads — this one. */
@@ -61,24 +59,8 @@ function besideVendor(root: string, vendorDir: string): string[] {
     .sort();
 }
 
-async function assetReach(cwd: string, assetConfig: string): Promise<string[]> {
-  const files = worktreeFiles(cwd);
-  if (files === undefined) throw new Error(`${cwd} is not inside a git work tree, so no listing meets the stylesheets' \`@source\``);
-  return assetInputs(cwd, assetConfig, files);
-}
-
-async function servedAssetReach(cwd: string, workerConfig: string, assetConfig: string): Promise<string[]> {
-  const read = readWorkerConfig(cwd, workerConfig, "asset reach");
-  if (!("config" in read)) throw new Error(read.findings.map((finding) => finding.message).join("; "));
-  return isRecord(read.config.assets) ? assetReach(cwd, assetConfig) : [];
-}
-
-async function unionReach(traces: readonly Promise<string[]>[]): Promise<string[]> {
-  return [...new Set((await Promise.all(traces)).flat())].sort();
-}
-
-/** The step table every Cloudflare Worker app in this fleet shares, in execution order. @public */
-export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {}): readonly Step[] {
+/** The step table every Cloudflare Worker app in this fleet shares, by tier. @public */
+export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {}): StepTiers {
   const sources = options.sources ?? ["src/", "tests/"];
   const tests = options.tests ?? ["tests/"];
   const assetOut = options.assetOut ?? ".forge/assets.ts";
@@ -115,7 +97,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     steps.push(jsxStep({ root, ...options.jsx }));
   }
 
-  // Opt-in: `markdownStep` reads the prose oxfmt is told to ignore, so an app that takes it must add
+  // Opt-in: `markdownStep` reads the prose `bun fmt` is told to ignore, so an app that takes it must add
   // `"**/*.md"` to its `.oxfmtrc.json` `ignorePatterns` — otherwise two tools own the same bytes.
   if (options.markdown !== undefined) {
     steps.push(markdownStep({ root, ...options.markdown }));
@@ -151,14 +133,6 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     if (design.cssDir !== undefined) {
       steps.push(cssTokensStep({ root, stylesheet: design.stylesheet, cssDir: design.cssDir }));
     }
-  }
-
-  // A suite split by the question each set answers needs a label apiece, which is what `testSets`
-  // supplies; without it the single `test` row stands.
-  if (options.testSets === undefined) {
-    steps.push(testStep({ sources: tests }));
-  } else {
-    for (const set of options.testSets) steps.push(testStep({ label: set.label, sources: set.sources }));
   }
 
   // Opt-in, because the rule it holds is a repository's own: which directories are browser-only, and
@@ -228,37 +202,47 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   // so the check needs no configuration to know `@y-core/forge/testing` loses every write in a deployed bundle.
   const devTrees = { root, ...(options.workerConfig === undefined ? {} : { workerConfig: options.workerConfig }), packages: [PACKAGE] };
   steps.push(devBoundaryStep({ ...devTrees, relaxAlias: RELAX_ALIAS }));
-  // Scheduled tier: it runs esbuild over the whole Worker, where the row above only reads import statements.
-  steps.push(devBundleStep(devTrees));
+  if (options.configFiles !== false) steps.push(configFileStep({ root }));
 
-  // Last, and stated at the call site so the table can be read without opening `builders.ts`.
-  // A spec reaches the app through the Worker and any assets it serves, never an import, so a change to either runs the row whole.
-  const workerConfig = options.workerConfig ?? "wrangler.jsonc";
-  const assetConfig = options.assetConfig;
-  const workerTrace = (cwd: string): Promise<string[]> => workerMainClosure(cwd, workerConfig);
-  const workerdWiden =
-    assetConfig === undefined
-      ? workerTrace
-      : (cwd: string): Promise<string[]> => unionReach([workerTrace(cwd), servedAssetReach(cwd, workerConfig, assetConfig)]);
-  if (options.db) steps.push(...dbSteps({ root }));
-  if (options.browser === true) steps.push(browserStep());
-  if (options.workerd) steps.push(workerdStep({ widen: workerdWiden }));
+  // A suite split by the question each set answers needs a label apiece, which is what `testSets`
+  // supplies; without it the single `test` row stands.
+  const testRows =
+    options.testSets === undefined
+      ? [testStep({ sources: tests })]
+      : options.testSets.map((set) => testStep({ label: set.label, sources: set.sources }));
 
-  return steps;
+  const db = options.db ? dbSteps({ root }) : undefined;
+  return {
+    static: [...steps, ...(db?.static ?? [])],
+    unit: [tier("static"), ...testRows],
+    runtime: [tier("unit"), ...(db?.runtime ?? [])],
+    // Scheduled tier: it runs esbuild over the whole Worker, where the dev-boundary row only reads import statements.
+    scheduled: [
+      tier("runtime"),
+      devBundleStep(devTrees),
+      ...(options.browser === true ? [browserStep()] : []),
+      ...(options.workerd ? [workerdStep()] : []),
+    ],
+  };
 }
 
-/** The baseline table for a library published under an `exports` map, in execution order. @public */
-export function forgeChecks(options: LibraryStepOptions): readonly Step[] {
+/** The baseline table for a library published under an `exports` map, by tier. @public */
+export function forgeChecks(options: LibraryStepOptions): StepTiers {
   const { root, pkg } = options;
   const derived = { root, packageName: pkg.name, exports: pkg.exports };
 
-  return [
-    typecheckStep(),
-    lintStep({ sources: options.sources ?? ["src/"] }),
-    formatStep({ sources: options.sources ?? ["src/"] }),
-    testStep({ sources: options.tests ?? [] }),
-    exportsStep({ ...derived, files: pkg.files, ...options.exports }),
-    jsxStep({ root, ...options.jsx }),
-    classOrderStep({ root, sources: ["src"], ...options.classOrder }),
-  ];
+  return {
+    static: [
+      typecheckStep(),
+      lintStep({ sources: options.sources ?? ["src/"] }),
+      formatStep({ sources: options.sources ?? ["src/"] }),
+      exportsStep({ ...derived, files: pkg.files, ...options.exports }),
+      jsxStep({ root, ...options.jsx }),
+      classOrderStep({ root, sources: ["src"], ...options.classOrder }),
+      ...(options.configFiles === false ? [] : [configFileStep({ root })]),
+    ],
+    unit: [tier("static"), testStep({ sources: options.tests ?? [] })],
+    runtime: [tier("unit")],
+    scheduled: [tier("runtime")],
+  };
 }

@@ -130,7 +130,7 @@ reasoning, and [`TESTING.md`][canon-testing-4] §4 has the standing ban on mock 
 
 `fakeD1` runs no SQL: it is for injecting a failure and recording the calls. When the test is about what your SQL does to your schema — a
 constraint, a cascade, a batch rolling back — open a real database instead. `openTestD1` starts wrangler's local D1 and applies every migration in
-the order wrangler would, read from the directory `config/db.ts` names:
+the order wrangler would, read from the directory `config/db.config.ts` names:
 
 ```ts
 /// <reference types="@y-core/forge/testing/node" />
@@ -155,12 +155,12 @@ test("deleting a user removes their posts", async () => {
 
 Open one handle per test file and `reset()` it between cases: `reset` drops everything the migrations made and applies them again on the running
 process, which is far cheaper than a new handle. Each handle has its own database, so files running side by side never share one. `root`,
-`hostConfig` and `migrations` point it elsewhere than the current directory's `config/db.ts`, and the host config is loaded and refused exactly
-as `forge db` loads it.
+`hostConfig` and `migrations` point it elsewhere than the current directory's `config/db.config.ts`, and the host config is loaded and refused
+exactly as `forge db` loads it.
 
 It runs under node, so the file belongs to the Playwright workerd set, not `bun test` ([`TEST_RUNNERS.md`][testing-7f] §7f). A node spec
 imports forge only through subpaths node can load, so it drives the database through `db.binding` rather than `createD1Client`, and the app's
-`config/db.ts` imports `@y-core/forge/tooling/db/host` ([declaring what forge reads][db-host-config]).
+`config/db.config.ts` imports `defineDbConfig` from `@y-core/forge/tooling/db/host` ([declaring what forge reads][db-host-config]).
 
 ### Asserting that a query uses its index
 
