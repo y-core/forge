@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.7.0] — 2026-10-31
+
 ### Breaking Changes
 
 - **`changelogStep` belongs in a table's `static` tier, and forge's is there**, so `verify:static` and every commit catch a hand-edited released
@@ -1356,6 +1362,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.7.0]: https://github.com/y-core/forge/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/y-core/forge/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/y-core/forge/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/y-core/forge/compare/v0.5.16...v0.6.0
