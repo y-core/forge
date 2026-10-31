@@ -55,6 +55,7 @@ describe("openDatabase()", () => {
 
     expect(() => second.query("SELECT searchable FROM chunk").all()).not.toThrow();
     expect(readMeta(second, "probe")).toBeUndefined();
+    expect(second.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE name = 'chunk_exact'").get()?.name).toBe("chunk_exact");
     second.close();
   });
 

@@ -39,7 +39,7 @@ export { goldenSetsOf, GOLDEN_STEP_LABEL, stepsOf } from "./gate/step-sets";
 export type { WardenCheckConfig } from "./gate/warden";
 export { checkWarden } from "./gate/warden";
 export { readMeta, stampVersions, versionsMatch, writeMeta } from "./index/db";
-export { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE } from "./index/schema";
+export { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE, UNSTEMMED_TOKENIZE } from "./index/schema";
 export type { AliasTable, BuildReport, Freshness, Knowledge, OpenOptions } from "./search/mod";
 export { advisory, aliasesFor, build, freshness, gateIndexPath, indexPath, load, openDatabase, openIndex, rebuild } from "./search/mod";
 export { CANON_ROOT, CLAUDE_ROOT, libraryPrefix, packageNameOf, resolveRepoRoot, walkUpToRepo, WARDEN_ROOT } from "./paths";

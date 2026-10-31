@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import type { SourceDoc } from "../types";
-import { coverage, documentFrequency, idf } from "./coverage";
+import { bridgeFrequency, coverage, documentFrequency, idf } from "./coverage";
 import { FLOOR } from "./search";
 
 const roots: string[] = [];
@@ -63,6 +63,17 @@ describe("documentFrequency()", () => {
 
   it("returns zero for a term the corpus does not carry", () => {
     expect(documentFrequency(db, "zarquon")).toBe(0);
+  });
+});
+
+describe("bridgeFrequency()", () => {
+  it("reads a bridge stemmed and whole, so a short target is not reached by prefix as a typed term is", () => {
+    expect(bridgeFrequency(db, "com")).toBe(0);
+    expect(documentFrequency(db, "com")).toBe(1);
+  });
+
+  it("counts a bridge target the corpus carries", () => {
+    expect(bridgeFrequency(db, "budget")).toBe(2);
   });
 });
 
@@ -126,6 +137,40 @@ describe("coverage()", () => {
   });
 });
 
+describe("a short typed term", () => {
+  const shortRoot = mkdtempSync(join(tmpdir(), "warden-coverage-short-"));
+  roots.push(shortRoot);
+  const sources: SourceDoc[] = [];
+  for (const [path, body] of [
+    ["docs/IO.md", "Every io call is awaited."],
+    ["docs/KEYS.md", "The keys rotate yearly."],
+    ["docs/KEY.md", "A key is never logged."],
+  ] as const) {
+    const file = join(shortRoot, path.replace("/", "-"));
+    writeFileSync(file, doc(body), "utf-8");
+    sources.push({ corpus: "project", path, file, weight: 1 });
+  }
+  const short = openDatabase(":memory:");
+  build(short, sources, "1.0.0");
+  const rowidOf = (id: string) => short.query<{ rowid: number }, [string]>("SELECT rowid FROM chunk WHERE id = ?").get(id)?.rowid ?? -1;
+
+  it("is read unstemmed, so `ios` is not carried by a chunk saying `io`", () => {
+    expect(documentFrequency(short, "ios")).toBe(0);
+    expect(documentFrequency(short, "io")).toBe(1);
+  });
+
+  it("is read by prefix, so `key` is carried by a chunk saying `keys`", () => {
+    expect(documentFrequency(short, "key")).toBe(2);
+  });
+
+  it("earns a chunk saying only `io` nothing for a query asking about `ios`", () => {
+    const io = rowidOf("project:docs/IO.md#1");
+
+    expect(coverage(short, "ios call", [io]).get(io)).toBeLessThan(coverage(short, "io call", [io]).get(io) ?? 0);
+    expect(coverage(short, "ios", [io]).get(io)).toBe(0);
+  });
+});
+
 function statistics(
   total: number,
   carriers: Record<string, number>,
@@ -156,7 +201,14 @@ function statistics(
     const search = measured.prepare<never, [number, string]>(
       "INSERT INTO chunk_fts (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, '', '', '', '', ?)",
     );
-    for (const [id, body] of bodies) search.run(chunk.get(id, source ?? 0, body)?.rowid ?? 0, body);
+    const exact = measured.prepare<never, [number, string]>(
+      "INSERT INTO chunk_exact (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, '', '', '', '', ?)",
+    );
+    for (const [id, body] of bodies) {
+      const rowid = chunk.get(id, source ?? 0, body)?.rowid ?? 0;
+      search.run(rowid, body);
+      exact.run(rowid, body);
+    }
   })();
 
   const rowidOf = (id: string) => measured.query<{ rowid: number }, [string]>("SELECT rowid FROM chunk WHERE id = ?").get(id)?.rowid ?? -1;

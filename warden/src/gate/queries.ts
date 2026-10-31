@@ -7,7 +7,7 @@ import { gateIndexPath, openDatabase } from "../index/db";
 import { freshness } from "../index/freshness";
 import { packageNameOf } from "../paths";
 import { type AliasTable, aliasesFor } from "../search/aliases";
-import { documentFrequency } from "../search/coverage";
+import { bridgeFrequency } from "../search/coverage";
 import { FLOOR, MARGIN, search } from "../search/search";
 import type { Tree } from "../types";
 import { canonVersion } from "../version";
@@ -172,7 +172,7 @@ export function checkGoldenQueries(config: GoldenCheckConfig, tier: GateTier = "
     for (const [term, targets] of aliases) {
       for (const target of targets) {
         bridges++;
-        if (documentFrequency(db, target) > 0) live++;
+        if (bridgeFrequency(db, target) > 0) live++;
         else findings.push(warn(`alias bridge \`${term}\` → \`${target}\` reaches no chunk`, { file: "warden/src/search/aliases.ts" }));
       }
     }

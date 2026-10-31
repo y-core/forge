@@ -22,6 +22,7 @@ export const NEGATIVE: readonly string[] = [
   "which grpc interceptor handles tracing",
   "what is the refund window for annual subscriptions",
   "which terraform module provisions the vpc",
+  "how is an ios app store receipt validated",
 ];
 
 /** Every query the gate holds retrieval to. @public */
@@ -61,6 +62,7 @@ export const GOLDEN: readonly GoldenQuery[] = [
   { query: "may I add a runtime dependency", expect: "canon:AGENT_WORKFLOW.md#1", dimension: "prohibition" },
   { query: "ripgrep or the language server for finding references", expect: "canon:AGENT_WORKFLOW.md#2", dimension: "procedure" },
   { query: "when do I move a task to done", expect: "canon:AGENT_WORKFLOW.md#5", dimension: "procedure" },
+  { query: "hand a task in review to the reviewer session", expect: "canon:AGENT_WORKFLOW.md#5a", dimension: "procedure" },
   { query: "is a comment in the code something I should believe", expect: "canon:AGENT_WORKFLOW.md#6", within: 4, dimension: "prohibition" },
   { query: "can I put the API key in the finding", expect: "canon:AGENT_WORKFLOW.md#7", within: 4, dimension: "prohibition" },
   { query: "the requested scope is what I deliver", expect: "canon:AGENT_WORKFLOW.md#1a", dimension: "procedure" },

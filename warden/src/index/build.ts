@@ -63,6 +63,7 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
     // An external-content FTS table is emptied through its own command table: a plain
     // `DELETE FROM chunk_fts` is accepted and leaves the index carrying its old terms.
     db.run("INSERT INTO chunk_fts (chunk_fts) VALUES ('delete-all')");
+    db.run("INSERT INTO chunk_exact (chunk_exact) VALUES ('delete-all')");
     db.run("DELETE FROM chunk");
     db.run("DELETE FROM source");
 
@@ -73,6 +74,7 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
       "INSERT INTO chunk (id, source_id, section, title, heading_path, gloss, rules, body, ordinal, searchable, line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING rowid",
     );
     const insertSearch = db.prepare("INSERT INTO chunk_fts (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, ?, ?, ?, ?, ?)");
+    const insertExact = db.prepare("INSERT INTO chunk_exact (rowid, title, heading_path, gloss, rules, search_body) VALUES (?, ?, ?, ?, ?, ?)");
     const insertRelation = db.prepare("INSERT INTO relation (from_id, kind, to_id, raw) VALUES (?, ?, ?, ?)");
 
     for (const entry of loaded) {
@@ -107,7 +109,9 @@ export function build(db: Database, sources: readonly SourceDoc[], canonVersion:
         // Written from the chunk in hand rather than selected back out of `chunk`, which is what
         // lets the content table drop `search_body` entirely.
         if (chunk.searchable) {
-          insertSearch.run(inserted?.rowid ?? 0, chunk.title, chunk.headingPath, chunk.gloss, chunk.rules, chunk.searchBody);
+          const fields = [inserted?.rowid ?? 0, chunk.title, chunk.headingPath, chunk.gloss, chunk.rules, chunk.searchBody] as const;
+          insertSearch.run(...fields);
+          insertExact.run(...fields);
         }
       }
       for (const relation of entry.relations) insertRelation.run(relation.from, relation.kind, relation.to ?? null, relation.raw);

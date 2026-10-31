@@ -1,7 +1,7 @@
 import { Database } from "bun:sqlite";
 import { describe, expect, it } from "bun:test";
 
-import { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE } from "./schema";
+import { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE, UNSTEMMED_TOKENIZE } from "./schema";
 
 describe("SCHEMA", () => {
   it("applies whole to a fresh database", () => {
@@ -14,6 +14,35 @@ describe("SCHEMA", () => {
         .all()
         .map((row) => row.name),
     ).toContain("chunk");
+  });
+
+  it("creates the unstemmed table a short term is read from", () => {
+    const db = new Database(":memory:");
+    db.exec(SCHEMA);
+
+    expect(db.query<{ name: string }, []>("SELECT name FROM sqlite_master WHERE name = 'chunk_exact'").get()?.name).toBe("chunk_exact");
+  });
+});
+
+describe("UNSTEMMED_TOKENIZE", () => {
+  const db = new Database(":memory:");
+  db.run(`CREATE VIRTUAL TABLE t USING fts5(a, tokenize = "${UNSTEMMED_TOKENIZE}")`);
+  db.run("INSERT INTO t VALUES (?)", ["io keys ui/core §5c"]);
+  const matches = (query: string) => db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM t WHERE t MATCH ?").get(query)?.c ?? 0;
+
+  it("does not stem, so `ios` never reaches `io`", () => {
+    expect(matches('"ios"*')).toBe(0);
+    expect(matches('"io"')).toBe(1);
+  });
+
+  it("reaches a longer word by prefix", () => {
+    expect(matches('"key"*')).toBe(1);
+  });
+
+  it("keeps a slashed or sectioned identifier as one term", () => {
+    expect(matches('"ui/core"')).toBe(1);
+    expect(matches('"§5c"')).toBe(1);
+    expect(matches('"core"')).toBe(0);
   });
 });
 

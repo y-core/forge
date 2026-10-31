@@ -43,6 +43,8 @@
 - ALWAYS start a code review with the `warden-review` skill ([`AGENT_GUIDE.md`][ag-5c] §5c)
 - ALWAYS reach the ledger over MCP, and never work from a remembered copy of its rules (`AGENT_WORKFLOW.md` §5). Scope is a property of the URL, so
   no ledger tool takes a `project` argument
+- ALWAYS ring `forge-review` with the `handoff` skill in the turn that moves a task to `review`, never asking the user first
+  (`AGENT_WORKFLOW.md` §5a)
 - **Governance is overwrite-on-sync.** Never edit the canon under `warden/canon/` to record a ruling that is forge's own — it is byte-identical
   across every repository that clones it, and forge is the one repository where the files are writable. A local ruling goes in `docs/`
   ([`AGENT_GUIDE.md`][ag-6d] §6d)
@@ -82,40 +84,16 @@ Gate philosophy, the tiers, and the flags: [`TEST_RUNNERS.md`][testing-6] §6. T
 The roster is `.claude/agents/`: `cc-plan` → `cc-dev` → `cc-test`, with `cc-doc` outside that pipeline. `cc-tester` runs the full gate before a
 commit. `warden sync --check` reconciles the names here against the directory in both directions.
 
-**The session handoff.** Development and review run in **two sessions on one machine**, started under fixed names so each can address the other:
+**The session handoff.** Development and review run in two sessions on one machine, started under fixed names because the name is the
+address `SendMessage` reaches — a session started without `-n` is unreachable:
 
 ```bash
 claude -n forge-dev       # writes the code, files and works the tasks
 claude -n forge-review    # reads the code, closes the tasks or files findings
 ```
 
-**The name is the address** — `ListAgents` lists the peer and `SendMessage` reaches it by that name, so a session started without `-n` is
-unreachable and the handoff silently has nowhere to go. The two skills are `handoff` and `review-handoff` under
-`.claude/skills/`, which carry the whole protocol. They are written by `warden sync` from `warden/claude/skills/shared/` like every other skill,
-so a local edit is reverted by the next run and a change to the protocol is made at the corpus.
-
-**The unit of handoff is a set of tasks, whatever its size.** One task, a wave's worth or an epic's are the same kind of event and travel the same
-way — as a list of task ids. **An epic and a wave are selectors rather than units**: they are how a set is identified, and neither ever
-widens the set beyond the ids it was given.
-
-**The ledger carries the work and `SendMessage` carries only the doorbell.** A message names the task ids and nothing else. Every resolution,
-criterion, finding and constraint on how to read the code is on the task itself and read from the ledger by both sides; prose in a message is a
-second copy of a record that already exists, free to disagree with it.
-
-**The reviewer closes, and the developer never does.** This is the ledger's own rule rather than a convention on top of it: `move_lane` reaches
-`done` only from `review`, so the agent that claims the work is finished is structurally not the one that closes it. **A verdict is reached task by
-task and never all-or-nothing**: clean tasks close while their siblings' findings are filed as `bug` tasks in the same epic and wave, each offender
-kicked back `review → doing`. The kickback is what keeps the work counted as unfinished, so nothing has to remember that it is. `forge-dev` is
-messaged back only when there is something left to do.
-
-**Neither session polls.** An incoming `SendMessage` wakes an idle session on its own; the ledger is reached over MCP, which answers a call and
-pushes nothing, so it is never the thing that notifies. If the peer is not running, the handoff stops and says so — it never falls back to a
-session reviewing its own work.
-
-**A handoff message states its own instruction, and that is a ruling rather than a belt-and-braces habit.** A cross-session message is not the user
-typing `/review-handoff`, so a skill description that merely names its trigger is not reliably enough to fire one; the message therefore carries an
-explicit `action` line telling the reviewer to invoke the skill. Dropping that line makes the handoff depend on a behaviour neither session can
-promise.
+The protocol is the `handoff` and `review-handoff` skills (`AGENT_WORKFLOW.md` §5a). `warden sync` writes them from
+`warden/claude/skills/shared/`, so a change to the protocol is made there.
 
 ---
 

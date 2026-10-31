@@ -83,6 +83,29 @@ describe("build()", () => {
     db.close();
   });
 
+  it("fills the unstemmed table from the same rows, and empties it on a rebuild", () => {
+    const db = openDatabase(":memory:");
+    const exact = (term: string) =>
+      db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_exact WHERE chunk_exact MATCH ?").get(`"${term}"*`)?.c;
+
+    build(db, fixture({ "docs/A.md": doc("A", "An ios receipt.") }, "warden-exact-one-"), "1.0.0");
+    expect(exact("ios")).toBe(1);
+
+    build(db, fixture({ "docs/A.md": doc("A", "A honeypot field.") }, "warden-exact-two-"), "1.0.0");
+    expect(exact("ios")).toBe(0);
+    expect(exact("hon")).toBe(1);
+    db.close();
+  });
+
+  it("feeds the unstemmed table the stripped prose, so a link destination is not a term", () => {
+    const db = openDatabase(":memory:");
+    build(db, fixture({ "docs/A.md": doc("A", "Read [the guide](zzq.md).") }, "warden-exact-prose-"), "1.0.0");
+
+    expect(db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_exact WHERE chunk_exact MATCH ?").get('"zzq"*')?.c).toBe(0);
+    expect(db.query<{ c: number }, [string]>("SELECT count(*) AS c FROM chunk_exact WHERE chunk_exact MATCH ?").get('"gui"*')?.c).toBe(1);
+    db.close();
+  });
+
   it("indexes an organising heading for reading but not for searching", () => {
     const db = openDatabase(":memory:");
     const source = [

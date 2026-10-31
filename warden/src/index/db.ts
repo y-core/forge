@@ -34,11 +34,13 @@ export function openDatabase(path: string): Database {
   // carrying one but no stamp died between the two and already has this shape.
   const stamped = readMeta(db, "schema_version");
   if (stamped !== undefined && stamped !== SCHEMA_VERSION) {
-    for (const table of db
-      .query<{ name: string; type: string }, []>("SELECT name, type FROM sqlite_master WHERE type IN ('table', 'view')")
-      .all()) {
-      // An fts5 table owns shadow tables that go with it, and dropping those directly is an error.
-      if (!table.name.startsWith("chunk_fts_")) db.run(`DROP ${table.type} IF EXISTS "${table.name}"`);
+    const existing = db
+      .query<{ name: string; type: string; sql: string }, []>("SELECT name, type, sql FROM sqlite_master WHERE type IN ('table', 'view')")
+      .all();
+    const virtual = existing.filter((table) => table.sql.startsWith("CREATE VIRTUAL TABLE")).map((table) => `${table.name}_`);
+    for (const table of existing) {
+      // A virtual table owns shadow tables that go with it, and dropping those directly is an error.
+      if (!virtual.some((prefix) => table.name.startsWith(prefix))) db.run(`DROP ${table.type} IF EXISTS "${table.name}"`);
     }
     db.exec(SCHEMA);
   }

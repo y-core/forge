@@ -4,7 +4,7 @@ export type { Excerptable } from "./excerpt";
 export { excerptOf, headingTrail } from "./excerpt";
 export type { HitFormat } from "./render";
 export { renderHit } from "./render";
-export { coverage, documentFrequency, idf } from "./coverage";
+export { bridgeFrequency, coverage, documentFrequency, idf } from "./coverage";
 export type { OutlineEntry, Section } from "./read";
 export { outline, readDocument, readSection } from "./read";
 export type { Related } from "./related";

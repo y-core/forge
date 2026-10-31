@@ -1,13 +1,16 @@
 /** Bumped whenever the tables change shape, a mismatch rebuilding rather than migrating. @public */
-export const SCHEMA_VERSION = "4";
+export const SCHEMA_VERSION = "5";
 
 /** Bumped whenever chunking, glossing or weighting changes what the same documents would produce. @public */
 export const INDEXER_VERSION = "9";
 
 // Without `-_/.§` in `tokenchars` the tokenizer splits `ui/core`, `Result<T,E>` and `§5c` into
 // pieces; `porter` wraps it so `returning` and `Return` are one term.
+/** The FTS5 tokenizer without stemming, which a short term is read through by prefix. @public */
+export const UNSTEMMED_TOKENIZE = "unicode61 remove_diacritics 2 tokenchars '-_/.§'";
+
 /** The FTS5 tokenizer chain. @public */
-export const TOKENIZE = "porter unicode61 remove_diacritics 2 tokenchars '-_/.§'";
+export const TOKENIZE = `porter ${UNSTEMMED_TOKENIZE}`;
 
 /** The full DDL, run inside one transaction on a fresh database. @public */
 export const SCHEMA = `
@@ -69,6 +72,14 @@ CREATE VIRTUAL TABLE chunk_fts USING fts5(
   content = 'chunk',
   content_rowid = 'rowid',
   tokenize = "${TOKENIZE}"
+);
+
+-- Porter folds \`ios\` into \`io\`, so a term of three characters or fewer is read here instead, by
+-- prefix: \`ios*\` reaches \`ios\` and never \`io\`. Contentless, because nothing reads a column back.
+CREATE VIRTUAL TABLE chunk_exact USING fts5(
+  title, heading_path, gloss, rules, search_body,
+  content = '',
+  tokenize = "${UNSTEMMED_TOKENIZE}"
 );
 `;
 

@@ -105,6 +105,13 @@ describe("checkGoldenQueries()", () => {
     expect(result.summary).toContain("1/2 alias bridges live");
   });
 
+  it("reads a short bridge target as coverage reads a bridge, so a prefix of a carried word is still dead", () => {
+    const result = checkGoldenQueries({ ...config(repo("warden-golden-short-bridge-")), queries: COVERING, aliases: new Map([["bot", ["hon"]]]) });
+
+    expect(result.findings.map((finding) => finding.message)).toContain("alias bridge `bot` → `hon` reaches no chunk");
+    expect(result.summary).toContain("0/1 alias bridges live");
+  });
+
   it("fails a negative query the corpus answered anyway — what stops the floor being deleted", () => {
     const result = checkGoldenQueries({
       ...config(repo("warden-golden-negative-")),

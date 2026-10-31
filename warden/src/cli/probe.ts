@@ -14,7 +14,7 @@ import { build } from "../index/build";
 import { openDatabase } from "../index/db";
 import { packageNameOf, resolveRepoRoot } from "../paths";
 import { aliasesFor } from "../search/aliases";
-import { documentFrequency } from "../search/coverage";
+import { bridgeFrequency, documentFrequency } from "../search/coverage";
 import { terms } from "../search/query";
 import { MARGIN, search } from "../search/search";
 import { resolveKind } from "../sync/kind";
@@ -145,7 +145,7 @@ export function probe(options: ProbeOptions): string {
 
     lines.push("## dead bridges");
     for (const [term, targets] of aliases) {
-      for (const target of targets) if (documentFrequency(db, target) === 0) lines.push(`${term} -> ${target}`);
+      for (const target of targets) if (bridgeFrequency(db, target) === 0) lines.push(`${term} -> ${target}`);
     }
     lines.push("");
 
