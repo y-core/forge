@@ -16,7 +16,10 @@ export const HEADER = `/** env.schema.ts — GENERATED — do not edit; run \`bu
  *  contract enforced by \`validateBindings\`; \`type Env\` is its compile-time face.
  */`;
 
-/** The binding-kind table, in `wrangler@4.103.0`'s own emission order. @internal */
+const K2_PRODUCER_TYPE =
+  "{ send(records: | { content: ArrayBuffer; headers?: Record<string, string> }[] | { content: Uint8Array; headers?: Record<string, string> }[] ): Promise< | { success: true } | { success: false; error: { code: number; message: string; retryable: boolean } } >; }";
+
+/** Every binding kind `forge cf gen env` types, one row each. @internal */
 export const REGISTRY: readonly BindingDef[] = [
   {
     configKey: "kv_namespaces",
@@ -99,6 +102,14 @@ export const REGISTRY: readonly BindingDef[] = [
     message: (n) => `${n} must be a Queue binding`,
   },
   {
+    configKey: "k2",
+    nameField: "binding",
+    tsType: K2_PRODUCER_TYPE,
+    shape: "list",
+    label: "K2 stream",
+    message: (n) => `${n} must be a K2 stream binding`,
+  },
+  {
     configKey: "secrets_store_secrets",
     nameField: "binding",
     tsType: "SecretsStoreSecret",
@@ -179,14 +190,6 @@ export const REGISTRY: readonly BindingDef[] = [
     message: (n) => `${n} must be an AI Search binding`,
   },
   {
-    configKey: "websearch",
-    nameField: "binding",
-    tsType: "WebSearch",
-    shape: "object",
-    label: "web-search",
-    message: (n) => `${n} must be a web-search binding`,
-  },
-  {
     configKey: "agent_memory",
     nameField: "binding",
     tsType: "AgentMemoryNamespace",
@@ -201,6 +204,14 @@ export const REGISTRY: readonly BindingDef[] = [
     shape: "object",
     label: "browser",
     message: (n) => `${n} must be a browser binding`,
+  },
+  {
+    configKey: "analytics",
+    nameField: "binding",
+    tsType: "AnalyticsSQLBinding",
+    shape: "object",
+    label: "Analytics SQL",
+    message: (n) => `${n} must be an Analytics SQL binding`,
   },
   { configKey: "ai", nameField: "binding", tsType: "Ai", shape: "object", label: "AI", message: (n) => `${n} must be an AI binding` },
   {
@@ -244,6 +255,14 @@ export const REGISTRY: readonly BindingDef[] = [
     message: (n) => `${n} must be a Fetcher binding`,
   },
   {
+    configKey: "pipelines",
+    nameField: "binding",
+    tsType: 'import("cloudflare:pipelines").Pipeline<import("cloudflare:pipelines").PipelineRecord>',
+    shape: "list",
+    label: "pipeline",
+    message: (n) => `${n} must be a pipeline binding`,
+  },
+  {
     configKey: "durable_objects.bindings",
     nameField: "name",
     tsType: "DurableObjectNamespace",
@@ -254,7 +273,7 @@ export const REGISTRY: readonly BindingDef[] = [
   {
     configKey: "services",
     nameField: "binding",
-    tsType: "Service",
+    tsType: "Fetcher",
     shape: "list",
     label: "service",
     message: (n) => `${n} must be a service binding`,

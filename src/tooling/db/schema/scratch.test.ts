@@ -1,5 +1,4 @@
 import { describe, expect, it } from "bun:test";
-import { fileURLToPath } from "node:url";
 
 import type { WranglerConfig } from "../../cf/types";
 import { CliError } from "../../cli/errors";
@@ -7,16 +6,7 @@ import { PLAIN } from "../../term/color";
 import { fakeDbIo } from "../db.fixture";
 import { appHome } from "../home";
 import type { DbConfig, DbRunContext, FakeDbIo, Migration } from "../types";
-import {
-  cachedSchemaModel,
-  composeScratchHome,
-  forgeVersion,
-  loadDesired,
-  localScratchConfig,
-  replayBaseline,
-  scratchModelKey,
-  scratchWranglerVersion,
-} from "./scratch";
+import { cachedSchemaModel, composeScratchHome, forgeVersion, loadDesired, localScratchConfig, replayBaseline, scratchModelKey } from "./scratch";
 import type { DesiredState, SchemaModel } from "./types";
 
 const MIGRATIONS = "/app/config/db/migrations";
@@ -174,25 +164,6 @@ describe("scratchModelKey", () => {
     expect(scratchModelKey("wrangler 4.106.0", "abc")).not.toBe(base);
     expect(scratchModelKey("wrangler 4.105.0", "abd")).not.toBe(base);
     expect(scratchModelKey("wrangler 4.105.0", "abc")).toBe(base);
-  });
-});
-
-describe("scratchWranglerVersion", () => {
-  // The model is built in process through the imported wrangler, and `node_modules/.bin` puts the
-  // app's CLI ahead of forge's, so a spawned version would stamp the key with one that built nothing.
-  it("reads the version of the wrangler this process imports, spawning none", () => {
-    const { run, io } = context();
-    io.rules.push({ match: () => true, reply: { code: 0, stdout: "wrangler 9.9.9\n", stderr: "" } });
-    const manifest = fileURLToPath(import.meta.resolve("wrangler/package.json"));
-    io.files.set(manifest, JSON.stringify({ version: "4.136.0" }));
-
-    expect(scratchWranglerVersion(run)).toBe("4.136.0");
-    expect(io.calls).toEqual([]);
-  });
-
-  it("is unknown when the package cannot be read, so a key is still stamped with something", () => {
-    const { run } = context();
-    expect(scratchWranglerVersion(run)).toBe("unknown");
   });
 });
 

@@ -10,7 +10,7 @@ import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
 import { declaredSteps, resolveTiers } from "./tiers";
 import { GATE_TIERS } from "./types";
-import type { CheckResult, CloudflareWorkerStepOptions, LibraryStepOptions, ResolvedTiers, Step, StepTiers, TierRef } from "./types";
+import type { CheckResult, CloudflareWorkerStepOptions, CommandStep, LibraryStepOptions, ResolvedTiers, Step, StepTiers, TierRef } from "./types";
 
 afterAll(() => {
   rmSync(curateFixtureTemplate(), { recursive: true, force: true });
@@ -86,7 +86,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
   it("emits the fleet's order, minus the optional asset step", () => {
     expect(labelsOf(workerRows())).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -101,7 +101,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
   it("inserts types:assets, then the check that judges what it wrote, before the type check", () => {
     expect(labelsOf(workerRows({ assetConfig: "src/assets/config.ts" }))).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
       "typecheck",
@@ -185,7 +185,7 @@ describe("cloudflareWorkerSteps() — the exposure row", () => {
   it("emits validate-exposure from the worker config alone, with no assets half", () => {
     expect(labelsOf(workerRows({ workerConfig: "wrangler.workers.jsonc" }))).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -420,7 +420,7 @@ describe("cloudflareWorkerSteps() — the dev-bundle row", () => {
 
       expect(result.findings.map((finding) => [finding.file, finding.message])).toContainEqual([
         "wrangler.workers.jsonc",
-        "`main` is unstated, so there is no deployed bundle to judge",
+        "`main` is unstated in every deployment, so there is no deployed bundle to judge",
       ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -454,7 +454,7 @@ describe("cloudflareWorkerSteps() — the test rows", () => {
 
     expect(labels).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -510,7 +510,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
 
     expect(labels).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -758,7 +758,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
 
     expect(labels).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -778,7 +778,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
   it("adds validate-css-tokens after the coverage row when a cssDir is given", () => {
     expect(labelsOf(workerRows({ design: DESIGN }))).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -800,7 +800,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
 
     expect(labels).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
       "typecheck",
@@ -840,43 +840,74 @@ async function classOrderResult(options: Parameters<typeof cloudflareWorkerSteps
 }
 
 describe("cloudflareWorkerSteps() — the generated-type commands", () => {
-  it("splits `wrangler types` into its two real invocations", () => {
-    const steps = workerRows();
-
-    expect(steps.find((s) => s.label === "types:cf-runtime")?.cmd).toEqual(["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env"]);
-    expect(steps.find((s) => s.label === "types:cf-bindings")?.cmd).toEqual([
+  it("generates runtime types only, with no --config when no worker config is set", () => {
+    expect(workerRows().find((s) => s.label === "types:cf-runtime")?.cmd).toEqual([
       "wrangler",
       "types",
-      "./.types/worker-configuration.d.ts",
-      "--no-include-runtime",
+      "./.types/cloudflare.d.ts",
+      "--no-include-env",
     ]);
   });
 
-  it("puts --config on the bindings invocation only, because runtime types do not depend on it", () => {
-    const steps = workerRows({ workerConfig: "wrangler.workers.jsonc" });
-
-    expect(steps.find((s) => s.label === "types:cf-runtime")?.cmd).not.toContain("--config");
-    expect(steps.find((s) => s.label === "types:cf-bindings")?.cmd).toEqual([
+  it("points the runtime invocation at the worker config, whose compatibility date and flags shape runtime types", () => {
+    expect(workerRows({ workerConfig: "wrangler.workers.jsonc" }).find((s) => s.label === "types:cf-runtime")?.cmd).toEqual([
       "wrangler",
       "types",
-      "./.types/worker-configuration.d.ts",
-      "--no-include-runtime",
+      "./.types/cloudflare.d.ts",
+      "--no-include-env",
       "--config",
       "wrangler.workers.jsonc",
     ]);
   });
 
-  it("omits both wrangler steps for an app that declares its binding types by hand", () => {
-    expect(labelsOf(workerRows({ wranglerTypes: false }))).toEqual([
-      "typecheck",
-      "lint",
-      "format",
-      "lint:types",
-      "validate-dev-boundary",
-      "validate-config-files",
-      "test",
-      "validate-dev-bundle",
+  it("leaves the Env interface to `forge cf gen env`: the one `wrangler types` row is the runtime invocation", () => {
+    const wranglerTypes = workerRows(EVERY_OPTION).filter(
+      (s): s is CommandStep => !isCheckStep(s) && s.cmd[0] === "wrangler" && s.cmd[1] === "types",
+    );
+
+    expect(wranglerTypes.map((s) => [s.label, s.cmd])).toEqual([
+      ["types:cf-runtime", ["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env", "--config", "wrangler.jsonc"]],
     ]);
+  });
+
+  it("drops the types:cf-runtime row and the check of what it writes under wranglerTypes: false, for an app that supplies its runtime types itself", () => {
+    const on = labelsOf(workerRows(EVERY_OPTION));
+    const off = labelsOf(workerRows({ ...EVERY_OPTION, wranglerTypes: false }));
+
+    expect({ dropped: on.filter((label) => !off.includes(label)), added: off.filter((label) => !on.includes(label)) }).toEqual({
+      dropped: ["types:cf-runtime", "validate-generated-types"],
+      added: [],
+    });
+  });
+
+  it("fails a `.types/` file no row writes, such as the retired worker-configuration.d.ts, naming the file", async () => {
+    const retired =
+      "/* eslint-disable */\n// Generated by Wrangler by running `wrangler types ./.types/worker-configuration.d.ts`\ninterface Env {}\n";
+    const root = gateFixtureRoot({ ".types/cloudflare.d.ts": "", ".types/worker-configuration.d.ts": retired }, "forge-presets-");
+    try {
+      const result = await runRow(workerRows({ root }), "validate-generated-types");
+      expect([result.ok, crossingsOf(result)]).toEqual([
+        false,
+        [[".types/worker-configuration.d.ts", "`.types/worker-configuration.d.ts` is written by no row of this table, so nothing regenerates it"]],
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("passes the runtime types, a stub written by hand beside them, and a project with no `.types/` yet", async () => {
+    for (const files of [
+      { ".types/cloudflare.d.ts": "", ".types/bun-test.d.ts": "declare module 'bun:test' {}\n" },
+      { "wrangler.jsonc": "{}\n" },
+    ]) {
+      const root = gateFixtureRoot(files, "forge-presets-");
+      try {
+        const result = await runRow(workerRows({ root }), "validate-generated-types");
+        expect([result.ok, result.findings]).toEqual([true, []]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
   });
 
   it("emits the asset step with --out, since the emitter writes nothing useful without one", () => {
@@ -973,7 +1004,7 @@ describe("cloudflareWorkerSteps() — the markdown row", () => {
     expect(entriesOf(cloudflareWorkerSteps({ markdown: { sources: ["docs"] } }).static)).toContain("validate-markdown");
     expect(labelsOf(steps)).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -1008,7 +1039,7 @@ describe("cloudflareWorkerSteps() — the warden step", () => {
     expect(fixerOf(warden)).toEqual(["warden", "sync"]);
     expect(labelsOf(steps)).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
+      "validate-generated-types",
       "typecheck",
       "lint",
       "format",
@@ -1067,7 +1098,6 @@ describe("cloudflareWorkerSteps() — watches", () => {
 
     expect(undeclared).toEqual([
       "types:cf-runtime",
-      "types:cf-bindings",
       "types:assets",
       "validate-asset-manifest",
       "typecheck",
@@ -1126,8 +1156,12 @@ describe("forgeChecks() — shape", () => {
       "validate-config-files",
     ]);
     expect(entriesOf(tiers.unit)).toEqual([{ tier: "static" }, "test"]);
-    expect(entriesOf(tiers.runtime)).toEqual([{ tier: "unit" }]);
-    expect(entriesOf(tiers.scheduled)).toEqual([{ tier: "runtime" }]);
+  });
+
+  it("declares no runtime or scheduled tier, so both run as unit", () => {
+    const table = resolved(forgeChecks({ root: "/nowhere", pkg: PKG }));
+
+    expect([table.runtime?.from, table.scheduled?.from]).toEqual(["unit", "unit"]);
   });
 
   it("opens each tier above static with the whole tier below it, in its order", () => {

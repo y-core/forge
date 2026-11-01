@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
-import { argvHas, fakeDbIo, schemaModelRows } from "../db.fixture";
+import { fakeDbIo, schemaModelRows } from "../db.fixture";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
 import { migrationsDigest } from "../migrate/files";
@@ -99,7 +99,6 @@ function introspectRows(shapes: readonly Shape[], statement: string): Record<str
 }
 
 function wire(io: FakeDbIo, sides: { baseline: readonly Shape[]; desired: readonly Shape[] }): void {
-  io.rules.push({ match: (a) => argvHas(a, "--version"), reply: { code: 0, stdout: "4.0.0\n", stderr: "" } });
   io.d1Rules.push({
     match: () => true,
     reply: (statement, home) => introspectRows(home.persistTo === BASELINE_STATE ? sides.baseline : sides.desired, statement),

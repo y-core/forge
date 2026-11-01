@@ -2,6 +2,7 @@ import { join } from "node:path";
 import process from "node:process";
 import { PassThrough } from "node:stream";
 
+import type { CfAuth } from "../cf/types";
 import type { CliIO } from "../cli/types";
 import { SqlReal } from "./backup/artifact";
 import { persistRoot } from "./home";
@@ -18,21 +19,6 @@ export function argvHas(args: readonly string[], ...words: string[]): boolean {
     from = at + 1;
   }
   return true;
-}
-
-/** The `--json` payload `d1 execute` prints for one statement's rows. */
-export function jsonRows(rows: Record<string, unknown>[]): Spawned {
-  return { code: 0, stdout: `${JSON.stringify([{ results: rows, success: true, meta: {} }])}\n`, stderr: "" };
-}
-
-/** The `--json` payload `d1 execute` prints for several statements, one result set each. */
-export function jsonBatches(batches: readonly Record<string, unknown>[][]): Spawned {
-  return { code: 0, stdout: `${JSON.stringify(batches.map((results) => ({ results, success: true, meta: {} })))}\n`, stderr: "" };
-}
-
-/** One `--command` answered statement by statement, terminator dropped. */
-export function routedReply(command: string, answer: (statement: string) => Record<string, unknown>[]): Spawned {
-  return jsonBatches(command.split("\n").map((statement) => answer(statement.trim().replace(/;$/, ""))));
 }
 
 /** The rows one statement of `readSchemaModel`'s batch answers with, by which read it is. */
@@ -53,17 +39,6 @@ export function schemaModelRows(
   if (statement === selects.indexColumns) return rows.indexColumns ?? [];
   if (statement === selects.foreignKeys) return rows.foreignKeys ?? [];
   return [];
-}
-
-/** The one batched reply `readSchemaModel` expects: the result sets in the order it asks for them. */
-export function schemaModelReply(rows: {
-  inventory?: Record<string, unknown>[];
-  columns?: Record<string, unknown>[];
-  indexList?: Record<string, unknown>[];
-  indexColumns?: Record<string, unknown>[];
-  foreignKeys?: Record<string, unknown>[];
-}): Spawned {
-  return jsonBatches([rows.inventory ?? [], rows.columns ?? [], rows.indexList ?? [], rows.indexColumns ?? [], rows.foreignKeys ?? []]);
 }
 
 /** The table one `pragma_table_info` statement reads, or null when the statement is not one. */
@@ -235,8 +210,48 @@ function answerStatement(io: FakeDbIo, statement: string, home: Home): Record<st
   return [];
 }
 
-/** Builds a fake `DbIo` with an optional seed filesystem. Unmatched wrangler calls fail loudly. */
-export function fakeDbIo(seed: Record<string, string> = {}, options: { now?: Date; env?: Record<string, string> } = {}): FakeDbIo {
+/** The credentials a deployed home carries, set to values a test can look for. */
+export const REMOTE_AUTH: CfAuth = { accountId: "acct", apiToken: "tok" };
+
+/** The flags that supply `REMOTE_AUTH` to a verb aimed at a deployed place. */
+export const REMOTE_FLAGS = { "account-id": "acct", "api-token": "tok" };
+
+/** `REMOTE_FLAGS` as the argv a command line passes them in. */
+export const REMOTE_ARGS = ["--account-id", "acct", "--api-token", "tok"];
+
+/** A Cloudflare success envelope carrying `result`. */
+export function cfEnvelope(result: unknown, status = 200): Response {
+  return Response.json({ success: true, errors: [], messages: [], result }, { status });
+}
+
+/** A Cloudflare failure envelope carrying one error. */
+export function cfRefusal(code: number, message: string, status = 400): Response {
+  return Response.json({ success: false, errors: [{ code, message }], messages: [], result: null }, { status });
+}
+
+function requestBody(init: RequestInit | undefined): string | null {
+  return typeof init?.body === "string" ? init.body : null;
+}
+
+/** A D1 `/query` POST answered through the same `d1Rules` a local statement is, by the home whose `databaseId` the path names. */
+function answerQuery(io: FakeDbIo, homes: readonly Home[], path: string, body: string | null): Response {
+  const databaseId = decodeURIComponent(/\/d1\/database\/([^/]+)\/query$/.exec(path)?.[1] ?? "");
+  const home = homes.find((candidate) => candidate.databaseId === databaseId);
+  if (home === undefined) return cfRefusal(7003, `fake cloudflare: no home has the D1 id ${databaseId}`, 404);
+  const parsed = JSON.parse(body ?? "{}") as { sql?: string; batch?: { sql: string }[] };
+  const statements = parsed.batch === undefined ? splitStatements(parsed.sql ?? "") : parsed.batch.map(({ sql }) => splitStatements(sql)[0] ?? sql);
+  try {
+    return cfEnvelope(statements.map((statement) => ({ results: answerStatement(io, statement, home), success: true, meta: {} })));
+  } catch (error) {
+    return cfRefusal(7500, error instanceof Error ? error.message : String(error));
+  }
+}
+
+/** Builds a fake `DbIo` with an optional seed filesystem. Unmatched wrangler calls and Cloudflare requests fail loudly. */
+export function fakeDbIo(
+  seed: Record<string, string> = {},
+  options: { now?: Date; env?: Record<string, string>; homes?: readonly Home[] } = {},
+): FakeDbIo {
   const files = new Map(Object.entries(seed));
   const dirs = new Set<string>();
   const io: FakeDbIo = {
@@ -246,6 +261,8 @@ export function fakeDbIo(seed: Record<string, string> = {}, options: { now?: Dat
     rules: [],
     d1Calls: [],
     d1Rules: [],
+    restRules: [],
+    restCalls: [],
     closed: [],
     spawn(cmd, args) {
       io.calls.push([cmd, ...args]);
@@ -303,6 +320,19 @@ export function fakeDbIo(seed: Record<string, string> = {}, options: { now?: Dat
     mtime: (p) => (files.has(p) ? (options.now ?? new Date()).getTime() : null),
     now: () => options.now ?? new Date("2026-09-11T10:00:00Z"),
     env: options.env ?? {},
+    fetch: async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? "GET";
+      const body = requestBody(init);
+      io.restCalls.push({ url, method, headers: Object.fromEntries(new Headers(init?.headers).entries()), body });
+      for (const rule of io.restRules) {
+        if (rule.match(url, init)) return typeof rule.reply === "function" ? rule.reply(url, init) : rule.reply.clone();
+      }
+      const path = new URL(url).pathname;
+      if (method === "POST" && path.endsWith("/query")) return answerQuery(io, options.homes ?? [], path, body);
+      return cfRefusal(7003, `fake cloudflare: no rule matches ${method} ${path}`, 404);
+    },
+    wranglerVersion: () => "4.151.2",
     log: (line) => {
       io.logs.push(line);
     },

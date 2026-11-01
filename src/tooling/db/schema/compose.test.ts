@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { WranglerConfig } from "../../cf/types";
 import { CliError } from "../../cli/errors";
 import { PLAIN } from "../../term/color";
-import { argvHas, fakeDbIo, schemaModelRows } from "../db.fixture";
+import { fakeDbIo, schemaModelRows } from "../db.fixture";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
 import { refuseUncomposed } from "../migrate/apply";
@@ -154,7 +154,6 @@ function wire(
     lost?: Lost;
   },
 ): void {
-  io.rules.push({ match: (a) => argvHas(a, "--version"), reply: { code: 0, stdout: "4.0.0\n", stderr: "" } });
   const ran = (file: string) => io.d1Calls.some((call) => call.source?.endsWith(file) === true);
   const seeding = () => io.d1Calls.at(-1)?.source?.endsWith("seed.sql") === true;
   io.d1Rules.push({
@@ -638,6 +637,19 @@ describe("composeMigration()", () => {
 
     expect(first).toBeGreaterThan(0);
     expect(pragmaReads(io)).toBe(first);
+  });
+
+  it("reads both scratch databases again when the installed wrangler's version changes, since that wrangler built the cached models", async () => {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS]) });
+    wire(io, { baseline: [USERS], desired: [USERS] });
+
+    await composeMigration(run, OPTIONS);
+    const first = pragmaReads(io);
+    io.wranglerVersion = () => "4.200.0";
+    await composeMigration(run, OPTIONS);
+
+    expect(first).toBeGreaterThan(0);
+    expect(pragmaReads(io)).toBe(first * 2);
   });
 
   it("replays into the scratch database again when --no-cache says so", async () => {

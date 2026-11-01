@@ -72,14 +72,15 @@ Each script is a tier, and in a table built from a preset each tier runs everyth
 
 | When you are | Run | What it adds |
 | --- | --- | --- |
-| Writing, and closing a task | `bun run verify:static`, then `bun test` on each test file you touched | Every row that judges the source rather than running it |
-| On a machine with no runtime installed | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
-| Committing | `bun run verify` | The runtime rows — the database rows — over your pending changes. No Playwright spec |
+| Writing, between checkpoints | `bun run verify:static` | Every row that judges the source rather than running it |
+| Closing a task, before review | `bun run verify:unit` | Every row that runs the code and needs nothing installed beyond your dependencies |
+| Closing an epic | `bun run verify` | The runtime rows — the database rows — over your pending changes. No Playwright spec |
 | Tagging a release, and the daily cron run | `bun run verify:scheduled` | Every runtime row whole, the browser set on Chromium (and on Firefox and WebKit where you added `crossEngineStep()`), the workerd set, and the rows that judge a finished change: the deployed bundle |
 
 Which tier a row belongs to is decided by [`TESTING.md`][testing-apps-6a] §6a's lines. **A heavy row runs at `scheduled`** — every Playwright row is
 one: the browser set on each engine, and the workerd set — by the rule in the library canon's [`TESTING.md`][testing-6c] §6c. A broken page or a
-request workerd mishandles is therefore caught by the cron run's `verify:scheduled`, or by the one before a tag, rather than at commit. `forge
+request workerd mishandles is therefore caught by the cron run's `verify:scheduled`, or by the one before a tag, rather than at an epic's close.
+To confirm a UI change in a browser before then, run the one spec that covers it — `bun run test:browser -- <spec>` — never the whole set. `forge
 verify --list` prints the rows a tier resolves to.
 
 **At `runtime`, a runtime row runs only as much as your pending changes need**, and the next section is how a row decides. At `scheduled` every
@@ -165,9 +166,9 @@ Most rows are opt-in, and each option is a question about your repository rather
 
 | You have | State | What it adds |
 | --- | --- | --- |
-| A `wrangler.jsonc` this gate should read | `workerConfig` | `--config` on the bindings invocation, plus `validate-exposure` — tuned by `exposure` |
+| A `wrangler.jsonc` this gate should read | `workerConfig` | `--config` on `types:cf-runtime`, plus `validate-exposure` — tuned by `exposure` |
 | An assets pipeline | `assetConfig` (and `assetOut`) | `types:assets` and `validate-asset-manifest`; with `workerConfig` too, `validate-asset-root` |
-| Hand-written binding types | `wranglerTypes: false` | Drops both `wrangler types` rows |
+| Runtime types you supply yourself | `wranglerTypes: false` | Drops `types:cf-runtime` and `validate-generated-types`, which fails a wrangler-generated `.types/` file no row writes |
 | A suite split by the question each set answers | `testSets` | One labelled `bun test` row per set, replacing the single `test` row that `tests` feeds |
 | `ui/*` components and a Tailwind stylesheet | `design` | The platform-CSS and class rows; `design.cssDir` adds `validate-css-tokens` |
 | Contrast pairs this repository actually draws | `contrast` | `validate-contrast` — the audit fails a run that measured no pairs |
@@ -187,12 +188,15 @@ fails an `imports` entry whose deploy target is a `*.dev.ts`, reported on `packa
 any `imports` entry other than `#app/relax` that carries `forge-dev`, reported on `package.json`. The bundle row below still proves the built
 Worker.
 
-**`validate-dev-bundle` follows it, on the `scheduled` tier.** It bundles the Worker config's `main` with esbuild — from the project, or from
+**`validate-dev-bundle` follows it, on the `scheduled` tier.** It bundles every deployment's `main` with esbuild — from the project, or from
 wrangler's own dependency — and fails when a `*.dev.ts` module, the app's or a dependency's, or a module from a directory a `forge.devOnly` subpath
 is published from, contributes to the output. A module tree-shaking removed does not count. It also fails when the shell's
 `WRANGLER_BUILD_CONDITIONS` names `forge-dev`, since a deploy from that shell would bundle every development module; `forge cf dev` sets it in
-wrangler's child process only ([`NAMESPACES.md`][namespaces-5i] §5i). It refuses a Worker config that sets `alias`, `build`, `define` or `rules`, or
-whose `compatibility_flags` carries `nodejs_compat` or `nodejs_compat_v2`, at the top level or in an `env.*` block, since it models none of them.
+wrangler's child process only ([`NAMESPACES.md`][namespaces-5i] §5i). It refuses `alias` at the top level, and `build`, `define`, `rules` or a
+`compatibility_flags` carrying `nodejs_compat` or `nodejs_compat_v2` in any deployment, since it models none of them.
+
+**`validate-exposure` and `validate-compatibility` judge each deployment as wrangler builds it**, so stating a key once at the top level settles
+every environment that leaves it out.
 
 **Each row sits in the tier [`TESTING.md`][testing-apps-6a] §6a's lines put it in.** The `test` rows are in `unit`, the database rows that need
 workerd in `runtime`, and the browser set, the workerd set and `validate-dev-bundle` in `scheduled`. Everything else is in `static`, including
@@ -274,7 +278,7 @@ Every rule id, its tier, its severity and the feature that replaces it are owned
 ## Running and narrowing a run
 
 ```bash
-bun run verify                     # the `runtime` tier, fail-fast — what a commit closes on
+bun run verify                     # the `runtime` tier, fail-fast — what an epic closes on
 bun run verify --tier unit         # any other tier; the scripts above spell each one
 bun run verify --list              # print the resolved selection, run nothing
 bun run verify --only lint,test    # narrow the run (branded as scoped)
@@ -539,7 +543,7 @@ const labels = (tier: GateTier) => {
   const selection = selectSteps(resolved.data, { tier });
   return selection.ok ? selection.steps.map((s) => s.label) : [];
 };
-expect(labels("static").slice(0, 3)).toEqual(["types:cf-runtime", "types:cf-bindings", "typecheck"]);
+expect(labels("static").slice(0, 3)).toEqual(["types:cf-runtime", "validate-generated-types", "typecheck"]);
 
 // A tier that leads with tier("static") runs every static row first, in the static tier's order.
 expect(labels("unit").slice(0, labels("static").length)).toEqual(labels("static"));
@@ -549,9 +553,11 @@ const touched = selectSteps(resolved.data, { tier: "unit", changed: ["src/ui/x.t
 if (touched.ok) expect(touched.steps.map((s) => s.label)).not.toContain("validate-exposure");
 ```
 
-Both answer `{ ok: false, error }` rather than throwing. `resolveTiers` refuses the whole table, whichever tier you go on to ask for: a `tier()`
-naming a tier the table does not declare or one not below the tier holding it, and a label one resolved tier holds twice. `selectSteps` refuses a
-tier the table does not declare, `watches: []` or a `!` entry in `watches`, a `watches` or `wide` glob matching none of the `files` you pass, an
+**A tier the table does not declare resolves to the nearest declared tier below it**, with `from` naming that tier, so a table needs no `runtime`
+key that only says `tier("unit")`; `verify` prints the fallback in its verdict as `(as unit)`. Both answer `{ ok: false, error }` rather than
+throwing. `resolveTiers` refuses the whole table, whichever tier you go on to ask for: a `tier()` naming a tier neither the table nor any tier
+below it declares, or one not below the tier holding it, and a label one resolved tier holds twice. `selectSteps` refuses a tier with no declared
+tier at or below it, `watches: []` or a `!` entry in `watches`, a `watches` or `wide` glob matching none of the `files` you pass, an
 unknown `--only` label, and a selection of zero steps. **A zero-step selection is not refused when `changed` is given**: it comes back `ok` with
 no steps, and an empty `changed` selects nothing at all, not even a step with no `watches`. **The `watches` rules are a property of the table**, so
 they are checked over every tier before the run's tier is applied and before `--only` narrows.
@@ -619,7 +625,7 @@ paths, so an allowlist or rule table imported from `src/…` is invisible to it,
 yourself, or add the module's path to the table's `inputs`.
 
 **`--affected` drops a row whose `watches` miss the change before its `widen` is asked.** A database row can therefore skip a change to its
-`forge` entry's imports. The run is scoped and never the gate, so the gate a commit closes on still runs it.
+`forge` entry's imports. The run is scoped and never the gate, so the gate an epic closes on still runs it.
 
 **An empty `--only` array is the flag's absence, not a request for nothing.** That is what a repeatable flag resolves to when it was never given,
 and reading it as "select no steps" would refuse every unscoped run.

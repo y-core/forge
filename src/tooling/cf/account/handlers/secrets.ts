@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { createCfClient } from "../../api/client";
 import { workerSecrets } from "../../api/endpoints";
 import { describeCfFailure } from "../../api/errors";
-import type { CfWorkerSecret } from "../../api/types";
+import { CF_OPERATIONS } from "../../api/operations";
 import type { ResourceType, SyncResult } from "../../types";
 import { devVarsPath, readDevVars } from "./devvars";
 import { randomSecret } from "./rotate";
@@ -143,7 +143,7 @@ interface ReconcileArgs {
 async function reconcileWorker({ entries, ctx, spec, declared }: ReconcileArgs): Promise<ReconcileResult<SecretEntry>> {
   const client = createCfClient(ctx.auth, ctx.fetch);
   const path = workerSecrets(ctx.auth.accountId, ctx.scriptName);
-  const listResult = await client.get<CfWorkerSecret[]>(path);
+  const listResult = await client.get(path, CF_OPERATIONS.listWorkerSecrets);
 
   if (!listResult.ok) return { entries, results: failureRows(spec.type, identities(entries), listResult.error, ctx, REDACT) };
 
@@ -157,7 +157,7 @@ async function reconcileWorker({ entries, ctx, spec, declared }: ReconcileArgs):
       continue;
     }
 
-    const putResult = await client.put<unknown>(path, { name: plan.name, text: plan.value, type: "secret_text" });
+    const putResult = await client.put(path, { name: plan.name, text: plan.value, type: "secret_text" }, CF_OPERATIONS.putWorkerSecret);
     results.push(writeRow(plan, spec.type, putResult.ok, putResult.ok ? "" : describeCfFailure(putResult.error, ctx.scriptName, REDACT)));
   }
 

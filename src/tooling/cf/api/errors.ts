@@ -18,11 +18,6 @@ export function classifyCfError(e: CfApiClientError): CfFailureKind {
   return "other";
 }
 
-/** Whether wrangler's printed output carries a Cloudflare auth error code, as `[code: <n>]`. */
-export function wranglerAuthRefused(output: string): boolean {
-  return [...output.matchAll(/\[code: (\d+)\]/g)].some((match) => (CF_ERROR_CODES.auth as readonly number[]).includes(Number(match[1])));
-}
-
 /** A detail string for a failed call against the Worker `scriptName`. */
 export function describeCfFailure(e: CfApiClientError, scriptName: string, options: DescribeCfFailureOptions = {}): string {
   const kind = classifyCfError(e);
@@ -34,7 +29,7 @@ export function describeCfFailure(e: CfApiClientError, scriptName: string, optio
     case "network":
       return options.redactMessage ? "network error" : `network error — ${e.message}`;
     case "other":
-      if (!options.redactMessage) return e.message;
+      if (!options.redactMessage || e.kind === "schema") return e.message;
       return describeRedacted(e);
   }
 }
@@ -42,7 +37,7 @@ export function describeCfFailure(e: CfApiClientError, scriptName: string, optio
 function describeAuthFailure(e: CfApiClientError): string {
   const code = e.cfErrors?.[0]?.code;
   return [
-    `auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "${WORKER_PERMISSION}"`,
+    `auth failed — the --api-token is rejected or lacks "${WORKER_PERMISSION}"`,
     " (Read to report, Edit to change)",
     code !== undefined ? ` · code ${code}` : "",
   ].join("");

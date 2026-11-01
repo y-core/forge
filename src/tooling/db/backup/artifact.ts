@@ -20,7 +20,7 @@ function appTableNames(objects: readonly SchemaObject[]): string[] {
   return objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app").map((object) => object.name);
 }
 
-/** Virtual tables by name — the pre-flight that turns wrangler's dumper throw into a message naming FTS5. @internal */
+/** Virtual tables by name — the pre-flight that turns D1's dumper throw into a message naming FTS5. @internal */
 export function findVirtualTables(objects: readonly SchemaObject[]): readonly string[] {
   return objects.filter((object) => /^\s*CREATE\s+VIRTUAL\s+TABLE\b/i.test(object.sql ?? "")).map((object) => object.name);
 }
@@ -30,7 +30,7 @@ export function declaredTypesSelect(table: AppTable): string {
   return `SELECT name, type FROM pragma_table_info(${quoteSqlLiteral(table.name)})`;
 }
 
-/** One statement per table counting, per column, the values `wrangler d1 export` would not reproduce, as `exportHazards` names them. @internal */
+/** One statement per table counting, per column, the values D1's export would not reproduce, as `exportHazards` names them. @internal */
 export function exportHazardSelect(table: AppTable, realAffinity: ReadonlySet<string>): string {
   const SAFE = "9007199254740991";
   const counts = table.columns.flatMap((column) => {
@@ -51,15 +51,15 @@ export function exportHazards(table: AppTable, counts: Record<string, unknown> |
   return table.columns.flatMap((column) => [
     ...(count("escape", column) > 0
       ? [
-          `${table.name}.${column}: ${count("escape", column)} text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which wrangler's dumper doubles`,
+          `${table.name}.${column}: ${count("escape", column)} text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which D1's dumper doubles`,
         ]
       : []),
     ...(count("integer", column) > 0
-      ? [`${table.name}.${column}: ${count("integer", column)} integer(s) past ±2^53, which wrangler's dumper rounds`]
+      ? [`${table.name}.${column}: ${count("integer", column)} integer(s) past ±2^53, which D1's dumper rounds`]
       : []),
     ...(count("real", column) > 0
       ? [
-          `${table.name}.${column}: ${count("real", column)} REAL(s) with no fraction in a column without REAL affinity, which wrangler's dumper restores as INTEGER`,
+          `${table.name}.${column}: ${count("real", column)} REAL(s) with no fraction in a column without REAL affinity, which D1's dumper restores as INTEGER`,
         ]
       : []),
   ]);
@@ -69,9 +69,7 @@ export function exportHazards(table: AppTable, counts: Record<string, unknown> |
 export function checkInventory(objects: readonly SchemaObject[]): readonly string[] {
   const problems: string[] = [];
   for (const name of findVirtualTables(objects)) {
-    problems.push(
-      `${name} is a virtual table — wrangler's dump generator throws on CREATE VIRTUAL TABLE, so this database cannot be exported or restored`,
-    );
+    problems.push(`${name} is a virtual table — D1's dumper throws on CREATE VIRTUAL TABLE, so this database cannot be exported or restored`);
   }
 
   const autoincrement = objects
@@ -247,7 +245,7 @@ export function compareKeys(left: readonly string[], right: readonly string[]): 
   return left.length < right.length ? -1 : 0;
 }
 
-/** A value as SQL text, carrying a newline on a token rather than on an escape wrangler's dumper leaves ambiguous. @internal */
+/** A value as SQL text, carrying a newline on a token rather than on an escape D1's dumper leaves ambiguous. @internal */
 export function sqlValueExpression(column: string, value: unknown): string {
   if (value === null) return "NULL";
   if (value instanceof SqlReal) {
@@ -317,8 +315,8 @@ export const TYPE_ALIAS_PREFIX = "forge:type:";
 
 /** One page of a table, ordered by its key and seeking past the last key read rather than by OFFSET. @internal */
 export function verificationSelect(table: AppTable, columns: readonly string[], after: ReadCursor): string {
-  // The read describes itself: a blob arrives as hex beside a `typeof` saying so, because `--json`
-  // erases the storage class and encodes a blob as text that a text column could equally hold.
+  // The read describes itself: a blob arrives as hex beside a `typeof` saying so, because D1's JSON
+  // answer erases the storage class and encodes a blob as text that a text column could equally hold.
   const projection = columns
     .map((column) => {
       const quoted = quoteSqlIdentifier(column);
@@ -400,7 +398,7 @@ function insertTarget(line: string): string | null {
 export function checkSchemaArtifact(sql: string): readonly ArtifactFault[] {
   const faults: ArtifactFault[] = [];
   const lines = sql.split("\n");
-  if (lines[0] !== DUMP_PREAMBLE) faults.push({ line: 1, reason: `the first line is not ${DUMP_PREAMBLE} — this is not a wrangler dump` });
+  if (lines[0] !== DUMP_PREAMBLE) faults.push({ line: 1, reason: `the first line is not ${DUMP_PREAMBLE} — this is not a D1 dump` });
 
   let tables = 0;
   let lastCreateTable = 0;
@@ -447,7 +445,7 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
   const faults: ArtifactFault[] = [];
   const lines = sql.split("\n");
   const allowed = new Set(appTables.map((table) => table.toLowerCase()));
-  if (lines[0] !== DUMP_PREAMBLE) faults.push({ line: 1, reason: `the first line is not ${DUMP_PREAMBLE} — this is not a wrangler dump` });
+  if (lines[0] !== DUMP_PREAMBLE) faults.push({ line: 1, reason: `the first line is not ${DUMP_PREAMBLE} — this is not a D1 dump` });
 
   for (const statement of splitSqlStatements(sql)) {
     const lead = statement.masked.search(/\S/);
@@ -479,7 +477,7 @@ export function checkDataArtifact(sql: string, appTables: readonly string[]): re
 }
 
 /** Bumped when a manifest field changes meaning, so an old artifact is refused rather than misread. @internal */
-export const BACKUP_FORMAT_VERSION = 8;
+export const BACKUP_FORMAT_VERSION = 9;
 
 const SHA256 = /^[0-9a-f]{64}$/;
 
@@ -495,6 +493,17 @@ function isCount(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
 
+function isBookmarkOrNull(value: unknown): boolean {
+  return value === null || (typeof value === "string" && value !== "");
+}
+
+function isBackupExporter(value: unknown): boolean {
+  if (typeof value !== "object" || value === null) return false;
+  const exporter = value as Record<string, unknown>;
+  if (exporter.tool === "wrangler") return typeof exporter.version === "string";
+  return exporter.tool === "d1" && isBookmarkOrNull(exporter.schemaBookmark) && isBookmarkOrNull(exporter.dataBookmark);
+}
+
 /** A manifest's digest of itself over its written bytes with the field blanked, which detects damage and never tampering. @internal */
 export function manifestSelfDigest(manifest: BackupManifest): string {
   return sha256(JSON.stringify({ ...manifest, selfDigest: "" }, null, 2));
@@ -508,7 +517,7 @@ export function validateManifest(value: unknown): readonly string[] {
 
   if (manifest.formatVersion !== BACKUP_FORMAT_VERSION) {
     problems.push(
-      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
+      `formatVersion is ${JSON.stringify(manifest.formatVersion)} and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records who exported its SQL (exporter)`,
     );
   }
   if (typeof manifest.createdAt !== "string" || Number.isNaN(Date.parse(manifest.createdAt))) {
@@ -534,6 +543,7 @@ export function validateManifest(value: unknown): readonly string[] {
     }
   }
 
+  if (!isBackupExporter(manifest.exporter)) problems.push("exporter is not one of wrangler, d1");
   if (manifest.via !== "read" && manifest.via !== "export") problems.push(`via is ${JSON.stringify(manifest.via)} and not one of read, export`);
   if (manifest.bookmark !== null && (typeof manifest.bookmark !== "string" || manifest.bookmark === "")) {
     problems.push("bookmark is neither null nor a Time Travel bookmark");

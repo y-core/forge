@@ -2,11 +2,11 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CliError } from "../../cli/errors";
+import { executeFile } from "../d1";
 import { sha256 } from "../digest";
 import { clearLocalState, synthesizeHome } from "../home";
 import { applyMigrations } from "../migrate/applier";
 import type { DbConfig, DbIo, DbRunContext, Home, Migration } from "../types";
-import { executeFile } from "../wrangler";
 import { readSchemaModel } from "./introspect";
 import { isSchemaModel } from "./snapshot";
 import { SCHEMA_MODEL_VERSION } from "./types";
@@ -105,30 +105,7 @@ export async function cachedSchemaModel(
   return model;
 }
 
-const versions = new WeakMap<DbRunContext, string>();
-
-/** The wrangler version, read once per run, which every cache key carries. @internal */
-export function scratchWranglerVersion(run: DbRunContext): string {
-  const known = versions.get(run);
-  if (known !== undefined) return known;
-  // The imported wrangler, not a spawned one: the model is built in process, and `node_modules/.bin`
-  // puts the app's CLI ahead of forge's, so a spawn would stamp the key with a version that built nothing.
-  const version = importedWranglerVersion(run.io);
-  versions.set(run, version);
-  return version;
-}
-
 /** Reads a scratch home's model, with forge's own tables filtered out. @internal */
 export function readScratchModel(run: DbRunContext, home: Home): Promise<SchemaModel> {
   return readSchemaModel(run.io, home);
-}
-
-/** The version of the wrangler this process imports, which is the one that builds every model. */
-function importedWranglerVersion(io: DbIo): string {
-  try {
-    const manifest = JSON.parse(io.readText(fileURLToPath(import.meta.resolve("wrangler/package.json")))) as { version?: unknown };
-    return typeof manifest.version === "string" ? manifest.version : "unknown";
-  } catch {
-    return "unknown";
-  }
 }

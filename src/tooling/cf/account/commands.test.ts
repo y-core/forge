@@ -789,3 +789,61 @@ describe("failsRun()", () => {
     expect(failsRun([])).toBe(false);
   });
 });
+
+describe("credentials, from flags alone", () => {
+  const cmd = createSyncAccountCommand();
+  type Flags = Parameters<NonNullable<typeof cmd.run>>[1];
+  const NAMES = ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"] as const;
+
+  function makeProject(): string {
+    const dir = mkdtempSync(join(tmpdir(), "forge-cli-"));
+    roots.push(dir);
+    writeFileSync(join(dir, "wrangler.jsonc"), `{ "name": "proj", "kv_namespaces": [{ "binding": "KV" }] }`, "utf-8");
+    return join(dir, "wrangler.jsonc");
+  }
+
+  async function firstRequest(
+    env: Partial<Record<(typeof NAMES)[number], string>>,
+    flags: Record<string, unknown>,
+  ): Promise<{ error: unknown; requests: { url: string; authorization: string | null }[] }> {
+    const saved = { fetch: globalThis.fetch, log: console.log, exitCode: process.exitCode, env: NAMES.map((name) => process.env[name]) };
+    const requests: { url: string; authorization: string | null }[] = [];
+    for (const name of NAMES) delete process.env[name];
+    Object.assign(process.env, env);
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(input), authorization: new Headers(init?.headers).get("Authorization") });
+      throw new Error("no request leaves this test");
+    }) as unknown as typeof globalThis.fetch;
+    console.log = () => {};
+    try {
+      await cmd.run?.([], { config: makeProject(), resources: ["kv_namespaces"], json: true, ...flags } as Flags);
+      return { error: undefined, requests };
+    } catch (error) {
+      return { error, requests };
+    } finally {
+      globalThis.fetch = saved.fetch;
+      console.log = saved.log;
+      process.exitCode = saved.exitCode ?? 0;
+      for (const [index, name] of NAMES.entries()) {
+        const value = saved.env[index];
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  }
+
+  it("authenticates from --account-id and --api-token, whatever the environment holds", async () => {
+    const { requests } = await firstRequest(
+      { CLOUDFLARE_ACCOUNT_ID: "env-acct", CLOUDFLARE_API_TOKEN: "env-tok" },
+      { "account-id": "flag-acct", "api-token": "flag-tok" },
+    );
+    expect(requests[0]?.url).toContain("/accounts/flag-acct/");
+    expect(requests[0]?.authorization).toBe("Bearer flag-tok");
+  });
+
+  it("refuses before any request when no flag is given, even with both variables exported", async () => {
+    const { error, requests } = await firstRequest({ CLOUDFLARE_ACCOUNT_ID: "env-acct", CLOUDFLARE_API_TOKEN: "env-tok" }, {});
+    expect(requests).toEqual([]);
+    expect(String(error)).toContain("--account-id and --api-token are not given. Pass both to a remote command");
+  });
+});

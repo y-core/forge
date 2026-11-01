@@ -1,6 +1,6 @@
 import { createCfClient } from "../../api/client";
 import { workerSettings } from "../../api/endpoints";
-import type { CfWorkerSettings } from "../../api/types";
+import { CF_OPERATIONS } from "../../api/operations";
 import type { SyncResult } from "../../types";
 import { devVarsPath, readDevVars } from "./devvars";
 import { failureRows } from "./rows";
@@ -64,13 +64,13 @@ function rowsFor(entries: VarEntry[], remote: Map<string, string>): SyncResult[]
 
 async function readWorkerVars(entries: VarEntry[], ctx: HandlerContext): Promise<ReconcileResult<VarEntry>> {
   const client = createCfClient(ctx.auth, ctx.fetch);
-  const getResult = await client.get<CfWorkerSettings>(workerSettings(ctx.auth.accountId, ctx.scriptName));
+  const getResult = await client.get(workerSettings(ctx.auth.accountId, ctx.scriptName), CF_OPERATIONS.getWorkerSettings);
 
   if (!getResult.ok) {
     return { entries, results: failureRows("vars", identities(entries), getResult.error, ctx) };
   }
 
-  const remote = new Map((getResult.data.bindings ?? []).filter((b) => b.type === "plain_text").map((b) => [b.name, b.text ?? ""]));
+  const remote = new Map(getResult.data.bindings.filter((b) => b.type === "plain_text").map((b) => [b.name, b.text ?? ""]));
   return { entries, results: rowsFor(entries, remote) };
 }
 

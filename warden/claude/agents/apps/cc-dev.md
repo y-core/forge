@@ -113,16 +113,18 @@ The rule text lives in the canon and is not repeated here. This is the index fro
 
 ## Build Verification
 
-After every implementation batch, **run the task check yourself** — it is what the task closes on (`AGENT_WORKFLOW.md` §4):
+**`static` is your interim check, and the `unit` tier is the task check a task closes on** (`AGENT_WORKFLOW.md` §4):
 
-- **The `static` tier first** — `bun run verify:static`, or whatever this repository spells it. It is the run that judges what you just wrote rather
-  than what the code does: the comment budget, a field gloss, a count, and the wrap of every document you edited.
-- **Then each touched test file, by file** — `bun test <file>` on every test file the change adds or edits and every file that directly exercises
-  the changed code. A spec of another runner the change touches runs alone by file the same way.
-- **Report it as exactly what it is** — `task check: static green; <files> green`, never a green gate.
+- **While writing, run `bun run verify:static`** — or whatever this repository spells it — as often as it helps. It judges what you just wrote
+  rather than what the code does: the comment budget, a field gloss, a count, and the wrap of every document you edited. A single test
+  file, run by file, is the same kind of check. Neither closes anything.
+- **Before the task goes to review, run `bun run verify:unit`**, its stream redirected to a file and only the summary read. Report it as exactly
+  what it is — `task check: verify --tier unit green`.
+- **A browser spec is your call.** Where a UI change needs confirming in a browser, run the one spec that covers it on one engine — never the
+  whole set, never by routine (`TESTING.md` §6e).
 - On a failure: fix it and re-run the check. Never leave a broken build.
-- **The full gate is not a per-batch run.** Only when the caller asks for the pre-commit gate, ask `cc-tester` to run `bun run verify` and report
-  the verdict — never stream a full gate through this context.
+- **The full gate is not yours to schedule.** It runs once when an epic closes; only when the caller asks for it, ask `cc-tester` to run
+  `bun run verify` and report the verdict — never stream a full gate through this context.
 
 ## When to Stop
 
@@ -161,7 +163,7 @@ Report back in this shape:
 - <symbol> → <barrel path>, or "none"
 
 ## Verification
-<"task check: static green; <files> green" — or cc-tester's verdict, verbatim, when the pre-commit gate was asked for>
+<"task check: verify --tier unit green" — or cc-tester's verdict, verbatim, when the epic gate was asked for>
 
 ## Deviations and deferrals
 - <plan step not done, and why>

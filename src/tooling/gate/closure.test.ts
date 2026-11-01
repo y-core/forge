@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { rmSync } from "node:fs";
+import { join } from "node:path";
 
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { workerMainClosure } from "./closure";
@@ -46,5 +47,11 @@ describe("workerMainClosure()", () => {
 
     await expect(workerMainClosure(root, "wrangler.jsonc")).rejects.toThrow("wrangler.jsonc names no `main` to trace");
     await expect(workerMainClosure(root, "missing.jsonc")).rejects.toThrow();
+  });
+
+  it("rejects a `main` that is not a path as a malformed config, before tracing anything", async () => {
+    const root = fixtureRoot({ ...APP, "wrangler.jsonc": '{ "name": "app", "main": 7 }\n' });
+
+    await expect(workerMainClosure(root, "wrangler.jsonc")).rejects.toThrow(`malformed wrangler config at ${join(root, "wrangler.jsonc")}: main: `);
   });
 });

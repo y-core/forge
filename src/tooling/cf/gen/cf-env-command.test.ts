@@ -7,7 +7,7 @@ import { execute } from "../../cli/execute";
 import type { SpawnOptions, SpawnOutcome } from "../../cli/types";
 import { parseWranglerConfig } from "../config/parse";
 import { createGenEnvCommand, defineEnvConfig, loadOptions } from "./cf-env-command";
-import { collectBindings, collectVars, emit } from "./cf-env-gen";
+import { collectBindings, collectSecretNames, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 
 const roots: string[] = [];
@@ -79,7 +79,10 @@ describe("createGenEnv — run handler end-to-end", () => {
     ]);
 
     const cfg = parseWranglerConfig(wranglerPath);
-    const expected = emit([...collectBindings(cfg, DEFAULT_OPTIONS), ...collectVars("CSRF_SECRET=deadbeef\n", cfg.vars ?? {}, DEFAULT_OPTIONS)]);
+    const expected = emit([
+      ...collectBindings(cfg, DEFAULT_OPTIONS),
+      ...collectVars(collectSecretNames(cfg, "CSRF_SECRET=deadbeef\n"), cfg.vars ?? {}, DEFAULT_OPTIONS),
+    ]);
     expect(readFileSync(outPath, "utf-8")).toBe(expected);
   });
 
@@ -101,8 +104,31 @@ describe("createGenEnv — run handler end-to-end", () => {
     ]);
 
     const cfg = parseWranglerConfig(wranglerPath);
-    const expected = emit(collectVars("", cfg.vars ?? {}, DEFAULT_OPTIONS));
+    const expected = emit(collectVars(collectSecretNames(cfg, ""), cfg.vars ?? {}, DEFAULT_OPTIONS));
     expect(readFileSync(outPath, "utf-8")).toBe(expected);
+  });
+
+  it("takes secret names from `secrets.required` and stops reading .dev.vars for them", async () => {
+    const dir = tempDir();
+    const wranglerPath = join(dir, "wrangler.jsonc");
+    const devVarsPath = join(dir, ".dev.vars");
+    const outPath = join(dir, "env.schema.ts");
+    writeFileSync(wranglerPath, `{ "name": "app", "secrets": { "required": ["API_KEY"] } }`);
+    writeFileSync(devVarsPath, "CSRF_SECRET=x\n");
+
+    await execute(createGenEnvCommand(mockSpawnSync), [
+      "--wrangler",
+      wranglerPath,
+      "--dev-vars",
+      devVarsPath,
+      "--out",
+      outPath,
+      "--config",
+      join(dir, "absent.ts"),
+    ]);
+
+    const generated = readFileSync(outPath, "utf-8");
+    expect([generated.includes("API_KEY: v.string()"), generated.includes("CSRF_SECRET")]).toEqual([true, false]);
   });
 
   it("applies a host-policy config module over the defaults", async () => {

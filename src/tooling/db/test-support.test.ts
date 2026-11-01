@@ -3,7 +3,18 @@ import process from "node:process";
 import { createInterface } from "node:readline/promises";
 
 import { SqlReal } from "./backup/artifact";
-import { argvHas, fakeDbIo, jsonRows, keysetPageReply, minimalWranglerConfig, OK, onStdin, routedReply, splitStatements } from "./db.fixture";
+import {
+  argvHas,
+  cfEnvelope,
+  cfRefusal,
+  fakeDbIo,
+  keysetPageReply,
+  minimalWranglerConfig,
+  OK,
+  onStdin,
+  splitStatements,
+  REMOTE_AUTH,
+} from "./db.fixture";
 import type { Home } from "./types";
 
 describe("argvHas()", () => {
@@ -81,6 +92,8 @@ describe("fakeDbIo()", () => {
       persistTo: "/app/.wrangler/state",
       place: "local",
       env: null,
+      databaseId: null,
+      auth: null,
       synthesized: false,
     };
     const split = await io.splitD1(home, sql);
@@ -98,36 +111,101 @@ describe("fakeDbIo()", () => {
   });
 });
 
-describe("jsonRows()", () => {
-  it("wraps rows the way `d1 execute --json` prints them", () => {
-    expect(jsonRows([{ n: 1 }])).toEqual({ code: 0, stdout: '[{"results":[{"n":1}],"success":true,"meta":{}}]\n', stderr: "" });
-  });
+describe("fakeDbIo() — the Cloudflare REST API", () => {
+  const DB_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+  const QUERY = `https://api.cloudflare.com/client/v4/accounts/acct/d1/database/${DB_ID}/query`;
+  const REMOTE: Home = {
+    label: "remote",
+    database: "app-db",
+    binding: "DB",
+    dir: "/app",
+    configPath: "/app/wrangler.jsonc",
+    persistTo: null,
+    place: "remote",
+    env: null,
+    databaseId: DB_ID,
+    auth: REMOTE_AUTH,
+    synthesized: false,
+  };
+  const post = (body: unknown): RequestInit => ({ method: "POST", headers: { Authorization: "Bearer tok" }, body: JSON.stringify(body) });
 
-  it("is the empty-result shape for no rows", () => {
-    expect(jsonRows([]).stdout).toBe('[{"results":[],"success":true,"meta":{}}]\n');
-  });
-});
-
-describe("routedReply()", () => {
-  it("answers a batched command with one result set per statement", () => {
-    const seen: string[] = [];
-    const answer = (statement: string): Record<string, unknown>[] => {
-      seen.push(statement);
-      return [{ statement }];
-    };
-
-    const batched = routedReply("SELECT 1;\nSELECT 2;", answer);
-
-    expect(seen).toEqual(["SELECT 1", "SELECT 2"]);
-    expect(JSON.parse(batched.stdout)).toEqual([
-      { results: [{ statement: "SELECT 1" }], success: true, meta: {} },
-      { results: [{ statement: "SELECT 2" }], success: true, meta: {} },
+  it("answers from the first matching rest rule and records the request", async () => {
+    const io = fakeDbIo();
+    io.restRules.push({ match: (url) => url.endsWith("/a"), reply: () => cfEnvelope({ n: 1 }) });
+    const response = await io.fetch("https://api.cloudflare.com/a", post({ x: 1 }));
+    expect(await response.json()).toEqual({ success: true, errors: [], messages: [], result: { n: 1 } });
+    expect(io.restCalls).toEqual([
+      { url: "https://api.cloudflare.com/a", method: "POST", headers: { authorization: "Bearer tok" }, body: '{"x":1}' },
     ]);
   });
 
-  it("answers an unbatched read exactly as it answers the same statement inside a batch", () => {
-    const answer = (statement: string): Record<string, unknown>[] => [{ statement }];
-    expect(routedReply("SELECT 1", answer)).toEqual(routedReply("SELECT 1;", answer));
+  it("records a bare GET with no headers and no body", async () => {
+    const io = fakeDbIo();
+    await io.fetch("https://d1-exports.example.com/dump.sql");
+    expect(io.restCalls).toEqual([{ url: "https://d1-exports.example.com/dump.sql", method: "GET", headers: {}, body: null }]);
+  });
+
+  it("fails an unmatched request with a 7003 naming its method and path", async () => {
+    const response = await fakeDbIo().fetch("https://api.cloudflare.com/client/v4/x?y=1");
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      success: false,
+      errors: [{ code: 7003, message: "fake cloudflare: no rule matches GET /client/v4/x" }],
+      messages: [],
+      result: null,
+    });
+  });
+
+  it("answers each statement of a /query batch through the d1 rules, by the home its database id names", async () => {
+    const io = fakeDbIo({}, { homes: [REMOTE] });
+    io.d1Rules.push({ match: (statement, home) => home.database === "app-db" && statement === "SELECT 1", reply: [{ n: 1 }] });
+    const response = await io.fetch(QUERY, post({ batch: [{ sql: "SELECT 1" }, { sql: "SELECT 2;" }] }));
+    expect((await response.json()).result).toEqual([
+      { results: [{ n: 1 }], success: true, meta: {} },
+      { results: [], success: true, meta: {} },
+    ]);
+    expect(io.d1Calls).toEqual([]);
+  });
+
+  it("answers a single /query body statement by statement", async () => {
+    const io = fakeDbIo({}, { homes: [REMOTE] });
+    io.d1Rules.push({ match: () => true, reply: (statement) => [{ statement }] });
+    const response = await io.fetch(QUERY, post({ sql: "SELECT 1;\nSELECT 'a;b';" }));
+    expect((await response.json()).result.map((r: { results: unknown[] }) => r.results)).toEqual([
+      [{ statement: "SELECT 1" }],
+      [{ statement: "SELECT 'a;b'" }],
+    ]);
+  });
+
+  it("refuses a /query for a database id no home has", async () => {
+    const response = await fakeDbIo().fetch(QUERY, post({ sql: "SELECT 1" }));
+    expect((await response.json()).errors).toEqual([{ code: 7003, message: `fake cloudflare: no home has the D1 id ${DB_ID}` }]);
+  });
+
+  it("turns a d1 rule that throws into a 7500 carrying its message", async () => {
+    const io = fakeDbIo({}, { homes: [REMOTE] });
+    io.d1Rules.push({
+      match: () => true,
+      reply: () => {
+        throw new Error("no such table: t: SQLITE_ERROR");
+      },
+    });
+    const response = await io.fetch(QUERY, post({ batch: [{ sql: "SELECT * FROM t" }] }));
+    expect(response.status).toBe(400);
+    expect((await response.json()).errors).toEqual([{ code: 7500, message: "no such table: t: SQLITE_ERROR" }]);
+  });
+
+  it("builds a failure envelope at the status asked for", async () => {
+    const response = cfRefusal(10000, "Authentication error", 403);
+    expect([response.status, await response.json()]).toEqual([
+      403,
+      { success: false, errors: [{ code: 10000, message: "Authentication error" }], messages: [], result: null },
+    ]);
+  });
+
+  it("names the installed wrangler 4.151.2, and carries an empty environment", () => {
+    expect(fakeDbIo().wranglerVersion()).toBe("4.151.2");
+    expect(fakeDbIo().env).toEqual({});
   });
 });
 

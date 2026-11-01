@@ -3,13 +3,15 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { listDeployments } from "../../cf/config/environment";
 import { DEV_CONDITION, WRANGLER_CONDITIONS } from "../../cf/dev/conditions";
+import type { WranglerConfig } from "../../cf/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { hasEsbuild } from "./bundle";
 import { DEV_MODULE, isForbidden, manifestPath } from "./dev-boundary";
 import type { BundleMetafile, DevBundleCheckConfig } from "./types";
-import { isRecord, readWorkerConfig } from "./worker-config";
+import { readWorkerConfig } from "./worker-config";
 
 type Esbuild = typeof import("esbuild");
 
@@ -19,26 +21,16 @@ const UNMODELLED = ["alias", "build", "define", "rules"] as const;
 /** The compatibility flags under which wrangler resolves a bare Node built-in through a polyfill this check does not reproduce. */
 const UNMODELLED_FLAGS = ["nodejs_compat", "nodejs_compat_v2"] as const;
 
-function unmodelledFlags(flags: unknown, key: string): string[] {
-  if (!Array.isArray(flags)) return [];
-  return UNMODELLED_FLAGS.filter((flag) => flags.includes(flag)).map((flag) => `\`${key}\` carries \`${flag}\``);
-}
-
-function unmodelledKeys(block: Record<string, unknown>, prefix: string): string[] {
-  return UNMODELLED.filter((key) => block[key] !== undefined).map((key) => `\`${prefix}${key}\` is set`);
+function unmodelledFlags(flags: readonly string[] | undefined, key: string): string[] {
+  return UNMODELLED_FLAGS.filter((flag) => flags?.includes(flag)).map((flag) => `\`${key}\` carries \`${flag}\``);
 }
 
 /** Every setting in the worker config that changes what wrangler bundles, phrased as the clause a refusal opens with. */
-function unmodelledSettings(config: Record<string, unknown>): string[] {
-  const keys = unmodelledKeys(config, "");
-  const top = unmodelledFlags(config.compatibility_flags, "compatibility_flags");
-  const environments = isRecord(config.env) ? Object.entries(config.env) : [];
-  const scoped = environments.flatMap(([name, environment]) =>
-    isRecord(environment)
-      ? [...unmodelledKeys(environment, `env.${name}.`), ...unmodelledFlags(environment.compatibility_flags, `env.${name}.compatibility_flags`)]
-      : [],
-  );
-  return [...keys, ...top, ...scoped];
+function unmodelledSettings(config: WranglerConfig): string[] {
+  return listDeployments(config).flatMap(({ prefix, effective, inherited }) => [
+    ...UNMODELLED.filter((key) => effective[key] !== undefined && !inherited.has(key)).map((key) => `\`${prefix}${key}\` is set`),
+    ...(inherited.has("compatibility_flags") ? [] : unmodelledFlags(effective.compatibility_flags, `${prefix}compatibility_flags`)),
+  ]);
 }
 
 function real(path: string): string {
@@ -168,7 +160,24 @@ function ambientDevCondition(env: Readonly<Record<string, string | undefined>>):
   ];
 }
 
-/** Fails when the bundle of the deployed `main` contains a `*.dev.ts` module, or one from a dev-only directory a dependency publishes. @public */
+/** A finding for every bundled input that is development code, naming the entry that reaches it. */
+function devInputs(inputs: readonly { reported: string; path: string }[], forbidden: readonly string[], main: string): Finding[] {
+  return inputs.flatMap(({ reported, path }) => {
+    const inDevOnly = forbidden.some((dir) => path === dir || path.startsWith(`${dir}/`));
+    if (!inDevOnly && !DEV_MODULE.test(path)) return [];
+    return [
+      fail(`development code in the deployed bundle — \`${reported}\``, {
+        file: reported,
+        detail: [
+          `\`${main}\` reaches it, so every deployment ships it`,
+          "find the import that pulls it in and move the development part into a `*.dev.ts` module",
+        ],
+      }),
+    ];
+  });
+}
+
+/** Fails when the bundle of any deployment's `main` contains a `*.dev.ts` module, or one from a dev-only directory a dependency publishes. @public */
 export async function checkDevBundle(config: DevBundleCheckConfig): Promise<CheckResult> {
   const ambient = ambientDevCondition(config.env ?? process.env);
   if (ambient.length > 0) return checkResult(ambient, "");
@@ -190,12 +199,12 @@ export async function checkDevBundle(config: DevBundleCheckConfig): Promise<Chec
     );
   }
 
-  const main = read.config.main;
-  if (main === undefined) {
-    return checkResult([fail("`main` is unstated, so there is no deployed bundle to judge", { file: workerConfig })], "");
+  const mains = [...new Set(listDeployments(read.config).flatMap((deployment) => deployment.effective.main ?? []))];
+  if (mains.length === 0) {
+    return checkResult([fail("`main` is unstated in every deployment, so there is no deployed bundle to judge", { file: workerConfig })], "");
   }
-
   const findings: Finding[] = [];
+
   const forbidden: string[] = [];
   for (const packageName of config.packages ?? []) {
     const declared = forbiddenDirs(config.root, packageName);
@@ -203,28 +212,22 @@ export async function checkDevBundle(config: DevBundleCheckConfig): Promise<Chec
     findings.push(...declared.findings);
   }
 
-  let metafile: BundleMetafile;
-  try {
-    metafile = await (config.bundler ?? bundleWorker)(config.root, main);
-  } catch (error) {
-    const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
-    return checkResult([...findings, fail(`\`${main}\` did not bundle: ${message}`, { file: workerConfig })], "");
+  const bundled: string[] = [];
+  let unbundled = false;
+  for (const main of mains) {
+    let metafile: BundleMetafile;
+    try {
+      metafile = await (config.bundler ?? bundleWorker)(config.root, main);
+    } catch (error) {
+      const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+      findings.push(fail(`\`${main}\` did not bundle: ${message}`, { file: workerConfig }));
+      unbundled = true;
+      continue;
+    }
+    const inputs = bundledInputs(config.root, metafile);
+    findings.push(...devInputs(inputs, forbidden, main));
+    bundled.push(`${main} bundles ${inputs.length} modules`);
   }
 
-  const inputs = bundledInputs(config.root, metafile);
-  for (const { reported, path } of inputs) {
-    const inDevOnly = forbidden.some((dir) => path === dir || path.startsWith(`${dir}/`));
-    if (!inDevOnly && !DEV_MODULE.test(path)) continue;
-    findings.push(
-      fail(`development code in the deployed bundle — \`${reported}\``, {
-        file: reported,
-        detail: [
-          `\`${main}\` reaches it, so every deployment ships it`,
-          "find the import that pulls it in and move the development part into a `*.dev.ts` module",
-        ],
-      }),
-    );
-  }
-
-  return checkResult(findings, `${main} bundles ${inputs.length} modules, none of them development code`);
+  return checkResult(findings, unbundled ? "" : `${bundled.join("; ")}, none of them development code`);
 }

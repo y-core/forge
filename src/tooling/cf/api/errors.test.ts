@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { classifyCfError, describeCfFailure, wranglerAuthRefused } from "./errors";
+import { classifyCfError, describeCfFailure } from "./errors";
 import type { CfApiClientError, CfApiClientErrorKind, CfApiError } from "./types";
 import { CfApiClientError as CfError } from "./types";
 
@@ -63,38 +63,14 @@ describe("classifyCfError", () => {
   it("classifies an empty envelope error list as other", () => {
     expect(classifyCfError(fail("api", "x", { cfErrors: [] }))).toBe("other");
   });
-});
 
-describe("wranglerAuthRefused", () => {
-  it("recognises the authentication error wrangler prints for a refused D1 query", () => {
-    expect(
-      wranglerAuthRefused(
-        "✘ [ERROR] A request to the Cloudflare API (/accounts/acc/d1/database/x/query) failed.\n\n  Authentication error [code: 10000]",
-      ),
-    ).toBe(true);
+  it("classifies a schema refusal on a 2xx as other", () => {
+    expect(classifyCfError(fail("schema", "GET /x: unexpected response shape at result", { statusCode: 200 }))).toBe("other");
   });
 
-  for (const code of [9106, 9107, 9109, 10000]) {
-    it(`recognises auth code ${code} in wrangler's [code: n] form`, () => {
-      expect(wranglerAuthRefused(`✘ [ERROR] refused [code: ${code}]`)).toBe(true);
-    });
-  }
-
-  it("finds an auth code printed after an unrelated one", () => {
-    expect(wranglerAuthRefused("first [code: 7500]\nthen [code: 9109]")).toBe(true);
+  it("classifies a paging refusal, which carries no status and no codes, as other", () => {
+    expect(classifyCfError(fail("paging", "/accounts/acc/r2/buckets: page 1 came back full"))).toBe("other");
   });
-
-  for (const { output, label } of [
-    { output: "✘ [ERROR] D1 query failed [code: 7500]", label: "a non-auth code" },
-    { output: "no such table: users", label: "a SQL error with no code" },
-    { output: "rows 10000", label: "an auth code's digits outside the bracket form" },
-    { output: "✘ [ERROR] overflow [code: 100000]", label: "a code whose digits only begin with an auth code" },
-    { output: "", label: "empty output" },
-  ]) {
-    it(`does not recognise ${label}`, () => {
-      expect(wranglerAuthRefused(output)).toBe(false);
-    });
-  }
 });
 
 describe("describeCfFailure — not-found", () => {
@@ -117,26 +93,26 @@ describe("describeCfFailure — not-found", () => {
 describe("describeCfFailure — auth", () => {
   it("names the worker permission and the code returned", () => {
     expect(describeCfFailure(fail("api", "Authentication error", { statusCode: 400, cfErrors: cf(10000) }), WORKER)).toBe(
-      'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 10000',
+      'auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 10000',
     );
   });
 
   it("drops the code clause when the envelope carried none", () => {
     expect(describeCfFailure(fail("api", "Forbidden", { statusCode: 403 }), WORKER)).toBe(
-      'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change)',
+      'auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change)',
     );
   });
 
   it("quotes the first code when several were returned", () => {
     expect(describeCfFailure(fail("api", "x", { cfErrors: cf(9107, 9109) }), WORKER)).toBe(
-      'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9107',
+      'auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9107',
     );
   });
 
   it("never quotes upstream text, so redaction changes nothing", () => {
     const error = fail("api", "token secret=hunter2 is invalid", { statusCode: 401 });
     expect(describeCfFailure(error, WORKER, { redactMessage: true })).toBe(
-      'auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change)',
+      'auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change)',
     );
   });
 });
@@ -160,6 +136,11 @@ describe("describeCfFailure — other", () => {
     expect(describeCfFailure(fail("parse", "Unexpected token < in JSON"), WORKER)).toBe("Unexpected token < in JSON");
   });
 
+  it("returns a paging refusal's message unchanged", () => {
+    const message = "/accounts/acc/r2/buckets: the API returned cursor c1 twice";
+    expect(describeCfFailure(fail("paging", message), WORKER)).toBe(message);
+  });
+
   it("replaces the message with the code and status when redaction is asked for", () => {
     const error = fail("api", "value secret=hunter2 is not permitted", { statusCode: 400, cfErrors: cf(1234) });
     expect(describeCfFailure(error, WORKER, { redactMessage: true })).toBe(
@@ -181,6 +162,17 @@ describe("describeCfFailure — other", () => {
 
   it("says only that the request failed when it has neither code nor status", () => {
     expect(describeCfFailure(fail("parse", "secret=hunter2"), WORKER, { redactMessage: true })).toBe(
+      "request failed (message withheld: it can echo the request body)",
+    );
+  });
+
+  it("keeps a schema refusal's message under redaction, since it is built from field paths and never from the body", () => {
+    const message = "GET /accounts/{account_id}/workers/scripts/{script_name}/secrets: unexpected response shape at 0.name (expected string)";
+    expect(describeCfFailure(fail("schema", message, { statusCode: 200 }), WORKER, { redactMessage: true })).toBe(message);
+  });
+
+  it("withholds a paging refusal's message under redaction, since it quotes a cursor the API sent", () => {
+    expect(describeCfFailure(fail("paging", "GET /x: the API returned cursor c1 twice"), WORKER, { redactMessage: true })).toBe(
       "request failed (message withheld: it can echo the request body)",
     );
   });

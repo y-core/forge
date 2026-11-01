@@ -1,4 +1,4 @@
-import type { CfKvNamespace } from "../../api/types";
+import { CF_OPERATIONS } from "../../api/operations";
 import type { KvNamespaceConfig } from "../../types";
 import { prefixedName } from "./naming";
 import { createProvisionedHandler } from "./provisioned";
@@ -10,11 +10,11 @@ export const kvHandler = createProvisionedHandler<KvNamespaceConfig>({
   displayName: "KV Namespaces",
   extract: (config) => config.kv_namespaces ?? [],
   list: async (client, accountId) => {
-    const res = await client.list<CfKvNamespace>(path(accountId));
+    const res = await client.list(path(accountId), CF_OPERATIONS.listKvNamespaces);
     return res.ok ? { ok: true, data: res.data.map((ns) => ({ id: ns.id, name: ns.title })) } : res;
   },
   create: async (client, accountId, name) => {
-    const res = await client.post<CfKvNamespace>(path(accountId), { title: name });
+    const res = await client.post(path(accountId), { title: name }, CF_OPERATIONS.createKvNamespace);
     return res.ok ? { ok: true, data: { id: res.data.id, name: res.data.title } } : res;
   },
   naming: prefixedName,

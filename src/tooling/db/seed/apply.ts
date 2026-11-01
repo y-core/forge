@@ -4,6 +4,7 @@ import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
 import { confirmPrinter } from "../context";
+import { executeSql, queryRowsIfTable } from "../d1";
 import { declaredPath, declaredSeeds } from "../declared";
 import { refuseSchemaDrift, schemaDrift } from "../drift";
 import { readTargetFacts } from "../migrate/apply";
@@ -16,7 +17,6 @@ import { applyRecordedSql } from "../recorded";
 import { quoteSqlLiteral } from "../sql";
 import { isRemotePlace } from "../target";
 import type { Bookmark, DbRunContext, LintFinding, RecordedChecksum, Seed, SeedOutcome, SeedPlan, SeedRecord } from "../types";
-import { executeSql, queryRowsIfTable } from "../wrangler";
 import { refuseSchemaChangingSeeds, seedName } from "./effect";
 import { discoverSeeds, expandSeedEnv } from "./files";
 import { lintSeed, lintSeeds } from "./lint";
@@ -112,7 +112,7 @@ export async function runSeedApply(
   try {
     await ensureCompanionTables(run.io, run.home);
     if (remote && plan.apply.length > 0 && options.bookmark) {
-      bookmark = timeTravelInfo(run.io, run.home, undefined, run.config);
+      bookmark = await timeTravelInfo(run.io, run.home, undefined, run.config);
       say(`undo: ${bookmark.restoreCommand}`);
     }
 

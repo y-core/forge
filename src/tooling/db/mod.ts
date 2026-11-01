@@ -4,6 +4,7 @@ export { confirmPrinter, resolveDbContext, withDbRun } from "./context";
 export { defineDbConfig, forgeSchema } from "./declared";
 export type {
   ApplyPlan,
+  BackupExporter,
   BackupManifest,
   BackupVia,
   Bookmark,

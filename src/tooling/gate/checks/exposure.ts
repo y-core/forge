@@ -1,10 +1,12 @@
+import { listDeployments } from "../../cf/config/environment";
+import type { DeploymentKey, ResolvedDeployment, WranglerDeployment } from "../../cf/config/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { ExposureCheckConfig, ExposurePosture } from "./types";
-import { isRecord, readWorkerConfig } from "./worker-config";
+import { readWorkerConfig } from "./worker-config";
 
 interface ExposureKey {
-  key: string;
+  key: DeploymentKey;
   /** What `require: "unroutable"` asks for, in the spelling the message quotes. */
   want: string;
   holds: (value: unknown) => boolean;
@@ -50,37 +52,37 @@ const CONTROLS: readonly ExposureControl[] = [
 ];
 
 /** The value as a reader sees it, capped so one long `routes` array cannot own the line. */
-function describe(block: Record<string, unknown>, key: string): string {
+function describe(block: WranglerDeployment, key: DeploymentKey): string {
   if (block[key] === undefined) return "absent";
   const json = JSON.stringify(block[key]);
   return `\`${json.length > 48 ? `${json.slice(0, 47)}…` : json}\``;
 }
 
-/** Every finding one deployment block owes, and whether each control was settled. */
-function judgeBlock(block: Record<string, unknown>, prefix: string, posture: ExposurePosture, file: string): { findings: Finding[]; held: number } {
+/** Every finding one deployment owes for the keys it states itself, and whether each control was settled. */
+function judgeBlock(deployment: ResolvedDeployment, posture: ExposurePosture, file: string): { findings: Finding[]; held: number } {
+  const { prefix, stated, effective, inherited } = deployment;
   const findings: Finding[] = [];
   let held = 0;
 
   for (const control of CONTROLS) {
-    const stated = control.keys.filter((entry) => block[entry.key] !== undefined);
-
-    if (stated.length > 1 && control.conflict !== undefined) {
-      const names = stated.map((entry) => `\`${prefix}${entry.key}\``).join(" and ");
+    const written = control.keys.filter((entry) => stated[entry.key] !== undefined);
+    if (written.length > 1 && control.conflict !== undefined) {
+      const names = written.map((entry) => `\`${prefix}${entry.key}\``).join(" and ");
       findings.push(fail(`${names} are both stated, and ${control.conflict.message}`, { file, detail: [...control.conflict.detail] }));
       continue;
     }
 
-    if (stated.length === 0) {
-      const named = control.keys[0].key;
-      findings.push(fail(`\`${prefix}${named}\` is unstated, and ${control.consequence}`, { file, detail: [...control.detail] }));
+    if (control.keys.every((entry) => effective[entry.key] === undefined)) {
+      if (control.keys.some((entry) => !inherited.has(entry.key))) {
+        const named = control.keys[0].key;
+        findings.push(fail(`\`${prefix}${named}\` is unstated, and ${control.consequence}`, { file, detail: [...control.detail] }));
+      }
       continue;
     }
 
-    // The value rule runs only on a control statedness let through, so an absent `workers_dev` is
-    // reported once — as unstated — rather than again as a value the strict posture refuses.
-    const wrong = posture === "unroutable" ? control.keys.filter((entry) => !entry.holds(block[entry.key])) : [];
-    for (const entry of wrong) {
-      const actual = describe(block, entry.key);
+    const wrong = posture === "unroutable" ? control.keys.filter((entry) => !entry.holds(effective[entry.key])) : [];
+    for (const entry of wrong.filter((candidate) => !inherited.has(candidate.key))) {
+      const actual = describe(effective, entry.key);
       findings.push(
         fail(`\`${prefix}${entry.key}\` is ${actual}, and \`require: "unroutable"\` asks for ${entry.want}`, {
           file,
@@ -94,37 +96,20 @@ function judgeBlock(block: Record<string, unknown>, prefix: string, posture: Exp
   return { findings, held };
 }
 
-/** Fails on any Worker config key whose default runs toward exposure being unstated, judging the top level and every `env.*` block as its own. */
+/** Fails on any Worker config key whose default runs toward exposure being unstated, judging every deployment as wrangler builds it. */
 export async function checkExposure(config: ExposureCheckConfig): Promise<CheckResult> {
   const { root } = config;
   const posture = config.require ?? "stated";
   const workerConfig = config.workerConfig ?? "wrangler.jsonc";
   const read = readWorkerConfig(root, workerConfig, "deployment exposure");
   if (!("config" in read)) return read;
-  const parsed = read.config;
 
-  const top = judgeBlock(parsed, "", posture, workerConfig);
-  const findings: Finding[] = [...top.findings];
-  let held = top.held;
-  let deployments = 1;
+  const deployments = listDeployments(read.config);
+  const verdicts = deployments.map((deployment) => judgeBlock(deployment, posture, workerConfig));
+  const findings = verdicts.flatMap((verdict) => verdict.findings);
+  const held = verdicts.reduce((sum, verdict) => sum + verdict.held, 0);
 
-  const environments = parsed.env;
-  if (environments !== undefined && !isRecord(environments)) {
-    findings.push(fail("`env` is not a table of named environments", { file: workerConfig }));
-  } else {
-    for (const [name, environment] of Object.entries(environments ?? {})) {
-      deployments += 1;
-      if (!isRecord(environment)) {
-        findings.push(fail(`\`env.${name}\` is not an environment table`, { file: workerConfig }));
-        continue;
-      }
-      const block = judgeBlock(environment, `env.${name}.`, posture, workerConfig);
-      findings.push(...block.findings);
-      held += block.held;
-    }
-  }
-
-  const total = deployments * CONTROLS.length;
-  const across = deployments === 1 ? "" : ` across ${deployments} deployments`;
+  const total = deployments.length * CONTROLS.length;
+  const across = deployments.length === 1 ? "" : ` across ${deployments.length} deployments`;
   return checkResult(findings, `deployment exposure: ${held}/${total} keys ${posture}${across}`);
 }

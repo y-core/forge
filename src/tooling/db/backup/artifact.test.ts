@@ -120,7 +120,7 @@ describe("checkInventory()", () => {
     ];
 
     expect(checkInventory(objects)).toEqual([
-      "tasks_fts is a virtual table — wrangler's dump generator throws on CREATE VIRTUAL TABLE, so this database cannot be exported or restored",
+      "tasks_fts is a virtual table — D1's dumper throws on CREATE VIRTUAL TABLE, so this database cannot be exported or restored",
     ]);
   });
 
@@ -884,7 +884,7 @@ describe("checkSchemaArtifact()", () => {
 
   it("reports a file that does not open with wrangler's preamble", () => {
     expect(checkSchemaArtifact(SCHEMA_DUMP.slice(1).join("\n"))).toEqual([
-      { line: 1, reason: "the first line is not PRAGMA defer_foreign_keys=TRUE; — this is not a wrangler dump" },
+      { line: 1, reason: "the first line is not PRAGMA defer_foreign_keys=TRUE; — this is not a D1 dump" },
     ]);
   });
 
@@ -958,7 +958,7 @@ describe("checkDataArtifact()", () => {
 
   it("reports a file that does not open with wrangler's preamble", () => {
     expect(checkDataArtifact(DATA_DUMP.slice(1).join("\n"), APP_TABLES)).toEqual([
-      { line: 1, reason: "the first line is not PRAGMA defer_foreign_keys=TRUE; — this is not a wrangler dump" },
+      { line: 1, reason: "the first line is not PRAGMA defer_foreign_keys=TRUE; — this is not a D1 dump" },
     ]);
   });
 
@@ -1158,7 +1158,7 @@ const MANIFEST: BackupManifest = {
   drift: "match" as const,
   createdAt: "2026-08-06T09:07:05.123Z",
   label: null,
-  dumper: { tool: "forge db backup", version: "4.105.0" },
+  exporter: { tool: "wrangler", version: "4.105.0" },
   database: { name: "app-db", id: null, target: "local", persistPath: ".wrangler/state" },
   schema: ON_DISK,
   migrations: [{ name: "0001_init", sha256: MIGRATIONS_DIGEST }],
@@ -1188,14 +1188,38 @@ describe("validateManifest()", () => {
 
   it("refuses a formatVersion this tool does not write, including a missing one", () => {
     expect(validateManifest(manifestJson({ formatVersion: 1 }))).toEqual([
-      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
+      `formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records who exported its SQL (exporter)`,
     ]);
     const value = manifestJson();
     delete value.formatVersion;
 
     expect(validateManifest(value)).toEqual([
-      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
+      `formatVersion is undefined and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records who exported its SQL (exporter)`,
     ]);
+  });
+
+  it("refuses a format 8 manifest, which recorded a dumper rather than an exporter", () => {
+    expect(validateManifest(manifestJson({ formatVersion: 8 }))).toEqual([
+      `formatVersion is 8 and this tool writes 9 — take the backup again, since the manifest now records who exported its SQL (exporter)`,
+    ]);
+  });
+
+  it("accepts both exporter shapes: the installed wrangler, and D1's export with its bookmarks", () => {
+    expect(validateManifest(manifestJson({ exporter: { tool: "wrangler", version: "4.151.2" } }))).toEqual([]);
+    expect(validateManifest(manifestJson({ exporter: { tool: "d1", schemaBookmark: "b-schema", dataBookmark: null } }))).toEqual([]);
+    expect(validateManifest(manifestJson({ exporter: { tool: "d1", schemaBookmark: null, dataBookmark: "b-data" } }))).toEqual([]);
+  });
+
+  it("refuses an exporter that is neither shape", () => {
+    for (const exporter of [
+      undefined,
+      { tool: "forge db backup", version: "4.105.0" },
+      { tool: "wrangler" },
+      { tool: "d1", schemaBookmark: "b" },
+      { tool: "d1", schemaBookmark: "", dataBookmark: null },
+    ]) {
+      expect(validateManifest(manifestJson({ exporter }))).toEqual(["exporter is not one of wrangler, d1"]);
+    }
   });
 
   it("refuses a migrations list that is not a list of named, hashed migrations", () => {
@@ -1595,9 +1619,9 @@ describe("exportHazardSelect() and exportHazards()", () => {
 
   it("names each column with a hazard and how many values it holds, and nothing for counts of zero or none", () => {
     expect(exportHazards(table, { "escape:id": 0, "integer:id": 2, "escape:body": 3, "real:body": 1 })).toEqual([
-      "notes.id: 2 integer(s) past ±2^53, which wrangler's dumper rounds",
-      "notes.body: 3 text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which wrangler's dumper doubles",
-      "notes.body: 1 REAL(s) with no fraction in a column without REAL affinity, which wrangler's dumper restores as INTEGER",
+      "notes.id: 2 integer(s) past ±2^53, which D1's dumper rounds",
+      "notes.body: 3 text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which D1's dumper doubles",
+      "notes.body: 1 REAL(s) with no fraction in a column without REAL affinity, which D1's dumper restores as INTEGER",
     ]);
     expect(exportHazards(table, undefined)).toEqual([]);
   });

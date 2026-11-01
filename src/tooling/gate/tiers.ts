@@ -49,13 +49,26 @@ function duplicateLabels(steps: readonly Step[]): readonly string[] {
   return [...new Set(labels.filter((label, index) => labels.indexOf(label) !== index))];
 }
 
-/** Expands every `tier()` reference in place, refusing a reference to an undeclared or non-lower tier and a label a tier holds twice. @public */
+function nearestBelow(resolved: Partial<Record<GateTier, ResolvedTier>>, key: GateTier): [GateTier, ResolvedTier] | undefined {
+  for (let index = GATE_TIERS.indexOf(key) - 1; index >= 0; index--) {
+    const below = GATE_TIERS[index];
+    const found = below === undefined ? undefined : resolved[below];
+    if (below !== undefined && found !== undefined) return [below, found];
+  }
+  return undefined;
+}
+
+/** Expands every `tier()` reference in place, runs an undeclared tier as the nearest declared one below it, and refuses a reference to a non-lower tier or to one nothing below declares, and a label a tier holds twice. @public */
 export function resolveTiers(tiers: StepTiers): Result<ResolvedTiers, string> {
   const resolved: Partial<Record<GateTier, ResolvedTier>> = {};
 
   for (const key of GATE_TIERS) {
     const entries = entriesOf(tiers, key);
-    if (entries === undefined) continue;
+    if (entries === undefined) {
+      const below = nearestBelow(resolved, key);
+      if (below !== undefined) resolved[key] = { steps: below[1].steps, home: below[1].home, from: below[1].from ?? below[0] };
+      continue;
+    }
 
     const steps: Step[] = [];
     const home: Record<string, GateTier> = {};
@@ -66,12 +79,14 @@ export function resolveTiers(tiers: StepTiers): Result<ResolvedTiers, string> {
         continue;
       }
       const ref = entry.tier;
-      if (entriesOf(tiers, ref) === undefined) {
-        return err(`The ${key} tier includes tier("${ref}"), which the table does not declare — add a \`${ref}\` key, or drop the reference.`);
+      if (GATE_TIERS.indexOf(ref) >= GATE_TIERS.indexOf(key)) {
+        return err(`The ${key} tier includes tier("${ref}"), which is not below it — a tier may include only a lower one.`);
       }
       const included = resolved[ref];
-      if (GATE_TIERS.indexOf(ref) >= GATE_TIERS.indexOf(key) || included === undefined) {
-        return err(`The ${key} tier includes tier("${ref}"), which is not below it — a tier may include only a lower one.`);
+      if (included === undefined) {
+        return err(
+          `The ${key} tier includes tier("${ref}"), which neither the table nor any tier below it declares — add a \`${ref}\` key, or drop the reference.`,
+        );
       }
       steps.push(...included.steps);
       Object.assign(home, included.home);

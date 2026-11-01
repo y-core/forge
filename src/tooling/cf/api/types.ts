@@ -1,73 +1,17 @@
 import type { Result } from "../../../result/types";
-// Cloudflare v4 API response envelope
-export interface CfApiResponse<T> {
-  result: T;
-  success: boolean;
-  errors: CfApiError[];
-  messages: unknown[];
-  result_info?: CfResultInfo;
-}
+import type { v } from "../../../validation/validation";
+import type { CF_OPERATIONS } from "./operations";
 
 export interface CfApiError {
   code: number;
   message: string;
 }
 
-export interface CfResultInfo {
-  page: number;
-  per_page: number;
-  count: number;
-  total_count: number;
-}
+export type CfD1Database = v.InferOutput<typeof CF_OPERATIONS.createD1Database.result>;
 
-// KV Namespace
-export interface CfKvNamespace {
-  id: string;
-  title: string;
-  supports_url_encoding?: boolean;
-}
+export type CfWorkerBinding = v.InferOutput<typeof CF_OPERATIONS.getWorkerSettings.result>["bindings"][number];
 
-// D1 Database
-export interface CfD1Database {
-  uuid: string;
-  name: string;
-  created_at?: string;
-  version?: string;
-}
-
-// R2 Bucket
-export interface CfR2Bucket {
-  name: string;
-  creation_date?: string;
-}
-
-// Queue
-export interface CfQueue {
-  queue_id: string;
-  queue_name: string;
-  created_on?: string;
-  modified_on?: string;
-}
-
-// Worker settings (for vars)
-export interface CfWorkerSettings {
-  bindings?: CfWorkerBinding[];
-  logpush?: boolean;
-}
-
-export interface CfWorkerBinding {
-  type: string;
-  name: string;
-  text?: string;
-}
-
-// Worker secret
-export interface CfWorkerSecret {
-  name: string;
-  type: string;
-}
-
-export type CfApiClientErrorKind = "network" | "api" | "parse";
+export type CfApiClientErrorKind = "network" | "api" | "parse" | "paging" | "schema";
 
 export class CfApiClientError extends Error {
   readonly kind: CfApiClientErrorKind;
@@ -83,13 +27,22 @@ export class CfApiClientError extends Error {
   }
 }
 
+export type CfPaging = "page" | "cursor";
+
+export interface CfOperation<T> {
+  name: string;
+  result: v.GenericSchema<unknown, T>;
+}
+
+export interface CfListOperation<T> extends CfOperation<T[]> {
+  paging: CfPaging;
+}
+
 export interface CfClient {
-  get<T>(path: string): Promise<Result<T, CfApiClientError>>;
-  list<T>(path: string): Promise<Result<T[], CfApiClientError>>;
-  post<T>(path: string, body: unknown): Promise<Result<T, CfApiClientError>>;
-  put<T>(path: string, body: unknown): Promise<Result<T, CfApiClientError>>;
-  patch<T>(path: string, body: unknown): Promise<Result<T, CfApiClientError>>;
-  delete<T>(path: string): Promise<Result<T, CfApiClientError>>;
+  get<T>(path: string, operation: CfOperation<T>): Promise<Result<T, CfApiClientError>>;
+  list<T>(path: string, operation: CfListOperation<T>): Promise<Result<T[], CfApiClientError>>;
+  post<T>(path: string, body: unknown, operation: CfOperation<T>): Promise<Result<T, CfApiClientError>>;
+  put<T>(path: string, body: unknown, operation: CfOperation<T>): Promise<Result<T, CfApiClientError>>;
 }
 
 /** Why a Cloudflare call failed, at the granularity a result row cares about. */

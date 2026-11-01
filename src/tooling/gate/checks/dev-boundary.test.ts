@@ -80,6 +80,32 @@ describe("checkDevBoundary — rule A, `main` is not a dev entry", () => {
     expect(result.findings[0]?.message).toBe("`main` names the development entry `src/worker.dev.ts`");
   });
 
+  it("fails an environment deploying the development entry, naming the environment's `main`", () => {
+    const result = checkDevBoundary(
+      project(
+        {
+          "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "env": { "dev": { "main": "src/worker.dev.ts" }, "qa": {} } }\n',
+          "src/worker.ts": "export default {};\n",
+        },
+        { workerConfig: "wrangler.jsonc" },
+      ),
+    );
+
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`env.dev.main` names the development entry `src/worker.dev.ts`"]);
+    expect(result.findings[0]?.detail?.[1]).toBe("point `env.dev.main` at the production entry, and keep the development one to `wrangler dev`");
+  });
+
+  it("adds no finding for an environment inheriting the top level's `main`", () => {
+    const result = checkDevBoundary(
+      project(
+        { "wrangler.jsonc": '{ "name": "app", "main": "src/worker.dev.ts", "env": { "qa": {} } }\n', "src/worker.ts": "export default {};\n" },
+        { workerConfig: "wrangler.jsonc" },
+      ),
+    );
+
+    expect(result.findings.map((finding) => finding.message)).toEqual(["`main` names the development entry `src/worker.dev.ts`"]);
+  });
+
   it("fails a config that states no `main` at all", () => {
     const result = checkDevBoundary(
       project({ "wrangler.jsonc": '{ "name": "app" }\n', "src/worker.ts": "export default {};\n" }, { workerConfig: "wrangler.jsonc" }),
@@ -88,6 +114,19 @@ describe("checkDevBoundary — rule A, `main` is not a dev entry", () => {
     expect(result.findings[0]?.message).toBe(
       "`main` is unstated, and an unstated entry point is one no check can hold to the production/development split",
     );
+  });
+
+  it("reports an unstated `main` once, at the top level, when an environment inherits it", () => {
+    const result = checkDevBoundary(
+      project(
+        { "wrangler.jsonc": '{ "name": "app", "env": { "qa": {} } }\n', "src/worker.ts": "export default {};\n" },
+        { workerConfig: "wrangler.jsonc" },
+      ),
+    );
+
+    expect(result.findings.map((finding) => finding.message)).toEqual([
+      "`main` is unstated, and an unstated entry point is one no check can hold to the production/development split",
+    ]);
   });
 
   it("fails loudly on a missing config rather than passing the rule it cannot read", () => {

@@ -33,7 +33,7 @@ function createBookmarkCommands(overrides: DbContextOverrides): CommandBase {
       },
       run: async (_args, flags, ctx?: CliContext) => {
         return withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
-          const info = timeTravelInfo(run.io, run.home, flags.timestamp, run.config);
+          const info = await timeTravelInfo(run.io, run.home, flags.timestamp, run.config);
           if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, ...info }));
           else run.print(`bookmark ${info.bookmark}\nrestore with: ${info.restoreCommand}`);
         });
@@ -66,9 +66,9 @@ function createBookmarkCommands(overrides: DbContextOverrides): CommandBase {
             print: confirmPrinter(run),
             cancelMessage: "Restore cancelled; the database is unchanged.",
           });
-          const output = timeTravelRestore(run.io, run.home, point);
-          if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, restored: point }));
-          else run.print(output === "" ? "restored" : output);
+          const undo = await timeTravelRestore(run.io, run.home, point, run.config);
+          if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, restored: point, undo }));
+          else run.print(`restored\nundo with: ${undo.restoreCommand}`);
         });
       },
     }),

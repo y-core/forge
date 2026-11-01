@@ -15,6 +15,15 @@ function writeWorkerConfig(body: string): void {
 
 const run = () => checkCompatibility({ root, workerConfig: "wrangler.jsonc" });
 
+async function expectRefusedAt(path: string): Promise<void> {
+  const result = await run();
+  expect([result.ok, result.summary, result.findings.length]).toEqual([false, "compatibility flags: unparseable", 1]);
+  const message = result.findings[0]?.message ?? "";
+  expect(message.startsWith(`\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(root, "wrangler.jsonc")}: ${path}: `)).toBe(
+    true,
+  );
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "forge-compatibility-"));
 });
@@ -88,18 +97,14 @@ describe("checkCompatibility", () => {
     ]);
   });
 
-  it("fails when the flag set is not a list of names", async () => {
+  it("fails as unparseable when the flag set is not a list of names", async () => {
     writeWorkerConfig('  "compatibility_flags": "no_nodejs_compat"');
-    const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`compatibility_flags` is not a list of flag names"]);
+    await expectRefusedAt("compatibility_flags");
   });
 
-  it("fails when the list holds something that is not a flag name", async () => {
+  it("fails as unparseable when the list holds something that is not a flag name", async () => {
     writeWorkerConfig('  "compatibility_flags": ["no_nodejs_compat", 7]');
-    const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`compatibility_flags` is not a list of flag names"]);
+    await expectRefusedAt("compatibility_flags[1]");
   });
 
   it("takes the required set from `require`, and refuses the opposite of each `no_*` entry", async () => {
@@ -122,7 +127,14 @@ describe("checkCompatibility", () => {
     writeWorkerConfig(`${POSTURE},\n  "env": { "dev": { "vars": { "MODE": "dev" } } }`);
     const result = await run();
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe("compatibility flags: 3/3 required stated");
+    expect(result.summary).toBe("compatibility flags: 6/6 required stated across 2 deployments");
+  });
+
+  it("reports an unstated top level once when an environment inherits it, counting both deployments", async () => {
+    writeWorkerConfig('  "env": { "dev": { "vars": { "MODE": "dev" } } }');
+    const result = await run();
+    expect(result.findings.map((f) => f.message.match(/`([^`]+)`/)?.[1])).toEqual(["compatibility_flags"]);
+    expect(result.summary).toBe("compatibility flags: 0/6 required stated across 2 deployments");
   });
 
   it("judges an environment that states its own set, because wrangler replaces the list rather than merging it", async () => {
@@ -161,18 +173,14 @@ describe("checkCompatibility", () => {
     expect(result.summary).toBe("compatibility flags: 1/9 required stated across 3 deployments");
   });
 
-  it("fails when env is not a table of named environments", async () => {
+  it("fails as unparseable when env is not a table of named environments", async () => {
     writeWorkerConfig(`${POSTURE},\n  "env": "staging"`);
-    const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`env` is not a table of named environments"]);
+    await expectRefusedAt("env");
   });
 
-  it("fails when a named environment is not a table", async () => {
+  it("fails as unparseable when a named environment is not a table", async () => {
     writeWorkerConfig(`${POSTURE},\n  "env": { "dev": true }`);
-    const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`env.dev` is not an environment table"]);
+    await expectRefusedAt("env.dev");
   });
 
   it("fails when the worker config is missing rather than reporting a stated tree", async () => {

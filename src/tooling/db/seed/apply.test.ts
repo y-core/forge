@@ -6,12 +6,22 @@ import { join } from "node:path";
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
-import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig, OK, onStdin, schemaModelRows } from "../db.fixture";
+import {
+  bufferedIO,
+  cfEnvelope,
+  cfRefusal,
+  fakeDbIo,
+  minimalWranglerConfig,
+  onStdin,
+  schemaModelRows,
+  REMOTE_AUTH,
+  REMOTE_ARGS,
+} from "../db.fixture";
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { schemaFingerprint } from "../migrate/fingerprint";
 import { schemaModelSelects } from "../schema/introspect";
-import type { FakeDbIo, SeedRecord } from "../types";
+import type { FakeDbIo, FakeRestCall, Home, SeedRecord } from "../types";
 
 const roots: string[] = [];
 
@@ -30,19 +40,44 @@ function appRoot(): string {
   return root;
 }
 
-const isColumns = (args: readonly string[]) => argvHas(args, "execute", "--json", "--command") && (args.at(-1) ?? "").includes("pragma_table_info");
+/** The deployed home `minimalWranglerConfig` resolves to, which the fake REST API answers through the rule table by its id. */
+const REMOTE_HOME: Home = {
+  label: "remote",
+  database: "app-db",
+  binding: "DB",
+  dir: "",
+  configPath: "",
+  persistTo: null,
+  place: "remote",
+  env: null,
+  databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+  auth: REMOTE_AUTH,
+  synthesized: false,
+};
+
+/** The scratch file each deployed load sent, found while it still exists: a seed's file is removed once it is loaded. */
+const remoteLoads = new WeakMap<FakeDbIo, Map<FakeRestCall, string>>();
+
+const sentSql = (call: FakeRestCall) => JSON.parse(call.body ?? "{}") as { sql?: string; batch?: { sql: string }[] };
 
 function seedIo(root: string, history: SeedRecord[], files: Record<string, string> = { "001_users.sql": USERS, "002_posts.sql": POSTS }): FakeDbIo {
   const seeded: Record<string, string> = {};
   for (const [name, sql] of Object.entries(files)) seeded[join(root, "seeds", name)] = sql;
-  const io = fakeDbIo(seeded, { now: new Date("2026-09-11T10:00:00Z") });
+  const io = fakeDbIo(seeded, { now: new Date("2026-09-11T10:00:00Z"), homes: [REMOTE_HOME] });
   const rows = history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }));
   io.d1Rules.push({ match: (statement) => statement.includes("pragma_table_info"), reply: [{ name: "source" }, { name: "name" }] });
   io.d1Rules.push({ match: () => true, reply: rows });
-  // A deployed place reads through the CLI, which is the one place a seed run still spawns.
-  io.rules.push({ match: isColumns, reply: jsonRows([{ name: "source" }, { name: "name" }]) });
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--json", "--command"), reply: jsonRows(rows) });
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--yes"), reply: OK });
+  const loads = new Map<FakeRestCall, string>();
+  remoteLoads.set(io, loads);
+  const answer = io.fetch;
+  io.fetch = async (input, init) => {
+    const response = answer(input, init);
+    const call = io.restCalls.at(-1);
+    const sql = call === undefined ? undefined : sentSql(call).sql;
+    const file = [...io.files].find(([path, text]) => path.includes("/.forge/scratch/") && text === sql)?.[0];
+    if (call !== undefined && file !== undefined) loads.set(call, file);
+    return response;
+  };
   return io;
 }
 
@@ -67,18 +102,27 @@ function recordLoads(io: FakeDbIo): (string | undefined)[] {
   return loaded;
 }
 
-// A deployed run reaches the database only by spawning and a local one only in process, so the two
+// A deployed run reaches the database only over REST and a local one only in process, so the two
 // recorders never interleave and concatenating them is the order the run made them in.
 /** The statements the run put to the database, and the files it loaded, leaving out the seed check's scratch copy. */
 function sent(io: FakeDbIo, flag: "--command" | "--file"): string[] {
-  const spawned = io.calls.filter((call) => call.includes(flag)).map((call) => call[call.indexOf(flag) + 1] ?? "");
+  const loads = remoteLoads.get(io) ?? new Map<FakeRestCall, string>();
+  const queries = io.restCalls.filter((call) => call.url.endsWith("/query"));
+  const remote =
+    flag === "--file"
+      ? queries.flatMap((call) => loads.get(call) ?? [])
+      : queries
+          .filter((call) => !loads.has(call))
+          .flatMap((call) => sentSql(call).batch?.map((statement) => statement.sql) ?? [sentSql(call).sql ?? ""]);
   const target = io.d1Calls.filter((call) => !call.home.startsWith("scratch:"));
   const local =
     flag === "--file"
       ? target.flatMap((call) => (call.source === null ? [] : [call.source]))
       : target.filter((call) => call.source === null).flatMap((call) => call.statements);
-  return [...spawned, ...local];
+  return [...remote, ...local];
 }
+
+const timeTravelCalls = (io: FakeDbIo) => io.restCalls.filter((call) => call.url.includes("/time_travel/bookmark"));
 
 async function run(io: FakeDbIo, argv: string[]): Promise<ReturnType<typeof bufferedIO>> {
   const cli = bufferedIO();
@@ -213,15 +257,14 @@ describe("db seed apply --target remote", () => {
   const REMOTE_USERS = "-- forge:places remote\nINSERT OR IGNORE INTO users (email) VALUES ('ops@example.com');";
   const REMOTE_BARE = "-- forge:places remote\nINSERT INTO users (email) VALUES ('ops@example.com');";
   const withTimeTravel = (io: FakeDbIo): FakeDbIo => {
-    io.rules.unshift({ match: (args) => argvHas(args, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } });
+    io.restRules.unshift({ match: (url) => url.includes("/time_travel/bookmark"), reply: () => cfEnvelope({ bookmark: "bm-1" }) });
     return io;
   };
-  const timeTravelCalls = (io: FakeDbIo) => io.calls.filter((call) => argvHas(call.slice(1), "time-travel", "info"));
 
   it("refuses without --yes and no terminal, before touching the database", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS }));
-    const { value: cli } = await onStdin(false, "", () => run(io, ["seed", "apply", "--root", root, "--target", "remote"]));
+    const { value: cli } = await onStdin(false, "", () => run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS]));
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(
@@ -234,14 +277,12 @@ describe("db seed apply --target remote", () => {
   it("captures a Time Travel bookmark before the first seed under --yes, and prints the undo", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.code).toBe(null);
     expect(timeTravelCalls(io).length).toBe(1);
-    const order = [
-      ...io.calls.map((call) => (argvHas(call.slice(1), "time-travel", "info") ? "bookmark" : call.includes("--file") ? "seed" : "other")),
-      ...io.d1Calls.map((call) => (call.source === null ? "other" : "seed")),
-    ];
+    const loads = remoteLoads.get(io);
+    const order = io.restCalls.map((call) => (call.url.includes("/time_travel/") ? "bookmark" : loads?.has(call) === true ? "seed" : "other"));
     expect(order.indexOf("bookmark")).toBeLessThan(order.indexOf("seed"));
     expect(cli.out).toEqual([
       `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
@@ -253,7 +294,7 @@ describe("db seed apply --target remote", () => {
   it("lists a seed with no places line as excluded, with the line that includes it", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS, "002_dev.sql": POSTS }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes", "--json"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes", "--json"]);
 
     expect(io.logs).toEqual([
       "excluded from remote: seeds:002_dev — add `-- forge:places remote` on line 1 to include it",
@@ -277,7 +318,7 @@ describe("db seed apply --target remote", () => {
   it("prints the excluded seed in the human report", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS, "002_dev.sql": POSTS }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.out).toEqual([
       `undo: forge db bookmark restore --target remote --bookmark bm-1 --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
@@ -293,7 +334,7 @@ describe("db seed apply --target remote", () => {
   it("refuses a non-idempotent INSERT on a deployed database, before the bookmark", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_bare.sql": REMOTE_BARE }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(BARE_FINDING(root));
@@ -305,7 +346,7 @@ describe("db seed apply --target remote", () => {
     it(`rejects ${flag} as an unknown flag, seeding nothing`, async () => {
       const root = appRoot();
       const io = withTimeTravel(seedIo(root, [], { "001_bare.sql": REMOTE_BARE }));
-      const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes", flag]);
+      const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes", flag]);
 
       expect(cli.code).toBe(1);
       expect(cli.err[0]?.startsWith(`Error: Unknown flag: ${flag}.`)).toBe(true);
@@ -316,7 +357,7 @@ describe("db seed apply --target remote", () => {
   it("refuses an unbounded DELETE on a deployed database", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_wipe.sql": "-- forge:places remote\nDELETE FROM users;" }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(
@@ -330,7 +371,7 @@ describe("db seed apply --target remote", () => {
     const scoped = "-- forge:places remote\nUPDATE users SET active = 1 ${SCOPE:-WHERE id = 1};";
     const io = withTimeTravel(seedIo(root, [], { "001_scope.sql": scoped }));
     (io as { env: Record<string, string | undefined> }).env = { SCOPE: "" };
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(
@@ -343,7 +384,7 @@ describe("db seed apply --target remote", () => {
   it("skips the bookmark under --no-bookmark", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes", "--no-bookmark"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes", "--no-bookmark"]);
 
     expect(cli.code).toBe(null);
     expect(timeTravelCalls(io)).toEqual([]);
@@ -353,7 +394,7 @@ describe("db seed apply --target remote", () => {
   it("asks nothing and captures nothing when every seed is already in", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [record("001_ops", sha256(REMOTE_USERS))], { "001_ops.sql": REMOTE_USERS }));
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS]);
 
     expect(cli.code).toBe(null);
     expect(timeTravelCalls(io)).toEqual([]);
@@ -363,8 +404,8 @@ describe("db seed apply --target remote", () => {
   it("names the undo when a seed fails part-way", async () => {
     const root = appRoot();
     const io = withTimeTravel(seedIo(root, [], { "001_ops.sql": REMOTE_USERS }));
-    io.rules.unshift({ match: (args) => args.includes("--file"), reply: { code: 1, stdout: "", stderr: "boom" } });
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    io.restRules.unshift({ match: (_url, init) => String(init?.body ?? "").includes("ops@example.com"), reply: () => cfRefusal(7500, "boom") });
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.out).toEqual([
@@ -451,14 +492,14 @@ describe("db seed apply — a seed that changes the schema", () => {
   it("refuses a deployed target's schema-changing seed before the confirmation and before any bookmark", async () => {
     const root = appRoot();
     const io = seedIo(root, [], { "001_index.sql": INDEX_SEED });
-    io.rules.unshift({ match: (args) => argvHas(args, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } });
+    io.restRules.unshift({ match: (url) => url.includes("/time_travel/bookmark"), reply: () => cfEnvelope({ bookmark: "bm-1" }) });
     indexOnCopy(io);
-    const { value: cli } = await onStdin(false, "", () => run(io, ["seed", "apply", "--root", root, "--target", "remote"]));
+    const { value: cli } = await onStdin(false, "", () => run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS]));
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain("seeds:001_index changes the schema of app-db (remote)");
     expect(cli.err.join("\n")).not.toContain("without a terminal to confirm at");
-    expect(io.calls.filter((call) => argvHas(call.slice(1), "time-travel", "info") || call.includes("--file"))).toEqual([]);
+    expect([timeTravelCalls(io), sent(io, "--file")]).toEqual([[], []]);
   });
 
   it("reads the target's history and inventory once a run", async () => {
@@ -576,7 +617,7 @@ describe("db seed apply locking", () => {
     const root = appRoot();
     const io = seedIo(root, [], { "001_ops.sql": "-- forge:places remote\nINSERT OR IGNORE INTO users (email) VALUES ('ops@example.com');" });
     io.files.set(lockPath(root), heldLock);
-    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", "--yes"]);
+    const cli = await run(io, ["seed", "apply", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--yes"]);
 
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain(heldMessage(root));
@@ -627,10 +668,12 @@ describe("db seed status", () => {
   it("reads an empty history from a database with no history table", async () => {
     const root = appRoot();
     const io = seedIo(root, []);
-    io.rules[1] = {
-      match: (args) => argvHas(args, "execute", "--json", "--command"),
-      reply: { code: 1, stdout: "", stderr: "no such table: _forge_seed_history" },
-    };
+    io.d1Rules.unshift({
+      match: (statement) => statement.includes("FROM _forge_seed_history"),
+      reply: () => {
+        throw new Error("no such table: _forge_seed_history");
+      },
+    });
     const cli = await run(io, ["seed", "status", "--root", root, "--json"]);
 
     expect(JSON.parse(cli.out[0] ?? "").apply).toEqual(["seeds:001_users", "seeds:002_posts"]);

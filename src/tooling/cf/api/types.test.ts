@@ -33,7 +33,7 @@ describe("CfApiClientError", () => {
     expect([error.statusCode, error.cfErrors]).toEqual([500, undefined]);
   });
 
-  for (const kind of ["network", "api", "parse"] as const) {
+  for (const kind of ["network", "api", "parse", "paging", "schema"] as const) {
     it(`records the ${kind} kind`, () => {
       expect(new CfApiClientError(kind, "x").kind).toBe(kind);
     });

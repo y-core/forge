@@ -1,9 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
-import { argvHas, fakeDbIo, jsonBatches, jsonRows, OK } from "./db.fixture";
-import type { FakeDbIo } from "./types";
-import type { Home } from "./types";
 import {
   describeForeignKeyWatch,
   executeFile,
@@ -15,8 +12,10 @@ import {
   queryRows,
   queryRowsIfTable,
   runWrangler,
-  wranglerVersion,
-} from "./wrangler";
+} from "./d1";
+import { cfEnvelope, cfRefusal, fakeDbIo, OK, REMOTE_AUTH } from "./db.fixture";
+import type { FakeDbIo } from "./types";
+import type { Home } from "./types";
 
 function home(over: Partial<Home> = {}): Home {
   return {
@@ -28,6 +27,8 @@ function home(over: Partial<Home> = {}): Home {
     persistTo: "/app/.wrangler/state",
     place: "local",
     env: null,
+    databaseId: null,
+    auth: null,
     synthesized: false,
     ...over,
   };
@@ -40,11 +41,28 @@ const STANDBY = home({
   dir: "/app/.forge/standby/app-db-standby",
   configPath: "/app/.forge/standby/app-db-standby/wrangler.jsonc",
   persistTo: "/app/.forge/standby/app-db-standby/.wrangler/state",
+  auth: null,
   synthesized: true,
 });
 
-const REMOTE = home({ label: "remote", place: "remote", persistTo: null });
-const PREVIEW = home({ label: "preview", place: "preview", persistTo: null });
+const DB_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+const PREVIEW_ID = "1a2b3c4d-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+const REMOTE = home({ label: "remote", place: "remote", persistTo: null, databaseId: DB_ID, auth: REMOTE_AUTH });
+const PREVIEW = home({ label: "preview", place: "preview", persistTo: null, databaseId: PREVIEW_ID, auth: REMOTE_AUTH });
+const SIGNED_URL = "https://d1-exports.example.com/dump.sql?X-Amz-Signature=deadbeef";
+
+/** A deployed database answered over the fake REST API, through the same `d1Rules` a local one is. */
+function remoteIo(seed: Record<string, string> = {}): FakeDbIo {
+  return fakeDbIo(seed, { homes: [REMOTE, PREVIEW, home({ ...REMOTE, env: "staging" })] });
+}
+
+function refusingRemote(code: number, message: string, seed: Record<string, string> = {}): FakeDbIo {
+  const io = remoteIo(seed);
+  io.restRules.push({ match: () => true, reply: () => cfRefusal(code, message) });
+  return io;
+}
+
+const bodyOf = (io: FakeDbIo, index = 0): unknown => JSON.parse(io.restCalls[index]?.body ?? "null");
 
 function ioWith(match: (args: readonly string[]) => boolean, reply: { code: number; stdout: string; stderr: string }): FakeDbIo {
   const io = fakeDbIo();
@@ -90,87 +108,38 @@ describe("queryRows()", () => {
     expect(io.d1Calls[0]).toMatchObject({ home: "standby", persistTo: "/app/.forge/standby/app-db-standby/.wrangler/state/v3" });
   });
 
-  it("sends a remote query with --remote and no state directory", async () => {
-    const io = ioWith((a) => argvHas(a, "execute"), jsonRows([]));
-    await queryRows(io, REMOTE, "SELECT 1");
-    expect(io.calls[0]).toEqual([
-      "wrangler",
-      "d1",
-      "execute",
-      "app-db",
-      "-c",
-      "/app/wrangler.jsonc",
-      "--remote",
-      "--json",
-      "--command",
-      "SELECT 1",
+  it("sends a remote query to the D1 REST API in one request, spawning nothing", async () => {
+    const io = remoteIo();
+    io.d1Rules.push({ match: (statement) => statement === "SELECT 1 AS n", reply: [{ n: 1 }] });
+    expect(await queryRows(io, REMOTE, "SELECT 1 AS n")).toEqual([{ n: 1 }]);
+    expect(io.restCalls.map((call) => [call.method, call.url])).toEqual([
+      ["POST", `https://api.cloudflare.com/client/v4/accounts/acct/d1/database/${DB_ID}/query`],
     ]);
+    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([]);
   });
 
-  it("sends a preview query with --remote --preview", async () => {
-    const io = ioWith((a) => argvHas(a, "execute"), jsonRows([]));
+  it("addresses a preview query to the preview database's id", async () => {
+    const io = remoteIo();
     await queryRows(io, PREVIEW, "SELECT 1");
-    expect(io.calls[0]?.slice(6, 8)).toEqual(["--remote", "--preview"]);
+    expect(io.restCalls[0]?.url).toContain(`/d1/database/${PREVIEW_ID}/query`);
   });
 
-  it("forwards the wrangler environment on the deployed path", async () => {
-    const io = ioWith((a) => argvHas(a, "execute"), jsonRows([]));
-    await queryRows(io, home({ label: "remote", place: "remote", persistTo: null, env: "staging" }), "SELECT 1");
-    expect(io.calls[0]?.slice(4, 8)).toEqual(["-c", "/app/wrangler.jsonc", "-e", "staging"]);
-  });
-
-  it("reads a deployed payload printed after a banner line", async () => {
-    const io = ioWith(() => true, {
-      code: 0,
-      stdout: '⛅️ wrangler 4.42.0\n🌀 Executing on local database\n[{"results":[{"name":"t"}],"success":true}]\n',
-      stderr: "",
-    });
-    expect(await queryRows(io, REMOTE, "SELECT name FROM sqlite_master")).toEqual([{ name: "t" }]);
-  });
-
-  it("reads a deployed payload when wrangler appended an update notice after it", async () => {
-    const io = ioWith(() => true, {
-      code: 0,
-      stdout: '[{"results":[{"name":"t"}],"success":true}]\nThere is a newer version of Wrangler available (current: 4.129.1, latest: 4.133.0).\n',
-      stderr: "",
-    });
-    expect(await queryRows(io, REMOTE, "SELECT name FROM sqlite_master")).toEqual([{ name: "t" }]);
-  });
-
-  it("reads a deployed payload between a banner and a trailing notice", async () => {
-    const io = ioWith(() => true, {
-      code: 0,
-      stdout: '⛅️ wrangler 4.129.1\n[{"results":[{"name":"t"}],"success":true}]\nUpdate available: 4.133.0\n',
-      stderr: "",
-    });
-    expect(await queryRows(io, REMOTE, "SELECT name FROM sqlite_master")).toEqual([{ name: "t" }]);
+  it("addresses the home's database id whatever the wrangler environment", async () => {
+    const io = remoteIo();
+    await queryRows(io, home({ ...REMOTE, env: "staging" }), "SELECT 1");
+    expect(io.restCalls[0]?.url).toContain(`/d1/database/${DB_ID}/query`);
   });
 
   it("returns no rows when the statement produced none", async () => {
     expect(await queryRows(ioAnswering([]), home(), "SELECT 1")).toEqual([]);
   });
 
-  it("refuses deployed output carrying no JSON at all, naming the command", async () => {
-    const io = ioWith(() => true, { code: 0, stdout: "⛅️ wrangler 4.42.0\n", stderr: "" });
-    expect((await capture(() => queryRows(io, REMOTE, "SELECT 1"))).message).toBe(
-      "query `SELECT 1` against remote (app-db) printed no JSON:\n⛅️ wrangler 4.42.0",
-    );
-  });
-
-  it("refuses deployed output whose JSON is cut short, naming the command rather than throwing the parser's own error", async () => {
-    const io = ioWith(() => true, { code: 0, stdout: '⛅️ wrangler 4.42.0\n{"truncated', stderr: "" });
-    const thrown = await capture(() => queryRows(io, REMOTE, "SELECT 1"));
-    expect(thrown.kind).toBe("external");
-    expect(thrown.message.startsWith("query `SELECT 1` against remote (app-db) printed JSON this tool cannot read (")).toBe(true);
-    expect(thrown.message.endsWith('):\n⛅️ wrangler 4.42.0\n{"truncated')).toBe(true);
-  });
-
-  it("names the home, the database and the exit code when a deployed run fails, as an external failure", async () => {
-    const io = ioWith(() => true, { code: 2, stdout: "", stderr: '✘ [ERROR] near "SELEC": syntax error\n' });
+  it("names the home, the database and D1's error when a deployed query fails, as an external failure", async () => {
+    const io = refusingRemote(7500, 'near "SELEC": syntax error at offset 0: SQLITE_ERROR');
     expect(await capture(() => queryRows(io, REMOTE, "SELEC 1"))).toMatchObject({
       kind: "external",
-      message: 'query `SELEC 1` against remote (app-db) failed (exit 2):\n✘ [ERROR] near "SELEC": syntax error',
+      message: 'query `SELEC 1` against remote (app-db) failed: near "SELEC": syntax error at offset 0: SQLITE_ERROR (Cloudflare error 7500)',
     });
   });
 
@@ -209,21 +178,30 @@ describe("queryBatches()", () => {
     expect(io.d1Calls).toEqual([]);
   });
 
-  it("names the home and the exit code when a deployed run fails", async () => {
-    const io = ioWith(() => true, { code: 2, stdout: "", stderr: "✘ [ERROR] no such table: t\n" });
+  it("names the home and D1's error when a deployed batch fails", async () => {
+    const io = refusingRemote(7500, "no such table: t: SQLITE_ERROR");
     expect(await capture(() => queryBatches(io, REMOTE, ["SELECT 1 FROM t"]))).toMatchObject({
       kind: "external",
-      message: "query `SELECT 1 FROM t;` against remote (app-db) failed (exit 2):\n✘ [ERROR] no such table: t",
+      message: "query `SELECT 1 FROM t` against remote (app-db) failed: no such table: t: SQLITE_ERROR (Cloudflare error 7500)",
     });
   });
 
   // A result set per statement is what makes the answers positional; one fewer would silently shift them.
   it("refuses a deployed reply carrying a different number of result sets than it asked statements", async () => {
-    const io = ioWith(() => true, jsonBatches([[{ n: 1 }]]));
-    expect(await capture(() => queryBatches(io, REMOTE, ["SELECT 1", "SELECT 2"]))).toMatchObject({
+    const io = remoteIo();
+    io.restRules.push({ match: () => true, reply: () => cfEnvelope([{ results: [{ n: 1 }] }, { results: [{ n: 2 }] }]) });
+    expect(await capture(() => queryBatches(io, REMOTE, ["SELECT 1", "SELECT 2", "SELECT 3"]))).toMatchObject({
       kind: "external",
-      message: "wrangler answered 1 result set(s) for 2 statements against remote",
+      message: "the D1 REST API answered 2 result set(s) for 3 statements against remote",
     });
+  });
+
+  it("sends a deployed batch as one request, answering each statement through its own rows", async () => {
+    const io = remoteIo();
+    io.d1Rules.push({ match: () => true, reply: (statement) => [{ n: Number(/\d+/.exec(statement)?.[0] ?? 0) }] });
+    expect(await queryBatches(io, REMOTE, ["SELECT 1 AS n", "SELECT 2 AS n", "SELECT 3 AS n"])).toEqual([[{ n: 1 }], [{ n: 2 }], [{ n: 3 }]]);
+    expect(io.restCalls).toHaveLength(1);
+    expect(bodyOf(io)).toEqual({ batch: [{ sql: "SELECT 1 AS n" }, { sql: "SELECT 2 AS n" }, { sql: "SELECT 3 AS n" }] });
   });
 
   // The port splits each element, so an element holding two statements answers one result set too many —
@@ -234,24 +212,6 @@ describe("queryBatches()", () => {
       kind: "external",
       message: "the in-process d1 binding answered 2 result set(s) for 1 statements against local",
     });
-  });
-
-  it("splits a deployed batch past the budget into as many spawns as it takes, concatenating the result sets in order", async () => {
-    const io = fakeDbIo();
-    const replies = [jsonBatches([[{ n: 1 }], [{ n: 2 }]]), jsonBatches([[{ n: 3 }]])];
-    io.rules.push({ match: (a) => argvHas(a, "execute"), reply: () => replies[io.calls.length - 1] ?? OK });
-
-    expect(await queryBatches(io, REMOTE, ["SELECT 1 AS n", "SELECT 2 AS n", "SELECT 3 AS n"], 40)).toEqual([[{ n: 1 }], [{ n: 2 }], [{ n: 3 }]]);
-    expect(io.calls.map((call) => call.at(-1))).toEqual(["SELECT 1 AS n;\nSELECT 2 AS n;", "SELECT 3 AS n;"]);
-  });
-
-  it("gives a deployed statement longer than the budget a spawn of its own rather than splitting it", async () => {
-    const io = fakeDbIo();
-    const wide = `SELECT '${"x".repeat(60)}' AS n`;
-    io.rules.push({ match: (a) => argvHas(a, "execute"), reply: jsonBatches([[{ n: 1 }]]) });
-
-    expect(await queryBatches(io, REMOTE, ["SELECT 1 AS n", wide], 40)).toEqual([[{ n: 1 }], [{ n: 1 }]]);
-    expect(io.calls.map((call) => call.at(-1))).toEqual(["SELECT 1 AS n;", `${wide};`]);
   });
 });
 
@@ -278,6 +238,11 @@ describe("queryRowsIfTable()", () => {
     expect(await queryRowsIfTable(io, home(), "SELECT name FROM d1_migrations")).toBeNull();
   });
 
+  it("is null when a deployed database answers no such table", async () => {
+    const io = refusingRemote(7500, "no such table: d1_migrations: SQLITE_ERROR");
+    expect(await queryRowsIfTable(io, REMOTE, "SELECT name FROM d1_migrations")).toBeNull();
+  });
+
   it("throws on any other failure rather than reading it as an empty database", async () => {
     const io = fakeDbIo();
     io.d1Rules.push({
@@ -300,21 +265,19 @@ describe("executeSql()", () => {
     expect(io.d1Calls[0]?.statements).toEqual(["DELETE FROM t"]);
   });
 
-  it("passes --yes on the deployed path, so a non-interactive run is not asked to confirm", async () => {
-    const io = ioWith(() => true, OK);
+  it("sends a deployed statement as one { sql } request, spawning nothing", async () => {
+    const io = remoteIo();
     await executeSql(io, REMOTE, "DELETE FROM t");
-    expect(io.calls[0]).toEqual([
-      "wrangler",
-      "d1",
-      "execute",
-      "app-db",
-      "-c",
-      "/app/wrangler.jsonc",
-      "--remote",
-      "--yes",
-      "--command",
-      "DELETE FROM t",
-    ]);
+    expect(io.restCalls).toHaveLength(1);
+    expect(bodyOf(io)).toEqual({ sql: "DELETE FROM t" });
+    expect(io.calls).toEqual([]);
+  });
+
+  it("names a deployed failure as an execute", async () => {
+    const io = refusingRemote(7500, "no such table: t: SQLITE_ERROR");
+    expect((await capture(() => executeSql(io, REMOTE, "DELETE FROM t"))).message).toBe(
+      "execute `DELETE FROM t` against remote (app-db) failed: no such table: t: SQLITE_ERROR (Cloudflare error 7500)",
+    );
   });
 
   it("reports a failure as an execute", async () => {
@@ -347,10 +310,13 @@ describe("executeFile()", () => {
     ]);
   });
 
-  it("loads a deployed file through --file", async () => {
-    const io = ioWith(() => true, OK);
+  it("sends a deployed file's text as one { sql } request, spawning nothing", async () => {
+    const io = remoteIo({ "/tmp/dump.sql": "CREATE TABLE t (id INTEGER);\nINSERT INTO t VALUES (1);\n" });
     await executeFile(io, REMOTE, "/tmp/dump.sql");
-    expect(io.calls[0]?.slice(-2)).toEqual(["--file", "/tmp/dump.sql"]);
+    expect(io.restCalls).toHaveLength(1);
+    expect(bodyOf(io)).toEqual({ sql: "CREATE TABLE t (id INTEGER);\nINSERT INTO t VALUES (1);\n" });
+    expect(io.calls).toEqual([]);
+    expect(io.d1Calls).toEqual([]);
   });
 
   it("names the file it could not load", async () => {
@@ -444,14 +410,15 @@ describe("executeFile()", () => {
       expect(sent).toEqual([[SQL]]);
     });
 
-    it("runs no watch for a deployed load, whose refusal the CLI reports as it printed it", async () => {
-      const io = ioWith(() => true, { code: 1, stdout: "", stderr: `${OPAQUE}\n` });
+    it("runs no watch for a deployed load, whose refusal D1 reports as it answered it", async () => {
+      const io = refusingRemote(7500, OPAQUE, { [FILE]: SQL });
 
       expect(await capture(() => executeFile(io, REMOTE, FILE))).toMatchObject({
         kind: "external",
-        message: `loading ${FILE} against remote (app-db) failed (exit 1):\n${OPAQUE}`,
+        message: `loading ${FILE} against remote (app-db) failed: ${OPAQUE} (Cloudflare error 7500)`,
       });
-      expect(io.calls.length).toBe(1);
+      expect(io.restCalls.length).toBe(1);
+      expect(io.calls).toEqual([]);
       expect(io.d1Calls).toEqual([]);
     });
   });
@@ -521,9 +488,9 @@ describe("describeForeignKeyWatch()", () => {
 });
 
 describe("exportSql()", () => {
-  it("runs with --local and no --persist-to, because export resolves state from the config's directory", async () => {
+  it("runs a local schema export with --local, --no-data and no --persist-to, because export resolves state from the config's directory", async () => {
     const io = ioWith(() => true, OK);
-    await exportSql(io, STANDBY, "/tmp/out.sql", ["--no-data"]);
+    expect(await exportSql(io, STANDBY, "/tmp/out.sql", "schema")).toBeNull();
     expect(io.calls[0]).toEqual([
       "wrangler",
       "d1",
@@ -542,19 +509,13 @@ describe("exportSql()", () => {
   // run's handle holds uncommitted to disk.
   it("releases the local handle before the export process reads the same state", async () => {
     const io = ioWith(() => true, OK);
-    await exportSql(io, STANDBY, "/tmp/out.sql", []);
+    await exportSql(io, STANDBY, "/tmp/out.sql", "data");
     expect(io.closed).toEqual(["/app/.forge/standby/app-db-standby/.wrangler/state/v3"]);
   });
 
-  it("releases no handle for a deployed database, which holds none", async () => {
+  it("forwards the environment before the output, and asks for the data part with --no-schema", async () => {
     const io = ioWith(() => true, OK);
-    await exportSql(io, REMOTE, "/tmp/out.sql", []);
-    expect(io.closed).toEqual([]);
-  });
-
-  it("forwards the environment before the output", async () => {
-    const io = ioWith(() => true, OK);
-    await exportSql(io, home({ env: "staging" }), "/tmp/out.sql", []);
+    expect(await exportSql(io, home({ env: "staging" }), "/tmp/out.sql", "data")).toBeNull();
     expect(io.calls[0]).toEqual([
       "wrangler",
       "d1",
@@ -567,35 +528,29 @@ describe("exportSql()", () => {
       "--local",
       "--output",
       "/tmp/out.sql",
+      "--no-schema",
     ]);
   });
 
-  it("carries --remote for a deployed database and --remote --preview for its preview, still with no --persist-to", async () => {
-    const io = ioWith(() => true, OK);
-    await exportSql(io, REMOTE, "/tmp/out.sql", ["--no-data"]);
-    await exportSql(io, PREVIEW, "/tmp/out.sql", ["--no-data"]);
-    expect(io.calls).toEqual([
-      ["wrangler", "d1", "export", "app-db", "-c", "/app/wrangler.jsonc", "--remote", "--output", "/tmp/out.sql", "--no-data"],
-      ["wrangler", "d1", "export", "app-db", "-c", "/app/wrangler.jsonc", "--remote", "--preview", "--output", "/tmp/out.sql", "--no-data"],
-    ]);
+  it("exports a deployed database through D1's export, spawning nothing and releasing no handle, and answers its bookmark", async () => {
+    const io = remoteIo();
+    io.restRules.push(
+      {
+        match: (url) => url.endsWith("/export"),
+        reply: () => cfEnvelope({ status: "complete", at_bookmark: "B", result: { filename: "d.sql", signed_url: SIGNED_URL } }),
+      },
+      { match: (url) => url === SIGNED_URL, reply: () => new Response("CREATE TABLE t (a);\n") },
+    );
+    expect(await exportSql(io, REMOTE, "/tmp/out.sql", "schema")).toBe("B");
+    expect(io.readText("/tmp/out.sql")).toBe("CREATE TABLE t (a);\n");
+    expect(io.calls).toEqual([]);
+    expect(io.closed).toEqual([]);
   });
 
-  it("throws with the exit code when the export fails", async () => {
+  it("throws with the exit code when a local export fails", async () => {
     const io = ioWith(() => true, { code: 1, stdout: "", stderr: "no such database" });
-    expect((await capture(() => exportSql(io, home(), "/tmp/out.sql", []))).message).toBe(
+    expect((await capture(() => exportSql(io, home(), "/tmp/out.sql", "schema"))).message).toBe(
       "export against local (app-db) failed (exit 1):\nno such database",
     );
-  });
-});
-
-describe("wranglerVersion()", () => {
-  it("takes the last line, which is where wrangler prints the number after its banner", () => {
-    const io = ioWith((a) => argvHas(a, "--version"), { code: 0, stdout: " ⛅️ wrangler\n4.42.0\n", stderr: "" });
-    expect(wranglerVersion(io, home())).toBe("4.42.0");
-    expect(io.calls[0]).toEqual(["wrangler", "--version"]);
-  });
-
-  it("is unknown when wrangler could not be run, so a manifest still records something", () => {
-    expect(wranglerVersion(fakeDbIo(), home())).toBe("unknown");
   });
 });

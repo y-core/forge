@@ -1,7 +1,9 @@
+import { listDeployments } from "../../cf/config/environment";
+import type { WranglerDeployment } from "../../cf/config/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { CompatibilityCheckConfig } from "./types";
-import { isRecord, readWorkerConfig } from "./worker-config";
+import { readWorkerConfig } from "./worker-config";
 
 /** Forge's own posture: the pure Workers/V8 surface, plus the module registry's semantics. */
 const REQUIRED_FLAGS = ["no_nodejs_compat", "no_nodejs_compat_v2", "new_module_registry"] as const;
@@ -16,22 +18,12 @@ function quoteAll(flags: readonly string[]): string {
 }
 
 /** Every finding one deployment block owes, and how many of the required flags it holds. */
-function judgeBlock(
-  block: Record<string, unknown>,
-  prefix: string,
-  required: readonly string[],
-  file: string,
-): { findings: Finding[]; held: number } {
+function judgeBlock(block: WranglerDeployment, prefix: string, required: readonly string[], file: string): { findings: Finding[]; held: number } {
   const key = `\`${prefix}compatibility_flags\``;
   const stated = block.compatibility_flags;
 
   if (stated === undefined) {
     const message = `${key} is unstated, and an unstated flag set leaves the Worker on whatever its compatibility date defaults to`;
-    return { findings: [fail(message, { file, detail: [`state "compatibility_flags": [${quoteAll(required)}]`] })], held: 0 };
-  }
-
-  if (!Array.isArray(stated) || stated.some((flag) => typeof flag !== "string")) {
-    const message = `${key} is not a list of flag names`;
     return { findings: [fail(message, { file, detail: [`state "compatibility_flags": [${quoteAll(required)}]`] })], held: 0 };
   }
 
@@ -59,40 +51,31 @@ function judgeBlock(
   return { findings, held };
 }
 
-/** Fails a Worker config whose flag set omits or contradicts the posture every forge app inherits, judging the top level and every environment that states a set of its own. */
+/** Fails a Worker config whose flag set omits or contradicts the posture every forge app inherits, judging every deployment as wrangler builds it. */
 export async function checkCompatibility(config: CompatibilityCheckConfig): Promise<CheckResult> {
   const { root } = config;
   const required = config.require ?? REQUIRED_FLAGS;
   const workerConfig = config.workerConfig ?? "wrangler.jsonc";
   const read = readWorkerConfig(root, workerConfig, "compatibility flags");
   if (!("config" in read)) return read;
-  const parsed = read.config;
 
-  const top = judgeBlock(parsed, "", required, workerConfig);
-  const findings: Finding[] = [...top.findings];
-  let held = top.held;
-  let deployments = 1;
+  const deployments = listDeployments(read.config);
+  const findings: Finding[] = [];
+  let held = 0;
+  let topHeld = 0;
 
-  const environments = parsed.env;
-  if (environments !== undefined && !isRecord(environments)) {
-    findings.push(fail("`env` is not a table of named environments", { file: workerConfig }));
-  } else {
-    for (const [name, environment] of Object.entries(environments ?? {})) {
-      if (!isRecord(environment)) {
-        findings.push(fail(`\`env.${name}\` is not an environment table`, { file: workerConfig }));
-        continue;
-      }
-      // Unlike the exposure keys, `compatibility_flags` is inherited: an environment silent about it
-      // runs the list judged above, and one that states its own replaces that list rather than adding to it.
-      if (environment.compatibility_flags === undefined) continue;
-      deployments += 1;
-      const block = judgeBlock(environment, `env.${name}.`, required, workerConfig);
-      findings.push(...block.findings);
-      held += block.held;
+  for (const deployment of deployments) {
+    if (deployment.inherited.has("compatibility_flags")) {
+      held += topHeld;
+      continue;
     }
+    const verdict = judgeBlock(deployment.effective, deployment.prefix, required, workerConfig);
+    if (deployment.env === null) topHeld = verdict.held;
+    findings.push(...verdict.findings);
+    held += verdict.held;
   }
 
-  const total = deployments * required.length;
-  const across = deployments === 1 ? "" : ` across ${deployments} deployments`;
+  const total = deployments.length * required.length;
+  const across = deployments.length === 1 ? "" : ` across ${deployments.length} deployments`;
   return checkResult(findings, `compatibility flags: ${held}/${total} required stated${across}`);
 }

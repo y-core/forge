@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { delimiter, dirname, join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -10,7 +11,7 @@ import { CliError } from "../cli/errors";
 import { captureStreams } from "../cli/proc";
 import { persistRoot } from "./home";
 import { isReadOnlyBatch } from "./sql";
-import type { DbIo, Home, Spawned } from "./types";
+import type { DbIo, Home, Spawned, WranglerD1Module } from "./types";
 
 function binDirs(from: string): string[] {
   const found: string[] = [];
@@ -54,6 +55,33 @@ export function missingWranglerExport(module: { getPlatformProxy?: unknown; unst
   return null;
 }
 
+/** The `version` a loaded wrangler `package.json` declares, or `unknown` when it declares none or will not load. @internal */
+export function installedWranglerVersion(load: () => unknown): string {
+  try {
+    const manifest = load() as { version?: unknown } | null;
+    return typeof manifest?.version === "string" && manifest.version !== "" ? manifest.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+/** The script a wrangler `package.json` at `manifestPath` names as its `wrangler` bin, or `null` when it names none. @internal */
+export function wranglerScript(manifestPath: string, manifest: unknown): string | null {
+  const bin = (manifest as { bin?: unknown } | null)?.bin;
+  const script = typeof bin === "string" ? bin : (bin as Record<string, unknown> | undefined)?.wrangler;
+  return typeof script === "string" && script !== "" ? join(dirname(manifestPath), script) : null;
+}
+
+function importedWranglerScript(): string | null {
+  try {
+    const require = createRequire(import.meta.url);
+    const manifestPath = require.resolve("wrangler/package.json");
+    return wranglerScript(manifestPath, require(manifestPath));
+  } catch {
+    return null;
+  }
+}
+
 /** Five tries of a refused batch, each wait a random share of 100 ms doubling up to 800 ms. @internal */
 export const D1_BUSY_BACKOFF: D1RetryPolicy = { attempts: 5, baseDelayMs: 100, maxDelayMs: 800 };
 
@@ -64,18 +92,17 @@ export function isD1BusyRefusal(error: unknown): boolean {
   return error instanceof Error && /^D1_ERROR: .*\binternal error; reference = \w+/s.test(error.message);
 }
 
-// Imported rather than named at the top: wrangler is an optional peer, and a static import would
-// fail a consumer that installed forge without it before any verb could say so.
-async function openLocalD1(home: Home): Promise<LocalD1> {
+async function openLocalD1(home: Home, loadWrangler: () => Promise<WranglerD1Module>): Promise<LocalD1> {
   // In process, wrangler's own logger writes to this tool's stderr, where a spawned one wrote to a
   // pipe nothing read. `error` keeps that parity: its chatter never was part of forge's output.
   process.env.WRANGLER_LOG ??= "error";
-  const wrangler = await import("wrangler").catch((error: unknown) => {
+  const wrangler = await loadWrangler().catch((error: unknown) => {
     throw wranglerUnreachable(home, { error });
   });
   const missing = missingWranglerExport(wrangler);
   if (missing !== null) throw wranglerUnreachable(home, { missing });
-  const proxy = await wrangler.getPlatformProxy<Record<string, D1DatabaseLike>>({
+  const { getPlatformProxy, unstable_splitSqlQuery } = wrangler as Required<WranglerD1Module>;
+  const proxy = await getPlatformProxy<Record<string, D1DatabaseLike>>({
     configPath: home.configPath,
     ...(home.env === null ? {} : { environment: home.env }),
     persist: { path: persistRoot(home) },
@@ -89,18 +116,24 @@ async function openLocalD1(home: Home): Promise<LocalD1> {
     await proxy.dispose();
     throw new CliError("invalid-args", `${home.configPath} declares no d1_databases binding named ${home.binding}`);
   }
-  return { db, split: wrangler.unstable_splitSqlQuery, dispose: proxy.dispose };
+  return { db, split: unstable_splitSqlQuery, dispose: proxy.dispose };
 }
 
 /** The real side effects: node's filesystem, a spawned wrangler, and the process environment. @internal */
-export function realDbIo(root: string, log: (line: string) => void = (line) => console.error(line)): DbIo {
+export function realDbIo(
+  root: string,
+  log: (line: string) => void = (line) => console.error(line),
+  // Imported rather than named at the top: wrangler is an optional peer, and a static import would
+  // fail a consumer that installed forge without it before any verb could say so.
+  loadWrangler: () => Promise<WranglerD1Module> = () => import("wrangler"),
+): DbIo {
   const handles = new Map<string, Promise<LocalD1>>();
   const answered = new Set<string>();
 
   function reach(home: Home, key: string): Promise<LocalD1> {
     const held = handles.get(key);
     if (held !== undefined) return held;
-    const opening = openLocalD1(home);
+    const opening = openLocalD1(home, loadWrangler);
     handles.set(key, opening);
     void opening.catch(() => handles.delete(key));
     return opening;
@@ -118,12 +151,14 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
   }
 
   const path = [...binDirs(root), ...binDirs(dirname(fileURLToPath(import.meta.url))), process.env.PATH ?? ""].join(delimiter);
-  // `FORCE_COLOR: "0"`: bun 1.4 colourises a pipe, and `parseJsonOutput` reads a line starting with
-  // an escape byte as "printed no JSON".
+  // bun 1.4 colourises a pipe, and a failed export quotes the child's output back.
   const env = { ...process.env, PATH: path, WRANGLER_SEND_METRICS: "false", FORCE_COLOR: "0" };
   return {
+    // `wrangler` is the package forge imports, the one `wranglerVersion` names, never whichever `node_modules/.bin` puts first.
     spawn(cmd, args, opts): Spawned {
-      return captureStreams(cmd, [...args], { cwd: opts.cwd, env, maxBuffer: 256 * 1024 * 1024 });
+      const script = cmd === "wrangler" ? importedWranglerScript() : null;
+      const [program, prefix] = script === null ? [cmd, []] : ["node", [script]];
+      return captureStreams(program, [...prefix, ...args], { cwd: opts.cwd, env, maxBuffer: 256 * 1024 * 1024 });
     },
     async d1(home, sql): Promise<Record<string, unknown>[][]> {
       if (home.persistTo === null) throw refuseDeployedHome(home);
@@ -178,6 +213,8 @@ export function realDbIo(root: string, log: (line: string) => void = (line) => c
     mtime: (p) => (existsSync(p) ? statSync(p).mtimeMs : null),
     now: () => new Date(),
     env: process.env,
+    fetch: (input, init) => globalThis.fetch(input, init),
+    wranglerVersion: () => installedWranglerVersion(() => createRequire(import.meta.url)("wrangler/package.json")),
     log,
   };
 }

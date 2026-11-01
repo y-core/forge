@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import process from "node:process";
 
+import { cfAuthFlags, readCfAuth } from "../cf/auth";
 import { CliError } from "../cli/errors";
 import type { CliContext } from "../cli/types";
 import { PLAIN } from "../term/color";
@@ -8,6 +9,7 @@ import { d1Entries, resolveDbConfig } from "./config";
 import { DEFAULT_DB_CONFIG, loadHostConfig, migrationsDirRefusal } from "./declared";
 import { resolveHome } from "./home";
 import { realDbIo } from "./io";
+import { isRemotePlace } from "./target";
 import type { DbContextOverrides, DbRunContext, SharedDbFlags } from "./types";
 
 /** The flags every `forge db` verb declares, spelled once. @internal */
@@ -20,10 +22,11 @@ export const sharedDbFlags = {
   },
   db: { type: "string" as const, description: "The d1_databases binding or database_name, when the config declares more than one" },
   config: { type: "string" as const, short: "c", description: "Path to wrangler.jsonc", default: "wrangler.jsonc" },
-  env: { type: "string" as const, short: "e", description: "Wrangler environment, forwarded as `wrangler -e`" },
+  env: { type: "string" as const, short: "e", description: "Wrangler environment: the config's `env.<name>` block" },
   root: { type: "string" as const, description: "Application root. Defaults to the current directory" },
   json: { type: "boolean" as const, description: "Print the result as a JSON document instead of a report. The only thing written to stdout" },
   yes: { type: "boolean" as const, description: "Skip the confirmation a destructive verb asks. Required in a non-interactive run" },
+  ...cfAuthFlags,
 };
 
 /** Resolves the shared flags into a run context. @public */
@@ -33,10 +36,11 @@ export async function resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, o
   const print = (line: string) => (ctx?.io.stdout ?? console.log)(line);
   const io = overrides.io ?? realDbIo(root, (line) => (ctx?.io.stderr ?? console.error)(line));
   const config = resolveDbConfig({ root, config: flags.config, db: flags.db, env: flags.env, target: flags.target });
-  const home = resolveHome(config, io);
+  const given = flags["account-id"] !== undefined || flags["api-token"] !== undefined;
+  const home = resolveHome(config, io, isRemotePlace(config.target.place) && given ? readCfAuth(flags) : null);
   const host = overrides.host ?? (await loadHostConfig(root, DEFAULT_DB_CONFIG, false));
   const run: DbRunContext = { config, home, io, host, json, yes: Boolean(flags.yes), style: json ? PLAIN : (ctx?.out ?? PLAIN), print };
-  const entry = d1Entries(config.config, config.env, config.configPath).find((candidate) => candidate.binding === config.entry.binding);
+  const entry = d1Entries(config.config, config.env).find((candidate) => candidate.binding === config.entry.binding);
   const refusal = migrationsDirRefusal(run, entry?.migrations_dir, entry?.migrations_pattern);
   if (refusal !== null) throw new CliError("invalid-args", refusal);
   return run;

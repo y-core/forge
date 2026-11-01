@@ -3,8 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { readDeployment } from "../cf/config/environment";
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
-import { resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry, wranglerHistoryTable } from "./config";
+import { CliError } from "../cli/errors";
+import { createUndeclaredEnvError, d1Entries, resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry, wranglerHistoryTable } from "./config";
 import { minimalWranglerConfig } from "./db.fixture";
 
 const roots: string[] = [];
@@ -89,6 +91,34 @@ describe("sharedD1Databases()", () => {
   });
 });
 
+describe("d1Entries()", () => {
+  it("reads the top level's entries with no --env, and none when it declares none", () => {
+    expect([d1Entries({ name: "app", d1_databases: [DB] }, null), d1Entries({ name: "app" }, null)]).toEqual([[DB], []]);
+  });
+
+  it("refuses an undeclared --env on a config with no env table, where wrangler itself falls back to the top level", () => {
+    const config: WranglerConfig = { name: "app", d1_databases: [DB] };
+    expect(readDeployment(config, "ghost")).toMatchObject({ ok: true, data: { effective: { d1_databases: [DB] } } });
+    expect(() => d1Entries(config, "ghost")).toThrow("--env ghost names no `env.ghost` block in the wrangler config");
+  });
+
+  it("reads a declared environment's own entries and never the top level's", () => {
+    const config: WranglerConfig = { name: "app", d1_databases: [DB], env: { staging: { d1_databases: [REPORTS] } } };
+    expect(d1Entries(config, "staging")).toEqual([REPORTS]);
+  });
+});
+
+describe("createUndeclaredEnvError()", () => {
+  it("is an invalid-args refusal naming the env block the --env asked for", () => {
+    const error = createUndeclaredEnvError("qa");
+    expect([error instanceof CliError, error.kind, error.message]).toEqual([
+      true,
+      "invalid-args",
+      "--env qa names no `env.qa` block in the wrangler config",
+    ]);
+  });
+});
+
 describe("toD1Entry()", () => {
   it("names the database after the binding and nulls both ids when the config gives none", () => {
     expect(toD1Entry({ binding: "DB" }, CONFIG_PATH)).toEqual({ binding: "DB", databaseName: "DB", databaseId: null, previewDatabaseId: null });
@@ -154,10 +184,12 @@ describe("resolveDbConfig()", () => {
     );
   });
 
-  it("refuses an --env that names no env block", () => {
-    expect(() => resolveDbConfig({ root: appRoot(), config: "wrangler.jsonc", env: "staging", target: "local" })).toThrow(
-      "--env staging names no `env.staging` block in the wrangler config",
-    );
+  it("refuses an --env that names no env block, even with no env table, where wrangler would fall back to the top level", () => {
+    for (const root of [appRoot(), appRoot({ env: { production: { d1_databases: [{ binding: "DB", database_name: "app-db-production" }] } } })]) {
+      expect(() => resolveDbConfig({ root, config: "wrangler.jsonc", env: "staging", target: "local" })).toThrow(
+        "--env staging names no `env.staging` block in the wrangler config",
+      );
+    }
   });
 
   it("refuses an --env naming a prototype member rather than falling through to the top-level entry", () => {
@@ -175,9 +207,11 @@ describe("resolveDbConfig()", () => {
     expect([resolved.env, resolved.entry.databaseName, resolved.entry.databaseId]).toEqual(["staging", "app-db-staging", "id-staging"]);
   });
 
-  it("falls back to the top-level d1_databases for an env block that declares none", () => {
+  it("refuses an --env whose block declares no d1_databases, since wrangler does not inherit the top level's", () => {
     const root = appRoot({ env: { staging: { vars: { TIER: "staging" } } } });
-    expect(resolveDbConfig({ root, config: "wrangler.jsonc", env: "staging", target: "local" }).entry.databaseName).toBe("app-db");
+    expect(() => resolveDbConfig({ root, config: "wrangler.jsonc", env: "staging", target: "local" })).toThrow(
+      "--env staging names an environment that declares no d1_databases, and wrangler does not inherit the top level's — restate the entries under `env.staging.d1_databases`",
+    );
   });
 
   it("refuses a remote target while the id is a placeholder, and allows it on a D1 id", () => {
@@ -234,5 +268,11 @@ describe("wranglerHistoryTable()", () => {
   it("reads the environment's entry under --env", () => {
     const root = appRoot({ d1_databases: [entry], env: { staging: { d1_databases: [{ ...entry, migrations_table: "staging_history" }] } } });
     expect(wranglerHistoryTable(resolveDbConfig({ root, config: "wrangler.jsonc", env: "staging", target: "local" }))).toBe("staging_history");
+  });
+
+  it("refuses under an --env whose block declares no d1_databases, rather than reading the top level's table", () => {
+    const root = appRoot({ d1_databases: [{ ...entry, migrations_table: "schema_history" }], env: { staging: { vars: { TIER: "staging" } } } });
+    const resolved = { ...resolveDbConfig({ root, config: "wrangler.jsonc", target: "local" }), env: "staging" };
+    expect(() => wranglerHistoryTable(resolved)).toThrow("--env staging names an environment that declares no d1_databases");
   });
 });

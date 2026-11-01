@@ -55,7 +55,7 @@ describe("failureRows", () => {
         remoteName: undefined,
         action: "error",
         detail:
-          'worker script · auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 10000',
+          'worker script · auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 10000',
       },
     ]);
   });

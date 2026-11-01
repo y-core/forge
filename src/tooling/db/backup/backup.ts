@@ -2,6 +2,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
+import { executeFile, exportSql, queryBatches, queryRows, queryRowsIfTable } from "../d1";
 import { sha256 } from "../digest";
 import { schemaDrift } from "../drift";
 import { clearLocalState, scratchHome } from "../home";
@@ -14,7 +15,6 @@ import { localScratchConfig } from "../schema/scratch";
 import { INVENTORY_SELECT, rowCountSelect, sqlColumnAffinity, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbIo, DbRunContext, Home, RestoreRoute, SchemaFacts } from "../types";
-import { executeFile, exportSql, queryBatches, queryRows, queryRowsIfTable, wranglerVersion } from "../wrangler";
 import {
   appSchemaDigestInput,
   BACKUP_FORMAT_VERSION,
@@ -215,12 +215,12 @@ export async function takeBackup(
     if (hazards.length > 0) {
       throw new CliError(
         "invalid-args",
-        `${home.database} holds values wrangler d1 export would not reproduce, so --via export is refused — back it up without --via:\n  ${hazards.join("\n  ")}`,
+        `${home.database} holds values D1's export would not reproduce, so --via export is refused — back it up without --via:\n  ${hazards.join("\n  ")}`,
       );
     }
     exportedCounts = new Map(tables.map((table, index) => [table.name, Number(counted[tables.length + index]?.[0]?.rows ?? 0)]));
   }
-  const bookmark = via === "export" && isRemotePlace(config.target.place) ? timeTravelInfo(io, home, undefined, config).bookmark : null;
+  const bookmark = via === "export" && isRemotePlace(config.target.place) ? (await timeTravelInfo(io, home, undefined, config)).bookmark : null;
 
   const directory = join(resolveBackupsDir(run, options.out), formatBackupDirectory(home.database, io.now()));
   if (io.exists(directory)) {
@@ -229,12 +229,13 @@ export async function takeBackup(
   io.mkdir(directory);
   const incomplete = `${directory} is incomplete and holds no manifest, so no verb will read it.`;
   const schemaExport = join(directory, "schema.export.sql");
-  await exportSql(io, home, schemaExport, ["--no-data"]);
+  const schemaBookmark = await exportSql(io, home, schemaExport, "schema");
   const schemaSql = io.readText(schemaExport);
   writeArtifactFile(io, join(directory, "schema.sql"), schemaSql);
   io.remove(schemaExport);
 
   let dataSql: string;
+  let dataBookmark: string | null = null;
   if (via === "read") {
     const exportedDigest = await appDigestOf(io, home);
     if (exportedDigest !== appDigest) {
@@ -246,7 +247,7 @@ export async function takeBackup(
     dataSql = `${DATA_PREAMBLE}\n${sources.flatMap(tableInserts).join("\n")}\n`;
   } else {
     const dataExport = join(directory, "data.export.sql");
-    await exportSql(io, home, dataExport, ["--no-schema"]);
+    dataBookmark = await exportSql(io, home, dataExport, "data");
     dataSql = withoutPlannerStatistics(io.readText(dataExport));
     io.remove(dataExport);
     const exportedDigest = await appDigestOf(io, home);
@@ -346,10 +347,9 @@ export async function takeBackup(
     formatVersion: BACKUP_FORMAT_VERSION,
     createdAt: io.now().toISOString(),
     label: options.label,
-    dumper: {
-      tool: via === "read" ? "forge db backup (schema via wrangler d1 export --no-data)" : "forge db backup --via export (wrangler d1 export)",
-      version: wranglerVersion(io, home),
-    },
+    exporter: isRemotePlace(config.target.place)
+      ? { tool: "d1", schemaBookmark, dataBookmark }
+      : { tool: "wrangler", version: io.wranglerVersion() },
     via,
     bookmark,
     database: { name: home.database, id: config.entry.databaseId, target: config.target.place, persistPath: home.persistTo },

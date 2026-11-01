@@ -2,13 +2,13 @@ import { dirname, join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { insertStatement } from "../backup/artifact";
+import { executeFile, queryBatches, queryOne } from "../d1";
 import { declaredSeeds } from "../declared";
 import { sha256 } from "../digest";
 import { readSchemaInputs } from "../schema/compose";
 import { loadDesired } from "../schema/scratch";
 import { rowCountSelect, tableInfoSelect, toColumnInfo } from "../sql";
 import type { DbRunContext, Home, SeedFixtureOptions, SeedFixtureOutcome } from "../types";
-import { executeFile, queryBatches, queryOne } from "../wrangler";
 import { seedVariablesIn } from "./files";
 
 /** Refuses a path a `seed apply` would never read, which is the difference between a generated seed and a file somewhere. */

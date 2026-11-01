@@ -84,6 +84,15 @@ describe("rateLimitsHandler — worker script", () => {
     expect(auth.results[0]?.action).toBe("error");
   });
 
+  it("reports a binding whose limit has the wrong type as an error naming the settings read", async () => {
+    const fetchFn = settingsFetch([{ type: "ratelimit", name: "MAIN_LIMITER", namespace_id: "1001", simple: { limit: "60", period: 60 } }]);
+    const res = await rateLimitsHandler.reconcile([MAIN_LIMITER], makeCtx({ fetch: fetchFn }));
+    expect([res.results[0]?.action, res.results[0]?.detail]).toEqual([
+      "error",
+      "worker script · GET /accounts/{account_id}/workers/scripts/{script_name}/settings: unexpected response shape at bindings.0.simple (expected number)",
+    ]);
+  });
+
   it("never claims in-sync without having queried", async () => {
     let calls = 0;
     const fetchFn: typeof globalThis.fetch = async () => {

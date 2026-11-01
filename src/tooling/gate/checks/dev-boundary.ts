@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
+import { listDeployments } from "../../cf/config/environment";
 import { DEV_CONDITION } from "../../cf/dev/conditions";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
@@ -58,7 +59,7 @@ export function isForbidden(specifier: string, forbidden: readonly string[]): bo
   return forbidden.some((entry) => (entry.endsWith("/*") ? specifier.startsWith(entry.slice(0, -1)) : specifier === entry));
 }
 
-/** Rule A: the deployed entry the Worker config names must not be a development one. */
+/** Rule A: no deployment's entry in the Worker config may be a development one. */
 function judgeMain(config: DevBoundaryCheckConfig): Finding[] {
   const workerConfig = config.workerConfig === undefined ? "wrangler.jsonc" : config.workerConfig;
   if (workerConfig === null) return [];
@@ -68,27 +69,30 @@ function judgeMain(config: DevBoundaryCheckConfig): Finding[] {
   ]);
   if (!("config" in read)) return [...read.findings];
 
-  const main = read.config.main;
-  if (main === undefined) {
+  return listDeployments(read.config).flatMap(({ prefix, effective, inherited }) => {
+    if (inherited.has("main")) return [];
+    const main = effective.main;
+    if (main === undefined) {
+      return [
+        fail(`\`${prefix}main\` is unstated, and an unstated entry point is one no check can hold to the production/development split`, {
+          file: workerConfig,
+          detail: ['state "main" as the production entry point'],
+        }),
+      ];
+    }
+
+    const normalized = main.startsWith("./") ? main.slice(2) : main;
+    if (!isDevModule(normalized)) return [];
     return [
-      fail("`main` is unstated, and an unstated entry point is one no check can hold to the production/development split", {
+      fail(`\`${prefix}main\` names the development entry \`${normalized}\``, {
         file: workerConfig,
-        detail: ['state "main" as the production entry point'],
+        detail: [
+          "a development entry holds code production must not run, so deploying one puts it in the deployed bundle",
+          `point \`${prefix}main\` at the production entry, and keep the development one to \`wrangler dev\``,
+        ],
       }),
     ];
-  }
-
-  const normalized = main.startsWith("./") ? main.slice(2) : main;
-  if (!isDevModule(normalized)) return [];
-  return [
-    fail(`\`main\` names the development entry \`${normalized}\``, {
-      file: workerConfig,
-      detail: [
-        "a development entry holds code production must not run, so deploying one puts it in the deployed bundle",
-        "point `main` at the production entry, and keep the development one to `wrangler dev`",
-      ],
-    }),
-  ];
+  });
 }
 
 /** Rule B, on the manifest: no `imports` entry resolves to a development module in the deployed bundle. */

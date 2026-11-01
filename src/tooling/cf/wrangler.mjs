@@ -1,13 +1,16 @@
 // Generated from src/tooling/cf/wrangler.ts by `bun run gen:bundles` — do not edit.
 
 // src/tooling/cf/config/parse.ts
-import { chmodSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 // src/validation/validation.ts
 import * as v from "valibot";
 
 // src/tooling/cli/jsonc.ts
+function formatPath(path) {
+  return path.reduce((acc, seg) => typeof seg === "number" ? `${acc}[${seg}]` : acc ? `${acc}.${seg}` : String(seg), "");
+}
 var isWs = (c) => c === " " || c === "	" || c === "\n" || c === "\r";
 function skipTrivia(src, i) {
   const len = src.length;
@@ -84,14 +87,65 @@ function stripJsonc(src) {
   return out;
 }
 
+// src/tooling/cf/schema.ts
+function jsonTable(schema, message = "must be an object") {
+  return v.pipe(
+    v.unknown(),
+    v.check((value) => !Array.isArray(value), message),
+    schema
+  );
+}
+
 // src/tooling/cf/config/parse.ts
 var MISSING_NAME_MESSAGE = 'wrangler config must define a string "name"';
+var D1DatabaseSchema = v.looseObject({
+  binding: v.string(),
+  database_name: v.optional(v.string()),
+  database_id: v.optional(v.string()),
+  preview_database_id: v.optional(v.string()),
+  migrations_dir: v.optional(v.string()),
+  migrations_pattern: v.optional(v.string()),
+  migrations_table: v.optional(v.string())
+});
+var ENVIRONMENT_ENTRIES = {
+  name: v.optional(v.string()),
+  main: v.optional(v.string()),
+  compatibility_date: v.optional(v.string()),
+  compatibility_flags: v.optional(v.array(v.string())),
+  account_id: v.optional(v.string()),
+  assets: v.optional(
+    jsonTable(
+      v.looseObject({
+        directory: v.optional(v.string()),
+        binding: v.optional(v.string()),
+        run_worker_first: v.optional(v.union([v.boolean(), v.array(v.string())]))
+      }),
+      "must be a table"
+    )
+  ),
+  workers_dev: v.optional(v.boolean()),
+  preview_urls: v.optional(v.boolean()),
+  routes: v.optional(v.array(v.unknown())),
+  d1_databases: v.optional(v.array(D1DatabaseSchema))
+};
+function hasOwnProto(value) {
+  return typeof value === "object" && value !== null && Object.hasOwn(value, "__proto__");
+}
+var EnvironmentSchema = jsonTable(v.looseObject(ENVIRONMENT_ENTRIES), "must be an environment table");
 var WranglerConfigSchema = v.looseObject(
   {
+    ...ENVIRONMENT_ENTRIES,
     name: v.string(MISSING_NAME_MESSAGE),
+    pages_build_output_dir: v.optional(v.string()),
+    env: v.optional(
+      v.pipe(
+        v.unknown(),
+        v.check((envs) => !Array.isArray(envs) && !hasOwnProto(envs), "must be a table of named environments"),
+        v.record(v.string(), EnvironmentSchema)
+      )
+    ),
     vars: v.optional(v.record(v.string(), v.unknown())),
     kv_namespaces: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-    d1_databases: v.optional(v.array(v.looseObject({ binding: v.string() }))),
     r2_buckets: v.optional(v.array(v.looseObject({ binding: v.string() }))),
     queues: v.optional(
       v.looseObject({
@@ -102,22 +156,28 @@ var WranglerConfigSchema = v.looseObject(
   },
   (issue) => issue.expected === '"name"' ? MISSING_NAME_MESSAGE : issue.message
 );
+function describeIssues(issues) {
+  return issues.map((issue) => {
+    const keys = (issue.path ?? []).map((item) => item.key);
+    return `${formatPath(keys) || "(root)"}: ${issue.message}`;
+  }).join("; ");
+}
+function decodeWranglerSource(source, origin) {
+  try {
+    return JSON.parse(stripJsonc(source));
+  } catch (thrown) {
+    throw new Error(`malformed wrangler config at ${origin}: invalid JSON \u2014 ${thrown.message}`, { cause: thrown });
+  }
+}
+function validateWranglerConfig(tree, origin) {
+  const result = v.safeParse(WranglerConfigSchema, tree);
+  if (!result.success) throw new Error(`malformed wrangler config at ${origin}: ${describeIssues(result.issues)}`);
+  return tree;
+}
 function loadWranglerConfig(configPath) {
   const abs = resolve(configPath);
   const source = readFileSync(abs, "utf-8");
-  const json = stripJsonc(source);
-  let parsed;
-  try {
-    parsed = JSON.parse(json);
-  } catch (thrown) {
-    throw new Error(`malformed wrangler config at ${abs}: invalid JSON \u2014 ${thrown.message}`, { cause: thrown });
-  }
-  const result = v.safeParse(WranglerConfigSchema, parsed);
-  if (!result.success) {
-    const detail = result.issues.map((issue) => `${v.getDotPath(issue) ?? "(root)"}: ${issue.message}`).join("; ");
-    throw new Error(`malformed wrangler config at ${abs}: ${detail}`);
-  }
-  return { path: abs, source, config: parsed };
+  return { path: abs, source, config: validateWranglerConfig(decodeWranglerSource(source, abs), abs) };
 }
 function parseWranglerConfig(configPath) {
   return loadWranglerConfig(configPath).config;

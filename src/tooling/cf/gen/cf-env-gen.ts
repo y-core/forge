@@ -39,22 +39,38 @@ function refine(name: string, base: string, opts: GenOptions): string {
   return base;
 }
 
-/** Collects var entries: typed `wrangler.jsonc` vars first, then `.dev.vars` secrets, which win on name collisions. @internal */
-export function collectVars(devVarsText: string, wranglerVars: Record<string, unknown>, opts: GenOptions): Entry[] {
+function declaresSecrets(cfg: Record<string, unknown>): boolean {
+  if (cfg.secrets !== undefined) return true;
+  const envs = cfg.env;
+  if (envs == null || typeof envs !== "object") return false;
+  return Object.values(envs).some((env) => (env as Record<string, unknown> | null)?.secrets !== undefined);
+}
+
+/** Secret names for the Env: `secrets.required` once the config declares `secrets`, else every `.dev.vars` key. @internal */
+export function collectSecretNames(cfg: Record<string, unknown>, devVarsText: string): string[] {
+  if (declaresSecrets(cfg)) {
+    const required = getPath(cfg, "secrets.required");
+    if (!Array.isArray(required)) return [];
+    return required.filter((name): name is string => typeof name === "string" && name !== "");
+  }
   // One recogniser for `.dev.vars` in the namespace: a key this misses is a key the
   // app boots with and no schema knows about.
-  const devVarNames = parseDevVars(devVarsText).map((entry) => entry.name);
-  const secretNames = new Set(devVarNames);
+  return parseDevVars(devVarsText).map((entry) => entry.name);
+}
+
+/** Collects var entries: typed `wrangler.jsonc` vars first, then the secret names, which win on name collisions. @internal */
+export function collectVars(secretNames: readonly string[], wranglerVars: Record<string, unknown>, opts: GenOptions): Entry[] {
+  const secrets = new Set(secretNames);
 
   const entries: Entry[] = [];
   const seen = new Set<string>();
   for (const [name, value] of Object.entries(wranglerVars)) {
-    if (secretNames.has(name)) continue;
+    if (secrets.has(name)) continue;
     const base = typeof value === "number" ? "v.number()" : typeof value === "boolean" ? "v.boolean()" : "v.string()";
     entries.push({ name, expr: refine(name, base, opts) });
     seen.add(name);
   }
-  for (const name of devVarNames) {
+  for (const name of secretNames) {
     if (seen.has(name)) continue;
     seen.add(name);
     entries.push({ name, expr: refine(name, "v.string()", opts) });

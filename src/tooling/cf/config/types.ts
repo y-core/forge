@@ -1,6 +1,6 @@
 import type { JsonPath } from "../../cli/types";
 import type { Primitive } from "../../cli/types";
-import type { WranglerConfig } from "../types";
+import type { D1DatabaseConfig, WranglerAssetsConfig, WranglerConfig, WranglerEnvironmentConfig } from "../types";
 
 export type ConfigDiff = { kind: "set"; path: JsonPath; value: Primitive } | { kind: "unsupported"; path: JsonPath; reason: string };
 
@@ -19,4 +19,38 @@ export interface WriteOutcome {
   edits: number;
   /** Set only on a `--force` rewrite: what that rewrite destroyed. */
   lost?: { comments: number; unsupported: string[] };
+}
+
+/** The deployment keys forge reads, as wrangler resolves them for one deployment. @internal */
+export interface WranglerDeployment {
+  name?: string;
+  account_id?: string;
+  compatibility_date?: string;
+  compatibility_flags?: string[];
+  main?: string;
+  assets?: WranglerAssetsConfig;
+  workers_dev?: boolean;
+  preview_urls?: boolean;
+  route?: unknown;
+  routes?: unknown[];
+  alias?: unknown;
+  build?: unknown;
+  rules?: unknown;
+  define?: unknown;
+  d1_databases?: D1DatabaseConfig[];
+}
+
+export type DeploymentKey = keyof WranglerDeployment;
+
+export type EnvironmentInheritance = "inherited" | "not-inherited" | "suffixed" | "top-level";
+
+/** One deployment: the block as written, the keys wrangler builds from it, and which of those it took from the top level. @internal */
+export interface ResolvedDeployment {
+  /** Null for the top level. */
+  env: string | null;
+  /** `""` for the top level, `env.<name>.` otherwise. */
+  prefix: string;
+  stated: WranglerEnvironmentConfig;
+  effective: WranglerDeployment;
+  inherited: ReadonlySet<DeploymentKey>;
 }

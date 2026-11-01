@@ -174,6 +174,134 @@ describe("checkDevBundle — what it refuses to judge", () => {
     expect(messages(result)).toEqual(["`env.staging.define` is set, and the dev-bundle check does not model it"]);
   });
 
+  it("does not refuse `alias` in an environment alone, since wrangler reads it only at the top level", async () => {
+    const config = project({ "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "env": { "staging": { "alias": { "a": "./b" } } } }\n' });
+    const result = await checkDevBundle({ ...config, bundler: async () => metafile({ "src/worker.ts": 40 }) });
+
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses a top-level `alias` once, however many environments there are", async () => {
+    const config = project({
+      "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "alias": { "a": "./b" }, "env": { "staging": { "alias": { "a": "./c" } } } }\n',
+    });
+    const result = await checkDevBundle({ ...config, bundler: async () => metafile({}) });
+
+    expect(messages(result)).toEqual(["`alias` is set, and the dev-bundle check does not model it"]);
+  });
+
+  it("reports a top-level `define` once, unprefixed, rather than again for an environment", async () => {
+    const config = project({ "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "define": { "X": "1" }, "env": { "staging": {} } }\n' });
+    const result = await checkDevBundle({ ...config, bundler: async () => metafile({}) });
+
+    expect(messages(result)).toEqual(["`define` is set, and the dev-bundle check does not model it"]);
+  });
+
+  it("bundles an environment's own `main` too, and fails development code reached only from it", async () => {
+    const config = project({
+      "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "env": { "staging": { "main": "src/staging.ts" } } }\n',
+    });
+    const entries: string[] = [];
+    const result = await checkDevBundle({
+      ...config,
+      bundler: async (_root, entry) => {
+        entries.push(entry);
+        return entry === "src/staging.ts" ? metafile({ "src/staging.ts": 20, "src/seed.dev.ts": 10 }) : metafile({ "src/worker.ts": 40 });
+      },
+    });
+
+    expect(entries).toEqual(["src/worker.ts", "src/staging.ts"]);
+    expect(messages(result)).toEqual(["development code in the deployed bundle — `src/seed.dev.ts`"]);
+    expect(result.findings[0]?.detail?.[0]).toBe("`src/staging.ts` reaches it, so every deployment ships it");
+  });
+
+  it("bundles a `main` shared by several deployments once, and names each distinct one in the summary", async () => {
+    const config = project({
+      "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "env": { "qa": {}, "staging": { "main": "src/staging.ts" } } }\n',
+    });
+    const entries: string[] = [];
+    const result = await checkDevBundle({
+      ...config,
+      bundler: async (_root, entry) => {
+        entries.push(entry);
+        return entry === "src/staging.ts" ? metafile({ "src/staging.ts": 20 }) : metafile({ "src/worker.ts": 40, "src/app.ts": 10 });
+      },
+    });
+
+    expect(entries).toEqual(["src/worker.ts", "src/staging.ts"]);
+    expect(result.summary).toBe("src/worker.ts bundles 2 modules; src/staging.ts bundles 1 modules, none of them development code");
+  });
+
+  it("reports a `main` that does not bundle and still bundles the next one, with no summary", async () => {
+    const config = project({
+      "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "env": { "staging": { "main": "src/staging.ts" } } }\n',
+    });
+    const entries: string[] = [];
+    const result = await checkDevBundle({
+      ...config,
+      bundler: async (_root, entry) => {
+        entries.push(entry);
+        if (entry === "src/worker.ts") throw new Error('Could not resolve "missing"');
+        return metafile({ "src/staging.ts": 20, "src/seed.dev.ts": 10 });
+      },
+    });
+
+    expect(entries).toEqual(["src/worker.ts", "src/staging.ts"]);
+    expect(messages(result)).toEqual([
+      '`src/worker.ts` did not bundle: Could not resolve "missing"',
+      "development code in the deployed bundle — `src/seed.dev.ts`",
+    ]);
+    expect([result.ok, result.summary]).toEqual([false, ""]);
+  });
+
+  it("passes an unstated top-level `main` when an environment states its own, and bundles that one", async () => {
+    const config = project({ "wrangler.jsonc": '{ "name": "app", "env": { "qa": {}, "staging": { "main": "src/staging.ts" } } }\n' });
+    const entries: string[] = [];
+    const result = await checkDevBundle({
+      ...config,
+      bundler: async (_root, entry) => {
+        entries.push(entry);
+        return metafile({ "src/staging.ts": 20 });
+      },
+    });
+
+    expect(entries).toEqual(["src/staging.ts"]);
+    expect([result.ok, messages(result)]).toEqual([true, []]);
+  });
+
+  it("adds nothing for an environment inheriting an unstated `main`, and bundles nothing", async () => {
+    const config = project({ "wrangler.jsonc": '{ "name": "app", "env": { "qa": {} } }\n' });
+    const entries: string[] = [];
+    const result = await checkDevBundle({
+      ...config,
+      bundler: async (_root, entry) => {
+        entries.push(entry);
+        return metafile({});
+      },
+    });
+
+    expect([entries, messages(result)]).toEqual([[], ["`main` is unstated in every deployment, so there is no deployed bundle to judge"]]);
+  });
+
+  it("reports a top-level `nodejs_compat` once, unprefixed, rather than again for an environment inheriting it", async () => {
+    const config = project({
+      "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "compatibility_flags": ["nodejs_compat"], "env": { "staging": {} } }\n',
+    });
+    const result = await checkDevBundle({ ...config, bundler: async () => metafile({}) });
+
+    expect(messages(result)).toEqual(["`compatibility_flags` carries `nodejs_compat`, and the dev-bundle check does not model it"]);
+  });
+
+  it("reports an env that is not a table as unparseable", async () => {
+    const config = project({ "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "env": ["staging"] }\n' });
+    const result = await checkDevBundle({ ...config, bundler: async () => metafile({}) });
+
+    expect([result.ok, result.summary]).toEqual([false, "dev-bundle: unparseable"]);
+    expect(messages(result)).toEqual([
+      `\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(config.root, "wrangler.jsonc")}: env: must be a table of named environments`,
+    ]);
+  });
+
   it("passes the `no_nodejs_compat` flags, which leave bare built-ins unresolved as the check models them", async () => {
     const config = project({
       "wrangler.jsonc": '{ "name": "app", "main": "src/worker.ts", "compatibility_flags": ["no_nodejs_compat", "no_nodejs_compat_v2"] }\n',
@@ -187,7 +315,7 @@ describe("checkDevBundle — what it refuses to judge", () => {
     const config = project({ "wrangler.jsonc": '{ "name": "app" }\n' });
 
     expect(messages(await checkDevBundle({ ...config, bundler: async () => metafile({}) }))).toEqual([
-      "`main` is unstated, so there is no deployed bundle to judge",
+      "`main` is unstated in every deployment, so there is no deployed bundle to judge",
     ]);
   });
 

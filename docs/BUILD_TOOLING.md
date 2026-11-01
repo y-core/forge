@@ -306,16 +306,17 @@ complete preset declares all four tiers, each above `static` leading with `tier(
 every `--tier`. `wardenAppSteps` declares rows only, because it is merged onto a complete one. Merging one complete preset onto another includes the
 lower tiers twice, which the resolver refuses as a duplicate label.
 
-**Generation leads judgement**: the two `wrangler types` steps and the asset-types emitter all write files `typecheck` then reads, so they precede
-it — a stale binding type surfaces as a type error rather than as a green run over yesterday's bindings.
+**Generation leads judgement**: the `wrangler types` step and the asset-types emitter both write files `typecheck` then reads, so they precede it
+— a stale generated type surfaces as a type error rather than as a green run over yesterday's output.
 
-**The two `wrangler types` invocations are two steps, not one** — `--no-include-env` for the runtime half, `--no-include-runtime` for the bindings
-half — because `Step.cmd` is one executable, not a shell line, and splitting them is what a chained `&&` costs back: a failure names which
-invocation broke. `--config` goes on the bindings invocation only, since runtime types do not depend on the wrangler config.
+**The preset generates runtime types only** (`--no-include-env`). The `Env` interface is the one `forge cf gen env` commits in `env.schema.ts`, so
+no second generator describes a binding. `--config` goes on that invocation when `workerConfig` is set, because runtime types follow the config's
+compatibility date and flags. `validate-generated-types` follows it and fails any other wrangler-generated file under `.types/`: nothing
+regenerates one, so `typecheck` would pass against types older than the config. A stub written by hand there is not wrangler's and passes.
 
 **The options are the fleet's actual disagreements, and nothing else.** `assetOut` exists because the emitter writes nothing useful without `--out`;
-`wranglerTypes: false` because one app declares its binding types by hand. Omitting `assetConfig` drops the asset rows — a shorter table, not a
-step that succeeds vacuously. The two `.types/` paths are baked in: an option nobody varies is surface for nothing, like the temp-dir prefix (§2f).
+`wranglerTypes: false` for an app that supplies its runtime types itself. Omitting `assetConfig` drops the asset rows — a shorter table, not a
+step that succeeds vacuously. The `.types/` path is baked in: an option nobody varies is surface for nothing, like the temp-dir prefix (§2f).
 
 **`presets.test.ts` pins every emitted command verbatim**, because the contract is "these are the commands the fleet runs": only a literal
 assertion catches a table that type-checks but names a command no app can run.
@@ -519,10 +520,10 @@ to break when it goes on.
 
 ### 3a. What the Check Reads, and the Trap It Exists For
 
-`checkCompatibility` (`src/tooling/gate/checks/compatibility.ts`) judges the top level **and every `env.*` block that states a set of its own**,
-because an environment **replaces** `compatibility_flags` wholesale rather than merging into the top level's. A `wrangler.jsonc` correct at the top
-and wrong in `env.dev` deploys a Worker with the Node surface to that environment, which is why the block is judged separately rather than being
-taken as an override of something already checked.
+`checkCompatibility` (`src/tooling/gate/checks/compatibility.ts`) judges **every deployment as wrangler builds it**. An environment that states a
+flag set of its own **replaces** the top level's wholesale rather than merging into it, so a `wrangler.jsonc` correct at the top and wrong in
+`env.dev` deploys a Worker with the Node surface to that environment, and the block is judged on its own. An environment that states no set
+inherits the top level's and shares its verdict: the top level's findings stand for both, and the summary counts both deployments.
 
 An unstated set, a value that is not a list of names, an omitted flag and a stated contradiction — `nodejs_compat` beside `no_nodejs_compat` — are
 each reported on their own, and each finding carries the literal line that fixes it. `config.require` overrides the set for a project with a

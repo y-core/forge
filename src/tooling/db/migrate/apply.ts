@@ -1,16 +1,17 @@
 import { D1_WRITE_PERMISSION } from "../../cf/api/endpoints";
-import { wranglerAuthRefused } from "../../cf/api/errors";
+import { classifyCfError } from "../../cf/api/errors";
+import { CfApiClientError } from "../../cf/api/types";
 import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
 import { timeTravelInfo } from "../bookmark";
 import { wranglerHistoryTable } from "../config";
 import { confirmPrinter } from "../context";
+import { executeSql, queryRows, queryRowsIfTable } from "../d1";
 import { refuseSchemaDrift, schemaDrift } from "../drift";
 import { sqlIdentifierEquals } from "../schema/normalize";
 import { INVENTORY_SELECT, quoteSqlIdentifier, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { ApplyPlan, Bookmark, DbIo, DbRunContext, Home, LintFinding, Migration, WranglerHistory } from "../types";
-import { executeSql, queryRows, queryRowsIfTable } from "../wrangler";
 import { analyseMigrations, formatMigrationChange } from "./analysis";
 import { applyMigrations } from "./applier";
 import { certifyFingerprintSql, compareChecksums, RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "./checksum";
@@ -211,13 +212,9 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
       throw refusedWrite(error, "Nothing was applied.");
     });
 
-    let bookmark: Bookmark | undefined;
+    const bookmark = remote && options.bookmark ? await captureBookmark(run) : undefined;
+    if (bookmark !== undefined) say(`undo: ${bookmark.restoreCommand}`);
     try {
-      if (remote && options.bookmark) {
-        bookmark = timeTravelInfo(io, home, undefined, config);
-        say(`undo: ${bookmark.restoreCommand}`);
-      }
-
       await applyMigrations(run, home, plan.pending, { label: "migrate", record: true });
 
       const inventory = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
@@ -239,9 +236,20 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
   }
 }
 
-/** A wrangler auth refusal restated as the missing token permission, with what the run had applied by then; any other error unchanged. */
+/** The undo a deployed apply is given before its first migration, a refusal of which is a failed read with nothing applied. */
+async function captureBookmark(run: DbRunContext): Promise<Bookmark> {
+  try {
+    return await timeTravelInfo(run.io, run.home, undefined, run.config);
+  } catch (error) {
+    if (!(error instanceof CliError)) throw error;
+    throw new CliError(error.kind, `${error.message}\nNothing was applied.`, { cause: error });
+  }
+}
+
+/** A Cloudflare auth refusal restated as the missing token permission, with what the run had applied by then; any other error unchanged. */
 function refusedWrite(error: unknown, applied: string): unknown {
-  if (!(error instanceof CliError) || !wranglerAuthRefused(error.message)) return error;
+  const authRefused = error instanceof CliError && error.cause instanceof CfApiClientError && classifyCfError(error.cause) === "auth";
+  if (!authRefused) return error;
   return new CliError("invalid-args", `the API token cannot write D1 — add ${D1_WRITE_PERMISSION} to it, then run again. ${applied}`, {
     cause: error,
   });

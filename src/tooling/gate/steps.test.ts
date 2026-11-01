@@ -98,10 +98,18 @@ describe("selectSteps() — the resolved tier's rows", () => {
     expect(result.ok && { total: result.total, scoped: result.scoped }).toEqual({ total: 3, scoped: false });
   });
 
-  it("refuses a run at a tier the table does not declare", () => {
-    const result = selectSteps(resolved({ static: [{ label: "alpha", tail: 10, cmd: ["a"] }] }), { tier: "unit" });
+  it("runs a tier the table does not declare as the nearest declared tier below it", () => {
+    const result = selectSteps(resolved({ static: [{ label: "alpha", tail: 10, cmd: ["a"] }] }), { tier: "runtime" });
 
-    expect(result.ok ? "" : result.error).toBe("The step table declares no unit tier — add a `unit` key under `tiers`.");
+    expect(result.ok && labelsOf(result.steps)).toEqual(["alpha"]);
+  });
+
+  it("refuses a run at a tier neither the table nor any tier below it declares", () => {
+    const result = selectSteps(resolved({ runtime: [{ label: "alpha", tail: 10, cmd: ["a"] }] }), { tier: "unit" });
+
+    expect(result.ok ? "" : result.error).toBe(
+      "The step table declares neither the unit tier nor any tier below it — add a `unit` key under `tiers`.",
+    );
   });
 });
 

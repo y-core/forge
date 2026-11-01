@@ -205,3 +205,46 @@ describe("sync zone --commit", () => {
     for (const body of puts) expect(body).toMatchObject({ description: `Managed by forge cf sync zone from ${config}` });
   });
 });
+
+describe("sync zone — the remote ruleset read", () => {
+  async function runJson(answer: () => Response): Promise<{ output: { phases: Record<string, unknown>[] }; exitCode: typeof process.exitCode }> {
+    const dir = mkdtempSync(join(tmpdir(), "forge-zone-"));
+    roots.push(dir);
+    const config = join(dir, "site.ts");
+    writeFileSync(config, `export default ${JSON.stringify(base)};\n`, "utf-8");
+
+    const original = globalThis.fetch;
+    const before = process.exitCode;
+    globalThis.fetch = (async () => answer()) as unknown as typeof globalThis.fetch;
+    const lines: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((line: string) => void lines.push(line));
+    try {
+      const cmd = createSyncZoneCommand();
+      const flags = { config, json: true, "zone-id": "zone", "api-token": "token" };
+      await cmd.run?.([], flags as Parameters<NonNullable<typeof cmd.run>>[1]);
+      return { output: JSON.parse(lines.join("\n")), exitCode: process.exitCode };
+    } finally {
+      globalThis.fetch = original;
+      process.exitCode = before ?? 0;
+      log.mockRestore();
+    }
+  }
+
+  it("reports a rule without an expression as a phase error naming the read, and exits 1", async () => {
+    const { output, exitCode } = await runJson(() =>
+      Response.json({ success: true, errors: [], messages: [], result: { rules: [{ action: "block", description: "d", enabled: true }] } }),
+    );
+    expect([output.phases[0]?.error, output.phases[0]?.errorDetail]).toEqual([
+      "could not read the phase",
+      'http_request_firewall_custom: GET /zones/{zone_id}/rulesets/phases/{ruleset_phase}/entrypoint: unexpected response shape at rules.0.expression (expected "expression")',
+    ]);
+    expect(exitCode).toBe(1);
+  });
+
+  it("reads a phase with no entry point ruleset as one holding no rules", async () => {
+    const { output } = await runJson(() =>
+      Response.json({ success: false, errors: [{ code: 10009, message: "not found" }], messages: [], result: null }, { status: 404 }),
+    );
+    expect(output.phases.map((phase) => phase.remote)).toEqual([[], []]);
+  });
+});

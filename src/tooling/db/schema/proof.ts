@@ -2,9 +2,9 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { insertStatement, SqlReal, sqlValueExpression } from "../backup/artifact";
+import { executeFile, queryBatches } from "../d1";
 import { quoteSqlIdentifier, sqlColumnAffinity } from "../sql";
 import type { DbRunContext, Home, SqlAffinity } from "../types";
-import { executeFile, queryBatches } from "../wrangler";
 import { columnTypeKey } from "./diff";
 import { orderTablesByForeignKeys } from "./emit";
 import { describeSchemaDifference, readSchemaModel } from "./introspect";

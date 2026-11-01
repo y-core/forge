@@ -4,10 +4,10 @@ import { CliError } from "../../cli/errors";
 import { resolveBackupsDir, restoreScratch } from "../backup/backup";
 import { findVerifiedBackup } from "../backup/reset";
 import { readBackupManifest } from "../backup/restore";
+import { queryRowsIfTable } from "../d1";
 import { clearLocalState } from "../home";
 import { isRemotePlace } from "../target";
 import type { DbRunContext, Home, Migration } from "../types";
-import { queryRowsIfTable } from "../wrangler";
 import { applyMigrations } from "./applier";
 import { RECORDED_CHECKSUM_SELECT, toRecordedChecksums } from "./checksum";
 import type { RehearsalOutcome } from "./types";
@@ -25,7 +25,7 @@ function selectArtifact(run: DbRunContext, artifact: string | undefined): string
   return join(resolveBackupsDir(run), found);
 }
 
-/** Which pending migration wrangler stopped on: the first one the rehearsal did not record. */
+/** Which pending migration the rehearsal stopped on: the first one it did not record. */
 async function failedMigration(run: DbRunContext, home: Home, pending: readonly Migration[]): Promise<string | null> {
   const recorded = toRecordedChecksums((await queryRowsIfTable(run.io, home, RECORDED_CHECKSUM_SELECT)) ?? []);
   const applied = new Set(recorded.map((record) => record.appliedName));

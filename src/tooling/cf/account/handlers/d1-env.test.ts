@@ -3,7 +3,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { loadWranglerConfig, writeWranglerConfig } from "../../config/parse";
+import { loadWranglerConfig } from "../../config/parse";
+import { writeWranglerConfig } from "../../config/write";
 import type { D1DatabaseConfig, WranglerConfig } from "../../types";
 import { syncBindings } from "../engine";
 import { createD1Handler } from "./d1";
@@ -47,6 +48,15 @@ describe("reconcileD1Environments()", () => {
       ],
     ]);
     expect(pass.config.env).toEqual({ dev: { vars: {} } });
+  });
+
+  it("writes back each environment as stated, never gaining a key it inherits from the top level", async () => {
+    const env = { staging: { d1_databases: [{ ...TOP, database_name: "app-db-staging", database_id: "db-staging" }] }, dev: { vars: {} } };
+    const pass = await reconcileD1Environments(
+      { ...config(env), workers_dev: false, compatibility_flags: ["no_nodejs_compat"] } as WranglerConfig,
+      ctx(true),
+    );
+    expect(pass.config.env).toEqual(env);
   });
 
   it("reports a binding the top level declares and an environment leaves out", async () => {
@@ -147,18 +157,6 @@ describe("reconcileD1Environments() — a mismatched entry", () => {
     });
     expect((pass.config.env as typeof env).dev.d1_databases[0]?.preview_database_id).toBe("db-app-preview");
   });
-});
-
-describe("reconcileD1Environments() — a malformed env block", () => {
-  for (const [env, path] of [
-    [{ dev: { d1_databases: { binding: "DB" } } }, "env.dev.d1_databases must be an array of entries"],
-    [{ dev: { d1_databases: [{ database_name: "app-db" }] } }, "env.dev.d1_databases[0] must be an entry with a string binding"],
-    [{ dev: "DB" }, "env.dev must be an object"],
-  ] as const) {
-    it(`refuses by path: ${path}`, async () => {
-      await expect(reconcileD1Environments(config(env as never), ctx(true))).rejects.toThrow(`wrangler config: ${path}`);
-    });
-  }
 });
 
 describe("cf sync --commit over a JSONC wrangler config", () => {

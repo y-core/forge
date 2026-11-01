@@ -1,6 +1,7 @@
 import { join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
+import { executeFile, queryBatches, queryRows, queryRowsIfTable } from "../d1";
 import { sha256 } from "../digest";
 import { applyMigrations } from "../migrate/applier";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
@@ -10,7 +11,6 @@ import { parseMigrationHeader } from "../schema/header";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbRunContext, Migration } from "../types";
-import { executeFile, queryBatches, queryRows, queryRowsIfTable } from "../wrangler";
 import {
   appSchemaDigestInput,
   checkRestoreTarget,

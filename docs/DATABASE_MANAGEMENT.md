@@ -83,8 +83,8 @@ config declares more than one. A config declaring several databases and a run na
 | `preview` | The deployed preview database | Cloudflare | D1 |
 
 **`remote` and `preview` are refused while the id is not a real one.** A `database_id` (or `preview_database_id` for `preview`) that is missing,
-empty, or still a placeholder aborts the run with the command that provisions it — `forge cf sync --commit` for a `database_id`, `wrangler d1
-create` for a preview database — rather than letting wrangler create something unasked.
+empty, or still a placeholder aborts the run with the command that provisions it (`forge cf sync --commit` for a `database_id`, `wrangler d1 create`
+for a preview database) — since D1's REST API addresses a deployed database by that id and nothing else.
 
 ### 2a. Standby — a Second Local Database
 
@@ -136,10 +136,10 @@ Forge keeps two tables of its own beside the app's, each `STRICT`, each created 
 than the app's, so a reader needs one convention instead of two. The prefix keeps both tables out of the schema fingerprint (§4a), out of what
 compose reads as the app's schema (`SCHEMA_COMPOSITION.md` §3), and out of what a backup treats as an app table ([`DATABASE_BACKUPS.md`][db-4] §4).
 
-**Forge owns the migration history outright.** No verb runs `wrangler d1 migrations apply` or writes wrangler's `d1_migrations` table. `migrate`
-and `migrate status` read it, as the table an entry's `migrations_table` names, and only when the database holds it: a migration wrangler recorded
-that forge never applied refuses the apply (§6d) and fails `status --check` (§6c). Wrangler remains the transport and nothing more — `d1 execute`,
-`d1 export` and `d1 time-travel` are what every verb here spawns.
+**Forge owns the migration history outright.** No verb runs `wrangler d1 migrations apply` or writes wrangler's `d1_migrations` table. `migrate` and
+`migrate status` read it, as the table an entry's `migrations_table` names, and only when the database holds it: a migration wrangler recorded that
+forge never applied refuses the apply (§6d) and fails `status --check` (§6c). Wrangler is a local transport and nothing more — its in-process D1
+binding and `d1 export --local`.
 
 Past that read, the migration analysis leaves the table out of the scratch copy it diffs against (§9b). Everywhere else it counts as one of the
 **app's** own tables: it enters the schema fingerprint, and a backup carries its rows. Drop it before forge's first apply to such a database; after
@@ -204,7 +204,7 @@ so the `BEGIN` inside it is not a transaction.
 | `drop-no-if-exists` | `DROP TABLE`, `INDEX`, `VIEW` or `TRIGGER` without `IF EXISTS` — except the `DROP TABLE` of a rebuild that just copied the table into `_forge_new_<name>` | It fails the whole migration when the object is already gone |
 | `unbounded-update` | `UPDATE … SET` with no `WHERE` in the statement — an upsert's `DO UPDATE SET` is not one | It rewrites every row in the table |
 | `unbounded-delete` | `DELETE FROM` with no `WHERE` in the statement | It empties the table |
-| `virtual-table` | `CREATE VIRTUAL TABLE` | `wrangler d1 export` throws on a virtual table, leaving the database unbackupable |
+| `virtual-table` | `CREATE VIRTUAL TABLE` | D1's export throws on a virtual table, leaving the database unbackupable |
 | `autoincrement` | `AUTOINCREMENT` | A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried with it ([`DATABASE_BACKUPS.md`][db-5] §5) |
 | `explicit-transaction` | A statement that is `BEGIN`, `COMMIT`, `ROLLBACK` or `END` | The load of a migration is already one transaction (§6d), and a nested one fails |
 | `attach-database` | `ATTACH` or `DETACH` | D1 is one database |
@@ -300,8 +300,8 @@ dry run's refusal is exactly the real run's.
 
 **A migration's body and its history row reach the database together.** Each migration is staged under `.forge/scratch/migrate/` as one file — the
 migration's SQL, then the `INSERT INTO _forge_migrations` that records it. Locally that file is loaded in process as one call, which is one
-transaction, so the migration and its record commit together or neither does; a deployed target loads it with `wrangler d1 execute --file`.
-Seeds take the same path with their own record statement (§7), so there is one apply mechanism here and not two.
+transaction, so the migration and its record commit together or neither does; a deployed target sends the same text to D1's query endpoint as one
+request. Seeds take the same path with their own record statement (§7), so there is one apply mechanism here and not two.
 
 **A local load refused at commit is replayed once, to name the row that broke it.** A deferred foreign key is checked at commit, and miniflare
 reports that refusal as `internal error; reference = <id>` or as a bare `FOREIGN KEY constraint failed`, neither naming a table. Forge then runs
@@ -310,11 +310,11 @@ that first left it so. The replay is local only: a deployed database is never re
 in a statement that always fails; it runs only after the original load was rolled back, and a migrate still holds the apply lock (§6a). Naming a
 refused very large load, such as a restore's rows, takes longer, and that cost is accepted rather than capped.
 
-**Against `--remote` that file is not one transaction, and this is the one place a deployed apply can tear.** A deployed migration body can commit
-without the `INSERT` that records it; the rerun then re-applies a body that has already run and fails on whatever it created. The `INSERT` is a
-plain `INSERT` rather than an `INSERT OR REPLACE`, so nothing papers over the gap. **The recovery is the bookmark the run printed** (§3). There is
-deliberately no verb that reconstructs the missing row: a row written from the file alone would assert that the body ran, which is the very thing
-in doubt.
+**Against a deployed target that request is not promised to be one transaction, and this is the one place a deployed apply can tear.** D1's API runs
+a multi-statement body as a batch and documents no rollback, so a deployed migration body can commit without the `INSERT` that records it; the rerun
+then re-applies a body that has already run and fails on whatever it created. The `INSERT` is a plain `INSERT` rather than an `INSERT OR REPLACE`,
+so nothing papers over the gap. **The recovery is the bookmark the run printed** (§3). There is deliberately no verb that reconstructs the missing
+row: a row written from the file alone would assert that the body ran, which is the very thing in doubt.
 
 **The fingerprint is certified after the batch, in a statement of its own.** A crash before that `UPDATE` leaves the last history row with a `NULL`
 fingerprint — reported, not failed (§4a), and certified by the next apply.
@@ -489,7 +489,7 @@ same rows from `cloudflareWorkerSteps({ db: true })`.
 **Set the Workers Builds deploy command to:**
 
 ```bash
-forge db migrate --target remote --yes && wrangler deploy
+forge db migrate --target remote --yes --account-id "$CLOUDFLARE_ACCOUNT_ID" --api-token "$CLOUDFLARE_API_TOKEN" && wrangler deploy
 ```
 
 **`&&` is what stops the deploy, so no build ships code ahead of its schema.** Every refusal of §6d and §9b exits non-zero having applied
@@ -499,9 +499,9 @@ the migrate exits 0 and the build deploys.
 **`--yes` is required.** A deployed migrate asks before it applies (§9b) and a build has no terminal to ask at, so without `--yes` the migrate is
 refused and the build ships nothing. `--yes` confirms the apply; it passes no refusal.
 
-**The build's token needs `Account → D1 → Edit`.** A token Cloudflare refuses names that permission, and says whether anything was applied by
-then: nothing, or the migrations before the refused one. `forge cf sync --commit` notes that D1 write access is unverified unless it created a
-database.
+**The build authenticates from two flags alone:** `--account-id` and `--api-token`, never an exported variable, `wrangler login` or the config's
+`account_id`; a missing one is named before any request. The token needs `Account → D1 → Edit` beside what `wrangler deploy` needs; a refusal
+names that permission and what was applied. `forge cf sync --commit` notes D1 write access is unverified unless it created a database.
 
 A team that keeps the apply a human step makes `forge db migrate status --check --target remote` the first half instead: it exits 1 while
 anything is pending (§6c).

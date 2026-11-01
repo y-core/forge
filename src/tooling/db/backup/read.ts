@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
 
 import { CliError } from "../../cli/errors";
+import { queryBatches, queryRows } from "../d1";
 import { scanSql, splitCreateTableBody, sqlIdentifierEquals, unquoteSqlIdentifier } from "../schema/normalize";
 import type { SqlToken } from "../schema/types";
 import { INVENTORY_SELECT, quoteSqlIdentifier, tableInfoSelect, tableSqlSelect, toColumnInfo, toSchemaObjects } from "../sql";
 import type { ColumnInfo, DbIo, Home } from "../types";
-import { queryBatches, queryRows } from "../wrangler";
 import { canonicaliseRow, classifyTable, decodeReadRow, SqlReal, TYPE_ALIAS_PREFIX, verificationSelect } from "./artifact";
 import { emptyComparison, finishComparison, mergeRowPage } from "./compare";
 import type { AppTable, CanonicalRow, ReadCursor, RowPage, SourceTable, TableComparison } from "./types";
 
-// One page's worst case has to fit in one `d1 execute --json` result, which is a bound on bytes
+// One page's worst case has to fit in one D1 query response, which is a bound on bytes
 // rather than on rows; 256 keeps a wide row inside it without a second round trip per page.
 const PAGE_ROWS = 256;
 

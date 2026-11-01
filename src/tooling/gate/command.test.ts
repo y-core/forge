@@ -161,10 +161,19 @@ describe("createGateCommand() — resolving the tier", () => {
     expect({ logs, code }).toEqual({ logs: ['Unknown --tier: "release". Known tiers: static, unit, runtime, scheduled.'], code: 1 });
   });
 
-  it("refuses a run tier the table does not declare, naming the key to add", async () => {
-    const { logs, code } = await run({ static: [trivial] }, { tier: "unit" });
+  it("refuses a run tier neither the table nor any tier below it declares, naming the key to add", async () => {
+    const { logs, code } = await run({ runtime: [trivial] }, { tier: "unit" });
 
-    expect({ logs, code }).toEqual({ logs: ["The step table declares no unit tier — add a `unit` key under `tiers`."], code: 1 });
+    expect({ logs, code }).toEqual({
+      logs: ["The step table declares neither the unit tier nor any tier below it — add a `unit` key under `tiers`."],
+      code: 1,
+    });
+  });
+
+  it("runs an undeclared tier as the nearest declared one below it, and says so in the verdict", async () => {
+    const { logs, code } = await run({ static: [trivial], unit: [tier("static")] }, { list: true });
+
+    expect({ logs, code }).toEqual({ logs: ["verify (as unit) — 1 step\n  alpha"], code: undefined });
   });
 
   it("refuses a label the resolved table holds twice, in any tier, before any step runs", async () => {

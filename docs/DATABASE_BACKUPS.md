@@ -7,7 +7,7 @@ audience: consumer
 # Database Backups
 
 > Owns what `forge db backup`, `forge db restore` and `forge db reset` decide: what an artifact holds, why it is proven before it is written, why
-> forge emits the data itself rather than taking wrangler's dump, and what each verb checks before it acts. The places a backup is taken from and
+> forge emits the data itself rather than taking D1's dump, and what each verb checks before it acts. The places a backup is taken from and
 > the undo each place has are [`DATABASE_MANAGEMENT.md`][dm-3] §3's.
 
 ---
@@ -19,8 +19,8 @@ audience: consumer
 - §3 A Remote Backup Is a Read: no lock, no bookmark, proven into a local scratch
 - §4 Self-Contained and Bound: the embedded migrations, the facts the manifest binds to, and the manifest's own digest
 - §5 The Data Format: why forge writes the rows itself, what the format carries, and the limits that follow
-- §5a What a Backup Costs: the page size, the spawn per page, the whole-database memory bound, and what `--no-verify` skips
-- §5b Backing Up Through `wrangler d1 export`: the route for a database too large to read, what it refuses, and what it blocks
+- §5a What a Backup Costs: the page size, the request per page, the whole-database memory bound, and what `--no-verify` skips
+- §5b Backing Up Through an Export: the route for a database too large to read, what it refuses, and what it blocks
 - §6 Restore and Reset: an empty target only, the whole artifact checked first, and what a reset relies on
 
 ---
@@ -34,7 +34,7 @@ an artifact holds every row the database does.
 
 | File | What it is | Restores by |
 | --- | --- | --- |
-| `schema.sql` | The schema alone, from `wrangler d1 export --no-data` | `--route full` loads this first, then `data.sql` |
+| `schema.sql` | The schema alone, from a schema-only export | `--route full` loads this first, then `data.sql` |
 | `data.sql` | Rows only, for the app's tables and forge's companions — the migration history among them | Both routes: after `migrations/`, or after `schema.sql` |
 | `migrations/` | Every migration the artifact was taken with, under the name the history recorded | `--route migrations` applies exactly these |
 | `manifest.json` | What was read, what it hashes to, and what was proven | Read first by every restore |
@@ -104,7 +104,7 @@ can recompute the digest. Tamper resistance is a signature, and is out of scope.
 
 ## 5. The Data Format
 
-**Forge emits the data itself rather than taking wrangler's dump**, because wrangler's dumper is not injective. It writes a newline as a backslash
+**Forge emits the data itself rather than taking D1's dump**, because D1's dumper is not injective. It writes a newline as a backslash
 followed by `n`, and reverses that without escaping the backslash — so a value that already contained those two characters comes back as a newline,
 silently. Forge instead writes each row as a single-line `INSERT` naming its columns, with any newline carried on a token that the SQL reverses with
 `replace(…, char(10))`; the token is accepted only after decoding it reproduces the input byte for byte. Naming the columns is what lets an artifact
@@ -114,14 +114,14 @@ one.
 What the format carries, and the limits that follow from it — each refused up front rather than discovered mid-restore:
 
 - **The value types the format carries** are text, finite numbers, NULL and `BLOB`. Both sources are read the same way — a deployed database
-  through `--json`, a local one and every scratch restore through the D1 binding in process — with `typeof` beside every value and a BLOB
+  over D1's REST API, a local one and every scratch restore through the D1 binding in process — with `typeof` beside every value and a BLOB
   projected as `hex()`, which is decoded and written as `X'hex'`. That is what lets a database with 16-byte BLOB keys (forge's own auth schema)
   be backed up. A REAL that happens to be integral reaches the read without its point, so the `real` tag writes it as `1.0`; the storage class
   would otherwise change under a column with no affinity. An integer past 2^53 is refused: it cannot round-trip. A stored `±Infinity` arrives
   as `null` under a `real` tag from both sources (measured), and is refused for the same reason rather than restored as NULL. Text that is not
   well-formed UTF-8 — only `char()` in hand-run SQL can write it, since a Worker encodes a lone surrogate as U+FFFD before D1 sees it — arrives
   from both sources as replacement characters (measured) and the read cannot tell; it restores changed.
-- **No virtual tables.** `wrangler d1 export` throws on one, which is also why the linter treats `CREATE VIRTUAL TABLE` as an error
+- **No virtual tables.** D1's dumper throws on one, which is also why the linter treats `CREATE VIRTUAL TABLE` as an error
   ([`DATABASE_MANAGEMENT.md`][dm-5] §5).
 - **No `AUTOINCREMENT` on an app table.** A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried
   alongside it.
@@ -138,16 +138,13 @@ What the format carries, and the limits that follow from it — each refused up 
 
 ### 5a. What a Backup Costs, and the Size It Stops Suiting
 
-**This is a documented limit, not a defect.** The reader is shaped for a database a `wrangler` CLI can be driven against, and it is worth knowing
-where that stops. A local database, and every scratch the proof restores into, is read in process; a deployed one is read by spawning wrangler.
+**This is a documented limit, not a defect.** The reader is shaped for a database small enough to read a page at a time, and it is worth knowing
+where that stops. A local database, and every scratch the proof restores into, is read in process; a deployed one is read over D1's REST API.
 
-- **Against a deployed database, a spawn costs about 1.3 seconds, whatever it carries.** The process spawn dominates the query, so reducing spawns
-  is the only thing that moves the wall clock.
-- **One read per 256 rows.** The page size is set so one page's worst case fits a single `--json` result; against a deployed database a 100k-row
-  table is roughly 400 spawns for one pass over it.
+- **One read per 256 rows.** The page size is set so one page's worst case fits a single query response; against a deployed database a 100k-row
+  table is roughly 400 requests for one pass over it.
 - **Every other read is batched.** The inventory, each table's shape, each key probe and each row count go out as one request carrying many
-  statements, so describing N tables costs two reads rather than 2N; against a deployed database a batch is split only to keep one `--command`
-  under the kernel's cap on a single argv string.
+  statements, so describing N tables costs two reads rather than 2N.
 - **A route-`full` load is two loads**, `schema.sql` then `data.sql`, each whole.
 - **The whole database is held in memory at once.** Every table is read whole before anything is written, and each is held twice: the canonical rows
   the artifact is emitted from, and the raw rows the verification compares against. Peak memory therefore tracks the database's size, not the
@@ -160,20 +157,22 @@ export holds no rows in memory beyond the `data.sql` text, but it pays off only 
 target, so a local database pays the same paged reads plus an export and a load. Nor does it compare the rows' contents with the source — only
 their counts and the schema.
 
-### 5b. Backing Up Through `wrangler d1 export`
+### 5b. Backing Up Through an Export
 
-**`forge db backup --via export` has `wrangler d1 export` write the rows** instead of reading them a page at a time. Schema comes from the same
-`--no-data` export, data from `--no-schema`, so the artifact keeps its layout and `forge db restore` reads it unchanged. The manifest records
-`via: "export"`, and for a deployed database the Time Travel `bookmark` taken just before the export. It is near the exported rows rather than
-their instant: a write landing between the bookmark and the data export is in `data.sql` and not at the bookmark.
+**`forge db backup --via export` has an export write the rows** — `wrangler d1 export --local` for a local database, D1's export endpoint, polled to
+completion and downloaded from its signed URL, for a deployed one — instead of reading them a page at a time. Schema comes from a schema-only export
+and data from a data-only one, so the artifact keeps its layout and `forge db restore` reads it unchanged. The manifest records `via: "export"`, and
+for a deployed database the Time Travel `bookmark` taken just before the export. It is near the exported rows rather than their instant: a write
+landing between the bookmark and the data export is in `data.sql` and not at the bookmark. The manifest's `exporter` records who wrote the SQL: the
+installed wrangler's version for a local database, or the bookmark each of D1's exports was taken at for a deployed one.
 
 **The table digests come from a scratch restore of the export**, read a page at a time and never held whole. Route `migrations` is proven against
 that scratch with both sides paged. Route `full` is proven on the scratch itself, already a route-`full` load, by its schema digest alone. **The
 rows' contents are never compared with the source.** Each table's count, taken just before the export, must equal the rows the export holds, and
 the app schema is read again after the data export and must still match — a check `--no-verify` keeps, because a schema change between the two
-exports leaves `schema.sql` and `data.sql` describing different schemas. The read path checks the schema again after its own `--no-data` export,
+exports leaves `schema.sql` and `data.sql` describing different schemas. The read path checks the schema again after its own schema export,
 so both paths refuse a schema change made during the backup, even under `--no-verify`. A value the export changed in place passes, so the export
-is refused up front wherever wrangler's dumper is known not to reproduce one:
+is refused up front wherever D1's dumper is known not to reproduce one:
 
 - **Text holding a `\n` escape beside a real newline, or a `\r` escape beside a real carriage return.** The dumper wraps such a value in a
   `replace()` that turns the escape into a second control character. A `\n` with no real newline beside it comes through intact.

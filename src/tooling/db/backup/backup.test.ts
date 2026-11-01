@@ -7,6 +7,7 @@ import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
 import {
   argvHas,
+  cfEnvelope,
   composed,
   fakeDbIo,
   keyProbeAsked,
@@ -15,17 +16,18 @@ import {
   minimalWranglerConfig,
   OK,
   projectReadRows,
-  routedReply,
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
+  REMOTE_AUTH,
+  REMOTE_FLAGS,
 } from "../db.fixture";
 import { sha256 } from "../digest";
 import { realDbIo } from "../io";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import { schemaFingerprint } from "../migrate/fingerprint";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
-import type { DbHostConfig, DbIo, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
+import type { DbHostConfig, DbIo, DbRunContext, FakeDbIo, FakeRestCall, Home, Place, SharedDbFlags } from "../types";
 import { appSchemaDigestInput, schemaDigestInput, SqlReal } from "./artifact";
 import { resolveBackupsDir, runBackup, takeBackup, withoutPlannerStatistics } from "./backup";
 import { readWholeTable } from "./read";
@@ -98,7 +100,7 @@ function appRoot(): string {
 }
 
 function flags(root: string, over: Partial<SharedDbFlags> = {}): SharedDbFlags {
-  return { target: "local", db: undefined, config: "wrangler.jsonc", env: undefined, root, json: false, yes: true, ...over };
+  return { target: "local", db: undefined, config: "wrangler.jsonc", env: undefined, root, json: false, yes: true, ...REMOTE_FLAGS, ...over };
 }
 
 function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}, host: DbHostConfig = {}): Promise<DbRunContext> {
@@ -116,10 +118,32 @@ interface FakeDatabase {
   readonly scratchRows?: Readonly<Record<string, Record<string, unknown>[]>>;
 }
 
-/** A fake wrangler answering the reads a backup makes, and writing `schema.sql` when asked to export. */
+const REMOTE_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+const PREVIEW_ID = "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5b";
+const SIGNED = "https://d1-exports.example.com/";
+
+function deployedHome(place: Place, databaseId: string): Home {
+  return {
+    label: place,
+    database: "app-db",
+    binding: "DB",
+    dir: "/app",
+    configPath: "/app/wrangler.jsonc",
+    persistTo: null,
+    place,
+    env: null,
+    databaseId,
+    auth: REMOTE_AUTH,
+    synthesized: false,
+  };
+}
+
+const exportBody = (call: FakeRestCall) => JSON.parse(call.body ?? "{}") as { dump_options?: Record<string, boolean> };
+const exportCalls = (io: FakeDbIo) => io.restCalls.filter((call) => call.url.endsWith("/export"));
+
+/** A fake answering the reads a backup makes in process and over REST, and writing `schema.sql` when either export is asked for it. */
 function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
-  const io = fakeDbIo(over.seed ?? {});
-  io.rules.push({ match: (args) => argvHas(args, "--version"), reply: { code: 0, stdout: "wrangler 4.105.0\n", stderr: "" } });
+  const io = fakeDbIo(over.seed ?? {}, { homes: [deployedHome("remote", REMOTE_ID), deployedHome("preview", PREVIEW_ID)] });
   io.rules.push({
     match: (args) => argvHas(args, "export", "--output"),
     reply: (args) => {
@@ -127,18 +151,20 @@ function fakeWrangler(over: FakeDatabase = {}): FakeDbIo {
       return OK;
     },
   });
-  // A deployed backup reads through the CLI, so the same answers are wired to both effects.
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--command"),
-    reply: (args) =>
-      routedReply(args[args.length - 1] ?? "", (statement) =>
-        answerFor(
-          statement,
-          args.some((arg) => arg.includes("-verify-")),
-        ),
-      ),
-  });
+  io.restRules.push(
+    {
+      match: (url) => url.endsWith("/export"),
+      reply: (_url, init) => {
+        const part = JSON.parse(String(init?.body ?? "{}")).dump_options?.no_data === true ? "schema" : "data";
+        return cfEnvelope({
+          status: "complete",
+          at_bookmark: `bm-${part}`,
+          result: { filename: `${part}.sql`, signed_url: `${SIGNED}${part}.sql` },
+        });
+      },
+    },
+    { match: (url) => url === `${SIGNED}schema.sql`, reply: () => new Response(SCHEMA_SQL) },
+  );
   io.d1Rules.push({ match: () => true, reply: (statement, home) => answerFor(statement, home.database.includes("-verify-")) });
   // A proof reads its scratch under a database named for the route, which is what tells the two apart.
   function answerFor(statement: string, scratch: boolean): Record<string, unknown>[] {
@@ -300,34 +326,24 @@ describe("runBackup", () => {
     expect(io.files.has(join(root, "var/dumps", DIRECTORY_NAME, "manifest.json"))).toBe(true);
   });
 
-  it("backs up a remote database read-only, proving into a local scratch", async () => {
+  it("backs up a remote database read-only over the D1 REST API, proving into a local scratch", async () => {
     const root = appRoot();
     const io = fakeWrangler();
     const outcome = await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: true, label: null });
-    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
-    const d1 = io.calls.filter((call) => call[1] === "d1");
-    const database = (call: string[]) => (call[2] === "migrations" ? call[4] : call[3]) ?? "";
-    const app = d1.filter((call) => database(call) === "app-db");
-    // The deployed source is read by spawning and the local proof in process, which is the split itself.
+    const api = io.restCalls.filter((call) => call.url.startsWith("https://api.cloudflare.com/"));
+    const queries = api.filter((call) => call.url.endsWith("/query"));
     const scratch = io.d1Calls.filter((call) => call.home.includes("verify-"));
-    expect(app.length).toBe(d1.length);
-    expect(app.length).toBeGreaterThan(0);
+    expect(io.calls).toEqual([]);
+    expect(queries.length).toBeGreaterThan(0);
     expect(scratch.length).toBeGreaterThan(0);
-    expect(app.every((call) => call.includes("--remote") && !call.includes("--persist-to"))).toBe(true);
-    expect(app.some((call) => call[2] === "time-travel" || (call.includes("--yes") && call.includes("--file")))).toBe(false);
+    expect(api.every((call) => call.url.includes(`/d1/database/${REMOTE_ID}/`))).toBe(true);
+    expect(queries.every((call) => "batch" in JSON.parse(call.body ?? "{}"))).toBe(true);
+    expect(api.some((call) => call.url.includes("/time_travel/"))).toBe(false);
     expect(scratch.every((call) => call.place === "local" && call.persistTo.startsWith(join(root, ".forge", "scratch") + "/"))).toBe(true);
-    expect(d1.find((call) => call[2] === "export")?.slice(2)).toEqual([
-      "export",
-      "app-db",
-      "-c",
-      join(root, "wrangler.jsonc"),
-      "--remote",
-      "--output",
-      join(directory, "schema.export.sql"),
-      "--no-data",
-    ]);
-    expect(outcome.manifest.database).toEqual({ name: "app-db", id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a", target: "remote", persistPath: null });
+    expect(exportCalls(io).map(exportBody)).toEqual([{ output_format: "polling", dump_options: { no_data: true } }]);
+    expect(outcome.manifest.database).toEqual({ name: "app-db", id: REMOTE_ID, target: "remote", persistPath: null });
+    expect(outcome.manifest.exporter).toEqual({ tool: "d1", schemaBookmark: "bm-schema", dataBookmark: null });
     expect(outcome.manifest.verified).toEqual([
       { route: "full", divergent: 0 },
       { route: "migrations", divergent: 0 },
@@ -338,41 +354,50 @@ describe("runBackup", () => {
     expect(io.files.has(join(root, ".forge", "db-apply.lock"))).toBe(false);
   });
 
-  it("backs up a preview database with --remote --preview", async () => {
+  it("refuses a remote backup before any request, and writes no backup directory, when --account-id is not given", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    const refused = await refusal(async () =>
+      runBackup(await context(root, io, { target: "remote", "account-id": undefined }), { out: null, verify: false, label: null }),
+    );
+    expect(refused.kind).toBe("invalid-args");
+    expect(refused.message).toStartWith("--account-id is not given.");
+    expect([io.restCalls, io.calls, io.exists(join(root, ".forge/backups"))]).toEqual([[], [], false]);
+  });
+
+  it("backs up a preview database by its preview id", async () => {
     const root = mkdtempSync(join(tmpdir(), "forge-db-backup-unit-"));
     roots.push(root);
     const config = minimalWranglerConfig(root, {
       d1_databases: [
-        {
-          binding: "DB",
-          database_name: "app-db",
-          database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-          preview_database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5b",
-          migrations_dir: "config/db/migrations",
-        },
+        { binding: "DB", database_name: "app-db", database_id: REMOTE_ID, preview_database_id: PREVIEW_ID, migrations_dir: "config/db/migrations" },
       ],
     });
     writeFileSync(config.path, config.text);
     const io = fakeWrangler();
     const outcome = await runBackup(await context(root, io, { target: "preview" }), { out: null, verify: false, label: null });
-    const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
-    expect(io.calls.find((call) => call[2] === "export")?.slice(2)).toEqual([
-      "export",
-      "app-db",
-      "-c",
-      join(root, "wrangler.jsonc"),
-      "--remote",
-      "--preview",
-      "--output",
-      join(directory, "schema.export.sql"),
-      "--no-data",
+    expect(exportCalls(io).map((call) => call.url)).toEqual([
+      `https://api.cloudflare.com/client/v4/accounts/acct/d1/database/${PREVIEW_ID}/export`,
     ]);
     expect(outcome.manifest.database.target).toBe("preview");
     expect(outcome.manifest.warnings).toEqual([
       "--no-verify: nothing in this artifact has been proven to rebuild",
       "taken from preview: restore is refused for remote and preview — this artifact restores into local, standby, or a rehearsal scratch",
     ]);
+  });
+
+  it("reads every row of a deployed table across two keyset pages over REST", async () => {
+    const root = appRoot();
+    const tasks = Array.from({ length: 300 }, (_, index) => ({ uuid: `t${String(index).padStart(3, "0")}`, lane: "todo" }));
+    const io = fakeWrangler({ rows: { ...ROWS, tasks } });
+    const outcome = await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: false, label: null });
+    const inserts = (io.files.get(join(outcome.directory, "data.sql")) ?? "").split("\n").filter((line) => line.startsWith('INSERT INTO "tasks"'));
+    const pages = io.restCalls.filter((call) => call.url.endsWith("/query") && (call.body ?? "").includes('FROM \\"tasks\\" AS t'));
+
+    expect(inserts.length).toBe(300);
+    expect(pages.length).toBe(2);
+    expect(outcome.manifest.tables.find((table) => table.name === "tasks")?.rows).toBe(300);
   });
 
   it("writes an integral REAL as 1.0 and proves it back with no divergence", async () => {
@@ -615,32 +640,33 @@ describe("runBackup --via export", () => {
   /** The fake, with an export that writes the schema for --no-data and the rows for --no-schema. */
   function exporting(over: FakeDatabase = {}): FakeDbIo {
     const io = fakeWrangler(over);
-    io.rules.unshift(
-      {
-        match: (args) => argvHas(args, "export", "--no-schema"),
-        reply: (args) => {
-          io.writeText(args[args.indexOf("--output") + 1] ?? "", DATA_SQL);
-          return OK;
-        },
+    io.rules.unshift({
+      match: (args) => argvHas(args, "export", "--no-schema"),
+      reply: (args) => {
+        io.writeText(args[args.indexOf("--output") + 1] ?? "", DATA_SQL);
+        return OK;
       },
-      { match: (args) => argvHas(args, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-7"}', stderr: "" } },
+    });
+    io.restRules.unshift(
+      { match: (url) => url.includes("/time_travel/bookmark"), reply: () => cfEnvelope({ bookmark: "bm-7" }) },
+      { match: (url) => url === `${SIGNED}data.sql`, reply: () => new Response(DATA_SQL) },
     );
     return io;
   }
 
-  it("has wrangler export the rows, writes them as data.sql, and records the route and the deployed database's bookmark", async () => {
+  it("has D1 export the schema and then the rows, writes them as data.sql, and records the route, the bookmark and each export's bookmark", async () => {
     const root = appRoot();
     const io = exporting();
     const outcome = await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: true, label: null, via: "export" });
     const directory = join(root, ".forge/backups", DIRECTORY_NAME);
 
-    const exports = io.calls.filter((call) => call[2] === "export").map((call) => call.at(-1));
-    expect(exports).toEqual(["--no-data", "--no-schema"]);
+    expect(exportCalls(io).map((call) => exportBody(call).dump_options)).toEqual([{ no_data: true }, { no_schema: true }]);
+    expect(io.calls).toEqual([]);
     expect(io.readText(join(directory, "data.sql"))).toBe(DATA_SQL);
-    expect([outcome.manifest.via, outcome.manifest.bookmark, outcome.manifest.dumper.tool]).toEqual([
+    expect([outcome.manifest.via, outcome.manifest.bookmark, outcome.manifest.exporter]).toEqual([
       "export",
       "bm-7",
-      "forge db backup --via export (wrangler d1 export)",
+      { tool: "d1", schemaBookmark: "bm-schema", dataBookmark: "bm-data" },
     ]);
     expect(outcome.manifest.tables.map((table) => [table.name, table.rows])).toEqual([["tasks", 2]]);
     expect(outcome.manifest.verified).toEqual([
@@ -653,7 +679,9 @@ describe("runBackup --via export", () => {
     const root = appRoot();
     const io = exporting();
     const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null, via: "export" });
-    expect([outcome.manifest.via, outcome.manifest.bookmark, io.calls.some((call) => call[2] === "time-travel")]).toEqual(["export", null, false]);
+    expect([outcome.manifest.via, outcome.manifest.bookmark, io.restCalls]).toEqual(["export", null, []]);
+    expect(io.calls.filter((call) => call[2] === "export").map((call) => call.at(-1))).toEqual(["--no-data", "--no-schema"]);
+    expect(outcome.manifest.exporter).toEqual({ tool: "wrangler", version: "4.151.2" });
   });
 
   it("refuses a database holding a virtual table before anything is exported", async () => {
@@ -675,7 +703,7 @@ describe("runBackup --via export", () => {
     });
     const refused = await refusal(async () => runBackup(await context(root, io), { out: null, verify: true, label: null, via: "export" }));
     expect(refused.message).toBe(
-      "app-db holds values wrangler d1 export would not reproduce, so --via export is refused — back it up without --via:\n  tasks.lane: 1 text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which wrangler's dumper doubles",
+      "app-db holds values D1's export would not reproduce, so --via export is refused — back it up without --via:\n  tasks.lane: 1 text value(s) holding a \\n or \\r escape beside a real newline or carriage return, which D1's dumper doubles",
     );
     expect(io.calls.some((call) => call[2] === "export")).toBe(false);
   });
@@ -684,10 +712,10 @@ describe("runBackup --via export", () => {
     const root = appRoot();
     const io = exporting();
     await runBackup(await context(root, io, { target: "remote" }), { out: null, verify: false, label: null, via: "export" });
-    const order = io.calls
-      .filter((call) => call[2] === "time-travel" || call[2] === "export")
-      .map((call) => (call[2] === "export" ? call.at(-1) : call[2]));
-    expect(order).toEqual(["time-travel", "--no-data", "--no-schema"]);
+    const order = io.restCalls
+      .filter((call) => call.url.includes("/time_travel/") || call.url.endsWith("/export"))
+      .map((call) => (call.url.endsWith("/export") ? Object.keys(exportBody(call).dump_options ?? {})[0] : "time-travel"));
+    expect(order).toEqual(["time-travel", "no_data", "no_schema"]);
   });
 
   function writtenToOnceExported(io: FakeDbIo): FakeDbIo {
@@ -841,10 +869,19 @@ describe("runBackup --via export", () => {
     });
   });
 
+  it("records the version the installed wrangler reports for a local backup", async () => {
+    const root = appRoot();
+    const io = fakeWrangler();
+    io.wranglerVersion = () => "4.200.0-rc.1";
+    const outcome = await runBackup(await context(root, io), { out: null, verify: false, label: null });
+    expect(outcome.manifest.exporter).toEqual({ tool: "wrangler", version: "4.200.0-rc.1" });
+  });
+
   it("records via read on the default route", async () => {
     const root = appRoot();
     const outcome = await runBackup(await context(root, fakeWrangler()), { out: null, verify: false, label: null });
     expect([outcome.manifest.via, outcome.manifest.bookmark]).toEqual(["read", null]);
+    expect(outcome.manifest.exporter).toEqual({ tool: "wrangler", version: "4.151.2" });
   });
 });
 

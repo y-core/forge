@@ -15,6 +15,7 @@ export const LEAF: readonly string[] = [
   "result",
   "router",
   "site",
+  "storage/backup",
   "tooling/lint",
   "tooling/term",
   "ui/contracts",

@@ -14,17 +14,11 @@ import { styleAction } from "../account/commands";
 import { createCfClient } from "../api/client";
 import { ZONE_PHASES, zoneRulesetEntrypoint } from "../api/endpoints";
 import { classifyCfError } from "../api/errors";
+import { CF_OPERATIONS } from "../api/operations";
 import type { CfApiClientError } from "../api/types";
 import { renderSections } from "../table";
 import type { TableRow, TableSection } from "../types";
 import type { SyncAction } from "../types";
-
-/** What the remote entry point ruleset returns, of the fields this command compares or writes. @internal */
-interface RemoteRuleset {
-  id?: string;
-  description?: string;
-  rules?: ZoneRule[];
-}
 
 /** The API-token permission each phase needs, named in the failure row. @internal */
 const PHASE_PERMISSIONS: Record<string, string> = {
@@ -183,31 +177,32 @@ async function runSyncZone(flags: LooseFlags, ctx?: CliContext): Promise<void> {
   const plans: PhasePlan[] = [];
   for (const planned of planZoneRules(config)) {
     const path = zoneRulesetEntrypoint(zoneId, planned.phase);
-    const read = await client.get<RemoteRuleset>(path);
+    const read = await client.get(path, CF_OPERATIONS.getZoneEntrypointRuleset);
     if (read.ok) {
-      plans.push({ ...planned, remote: read.data.rules ?? [] });
+      plans.push({ ...planned, remote: read.data.rules });
       continue;
     }
     // A phase with no entry point ruleset yet is not an error: the first write creates it.
-    const kind = classifyCfError(read.error as CfApiClientError);
+    const kind = classifyCfError(read.error);
     if (kind === "not-found") plans.push({ ...planned, remote: [] });
-    else plans.push({ ...planned, remote: null, ...describeFailure(read.error as CfApiClientError, planned.phase) });
+    else plans.push({ ...planned, remote: null, ...describeFailure(read.error, planned.phase) });
   }
 
   let committed = false;
   if (flags.commit === true) {
     for (const plan of plans) {
       if (plan.error !== undefined || phaseInSync(plan)) continue;
-      const written = await client.put<RemoteRuleset>(zoneRulesetEntrypoint(zoneId, plan.phase), {
-        description: `Managed by forge cf sync zone from ${configPath}`,
-        rules: plan.desired,
-      });
+      const written = await client.put(
+        zoneRulesetEntrypoint(zoneId, plan.phase),
+        { description: `Managed by forge cf sync zone from ${configPath}`, rules: plan.desired },
+        CF_OPERATIONS.putZoneEntrypointRuleset,
+      );
       if (written.ok) {
         plan.remote = plan.desired;
         plan.written = true;
         committed = true;
       } else {
-        Object.assign(plan, describeFailure(written.error as CfApiClientError, plan.phase));
+        Object.assign(plan, describeFailure(written.error, plan.phase));
       }
     }
   }

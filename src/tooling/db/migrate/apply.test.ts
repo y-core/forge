@@ -1,12 +1,14 @@
 import { describe, expect, it } from "bun:test";
 
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
+import { CfApiClientError } from "../../cf/api/types";
 import type { WranglerConfig } from "../../cf/types";
+import { CliError } from "../../cli/errors";
 import { PLAIN } from "../../term/color";
-import { OK, argvHas, composed, fakeDbIo, jsonRows, onStdin, schemaModelRows } from "../db.fixture";
+import { cfEnvelope, cfRefusal, composed, fakeDbIo, onStdin, REMOTE_AUTH, schemaModelRows } from "../db.fixture";
 import { appHome } from "../home";
 import { formatComposeHeader } from "../schema/header";
-import type { DbConfig, DbRunContext, FakeDbIo, Home, Place, SchemaObject, Spawned } from "../types";
+import type { DbConfig, DbRunContext, FakeDbIo, FakeRestCall, Home, Place, SchemaObject } from "../types";
 import { lintPendingMigrations, readWranglerHistory, runMigrate } from "./apply";
 import { RECORDED_CHECKSUM_SELECT, recordMigrationSql } from "./checksum";
 import { migrationChecksum, migrationsDigest } from "./files";
@@ -49,24 +51,38 @@ function dbConfig(place: Place): DbConfig {
 }
 
 function context(files: Record<string, string>, place: Place = "local"): { run: DbRunContext; io: FakeDbIo; out: string[] } {
-  const io = fakeDbIo(files, { now: NOW });
   const config = dbConfig(place);
+  const home = appHome(config, REMOTE_AUTH);
+  const io = fakeDbIo(files, { now: NOW, homes: [home] });
   const out: string[] = [];
-  const run: DbRunContext = { config, home: appHome(config), io, host: {}, json: false, yes: true, style: PLAIN, print: (line) => out.push(line) };
+  const run: DbRunContext = { config, home, io, host: {}, json: false, yes: true, style: PLAIN, print: (line) => out.push(line) };
   return { run, io, out };
 }
 
 const OPTIONS = { dryRun: false, bookmark: true, rehearse: false };
 
-const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table: _forge_migrations" };
 const INVENTORY = [{ type: "table", name: "users", tbl_name: "users", sql: INIT }];
 const ACTUAL_FINGERPRINT = schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: INIT }]);
 
-const command = (a: readonly string[]) => (argvHas(a, "execute", "--json", "--command") ? (a.at(-1) ?? "") : "");
-const isRecordedSelect = (a: readonly string[]) => command(a) === RECORDED_CHECKSUM_SELECT;
-const isInventorySelect = (a: readonly string[]) => command(a) === INVENTORY_SELECT;
-const isWrite = (a: readonly string[]) => argvHas(a, "execute", "--yes", "--command");
-const isFileApply = (a: readonly string[]) => argvHas(a, "execute", "--yes", "--file");
+/** The statements one D1 REST request carried: each of a batch, or the one body of SQL. */
+function sentSql(body: string | null): { batch: string[] | null; sql: string | null } {
+  const parsed = JSON.parse(body ?? "{}") as { sql?: string; batch?: { sql: string }[] };
+  return { batch: parsed.batch?.map((statement) => statement.sql) ?? null, sql: parsed.sql ?? null };
+}
+
+/** Answers every D1 REST request whose SQL `matches` with `reply`, ahead of the rule table. */
+function refuseOverRest(io: FakeDbIo, matches: (sql: string) => boolean, reply: () => Response): void {
+  io.restRules.unshift({
+    match: (url, init) => {
+      if (!url.endsWith("/query")) return false;
+      const sent = sentSql(typeof init?.body === "string" ? init.body : null);
+      return (sent.batch ?? [sent.sql ?? ""]).some(matches);
+    },
+    reply,
+  });
+}
+
+const isFileApply = (file: string) => (sql: string) => sql.includes(file);
 
 /** A generated migration: the compose header over `body`, stamped against `baseline`. */
 function stamped(body: string, baseline: string): string {
@@ -85,13 +101,7 @@ function wire(io: FakeDbIo, recorded: Record<string, unknown>[] | null = null): 
     { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: () => recorded ?? (noTable() as never) },
     { match: (statement) => statement === INVENTORY_SELECT, reply: INVENTORY },
   );
-  io.rules.push(
-    { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
-    { match: isRecordedSelect, reply: recorded === null ? NO_TABLE : jsonRows(recorded) },
-    { match: isInventorySelect, reply: jsonRows(INVENTORY) },
-    { match: isWrite, reply: OK },
-    { match: isFileApply, reply: OK },
-  );
+  io.restRules.push({ match: (url) => url.includes("/time_travel/bookmark"), reply: () => cfEnvelope({ bookmark: "bm-1" }) });
 }
 
 const targetCalls = (io: FakeDbIo) => io.d1Calls.filter((call) => !call.home.startsWith("scratch:"));
@@ -105,25 +115,28 @@ function verbOf(statements: readonly string[], source: string | null): string {
   return "write";
 }
 
-// A deployed run reaches the database only by spawning and a local one only in process, so the two
+const apiCalls = (io: FakeDbIo) => io.restCalls.filter((call) => call.url.startsWith("https://api.cloudflare.com/"));
+
+/** The verb of one D1 REST request, naming a staged file by the scratch file whose text it sent. */
+function restVerb(io: FakeDbIo, call: FakeRestCall): string {
+  if (call.url.includes("/time_travel/bookmark")) return "bookmark";
+  const sent = sentSql(call.body);
+  if (sent.batch !== null) return verbOf(sent.batch, null);
+  const staged = [...io.files].find(([path, text]) => path.includes("/.forge/scratch/") && text === sent.sql)?.[0];
+  return staged === undefined ? "write" : `stage:${staged.split("/").at(-1)}`;
+}
+
+// A deployed run reaches the database only over REST and a local one only in process, so the two
 // recorders never interleave and concatenating them is the order the run made them in.
 /** The verb of each thing the run did against the database, in order. */
 function trace(io: FakeDbIo): string[] {
-  const spawned = io.calls.map((call) => {
-    const args = call.slice(1);
-    if (isFileApply(args)) return `stage:${(args.at(-1) ?? "").split("/").at(-1)}`;
-    if (argvHas(args, "time-travel", "info")) return "bookmark";
-    if (isRecordedSelect(args)) return "read-recorded";
-    if (isInventorySelect(args)) return "read-inventory";
-    if (command(args).startsWith("SELECT name FROM ")) return "read-history";
-    if (isWrite(args)) return "write";
-    return args.join(" ");
-  });
-  return [...spawned, ...targetCalls(io).map((call) => verbOf(call.statements, call.source))];
+  return [...apiCalls(io).map((call) => restVerb(io, call)), ...targetCalls(io).map((call) => verbOf(call.statements, call.source))];
 }
 
 const writes = (io: FakeDbIo) => [
-  ...io.calls.filter((call) => isWrite(call.slice(1))).map((call) => call.at(-1) ?? ""),
+  ...apiCalls(io)
+    .filter((call) => restVerb(io, call) === "write")
+    .map((call) => sentSql(call.body).sql ?? ""),
   ...targetCalls(io)
     .filter((call) => verbOf(call.statements, call.source) === "write")
     .map((call) => call.statements.join("\n")),
@@ -460,16 +473,11 @@ describe("runMigrate()", () => {
 
   it("releases the lock and repeats the undo when the apply fails part way", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
-    io.rules.push(
-      { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
-      { match: isRecordedSelect, reply: NO_TABLE },
-      { match: isInventorySelect, reply: jsonRows(INVENTORY) },
-      { match: isWrite, reply: OK },
-      { match: isFileApply, reply: { code: 1, stdout: "", stderr: "boom" } },
-    );
+    wire(io);
+    refuseOverRest(io, isFileApply("INSERT INTO _forge_migrations"), () => cfRefusal(7500, "boom"));
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
-      "loading /app/.forge/scratch/migrate/0001_init.sql against remote (app-db) failed (exit 1)",
+      "loading /app/.forge/scratch/migrate/0001_init.sql against remote (app-db) failed: boom (Cloudflare error 7500)",
     );
     expect(io.files.has(LOCK)).toBe(false);
     expect(out).toEqual([
@@ -480,12 +488,11 @@ describe("runMigrate()", () => {
 
   it("prints no part-migrated line when the companion tables are refused, since the bookmark is not yet taken", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
-    io.rules.push(
-      { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
-      { match: isRecordedSelect, reply: NO_TABLE },
-      { match: isInventorySelect, reply: jsonRows(INVENTORY) },
-      { match: isWrite, reply: { code: 1, stdout: "", stderr: "Authentication error [code: 10000]" } },
-      { match: isFileApply, reply: OK },
+    wire(io);
+    refuseOverRest(
+      io,
+      (sql) => sql.includes("CREATE TABLE IF NOT EXISTS _forge_migrations"),
+      () => cfRefusal(10000, "Authentication error"),
     );
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
@@ -501,17 +508,11 @@ describe("runMigrate()", () => {
       { [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT, [`${MIGRATIONS}/0002_next.sql`]: stamped(NEXT, "") },
       "remote",
     );
-    io.rules.push(
-      { match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } },
-      { match: isRecordedSelect, reply: NO_TABLE },
-      { match: isInventorySelect, reply: jsonRows(INVENTORY) },
-      { match: isWrite, reply: OK },
-      { match: (a) => isFileApply(a) && (a.at(-1) ?? "").endsWith("0002_next.sql"), reply: { code: 1, stdout: "", stderr: "boom" } },
-      { match: isFileApply, reply: OK },
-    );
+    wire(io);
+    refuseOverRest(io, isFileApply("CREATE TABLE notes"), () => cfRefusal(7500, "boom"));
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow(
-      "loading /app/.forge/scratch/migrate/0002_next.sql against remote (app-db) failed (exit 1)",
+      "loading /app/.forge/scratch/migrate/0002_next.sql against remote (app-db) failed: boom (Cloudflare error 7500)",
     );
     expect(trace(io)).toContain("stage:0001_init.sql");
     expect(out).toEqual([
@@ -668,7 +669,7 @@ describe("runMigrate() — the migration analysis", () => {
         `${unapproved} (${place}), so nothing was applied:\n  drops table "users" — no \`-- forge:drops table "users"\` line approves it`,
       );
       expect(trace(io)).toEqual(["read-recorded", "read-inventory"]);
-      expect(io.calls.some((call) => argvHas(call, "time-travel"))).toBe(false);
+      expect(io.restCalls.some((call) => call.url.includes("/time_travel/"))).toBe(false);
       expect(stagedForApply(io)).toEqual([]);
     });
 
@@ -712,7 +713,7 @@ describe("runMigrate() — the migration analysis", () => {
       'Refusing to migrate app-db (remote) without a terminal to confirm at: 0002_next (drops table "users"), 0003_notes.\nMigrations are forward-only; the undo is `forge db bookmark restore`. Pass --yes to say so deliberately.',
     );
     expect(stagedForApply(io)).toEqual([]);
-    expect(io.calls.some((call) => argvHas(call, "time-travel"))).toBe(false);
+    expect(io.restCalls.some((call) => call.url.includes("/time_travel/"))).toBe(false);
   });
 
   it("refuses the same unapproved drop under --dry-run, as the real run would", async () => {
@@ -732,14 +733,16 @@ describe("runMigrate() — the migration analysis", () => {
     expect(io.d1Calls.some((call) => call.home === ANALYSIS)).toBe(false);
   });
 
-  it("refuses a remote target whose inventory wrangler cannot read, with wrangler's error, building no copy", async () => {
+  it("refuses a remote target whose inventory D1 cannot read, with D1's error, building no copy", async () => {
     const { run, io } = context(files(composed(DROP_USERS)), "remote");
-    io.rules.push(
-      { match: isRecordedSelect, reply: jsonRows([APPLIED_INIT]) },
-      { match: isInventorySelect, reply: { code: 1, stdout: "", stderr: "Authentication error [code: 10000]" } },
+    wire(io, [APPLIED_INIT]);
+    refuseOverRest(
+      io,
+      (sql) => sql === INVENTORY_SELECT,
+      () => cfRefusal(7500, "D1_ERROR: not authorized: SQLITE_AUTH"),
     );
 
-    await expect(runMigrate(run, OPTIONS)).rejects.toThrow("Authentication error [code: 10000]");
+    await expect(runMigrate(run, OPTIONS)).rejects.toThrow("D1_ERROR: not authorized: SQLITE_AUTH (Cloudflare error 7500)");
     expect(io.d1Calls.some((call) => call.home === ANALYSIS)).toBe(false);
   });
 
@@ -830,10 +833,8 @@ function withHistory(io: FakeDbIo, inventory: readonly Record<string, unknown>[]
   for (const [table, names] of Object.entries(history)) {
     const rows = names.map((name) => ({ name }));
     io.d1Rules.unshift({ match: (statement, home) => isTarget(home) && statement === HISTORY_SELECT(table), reply: rows });
-    io.rules.unshift({ match: (a) => command(a) === HISTORY_SELECT(table), reply: jsonRows(rows) });
   }
   io.d1Rules.unshift({ match: (statement, home) => isTarget(home) && statement === INVENTORY_SELECT, reply: [...inventory] });
-  io.rules.unshift({ match: isInventorySelect, reply: jsonRows([...inventory]) });
 }
 
 function withMigrationsTable(run: DbRunContext, table: string): void {
@@ -929,16 +930,26 @@ describe("runMigrate() — a history wrangler wrote", () => {
 describe("runMigrate() — a deployed write that fails", () => {
   const undo = "forge db bookmark restore --target remote --bookmark bm-1 --root '/app' --config '/app/wrangler.jsonc' --db 'DB'";
 
+  it("reports a token refused on the bookmark read as a failed read with nothing applied, not as a refused write", async () => {
+    const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
+    io.restRules.push({ match: (url) => url.includes("/time_travel/bookmark"), reply: () => cfRefusal(10000, "Authentication error") });
+    wire(io);
+
+    expect(await rejection(runMigrate(run, OPTIONS))).toBe(
+      "time-travel info against remote (app-db) failed: Cloudflare refused the --api-token — it is invalid, or lacks Account → D1 → Edit · code 10000\nNothing was applied.",
+    );
+    expect(trace(io)).toEqual(["read-recorded", "read-inventory", "write", "bookmark"]);
+    expect(out).toEqual([]);
+    expect(io.files.has(LOCK)).toBe(false);
+  });
+
   it("names the D1 permission without claiming nothing was applied when the token is refused on a later file", async () => {
     const { run, io, out } = context(
       { [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT, [`${MIGRATIONS}/0002_next.sql`]: stamped(NEXT, "") },
       "remote",
     );
-    io.rules.push({
-      match: (a) => isFileApply(a) && (a.at(-1) ?? "").endsWith("0002_next.sql"),
-      reply: { code: 1, stdout: "", stderr: "Authentication error [code: 10000]" },
-    });
     wire(io);
+    refuseOverRest(io, isFileApply("CREATE TABLE notes"), () => cfRefusal(10000, "Authentication error"));
 
     expect(await rejection(runMigrate(run, OPTIONS))).toBe(
       "the API token cannot write D1 — add Account → D1 → Edit to it, then run again. The migrations before the refused write may be applied.",
@@ -950,16 +961,56 @@ describe("runMigrate() — a deployed write that fails", () => {
 
   it("keeps a companion-table write failure's own message when it carries no auth code, naming no D1 permission", async () => {
     const { run, io, out } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
-    io.rules.push({ match: isWrite, reply: { code: 1, stdout: "", stderr: "D1_ERROR: database is locked" } });
     wire(io);
+    refuseOverRest(
+      io,
+      (sql) => sql.includes("CREATE TABLE IF NOT EXISTS _forge_migrations"),
+      () => cfRefusal(7500, "D1_ERROR: database is locked"),
+    );
 
     const message = await rejection(runMigrate(run, OPTIONS));
 
     expect(message).toMatch(
-      /^execute `CREATE TABLE IF NOT EXISTS _forge_migrations[^`]*` against remote \(app-db\) failed \(exit 1\):\nD1_ERROR: database is locked$/,
+      /^execute `CREATE TABLE IF NOT EXISTS _forge_migrations[^`]*` against remote \(app-db\) failed: D1_ERROR: database is locked \(Cloudflare error 7500\)$/,
     );
     expect(message).not.toContain("D1 → Edit");
     expect([trace(io), out]).toEqual([["read-recorded", "read-inventory", "write"], []]);
+  });
+});
+
+describe("runMigrate() — which refusals are restated as the missing D1 permission", () => {
+  const COMPANION = (sql: string) => sql.includes("CREATE TABLE IF NOT EXISTS _forge_migrations");
+  const RESTATED = "the API token cannot write D1 — add Account → D1 → Edit to it, then run again. Nothing was applied.";
+
+  async function refusedCompanion(reply: () => Response): Promise<{ error: unknown; io: FakeDbIo }> {
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: STAMPED_INIT }, "remote");
+    wire(io);
+    refuseOverRest(io, COMPANION, reply);
+    const error = await runMigrate(run, OPTIONS).then(
+      () => null,
+      (thrown: unknown) => thrown,
+    );
+    return { error, io };
+  }
+
+  it("restates an auth code however Cloudflare words it, keeping the refusal as the cause", async () => {
+    const { error } = await refusedCompanion(() => cfRefusal(9109, "boom"));
+    expect(error).toBeInstanceOf(CliError);
+    expect([(error as CliError).kind, (error as CliError).message]).toEqual(["invalid-args", RESTATED]);
+    expect(((error as CliError).cause as CliError).cause).toBeInstanceOf(CfApiClientError);
+  });
+
+  it("restates a 403 that carries no code", async () => {
+    const { error } = await refusedCompanion(() => Response.json({ success: false, errors: [], result: null }, { status: 403 }));
+    expect((error as Error).message).toBe(RESTATED);
+  });
+
+  it("keeps a SQL refusal whose text reads like an auth error, since only the cause classifies it", async () => {
+    const worded = "Authentication error [code: 10000]: CLOUDFLARE_API_TOKEN lacks Account → D1 → Edit";
+    const { error } = await refusedCompanion(() => cfRefusal(7500, worded));
+    expect((error as Error).message).toMatch(/^execute `CREATE TABLE IF NOT EXISTS _forge_migrations[^`]*` against remote \(app-db\) failed: /);
+    expect((error as Error).message).toEndWith(`${worded} (Cloudflare error 7500)`);
+    expect((error as Error).message).not.toContain("the API token cannot write D1");
   });
 });
 

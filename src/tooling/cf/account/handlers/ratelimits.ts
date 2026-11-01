@@ -1,20 +1,14 @@
 import { createCfClient } from "../../api/client";
 import { workerSettings } from "../../api/endpoints";
-import type { CfWorkerSettings } from "../../api/types";
+import { CF_OPERATIONS } from "../../api/operations";
+import type { CfWorkerBinding } from "../../api/types";
 import type { RateLimitConfig, SyncResult } from "../../types";
 import { failureRows } from "./rows";
 import type { HandlerContext, ReconcileResult, ResourceHandler } from "./types";
 
-interface CfRateLimitBinding {
-  type: string;
-  name: string;
-  namespace_id?: string;
-  simple?: { limit?: number; period?: number };
-}
-
 const describeSimple = (simple?: { limit?: number; period?: number }): string => `${simple?.limit ?? "?"}/${simple?.period ?? "?"}s`;
 
-function matches(local: RateLimitConfig, remote: CfRateLimitBinding): boolean {
+function matches(local: RateLimitConfig, remote: CfWorkerBinding): boolean {
   return (
     local.namespace_id === remote.namespace_id && local.simple?.limit === remote.simple?.limit && local.simple?.period === remote.simple?.period
   );
@@ -22,14 +16,14 @@ function matches(local: RateLimitConfig, remote: CfRateLimitBinding): boolean {
 
 async function reconcileWorkerRateLimits(entries: RateLimitConfig[], ctx: HandlerContext): Promise<ReconcileResult<RateLimitConfig>> {
   const client = createCfClient(ctx.auth, ctx.fetch);
-  const getResult = await client.get<CfWorkerSettings>(workerSettings(ctx.auth.accountId, ctx.scriptName));
+  const getResult = await client.get(workerSettings(ctx.auth.accountId, ctx.scriptName), CF_OPERATIONS.getWorkerSettings);
 
   if (!getResult.ok) {
     const identities = entries.map((entry) => ({ binding: entry.name }));
     return { entries, results: failureRows("ratelimits", identities, getResult.error, ctx) };
   }
 
-  const remote = new Map(((getResult.data.bindings ?? []) as CfRateLimitBinding[]).filter((b) => b.type === "ratelimit").map((b) => [b.name, b]));
+  const remote = new Map(getResult.data.bindings.filter((b) => b.type === "ratelimit").map((b) => [b.name, b]));
 
   const results: SyncResult[] = entries.map((entry) => {
     const row = { resourceType: "ratelimits" as const, binding: entry.name, local: true };

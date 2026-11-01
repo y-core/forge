@@ -38,8 +38,9 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5a Both Pass and Fail Cases Required: the requirement matrix
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
-- §6 The Verification Gate: what must pass before a task closes, and before a commit
-- §6a One Command, Nested Tiers: which tier each moment runs, the daily cron, and an absent prerequisite
+- §6 The Verification Gate: what must pass before a task closes, and before an epic does
+- §6a One Command, Nested Tiers: which tier each moment runs, why `verify:scheduled` is never an agent's, the daily cron, and an absent
+  prerequisite
 - §6b What Each Tool Catches: the failure classes
 - §6c The Lines Between the Tiers: what a step needs, the heavy step, the price of running it late, and how a table nests its tiers
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
@@ -77,7 +78,7 @@ preference:
 
 **The set sits outside `unit` because it needs a browser binary or server an install step provides, and at `scheduled` because a step that
 starts a browser is heavy (§6c).** Narrowing it would buy almost nothing, because a spec's reach covers nearly every source file. A broken behaviour
-is therefore found by the next daily cron run or the next tag, not by the commit gate, and a tag still never ships without the set.
+is therefore found by the next daily cron run or the next tag, not by the epic gate, and a tag still never ships without the set.
 
 **Chromium is the set's engine, and another engine is a `scheduled` row of the same table**, so a tag and the cron run both take it (§6a, §6c).
 A library adds one when its consumers need wider compatibility. Where the environment serves the other engines from their own server, the browser
@@ -364,12 +365,18 @@ sharing every flag and every line of behaviour, differing only in a membership f
 
 | Moment | Runs |
 | --- | --- |
-| Write loop and task close | `verify:static`, plus each touched test file run by file (`AGENT_WORKFLOW.md` §4) |
-| Commit | `verify`, the `runtime` tier |
+| Interim, while writing | `verify:static`, as often as it helps; it closes nothing (`AGENT_WORKFLOW.md` §4) |
+| Task close, before review | `verify:unit` |
+| Epic close | `verify`, the `runtime` tier, by the verification runner |
 | Tag | `verify:scheduled`, run by the release command before it tags; the remote CI then runs `verify:unit` on the tag |
 | Daily cron | `verify:scheduled`, run by the ledger host |
 
-`unit` is the run for a machine with no runtime installed. No other moment exists to close on, an epic's end included.
+`unit` is also the run for a machine with no runtime installed. No other moment exists to close on. A browser spec between them is the developing
+agent's call — one spec on one engine where a UI change needs confirming, never the whole set and never routine.
+
+**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier, never plans it into a
+task, and never reports it as owed: the release command runs it before it tags, the ledger host runs it daily, and a break either finds reaches
+the ledger as a task without anyone being told to look.
 
 **The daily cron is the ledger host's, and its verdict lands in the ledger.** It gates a fresh checkout of the default branch, never a developer's
 work tree, with `--report`. A failure lands as one open task in the ledger of the project it ran for, rewritten in place by each later failure while
@@ -383,7 +390,7 @@ warning" — is a failure.
 
 **A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
 Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
-same hint, because those tiers promise that a runtime ran, and a commit or a tag may not be assured by a step nobody ran. **A
+same hint, because those tiers promise that a runtime ran, and an epic or a tag may not be closed on a step nobody ran. **A
 run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
 
 The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
@@ -430,7 +437,7 @@ something about it; a test suite executes what the source builds. A type-aware l
 to be quick is still `unit`, which is what lets a writer trust one run to judge everything they just wrote. **Every step below `runtime` works on
 any machine with the repository's dependencies installed**, which makes those runs the gate anyone may run at any time. A step that declares a
 `requires` probe on an optional dependency runs wherever that dependency happens to be installed, and §6a's tier-decided verdict keeps that from
-weakening the gate a commit closes on.
+weakening the gate an epic closes on.
 
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
 
@@ -448,7 +455,7 @@ by a row.
 **A heavy test inside `unit` is split out, never dropped.** It becomes a test set of its own, listed in the `scheduled` tier. It is never deleted,
 skipped or ignored out of every automated run.
 
-**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the commit gate.** A
+**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the epic gate.** A
 step worth proving only before a tag and on the cron run goes in the `scheduled` tier of `config/steps.config.ts`. Another browser engine is that
 kind of step: Chromium proves the behaviour, and another engine proves only that it holds there too.
 
@@ -470,6 +477,10 @@ reach the derivation missed.
 tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
 runs only the rows it lists. That reference is what nests the tiers, and it is what makes a fail-fast `scheduled` run fail on the sub-second
 check rather than after minutes of browser. A row moves to another tier by moving its entry, never by declaring it twice.
+
+**A tier the table does not declare runs as the nearest declared tier below it**, so a table with no `runtime` key closes an epic on its `unit`
+rows. The runner does this, and the verdict names it — `verify (as unit)` — so a table never spells a fallback as a tier that only references the
+one below. A tier with no declared tier at or below it is refused.
 
 **A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
 whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row narrows only in the tier that

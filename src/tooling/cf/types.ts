@@ -217,13 +217,28 @@ export interface WranglerAssetsConfig {
   [key: string]: unknown;
 }
 
-export interface WranglerConfig {
-  name: string;
+/** The keys one deployment block states, read alike from the top level and from each `env.<name>`. */
+export interface WranglerEnvironmentConfig {
+  name?: string;
   main?: string;
+  compatibility_date?: string;
+  compatibility_flags?: string[];
+  account_id?: string;
   assets?: WranglerAssetsConfig;
+  workers_dev?: boolean;
+  preview_urls?: boolean;
+  routes?: unknown[];
+  route?: unknown;
+  d1_databases?: D1DatabaseConfig[];
+  [key: string]: unknown;
+}
+
+export interface WranglerConfig extends WranglerEnvironmentConfig {
+  name: string;
+  pages_build_output_dir?: string;
+  env?: Record<string, WranglerEnvironmentConfig>;
   vars?: Record<string, string>;
   kv_namespaces?: KvNamespaceConfig[];
-  d1_databases?: D1DatabaseConfig[];
   r2_buckets?: R2BucketConfig[];
   queues?: { producers?: QueueProducerConfig[]; consumers?: QueueConsumerConfig[] };
   ratelimits?: RateLimitConfig[];

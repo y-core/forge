@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { describeTargetGrammar, formatTarget, isRemotePlace, parseTarget, refuseRemote, wranglerPlaceFlags } from "./target";
-import type { Home } from "./types";
+import { describeTargetGrammar, formatTarget, isRemotePlace, parseTarget, refuseRemote } from "./target";
 
 describe("parseTarget()", () => {
   it("accepts every place, with or without a database", () => {
@@ -57,41 +56,5 @@ describe("refuseRemote()", () => {
 
   it("knows which places are deployed", () => {
     expect(["local", "standby", "remote", "preview"].map((p) => isRemotePlace(p as never))).toEqual([false, false, true, true]);
-  });
-});
-
-describe("wranglerPlaceFlags()", () => {
-  const home = (over: Partial<Home>): Home => ({
-    label: "local",
-    database: "app",
-    binding: "DB",
-    dir: "/app",
-    configPath: "/app/wrangler.jsonc",
-    persistTo: "/app/.wrangler/state",
-    place: "local",
-    env: null,
-    synthesized: false,
-    ...over,
-  });
-
-  it("pins a local run to its config and state directory", () => {
-    expect(wranglerPlaceFlags(home({}))).toEqual(["-c", "/app/wrangler.jsonc", "--local", "--persist-to", "/app/.wrangler/state"]);
-  });
-
-  it("carries the environment before the place", () => {
-    expect(wranglerPlaceFlags(home({ env: "staging" }))).toEqual([
-      "-c",
-      "/app/wrangler.jsonc",
-      "-e",
-      "staging",
-      "--local",
-      "--persist-to",
-      "/app/.wrangler/state",
-    ]);
-  });
-
-  it("emits --remote for the deployed database and --preview beside it for the preview", () => {
-    expect(wranglerPlaceFlags(home({ place: "remote", persistTo: null }))).toEqual(["-c", "/app/wrangler.jsonc", "--remote"]);
-    expect(wranglerPlaceFlags(home({ place: "preview", persistTo: null }))).toEqual(["-c", "/app/wrangler.jsonc", "--remote", "--preview"]);
   });
 });

@@ -181,9 +181,9 @@ same bytes. Firefox and WebKit are not a preset option. An application that runs
 
 | Script | Runs |
 | --- | --- |
-| `verify` | `forge verify` — the `runtime` tier, the gate a commit closes on |
-| `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it |
-| `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed |
+| `verify` | `forge verify` — the `runtime` tier, the gate an epic closes on |
+| `verify:static` | `forge verify --tier static` — every row that judges the source rather than running it; the interim check |
+| `verify:unit` | `forge verify --tier unit` — every row that needs no runtime installed; the task check |
 | `verify:scheduled` | `forge verify --tier scheduled`, what a tag and the daily cron run: every runtime suite whole, every heavy row (the browser set on each engine the table declares among them), and the rows that judge a finished change ([`TESTING.md`][testing-6a] §6a) |
 | `fix` | `forge verify --fix` |
 | `lint` | `forge verify --only lint` — checks, never writes |

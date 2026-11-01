@@ -7,7 +7,8 @@ import { CliError } from "../../cli/errors";
 import { syncBindings } from "../account/engine";
 import { kvHandler } from "../account/handlers/kv";
 import type { WranglerConfig } from "../types";
-import { loadWranglerConfig, writeWranglerConfig } from "./parse";
+import { loadWranglerConfig } from "./parse";
+import { writeWranglerConfig } from "./write";
 
 const roots: string[] = [];
 
@@ -107,6 +108,24 @@ describe("write-back round trip (bug-260825-04)", () => {
     expect(stray).toEqual([]);
   });
 
+  it("surfaces the staging failure itself when the temp file could not be created", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-write-"));
+    roots.push(dir);
+    const path = join(dir, "absent", "wrangler.jsonc");
+    const source = `{\n  "name": "w",\n  "kv_namespaces": [\n    {\n      "binding": "A"\n    }\n  ]\n}\n`;
+    const loaded = { path, source, config: { name: "w", kv_namespaces: [{ binding: "A" }] } };
+
+    let thrown: unknown;
+    try {
+      writeWranglerConfig(loaded, { name: "w", kv_namespaces: [{ binding: "A", id: "x" }] });
+    } catch (e) {
+      thrown = e;
+    }
+
+    const { code, syscall } = thrown as { code?: string; syscall?: string };
+    expect({ code, syscall }).toEqual({ code: "ENOENT", syscall: "open" });
+  });
+
   it("reports how many values it spliced", async () => {
     const path = project(INPUT);
     const loaded = loadWranglerConfig(path);
@@ -190,6 +209,20 @@ describe("write-back refusals", () => {
       expect(readFileSync(loaded.path, "utf-8")).toBe(source);
     });
   }
+
+  it("refuses a splice whose result no longer decodes, and leaves the file unchanged", () => {
+    const source = `{\n  "name": "w",\n  "stray": tru,\n  "kv_namespaces": [\n    {\n      "binding": "A"\n    }\n  ]\n}\n`;
+    const path = project(source);
+    const loaded = { path, source, config: { name: "w", kv_namespaces: [{ binding: "A" }] } };
+    const updated: WranglerConfig = { name: "w", kv_namespaces: [{ binding: "A", id: "x" }] };
+
+    const write = writeWranglerConfig(loaded, updated);
+
+    if (write.ok) throw new Error("expected refusal");
+    expect(write.error.message).toContain("did not reproduce the expected result (the result no longer parses — ");
+    expect(write.error.message).toContain("malformed wrangler config at <edited config>: invalid JSON — ");
+    expect(readFileSync(path, "utf-8")).toBe(source);
+  });
 
   it("still splices when the file carries no comments at all", () => {
     const path = project(`{\n  "name": "w",\n  "kv_namespaces": [\n    {\n      "binding": "A"\n    }\n  ]\n}\n`);

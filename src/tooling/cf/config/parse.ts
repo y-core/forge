@@ -1,31 +1,67 @@
-import { chmodSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
-import process from "node:process";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
-import { err, ok } from "../../../result/result";
-import type { Result } from "../../../result/types";
 import { v } from "../../../validation/mod";
-import { CliError } from "../../cli/errors";
-import { countComments, formatPath, stripJsonc } from "../../cli/jsonc";
-import { applyJsoncEdits } from "../../cli/jsonc-edit";
-import type { JsoncEdit } from "../../cli/types";
+import { formatPath, stripJsonc } from "../../cli/jsonc";
+import type { JsonPath } from "../../cli/types";
+import { jsonTable } from "../schema";
 import type { WranglerConfig } from "../types";
-import { diffConfig } from "./diff";
-import type { ConfigDiff } from "./types";
-
-export { stripJsonc } from "../../cli/jsonc";
-import type { LoadedWranglerConfig, WriteOutcome } from "./types";
+import type { LoadedWranglerConfig } from "./types";
 
 const MISSING_NAME_MESSAGE = 'wrangler config must define a string "name"';
 
-// Wrangler configs carry many optional and arbitrary extra keys, so this uses loose
-// objects and asserts only what sync handlers read; `name` is the one hard requirement.
+const D1DatabaseSchema = v.looseObject({
+  binding: v.string(),
+  database_name: v.optional(v.string()),
+  database_id: v.optional(v.string()),
+  preview_database_id: v.optional(v.string()),
+  migrations_dir: v.optional(v.string()),
+  migrations_pattern: v.optional(v.string()),
+  migrations_table: v.optional(v.string()),
+});
+
+const ENVIRONMENT_ENTRIES = {
+  name: v.optional(v.string()),
+  main: v.optional(v.string()),
+  compatibility_date: v.optional(v.string()),
+  compatibility_flags: v.optional(v.array(v.string())),
+  account_id: v.optional(v.string()),
+  assets: v.optional(
+    jsonTable(
+      v.looseObject({
+        directory: v.optional(v.string()),
+        binding: v.optional(v.string()),
+        run_worker_first: v.optional(v.union([v.boolean(), v.array(v.string())])),
+      }),
+      "must be a table",
+    ),
+  ),
+  workers_dev: v.optional(v.boolean()),
+  preview_urls: v.optional(v.boolean()),
+  routes: v.optional(v.array(v.unknown())),
+  d1_databases: v.optional(v.array(D1DatabaseSchema)),
+};
+
+function hasOwnProto(value: unknown): boolean {
+  return typeof value === "object" && value !== null && Object.hasOwn(value, "__proto__");
+}
+
+const EnvironmentSchema = jsonTable(v.looseObject(ENVIRONMENT_ENTRIES), "must be an environment table");
+
 const WranglerConfigSchema = v.looseObject(
   {
+    ...ENVIRONMENT_ENTRIES,
     name: v.string(MISSING_NAME_MESSAGE),
+    pages_build_output_dir: v.optional(v.string()),
+    env: v.optional(
+      v.pipe(
+        v.unknown(),
+        v.check((envs) => !Array.isArray(envs) && !hasOwnProto(envs), "must be a table of named environments"),
+        v.record(v.string(), EnvironmentSchema),
+      ),
+    ),
     vars: v.optional(v.record(v.string(), v.unknown())),
     kv_namespaces: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-    d1_databases: v.optional(v.array(v.looseObject({ binding: v.string() }))),
     r2_buckets: v.optional(v.array(v.looseObject({ binding: v.string() }))),
     queues: v.optional(
       v.looseObject({
@@ -37,140 +73,37 @@ const WranglerConfigSchema = v.looseObject(
   (issue) => (issue.expected === '"name"' ? MISSING_NAME_MESSAGE : issue.message),
 );
 
+function describeIssues(issues: readonly v.BaseIssue<unknown>[]): string {
+  return issues
+    .map((issue) => {
+      const keys = (issue.path ?? []).map((item) => item.key as JsonPath[number]);
+      return `${formatPath(keys) || "(root)"}: ${issue.message}`;
+    })
+    .join("; ");
+}
+
+/** Decodes JSONC source text into a plain value, throwing the normalized malformed-config error. @internal */
+export function decodeWranglerSource(source: string, origin: string): unknown {
+  try {
+    return JSON.parse(stripJsonc(source));
+  } catch (thrown) {
+    throw new Error(`malformed wrangler config at ${origin}: invalid JSON — ${(thrown as Error).message}`, { cause: thrown });
+  }
+}
+
+/** Holds a decoded config to the fields forge reads, returning it unchanged; the seam a non-JSONC source plugs into. @internal */
+export function validateWranglerConfig(tree: unknown, origin: string): WranglerConfig {
+  const result = v.safeParse(WranglerConfigSchema, tree);
+  if (!result.success) throw new Error(`malformed wrangler config at ${origin}: ${describeIssues(result.issues)}`);
+  return tree as WranglerConfig;
+}
+
 export function loadWranglerConfig(configPath: string): LoadedWranglerConfig {
   const abs = resolve(configPath);
   const source = readFileSync(abs, "utf-8");
-  const json = stripJsonc(source);
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch (thrown) {
-    throw new Error(`malformed wrangler config at ${abs}: invalid JSON — ${(thrown as Error).message}`, { cause: thrown });
-  }
-
-  const result = v.safeParse(WranglerConfigSchema, parsed);
-  if (!result.success) {
-    const detail = result.issues.map((issue) => `${v.getDotPath(issue) ?? "(root)"}: ${issue.message}`).join("; ");
-    throw new Error(`malformed wrangler config at ${abs}: ${detail}`);
-  }
-
-  // Return the original parsed object (not the validated output) so write-back keeps
-  // every field verbatim, including keys the schema does not enumerate.
-  return { path: abs, source, config: parsed as WranglerConfig };
+  return { path: abs, source, config: validateWranglerConfig(decodeWranglerSource(source, abs), abs) };
 }
 
 export function parseWranglerConfig(configPath: string): WranglerConfig {
   return loadWranglerConfig(configPath).config;
-}
-
-function describeUnsupported(diffs: ConfigDiff[]): string[] {
-  return diffs
-    .filter((d): d is Extract<ConfigDiff, { kind: "unsupported" }> => d.kind === "unsupported")
-    .map((d) => `${formatPath(d.path)} (${d.reason})`);
-}
-
-function writeAtomic(path: string, text: string): void {
-  // Same directory, so the rename is within one filesystem and therefore atomic; the pid keeps
-  // two concurrent runs from staging through each other's temp file.
-  const temp = join(dirname(path), `.${basename(path)}.forge-${process.pid}.tmp`);
-  try {
-    writeFileSync(temp, text, "utf-8");
-    try {
-      chmodSync(temp, statSync(path).mode);
-    } catch {
-      // Not every filesystem permits chmod; the content matters more than the mode.
-    }
-    renameSync(temp, path);
-  } catch (e) {
-    try {
-      unlinkSync(temp);
-    } catch {
-      // The temp file may never have been created; nothing to clean up.
-    }
-    throw e;
-  }
-}
-
-/** Writes resolved IDs back into the config, preserving every byte the change does not touch. */
-export function writeWranglerConfig(
-  loaded: LoadedWranglerConfig,
-  updated: WranglerConfig,
-  options: { force?: boolean } = {},
-): Result<WriteOutcome, CliError> {
-  const diffs = diffConfig(loaded.config, updated);
-
-  if (diffs.length === 0) {
-    return ok({ path: loaded.path, written: false, edits: 0 });
-  }
-
-  const unsupported = describeUnsupported(diffs);
-  const edits: JsoncEdit[] = diffs
-    .filter((d): d is Extract<ConfigDiff, { kind: "set" }> => d.kind === "set")
-    .map((d) => ({ path: d.path, value: d.value }));
-
-  const comments = countComments(loaded.source);
-
-  if (unsupported.length > 0) {
-    if (!options.force) return err(refusal(loaded, unsupported, comments));
-    return forceRewrite(loaded, updated, comments, unsupported);
-  }
-
-  const spliced = applyJsoncEdits(loaded.source, edits);
-  if (!spliced.ok) {
-    const reason = [`${spliced.error.message}`];
-    if (!options.force) return err(refusal(loaded, reason, comments));
-    return forceRewrite(loaded, updated, comments, reason);
-  }
-
-  const verification = verify(spliced.data, updated);
-  if (verification !== null) {
-    return err(
-      new CliError(
-        "invalid-args",
-        `Refusing to write ${loaded.path}: the edited config did not reproduce the expected result (${verification}). ` +
-          "This is a bug in forge's config writer, not something --force can fix. The file is unchanged.",
-      ),
-    );
-  }
-
-  writeAtomic(loaded.path, spliced.data);
-  return ok({ path: loaded.path, written: true, edits: edits.length });
-}
-
-function verify(text: string, expected: WranglerConfig): string | null {
-  let reparsed: unknown;
-  try {
-    reparsed = JSON.parse(stripJsonc(text));
-  } catch (e) {
-    return `the result no longer parses — ${(e as Error).message}`;
-  }
-  const residual = diffConfig(reparsed, expected);
-  const first = residual[0];
-  if (first === undefined) return null;
-  return `${residual.length} difference(s) remain, first at ${formatPath(first.path)}`;
-}
-
-function refusal(loaded: LoadedWranglerConfig, reasons: string[], comments: number): CliError {
-  const atRisk =
-    comments > 0 ? `${comments} comment${comments === 1 ? "" : "s"} in that file would be lost` : "the file's formatting would be rewritten";
-
-  return new CliError(
-    "invalid-args",
-    [
-      `Refusing to write ${loaded.path}: this change cannot be made without rewriting the whole file.`,
-      `  ${reasons.join("\n  ")}`,
-      `${atRisk}. Re-run without --commit to inspect the plan, or with --commit --force to rewrite anyway.`,
-    ].join("\n"),
-  );
-}
-
-function forceRewrite(
-  loaded: LoadedWranglerConfig,
-  updated: WranglerConfig,
-  comments: number,
-  unsupported: string[],
-): Result<WriteOutcome, CliError> {
-  writeAtomic(loaded.path, `${JSON.stringify(updated, null, 2)}\n`);
-  return ok({ path: loaded.path, written: true, edits: 0, lost: { comments, unsupported } });
 }

@@ -42,12 +42,13 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §5c Negative Case Structure: assert status and body
 - §5d No 200 on Guard Failure: never adjust the assertion to match
 - §5e No Mocking of Security Primitives: a testability signal, not a mocking one
-- §6 The Verification Gate: what must pass before a task closes, and before a commit
+- §6 The Verification Gate: what must pass before a task closes, and before an epic does
 - §6a One Command, Nested Tiers: what a step needs, the heavy step, what an absent prerequisite means, and how a table nests its tiers
 - §6b What Each Tool Catches: the failure classes
 - §6c A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself, and where a runtime row's reach comes from
 - §6d Local Ports Are Slots, and a Slot Is a Port and a Bind Address: what each half is, and who overrides which
-- §6e One Tier per Moment: which tier each moment takes, the browser set, and the cron run
+- §6e One Tier per Moment: which tier each moment takes, why `verify:scheduled` is never an agent's, a browser spec by judgement, and the cron
+  run
 
 ---
 
@@ -384,7 +385,7 @@ licence to mock. A mocked guard is a test that passes when the guard is deleted.
 
 **There is one gate command, and its tiers — `static`, `unit`, `runtime` and `scheduled` — are selected with `--tier`, not commands.** They are
 nested: `static ⊆ unit ⊆ runtime ⊆ scheduled`. Each tier above `static` includes the tier below it, as its first entry. **A bare invocation is
-`runtime`**, and that is the gate a commit closes on; §6e says which tier each other moment takes. A config file owns the step table: every step,
+`runtime`**, and that is the gate an epic closes on; §6e says which tier each other moment takes. A config file owns the step table: every step,
 how it runs, and the tiers that list it. Read it there rather than trusting any prose copy.
 
 **Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
@@ -413,15 +414,15 @@ whose membership follows taste is a tier nobody can predict.
 and it runs as a test row of its own, `testStep({ label, sources })` listed in the `scheduled` tier. It is never deleted, skipped or `#[ignore]`d
 out of every automated run.
 
-**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the commit gate.** A
+**The price is stated rather than hidden: a break in a heavy step is found by the next daily cron run or the next tag, not by the epic gate.** A
 step worth proving only periodically — another browser engine — goes in the `scheduled` tier of `config/steps.config.ts`, which a tag and the cron
 both run (§6e).
 
 **Every application declares `verify:scheduled`.** The cron runs it, so an application without it is outside the cron, and that is a gap rather
 than a choice (`CONFIG_BASELINE.md` §4).
 
-**An absent prerequisite is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and a commit
-may not be assured by a step nobody ran.
+**An absent prerequisite is a skip below `runtime` and a failure from `runtime` up**, because those tiers promise that a runtime ran, and an epic
+may not be closed on a step nobody ran.
 
 **The tier is part of the verdict**, since the tiers are different assurances — and so is a skipped step: a green that skipped one is not the green
 that ran it.
@@ -430,6 +431,10 @@ that ran it.
 tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
 runs only the rows it lists. That reference is what nests the tiers, and it is what makes a fail-fast `scheduled` run fail on the sub-second
 check rather than after minutes of browser. A row moves to another tier by moving its entry, never by declaring it twice.
+
+**A tier the table does not declare runs as the nearest declared tier below it**, so a table with no `runtime` key closes an epic on its `unit`
+rows. The runner does this, and the verdict names it — `verify (as unit)` — so a table never spells a fallback as a tier that only references the
+one below. A tier with no declared tier at or below it is refused.
 
 **A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
 whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row narrows only in the tier that
@@ -502,23 +507,28 @@ the exception with its compensating control, rather than leaving the reuse undoc
 
 ### 6e. One Tier per Moment
 
-**Each moment takes one tier of the same gate.** The task check adds the touched test files, run by file, to `static` (`AGENT_WORKFLOW.md`
-§4); every later moment takes a whole tier and never a scoped run:
+**Each moment takes one whole tier of the same gate** (`AGENT_WORKFLOW.md` §4):
 
 | Moment | Command | Runs |
 | --- | --- | --- |
-| Write and task close | `bun run verify:static`, plus `bun test <file>` on each touched test file | every row that judges the source; each test file the change adds, edits or directly exercises |
-| Commit | `bun run verify` | the unit and seam sets, plus every runtime row the pending changes touch; no Playwright spec |
+| Interim, while writing | `bun run verify:static`, as often as it helps | every row that judges the source; it closes nothing |
+| Task close, before review | `bun run verify:unit` | every static row, and the unit and seam sets whole |
+| Epic close | `bun run verify`, by the verification runner | the unit tier, plus every runtime row the pending changes touch; no Playwright spec |
 | Tag | `bun run verify:scheduled`, run by `forge release` before it tags | every runtime row whole, every browser spec on Chromium and on each other engine the table declares, the Worker-runtime suite, every heavy row, and the rows that judge a finished change; the remote CI then runs `verify:unit` on the tag |
 | Daily cron | `bun run verify:scheduled`, run by the ledger host | the tag's run, over the default branch as committed |
 
-No other moment exists to close on, an epic's end included.
+No other moment exists to close on.
+
+**The tag and the cron are not an agent's moments, and `verify:scheduled` belongs to them.** An agent never runs the tier, never plans it into a
+task, and never reports it as owed: `forge release` runs it before it tags, the ledger host runs it daily, and a break either finds reaches the
+ledger as a task without anyone being told to look.
 
 **The browser set starts at `scheduled`, because a step that starts a browser is heavy (§6a).** Narrowing it at `runtime` bought almost nothing:
 its reach was the Worker's whole import graph plus the asset build's inputs, so nearly every source edit ran it whole. A broken page is found by
-the next daily cron run or the next tag, and a tag never ships without the set. While iterating on a page, one spec on one engine —
-`playwright test --project=chromium <spec>` — is the loop, and the task check runs a touched spec the same way; it is a scoped run, never a gate
-green (§6c).
+the next daily cron run or the next tag, and a tag never ships without the set. **Between them, a browser spec is the developing agent's call.**
+Where a UI change needs confirming in a browser, one spec on one engine — `bun run test:browser -- <spec>` — confirms it. It is never the whole
+set and never routine, because each run starts a browser and the set runs whole on the schedule anyway; it is a scoped run, never a task check or
+a gate green (§6c).
 
 **The cron run is the ledger host's, and its verdict lands in the ledger rather than in anyone's terminal.** It gates a fresh checkout of the
 default branch, never a developer's work tree, and asks the gate for a structured report beside its logs. A failing step or spec becomes a task in

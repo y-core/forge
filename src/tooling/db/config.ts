@@ -1,47 +1,41 @@
 import { resolve } from "node:path";
 
-import { v } from "../../validation/mod";
+import { listDeployments, readDeployment } from "../cf/config/environment";
 import { loadWranglerConfig } from "../cf/config/parse";
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
 import { CliError } from "../cli/errors";
 import { DATABASE_NAME, describeTargetGrammar, parseTarget, refuseRemote } from "./target";
-import { D1EntrySchema } from "./types";
 import type { D1Entry, DbConfig, DbConfigRequest } from "./types";
 
-/** Holds each entry to `D1EntrySchema`, naming the config, the block and the field of the first one that is not. */
-function checkD1Entries(entries: readonly D1DatabaseConfig[], configPath: string, block: string): D1DatabaseConfig[] {
-  return entries.map((entry, index) => {
-    const result = v.safeParse(D1EntrySchema, entry);
-    if (result.success) return entry;
-    const detail = result.issues.map((issue) => `${block}[${index}].${v.getDotPath(issue) ?? "(root)"}: ${issue.message}`).join("; ");
-    throw new CliError("invalid-args", `${configPath}: ${detail}`);
-  });
+/** The refusal for an `--env` naming no `env.<name>` block. @internal */
+export function createUndeclaredEnvError(env: string): CliError {
+  return new CliError("invalid-args", `--env ${env} names no \`env.${env}\` block in the wrangler config`);
 }
 
-/** The d1 entries an environment sees: its own list when it declares one, the top level otherwise. @internal */
-export function d1Entries(config: WranglerConfig, env: string | null, configPath = "wrangler.jsonc"): D1DatabaseConfig[] {
-  if (env !== null) {
-    const envs = config.env as Record<string, { d1_databases?: D1DatabaseConfig[] } | undefined> | undefined;
-    // Own keys only: a bare index answers `toString` and every other prototype member, so the
-    // refusal below would not fire and the run would fall through to the top-level entry.
-    const scoped = envs !== undefined && Object.hasOwn(envs, env) ? envs[env] : undefined;
-    if (scoped === undefined) throw new CliError("invalid-args", `--env ${env} names no \`env.${env}\` block in the wrangler config`);
-    if (scoped.d1_databases !== undefined) return checkD1Entries(scoped.d1_databases, configPath, `env.${env}.d1_databases`);
+/** The d1 entries wrangler binds for an environment, refusing one that declares none since wrangler does not inherit them. @internal */
+export function d1Entries(config: WranglerConfig, env: string | null): D1DatabaseConfig[] {
+  const read = readDeployment(config, env);
+  if (env === null) return read.ok ? (read.data.effective.d1_databases ?? []) : [];
+  // Stricter than wrangler, which falls back to the top level with no `env` table: a mistyped name must never reach the top-level database.
+  if (!read.ok || config.env === undefined) throw createUndeclaredEnvError(env);
+  const entries = read.data.effective.d1_databases;
+  if (entries === undefined) {
+    throw new CliError(
+      "invalid-args",
+      `--env ${env} names an environment that declares no d1_databases, and wrangler does not inherit the top level's — restate the entries under \`env.${env}.d1_databases\``,
+    );
   }
-  return checkD1Entries(config.d1_databases ?? [], configPath, "d1_databases");
+  return entries;
 }
 
 /** The table wrangler records its own applied migrations in for the run's entry: its `migrations_table`, else `d1_migrations`. @internal */
 export function wranglerHistoryTable(config: DbConfig): string {
-  return (
-    d1Entries(config.config, config.env, config.configPath).find((c) => c.binding === config.entry.binding)?.migrations_table ?? "d1_migrations"
-  );
+  return d1Entries(config.config, config.env).find((c) => c.binding === config.entry.binding)?.migrations_table ?? "d1_migrations";
 }
 
 /** Every distinct database name the config declares across the top level and every environment — what one local state directory holds. @internal */
 export function sharedD1Databases(config: WranglerConfig): string[] {
-  const envs = (config.env ?? {}) as Record<string, { d1_databases?: D1DatabaseConfig[] } | undefined>;
-  const entries = [...(config.d1_databases ?? []), ...Object.values(envs).flatMap((scoped) => scoped?.d1_databases ?? [])];
+  const entries = listDeployments(config).flatMap((deployment) => deployment.effective.d1_databases ?? []);
   return [...new Set(entries.map((entry) => entry.database_name ?? entry.binding))];
 }
 
@@ -67,7 +61,7 @@ export function selectD1Entry(entries: readonly D1DatabaseConfig[], db: string |
 /** Normalises one config entry into the shape every verb reads, with paths made absolute. */
 export function toD1Entry(entry: D1DatabaseConfig, configPath: string): D1Entry {
   const databaseName = entry.database_name ?? entry.binding;
-  // The name reaches `wrangler d1 execute <name>` as an argv positional and a backup directory name.
+  // The name reaches `wrangler d1 export <name>` as an argv positional and a backup directory name.
   if (!DATABASE_NAME.test(databaseName)) {
     throw new CliError(
       "invalid-args",
@@ -86,7 +80,7 @@ export function resolveDbConfig(request: DbConfigRequest): DbConfig {
   const configPath = resolve(root, request.config);
   const loaded = loadWranglerConfig(configPath);
   const env = request.env ?? null;
-  const entries = d1Entries(loaded.config, env, configPath);
+  const entries = d1Entries(loaded.config, env);
   // `standby:<name>` names the standby database, not a config entry; every other place's suffix does.
   const chosen = selectD1Entry(entries, request.db ?? (target.place === "standby" ? null : target.database), configPath);
   const entry = toD1Entry(chosen, configPath);

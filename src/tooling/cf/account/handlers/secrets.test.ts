@@ -219,7 +219,7 @@ describe("fixed secrets — the local value is what goes remote", () => {
 
     expect(missing.results[0]?.detail).toBe("worker script · worker script not found: worker");
     expect(auth.results[0]?.detail).toBe(
-      'worker script · auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9106',
+      'worker script · auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9106',
     );
     // The distinction lives in `action` too, so it survives being skimmed.
     expect(missing.results[0]?.action).toBe("unavailable");
@@ -406,6 +406,16 @@ describe("a remote secret nothing local claims", () => {
     const { configPath } = makeProject(`LOG_LEVEL=DEBUG\n${GENERATE_MARKER}\nINTERNAL_API_TOKEN=v\n`);
     const res = await createSecretsHandler(configPath).reconcile([], makeCtx({ fetch: makeFetch(remote("INTERNAL_API_TOKEN", "LOG_LEVEL")) }));
     expect(res.results).toEqual([]);
+  });
+});
+
+describe("createSecretsHandler() — a malformed secrets listing", () => {
+  it("reports a non-string name as an error naming the listing, even with upstream text redacted", async () => {
+    const { configPath } = makeProject(fixed("CSRF_SECRET"));
+    const entries = [{ name: "CSRF_SECRET", value: "v", conflictsWithVar: false }];
+    const res = await createSecretsHandler(configPath).reconcile(entries, makeCtx({ fetch: makeFetch([{ name: 7, type: "secret_text" }]) }));
+    expect(res.results[0]?.action).toBe("error");
+    expect(res.results[0]?.detail).toContain("GET /accounts/{account_id}/workers/scripts/{script_name}/secrets");
   });
 });
 

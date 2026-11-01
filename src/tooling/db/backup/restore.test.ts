@@ -57,7 +57,7 @@ function manifest(database: string, over: Partial<BackupManifest> = {}): BackupM
     drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
-    dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },
+    exporter: { tool: "wrangler" as const, version: "4.105.0" },
     database: { name: database, id: null, target: "local", persistPath: null },
     schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
     migrations: [{ name: "0001_init", sha256: "d".repeat(64) }],
@@ -152,7 +152,7 @@ describe("readBackupManifest", () => {
     const run = await context(root, io);
 
     expect((await refusal(() => readBackupManifest(run, artifact))).message).toBe(
-      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark`,
+      `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 3 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records who exported its SQL (exporter)`,
     );
   });
 
@@ -169,7 +169,7 @@ describe("readBackupManifest", () => {
 
     expect(await refusal(() => readBackupManifest(run, artifact))).toEqual({
       kind: "invalid-args",
-      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records how its rows were taken (via) and a deployed export's bookmark\n  schema.digest is not a 64-character hex SHA-256`,
+      message: `${join(artifact, "manifest.json")} is not a manifest this tool wrote:\n  formatVersion is 1 and this tool writes ${BACKUP_FORMAT_VERSION} — take the backup again, since the manifest now records who exported its SQL (exporter)\n  schema.digest is not a 64-character hex SHA-256`,
     });
   });
 });

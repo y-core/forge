@@ -5,6 +5,8 @@ import { iconTarget } from "../../assets/icons";
 import { deployRoot } from "../../assets/paths";
 import { SERVICE_WORKER_FILE } from "../../assets/service-worker";
 import { SITE_OUTPUTS } from "../../assets/types";
+import { listDeployments } from "../../cf/config/environment";
+import type { WranglerAssetsConfig } from "../../cf/types";
 import { checkResult, fail, warn } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import type { AssetRootCheckConfig } from "./types";
@@ -22,20 +24,17 @@ function servedPath(assetsDir: string, outDir: string, file: string): string | n
   return `/${posix.join(within, file)}`;
 }
 
-/** Compares the files the assets pipeline writes into the asset-tree root against the `!`-prefixed entries of `assets.run_worker_first`. @public */
-export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<CheckResult> {
-  const { root } = config;
-  const workerConfig = config.workerConfig ?? "wrangler.jsonc";
-  const read = readWorkerConfig(root, workerConfig, "asset-root exclusions");
-  if (!("config" in read)) return read;
-  const assets = read.config.assets ?? {};
+type AssetPipeline = Awaited<ReturnType<typeof loadConfig>>;
 
-  // A Worker with no static assets is a valid project, so this green is deliberate.
-  if (assets.directory === undefined) {
-    return checkResult([], "asset-root exclusions: no static assets configured");
-  }
-
-  const resolved = await loadConfig({ root, configPath: config.assetConfig });
+/** One deployment's `run_worker_first` exclusions against the files the pipeline writes into its asset root. */
+function judgeAssets(
+  root: string,
+  resolved: AssetPipeline,
+  assets: WranglerAssetsConfig & { directory: string },
+  prefix: string,
+  workerConfig: string,
+): { findings: Finding[]; emitted: number; excluded: number } {
+  const key = prefix === "" ? "run_worker_first" : `${prefix}assets.run_worker_first`;
   const assetsDir = normaliseDir(root, assets.directory);
 
   const emitted = new Map<string, string>();
@@ -49,11 +48,9 @@ export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<Chec
   for (const file of resolved.site ? SITE_OUTPUTS : []) record(resolved.site?.outDir ?? "", file, "site");
   if (resolved.js.serviceWorker !== null) record(deployRoot(root, resolved.paths.publicDir), SERVICE_WORKER_FILE, "js.serviceWorker");
 
-  const rules = Array.isArray(assets.run_worker_first) ? assets.run_worker_first.filter((rule): rule is string => typeof rule === "string") : [];
+  const rules = Array.isArray(assets.run_worker_first) ? assets.run_worker_first : [];
   const excluded = new Set(rules.filter((rule) => rule.startsWith("!")).map((rule) => rule.slice(1)));
 
-  // A prefix exclusion such as `!/assets/*` covers everything beneath it, so a file it already
-  // reaches needs no name of its own.
   const coveredByGlob = (path: string): boolean =>
     [...excluded].some((rule) => rule.endsWith("*") && path.startsWith(rule.slice(0, -1)) && rule.length > 1);
 
@@ -61,14 +58,12 @@ export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<Chec
 
   for (const [path, step] of [...emitted].sort()) {
     if (excluded.has(path) || coveredByGlob(path)) continue;
-    // A file under a directory is asked for by that directory, so the rule set stops growing with
-    // the file set; only a root-level output is named one by one.
     const dir = posix.dirname(path);
     const rule = dir === "/" ? path : `${dir}/*`;
     findings.push(
-      fail(`\`${path}\` is written to the asset tree by \`${step}\` but \`run_worker_first\` does not exclude it`, {
+      fail(`\`${path}\` is written to the asset tree by \`${step}\` but \`${key}\` does not exclude it`, {
         file: workerConfig,
-        detail: [`add "!${rule}" to assets.run_worker_first`],
+        detail: [`add "!${rule}" to ${prefix}assets.run_worker_first`],
       }),
     );
   }
@@ -83,5 +78,29 @@ export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<Chec
     );
   }
 
-  return checkResult(findings, `asset-root exclusions: ${emitted.size} emitted, ${excluded.size} excluded`);
+  return { findings, emitted: emitted.size, excluded: excluded.size };
+}
+
+/** Compares the files the assets pipeline writes into each deployment's asset-tree root against the `!`-prefixed entries of its `assets.run_worker_first`. @public */
+export async function checkAssetRoot(config: AssetRootCheckConfig): Promise<CheckResult> {
+  const { root } = config;
+  const workerConfig = config.workerConfig ?? "wrangler.jsonc";
+  const read = readWorkerConfig(root, workerConfig, "asset-root exclusions");
+  if (!("config" in read)) return read;
+
+  const judged = listDeployments(read.config).flatMap(({ prefix, effective, inherited }) => {
+    const directory = effective.assets?.directory;
+    if (inherited.has("assets") || directory === undefined) return [];
+    return [{ prefix, assets: { ...effective.assets, directory } }];
+  });
+  if (judged.length === 0) {
+    return checkResult([], "asset-root exclusions: no static assets configured");
+  }
+
+  const resolved = await loadConfig({ root, configPath: config.assetConfig });
+  const verdicts = judged.map(({ prefix, assets }) => judgeAssets(root, resolved, assets, prefix, workerConfig));
+  const findings = verdicts.flatMap((verdict) => verdict.findings);
+  const emitted = verdicts.reduce((sum, verdict) => sum + verdict.emitted, 0);
+  const excluded = verdicts.reduce((sum, verdict) => sum + verdict.excluded, 0);
+  return checkResult(findings, `asset-root exclusions: ${emitted} emitted, ${excluded} excluded`);
 }

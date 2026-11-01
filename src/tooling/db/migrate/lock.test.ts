@@ -16,6 +16,8 @@ const home: Home = {
   persistTo: "/app/.wrangler/state",
   place: "local",
   env: null,
+  databaseId: null,
+  auth: null,
   synthesized: false,
 };
 

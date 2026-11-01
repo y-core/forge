@@ -7,7 +7,7 @@ import { scopeLogger } from "../../cli/log";
 import { runUnchecked } from "../../cli/proc";
 import type { CommandBase, SpawnSync } from "../../cli/types";
 import { loadWranglerConfig } from "../config/parse";
-import { collectBindings, collectVars, emit } from "./cf-env-gen";
+import { collectBindings, collectSecretNames, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS } from "./cf-env-registry";
 import type { GenOptions } from "./types";
 
@@ -55,7 +55,7 @@ export function createGenEnvCommand(spawn?: SpawnSync): CommandBase {
       if (!hasConfig) log.info(`no config at ${flags.config}; using built-in defaults`);
       const options = await loadOptions(hasConfig ? configPath : undefined);
 
-      const entries = [...collectBindings(cfg, options), ...collectVars(devVars, wranglerVars, options)];
+      const entries = [...collectBindings(cfg, options), ...collectVars(collectSecretNames(cfg, devVars), wranglerVars, options)];
       writeFileSync(outPath, emit(entries));
       if (!formatGenerated(outPath, cwd, spawn)) log.warn(`bun fmt failed; ${outPath} is unformatted`);
 

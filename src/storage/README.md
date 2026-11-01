@@ -14,6 +14,7 @@ same pair of functions. Reach for it whenever a Worker has to read or write some
 - `@y-core/forge/storage/db` — the D1 SQL database, queried through `sql` fragments and nothing else
 - `@y-core/forge/storage/kv` — a Workers KV namespace, through a codec you choose
 - `@y-core/forge/storage/r2` — an R2 bucket, through a swappable object-storage backend
+- `@y-core/forge/storage/backup` — a deployed D1 database archived into R2 by a scheduled Workflow
 
 ---
 
@@ -434,6 +435,69 @@ Declare the same binding `optional: true` in the env schema so the registered ch
 ([`STORAGE_BINDINGS.md`][sb-4b] §4b). Which features may degrade this way, and which must keep `required` at its default and fail closed, are
 [§5a][sb-5a] and [§5b][sb-5b].
 
+## Archiving a D1 database into R2 on a schedule
+
+Time Travel keeps a deployed database's history for 30 days (7 on the free plan). For anything older, `runD1Backup` exports the database through
+D1's REST API and streams the dump into an R2 bucket, as the steps of a Workflow your Worker runs on a cron schedule. The class is yours, because
+`class_name` must name an export of your Worker's main module:
+
+```ts
+import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
+import { NonRetryableError } from "cloudflare:workflows";
+import { runD1Backup } from "@y-core/forge/storage/backup";
+
+export class D1Backup extends WorkflowEntrypoint<Env> {
+  async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
+    await runD1Backup(step, {
+      accountId: this.env.CF_ACCOUNT_ID,
+      databaseId: this.env.D1_DATABASE_ID,
+      apiToken: this.env.D1_BACKUP_TOKEN,
+      bucket: this.env.BACKUPS,
+      at: event.timestamp,
+      keep: 30,
+      nonRetryable: (message) => new NonRetryableError(message),
+    });
+  }
+}
+```
+
+```jsonc
+{
+  "workflows": [{ "name": "d1-backup", "binding": "D1_BACKUP", "class_name": "D1Backup", "schedules": ["0 3 * * *"] }],
+  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "app-d1-backups" }],
+}
+```
+
+**The token is a Worker secret holding `Account → D1 → Edit`**, the permission `forge db` uses for the same export. Scope it to this one
+account, and keep it out of `vars`.
+
+**Pass `event.timestamp` as `at`.** A retried step must name the same object, and `Date.now()` would change on every retry. Each dump is kept at
+`d1-backups/<database id>/<at>-<bookmark>.sql`, so its name says when it was taken and the Time Travel bookmark it was taken at.
+
+**An export blocks the database while it runs**, the same as `forge db backup --via export`. Schedule it for the quietest hour.
+
+**`nonRetryable` stops a run that no retry can fix**: a refused token, an unknown database id, or bad options. Every other failure is thrown for the
+Workflow to retry. A failed upload is aborted first, so a retry never leaves parts behind. The signed download URL never leaves the step that uses
+it, so it never reaches the instance's recorded state.
+
+**Restore within 30 days with the dump's bookmark, not the dump.** `forge db bookmark restore --target remote --bookmark <bookmark>` returns the
+database to exactly the state the dump holds. An older dump is a plain SQL file. Download it with `wrangler r2 object get` and load it into a new
+database; `forge db` has no verb that loads one.
+
+## Listing archives from an admin page
+
+`listD1Backups` reads the dumps of one database from the bucket, newest first, paging through the listing for you:
+
+```ts
+import { listD1Backups } from "@y-core/forge/storage/backup";
+
+app.get("/admin/backups", async (c) => Response.json(await listD1Backups(c.env.BACKUPS, { databaseId: c.env.D1_DATABASE_ID })));
+app.post("/admin/backups", async (c) => Response.json({ id: (await c.env.D1_BACKUP.create()).id }, { status: 202 }));
+```
+
+Mount both in your admin route group, so the admin guard runs first ([`AUTH_MOUNTING.md`][am-2] §2). Starting a backup and listing them are the
+only operations to expose this way. Restoring stays on the command line, where it asks first and prints its own undo.
+
 ---
 
 ## Gotchas
@@ -468,6 +532,7 @@ reserved `||` separator, and an empty-string `prefix` on `createKVStore` (it wou
 - [`docs/TEST_RUNNERS.md`][tr-7b] §7b — `fakeD1`, `fakeKV` and `fakeR2`
 - [`src/tooling/lint/README.md`][lint-readme] — `forge/sql-explicit-transaction`, the rule that refuses a runtime `BEGIN`
 
+[am-2]: ../../docs/AUTH_MOUNTING.md#2-the-route-groups-and-their-guards
 [app-readme-bindings]: ../app/README.md#validating-bindings-before-anything-reads-them
 [dm]: ../../docs/DATABASE_MANAGEMENT.md
 [eh]: ../../docs/FORGE_ERRORS.md

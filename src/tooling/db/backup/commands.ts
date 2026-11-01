@@ -28,8 +28,7 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
       label: { type: "string" as const, description: "A note recorded in the manifest, for saying what this backup was taken before" },
       via: {
         type: "string" as const,
-        description:
-          "How the rows are taken: read (default) queries them; export has wrangler d1 export write them, for a database too large to read",
+        description: "How the rows are taken: read (default) queries them; export has D1's export write them, for a database too large to read",
       },
     },
     run: async (_args, flags, ctx?: CliContext) => {

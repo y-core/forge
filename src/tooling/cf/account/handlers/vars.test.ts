@@ -159,6 +159,19 @@ describe("varsHandler.reconcile() — worker script", () => {
   });
 });
 
+describe("varsHandler.reconcile() — a malformed settings read", () => {
+  it("reports a binding with no name as an error naming the settings read", async () => {
+    const res = await handler.reconcile(
+      [{ name: "V", value: "v", overridden: false }],
+      makeCtx({ fetch: makeFetch([{ type: "plain_text", text: "v" }]) }),
+    );
+    expect([res.results[0]?.action, res.results[0]?.detail]).toEqual([
+      "error",
+      'worker script · GET /accounts/{account_id}/workers/scripts/{script_name}/settings: unexpected response shape at bindings.0.name (expected "name")',
+    ]);
+  });
+});
+
 describe("varsHandler.reconcile() — a missing target is not an auth failure", () => {
   const entries = [{ name: "V", value: "v", overridden: false }];
 
@@ -176,7 +189,7 @@ describe("varsHandler.reconcile() — a missing target is not an auth failure", 
     const res = await handler.reconcile(entries, makeCtx({ fetch: badAuth }));
     expect(res.results[0]?.action).toBe("error");
     expect(res.results[0]?.detail).toBe(
-      'worker script · auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9106',
+      'worker script · auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 9106',
     );
   });
 

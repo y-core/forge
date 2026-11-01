@@ -262,7 +262,7 @@ test.describe("forge db migrate --target local against real D1", () => {
     expect(restore.stdout).toContain("✓ auth_users — 2 rows");
   });
 
-  test("refuses --via export, naming each column, for every value wrangler's dumper would not reproduce", async () => {
+  test("refuses --via export, naming each column, for every value D1's dumper would not reproduce", async () => {
     await withD1((db) =>
       db.exec(
         "CREATE TABLE probe_hazard (id INTEGER PRIMARY KEY, crlf, lflf, plain, num);" +

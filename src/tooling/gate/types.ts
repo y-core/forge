@@ -132,9 +132,9 @@ export interface CloudflareWorkerStepOptions {
   assetConfig?: string;
   /** Where the asset-types emitter writes. Defaults to `.forge/assets.ts`. */
   assetOut?: string;
-  /** Whether to emit the two `wrangler types` steps. Defaults to `true`. */
+  /** Whether to emit the `types:cf-runtime` step. Defaults to `true`. */
   wranglerTypes?: boolean;
-  /** `--config` for the bindings invocation; the runtime invocation takes none. Also the config the exposure row reads. */
+  /** The wrangler config every row that reads one is pointed at, `--config` on `types:cf-runtime` included. */
   workerConfig?: string;
   /** How the exposure row judges each deployment; omit to take `require: "stated"`. Read only when `workerConfig` is set. */
   exposure?: Omit<ExposureCheckConfig, "root" | "workerConfig">;
@@ -319,9 +319,11 @@ export interface ResolvedTier {
   steps: readonly Step[];
   /** The tier that declares each row directly, by label. */
   home: Readonly<Record<string, GateTier>>;
+  /** Set when the table does not declare this tier: the nearest declared tier below it, whose rows it runs. */
+  from?: GateTier;
 }
 
-/** Every tier a table declares, resolved. @public */
+/** Every tier a table declares, resolved, and each tier above the lowest declared one that it does not, run as the nearest declared tier below. @public */
 export type ResolvedTiers = { readonly [K in GateTier]?: ResolvedTier };
 
 /** How a selected step runs: its whole command, its command plus `narrow.args`, or not at all because no pending change touches it. @public */

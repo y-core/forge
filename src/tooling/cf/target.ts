@@ -6,7 +6,7 @@ export const WORKER_SURFACE = "worker script";
 
 /** Refuses a config declaring a Cloudflare Pages project, before any request is made. */
 export function refusePagesConfig(config: WranglerConfig, scriptName: string): void {
-  if (config["pages_build_output_dir"] === undefined) return;
+  if (config.pages_build_output_dir === undefined) return;
   throw new CliError(
     "invalid-args",
     `${scriptName} declares \`pages_build_output_dir\`, a Cloudflare Pages project — forge supports Workers only. Remove it and deploy ${scriptName} as a Worker.`,

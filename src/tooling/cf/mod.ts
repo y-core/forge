@@ -44,7 +44,8 @@ export type { ConfigDiff } from "./config/types";
 export { createDevCommand } from "./dev/command";
 export { diffConfig } from "./config/diff";
 export type { LoadedWranglerConfig, WriteOutcome } from "./config/types";
-export { loadWranglerConfig, parseWranglerConfig, stripJsonc, writeWranglerConfig } from "./config/parse";
+export { loadWranglerConfig, parseWranglerConfig } from "./config/parse";
+export { writeWranglerConfig } from "./config/write";
 export { createGenEnvCommand, defineEnvConfig, loadOptions } from "./gen/cf-env-command";
 export type { GenOptions } from "./gen/types";
 export type { TableSection } from "./types";
@@ -61,6 +62,7 @@ export type {
   SyncResult,
   WranglerAssetsConfig,
   WranglerConfig,
+  WranglerEnvironmentConfig,
 } from "./types";
 export { ACTION_LABELS, RESOURCE_TYPES } from "./types";
 export { createSyncZoneCommand, planZoneRules, rulesInSync } from "./zone/commands";

@@ -29,7 +29,7 @@ function context(place: Place = "standby"): { run: DbRunContext; io: FakeDbIo } 
   const config = dbConfig(place);
   const run: DbRunContext = {
     config,
-    home: resolveHome(config, io),
+    home: resolveHome(config, io, null),
     io,
     host: { seeds: ["seeds"] },
     json: false,

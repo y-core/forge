@@ -1,11 +1,12 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { afterAll, describe, expect, it } from "bun:test";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
-import { isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
-import type { Home, Spawned } from "./types";
+import { installedWranglerVersion, isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerScript, wranglerUnreachable } from "./io";
+import type { Home, Spawned, WranglerD1Module } from "./types";
 
 const roots: string[] = [];
 
@@ -126,6 +127,18 @@ describe("realDbIo() — spawn", () => {
     expect(spawnFresh(app, "forge-db-nearest", [], app)).toEqual({ code: 0, exited: true, stdout: "near\n", stderr: "" });
   });
 
+  it("runs the wrangler forge imports, never the app's node_modules/.bin copy", () => {
+    const imported = JSON.parse(readFileSync(fileURLToPath(import.meta.resolve("wrangler/package.json")), "utf-8")) as { version: string };
+    const root = tempRoot();
+    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(root, "node_modules", ".bin", "wrangler"), "#!/bin/sh\necho app-copy\n", "utf-8");
+    chmodSync(join(root, "node_modules", ".bin", "wrangler"), 0o755);
+    const run = spawnFresh(root, "wrangler", ["--version"], root);
+    expect(run.code).toBe(0);
+    expect(run.stdout).not.toContain("app-copy");
+    expect(run.stdout).toContain(imported.version);
+  });
+
   it("turns wrangler's metrics prompt off in the child's environment", () => {
     const root = tempRoot();
     const run = spawnFresh(root, "bun", ["-e", "console.log(process.env.WRANGLER_SEND_METRICS)"], root);
@@ -179,9 +192,10 @@ let disposals = 0;
 let refuseOpen = false;
 let holdOpen: ((error: Error) => void) | null = null;
 
-// One registration for the file: `mock.module` re-registered later does not reach an import another
-// module already made.
-void mock.module("wrangler", () => ({ getPlatformProxy: platformProxy, unstable_splitSqlQuery: (sql: string) => sql.split(";") }));
+const loadFakeWrangler = async (): Promise<WranglerD1Module> => ({
+  getPlatformProxy: platformProxy as unknown as Required<WranglerD1Module>["getPlatformProxy"],
+  unstable_splitSqlQuery: (sql: string) => sql.split(";"),
+});
 
 function platformProxy(options: Record<string, unknown>) {
   opened.push(options);
@@ -208,6 +222,8 @@ function localHome(root: string): Home {
     persistTo: join(root, ".wrangler", "state"),
     place: "local",
     env: null,
+    databaseId: null,
+    auth: null,
     synthesized: false,
   };
 }
@@ -232,8 +248,56 @@ describe("wranglerUnreachable()", () => {
   });
 });
 
-// `unstable_splitSqlQuery` used to be read at query time, where its absence surfaced as "query
-// `SELECT …` failed" and the version diagnostic was lost. Both exports are now read at the open.
+describe("wranglerScript()", () => {
+  it("resolves the wrangler bin of a map against the manifest's directory", () => {
+    expect(wranglerScript("/m/node_modules/wrangler/package.json", { bin: { wrangler: "./bin/wrangler.js" } })).toBe(
+      "/m/node_modules/wrangler/bin/wrangler.js",
+    );
+  });
+
+  it("resolves a bin given as one string", () => {
+    expect(wranglerScript("/m/wrangler/package.json", { bin: "cli.js" })).toBe("/m/wrangler/cli.js");
+  });
+
+  it("answers null for a manifest naming no wrangler bin", () => {
+    expect(wranglerScript("/m/package.json", {})).toBeNull();
+    expect(wranglerScript("/m/package.json", { bin: { other: "x.js" } })).toBeNull();
+    expect(wranglerScript("/m/package.json", { bin: "" })).toBeNull();
+    expect(wranglerScript("/m/package.json", null)).toBeNull();
+  });
+});
+
+describe("installedWranglerVersion()", () => {
+  it("answers the version the package declares", () => {
+    expect(installedWranglerVersion(() => ({ name: "wrangler", version: "4.151.2" }))).toBe("4.151.2");
+  });
+
+  it("answers unknown for a package that will not load", () => {
+    expect(
+      installedWranglerVersion(() => {
+        throw new Error("Cannot find module 'wrangler/package.json'");
+      }),
+    ).toBe("unknown");
+  });
+
+  it("answers unknown for a package declaring no version", () => {
+    expect(installedWranglerVersion(() => ({}))).toBe("unknown");
+    expect(installedWranglerVersion(() => ({ version: "" }))).toBe("unknown");
+    expect(installedWranglerVersion(() => null)).toBe("unknown");
+  });
+
+  it("reads the version of the wrangler forge imports through realDbIo, never the app's own wrangler package or CLI", () => {
+    const imported = JSON.parse(readFileSync(fileURLToPath(import.meta.resolve("wrangler/package.json")), "utf-8")) as { version: string };
+    const root = tempRoot();
+    mkdirSync(join(root, "node_modules", "wrangler"), { recursive: true });
+    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
+    writeFileSync(join(root, "node_modules", "wrangler", "package.json"), JSON.stringify({ name: "wrangler", version: "0.0.1-app" }));
+    writeFileSync(join(root, "node_modules", ".bin", "wrangler"), "#!/bin/sh\necho 0.0.1-app\n");
+    chmodSync(join(root, "node_modules", ".bin", "wrangler"), 0o755);
+    expect(realDbIo(root).wranglerVersion()).toBe(imported.version);
+  });
+});
+
 describe("missingWranglerExport()", () => {
   it("names the half a wrangler exporting only getPlatformProxy is missing", () => {
     const missing = missingWranglerExport({ getPlatformProxy: () => undefined });
@@ -251,9 +315,21 @@ describe("missingWranglerExport()", () => {
 });
 
 describe("realDbIo() — the local D1 port", () => {
+  it("reports a wrangler that would not load through the injected loader, and opens nothing", async () => {
+    const root = tempRoot();
+    const cause = new Error("Cannot find module 'wrangler'");
+    const opensBefore = opens;
+    const io = realDbIo(root, undefined, () => Promise.reject(cause));
+    await expect(io.d1(localHome(root), ["SELECT 1"])).rejects.toMatchObject({
+      kind: "external",
+      message: wranglerUnreachable(localHome(root), { error: cause }).message,
+    });
+    expect(opens).toBe(opensBefore);
+  });
+
   it("opens the binding over the home's own `v3` state, with remote bindings off", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.closeD1(null);
 
@@ -269,7 +345,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("opens one handle for repeated calls against the same state, and none after it is closed", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.d1(localHome(root), ["SELECT 2"]);
@@ -284,7 +360,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("opens a separate handle for a home naming different config or a different environment", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.d1({ ...localHome(root), configPath: join(root, "wrangler.other.jsonc") }, ["SELECT 1"]);
@@ -302,7 +378,7 @@ describe("realDbIo() — the local D1 port", () => {
   it("keeps no handle for an open that failed, and sweeps past it to release the ones that opened", async () => {
     const failing = tempRoot();
     const working = tempRoot();
-    const io = realDbIo(failing);
+    const io = realDbIo(failing, undefined, loadFakeWrangler);
 
     refuseOpen = true;
     await expect(io.d1(localHome(failing), ["SELECT 1"])).rejects.toThrow("Unexpected token }");
@@ -319,7 +395,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("refuses a deployed home, which nothing reaches in process", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
     );
@@ -329,14 +405,14 @@ describe("realDbIo() — the local D1 port", () => {
 describe("realDbIo() — splitD1", () => {
   it("answers wrangler's split over the home's handle, with blank statements dropped", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     expect(await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);  ;\nDROP VIEW v;")).toEqual(["INSERT INTO t VALUES (1)", "\nDROP VIEW v"]);
     await io.closeD1(null);
   });
 
   it("opens one handle for a split and a batch against the same state", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     const [opened0, batched0] = [opens, batches.length];
     const [statement = ""] = await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);");
     await io.d1(localHome(root), [statement]);
@@ -346,7 +422,7 @@ describe("realDbIo() — splitD1", () => {
 
   it("refuses a deployed home with the words d1 refuses it in", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     const opened0 = opens;
     await expect(io.splitD1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, "SELECT 1;")).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
@@ -369,7 +445,7 @@ describe("isD1BusyRefusal()", () => {
 describe("realDbIo() — a batch refused for the lock", () => {
   it("disposes the refused handle and replays the batch on a new one", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
     refusals = [BUSY_REFUSAL];
     expect(await io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).toEqual([[]]);
@@ -383,7 +459,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
 
   it("replays a read batch on a new handle even after the handle has answered", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
     refusals = [BUSY_REFUSAL];
@@ -394,7 +470,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
 
   it("never replays a write batch on a handle that has already answered", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     const [opened0, batched0] = [opens, batches.length];
     refusals = [BUSY_REFUSAL];
@@ -405,7 +481,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
 
   it("does not retry a first batch that failed on its SQL", async () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo(root, undefined, loadFakeWrangler);
     const [opened0, batched0] = [opens, batches.length];
     refusals = ["D1_ERROR: no such table: t: SQLITE_ERROR"];
     await expect(io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).rejects.toThrow("no such table: t");

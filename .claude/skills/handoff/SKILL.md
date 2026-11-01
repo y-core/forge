@@ -21,8 +21,8 @@ Resolve what you were given to a list of task ids. Given nothing, that is the ta
 `review` in this session. An epic or a wave identifies a set; neither widens one past the ids you
 were handed.
 
-Every task must be in `review` — the lane is what offers it for a verdict. Say so and stop if one
-is not.
+Every task must be in `review`, its task check — `bun run verify:unit` — green on the tree as it
+stands; the lane is what offers it for a verdict. Say so and stop if one is not.
 
 ## Check the reviewer is up
 
@@ -47,3 +47,15 @@ so the reviewer's trigger is not guaranteed to fire on the `handoff:` line alone
 
 Tell the user what you sent. **Do not close the tasks yourself** — `move_lane` reaches `done` only
 from `review`. Do not poll; the reply wakes this session on its own.
+
+## When the reply comes
+
+- **Findings filed or tasks reopened** — work them, move them to `review`, and hand off again.
+- **No task of the epic left open** — the epic is closed; for tasks filed under no epic, the set you
+  handed off is. Send the full gate — `bun run verify` — to `cc-tester` once and report its
+  verdict. A red verdict is filed as a task and worked like any other.
+- **Tasks of the epic still open elsewhere** — report the verdict and stop; the gate waits for the
+  last of them.
+
+**The user commits, and that is the end of your part.** Never commit, ask to, or remind
+(`AGENT_WORKFLOW.md` §4b).

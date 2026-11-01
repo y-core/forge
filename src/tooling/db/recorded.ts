@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
+import { executeFile } from "./d1";
 import type { DbRunContext, Home, RecordedUnit } from "./types";
-import { executeFile } from "./wrangler";
 
 /** Stages one unit under `.forge/scratch/` and loads it, so its body and its record reach the database together. @internal */
 export async function applyRecordedSql(run: DbRunContext, home: Home, unit: RecordedUnit): Promise<void> {

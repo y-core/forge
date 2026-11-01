@@ -12,8 +12,9 @@ composes the migration, applies it forward-only, and records what it applied. Se
 `migrate`, `seed` and `schema` carry verbs, and a bare group runs its first verb with the same flags: `forge db migrate` is
 `migrate apply`, `forge db seed` is `seed apply`, `forge db schema` is `schema check`.
 
-**Node-only, like every `tooling` namespace.** It reaches a local database through `wrangler`'s own `getPlatformProxy` and a deployed one by running
-the CLI, and is never reachable from a Worker. The runtime client a Worker reads the same database through is [`STORAGE_BINDINGS.md`][sb-1] §1.
+**Node-only, like every `tooling` namespace.** It reaches a local database through `wrangler`'s own `getPlatformProxy` and a deployed one through
+the D1 REST API, and is never reachable from a Worker. The runtime client a Worker reads the same database through is [`STORAGE_BINDINGS.md`][sb-1]
+§1.
 
 ---
 
@@ -27,8 +28,8 @@ forge db seed                   # load the development data
 forge db migrate status         # applied, pending, and where files and database disagree
 ```
 
-Every verb takes the same shared flags, and `--help` on any verb lists them with its own. `--env` is forwarded to wrangler as `-e`, and `--json`
-prints one JSON document on stdout and nothing else.
+Every verb takes the same shared flags, and `--help` on any verb lists them with its own. `--env` selects the wrangler config's `env.<name>` block,
+and `--json` prints one JSON document on stdout and nothing else.
 
 A destructive verb asks before it acts, through the prompt [`@y-core/forge/tooling/cli`][cli-readme] owns, and refuses a run with no terminal that
 did not pass `--yes`.
@@ -41,7 +42,7 @@ did not pass `--yes`.
 [`DATABASE_MANAGEMENT.md`][dm-2] §2; `standby` in particular is generated rather than checked in ([§2a][dm-2a]).
 
 ```bash
-forge db migrate --target remote
+forge db migrate --target remote --account-id "$ACCOUNT_ID" --api-token "$API_TOKEN"
 forge db migrate --target local:analytics   # the d1_databases entry named analytics
 forge db migrate --db ANALYTICS             # the same entry, by binding
 ```
@@ -256,7 +257,7 @@ Every app runs the same lifecycle, so the scripts are the same in each. Copy the
 | `db:schema:check` | `forge db schema check` | Confirms the schema files, the snapshot and the migrations agree |
 | `db:migrate` | `forge db migrate` | Applies pending migrations to the local database |
 | `db:migrate:remote` | `forge db migrate --target remote` | Applies pending migrations to the deployed database, under a bookmark |
-| `deploy` | `forge db migrate --target remote --yes && wrangler deploy` | Applies the deployed database's pending migrations, then deploys the Worker — the Workers Builds deploy command |
+| `deploy` | `forge db migrate --target remote --yes --account-id "$CLOUDFLARE_ACCOUNT_ID" --api-token "$CLOUDFLARE_API_TOKEN" && wrangler deploy` | Applies the deployed database's pending migrations, then deploys the Worker — the Workers Builds deploy command |
 | `db:standby` | `forge db standby reset` | Rebuilds the standby database from the migrations and the seeds |
 | `db:backup` | `forge db backup` | Writes a verified backup of a database |
 | `db:restore` | `forge db restore` | Restores a database from a backup |
@@ -292,10 +293,10 @@ await execute(root);
 ```
 
 It takes a `DbContextOverrides` — `io` and `host`, both optional. `io` is the seam every test in this namespace drives: pass a `DbIo` and no command
-touches a filesystem, spawns `wrangler` or opens a database. `host` supplies the `config/db.config.ts` that would otherwise be loaded from
-disk.
+touches a filesystem, spawns `wrangler`, calls Cloudflare or opens a database. `host` supplies the `config/db.config.ts` that would otherwise be
+loaded from disk.
 
-A fake `DbIo` records what a run put to a local database apart from what it spawned, so a test can assert on each.
+A fake `DbIo` records what a run put to a local database apart from what it spawned and what it sent to Cloudflare, so a test can assert on each.
 
 To drive one verb without the command layer, run it inside `withDbRun`, which resolves the context and releases what the verb opened. It takes a
 whole `SharedDbFlags`, so every key is present even where the value is not:
@@ -326,8 +327,14 @@ The engine beneath them is `@internal` and reached by file, not from the barrel.
 migration recorded there that forge never applied. `migrations_dir` and `migrations_pattern` are read only to check they name forge's files. The two
 `_forge_*` tables and what each one catches are [`DATABASE_MANAGEMENT.md`][dm-4] §4.
 
-**A `--target remote` run needs a real `database_id`.** A missing one, or the placeholder, refuses the run and points at
-[`forge cf sync --commit`][cf-readme] rather than guessing.
+**A `--target remote` run needs a real `database_id`, and both `--account-id` and `--api-token`.** A missing id, or the placeholder, refuses the
+run and points at [`forge cf sync --commit`][cf-readme] rather than guessing. Nothing else authenticates it — not `wrangler login`, not an exported
+`CLOUDFLARE_*` variable; either flag missing refuses before any request. Pass the token as `--api-token "$VAR"` so it stays out of shell history.
+The undo command a remote verb prints names neither flag, so add both when you run it.
+
+**`--env` reads the environment as wrangler builds it.** An `env.<name>` block with no `d1_databases` gets none from the top level, so `--env`
+refuses and names the key to restate. An undeclared name is always refused, even when the config has no `env` table and wrangler would fall back to
+the top level. Forge refuses so that a mistyped name never reaches the top-level database.
 
 **`--json` owns stdout.** Progress lines, confirmations and warnings go to stderr under it, so the document on stdout is parseable whole.
 

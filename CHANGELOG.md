@@ -18,7 +18,47 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **The optional `wrangler` peer floor rises from `>=4.99.0` to `>=4.151.2`**, the version the gate runs.
+- **`forge cf gen env` takes secret names from `secrets.required` once `wrangler.jsonc` declares `secrets`, and stops reading `.dev.vars` for
+  them**, as `wrangler types` does. After you regenerate, a `.dev.vars` key that isn't in `secrets.required` drops out of `EnvSchema` and `Env`.
+- **`forge cf gen env` now types `analytics`, `k2` and `pipelines` bindings, so a regenerated `EnvSchema` requires them on the first request.**
+  List a binding that is absent under `wrangler dev` in `optional`. `unsafe` and `logfwdr` stay untyped, and the cf README says what to do instead.
+- **`cloudflareWorkerSteps` generates runtime types only: the `types:cf-bindings` row and `.types/worker-configuration.d.ts` are gone.** Delete
+  that file and take `Env` from `forge cf gen env`, which types every binding kind but `unsafe` and `logfwdr`. The new
+  `validate-generated-types` row fails while wrangler output other than `.types/cloudflare.d.ts` is there.
+- **With `workerConfig` set, `types:cf-runtime` passes `--config`**, because runtime types follow the config's compatibility date and flags.
+- **`forge db --env <name>` refuses an environment that declares no `d1_databases` instead of using the top level's**, because wrangler gives
+  that environment no D1 binding. Restate the entries under `env.<name>.d1_databases`.
+- **`validate-dev-boundary`, `validate-dev-bundle` and `validate-asset-root` also judge an `env.*` block's own `main` and `assets`**, so a config
+  that passed may now fail.
+- **`forge db --target remote` and `--target preview` reach D1 over Cloudflare's REST API and authenticate only from `--account-id` and
+  `--api-token`.** `wrangler login` and exported variables no longer authenticate them, and either flag missing is refused before any request. In
+  Workers Builds, set both as build secrets and pass them as `--account-id "$CLOUDFLARE_ACCOUNT_ID" --api-token "$CLOUDFLARE_API_TOKEN"`, with a
+  token holding `Account → D1 → Edit`.
+- **`forge cf sync` reads its credentials from `--account-id` and `--api-token` alone.** `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` are
+  no longer read.
+- **`timeTravelInfo` and `timeTravelRestore` return promises, and `timeTravelRestore` returns the undo `Bookmark` and takes the run's config.**
+  `forge db bookmark restore` prints the command that undoes it.
+- **`DbIo` gains `fetch` and `wranglerVersion`, and `Home` gains `databaseId`.** A hand-built `DbIo` or `Home` must supply them.
+- **Backup manifests are format 9: `dumper` is replaced by `exporter`.** `forge db restore` refuses an older artifact, so take your backups again.
+
+### Added
+
+- **`@y-core/forge/storage/backup` archives a deployed D1 database into R2 from a scheduled Workflow.** Call `runD1Backup(step, options)` from
+  your `WorkflowEntrypoint`. It exports through the D1 REST API, streams the dump into R2 by multipart upload, and prunes past `keep`.
+  `listD1Backups` lists the archives, newest first.
+
+### Fixed
+
+- **`forge cf gen env` types a service binding as `Fetcher`, as `wrangler types` does, and no longer reads `websearch`, a key wrangler rejects.**
+  `Fetcher` is what `Service` already resolved to, so code that reads the binding is unaffected.
+- **`validate-exposure` and `validate-compatibility` judge each environment as wrangler builds it.** An `env.*` block that leaves out
+  `workers_dev`, `preview_urls`, `route`, `routes` or `compatibility_flags` inherits the top level's value. A finding names an environment only
+  for a key it states itself, and both summaries count every deployment.
+- **`validate-dev-bundle` no longer refuses `alias` inside an `env.*` block**, since wrangler reads `alias` only at the top level.
+- **A synthesized home under `--env` carries that environment's `account_id` and `compatibility_date`.**
 
 ---
 

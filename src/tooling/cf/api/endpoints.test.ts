@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   CF_ERROR_CODES,
   D1_WRITE_PERMISSION,
+  d1DatabasePath,
   d1Path,
   WORKER_PERMISSION,
   workerSecrets,
@@ -94,5 +95,17 @@ describe("the constant tables", () => {
 
   it("keeps the two failure classes disjoint, so classification cannot depend on which is tested first", () => {
     expect(CF_ERROR_CODES.notFound.filter((c) => (CF_ERROR_CODES.auth as readonly number[]).includes(c))).toEqual([]);
+  });
+});
+
+describe("d1DatabasePath", () => {
+  it("addresses one database under the account's D1 path", () => {
+    expect(d1DatabasePath("acc-1", "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a")).toBe(
+      "/accounts/acc-1/d1/database/0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+    );
+  });
+
+  it("encodes a slash in the database id, so it cannot reach a sibling operation", () => {
+    expect(d1DatabasePath("acc-1", "x/../y")).toBe("/accounts/acc-1/d1/database/x%2F..%2Fy");
   });
 });

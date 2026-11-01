@@ -35,6 +35,8 @@ describe("appHome()", () => {
       persistTo: "/app/.wrangler/state",
       place: "local",
       env: null,
+      databaseId: null,
+      auth: null,
       synthesized: false,
     });
   });
@@ -50,6 +52,28 @@ describe("appHome()", () => {
 
   it("is never a generated config", () => {
     expect(appHome(dbConfig()).synthesized).toBe(false);
+  });
+});
+
+describe("databaseId — the id the D1 REST API addresses", () => {
+  const entry: D1Entry = { ...ENTRY, databaseId: "db-remote", previewDatabaseId: "db-preview" };
+  const at = (place: "local" | "standby" | "remote" | "preview") => dbConfig({ entry, target: { place, database: null } });
+  const SCRATCH = { label: "scratch:x", database: "app-db-x", dir: "/app/.forge/scratch/x" };
+
+  for (const [place, id] of [
+    ["remote", "db-remote"],
+    ["preview", "db-preview"],
+    ["local", null],
+    ["standby", null],
+  ] as const) {
+    it(`is ${id ?? "null"} for ${place}, in appHome and synthesizeHome alike`, () => {
+      expect(appHome(at(place)).databaseId).toBe(id);
+      expect(synthesizeHome(at(place), fakeDbIo(), SCRATCH).databaseId).toBe(id);
+    });
+  }
+
+  it("is null for preview when the entry declares no preview id, rather than falling back to the deployed one", () => {
+    expect(appHome(dbConfig({ entry: { ...entry, previewDatabaseId: null }, target: { place: "preview", database: null } })).databaseId).toBeNull();
   });
 });
 
@@ -82,6 +106,8 @@ describe("synthesizeHome()", () => {
       persistTo: "/app/.forge/standby/app-db-standby/.wrangler/state",
       place: "local",
       env: null,
+      databaseId: null,
+      auth: null,
       synthesized: true,
     });
   });
@@ -139,6 +165,44 @@ describe("synthesizeHome()", () => {
   it("drops the environment, because the generated config has no env blocks to select from", () => {
     const io = fakeDbIo();
     expect(synthesizeHome(dbConfig({ env: "staging" }), io, STANDBY_OPTIONS).env).toBeNull();
+  });
+
+  it("carries the environment's own account and compatibility date under --env, and the top level's where it states none", () => {
+    const config = {
+      name: "app",
+      account_id: "acct-1",
+      compatibility_date: "2026-01-01",
+      env: { staging: { account_id: "acct-staging", compatibility_date: "2026-03-01" }, qa: {} },
+    };
+    const written = (env: string) => {
+      const io = fakeDbIo();
+      synthesizeHome(dbConfig({ config, env }), io, STANDBY_OPTIONS);
+      const { name, account_id, compatibility_date } = JSON.parse(withoutNote(io.readText("/app/.forge/standby/app-db-standby/wrangler.jsonc")));
+      return { name, account_id, compatibility_date };
+    };
+    expect([written("staging"), written("qa")]).toEqual([
+      { name: "app-staging", account_id: "acct-staging", compatibility_date: "2026-03-01" },
+      { name: "app-qa", account_id: "acct-1", compatibility_date: "2026-01-01" },
+    ]);
+  });
+});
+
+describe("synthesizeHome() — under --env", () => {
+  const read = (io: ReturnType<typeof fakeDbIo>) => JSON.parse(withoutNote(io.readText("/app/.forge/standby/app-db-standby/wrangler.jsonc")));
+
+  it("names the Worker after the environment's own name when it states one", () => {
+    const io = fakeDbIo();
+    synthesizeHome(dbConfig({ config: { name: "app", env: { staging: { name: "app-stage" } } }, env: "staging" }), io, STANDBY_OPTIONS);
+    expect(read(io).name).toBe("app-stage");
+  });
+
+  it("refuses an --env naming no env block when the config has an env table, writing nothing", () => {
+    const io = fakeDbIo();
+    const config = dbConfig({ config: { name: "app", env: { staging: {} } }, env: "qa" });
+    expect(() => synthesizeHome(config, io, STANDBY_OPTIONS)).toThrow(
+      new CliError("invalid-args", "--env qa names no `env.qa` block in the wrangler config"),
+    );
+    expect(io.exists("/app/.forge/standby/app-db-standby")).toBe(false);
   });
 });
 
@@ -234,7 +298,7 @@ describe("resolveHome()", () => {
   it("generates a home for standby and uses the checked-in config for every other place", () => {
     const io = fakeDbIo();
     const places = (["local", "standby", "remote", "preview"] as const).map((place) => {
-      const home = resolveHome(dbConfig({ target: { place, database: null } }), io);
+      const home = resolveHome(dbConfig({ target: { place, database: null } }), io, null);
       return [home.label, home.synthesized];
     });
     expect(places).toEqual([

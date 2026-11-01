@@ -42,6 +42,7 @@ description: "Reader-centred prose for governing documents and for what an agent
 - §7 The Principles Operate Together: the worked failure, one principle at a time
 - §8 Response Length and Proportion: length tracks substance, not effort
 - §9 Progress Narration During Work: one sentence up front, then findings only
+- §9a The Closing Report Assigns the User Nothing: what is done and what is blocked, and work to be done in the ledger
 - §10 Corrections to Earlier Statements: correct what changes a decision, and nothing else
 - §13 What This Document Does Not Enforce: why no check measures plainness
 
@@ -384,10 +385,23 @@ Narration is for the reader's benefit, not a record of activity.
 - **One sentence before the first tool call**, saying what you are about to do. Not a plan, not a list of the files you intend to read.
 - **During the work, speak on a finding or a change of direction** — something discovered that the reader would want to know, or a decision to do
   something other than what was announced. Not on completing a step, not on starting the next one.
-- **At the end, lead with the outcome.** What is now true, then what changed, then what is outstanding. The process that produced it is
+- **At the end, lead with the outcome.** What is now true, then what changed, then what is blocked (§9a). The process that produced it is
   supplementary (§4e) and usually unnecessary.
 
 A reader watching tool calls can already see that work is happening. Narrating it a second time in prose is words that are not information (§5e).
+
+### 9a. The Closing Report Assigns the User Nothing
+
+**A report says what is done and what is blocked, and assigns the user nothing.** No list of next steps, no "you should now run", no offer or
+reminder to commit (`AGENT_WORKFLOW.md` §4b). Each is a task handed to the person who asked for the work, in the one place nothing tracks it: a
+to-do list in prose is gone at the next scroll, and nothing ever marks it done.
+
+**Work to be done is a ledger task, never a to-do list in prose.** It is filed in the turn that finds it and named by id (`AGENT_WORKFLOW.md` §5).
+Work the ledger does not carry — provisioning, a secret, a dashboard or DNS step — is reported as what the work is blocked on.
+
+**A blocker is named with what clears it.** "Blocked: the egress allowlist refuses `api.example.com`; allowing it on the host clears it" is a fact
+about the work rather than an instruction, and the reader decides whether and when. A part left undone is named the same way
+(`AGENT_WORKFLOW.md` §1a).
 
 ---
 

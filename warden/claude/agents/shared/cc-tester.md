@@ -1,11 +1,10 @@
 ---
 name: cc-tester
 description: >
-  Verification-gate runner — runs the pre-commit full gate (`bun run verify` and any extra
-  cross-cutting suite) once a set of changes is ready to commit, and returns a compact pass/fail
-  verdict, never the full stream. cc-plan / cc-dev / cc-doc / cc-test send that run here so
-  voluminous output never fills their context; each task closes on a task check they run
-  themselves. Runs gates; does NOT fix failures — reports the minimal excerpt back to the owning
+  Verification-gate runner — runs the full gate (`bun run verify` and any extra cross-cutting
+  suite) once, when an epic closes, and returns a compact pass/fail verdict, never the full
+  stream. cc-plan / cc-dev / cc-doc / cc-test send that run here so voluminous output never fills
+  their context; each task closes on the `unit` tier, which they run themselves. Runs gates; does NOT fix failures — reports the minimal excerpt back to the owning
   agent.
 
   Not for direct invocation by a person, not for general exploration, and never for fixing what
@@ -13,8 +12,7 @@ description: >
 
   Examples of when to invoke:
   - "Run bun run verify and report the verdict"
-  - "Run the pre-commit gate on the finished set of changes"
-  - "Run bun run verify:scheduled before the tag"
+  - "Run the epic gate now that the last task in it has closed"
   - "Re-run the gate after cc-dev's fix and confirm it is green"
 tools: Read, Grep, Glob, LSP, Bash, Agent
 model: sonnet
@@ -35,13 +33,15 @@ This agent exists to absorb them — _not_ because an agent cannot be trusted to
 
 That rationale is also the boundary:
 
-- **The full cross-cutting gate comes here, once per commit or tag.** `bun run verify`, the gate a commit closes on;
-  `bun run verify:scheduled`, the gate a tag blocks on and the one tier that runs the browser set and every heavy row; any suite whose
-  output is voluminous or whose failure could belong to more than one owner. A caller that names no tier gets a bare `verify`, which runs no browser
-  spec — so a verdict on a bare run never says a page works in a browser.
-- **The task check does not.** An owning agent closes each task on the `static` tier plus its touched test files, run by file, itself: the output is
-  small and it owns the fix either way (`AGENT_WORKFLOW.md` §4). Routing a few lines through a second agent buys nothing (`AGENT_WORKFLOW.md` §4a).
-- **A scoped green is never a green gate**, whoever ran it — a task check reads `task check: static green; <files> green`.
+- **The full cross-cutting gate comes here, once, when an epic closes** (`AGENT_WORKFLOW.md` §4b). `bun run verify`, the gate an epic closes
+  on, and any suite whose output is voluminous or whose failure could belong to more than one owner. A
+  bare `verify` runs no browser spec, so a verdict on it never says a page works in a browser.
+- **`verify:scheduled` never comes here.** It belongs to the release command and the daily cron (`TESTING.md` §6); a request for it is refused,
+  named as refused, and nothing runs.
+- **The task check does not, nor does an interim check.** An owning agent closes each task on the `unit` tier itself and checks in the interim on
+  `static`: it reads the runner's summary and owns the fix either way (`AGENT_WORKFLOW.md` §4). Routing that through a second agent buys nothing
+  (`AGENT_WORKFLOW.md` §4a).
+- **A scoped green is never a green gate**, whoever ran it — a task check reads `task check: verify --tier unit green`.
 
 ## The Step List Is Not Yours to Know
 

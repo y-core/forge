@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { INVENTORY_SELECT } from "../../../storage/db/schema";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
-import { OK, argvHas, bufferedIO, composed, fakeDbIo, jsonRows, minimalWranglerConfig, schemaModelRows } from "../db.fixture";
+import { bufferedIO, cfEnvelope, composed, fakeDbIo, minimalWranglerConfig, schemaModelRows, REMOTE_AUTH, REMOTE_ARGS } from "../db.fixture";
 import { formatComposeHeader } from "../schema/header";
-import type { DbHostConfig, FakeDbIo, Spawned } from "../types";
+import type { DbHostConfig, FakeDbIo, Home } from "../types";
 import { RECORDED_CHECKSUM_SELECT } from "./checksum";
 import { migrationChecksum, migrationsDigest } from "./files";
 import { schemaFingerprint } from "./fingerprint";
@@ -25,11 +25,23 @@ const GENERATED_INIT = `${formatComposeHeader({ desired: {}, baseline: migration
 const INVENTORY = [{ type: "table", name: "users", tbl_name: "users", sql: INIT }];
 const FINGERPRINT = schemaFingerprint([{ type: "table", name: "users", tblName: "users", sql: INIT }]);
 
-const NO_TABLE: Spawned = { code: 1, stdout: "", stderr: "no such table: _forge_migrations" };
+/** The deployed home `minimalWranglerConfig` resolves to, which the fake REST API answers through the rule table by its id. */
+const REMOTE_HOME: Home = {
+  label: "remote",
+  database: "app-db",
+  binding: "DB",
+  dir: "",
+  configPath: "",
+  persistTo: null,
+  place: "remote",
+  env: null,
+  databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+  auth: REMOTE_AUTH,
+  synthesized: false,
+};
 
-const isJsonQuery = (a: readonly string[]) => argvHas(a, "execute", "--json", "--command");
-const isRecordedSelect = (a: readonly string[]) => isJsonQuery(a) && (a.at(-1) ?? "") === RECORDED_CHECKSUM_SELECT;
-const isInventorySelect = (a: readonly string[]) => isJsonQuery(a) && (a.at(-1) ?? "") === INVENTORY_SELECT;
+const sentBatches = (io: FakeDbIo) =>
+  io.restCalls.flatMap((call) => (JSON.parse(call.body ?? "{}") as { batch?: { sql: string }[] }).batch?.map((statement) => statement.sql) ?? []);
 
 /** A temp root with a real `wrangler.jsonc`, since the config is read from the filesystem either way. */
 function appRoot(): string {
@@ -45,13 +57,7 @@ function wire(io: FakeDbIo, over: { recorded?: Record<string, unknown>[] } = {})
     { match: (statement) => statement === RECORDED_CHECKSUM_SELECT, reply: () => over.recorded ?? (noTable() as never) },
     { match: (statement) => statement === INVENTORY_SELECT, reply: INVENTORY },
   );
-  // A deployed place still reads through the CLI, so both effects are wired.
-  io.rules.push(
-    { match: isRecordedSelect, reply: over.recorded === undefined ? NO_TABLE : jsonRows(over.recorded) },
-    { match: isInventorySelect, reply: jsonRows(INVENTORY) },
-    { match: (a) => argvHas(a, "execute", "--yes", "--command"), reply: OK },
-    { match: (a) => argvHas(a, "execute", "--yes", "--file"), reply: OK },
-  );
+  io.restRules.push({ match: (url) => url.includes("/time_travel/bookmark"), reply: () => cfEnvelope({ bookmark: "bm-1" }) });
 }
 
 const noTable = () => {
@@ -119,7 +125,7 @@ describe("forge db migrate", () => {
     const result = await drive(io, ["migrate", "--root", root, "--yes", "--dry-run"]);
 
     expect(result.out).toEqual(["would apply 1 to app-db (local): 0001_init"]);
-    expect(io.calls.some((call) => argvHas(call.slice(1), "execute", "--yes", "--file"))).toBe(false);
+    expect(io.d1Calls.some((call) => call.home === "local" && call.source !== null)).toBe(false);
   });
 
   it("reports what a --to cut left behind", async () => {
@@ -177,7 +183,7 @@ describe("forge db migrate", () => {
     [
       "--target remote while the database_id is a placeholder",
       [{ binding: "DB", database_name: "app-db", database_id: "app-db-local", migrations_dir: "config/db/migrations" }],
-      ["--target", "remote"],
+      ["--target", "remote", ...REMOTE_ARGS],
       "remote is refused while wrangler.jsonc's database_id is the placeholder app-db-local",
     ],
   ];
@@ -219,20 +225,32 @@ describe("forge db migrate against the deployed database", () => {
     ["--yes", "applied 1: 0001_init"],
     ["--dry-run", "would apply 1 to app-db (remote): 0001_init"],
   ] as const) {
-    it(`sends Cloudflare no request under ${flag} with API credentials set, reaching the database only through wrangler`, async () => {
+    it(`reaches the database under ${flag} only through DbIo.fetch, never the global fetch, spawning nothing`, async () => {
       const root = appRoot();
-      const io = fakeDbIo(
-        { [join(root, "config", "db", "migrations", "0001_init.sql")]: GENERATED_INIT },
-        { now: NOW, env: { CLOUDFLARE_API_TOKEN: "tok", CLOUDFLARE_ACCOUNT_ID: "acc" } },
-      );
-      io.rules.push({ match: (a) => argvHas(a, "time-travel", "info"), reply: { code: 0, stdout: '{"bookmark":"bm-1"}', stderr: "" } });
+      const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: GENERATED_INIT }, { now: NOW, homes: [REMOTE_HOME] });
       wire(io);
 
-      const { sent, value: result } = await recordingGlobalFetch(() => drive(io, ["migrate", "--root", root, "--target", "remote", flag]));
+      const { sent, value: result } = await recordingGlobalFetch(() =>
+        drive(io, ["migrate", "--root", root, "--target", "remote", ...REMOTE_ARGS, flag]),
+      );
 
       expect([result.code, result.err, result.out.at(-1), sent]).toEqual([null, [], last, []]);
+      expect(io.restCalls.length).toBeGreaterThan(0);
+      expect(io.calls).toEqual([]);
     });
   }
+
+  it("refuses before any request when --api-token is not given", async () => {
+    const root = appRoot();
+    const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: GENERATED_INIT }, { now: NOW, homes: [REMOTE_HOME] });
+    wire(io);
+
+    const result = await drive(io, ["migrate", "--root", root, "--target", "remote", "--account-id", "acct", "--yes"]);
+
+    expect(result.code).toBe(1);
+    expect(result.err.join("\n")).toContain("--api-token is not given. Pass it to a remote command");
+    expect(io.restCalls).toEqual([]);
+  });
 });
 
 describe("forge db migrate compose", () => {
@@ -517,22 +535,23 @@ describe("forge db lint", () => {
     const io = fakeDbIo({ [migration(root, "0001_init")]: INIT }, { now: NOW });
     wire(io);
 
-    const result = await drive(io, ["lint", "--root", root, "--target", "remote"]);
+    const result = await drive(io, ["lint", "--root", root, "--target", "remote", ...REMOTE_ARGS]);
 
     expect(result.code).toBe(1);
     expect(result.err.join("\n")).toContain("remote is refused while wrangler.jsonc's database_id is the placeholder app-db-local");
     expect(io.calls).toEqual([]);
   });
 
-  it("reads a remote target through wrangler", async () => {
+  it("reads a remote target over the D1 REST API", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [migration(root, "0001_init")]: GENERATED_INIT }, { now: NOW });
+    const io = fakeDbIo({ [migration(root, "0001_init")]: GENERATED_INIT }, { now: NOW, homes: [REMOTE_HOME] });
     wire(io);
 
-    const result = await drive(io, ["lint", "--root", root, "--target", "remote"]);
+    const result = await drive(io, ["lint", "--root", root, "--target", "remote", ...REMOTE_ARGS]);
 
     expect([result.code, result.out]).toEqual([null, ["1 pending migration(s) on app-db (remote) — no findings"]]);
-    expect(io.calls.some((call) => isInventorySelect(call.slice(1)) && call.includes("--remote"))).toBe(true);
+    expect(sentBatches(io)).toContain(INVENTORY_SELECT);
+    expect(io.calls).toEqual([]);
   });
 
   it("refuses a drop its file does not approve, and names each one it does", async () => {

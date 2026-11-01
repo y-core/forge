@@ -211,7 +211,8 @@ Keep every old key in the value you paste. Split the variable in the Worker with
 
 ## Setting up credentials
 
-`CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, or `--account-id` / `--api-token`. The token needs one account permission per resource type it
+`--account-id` and `--api-token`, and nothing else: an exported `CLOUDFLARE_*` variable is not read. Pass the token as `--api-token "$VAR"` so
+it stays out of shell history. The token needs one account permission per resource type it
 touches — **Read** for a status run, **Edit** for `--commit`:
 
 | touching | permission |
@@ -279,6 +280,9 @@ is [`src/config/README.md`][config-readme]:
 3. **`validateBindings(EnvSchema)`** ([`@y-core/forge/app`][app-readme]) — registered as middleware, so the contract is enforced on the first
    request.
 
+**Secret names come from `.dev.vars` unless `wrangler.jsonc` declares `secrets`.** Then `secrets.required` lists them and `.dev.vars` is not read
+for names, as `wrangler types` does.
+
 Run it as a script; `forge cf gen env --help` lists the flags that move each path above:
 
 ```json
@@ -300,6 +304,21 @@ export type Env = v.InferOutput<typeof EnvSchema>;
 ```
 
 The command emits the module and runs a `bun fmt` pass, so the generated file passes the lint gate.
+
+### Typing a binding gen env leaves out
+
+An `unsafe.bindings` or `logfwdr` binding gets no `EnvSchema` entry, so `validateBindings` does not check it. The binding is still on `env`; only
+its type is missing, so add it to the generated type yourself:
+
+```ts
+import type { Env as GeneratedEnv } from "./env.schema";
+export type Env = GeneratedEnv & { LIMITER: RateLimit };
+```
+
+- **`unsafe.bindings`**: an entry's `type` can be any string, so there is no binding type to derive from it.
+- **`logfwdr`**: `wrangler types` emits only a fixed `LOGFWDR_SCHEMA: any`, whatever the config names.
+
+A `pipelines` binding is typed `Pipeline<PipelineRecord>`, the generic type, because the record schema lives on the account.
 
 ---
 
@@ -343,6 +362,48 @@ happen ([`src/tooling/gate/README.md`][gate-readme]).
 
 ---
 
+## Inspecting local data while the app runs
+
+**Add `/cdn-cgi/local/explorer` to the URL `forge cf dev` prints and open it in a browser** — `http://localhost:8787/cdn-cgi/local/explorer` on
+wrangler's default port. This is Cloudflare's Local Explorer. It reads and edits the local data the running app uses: KV keys, R2 objects, D1
+tables, a Durable Object's SQLite tables, and Workflow instances. It finds the bindings `wrangler.jsonc` declares by itself. What it can view and
+edit for each binding is listed on [Cloudflare's Local Explorer page](https://developers.cloudflare.com/workers/local-development/local-explorer/).
+
+### Running a cron handler on demand
+
+Local development never fires a Cron Trigger on its own. Run your `scheduled()` handler from **Cron Triggers** in Local Explorer, or from a
+script:
+
+```bash
+curl -X POST "http://localhost:8787/cdn-cgi/local/explorer/api/local/scheduled?worker=my-app" \
+  -H "Content-Type: application/json" --data '{"cron":"0 * * * *"}'
+```
+
+`worker` must match the Worker's name exactly, and a `GET` on `/cdn-cgi/local/explorer/api/local/workers` lists the names. **A request that
+succeeds does not mean the handler did**: read `result.outcome` in the response. The request fields are on
+[Cloudflare's Cron Triggers page](https://developers.cloudflare.com/workers/configuration/cron-triggers/#use-the-local-explorer-api).
+
+### Letting an agent read and change local data
+
+Local Explorer is also an API at `/cdn-cgi/local/explorer/api`, and a `GET` on that path returns the OpenAPI spec for every endpoint. When wrangler
+detects that an AI agent started it, it prints that URL at start-up. Send an agent there to seed KV or D1, inspect a Durable Object, retry a
+Workflow run, or query traces and logs, so it does not write throwaway code to reach the bindings.
+
+### Writing local data where the app reads it
+
+**Do not seed the app's development data with Cloudflare's `cf` CLI and `--local`.** Under `--local`, `cf` keeps its data in one directory that
+every project on the machine shares: `~/.config/cloudflare/state/v3` on Linux, `~/Library/Preferences/cloudflare/state/v3` on macOS
+([Cloudflare's `cf` local data](https://developers.cloudflare.com/cf/projects/#local-resource-data)). `forge cf dev` runs `wrangler dev`, which
+keeps the app's data in `.wrangler/state` in the project
+([Cloudflare's local data guide](https://developers.cloudflare.com/workers/local-development/local-data/)). So a row written with
+`cf d1 raw … --local` is one the app never sees, and a row the app writes is one `cf` never sees.
+
+Write local data through Local Explorer, or through a `wrangler` command run with `--local`, which uses `.wrangler/state` too.
+
+This warning is about Cloudflare's `cf` binary. `forge cf sync --local` is forge's own flag, and it rotates values in `.dev.vars`.
+
+---
+
 ## Reading wrangler.jsonc from a Playwright config
 
 A `playwright.config.ts` runs under node, and node cannot load this namespace's barrel. Import the parser from its own subpath instead:
@@ -354,9 +415,9 @@ import { parseWranglerConfig } from "@y-core/forge/tooling/cf/wrangler";
 const workerFirst = parseWranglerConfig("wrangler.jsonc").assets?.run_worker_first;
 ```
 
-`parseWranglerConfig` returns the config itself, not a `Result`. It throws when the file is missing, is not valid JSONC, or lacks a field forge
-requires, such as a string `name`, so a broken config stops the test run at config load. A relative path resolves against the working directory,
-which is where you ran `playwright test` from.
+`parseWranglerConfig` returns the config itself, not a `Result`. It throws when the file is missing, is not valid JSONC, or holds a field forge
+reads at the wrong type, such as a non-string `name`, so a broken config stops the test run at config load. A relative path resolves against the
+working directory, which is where you ran `playwright test` from.
 
 The subpath exports `parseWranglerConfig` and nothing else. Why it is published separately is [`docs/NAMESPACES.md`][ns-3c] §3c.
 

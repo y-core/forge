@@ -33,9 +33,9 @@ description: "How to review an application: the blocking invariants, tiered dete
 
 ### 1a. Pre-Review Preparation
 
-1. **Establish a green baseline** — run the static tier with `--reuse` and the task's touched test files by file before reviewing, so
-   pre-existing failures are not attributed to the change (`AGENT_WORKFLOW.md` §4). The author's static receipt for these exact bytes answers
-   the first at once; the full gate is not the reviewer's to run.
+1. **Establish a green baseline** — run the `unit` tier with `--reuse` before reviewing, so pre-existing failures are not attributed to the
+   change (`AGENT_WORKFLOW.md` §4). The author's task-check receipt for these exact bytes answers it at once; the full gate is not the reviewer's
+   to run.
 2. **Read the route map, then the controller binding.** Together they answer "which routes exist and what guards each one" — the single question
    most review findings turn on.
 3. **Read each changed handler end to end** before judging any line in it.

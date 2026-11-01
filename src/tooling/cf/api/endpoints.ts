@@ -11,6 +11,9 @@ export const workerSecrets = (accountId: string, scriptName: string) =>
 /** The account's D1 databases — GET lists them; POST creates one. */
 export const d1Path = (accountId: string) => `${acct(accountId)}/d1/database`;
 
+/** One D1 database by UUID — the base of its query, export and time_travel operations. */
+export const d1DatabasePath = (accountId: string, databaseId: string) => `${d1Path(accountId)}/${encodeURIComponent(databaseId)}`;
+
 const zone = (zoneId: string) => `/zones/${encodeURIComponent(zoneId)}`;
 
 /** The phase entry point ruleset for a zone — GET reads the latest version, PUT replaces it. */

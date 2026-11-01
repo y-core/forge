@@ -164,7 +164,7 @@ Report back in this shape:
 - <claim that was wrong> — settled by <source>
 
 ## Verification
-<the docs step's result, or "task check: static green; <files> green" where TSDoc changed>
+<the docs step's result, or "task check: verify --tier unit green" where TSDoc changed>
 
 ## Deferrals
 - <found and deliberately left, and why>

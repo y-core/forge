@@ -233,9 +233,9 @@ merged-and-already-applied case only, where the alternative is a history that ca
 ## 7. The Scratch Cache
 
 Compose runs entirely in `.forge/scratch/compose/`, from a copy of the run's config forced to `local`, so `--target remote` can never aim it at
-Cloudflare. A side is two wrangler spawns — the load, and the introspection reads batched into one `--command` — and the **model** is cached, never
-the database, under `<side>/cache/<key>/model.json`, keyed on the model version, the wrangler version and a digest of that side's inputs. A hit is
-zero spawns, one model is kept per side, the proof's own replay is cached as the next baseline, and `--no-cache` replays regardless. A baseline
+Cloudflare. A side is the load and one batch of introspection reads, both through the in-process D1 handle, and the **model** is cached, never
+the database, under `<side>/cache/<key>/model.json`, keyed on the model version, the wrangler version and a digest of that side's inputs. A hit
+opens no handle, one model is kept per side, the proof's own replay is cached as the next baseline, and `--no-cache` replays regardless. A baseline
 whose migrations do not apply to an empty database, and a desired file that does not execute against one, are each refused naming the file; pending
 migrations on some database are not a refusal, because compose reads files and never a database of yours.
 

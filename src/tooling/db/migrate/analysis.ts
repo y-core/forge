@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { wranglerHistoryTable } from "../config";
+import { executeFile } from "../d1";
 import { diffSchemaModels } from "../schema/diff";
 import { parseMigrationHeader } from "../schema/header";
 import { readSchemaModel } from "../schema/introspect";
@@ -10,7 +11,6 @@ import { composeScratchHome } from "../schema/scratch";
 import type { SchemaModel, SchemaRename, SchemaTable, ScratchSide } from "../schema/types";
 import { quoteSqlIdentifier } from "../sql";
 import type { DbRunContext, Home, Migration, SchemaObject } from "../types";
-import { executeFile } from "../wrangler";
 import { applyMigrations } from "./applier";
 import { isManagedObject } from "./fingerprint";
 import type { MigrationChange, MigrationFinding } from "./types";

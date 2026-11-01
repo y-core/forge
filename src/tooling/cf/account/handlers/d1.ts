@@ -2,6 +2,7 @@ import { ok } from "../../../../result/result";
 import type { Result } from "../../../../result/types";
 import { createCfClient } from "../../api/client";
 import { D1_WRITE_PERMISSION, d1Path } from "../../api/endpoints";
+import { CF_OPERATIONS } from "../../api/operations";
 import type { CfApiClientError, CfD1Database } from "../../api/types";
 import type { D1DatabaseConfig } from "../../types";
 import { createD1EnvironmentPass } from "./d1-env";
@@ -15,7 +16,7 @@ function createD1Inventory(ctx: HandlerContext): D1Inventory {
   let listing: Promise<Result<CfD1Database[], CfApiClientError>> | undefined;
   let attempted = false;
   return {
-    list: () => (listing ??= createCfClient(ctx.auth, ctx.fetch).list<CfD1Database>(d1Path(ctx.auth.accountId))),
+    list: () => (listing ??= createCfClient(ctx.auth, ctx.fetch).list(d1Path(ctx.auth.accountId), CF_OPERATIONS.listD1Databases)),
     record(created) {
       attempted = true;
       if (!created.ok || listing === undefined) return;
@@ -44,7 +45,7 @@ export function createD1Handler(): ResourceHandler<D1DatabaseConfig> {
       return res.ok ? { ok: true, data: res.data.map((db) => ({ id: db.uuid, name: db.name })) } : res;
     },
     create: async (client, accountId, name, ctx) => {
-      const res = await client.post<CfD1Database>(d1Path(accountId), { name });
+      const res = await client.post(d1Path(accountId), { name }, CF_OPERATIONS.createD1Database);
       inventoryFor(ctx).record(res);
       return res.ok ? { ok: true, data: { id: res.data.uuid, name: res.data.name } } : res;
     },

@@ -1,6 +1,24 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { appendForgeDev, DEV_CONDITION, WRANGLER_CONDITIONS } from "./conditions";
+
+const WRANGLER_CLI = fileURLToPath(import.meta.resolve("wrangler"));
+
+function matchOnce(source: string, anchor: RegExp, label: string): RegExpExecArray {
+  const matches = [...source.matchAll(anchor)];
+  if (matches.length !== 1) throw new Error(`${WRANGLER_CLI}: ${label} not found exactly once (found ${matches.length})`);
+  return matches[0]!;
+}
+
+function wranglerDefaultConditions(): string[] {
+  const cli = readFileSync(WRANGLER_CLI, "utf-8");
+  const [, body] = matchOnce(cli, /function getBuildConditions\(\) \{([\s\S]*?)\n\}/g, "function getBuildConditions()");
+  const [, literal] = matchOnce(body!, /return (\[[^\]]*\]);/g, "the default conditions literal in getBuildConditions()");
+  matchOnce(cli, /conditions: getBuildConditions\(\)/g, "conditions: getBuildConditions()");
+  return JSON.parse(literal!) as string[];
+}
 
 describe("appendForgeDev", () => {
   it("starts from wrangler's default conditions when the variable is unset", () => {
@@ -25,7 +43,11 @@ describe("appendForgeDev", () => {
 });
 
 describe("the condition constants", () => {
-  it("name wrangler's module-Worker defaults and forge's development condition", () => {
-    expect([WRANGLER_CONDITIONS, DEV_CONDITION]).toEqual([["workerd", "worker", "browser"], "forge-dev"]);
+  it("match the default conditions in the installed wrangler's bundle", () => {
+    expect(WRANGLER_CONDITIONS).toEqual(wranglerDefaultConditions());
+  });
+
+  it("name forge's development condition", () => {
+    expect(DEV_CONDITION).toBe("forge-dev");
   });
 });

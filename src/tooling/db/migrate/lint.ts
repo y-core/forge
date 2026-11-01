@@ -136,7 +136,7 @@ const CHECKS: readonly Check[] = [
   },
   {
     rule: "virtual-table",
-    message: "CREATE VIRTUAL TABLE leaves the database unbackupable — `wrangler d1 export` throws on a virtual table",
+    message: "CREATE VIRTUAL TABLE leaves the database unbackupable — D1's export throws on a virtual table",
     find: ({ statement }) => statement.masked.search(/\bCREATE\s+VIRTUAL\s+TABLE\b/i),
   },
   {
@@ -146,7 +146,7 @@ const CHECKS: readonly Check[] = [
   },
   {
     rule: "explicit-transaction",
-    message: "wrangler wraps each migration in its own transaction, and a nested BEGIN or COMMIT fails inside it",
+    message: "forge applies each migration in its own transaction, and a nested BEGIN or COMMIT fails inside it",
     find: ({ statement }) => leadingKeywordAt(statement.masked, /^\s*(BEGIN|COMMIT|ROLLBACK|END)\b/i),
   },
   {

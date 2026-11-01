@@ -1,6 +1,9 @@
 import { dirname, join } from "node:path";
 
+import { readDeployment } from "../cf/config/environment";
+import type { CfAuth } from "../cf/types";
 import { CliError } from "../cli/errors";
+import { createUndeclaredEnvError } from "./config";
 import type { DbConfig, DbIo, Home, SynthesizeOptions } from "./types";
 
 /** Where wrangler keeps a local home's state: the `--persist-to` argument's own `v3` child, which is what anything reading that state opens. @internal */
@@ -8,8 +11,14 @@ export function persistRoot(home: Home): string {
   return join(home.persistTo ?? home.dir, "v3");
 }
 
+function deployedDatabaseId(config: DbConfig): string | null {
+  if (config.target.place === "preview") return config.entry.previewDatabaseId;
+  if (config.target.place === "remote") return config.entry.databaseId;
+  return null;
+}
+
 /** The app's own database: the checked-in config, and wrangler's default state directory beside it. @internal */
-export function appHome(config: DbConfig): Home {
+export function appHome(config: DbConfig, auth: CfAuth | null = null): Home {
   const dir = dirname(config.configPath);
   const remote = config.target.place === "remote" || config.target.place === "preview";
   return {
@@ -21,15 +30,19 @@ export function appHome(config: DbConfig): Home {
     persistTo: remote ? null : join(dir, ".wrangler", "state"),
     place: config.target.place,
     env: config.env,
+    databaseId: deployedDatabaseId(config),
+    auth: remote ? auth : null,
     synthesized: false,
   };
 }
 
 /** Writes a config derived from the app's, so a second database or a cut migration list is reachable with no second checked-in file. @internal */
 export function synthesizeHome(config: DbConfig, io: DbIo, options: SynthesizeOptions): Home {
+  const read = readDeployment(config.config, config.env);
+  if (!read.ok) throw createUndeclaredEnvError(String(config.env));
   io.mkdir(options.dir);
   const configPath = join(options.dir, "wrangler.jsonc");
-  const source = config.config;
+  const source = read.data.effective;
   const remote = config.target.place === "remote" || config.target.place === "preview";
   const entry = {
     binding: config.entry.binding,
@@ -39,9 +52,9 @@ export function synthesizeHome(config: DbConfig, io: DbIo, options: SynthesizeOp
   };
   const generated = {
     send_metrics: false,
-    name: source.name,
-    ...(typeof source.account_id === "string" ? { account_id: source.account_id } : {}),
-    ...(typeof source.compatibility_date === "string" ? { compatibility_date: source.compatibility_date } : {}),
+    name: source.name ?? config.config.name,
+    ...(source.account_id === undefined ? {} : { account_id: source.account_id }),
+    ...(source.compatibility_date === undefined ? {} : { compatibility_date: source.compatibility_date }),
     d1_databases: [entry],
   };
   // The note is a JSONC comment rather than a field: wrangler holds its config to a schema and warns
@@ -57,6 +70,8 @@ export function synthesizeHome(config: DbConfig, io: DbIo, options: SynthesizeOp
     persistTo: remote ? null : (options.persistTo ?? join(options.dir, ".wrangler", "state")),
     place: config.target.place,
     env: null,
+    databaseId: deployedDatabaseId(config),
+    auth: null,
     synthesized: true,
   };
 }
@@ -82,8 +97,8 @@ export function scratchHome(config: DbConfig, io: DbIo, name: string, database: 
 }
 
 /** The home a target resolves to: the app's for `local`, `remote` and `preview`, a generated one for `standby`. @internal */
-export function resolveHome(config: DbConfig, io: DbIo): Home {
-  return config.target.place === "standby" ? standbyHome(config, io) : appHome(config);
+export function resolveHome(config: DbConfig, io: DbIo, auth: CfAuth | null): Home {
+  return config.target.place === "standby" ? standbyHome(config, io) : appHome(config, auth);
 }
 
 /** Removes a generated local home's miniflare state, so the next statement starts from an empty database; the app's own home and a deployed one are refused. @internal */

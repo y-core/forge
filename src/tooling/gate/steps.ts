@@ -105,7 +105,10 @@ export function selectSteps(
 
   const run = table[opts.tier];
   if (run === undefined) {
-    return { ok: false, error: `The step table declares no ${opts.tier} tier — add a \`${opts.tier}\` key under \`tiers\`.` };
+    return {
+      ok: false,
+      error: `The step table declares neither the ${opts.tier} tier nor any tier below it — add a \`${opts.tier}\` key under \`tiers\`.`,
+    };
   }
   const inTier = run.steps;
   const known = inTier.map((step) => step.label);

@@ -1,6 +1,8 @@
+import type { getPlatformProxy, unstable_splitSqlQuery } from "wrangler";
+
 import type { SchemaHealthState } from "../../storage/db/types";
 import { v } from "../../validation/mod";
-import type { WranglerConfig } from "../cf/types";
+import type { CfAuth, WranglerConfig } from "../cf/types";
 import type { Colorize } from "../term/types";
 import type { ComposeStamp } from "./schema/types";
 
@@ -66,9 +68,19 @@ export interface DbIo {
   mtime(path: string): number | null;
   now(): Date;
   readonly env: Readonly<Record<string, string | undefined>>;
+  /** HTTPS to Cloudflare: the D1 REST API and an export's signed download. */
+  fetch: typeof globalThis.fetch;
+  /** The installed wrangler's version, which a local export's escaping depends on, or `unknown`. */
+  wranglerVersion(): string;
   /** Progress lines, kept off stdout so `--json` output is the only thing there. */
   log(line: string): void;
 }
+
+/** The wrangler exports a local D1 handle opens through, either absent from a wrangler too old to carry it. @internal */
+export type WranglerD1Module = {
+  readonly getPlatformProxy?: typeof getPlatformProxy;
+  readonly unstable_splitSqlQuery?: typeof unstable_splitSqlQuery;
+};
 
 /** A database home: where its config is, and where wrangler keeps its local state. @public */
 export interface Home {
@@ -83,6 +95,10 @@ export interface Home {
   readonly persistTo: string | null;
   readonly place: Place;
   readonly env: string | null;
+  /** The UUID the D1 REST API addresses a deployed place by; null off Cloudflare. */
+  readonly databaseId: string | null;
+  /** What the D1 REST API is called with, from `--account-id` and `--api-token`; null off Cloudflare. */
+  readonly auth: CfAuth | null;
   /** True when the config was generated for this run and may be deleted after it. */
   readonly synthesized: boolean;
 }
@@ -339,21 +355,13 @@ export const DbHostConfigSchema = v.strictObject({
   backupsDir: v.optional(v.string()),
 });
 
-/** The fields of one `d1_databases` entry `forge db` reads, held to their types before any is trusted. @internal */
-export const D1EntrySchema = v.looseObject({
-  binding: v.string(),
-  database_name: v.optional(v.string()),
-  database_id: v.optional(v.string()),
-  preview_database_id: v.optional(v.string()),
-});
-
 /** One backup artifact directory's `manifest.json`. @public */
 export interface BackupManifest {
   readonly formatVersion: number;
   readonly createdAt: string;
   readonly label: string | null;
-  readonly dumper: { readonly tool: string; readonly version: string };
-  /** How the rows were taken: read through queries, or exported by `wrangler d1 export`. */
+  readonly exporter: BackupExporter;
+  /** How the rows were taken: read through queries, or written by an export. */
   readonly via: BackupVia;
   /** The Time Travel bookmark of a deployed database, captured before an export; `null` for a local one and a read. */
   readonly bookmark: string | null;
@@ -379,7 +387,15 @@ export interface SchemaFacts {
   readonly migrationsDigest: string;
 }
 
-/** How `forge db backup` takes the rows: `read` queries them in pages, `export` has `wrangler d1 export` write them, for a database too large to read. @public */
+/** Who wrote a backup's exported SQL: the installed wrangler for a local database, D1's export for a deployed one. @public */
+export type BackupExporter =
+  | { readonly tool: "wrangler"; readonly version: string }
+  | { readonly tool: "d1"; readonly schemaBookmark: string | null; readonly dataBookmark: string | null };
+
+/** Which half of a database one export writes. @internal */
+export type D1ExportPart = "schema" | "data";
+
+/** How `forge db backup` takes the rows: `read` queries them in pages, `export` has an export write them, for a database too large to read. @public */
 export type BackupVia = "read" | "export";
 
 /** `full` loads a whole database; `migrations` applies the migrations dir and then loads data into it. @public */
@@ -394,6 +410,8 @@ export interface SharedDbFlags {
   root: string | undefined;
   json: boolean;
   yes: boolean;
+  "account-id"?: string | undefined;
+  "api-token"?: string | undefined;
 }
 
 /** What `resolveDbConfig` reads from the shared flags. @internal */
@@ -465,6 +483,21 @@ export interface FakeD1Rule {
   reply: Record<string, unknown>[] | ((statement: string, home: Home) => Record<string, unknown>[]);
 }
 
+/** One canned Cloudflare answer, matched against the request. @internal */
+export interface FakeRestRule {
+  match: (url: string, init: RequestInit | undefined) => boolean;
+  reply: Response | ((url: string, init: RequestInit | undefined) => Response);
+}
+
+/** One request the run sent through `DbIo.fetch`. @internal */
+export interface FakeRestCall {
+  readonly url: string;
+  readonly method: string;
+  readonly headers: Readonly<Record<string, string>>;
+  /** The request body as sent, or null when there was none. */
+  readonly body: string | null;
+}
+
 /** An in-memory `DbIo`: a map for the filesystem, a rule table for each effect, and every call recorded. @internal */
 export interface FakeDbIo extends DbIo {
   files: Map<string, string>;
@@ -473,6 +506,8 @@ export interface FakeDbIo extends DbIo {
   rules: FakeWranglerRule[];
   d1Calls: FakeD1Call[];
   d1Rules: FakeD1Rule[];
+  restRules: FakeRestRule[];
+  restCalls: FakeRestCall[];
   /** Persist paths in close order, which is what pins the obligations to close before a delete and before a spawn. */
   closed: string[];
 }

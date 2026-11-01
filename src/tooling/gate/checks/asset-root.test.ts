@@ -159,6 +159,58 @@ describe("checkAssetRoot", () => {
     expect(result.findings).toEqual([]);
   });
 
+  it("fails an environment's own `run_worker_first` that forgets an exclusion, naming the environment's key", async () => {
+    writeConfigs(ICONS, []);
+    const top = { directory: "./public", run_worker_first: ["/*", "!/favicon.svg"] };
+    writeFileSync(
+      join(root, "wrangler.jsonc"),
+      JSON.stringify({ name: "app", assets: top, env: { staging: { assets: { directory: "./public", run_worker_first: ["/*"] } }, qa: {} } }),
+    );
+    const result = await run();
+    expect(result.findings.map((f) => [f.message, f.detail])).toEqual([
+      [
+        "`/favicon.svg` is written to the asset tree by `icons.outputs` but `env.staging.assets.run_worker_first` does not exclude it",
+        ['add "!/favicon.svg" to env.staging.assets.run_worker_first'],
+      ],
+    ]);
+  });
+
+  it("adds no finding for an environment inheriting the top level's assets", async () => {
+    writeConfigs(ICONS, ["/*"]);
+    const config = { name: "app", assets: { directory: "./public", run_worker_first: ["/*"] }, env: { qa: {}, staging: {} } };
+    writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify(config));
+    const result = await run();
+    expect(result.findings.map((f) => f.message)).toEqual([
+      "`/favicon.svg` is written to the asset tree by `icons.outputs` but `run_worker_first` does not exclude it",
+    ]);
+  });
+
+  it("sums the emitted and excluded counts across every deployment judged on its own assets", async () => {
+    writeConfigs(ICONS, []);
+    const config = {
+      name: "app",
+      assets: { directory: "./public", run_worker_first: ["/*", "!/favicon.svg"] },
+      env: { staging: { assets: { directory: "./public", run_worker_first: ["/*", "!/favicon.svg", "!/stale.png"] } }, qa: {} },
+    };
+    writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify(config));
+    const result = await run();
+    expect([result.ok, result.summary]).toEqual([true, "asset-root exclusions: 2 emitted, 3 excluded"]);
+  });
+
+  it("judges an environment's own assets when the top level declares none, rather than passing as unconfigured", async () => {
+    writeConfigs(ICONS, []);
+    writeFileSync(
+      join(root, "wrangler.jsonc"),
+      JSON.stringify({ name: "app", env: { staging: { assets: { directory: "./public", run_worker_first: ["/*"] } } } }),
+    );
+    const result = await run();
+    expect([result.ok, result.summary, result.findings.map((f) => f.message)]).toEqual([
+      false,
+      "asset-root exclusions: 1 emitted, 0 excluded",
+      ["`/favicon.svg` is written to the asset tree by `icons.outputs` but `env.staging.assets.run_worker_first` does not exclude it"],
+    ]);
+  });
+
   it("passes quietly when the worker config declares no static assets", async () => {
     writeConfigs(ICONS, []);
     writeFileSync(join(root, "wrangler.jsonc"), '{\n  "name": "app"\n}\n');
@@ -181,6 +233,21 @@ describe("checkAssetRoot", () => {
     const result = await run();
     expect(result.ok).toBe(false);
     expect(result.summary).toBe("asset-root exclusions: unparseable");
+  });
+
+  it("fails as unparseable on a `run_worker_first` entry that is not a rule, rather than judging the rest", async () => {
+    writeConfigs(ICONS, []);
+    writeFileSync(
+      join(root, "wrangler.jsonc"),
+      '{ "name": "app", "assets": { "directory": "./public", "run_worker_first": ["!/favicon.svg", 7] } }',
+    );
+    const result = await run();
+    expect([result.ok, result.summary, result.findings.length]).toEqual([false, "asset-root exclusions: unparseable", 1]);
+    expect(
+      result.findings[0]?.message.startsWith(
+        `\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(root, "wrangler.jsonc")}: assets.run_worker_first: `,
+      ),
+    ).toBe(true);
   });
 
   it("fails as unparseable when the worker config names no Worker", async () => {

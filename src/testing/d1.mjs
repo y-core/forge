@@ -75,12 +75,6 @@ var DbHostConfigSchema = v.strictObject({
   snapshot: v.optional(v.string()),
   backupsDir: v.optional(v.string())
 });
-var D1EntrySchema = v.looseObject({
-  binding: v.string(),
-  database_name: v.optional(v.string()),
-  database_id: v.optional(v.string()),
-  preview_database_id: v.optional(v.string())
-});
 
 // src/tooling/db/declared.ts
 var DEFAULT_DB_CONFIG = "config/db.config.ts";

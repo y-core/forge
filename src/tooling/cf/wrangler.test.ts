@@ -71,6 +71,14 @@ describe("the committed wrangler bundle under node", () => {
     expect(parseUnderNode(path)).toEqual({ message: sourceMessage(path) });
   });
 
+  it("refuses a non-string `run_worker_first` entry with the source parser's message", () => {
+    const path = writeFixture('{ "name": "w", "assets": { "run_worker_first": [7] } }');
+    const message = sourceMessage(path);
+
+    expect(message).toContain("assets.run_worker_first");
+    expect(parseUnderNode(path)).toEqual({ message });
+  });
+
   it("exports parseWranglerConfig and nothing else", () => {
     const names = runUnderNode(`console.log(JSON.stringify(Object.keys(await import(${JSON.stringify(BUNDLE_URL)}))));`);
 

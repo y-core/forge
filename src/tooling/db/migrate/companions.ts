@@ -1,5 +1,5 @@
+import { executeSql } from "../d1";
 import type { DbIo, Home } from "../types";
-import { executeSql } from "../wrangler";
 
 /** The table forge records every applied migration in: its stamp-blanked bytes, when it ran, and the fingerprint it certified. @internal */
 export const FORGE_MIGRATIONS_DDL = [

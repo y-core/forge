@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import process, { env } from "node:process";
+import process from "node:process";
 
 import { createCommand } from "../../cli/command";
 import { confirm } from "../../cli/confirm";
@@ -9,11 +9,13 @@ import { splitList } from "../../cli/parse";
 import type { CliContext } from "../../cli/types";
 import { PLAIN } from "../../term/color";
 import type { Colorize } from "../../term/types";
-import { loadWranglerConfig, writeWranglerConfig } from "../config/parse";
+import { cfAuthFlags, readCfAuth } from "../auth";
+import { loadWranglerConfig } from "../config/parse";
+import { writeWranglerConfig } from "../config/write";
 import { renderSections } from "../table";
 import { refusePagesConfig, WORKER_SURFACE } from "../target";
 import type { TableOptions } from "../types";
-import type { CfAuth, PrefixStrategy, ResolvedPrefix, ResourceType, SyncAction, SyncNote, SyncOutput, SyncResult } from "../types";
+import type { PrefixStrategy, ResolvedPrefix, ResourceType, SyncAction, SyncNote, SyncOutput, SyncResult } from "../types";
 import { ACTION_LABELS, RESOURCE_TYPES } from "../types";
 import { syncBindings } from "./engine";
 import { devVarsPath, GENERATE_MARKER, PUSH_MARKER, readDevVars, RING_MARKER } from "./handlers/devvars";
@@ -66,23 +68,8 @@ const syncFlags = {
     description: "Exit non-zero when anything is out of step — pending creates, rotations, drift, or names only the remote has. For CI",
   },
   json: { type: "boolean" as const, description: "Print the run as a JSON document instead of a table. The only thing written to stdout" },
-  "account-id": { type: "string" as const, description: "Cloudflare account ID (or CLOUDFLARE_ACCOUNT_ID env)" },
-  "api-token": { type: "string" as const, description: "Cloudflare API token (or CLOUDFLARE_API_TOKEN env)" },
+  ...cfAuthFlags,
 };
-
-function resolveAuth(flags: Record<string, string | string[] | boolean | undefined>): CfAuth {
-  const accountId = (flags["account-id"] as string | undefined) ?? env.CLOUDFLARE_ACCOUNT_ID;
-  const apiToken = (flags["api-token"] as string | undefined) ?? env.CLOUDFLARE_API_TOKEN;
-
-  if (!accountId) throw new CliError("invalid-args", "Missing account ID. Set --account-id or CLOUDFLARE_ACCOUNT_ID");
-  if (!apiToken)
-    throw new CliError(
-      "invalid-args",
-      "Missing API token. Set --api-token or CLOUDFLARE_API_TOKEN; https://dash.cloudflare.com/profile/api-tokens",
-    );
-
-  return { accountId, apiToken };
-}
 
 /** The `--resources` categories that name more than one section. */
 const COMPOUND_ALIASES: Record<string, readonly string[]> = { commit: ["secrets", "provision"] };
@@ -410,7 +397,7 @@ async function runSync(flags: LooseFlags, ctx?: CliContext): Promise<void> {
   }
   if (flags.local) return runLocalRotate(flags, commit);
 
-  const auth = resolveAuth(flags);
+  const auth = readCfAuth(flags);
   const configPath = (flags.config as string) ?? "wrangler.jsonc";
   const json = Boolean(flags.json);
   // `--json` selects PLAIN before anything is rendered: the payload is data, and no escape

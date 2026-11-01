@@ -95,7 +95,7 @@ describe("kvHandler.reconcile()", () => {
     const res = await kvHandler.reconcile([{ binding: "MY_KV" }], ctx);
     expect(res.results[0]?.action).toBe("error");
     expect(res.results[0]?.detail).toBe(
-      'worker script · auth failed — CLOUDFLARE_API_TOKEN is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 1',
+      'worker script · auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change) · code 1',
     );
   });
 
@@ -159,4 +159,36 @@ describe("kvHandler.reconcile() — the id is the identity", () => {
     expect(res.results[0]?.action).toBe("created");
     expect(res.results[0]?.detail).toBe("local id ns-deleted not found on this account");
   });
+});
+
+describe("kvHandler.reconcile() — a listing it cannot trust creates nothing", () => {
+  const LISTING = "worker script · GET /accounts/{account_id}/storage/kv/namespaces";
+  const others = (count: number) => Array.from({ length: count }, (_, i) => ({ id: `ns-${i}`, title: `OTHER_${i}` }));
+
+  for (const { label, page, detail } of [
+    {
+      label: "a full page with no paging metadata",
+      page: () => ({ result: others(100) }),
+      detail: `${LISTING}: page 1 came back full with no paging metadata, so the listing may be incomplete`,
+    },
+    {
+      label: "an empty page before the declared last",
+      page: (n: number) => ({ result: n === 1 ? others(1) : [], result_info: { per_page: 1, total_pages: 3 } }),
+      detail: `${LISTING}: page 2 of 3 came back empty`,
+    },
+    { label: "a null result", page: () => ({ result: null }), detail: `${LISTING}: unexpected response shape at result (expected Array)` },
+  ]) {
+    it(`reports ${label} as an error and sends no POST`, async () => {
+      const posts: string[] = [];
+      const fetchFn: typeof globalThis.fetch = async (url, init) => {
+        if ((init?.method ?? "GET").toUpperCase() === "POST") {
+          posts.push(String(url));
+          return Response.json({ success: true, errors: [], messages: [], result: { id: "new", title: "MY_KV" } });
+        }
+        return Response.json({ success: true, errors: [], messages: [], ...page(Number(new URL(String(url)).searchParams.get("page"))) });
+      };
+      const res = await kvHandler.reconcile([{ binding: "MY_KV" }], makeCtx({ fetch: fetchFn }));
+      expect([res.results[0]?.action, res.results[0]?.detail, posts]).toEqual(["error", detail, []]);
+    });
+  }
 });

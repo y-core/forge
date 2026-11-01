@@ -1,4 +1,4 @@
-import type { DbTarget, Home, Place } from "./types";
+import type { DbTarget, Place } from "./types";
 
 const PLACES: readonly Place[] = ["local", "standby", "remote", "preview"];
 
@@ -44,14 +44,4 @@ export function refuseRemote(place: Place, databaseId: string | null): string | 
   if (databaseId === null || databaseId === "") return `${place} is refused while wrangler.jsonc has no ${field} — ${fix}`;
   if (!UUID.test(databaseId)) return `${place} is refused while wrangler.jsonc's ${field} is the placeholder ${databaseId} — ${fix}`;
   return null;
-}
-
-/** The flags every wrangler call against a home carries, so a run can never straddle two databases. @internal */
-export function wranglerPlaceFlags(home: Home): string[] {
-  const flags = ["-c", home.configPath];
-  if (home.env !== null) flags.push("-e", home.env);
-  if (home.place === "remote") flags.push("--remote");
-  else if (home.place === "preview") flags.push("--remote", "--preview");
-  else flags.push("--local", ...(home.persistTo === null ? [] : ["--persist-to", home.persistTo]));
-  return flags;
 }

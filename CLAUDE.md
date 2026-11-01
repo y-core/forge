@@ -31,10 +31,16 @@
 - ALWAYS add new public symbols to the namespace's `mod.ts` as a named export
 - ALWAYS give every source file its own co-located test (`*.test.ts` / `*.test.tsx`) — an `@internal` helper file included, and covering it through
   a caller does not satisfy the check ([`CODE_RULES.md`][cr-4] §4, [`TESTING.md`][tl-2] §2)
-- ALWAYS close a task on the task check — `bun run verify:static` plus `bun test` on each touched test file, run by file, which is yours to
-  run — and send the full gate to `cc-tester` once, before a commit (`AGENT_WORKFLOW.md` §4)
-- ALWAYS write inside `bun run verify:static`, and never offer a task for review without a green task check behind it — the lane is a claim about a
-  run (`AGENT_WORKFLOW.md` §5), and a budget or document failing there is one the reviewer now spends their pass on
+- ALWAYS close a task on the task check — `bun run verify:unit`, which is yours to run (`AGENT_WORKFLOW.md` §4)
+- ALWAYS treat a browser spec as your call — one spec on one engine where a UI change needs confirming, never the whole set and never by
+  routine (`TESTING.md` §6a)
+- NEVER commit, ask to, or remind — the user commits once the review has closed, and sending the full gate to `cc-tester` when an epic closes
+  is the agent's whole part (`AGENT_WORKFLOW.md` §4b)
+- NEVER run `verify:scheduled`, plan it, or report it as owed — it belongs to the release command and the daily cron (`TESTING.md` §6a)
+- ALWAYS report what is done and what is blocked, and assign the user nothing — work to be done is a ledger task, never a to-do list in prose
+  (`PLAIN_LANGUAGE.md` §9a)
+- ALWAYS write inside `bun run verify:static`, the interim check, and never offer a task for review without a green task check behind it — the
+  lane is a claim about a run (`AGENT_WORKFLOW.md` §5), and a budget or document failing there is one the reviewer now spends their pass on
 - ALWAYS write for the reader, not the record (`PLAIN_LANGUAGE.md` §2, §3d, §8)
 - ALWAYS report a command's exit status with the one canonical suffix — never a variant (`AGENT_WORKFLOW.md` §3), and keep a command in a shape the
   harness can parse (`AGENT_WORKFLOW.md` §3a)
@@ -43,8 +49,8 @@
 - ALWAYS start a code review with the `warden-review` skill ([`AGENT_GUIDE.md`][ag-5c] §5c)
 - ALWAYS reach the ledger over MCP, and never work from a remembered copy of its rules (`AGENT_WORKFLOW.md` §5). Scope is a property of the URL, so
   no ledger tool takes a `project` argument
-- ALWAYS ring `forge-review` with the `handoff` skill in the turn that moves a task to `review`, never asking the user first
-  (`AGENT_WORKFLOW.md` §5a)
+- ALWAYS end an assignment that moves a task, or a set of them, to `review` by ringing `forge-review` with the `handoff` skill in the same turn,
+  never asking first (`AGENT_WORKFLOW.md` §5a)
 - **Governance is overwrite-on-sync.** Never edit the canon under `warden/canon/` to record a ruling that is forge's own — it is byte-identical
   across every repository that clones it, and forge is the one repository where the files are writable. A local ruling goes in `docs/`
   ([`AGENT_GUIDE.md`][ag-6d] §6d)
@@ -60,11 +66,11 @@
 | `bun fmt` | Formatter and import sorter, configured by `.oxfmtrc.json` |
 | `bun check` | Type checker |
 
-A bare `bun run verify` is the `runtime` tier — the gate a commit closes on, with the database rows narrowed to the pending changes and no
-Playwright spec; `bun run verify:scheduled` is the one tier with the Playwright suites (Chromium, Firefox and WebKit, and workerd), and it fails
-unless both Playwright servers answer. **`bun run verify:static` is the loop to write in**, and with `bun test` on each touched test file it is the
-task check a task closes on: every row that judges the source rather than running it, which is the whole gate bar the test suites. It holds the
-rules above that a step checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a
+A bare `bun run verify` is the `runtime` tier — the gate an epic closes on, with the database rows narrowed to the pending changes and no
+Playwright spec; `verify:scheduled`, the one tier with the Playwright suites, is the release command's and the daily cron's and never an agent's
+(`TESTING.md` §6a). **`bun run verify:unit` is the task check a task closes on**, and **`bun run verify:static` is the interim check to write
+in**: every row that judges the source rather than running it, which is the whole gate bar the test suites. It holds the rules above that a step
+checks — the wrap and link style of every document, the comment budget, the barrel, a new file's co-located test — so a
 finding lands without waiting on a test suite.
 
 These flags are not findable from `package.json`:

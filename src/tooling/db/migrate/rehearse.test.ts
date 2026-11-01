@@ -37,7 +37,7 @@ function manifest(over: Partial<BackupManifest> = {}): BackupManifest {
     drift: "match" as const,
     createdAt: "2026-09-11T09:00:00.000Z",
     label: null,
-    dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },
+    exporter: { tool: "wrangler" as const, version: "4.105.0" },
     database: { name: "app-db", id: null, target: "local", persistPath: null },
     schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
     migrations: [{ name: "0001_init", sha256: sha256(TAKEN) }],

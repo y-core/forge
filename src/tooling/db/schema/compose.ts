@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 import { D1_LIMITS } from "../../../storage/db/limits";
 import { CliError } from "../../cli/errors";
+import { executeFile } from "../d1";
 import { declaredMigrations, declaredSchemas, NO_SCHEMAS, snapshotPath } from "../declared";
 import { sha256 } from "../digest";
 import { formatApprovalLine, migrationFindings } from "../migrate/analysis";
@@ -9,7 +10,6 @@ import { migrationChecksum, migrationFileName, migrationsDigest, nextMigrationNu
 import { isManagedObject, MANAGED_TABLE_PREFIXES } from "../migrate/fingerprint";
 import { formatLintFinding, lintMigration } from "../migrate/lint";
 import type { DbRunContext } from "../types";
-import { executeFile } from "../wrangler";
 import { readDesiredState } from "./desired";
 import {
   checkSchemaRenames,
@@ -27,7 +27,7 @@ import { readSchemaModel } from "./introspect";
 import { declaredObjectNames } from "./normalize";
 import { assignOwnership, attributeDrops, declaredNamesBySource } from "./ownership";
 import { proveComposed } from "./proof";
-import { cachedSchemaModel, forgeVersion, loadDesired, readScratchModel, replayBaseline, scratchModelKey, scratchWranglerVersion } from "./scratch";
+import { cachedSchemaModel, forgeVersion, loadDesired, readScratchModel, replayBaseline, scratchModelKey } from "./scratch";
 import { buildSchemaSnapshot, readSchemaSnapshot, writeSchemaSnapshot } from "./snapshot";
 import type { ComposeOptions, ComposeOutcome, DesiredState, OwnershipClaim, SchemaInputs, SchemaModel, SchemaRename } from "./types";
 
@@ -78,7 +78,7 @@ export function missingSchemas(inputs: SchemaInputs): string[] {
 
 /** The replayed model of every migration on disk, from the cache when the migrations have not changed. @internal */
 export function baselineSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): Promise<SchemaModel> {
-  const key = scratchModelKey(scratchWranglerVersion(run), migrationsDigest(inputs.migrations));
+  const key = scratchModelKey(run.io.wranglerVersion(), migrationsDigest(inputs.migrations));
   return cachedSchemaModel(run, "baseline", key, cache, async () => readScratchModel(run, await replayBaseline(run, inputs.migrations)));
 }
 
@@ -89,7 +89,7 @@ export function declaredDigests(states: readonly DesiredState[]): Record<string,
 
 /** The model every declared schema builds together, from the cache when none of them has changed. @internal */
 export function desiredSchemaModel(run: DbRunContext, inputs: SchemaInputs, cache: boolean): Promise<SchemaModel> {
-  const key = scratchModelKey(scratchWranglerVersion(run), sha256(inputs.states.map((state) => `${state.source}\0${state.digest}`).join("\0\0")));
+  const key = scratchModelKey(run.io.wranglerVersion(), sha256(inputs.states.map((state) => `${state.source}\0${state.digest}`).join("\0\0")));
   return cachedSchemaModel(run, "desired", key, cache, async () => readScratchModel(run, await loadDesired(run, inputs.states)));
 }
 
@@ -285,7 +285,7 @@ export async function composeMigration(run: DbRunContext, options: ComposeOption
   run.io.writeText(path, sql);
   const next = [...inputs.migrations, { name: file.slice(0, -".sql".length), sha256: migrationChecksum(sql) }];
   // The proof's replay is exactly the baseline the next compose or `--check --replay` will want, so it is cached under that key now.
-  await cachedSchemaModel(run, "baseline", scratchModelKey(scratchWranglerVersion(run), migrationsDigest(next)), false, () =>
+  await cachedSchemaModel(run, "baseline", scratchModelKey(run.io.wranglerVersion(), migrationsDigest(next)), false, () =>
     Promise.resolve(proven.model),
   );
   writeSchemaSnapshot(run.io, inputs.snapshotPath, snapshotOf(migrationsDigest(next)));

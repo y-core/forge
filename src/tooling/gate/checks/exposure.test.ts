@@ -14,6 +14,15 @@ function writeWorkerConfig(body: string): void {
 const run = () => checkExposure({ root, workerConfig: "wrangler.jsonc" });
 const strict = () => checkExposure({ root, workerConfig: "wrangler.jsonc", require: "unroutable" });
 
+async function expectRefusedAt(path: string): Promise<void> {
+  const result = await run();
+  expect([result.ok, result.summary, result.findings.length]).toEqual([false, "deployment exposure: unparseable", 1]);
+  const message = result.findings[0]?.message ?? "";
+  expect(message.startsWith(`\`wrangler.jsonc\` is not parseable: malformed wrangler config at ${join(root, "wrangler.jsonc")}: ${path}: `)).toBe(
+    true,
+  );
+}
+
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "forge-exposure-"));
 });
@@ -213,56 +222,82 @@ describe("checkExposure", () => {
     expect(result.summary).toBe("deployment exposure: 6/6 keys stated across 2 deployments");
   });
 
-  it("names every key of an environment that states none, keeping the file a reader can open", async () => {
+  it("an environment stating none of the keys inherits the top level's", async () => {
     writeWorkerConfig('  "workers_dev": false,\n  "preview_urls": false,\n  "routes": [],\n  "env": { "dev": { "vars": { "MODE": "dev" } } }');
     const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual([
-      "`env.dev.workers_dev` is unstated, and an unstated `workers_dev` publishes the Worker on a `workers.dev` subdomain",
-      "`env.dev.preview_urls` is unstated, and an unstated `preview_urls` publishes every uploaded version on its own preview URL",
-      "`env.dev.routes` is unstated, and a config silent about `routes` reads identically to one whose routes were deleted by accident",
-    ]);
-    expect(result.findings.map((f) => f.file)).toEqual(["wrangler.jsonc", "wrangler.jsonc", "wrangler.jsonc"]);
-    expect(result.summary).toBe("deployment exposure: 3/6 keys stated across 2 deployments");
+    expect(result.ok).toBe(true);
+    expect(result.findings).toEqual([]);
+    expect(result.summary).toBe("deployment exposure: 6/6 keys stated across 2 deployments");
   });
 
-  it("does not model wrangler's merge — a stated top level does not settle an environment", async () => {
+  it("a stated top level settles an environment that restates nothing", async () => {
     writeWorkerConfig('  "workers_dev": false,\n  "preview_urls": false,\n  "routes": [],\n  "env": { "staging": { "name": "app-staging" } }');
     const result = await run();
-    expect(result.findings.length).toBe(3);
-    expect(result.findings.every((f) => f.message.startsWith("`env.staging."))).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe("deployment exposure: 6/6 keys stated across 2 deployments");
   });
 
-  it("reports the top level before each environment, in declared order", async () => {
+  it("reports an unstated top level once, however many environments inherit it", async () => {
     writeWorkerConfig('  "env": { "staging": { "workers_dev": false }, "dev": {} }');
     const result = await run();
-    expect(result.findings.map((f) => f.message.match(/`([^`]+)`/)?.[1])).toEqual([
-      "workers_dev",
-      "preview_urls",
-      "routes",
-      "env.staging.preview_urls",
-      "env.staging.routes",
-      "env.dev.workers_dev",
-      "env.dev.preview_urls",
-      "env.dev.routes",
-    ]);
+    expect(result.findings.map((f) => f.message.match(/`([^`]+)`/)?.[1])).toEqual(["workers_dev", "preview_urls", "routes"]);
     expect(result.summary).toBe("deployment exposure: 1/9 keys stated across 3 deployments");
   });
 
-  it("fails when env is not a table of named environments", async () => {
-    writeWorkerConfig('  "workers_dev": false,\n  "preview_urls": false,\n  "routes": [],\n  "env": "staging"');
-    const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`env` is not a table of named environments"]);
-    expect(result.summary).toBe("deployment exposure: 3/3 keys stated");
+  it('reports a routable top level once under `require: "unroutable"`, not again for an environment inheriting it', async () => {
+    writeWorkerConfig('  "workers_dev": true,\n  "preview_urls": false,\n  "routes": [],\n  "env": { "staging": {} }');
+    const result = await strict();
+    expect(result.findings.map((f) => f.message)).toEqual(['`workers_dev` is `true`, and `require: "unroutable"` asks for `false`']);
+    expect(result.summary).toBe("deployment exposure: 4/6 keys unroutable across 2 deployments");
   });
 
-  it("fails when a named environment is not a table, counting it as holding none of its controls", async () => {
+  for (const { stated, inherits, top, own } of [
+    { stated: "route", inherits: "routes", top: '"routes": ["example.com/*"]', own: '"route": "staging.example.com/*"' },
+    { stated: "routes", inherits: "route", top: '"route": "example.com/*"', own: '"routes": ["staging.example.com/*"]' },
+  ]) {
+    it(`judges the routing conflict on the block as written, passing an environment's own \`${stated}\` beside an inherited \`${inherits}\``, async () => {
+      writeWorkerConfig(`  "workers_dev": false,\n  "preview_urls": false,\n  ${top},\n  "env": { "staging": { ${own} } }`);
+      const result = await run();
+      expect([result.ok, result.findings, result.summary]).toEqual([true, [], "deployment exposure: 6/6 keys stated across 2 deployments"]);
+    });
+  }
+
+  it("judges an environment's own `route` without a conflict against the `routes` it inherits", async () => {
+    writeWorkerConfig(
+      '  "workers_dev": false,\n  "preview_urls": false,\n  "routes": ["example.com/*"],\n  "env": { "staging": { "route": "staging.example.com/*" } }',
+    );
+    const result = await strict();
+    expect(result.findings.map((f) => f.message).filter((message) => message.startsWith("`env.staging."))).toEqual([
+      '`env.staging.route` is `"staging.example.com/*"`, and `require: "unroutable"` asks for no `route` at all',
+    ]);
+  });
+
+  it("still reports the conflict when an environment states both `route` and `routes` itself", async () => {
+    writeWorkerConfig(
+      '  "workers_dev": false,\n  "preview_urls": false,\n  "routes": [],\n  "env": { "staging": { "route": "staging.example.com/*", "routes": [] } }',
+    );
+    const result = await strict();
+    expect(result.findings.map((f) => f.message)).toEqual([
+      "`env.staging.routes` and `env.staging.route` are both stated, and wrangler accepts exactly one",
+    ]);
+    expect(result.findings.map((f) => f.file)).toEqual(["wrangler.jsonc"]);
+  });
+
+  it('passes an environment\'s own `workers_dev: false` under `require: "unroutable"` beneath a top level that sets it true', async () => {
+    writeWorkerConfig('  "workers_dev": true,\n  "preview_urls": false,\n  "routes": [],\n  "env": { "staging": { "workers_dev": false } }');
+    const result = await strict();
+    expect(result.findings.map((f) => f.message.match(/`([^`]+)`/)?.[1])).toEqual(["workers_dev"]);
+    expect(result.summary).toBe("deployment exposure: 5/6 keys unroutable across 2 deployments");
+  });
+
+  it("fails as unparseable when env is not a table of named environments", async () => {
+    writeWorkerConfig('  "workers_dev": false,\n  "preview_urls": false,\n  "routes": [],\n  "env": "staging"');
+    await expectRefusedAt("env");
+  });
+
+  it("fails as unparseable when a named environment is not a table", async () => {
     writeWorkerConfig('  "workers_dev": false,\n  "preview_urls": false,\n  "routes": [],\n  "env": { "dev": true }');
-    const result = await run();
-    expect(result.ok).toBe(false);
-    expect(result.findings.map((f) => f.message)).toEqual(["`env.dev` is not an environment table"]);
-    expect(result.summary).toBe("deployment exposure: 3/6 keys stated across 2 deployments");
+    await expectRefusedAt("env.dev");
   });
 
   it("fails as unparseable when the worker config does not hold a JSON object", async () => {

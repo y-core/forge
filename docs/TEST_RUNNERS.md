@@ -167,8 +167,9 @@ file shares one Worker and files run side by side.
 wrote under `--persist-to`, which the harness cannot read, so it serves no Worker: it opens the same miniflare D1 engine through `getPlatformProxy`
 (`tests/workerd/d1.ts`) and calls `checkSchemaHealth` on that binding directly.
 
-**The compose cases run on a bounded pool, `CASE_CONCURRENCY` in `tests/workerd/db-compose.workerd.ts`.** Each case spawns wrangler many times
-over, so running every case at once exhausts memory and the OOM killer takes the gate down; a small pool keeps most of the wall-clock win.
+**The compose cases run on a bounded pool, `CASE_CONCURRENCY` in `tests/workerd/db-compose.workerd.ts`.** Each case spawns `forge db` many times
+over, each run starting its own workerd, so running every case at once exhausts memory and the OOM killer takes the gate down; a small pool keeps
+most of the wall-clock win.
 
 **The set runs at the `scheduled` tier, whole, because a Playwright run is heavy** ([`TESTING.md`][testing-6c] §6c). It also needs workerd
 installed: `hasWorkerd` probes `wrangler`, which is what resolves the platform-specific runtime package, and `workerdStep`'s hint names `bun
@@ -373,10 +374,10 @@ cross-engine row (§1g)) and the rows that judge a finished change. `test` cover
 **forge's tag runs `unit` on the remote, not `scheduled`**: `forge release` runs `verify:scheduled` locally and refuses to tag a tree it has not
 passed ([`TESTING.md`][testing-6c] §6c). A tag pushed by hand or past `--allow-unverified` reaches no runtime suite.
 
-**The reviewer's baseline is a static reuse run, and the developer's task check is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the
-reviewer run `verify --tier static --reuse` and the task's touched test files. The task check's `static` run records a receipt naming the tree it
-judged, so a reviewer on the same bytes gets a one-line verdict; anything that moved runs the static tier. A test that writes into the tree moves
-the bytes that receipt names, so every baseline after it pays for a whole static run.
+**The reviewer's baseline is a `unit` reuse run, and the developer's task check is what answers it.** [`CODE_REVIEW.md`][cr-1a] §1a has the
+reviewer run `verify --tier unit --reuse`. The task check's `unit` run records a receipt naming the tree it judged, so a reviewer on the same
+bytes gets a one-line verdict; anything that moved runs the `unit` tier. A test that writes into the tree moves the bytes that receipt names, so
+every baseline after it pays for a whole `unit` run.
 
 **The `inputs` of `config/steps.config.ts` hold the runner and the code its checks run**: the check code under `src/tooling` and `warden/src`, and
 the `result` primitive it imports. No builder can derive these, because a check's own implementation is never in its config, yet an edit there can

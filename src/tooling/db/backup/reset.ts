@@ -2,11 +2,11 @@ import { join, resolve } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { sharedD1Databases } from "../config";
+import { queryBatches, queryRows } from "../d1";
 import { persistRoot } from "../home";
 import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
 import { isRemotePlace } from "../target";
 import type { BackupManifest, DbRunContext } from "../types";
-import { queryBatches, queryRows } from "../wrangler";
 import { classifyTable, isVerifiedBackupOf, validateManifest, verifyBackupArtifact } from "./artifact";
 import { resolveBackupsDir } from "./backup";
 import { describeTables, digestWholeTable } from "./read";

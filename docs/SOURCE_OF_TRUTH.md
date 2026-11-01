@@ -123,7 +123,9 @@ restates a naming rule or a handler's plan.
 | Which wrangler configs `forge cf sync` refuses before any request | `refusePagesConfig` in `src/tooling/cf/target.ts` |
 | The naming strategy for a created remote resource | the per-type handler in `src/tooling/cf/account/handlers/` |
 | What a reconciliation run decides to create, write, or leave | `syncBindings` in `src/tooling/cf/account/engine.ts` |
-| The JSONC round-trip contract — what survives a write | `src/tooling/cf/config/parse.ts` + `src/tooling/cli/jsonc-edit.ts` |
+| The JSONC round-trip contract — what survives a write | `src/tooling/cf/config/write.ts` + `src/tooling/cli/jsonc-edit.ts` |
+| The shape every reader of a worker config is given, and the one error a malformed one raises | `validateWranglerConfig` in `src/tooling/cf/config/parse.ts` |
+| How an `env.<name>` block inherits each deployment key forge reads | `ENVIRONMENT_INHERITANCE` in `src/tooling/cf/config/environment.ts`, held against the installed wrangler by `environment.test.ts` |
 | The `.dev.vars` marker comments and what each licenses | `GENERATE_MARKER` and `PUSH_MARKER` in `src/tooling/cf/account/handlers/devvars.ts` |
 | The `forge cf sync` command surface and its flags | `createSyncAccountCommand` in `src/tooling/cf/account/commands.ts` |
 | The `forge` command tree — which first-party commands attach, and where an app's own are loaded from | `src/tooling/root/root.ts` |

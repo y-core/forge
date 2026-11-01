@@ -6,9 +6,9 @@ import { join } from "node:path";
 import { addCommand, createCommand } from "../../cli/command";
 import { execute } from "../../cli/execute";
 import type { CommandBase } from "../../cli/types";
-import { argvHas, bufferedIO, fakeDbIo, jsonRows, minimalWranglerConfig } from "../db.fixture";
+import { bufferedIO, fakeDbIo, minimalWranglerConfig, REMOTE_AUTH, REMOTE_ARGS } from "../db.fixture";
 import { sha256 } from "../digest";
-import type { FakeDbIo, SeedRecord } from "../types";
+import type { FakeDbIo, Home, SeedRecord } from "../types";
 import { createSeedCommands } from "./commands";
 
 const roots: string[] = [];
@@ -28,16 +28,25 @@ function appRoot(): string {
   return root;
 }
 
+/** The deployed home `minimalWranglerConfig` resolves to, which the fake REST API answers through the rule table by its id. */
+const REMOTE_HOME: Home = {
+  label: "remote",
+  database: "app-db",
+  binding: "DB",
+  dir: "",
+  configPath: "",
+  persistTo: null,
+  place: "remote",
+  env: null,
+  databaseId: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
+  auth: REMOTE_AUTH,
+  synthesized: false,
+};
+
 function seedIo(root: string, history: SeedRecord[] = []): FakeDbIo {
-  const io = fakeDbIo({ [join(root, "seeds", "001_users.sql")]: USERS, [join(root, "seeds", "002_posts.sql")]: POSTS });
+  const io = fakeDbIo({ [join(root, "seeds", "001_users.sql")]: USERS, [join(root, "seeds", "002_posts.sql")]: POSTS }, { homes: [REMOTE_HOME] });
   const rows = history.map((row) => ({ source: row.source, name: row.name, sha256: row.sha256, applied_at: row.appliedAt }));
   io.d1Rules.push({ match: (statement) => statement.includes("_forge_seed_history"), reply: rows });
-  // A deployed target reads through the CLI, which is the one place a seed run still spawns.
-  io.rules.push({
-    match: (args) => argvHas(args, "execute", "--json", "--command") && (args.at(-1) ?? "").includes("_forge_seed_history"),
-    reply: jsonRows(rows),
-  });
-  io.rules.push({ match: (args) => argvHas(args, "execute"), reply: jsonRows([]) });
   return io;
 }
 
@@ -80,6 +89,8 @@ describe("createSeedCommands", () => {
       "root",
       "json",
       "yes",
+      "account-id",
+      "api-token",
       "dir",
       "only",
       "rerun",
@@ -120,7 +131,7 @@ describe("db seed", () => {
 
     expect(cli.err).toEqual([]);
     expect(cli.out).toEqual(["pending  seeds:001_users", "pending  seeds:002_posts"]);
-    expect(io.calls.filter((call) => call.includes("--file"))).toEqual([]);
+    expect(io.d1Calls.filter((call) => call.source !== null)).toEqual([]);
   });
 
   it("clears the history under reset when --yes says so", async () => {
@@ -198,7 +209,7 @@ describe("db seed status --check", () => {
 
   it("prints excluded rows on a deployed target and exits 0 on them", async () => {
     const root = appRoot();
-    const cli = await run(seedIo(root), ["seed", "status", "--root", root, "--target", "remote", "--check"]);
+    const cli = await run(seedIo(root), ["seed", "status", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--check"]);
 
     expect(cli.out).toEqual(["excluded seeds:001_users", "excluded seeds:002_posts"]);
     expect(cli.err).toEqual([]);
@@ -207,7 +218,7 @@ describe("db seed status --check", () => {
 
   it("lists excluded seeds in the JSON document", async () => {
     const root = appRoot();
-    const cli = await run(seedIo(root), ["seed", "status", "--root", root, "--target", "remote", "--check", "--json"]);
+    const cli = await run(seedIo(root), ["seed", "status", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--check", "--json"]);
 
     expect(JSON.parse(cli.out[0] ?? "")).toEqual({
       target: "remote",

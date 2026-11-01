@@ -287,7 +287,13 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       }
       // The tier belongs in the verdict: `✓ verify` and `✓ verify --tier scheduled` are different assurances.
       const affected = flags.affected === true;
-      const banner = ["verify", ...(tier === DEFAULT_TIER ? [] : ["--tier", tier]), ...(affected ? ["--affected"] : [])].join(" ");
+      const from = table.data[tier]?.from;
+      const banner = [
+        "verify",
+        ...(tier === DEFAULT_TIER ? [] : ["--tier", tier]),
+        ...(affected ? ["--affected"] : []),
+        ...(from === undefined ? [] : [`(as ${from})`]),
+      ].join(" ");
 
       const pending = affected || tier === "runtime" ? worktreeChanges(cwd) : undefined;
       const changed = affected ? pending : undefined;

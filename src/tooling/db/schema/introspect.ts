@@ -1,7 +1,7 @@
 import { CliError } from "../../cli/errors";
+import { queryBatches } from "../d1";
 import { isManagedObject } from "../migrate/fingerprint";
 import type { DbIo, Home } from "../types";
-import { queryBatches } from "../wrangler";
 import { normalizeDdlText, splitCreateTableBody, sqlIdentifierKey } from "./normalize";
 import type { CreateTableParts, SchemaColumn, SchemaForeignKey, SchemaIndex, SchemaModel, SchemaTable, SchemaTrigger, SchemaView } from "./types";
 
@@ -11,7 +11,7 @@ function ownFilter(): string {
   return `m.name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_cf\\_%' ESCAPE '\\' AND m.name NOT LIKE '\\_forge\\_%' ESCAPE '\\'`;
 }
 
-/** The reads a model is built from, batched into one wrangler spawn however many tables there are. @internal */
+/** The reads a model is built from, sent as one batch however many tables there are. @internal */
 export function schemaModelSelects(): { inventory: string; columns: string; indexList: string; indexColumns: string; foreignKeys: string } {
   const own = ownFilter();
   return {
@@ -85,7 +85,7 @@ export function assembleSchemaModel(rows: {
   if (virtual !== undefined) {
     throw new CliError(
       "invalid-args",
-      `${text(virtual, "name")} is a virtual table — compose does not model one, and \`wrangler d1 export\` cannot back one up`,
+      `${text(virtual, "name")} is a virtual table — compose does not model one, and D1's export cannot back one up`,
     );
   }
 
@@ -135,7 +135,7 @@ export function assembleSchemaModel(rows: {
   return { tables: byName(tables), indexes: byName(indexes), triggers: byName(triggers), views: byName(views) };
 }
 
-/** Reads a home's schema into a model: every read in one wrangler spawn, however many objects there are. @internal */
+/** Reads a home's schema into a model: every read in one batch, however many objects there are. @internal */
 export async function readSchemaModel(io: DbIo, home: Home): Promise<SchemaModel> {
   const selects = schemaModelSelects();
   const [inventory = [], columns = [], indexList = [], indexColumns = [], foreignKeys = []] = await queryBatches(io, home, [

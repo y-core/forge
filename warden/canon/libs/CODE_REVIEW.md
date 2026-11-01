@@ -33,9 +33,9 @@ description: "How to review: the blocking invariants, tiered detection with a co
 
 ### 1a. Pre-Review Preparation
 
-1. **Establish a green baseline** — run the static tier with `--reuse` and the task's touched test files by file before reviewing, so
-   pre-existing failures are not attributed to the change (`AGENT_WORKFLOW.md` §4). The author's static receipt for these exact bytes answers
-   the first at once; the full gate is not the reviewer's to run.
+1. **Establish a green baseline** — run the `unit` tier with `--reuse` before reviewing, so pre-existing failures are not attributed to the
+   change (`AGENT_WORKFLOW.md` §4). The author's task-check receipt for these exact bytes answers it at once; the full gate is not the reviewer's
+   to run.
 2. Identify the affected namespaces and read their barrels — the public surface is where a change does lasting damage.
 3. Work §2, then §3a → §3b → §3c. **Verify per §5 before reporting; classify per §4.**
 

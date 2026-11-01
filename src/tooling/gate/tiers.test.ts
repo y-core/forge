@@ -38,6 +38,12 @@ const LADDER: StepTiers = {
   scheduled: [tier("runtime"), command("test:browser")],
 };
 
+const LADDER_WITHOUT_SCHEDULED: StepTiers = {
+  static: [row("lint")],
+  unit: [tier("static"), row("test")],
+  runtime: [tier("unit"), command("db:lint")],
+};
+
 describe("tier()", () => {
   it("builds a reference naming the tier", () => {
     expect([tier("static"), tier("unit"), tier("runtime"), tier("scheduled")]).toEqual([
@@ -96,19 +102,45 @@ describe("resolveTiers() — expansion", () => {
   });
 
   it("holds only a tier's own rows where it names no reference", () => {
-    expect(labelsIn(resolved({ static: [row("lint")], scheduled: [row("browser")] }))).toEqual({ static: ["lint"], scheduled: ["browser"] });
+    expect(labelsIn(resolved({ static: [row("lint")], scheduled: [row("browser")] })).scheduled).toEqual(["browser"]);
   });
 
-  it("leaves a tier the table does not declare out of the result", () => {
-    expect(Object.keys(resolved({ static: [row("lint")], runtime: [tier("static"), row("db")] }))).toEqual(["static", "runtime"]);
+  it("runs a tier the table does not declare as the nearest declared tier below it, and names that tier", () => {
+    const table = resolved({ static: [row("lint")], runtime: [tier("static"), row("db")] });
+
+    expect(labelsIn(table)).toEqual({ static: ["lint"], unit: ["lint"], runtime: ["lint", "db"], scheduled: ["lint", "db"] });
+    expect([table.unit?.from, table.runtime?.from, table.scheduled?.from]).toEqual(["static", undefined, "runtime"]);
+  });
+
+  it("names the declared tier a fallback runs through two undeclared tiers", () => {
+    expect(resolved({ static: [row("lint")] }).scheduled?.from).toBe("static");
+  });
+
+  it("homes a fallback tier's rows where the declared tier homes them", () => {
+    expect(resolved(LADDER_WITHOUT_SCHEDULED).scheduled?.home).toEqual({ lint: "static", test: "unit", "db:lint": "runtime" });
+  });
+
+  it("leaves a tier with no declared tier at or below it out of the result", () => {
+    expect(Object.keys(resolved({ unit: [row("test")] }))).toEqual(["unit", "runtime", "scheduled"]);
+  });
+
+  it("lets a reference name an undeclared tier that falls back to a declared one", () => {
+    expect(labelsIn(resolved({ static: [row("lint")], runtime: [tier("unit"), row("db")] })).runtime).toEqual(["lint", "db"]);
   });
 
   it("resolves a declared but empty tier to no rows", () => {
-    expect(resolved({ static: [], unit: [tier("static")] })).toEqual({ static: { steps: [], home: {} }, unit: { steps: [], home: {} } });
+    const table = resolved({ static: [], unit: [tier("static")] });
+
+    expect([table.static, table.unit]).toEqual([
+      { steps: [], home: {} },
+      { steps: [], home: {} },
+    ]);
   });
 
   it("accepts one label in two tiers that do not include each other", () => {
-    expect(labelsIn(resolved({ static: [row("lint")], unit: [row("lint")] }))).toEqual({ static: ["lint"], unit: ["lint"] });
+    const table = labelsIn(resolved({ static: [row("lint")], unit: [row("lint")] }));
+
+    expect([table.static, table.unit]).toEqual([["lint"], ["lint"]]);
   });
 
   it("reads its input without mutating it", () => {
@@ -120,9 +152,9 @@ describe("resolveTiers() — expansion", () => {
 });
 
 describe("resolveTiers() — references it refuses", () => {
-  it("refuses a reference to a tier the table does not declare, naming both tiers and the key to add", () => {
+  it("refuses a reference to a tier neither the table nor any tier below it declares, naming both tiers and the key to add", () => {
     expect(refusal({ unit: [tier("static"), row("test")] })).toBe(
-      'The unit tier includes tier("static"), which the table does not declare — add a `static` key, or drop the reference.',
+      'The unit tier includes tier("static"), which neither the table nor any tier below it declares — add a `static` key, or drop the reference.',
     );
   });
 

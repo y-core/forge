@@ -8,20 +8,22 @@ import { createDbCommands } from "../commands";
 import {
   argvHas,
   bufferedIO,
+  cfEnvelope,
   fakeDbIo,
   keyProbeAsked,
   keyProbeReply,
   minimalWranglerConfig,
   OK,
   keysetPageReply,
-  routedReply,
   tableInfoAsked,
   tableSqlAsked,
   tableSqlReply,
+  REMOTE_AUTH,
+  REMOTE_ARGS,
 } from "../db.fixture";
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
-import type { BackupManifest, FakeDbIo } from "../types";
+import type { BackupManifest, FakeDbIo, Home } from "../types";
 import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
 
 const roots: string[] = [];
@@ -71,10 +73,33 @@ function appRoot(): string {
   return root;
 }
 
-/** A fake wrangler answering the reads these verbs make, and writing `schema.sql` when asked to export. */
+const REMOTE_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+const SIGNED_URL = "https://d1-exports.example.com/schema.sql";
+
+const REMOTE_HOME: Home = {
+  label: "remote",
+  database: "app-db",
+  binding: "DB",
+  dir: "/app",
+  configPath: "/app/wrangler.jsonc",
+  persistTo: null,
+  place: "remote",
+  env: null,
+  databaseId: REMOTE_ID,
+  auth: REMOTE_AUTH,
+  synthesized: false,
+};
+
+/** A fake answering the reads these verbs make in process and over REST, and writing `schema.sql` when either export is asked for it. */
 function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> = ROWS): FakeDbIo {
-  const io = fakeDbIo();
-  io.rules.push({ match: (args) => argvHas(args, "--version"), reply: { code: 0, stdout: "wrangler 4.105.0\n", stderr: "" } });
+  const io = fakeDbIo({}, { homes: [REMOTE_HOME] });
+  io.restRules.push(
+    {
+      match: (url) => url.endsWith("/export"),
+      reply: () => cfEnvelope({ status: "complete", at_bookmark: "bm-schema", result: { filename: "schema.sql", signed_url: SIGNED_URL } }),
+    },
+    { match: (url) => url === SIGNED_URL, reply: () => new Response(SCHEMA_SQL) },
+  );
   io.rules.push({
     match: (args) => argvHas(args, "export", "--output"),
     reply: (args) => {
@@ -82,7 +107,6 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
       return OK;
     },
   });
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--file"), reply: OK });
   const answer = (statement: string): Record<string, unknown>[] => {
     const info = tableInfoAsked(statement);
     if (info !== null) return COLUMNS[info] ?? [];
@@ -97,8 +121,6 @@ function fakeWrangler(rows: Readonly<Record<string, Record<string, unknown>[]>> 
     return keysetPageReply(statement, rows) ?? [];
   };
   io.d1Rules.push({ match: () => true, reply: answer });
-  // A deployed verb reads through the CLI, so the same answers are wired to both effects.
-  io.rules.push({ match: (args) => argvHas(args, "execute", "--command"), reply: (args) => routedReply(args[args.length - 1] ?? "", answer) });
   return io;
 }
 
@@ -137,7 +159,7 @@ describe("forge db backup", () => {
     expect(manifest.formatVersion).toBe(BACKUP_FORMAT_VERSION);
     expect(manifest.createdAt).toBe("2026-09-11T10:00:00.000Z");
     expect(manifest.label).toBeNull();
-    expect(manifest.dumper).toEqual({ tool: "forge db backup (schema via wrangler d1 export --no-data)", version: "wrangler 4.105.0" });
+    expect(manifest.exporter).toEqual({ tool: "wrangler", version: "4.151.2" });
     expect(manifest.database).toEqual({
       name: "app-db",
       id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
@@ -186,7 +208,7 @@ describe("forge db backup", () => {
 
   it("backs up a deployed database without asking, and prints the note that restore is refused there", async () => {
     const root = appRoot();
-    const buffer = await runCli(fakeWrangler(), ["backup", "--root", root, "--target", "remote", "--no-verify"]);
+    const buffer = await runCli(fakeWrangler(), ["backup", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--no-verify"]);
     const directory = join(root, ".forge/backups", "app-db-20260911T100000Z");
 
     expect(buffer.err).toEqual([]);
@@ -224,7 +246,7 @@ const MANIFEST: BackupManifest = {
   drift: "match" as const,
   createdAt: "2026-09-11T10:00:00.000Z",
   label: null,
-  dumper: { tool: "forge db backup", version: "wrangler 4.105.0" },
+  exporter: { tool: "wrangler", version: "4.105.0" },
   database: { name: "other-db", id: null, target: "local", persistPath: null },
   schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
   migrations: [{ name: "0001_init", sha256: "d".repeat(64) }],

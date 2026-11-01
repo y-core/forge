@@ -1,4 +1,4 @@
-import type { CfQueue } from "../../api/types";
+import { CF_OPERATIONS } from "../../api/operations";
 import type { QueueProducerConfig } from "../../types";
 import { dnsName } from "./naming";
 import { createProvisionedHandler } from "./provisioned";
@@ -10,11 +10,11 @@ export const queuesHandler = createProvisionedHandler<QueueProducerConfig>({
   displayName: "Queues",
   extract: (config) => config.queues?.producers ?? [],
   list: async (client, accountId) => {
-    const res = await client.list<CfQueue>(path(accountId));
+    const res = await client.list(path(accountId), CF_OPERATIONS.listQueues);
     return res.ok ? { ok: true, data: res.data.map((q) => ({ id: q.queue_id, name: q.queue_name })) } : res;
   },
   create: async (client, accountId, name) => {
-    const res = await client.post<CfQueue>(path(accountId), { queue_name: name });
+    const res = await client.post(path(accountId), { queue_name: name }, CF_OPERATIONS.createQueue);
     return res.ok ? { ok: true, data: { id: res.data.queue_id, name: res.data.queue_name } } : res;
   },
   naming: dnsName,
