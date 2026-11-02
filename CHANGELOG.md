@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.7.2] — 2026-11-02
+
 ### Breaking Changes
 
 - **`ClassGroupsCheckConfig` and `DesignScaleCheckConfig` require `fixer`, the command that regenerates the table.** The generated banner and
@@ -1481,6 +1487,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.7.2]: https://github.com/y-core/forge/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/y-core/forge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/y-core/forge/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/y-core/forge/compare/v0.6.1...v0.6.2
