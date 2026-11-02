@@ -8,13 +8,7 @@ export const DEFAULT_OPTIONS: GenOptions = {
 };
 
 /** The generated module's header comment. @internal */
-export const HEADER = `/** env.schema.ts — GENERATED — do not edit; run \`bun run gen:env\`.
- *
- *  Schema-first replacement for \`wrangler types … --no-include-runtime\`. The single
- *  source of truth for the Worker binding/var surface, emitted by the \`gen-env\` command
- *  from \`wrangler.jsonc\` bindings + \`.dev.vars\` keys. \`EnvSchema\` is the runtime
- *  contract enforced by \`validateBindings\`; \`type Env\` is its compile-time face.
- */`;
+export const HEADER = "/** env.schema.ts — GENERATED — do not edit; run `forge cf gen env`. */";
 
 const K2_PRODUCER_TYPE =
   "{ send(records: | { content: ArrayBuffer; headers?: Record<string, string> }[] | { content: Uint8Array; headers?: Record<string, string> }[] ): Promise< | { success: true } | { success: false; error: { code: number; message: string; retryable: boolean } } >; }";

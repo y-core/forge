@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import { experimental_generateTypes } from "wrangler";
 
+import { validateCommentBudget } from "../../gate/checks/comment-budget-parse";
 import { createGenEnvCommand, loadOptions } from "./cf-env-command";
 import { collectBindings, collectSecretNames, collectVars, emit } from "./cf-env-gen";
 import { DEFAULT_OPTIONS, HEADER } from "./cf-env-registry";
@@ -211,6 +212,11 @@ export const EnvSchema = v.object({
 /** The Worker's binding/var surface as a type — inferred from \`EnvSchema\`. */
 export type Env = v.InferOutput<typeof EnvSchema>;
 `);
+  });
+
+  it("writes a module the comment budget passes", () => {
+    const source = emit([{ name: "BASE_URL", expr: "v.string()" }]);
+    expect(validateCommentBudget("src/app/env.schema.ts", source)).toEqual([]);
   });
 
   it("quotes a key that is not a valid identifier, so the generated module still parses", () => {

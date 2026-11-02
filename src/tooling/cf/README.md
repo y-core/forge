@@ -329,7 +329,7 @@ Run it as a script; `forge cf gen env --help` lists the flags that move each pat
 A typical generated module:
 
 ```ts
-/** env.schema.ts — GENERATED — do not edit; run `bun run gen:env`. */
+/** env.schema.ts — GENERATED — do not edit; run `forge cf gen env`. */
 import { v } from "@y-core/forge/validation";
 
 export const EnvSchema = v.object({

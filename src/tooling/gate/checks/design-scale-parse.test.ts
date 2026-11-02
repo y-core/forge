@@ -71,20 +71,17 @@ describe("deriveDesignScale()", () => {
 });
 
 describe("renderDesignScale()", () => {
-  const rendered = renderDesignScale({
-    spacingUnit: "0.25rem",
-    spacingRoots: ["p"],
-    spacingSteps: ["4"],
-    colorRoots: ["bg"],
-    colorTokens: ["accent"],
-  });
+  const rendered = renderDesignScale(
+    { spacingUnit: "0.25rem", spacingRoots: ["p"], spacingSteps: ["4"], colorRoots: ["bg"], colorTokens: ["accent"] },
+    { table: "src/lint/scale.ts", fixer: "forge-app gen scale" },
+  );
 
   it("emits a module that imports nothing, which is what lets the plugin read it", () => {
     expect(rendered.match(/^\s*import\b/m)).toBeNull();
   });
 
-  it("names the generator in its banner, so the file says how to regenerate it", () => {
-    expect(rendered.includes("bun run gen:design-scale")).toBe(true);
+  it("opens with a banner naming the table's own file and the configured fixer", () => {
+    expect(rendered.startsWith("/** scale.ts — GENERATED — do not edit; run `forge-app gen scale`. */")).toBe(true);
   });
 
   it("emits every derived list as a named export", () => {

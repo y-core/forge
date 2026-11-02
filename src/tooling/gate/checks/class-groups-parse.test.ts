@@ -338,10 +338,11 @@ describe("renderClassGroups", () => {
       classes: { "bg-red": ["background-color"], "bg-none": ["background-image"] },
     }),
   );
-  const rendered = renderClassGroups(table);
+  const module = { table: "src/styles/groups.ts", fixer: "forge-app gen groups" };
+  const rendered = renderClassGroups(table, module);
 
-  it("opens with the generated banner naming the command that rewrites it", () => {
-    expect(rendered.startsWith("/** class-groups.ts — GENERATED — do not edit; run `bun run gen:class-groups`.")).toBe(true);
+  it("opens with a banner naming the table's own file and the configured fixer", () => {
+    expect(rendered.startsWith("/** groups.ts — GENERATED — do not edit; run `forge-app gen groups`. */")).toBe(true);
   });
 
   it("exports the two symbols `cn` imports", () => {
@@ -354,12 +355,12 @@ describe("renderClassGroups", () => {
   });
 
   it("is deterministic across two renders of the same table", () => {
-    expect(renderClassGroups(table)).toBe(rendered);
+    expect(renderClassGroups(table, module)).toBe(rendered);
   });
 
   it("breaks a tie on the group id, so the table is a function of the stylesheet and never of enumeration order", () => {
     const emit = (classes: Record<string, string[]>): string =>
-      renderClassGroups(deriveClassGroups(fakeDesignSystem({ functional: { x: ["a"] }, classes })));
+      renderClassGroups(deriveClassGroups(fakeDesignSystem({ functional: { x: ["a"] }, classes })), module);
     expect(emit({ "x-1": ["a"], "x-2": ["b"] })).toBe(emit({ "x-2": ["b"], "x-1": ["a"] }));
   });
 });
@@ -375,7 +376,7 @@ describe("the rendered resolver", () => {
     const dir = mkdtempSync(resolve(tmpdir(), "forge-class-groups-parse-"));
     dirs.push(dir);
     const path = resolve(dir, "class-groups.ts");
-    writeFileSync(path, renderClassGroups(table), "utf-8");
+    writeFileSync(path, renderClassGroups(table, { table: "class-groups.ts", fixer: "bun run gen:class-groups" }), "utf-8");
     return ((await import(path)) as { classGroup: (utility: string) => string | undefined }).classGroup;
   }
 

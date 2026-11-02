@@ -18,7 +18,16 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`ClassGroupsCheckConfig` and `DesignScaleCheckConfig` require `fixer`, the command that regenerates the table.** The generated banner and
+  every drift finding name it, and the banner names the table's own file, so neither points at a forge-only script any more. `renderClassGroups`
+  and `renderDesignScale` take the table and the fixer as their second argument.
+
+### Fixed
+
+- **`forge cf gen env` writes a one-line header that passes the comment budget**, and names `forge cf gen env` instead of `bun run gen:env`.
+- **`forge assets gen types` writes a two-line header that passes the comment budget**, where three `//` lines failed it.
 
 ---
 

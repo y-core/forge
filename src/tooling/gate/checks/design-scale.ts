@@ -20,14 +20,14 @@ export async function checkDesignScale(config: DesignScaleCheckConfig): Promise<
 
 /** Reports any drift between an already derived scale and the committed module. @public */
 export function compareDesignScale(config: DesignScaleCheckConfig, scale: DesignScale): CheckResult {
-  const expected = renderDesignScale(scale);
+  const expected = renderDesignScale(scale, config);
   const path = resolve(config.root, config.table);
 
   let actual: string;
   try {
     actual = readFileSync(path, "utf-8");
   } catch {
-    return checkResult([fail("the generated design scale is missing", { file: config.table, detail: ["run `bun run gen:design-scale`"] })], "");
+    return checkResult([fail("the generated design scale is missing", { file: config.table, detail: [`run \`${config.fixer}\``] })], "");
   }
 
   if (canonical(actual) === canonical(expected)) {
@@ -40,7 +40,7 @@ export function compareDesignScale(config: DesignScaleCheckConfig, scale: Design
         file: config.table,
         detail: [
           `\`${config.stylesheet}\` now compiles to a different scale — a \`tailwindcss\` release, a theme edit, or a hand edit to the generated file`,
-          "run `bun run gen:design-scale` and review the diff before committing it",
+          `run \`${config.fixer}\` and review the diff before committing it`,
         ],
       }),
     ],
@@ -50,11 +50,16 @@ export function compareDesignScale(config: DesignScaleCheckConfig, scale: Design
 
 /** Writes the derived scale over the committed module. @public */
 export async function writeDesignScale(config: DesignScaleCheckConfig): Promise<void> {
-  writeFileSync(resolve(config.root, config.table), renderDesignScale(await deriveScale(config)), "utf-8");
+  writeFileSync(resolve(config.root, config.table), renderDesignScale(await deriveScale(config), config), "utf-8");
 }
 
 if (import.meta.main) {
   const root = resolve(dirname(fileURLToPathish(import.meta.url)), "../../../..");
-  await writeDesignScale({ root, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" });
+  await writeDesignScale({
+    root,
+    stylesheet: "src/ui/assets/css/tailwind.css",
+    table: "src/tooling/lint/data/design-scale.ts",
+    fixer: "bun run gen:design-scale",
+  });
   console.log("wrote src/tooling/lint/data/design-scale.ts");
 }

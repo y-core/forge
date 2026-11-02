@@ -1,5 +1,5 @@
 import type { DesignSystem } from "./types";
-import type { DesignScale } from "./types";
+import type { DesignScale, DesignScaleCheckConfig } from "./types";
 
 const SPACING_MULTIPLE = /^\d+(?:\.\d+)?$/;
 
@@ -55,17 +55,15 @@ export function deriveDesignScale(ds: DesignSystem): DesignScale {
   };
 }
 
-const BANNER = "/** design-scale.ts — GENERATED — do not edit; run `bun run gen:design-scale`. */";
-
 const quote = (value: string): string => JSON.stringify(value);
 
 const list = (name: string, doc: string, values: readonly string[]): string =>
   [`/** ${doc} */`, `export const ${name}: readonly string[] = [`, `${values.map((value) => `  ${quote(value)}`).join(",\n")},`, "];"].join("\n");
 
 /** Renders the derived scale as the committed, dependency-free module. @public */
-export function renderDesignScale(scale: DesignScale): string {
+export function renderDesignScale(scale: DesignScale, module: Pick<DesignScaleCheckConfig, "table" | "fixer">): string {
   return [
-    BANNER,
+    `/** ${module.table.slice(module.table.lastIndexOf("/") + 1)} — GENERATED — do not edit; run \`${module.fixer}\`. */`,
     "",
     "/** The `--spacing` step size, verbatim. */",
     `export const SPACING_UNIT = ${quote(scale.spacingUnit)};`,

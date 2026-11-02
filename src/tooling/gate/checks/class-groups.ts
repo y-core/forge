@@ -25,14 +25,14 @@ export async function checkClassGroups(config: ClassGroupsCheckConfig): Promise<
 
 /** Reports any drift between an already derived table and the committed module. @public */
 export function compareClassGroups(config: ClassGroupsCheckConfig, table: ClassGroupTable): CheckResult {
-  const expected = renderClassGroups(table);
+  const expected = renderClassGroups(table, config);
   const path = resolve(config.root, config.table);
 
   let actual: string;
   try {
     actual = readFileSync(path, "utf-8");
   } catch {
-    return checkResult([fail("the generated conflict table is missing", { file: config.table, detail: ["run `bun run gen:class-groups`"] })], "");
+    return checkResult([fail("the generated conflict table is missing", { file: config.table, detail: [`run \`${config.fixer}\``] })], "");
   }
 
   if (canonical(actual) === canonical(expected)) {
@@ -45,7 +45,7 @@ export function compareClassGroups(config: ClassGroupsCheckConfig, table: ClassG
         file: config.table,
         detail: [
           `\`${config.stylesheet}\` now compiles to a different table — a \`tailwindcss\` release, a theme edit, or a hand edit to the generated file`,
-          "run `bun run gen:class-groups` and review the diff before committing it",
+          `run \`${config.fixer}\` and review the diff before committing it`,
         ],
       }),
     ],
@@ -55,7 +55,7 @@ export function compareClassGroups(config: ClassGroupsCheckConfig, table: ClassG
 
 /** Writes the derived table over the committed module. @public */
 export async function writeClassGroups(config: ClassGroupsCheckConfig): Promise<void> {
-  writeFileSync(resolve(config.root, config.table), renderClassGroups(await deriveTable(config)), "utf-8");
+  writeFileSync(resolve(config.root, config.table), renderClassGroups(await deriveTable(config), config), "utf-8");
 }
 
 if (import.meta.main) {
@@ -64,6 +64,7 @@ if (import.meta.main) {
     root,
     stylesheet: "src/ui/assets/css/tailwind.css",
     table: "src/ui/core/utils/class-groups.ts",
+    fixer: "bun run gen:class-groups",
     stateRecipes: FORGE_STATE_RECIPES,
   });
   console.log("wrote src/ui/core/utils/class-groups.ts");

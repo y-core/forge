@@ -10,7 +10,12 @@ import type { DesignScale, DesignScaleCheckConfig } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
 
-const CONFIG: DesignScaleCheckConfig = { root: ROOT, stylesheet: "src/ui/assets/css/tailwind.css", table: "src/tooling/lint/data/design-scale.ts" };
+const CONFIG: DesignScaleCheckConfig = {
+  root: ROOT,
+  stylesheet: "src/ui/assets/css/tailwind.css",
+  table: "src/tooling/lint/data/design-scale.ts",
+  fixer: "bun run gen:design-scale",
+};
 const SCALE: DesignScale = { spacingUnit: "0.25rem", spacingRoots: ["p"], spacingSteps: ["1", "2"], colorRoots: ["bg"], colorTokens: ["red-500"] };
 
 const roots: string[] = [];
@@ -25,9 +30,9 @@ function scratchDir(): string {
   return dir;
 }
 
-function committedModule(edit: (rendered: string) => string): string {
+function committedModule(edit: (rendered: string) => string, fixer = CONFIG.fixer): string {
   const path = resolve(scratchDir(), "design-scale.ts");
-  writeFileSync(path, edit(renderDesignScale(SCALE)), "utf-8");
+  writeFileSync(path, edit(renderDesignScale(SCALE, { ...CONFIG, fixer })), "utf-8");
   return path;
 }
 
@@ -48,19 +53,22 @@ describe("checkDesignScale() and compareDesignScale()", () => {
     expect(result.findings).toEqual([]);
   });
 
-  it("fails with a regeneration hint when the module is missing", () => {
-    const result = compareDesignScale({ ...CONFIG, table: resolve(scratchDir(), "absent.ts") }, SCALE);
+  it("fails with the configured fixer as its hint when the module is missing", () => {
+    const result = compareDesignScale({ ...CONFIG, table: resolve(scratchDir(), "absent.ts"), fixer: "forge-app gen scale" }, SCALE);
 
     expect(result.findings.map((finding) => finding.message)).toEqual(["the generated design scale is missing"]);
+    expect(result.findings.map((finding) => finding.detail)).toEqual([["run `forge-app gen scale`"]]);
   });
 
   it("fails when the committed module has been hand-edited", () => {
-    const table = committedModule((rendered) => rendered.replace('SPACING_UNIT = "0.25rem"', 'SPACING_UNIT = "0.5rem"'));
+    const fixer = "forge-app gen scale";
+    const table = committedModule((rendered) => rendered.replace('SPACING_UNIT = "0.25rem"', 'SPACING_UNIT = "0.5rem"'), fixer);
 
-    const result = compareDesignScale({ ...CONFIG, table }, SCALE);
+    const result = compareDesignScale({ ...CONFIG, table, fixer }, SCALE);
 
     expect(result.ok).toBe(false);
     expect(result.findings.map((finding) => finding.message)).toEqual(["the committed design scale no longer matches the design system"]);
+    expect(result.findings[0]?.detail).toContain("run `forge-app gen scale` and review the diff before committing it");
   });
 
   it("passes a whitespace-only edit, which the `format` step owns rather than this one", () => {

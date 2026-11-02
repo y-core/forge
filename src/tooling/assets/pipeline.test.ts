@@ -8,6 +8,7 @@ import type { PdfFontPackData } from "../../render/pdf/fonts/types";
 import { createPdfRenderer } from "../../render/pdf/mod";
 import type { PdfArtwork, PdfLetterhead } from "../../render/pdf/types";
 import type { SpawnOptions, SpawnOutcome } from "../cli/types";
+import { validateCommentBudget } from "../gate/checks/comment-budget-parse";
 import { buildAll, generateAssetsTypes, readEmittedManifest, structuralSignature } from "./pipeline";
 import type { ResolvedConfig } from "./types";
 
@@ -729,6 +730,8 @@ describe("generateAssetsTypes() — no drift from the real build", () => {
       expect(types).toContain(`createManifest(DATA, "/assets")`);
       expect(types).toContain("TYPES ONLY");
       expect(built).not.toContain("TYPES ONLY");
+      expect(validateCommentBudget("src/assets.ts", types)).toEqual([]);
+      expect(validateCommentBudget("src/assets.ts", built)).toEqual([]);
       expect(structuralSignature(built)).toBe(structuralSignature(types));
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });

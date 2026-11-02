@@ -1,5 +1,5 @@
 import type { CssNode, DesignSystem } from "./types";
-import type { ClassGroupTable, RootRow } from "./types";
+import type { ClassGroupsCheckConfig, ClassGroupTable, RootRow } from "./types";
 
 const box = (property: string, suffix: string): [string, string[]][] => [
   [
@@ -389,8 +389,6 @@ function renderRoots(table: ClassGroupTable): { valueSets: string; roots: string
   return { valueSets: sets.all.map((set) => `  [${set.split(" ").map(quote).join(", ")}]`).join(",\n"), roots: rows.join(",\n") };
 }
 
-const BANNER = "/** class-groups.ts — GENERATED — do not edit; run `bun run gen:class-groups`. */";
-
 const RESOLVER = `interface RootRow {
   readonly n?: string;
   readonly i?: string;
@@ -453,7 +451,7 @@ export function classGroup(utility: string): string | undefined {
 }`;
 
 /** Renders the derived table as the `class-groups.ts` module source, banner and resolver included. @public */
-export function renderClassGroups(table: ClassGroupTable): string {
+export function renderClassGroups(table: ClassGroupTable, module: Pick<ClassGroupsCheckConfig, "table" | "fixer">): string {
   const statics = [...table.statics]
     .sort((a, b) => (a[0] < b[0] ? -1 : 1))
     .map(([name, group]) => `  [${quote(name)}, ${quote(group)}]`)
@@ -462,7 +460,7 @@ export function renderClassGroups(table: ClassGroupTable): string {
   const overrides = [...table.overrides].map(([group, covered]) => `  [${quote(group)}, [${covered.map(quote).join(", ")}]]`).join(",\n");
 
   return [
-    BANNER,
+    `/** ${module.table.slice(module.table.lastIndexOf("/") + 1)} — GENERATED — do not edit; run \`${module.fixer}\`. */`,
     "",
     "const STATIC_GROUPS: ReadonlyMap<string, string> = new Map<string, string>([",
     `${statics},`,

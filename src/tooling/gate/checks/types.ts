@@ -119,6 +119,8 @@ export interface ClassGroupsCheckConfig {
   stylesheet: string;
   /** The generated module the derived table is committed to, relative to `root`. */
   table: string;
+  /** The command that regenerates the table, named in its banner and in every failure. */
+  fixer: string;
   /** `@utility` recipes whose payload is conditional, keyed into a slot no Tailwind utility reaches. */
   stateRecipes?: readonly string[];
 }
@@ -408,6 +410,8 @@ export interface DesignScaleCheckConfig {
   stylesheet: string;
   /** The generated module the derived scale is committed to, relative to `root`. */
   table: string;
+  /** The command that regenerates the scale, named in its banner and in every failure. */
+  fixer: string;
 }
 
 /** A node of the AST `candidatesToAst` returns; only the shapes a derivation reads are named. @public */

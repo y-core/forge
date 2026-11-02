@@ -492,8 +492,8 @@ describe("bundleStep()", () => {
 
 describe("builders — conditional on tailwindcss", () => {
   const conditional = () => [
-    classGroupsStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/class-groups.ts" }),
-    designScaleStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/design-scale.ts" }),
+    classGroupsStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/class-groups.ts", fixer: "regen" }),
+    designScaleStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/design-scale.ts", fixer: "regen" }),
     classTokensStep({ root: "/nowhere", sources: ["src/ui"], stylesheet: "css/tailwind.css" }),
     cssCoverageStep({ root: "/nowhere", sources: ["src/ui"], stylesheet: "css/tailwind.css" }),
     cssTokensStep({ root: "/nowhere", stylesheet: "css/tailwind.css", cssDir: "css" }),
@@ -538,7 +538,10 @@ describe("builders — conditional on tailwindcss", () => {
   });
 
   it("lets a project that vendors the dependency drop it, rather than being gated on probing it", () => {
-    const step = classGroupsStep({ root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/class-groups.ts" }, { requires: null });
+    const step = classGroupsStep(
+      { root: "/nowhere", stylesheet: "css/tailwind.css", table: "src/class-groups.ts", fixer: "regen" },
+      { requires: null },
+    );
 
     expect(Object.hasOwn(step, "requires")).toBe(false);
   });
@@ -650,8 +653,8 @@ describe("builders — derived watches", () => {
         [".types", ".types/**", "src", "src/**"],
       ],
       [classTokensStep({ root: "/nowhere", sources: ["src/ui"], stylesheet: "css/t.css" }), ["src/ui", "src/ui/**", "**/*.css"]],
-      [classGroupsStep({ root: "/nowhere", stylesheet: "css/t.css", table: "src/groups.ts" }), ["**/*.css", "src/groups.ts"]],
-      [designScaleStep({ root: "/nowhere", stylesheet: "css/t.css", table: "src/scale.ts" }), ["**/*.css", "src/scale.ts"]],
+      [classGroupsStep({ root: "/nowhere", stylesheet: "css/t.css", table: "src/groups.ts", fixer: "regen" }), ["**/*.css", "src/groups.ts"]],
+      [designScaleStep({ root: "/nowhere", stylesheet: "css/t.css", table: "src/scale.ts", fixer: "regen" }), ["**/*.css", "src/scale.ts"]],
       [cssTokensStep({ root: "/nowhere", stylesheet: "css/t.css", cssDir: "css" }), ["**/*.css"]],
       [iccProfileStep({ root: "/nowhere", profile: "pdf/p.icc", module: "pdf/icc.ts" }), ["pdf/p.icc", "pdf/icc.ts"]],
       [

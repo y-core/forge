@@ -15,6 +15,7 @@ const CONFIG: ClassGroupsCheckConfig = {
   root: ROOT,
   stylesheet: "src/ui/assets/css/tailwind.css",
   table: "src/ui/core/utils/class-groups.ts",
+  fixer: "bun run gen:class-groups",
   stateRecipes: FORGE_STATE_RECIPES,
 };
 const TABLE: ClassGroupTable = { statics: new Map([["block", "display"]]), roots: new Map(), overrides: new Map() };
@@ -31,9 +32,9 @@ function scratchDir(): string {
   return dir;
 }
 
-function committedModule(edit: (rendered: string) => string): string {
+function committedModule(edit: (rendered: string) => string, fixer = CONFIG.fixer): string {
   const path = resolve(scratchDir(), "class-groups.ts");
-  writeFileSync(path, edit(renderClassGroups(TABLE)), "utf-8");
+  writeFileSync(path, edit(renderClassGroups(TABLE, { ...CONFIG, fixer })), "utf-8");
   return path;
 }
 
@@ -51,12 +52,20 @@ describe("checkClassGroups and compareClassGroups", () => {
     expect(result.summary).toBe("src/ui/core/utils/class-groups.ts matches the table `src/ui/assets/css/tailwind.css` compiles to");
   });
 
-  it("fails when the committed table has been hand-edited", () => {
-    const table = committedModule((rendered) => rendered.replace('["block", "display"]', '["block", "position"]'));
+  it("names the configured fixer when the table is missing", () => {
+    const result = compareClassGroups({ ...CONFIG, table: resolve(scratchDir(), "absent.ts"), fixer: "forge-app gen groups" }, TABLE);
 
-    const result = compareClassGroups({ ...CONFIG, table }, TABLE);
+    expect(result.findings.map((finding) => finding.detail)).toEqual([["run `forge-app gen groups`"]]);
+  });
+
+  it("fails when the committed table has been hand-edited", () => {
+    const fixer = "forge-app gen groups";
+    const table = committedModule((rendered) => rendered.replace('["block", "display"]', '["block", "position"]'), fixer);
+
+    const result = compareClassGroups({ ...CONFIG, table, fixer }, TABLE);
     expect(result.ok).toBe(false);
     expect(result.findings.map((finding) => finding.message)).toEqual(["the committed conflict table no longer matches the design system"]);
+    expect(result.findings[0]?.detail).toContain("run `forge-app gen groups` and review the diff before committing it");
   });
 
   it("passes a whitespace-only edit, which the `format` step owns rather than this one", () => {
@@ -75,7 +84,7 @@ describe("checkClassGroups and compareClassGroups", () => {
 
 describe("writeClassGroups", () => {
   it("writes a module matching the committed table modulo formatting", async () => {
-    const table = resolve(scratchDir(), "written.ts");
+    const table = resolve(scratchDir(), "class-groups.ts");
 
     await writeClassGroups({ ...CONFIG, table });
     expect(canonical(readFileSync(table, "utf-8"))).toBe(canonical(readFileSync(resolve(ROOT, CONFIG.table), "utf-8")));
