@@ -293,7 +293,9 @@ nothing re-arms `Max-Age` — and since the expiry is inside the signature, noth
 
 **Reading `session.id` can itself mark the session dirty** — when the value the client presented would not reproduce that id, as on a first visit.
 Without that, a CSRF subject bound to `sessionCtx.getOptional(c)?.id` would mint a token under a throwaway id no cookie carried forward, and every
-anonymous mutation would answer 403. Where the cookie _is_ the id and storage restored it, nothing is written.
+anonymous mutation would answer 403. Over KV, a dirty session holding no data writes no record but its id is still issued as the cookie, and a
+signed id with no record is restored under the same id, so neither the first view nor the next one writes. Under `csrfProtection`, a `GET` reads
+the id only when the handler mints a token.
 
 **`createAnonymousSession` caches on the `env` object's identity, not on the cookie name and ring.** That is load-bearing: the cached middleware
 closes over the KV namespace `options.kv(c)` returned for the request that built it, so two tenants sharing a cookie name, secure flag and ring

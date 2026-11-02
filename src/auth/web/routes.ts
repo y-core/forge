@@ -25,6 +25,7 @@ export function authRoutes<base extends string>(basePath: base) {
     signinSubmit: post("/signin"),
     signup: get("/signup"),
     signupSubmit: post("/signup"),
+    signoutConfirm: get("/signout"),
     signout: post("/signout"),
     signoutSiteData: post("/signout/site-data"),
     verify: {

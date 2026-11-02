@@ -450,14 +450,42 @@ describe("resolveAuth", () => {
 });
 
 describe("requireAdmin", () => {
-  it("refuses a signed-in non-administrator", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))), requireAdmin()], { userId: "u1" });
-    expect((await app.request("/admin/users")).status).toBe(403);
+  const member = () => requireAuth(guardOptions(fakeUsers([fakeAuthUser()])));
+  const administrator = () => requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })])));
+  const answerOf = async (res: Response) => ({ status: res.status, type: res.headers.get("content-type"), body: await res.text() });
+
+  it("refuses a signed-in non-administrator with a plain-text 403 when no `onForbidden` is passed", async () => {
+    const app = guardedApp([member(), requireAdmin()], { userId: "u1" });
+    const res = await app.request("/admin/users");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
+  });
+
+  it("answers a signed-in non-administrator with the `onForbidden` response, handed the request's app context", async () => {
+    const onForbidden = (c: { readonly url: URL }) =>
+      new Response(`page for ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
+    const app = guardedApp([member(), requireAdmin({ onForbidden })], { userId: "u1" });
+    expect(await answerOf(await app.request("/admin/users"))).toEqual({ status: 403, type: "text/html", body: "page for /admin/users" });
+  });
+
+  it("answers with what an async `onForbidden` resolves to", async () => {
+    const app = guardedApp([member(), requireAdmin({ onForbidden: async () => new Response("later", { status: 451 }) })], { userId: "u1" });
+    const res = await app.request("/admin/users");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 451, body: "later" });
   });
 
   it("admits an administrator", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))), requireAdmin()], { userId: "u1" });
+    const app = guardedApp([administrator(), requireAdmin()], { userId: "u1" });
     expect(await (await app.request("/admin/users")).text()).toBe("users");
+  });
+
+  it("admits an administrator without consulting the `onForbidden` it was passed", async () => {
+    const consulted: string[] = [];
+    const onForbidden = (c: { readonly url: URL }) => {
+      consulted.push(c.url.pathname);
+      return new Response("refused", { status: 403 });
+    };
+    const app = guardedApp([administrator(), requireAdmin({ onForbidden })], { userId: "u1" });
+    expect({ body: await (await app.request("/admin/users")).text(), consulted }).toEqual({ body: "users", consulted: [] });
   });
 
   it("throws when no identity was established, rather than admitting the request", () => {
@@ -465,6 +493,19 @@ describe("requireAdmin", () => {
     expect(() => requireAdmin()(context, async () => new Response("ok"))).toThrow(
       "auth/web guard: no identity on this request — `requireAuth` must run before `requireAdmin`, which reads the identity it establishes.",
     );
+  });
+
+  it("throws on a missing identity before consulting `onForbidden`", () => {
+    const consulted: string[] = [];
+    const onForbidden = () => {
+      consulted.push("called");
+      return new Response("refused", { status: 403 });
+    };
+    const context = new RequestContext(new Request("http://localhost/admin/users"));
+    expect(() => requireAdmin({ onForbidden })(context, async () => new Response("ok"))).toThrow(
+      "auth/web guard: no identity on this request — `requireAuth` must run before `requireAdmin`, which reads the identity it establishes.",
+    );
+    expect(consulted).toEqual([]);
   });
 });
 
@@ -1228,6 +1269,38 @@ describe("createAuthGuards", () => {
       location: "/approve?next=%2Fadmin%2Felevate",
     });
     expect(await (await elevateApp({ approval: fakeApproval() }, { approved: true }).request("/admin/elevate")).text()).toBe("elevate");
+  });
+
+  /** An app running every stack `options` wires, over a fresh session signed in as `u1`, with the admin user list behind it. */
+  function adminListApp(options: Partial<AuthGuardChainOptions>): Forge {
+    const app = new Forge();
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+    app.use("*", (context, next) => {
+      sessionCtx.get(context).set(AUTH_SESSION_KEY, "u1");
+      sessionCtx.get(context).set(AUTH_SIGNED_IN_SESSION_KEY, Date.now());
+      sessionCtx.get(context).set(AUTH_STEP_UP_SESSION_KEY, Date.now());
+      return next();
+    });
+    for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
+    mapHandler(app, "GET", "/admin/users", () => new Response("users"));
+    return app;
+  }
+
+  it("refuses a non-administrator on `admin.users` with a plain-text 403 when the chain has no `onForbidden`", async () => {
+    const res = await adminListApp({}).request("/admin/users");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
+  });
+
+  it("answers a non-administrator on `admin.users` with the chain's `onForbidden`", async () => {
+    const onForbidden = (c: { readonly url: URL }) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+    const res = await adminListApp({ onForbidden }).request("/admin/users");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "admin only: /admin/users" });
+  });
+
+  it("admits an administrator on `admin.users` past a chain carrying `onForbidden`", async () => {
+    const onForbidden = () => new Response("admin only", { status: 403 });
+    const res = await adminListApp({ auth: guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })])), onForbidden }).request("/admin/users");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 200, body: "users" });
   });
 
   it("throws for every guard that reads the identity, not only `require-admin`", () => {

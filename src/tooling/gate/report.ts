@@ -75,15 +75,14 @@ export function formatList(
 
 /** The `--list` label of a step: its own, with how it reaches pending changes and the dependency it is conditional on below the `runtime` tier. */
 export function listLabel(step: Step, tier: GateTier, reach: StepReach = "whole"): string {
-  const label = reach === "whole" ? step.label : `${step.label} (${reach === "narrow" ? "narrowed to pending changes" : "untouched"})`;
+  const label = reach === "whole" ? step.label : `${step.label} (untouched)`;
   if (step.requires === undefined) return label;
   return failsWhenAbsent(tier) ? `${label} (requires ${step.requires.tool})` : `${label} (conditional — ${step.requires.tool} required)`;
 }
 
-/** Formats the line shown for a step no pending change touches, which the `runtime` tier runs nothing for, naming the `probe` command that found so when one did. */
-export function formatUntouched(label: string, changes: number, style: Colorize = PLAIN, probe?: string): string {
-  const why = probe === undefined ? "" : `: \`${probe}\` selects nothing`;
-  return `${style.yellow("○")} ${label} — untouched by ${changes} change${changes === 1 ? "" : "s"}${why}`;
+/** Formats the line shown for a step no pending change touches, which the `runtime` tier runs nothing for. */
+export function formatUntouched(label: string, changes: number, style: Colorize = PLAIN): string {
+  return `${style.yellow("○")} ${label} — untouched by ${changes} change${changes === 1 ? "" : "s"}`;
 }
 
 /** Formats the `--fix` closing line, which always points at the run that confirms it. */

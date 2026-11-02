@@ -13,14 +13,12 @@ import type { CsrfMinterOptions, CsrfProtectionOptions, CsrfResult, CsrfTokenOpt
 
 const CLOCK_SKEW_MS = 30_000;
 const CSRF_PURPOSE = "csrf";
+const refuseForbidden = (): Response => new Response("Forbidden", { status: 403 });
 
 const CSRF_MINTER_KEY = "csrf";
-const CSRF_TOKEN_KEY = "csrfToken";
 
 /** Typed accessor for the per-request CSRF minter function set by `csrfProtection`. @public */
 export const csrfMinterCtx = contextVar<(path: string) => Promise<string>>(CSRF_MINTER_KEY);
-/** Typed accessor for the pre-minted CSRF token, bound to the current request's pathname, set by `csrfProtection` on GET/HEAD. @public */
-export const csrfTokenCtx = contextVar<string>(CSRF_TOKEN_KEY);
 
 /** Creates a signed CSRF token embedding the ring's active kid, path, optional subject, timestamp, and 16 random bytes. @public */
 export async function createCsrfToken(ring: KeyRing, path: string, options: CsrfTokenOptions = {}): Promise<string> {
@@ -114,7 +112,7 @@ export function csrfMinter(options: CsrfMinterOptions): (context: RequestContext
   };
 }
 
-/** Middleware that sets a CSRF token on GET requests and verifies it on mutations. @public */
+/** Middleware that publishes a CSRF minter on every request and verifies the token on mutations. @public */
 export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const { tokenField = CSRF_FIELD_DEFAULT, headerName = CSRF_HEADER_DEFAULT } = options;
   const parseOptions: ParseFormDataOptions = options.maxBytes !== undefined ? { maxBytes: options.maxBytes } : {};
@@ -122,6 +120,7 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   const resolveRing = createKeyRingResolver(options.ring);
 
   const resolveSubject = options.subject === false ? null : options.subject;
+  const onForbidden = options.onForbidden ?? refuseForbidden;
 
   let unboundWarned = false;
   const warnUnbound = () => {
@@ -135,21 +134,29 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
   return async (context, next) => {
     const method = context.method.toUpperCase();
     const ring = await resolveRing(context);
-    const subject = resolveSubject ? resolveSubject(context) : undefined;
-    if (resolveSubject && subject === undefined) warnUnbound();
-    const tokenOptions: CsrfTokenOptions = subject !== undefined ? { subject } : {};
+    let resolved: { subject: string | undefined } | undefined;
+    const subjectOf = (): string | undefined => {
+      if (resolved === undefined) {
+        resolved = { subject: resolveSubject ? resolveSubject(context) : undefined };
+        if (resolveSubject && resolved.subject === undefined) warnUnbound();
+      }
+      return resolved.subject;
+    };
 
-    csrfMinterCtx.set(context, (path: string) => createCsrfToken(ring, path, tokenOptions));
+    csrfMinterCtx.set(context, (path: string) => {
+      const subject = subjectOf();
+      return createCsrfToken(ring, path, subject !== undefined ? { subject } : {});
+    });
     csrfFieldCtx.set(context, tokenField);
     csrfHeaderCtx.set(context, headerName);
 
     if (method === "GET" || method === "HEAD") {
-      csrfTokenCtx.set(context, await createCsrfToken(ring, context.url.pathname, tokenOptions));
       return next();
     }
 
+    const subject = subjectOf();
     if (resolveSubject && subject === undefined) {
-      return new Response("Forbidden", { status: 403 });
+      return onForbidden(context, "unbound-subject");
     }
 
     const headerToken = context.request.headers.get(headerName);
@@ -169,7 +176,7 @@ export function csrfProtection(options: CsrfProtectionOptions): Middleware {
 
     const result = await verifyCsrfToken(ring, token ?? "", context.url.pathname, { ...(subject !== undefined ? { subject } : {}) });
     if (!result.ok) {
-      return new Response("Forbidden", { status: 403 });
+      return onForbidden(context, result.error);
     }
 
     return next();

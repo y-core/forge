@@ -69,9 +69,11 @@ export type { AuthDecoyStores, AuthDeferral, AuthFlowChallenge, AuthIssueOutcome
 export type {
   AuthEmailChangeConfirm,
   AuthEmailChangeFlow,
+  AuthEmailChangeInspect,
   AuthEmailChangeOptions,
   AuthEmailChangeReason,
   AuthEmailChangeRequest,
+  AuthEmailChangeStage,
 } from "./flows/types";
 export { createEmailChangeFlow } from "./flows/email-change";
 export type { AuthSignin, AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./flows/types";

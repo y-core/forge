@@ -112,6 +112,12 @@ describe("parseResources()", () => {
     expect(deploy).not.toContain("local_vars");
   });
 
+  it("expands build to the Workers Builds variables alone, which the catch-all deploy category does not claim", () => {
+    expect(parseResources("build")).toEqual(["build_vars"]);
+    expect(parseResources("deploy")).not.toContain("build_vars");
+    expect(parseResources("commit")).not.toContain("build_vars");
+  });
+
   it("dedupes a category overlapping a type named alongside it", () => {
     // `-r commit,secrets` would otherwise run the secrets handler twice.
     expect(parseResources("commit,secrets")).toEqual(["secrets", "kv_namespaces", "d1_databases", "r2_buckets", "queues"]);
@@ -129,7 +135,9 @@ describe("parseResources()", () => {
 
   it("names every unknown type and lists the valid ones", () => {
     expect(() => parseResources("vars,nope,alsonope")).toThrow(/Unknown resources: nope, alsonope/);
-    expect(() => parseResources("nope")).toThrow(/Valid categories: local, deploy, secrets, provision, rotate, commit; types: kv_namespaces, /);
+    expect(() => parseResources("nope")).toThrow(
+      /Valid categories: local, deploy, secrets, provision, rotate, build, commit; types: kv_namespaces, /,
+    );
   });
 
   it("rejects an empty list", () => {
@@ -338,6 +346,23 @@ describe("printResults()", () => {
     expect(lines.at(-1)).toBe("  No .dev.vars at /tmp/.dev.vars.");
   });
 
+  it("renders a build variable under its own section, with the rule --commit applies to it", () => {
+    const build: SyncResult = {
+      resourceType: "build_vars",
+      binding: "BUN_VERSION",
+      action: "drift",
+      local: true,
+      remote: true,
+      detail: 'production · "1.2.15" → "1.3.1"',
+    };
+    const lines = capture([VAR, build]);
+    expect(headings(lines)).toEqual(["worker script · commands-fixture", "Pushed by the Next Deploy", "Set by --commit"]);
+    expect(noteUnder(lines, "Set by --commit")).toBe(
+      "Workers Builds variables derived from package.json; --commit creates or overwrites them in each build settings scope",
+    );
+    expect(lines.slice(lines.indexOf("Set by --commit")).some((l) => isGridLine(l) && l.includes("BUN_VERSION"))).toBe(true);
+  });
+
   it("omits a section that has no rows", () => {
     expect(headings(capture([DECLARED]))).toEqual(["worker script · commands-fixture", "Pushed by the Next Deploy"]);
   });
@@ -355,6 +380,24 @@ describe("summariseCommit()", () => {
   it("counts only the pending work, not what a deploy owns", () => {
     expect(summariseCommit([row("would-create"), row("deploy-pushes"), row("drift"), row("remote-only")])).toBe(
       "(status only — nothing was written. --commit would create 1. Re-run with --commit to apply.)",
+    );
+  });
+
+  const build = (action: SyncResult["action"]): SyncResult => ({ resourceType: "build_vars", binding: "BUN_VERSION", action });
+
+  it("counts a build variable's drift as an update, since --commit overwrites it", () => {
+    expect(summariseCommit([build("drift")])).toBe("(status only — nothing was written. --commit would update 1. Re-run with --commit to apply.)");
+  });
+
+  it("still leaves a var's drift to the deploy", () => {
+    expect(summariseCommit([{ resourceType: "vars", binding: "V", action: "drift" }])).toBe(
+      "(status only — nothing was written, and --commit would change nothing here.)",
+    );
+  });
+
+  it("lists creates, rotates and updates together in that order", () => {
+    expect(summariseCommit([build("drift"), row("would-rotate"), build("would-create")])).toBe(
+      "(status only — nothing was written. --commit would create 1 and rotate 1 and update 1. Re-run with --commit to apply.)",
     );
   });
 

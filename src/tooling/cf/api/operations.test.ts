@@ -31,6 +31,16 @@ const SAMPLES: Record<OperationKey, { good: unknown; bad?: unknown }> = {
   getWorkerSettings: { good: { bindings: [{ type: "plain_text", name: "A", text: "x" }] }, bad: { bindings: [{ type: "plain_text" }] } },
   listWorkerSecrets: { good: [{ name: "S", type: "secret_text" }], bad: [{ type: "secret_text" }] },
   putWorkerSecret: { good: null },
+  listWorkerScripts: { good: [{ id: "w", tag: "t1" }], bad: [{ id: "w" }] },
+  getWorkerBuildSettings: {
+    good: {
+      production_settings: { environment_variables: { BUN_VERSION: { value: "1.3.1", is_secret: false } } },
+      previews_base_config: { environment_variables: null },
+      previews_enabled: true,
+    },
+    bad: { production_settings: { environment_variables: { BUN_VERSION: { value: 1 } } } },
+  },
+  patchWorkerBuildSettings: { good: {} },
   getZoneEntrypointRuleset: {
     good: { rules: [{ action: "block", expression: "true", description: "d", enabled: true }] },
     bad: { rules: [{ action: "block", enabled: true }] },
@@ -45,6 +55,7 @@ function callOperation(key: OperationKey, body: unknown): Promise<Result<unknown
   const method = operation.name.split(" ")[0];
   if (method === "GET") return client.get("/p", operation);
   if (method === "POST") return client.post("/p", {}, operation);
+  if (method === "PATCH") return client.patch("/p", {}, operation);
   return client.put("/p", {}, operation);
 }
 
@@ -70,7 +81,7 @@ describe("CF_OPERATIONS", () => {
     });
   }
 
-  for (const key of ["listR2Buckets", "getWorkerSettings", "getZoneEntrypointRuleset"] as const) {
+  for (const key of ["listR2Buckets", "getWorkerSettings", "getWorkerBuildSettings", "getZoneEntrypointRuleset"] as const) {
     it(`${key} refuses a list result, which would otherwise read as an empty one`, async () => {
       const r = await callOperation(key, envelope([]));
       expect(r.ok ? null : r.error.kind).toBe("schema");
@@ -91,6 +102,27 @@ describe("CF_OPERATIONS", () => {
 
   it("reads worker settings without bindings as holding none", async () => {
     expect(await callOperation("getWorkerSettings", envelope({}))).toEqual({ ok: true, data: { bindings: [] } });
+  });
+
+  it("reads build settings without either scope as holding neither, with previews disabled", async () => {
+    expect(await callOperation("getWorkerBuildSettings", envelope({}))).toEqual({
+      ok: true,
+      data: { production_settings: undefined, previews_base_config: undefined, previews_enabled: false },
+    });
+  });
+
+  it("reads a secret build variable that returns no value as a secret with none", async () => {
+    const r = await createCfClient(AUTH, async () =>
+      Response.json(envelope({ production_settings: { environment_variables: { T: { is_secret: true } } } })),
+    ).get("/p", CF_OPERATIONS.getWorkerBuildSettings);
+    expect(r.ok ? r.data.production_settings?.environment_variables?.T : null).toEqual({ is_secret: true });
+  });
+
+  it("reads a build variable without is_secret as a plain one", async () => {
+    const r = await createCfClient(AUTH, async () =>
+      Response.json(envelope({ production_settings: { environment_variables: { V: { value: "1" } } } })),
+    ).get("/p", CF_OPERATIONS.getWorkerBuildSettings);
+    expect(r.ok ? r.data.production_settings?.environment_variables?.V : null).toEqual({ value: "1", is_secret: false });
   });
 
   it("reads an entry point ruleset without rules as holding none", async () => {

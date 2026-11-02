@@ -417,7 +417,12 @@ export function fakeAuthSignupFlow(overrides: Partial<AuthSignupFlow> = {}): Aut
 
 /** An email-change flow refusing everything until a test says otherwise. @internal */
 export function fakeAuthEmailChangeFlow(overrides: Partial<AuthEmailChangeFlow> = {}): AuthEmailChangeFlow {
-  return { request: async () => err("unavailable" as const), confirm: async () => err("unavailable" as const), ...overrides };
+  return {
+    request: async () => err("unavailable" as const),
+    inspect: async () => err("unavailable" as const),
+    confirm: async () => err("unavailable" as const),
+    ...overrides,
+  };
 }
 
 /** Every href map the loaders read, built from the route builders at their default mounts. @internal */

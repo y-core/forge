@@ -4,10 +4,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { render } from "../../../testing/render";
+import { Button } from "../../../ui/core/button";
 import { authPaths } from "../paths";
 import { authRoutes } from "../routes";
-import { attrOf, attrsOf, textOf } from "../web.fixture";
-import { AuthSignout } from "./signout";
+import { attrOf, attrsOf, elementOf, elementsOf, tagOf, textOf } from "../web.fixture";
+import { AuthSignout, SignoutConfirmView } from "./signout";
 
 const AUTH = authPaths(authRoutes("/auth"));
 
@@ -61,5 +62,61 @@ describe("AuthSignout", () => {
 
     expect(attrOf(placed, 'data-ref="signout"', "class")).toBe(`${attrOf(plain, 'data-ref="signout"', "class")} w-full`);
     expect(attrOf(placed, 'data-slot="form"', "class")).toBe("");
+  });
+});
+
+describe("SignoutConfirmView", () => {
+  it("offers one form that posts the sign-out with the token it was given", async () => {
+    const html = await render(<SignoutConfirmView submitPath={AUTH.signout()} csrfToken='fresh-tok' />);
+
+    expect({
+      forms: elementsOf(html, "form", 'data-slot="form"').length,
+      action: attrOf(html, 'data-slot="form"', "action"),
+      method: attrOf(html, 'data-slot="form"', "method"),
+      token: attrsOf(html, 'data-slot="form-csrf"'),
+      type: attrOf(html, 'data-ref="signout"', "type"),
+      label: textOf(html, "button", 'data-ref="signout"'),
+    }).toEqual({
+      forms: 1,
+      action: "/auth/signout",
+      method: "post",
+      token: { "data-slot": "form-csrf", type: "hidden", name: "_csrf", value: "fresh-tok" },
+      type: "submit",
+      label: "Sign out",
+    });
+  });
+
+  it("titles the page Sign out and says what the button does", async () => {
+    const html = await render(<SignoutConfirmView submitPath={AUTH.signout()} csrfToken='tok' />);
+
+    expect({ heading: elementOf(html, "h1", 'class="text-xl"'), description: textOf(html, "div", 'data-slot="card-description"') }).toEqual({
+      heading: '<h1 class="text-xl">Sign out</h1>',
+      description: "End your session on this device.",
+    });
+  });
+
+  it("makes the sign-out the page's primary solid control", async () => {
+    const html = await render(<SignoutConfirmView submitPath={AUTH.signout()} csrfToken='tok' />);
+    const primary = await render(
+      <Button tone='primary' appearance='solid'>
+        x
+      </Button>,
+    );
+
+    expect(attrOf(html, 'data-ref="signout"', "class")).toBe(attrOf(primary, 'data-slot="button"', "class"));
+  });
+
+  it("carries the token on the header the app renamed it to", async () => {
+    const html = await render(<SignoutConfirmView submitPath={AUTH.signout()} csrfToken='tok' csrfHeader='X-App-Token' />);
+
+    expect(attrOf(html, 'data-slot="form"', "hx-headers")).toBe("{&quot;X-App-Token&quot;:&quot;tok&quot;}");
+  });
+
+  it("lands the host's class after its own on the card", async () => {
+    const plain = await render(<SignoutConfirmView submitPath={AUTH.signout()} csrfToken='tok' />);
+    const placed = await render(<SignoutConfirmView submitPath={AUTH.signout()} csrfToken='tok' class='mt-8' />);
+
+    expect(attrOf(placed, 'data-slot="card"', "class")).toBe(`${attrOf(plain, 'data-slot="card"', "class")} mt-8`);
+    expect(tagOf(placed, 'data-slot="form"')).toBe(tagOf(plain, 'data-slot="form"'));
   });
 });

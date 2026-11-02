@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it, spyOn } from "bun:test";
 import { RequestContext } from "@remix-run/fetch-router";
 
 import { Forge } from "../app/forge-app";
+import { contextVar } from "../context/accessor";
 import type { AppContext } from "../context/types";
 import { HMAC_DOMAIN, importKeyRing, importKeyRingUnder } from "../crypto/keyring/ring";
 import { resolveKeyRingKey } from "../crypto/keyring/subkey";
@@ -10,9 +11,10 @@ import type { KeyRing } from "../crypto/keyring/types";
 import { base64urlDecode, base64urlEncode, hmacSign, hmacVerify, utf8Decode, utf8Encode } from "../crypto/primitives/mod";
 import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
-import { createCsrfToken, csrfMinter, csrfMinterCtx, csrfProtection, csrfTokenCtx, mintCsrf, verifyCsrfToken } from "./csrf";
+import { createCsrfToken, csrfMinter, csrfMinterCtx, csrfProtection, mintCsrf, verifyCsrfToken } from "./csrf";
 import { csrfFieldCtx, csrfHeaderCtx } from "./csrf-context";
 import { parseFormData } from "./parse-form-data";
+import type { CsrfFailure, CsrfProtectionOptions, CsrfRefusal } from "./types";
 
 const HEX_KEY_A = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
 
@@ -110,19 +112,10 @@ describe("csrfProtection middleware", () => {
   function makeApp() {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
     return app;
   }
-
-  it("GET sets csrfToken on context", async () => {
-    const app = makeApp();
-    const res = await app.request("/test");
-    expect(res.status).toBe(200);
-    const token = await res.text();
-    expect(token).not.toBe("");
-    expect(token).toContain(".");
-  });
 
   it("POST with valid X-CSRF-Token header passes", async () => {
     const app = makeApp();
@@ -178,12 +171,13 @@ describe("csrfProtection middleware", () => {
     const app = makeApp();
     const res = await app.request("/test", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: "name=Jane" });
     expect(res.status).toBe(403);
+    expect(await res.text()).toBe("Forbidden");
   });
 
   it("respects custom headerName option", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, headerName: "X-My-Token", subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test");
@@ -208,7 +202,7 @@ describe("csrfProtection middleware", () => {
   it("publishes the header name on a mutation too", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, headerName: "X-My-Token", subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.get(c)));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", (c) => new Response(csrfHeaderCtx.get(c)));
 
     const token = await (await app.request("/test")).text();
@@ -219,7 +213,7 @@ describe("csrfProtection middleware", () => {
   it("publishes the token field name it consumed on a mutation", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, tokenField: "my_csrf", subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.get(c)));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", (c) => new Response(csrfFieldCtx.get(c)));
 
     const token = await (await app.request("/test")).text();
@@ -265,7 +259,7 @@ describe("csrfProtection middleware", () => {
     let captured: string | null = null;
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", async (c) => {
       const fd = await parseFormData(c);
       captured = fd.get("name") as string;
@@ -285,12 +279,12 @@ describe("csrfProtection middleware", () => {
     expect(captured).toBe("Alice");
   });
 
-  it("a HEAD request mints csrfToken on context through the GET Forge rewrites it to", async () => {
+  it("a HEAD request's handler can mint through the GET Forge rewrites it to", async () => {
     let capturedToken: string | undefined;
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, subject: false }));
-    mapHandler(app, "GET", "/test", (c) => {
-      capturedToken = csrfTokenCtx.getOptional(c);
+    mapHandler(app, "GET", "/test", async (c) => {
+      capturedToken = await mintCsrf(c, "/test");
       return new Response("body");
     });
     const res = await app.request("/test", { method: "HEAD" });
@@ -303,7 +297,7 @@ describe("csrfProtection middleware", () => {
   it("subject binding — wrong session returns 403, matching session returns 200", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, subject: (c) => c.request.headers.get("x-session") ?? undefined }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test", { headers: { "x-session": "session-a" } });
@@ -319,7 +313,7 @@ describe("csrfProtection middleware", () => {
   it("subject resolver returning undefined — a mutation is refused rather than verified unbound", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, subject: (c) => c.request.headers.get("x-session") ?? undefined }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const token = await (await app.request("/test")).text();
@@ -350,10 +344,111 @@ describe("csrfProtection middleware", () => {
     expect(warnings.filter((w) => w.startsWith("[csrf]"))).toHaveLength(1);
   });
 
+  it("a GET whose handler mints nothing never calls the subject resolver", async () => {
+    let calls = 0;
+    const app = new Forge();
+    app.use(
+      "*",
+      csrfProtection({
+        ring: () => ring,
+        subject: () => {
+          calls += 1;
+          return "session-a";
+        },
+      }),
+    );
+    mapHandler(app, "GET", "/test", () => new Response("page"));
+
+    const res = await app.request("/test");
+    expect(await res.text()).toBe("page");
+    expect(calls).toBe(0);
+  });
+
+  it("a GET resolves the subject once however many tokens its handler mints", async () => {
+    let calls = 0;
+    const app = new Forge();
+    app.use(
+      "*",
+      csrfProtection({
+        ring: () => ring,
+        subject: () => {
+          calls += 1;
+          return "session-a";
+        },
+      }),
+    );
+    mapHandler(app, "GET", "/test", async (c) => Response.json([await mintCsrf(c, "/test"), await mintCsrf(c, "/other")]));
+
+    const [first, second] = (await (await app.request("/test")).json()) as [string, string];
+    expect(calls).toBe(1);
+    expect(await verifyCsrfToken(ring, first, "/test", { subject: "session-a" })).toEqual({ ok: true });
+    expect(await verifyCsrfToken(ring, second, "/other", { subject: "session-a" })).toEqual({ ok: true });
+  });
+
+  it("a GET binds the token to the subject a later middleware publishes before the mint", async () => {
+    const lateSubject = contextVar<string>("csrf-test-late-subject");
+    const app = new Forge();
+    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => lateSubject.getOptional(c) }));
+    app.use("*", async (c, next) => {
+      lateSubject.set(c, "published-late");
+      return next();
+    });
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, "/test")));
+
+    const token = await (await app.request("/test")).text();
+    expect(await verifyCsrfToken(ring, token, "/test", { subject: "published-late" })).toEqual({ ok: true });
+  });
+
+  it("a mutation resolves the subject once, before its handler runs", async () => {
+    let calls = 0;
+    let callsWhenHandlerRan = -1;
+    const app = new Forge();
+    app.use(
+      "*",
+      csrfProtection({
+        ring: () => ring,
+        subject: () => {
+          calls += 1;
+          return "session-a";
+        },
+      }),
+    );
+    mapHandler(app, "POST", "/test", async (c) => {
+      callsWhenHandlerRan = calls;
+      return new Response(await mintCsrf(c, "/test"));
+    });
+
+    const token = await createCsrfToken(ring, "/test", { subject: "session-a" });
+    const res = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } });
+    expect(res.status).toBe(200);
+    expect(callsWhenHandlerRan).toBe(1);
+    expect(calls).toBe(1);
+  });
+
+  it("a GET that mints under an undefined subject warns once", async () => {
+    const warnings: string[] = [];
+    const original = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(String(args[0]));
+    };
+    try {
+      const app = new Forge();
+      app.use("*", csrfProtection({ ring: () => ring, subject: () => undefined }));
+      mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, "/test")));
+
+      await app.request("/test");
+      await app.request("/test");
+    } finally {
+      console.warn = original;
+    }
+
+    expect(warnings.filter((w) => w.startsWith("[csrf]"))).toHaveLength(1);
+  });
+
   it("subject: false — path-only token verifies regardless of session (no subject binding)", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test", { headers: { "x-session": "session-a" } });
@@ -370,7 +465,7 @@ describe("csrfProtection middleware", () => {
 
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => rotated, subject: false }));
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test");
@@ -401,7 +496,7 @@ describe("csrfProtection middleware with typed resolver", () => {
         subject: false,
       }),
     );
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
 
     const res = await app.request("/test", undefined, { MY_SECRET: "test-value" });
     expect(res.status).toBe(200);
@@ -426,7 +521,7 @@ describe("csrfProtection middleware with resolver secret", () => {
         subject: false,
       }),
     );
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test", undefined, sharedEnv);
@@ -460,7 +555,7 @@ describe("csrfProtection middleware with resolver secret", () => {
         subject: false,
       }),
     );
-    mapHandler(app, "GET", "/test", (c) => new Response(csrfTokenCtx.getOptional(c) ?? ""));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
     mapHandler(app, "POST", "/test", () => new Response("ok"));
 
     const getRes = await app.request("/test", undefined, envA);
@@ -843,5 +938,142 @@ describe("csrfProtection — body cap conflicts", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("Alice");
+  });
+});
+
+describe("csrfProtection — onForbidden", () => {
+  const STALE_MS = 24 * 3_600_000;
+  const BEYOND_SKEW_MS = 10 * 60_000;
+  const NONCE = "aa".repeat(16);
+  let ring: KeyRing;
+
+  beforeAll(async () => {
+    ring = await importKeyRing([HEX_SECRET]);
+  });
+
+  function makeApp(onForbidden: NonNullable<CsrfProtectionOptions["onForbidden"]>) {
+    const app = new Forge();
+    app.use("*", csrfProtection({ ring: () => ring, subject: (c) => c.request.headers.get("x-session") ?? undefined, maxBytes: 64, onForbidden }));
+    mapHandler(app, "GET", "/test", async (c) => new Response(await mintCsrf(c, c.url.pathname)));
+    mapHandler(app, "POST", "/test", () => new Response("ok"));
+    return app;
+  }
+
+  function recordingHook() {
+    const calls: Array<{ path: string; reason: CsrfRefusal }> = [];
+    const hook = (c: RequestContext, reason: CsrfRefusal) => {
+      calls.push({ path: c.url.pathname, reason });
+      return new Response(`refused: ${reason}`, { status: 418 });
+    };
+    return { calls, hook };
+  }
+
+  const tokenRefusals: Array<{ reason: CsrfFailure; token: () => Promise<string | undefined> }> = [
+    { reason: "missing-token", token: async () => undefined },
+    { reason: "invalid-format", token: async () => "no-dot" },
+    {
+      reason: "invalid-signature",
+      token: async () => `${(await createCsrfToken(ring, "/test", { subject: "session-a" })).split(".")[0]}.aGVsbG8gd29ybGQ`,
+    },
+    { reason: "path-mismatch", token: () => createCsrfToken(ring, "/other", { subject: "session-a" }) },
+    { reason: "subject-mismatch", token: () => createCsrfToken(ring, "/test", { subject: "session-b" }) },
+    { reason: "unknown-key", token: async () => createCsrfToken(await importKeyRing([HEX_KEY_A]), "/test", { subject: "session-a" }) },
+    { reason: "expired", token: () => signCsrfPayload(ring, `${ring.activeKeyId}|/test|session-a|${Date.now() - STALE_MS}|${NONCE}`) },
+    {
+      reason: "future-timestamp",
+      token: () => signCsrfPayload(ring, `${ring.activeKeyId}|/test|session-a|${Date.now() + BEYOND_SKEW_MS}|${NONCE}`),
+    },
+  ];
+
+  for (const { reason, token } of tokenRefusals) {
+    it(`answers a "${reason}" refusal with the hook's response, passing the request's context`, async () => {
+      const { calls, hook } = recordingHook();
+      const value = await token();
+      const res = await makeApp(hook).request("/test", {
+        method: "POST",
+        headers: { "x-session": "session-a", ...(value !== undefined ? { "X-CSRF-Token": value } : {}) },
+      });
+      expect(res.status).toBe(418);
+      expect(await res.text()).toBe(`refused: ${reason}`);
+      expect(calls).toEqual([{ path: "/test", reason }]);
+    });
+  }
+
+  it('answers an "unbound-subject" refusal with the hook\'s response', async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { calls, hook } = recordingHook();
+      const app = makeApp(hook);
+      const token = await (await app.request("/test")).text();
+      const res = await app.request("/test", { method: "POST", headers: { "X-CSRF-Token": token } });
+      expect(res.status).toBe(418);
+      expect(await res.text()).toBe("refused: unbound-subject");
+      expect(calls).toEqual([{ path: "/test", reason: "unbound-subject" }]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("awaits an async hook and returns the response it resolves to", async () => {
+    const app = makeApp(async (_c, reason) => {
+      await Promise.resolve();
+      return new Response(`later: ${reason}`, { status: 409 });
+    });
+    const res = await app.request("/test", { method: "POST", headers: { "x-session": "session-a", "X-CSRF-Token": "no-dot" } });
+    expect(res.status).toBe(409);
+    expect(await res.text()).toBe("later: invalid-format");
+  });
+
+  it("never calls the hook on a valid POST, which reaches the handler", async () => {
+    const { calls, hook } = recordingHook();
+    const app = makeApp(hook);
+    const token = await (await app.request("/test", { headers: { "x-session": "session-a" } })).text();
+    const res = await app.request("/test", { method: "POST", headers: { "x-session": "session-a", "X-CSRF-Token": token } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+    expect(calls).toEqual([]);
+  });
+
+  it("never calls the hook on a GET, even with no session to bind to", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const { calls, hook } = recordingHook();
+      const res = await makeApp(hook).request("/test");
+      expect(res.status).toBe(200);
+      expect(calls).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("answers an oversize body 413 without calling the hook", async () => {
+    const { calls, hook } = recordingHook();
+    const res = await makeApp(hook).request("/test", {
+      method: "POST",
+      headers: { "x-session": "session-a", "content-type": "application/x-www-form-urlencoded" },
+      body: `name=${"x".repeat(200)}`,
+    });
+    expect(res.status).toBe(413);
+    expect(await res.text()).toBe("Payload Too Large");
+    expect(calls).toEqual([]);
+  });
+
+  it("rethrows a cap conflict to the error boundary without calling the hook", async () => {
+    const { calls, hook } = recordingHook();
+    const app = new Forge();
+    app.use("*", async (c, next) => {
+      await parseFormData(c, { maxBytes: 64 }).catch(() => {});
+      return next();
+    });
+    app.use("*", csrfProtection({ ring: () => ring, subject: false, maxBytes: 5000, onForbidden: hook }));
+    mapHandler(app, "POST", "/upload", () => new Response("ok"));
+
+    const res = await app.request("/upload", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: `name=${"x".repeat(200)}`,
+    });
+    expect(res.status).toBe(500);
+    expect(calls).toEqual([]);
   });
 });

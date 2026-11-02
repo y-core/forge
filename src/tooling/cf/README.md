@@ -209,6 +209,21 @@ Keep every old key in the value you paste. Split the variable in the Worker with
 
 ---
 
+## Pinning Bun for Workers Builds
+
+Workers Builds installs its own default Bun unless the build variable `BUN_VERSION` is set, and it ignores `packageManager`. Pin the version in
+the `package.json` beside `wrangler.jsonc`:
+
+```json
+{ "packageManager": "bun@1.3.1" }
+```
+
+`cf sync` reads `BUN_VERSION` from it and reports a row for each build settings scope: production, and previews when previews are enabled.
+`--commit` writes it, **overwriting a different value** — the one value `cf sync --commit` replaces rather than leaves alone. A version that is not
+an exact `bun@X.Y.Z` is refused. With no `bun@` entry there is no row, and a Worker with no Workers Builds configuration reads `unavailable`.
+
+---
+
 ## Setting up credentials
 
 `--account-id` and `--api-token`, and nothing else: an exported `CLOUDFLARE_*` variable is not read. Pass the token as `--api-token "$VAR"` so
@@ -222,6 +237,10 @@ touches — **Read** for a status run, **Edit** for `--commit`:
 | D1 databases | D1 |
 | R2 buckets | Workers R2 Storage |
 | queues | Queues |
+| a Worker's Workers Builds variables (`BUN_VERSION`) | Workers CI — **Write**, not Edit, for `--commit` |
+
+The Workers Builds API accepts only a **user-scoped** token: an account-scoped one is refused as "Invalid token" even when it carries Workers CI.
+The dashboard lists that permission as "Workers Builds Configuration".
 
 **An auth failure does not tell you which.** Cloudflare returns one code for a token it rejects and for a valid token missing a permission, so the
 row names both and prints Cloudflare's own message beneath the table. To separate them without guessing, ask Cloudflare about the token itself:

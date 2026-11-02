@@ -143,17 +143,17 @@ describe("the gate's watches", () => {
     ]);
   });
 
-  it("keeps a hand-kept watch list and any narrowing off every Playwright row", () => {
+  it("keeps a hand-kept watch list and any `widen` off every Playwright row", () => {
     const playwright = STEPS.filter((step) => step.cmd?.[0] === "playwright");
 
-    expect(playwright.map((step) => [step.label, step.watches, step.narrow, step.widen])).toEqual([
-      ["test:browser", undefined, undefined, undefined],
-      ["test:workerd", undefined, undefined, undefined],
-      ["test:browser:cross-engine", undefined, undefined, undefined],
+    expect(playwright.map((step) => [step.label, step.watches, step.widen])).toEqual([
+      ["test:browser", undefined, undefined],
+      ["test:workerd", undefined, undefined],
+      ["test:browser:cross-engine", undefined, undefined],
     ]);
   });
 
-  it("passes the gate's own refusal of a watches or wide glob that matches no file in the work tree", () => {
+  it("passes the gate's own refusal of a watches glob that matches no file in the work tree", () => {
     const files = worktreeFiles(ROOT) ?? [];
     const selection = selectSteps(TABLE, { tier: "scheduled", files });
 

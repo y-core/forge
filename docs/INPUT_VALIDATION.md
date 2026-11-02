@@ -187,8 +187,9 @@ already gone and no cap can serve it — so `parseFormData` throws a distinct wi
 
 ### 3a. `csrfProtection` Middleware — Guard Mutating Routes
 
-`csrfProtection(options)` is a `Middleware` that mints a path-bound token on `GET`/`HEAD` (exposed via `csrfTokenCtx` / `csrfMinterCtx`) and
-verifies the submitted token on mutations against the HMAC key or key ring resolved from the configured secret.
+`csrfProtection(options)` is a `Middleware` that publishes a minter (`csrfMinterCtx`, reached through `mintCsrf`) on every request, mints a
+path-bound token only when asked, and verifies the submitted token on mutations against the HMAC key or key ring resolved from the configured
+secret.
 
 The token is read from the `X-CSRF-Token` header, falling back to the `_csrf` form field (`CSRF_FIELD_DEFAULT`; override with `tokenField` /
 `headerName`). **It returns `403` when the token is absent, malformed, expired, path-mismatched, subject-mismatched, or badly signed.**
@@ -237,7 +238,7 @@ shares no key with them.
 preventing reuse across endpoints. It **throws** when `path` is missing or empty, or when no minter is on the context (i.e. `csrfProtection` is not
 mounted on the route).
 
-When the form POSTs back to the path it was rendered on, read the pre-minted `csrfTokenCtx.get(c)` instead. **Mint one token per form render; never
+When the form POSTs back to the path it was rendered on, mint with `mintCsrf(c, c.url.pathname)`. **Mint one token per form render; never
 cache across requests.**
 
 ### 3d. `createCsrfToken` and `verifyCsrfToken` — Lower-Level API

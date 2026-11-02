@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { bytesToHex, hexToBytes, utf8Encode } from "../primitives/mod";
 import { importKeyRing, importKeyRingUnder } from "./ring";
-import { hmacUnderKeyRing, signWithKeyRing, verifyWithKeyRing } from "./sign";
+import { hmacUnderKeyRing, hmacVerifyUnderKeyRing, signWithKeyRing, verifyWithKeyRing } from "./sign";
 import type { KeyRing } from "./types";
 
 const SECRET_A = "a70bf50e531ce1a817561f2f5d5b6645d4e806becf58ccc5e8cf6b8045a090a8";
@@ -60,6 +60,16 @@ describe("hmacUnderKeyRing", () => {
     const domain = { keyIdLabel: "y-core/forge/keyring/kid", subkeyLabel: "y-core/forge/keyring/pseudonym/v1" };
     const { mac } = await hmacUnderKeyRing("test", ring, domain, "notes", "user");
     expect(bytesToHex(mac)).toBe(await webCryptoMac(SECRET_A, domain.subkeyLabel, "notes", "user"));
+  });
+});
+
+describe("hmacVerifyUnderKeyRing", () => {
+  it("verifies under the subkey label of the domain it is given, and no other", async () => {
+    const ring = await ringOf(SECRET_A);
+    const domain = { keyIdLabel: "y-core/forge/keyring/kid", subkeyLabel: "y-core/forge/keyring/pseudonym/v1" };
+    const { kid, mac } = await hmacUnderKeyRing("test", ring, domain, "notes", "user");
+    expect(await hmacVerifyUnderKeyRing("test", ring, domain, "notes", { kid, data: "user", mac })).toBe("verified");
+    expect(await verifyWithKeyRing("test", ring, "notes", kid, "user", mac)).toBe("forged");
   });
 });
 

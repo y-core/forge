@@ -268,26 +268,28 @@ could open.
 **The new address is deliberately never looked up before the email goes out.** Answering "that address is taken" here is the same enumeration oracle
 sign-in refuses to give. The unique index refuses the collision at the `move` stage instead, folded into the same refusal an unknown account gets.
 
-**You mount the confirm route, and the one route serves both stages.** Forge ships `AuthEmailChangeFlow.confirm` and no route that calls it: the URL
-shape is yours, so the handler is too. `confirm` decodes the token and burns it through the nonce store — a second visit to the same link answers
-`consumed`, which is what makes a link scanner harmless — and then acts on the stage it read. An `approve` token defers the second mail and answers
-`forwarded`, whose `sentTo` names the new address the second link went to. A `move` token writes the address and marks it verified in one statement,
-answering `moved`.
+**You mount the confirm route, as a `GET` that reads and a `POST` that acts.** Forge ships `AuthEmailChangeFlow.inspect` and `confirm` and no
+route that calls either: the URL shape is yours, so the handlers are too. `inspect` decodes the token and answers its stage and the new address,
+touching neither the nonce store nor the account. `confirm` decodes it, burns it through the nonce store — a second post of the same token answers
+`consumed` — and only then acts on the stage it read. An `approve` token defers the second mail and answers `forwarded`, whose `sentTo` names the
+new address the second link went to. A `move` token writes the address and marks it verified in one statement, answering `moved`.
 
-**The confirmation page is yours to render, and `resolveAuthView` does not reach it** — it is no `AuthViewName`, so forge has no view for it. Render
-it in your own layout with your own copy; [`AUTH_MOUNTING.md`][am-6] §6 is the recipe for putting a forge auth view beside it.
+**Forge renders the form, and the pages around it are yours.** `EmailChangeConfirmView` renders the `POST` form for the stage `inspect` read,
+carrying the link's token and a CSRF token you mint for your `POST` path with `mintCsrf`. `resolveAuthView` does not reach it — it is no
+`AuthViewName` — so render it, and the refusal and outcome pages, in your own layout; [`AUTH_MOUNTING.md`][am-6] §6 is the recipe for putting a
+forge auth view beside it.
 
 **It renders in the same document shell the auth pages do**, because that shell belongs to the app rather than to the mount
 ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6). Call `renderShell` from your own view with a slot you name yourself — its `mount` is an
 open string — and the page comes out inside the chrome every auth page already renders in. Forge asks a shell for a document, not for a component
 typed against `AuthViewName`, so there is no adapter to write.
 
-**That route is a `GET` that mutates, and the trade is deliberate.** A confirmation link in an email can only be a `GET`, so the usual rule gives
-way; what makes it safe is that each link is single-use. The first visit does its stage's work, and every visit after it — a link scanner's, a
-prefetch, the user clicking twice — changes nothing. Do not add your own idempotency around it, and do not make the route a `POST` behind an
-interstitial unless you want the extra click: the nonce store already carries the guarantee.
+**The link only reads, because a link scanner opens it before its owner does.** Mail scanners, prefetchers and preview panes issue the `GET` a
+mailed link carries; a `GET` that burned the token let the scanner approve or complete the move and left the owner's own click answering
+`consumed`. Submitting the form is a step only a person takes. Do not act from the `GET` handler, and do not add your own idempotency around the
+`POST`: the nonce store already makes it single-use.
 
-**The route renders two success pages, and the failure arm needs `instanceof`.** The success value `confirm` answers is a union discriminated on
+**The `POST` renders two success pages, and the failure arm needs `instanceof`.** The success value `confirm` answers is a union discriminated on
 `status`, and its error is a union of a string literal and the `AuthStoreError` class, so those two arms are told apart by type rather than by
 value. The handler is [`src/auth/README.md`][auth-readme]'s.
 

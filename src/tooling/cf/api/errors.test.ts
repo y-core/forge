@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
+import { WORKERS_CI_PERMISSION } from "./endpoints";
 import { classifyCfError, describeCfFailure } from "./errors";
 import type { CfApiClientError, CfApiClientErrorKind, CfApiError } from "./types";
 import { CfApiClientError as CfError } from "./types";
@@ -114,6 +115,33 @@ describe("describeCfFailure — auth", () => {
     expect(describeCfFailure(error, WORKER, { redactMessage: true })).toBe(
       'auth failed — the --api-token is rejected or lacks "Workers Scripts" (Read to report, Edit to change)',
     );
+  });
+});
+
+describe("describeCfFailure — auth, naming another permission", () => {
+  const BUILDS = { name: "Builds Things", grants: "Read to look, Write to touch" };
+
+  it("names the permission it is given in place of Workers Scripts, keeping the code", () => {
+    expect(describeCfFailure(fail("api", "Authentication error", { statusCode: 400, cfErrors: cf(10000) }), WORKER, { permission: BUILDS })).toBe(
+      'auth failed — the --api-token is rejected or lacks "Builds Things" (Read to look, Write to touch) · code 10000',
+    );
+  });
+
+  it("names Workers CI and the user-scoped token requirement for the Workers Builds permission", () => {
+    expect(describeCfFailure(fail("api", "Forbidden", { statusCode: 403 }), WORKER, { permission: WORKERS_CI_PERMISSION })).toBe(
+      'auth failed — the --api-token is rejected or lacks "Workers CI" (Read to report, Write to change, on a user-scoped token — an account-scoped one is refused as invalid)',
+    );
+  });
+
+  it("never quotes upstream text with a permission and redaction together", () => {
+    const error = fail("api", "token secret=hunter2 is invalid", { statusCode: 401, cfErrors: cf(9109) });
+    expect(describeCfFailure(error, WORKER, { permission: BUILDS, redactMessage: true })).toBe(
+      'auth failed — the --api-token is rejected or lacks "Builds Things" (Read to look, Write to touch) · code 9109',
+    );
+  });
+
+  it("leaves a not-found failure naming the worker script whatever permission is given", () => {
+    expect(describeCfFailure(fail("api", "gone", { statusCode: 404 }), WORKER, { permission: BUILDS })).toBe("worker script not found: my-worker");
   });
 });
 

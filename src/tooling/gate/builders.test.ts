@@ -63,9 +63,6 @@ const GRAPH = { primitives: ["p"], leaf: ["l"], edges: { a: { b: "value" }, b: {
   typeof namespaceWatches
 >[1];
 
-// The probe's parse is a function, so a row's narrowing is compared with the probe reduced to its arguments.
-const narrowing = (step: Step): unknown => (step.narrow === undefined ? undefined : { ...step.narrow, probe: step.narrow.probe?.args });
-
 const playwrightVersion = (createRequire(import.meta.url)("@playwright/test/package.json") as { version: string }).version;
 
 const CHECK_STEPS: readonly Step[] = [
@@ -218,8 +215,8 @@ describe("typeAwareLintStep()", () => {
 });
 
 describe("browserStep()", () => {
-  it("never narrows or widens, because only a runtime row follows the pending changes", () => {
-    expect([narrowing(browserStep()), browserStep().widen]).toEqual([undefined, undefined]);
+  it("never widens, because only a runtime row follows the pending changes", () => {
+    expect(browserStep().widen).toBeUndefined();
   });
 
   it("asks Playwright for its JSON report beside the console's list, through the variable naming the file", () => {
@@ -345,8 +342,8 @@ describe("crossEngineStep()", () => {
     expect([step.label, step.cmd]).toEqual(["test:browser:cross-engine", ["playwright", "test", "--project=firefox", "--project=webkit"]]);
   });
 
-  it("never narrows or widens, so a cron run covers every spec", () => {
-    expect([narrowing(crossEngineStep()), crossEngineStep().widen]).toEqual([undefined, undefined]);
+  it("never widens, so a cron run covers every spec", () => {
+    expect(crossEngineStep().widen).toBeUndefined();
   });
 
   it("asks Playwright for the JSON report a per-spec failure with its engine is read from", () => {
@@ -427,8 +424,8 @@ describe("browserRequired() — Firefox and WebKit on the compat server", () => 
 });
 
 describe("workerdStep()", () => {
-  it("declares no reach to narrow or widen, as the browser row does not", () => {
-    expect([narrowing(workerdStep()), workerdStep().widen]).toEqual([undefined, undefined]);
+  it("declares no `widen`, as the browser row does not", () => {
+    expect(workerdStep().widen).toBeUndefined();
   });
 
   it("runs the workerd Playwright project under node, where createTestHarness answers HTTP", () => {
@@ -742,12 +739,6 @@ describe("builders — derived watches", () => {
 
     expect([db.static.map((step) => step.label), db.runtime.map((step) => step.label)]).toEqual([["db:schema:digests"], ["db:lint", "db:schema"]]);
     expect([...db.static, ...db.runtime].map((step) => step.requires?.tool)).toEqual([undefined, "workerd", "workerd"]);
-  });
-
-  it("declares no narrowing on any db row, so each runs whole or not at all", () => {
-    const db = dbSteps();
-
-    expect([...db.static, ...db.runtime].map((step) => step.narrow)).toEqual([undefined, undefined, undefined]);
   });
 
   it("passes --root and the forge command to every row", () => {

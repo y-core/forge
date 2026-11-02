@@ -1,4 +1,5 @@
 import type { ResourceType } from "../../types";
+import { createBuildVarsHandler } from "./build-vars";
 import { createD1Handler } from "./d1";
 import {
   aiHandler,
@@ -35,6 +36,7 @@ export function buildHandlers(opts: HandlerBuildOptions): ResourceHandler[] {
     createVarsHandler(opts.configPath),
     createSecretsHandler(opts.configPath),
     createRotatableSecretsHandler(opts.configPath),
+    createBuildVarsHandler(opts.configPath),
     rateLimitsHandler,
     durableObjectsHandler,
     hyperdriveHandler,

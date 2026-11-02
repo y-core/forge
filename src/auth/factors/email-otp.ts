@@ -74,6 +74,8 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
   }
 
   async function createChallenge(userId: string, at: number): Promise<Result<AuthFactorChallenge, AuthFactorReason>> {
+    const to = await options.address(userId);
+    if (!to.ok) return err("unavailable");
     const code = randomCode(digits);
     const token = await encodeAuthToken(options.keys, "verify", `${userId}${PAYLOAD_SEPARATOR}${code}`, ttlMs, { now: at });
     const expiresAt = at + ttlMs;
@@ -82,8 +84,7 @@ export function createEmailOtpFactor(options: EmailOtpOptions): ImplicitFactorSe
     if (!claimed.ok) return err("unavailable");
     if (!claimed.data) return err("too-soon");
 
-    const to = await options.address(userId);
-    if (!(await deliverCode(to, code, expiresAt))) {
+    if (!(await deliverCode(to.data, code, expiresAt))) {
       await options.state.discard(userId, token);
       return err("unavailable");
     }

@@ -7,6 +7,7 @@ export {
   createPasskeyManageActions,
   createPasskeyStepUpActions,
   createRecoveryCodeActions,
+  authCsrfRefusal,
   createSigninActions,
   createSignoutActions,
   createSignupActions,
@@ -16,7 +17,14 @@ export {
 } from "./actions";
 export type { Approval, ApprovalOptions } from "./types";
 export { defineApproval, registerApproval } from "./approval";
-export type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthGuardResolver, AuthRouteMaps } from "./types";
+export type {
+  AuthAdminGuardOptions,
+  AuthEnrolmentGuardOptions,
+  AuthGuardChainOptions,
+  AuthGuardOptions,
+  AuthGuardResolver,
+  AuthRouteMaps,
+} from "./types";
 export type { AccessTokenGuardOptions } from "./types";
 export {
   accessTokenCtx,
@@ -66,6 +74,7 @@ export {
   loadPasskeyList,
   loadRecoveryCodes,
   loadSignin,
+  loadSignoutConfirm,
   loadSignup,
   loadTotpEnrol,
   loadVerify,
@@ -102,12 +111,12 @@ export {
 } from "./schemas";
 export type { AuthViewChrome } from "./views/types";
 export type { AuthTurnstileWidget } from "./views/types";
-export type { EmailChangeViewProps } from "./views/types";
-export { EmailChangeView } from "./views/email-change";
+export type { EmailChangeConfirmViewProps, EmailChangeViewProps } from "./views/types";
+export { EmailChangeConfirmView, EmailChangeView } from "./views/email-change";
 export type { AuthPasskeyContract, PasskeyEnrolViewProps } from "./views/types";
 export { PasskeyEnrolView } from "./views/passkey-enrol";
-export type { AuthSignoutProps } from "./views/types";
-export { AuthSignout } from "./views/signout";
+export type { AuthSignoutProps, SignoutConfirmViewProps } from "./views/types";
+export { AuthSignout, SignoutConfirmView } from "./views/signout";
 export type { AuthSiteDataProps } from "./views/types";
 export { AuthSiteData } from "./views/site-data";
 export type { SigninViewProps } from "./views/types";

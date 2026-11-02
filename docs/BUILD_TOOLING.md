@@ -278,8 +278,8 @@ JavaScript, along with a reference to an undeclared tier and a label one resolve
 runs, so the refusal is the table's, whatever `--tier` asked for. Nothing sorts a tier, which is why each preset tier above `static` leads with
 its reference ([`TESTING.md`][testing-6c] §6c).
 
-**At `runtime`, a row narrows only in the tier that declares it**, or wherever it states `narrow`. The resolver records each row's home tier. A
-row `runtime` reaches through `tier("unit")` runs whole there, because the tier that declared it made no claim about narrowing it.
+**At `runtime`, a row narrows only in the tier that declares it.** The resolver records each row's home tier. A row `runtime` reaches through
+`tier("unit")` runs whole there, because the tier that declared it made no claim about narrowing it.
 
 **`binDir` is a de-hardcoding, not a feature.** Its default is `${cwd}/node_modules/.bin`, but apps that invoke tools as `bun x oxlint` need a
 different prefix, and one config field is cheaper than a fork of the runner per app. The temp-directory prefix behind the full-log file stays

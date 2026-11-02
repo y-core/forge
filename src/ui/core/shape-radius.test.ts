@@ -2,8 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { relative, resolve } from "node:path";
 
-import { CLASS_SHAPED, stringLiterals } from "../../tooling/gate/checks/class-tokens";
+import { CLASS_SHAPED } from "../../tooling/gate/checks/class-tokens";
 import { loadDesignSystem } from "../../tooling/gate/checks/design-system";
+import { stringLiterals } from "../../tooling/gate/checks/source-scan";
 import { utilityOf } from "./utils/cn";
 
 const UI_DIR = resolve(import.meta.dir, "..");

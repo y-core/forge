@@ -43,12 +43,22 @@ export interface CfClient {
   list<T>(path: string, operation: CfListOperation<T>): Promise<Result<T[], CfApiClientError>>;
   post<T>(path: string, body: unknown, operation: CfOperation<T>): Promise<Result<T, CfApiClientError>>;
   put<T>(path: string, body: unknown, operation: CfOperation<T>): Promise<Result<T, CfApiClientError>>;
+  patch<T>(path: string, body: unknown, operation: CfOperation<T>): Promise<Result<T, CfApiClientError>>;
 }
 
 /** Why a Cloudflare call failed, at the granularity a result row cares about. */
 export type CfFailureKind = "not-found" | "auth" | "network" | "other";
 
+/** An API-token permission, as an auth failure names it. */
+export interface CfTokenPermission {
+  name: string;
+  /** Which access level each kind of run needs, and any restriction on the token that carries it. */
+  grants: string;
+}
+
 export interface DescribeCfFailureOptions {
   /** Never interpolate the upstream message, which can echo a secret out of the rejected request body. */
   redactMessage?: boolean;
+  /** The permission an auth failure names; `WORKER_PERMISSION` when absent. */
+  permission?: CfTokenPermission;
 }

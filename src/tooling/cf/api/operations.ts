@@ -54,6 +54,12 @@ const d1Export = v.variant("status", [
   v.object({ status: v.literal("error"), error: v.optional(v.string(), "") }),
 ]);
 
+const buildVariable = v.object({ value: v.nullish(v.string()), is_secret: v.optional(v.boolean(), false) });
+
+const buildScope = jsonTable(v.object({ environment_variables: v.nullish(jsonTable(v.record(v.string(), buildVariable))) }));
+
+const BUILD_SETTINGS = "/accounts/{account_id}/builds/workers/{external_script_id}";
+
 /** Each Cloudflare REST operation forge calls, named and paired with the schema its result must satisfy. @internal */
 export const CF_OPERATIONS = {
   listKvNamespaces: { name: "GET /accounts/{account_id}/storage/kv/namespaces", paging: "page", result: v.array(kvNamespace) },
@@ -84,6 +90,18 @@ export const CF_OPERATIONS = {
   },
   listWorkerSecrets: { name: "GET /accounts/{account_id}/workers/scripts/{script_name}/secrets", result: v.array(v.object({ name: v.string() })) },
   putWorkerSecret: { name: "PUT /accounts/{account_id}/workers/scripts/{script_name}/secrets", result: v.unknown() },
+  listWorkerScripts: { name: "GET /accounts/{account_id}/workers/scripts", result: v.array(v.object({ id: v.string(), tag: v.string() })) },
+  getWorkerBuildSettings: {
+    name: `GET ${BUILD_SETTINGS}`,
+    result: jsonTable(
+      v.object({
+        production_settings: v.nullish(buildScope),
+        previews_base_config: v.nullish(buildScope),
+        previews_enabled: v.optional(v.boolean(), false),
+      }),
+    ),
+  },
+  patchWorkerBuildSettings: { name: `PATCH ${BUILD_SETTINGS}`, result: v.unknown() },
   getZoneEntrypointRuleset: { name: `GET ${ZONE_ENTRYPOINT}`, result: jsonTable(v.object({ rules: v.optional(v.array(zoneRule), []) })) },
   putZoneEntrypointRuleset: { name: `PUT ${ZONE_ENTRYPOINT}`, result: v.unknown() },
 } satisfies Record<string, CfOperation<unknown> | CfListOperation<unknown>>;

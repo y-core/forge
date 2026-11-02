@@ -2,12 +2,12 @@ import type { Session } from "@remix-run/session";
 
 import { firstDeclaredField, screenTurnstile } from "../../app/pipeline";
 import { getAppContext } from "../../context/types";
-import type { AppContext, RequestHandler } from "../../context/types";
+import type { AppContext, RequestContext, RequestHandler } from "../../context/types";
 import { TURNSTILE_FIELD_DEFAULT } from "../../form/constants";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { isFormCapConflict, parseFormData } from "../../form/parse-form-data";
 import { formToObject } from "../../form/to-object";
-import type { ReadonlyFormData } from "../../form/types";
+import type { CsrfRefusal, ReadonlyFormData } from "../../form/types";
 import { jsonResponse } from "../../http/response";
 import { requestLog } from "../../logging/request-logger";
 import { err, ok } from "../../result/result";
@@ -64,7 +64,7 @@ import {
   authTotpEnrolSchema,
   authVerifySchema,
 } from "./schemas";
-import type { AuthIdentity } from "./types";
+import type { AuthEntryPaths, AuthIdentity } from "./types";
 import type { AuthTurnstileCheck } from "./types";
 import type { AuthPageState, AuthRequestSurface, AuthWebOptions } from "./types";
 
@@ -416,6 +416,17 @@ export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>
   };
 }
 
+/** The `csrfProtection` refusal that sends a refused sign-out to its confirm page and answers every other refusal 403. @public */
+// oxlint-disable-next-line typescript/no-explicit-any -- the guard hands its own context shape through
+export function authCsrfRefusal(paths: AuthEntryPaths): (context: RequestContext<any, any>, reason: CsrfRefusal) => Response {
+  const signoutPath = paths.signout();
+  const confirmPath = paths.signoutConfirm();
+  return (context, reason) =>
+    reason !== "unbound-subject" && context.method.toUpperCase() === "POST" && context.url.pathname === signoutPath
+      ? createAuthRedirect(context, confirmPath)
+      : new Response("Forbidden", { status: 403 });
+}
+
 // The challenge is bound to the session's own `userId`, which `createPasskeyFactor.verifyChallenge`
 // re-checks against the assertion before it admits anything.
 /** The JSON endpoints of a passkey step-up, held against the session that is already signed in. @public */
@@ -755,7 +766,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
       // The role is judged here and not left to the group's `require-admin`: that guard runs on the
       // loader this handler redirects to, which is after the write it was meant to refuse has landed.
-      if (!viewer.isAdmin) return forbidden();
+      if (!viewer.isAdmin) return forbidden(c, options);
 
       const parsed = await readAuthSubmission(c, authAdminUserSchema());
       if (!parsed.ok) return loadAdminUserEdit(c, options, { fieldError: parsed.error.message, status: 422 });
@@ -801,7 +812,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
       const viewer = resolveAuthViewer(c);
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
-      if (!viewer.isAdmin) return forbidden();
+      if (!viewer.isAdmin) return forbidden(c, options);
 
       // The loaded row is compared and not the route parameter: a UUID is case-insensitive, so an
       // uppercased one names the same account and would slip the deactivation guard's irreversible twin.
@@ -824,7 +835,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
       const viewer = resolveAuthViewer(c);
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
-      if (!viewer.isAdmin) return forbidden();
+      if (!viewer.isAdmin) return forbidden(c, options);
 
       const found = await services.admin.view(id);
       if (!found.ok) return unavailable();

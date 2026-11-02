@@ -334,7 +334,7 @@ over fetch-router's `RequestContext`. It is also the canonical home of `validate
 
 `contextVar` is a factory for typed accessors over the request context's variable store.
 
-**Forge namespaces use it to build accessors that they then export under their own name** — `requestIdCtx` from `security`, `csrfTokenCtx` from
+**Forge namespaces use it to build accessors that they then export under their own name** — `requestIdCtx` from `security`, `csrfMinterCtx` from
 `form`. **Consumer code should use those published accessors rather than inventing ad-hoc context slots.**
 
 **`csrfFieldCtx` (from `form`) is a published accessor with a rule attached.** `csrfProtection` sets it to the field it took the token from, above

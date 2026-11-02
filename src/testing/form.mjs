@@ -253,9 +253,7 @@ function signWithKeyRing(operation, ring, purpose, data) {
 // src/form/csrf.ts
 var CSRF_PURPOSE = "csrf";
 var CSRF_MINTER_KEY = "csrf";
-var CSRF_TOKEN_KEY = "csrfToken";
 var csrfMinterCtx = contextVar(CSRF_MINTER_KEY);
-var csrfTokenCtx = contextVar(CSRF_TOKEN_KEY);
 async function createCsrfToken(ring, path, options = {}) {
   const kid = ring.activeKeyId;
   const subject = options.subject ?? "";

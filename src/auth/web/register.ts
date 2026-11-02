@@ -33,6 +33,7 @@ import {
   loadPasskeyList,
   loadRecoveryCodes,
   loadSignin,
+  loadSignoutConfirm,
   loadSignup,
   loadTotpEnrol,
   loadVerify,
@@ -60,6 +61,7 @@ export function registerAuth<Bindings extends object>(
     actions: {
       signin: authPage(loadSignin, options),
       signup: authPage(loadSignup, options),
+      signoutConfirm: authPage(loadSignoutConfirm, options),
       ...createSigninActions(options),
       ...createSignupActions(options),
       ...createSignoutActions(options),

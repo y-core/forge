@@ -62,10 +62,22 @@ export interface TurnstileVerifyOptions {
   signal?: AbortSignal;
 }
 
+/** Why `verifyCsrfToken` refused a token. @public */
+export type CsrfFailure =
+  | "expired"
+  | "future-timestamp"
+  | "invalid-format"
+  | "invalid-signature"
+  | "missing-token"
+  | "path-mismatch"
+  | "subject-mismatch"
+  | "unknown-key";
+
 /** Result of a CSRF token verification. @public */
-export type CsrfResult = GuardResult<
-  "expired" | "future-timestamp" | "invalid-format" | "invalid-signature" | "missing-token" | "path-mismatch" | "subject-mismatch" | "unknown-key"
->;
+export type CsrfResult = GuardResult<CsrfFailure>;
+
+/** Why `csrfProtection` refused a mutation: a token failure, or a `subject` resolver that returned nothing to bind to. @public */
+export type CsrfRefusal = CsrfFailure | "unbound-subject";
 
 /** Options for `csrfMinter`, which are `csrfProtection`'s minting half. @public */
 export interface CsrfMinterOptions {
@@ -83,6 +95,8 @@ export interface CsrfProtectionOptions {
   // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
   subject: ((context: RequestContext<any, any>) => string | undefined) | false;
   maxBytes?: number;
+  // oxlint-disable-next-line typescript/no-explicit-any -- context shape varies
+  onForbidden?: (context: RequestContext<any, any>, reason: CsrfRefusal) => Response | Promise<Response>;
 }
 
 /** Whether `secretKey` may verify a Turnstile token against siteverify's fixed testing answer. @internal */

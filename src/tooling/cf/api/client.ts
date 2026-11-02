@@ -145,5 +145,6 @@ export function createCfClient(auth: Pick<CfAuth, "apiToken">, fetchFn: typeof g
     list,
     post: <T>(path: string, body: unknown, operation: CfOperation<T>) => request("POST", path, operation, body),
     put: <T>(path: string, body: unknown, operation: CfOperation<T>) => request("PUT", path, operation, body),
+    patch: <T>(path: string, body: unknown, operation: CfOperation<T>) => request("PATCH", path, operation, body),
   };
 }

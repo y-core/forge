@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it, spyOn } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import { applyMiddlewareChain } from "../../app/middleware-chain";
@@ -34,6 +34,7 @@ import { createCredentialStore } from "../stores/credentials";
 import { createFactorStore } from "../stores/factors";
 import { createUserStore } from "../stores/users";
 import type { AuthCredential, AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, UserStore } from "../types";
+import { authCsrfRefusal } from "./actions";
 import { createAuthGuards, requireAuth } from "./guards";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
@@ -111,7 +112,11 @@ function mount(mounted: AuthWebOptions<MountEnv> = options): Forge<MountEnv> {
     // `globals`, never `before`: the resolver reads the session, which the chain publishes ahead of
     // this slot and not ahead of that one.
     globals: [
-      csrfProtection({ ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]), subject: (c) => sessionCtx.getOptional(c)?.id }),
+      csrfProtection({
+        ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]),
+        subject: (c) => sessionCtx.getOptional(c)?.id,
+        onForbidden: authCsrfRefusal(paths.auth),
+      }),
     ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
@@ -390,7 +395,11 @@ function flowMount(
     securityHeaders: { styleSrc: ["'self'"], scriptSrc: ["'self'"] },
     session: createAnonymousSession<MountEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
     globals: [
-      csrfProtection({ ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]), subject: (c) => sessionCtx.getOptional(c)?.id }),
+      csrfProtection({
+        ring: (c) => importKeyRing([(c as AppContext<MountEnv>).env.CSRF_SECRET]),
+        subject: (c) => sessionCtx.getOptional(c)?.id,
+        onForbidden: authCsrfRefusal(paths.auth),
+      }),
     ],
     guards: createAuthGuards<MountEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
@@ -449,8 +458,8 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
     return res;
   }
 
-  /** Posts one of the page's forms, to its own action and with its own token, as a browser would. */
-  async function form(url: string, fields: Record<string, string>, actionPath?: string): Promise<Response> {
+  /** The action and token of the page's form posting to `actionPath`, as the page rendered them. */
+  async function formOf(url: string, actionPath?: string): Promise<{ readonly action: string; readonly token: string }> {
     const page = await get(url);
     const path = actionPath ?? new URL(url, "http://localhost").pathname;
     const html = await page.text();
@@ -460,20 +469,30 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
       html.split("<form").find((part) => new URL(/action="([^"]*)"/.exec(part)?.[1] ?? "/", "http://localhost").pathname === path) ?? "";
     const action = (/action="([^"]*)"/.exec(block)?.[1] ?? path).replaceAll("&amp;", "&");
     const token = /name="_csrf" value="([^"]+)"/.exec(block)?.[1] ?? "";
-    const body = new URLSearchParams({ ...fields, _csrf: token });
+    return { action, token };
+  }
+
+  /** Posts `fields` as a same-origin form, carrying the visitor's cookie. */
+  async function post(path: string, fields: Record<string, string>, headers: Record<string, string> = {}): Promise<Response> {
     const res = keep(
       await mounted.app.request(
-        action,
+        path,
         {
           method: "POST",
-          headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie },
-          body: body.toString(),
+          headers: { origin: "http://localhost", "content-type": "application/x-www-form-urlencoded", cookie, ...headers },
+          body: new URLSearchParams(fields).toString(),
         },
         bindings,
       ),
     );
     await mounted.settle();
     return res;
+  }
+
+  /** Posts one of the page's forms, to its own action and with its own token, as a browser would. */
+  async function form(url: string, fields: Record<string, string>, actionPath?: string): Promise<Response> {
+    const { action, token } = await formOf(url, actionPath);
+    return post(action, { ...fields, _csrf: token });
   }
 
   /** Posts `payload` as JSON with `token` in the header, as the browser controller does. */
@@ -512,7 +531,7 @@ function visitor(mounted: ReturnType<typeof flowMount>, bindings: MountEnv) {
     return res;
   }
 
-  return { get, form, contract, ceremony };
+  return { get, formOf, post, form, contract, ceremony };
 }
 
 describe("a second factor, driven through the mount", () => {
@@ -619,6 +638,116 @@ describe("a second factor, driven through the mount", () => {
 
     const page = await (await ada.get("/auth/verify")).text();
     expect(page).toContain("Enter the current code from your authenticator app.");
+  });
+});
+
+describe("a sign-out whose token aged past the guard's hour, driven through the mount", () => {
+  const MINUTE = 60_000;
+  const DASHBOARD = [200, null] as const;
+  const SIGNED_OUT = [302, "/auth/signin?next=%2Fapp%2Fdashboard"] as const;
+
+  let restore: (() => void)[] = [];
+  afterEach(() => {
+    for (const undo of restore) undo();
+    restore = [];
+  });
+
+  /** Holds `Date.now`, which `csrfProtection` reads, at the real time it was called; returns the setter. */
+  function holdClock(): (ms: number) => void {
+    const start = Date.now();
+    const clock = spyOn(Date, "now").mockReturnValue(start);
+    restore.push(() => clock.mockRestore());
+    return (ms) => clock.mockReturnValue(start + ms);
+  }
+
+  function answerOf(res: Response): readonly [number, string | null] {
+    return [res.status, res.headers.get("location")];
+  }
+
+  /** Ada, signed up, enrolled and stepped up, so the guarded dashboard serves her. */
+  async function signedInAda() {
+    const ada = visitor(flowMount("totp-app"), env());
+    await ada.form("/auth/signup", { email: "ada@example.com" });
+    await ada.form("/auth/verify", { code: CODE });
+    await ada.form("/auth/enrol/totp", { code: CODE });
+    await ada.form("/auth/verify", { code: CODE });
+    expect(answerOf(await ada.get("/app/dashboard"))).toEqual(DASHBOARD);
+    return ada;
+  }
+
+  it("sends a sign-out at +61 minutes to the confirm page, keeps the session, and signs out from that page's form", async () => {
+    const ada = await signedInAda();
+    const advance = holdClock();
+    const { token } = await ada.formOf("/auth/signout");
+    advance(61 * MINUTE);
+
+    const refused = answerOf(await ada.post("/auth/signout", { _csrf: token }));
+    const kept = answerOf(await ada.get("/app/dashboard"));
+    const confirm = await ada.get("/auth/signout");
+    const confirmPage = { status: confirm.status, title: /<title>([^<]*)<\/title>/.exec(await confirm.text())?.[1] };
+    const signedOut = answerOf(await ada.form("/auth/signout", {}));
+    const after = answerOf(await ada.get("/app/dashboard"));
+
+    expect({ refused, kept, confirmPage, signedOut, after }).toEqual({
+      refused: [303, "/auth/signout"],
+      kept: DASHBOARD,
+      confirmPage: { status: 200, title: "Sign out" },
+      signedOut: [303, "/auth/signin"],
+      after: SIGNED_OUT,
+    });
+  });
+
+  it("signs out directly at +59 minutes", async () => {
+    const ada = await signedInAda();
+    const advance = holdClock();
+    const { token } = await ada.formOf("/auth/signout");
+    advance(59 * MINUTE);
+
+    const signedOut = answerOf(await ada.post("/auth/signout", { _csrf: token }));
+    const after = answerOf(await ada.get("/app/dashboard"));
+
+    expect({ signedOut, after }).toEqual({ signedOut: [303, "/auth/signin"], after: SIGNED_OUT });
+  });
+
+  it("answers an htmx sign-out at +61 minutes with a 204 carrying HX-Redirect to the confirm page, and keeps the session", async () => {
+    const ada = await signedInAda();
+    const advance = holdClock();
+    const { token } = await ada.formOf("/auth/signout");
+    advance(61 * MINUTE);
+
+    const res = await ada.post("/auth/signout", { _csrf: token }, { "HX-Request": "true" });
+    const refused = { status: res.status, location: res.headers.get("location"), hxRedirect: res.headers.get("hx-redirect") };
+    const kept = answerOf(await ada.get("/app/dashboard"));
+
+    expect({ refused, kept }).toEqual({ refused: { status: 204, location: null, hxRedirect: "/auth/signout" }, kept: DASHBOARD });
+  });
+
+  it("never ends a session on a GET of the sign-out path", async () => {
+    const ada = await signedInAda();
+
+    const page = await ada.get("/auth/signout");
+    const kept = answerOf(await ada.get("/app/dashboard"));
+
+    expect({ status: page.status, kept }).toEqual({ status: 200, kept: DASHBOARD });
+  });
+
+  it("still refuses a stale or missing token on a POST other than the sign-out at 403", async () => {
+    const mounted = flowMount("totp-app");
+    const anonymous = visitor(mounted, env());
+    const advance = holdClock();
+    const { token } = await anonymous.formOf("/auth/signin");
+    advance(61 * MINUTE);
+
+    const stale = await anonymous.post("/auth/signin", { email: "ada@example.com", _csrf: token });
+    const missing = await anonymous.post("/auth/signin", { email: "ada@example.com" });
+
+    expect([
+      { status: stale.status, body: await stale.text() },
+      { status: missing.status, body: await missing.text() },
+    ]).toEqual([
+      { status: 403, body: "Forbidden" },
+      { status: 403, body: "Forbidden" },
+    ]);
   });
 });
 

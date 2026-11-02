@@ -7,7 +7,7 @@ import type { AuthStoreError } from "../errors";
 import { authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken } from "../keys/token";
 import { authLimit } from "../limits";
 import { normalizeEmail } from "../stores/email";
-import type { AuthEmailChangeConfirm, AuthEmailChangeReason, AuthIssueOutcome } from "./types";
+import type { AuthEmailChangeConfirm, AuthEmailChangeReason, AuthEmailChangeStage, AuthIssueOutcome } from "./types";
 import type { AuthEmailChangeFlow, AuthEmailChangeOptions } from "./types";
 
 const DEFAULT_TTL_MS = 3_600_000;
@@ -15,9 +15,7 @@ const MIN_TTL_MS = 60_000;
 const MAX_TTL_MS = 86_400_000;
 const PAYLOAD_SEPARATOR = " ";
 
-type Stage = "approve" | "move";
-
-function readPayload(payload: string): { stage: Stage; userId: string; address: string } | undefined {
+function readPayload(payload: string): { stage: AuthEmailChangeStage; userId: string; address: string } | undefined {
   const first = payload.indexOf(PAYLOAD_SEPARATOR);
   if (first < 0) return undefined;
   const second = payload.indexOf(PAYLOAD_SEPARATOR, first + 1);
@@ -41,7 +39,7 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
   });
   const logger = options.logger ?? createLogger("auth/flows");
 
-  function mint(stage: Stage, userId: string, address: string, at: number): Promise<string> {
+  function mint(stage: AuthEmailChangeStage, userId: string, address: string, at: number): Promise<string> {
     return encodeAuthToken(options.keys, "identity", [stage, userId, address].join(PAYLOAD_SEPARATOR), ttlMs, { now: at });
   }
 
@@ -93,6 +91,17 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
     });
   }
 
+  async function read(
+    token: string,
+    at: number,
+  ): Promise<Result<{ stage: AuthEmailChangeStage; userId: string; address: string }, AuthEmailChangeReason>> {
+    const decoded = await decodeAuthToken(options.keys, "identity", token, { now: at });
+    if (!decoded.ok) return err(decoded.error === "expired" ? "expired" : "unrecognised");
+    const payload = readPayload(decoded.data.payload);
+    if (!payload) return err("unrecognised");
+    return ok(payload);
+  }
+
   return {
     async request(userId, email, at) {
       const found = await options.users.findById(userId);
@@ -113,11 +122,16 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
       return ok({ expiresAt, sentTo: found.data.email });
     },
 
+    async inspect(token, at) {
+      const link = await read(token, at);
+      if (!link.ok) return link;
+      return ok({ stage: link.data.stage, address: link.data.address });
+    },
+
     async confirm(token, at) {
-      const decoded = await decodeAuthToken(options.keys, "identity", token, { now: at });
-      if (!decoded.ok) return err(decoded.error === "expired" ? "expired" : "unrecognised");
-      const payload = readPayload(decoded.data.payload);
-      if (!payload) return err("unrecognised");
+      const link = await read(token, at);
+      if (!link.ok) return link;
+      const payload = link.data;
 
       const nonce = await authNonceKey(options.keys, token);
       if (!nonce.ok) return err("unrecognised");

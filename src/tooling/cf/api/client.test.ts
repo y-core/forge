@@ -86,6 +86,26 @@ describe("createCfClient()", () => {
     await client.post("/path", { name: "my-kv" }, ANY);
     expect(JSON.parse(capturedBody!)).toEqual({ name: "my-kv" });
   });
+
+  it("sends a PATCH with its JSON body and content type, and parses the result through the operation", async () => {
+    const sent: { method: string | undefined; contentType: string | null; body: unknown }[] = [];
+    const fetchFn: typeof globalThis.fetch = async (_url, init) => {
+      sent.push({ method: init?.method, contentType: new Headers(init?.headers).get("Content-Type"), body: JSON.parse(String(init?.body)) });
+      return new Response(JSON.stringify({ success: true, errors: [], messages: [], result: { id: "patched" } }), { status: 200 });
+    };
+    const r = await createCfClient(AUTH, fetchFn).patch("/path", { a: { b: 1 } }, { name: "PATCH /test", result: v.object({ id: v.string() }) });
+    expect(r).toEqual({ ok: true, data: { id: "patched" } });
+    expect(sent).toEqual([{ method: "PATCH", contentType: "application/json", body: { a: { b: 1 } } }]);
+  });
+
+  it("refuses a PATCH result the operation's schema rejects, naming the operation", async () => {
+    const r = await createCfClient(AUTH, makeFetch(200, { success: true, result: { id: 7 } })).patch(
+      "/path",
+      {},
+      { name: "PATCH /test", result: v.object({ id: v.string() }) },
+    );
+    expect(r.ok ? null : r.error.message).toBe("PATCH /test: unexpected response shape at id (expected string)");
+  });
 });
 
 describe("createCfClient() — the response shape", () => {

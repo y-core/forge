@@ -801,7 +801,7 @@ describe("createGateCommand() — --affected", () => {
   });
 });
 
-describe("createGateCommand() — the runtime tier's narrowing", () => {
+describe("createGateCommand() — the runtime tier's reach", () => {
   const FILES = { "src/ui/a.ts": "a\n", "src/ui/theme.css": "t\n", "db/schema.sql": "s\n", "docs/A.md": "a\n" };
   const TEMPLATE = worktreeRoot(FILES);
 
@@ -813,43 +813,30 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
 
   // Each row writes the arguments it was spawned with outside the tree, so a test reads back how the runner reached it.
   const out = fixtureRoot();
-  const recording = (label: string, watches: readonly string[], narrow?: CommandStep["narrow"]): CommandStep => ({
+  const recording = (label: string, watches: readonly string[]): CommandStep => ({
     label,
     tail: 5,
     cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD")-${label}.args"`, "sh", "whole"],
     watches,
-    ...(narrow === undefined ? {} : { narrow }),
   });
 
-  const table = (): StepTiers =>
-    ladder(
-      [passing("lint")],
-      [recording("browser", ["src/**"], { args: ["--only-changed"], wide: ["src/ui/theme.css"] }), recording("db", ["db/**"])],
-    );
+  const table = (): StepTiers => ladder([passing("lint")], [recording("browser", ["src/**"]), recording("db", ["db/**"])]);
 
   const spawnedWith = (root: string, label: string): string | undefined => {
     const path = join(out, `${basename(root)}-${label}.args`);
     return existsSync(path) ? readFileSync(path, "utf-8").trim() : undefined;
   };
 
-  it("runs a touched row with its narrow arguments, reports an untouched one, and is a gate green", async () => {
+  it("runs a touched row whole, reports an untouched one, and is a gate green", async () => {
     const root = worktreeClone();
     writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
     const { logs, code } = await run(table(), {}, { cwd: root });
 
-    expect(spawnedWith(root, "browser")).toBe("whole --only-changed");
+    expect(spawnedWith(root, "browser")).toBe("whole");
     expect(spawnedWith(root, "db")).toBeUndefined();
     expect(logs).toContain("○ db — untouched by 1 change");
     expect(logs.at(-1)).toMatch(/^✓ verify — 2 steps passed \([^)]+\)$/);
     expect(code).toBeUndefined();
-  });
-
-  it("runs a row whole when a pending change matches its `wide` globs", async () => {
-    const root = worktreeClone();
-    writeFileSync(join(root, "src/ui/theme.css"), "new\n");
-    await run(table(), {}, { cwd: root });
-
-    expect(spawnedWith(root, "browser")).toBe("whole");
   });
 
   it("runs every runtime row whole when a gate input changes", async () => {
@@ -869,7 +856,7 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
     expect(readReceipt(root)?.labels).toEqual(["lint"]);
   });
 
-  it("records a narrowed run's receipt against HEAD, naming only the rows that ran", async () => {
+  it("records a runtime run's receipt against HEAD, naming only the rows that ran", async () => {
     const root = worktreeClone();
     writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
     await run(table(), {}, { cwd: root });
@@ -910,126 +897,18 @@ describe("createGateCommand() — the runtime tier's narrowing", () => {
     expect(code).toBe(1);
   });
 
-  it("lists how each runtime row reaches the pending changes", async () => {
+  it("lists which runtime rows the pending changes leave untouched", async () => {
     const root = worktreeClone();
     writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
     const { logs } = await run(table(), { list: true }, { cwd: root });
 
-    expect(logs).toEqual(["verify — 3 steps\n  lint\n  browser (narrowed to pending changes)\n  db (untouched)"]);
-  });
-});
-
-describe("createGateCommand() — a row that traces or probes before it narrows", () => {
-  const FILES = { "src/ui/a.ts": "a\n", "src/ui/exposed.ts": "e\n", "docs/A.md": "a\n" };
-  const TEMPLATE = worktreeRoot(FILES);
-  const out = fixtureRoot();
-
-  function editedClone(path = "src/ui/a.ts"): string {
-    const root = cloneWorktree(TEMPLATE);
-    roots.push(root);
-    writeFileSync(join(root, path), "edited\n");
-    return root;
-  }
-
-  // Answers `--list` with `listing` and `exit`, recording that it was asked; any other run records its arguments.
-  const probing = (listing: string, exit = 0, reach: { wide?: readonly string[]; widen?: Step["widen"] } = {}): CommandStep => ({
-    label: "browser",
-    tail: 5,
-    cmd: [
-      "sh",
-      "-c",
-      `case " $* " in *" --list "*) touch "${out}/$(basename "$PWD").probed"; printf '%s' '${listing}'; exit ${exit};; esac; printf '%s ' "$@" > "${out}/$(basename "$PWD").args"`,
-      "sh",
-      "whole",
-    ],
-    narrow: {
-      args: ["--only-changed"],
-      probe: { args: ["--list"], selects: (output) => output !== "none" },
-      ...(reach.wide === undefined ? {} : { wide: reach.wide }),
-    },
-    ...(reach.widen === undefined ? {} : { widen: reach.widen }),
+    expect(logs).toEqual(["verify — 3 steps\n  lint\n  browser\n  db (untouched)"]);
   });
 
-  const outcome = (root: string): { probed: boolean; args: string | undefined } => {
-    const args = join(out, `${basename(root)}.args`);
-    return { probed: existsSync(join(out, `${basename(root)}.probed`)), args: existsSync(args) ? readFileSync(args, "utf-8").trim() : undefined };
-  };
-
-  it("leaves a row its probe selects nothing for untouched, saying which probe found so, and records only the rows that ran", async () => {
-    const root = editedClone();
-    const { logs, code } = await run(ladder([passing("lint")], [probing("none")]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: true, args: undefined });
-    expect(logs.find((line) => line.startsWith("○ browser"))).toMatch(
-      /^○ browser — untouched by 1 change: `sh -c .* --only-changed --list` selects nothing$/,
-    );
-    expect(readReceipt(root)?.labels).toEqual(["lint"]);
-    expect(code).toBeUndefined();
-  });
-
-  it("runs a row narrowed when its probe selects something", async () => {
-    const root = editedClone();
-    await run(ladder([], [probing("one spec")]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: true, args: "whole --only-changed" });
-  });
-
-  it("runs a row whole when its probe exits non-zero, never untouched", async () => {
-    const root = editedClone();
-    await run(ladder([], [probing("none", 1)]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: true, args: "whole" });
-  });
-
-  it("runs a row whole without probing when a pending change is a path its `widen` traces", async () => {
-    const root = editedClone("src/ui/exposed.ts");
-    await run(ladder([], [probing("none", 0, { widen: () => ["src/ui/exposed.ts"] })]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
-  });
-
-  it("probes a row whose `widen` traces none of the pending changes", async () => {
-    const root = editedClone();
-    await run(ladder([], [probing("none", 0, { widen: async () => ["src/ui/exposed.ts"] })]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: true, args: undefined });
-  });
-
-  it("runs a row its watches leave untouched whole when a pending change is a path its `widen` traces from the gate's root", async () => {
-    const root = editedClone("src/ui/exposed.ts");
-    const seen: string[] = [];
-    const step: CommandStep = {
-      label: "db",
-      tail: 5,
-      cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD").args"`, "sh", "whole"],
-      watches: ["docs/**"],
-      widen: (cwd) => (seen.push(cwd), ["src/ui/exposed.ts"]),
-    };
-    await run(ladder([], [step]), {}, { cwd: root });
-
-    expect({ seen, args: outcome(root).args }).toEqual({ seen: [root], args: "whole" });
-  });
-
-  it("runs a row whole when its `widen` throws", async () => {
-    const root = editedClone();
-    const widen = (): string[] => {
-      throw new Error("no bundler");
-    };
-    await run(ladder([], [probing("none", 0, { widen })]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
-  });
-
-  it("runs a row whole without probing when its `widen` rejects", async () => {
-    const root = editedClone();
-    await run(ladder([], [probing("none", 0, { widen: () => Promise.reject(new Error("bundle failed")) })]), {}, { cwd: root });
-
-    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
-  });
-
-  it("runs a row whole when its probe cannot be spawned, never untouched", async () => {
-    const root = editedClone();
-    const unspawnable: CommandStep = { ...probing("none"), label: "absent", cmd: ["forge-no-such-binary", "test"] };
+  it("fails a row whose command cannot be spawned", async () => {
+    const root = worktreeClone();
+    writeFileSync(join(root, "src/ui/a.ts"), "edited\n");
+    const unspawnable: CommandStep = { ...recording("absent", ["src/**"]), cmd: ["forge-no-such-binary", "test"] };
     const saved = process.env.TMPDIR;
     process.env.TMPDIR = mkdtempSync(join(tmpdir(), "forge-system-tmp-"));
     const { logs, code } = await run(ladder([], [unspawnable]), {}, { cwd: root }).finally(() => {
@@ -1041,53 +920,146 @@ describe("createGateCommand() — a row that traces or probes before it narrows"
     expect(logs.find((line) => line.includes(" absent"))).toMatch(/^✗ absent \([^)]+\)$/);
     expect(code).toBe(1);
   });
+});
 
-  it("runs a row whole without probing when a gate input or a `wide` glob changes", async () => {
-    const gateInput = editedClone("docs/A.md");
-    await run(ladder([], [probing("none")]), {}, { cwd: gateInput, gateInputs: ["docs/**"] });
-    const wide = editedClone("docs/A.md");
-    await run(ladder([], [probing("none", 0, { wide: ["docs/**"] })]), {}, { cwd: wide });
+describe("createGateCommand() — a runtime row whose `widen` traces paths its watches miss", () => {
+  const FILES = { "src/ui/a.ts": "a\n", "src/ui/exposed.ts": "e\n", "docs/A.md": "a\n" };
+  const TEMPLATE = worktreeRoot(FILES);
+  const out = fixtureRoot();
 
-    expect([outcome(gateInput), outcome(wide)]).toEqual([
-      { probed: false, args: "whole" },
-      { probed: false, args: "whole" },
-    ]);
+  function editedClone(path = "src/ui/a.ts"): string {
+    const root = cloneWorktree(TEMPLATE);
+    roots.push(root);
+    writeFileSync(join(root, path), "edited\n");
+    return root;
+  }
+
+  const tracing = (widen?: Step["widen"]): CommandStep => ({
+    label: "db",
+    tail: 5,
+    cmd: ["sh", "-c", `printf '%s ' "$@" > "${out}/$(basename "$PWD").args"`, "sh", "whole"],
+    watches: ["docs/**"],
+    ...(widen === undefined ? {} : { widen }),
   });
 
-  it("never probes at the scheduled tier, where every row runs whole", async () => {
+  const spawned = (root: string): string | undefined => {
+    const args = join(out, `${basename(root)}.args`);
+    return existsSync(args) ? readFileSync(args, "utf-8").trim() : undefined;
+  };
+
+  it("runs the row whole when a pending change is a path its `widen` traces from the gate's root", async () => {
+    const root = editedClone("src/ui/exposed.ts");
+    const seen: string[] = [];
+    await run(ladder([], [tracing((cwd) => (seen.push(cwd), ["src/ui/exposed.ts"]))]), {}, { cwd: root });
+
+    expect({ seen, args: spawned(root) }).toEqual({ seen: [root], args: "whole" });
+  });
+
+  it("runs the row whole when an async `widen` traces a pending change", async () => {
+    const root = editedClone("src/ui/exposed.ts");
+    await run(ladder([], [tracing(async () => ["src/ui/exposed.ts"])]), {}, { cwd: root });
+
+    expect(spawned(root)).toBe("whole");
+  });
+
+  it("leaves the row untouched when its `widen` traces none of the pending changes, and records only the rows that ran", async () => {
     const root = editedClone();
-    await run(ladder([], [probing("none")]), { tier: "scheduled" }, { cwd: root });
+    const { logs, code } = await run(ladder([passing("lint")], [tracing(async () => ["src/ui/exposed.ts"])]), {}, { cwd: root });
 
-    expect(outcome(root)).toEqual({ probed: false, args: "whole" });
+    expect(spawned(root)).toBeUndefined();
+    expect(logs).toContain("○ db — untouched by 1 change");
+    expect(readReceipt(root)?.labels).toEqual(["lint"]);
+    expect(code).toBeUndefined();
   });
 
-  it("never asks for the prerequisite of a row its probe leaves untouched", async () => {
+  it("leaves the row untouched when its `widen` traces no path at all", async () => {
     const root = editedClone();
-    const probed: string[] = [];
-    const absent = { tool: "playwright server", probe: () => (probed.push("browser"), false), hint: "start it" };
-    const { code } = await run(ladder([passing("lint")], [{ ...probing("none"), requires: absent }]), {}, { cwd: root });
+    const { logs } = await run(ladder([], [tracing(() => [])]), {}, { cwd: root });
 
-    expect({ probed, code }).toEqual({ probed: [], code: undefined });
+    expect(spawned(root)).toBeUndefined();
+    expect(logs).toContain("○ db — untouched by 1 change");
   });
 
-  it("lists the reach the probe and the trace settle on", async () => {
+  it("never asks `widen` on a clean tree, where no pending change could reach it", async () => {
+    const root = cloneWorktree(TEMPLATE);
+    roots.push(root);
+    const seen: string[] = [];
+    await run(ladder([], [tracing((cwd) => (seen.push(cwd), ["src/ui/exposed.ts"]))]), {}, { cwd: root });
+
+    expect({ seen, args: spawned(root) }).toEqual({ seen: [], args: undefined });
+  });
+
+  it("traces after a --reuse finds no receipt, running the row whole when the trace hits", async () => {
+    const root = editedClone("src/ui/exposed.ts");
+    const { logs } = await run(ladder([], [tracing(() => ["src/ui/exposed.ts"])]), { reuse: true }, { cwd: root });
+
+    expect(logs[0]).toBe(`○ no passing run of tree ${worktreeHash(root) ?? ""} on record at runtime or above; running the gate`);
+    expect({ args: spawned(root), labels: readReceipt(root)?.labels }).toEqual({ args: "whole", labels: ["db"] });
+  });
+
+  it("runs the row whole when its `widen` throws", async () => {
+    const root = editedClone();
+    const widen = (): string[] => {
+      throw new Error("no bundler");
+    };
+    await run(ladder([], [tracing(widen)]), {}, { cwd: root });
+
+    expect(spawned(root)).toBe("whole");
+  });
+
+  it("runs the row whole when its `widen` rejects", async () => {
+    const root = editedClone();
+    await run(ladder([], [tracing(() => Promise.reject(new Error("bundle failed")))]), {}, { cwd: root });
+
+    expect(spawned(root)).toBe("whole");
+  });
+
+  it("never asks `widen` about a row its watches already reach", async () => {
+    const root = editedClone("docs/A.md");
+    const seen: string[] = [];
+    await run(ladder([], [tracing((cwd) => (seen.push(cwd), []))]), {}, { cwd: root });
+
+    expect({ seen, args: spawned(root) }).toEqual({ seen: [], args: "whole" });
+  });
+
+  it("never asks `widen` at the scheduled tier, where every row runs whole", async () => {
+    const root = editedClone();
+    const seen: string[] = [];
+    await run(ladder([], [tracing((cwd) => (seen.push(cwd), []))]), { tier: "scheduled" }, { cwd: root });
+
+    expect({ seen, args: spawned(root) }).toEqual({ seen: [], args: "whole" });
+  });
+
+  it("lists the reach the trace settles on", async () => {
     const untouched = editedClone();
     const traced = editedClone("src/ui/exposed.ts");
     const listed = async (root: string, step: CommandStep): Promise<string[]> =>
       (await run(ladder([], [step]), { list: true }, { cwd: root })).logs;
 
-    expect(await listed(untouched, probing("none"))).toEqual(["verify — 1 step\n  browser (untouched)"]);
-    expect(await listed(traced, probing("none", 0, { widen: () => ["src/ui/exposed.ts"] }))).toEqual(["verify — 1 step\n  browser"]);
+    expect(
+      await listed(
+        untouched,
+        tracing(async () => ["src/ui/exposed.ts"]),
+      ),
+    ).toEqual(["verify — 1 step\n  db (untouched)"]);
+    expect(
+      await listed(
+        traced,
+        tracing(() => ["src/ui/exposed.ts"]),
+      ),
+    ).toEqual(["verify — 1 step\n  db"]);
   });
 
-  it("reuses a receipt whose run the probe left the row out of, without probing again", async () => {
+  it("reuses a receipt whose run the trace left the row out of, without tracing again", async () => {
     const root = editedClone();
-    await run(ladder([passing("lint")], [probing("none")]), {}, { cwd: root });
-    rmSync(join(out, `${basename(root)}.probed`));
-    const { logs } = await run(ladder([passing("lint")], [probing("none")]), { reuse: true }, { cwd: root });
+    const seen: string[] = [];
+    const step = tracing((cwd) => (seen.push(cwd), ["src/ui/exposed.ts"]));
+    await run(ladder([passing("lint")], [step]), {}, { cwd: root });
+    seen.length = 0;
+    const { logs } = await run(ladder([passing("lint")], [step]), { reuse: true }, { cwd: root });
 
     expect(logs.at(-1)).toStartWith("✓ verify — reused the passing runtime run");
-    expect(outcome(root).probed).toBe(false);
+    expect(seen).toEqual([]);
   });
 });
 

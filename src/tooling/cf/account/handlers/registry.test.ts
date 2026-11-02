@@ -25,6 +25,7 @@ describe("defaultHandlers", () => {
       "vars",
       "secrets",
       "rotatable_secrets",
+      "build_vars",
     ];
     for (const t of requiredTypes) {
       expect(types).toContain(t);
@@ -102,6 +103,15 @@ describe("buildHandlers()", () => {
     expect(vars?.extract({ name: "t", vars: { BASE_URL: "https://prod.test" } })).toEqual([
       { name: "BASE_URL", value: "https://prod.test", overridden: true },
     ]);
+  });
+
+  it("threads configPath into the build variables handler's package.json lookup", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-registry-build-"));
+    roots.push(dir);
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ packageManager: "bun@0.0.1" }), "utf-8");
+
+    const build = buildHandlers({ configPath: join(dir, "wrangler.jsonc") }).find((h) => h.type === "build_vars");
+    expect(build?.extract({ name: "t" })).toEqual([{ kind: "exact", version: "0.0.1" }]);
   });
 
   it("defaultHandlers resolves .dev.vars against the cwd, not its parent", () => {

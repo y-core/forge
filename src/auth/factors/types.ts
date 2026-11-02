@@ -39,7 +39,7 @@ export interface EmailOtpOptions {
   nonces: NonceStore;
   notifier: AuthNotifier;
   /** The address a code is sent to, given the identity it is issued for. */
-  address: (userId: string) => string | Promise<string>;
+  address: (userId: string) => AuthStoreResult<string> | Promise<AuthStoreResult<string>>;
   digits?: number;
   ttlMs?: number;
   maxAttempts?: number;

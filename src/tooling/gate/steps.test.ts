@@ -339,7 +339,7 @@ describe("selectSteps() — the paths a change touches", () => {
     );
   });
 
-  it("refuses a nested watches or wide glob that matches no file, naming the row, the field and the glob", () => {
+  it("refuses a nested watches glob that matches no file, naming the row, the field and the glob", () => {
     const files = ["src/ui/a.ts", "README.md"];
     const refusal = (step: Step): string => {
       const result = selectSteps(resolved({ scheduled: [step] }), { tier: "scheduled", files });
@@ -348,9 +348,6 @@ describe("selectSteps() — the paths a change touches", () => {
 
     expect(refusal({ label: "ui", tail: 10, cmd: ["x"], watches: ["src/ui/**", "src/css/**"] })).toBe(
       'Step "ui" declares `watches` glob "src/css/**", which matches no file in the work tree — a renamed path no longer reaches the step, so update the glob.',
-    );
-    expect(refusal({ label: "b", tail: 10, cmd: ["x"], narrow: { args: [], wide: ["src/theme/*.css"] } })).toStartWith(
-      'Step "b" declares `narrow.wide` glob "src/theme/*.css", which matches no file',
     );
   });
 
@@ -398,11 +395,11 @@ describe("selectSteps() — the paths a change touches", () => {
   it("refuses a dead glob on a row the run's tier and --only leave out, since the table is malformed for every run", () => {
     const table = ladder({
       static: [{ label: "lint", tail: 10, cmd: ["l"] }],
-      scheduled: [{ label: "webkit", tail: 10, cmd: ["w"], narrow: { args: [], wide: ["src/gone/**"] } }],
+      scheduled: [{ label: "webkit", tail: 10, cmd: ["w"], watches: ["src/gone/**"] }],
     });
     const result = selectSteps(table, { tier: "static", only: ["lint"], files: ["src/ui/a.ts"] });
 
-    expect(result.ok ? "" : result.error).toStartWith('Step "webkit" declares `narrow.wide` glob "src/gone/**"');
+    expect(result.ok ? "" : result.error).toStartWith('Step "webkit" declares `watches` glob "src/gone/**"');
   });
 
   it("checks no glob against the work tree when no file list is given", () => {
@@ -435,16 +432,10 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
     static: [{ label: "lint", tail: 10, cmd: ["l"], watches: ["src/**"] }],
     unit: [{ label: "test", tail: 10, cmd: ["t"] }],
     runtime: [
-      {
-        label: "browser",
-        tail: 10,
-        cmd: ["b"],
-        watches: ["src/**"],
-        narrow: { args: ["--only-changed"], wide: ["playwright.config.ts", "src/css/**"] },
-      },
+      { label: "browser", tail: 10, cmd: ["b"], watches: ["src/**"] },
       { label: "db", tail: 10, cmd: ["d"], watches: ["db/**"] },
     ],
-    scheduled: [{ label: "webkit", tail: 10, cmd: ["w"], watches: ["src/**"], narrow: { args: ["--only-changed"] } }],
+    scheduled: [{ label: "webkit", tail: 10, cmd: ["w"], watches: ["src/**"] }],
   });
 
   function reachAt(runTier: GateTier, pending: readonly string[] | undefined, gateInputs?: readonly string[]): Record<string, string> {
@@ -456,21 +447,12 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
     return result.ok ? { ...result.reach } : { refused: result.error };
   }
 
-  it("narrows a row with `narrow` whose watches a pending change touches, and leaves a runtime row it misses untouched", () => {
-    expect(reachAt("runtime", ["src/ui/a.ts"])).toEqual({ lint: "whole", test: "whole", browser: "narrow", db: "untouched" });
-  });
-
-  it("runs a runtime row without `narrow` whole when a pending change touches it", () => {
-    expect(reachAt("runtime", ["db/schema.sql"])).toMatchObject({ browser: "untouched", db: "whole" });
+  it("runs a runtime row whose watches a pending change touches whole, and leaves one it misses untouched", () => {
+    expect(reachAt("runtime", ["src/ui/a.ts"])).toEqual({ lint: "whole", test: "whole", browser: "whole", db: "untouched" });
   });
 
   it("leaves every runtime row untouched on a clean tree, and the rows below it whole", () => {
     expect(reachAt("runtime", [])).toEqual({ lint: "whole", test: "whole", browser: "untouched", db: "untouched" });
-  });
-
-  it("runs a row whole when a pending change matches its `wide` globs, whether or not its watches cover the path", () => {
-    expect(reachAt("runtime", ["src/css/theme.css"]).browser).toBe("whole");
-    expect(reachAt("runtime", ["playwright.config.ts"]).browser).toBe("whole");
   });
 
   it("runs every runtime row whole when a pending change matches a default gate input", () => {
@@ -507,7 +489,6 @@ describe("selectSteps() — how each step reaches the pending changes", () => {
 
 describe("selectSteps() — narrowing keys on a row's home tier", () => {
   const DB: Step = { label: "db", tail: 10, cmd: ["d"], watches: ["db/**"] };
-  const NARROWS: Step = { label: "browser", tail: 10, cmd: ["b"], watches: ["src/**"], narrow: { args: ["--only-changed"] } };
 
   function reachIn(table: ResolvedTiers): Readonly<Record<string, string>> {
     const result = selectSteps(table, { tier: "runtime", pending: ["src/ui/a.ts"] });
@@ -520,12 +501,5 @@ describe("selectSteps() — narrowing keys on a row's home tier", () => {
 
   it('runs the same row whole when it is declared in static and reached through tier("static")', () => {
     expect(reachIn(ladder({ static: [DB] }))).toEqual({ db: "whole" });
-  });
-
-  it("narrows a row carrying `narrow` whatever its home tier", () => {
-    expect([reachIn(ladder({ static: [NARROWS] })), reachIn(ladder({ runtime: [NARROWS] }))]).toEqual([
-      { browser: "narrow" },
-      { browser: "narrow" },
-    ]);
   });
 });

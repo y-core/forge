@@ -397,13 +397,13 @@ warning" — is a failure.
 | --- | --- |
 | `static` | judges the source and runs nothing |
 | `unit` | runs code in the test process, with nothing installed but the application's dependencies |
-| `runtime` | needs workerd or a local database, and runs narrowed to the pending changes |
+| `runtime` | needs workerd or a local database, and runs only when the pending changes reach it |
 | `scheduled` | is heavy, or judges a finished change — the deployed bundle; every row at this tier runs whole. An empty changelog entry is the release command's refusal, not a row |
 
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
 
 - it starts a browser, or runs any suite under Playwright — a Worker-runtime suite on Playwright included;
-- it runs a Worker-runtime suite whole on every change, with no way to narrow;
+- it runs a Worker-runtime suite on every change, with nothing declaring which changes reach it;
 - it is a soak, a live-network or a deep property run;
 - its test set takes more than 60 seconds, or one test in it more than 10.
 
@@ -437,8 +437,9 @@ rows. The runner does this, and the verdict names it — `verify (as unit)` — 
 one below. A tier with no declared tier at or below it is refused.
 
 **A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
-whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row narrows only in the tier that
-declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about narrowing it.
+whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row is left untouched only in the
+tier that declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about which
+changes reach it.
 
 ### 6b. What Each Tool Catches
 
@@ -457,16 +458,16 @@ a fail-fast run stops there without being told to.
 A narrowed selection brands every summary line as scoped, so a scoped green can never be read as a green gate. **A selection resolving to zero steps
 is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
 
-**The `runtime` tier's narrowing is not a scoped selection.** It is the tier's own definition (§6a), fixed by the tree and the commit it sits on,
-so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
+**Leaving a row untouched at `runtime` is not a scoped selection.** It is the tier's own definition (§6a), fixed by the tree and the commit it sits
+on, so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
 same commit.
 
-**A runtime row's reach is derived, never declared by hand.** The runner asks the row's tool what the narrowed run would select: the row runs
-nothing when the answer is nothing, runs narrowed when it is something, and runs whole when the answer cannot be read. A change to one of the gate's
-own inputs, or to a path the row declares wide, runs it whole. The only hand-kept list names what the tool's graph cannot see — a file a spec reads
-without importing it, or a module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that leaves
-one of its globs matching nothing is refused rather than silently narrowing the row. **`scheduled` runs every row whole on every tag and every
-cron run**, which is the backstop for a reach the derivation missed. A row whose tool cannot be asked runs whole on every change.
+**A runtime row's reach is derived wherever a graph can derive it.** A row runs whole when a change touches one of the gate's own inputs or a path
+the row reads, and runs nothing otherwise. A row may also trace at run time the paths no glob can name ahead of time; a change reaching one of them
+runs it whole, and so does a trace that fails. The only hand-kept list names what no graph can see — a file a spec reads without importing it, or a
+module it reaches through a specifier resolved at run time — and it is checked against the tree, so a rename that leaves one of its globs matching
+nothing is refused rather than silently dropping the row from a change it reads. **`scheduled` runs every row whole on every tag and every cron
+run**, which is the backstop for a reach the derivation missed. A row that declares nothing it reads runs whole on every change.
 
 **A Playwright row has no reach to derive**: the browser set and the Worker-runtime suite both start at `scheduled`, where every row runs whole
 (§6a).

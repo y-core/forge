@@ -1276,6 +1276,42 @@ same prop but is server-hidden only: there is no runtime re-sync for it.
 `hidden` only stops it being painted, and the filters event is one any script on the page can dispatch. Gate the route itself. An empty list
 therefore hides the item rather than showing it, so a token lookup that misses cannot reveal what it was meant to conceal.
 
+### Compose the bar from contributions
+
+Create one `createPrimaryNav<NavKey, Ctx, NavState>()` per app. Each feature calls `contribute` when it registers, and the layout hands the result
+to `Navbar`:
+
+```tsx
+import type { AppContext } from "@y-core/forge/context";
+import { Navbar, createPrimaryNav } from "@y-core/forge/ui/chrome";
+
+type NavKey = "home" | "notebooks" | "account";
+export const nav = createPrimaryNav<NavKey, AppContext, { signedIn: boolean }>();
+
+nav.contribute({ items: [{ label: "Home", href: "home" }], hrefs: { home: routes.home.href() } });
+nav.contribute({
+  items: [{ label: "Notebooks", href: "notebooks" }, { label: "Account", items: [{ label: "Settings", href: "account" }] }],
+  hrefs: { notebooks: routes.notebooks.href(), account: routes.account.href() },
+  footer: [{ label: "Your account", href: "account" }],
+  state: async (c) => ({ signedIn: await isSignedIn(c) }),
+});
+
+<Navbar config={nav.definition()} resolveHref={nav.resolveHref} icon={AppIcon} />;
+```
+
+**A key a contribution's links name must be in its own `hrefs`.** A misspelled key in `items`, `hrefs` or `footer` fails `bun check`. A
+contribution built apart from the call must be `as const` or annotated `NavContribution<…>`, or its keys widen to `string` and the check is
+lost.
+
+**A key contributed twice throws at `contribute`**, and the refused contribution adds nothing to the bar. The bar renders in registration order.
+
+**No entry may be labelled "Menu"**, at any depth, because the bar's collapse toggle owns that accessible name. `contribute` throws on one.
+
+**`resolveHref` throws on a key nobody contributed** rather than linking home, so a wiring mistake surfaces instead of rendering a link to the
+site root. `footer()` resolves its links the same way.
+
+**`states()` returns each contribution's resolver** for the layout to run once per request.
+
 ### Choose how the bar collapses
 
 `collapsible` decides which breakpoints the bar hides behind its toggle. `"mobile"` (the default) expands the panel and hides the toggle from `md:`

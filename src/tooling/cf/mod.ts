@@ -22,6 +22,7 @@ export {
   RING_MARKER,
   writeDevVars,
 } from "./account/handlers/devvars";
+export { createBuildVarsHandler } from "./account/handlers/build-vars";
 export { createLocalVarsHandler } from "./account/handlers/localvars";
 export { dnsName, prefixedName, sanitizeName } from "./account/handlers/naming";
 export { rateLimitsHandler } from "./account/handlers/ratelimits";

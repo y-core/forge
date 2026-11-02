@@ -43,11 +43,17 @@ export interface KeyRingSignature {
   readonly mac: Uint8Array<ArrayBuffer>;
 }
 
-/** Why a MAC did or did not check out: its key is off the ring, or the MAC is not the one that key makes. @internal */
+/** Why a MAC did or did not check out: its key is off the ring, or the MAC is not the one that key makes. @public */
 export type KeyRingVerdict = "verified" | "no-key" | "forged";
 
 /** What `derivePseudonym` keys: an app-named purpose selecting the subkey, and the id it stands in for. @public */
 export interface PseudonymRequest {
+  readonly purpose: string;
+  readonly value: string | Uint8Array<ArrayBuffer>;
+}
+
+/** What `signKeyRingValue` signs: an app-named purpose selecting the subkey, and the bytes or text the signature covers. @public */
+export interface KeyRingSigningRequest {
   readonly purpose: string;
   readonly value: string | Uint8Array<ArrayBuffer>;
 }

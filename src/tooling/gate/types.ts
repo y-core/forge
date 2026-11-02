@@ -326,8 +326,8 @@ export interface ResolvedTier {
 /** Every tier a table declares, resolved, and each tier above the lowest declared one that it does not, run as the nearest declared tier below. @public */
 export type ResolvedTiers = { readonly [K in GateTier]?: ResolvedTier };
 
-/** How a selected step runs: its whole command, its command plus `narrow.args`, or not at all because no pending change touches it. @public */
-export type StepReach = "whole" | "narrow" | "untouched";
+/** How a selected step runs: its whole command, or not at all because no pending change touches it. @public */
+export type StepReach = "whole" | "untouched";
 
 /** A dependency a step needs, with the probe that detects it and the remedy to print. @public */
 export interface StepRequirement {
@@ -354,25 +354,8 @@ export interface StepBase {
   requires?: StepRequirement;
   /** Globs, relative to the runner's `cwd`, of every path the step reads; omitted, `--affected` runs it on any change. */
   watches?: readonly string[];
-  /** Resolves at the `runtime` tier, for a step that would otherwise narrow or stay untouched, the paths relative to `cwd` whose change runs it whole that no glob names ahead of time; a rejection runs it whole. */
+  /** Resolves at the `runtime` tier, for a step that would otherwise stay untouched, the paths relative to `cwd` whose change runs it whole that no glob names ahead of time; a rejection runs it whole. */
   widen?: (cwd: string) => readonly string[] | Promise<readonly string[]>;
-  /** Narrows the step to pending changes at the `runtime` tier; at `scheduled` it runs whole. */
-  narrow?: {
-    /** Appended to `cmd` when a pending change touches `watches`. */
-    args: readonly string[];
-    /** Globs whose change runs the step whole, for inputs its narrowing cannot trace. */
-    wide?: readonly string[];
-    /** Appended to `cmd` and `args` to ask the tool what the narrowed run would select, without running it; a non-zero exit runs the step whole. */
-    probe?: StepProbe;
-  };
-}
-
-/** How a narrowed step asks its tool whether the pending changes select anything. @public */
-export interface StepProbe {
-  /** Appended after `narrow.args`, turning the narrowed run into a listing. */
-  args: readonly string[];
-  /** False only when the listing proves nothing is selected, so output it cannot read still runs the step. */
-  selects: (output: string) => boolean;
 }
 
 /** A step run as an external process, reported from the tail of its captured output. @public */

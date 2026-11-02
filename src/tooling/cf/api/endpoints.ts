@@ -1,8 +1,16 @@
+import type { CfTokenPermission } from "./types";
+
 const acct = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}`;
 
 /** Worker script settings — GET returns metadata and bindings; PATCH takes a multipart body. */
 export const workerSettings = (accountId: string, scriptName: string) =>
   `${acct(accountId)}/workers/scripts/${encodeURIComponent(scriptName)}/settings`;
+
+/** The account's Worker scripts — GET lists each with its `id` (the script name) and `tag`. */
+export const workerScripts = (accountId: string) => `${acct(accountId)}/workers/scripts`;
+
+/** A Worker's Workers Builds settings, addressed by script tag — GET reads them; PATCH merges into them. */
+export const workerBuildSettings = (accountId: string, tag: string) => `${acct(accountId)}/builds/workers/${encodeURIComponent(tag)}`;
 
 /** Worker secrets — GET lists `{ name, type }`; PUT upserts one. Values are never returned. */
 export const workerSecrets = (accountId: string, scriptName: string) =>
@@ -40,7 +48,13 @@ export const CF_ERROR_CODES = {
 } as const;
 
 /** The API-token permission a Worker's settings and secrets need. */
-export const WORKER_PERMISSION = "Workers Scripts";
+export const WORKER_PERMISSION: CfTokenPermission = { name: "Workers Scripts", grants: "Read to report, Edit to change" };
+
+/** The API-token permission the Workers Builds API needs, which the dashboard labels "Workers Builds Configuration". */
+export const WORKERS_CI_PERMISSION: CfTokenPermission = {
+  name: "Workers CI",
+  grants: "Read to report, Write to change, on a user-scoped token — an account-scoped one is refused as invalid",
+};
 
 /** The API-token permission a D1 write needs, as the dashboard names it. */
 export const D1_WRITE_PERMISSION = "Account → D1 → Edit";

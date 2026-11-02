@@ -28,8 +28,23 @@ export function signWithKeyRing(
   return hmacUnderKeyRing(operation, ring, HMAC_DOMAIN, purpose, data);
 }
 
+/** Checks `mac` over `data` under the key `kid` names and one purpose's HMAC subkey in `domain`; a `null` mac, one that did not decode, is forged. @internal */
+export async function hmacVerifyUnderKeyRing(
+  operation: string,
+  ring: KeyRing,
+  domain: KeyRingDomain,
+  purpose: string,
+  signed: { kid: string; data: string | Uint8Array<ArrayBuffer>; mac: Uint8Array<ArrayBuffer> | null },
+): Promise<KeyRingVerdict> {
+  await assertAppKeyRing(operation, ring);
+  const key = resolveKeyRingKey(ring, { domain, kid: signed.kid, purpose }, "hmac");
+  if (!key) return "no-key";
+  if (signed.mac === null) return "forged";
+  return (await hmacVerify(await key, signed.data, signed.mac)) ? "verified" : "forged";
+}
+
 /** Checks `mac` over `data` under the key `kid` names and the HMAC subkey for `purpose`; a `null` mac, one that did not decode, is forged. @internal */
-export async function verifyWithKeyRing(
+export function verifyWithKeyRing(
   operation: string,
   ring: KeyRing,
   purpose: string,
@@ -37,9 +52,5 @@ export async function verifyWithKeyRing(
   data: string | Uint8Array<ArrayBuffer>,
   mac: Uint8Array<ArrayBuffer> | null,
 ): Promise<KeyRingVerdict> {
-  await assertAppKeyRing(operation, ring);
-  const key = resolveKeyRingKey(ring, { domain: HMAC_DOMAIN, kid, purpose }, "hmac");
-  if (!key) return "no-key";
-  if (mac === null) return "forged";
-  return (await hmacVerify(await key, data, mac)) ? "verified" : "forged";
+  return hmacVerifyUnderKeyRing(operation, ring, HMAC_DOMAIN, purpose, { kid, data, mac });
 }

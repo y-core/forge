@@ -1,7 +1,7 @@
 import { WORKER_SURFACE } from "../target";
 import { CF_ERROR_CODES, WORKER_PERMISSION } from "./endpoints";
 import type { CfApiClientError } from "./types";
-import type { CfFailureKind, DescribeCfFailureOptions } from "./types";
+import type { CfFailureKind, CfTokenPermission, DescribeCfFailureOptions } from "./types";
 
 /** Classifies a Cloudflare failure by envelope error code, falling back to HTTP status. */
 export function classifyCfError(e: CfApiClientError): CfFailureKind {
@@ -25,7 +25,7 @@ export function describeCfFailure(e: CfApiClientError, scriptName: string, optio
     case "not-found":
       return `${WORKER_SURFACE} not found: ${scriptName}`;
     case "auth":
-      return describeAuthFailure(e);
+      return describeAuthFailure(e, options.permission ?? WORKER_PERMISSION);
     case "network":
       return options.redactMessage ? "network error" : `network error — ${e.message}`;
     case "other":
@@ -34,11 +34,11 @@ export function describeCfFailure(e: CfApiClientError, scriptName: string, optio
   }
 }
 
-function describeAuthFailure(e: CfApiClientError): string {
+function describeAuthFailure(e: CfApiClientError, permission: CfTokenPermission): string {
   const code = e.cfErrors?.[0]?.code;
   return [
-    `auth failed — the --api-token is rejected or lacks "${WORKER_PERMISSION}"`,
-    " (Read to report, Edit to change)",
+    `auth failed — the --api-token is rejected or lacks "${permission.name}"`,
+    ` (${permission.grants})`,
     code !== undefined ? ` · code ${code}` : "",
   ].join("");
 }

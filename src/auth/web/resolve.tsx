@@ -56,9 +56,9 @@ export function notFound(): Response {
   return new Response(NOT_FOUND, { status: 404 });
 }
 
-/** The refusal an authenticated request without the role its target demands gets. @internal */
-export function forbidden(): Response {
-  return new Response(FORBIDDEN, { status: 403 });
+/** The refusal an authenticated request without the role its target demands gets, through `onForbidden` where one is passed. @internal */
+export function forbidden<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Response | Promise<Response> {
+  return options.onForbidden === undefined ? new Response(FORBIDDEN, { status: 403 }) : options.onForbidden(c);
 }
 
 // `authCtx` and nothing else: a page's data is read for whoever a guard established, so a route that
@@ -273,6 +273,16 @@ async function resolveSignup<Bindings>(
     ...(turnstile === undefined ? {} : { turnstile }),
     icon: options.icon,
   });
+}
+
+async function resolveSignoutConfirm<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  _viewer: AuthIdentity | null,
+  _state: AuthPageState,
+): Promise<Result<AuthViewProps["signoutConfirm"], Response>> {
+  const submitPath = options.paths.auth.signout();
+  return ok({ submitPath, csrfToken: await mintCsrf(c, submitPath), ...authCsrfHeader(c) });
 }
 
 const RESENT_STAMP = /^\d{1,15}$/;
@@ -739,6 +749,7 @@ async function resolveAdminElevate<Bindings>(
 const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<Name> } = {
   signin: resolveSignin,
   signup: resolveSignup,
+  signoutConfirm: resolveSignoutConfirm,
   verify: resolveVerify,
   enrolPasskey: resolveEnrolPasskey,
   enrolTotp: resolveEnrolTotp,
@@ -763,6 +774,7 @@ const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<N
 export const AUTH_VIEW_GUARDS = {
   signin: [],
   signup: [],
+  signoutConfirm: [],
   verify: ["resolve-auth"],
   enrolPasskey: ["require-auth", "require-pending-enrolment"],
   enrolTotp: ["require-auth", "require-pending-enrolment"],
@@ -783,14 +795,14 @@ export const AUTH_VIEW_GUARDS = {
 
 // `require-auth`, `require-admin` and `require-approval` are observable here and re-checked rather than trusted; the
 // enrolment pair needs a factor-registry round trip per render, so for those `guarded` is the whole check.
-function refuseUnguarded<Bindings>(
+async function refuseUnguarded<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   guards: readonly AuthGuardName[],
-): Result<AuthIdentity | null, Response> {
+): Promise<Result<AuthIdentity | null, Response>> {
   const viewer = resolveAuthViewer(c);
   if (guards.includes("require-auth") && viewer === null) return err(createAuthRedirect(c, options.paths.auth.signin(), 302));
-  if (guards.includes("require-admin") && viewer?.isAdmin !== true) return err(forbidden());
+  if (guards.includes("require-admin") && viewer?.isAdmin !== true) return err(await forbidden(c, options));
   if (guards.includes("require-approval") && approvalCtx.getOptional(c) === undefined) return err(notFound());
   return ok(viewer);
 }
@@ -812,7 +824,7 @@ export async function resolveAuthView<Name extends AuthViewName, Bindings>(
     );
   }
 
-  const admitted = refuseUnguarded(c, options, guards);
+  const admitted = await refuseUnguarded(c, options, guards);
   if (!admitted.ok) return err(admitted.error);
 
   const viewer = admitted.data as AuthViewViewer<Name>;

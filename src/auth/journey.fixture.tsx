@@ -98,7 +98,7 @@ async function buildServices(c: AppContext<JourneyEnv>): Promise<AuthRequestServ
 
   const factors = createFactorRegistry(enrolments, {
     offered: [
-      { service: createEmailOtpFactor({ keys, state, nonces, notifier, address }), role: "primary" },
+      { service: createEmailOtpFactor({ keys, state, nonces, notifier, address: async (userId) => ok(await address(userId)) }), role: "primary" },
       {
         service: createTotpAppFactor({ keys, factors: enrolments, issuer: "Forge journey", account: address }),
         role: "second",

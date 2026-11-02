@@ -6,6 +6,9 @@ import {
   d1DatabasePath,
   d1Path,
   WORKER_PERMISSION,
+  workerBuildSettings,
+  WORKERS_CI_PERMISSION,
+  workerScripts,
   workerSecrets,
   workerSettings,
   ZONE_PHASES,
@@ -39,6 +42,36 @@ describe("workerSettings", () => {
 
   it("builds a path from empty segments rather than dropping them", () => {
     expect(workerSettings("", "")).toBe("/accounts//workers/scripts//settings");
+  });
+});
+
+describe("workerScripts", () => {
+  it("builds the account's script list path", () => {
+    expect(workerScripts("acc-1")).toBe("/accounts/acc-1/workers/scripts");
+  });
+
+  it("encodes a slash in the account id, so it cannot open a second path segment", () => {
+    expect(workerScripts("acc/../other")).toBe("/accounts/acc%2F..%2Fother/workers/scripts");
+  });
+});
+
+describe("workerBuildSettings", () => {
+  it("builds the Workers Builds settings path for a script tag", () => {
+    expect(workerBuildSettings("acc-1", "0a1b2c")).toBe("/accounts/acc-1/builds/workers/0a1b2c");
+  });
+
+  it("encodes a slash in the tag, so it cannot reach a sibling operation", () => {
+    expect(workerBuildSettings("acc-1", "t/../triggers")).toBe("/accounts/acc-1/builds/workers/t%2F..%2Ftriggers");
+  });
+
+  it("encodes a query introducer in the tag, so a tag cannot append parameters", () => {
+    expect(workerBuildSettings("acc-1", "t?patch_existing_previews=true")).toBe(
+      "/accounts/acc-1/builds/workers/t%3Fpatch_existing_previews%3Dtrue",
+    );
+  });
+
+  it("encodes both interpolated segments", () => {
+    expect(workerBuildSettings("a c", "t 1")).toBe("/accounts/a%20c/builds/workers/t%201");
   });
 });
 
@@ -86,7 +119,14 @@ describe("the constant tables", () => {
   });
 
   it("names the permission the Worker surface needs", () => {
-    expect(WORKER_PERMISSION).toBe("Workers Scripts");
+    expect(WORKER_PERMISSION).toEqual({ name: "Workers Scripts", grants: "Read to report, Edit to change" });
+  });
+
+  it("names the Workers Builds permission by its API name, with the user-scoped token it requires", () => {
+    expect(WORKERS_CI_PERMISSION).toEqual({
+      name: "Workers CI",
+      grants: "Read to report, Write to change, on a user-scoped token — an account-scoped one is refused as invalid",
+    });
   });
 
   it("names the permission a D1 write needs as the dashboard spells it", () => {

@@ -10,7 +10,7 @@ import { Form } from "../../../ui/core/form";
 import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
-import type { EmailChangeViewProps } from "./types";
+import type { EmailChangeConfirmViewProps, EmailChangeViewProps } from "./types";
 
 // Design Read: a signed-in visitor changing the address they sign in with; the one action is
 // requesting it; failure is a rejected address — `destructive` Alert above, the typed address kept.
@@ -83,6 +83,48 @@ export const EmailChangeView: FC<EmailChangeViewProps> = ({
           <Link href={accountPath}>Back to your account</Link>
         </p>
       </Card.Footer>
+    </Card>
+  );
+};
+
+// Design Read: a visitor arriving from a mailed link; the one action is confirming it; failure is a
+// refused link, which the caller's own page renders.
+/** The email-change confirmation form a mailed link opens, posting the link's token back. @public */
+export const EmailChangeConfirmView: FC<EmailChangeConfirmViewProps> = ({
+  stage,
+  address,
+  token,
+  submitPath,
+  csrfToken,
+  csrfHeader,
+  class: cls,
+  level,
+}) => {
+  const Heading = `h${level ?? 1}` as "h1";
+  const approving = stage === "approve";
+  return (
+    <Card class={cn("mx-auto w-full max-w-md", cls)}>
+      <Card.Header>
+        <Card.Title>
+          <Heading class='text-xl'>{approving ? "Approve the new email address" : "Confirm your new email address"}</Heading>
+        </Card.Title>
+        <Card.Description>
+          {approving ? (
+            <>
+              Someone signed in to your account asked to move it to {address}. Approve only if that was you — we then send a link to {address} to
+              finish.
+            </>
+          ) : (
+            <>Confirm {address} as the address you sign in with. Every session signs out once it changes.</>
+          )}
+        </Card.Description>
+      </Card.Header>
+      <Card.Content>
+        <Form action={submitPath} csrfToken={csrfToken} csrfHeader={csrfHeader} class='flex flex-col gap-6'>
+          <input type='hidden' name='token' value={token} />
+          <Button type='submit'>{approving ? "Approve the change" : "Confirm the new address"}</Button>
+        </Form>
+      </Card.Content>
     </Card>
   );
 };

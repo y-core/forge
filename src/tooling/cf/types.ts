@@ -16,6 +16,7 @@ export const RESOURCE_TYPES = [
   "vars",
   "secrets",
   "rotatable_secrets",
+  "build_vars",
   "ratelimits",
   "durable_objects",
   "hyperdrive",

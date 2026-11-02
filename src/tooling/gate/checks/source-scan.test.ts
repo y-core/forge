@@ -20,6 +20,7 @@ import {
   listFiles,
   resolveModuleFile,
   resolveSources,
+  stringLiterals,
   unresolvedSourceEntries,
 } from "./source-scan";
 
@@ -252,6 +253,89 @@ describe("blankSourceLiterals() — what it blanks beyond comments", () => {
     const blanked = blankSourceLiterals(source);
 
     expect([blanked.length, blanked.split("\n").length]).toEqual([source.length, source.split("\n").length]);
+  });
+
+  it("blanks a template's chunks and leaves its interpolation code and that code's quotes visible", () => {
+    expect(blankSourceLiterals('const a = `x ${f("y")} z`;')).toBe('const a = `  ${f(" ")}  `;');
+  });
+});
+
+describe("stringLiterals() — the literals a class check reads", () => {
+  it("reads a quoted literal with the line it opens on", () => {
+    expect(stringLiterals('const a = 1;\nconst BASE = "flex gap-2";')).toEqual([{ line: 2, text: "flex gap-2" }]);
+  });
+
+  it("reads both single and double quotes", () => {
+    expect(stringLiterals(`const a = 'flex'; const b = "gap-2";`)).toEqual([
+      { line: 1, text: "flex" },
+      { line: 1, text: "gap-2" },
+    ]);
+  });
+
+  it("cuts a template's interpolation out and keeps the chunks either side", () => {
+    expect(stringLiterals("const a = `flex ${cls} gap-2`;")).toEqual([
+      { line: 1, text: "flex " },
+      { line: 1, text: " gap-2" },
+    ]);
+  });
+
+  it("reads nothing out of a comment", () => {
+    expect(stringLiterals('// const BASE = "flex gap-2";')).toEqual([]);
+    expect(stringLiterals('/* const BASE = "flex gap-2"; */')).toEqual([]);
+  });
+
+  it("keeps an apostrophe in prose from swallowing the rest of the file", () => {
+    expect(stringLiterals(`// don't\nconst BASE = "flex";`)).toEqual([{ line: 2, text: "flex" }]);
+  });
+
+  it("opens no template on a backtick inside a regex, so the literals after it are still read", () => {
+    expect(stringLiterals('const re = /`/;\nconst BASE = "flex gap-2";\nconst a = `px-2`;')).toEqual([
+      { line: 2, text: "flex gap-2" },
+      { line: 3, text: "px-2" },
+    ]);
+  });
+
+  it("opens no string on a quote inside a regex, so the literal after it is still read", () => {
+    expect(stringLiterals('const re = /"/; const BASE = "flex gap-2";')).toEqual([{ line: 1, text: "flex gap-2" }]);
+    expect(stringLiterals("const re = /'/; const BASE = 'flex gap-2';")).toEqual([{ line: 1, text: "flex gap-2" }]);
+  });
+
+  it("returns no regex body as a literal", () => {
+    expect(stringLiterals("const re = /flex/;")).toEqual([]);
+  });
+
+  it("reads the literals inside an interpolation, and a nested template does not end the outer one", () => {
+    const source = 'const a = `btn ${on ? `bg-primary ${x}` : "bg-muted"} px-2`;';
+    expect(stringLiterals(source).map((literal) => literal.text)).toEqual(["btn ", "bg-primary ", "", "bg-muted", " px-2"]);
+  });
+
+  it("keeps a `}` inside a regex in an interpolation from closing it", () => {
+    const source = 'const a = `a ${s.replace(/}/g, "")} b`; const c = "gap-2";';
+    expect(stringLiterals(source).map((literal) => literal.text)).toEqual(["a ", "", " b", "gap-2"]);
+  });
+
+  it("reads a regex opening an interpolation as a regex, backtick and all", () => {
+    const source = 'const a = `${/`/.test(s) ? "x" : "y"} z`;';
+    expect(stringLiterals(source).map((literal) => literal.text)).toEqual(["", "x", "y", " z"]);
+  });
+
+  it("keeps a `}` inside a string in an interpolation from closing it", () => {
+    expect(stringLiterals('const a = `a ${"}"} b`;').map((literal) => literal.text)).toEqual(["a ", "}", " b"]);
+  });
+
+  it("closes an interpolation on its own `}`, not on one closing an object inside it", () => {
+    expect(stringLiterals("const a = `a ${f({ k: { j: 1 } })} b`;").map((literal) => literal.text)).toEqual(["a ", " b"]);
+  });
+
+  it("keeps an escaped backtick inside the template", () => {
+    expect(stringLiterals("const a = `x\\`y`;")).toEqual([{ line: 1, text: "x\\`y" }]);
+  });
+
+  it("reports a literal inside an interpolation on the line it opens on", () => {
+    expect(stringLiterals('const a = `${on\n  ? "flex"\n  : "grid"}`;').filter((literal) => literal.text !== "")).toEqual([
+      { line: 2, text: "flex" },
+      { line: 3, text: "grid" },
+    ]);
   });
 });
 

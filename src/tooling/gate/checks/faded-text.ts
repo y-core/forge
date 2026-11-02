@@ -5,8 +5,7 @@ import { classGroup } from "../../../ui/core/utils/class-groups";
 import { utilityOf } from "../../../ui/core/utils/cn";
 import { checkResult, fail, scannedNothing } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { stringLiterals } from "./class-tokens";
-import { blankComments, endOfCssString, isTestSource, lineAt, resolveSources, unresolvedSourceEntries } from "./source-scan";
+import { blankComments, endOfCssString, isTestSource, lineAt, resolveSources, stringLiterals, unresolvedSourceEntries } from "./source-scan";
 import type { ContrastPairInput, FadedTextCheckConfig } from "./types";
 
 const SCANNED = (name: string): boolean => (/\.tsx?$/.test(name) || name.endsWith(".css")) && !isTestSource(name);

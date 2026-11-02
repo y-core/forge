@@ -34,6 +34,7 @@ import {
   loadPasskeyList,
   loadRecoveryCodes,
   loadSignin,
+  loadSignoutConfirm,
   loadSignup,
   loadTotpEnrol,
   loadVerify,
@@ -154,6 +155,7 @@ const CASES: readonly Case[] = [
     state: { email: "ada@example.com", fieldError: "Try again.", error: "Too many attempts.", status: 422 },
   },
   { label: "signup", name: "signup", load: loadSignup, options: fakeAuthWebOptions() },
+  { label: "signoutConfirm", name: "signoutConfirm", load: loadSignoutConfirm, options: fakeAuthWebOptions() },
   {
     label: "signup+refusal",
     name: "signup",
@@ -333,6 +335,7 @@ const CASES: readonly Case[] = [
 const VIEW_GROUP: Readonly<Record<AuthViewName, readonly string[]>> = {
   signin: ["auth"],
   signup: ["auth"],
+  signoutConfirm: ["auth"],
   verify: ["auth", "verify"],
   enrolPasskey: ["auth", "enrol"],
   enrolTotp: ["auth", "enrol"],
@@ -627,6 +630,10 @@ describe("a deployment offering no passkey factor serves no passkey management p
 
 // `loadAdminUsers` reads `services.admin.list` having read no identity, so an auth view embedded on
 // an unguarded consumer route would serve the whole user table to a visitor.
+const ADMIN_VIEWS = ["adminUsers", "adminUser", "adminUserEdit", "adminUserFactors"] as const;
+
+type AdminViewName = (typeof ADMIN_VIEWS)[number];
+
 describe("resolveAuthView holds a host to the guards the page's data assumes", () => {
   const options = optionsWith({ admin: fakeAdminUserStore(roster) });
 
@@ -657,6 +664,52 @@ describe("resolveAuthView holds a host to the guards the page's data assumes", (
     const res = await app.request("/page");
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("Forbidden");
+  });
+
+  function adminViewApp(onForbidden: AuthWebOptions["onForbidden"], identity: AuthIdentity | null, name: AdminViewName = "adminUsers"): Forge {
+    return guardedApp(async (c) => {
+      const view = await resolveAuthView(c, { ...options, onForbidden }, { name, guarded: AUTH_VIEW_GUARDS[name] } as AuthViewRequest<typeof name>);
+      return view.ok ? new Response(String(await renderToString(view.data.node))) : view.error;
+    }, identity);
+  }
+
+  it("refuses a signed-in non-admin on every admin-gated view through `onForbidden`, handed the request's app context", async () => {
+    const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
+    const answers = [];
+    for (const name of ADMIN_VIEWS) {
+      const res = await adminViewApp(onForbidden, member, name).request("/page");
+      answers.push({ name, status: res.status, type: res.headers.get("content-type"), body: await res.text() });
+    }
+    expect(answers).toEqual(ADMIN_VIEWS.map((name) => ({ name, status: 403, type: "text/html", body: "admin only: /page" })));
+  });
+
+  it("answers a signed-in non-admin with what an async `onForbidden` resolves to", async () => {
+    const res = await adminViewApp(async () => new Response("later", { status: 451 }), member).request("/page");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 451, body: "later" });
+  });
+
+  it("sends an anonymous request to sign-in without consulting `onForbidden`", async () => {
+    const consulted: string[] = [];
+    const onForbidden = (c: AppContext) => {
+      consulted.push(c.url.pathname);
+      return new Response("admin only", { status: 403 });
+    };
+    const res = await adminViewApp(onForbidden, null).request("/page");
+    expect({ ...{ status: res.status, location: res.headers.get("location") }, consulted }).toEqual({
+      status: 302,
+      location: "/auth/signin",
+      consulted: [],
+    });
+  });
+
+  it("serves an administrator the page without consulting `onForbidden`", async () => {
+    const consulted: string[] = [];
+    const onForbidden = (c: AppContext) => {
+      consulted.push(c.url.pathname);
+      return new Response("admin only", { status: 403 });
+    };
+    const res = await adminViewApp(onForbidden, admin).request("/page");
+    expect({ status: res.status, consulted }).toEqual({ status: 200, consulted: [] });
   });
 
   it("needs no claim for a page whose route runs no guards", async () => {

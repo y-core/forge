@@ -48,6 +48,15 @@ export function loadSignup<Bindings>(c: AppContext<Bindings>, options: AuthWebOp
   return authPage(c, options, { name: "signup", state, guarded: AUTH_VIEW_GUARDS.signup });
 }
 
+/** The sign-out confirmation, where a sign-out refused for its token is sent for a fresh one. @public */
+export function loadSignoutConfirm<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "signoutConfirm", state, guarded: AUTH_VIEW_GUARDS.signoutConfirm });
+}
+
 /** The verification page, whose affordance is the code field or a ceremony, per the factor. @public */
 export function loadVerify<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, state: AuthPageState = {}): Promise<Response> {
   return authPage(c, options, { name: "verify", state, guarded: AUTH_VIEW_GUARDS.verify });

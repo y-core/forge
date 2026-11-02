@@ -1,14 +1,15 @@
 ---
 title: The App Key Ring
-description: "How to hold your app's root secrets as one key ring — seal a stored secret, derive a keyed stand-in for an id, sign what forge signs, and rotate and retire the secrets safely."
+description: "How to hold your app's root secrets as one key ring — seal a stored secret, derive a keyed stand-in for an id, sign a value and check it later, and rotate and retire the secrets safely."
 audience: consumer
 ---
 
 # `@y-core/forge/crypto/keyring`
 
 Your app's root secrets live here as one key ring. From it you seal a value your app stores and reads back later — a webhook signing secret, a
-third-party API token — and derive a pseudonym, a keyed stand-in for an id that nobody without the secret can reverse. Forge's CSRF tokens, signed
-cookies and R2 signed URLs sign under the same ring, each with a subkey of its own.
+third-party API token — derive a pseudonym, a keyed stand-in for an id that nobody without the secret can reverse, and sign a value so a later
+request can tell it was yours and unaltered. Forge's CSRF tokens, signed cookies and R2 signed URLs sign under the same ring, each with a subkey of
+its own.
 
 ```ts
 import {
@@ -20,8 +21,12 @@ import {
   openAtRest,
   parseKeyRingSecrets,
   sealAtRest,
+  signKeyRingValue,
+  verifyKeyRingValue,
   type AtRestBinding,
   type KeyRing,
+  type KeyRingSigningRequest,
+  type KeyRingVerdict,
   type PseudonymRequest,
 } from "@y-core/forge/crypto/keyring";
 ```
@@ -147,12 +152,39 @@ throws on an empty purpose, and refuses a ring `importKeyRing` did not build.
 
 ---
 
+## Signing a value
+
+When your app hands out bytes and must later know they came back unaltered — an export a user uploads again, a payload attached to a PDF — sign
+them, and check the signature when they return:
+
+```ts
+const signature = await signKeyRingValue(ring, { purpose: "answers-export", value: bytes });
+// …later, with the bytes and signature as they came back
+const verdict = await verifyKeyRingValue(ring, { purpose: "answers-export", value: bytes }, signature);
+if (verdict !== "verified") return refuse(verdict); // "no-key" or "forged"
+```
+
+A signature is one string, `<kid>.<mac>`: the signing key's id, a dot, and HMAC-SHA-256 of the value in base64url. Store or send it whole —
+`verifyKeyRingValue` parses it, compares in constant time, and answers `"forged"` for anything it cannot parse. A string value is signed as its
+UTF-8 bytes, and a `Uint8Array` as given.
+
+**A signature keeps verifying across a rotation** until its secret leaves the ring, because it names the key that made it. Then it answers
+`"no-key"`, and so does a signature naming a key id somebody made up. **Refuse `"no-key"` exactly as you refuse `"forged"`**: it says nothing
+about the value, so never re-sign the bytes that came back with it. To carry a signature across a retirement, re-sign the value your own store
+holds before the old secret leaves the ring.
+
+**Signatures are derived under subkeys of their own.** No purpose you choose — `csrf` included — reaches the subkeys forge signs its CSRF tokens
+or cookies under, so a signature from your app is never one of forge's. Give every use its own purpose, as with sealing. Both functions throw on
+an empty purpose, and refuse a ring `importKeyRing` did not build.
+
+---
+
 ## What else signs under this ring
 
 **CSRF tokens, signed cookies and R2 signed URLs take this ring too.** Pass the same `KeyRing` to `csrfProtection`, `createSignedCookie` and
-`createSignedObjectUrl`: each derives an HMAC subkey for a purpose of its own, so none of them shares a key with a sealed frame, a pseudonym or
-each other. Each carries the ring's key id on the wire, so a rotation keeps what was signed before it verifying until the old secret leaves the
-ring. Each refuses the auth key ring, as `sealAtRest` and `derivePseudonym` do.
+`createSignedObjectUrl`: each derives an HMAC subkey for a purpose of its own, so none of them shares a key with a sealed frame, a pseudonym, a
+signature or each other. Each carries the ring's key id on the wire, so a rotation keeps what was signed before it verifying until the old secret
+leaves the ring. Each refuses the auth key ring, as `sealAtRest` and `derivePseudonym` do.
 
 How each is wired is its own document's: [`INPUT_VALIDATION.md`][iv-3b] §3b for CSRF, [`src/session/README.md`][session-readme] for signed
 cookies, and [`STORAGE_BINDINGS.md`][sb-3c] §3c for signed URLs.

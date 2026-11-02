@@ -26,7 +26,7 @@ export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSession
       }
       const raw = await kv.get(keyFor(cookie), { type: "text" });
       if (raw === null) {
-        return createSession();
+        return createSession(cookie);
       }
       try {
         return createSession(cookie, JSON.parse(raw) as SessionData);
@@ -44,7 +44,14 @@ export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSession
         return ""; // empty cookie value → the session cookie is cleared
       }
       if (session.dirty) {
-        await kv.put(keyFor(session.id), JSON.stringify(session.data), { expirationTtl: ttlSeconds });
+        const data = session.data;
+        if (Object.keys(data[0]).length === 0 && Object.keys(data[1]).length === 0) {
+          if ((await kv.get(keyFor(session.id), { type: "text" })) !== null) {
+            await kv.delete(keyFor(session.id));
+          }
+          return session.id;
+        }
+        await kv.put(keyFor(session.id), JSON.stringify(data), { expirationTtl: ttlSeconds });
         return session.id;
       }
       return null; // unchanged → no Set-Cookie

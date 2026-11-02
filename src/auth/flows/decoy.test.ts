@@ -146,7 +146,7 @@ describe("verifyAuthDecoy", () => {
       state: world.stores.state,
       nonces: world.stores.nonces,
       notifier: NOTIFIER,
-      address: () => "ada@example.com",
+      address: () => ok("ada@example.com"),
     });
     const run = (): Promise<unknown> => factor.verifyChallenge(REAL_USER_ID, "000000", AT);
     await run();

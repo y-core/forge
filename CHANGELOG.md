@@ -43,15 +43,49 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `forge db bookmark restore` prints the command that undoes it.
 - **`DbIo` gains `fetch` and `wranglerVersion`, and `Home` gains `databaseId`.** A hand-built `DbIo` or `Home` must supply them.
 - **Backup manifests are format 9: `dumper` is replaced by `exporter`.** `forge db restore` refuses an older artifact, so take your backups again.
+- **`EmailOtpOptions.address` returns `AuthStoreResult<string>`, and a failed lookup now sends no code and starts no cooldown.**
+  `createChallenge` answers it as `unavailable`. Return `ok(email)` where you returned the address, and
+  `err(new AuthStoreError("unavailable", …))` where you returned `""`. The auth README's getting-started builder shows the wiring.
+- **Answering an email-change link takes a `GET` and a `POST`: `AuthEmailChangeFlow` gains `inspect`, and your confirm route calls `confirm`
+  only from the `POST`.** A link scanner's `GET` used to burn the token and move the account. Render `EmailChangeConfirmView` from the `GET`
+  with what `inspect` answers, and call `confirm` from its form's `POST`; an `AuthEmailChangeFlow` you implement yourself needs `inspect` too.
+- **`StepBase.narrow` and `StepProbe` are removed, and `StepReach` is `"whole" | "untouched"`.** No forge builder set `narrow`. A step of your
+  own that did runs whole when its `watches` or its `widen` reach a pending change, and is untouched otherwise. Delete the `narrow` option and
+  drop any `StepProbe` import.
+- **`csrfTokenCtx` is removed from `@y-core/forge/form`: `csrfProtection` no longer pre-mints a token on GET.** Render a form that posts back
+  to its own page with `await mintCsrf(c, c.url.pathname)`.
+- **`validate-class-tokens` and `validate-faded-text` now read the class strings inside a template's `${…}`**, so a typo in a conditional class
+  that passed before may now fail. A quote or backtick inside a regex literal also no longer hides the strings after it. `stringLiterals` moves
+  from `checks/class-tokens` to `checks/source-scan`, and `@y-core/forge/tooling/gate` still exports it.
+- **`forge cf sync` now reads Workers Builds when `package.json` pins `bun@`, so a token that is account-scoped or lacks Workers CI gets an
+  `error` row and the run exits 1.** Give the token Workers CI (Read for a status run, Write for `--commit`) and make it user-scoped.
 
 ### Added
 
+- **`@y-core/forge/ui/chrome` composes the primary navbar from contributions.** Call `createPrimaryNav<Key, Ctx, State>()` once, have each
+  feature `contribute` its items, `hrefs`, footer links and state resolver, and pass `definition()` and `resolveHref` to `Navbar`. A misspelled
+  key fails `bun check`, a duplicate key or a "Menu" label throws at `contribute`, and an unknown key throws instead of linking home.
 - **`@y-core/forge/storage/backup` archives a deployed D1 database into R2 from a scheduled Workflow.** Call `runD1Backup(step, options)` from
   your `WorkflowEntrypoint`. It exports through the D1 REST API, streams the dump into R2 by multipart upload, and prunes past `keep`.
   `listD1Backups` lists the archives, newest first.
+- **`requireAdmin` takes `onForbidden`, so a signed-in non-administrator can be answered with a page instead of a plain 403.** Pass the same
+  function as `onForbidden` to `createAuthGuards` and to `AuthWebOptions`, which the admin pages and their actions read. With none, the answer is
+  unchanged.
+- **`forge cf sync` sets the Workers Builds `BUN_VERSION` from `package.json` `packageManager`.** It reports drift for each build settings scope
+  and writes the exact `bun@X.Y.Z` version on `--commit`, through a user-scoped token with Workers CI.
+- **`onForbidden` on `csrfProtection` lets you answer a CSRF refusal yourself**, such as with a fragment an HTMX target can swap. It is called
+  with the context and a `CsrfRefusal` reason (`"unbound-subject"` or a `CsrfFailure` code), for routing and logging. Without it the guard still
+  answers a bare `403`.
+- **`authCsrfRefusal` and a `GET` sign-out confirm page recover a sign-out whose CSRF token expired.** Pass
+  `onForbidden: authCsrfRefusal(paths.auth)` to `csrfProtection`, and a sign-out posted from a page open longer than an hour goes to
+  `auth.signoutConfirm()` instead of answering 403 with the session still signed in. `authRoutes` gains the `signoutConfirm` leaf, so a map of
+  your own must handle it with `loadSignoutConfirm`.
 
 ### Fixed
 
+- **A KV-backed anonymous session that holds no data no longer writes a record**, so a first view of a page with a session-bound CSRF form, or a
+  refused cookie-less POST, costs no KV write. A signed id with no record is restored under the same id, and `csrfProtection` reads the session
+  id on a GET only when the handler mints a token.
 - **`forge cf gen env` types a service binding as `Fetcher`, as `wrangler types` does, and no longer reads `websearch`, a key wrangler rejects.**
   `Fetcher` is what `Service` already resolved to, so code that reads the binding is unaffected.
 - **`validate-exposure` and `validate-compatibility` judge each environment as wrangler builds it.** An `env.*` block that leaves out

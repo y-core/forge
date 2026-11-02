@@ -156,9 +156,9 @@ word, not as a styled banner. Where that matters, give the guard its own answer 
 a fragment.
 
 **`auth/web`'s guards are the documented exception, and mostly are not refusals at all.** They route through `refuse()`, which redirects an HTML
-request to the remedy page and answers a JSON one with a JSON body. Only two produce plain text: `requireAdmin`'s `Forbidden`, and the
-unknown-demand `Service Unavailable` (503), which cannot redirect because every remedy page asks the same unavailable store and the redirect would
-loop.
+request to the remedy page and answers a JSON one with a JSON body. `requireAdmin` takes `onForbidden` for its 403, as `rateLimit` takes
+`onLimit`, and the admin pages and their actions take the same option on `AuthWebOptions`. The one plain-text answer left is the unknown-demand
+`Service Unavailable` (503), which cannot redirect because every remedy page asks the same unavailable store and the redirect would loop.
 
 ---
 

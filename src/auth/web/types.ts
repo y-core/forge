@@ -44,6 +44,7 @@ import type { PasskeyEnrolViewProps } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
 import type { RecoveryCodesViewProps } from "./views/types";
 import type { SigninViewProps } from "./views/types";
+import type { SignoutConfirmViewProps } from "./views/types";
 import type { SignupViewProps } from "./views/types";
 import type { TotpEnrolViewProps } from "./views/types";
 import type { VerifyViewProps } from "./views/types";
@@ -110,6 +111,12 @@ export interface AuthRouteMaps {
   readonly admin?: RouteMap;
 }
 
+/** What `requireAdmin` answers a signed-in non-administrator with. @public */
+export interface AuthAdminGuardOptions<Bindings = Record<string, unknown>> {
+  /** The refusal in place of a plain-text 403. */
+  readonly onForbidden?: ((c: AppContext<Bindings>) => Response | Promise<Response>) | undefined;
+}
+
 /** What `createAuthGuards` needs to wire `AUTH_ROUTE_GROUPS` onto a middleware chain. @public */
 export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   readonly routes: AuthRouteMaps;
@@ -125,6 +132,8 @@ export interface AuthGuardChainOptions<Bindings = Record<string, unknown>> {
   readonly rateLimit?: Readonly<Record<string, NonNullable<MiddlewareGuardGroup<Bindings>["rateLimit"]>>>;
   /** What a group listing `require-approval` holds its requests to; without it every such group answers 404. */
   readonly approval?: Approval<Bindings> | undefined;
+  /** The refusal `require-admin` gives a signed-in non-administrator, in place of a plain-text 403. */
+  readonly onForbidden?: AuthAdminGuardOptions<Bindings>["onForbidden"];
 }
 
 /** What `defineApproval` needs to set up the one administrator approval a deployment's guarded routes share. @public */
@@ -219,6 +228,8 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   readonly signoutClearsSiteData?: boolean | undefined;
   /** A challenge on the anonymous forms; omit it and no form renders or verifies one. */
   readonly turnstile?: AuthTurnstileOptions<Bindings> | undefined;
+  /** The refusal the admin pages and their actions give a signed-in non-administrator, in place of a plain-text 403; pass the one given to `createAuthGuards`. */
+  readonly onForbidden?: AuthAdminGuardOptions<Bindings>["onForbidden"];
 }
 
 /** An anonymous auth form a Turnstile widget can guard; `resend` is the verify page's ask for another code. @public */
@@ -283,6 +294,7 @@ export type AuthAdminPaths<base extends string = string> = AuthPathMap<ReturnTyp
 export interface AuthViewProps {
   readonly signin: SigninViewProps;
   readonly signup: SignupViewProps;
+  readonly signoutConfirm: SignoutConfirmViewProps;
   readonly verify: VerifyViewProps;
   readonly enrolPasskey: PasskeyEnrolViewProps;
   readonly enrolTotp: TotpEnrolViewProps;
@@ -430,7 +442,7 @@ export type AuthNavContext = RequestContext<any, any>;
 
 /** Options for `authNav`. @public */
 export interface AuthNavOptions {
-  /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */
+  /** Where the sign-out form posts, from `authPaths(...).auth.signout()`. */
   readonly signoutPath: string;
   /** The ring the `csrfProtection` guarding that path verifies with; the token is bound to the session, as that guard's is. */
   readonly ring: KeyRingResolver;

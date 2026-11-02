@@ -97,6 +97,38 @@ export interface NavDefinition {
   sections: NavSection[];
 }
 
+type ReadonlyNavFilters<T extends { filters?: string[] | undefined }> = Omit<T, "filters"> & { filters?: readonly string[] | undefined };
+type KeyedNavLink<K extends string> = Omit<ReadonlyNavFilters<NavLink>, "href"> & { href: K };
+type KeyedNavSlot = ReadonlyNavFilters<NavSlot>;
+type KeyedNavGroup<K extends string> = Omit<ReadonlyNavFilters<NavGroup>, "group"> & { group: readonly (KeyedNavLink<K> | KeyedNavSlot)[] };
+type KeyedNavItem<K extends string> =
+  | KeyedNavLink<K>
+  | KeyedNavSlot
+  | (Omit<ReadonlyNavFilters<NavMenu>, "items"> & { items: readonly KeyedNavItem<K>[] })
+  | (Omit<ReadonlyNavFilters<NavMegaMenu>, "groups"> & { groups: readonly KeyedNavGroup<K>[] });
+type KeyedNavSectionItem<K extends string> = KeyedNavItem<K> | KeyedNavGroup<K>;
+
+/** Resolves what one contribution's entries show this request's viewer. @public */
+export type NavStateResolver<C, S> = (c: C) => Promise<S>;
+
+/** One feature's bar entries, the URL each key they name renders as, its footer links and its viewer state. @public */
+export interface NavContribution<K extends string, C, S> {
+  items: readonly KeyedNavSectionItem<K>[];
+  /** The URL each key renders as; the keys are what this contribution's links and footer name. */
+  hrefs: Readonly<Record<K, string>>;
+  footer?: readonly { label: string; href: K }[] | undefined;
+  state?: NavStateResolver<C, S> | undefined;
+}
+
+/** One app's primary navbar, composed in registration order from every contribution. @public */
+export interface PrimaryNav<K extends string, C, S> {
+  contribute: <L extends K>(contribution: NavContribution<L, C, S>) => void;
+  definition: () => NavDefinition;
+  footer: () => readonly Pick<NavLink, "label" | "href">[];
+  resolveHref: (key: string) => string;
+  states: () => readonly NavStateResolver<C, S>[];
+}
+
 /** The glyphs every bar draws: the menu chevron and the inline toggle's own pair. @public */
 export type NavGlyph = "chevron-down" | "hamburger" | "close";
 

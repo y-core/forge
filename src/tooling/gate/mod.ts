@@ -72,7 +72,7 @@ export { canonical, fileURLToPathish, hasTailwind, loadDesignSystem } from "./ch
 export type { ClassOrderCheckConfig } from "./checks/types";
 export { checkClassOrder, droppedToken, validateClassOrder } from "./checks/class-order";
 export type { ClassTokensCheckConfig, SourceLiteral } from "./checks/types";
-export { checkClassTokens, danglingVariants, stringLiterals, unknownTokens } from "./checks/class-tokens";
+export { checkClassTokens, danglingVariants, unknownTokens } from "./checks/class-tokens";
 export { checkCoLocation, declaredByName, testCandidates } from "./checks/co-location";
 export type { CoLocationCheckConfig } from "./checks/types";
 export { checkCommentBudget } from "./checks/comment-budget";
@@ -232,6 +232,7 @@ export {
   listDirectories,
   listFiles,
   resolveSources,
+  stringLiterals,
   suppressedBy,
 } from "./checks/source-scan";
 export { boundaryViolation, checkSsrBoundary, clientSubpaths, validateSsrBoundary } from "./checks/ssr-boundary";
@@ -243,7 +244,7 @@ export { checkResult, fail, formatCheckResult, formatFinding, reportCheck, scann
 export type { CloudflareWorkerDesignOptions, CloudflareWorkerStepOptions, GatePackage, LibraryStepOptions } from "./types";
 export { cloudflareWorkerSteps, forgeChecks } from "./presets";
 export { workerMainClosure } from "./closure";
-export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepProbe, StepReach, StepRequirement, StepResults } from "./types";
+export type { CheckStep, CommandStep, GateTier, Selection, Step, StepBase, StepReach, StepRequirement, StepResults } from "./types";
 export type { GateRunReport, StepReport, StepStatus, TestFailure } from "./types";
 export { DEFAULT_GATE_INPUTS, isCheckStep, selectSteps } from "./steps";
 export { declaredSteps, defineSteps, isStepsConfig, mergeTiers, resolveTiers, tier } from "./tiers";

@@ -429,7 +429,7 @@ a fail-fast run stops there without being told to.
 | --- | --- |
 | `static` | judges the source and runs nothing |
 | `unit` | runs code in the test process, with nothing installed but the repository's dependencies |
-| `runtime` | needs a Worker runtime or a local database, and runs narrowed to the pending changes |
+| `runtime` | needs a Worker runtime or a local database, and runs only when the pending changes reach it |
 | `scheduled` | is heavy, or judges a finished change; every row at this tier runs whole |
 
 **The kind line is what a step does, not what it costs.** Type checking, linting, formatting and every project validator read the source and say
@@ -442,7 +442,7 @@ weakening the gate an epic closes on.
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
 
 - it starts a browser, or runs any suite under Playwright — a Worker-runtime suite on Playwright included;
-- it runs a Worker-runtime suite whole on every change, with no way to narrow;
+- it runs a Worker-runtime suite on every change, with nothing declaring which changes reach it;
 - it is a soak, a live-network or a deep property run;
 - its test set takes more than 60 seconds, or one test in it more than 10.
 
@@ -462,16 +462,15 @@ kind of step: Chromium proves the behaviour, and another engine proves only that
 **Every repository declares `verify:scheduled`.** The cron runs it, so a repository without it is outside the cron, and that is a gap rather than a
 choice.
 
-**Below `scheduled`, a step that declares how to narrow runs only over the pending changes; at `scheduled` it runs whole.** Under `runtime` such a
-step runs whole when a change touches one of the gate's own inputs or a path the step declares wide. Otherwise its tool is asked what the narrowed
-run would select: the step runs nothing when the answer is nothing, runs narrowed to the specs the changes reach when it is something, and runs
-whole when the answer cannot be read.
+**Below `scheduled`, a step that declares what it reads runs only when the pending changes reach it; at `scheduled` it runs whole.** Under
+`runtime` such a step runs whole when a change touches one of the gate's own inputs or a path it reads, and runs nothing otherwise. A step may also
+trace at run time the paths no glob can name ahead of time; a change reaching one of them runs it whole, and so does a trace that fails.
 
 **A step's reach is derived from a graph a check already holds — the tool's import graph, the declared namespace graph — and never from a path
 list kept by hand.** The only hand-kept list names what that graph cannot see: a file a spec reads without importing it, or a module it reaches
 through a specifier resolved at run time. That list is checked against the tree, so a rename that leaves one of its globs matching nothing is
-refused rather than silently narrowing the step. **`scheduled` runs every step whole on every tag and every cron run**, which is the backstop for a
-reach the derivation missed.
+refused rather than silently dropping the step from a change it reads. **`scheduled` runs every step whole on every tag and every cron run**,
+which is the backstop for a reach the derivation missed.
 
 **A table declares each tier as its own list, in run order, and a tier includes a lower one by reference, expanded in place.** Nothing sorts a
 tier. Each tier above `static` leads with the reference to the tier below, by convention: nothing refuses a table that omits it, and such a tier
@@ -483,16 +482,17 @@ rows. The runner does this, and the verdict names it — `verify (as unit)` — 
 one below. A tier with no declared tier at or below it is refused.
 
 **A reference may name only a lower tier, and one resolved tier never holds a label twice.** The table is refused whole when either breaks,
-whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row narrows only in the tier that
-declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about narrowing it.
+whichever tier the run asked for, so a malformed `scheduled` tier fails a `static` run too. Below `scheduled`, a row is left untouched only in the
+tier that declares it directly. A row a tier reaches through a reference runs whole, because the tier that declared it made no claim about which
+changes reach it.
 
 ### 6d. A Scoped Run Is Not a Gate Run
 
 A narrowed selection brands every summary line as scoped and not the gate, so a scoped green can never be read as a green gate. **A selection
 resolving to zero steps is refused outright**: a gate that ran nothing must never be indistinguishable from a gate that passed.
 
-**The `runtime` tier's narrowing is not a scoped selection.** It is the tier's own definition (§6c), fixed by the tree and the commit it sits on,
-so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
+**Leaving a row untouched at `runtime` is not a scoped selection.** It is the tier's own definition (§6c), fixed by the tree and the commit it sits
+on, so its green is a gate green. What it ran depends on that commit, so its receipt records it, and a `runtime` receipt answers a reuse only at the
 same commit.
 
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on

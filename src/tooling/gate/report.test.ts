@@ -177,10 +177,10 @@ describe("listLabel()", () => {
     for (const tier of GATE_TIERS) expect(listLabel({ label: "lint", tail: 10, cmd: ["oxlint"] }, tier)).toBe("lint");
   });
 
-  it("says how a narrowed or untouched step reaches the pending changes, ahead of its dependency", () => {
+  it("says when a step is untouched, ahead of its dependency", () => {
     const browser: Step = { label: "test:browser", tail: 10, cmd: ["playwright"], requires: { tool: "chromium", hint: "x" } };
 
-    expect(listLabel(browser, "runtime", "narrow")).toBe("test:browser (narrowed to pending changes) (requires chromium)");
+    expect(listLabel(browser, "runtime", "untouched")).toBe("test:browser (untouched) (requires chromium)");
     expect(listLabel({ label: "db:lint", tail: 10, cmd: ["forge"] }, "runtime", "untouched")).toBe("db:lint (untouched)");
   });
 });
@@ -294,12 +294,6 @@ describe("formatUntouched()", () => {
   it("says how many pending changes left the step with nothing to run", () => {
     expect(formatUntouched("test:workerd", 3)).toBe("○ test:workerd — untouched by 3 changes");
     expect(formatUntouched("db:lint", 1)).toBe("○ db:lint — untouched by 1 change");
-  });
-
-  it("names the probe that found nothing selected, so the reader can ask it again", () => {
-    expect(formatUntouched("test:workerd", 2, undefined, "playwright test --project=workerd --only-changed --list")).toBe(
-      "○ test:workerd — untouched by 2 changes: `playwright test --project=workerd --only-changed --list` selects nothing",
-    );
   });
 });
 

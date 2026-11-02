@@ -49,8 +49,12 @@ step-up factor. Copy the wiring from there. This section rules on the order it f
 the first three and produces the chain order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e states. `registerAuth`, `registerAccount` and
 `registerAdmin` mount the routes after it.
 
-**`csrfProtection` goes in `globals`, never ahead of the session.** Its subject resolver runs before `next()`, so mounted ahead of the session it
-reads nothing and every token binds to nobody.
+**`csrfProtection` goes in `globals`, never ahead of the session.** Its subject resolver runs before `next()` on a mutation, so mounted ahead of
+the session every mutation is refused.
+
+**That `csrfProtection` takes `onForbidden: authCsrfRefusal(paths.auth)`.** A sign-out posted from a page open past the token's hour then lands on
+the `GET` sign-out confirm page, not on a bare 403 that leaves the session alive. Both paths come off the same `authPaths` map, so they move with
+the mount point. The hook is single: a mount that answers refusals its own way must choose between the two.
 
 **Every store handed to `createAuthGuards` is a resolver, not a value.** On a Worker a store needs `c.env`, which exists only per request. The
 factor registry is the same: the test's `factorRegistryFor` builds a `createFactorRegistry` over this request's factor store.
@@ -243,11 +247,12 @@ mistake, not a request to refuse, so it 500s rather than rendering. An unguarded
 
 **`require-auth`, `require-admin` and `require-approval` are re-checked here and are not taken on trust.** `require-auth` reads the identity off
 `authCtx` and nowhere else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin`
-off that identity and answers the same 403 `requireAdmin` does. `require-approval` reads `approvalCtx`, which only an admitting `requireApproval`
-sets, so an `adminElevate` embed on a route that skips it answers 404 rather than showing the claim form to a visitor who never presented the code;
-the claim's own handler refuses the same way. The rest — `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and
-`require-fresh-step-up` — need a factor-registry round trip that would cost one per render, so for those `guarded` is the whole check. That is why
-it is a claim a reviewer can check, and why a lie about it is a lie about your own route.
+off that identity and answers through `AuthWebOptions.onForbidden` where one is passed, and with the plain 403 `requireAdmin` gives otherwise.
+`require-approval` reads `approvalCtx`, which only an admitting `requireApproval` sets, so an `adminElevate` embed on a route that skips it answers
+404 rather than showing the claim form to a visitor who never presented the code; the claim's own handler refuses the same way. The rest —
+`resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` — need a factor-registry round trip that would cost one
+per render, so for those `guarded` is the whole check. That is why it is a claim a reviewer can check, and why a lie about it is a lie about your
+own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
 the action path — `authRoutes`' `signinSubmit` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a

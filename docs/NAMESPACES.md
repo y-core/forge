@@ -487,8 +487,8 @@ subkey derivation and the frame. It does not route to `auth`, because none of it
 namespace instead — the UUIDv7 set in `storage/db`, the WebAuthn wire formats in `auth/passkey`.
 
 **A keyed stand-in for an id routes here too.** An app that needs an id it can look up but nobody can reverse calls `derivePseudonym` under the
-same ring, rather than hand-rolling an HMAC over Web Crypto. Its subkeys are derived under a label of their own, so a pseudonym never shares a key
-with a sealed frame.
+same ring, rather than hand-rolling an HMAC over Web Crypto. A value the app signs and later checks calls `signKeyRingValue` and
+`verifyKeyRingValue`. Each derives its subkeys under a label of its own, so neither shares a key with a sealed frame or with what forge signs.
 
 **CSRF tokens, R2 signed URLs and `session`'s values sign under a `KeyRing` too.** Each derives an HMAC subkey for a purpose of its own, carries the
 ring's key id on the wire, and refuses the auth key ring.

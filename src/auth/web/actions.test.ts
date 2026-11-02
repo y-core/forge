@@ -1,15 +1,18 @@
-import { afterEach, beforeAll, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, describe, expect, it, spyOn } from "bun:test";
 
 import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../../app/forge-app";
-import { csrfMinterCtx } from "../../form/csrf";
+import type { AppContext } from "../../context/types";
+import { importKeyRing } from "../../crypto/keyring/ring";
+import { createCsrfToken, csrfMinterCtx, csrfProtection } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
+import type { CsrfFailure, CsrfProtectionOptions } from "../../form/types";
 import { requestLog } from "../../logging/request-logger";
 import { err, ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
-import { nullLogger } from "../../testing/context";
+import { createTestContext, nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
 import type { TestAction } from "../../testing/types";
 import { AuthStoreError } from "../errors";
@@ -20,6 +23,7 @@ import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/passke
 import type { PasskeyKeyPair } from "../passkey/types";
 import type { AuthChallenge, AuthCredential, AuthFactor, AuthFactorKind, CredentialStore, UserStore } from "../types";
 import {
+  authCsrfRefusal,
   createAdminElevateActions,
   createAdminUserActions,
   createEmailChangeActions,
@@ -38,7 +42,8 @@ import {
 } from "./actions";
 import { requireApproval, requireFreshStepUp } from "./guards";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
-import { authEnrolmentPaths } from "./paths";
+import { authEnrolmentPaths, authPaths } from "./paths";
+import { authRoutes } from "./routes";
 import type { AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
 import {
   approvedSession,
@@ -874,6 +879,157 @@ describe("createSignoutActions", () => {
   });
 });
 
+describe("authCsrfRefusal", () => {
+  const CSRF_SECRET = "8b7680f6f106e5235091e5cdcc23ed1f2bd06cd47e14022ec96f670b87a7157d";
+  const MINTED_AT = 1_790_000_000_000;
+  const MINUTE = 60_000;
+  const AUTH = authPaths(authRoutes("/auth"));
+
+  let restore: (() => void)[] = [];
+  afterEach(() => {
+    for (const undo of restore) undo();
+    restore = [];
+  });
+
+  /** An app whose sign-out and sign-in POSTs sit behind `csrfProtection`, recording every handler that ran. */
+  function guarded(base: string, options: Partial<CsrfProtectionOptions> = {}) {
+    const ran: string[] = [];
+    const app = new Forge();
+    app.use("*", csrfProtection({ ring: () => importKeyRing([CSRF_SECRET]), subject: false, ...options }));
+    for (const path of [`${base}/signout`, `${base}/signin`]) {
+      mapHandler(app, "ANY", path, (c) => {
+        ran.push(`${c.method} ${path}`);
+        return new Response("ran");
+      });
+    }
+    return { app, ran };
+  }
+
+  function refusing(base = "/auth", options: Partial<CsrfProtectionOptions> = {}) {
+    return guarded(base, { onForbidden: authCsrfRefusal(authPaths(authRoutes(base))), ...options });
+  }
+
+  /** A token for `path` minted at `MINTED_AT`, with the clock then moved `ageMs` past it. */
+  async function agedToken(path: string, ageMs: number): Promise<string> {
+    const clock = spyOn(Date, "now").mockReturnValue(MINTED_AT);
+    restore.push(() => clock.mockRestore());
+    const token = await createCsrfToken(await importKeyRing([CSRF_SECRET]), path);
+    clock.mockReturnValue(MINTED_AT + ageMs);
+    return token;
+  }
+
+  function post(fields: Record<string, string>, headers: Record<string, string> = {}, method = "POST"): RequestInit {
+    return { method, body: new URLSearchParams(fields).toString(), headers: { "content-type": "application/x-www-form-urlencoded", ...headers } };
+  }
+
+  async function answerOf(res: Response) {
+    return { status: res.status, location: res.headers.get("location"), hxRedirect: res.headers.get("hx-redirect"), body: await res.text() };
+  }
+
+  it("sends a sign-out whose token aged 61 minutes to the confirm page without running the sign-out", async () => {
+    const { app, ran } = refusing();
+    const token = await agedToken("/auth/signout", 61 * MINUTE);
+
+    const res = await app.request("/auth/signout", post({ _csrf: token }));
+    expect({ answer: await answerOf(res), ran }).toEqual({
+      answer: { status: 303, location: "/auth/signout", hxRedirect: null, body: "" },
+      ran: [],
+    });
+  });
+
+  it("admits a sign-out whose token aged 59 minutes to the sign-out handler", async () => {
+    const { app, ran } = refusing();
+    const token = await agedToken("/auth/signout", 59 * MINUTE);
+
+    const res = await app.request("/auth/signout", post({ _csrf: token }));
+    expect({ status: res.status, ran }).toEqual({ status: 200, ran: ["POST /auth/signout"] });
+  });
+
+  it("answers an htmx sign-out refused for its token with a 204 carrying HX-Redirect to the confirm page", async () => {
+    const { app, ran } = refusing();
+    const token = await agedToken("/auth/signout", 61 * MINUTE);
+
+    const res = await app.request("/auth/signout", post({ _csrf: token }, HX_REQUEST));
+    expect({ answer: await answerOf(res), ran }).toEqual({
+      answer: { status: 204, location: null, hxRedirect: "/auth/signout", body: "" },
+      ran: [],
+    });
+  });
+
+  it("sends a tokenless sign-out POST to the confirm page", async () => {
+    const { app, ran } = refusing();
+
+    const res = await app.request("/auth/signout", post({}));
+    expect({ status: res.status, location: res.headers.get("location"), ran }).toEqual({ status: 303, location: "/auth/signout", ran: [] });
+  });
+
+  it("refuses a sign-out at 403 when no session subject is there to bind a fresh token to", async () => {
+    const warn = spyOn(console, "warn").mockImplementation(() => undefined);
+    restore.push(() => warn.mockRestore());
+    const { app, ran } = refusing("/auth", { subject: () => undefined });
+
+    const res = await app.request("/auth/signout", post({}));
+    expect({ answer: await answerOf(res), ran }).toEqual({ answer: { status: 403, location: null, hxRedirect: null, body: "Forbidden" }, ran: [] });
+  });
+
+  it("answers a refusal on any other path exactly as the guard's own default does", async () => {
+    const token = await agedToken("/auth/signin", 61 * MINUTE);
+    const recovering = refusing();
+    const plain = guarded("/auth");
+
+    const recovered = await recovering.app.request("/auth/signin", post({ _csrf: token }));
+    const fallback = await plain.app.request("/auth/signin", post({ _csrf: token }));
+    expect({ recovered: { ...(await answerOf(recovered)), type: recovered.headers.get("content-type") }, ran: recovering.ran }).toEqual({
+      recovered: { ...(await answerOf(fallback)), type: fallback.headers.get("content-type") },
+      ran: [],
+    });
+    expect(fallback.status).toBe(403);
+  });
+
+  it("redirects a sign-out POST refused for every reason a token can fail", async () => {
+    const refusal = authCsrfRefusal(AUTH);
+    const reasons: Record<CsrfFailure, true> = {
+      expired: true,
+      "future-timestamp": true,
+      "invalid-format": true,
+      "invalid-signature": true,
+      "missing-token": true,
+      "path-mismatch": true,
+      "subject-mismatch": true,
+      "unknown-key": true,
+    };
+
+    const answers = Object.keys(reasons).map((reason) => {
+      const res = refusal(createTestContext(new Request("http://localhost/auth/signout", { method: "POST" })), reason as CsrfFailure);
+      return { reason, status: res.status, location: res.headers.get("location") };
+    });
+    expect(answers).toEqual(Object.keys(reasons).map((reason) => ({ reason, status: 303, location: "/auth/signout" })));
+  });
+
+  it("refuses at 403 a DELETE to the sign-out path that the guard refused", async () => {
+    const { app, ran } = refusing();
+
+    const res = await app.request("/auth/signout", post({}, {}, "DELETE"));
+    expect({ status: res.status, body: await res.text(), ran }).toEqual({ status: 403, body: "Forbidden", ran: [] });
+  });
+
+  it("follows the auth routes to a /login mount point and no longer recognises /auth/signout", async () => {
+    const login = refusing("/login");
+    const loginToken = await agedToken("/login/signout", 61 * MINUTE);
+    const atLogin = await login.app.request("/login/signout", post({ _csrf: loginToken }));
+
+    const authAnswer = authCsrfRefusal(authPaths(authRoutes("/login")))(
+      createTestContext(new Request("http://localhost/auth/signout", { method: "POST" })),
+      "expired",
+    );
+
+    expect({
+      atLogin: { status: atLogin.status, location: atLogin.headers.get("location"), ran: login.ran },
+      atAuth: { status: authAnswer.status, body: await authAnswer.text() },
+    }).toEqual({ atLogin: { status: 303, location: "/login/signout", ran: [] }, atAuth: { status: 403, body: "Forbidden" } });
+  });
+});
+
 describe("createPasskeyEnrolActions — the nickname the ceremony carries", () => {
   const RP_ID = "example.com";
   const ORIGIN = "https://example.com";
@@ -1676,7 +1832,7 @@ describe("createAdminUserActions — resetFactors", () => {
   const target = fakeAuthUser({ id: "u2", email: "member@example.com" });
   const actor = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
 
-  function resetApp(seed: Seed, outcome: "changed" | "not-found" = "changed") {
+  function resetApp(seed: Seed, outcome: "changed" | "not-found" = "changed", onForbidden?: AuthWebOptions["onForbidden"]) {
     const resets: string[] = [];
     const admin = fakeAdminUserStore([target, actor], {
       resetFactors: async (id, at) => {
@@ -1684,7 +1840,7 @@ describe("createAdminUserActions — resetFactors", () => {
         return ok(outcome);
       },
     });
-    const options = optionsWith({ users: fakeAuthUserStore([target, actor]), admin });
+    const options = { ...optionsWith({ users: fakeAuthUserStore([target, actor]), admin }), onForbidden };
     const app = mounted(actionApp(seed), "POST", "/admin/users/:id/factors/reset", createAdminUserActions(options).resetFactors);
     return { resets, app };
   }
@@ -1697,10 +1853,21 @@ describe("createAdminUserActions — resetFactors", () => {
     expect({ answer: await answerOf(res), resets }).toEqual({ answer: { status: 303, location: "/admin/users/u2/factors" }, resets: ["u2@1000"] });
   });
 
-  it("refuses a signed-in non-administrator at 403 without resetting anything", async () => {
+  it("refuses a signed-in non-administrator with a plain-text 403 without resetting anything", async () => {
     const { resets, app } = resetApp({ userId: "u9", admin: false });
     const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
-    expect({ status: res.status, resets }).toEqual({ status: 403, resets: [] });
+    expect({ status: res.status, body: await res.text(), resets }).toEqual({ status: 403, body: "Forbidden", resets: [] });
+  });
+
+  it("refuses a signed-in non-administrator through `onForbidden` without resetting anything", async () => {
+    const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+    const { resets, app } = resetApp({ userId: "u9", admin: false }, "changed", onForbidden);
+    const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
+    expect({ status: res.status, body: await res.text(), resets }).toEqual({
+      status: 403,
+      body: "admin only: /admin/users/u2/factors/reset",
+      resets: [],
+    });
   });
 
   it("refuses an administrator resetting their own account at 409, whatever case the id is spelled in", async () => {
@@ -1976,8 +2143,23 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     const app = mounted(actionApp({ userId: "u2", admin: false }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
-    expect(res.status).toBe(403);
-    expect(writes).toBe(0);
+    expect({ status: res.status, body: await res.text(), writes }).toEqual({ status: 403, body: "Forbidden", writes: 0 });
+  });
+
+  it("answers a signed-in non-administrator's PATCH through `onForbidden`, writing nothing", async () => {
+    let writes = 0;
+    const admin = fakeAdminUserStore([member], {
+      setAdmin: async () => {
+        writes += 1;
+        return ok("changed" as const);
+      },
+    });
+    const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+    const options = { ...optionsWith({ users: fakeAuthUserStore([member]), admin }), onForbidden };
+    const app = mounted(actionApp({ userId: "u2", admin: false }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+
+    const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
+    expect({ status: res.status, body: await res.text(), writes }).toEqual({ status: 403, body: "admin only: /admin/users/u2", writes: 0 });
   });
 
   it("refuses a signed-in non-administrator's DELETE rather than deleting the account it names", async () => {
@@ -1995,8 +2177,24 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     const app = mounted(actionApp({ userId: "u2", admin: false }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
 
     const res = await app.request("/admin/users/u3", { method: "DELETE" });
-    expect(res.status).toBe(403);
-    expect(removals).toBe(0);
+    expect({ status: res.status, body: await res.text(), removals }).toEqual({ status: 403, body: "Forbidden", removals: 0 });
+  });
+
+  it("answers a signed-in non-administrator's DELETE through what an async `onForbidden` resolves to, deleting nothing", async () => {
+    const target = fakeAuthUser({ id: "u3", email: "target@example.com" });
+    let removals = 0;
+    const admin = fakeAdminUserStore([member, target], {
+      remove: async () => {
+        removals += 1;
+        return ok("changed" as const);
+      },
+    });
+    const onForbidden = async (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
+    const options = { ...optionsWith({ users: fakeAuthUserStore([member, target]), admin }), onForbidden };
+    const app = mounted(actionApp({ userId: "u2", admin: false }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+
+    const res = await app.request("/admin/users/u3", { method: "DELETE" });
+    expect({ status: res.status, body: await res.text(), removals }).toEqual({ status: 403, body: "admin only: /admin/users/u3", removals: 0 });
   });
 });
 

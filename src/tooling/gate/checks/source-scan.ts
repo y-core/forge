@@ -3,7 +3,7 @@ import { basename, posix, relative, resolve, sep } from "node:path";
 
 import { fail } from "../finding";
 import type { Finding } from "../types";
-import type { CommentSpan } from "./types";
+import type { CommentSpan, SourceLiteral } from "./types";
 
 const TEST_SUFFIXES = [".test.ts", ".test.tsx", ".browser.ts", ".browser.tsx", ".fixture.ts", ".fixture.tsx"];
 
@@ -155,9 +155,23 @@ export function endOfRegex(source: string, start: number): number {
 // closes a JSX tag, and reading `</p>` as a regex swallows the `//` comment on the same line.
 const OPENS_REGEX = /(?:=>|[({[,;:=!&|?+\-*%~^]|\b(?:return|typeof|instanceof|in|of|new|delete|void|throw|case|do|else|yield|await))\s*$/;
 
+type LiteralOpener = "'" | '"' | "`" | "/";
+
+function endOfTemplateChunk(source: string, start: number): number {
+  for (let i = start; i < source.length; i++) {
+    const char = source[i];
+    if (char === "\\") {
+      i++;
+      continue;
+    }
+    if (char === "`" || (char === "$" && source[i + 1] === "{")) return i;
+  }
+  return -1;
+}
+
 // One pass over strings, regex literals and comments together, so none can start inside another —
 // including the odd backtick inside a regex, which a regex-blind lexer reads as a template opener.
-function scan(source: string, lineComments: boolean, onLiteral?: (start: number, end: number) => void): CommentSpan[] {
+function scan(source: string, lineComments: boolean, onLiteral?: (start: number, end: number, opener: LiteralOpener) => void): CommentSpan[] {
   const spans: CommentSpan[] = [];
   let line = 1;
   let counted = 0;
@@ -170,13 +184,48 @@ function scan(source: string, lineComments: boolean, onLiteral?: (start: number,
 
   // The last 16 code characters, which is all `OPENS_REGEX` needs and all a comment leaves untouched.
   let tail = "";
+  let depth = 0;
+  const resumes: number[] = [];
+  const chunk = (start: number): number => {
+    const stop = endOfTemplateChunk(source, start);
+    if (stop === -1) return -1;
+    onLiteral?.(start, stop, "`");
+    if (source[stop] === "`") return stop;
+    resumes.push(depth);
+    depth++;
+    return stop + 1;
+  };
 
   for (let i = 0; i < source.length; i++) {
     const char = source[i];
-    if (char === "'" || char === '"' || (lineComments && char === "`")) {
+    if (lineComments && char === "`") {
+      const stop = chunk(i + 1);
+      if (stop !== -1) {
+        i = stop;
+        tail = source[stop] === "`" ? "x" : "{";
+        continue;
+      }
+      tail = (tail + char).slice(-16);
+      continue;
+    }
+    if (lineComments && resumes.length > 0 && (char === "{" || char === "}")) {
+      if (char === "{") depth++;
+      else if (--depth === resumes.at(-1)) {
+        resumes.pop();
+        const stop = chunk(i + 1);
+        if (stop !== -1) {
+          i = stop;
+          tail = source[stop] === "`" ? "x" : "{";
+          continue;
+        }
+      }
+      tail = (tail + char).slice(-16);
+      continue;
+    }
+    if (char === "'" || char === '"') {
       const end = lineComments ? endOfQuoted(source, i) : endOfCssString(source, i);
       if (end !== -1) {
-        onLiteral?.(i + 1, end - 1);
+        onLiteral?.(i + 1, end - 1, char);
         i = end - 1;
         tail = "x";
         continue;
@@ -209,7 +258,7 @@ function scan(source: string, lineComments: boolean, onLiteral?: (start: number,
     if (lineComments && (tail.trim() === "" || OPENS_REGEX.test(tail))) {
       const end = endOfRegex(source, i);
       if (end !== -1) {
-        onLiteral?.(i + 1, source.lastIndexOf("/", end - 1));
+        onLiteral?.(i + 1, source.lastIndexOf("/", end - 1), "/");
         i = end - 1;
         tail = "x";
         continue;
@@ -256,6 +305,15 @@ export function blankSourceComments(source: string): string {
 /** `source` with comments and the bodies of string, template and regex literals blanked space-for-space, delimiters kept. @internal */
 export function blankSourceLiterals(source: string): string {
   return blank(source, true, true);
+}
+
+/** Every string literal and template chunk in `source`, each with its opening line — comments, regex bodies and `${…}` code excluded. @public */
+export function stringLiterals(source: string): SourceLiteral[] {
+  const out: SourceLiteral[] = [];
+  scan(source, true, (start, end, opener) => {
+    if (opener !== "/") out.push({ line: lineAt(source, start), text: source.slice(start, end) });
+  });
+  return out;
 }
 
 /** Index just past the string literal opening at `start`, or -1 when it never closes. @internal */

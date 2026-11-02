@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { checkClassTokens, danglingVariants, stringLiterals, unknownTokens } from "./class-tokens";
+import { checkClassTokens, danglingVariants, unknownTokens } from "./class-tokens";
 import { hasTailwind, loadDesignSystem } from "./design-system";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
@@ -34,35 +34,6 @@ function fixtureRoot(files: Record<string, string>): string {
 function fake(known: readonly string[], declared: readonly string[]): { known: (token: string) => boolean; declared: Set<string> } {
   return { known: (token) => known.includes(token), declared: new Set(declared) };
 }
-
-describe("stringLiterals", () => {
-  it("reads a quoted literal with the line it opens on", () => {
-    expect(stringLiterals('const a = 1;\nconst BASE = "flex gap-2";')).toEqual([{ line: 2, text: "flex gap-2" }]);
-  });
-
-  it("reads both single and double quotes", () => {
-    expect(stringLiterals(`const a = 'flex'; const b = "gap-2";`)).toEqual([
-      { line: 1, text: "flex" },
-      { line: 1, text: "gap-2" },
-    ]);
-  });
-
-  it("cuts a template's interpolation out and keeps the chunks either side", () => {
-    expect(stringLiterals("const a = `flex ${cls} gap-2`;")).toEqual([
-      { line: 1, text: "flex " },
-      { line: 1, text: " gap-2" },
-    ]);
-  });
-
-  it("reads nothing out of a comment", () => {
-    expect(stringLiterals('// const BASE = "flex gap-2";')).toEqual([]);
-    expect(stringLiterals('/* const BASE = "flex gap-2"; */')).toEqual([]);
-  });
-
-  it("keeps an apostrophe in prose from swallowing the rest of the file", () => {
-    expect(stringLiterals(`// don't\nconst BASE = "flex";`)).toEqual([{ line: 2, text: "flex" }]);
-  });
-});
 
 describe("unknownTokens", () => {
   const oracle = fake(["rounded-sm", "text-(--tone-text)", "flex"], ["focus-ring-outset", "rounded", "text", "flex"]);
@@ -143,6 +114,48 @@ describe("unknownTokens", () => {
     expect(unknownTokens("a.tsx", 'label("flex layouts focus-ring-outset-outset")', oracle.known, oracle.declared)).toEqual([]);
   });
 
+  it("reads a class string after a regex holding a backtick, rather than swallowing it into a template", () => {
+    const forge = fake(["flex", "rounded-sm"], ["state-invalid", "flex", "rounded"]);
+    const source = 'const re = /`/;\nconst BASE = "flex rounded-sm state-invalidd";\nconst a = `px-2`;';
+    expect(unknownTokens("src/ui/core/input.tsx", source, forge.known, forge.declared)).toEqual([
+      {
+        level: "fail",
+        message: "class token matches no utility the design system produces CSS for",
+        file: "src/ui/core/input.tsx",
+        line: 2,
+        detail: ["`state-invalidd`", "`state-invalid` is a utility this design system declares — `state-invalidd` is not, so it renders nothing"],
+      },
+    ]);
+  });
+
+  for (const source of [
+    'const re = /"/; const BASE = "flex rounded-sm state-invalidd";',
+    "const re = /'/; const BASE = 'flex rounded-sm state-invalidd';",
+  ]) {
+    it(`reads a class string after a regex holding its own quote: ${source}`, () => {
+      const forge = fake(["flex", "rounded-sm"], ["state-invalid", "flex", "rounded"]);
+      expect(unknownTokens("a.tsx", source, forge.known, forge.declared).map((finding) => [finding.line, finding.detail?.[0]])).toEqual([
+        [1, "`state-invalidd`"],
+      ]);
+    });
+  }
+
+  it("judges a class string inside a conditional interpolation", () => {
+    const forge = fake(["flex", "rounded-sm"], ["state-invalid", "flex", "rounded"]);
+    const source = 'const a = `flex ${on ? "flex rounded-sm" : "rounded-sm state-invalidd"}`;';
+    expect(unknownTokens("a.tsx", source, forge.known, forge.declared).map((finding) => [finding.line, finding.detail?.[0]])).toEqual([
+      [1, "`state-invalidd`"],
+    ]);
+  });
+
+  it("judges a class string after an interpolation whose regex holds a backtick", () => {
+    const forge = fake(["flex", "rounded-sm"], ["state-invalid", "flex", "rounded"]);
+    const source = 'const a = `${s.replace(/`/g, "")} flex`;\nconst BASE = "flex rounded-sm state-invalidd";';
+    expect(unknownTokens("a.tsx", source, forge.known, forge.declared).map((finding) => [finding.line, finding.detail?.[0]])).toEqual([
+      [2, "`state-invalidd`"],
+    ]);
+  });
+
   it("still judges a class string that carries a marker class no utility compiles", () => {
     const source = 'cn("group/filter flex focus-ring-outset-outset")';
     expect(unknownTokens("a.tsx", source, oracle.known, oracle.declared).map((finding) => finding.detail?.[0])).toEqual([
@@ -177,6 +190,16 @@ describe("danglingVariants", () => {
 
   it("says nothing about a whole class string, however permissive the predicate", () => {
     expect(danglingVariants("a.tsx", 'cn("hover:bg-accent size-4")', () => true)).toEqual([]);
+  });
+
+  it("reports a variant fragment after a regex holding a backtick", () => {
+    const source = 'const re = /`/;\nconst V = "hover:";\nconst a = `x`;';
+    expect(danglingVariants("a.tsx", source, variant).map((finding) => [finding.line, finding.detail])).toEqual([[2, ["`hover:`"]]]);
+  });
+
+  it("reports a variant fragment inside a nested template", () => {
+    const source = 'const a = `flex ${on ? `hover:${x}` : ""} p-2`;';
+    expect(danglingVariants("a.tsx", source, variant).map((finding) => [finding.line, finding.detail])).toEqual([[1, ["`hover:`"]]]);
   });
 
   it("reports the same fragment once per line, however many literals repeat it", () => {

@@ -24,7 +24,7 @@ import { createAuthRedirect } from "./redirect";
 import { AUTH_ROUTE_GROUPS } from "./routes";
 import type { AccessTokenGuardOptions, Approval, AuthIdentity } from "./types";
 import type { AuthGuardName, AuthMedium, AuthRouteGroup } from "./types";
-import type { AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthRouteMaps } from "./types";
+import type { AuthAdminGuardOptions, AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthRouteMaps } from "./types";
 
 const NO_SESSION =
   "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.";
@@ -146,11 +146,12 @@ function establishedIdentity(context: Parameters<Middleware>[0], guard: string):
 }
 
 /** Refuses a request whose established identity is not an administrator. @public */
-export function requireAdmin(): Middleware {
+export function requireAdmin<Bindings = Record<string, unknown>>(options: AuthAdminGuardOptions<Bindings> = {}): Middleware {
+  const { onForbidden } = options;
   return (context, next) => {
     const identity = establishedIdentity(context, "requireAdmin");
-    if (!identity.isAdmin) return new Response("Forbidden", { status: 403 });
-    return next();
+    if (identity.isAdmin) return next();
+    return onForbidden === undefined ? new Response("Forbidden", { status: 403 }) : onForbidden(getAppContext<Bindings>(context));
   };
 }
 
@@ -443,7 +444,7 @@ function assertGuardOrder(group: AuthRouteGroup): void {
 
 function guardMiddleware<Bindings>(
   name: AuthGuardName,
-  options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment" | "approval">,
+  options: Pick<AuthGuardChainOptions<Bindings>, "auth" | "enrolment" | "approval" | "onForbidden">,
   group: AuthRouteGroup,
 ): Middleware {
   const medium = group.medium;
@@ -462,7 +463,7 @@ function guardMiddleware<Bindings>(
       ...(group.clearsStepUp === true ? { clearsStepUp: true } : {}),
       medium,
     });
-  if (name === "require-admin") return requireAdmin();
+  if (name === "require-admin") return requireAdmin<Bindings>({ onForbidden: options.onForbidden });
   if (name === "require-pending-enrolment") return requirePendingEnrolment({ ...options.enrolment, medium });
   if (name === "require-fresh-step-up") return requireFreshStepUp({ ...options.enrolment, medium });
   if (name === "require-approval") {

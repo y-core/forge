@@ -2,6 +2,7 @@ import type { ButtonProps } from "../../../ui/core/types";
 import type { ForgeIcon } from "../../../ui/core/types";
 import type { OtpLength } from "../../../ui/core/types";
 import type { TotpAppEnrolment } from "../../factors/types";
+import type { AuthEmailChangeStage } from "../../flows/types";
 import type { AdminUserOutcome } from "../../types";
 import type { AuthUser } from "../../types";
 import type { AuthCredential } from "../../types";
@@ -126,6 +127,19 @@ export type EmailChangeViewProps = AuthViewChrome & {
   /** Set once the confirmation has gone out, so the page reports the outcome rather than repeating the form. */
   readonly sentTo?: string | undefined;
   readonly icon: ForgeIcon<"alert" | "mail">;
+};
+
+/** What the email-change confirmation form renders, from what `AuthEmailChangeFlow.inspect` read off the link. @public */
+export type EmailChangeConfirmViewProps = AuthViewChrome & {
+  readonly stage: AuthEmailChangeStage;
+  /** The address the account moves to. */
+  readonly address: string;
+  /** The link's own token, posted back so `confirm` can burn it. */
+  readonly token: string;
+  readonly submitPath: string;
+  readonly csrfToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
 };
 
 /** What the passkey rename page renders. @public */
@@ -254,7 +268,7 @@ export type AuthSiteDataProps = {
 
 /** What the control that ends a session needs, and the knobs a host places it with. @public */
 export type AuthSignoutProps = {
-  /** The POST-only sign-out route, from `authPaths(...).auth.signout()`. */
+  /** Where the form posts, from `authPaths(...).auth.signout()`. */
   readonly action: string;
   /** The token authorising that POST; without one `csrfProtection` refuses it. */
   readonly csrfToken: string;
@@ -269,6 +283,15 @@ export type AuthSignoutProps = {
   readonly menuitem?: boolean | undefined;
   /** Composed onto the button, not the form it submits: the form is a wrapper with no box of its own. */
   readonly class?: string | undefined;
+};
+
+/** What the sign-out confirmation page renders. @public */
+export type SignoutConfirmViewProps = AuthViewChrome & {
+  /** Where the form posts, from `authPaths(...).auth.signout()`. */
+  readonly submitPath: string;
+  readonly csrfToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
 };
 
 /** Which authenticator-app page state is rendering; only the enrolling one carries the secret. @public */

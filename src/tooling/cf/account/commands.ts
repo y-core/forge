@@ -250,6 +250,12 @@ const SECTIONS: SectionSpec[] = [
     note: `.dev.vars keys marked '${GENERATE_MARKER}'; --commit generates remote secret; --rotate rotates secrets`,
     types: ["rotatable_secrets"],
   },
+  {
+    title: "Set by --commit",
+    alias: "build",
+    note: "Workers Builds variables derived from package.json; --commit creates or overwrites them in each build settings scope",
+    types: ["build_vars"],
+  },
 ];
 
 /** The resource types one section covers, with the catch-all taking whatever no section claimed. */
@@ -315,7 +321,8 @@ export function pendingRows(results: SyncResult[]): SyncResult[] {
 
 export function summariseCommit(results: SyncResult[]): string {
   const count = (action: SyncResult["action"]) => results.filter((r) => r.action === action).length;
-  const parts = [[count("would-create"), "create"] as const, [count("would-rotate"), "rotate"] as const]
+  const updates = results.filter((r) => r.action === "drift" && r.resourceType === "build_vars").length;
+  const parts = [[count("would-create"), "create"] as const, [count("would-rotate"), "rotate"] as const, [updates, "update"] as const]
     .filter(([n]) => n > 0)
     .map(([n, verb]) => `${verb} ${n}`);
 

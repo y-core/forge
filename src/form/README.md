@@ -58,22 +58,22 @@ const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
 Render the widget's site key from `readTurnstileKey(c, "siteKey")`, exported by `@y-core/forge/app`, so the page and the check read one place. A
 missing or blank key answers 500 naming it.
 
-On `GET` the guard pre-mints a token for the current path; render it with `<Form csrfToken={…}>` from `@y-core/forge/ui/core`, which writes both the
-hidden `_csrf` input and the `hx-headers` entry htmx submits it on. A form htmx or the browser submits by GET or DELETE gets the header
-alone, because those verbs put the form's fields in the URL. For a DELETE form that must also work without JavaScript, see
+A form that posts back to its own page renders `await mintCsrf(c, c.url.pathname)` into `<Form csrfToken={…}>` from `@y-core/forge/ui/core`,
+which writes both the hidden `_csrf` input and the `hx-headers` entry htmx submits it on. A form htmx or the browser submits by GET or DELETE gets
+the header alone, because those verbs put the form's fields in the URL. For a DELETE form that must also work without JavaScript, see
 [`ui/core`'s form section][ui-form].
 
 ```tsx
-import { csrfTokenCtx } from "@y-core/forge/form";
+import { mintCsrf } from "@y-core/forge/form";
 import { Form } from "@y-core/forge/ui/core";
 
-function contactPage(c) {
-  return <Form csrfToken={csrfTokenCtx.get(c)} hx-post='/contact' />;
+async function contactPage(c) {
+  return <Form csrfToken={await mintCsrf(c, c.url.pathname)} hx-post='/contact' />;
 }
 ```
 
-`csrfTokenCtx` carries a token bound to **this request's pathname**, so it is the right token only when the form posts back to the page it was
-rendered on. Anything else needs a minted token — see [Minting a token for another path][mint-section] below.
+A token is bound to **the path passed to it**, so `c.url.pathname` is the right path only when the form posts back to the page it was rendered
+on. Anything else needs a token minted for its own path — see [Minting a token for another path][mint-section] below.
 
 Neither the CSRF field nor the Turnstile field appears in `ContactSchema`: a guard that consumed a field is what removes it before validation
 ([`INPUT_VALIDATION.md`][iv-1d] §1d). Validate the
@@ -101,10 +101,11 @@ app.use("*", sessionMiddleware(storage, sessionCookie));
 app.use("*", csrfGuard); // after the session middleware, always
 ```
 
-**Register `sessionMiddleware` before `csrfProtection`.** The resolver runs before `next()`, so a guard registered first resolves against a context
-carrying no session at all — and a resolver that returns nothing is a refusal, not a fallback: the mutation answers `403` and one `[csrf]` warning
-names the likely cause. The fixation risk path-only binding leaves open, and why `subject` has no default, are [`INPUT_VALIDATION.md`][iv-3a] §3a's.
-`subject: false` is the only opt-out.
+**Register `sessionMiddleware` before `csrfProtection`.** On a mutation the resolver runs before `next()`, so a guard registered first resolves
+against a context carrying no session at all — and a resolver that returns nothing is a refusal, not a fallback: the mutation answers `403` and one
+`[csrf]` warning names the likely cause. On a `GET` it runs at the first mint, so a page that renders no form never reads the session id. The
+fixation risk path-only binding leaves open, and why `subject` has no default, are [`INPUT_VALIDATION.md`][iv-3a] §3a's. `subject: false` is the
+only opt-out.
 
 ---
 
@@ -162,6 +163,34 @@ explaining it.
 
 **Read both with `.getOptional`, never `.get`.** Absence says no guard ran on this request, so nothing was consumed and nothing should be dropped
 for it ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
+
+---
+
+## Answering a refusal yourself
+
+An htmx target swaps whatever the guard answers, so a bare `Forbidden` lands in the page as a word. Pass `onForbidden` to answer with something
+the target can show:
+
+```ts
+import { csrfProtection } from "@y-core/forge/form";
+import { fragmentResponse } from "@y-core/forge/http";
+
+const csrfGuard = csrfProtection({
+  ring: (c) => importKeyRing(parseKeyRingSecrets(getAppContext(c).env.CSRF_SECRET)),
+  subject: (c) => sessionCtx.getOptional(c)?.id,
+  onForbidden: (c, reason) => {
+    console.warn("[csrf] refused", { reason });
+    return fragmentResponse("<p>This form has expired. Reload the page and try again.</p>", 403);
+  },
+});
+```
+
+**The reason is for routing and logging, never for the response body** — the [Security][security-section] rule below holds for it too.
+
+**`"unbound-subject"` means the session was not there to bind to**, usually because of registration order — see
+[Binding a token to the session][binding-section]. Every other reason is a `CsrfResult` code.
+
+Without the hook the guard answers a bare `403`. An oversized body is a `413` and never reaches it.
 
 ---
 
@@ -252,8 +281,8 @@ compares them ([`INPUT_VALIDATION.md`][iv-4a] §4a).
 ## Security
 
 **Never surface `CsrfResult.error` or `TurnstileResult.error` to a client.** The codes are server diagnostics. `csrfProtection` collapses every
-token failure to a bare `403` with no body detail, and `defineAction` answers a tripped bot guard in the shape of an ordinary validation refusal
-([`INPUT_VALIDATION.md`][iv-4b] §4b).
+refusal to a bare `403` with no body detail unless you supply `onForbidden`, and `defineAction` answers a tripped bot guard in the shape of an
+ordinary validation refusal ([`INPUT_VALIDATION.md`][iv-4b] §4b).
 
 **An oversized body is a `413`, never a `403`.**
 
@@ -271,8 +300,8 @@ token failure to a bare `403` with no body detail, and `defineAction` answers a 
 parse has been **refused** at the smaller cap, a later, larger cap throws a wiring error naming both caps — `isFormCapConflict(error)` identifies
 it — which `csrfProtection`, the pipeline and `readAuthSubmission` all rethrow to the error boundary rather than replaying as a `413`.
 
-**A token is bound to a path, so `csrfTokenCtx` is wrong the moment the form posts elsewhere** — verification fails with `path-mismatch`. Mint one
-token per render and never cache one across requests.
+**A token is bound to a path, so a token minted for `c.url.pathname` is wrong the moment the form posts elsewhere** — verification fails with
+`path-mismatch`. Mint one token per render and never cache one across requests.
 
 **The `ring` resolver runs once per distinct `env` object, not once per request.** The ring is cached against it, so a secret change is picked up
 when a fresh isolate starts rather than mid-life.
@@ -286,6 +315,7 @@ when a fresh isolate starts rather than mid-life.
 - [`src/app/README.md`][app-readme] — `defineAction` and its options, which is the path most routes take instead of this one
 
 [app-readme]: ../app/README.md
+[binding-section]: #binding-a-token-to-the-session
 [boundaries-2]: ../../warden/canon/libs/BOUNDARIES.md#2-transport-versus-application-security-layer
 [cf-dev]: ../tooling/cf/README.md#running-the-app-locally
 [iv]: ../../docs/INPUT_VALIDATION.md
@@ -299,6 +329,7 @@ when a fresh isolate starts rather than mid-life.
 [mint-section]: #minting-a-token-for-another-path
 [ram-2b]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
 [security-readme]: ../security/README.md
+[security-section]: #security
 [session-readme]: ../session/README.md
 [sh-8]: ../../docs/SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [ui-form]: ../ui/README.md#build-a-form

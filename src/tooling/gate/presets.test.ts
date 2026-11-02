@@ -333,10 +333,10 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
     expect(workerd?.requires?.tool).toBe("workerd");
   });
 
-  it("declares no reach to narrow or widen, so every run of the row is whole", () => {
+  it("declares no `widen`, so every run of the row is whole", () => {
     const workerd = workerRows({ workerd: true, assetConfig: "config/assets.ts", workerConfig: "wrangler.jsonc" }).at(-1);
 
-    expect([workerd?.narrow, workerd?.widen]).toEqual([undefined, undefined]);
+    expect(workerd?.widen).toBeUndefined();
   });
 
   it("runs the consumer's workerd Playwright project", () => {

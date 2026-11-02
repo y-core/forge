@@ -41,14 +41,9 @@ function isDeadGlob(glob: string, files: readonly string[]): boolean {
 
 function deadGlob(steps: readonly Step[], files: readonly string[]): string | undefined {
   for (const step of steps) {
-    for (const [field, globs] of [
-      ["watches", step.watches ?? []],
-      ["narrow.wide", step.narrow?.wide ?? []],
-    ] as const) {
-      const dead = globs.find((glob) => isDeadGlob(glob, files));
-      if (dead !== undefined) {
-        return `Step "${step.label}" declares \`${field}\` glob "${dead}", which matches no file in the work tree — a renamed path no longer reaches the step, so update the glob.`;
-      }
+    const dead = (step.watches ?? []).find((glob) => isDeadGlob(glob, files));
+    if (dead !== undefined) {
+      return `Step "${step.label}" declares \`watches\` glob "${dead}", which matches no file in the work tree — a renamed path no longer reaches the step, so update the glob.`;
     }
   }
   return undefined;
@@ -79,15 +74,11 @@ function matchesAny(changed: readonly string[], globs: readonly string[]): boole
 }
 
 function reachOf(step: Step, tier: GateTier, pending: readonly string[] | undefined, gateWide: boolean, home: GateTier | undefined): StepReach {
-  if (tier !== "runtime" || pending === undefined) return "whole";
-  const followsChanges = step.narrow !== undefined || home === "runtime";
-  if (!followsChanges) return "whole";
-  if (gateWide || matchesAny(pending, step.narrow?.wide ?? [])) return "whole";
-  if (!touches(step, pending)) return "untouched";
-  return step.narrow === undefined ? "whole" : "narrow";
+  if (tier !== "runtime" || pending === undefined || home !== "runtime" || gateWide) return "whole";
+  return touches(step, pending) ? "whole" : "untouched";
 }
 
-/** Resolves which rows of a resolved table to run at `tier` and how each runs: the tier's own order, filtered by `--only` and by the paths `changed` touches, at `runtime` narrowed to the `pending` changes for a row that narrows or whose home tier is `runtime`, and refused when a nested glob matches none of `files`. @public */
+/** Resolves which rows of a resolved table to run at `tier` and how each runs: the tier's own order, filtered by `--only` and by the paths `changed` touches, at `runtime` left untouched when the `pending` changes miss a row whose home tier is `runtime`, and refused when a nested glob matches none of `files`. @public */
 export function selectSteps(
   table: ResolvedTiers,
   opts: {

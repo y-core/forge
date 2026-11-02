@@ -48,6 +48,19 @@ describe("findComments() — the lexer, not a regex", () => {
     expect(findComments("<p>don't</p> // a note").map((span) => span.text)).toEqual(["// a note"]);
   });
 
+  it("finds a comment inside an interpolation as well as the one after the template", () => {
+    expect(findComments("const a = `${x /* c */}`; // d").map((span) => span.text)).toEqual(["/* c */", "// d"]);
+  });
+
+  it("opens no comment on a `//` inside a template nested in an interpolation", () => {
+    expect(findComments("const t = `a ${q(`https://${h}`)} b`;\nconst z = 1;")).toEqual([]);
+  });
+
+  it("finds a comment after a template whose interpolation holds a regex with a quote", () => {
+    const source = 'const v = `"${s.replace(/"/g, \'\\\\"\')}"`; // note';
+    expect(findComments(source).map((span) => span.text)).toEqual(["// note"]);
+  });
+
   it("carries the line an unterminated block opens on, rather than dropping it", () => {
     expect(only("const a = 1;\n/* never closed")).toEqual({ kind: "block", start: 13, end: 28, line: 2, text: "/* never closed" });
   });

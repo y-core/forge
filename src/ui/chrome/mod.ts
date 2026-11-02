@@ -4,6 +4,8 @@ export type { DockHideAbove, DockItem, DockProps } from "./types";
 export { Dock } from "./dock";
 export type { NavCollapsedAs, NavDrawerEdge, NavDrawerGlyph, NavPlacement, NavbarProps } from "./types";
 export { Navbar } from "./navbar";
+export type { NavContribution, NavStateResolver, PrimaryNav } from "./types";
+export { createPrimaryNav } from "./primary-nav";
 export type {
   NavCollapsible,
   NavDefinition,

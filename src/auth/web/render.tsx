@@ -21,6 +21,7 @@ import { PasskeyEnrolView } from "./views/passkey-enrol";
 import { PasskeyListView } from "./views/passkey-list";
 import { RecoveryCodesView } from "./views/recovery-codes";
 import { SigninView } from "./views/signin";
+import { SignoutConfirmView } from "./views/signout";
 import { SignupView } from "./views/signup";
 import { AuthSiteData } from "./views/site-data";
 import { TotpEnrolView } from "./views/totp-enrol";
@@ -32,6 +33,7 @@ import { VerifyView } from "./views/verify";
 export const AUTH_VIEWS: { readonly [Name in AuthViewName]: FC<AuthViewProps[Name]> } = {
   signin: SigninView,
   signup: SignupView,
+  signoutConfirm: SignoutConfirmView,
   verify: VerifyView,
   enrolPasskey: PasskeyEnrolView,
   enrolTotp: TotpEnrolView,
@@ -54,6 +56,7 @@ export const AUTH_VIEWS: { readonly [Name in AuthViewName]: FC<AuthViewProps[Nam
 const AUTH_PAGE_TITLES: Readonly<Record<AuthViewName, string>> = {
   signin: "Sign in",
   signup: "Create an account",
+  signoutConfirm: "Sign out",
   verify: "Verify",
   enrolPasskey: "Add a passkey",
   enrolTotp: "Add an authenticator app",

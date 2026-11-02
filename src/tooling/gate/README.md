@@ -90,17 +90,16 @@ row runs whole.
 
 ## Deciding which runtime rows a change reaches
 
-**An application declares nothing for this by default.** At `runtime` the database rows run on every change, and no Playwright row is at
-`runtime`, so nothing narrows one. The pending changes are the working tree against `HEAD`, read as `--affected` reads them (below). **The
-narrowed run is still the gate**, not a scoped run, and it records a receipt.
+**An application declares nothing for this by default.** At `runtime` the database rows run on every change, and no Playwright row is at `runtime`.
+The pending changes are the working tree against `HEAD`, read as `--affected` reads them (below). **A run that leaves a row untouched is still the
+gate**, not a scoped run, and it records a receipt.
 
 **Leave `watches` off a Playwright row**: a spec reaches your app through the server it starts, never through an import, so a hand-kept list can
 only drop a row that `--affected` should have run.
 
-**Every `watches` and `wide` glob must match a file in the work tree**, tracked or untracked. A glob that matches nothing — usually a directory you
-renamed — fails the gate before any row runs, naming the row, the field and the glob. A glob with no `/` is exempt, because it may name a
-root-level config you have not created yet, and so is one starting `../`, which lies outside the tree. `src/x` and `src/x/**` answer for each
-other.
+**Every `watches` glob must match a file in the work tree**, tracked or untracked. A glob that matches nothing — usually a directory you renamed —
+fails the gate before any row runs, naming the row, the field and the glob. A glob with no `/` is exempt, because it may name a root-level config
+you have not created yet, and so is one starting `../`, which lies outside the tree. `src/x` and `src/x/**` answer for each other.
 
 **The database rows run on every change unless you pass `exercises` and `graph`**, because `config/db.config.ts` can name a schema outside `root`. A
 repository that checks a namespace graph with `namespaceGraphStep` passes the same graph and the namespaces the database tooling runs; the rows then
@@ -555,12 +554,12 @@ if (touched.ok) expect(touched.steps.map((s) => s.label)).not.toContain("validat
 
 **A tier the table does not declare resolves to the nearest declared tier below it**, with `from` naming that tier, so a table needs no `runtime`
 key that only says `tier("unit")`; `verify` prints the fallback in its verdict as `(as unit)`. Both answer `{ ok: false, error }` rather than
-throwing. `resolveTiers` refuses the whole table, whichever tier you go on to ask for: a `tier()` naming a tier neither the table nor any tier
-below it declares, or one not below the tier holding it, and a label one resolved tier holds twice. `selectSteps` refuses a tier with no declared
-tier at or below it, `watches: []` or a `!` entry in `watches`, a `watches` or `wide` glob matching none of the `files` you pass, an
-unknown `--only` label, and a selection of zero steps. **A zero-step selection is not refused when `changed` is given**: it comes back `ok` with
-no steps, and an empty `changed` selects nothing at all, not even a step with no `watches`. **The `watches` rules are a property of the table**, so
-they are checked over every tier before the run's tier is applied and before `--only` narrows.
+throwing. `resolveTiers` refuses the whole table, whichever tier you go on to ask for: a `tier()` naming a tier neither the table nor any tier below
+it declares, or one not below the tier holding it, and a label one resolved tier holds twice. `selectSteps` refuses a tier with no declared tier at
+or below it, `watches: []` or a `!` entry in `watches`, a `watches` glob matching none of the `files` you pass, an unknown `--only` label, and a
+selection of zero steps. **A zero-step selection is not refused when `changed` is given**: it comes back `ok` with no steps, and an empty `changed`
+selects nothing at all, not even a step with no `watches`. **The `watches` rules are a property of the table**, so they are checked over every tier
+before the run's tier is applied and before `--only` narrows.
 
 **A program compiled under `"types": []` — a Worker app's tests — takes a check's config and result types from
 `@y-core/forge/tooling/gate/types`.** The barrel pulls in Node-only modules, so importing a type from it fails that program's typecheck.

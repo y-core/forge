@@ -81,6 +81,7 @@ function mergeEntries(config: WranglerConfig, type: ResourceType, entries: unkno
     case "vars":
     case "secrets":
     case "rotatable_secrets":
+    case "build_vars":
     case "ratelimits":
     case "durable_objects":
     case "hyperdrive":

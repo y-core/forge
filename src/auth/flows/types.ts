@@ -40,6 +40,16 @@ export type AuthEmailChangeConfirm =
   | { readonly status: "forwarded"; readonly sentTo: string; readonly expiresAt: number }
   | { readonly status: "moved"; readonly user: AuthUser };
 
+/** Which link a token is: the one approving a move from the address held, or the one completing it at the new address. @public */
+export type AuthEmailChangeStage = "approve" | "move";
+
+/** What a confirmation link asks for, read without answering it. @public */
+export interface AuthEmailChangeInspect {
+  readonly stage: AuthEmailChangeStage;
+  /** The address the account moves to. */
+  readonly address: string;
+}
+
 /** @public */
 export interface AuthEmailChangeOptions {
   keys: KeyRing;
@@ -56,6 +66,7 @@ export interface AuthEmailChangeOptions {
 /** Moves an account to a new address only once the old one has approved it and the new one has answered a link of its own. @public */
 export interface AuthEmailChangeFlow {
   request(userId: string, email: string, at: number): Promise<Result<AuthEmailChangeRequest, AuthEmailChangeReason>>;
+  inspect(token: string, at: number): Promise<Result<AuthEmailChangeInspect, AuthEmailChangeReason>>;
   confirm(token: string, at: number): Promise<Result<AuthEmailChangeConfirm, AuthEmailChangeReason | AuthStoreError>>;
 }
 

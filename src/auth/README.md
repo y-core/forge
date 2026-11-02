@@ -33,6 +33,7 @@ binding off `c.env`. That builder is the one function you write:
 ```ts
 import {
   type AuthIssueOutcome,
+  AuthStoreError,
   createAdminUserStore,
   createCredentialStore,
   createEmailChangeFlow,
@@ -49,6 +50,7 @@ import {
 } from "@y-core/forge/auth";
 import type { AuthRequestServices } from "@y-core/forge/auth/web";
 import type { AppContext } from "@y-core/forge/context";
+import { err, ok } from "@y-core/forge/result";
 import { createD1Client } from "@y-core/forge/storage/db";
 
 // Module scope: the ring is resolved once per isolate, not once per request.
@@ -70,7 +72,8 @@ async function resolveServices(c: AppContext<Env>): Promise<AuthRequestServices>
     notifier,
     address: async (userId) => {
       const found = await users.findById(userId);
-      return found.ok && found.data ? found.data.email : "";
+      if (!found.ok) return found;
+      return found.data ? ok(found.data.email) : err(new AuthStoreError("unavailable", "address"));
     },
   });
   const factors = createFactorRegistry(enrolments, { offered: [{ service: emailOtp, role: "primary" }] });
@@ -214,15 +217,29 @@ registered ([`AUTH_FLOWS.md`][af-1] §1).
 
 ## Completing an address change from your own route
 
-Forge mounts every auth route except this one: the confirmation URL is yours, so its handler is too. Build the link with
-`AuthEmailChangeOptions.confirmUrl`, then answer it by calling `confirm`:
+Forge mounts every auth route except this one: the confirmation URL is yours, so its handlers are too. Build the link with
+`AuthEmailChangeOptions.confirmUrl`, then answer it in two requests — **a `GET` that calls `inspect` and renders `EmailChangeConfirmView`, and a
+`POST` from that form that calls `confirm`**:
 
-```ts
-const outcome = await services.emailChange.confirm(token, Date.now());
+```tsx
+// GET /email/confirm?t=…
+const token = c.url.searchParams.get("t") ?? "";
+const link = await services.emailChange.inspect(token, Date.now());
+if (!link.ok) return refusalPage(link.error);
+return confirmPage(
+  <EmailChangeConfirmView {...link.data} token={token} submitPath='/email/confirm' csrfToken={await mintCsrf(c, "/email/confirm")} />,
+);
+
+// POST /email/confirm
+const form = await parseFormData(c);
+const outcome = await services.emailChange.confirm(String(form.get("token") ?? ""), Date.now());
 if (!outcome.ok) return outcome.error instanceof AuthStoreError ? unavailablePage() : refusalPage(outcome.error);
 if (outcome.data.status === "forwarded") return checkInboxPage(outcome.data.sentTo);
 return changedPage(outcome.data.user);
 ```
+
+**Never call `confirm` from the `GET`.** A mail client's link scanner opens the link before its owner does, and whichever request calls
+`confirm` is the one that moves the account; `inspect` reads the link and writes nothing ([`AUTH_FLOWS.md`][af-5] §5).
 
 The **error** channel is a union of a reason string and a class, so the two arms are told apart with `instanceof` rather than by value. The
 **success** value is discriminated on `status`, and a `forwarded` page has to say a step is left — [`AUTH_FLOWS.md`][af-5] §5 owns both stages,
@@ -231,8 +248,8 @@ and why a completed move signs every session out.
 On the request side, render `AuthEmailChangeRequest.sentTo` and never the address the visitor typed: which address was mailed
 depends on whether the account's own is verified.
 
-The confirmation page is yours to render and `resolveAuthView` does not reach it — it is no `AuthViewName`. Render it through the same document
-shell the auth pages use ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6).
+`EmailChangeConfirmView` is the form alone, and `resolveAuthView` does not reach it — it is no `AuthViewName`. Render it, and the refusal and
+outcome pages, through the same document shell the auth pages use ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6).
 
 ---
 
@@ -316,13 +333,22 @@ markup with your own component, which receives `ApprovalViewProps`.
 | --- | --- |
 | `resolveAuth` | Everyone. It establishes the identity where the session carries one and refuses nothing — including a session that still owes a step-up |
 | `requireAuth` | A signed-in, non-deactivated visitor who owes no step-up, including one owed before an enrolment. It is what puts the identity on `authCtx` |
-| `requireAdmin` | An administrator. Anyone else gets a plain 403, and it throws if `requireAuth` did not run first |
+| `requireAdmin` | An administrator. Anyone else gets a plain 403 unless you pass `onForbidden`, and it throws if `requireAuth` did not run first |
 | `requireEnrolment` | A visitor who owes no factor. An owed enrolment or step-up is a redirect; an unreadable factor store is a 503 |
 | `requirePendingEnrolment` | **Only** a visitor who owes an enrolment, so an owed step-up cannot be enrolled around — nor a confirmed second factor skipped |
 | `requireFreshStepUp` | Every safe method, and a state-changing one only behind a recent step-up — or from a user who owes none |
 
 Order is the contract: every guard below `requireAuth` in that table reads the identity it establishes, so a wrong order fails on the first
 request rather than at construction.
+
+**Answer a non-administrator with a page by passing `onForbidden`.** On your own route, hand it to the guard:
+
+```ts
+requireAdmin({ onForbidden: (c) => htmlResponse(renderAdminOnlyPage(c), 403) });
+```
+
+On a mount, pass the same function as `onForbidden` to both `createAuthGuards` and `AuthWebOptions`, because the admin pages and their actions
+re-check the role themselves.
 
 Read the identity through `authCtx` — `authCtx.get(c)` where a guard has run, `authCtx.getOptional(c)` otherwise. The store is read once per
 request however many guards run, so mounting `resolveAuth` globally costs the guarded routes nothing extra.
@@ -858,6 +884,30 @@ protection as every other auth `POST`.
 
 ---
 
+## Signing out from a page left open past an hour
+
+A sign-out form carries a CSRF token minted when the page rendered, and `csrfProtection` refuses a token older than an hour. Without recovery, a
+sign-out pressed on a page left open that long answers `403` and the session stays signed in. Hand the guard `authCsrfRefusal`:
+
+```ts
+import { authCsrfRefusal } from "@y-core/forge/auth/web";
+
+csrfProtection({ ring, subject, onForbidden: authCsrfRefusal(paths.auth) });
+```
+
+A refused sign-out now answers a `303` to `auth.signoutConfirm()`, or a `204` with `HX-Redirect` under htmx. That page carries a fresh token, and
+its button signs out.
+
+**A refused token never ends the session.** Only the confirm page's own `POST` does, so a cross-site sign-out attempt lands the visitor on a page
+that changes nothing.
+
+**Every other refusal still answers `403`**, including `"unbound-subject"`, which means the session middleware is missing. To answer the rest
+your own way, see [Answering a refusal yourself][form-readme-refusal]; the hook takes one function, so choose one or the other.
+
+The confirm page is replaceable like any other, through `views.signoutConfirm`.
+
+---
+
 ## Challenging bots on the sign-in and sign-up forms
 
 Set `turnstile` and the sign-in, sign-up and verify pages carry an invisible Cloudflare Turnstile challenge, and refuse a submission that arrives
@@ -992,6 +1042,7 @@ go beyond `isAdmin`.
 [eh-1c]: ../../docs/FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ../../docs/FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [form-readme]: ../form/README.md
+[form-readme-refusal]: ../form/README.md#answering-a-refusal-yourself
 [iv-4a]: ../../docs/INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [keyring-readme]: ../crypto/keyring/README.md
 [namespaces-5h]: ../../docs/NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it

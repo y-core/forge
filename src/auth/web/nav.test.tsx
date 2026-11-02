@@ -107,8 +107,6 @@ describe("authNav slots", () => {
     expect(attrsOf(html, 'name="_csrf"')).toEqual({ "data-slot": "form-csrf", type: "hidden", name: "_csrf", value: token });
   });
 
-  // A `NavLink` announces a destination, which an action is not — and `/auth/signout` is POST-only,
-  // so an anchor would have no handler to reach.
   it("submits from a menu row rather than a link", async () => {
     const nav = await fixedKeyNav();
     const { slots } = await nav(navContext({ identity: fakeIdentity() }));

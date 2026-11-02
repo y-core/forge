@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
-import { ok } from "../../result/result";
+import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
@@ -69,7 +69,7 @@ async function harness(overrides: Partial<Parameters<typeof createEmailOtpFactor
   const state = memoryOtpState();
   const nonces = memoryNonces();
   const notifier = recordingNotifier();
-  const factor = createEmailOtpFactor({ keys, state, nonces, notifier, address: () => "aurora@example.test", ...overrides });
+  const factor = createEmailOtpFactor({ keys, state, nonces, notifier, address: () => ok("aurora@example.test"), ...overrides });
   return { factor, keys, state, nonces, notifier };
 }
 
@@ -320,6 +320,65 @@ describe("createEmailOtpFactor — store failures", () => {
     return { ...inner, [failing]: refuse } as OtpStateStore;
   }
 
+  const failingAddresses = [
+    { label: "synchronously", address: () => err(new AuthStoreError("unavailable", "users.findById")) },
+    { label: "asynchronously", address: () => Promise.resolve(err(new AuthStoreError("unavailable", "users.findById"))) },
+  ];
+
+  for (const { label, address } of failingAddresses) {
+    it(`answers an address lookup that fails ${label} as unavailable, sending nothing and storing no code`, async () => {
+      const state = memoryOtpState();
+      const { factor, notifier } = await harness({ state, address, cooldownMs: COOLDOWN_MS });
+      expect(await factor.createChallenge(USER_ID, NOW)).toEqual({ ok: false, error: "unavailable" });
+      expect(notifier.sent).toEqual([]);
+      expect(await state.read(USER_ID, NOW)).toEqual({ ok: true, data: null });
+    });
+
+    it(`claims no cooldown on an address lookup that fails ${label}, so an issue at the same instant goes through`, async () => {
+      const state = memoryOtpState();
+      const { factor: failing } = await harness({ state, address, cooldownMs: COOLDOWN_MS });
+      await failing.createChallenge(USER_ID, NOW);
+      const { factor: working, notifier } = await harness({ state, cooldownMs: COOLDOWN_MS });
+      expect(await working.createChallenge(USER_ID, NOW)).toEqual({ ok: true, data: { kind: "email-otp", expiresAt: NOW + TTL_MS } });
+      expect(notifier.sent.map((message) => message.to)).toEqual(["aurora@example.test"]);
+    });
+  }
+
+  it("reads the address before it claims the cooldown, so a failed lookup never reaches the state store", async () => {
+    const inner = memoryOtpState();
+    const issued: string[] = [];
+    const state: OtpStateStore = {
+      ...inner,
+      issue: (userId, row, cooldownMs) => {
+        issued.push(userId);
+        return inner.issue(userId, row, cooldownMs);
+      },
+    };
+    const { factor } = await harness({ state, address: () => err(new AuthStoreError("unavailable", "users.findById")) });
+    await factor.createChallenge(USER_ID, NOW);
+    expect(issued).toEqual([]);
+  });
+
+  it("rejects when the address resolver throws, without sending or claiming the cooldown", async () => {
+    const state = memoryOtpState();
+    const { factor, notifier } = await harness({ state, address: () => Promise.reject(new Error("users table offline")), cooldownMs: COOLDOWN_MS });
+    await expect(factor.createChallenge(USER_ID, NOW)).rejects.toThrow("users table offline");
+    expect(notifier.sent).toEqual([]);
+    expect(await state.read(USER_ID, NOW)).toEqual({ ok: true, data: null });
+  });
+
+  it("resolves the address for the identity the code is issued to", async () => {
+    const asked: string[] = [];
+    const { factor } = await harness({
+      address: (userId) => {
+        asked.push(userId);
+        return ok("aurora@example.test");
+      },
+    });
+    await factor.createChallenge(USER_ID, NOW);
+    expect(asked).toEqual([USER_ID]);
+  });
+
   it("reports a failure to spend the guess as unavailable rather than as a wrong code", async () => {
     const { factor } = await harness({ state: brokenState("countAttempt") });
     expect(await factor.verifyChallenge(USER_ID, "000000", NOW)).toEqual({ ok: false, error: "unavailable" });
@@ -357,7 +416,7 @@ describe("createEmailOtpFactor — the ranges it holds at construction", () => {
         state: memoryOtpState(),
         nonces: memoryNonces(),
         notifier: recordingNotifier(),
-        address: () => "aurora@example.test",
+        address: () => ok("aurora@example.test"),
         ...overrides,
       });
   }

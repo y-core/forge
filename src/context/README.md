@@ -72,8 +72,8 @@ earlier middleware was supposed to guarantee the value; the optional message arg
 `getOptional` treats absence as an answer and returns `undefined` — that is the right call whenever "nobody set this" is a state your code handles.
 
 Export the accessor rather than the key, and read a slot only through its accessor. Forge namespaces do the same — `requestIdCtx` from `security`,
-`csrfTokenCtx` from `form` — and reaching for one of those instead of minting your own is [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a's rule, with the
-one-accessor-per-slot rule in §4b. `createContextKey<T>()` is re-exported for the rare middleware that must hold the raw key itself.
+`csrfMinterCtx` from `form` — and reaching for one of those instead of minting your own is [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a's rule, with
+the one-accessor-per-slot rule in §4b. `createContextKey<T>()` is re-exported for the rare middleware that must hold the raw key itself.
 
 ---
 

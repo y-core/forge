@@ -143,10 +143,6 @@ async function absentRequirement(step: Step, probed: Map<string, boolean>): Prom
   return present ? undefined : required;
 }
 
-function decidesLate(step: Step, reach: StepReach | undefined): boolean {
-  return reach === "narrow" && (step.widen !== undefined || step.narrow?.probe !== undefined);
-}
-
 async function widenedBy(step: Step, pending: readonly string[], cwd: string): Promise<boolean> {
   const widen = step.widen;
   if (widen === undefined || pending.length === 0) return false;
@@ -163,28 +159,12 @@ async function settleReach(
   reach: Readonly<Record<string, StepReach>>,
   pending: readonly string[],
   cwd: string,
-): Promise<{ reach: Record<string, StepReach>; probes: Record<string, string> }> {
+): Promise<Record<string, StepReach>> {
   const settled: Record<string, StepReach> = { ...reach };
-  const probes: Record<string, string> = {};
   for (const step of steps) {
-    const before = reach[step.label];
-    if (before !== "narrow" && before !== "untouched") continue;
-    if (await widenedBy(step, pending, cwd)) {
-      settled[step.label] = "whole";
-      continue;
-    }
-    const probe = step.narrow?.probe;
-    if (before !== "narrow" || isCheckStep(step) || probe === undefined) continue;
-    const [bin, ...args] = step.cmd;
-    const asked = [...args, ...(step.narrow?.args ?? []), ...probe.args];
-    const result = captureStep(bin, asked, cwd, {});
-    if (result.code !== 0) settled[step.label] = "whole";
-    else if (!probe.selects(result.output)) {
-      settled[step.label] = "untouched";
-      probes[step.label] = [bin, ...asked].join(" ");
-    }
+    if (reach[step.label] === "untouched" && (await widenedBy(step, pending, cwd))) settled[step.label] = "whole";
   }
-  return { reach: settled, probes };
+  return settled;
 }
 
 function resolveTier(flag: string | undefined): { ok: true; tier: GateTier } | { ok: false; error: string } {
@@ -318,11 +298,11 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
       const { steps, total, scoped } = selection;
       insertPath(binDir);
-      const settle = async (): Promise<{ reach: Record<string, StepReach>; probes: Record<string, string> }> =>
-        pending === undefined ? { reach: { ...selection.reach }, probes: {} } : settleReach(steps, selection.reach, pending, cwd);
+      const settle = async (): Promise<Record<string, StepReach>> =>
+        pending === undefined ? { ...selection.reach } : settleReach(steps, selection.reach, pending, cwd);
 
       if (flags.list) {
-        const { reach } = await settle();
+        const reach = await settle();
         console.log(
           formatList(
             banner,
@@ -398,9 +378,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
       const base = tree === undefined ? undefined : worktreeHead(cwd);
       if (flags.reuse === true) {
         // A receipt of this tree and base settled its late rows over the same changes, so it is not asked to have run them.
-        const required = steps
-          .filter((step) => selection.reach[step.label] !== "untouched" && !decidesLate(step, selection.reach[step.label]))
-          .map((step) => step.label);
+        const required = steps.filter((step) => selection.reach[step.label] !== "untouched").map((step) => step.label);
         const receipt = tree === undefined ? undefined : readReceipt(cwd);
         if (receipt !== undefined && tree !== undefined && receiptCovers(receipt, { tree, tier, base, labels: required })) {
           console.log(formatReused(banner, receipt, style));
@@ -409,7 +387,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         console.log(formatReuseMiss({ tree, tier }, style));
       }
 
-      const { reach, probes } = await settle();
+      const reach = await settle();
       const labels = steps.filter((step) => reach[step.label] !== "untouched").map((step) => step.label);
 
       const reportDir = flags.report === undefined ? undefined : resolve(cwd, flags.report);
@@ -426,7 +404,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
 
       for (const [index, step] of steps.entries()) {
         if (reach[step.label] === "untouched") {
-          console.log(formatUntouched(step.label, pending?.length ?? 0, style, probes[step.label]));
+          console.log(formatUntouched(step.label, pending?.length ?? 0, style));
           records.push({ label: step.label, status: "untouched", durationMs: 0 });
           continue;
         }
@@ -459,8 +437,7 @@ export function createGateCommand(config: GateCommandConfig): Command<typeof gat
         }
 
         const [bin, ...args] = step.cmd;
-        const narrowed = reach[step.label] === "narrow" ? (step.narrow?.args ?? []) : [];
-        const result = captureStep(bin, [...args, ...narrowed], cwd, step, reportDir === undefined ? undefined : step.results);
+        const result = captureStep(bin, args, cwd, step, reportDir === undefined ? undefined : step.results);
         console.log(formatStepLine(step.label, result.code === 0, result.ms, style));
         records.push({ label: step.label, durationMs: result.ms, ...commandStatus(result), ...logged(step.label, result.output) });
         if (result.code !== 0) {

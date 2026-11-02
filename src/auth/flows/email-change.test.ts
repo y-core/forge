@@ -442,3 +442,126 @@ describe("createEmailChangeFlow — the link lifetime it holds at construction",
     expect(() => scene()).not.toThrow();
   });
 });
+
+describe("createEmailChangeFlow — inspecting a link", () => {
+  async function linkFor(built: ReturnType<typeof scene>): Promise<string> {
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    await settle(built);
+    return tokenOf(built.mail.sent);
+  }
+
+  it("reads an approve link without forwarding it, spending it or touching the account, and a later confirm still answers it once", async () => {
+    const built = scene();
+    const approve = await linkFor(built);
+
+    expect(await built.flow.inspect(approve, AT + 500)).toEqual({ ok: true, data: { stage: "approve", address: "new@example.com" } });
+    expect(built.nonces.seen.size).toBe(0);
+    expect(built.users.writes).toEqual([]);
+    expect(built.users.revoked).toEqual([]);
+    expect(built.scheduled).toHaveLength(1);
+    expect(built.mail.sent.map((message) => message.to)).toEqual(["person@example.com"]);
+
+    expect(await built.flow.confirm(approve, AT + 600)).toEqual({
+      ok: true,
+      data: { status: "forwarded", sentTo: "new@example.com", expiresAt: AT + 600 + TTL_MS },
+    });
+    expect(built.nonces.seen.size).toBe(1);
+    expect(await built.flow.confirm(approve, AT + 700)).toEqual({ ok: false, error: "consumed" });
+  });
+
+  it("reads a move link without moving the address or signing anyone out, and a later confirm moves it once", async () => {
+    const built = scene([userRow({ emailVerifiedAt: null })]);
+    const move = await linkFor(built);
+
+    expect(await built.flow.inspect(move, AT + 500)).toEqual({ ok: true, data: { stage: "move", address: "new@example.com" } });
+    expect(built.users.rows[0]?.email).toBe("person@example.com");
+    expect(built.users.writes).toEqual([]);
+    expect(built.users.revoked).toEqual([]);
+    expect(built.nonces.seen.size).toBe(0);
+    expect(built.scheduled).toHaveLength(1);
+
+    const moved = await built.flow.confirm(move, AT + 1_000);
+    expect(moved.ok && moved.data.status).toBe("moved");
+    expect(built.users.rows[0]?.email).toBe("new@example.com");
+    expect(built.users.revoked).toEqual([{ id: USER_ID, at: AT + 1_000 }]);
+    expect(built.nonces.seen.size).toBe(1);
+    expect(await built.flow.confirm(move, AT + 2_000)).toEqual({ ok: false, error: "consumed" });
+  });
+
+  it("leaves a link live however many times a scanner, a prefetcher and the owner open it", async () => {
+    const built = scene([userRow({ emailVerifiedAt: null })]);
+    const move = await linkFor(built);
+    for (const at of [AT + 100, AT + 200, AT + 300]) {
+      expect(await built.flow.inspect(move, at)).toEqual({ ok: true, data: { stage: "move", address: "new@example.com" } });
+    }
+    expect((await built.flow.confirm(move, AT + 400)).ok).toBe(true);
+    expect(built.users.writes).toHaveLength(1);
+  });
+
+  it("answers a valid link while every store, the notifier and the deferral refuse to be reached", async () => {
+    const unreachable = () => Promise.reject(new Error("inspect reached a store"));
+    const built = scene(
+      [],
+      {},
+      {
+        users: {
+          findById: unreachable,
+          findByEmailKey: unreachable,
+          findByWebAuthnId: unreachable,
+          create: unreachable,
+          setWebAuthnIdIfAbsent: unreachable,
+          markEmailVerified: unreachable,
+          revokeSessions: unreachable,
+          changeEmail: unreachable,
+        },
+        nonces: { markConsumed: unreachable },
+        notifier: { send: unreachable },
+        defer: () => {
+          throw new Error("inspect deferred work");
+        },
+      },
+    );
+    const token = await encodeAuthToken(ring, "identity", `approve ${USER_ID} new@example.com`, TTL_MS, { now: AT });
+    expect(await built.flow.inspect(token, AT + 500)).toEqual({ ok: true, data: { stage: "approve", address: "new@example.com" } });
+  });
+
+  it("refuses a link at the end of its window as expired", async () => {
+    const built = scene();
+    const approve = await linkFor(built);
+    expect(await built.flow.inspect(approve, AT + TTL_MS)).toEqual({ ok: false, error: "expired" });
+    expect(await built.flow.inspect(approve, AT + TTL_MS - 1)).toEqual({ ok: true, data: { stage: "approve", address: "new@example.com" } });
+  });
+
+  it("refuses an altered token, a padded spelling, and one sealed under another ring or purpose", async () => {
+    const built = scene();
+    const token = await linkFor(built);
+    const cases = [
+      { name: "altered", token: `${token.slice(0, -2)}${token.slice(-2) === "AA" ? "AB" : "AA"}` },
+      { name: "padded", token: `${token}=` },
+      { name: "foreign ring", token: await encodeAuthToken(otherRing, "identity", `move ${USER_ID} evil@example.com`, TTL_MS, { now: AT }) },
+      { name: "wrong purpose", token: await encodeAuthToken(ring, "verify", `move ${USER_ID} evil@example.com`, TTL_MS, { now: AT }) },
+      { name: "empty", token: "" },
+    ];
+    for (const { name, token: candidate } of cases) {
+      expect(`${name}: ${JSON.stringify(await built.flow.inspect(candidate, AT + 1_000))}`).toBe(`${name}: {"ok":false,"error":"unrecognised"}`);
+    }
+  });
+
+  it("refuses a payload with no stage, no address, or a stage it did not write", async () => {
+    const built = scene();
+    for (const payload of [USER_ID, `${USER_ID} new@example.com`, `move ${USER_ID}`, `move ${USER_ID} `, `verify ${USER_ID} new@example.com`]) {
+      const malformed = await encodeAuthToken(ring, "identity", payload, TTL_MS, { now: AT });
+      expect(`${payload}: ${JSON.stringify(await built.flow.inspect(malformed, AT + 1_000))}`).toBe(
+        `${payload}: {"ok":false,"error":"unrecognised"}`,
+      );
+    }
+  });
+
+  it("cannot tell a spent link from a live one, so the confirm that follows is what refuses it", async () => {
+    const built = scene([userRow({ emailVerifiedAt: null })]);
+    const move = await linkFor(built);
+    expect((await built.flow.confirm(move, AT + 500)).ok).toBe(true);
+    expect(await built.flow.inspect(move, AT + 600)).toEqual({ ok: true, data: { stage: "move", address: "new@example.com" } });
+    expect(await built.flow.confirm(move, AT + 700)).toEqual({ ok: false, error: "consumed" });
+  });
+});
