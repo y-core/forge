@@ -11,7 +11,7 @@ audience: consumer
 > refuses, what makes a seed idempotent, and how a library's declared schema reaches an app without being copied into it.
 >
 > Defers to: [`SCHEMA_COMPOSITION.md`][sc] for how a declared schema becomes the migration this document applies; [`DATABASE_BACKUPS.md`][db] for
-> the backup artifact whole and what a restore and a reset check before they act; [`src/tooling/db/README.md`][db-readme] for the command tree,
+> the D1 backup pipeline whole and what a restore and a reset check before they act; [`src/tooling/db/README.md`][db-readme] for the command tree,
 > the worked invocations and the exports, with `--help` on each verb for its flags; [`STORAGE_BINDINGS.md`][sb-1] §1 for the runtime D1 client a
 > Worker reads the same database through; [`NAMESPACES.md`][namespaces-5g] §5g for why this surface is a `tooling` namespace and never
 > Worker-reachable; [`BUILD_TOOLING.md`][bt-1c] §1c for the exit contract every verb reports through.
@@ -106,19 +106,21 @@ be skipped — a killed run, an interrupted gate — so determinism never depend
 **On `remote` and `preview`, the undo is D1 Time Travel.** Before every deployed apply, forge captures a bookmark and prints the
 `forge db bookmark restore` command that returns to it — before the first statement runs, and again if the apply throws part-way. `--no-bookmark`
 is the only way to run a deployed apply with no undo recorded. A Time Travel restore discards every write since the point it returns to, so it asks
-before it acts. Before the bookmark, a `migrate` refuses a database whose schema moved since the last certified fingerprint (§6d).
+before it acts. The restore prints its own undo whatever D1 answers, as long as D1 may have acted on it. That undo is the `previous_bookmark` D1
+captured at the restore. A bookmark forge read just before the restore is the fallback, because a write landing between that read and the restore is
+missing from it. Before the bookmark, a `migrate` refuses a database whose schema moved since the last certified fingerprint (§6d).
 
 **The cheapest undo is not needing one:** `forge db migrate --rehearse` makes a migration that only fails on real rows fail on a copy (§6f).
 
-**On `local` and `standby`, the undo is a verified backup and a reset.** Time Travel does not exist off Cloudflare, so the sequence is explicit and
-in separate verbs: back up, reset, restore.
+**On `local` and `standby`, the undo is a dump and a reset.** Time Travel does not exist off Cloudflare, so the sequence is explicit and in
+separate verbs: back up, reset, restore.
 
 `reset` is the only verb that empties a database, and it does so by removing miniflare's state files rather than by deleting rows. It refuses a
-database that holds rows and has no verified backup that still describes them ([`DATABASE_BACKUPS.md`][db-6] §6), and it demands the database be
+database that holds rows and has no recent dump that still describes them ([`DATABASE_BACKUPS.md`][db-5] §5), and it demands the database be
 named back to it, so a stale `--target` cannot aim it at the wrong one.
 
-**The undo halves do not cross, and `backup` reads any place.** `forge db backup --target remote` gives a deployed database a verified artifact that
-outlives Time Travel's thirty days ([`DATABASE_BACKUPS.md`][db-3] §3). `restore` and `reset` stay refused for `remote` and `preview`, where Time
+**The undo halves do not cross.** `forge db backup` keeps a deployed database's dump in R2, past Time Travel's thirty days, and `forge db restore`
+imports one into a new database, never the live one ([`DATABASE_BACKUPS.md`][db-4] §4). `reset` stays refused for `remote` and `preview`, where Time
 Travel is the undo, and `bookmark` is refused for `local` and `standby`, which have no Time Travel to read.
 
 ---
@@ -134,12 +136,12 @@ Forge keeps two tables of its own beside the app's, each `STRICT`, each created 
 
 **The names begin `_forge_`, matching the platform's own `_cf_*`.** A leading underscore is how D1 already marks a table as the platform's rather
 than the app's, so a reader needs one convention instead of two. The prefix keeps both tables out of the schema fingerprint (§4a), out of what
-compose reads as the app's schema (`SCHEMA_COMPOSITION.md` §3), and out of what a backup treats as an app table ([`DATABASE_BACKUPS.md`][db-4] §4).
+compose reads as the app's schema (`SCHEMA_COMPOSITION.md` §3), and out of the rows a reset counts as the app's ([`DATABASE_BACKUPS.md`][db-5] §5).
 
 **Forge owns the migration history outright.** No verb runs `wrangler d1 migrations apply` or writes wrangler's `d1_migrations` table. `migrate` and
 `migrate status` read it, as the table an entry's `migrations_table` names, and only when the database holds it: a migration wrangler recorded that
 forge never applied refuses the apply (§6d) and fails `status --check` (§6c). Wrangler is a local transport and nothing more — its in-process D1
-binding and `d1 export --local`.
+binding.
 
 Past that read, the migration analysis leaves the table out of the scratch copy it diffs against (§9b). Everywhere else it counts as one of the
 **app's** own tables: it enters the schema fingerprint, and a backup carries its rows. Drop it before forge's first apply to such a database; after
@@ -151,7 +153,7 @@ Forge writes the history row itself, in the same load as the migration body (§6
 The DDL is `src/tooling/db/migrate/companions.ts`. `id` is apply order; `name` is the file name without `.sql`; `sha256` covers the file with its
 `forge:compose` stamp blanked; `applied_at` is epoch milliseconds, since `STRICT` has no `TIMESTAMP`; `fingerprint` may be `NULL`.
 
-**`id` is never `AUTOINCREMENT`.** A backup restores keys from the artifact, and an engine-allocated key would need `sqlite_sequence` carried with
+**`id` is never `AUTOINCREMENT`.** A restore replays keys from the dump, and an engine-allocated key would need `sqlite_sequence` carried with
 it — the hazard the `autoincrement` lint rule refuses on an app table (§5). Forge's own table does not get to break the rule it enforces.
 
 **The unique index on `name` is what makes a duplicate migration name a hard failure**: two files of the same name fail at apply time on it, as a
@@ -175,8 +177,8 @@ The fingerprint rules have one home, `src/storage/db/schema.ts`, which `tooling/
 `checkSchemaHealth` ([`STORAGE_BINDINGS.md`][sb-1f] §1f), so the CLI and the runtime cannot judge one schema two ways.
 
 **The migrations digest is computed, never stored.** It is a SHA-256 over the ordered `(name, sha256)` pairs — derived from the rows above and from
-the files on disk alike, so no stored rollup can drift from what it summarises. A backup artifact binds itself to it ([`DATABASE_BACKUPS.md`][db-4]
-§4), and compose caches a replayed baseline under it (`SCHEMA_COMPOSITION.md` §7).
+the files on disk alike, so no stored rollup can drift from what it summarises. Compose caches a replayed baseline under it
+(`SCHEMA_COMPOSITION.md` §7).
 
 **Seed history stays a table of its own, rather than a `type` column here.** Migration history is forward-only and is the record that makes an
 edited-after-applied file detectable at all; seed history is deliberately deleted by `seed reset` (§4c). Merging them would put that `DELETE` one
@@ -205,7 +207,7 @@ so the `BEGIN` inside it is not a transaction.
 | `unbounded-update` | `UPDATE … SET` with no `WHERE` in the statement — an upsert's `DO UPDATE SET` is not one | It rewrites every row in the table |
 | `unbounded-delete` | `DELETE FROM` with no `WHERE` in the statement | It empties the table |
 | `virtual-table` | `CREATE VIRTUAL TABLE` | D1's export throws on a virtual table, leaving the database unbackupable |
-| `autoincrement` | `AUTOINCREMENT` | A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried with it ([`DATABASE_BACKUPS.md`][db-5] §5) |
+| `autoincrement` | `AUTOINCREMENT` | A restore replays keys from the dump, and an engine-allocated key needs `sqlite_sequence` carried with it |
 | `explicit-transaction` | A statement that is `BEGIN`, `COMMIT`, `ROLLBACK` or `END` | The load of a migration is already one transaction (§6d), and a nested one fails |
 | `attach-database` | `ATTACH` or `DETACH` | D1 is one database |
 | `add-column-not-null-no-default` | `ADD COLUMN … NOT NULL` with no `DEFAULT` | SQLite refuses it outright |
@@ -282,7 +284,7 @@ repair, and none has an override:
 2. **A history wrangler wrote.** A migration the entry's `migrations_table` (or `d1_migrations`) records and `_forge_migrations` does not —
    `wrangler d1 migrations apply` ran against this database. It is checked on every target where the database holds that table. Where forge has
    applied nothing, drop the table before bringing the database under forge (§4); otherwise restore the database to a point before that run —
-   `forge db bookmark restore` on a deployed target, `forge db reset` and `forge db restore` on a local one.
+   `forge db bookmark restore` on a deployed target, `forge db reset` and then a restore from a dump on a local one.
 3. **A migration compose did not write.** A pending file with no `forge:compose` stamp, or one whose stamp's `body` digest does not match the file
    (§9b). Change `schema.sql` and compose again.
 4. **A moved fingerprint.** The newest certified fingerprint — rows a part-applied batch left `NULL` are read past — is not the fingerprint of the
@@ -328,14 +330,13 @@ whether they agree — and every verb that opens the target reaches it through `
 | --- | --- | --- |
 | `forge db migrate` | Refuses; nothing passes it | It is the verb that can explain the schema, so it is the one that insists |
 | `forge db seed` | Refuses; nothing passes it | A seed writes rows into whatever schema is there, and the check is held early (§7) |
-| `forge db backup` | Says so, records the state in `manifest.json`, and takes the backup | An artifact of a drifted database is still worth having ([`DATABASE_BACKUPS.md`][db-4] §4) |
 
 **`forge db schema check` is not on that list, and stays off it.** It reads files and opens no database, which is what lets it run in a library
 repository with no database at all and in a pre-merge job. A pipeline that wants both answers runs it and `forge db migrate status --check` (§9).
 
-`restore` and `reset` are also absent, because neither holds a live schema worth comparing: a restore needs an empty target and checks what it
-built against the manifest (`DATABASE_BACKUPS.md` §6), and a reset's guard — a verified artifact whose row digests still match — is strictly
-stronger than a fingerprint.
+`backup`, `restore` and `reset` are also absent. A backup takes D1's dump of whatever schema is there, and its sidecar records that schema's digest.
+A restore needs an empty target and checks what it built against that sidecar (`DATABASE_BACKUPS.md` §4b). A reset's guard is a dump whose row
+counts still match.
 
 ### 6f. Rehearsing Against Real Rows
 
@@ -343,11 +344,11 @@ stronger than a fingerprint.
 proof holds one synthetic row per table ([`SCHEMA_COMPOSITION.md`][sc-4] §4). A statement that fails only on particular values — a `NOT NULL` over
 NULLs, a `UNIQUE` over duplicates — passes all of them and fails on the target.
 
-A rehearsal restores a backup artifact into a throwaway database under `.forge/scratch/rehearse/`, with the target's own history carried in its
-rows ([`DATABASE_BACKUPS.md`][db-4] §4), and applies and records the pending migrations there **before the confirmation, under the lock** — so one
-that fails leaves the target untouched, naming the migration it stopped on and what the database said. A deployed target is refused, having no
-local scratch, and a dry run rehearses nothing. **The artifact must have been taken with exactly the migrations this target has applied** — one
-taken earlier or later is refused, naming the difference — so the pending files run over the schema they will meet.
+A rehearsal loads the newest complete local R2 dump, or the one `--dump` names, into a throwaway database under `.forge/scratch/rehearse/`. It
+checks the load against the dump's sidecar, then applies and records the pending migrations there **before the confirmation, under the lock**. So
+one that fails leaves the target untouched, naming the migration it stopped on and what the database said. A deployed target is refused, having no
+local scratch, and a dry run rehearses nothing. **The dump must have been taken at the migration this target is at**: one taken earlier or later is
+refused, naming both, so the pending files run over the schema they will meet.
 
 ---
 
@@ -583,10 +584,8 @@ new schema under the previous Worker, which §9b keeps safe: fix the deploy and 
 
 [bt-1c]: ./BUILD_TOOLING.md#1c-errors-carry-a-kind-not-an-exit-code
 [db]: ./DATABASE_BACKUPS.md
-[db-3]: ./DATABASE_BACKUPS.md#3-a-remote-backup-is-a-read
-[db-4]: ./DATABASE_BACKUPS.md#4-self-contained-and-bound
-[db-5]: ./DATABASE_BACKUPS.md#5-the-data-format
-[db-6]: ./DATABASE_BACKUPS.md#6-restore-and-reset
+[db-4]: ./DATABASE_BACKUPS.md#4-the-restore-ladder
+[db-5]: ./DATABASE_BACKUPS.md#5-reset-and-rehearse-rely-on-a-local-dump
 [db-readme]: ../src/tooling/db/README.md
 [namespaces-5g]: ./NAMESPACES.md#5g-tooling--where-a-developer-facing-tool-belongs
 [sb-1]: ./STORAGE_BINDINGS.md#1-storagedb--d1-database-client

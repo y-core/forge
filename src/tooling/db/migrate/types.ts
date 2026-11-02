@@ -29,15 +29,17 @@ export interface MigrateOptions {
   /** `NNNN` or a full migration name: nothing numbered above it is applied. */
   to?: string | undefined;
   bookmark: boolean;
-  /** Apply the pending migrations to a copy restored from a backup artifact first, and report before touching the target. */
+  /** Apply the pending migrations to a copy restored from a local R2 dump first, and report before touching the target. */
   rehearse: boolean;
-  /** The artifact a rehearsal restores; absent takes the most recent verified backup of this database. */
-  artifact?: string | undefined;
+  /** The R2 dump a rehearsal restores; absent takes the newest complete dump of this database. */
+  dump?: string | undefined;
+  bucket?: string | undefined;
+  prefix?: string | undefined;
 }
 
-/** What one rehearsal proved: the artifact it restored, the rows it held, and the migrations that applied to them. @public */
+/** What one rehearsal proved: the dump it restored, the rows it held, and the migrations that applied to them. @public */
 export interface RehearsalOutcome {
-  readonly artifact: string;
+  readonly dump: string;
   readonly rows: number;
   readonly applied: readonly string[];
 }

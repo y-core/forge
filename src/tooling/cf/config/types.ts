@@ -1,6 +1,6 @@
 import type { JsonPath } from "../../cli/types";
 import type { Primitive } from "../../cli/types";
-import type { D1DatabaseConfig, WranglerAssetsConfig, WranglerConfig, WranglerEnvironmentConfig } from "../types";
+import type { D1DatabaseConfig, R2BucketConfig, WorkflowConfig, WranglerAssetsConfig, WranglerConfig, WranglerEnvironmentConfig } from "../types";
 
 export type ConfigDiff = { kind: "set"; path: JsonPath; value: Primitive } | { kind: "unsupported"; path: JsonPath; reason: string };
 
@@ -38,6 +38,8 @@ export interface WranglerDeployment {
   rules?: unknown;
   define?: unknown;
   d1_databases?: D1DatabaseConfig[];
+  r2_buckets?: R2BucketConfig[];
+  workflows?: WorkflowConfig[];
 }
 
 export type DeploymentKey = keyof WranglerDeployment;

@@ -514,6 +514,19 @@ describe("sessionMiddleware key rotation", () => {
     expect(await res.text()).not.toBe(seededId);
   });
 
+  it("gives a KV session a fresh id when its cookie fails signature parsing", async () => {
+    const kv = fakeKV();
+    const seed = rotationApp(OLD_RING, createKVSessionStorage(kv));
+    const seeded = await seed.app.request("/id");
+    const seededId = await seeded.text();
+    const sent = carry(seeded);
+    const tampered = `${sent.slice(0, 12)}${sent[12] === "A" ? "B" : "A"}${sent.slice(13)}`;
+
+    expect(await seed.cookie.parse(tampered)).toBeNull();
+    const res = await seed.app.request("/id", { headers: { cookie: tampered } });
+    expect(await res.text()).not.toBe(seededId);
+  });
+
   // The cost trade, pinned: off rotation the payload decides alone, so an unchanged session is
   // never re-signed — and a retired signature it cannot see is therefore left in place.
   it("leaves a retired signature alone when rotating is not set", async () => {

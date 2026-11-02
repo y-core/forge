@@ -49,6 +49,8 @@ const FIXTURES: Record<DeploymentKey, readonly [unknown, unknown]> = {
   rules: [[{ type: "Text", globs: ["**/*.top"] }], [{ type: "Text", globs: ["**/*.own"] }]],
   define: [{ X: "1" }, { X: "2" }],
   d1_databases: [[{ binding: "DB", database_name: "top" }], [{ binding: "DB", database_name: "own" }]],
+  r2_buckets: [[{ binding: "BACKUPS", bucket_name: "top" }], [{ binding: "BACKUPS", bucket_name: "own" }]],
+  workflows: [[{ name: "wf-top", binding: "WF", class_name: "Wf" }], [{ name: "wf-own", binding: "WF", class_name: "Wf" }]],
 };
 
 function project(key: DeploymentKey, value: unknown): unknown {

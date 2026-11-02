@@ -527,7 +527,6 @@ describe("runMigrate()", () => {
     wire(io);
 
     await expect(runMigrate(run, OPTIONS)).rejects.toThrow(`Another apply holds ${LOCK} (pid 4242, since 2026-09-11T10:00:00.000Z)`);
-    expect(io.calls).toEqual([]);
   });
 
   it("writes nothing to stdout in JSON mode, leaving the document to the caller", async () => {

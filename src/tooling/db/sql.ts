@@ -1,5 +1,5 @@
 import { maskSqlProse } from "./schema/normalize";
-import type { ColumnInfo, SqlAffinity } from "./types";
+import type { ColumnInfo, SqlAffinity, TableClass } from "./types";
 
 export { INVENTORY_SELECT, toSchemaObjects } from "../../storage/db/schema";
 
@@ -81,7 +81,11 @@ const READ_PRAGMAS = new Set([
 ]);
 
 function isReadOnlyStatement(statement: string): boolean {
-  const words = maskSqlProse(statement, { identifiers: true }).trim().toUpperCase();
+  const words = maskSqlProse(statement, { identifiers: true })
+    .replace(/[\s;]+$/, "")
+    .trim()
+    .toUpperCase();
+  if (words.includes(";")) return false;
   const lead = /^\w+/.exec(words)?.[0];
   if (lead === "SELECT" || lead === "EXPLAIN") return true;
   if (lead === "WITH") return !/\b(INSERT|UPDATE|DELETE|REPLACE)\b/.test(words);
@@ -90,7 +94,14 @@ function isReadOnlyStatement(statement: string): boolean {
   return name !== undefined && READ_PRAGMAS.has(name);
 }
 
-/** True when every statement is a SELECT, an EXPLAIN, a WITH naming no INSERT, UPDATE, DELETE or REPLACE, or an introspection PRAGMA with no `=`. @internal */
+/** True when every element is one statement — a SELECT, an EXPLAIN, a WITH naming no INSERT, UPDATE, DELETE or REPLACE, or an introspection PRAGMA with no `=`. @internal */
 export function isReadOnlyBatch(statements: readonly string[]): boolean {
   return statements.length > 0 && statements.every(isReadOnlyStatement);
+}
+
+/** Who owns a table: the app's own, the toolchain's, or the engine's. @internal */
+export function classifyTable(name: string): TableClass {
+  if (name === "sqlite_sequence" || name.startsWith("_forge_")) return "managed";
+  if (name.startsWith("sqlite_") || name.startsWith("_cf_")) return "system";
+  return "app";
 }

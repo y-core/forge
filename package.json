@@ -155,6 +155,10 @@
     "#relax/error-page": {
       "forge-dev": "./src/app/error-page.dev.ts",
       "default": "./src/app/error-page.strict.ts"
+    },
+    "#relax/d1-transfer": {
+      "forge-dev": "./src/storage/backup/transfer.dev.ts",
+      "default": "./src/storage/backup/transfer.strict.ts"
     }
   },
   "exports": {

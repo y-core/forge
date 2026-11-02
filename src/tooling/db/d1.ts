@@ -1,17 +1,7 @@
 import { CliError } from "../cli/errors";
-import { executeDeployed, exportDeployed, queryDeployed } from "./remote";
+import { executeDeployed, queryDeployed } from "./remote";
 import { isRemotePlace } from "./target";
-import type { D1ExportPart, DbIo, Home, Spawned } from "./types";
-
-/** Runs `wrangler d1 <args>` against a home, returning both streams and the exit code. @internal */
-export function runWrangler(io: DbIo, home: Home, args: readonly string[]): Spawned {
-  return io.spawn("wrangler", ["d1", ...args], { cwd: home.dir });
-}
-
-function failed(what: string, home: Home, run: Spawned): CliError {
-  const detail = `${run.stderr.trim()}\n${run.stdout.trim()}`.trim().slice(0, 4000);
-  return new CliError("external", `${what} against ${home.label} (${home.database}) failed (exit ${run.code})${detail ? `:\n${detail}` : ""}`);
-}
+import type { DbIo, Home } from "./types";
 
 function failedInProcess(what: string, home: Home, error: unknown): CliError {
   const detail = (error instanceof Error ? error.message : String(error)).trim().slice(0, 4000);
@@ -119,16 +109,4 @@ export async function executeFile(io: DbIo, home: Home, file: string): Promise<v
     return;
   }
   await executeDeployed(io, home, io.readText(file), `loading ${file}`);
-}
-
-/** Exports a home's schema or data to `output`: wrangler for a local home, D1's export for a deployed one, answering the bookmark a deployed export was taken at. @internal */
-export async function exportSql(io: DbIo, home: Home, output: string, part: D1ExportPart): Promise<string | null> {
-  if (isRemotePlace(home.place)) return exportDeployed(io, home, output, part);
-  // The handle is released first: it may hold committed state a separate wrangler process cannot see.
-  if (home.persistTo !== null) await io.closeD1(home);
-  const envFlags = home.env === null ? [] : ["-e", home.env];
-  const partFlag = part === "schema" ? "--no-data" : "--no-schema";
-  const run = runWrangler(io, home, ["export", home.database, "-c", home.configPath, ...envFlags, "--local", "--output", output, partFlag]);
-  if (run.code !== 0) throw failed("export", home, run);
-  return null;
 }

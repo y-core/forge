@@ -1,7 +1,6 @@
 import { join } from "node:path";
 
-import { unstable_splitSqlQuery } from "wrangler";
-
+import { cutSqlStatements } from "../../src/storage/backup/split";
 import { openPlatformD1 } from "../../src/testing/d1";
 
 /** A D1 binding over the state a `--persist-to` run wrote, and the workerd process behind it. */
@@ -23,7 +22,7 @@ export async function openD1(root: string, persistPath: string = join(root, ".wr
     // Each statement runs on its own and in order, never through `batch()`: `prepare` throws on a
     // multi-statement string, and a batch is one transaction where `d1 execute --command` is not.
     exec: async (sql) => {
-      for (const statement of unstable_splitSqlQuery(sql)) await binding.prepare(statement).run();
+      for (const statement of cutSqlStatements(sql)) await binding.prepare(statement).run();
     },
     rows: async <T>(sql: string) => (await binding.prepare(sql).all()).results as T[],
     dispose: platform.dispose,

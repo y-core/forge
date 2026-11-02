@@ -1,19 +1,8 @@
 import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../cli/errors";
-import {
-  describeForeignKeyWatch,
-  executeFile,
-  executeSql,
-  exportSql,
-  foreignKeyWatch,
-  queryBatches,
-  queryOne,
-  queryRows,
-  queryRowsIfTable,
-  runWrangler,
-} from "./d1";
-import { cfEnvelope, cfRefusal, fakeDbIo, OK, REMOTE_AUTH } from "./db.fixture";
+import { describeForeignKeyWatch, executeFile, executeSql, foreignKeyWatch, queryBatches, queryOne, queryRows, queryRowsIfTable } from "./d1";
+import { cfEnvelope, cfRefusal, fakeDbIo, REMOTE_AUTH } from "./db.fixture";
 import type { FakeDbIo } from "./types";
 import type { Home } from "./types";
 
@@ -49,7 +38,6 @@ const DB_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
 const PREVIEW_ID = "1a2b3c4d-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
 const REMOTE = home({ label: "remote", place: "remote", persistTo: null, databaseId: DB_ID, auth: REMOTE_AUTH });
 const PREVIEW = home({ label: "preview", place: "preview", persistTo: null, databaseId: PREVIEW_ID, auth: REMOTE_AUTH });
-const SIGNED_URL = "https://d1-exports.example.com/dump.sql?X-Amz-Signature=deadbeef";
 
 /** A deployed database answered over the fake REST API, through the same `d1Rules` a local one is. */
 function remoteIo(seed: Record<string, string> = {}): FakeDbIo {
@@ -63,12 +51,6 @@ function refusingRemote(code: number, message: string, seed: Record<string, stri
 }
 
 const bodyOf = (io: FakeDbIo, index = 0): unknown => JSON.parse(io.restCalls[index]?.body ?? "null");
-
-function ioWith(match: (args: readonly string[]) => boolean, reply: { code: number; stdout: string; stderr: string }): FakeDbIo {
-  const io = fakeDbIo();
-  io.rules.push({ match, reply });
-  return io;
-}
 
 function ioAnswering(rows: Record<string, unknown>[] | ((statement: string) => Record<string, unknown>[])): FakeDbIo {
   const io = fakeDbIo();
@@ -86,19 +68,10 @@ async function capture(run: () => unknown): Promise<CliError> {
   throw new Error("expected a CliError, and the call returned");
 }
 
-describe("runWrangler()", () => {
-  it("prefixes d1 and runs in the home's directory", () => {
-    const io = ioWith(() => true, OK);
-    expect(runWrangler(io, home(), ["info", "app-db"])).toEqual(OK);
-    expect(io.calls).toEqual([["wrangler", "d1", "info", "app-db"]]);
-  });
-});
-
 describe("queryRows()", () => {
-  it("puts a local query to the home's own state and spawns nothing", async () => {
+  it("puts a local query to the home's own state", async () => {
     const io = ioAnswering([{ n: 1 }]);
     expect(await queryRows(io, home(), "SELECT 1")).toEqual([{ n: 1 }]);
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([{ home: "local", place: "local", persistTo: "/app/.wrangler/state/v3", statements: ["SELECT 1"], source: null }]);
   });
 
@@ -108,14 +81,13 @@ describe("queryRows()", () => {
     expect(io.d1Calls[0]).toMatchObject({ home: "standby", persistTo: "/app/.forge/standby/app-db-standby/.wrangler/state/v3" });
   });
 
-  it("sends a remote query to the D1 REST API in one request, spawning nothing", async () => {
+  it("sends a remote query to the D1 REST API in one request", async () => {
     const io = remoteIo();
     io.d1Rules.push({ match: (statement) => statement === "SELECT 1 AS n", reply: [{ n: 1 }] });
     expect(await queryRows(io, REMOTE, "SELECT 1 AS n")).toEqual([{ n: 1 }]);
     expect(io.restCalls.map((call) => [call.method, call.url])).toEqual([
       ["POST", `https://api.cloudflare.com/client/v4/accounts/acct/d1/database/${DB_ID}/query`],
     ]);
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([]);
   });
 
@@ -174,7 +146,6 @@ describe("queryBatches()", () => {
   it("reaches the database not at all for no statements", async () => {
     const io = ioAnswering([]);
     expect(await queryBatches(io, home(), [])).toEqual([]);
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([]);
   });
 
@@ -261,16 +232,14 @@ describe("executeSql()", () => {
   it("puts the statement to the local database rather than an argv", async () => {
     const io = ioAnswering([]);
     await executeSql(io, home(), "DELETE FROM t");
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls[0]?.statements).toEqual(["DELETE FROM t"]);
   });
 
-  it("sends a deployed statement as one { sql } request, spawning nothing", async () => {
+  it("sends a deployed statement as one { sql } request", async () => {
     const io = remoteIo();
     await executeSql(io, REMOTE, "DELETE FROM t");
     expect(io.restCalls).toHaveLength(1);
     expect(bodyOf(io)).toEqual({ sql: "DELETE FROM t" });
-    expect(io.calls).toEqual([]);
   });
 
   it("names a deployed failure as an execute", async () => {
@@ -298,7 +267,6 @@ describe("executeFile()", () => {
   it("loads a local file's text in one call, naming the file it came from", async () => {
     const io = fakeDbIo({ "/tmp/dump.sql": "CREATE TABLE t (id INTEGER);\nINSERT INTO t VALUES (1);\n" });
     await executeFile(io, STANDBY, "/tmp/dump.sql");
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([
       {
         home: "standby",
@@ -310,12 +278,11 @@ describe("executeFile()", () => {
     ]);
   });
 
-  it("sends a deployed file's text as one { sql } request, spawning nothing", async () => {
+  it("sends a deployed file's text as one { sql } request", async () => {
     const io = remoteIo({ "/tmp/dump.sql": "CREATE TABLE t (id INTEGER);\nINSERT INTO t VALUES (1);\n" });
     await executeFile(io, REMOTE, "/tmp/dump.sql");
     expect(io.restCalls).toHaveLength(1);
     expect(bodyOf(io)).toEqual({ sql: "CREATE TABLE t (id INTEGER);\nINSERT INTO t VALUES (1);\n" });
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([]);
   });
 
@@ -370,7 +337,6 @@ describe("executeFile()", () => {
           message: failure(`${DIAGNOSIS}\n${refusal}`),
         });
         expect(sent).toEqual([[SQL], [foreignKeyWatch(STATEMENTS)]]);
-        expect(io.calls).toEqual([]);
       });
     }
 
@@ -418,7 +384,6 @@ describe("executeFile()", () => {
         message: `loading ${FILE} against remote (app-db) failed: ${OPAQUE} (Cloudflare error 7500)`,
       });
       expect(io.restCalls.length).toBe(1);
-      expect(io.calls).toEqual([]);
       expect(io.d1Calls).toEqual([]);
     });
   });
@@ -483,74 +448,6 @@ describe("describeForeignKeyWatch()", () => {
 
     expect(describeForeignKeyWatch(WATCH_MARKED, ["", "", "", `${head}${"B".repeat(80)}`])).toBe(
       `FOREIGN KEY constraint failed: child first held a row with no match in parent after \`${head}\``,
-    );
-  });
-});
-
-describe("exportSql()", () => {
-  it("runs a local schema export with --local, --no-data and no --persist-to, because export resolves state from the config's directory", async () => {
-    const io = ioWith(() => true, OK);
-    expect(await exportSql(io, STANDBY, "/tmp/out.sql", "schema")).toBeNull();
-    expect(io.calls[0]).toEqual([
-      "wrangler",
-      "d1",
-      "export",
-      "app-db-standby",
-      "-c",
-      "/app/.forge/standby/app-db-standby/wrangler.jsonc",
-      "--local",
-      "--output",
-      "/tmp/out.sql",
-      "--no-data",
-    ]);
-  });
-
-  // A separate wrangler process reads the state through its own handle, which cannot see what this
-  // run's handle holds uncommitted to disk.
-  it("releases the local handle before the export process reads the same state", async () => {
-    const io = ioWith(() => true, OK);
-    await exportSql(io, STANDBY, "/tmp/out.sql", "data");
-    expect(io.closed).toEqual(["/app/.forge/standby/app-db-standby/.wrangler/state/v3"]);
-  });
-
-  it("forwards the environment before the output, and asks for the data part with --no-schema", async () => {
-    const io = ioWith(() => true, OK);
-    expect(await exportSql(io, home({ env: "staging" }), "/tmp/out.sql", "data")).toBeNull();
-    expect(io.calls[0]).toEqual([
-      "wrangler",
-      "d1",
-      "export",
-      "app-db",
-      "-c",
-      "/app/wrangler.jsonc",
-      "-e",
-      "staging",
-      "--local",
-      "--output",
-      "/tmp/out.sql",
-      "--no-schema",
-    ]);
-  });
-
-  it("exports a deployed database through D1's export, spawning nothing and releasing no handle, and answers its bookmark", async () => {
-    const io = remoteIo();
-    io.restRules.push(
-      {
-        match: (url) => url.endsWith("/export"),
-        reply: () => cfEnvelope({ status: "complete", at_bookmark: "B", result: { filename: "d.sql", signed_url: SIGNED_URL } }),
-      },
-      { match: (url) => url === SIGNED_URL, reply: () => new Response("CREATE TABLE t (a);\n") },
-    );
-    expect(await exportSql(io, REMOTE, "/tmp/out.sql", "schema")).toBe("B");
-    expect(io.readText("/tmp/out.sql")).toBe("CREATE TABLE t (a);\n");
-    expect(io.calls).toEqual([]);
-    expect(io.closed).toEqual([]);
-  });
-
-  it("throws with the exit code when a local export fails", async () => {
-    const io = ioWith(() => true, { code: 1, stdout: "", stderr: "no such database" });
-    expect((await capture(() => exportSql(io, home(), "/tmp/out.sql", "schema"))).message).toBe(
-      "export against local (app-db) failed (exit 1):\nno such database",
     );
   });
 });

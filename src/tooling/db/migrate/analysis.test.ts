@@ -506,7 +506,6 @@ describe("copyTargetSchema()", () => {
     expect(home.dir).toBe(ANALYSIS);
     expect(io.files.get(TARGET_SQL)).toBe("CREATE TABLE posts (id INTEGER PRIMARY KEY);");
     expect(loadsIntoCopy(io)).toHaveLength(1);
-    expect(io.calls).toEqual([]);
   });
 
   it("refuses a schema that does not rebuild on the scratch database", async () => {

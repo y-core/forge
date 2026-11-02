@@ -4,10 +4,8 @@ export { confirmPrinter, resolveDbContext, withDbRun } from "./context";
 export { defineDbConfig, forgeSchema } from "./declared";
 export type {
   ApplyPlan,
-  BackupExporter,
-  BackupManifest,
-  BackupVia,
   Bookmark,
+  BookmarkUndo,
   D1Entry,
   DbConfig,
   DbContextOverrides,
@@ -21,9 +19,7 @@ export type {
   LintRule,
   Migration,
   Place,
-  RestoreRoute,
   SchemaDrift,
-  SchemaFacts,
   SchemaObject,
   Seed,
   SeedFixtureOptions,
@@ -31,7 +27,6 @@ export type {
   SeedOutcome,
   SeedPlan,
   SharedDbFlags,
-  Spawned,
   StandbyResetOptions,
   StandbyResetOutcome,
 } from "./types";
@@ -40,20 +35,8 @@ export { runMigrate } from "./migrate/apply";
 export { lintMigration, lintMigrations } from "./migrate/lint";
 export type { MigrateOptions, MigrateOutcome, RehearsalOutcome } from "./migrate/types";
 
-export { runBackup } from "./backup/backup";
-export { executeReset, findVerifiedBackup, prepareReset } from "./backup/reset";
-export { executeRestore, prepareRestore, readBackupManifest } from "./backup/restore";
-export type {
-  BackupOptions,
-  BackupOutcome,
-  ResetOptions,
-  ResetOutcome,
-  ResetPlan,
-  RestoreOptions,
-  RestoreOutcome,
-  RestorePlan,
-  RestoreTargetState,
-} from "./backup/types";
+export { executeReset, prepareReset } from "./backup/reset";
+export type { ResetOptions, ResetOutcome, ResetPlan } from "./backup/types";
 
 export { readSeeds } from "./seed/apply";
 export { composeSeedFixture } from "./seed/fixture";

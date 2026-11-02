@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { v } from "../../../validation/validation";
-import { createCfClient } from "./client";
+import { createCfClient, readRetryAfterMs } from "./client";
 import { classifyCfError, describeCfFailure } from "./errors";
 import { CfApiClientError } from "./types";
 import type { CfListOperation, CfOperation } from "./types";
@@ -522,8 +522,316 @@ describe("createCfClient().list() — cursor paging", () => {
     const r = await createCfClient(AUTH, fetchFn).list(PATH, CURSORED);
     expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({
       kind: "paging",
-      message: `${CURSORED.name}: the API returned cursor c1 twice`,
+      message: `${CURSORED.name}: page 2 returned cursor c1, which an earlier page already returned`,
     });
     expect(queries.length).toBe(2);
+  });
+
+  it("refuses a cursor cycle A, B, A at the third page", async () => {
+    const next: Record<string, string> = { "": "A", A: "B", B: "A" };
+    const { fetchFn, queries } = cursorFetch((cursor) => envelope([cursor ?? "first"], { cursor: next[cursor ?? ""] }));
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, CURSORED);
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({
+      kind: "paging",
+      message: `${CURSORED.name}: page 3 returned cursor A, which an earlier page already returned`,
+    });
+    expect(queries).toEqual(["?per_page=100", "?per_page=100&cursor=A", "?per_page=100&cursor=B"]);
+  });
+
+  it("returns every item of an ordinary two-page cursor listing", async () => {
+    const { fetchFn, queries } = cursorFetch((cursor) =>
+      cursor === null ? envelope(["a", "b"], { cursor: "c1" }) : envelope(["c"], { cursor: null }),
+    );
+    expect(await createCfClient(AUTH, fetchFn).list(PATH, CURSORED)).toEqual({ ok: true, data: ["a", "b", "c"] });
+    expect(queries.length).toBe(2);
+  });
+
+  it("refuses a cursor listing that never ends at the page cap, naming it", async () => {
+    let issued = 0;
+    const { fetchFn, queries } = cursorFetch(() => envelope(["x"], { cursor: `c${++issued}` }));
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, CURSORED);
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({
+      kind: "paging",
+      message: `${CURSORED.name}: the listing reached the 1000-page cap, so it may be incomplete`,
+    });
+    expect(queries.length).toBe(1000);
+  });
+
+  it("refuses a cursor cycle A, B, C, A at the fourth page", async () => {
+    const next: Record<string, string> = { "": "A", A: "B", B: "C", C: "A" };
+    const { fetchFn, queries } = cursorFetch((cursor) => envelope([cursor ?? "first"], { cursor: next[cursor ?? ""] }));
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, CURSORED);
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({
+      kind: "paging",
+      message: `${CURSORED.name}: page 4 returned cursor A, which an earlier page already returned`,
+    });
+    expect(queries).toEqual(["?per_page=100", "?per_page=100&cursor=A", "?per_page=100&cursor=B", "?per_page=100&cursor=C"]);
+  });
+
+  it("refuses the page cap with a CfApiClientError", async () => {
+    let issued = 0;
+    const { fetchFn } = cursorFetch(() => envelope(["x"], { cursor: `c${++issued}` }));
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, CURSORED);
+    expect(r.ok ? null : r.error).toBeInstanceOf(CfApiClientError);
+  });
+
+  it("returns every item of a cursor listing that ends on the cap page", async () => {
+    const { fetchFn, queries } = cursorFetch((cursor) => {
+      const page = cursor === null ? 1 : Number(cursor.slice(1));
+      return envelope([`i${page}`], { cursor: page < 1000 ? `c${page + 1}` : null });
+    });
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, CURSORED);
+    expect(r).toEqual({ ok: true, data: Array.from({ length: 1000 }, (_, i) => `i${i + 1}`) });
+    expect(queries.length).toBe(1000);
+  });
+
+  it("returns every item of a page-number listing of exactly the cap", async () => {
+    const { fetchFn, queries } = cursorFetch(() => envelope([`i${queries.length}`], { per_page: 1, total_pages: 1000 }));
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, PAGED);
+    expect(r).toEqual({ ok: true, data: Array.from({ length: 1000 }, (_, i) => `i${i + 1}`) });
+    expect(queries.length).toBe(1000);
+  });
+
+  it("refuses a page-number listing whose total_pages keeps growing at the page cap", async () => {
+    const { fetchFn, queries } = cursorFetch(() => envelope(["x"], { per_page: 1, total_pages: queries.length + 1 }));
+    const r = await createCfClient(AUTH, fetchFn).list(PATH, PAGED);
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({
+      kind: "paging",
+      message: `${PAGED.name}: the listing reached the 1000-page cap, so it may be incomplete`,
+    });
+    expect(queries.length).toBe(1000);
+  });
+});
+
+describe("createCfClient() — retrying an idempotent operation", () => {
+  const IDEMPOTENT: CfOperation<unknown> = { name: "GET /test", result: v.unknown(), idempotent: true };
+  const okReply = () => Response.json({ success: true, errors: [], messages: [], result: "done" });
+  const unavailable = (headers: Record<string, string> = {}) =>
+    Response.json({ success: false, errors: [{ code: 7500, message: "unavailable" }], result: null }, { status: 503, headers });
+
+  function queuedFetch(...replies: (() => Response)[]): { fetchFn: typeof globalThis.fetch; sent: () => number } {
+    let sent = 0;
+    const fetchFn: typeof globalThis.fetch = async () => {
+      const reply = replies[Math.min(sent, replies.length - 1)];
+      sent += 1;
+      if (reply === undefined) throw new Error("no reply queued");
+      return reply();
+    };
+    return { fetchFn, sent: () => sent };
+  }
+
+  function recordingSleep(): { sleep: (ms: number) => Promise<void>; slept: number[] } {
+    const slept: number[] = [];
+    return { sleep: async (ms) => void slept.push(ms), slept };
+  }
+
+  it("succeeds on the second attempt after a 503", async () => {
+    const { fetchFn, sent } = queuedFetch(unavailable, okReply);
+    const { sleep, slept } = recordingSleep();
+    expect(await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT)).toEqual({ ok: true, data: "done" });
+    expect(sent()).toBe(2);
+    expect(slept).toEqual([1_000]);
+  });
+
+  it("retries a 429", async () => {
+    const { fetchFn, sent } = queuedFetch(() => Response.json({ success: false, errors: [], result: null }, { status: 429 }), okReply);
+    const { sleep } = recordingSleep();
+    expect((await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT)).ok).toBe(true);
+    expect(sent()).toBe(2);
+  });
+
+  it("retries a 502 whose body is not JSON", async () => {
+    const { fetchFn, sent } = queuedFetch(() => new Response("<html>bad gateway</html>", { status: 502 }), okReply);
+    const { sleep } = recordingSleep();
+    expect((await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT)).ok).toBe(true);
+    expect(sent()).toBe(2);
+  });
+
+  it("retries a transport failure", async () => {
+    const { fetchFn, sent } = queuedFetch(() => {
+      throw new Error("connection reset");
+    }, okReply);
+    const { sleep } = recordingSleep();
+    expect(await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT)).toEqual({ ok: true, data: "done" });
+    expect(sent()).toBe(2);
+  });
+
+  it("doubles the wait between attempts and gives up at the attempt cap, naming the last status", async () => {
+    const { fetchFn, sent } = queuedFetch(unavailable);
+    const { sleep, slept } = recordingSleep();
+    const r = await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(r.ok ? null : { kind: r.error.kind, statusCode: r.error.statusCode, message: r.error.message }).toEqual({
+      kind: "api",
+      statusCode: 503,
+      message: "GET /test: gave up after 4 attempts; the last answered HTTP 503: unavailable",
+    });
+    expect(r.ok ? null : r.error.cfErrors).toEqual([{ code: 7500, message: "unavailable" }]);
+    expect(sent()).toBe(4);
+    expect(slept).toEqual([1_000, 2_000, 4_000]);
+  });
+
+  it("gives up on repeated transport failures as a network error", async () => {
+    const { fetchFn, sent } = queuedFetch(() => {
+      throw new Error("connection reset");
+    });
+    const { sleep } = recordingSleep();
+    const r = await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(r.ok ? null : { kind: r.error.kind, message: r.error.message }).toEqual({
+      kind: "network",
+      message: "GET /test: gave up after 4 attempts; the last failed in transport: Network error: connection reset",
+    });
+    expect(sent()).toBe(4);
+  });
+
+  it("waits the seconds a Retry-After names", async () => {
+    const { fetchFn } = queuedFetch(() => unavailable({ "Retry-After": "7" }), okReply);
+    const { sleep, slept } = recordingSleep();
+    await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(slept).toEqual([7_000]);
+  });
+
+  it("waits until the HTTP date a Retry-After names", async () => {
+    const at = new Date(Date.now() + 10_000).toUTCString();
+    const { fetchFn } = queuedFetch(() => unavailable({ "Retry-After": at }), okReply);
+    const { sleep, slept } = recordingSleep();
+    await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(slept).toHaveLength(1);
+    expect(slept[0]).toBeGreaterThan(8_000);
+    expect(slept[0]).toBeLessThanOrEqual(10_000);
+  });
+
+  it("caps a Retry-After past the longest wait", async () => {
+    const { fetchFn } = queuedFetch(() => unavailable({ "Retry-After": "3600" }), okReply);
+    const { sleep, slept } = recordingSleep();
+    await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(slept).toEqual([30_000]);
+  });
+
+  it("retries at once on a Retry-After of 0", async () => {
+    const { fetchFn, sent } = queuedFetch(() => unavailable({ "Retry-After": "0" }), okReply);
+    const { sleep, slept } = recordingSleep();
+    expect(await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT)).toEqual({ ok: true, data: "done" });
+    expect(sent()).toBe(2);
+    expect(slept).toEqual([0]);
+  });
+
+  it("retries at once on a Retry-After HTTP date already past", async () => {
+    const { fetchFn } = queuedFetch(() => unavailable({ "Retry-After": "Thu, 01 Jan 1970 00:00:00 GMT" }), okReply);
+    const { sleep, slept } = recordingSleep();
+    await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(slept).toEqual([0]);
+  });
+
+  it("caps a Retry-After HTTP date past the longest wait", async () => {
+    const { fetchFn } = queuedFetch(() => unavailable({ "Retry-After": "Fri, 31 Dec 9999 23:59:59 GMT" }), okReply);
+    const { sleep, slept } = recordingSleep();
+    await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+    expect(slept).toEqual([30_000]);
+  });
+
+  it("retries a failed page of an idempotent cursor listing on the same cursor, and finishes the listing", async () => {
+    const LISTING: CfListOperation<string> = { ...CURSORED, idempotent: true };
+    const queries: string[] = [];
+    let failedOnce = false;
+    const fetchFn: typeof globalThis.fetch = async (url) => {
+      const cursor = new URL(String(url)).searchParams.get("cursor");
+      queries.push(new URL(String(url)).search);
+      if (cursor === "c1" && !failedOnce) {
+        failedOnce = true;
+        return unavailable();
+      }
+      const next = cursor === null ? "c1" : cursor === "c1" ? "c2" : null;
+      return Response.json({ success: true, errors: [], messages: [], result: [cursor ?? "first"], result_info: { cursor: next } });
+    };
+    const { sleep, slept } = recordingSleep();
+    expect(await createCfClient(AUTH, fetchFn, 30_000, sleep).list("/p", LISTING)).toEqual({ ok: true, data: ["first", "c1", "c2"] });
+    expect(queries).toEqual(["?per_page=100", "?per_page=100&cursor=c1", "?per_page=100&cursor=c1", "?per_page=100&cursor=c2"]);
+    expect(slept).toEqual([1_000]);
+  });
+
+  it("falls back to the backoff on a Retry-After it cannot read, a signed or fractional one included", async () => {
+    for (const header of ["soon", "-5", "-1", "1.5", "2001-01-01"]) {
+      const { fetchFn } = queuedFetch(() => unavailable({ "Retry-After": header }), okReply);
+      const { sleep, slept } = recordingSleep();
+      await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT);
+      expect({ header, slept }).toEqual({ header, slept: [1_000] });
+    }
+  });
+
+  it("does not retry a 4xx other than 429", async () => {
+    const { fetchFn, sent } = queuedFetch(() =>
+      Response.json({ success: false, errors: [{ code: 7003, message: "nope" }], result: null }, { status: 404 }),
+    );
+    const { sleep, slept } = recordingSleep();
+    expect((await createCfClient(AUTH, fetchFn, 30_000, sleep).get("/p", IDEMPOTENT)).ok).toBe(false);
+    expect(sent()).toBe(1);
+    expect(slept).toEqual([]);
+  });
+
+  it("sends an operation not marked idempotent once, whatever it is answered", async () => {
+    const { fetchFn, sent } = queuedFetch(unavailable, okReply);
+    const { sleep, slept } = recordingSleep();
+    const r = await createCfClient(AUTH, fetchFn, 30_000, sleep).post("/p", {}, ANY);
+    expect(r.ok ? null : { statusCode: r.error.statusCode, message: r.error.message }).toEqual({ statusCode: 503, message: "unavailable" });
+    expect(sent()).toBe(1);
+    expect(slept).toEqual([]);
+  });
+
+  it("sends an operation not marked idempotent once after a transport failure", async () => {
+    const { fetchFn, sent } = queuedFetch(() => {
+      throw new Error("connection reset");
+    }, okReply);
+    const { sleep } = recordingSleep();
+    expect((await createCfClient(AUTH, fetchFn, 30_000, sleep).post("/p", {}, ANY)).ok).toBe(false);
+    expect(sent()).toBe(1);
+  });
+});
+
+describe("createCfClient() — a refusal's Retry-After", () => {
+  const rateLimited = (headers: Record<string, string>) =>
+    Response.json({ success: false, errors: [{ code: 971, message: "slow down" }], result: null }, { status: 429, headers });
+
+  it("carries the header on the refusal, as sent", async () => {
+    const r = await createCfClient(AUTH, async () => rateLimited({ "Retry-After": "90" })).post("/p", {}, ANY);
+    expect(r.ok ? null : { statusCode: r.error.statusCode, retryAfter: r.error.retryAfter }).toEqual({ statusCode: 429, retryAfter: "90" });
+  });
+
+  it("carries it on a refusal whose body is not an envelope", async () => {
+    const fetchFn = async () => new Response("busy", { status: 429, headers: { "Retry-After": "5" } });
+    const r = await createCfClient(AUTH, fetchFn).post("/p", {}, ANY);
+    expect(r.ok ? null : r.error.retryAfter).toBe("5");
+  });
+
+  it("carries none when the refusal sent none", async () => {
+    const r = await createCfClient(AUTH, async () => rateLimited({})).post("/p", {}, ANY);
+    expect(r.ok ? "ok" : r.error.retryAfter).toBeUndefined();
+  });
+
+  it("keeps it on the refusal an idempotent operation gives up with", async () => {
+    const IDEMPOTENT: CfOperation<unknown> = { name: "GET /test", result: v.unknown(), idempotent: true };
+    const r = await createCfClient(
+      AUTH,
+      async () => rateLimited({ "Retry-After": "0" }),
+      30_000,
+      async () => {},
+    ).get("/p", IDEMPOTENT);
+    expect(r.ok ? null : r.error.retryAfter).toBe("0");
+  });
+});
+
+describe("readRetryAfterMs()", () => {
+  const NOW = Date.parse("2026-09-11T10:00:00Z");
+
+  it("reads seconds", () => {
+    expect(readRetryAfterMs("90", NOW)).toBe(90_000);
+  });
+
+  it("reads an HTTP date as the wait from now, never below zero", () => {
+    expect(readRetryAfterMs("Fri, 11 Sep 2026 10:00:30 GMT", NOW)).toBe(30_000);
+    expect(readRetryAfterMs("Thu, 01 Jan 1970 00:00:00 GMT", NOW)).toBe(0);
+  });
+
+  it("answers undefined for no header, or one it cannot read", () => {
+    expect([null, "-1", "1.5", "soon"].map((header) => readRetryAfterMs(header, NOW))).toEqual([undefined, undefined, undefined, undefined]);
   });
 });

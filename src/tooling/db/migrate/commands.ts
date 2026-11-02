@@ -19,12 +19,17 @@ const migrateFlags = {
   "no-bookmark": { type: "boolean" as const, description: "Skip the Time Travel bookmark a deployed apply captures as its undo" },
   rehearse: {
     type: "boolean" as const,
-    description: "Apply to a copy restored from a backup artifact first, and report, before touching the target",
+    description: "Apply to a copy restored from a local R2 dump first, and report, before touching the target",
   },
-  artifact: {
+  dump: {
     type: "string" as const,
-    description: "The artifact --rehearse restores; implies --rehearse, and defaults to the most recent verified backup of this database",
+    description: "The R2 dump --rehearse restores; implies --rehearse, and defaults to the newest complete dump of this database",
   },
+  bucket: {
+    type: "string" as const,
+    description: "With --rehearse: the R2 binding the dumps are in. Defaults to BACKUPS, or the config's only one",
+  },
+  prefix: { type: "string" as const, description: "With --rehearse: the prefix runD1Backup was given. Defaults to d1-backups" },
 };
 
 /** What `db migrate apply` does, which the bare `db migrate` runs too. */
@@ -38,8 +43,10 @@ async function applyMigrations(
       dryRun: Boolean(flags["dry-run"]),
       ...(flags.to === undefined ? {} : { to: flags.to }),
       bookmark: !flags["no-bookmark"],
-      rehearse: Boolean(flags.rehearse) || flags.artifact !== undefined,
-      ...(flags.artifact === undefined ? {} : { artifact: flags.artifact }),
+      rehearse: Boolean(flags.rehearse) || flags.dump !== undefined,
+      dump: flags.dump,
+      bucket: flags.bucket,
+      prefix: flags.prefix,
     });
 
     if (run.json) {
@@ -47,7 +54,7 @@ async function applyMigrations(
       return;
     }
     if (outcome.rehearsed !== undefined) {
-      run.print(`rehearsed on ${outcome.rehearsed.rows} row(s) from ${outcome.rehearsed.artifact}`);
+      run.print(`rehearsed on ${outcome.rehearsed.rows} row(s) from ${outcome.rehearsed.dump}`);
     }
     if (outcome.applied.length > 0) run.print(`applied ${outcome.applied.length}: ${outcome.applied.join(", ")}`);
     if (outcome.skipped.length > 0) run.print(`left for a later run: ${outcome.skipped.join(", ")}`);

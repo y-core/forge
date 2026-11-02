@@ -18,12 +18,16 @@ const SAMPLES: Record<OperationKey, { good: unknown; bad?: unknown }> = {
   listD1Databases: { good: [{ uuid: "db-1", name: "app-db" }], bad: [{ name: "app-db" }] },
   createD1Database: { good: { uuid: "db-1", name: "app-db" }, bad: { uuid: "db-1" } },
   queryD1Database: { good: [{ results: [{ n: 1 }], success: true, meta: {} }], bad: [{ results: "x" }] },
-  exportD1Database: {
-    good: { status: "complete", at_bookmark: "b", result: { filename: "f.sql", signed_url: "https://example.com/f" } },
-    bad: { status: "active" },
-  },
+  readD1Database: { good: [{ results: [{ n: 1 }], success: true, meta: {} }], bad: [{ results: "x" }] },
   getD1Bookmark: { good: { bookmark: "b" }, bad: {} },
-  restoreD1Bookmark: { good: { bookmark: "b", previous_bookmark: "a", message: "ok" }, bad: { bookmark: "b" } },
+  restoreD1Bookmark: { good: { bookmark: "b", previous_bookmark: "a", message: "ok" }, bad: { previous_bookmark: 1 } },
+  getR2Lifecycle: { good: { rules: [{ id: "r", enabled: true, conditions: { prefix: "" } }] }, bad: { rules: [{ id: 1 }] } },
+  putR2Lifecycle: { good: {} },
+  listR2Objects: { good: [{ key: "d1-backups/a.sql", size: 12, etag: "e" }], bad: [{ key: "d1-backups/a.sql" }] },
+  getR2Object: { good: null },
+  putR2Object: { good: { key: "d1-backups/a.sql" } },
+  createWorkflowInstance: { good: { id: "i-1", status: "queued" }, bad: { id: 1 } },
+  getWorkflowInstance: { good: { status: "errored", output: null, error: { name: "Error", message: "boom" } }, bad: { status: 1 } },
   listR2Buckets: { good: { buckets: [{ name: "assets" }] }, bad: { buckets: [{}] } },
   createR2Bucket: { good: null },
   listQueues: { good: [{ queue_id: "q-1", queue_name: "jobs" }], bad: [{ queue_name: "jobs" }] },
@@ -100,6 +104,10 @@ describe("CF_OPERATIONS", () => {
     );
   });
 
+  it("reads a restore reply naming neither bookmark, since D1 marks both optional", async () => {
+    expect(await callOperation("restoreD1Bookmark", envelope({}))).toEqual({ ok: true, data: {} });
+  });
+
   it("reads worker settings without bindings as holding none", async () => {
     expect(await callOperation("getWorkerSettings", envelope({}))).toEqual({ ok: true, data: { bindings: [] } });
   });
@@ -152,17 +160,13 @@ describe("CF_OPERATIONS", () => {
   });
 });
 
-describe("exportD1Database", () => {
-  it("reads an export still running, at HTTP 202, as a success carrying its bookmark", async () => {
-    const r = await createCfClient(AUTH, async () =>
-      Response.json(envelope({ status: "active", at_bookmark: "B", messages: [] }), { status: 202 }),
-    ).post("/p", { output_format: "polling" }, CF_OPERATIONS.exportD1Database);
-    expect(r).toEqual({ ok: true, data: { status: "active", at_bookmark: "B" } });
-  });
-
-  it("gives an error status with no detail an empty one", async () => {
-    const r = await createCfClient(AUTH, async () => Response.json(envelope({ status: "error" }))).post("/p", {}, CF_OPERATIONS.exportD1Database);
-    expect(r).toEqual({ ok: true, data: { status: "error", error: "" } });
+describe("CF_OPERATIONS idempotency", () => {
+  it("marks only the reads — of a query, a bookmark, a Workflow instance, a lifecycle, an object or a listing — as safe to resend", () => {
+    const idempotent = (Object.keys(CF_OPERATIONS) as OperationKey[]).filter((key) => {
+      const operation: CfOperation<unknown> | CfListOperation<unknown> = CF_OPERATIONS[key];
+      return operation.idempotent === true;
+    });
+    expect(idempotent.sort()).toEqual(["getD1Bookmark", "getR2Lifecycle", "getR2Object", "getWorkflowInstance", "listR2Objects", "readD1Database"]);
   });
 });
 

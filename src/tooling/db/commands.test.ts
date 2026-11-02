@@ -2,11 +2,13 @@ import { afterAll, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import process from "node:process";
+import { PassThrough } from "node:stream";
 
 import { execute } from "../cli/execute";
 import type { CommandBase } from "../cli/types";
 import { createDbCommands } from "./commands";
-import { bufferedIO, cfEnvelope, fakeDbIo, minimalWranglerConfig, REMOTE_ARGS } from "./db.fixture";
+import { bufferedIO, cfEnvelope, cfRefusal, fakeDbIo, minimalWranglerConfig, REMOTE_ARGS } from "./db.fixture";
 import type { FakeDbIo } from "./types";
 
 const roots: string[] = [];
@@ -25,6 +27,7 @@ afterAll(() => {
 
 const BOOKMARK = "00000085-0000027c-00004f1e-90dbd1f2b0a54cfd";
 const PREVIOUS = "00000084-0000027b-00004f1d-80dbd1f2b0a54cfd";
+const AFTER_GAP = "that bookmark was read just before the restore, so an undo to it loses any write that landed in between";
 const DB_PATH = "https://api.cloudflare.com/client/v4/accounts/acct/d1/database/0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
 
 function timeTravelIo(): FakeDbIo {
@@ -76,7 +79,6 @@ describe("a wrangler entry whose migrations_dir is not forge's directory", () =>
 
       expect(cli.code).toBe(1);
       expect(cli.err.join("\n")).toContain('set "migrations_dir": "config/db/migrations" on that entry');
-      expect(io.calls).toEqual([]);
     });
   }
 });
@@ -104,7 +106,7 @@ describe("forge db standby reset --no-lint", () => {
     const cli = await runDb(io, ["standby", "reset", "--root", appRoot(), "--yes", "--no-lint"]);
     expect(cli.code).toBe(1);
     expect(cli.err.join("\n")).toContain("Unknown flag: --no-lint.");
-    expect([io.calls, io.d1Calls]).toEqual([[], []]);
+    expect(io.d1Calls).toEqual([]);
   });
 });
 
@@ -199,10 +201,13 @@ describe("forge db bookmark restore", () => {
         target: "remote",
         database: "app-db",
         restored: { bookmark: BOOKMARK },
-        undo: { bookmark: PREVIOUS, restoreCommand: undo },
+        undo: { bookmark: PREVIOUS, restoreCommand: undo, from: "restore", replyReadable: true },
       }),
     ]);
-    expect(io.restCalls.map((call) => [call.method, call.url])).toEqual([["POST", `${DB_PATH}/time_travel/restore?bookmark=${BOOKMARK}`]]);
+    expect(io.restCalls.map((call) => [call.method, call.url])).toEqual([
+      ["GET", `${DB_PATH}/time_travel/bookmark`],
+      ["POST", `${DB_PATH}/time_travel/restore?bookmark=${BOOKMARK}`],
+    ]);
   });
 
   it("restores to a timestamp when that is the point named", async () => {
@@ -221,7 +226,7 @@ describe("forge db bookmark restore", () => {
       "--json",
     ]);
     expect(JSON.parse(cli.out[0] ?? "{}")).toMatchObject({ restored: { timestamp: "2026-09-01T00:00:00Z" }, undo: { bookmark: PREVIOUS } });
-    expect(io.restCalls[0]?.url).toBe(`${DB_PATH}/time_travel/restore?timestamp=2026-09-01T00%3A00%3A00.000Z`);
+    expect(io.restCalls[1]?.url).toBe(`${DB_PATH}/time_travel/restore?timestamp=2026-09-01T00%3A00%3A00.000Z`);
   });
 
   it("prints the command that undoes the restore when --json was not asked for", async () => {
@@ -241,6 +246,139 @@ describe("forge db bookmark restore", () => {
     expect(cli.out).toEqual([
       `restored\nundo with: forge db bookmark restore --target remote --bookmark ${PREVIOUS} --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`,
     ]);
+  });
+
+  it("exits 0 on an accepted restore whose reply is unreadable, printing the undo to the bookmark read first", async () => {
+    const io = timeTravelIo();
+    io.restRules.unshift({ match: (url) => url.includes("/time_travel/restore"), reply: () => new Response("<html>ok</html>") });
+    const root = appRoot();
+    const argv = ["bookmark", "restore", "--target", "remote", ...REMOTE_ARGS, "--root", root, "--bookmark", PREVIOUS, "--yes"];
+    const undo = `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`;
+    const cli = await runDb(io, argv);
+    expect([cli.code, cli.err, cli.out]).toEqual([
+      null,
+      [],
+      [
+        `restored, but the reply was unreadable\nundo with: ${undo}\nthat bookmark was read just before the restore, so an undo to it loses any write that landed in between`,
+      ],
+    ]);
+    expect(JSON.parse((await runDb(io, [...argv, "--json"])).out[0] ?? "{}")).toMatchObject({
+      undo: { bookmark: BOOKMARK, from: "pre-read", replyReadable: false },
+    });
+  });
+
+  it("exits 1 on a restore whose transport failed after sending, naming the undo to the bookmark read first", async () => {
+    const io = timeTravelIo();
+    io.restRules.unshift({
+      match: (url) => url.includes("/time_travel/restore"),
+      reply: () => {
+        throw new Error("connection reset");
+      },
+    });
+    const cli = await runDb(io, [
+      "bookmark",
+      "restore",
+      "--target",
+      "remote",
+      ...REMOTE_ARGS,
+      "--root",
+      appRoot(),
+      "--bookmark",
+      PREVIOUS,
+      "--yes",
+    ]);
+    expect(cli.code).toBe(1);
+    expect(cli.err[0]).toStartWith("Error: time-travel restore against remote (app-db) may have restored: Network error: connection reset.");
+    expect(cli.err[0]).toContain(`Undo with: forge db bookmark restore --target remote --bookmark ${BOOKMARK} `);
+  });
+
+  it("exits 0 on a restore whose reply names no previous bookmark, printing the undo to the bookmark read first", async () => {
+    const io = timeTravelIo();
+    io.restRules.unshift({ match: (url) => url.includes("/time_travel/restore"), reply: () => cfEnvelope({}) });
+    const root = appRoot();
+    const argv = ["bookmark", "restore", "--target", "remote", ...REMOTE_ARGS, "--root", root, "--bookmark", PREVIOUS, "--yes"];
+    const undo = `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`;
+    const cli = await runDb(io, argv);
+    expect([cli.code, cli.err, cli.out]).toEqual([
+      null,
+      [],
+      [`restored, but D1's reply named no bookmark it restored from\nundo with: ${undo}\n${AFTER_GAP}`],
+    ]);
+    const json = await runDb(io, [...argv, "--json"]);
+    expect([json.code, JSON.parse(json.out[0] ?? "{}").undo]).toEqual([
+      null,
+      { bookmark: BOOKMARK, restoreCommand: undo, from: "pre-read", replyReadable: true },
+    ]);
+  });
+
+  for (const { outcome, before, reply, err, sent } of [
+    {
+      outcome: "a 5xx, as one that may have restored",
+      reply: () => cfRefusal(10001, "Service unavailable", 503),
+      err: (undo: string) =>
+        `Error: time-travel restore against remote (app-db) may have restored: D1 answered HTTP 503. Undo with: ${undo} — ${AFTER_GAP}`,
+      sent: 1,
+    },
+    {
+      outcome: "a failure envelope on a 2xx, as one that may have restored",
+      reply: () => Response.json({ success: false, errors: [], result: null }, { status: 200 }),
+      err: (undo: string) =>
+        `Error: time-travel restore against remote (app-db) may have restored: D1 answered HTTP 200 with a failure envelope. Undo with: ${undo} — ${AFTER_GAP}`,
+      sent: 1,
+    },
+    {
+      outcome: "a 429 with a Retry-After date, as not restored until that time",
+      reply: () =>
+        Response.json({ success: false, errors: [], result: null }, { status: 429, headers: { "Retry-After": "Fri, 11 Sep 2026 10:05:00 GMT" } }),
+      err: () =>
+        "Error: time-travel restore against remote (app-db) failed: not restored — D1 rate-limited the restore; the next is allowed after 2026-09-11T10:05:00.000Z",
+      sent: 1,
+    },
+    {
+      outcome: "another 4xx, as failed with no undo",
+      reply: () => cfRefusal(7400, "Invalid bookmark", 400),
+      err: () => "Error: time-travel restore against remote (app-db) failed: Invalid bookmark (Cloudflare error 7400)",
+      sent: 1,
+    },
+    {
+      outcome: "a refused pre-read, sending no restore",
+      before: () => cfRefusal(10000, "Authentication error"),
+      err: () =>
+        "Error: time-travel restore not sent — the bookmark to undo it with could not be read first: time-travel info against remote (app-db) failed: Cloudflare refused the --api-token — it is invalid, or lacks Account → D1 → Edit · code 10000",
+      sent: 0,
+    },
+    {
+      outcome: "a pre-read bookmark outside the grammar, sending no restore",
+      before: () => cfEnvelope({ bookmark: "$(x)" }),
+      err: () =>
+        'Error: time-travel restore not sent — the bookmark to undo it with could not be read first: --bookmark "$(x)" is not a bookmark — 1 to 128 characters of letters, digits, underscore and hyphen, starting with a letter or a digit',
+      sent: 0,
+    },
+  ]) {
+    it(`exits 1 on ${outcome}`, async () => {
+      const io = timeTravelIo();
+      if (reply !== undefined) io.restRules.unshift({ match: (url) => url.includes("/time_travel/restore"), reply });
+      if (before !== undefined) io.restRules.unshift({ match: (url) => url.includes("/time_travel/bookmark"), reply: before });
+      const root = appRoot();
+      const undo = `forge db bookmark restore --target remote --bookmark ${BOOKMARK} --root '${root}' --config '${join(root, "wrangler.jsonc")}' --db 'DB'`;
+      const cli = await runDb(io, ["bookmark", "restore", "--target", "remote", ...REMOTE_ARGS, "--root", root, "--bookmark", PREVIOUS, "--yes"]);
+      expect([cli.code, cli.out, cli.err]).toEqual([1, [], [err(undo)]]);
+      expect(io.restCalls.filter((call) => call.url.includes("/time_travel/restore"))).toHaveLength(sent);
+    });
+  }
+
+  it("sends neither the pre-read nor the restore when the confirmation is declined", async () => {
+    const io = timeTravelIo();
+    const input = Object.assign(new PassThrough(), { isTTY: true });
+    input.end("n\n");
+    const stdin = Object.getOwnPropertyDescriptor(process, "stdin");
+    Object.defineProperty(process, "stdin", { value: input, configurable: true });
+    try {
+      const cli = await runDb(io, ["bookmark", "restore", "--target", "remote", ...REMOTE_ARGS, "--root", appRoot(), "--bookmark", BOOKMARK]);
+      expect([cli.code, cli.err.at(-1), io.restCalls]).toEqual([1, "Error: Restore cancelled; the database is unchanged.", []]);
+    } finally {
+      if (stdin !== undefined) Object.defineProperty(process, "stdin", stdin);
+    }
   });
 
   it("refuses to restore without --yes when there is no terminal to confirm at", async () => {

@@ -1,3 +1,4 @@
+import { sqlStatementSpans } from "../../../storage/backup/split";
 import { D1_LIMITS } from "../../../storage/db/limits";
 import { sha256 } from "../digest";
 import { parseMigrationHeader } from "../schema/header";
@@ -7,30 +8,13 @@ import type { LintFinding, LintRule, Migration, SqlStatement } from "../types";
 
 const CREATE_TRIGGER = /^\s*CREATE\s+(TEMP\s+|TEMPORARY\s+)?TRIGGER\b/i;
 
-function triggerClosed(text: string): boolean {
-  if (!/\bEND\s*$/i.test(text)) return false;
-  const openers = text.match(/\b(BEGIN|CASE)\b/gi)?.length ?? 0;
-  const closers = text.match(/\bEND\b/gi)?.length ?? 0;
-  return openers <= closers;
-}
-
-/** Splits SQL into statements at each `;`, consuming `CREATE TRIGGER … BEGIN … END` as one; comments and literals are already masked. @internal */
+/** Splits SQL into statements at each `;`, a trigger's `BEGIN … END` body kept whole, each beside its text with comments, literals and quoted names masked. @internal */
 export function splitSqlStatements(sql: string): SqlStatement[] {
-  const masked = maskSqlProse(sql, { identifiers: true });
-  const found: SqlStatement[] = [];
-  let start = 0;
-  let inTrigger = false;
-  for (let i = 0; i < masked.length; i += 1) {
-    if (masked[i] !== ";") continue;
-    const text = masked.slice(start, i);
-    if (!inTrigger && CREATE_TRIGGER.test(text)) inTrigger = true;
-    if (inTrigger && !triggerClosed(text)) continue;
-    inTrigger = false;
-    found.push({ masked: text, raw: sql.slice(start, i), offset: start });
-    start = i + 1;
-  }
-  if (masked.slice(start).trim() !== "") found.push({ masked: masked.slice(start), raw: sql.slice(start), offset: start });
-  return found;
+  return sqlStatementSpans(sql).flatMap(({ start, end, terminated }) => {
+    const raw = sql.slice(start, end);
+    const masked = maskSqlProse(raw, { identifiers: true });
+    return terminated || masked.trim() !== "" ? [{ raw, masked, offset: start }] : [];
+  });
 }
 
 const ALTER_TABLE = /\bALTER\s+TABLE\b/i;

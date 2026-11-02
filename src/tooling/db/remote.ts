@@ -1,19 +1,37 @@
-import { createCfClient } from "../cf/api/client";
+import { createCfClient, readRetryAfterMs } from "../cf/api/client";
 import { D1_WRITE_PERMISSION, d1DatabasePath } from "../cf/api/endpoints";
 import { classifyCfError } from "../cf/api/errors";
 import { CF_OPERATIONS } from "../cf/api/operations";
-import type { CfApiClientError, CfClient } from "../cf/api/types";
+import { CfApiClientError } from "../cf/api/types";
+import type { CfClient } from "../cf/api/types";
 import { readCfAuth } from "../cf/auth";
 import { CliError } from "../cli/errors";
-import type { D1ExportPart, DbIo, Home } from "./types";
+import { isReadOnlyBatch } from "./sql";
+import type { D1RestoreAnswer, DbIo, Home } from "./types";
 
-/** How long one D1 REST request may take, an export poll included. @internal */
+/** How long one D1 REST request may take. @internal */
 export const D1_REQUEST_TIMEOUT_MS = 120_000;
+
+/** The longest statement D1 accepts, in UTF-8 bytes. @internal */
+export const D1_STATEMENT_MAX_BYTES = 100_000;
+
+/** The largest `/query` body, in UTF-8 bytes, that a batch packs several statements into. @internal */
+export const D1_BATCH_MAX_BYTES = 64_000;
+
+/** The most statements a batch packs into one request. @internal */
+export const D1_BATCH_MAX_STATEMENTS = 100;
+
+const D1_RESULT_OVER_CAP = /\bresult\b.*\b(?:size|too large)\b.*\b(?:limit|exceed)/i;
+
+const EMPTY_BATCH_BYTES = JSON.stringify({ batch: [] }).length;
 
 function reachDeployed(io: DbIo, home: Home): { client: CfClient; base: string } {
   if (home.databaseId === null) throw new CliError("invalid-args", `${home.label} (${home.database}) has no D1 id to address`);
   const auth = home.auth ?? readCfAuth({});
-  return { client: createCfClient(auth, io.fetch, D1_REQUEST_TIMEOUT_MS), base: d1DatabasePath(auth.accountId, home.databaseId) };
+  return {
+    client: createCfClient(auth, io.fetch, D1_REQUEST_TIMEOUT_MS, (ms) => io.sleep(ms)),
+    base: d1DatabasePath(auth.accountId, home.databaseId),
+  };
 }
 
 function where(home: Home): string {
@@ -43,14 +61,54 @@ export function describeD1Failure(e: CfApiClientError, home: Home): string {
   }
 }
 
-/** Statements against a deployed home as one batch request, answering each statement's rows in order. @internal */
+function packD1Batches(statements: readonly string[]): string[][] {
+  const encoder = new TextEncoder();
+  const chunks: string[][] = [];
+  let bytes = EMPTY_BATCH_BYTES;
+  for (const sql of statements) {
+    const entryBytes = encoder.encode(JSON.stringify({ sql })).length;
+    const open = chunks[chunks.length - 1];
+    if (open !== undefined && open.length < D1_BATCH_MAX_STATEMENTS && bytes + 1 + entryBytes <= D1_BATCH_MAX_BYTES) {
+      open.push(sql);
+      bytes += 1 + entryBytes;
+      continue;
+    }
+    chunks.push([sql]);
+    bytes = EMPTY_BATCH_BYTES + entryBytes;
+  }
+  return chunks;
+}
+
+/** Statements against a deployed home in as few batch requests as D1's limits allow, answering each statement's rows in order. @internal */
 export async function queryDeployed(io: DbIo, home: Home, statements: readonly string[], what: string): Promise<Record<string, unknown>[][]> {
+  const encoder = new TextEncoder();
+  const oversized = statements.findIndex((sql) => encoder.encode(sql).length > D1_STATEMENT_MAX_BYTES);
+  if (oversized !== -1) {
+    const bytes = encoder.encode(statements[oversized] ?? "").length;
+    throw refusedDeployed(what, home, `statement ${oversized + 1} is ${bytes} bytes, over D1's ${D1_STATEMENT_MAX_BYTES}-byte statement limit`);
+  }
+  const readOnly = isReadOnlyBatch(statements);
+  const chunks = packD1Batches(statements);
+  if (!readOnly && chunks.length > 1) {
+    throw refusedDeployed(what, home, `a batch holding a write has to go as one request, and these ${statements.length} statements exceed one`);
+  }
   const { client, base } = reachDeployed(io, home);
-  const answered = await client.post(`${base}/query`, { batch: statements.map((sql) => ({ sql })) }, CF_OPERATIONS.queryD1Database);
-  if (!answered.ok) throw failedDeployed(what, home, answered.error);
-  const unsuccessful = answered.data.findIndex((statement) => !statement.success);
-  if (unsuccessful !== -1) throw refusedDeployed(what, home, `D1 reported statement ${unsuccessful + 1} unsuccessful`);
-  return answered.data.map((statement) => statement.results);
+  const operation = readOnly ? CF_OPERATIONS.readD1Database : CF_OPERATIONS.queryD1Database;
+  const answers: Record<string, unknown>[][] = [];
+  for (const chunk of chunks) {
+    const answered = await client.post(`${base}/query`, { batch: chunk.map((sql) => ({ sql })) }, operation);
+    if (!answered.ok) throw failedDeployed(what, home, answered.error);
+    const unsuccessful = answered.data.findIndex((statement) => !statement.success);
+    if (unsuccessful !== -1) throw refusedDeployed(what, home, `D1 reported statement ${answers.length + unsuccessful + 1} unsuccessful`);
+    answers.push(...answered.data.map((statement) => statement.results));
+  }
+  return answers;
+}
+
+/** Whether `error` is D1 refusing a query whose result exceeds its result size cap. @internal */
+export function isD1ResultOverCap(error: unknown): boolean {
+  if (!(error instanceof CliError) || !(error.cause instanceof CfApiClientError) || error.cause.kind !== "api") return false;
+  return (error.cause.cfErrors ?? []).some((cfError) => D1_RESULT_OVER_CAP.test(cfError.message));
 }
 
 /** One body of SQL, however many statements it holds, sent to a deployed home as one request. @internal */
@@ -60,43 +118,6 @@ export async function executeDeployed(io: DbIo, home: Home, sql: string, what: s
   if (!answered.ok) throw failedDeployed(what, home, answered.error);
   const unsuccessful = answered.data.findIndex((statement) => !statement.success);
   if (unsuccessful !== -1) throw refusedDeployed(what, home, `D1 reported statement ${unsuccessful + 1} unsuccessful`);
-}
-
-/** Exports a deployed home's schema or data to `output` through D1's polled export, answering the bookmark it was taken at. @internal */
-export async function exportDeployed(io: DbIo, home: Home, output: string, part: D1ExportPart): Promise<string | null> {
-  const { client, base } = reachDeployed(io, home);
-  const dumpOptions = part === "schema" ? { no_data: true } : { no_schema: true };
-  let current: string | undefined;
-  for (;;) {
-    const body = { output_format: "polling", dump_options: dumpOptions, ...(current === undefined ? {} : { current_bookmark: current }) };
-    const answered = await client.post(`${base}/export`, body, CF_OPERATIONS.exportD1Database);
-    if (!answered.ok) throw failedDeployed("export", home, answered.error);
-    const reply = answered.data;
-    if (reply.status === "error") throw refusedDeployed("export", home, reply.error || "D1 reported an error and no detail");
-    if (reply.status === "active") {
-      if (current !== undefined && reply.at_bookmark !== current) {
-        throw refusedDeployed("export", home, "D1 moved the export's bookmark while it was being polled");
-      }
-      current = reply.at_bookmark;
-      continue;
-    }
-    await downloadExport(io, home, reply.result.signed_url, output);
-    return reply.at_bookmark ?? current ?? null;
-  }
-}
-
-// A signed URL is a bearer credential: it is never quoted, logged or carried as a cause, and it is fetched without the API token.
-async function downloadExport(io: DbIo, home: Home, signedUrl: string, output: string): Promise<void> {
-  const what = `downloading the export of ${where(home)}`;
-  if (!signedUrl.startsWith("https://")) throw new CliError("external", `${what} was refused: D1 answered a signed URL that is not HTTPS`);
-  let res: Response;
-  try {
-    res = await io.fetch(signedUrl);
-  } catch {
-    throw new CliError("external", `${what} failed: network error`);
-  }
-  if (!res.ok) throw new CliError("external", `${what} failed (HTTP ${res.status})`);
-  io.writeText(output, await res.text());
 }
 
 const CALENDAR = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(Z|[+-]\d{2}:?\d{2})?)?$/;
@@ -138,11 +159,28 @@ export async function readDeployedBookmark(io: DbIo, home: Home, timestamp?: str
   return answered.data.bookmark;
 }
 
-/** Restores a deployed home to a bookmark or a timestamp, answering the bookmark it held before. @internal */
-export async function restoreDeployedBookmark(io: DbIo, home: Home, point: { bookmark: string } | { timestamp: string }): Promise<string> {
+function describeRateLimit(io: DbIo, retryAfter: string | undefined): string {
+  const now = io.now().getTime();
+  const waitMs = readRetryAfterMs(retryAfter ?? null, now);
+  const next = waitMs === undefined ? "try again in a few minutes" : `the next is allowed after ${new Date(now + waitMs).toISOString()}`;
+  return `not restored — D1 rate-limited the restore; ${next}`;
+}
+
+function readRestoreFailure(io: DbIo, home: Home, e: CfApiClientError): D1RestoreAnswer {
+  if (e.kind === "network") return { kind: "unknown", reason: e.message };
+  const accepted = e.statusCode !== undefined && e.statusCode >= 200 && e.statusCode < 300;
+  if (accepted && (e.kind === "parse" || e.kind === "schema")) return { kind: "unreadable" };
+  if (accepted) return { kind: "unknown", reason: `D1 answered HTTP ${e.statusCode} with a failure envelope` };
+  if (e.statusCode === 429) throw refusedDeployed("time-travel restore", home, describeRateLimit(io, e.retryAfter));
+  if (e.statusCode !== undefined && e.statusCode >= 500) return { kind: "unknown", reason: `D1 answered HTTP ${e.statusCode}` };
+  throw failedDeployed("time-travel restore", home, e);
+}
+
+/** Sends a deployed home's restore to a bookmark or a timestamp once, answering what D1 replied unless it refused. @internal */
+export async function restoreDeployedBookmark(io: DbIo, home: Home, point: { bookmark: string } | { timestamp: string }): Promise<D1RestoreAnswer> {
   const { client, base } = reachDeployed(io, home);
   const query = new URLSearchParams("bookmark" in point ? { bookmark: point.bookmark } : { timestamp: toIsoInstant(point.timestamp) });
   const answered = await client.post(`${base}/time_travel/restore?${query.toString()}`, undefined, CF_OPERATIONS.restoreD1Bookmark);
-  if (!answered.ok) throw failedDeployed("time-travel restore", home, answered.error);
-  return answered.data.previous_bookmark;
+  if (!answered.ok) return readRestoreFailure(io, home, answered.error);
+  return { kind: "restored", previousBookmark: answered.data.previous_bookmark ?? null };
 }

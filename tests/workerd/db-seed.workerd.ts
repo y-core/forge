@@ -220,7 +220,7 @@ test.describe("seed apply against real local D1", () => {
 
     expect(refused.code, refused.stdout).toBe(1);
     expect(refused.stderr).toContain(
-      "seeds:006_typo fails on a copy of db-compose-fixture (local)'s schema at `INSERT INTO child (id) VALUS (1) ON CONFLICT (id) DO NOTHING;`, so no seed was applied — fix the statement:",
+      "seeds:006_typo fails on a copy of db-compose-fixture (local)'s schema at `INSERT INTO child (id) VALUS (1) ON CONFLICT (id) DO NOTHING`, so no seed was applied — fix the statement:",
     );
     expect(refused.stderr).toContain(`D1_ERROR: near "VALUS": syntax error`);
     expect((await targetState(root)).history.some((row) => (row as { name: string }).name === "006_typo")).toBe(false);

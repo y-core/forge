@@ -3,23 +3,15 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
+import { backupKey } from "../../../storage/backup/list";
+import { writeSidecar } from "../../../storage/backup/sidecar";
+import type { D1BackupSidecar } from "../../../storage/backup/types";
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
-import {
-  fakeDbIo,
-  keyProbeAsked,
-  keyProbeReply,
-  keysetPageReply,
-  minimalWranglerConfig,
-  tableInfoAsked,
-  tableSqlAsked,
-  tableSqlReply,
-} from "../db.fixture";
-import { sha256 } from "../digest";
-import { persistRoot } from "../home";
-import type { BackupManifest, DbHostConfig, DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
-import { BACKUP_FORMAT_VERSION, canonicaliseRow, manifestSelfDigest } from "./artifact";
-import { executeReset, findVerifiedBackup, prepareReset } from "./reset";
+import { fakeDbIo, minimalWranglerConfig } from "../db.fixture";
+import type { DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
+import { executeReset, prepareReset, RESET_DUMP_MAX_AGE_MS } from "./reset";
 import type { ResetOptions, ResetOutcome } from "./types";
 
 const roots: string[] = [];
@@ -30,86 +22,38 @@ afterAll(() => {
 
 const STATE = ["v3", "d1", "miniflare-D1DatabaseObject"];
 
+const DB_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+
+const NOW = new Date("2026-09-11T10:00:00Z");
+
 const INVENTORY = [
   { type: "table", name: "tasks", tbl_name: "tasks", sql: "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT)" },
   { type: "table", name: "_forge_migrations", tbl_name: "_forge_migrations", sql: "CREATE TABLE _forge_migrations (name TEXT PRIMARY KEY)" },
+  { type: "table", name: "_cf_KV", tbl_name: "_cf_KV", sql: "CREATE TABLE _cf_KV (key TEXT)" },
 ];
 
-const COLUMNS: Readonly<Record<string, Record<string, unknown>[]>> = {
-  tasks: [
-    { cid: 0, name: "uuid", type: "TEXT", notnull: 0, dflt_value: null, pk: 1 },
-    { cid: 1, name: "lane", type: "TEXT", notnull: 1, dflt_value: "''", pk: 0 },
-  ],
-  members: [
-    { cid: 0, name: "team", type: "TEXT", notnull: 1, dflt_value: null, pk: 1 },
-    { cid: 1, name: "person", type: "TEXT", notnull: 1, dflt_value: null, pk: 2 },
-  ],
-};
-
-const MEMBERS_INVENTORY = [
-  {
-    type: "table",
-    name: "members",
-    tbl_name: "members",
-    sql: "CREATE TABLE members (team TEXT NOT NULL, person TEXT NOT NULL, PRIMARY KEY (team, person))",
-  },
-];
-
-const ROWS: readonly Record<string, unknown>[] = [
-  { uuid: "t1", lane: "todo" },
-  { uuid: "t2", lane: "doing" },
-];
-
-/** The digest `runBackup` records for `tasks`, over whichever rows the database holds. */
-function tasksDigest(rows: readonly Record<string, unknown>[] = ROWS): string {
-  return sha256(rows.map((row) => canonicaliseRow(["uuid", "lane"], ["uuid"], row).canonical).join("\n"));
-}
-
-const DATA_SQL = "PRAGMA defer_foreign_keys=TRUE;\n";
-
-const SCHEMA_SQL = [
-  "PRAGMA defer_foreign_keys=TRUE;",
-  "CREATE TABLE tasks (uuid TEXT PRIMARY KEY, lane TEXT);",
-  "DELETE FROM sqlite_sequence;",
-  "",
-].join("\n");
-
-/** What `manifest.artifacts` declares for one file this tool wrote. */
-function declares(file: string, text: string): { file: string; bytes: number; sha256: string } {
-  return { file, bytes: new TextEncoder().encode(text).length, sha256: sha256(text) };
-}
-
-/** The two `.sql` files every backup carries, seeded under the directory the manifest sits in. */
-function artifactFiles(directory: string): Record<string, string> {
-  return { [join(directory, "schema.sql")]: SCHEMA_SQL, [join(directory, "data.sql")]: DATA_SQL };
-}
-
-function manifest(database: string, over: Partial<BackupManifest> = {}): BackupManifest {
-  const written = {
-    formatVersion: BACKUP_FORMAT_VERSION,
-    via: "read" as const,
-    bookmark: null,
-    drift: "match" as const,
-    createdAt: "2026-09-11T09:00:00.000Z",
-    label: null,
-    exporter: { tool: "wrangler" as const, version: "4.105.0" },
-    database: { name: database, id: null, target: "local", persistPath: null },
-    schema: { migrations: ["0001_init"], digest: "a".repeat(64), migrationsDigest: "b".repeat(64) },
-    migrations: [{ name: "0001_init", sha256: "d".repeat(64) }],
-    tables: [{ name: "tasks", rows: 2, digest: tasksDigest() }],
-    artifacts: [declares("schema.sql", SCHEMA_SQL), declares("data.sql", DATA_SQL)],
-    warnings: [],
-    verified: [{ route: "full", divergent: 0 }],
+function sidecar(over: Partial<D1BackupSidecar> = {}): D1BackupSidecar {
+  const takenAt = over.takenAt ?? "2026-09-11T09:00:00.000Z";
+  return {
+    key: backupKey(undefined, DB_ID, new Date(takenAt), "local-1"),
+    databaseId: DB_ID,
+    bookmark: "local-1",
+    takenAt,
+    size: 10,
+    md5: "0".repeat(32),
+    sha256: "1".repeat(64),
+    schemaDigest: "2".repeat(64),
+    migrationHead: "0001_init.sql",
+    rows: { tasks: 2, _forge_migrations: 1 },
+    hazards: [],
     ...over,
-    selfDigest: "",
   };
-  return { ...written, selfDigest: manifestSelfDigest(written) };
 }
 
-function appRoot(): string {
+function appRoot(over: Record<string, unknown> = { r2_buckets: [{ binding: "BACKUPS", bucket_name: "app-backups" }] }): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-reset-unit-"));
   roots.push(root);
-  const config = minimalWranglerConfig(root);
+  const config = minimalWranglerConfig(root, over);
   writeFileSync(config.path, config.text);
   return root;
 }
@@ -118,30 +62,27 @@ function flags(root: string, over: Partial<SharedDbFlags> = {}): SharedDbFlags {
   return { target: "local", db: undefined, config: "wrangler.jsonc", env: undefined, root, json: false, yes: true, ...over };
 }
 
-function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}, host: DbHostConfig = {}): Promise<DbRunContext> {
-  return resolveDbContext(flags(root, over), undefined, { io, host });
+function context(root: string, io: FakeDbIo, over: Partial<SharedDbFlags> = {}): Promise<DbRunContext> {
+  return resolveDbContext(flags(root, over), undefined, { io, host: {} });
 }
 
-/** A fake wrangler answering the inventory, each app table's count, and a paged read of its rows. */
-function fakeDatabase(
-  seed: Record<string, string>,
-  tables: Readonly<Record<string, readonly Record<string, unknown>[]>> = { tasks: ROWS },
-  inventory = INVENTORY,
-): FakeDbIo {
-  const io = fakeDbIo(seed);
-  const answer = (statement: string): Record<string, unknown>[] => {
-    const info = tableInfoAsked(statement);
-    if (info !== null) return COLUMNS[info] ?? [];
-    const ddl = tableSqlAsked(statement);
-    if (ddl !== null) return tableSqlReply(inventory.find((object) => object.name === ddl)?.sql);
-    if (statement.includes("sqlite_master")) return inventory;
-    const probe = keyProbeAsked(statement);
-    if (probe !== null) return keyProbeReply(probe.asks, tables[probe.table] ?? [], probe.column);
-    const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
-    if (count !== null) return [{ rows: (tables[count[1] ?? ""] ?? []).length }];
-    return keysetPageReply(statement, tables) ?? [];
-  };
-  io.d1Rules.push({ match: () => true, reply: answer });
+/** A local database holding `rows` per table, with a state file and a BACKUPS bucket holding `dumps`. */
+async function database(root: string, rows: Readonly<Record<string, number>>, dumps: readonly D1BackupSidecar[] = []): Promise<FakeDbIo> {
+  const io = fakeDbIo({ [join(root, ".wrangler", "state", ...STATE, "db.sqlite")]: "" }, { now: NOW });
+  io.d1Rules.push({
+    match: () => true,
+    reply: (statement) => {
+      if (statement.includes("sqlite_master")) return INVENTORY;
+      const count = /^SELECT COUNT\(\*\) AS rows FROM "([^"]+)"$/.exec(statement);
+      return count === null ? [] : [{ rows: rows[count[1] ?? ""] ?? 0 }];
+    },
+  });
+  const bucket = fakeBackupBucket();
+  for (const dump of dumps) {
+    bucket.objects.set(dump.key, { bytes: new Uint8Array(dump.size), customMetadata: {} });
+    await writeSidecar(bucket, dump);
+  }
+  io.buckets.set("BACKUPS", bucket);
   return io;
 }
 
@@ -155,379 +96,157 @@ async function refusal(run: () => unknown): Promise<{ kind: string; message: str
   throw new Error("expected a CliError, and the call returned");
 }
 
-describe("findVerifiedBackup", () => {
-  it("takes the newest artifact that names this database and proved every route", async () => {
-    const root = appRoot();
-    const backups = join(root, ".forge/backups");
-    const io = fakeDbIo({
-      [join(backups, "app-db-20260911T080000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-      [join(backups, "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-      [join(backups, "app-db-20260911T091000Z", "manifest.json")]: JSON.stringify(manifest("app-db", { verified: [] })),
-      [join(backups, "app-db-20260911T092000Z", "manifest.json")]: JSON.stringify(
-        manifest("app-db", { verified: [{ route: "full", divergent: 3 }] }),
-      ),
-      // Not JSON at all, so `JSON.parse` throws where the others validate.
-      [join(backups, "app-db-20260911T093000Z", "manifest.json")]: "{ this is not json",
-      [join(backups, "app-db-20260911T094000Z", "manifest.json")]: JSON.stringify(manifest("app-db", { formatVersion: 1 })),
-      [join(backups, "app-db-20260911T095000Z", "notes.txt")]: "an artifact directory with no manifest",
-      [join(backups, "other-db-20260911T096000Z", "manifest.json")]: JSON.stringify(manifest("other-db")),
-    });
+const runReset = async (run: DbRunContext, options: ResetOptions): Promise<ResetOutcome> => executeReset(run, await prepareReset(run, options));
 
-    expect(findVerifiedBackup(await context(root, io), "app-db")).toBe("app-db-20260911T090000Z");
-  });
+const LIVE = { tasks: 2, _forge_migrations: 1 };
 
-  it("looks under the host config's backupsDir rather than the default", async () => {
-    const root = appRoot();
-    const io = fakeDbIo({
-      [join(root, "var/dumps", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-      [join(root, ".forge/backups", "app-db-20260911T099000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-    });
-
-    expect(findVerifiedBackup(await context(root, io, {}, { backupsDir: "var/dumps" }), "app-db")).toBe("app-db-20260911T090000Z");
-  });
-
-  it("is null when the backups directory does not exist", async () => {
-    const root = appRoot();
-
-    expect(findVerifiedBackup(await context(root, fakeDbIo()), "app-db")).toBe(null);
-  });
-});
+const UNBACKED = "Run `forge db backup` first, or pass --allow-unbacked if this database is genuinely disposable";
 
 describe("prepareReset + executeReset — the pair the CLI confirms between", () => {
-  const runReset = async (run: DbRunContext, options: ResetOptions): Promise<ResetOutcome> => executeReset(run, await prepareReset(run, options));
-
   it("refuses a deployed database, naming the bookmark verb that does reach one", async () => {
-    const root = appRoot();
-    const io = fakeDbIo();
-    const run = await context(root, io, { target: "remote" });
-
+    const run = await context(appRoot(), fakeDbIo(), { target: "remote" });
     expect(await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
       kind: "invalid-args",
       message:
         "remote cannot be reset from here — return a deployed database to a point in time with `forge db bookmark restore`, or replace it with `wrangler d1 create`",
     });
-    expect(io.calls).toEqual([]);
   });
 
-  it("refuses an expect that does not name this target", async () => {
+  it("refuses an expect that does not name this target, removing nothing", async () => {
     const root = appRoot();
-    const io = fakeDbIo({ [join(root, ".wrangler", "state", ...STATE, "db.sqlite")]: "" });
-    const run = await context(root, io);
-
-    expect(await refusal(() => runReset(run, { expect: "other-db", allowUnbacked: false }))).toEqual({
-      kind: "invalid-args",
-      message: "--expect other-db does not name this target, which is app-db",
-    });
+    const io = await database(root, LIVE);
+    expect((await refusal(async () => runReset(await context(root, io), { expect: "other-db", allowUnbacked: false }))).message).toBe(
+      "--expect other-db does not name this target, which is app-db",
+    );
     expect(io.exists(join(root, ".wrangler", "state", ...STATE, "db.sqlite"))).toBe(true);
   });
 
   it("returns without querying the database when there is no state directory", async () => {
-    const root = appRoot();
     const io = fakeDbIo();
-
-    expect(await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
+    expect(await runReset(await context(appRoot(), io), { expect: "app-db", allowUnbacked: false })).toEqual({
       database: "app-db",
       rows: 0,
       removed: null,
       backedUpBy: null,
     });
-    expect(io.calls).toEqual([]);
+    expect(io.d1Calls).toEqual([]);
   });
 
-  it("removes the state directory and names the artifact that proved the rows are recoverable", async () => {
+  it("removes the state, after releasing its handle, and names the dump whose census matches the live rows", async () => {
     const root = appRoot();
     const state = join(root, ".wrangler", "state", ...STATE);
-    const io = fakeDatabase({
-      [join(state, "db.sqlite")]: "",
-      [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-      ...artifactFiles(join(root, ".forge/backups", "app-db-20260911T090000Z")),
-    });
+    const io = await database(root, LIVE, [sidecar()]);
+    const run = await context(root, io);
 
-    expect(await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toEqual({
+    expect(await runReset(run, { expect: "app-db", allowUnbacked: false })).toEqual({
       database: "app-db",
       rows: 2,
       removed: state,
-      backedUpBy: "app-db-20260911T090000Z",
+      backedUpBy: sidecar().key,
     });
-    expect(io.exists(join(state, "db.sqlite"))).toBe(false);
+    expect([io.exists(join(state, "db.sqlite")), io.closed.at(-1)]).toEqual([false, join(root, ".wrangler", "state", "v3")]);
   });
 
-  // The state directory is named from `persistRoot`, so the `v3` segment is spelled in one place and
-  // a handle over it is released before the directory holding it goes.
-  it("releases the handle over the state it is about to remove, naming the path `persistRoot` gives", async () => {
+  it("counts only the app's own rows toward needing a dump, and reads none of Cloudflare's tables", async () => {
     const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const io = fakeDatabase({
-      [join(state, "db.sqlite")]: "",
-      [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-      ...artifactFiles(join(root, ".forge/backups", "app-db-20260911T090000Z")),
-    });
-    const run = await context(root, io);
-    const remove = io.remove;
-    let closedFirst = false;
-    io.remove = (path: string) => {
-      closedFirst = io.closed.includes(persistRoot(run.home));
-      remove(path);
-    };
-
-    await runReset(run, { expect: "app-db", allowUnbacked: false });
-
-    expect(closedFirst).toBe(true);
-    expect(persistRoot(run.home)).toBe(join(root, ".wrangler", "state", "v3"));
+    const io = await database(root, { _forge_migrations: 3 });
+    expect((await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).backedUpBy).toBeNull();
+    expect(io.d1Calls.flatMap((call) => call.statements).some((statement) => statement.includes("_cf_KV"))).toBe(false);
   });
 
-  // `takeBackup` writes both `.sql` files for every backup, so a manifest declaring none was never
-  // one this tool wrote and cannot hold the rows this reset is about to destroy.
-  it("refuses an artifact whose manifest declares no files, before it removes anything", async () => {
+  it("refuses to empty a database holding rows when no complete dump exists, naming where it looked", async () => {
     const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const io = fakeDatabase({
-      [join(state, "db.sqlite")]: "",
-      [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db", { artifacts: [] })),
-      ...artifactFiles(directory),
-    });
-    const run = await context(root, io);
-
-    const refused = await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }));
-
-    expect(refused.kind).toBe("invalid-args");
-    expect(refused.message).toContain("declares no schema.sql and no data.sql");
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("refuses an artifact whose declared file is truncated, before it removes anything", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const data = "PRAGMA defer_foreign_keys=TRUE;\n";
-    const declared = manifest("app-db", { artifacts: [{ file: "data.sql", bytes: data.length, sha256: sha256(data) }] });
-    const io = fakeDatabase({
-      [join(state, "db.sqlite")]: "",
-      [join(directory, "manifest.json")]: JSON.stringify(declared),
-      [join(directory, "data.sql")]: data.slice(0, 10),
-    });
-    const run = await context(root, io);
-
-    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).kind).toBe("invalid-args");
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("refuses an artifact whose declared file is absent, before it removes anything", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const declared = manifest("app-db", { artifacts: [{ file: "data.sql", bytes: 32, sha256: "c".repeat(64) }] });
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(declared) });
-    const run = await context(root, io);
-
-    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).kind).toBe("invalid-args");
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("refuses a local reset when the environment the run names declares more than one database", async () => {
-    const root = appRoot();
-    writeFileSync(
-      join(root, "wrangler.jsonc"),
-      minimalWranglerConfig(root, {
-        env: {
-          staging: {
-            d1_databases: [
-              {
-                binding: "DB",
-                database_name: "app-db",
-                database_id: "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-                migrations_dir: "config/db/migrations",
-              },
-              {
-                binding: "REPORTS",
-                database_name: "reports-db",
-                database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-                migrations_dir: "config/db/migrations",
-              },
-            ],
-          },
-        },
-      }).text,
+    const io = await database(root, LIVE);
+    expect((await refusal(async () => runReset(await context(root, io), { expect: "app-db", allowUnbacked: false }))).message).toBe(
+      `app-db holds 2 rows and no complete dump of app-db under BACKUPS:d1-backups/${DB_ID}/ — run \`forge db backup\` first`,
     );
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
-    const run = await context(root, io, { env: "staging", db: "DB" });
-
-    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: true }))).message).toBe(
-      `${join(root, "wrangler.jsonc")} declares 2 d1 databases across its environments (app-db, reports-db) and the miniflare state filename is a hash — this tool cannot reset one of several`,
-    );
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
+    expect(io.exists(join(root, ".wrangler", "state", ...STATE, "db.sqlite"))).toBe(true);
   });
 
-  it("refuses a local reset when another environment's database shares the state directory, whichever env the run names", async () => {
+  it("refuses a dump whose census no longer describes the database, naming each table", async () => {
     const root = appRoot();
-    writeFileSync(
-      join(root, "wrangler.jsonc"),
-      minimalWranglerConfig(root, {
-        env: {
-          staging: {
-            d1_databases: [
-              {
-                binding: "DB",
-                database_name: "app-db-staging",
-                database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a",
-                migrations_dir: "config/db/migrations",
-              },
-            ],
-          },
-        },
-      }).text,
+    const io = await database(root, { tasks: 3, _forge_migrations: 1 }, [sidecar()]);
+    expect((await refusal(async () => runReset(await context(root, io), { expect: "app-db", allowUnbacked: false }))).message).toBe(
+      `${sidecar().key} no longer describes app-db, so it does not prove these 3 rows are recoverable:\n  tasks: the dump holds 2 row(s) and the database now holds 3\n${UNBACKED}`,
     );
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
+  });
+
+  it("refuses a dump older than the window even when its census matches", async () => {
+    const root = appRoot();
+    const old = sidecar({ takenAt: new Date(NOW.getTime() - RESET_DUMP_MAX_AGE_MS - 60_000).toISOString() });
+    const io = await database(root, LIVE, [old]);
+    expect((await refusal(async () => runReset(await context(root, io), { expect: "app-db", allowUnbacked: false }))).message).toContain(
+      `it was taken ${old.takenAt}, more than 24 hours ago`,
+    );
+  });
+
+  it("refuses a dump whose takenAt is not an instant, or lies in the future, even when its census matches", async () => {
+    for (const takenAt of ["", "2026-09-11T11:00:00.000Z"]) {
+      const root = appRoot();
+      const io = await database(root, LIVE, [{ ...sidecar(), takenAt }]);
+      expect((await refusal(async () => runReset(await context(root, io), { expect: "app-db", allowUnbacked: false }))).message).toContain(
+        `its takenAt ${JSON.stringify(takenAt)} is not an instant in the past`,
+      );
+    }
+  });
+
+  it("relies on the newest complete dump, passing over one with no sidecar", async () => {
+    const root = appRoot();
+    const io = await database(root, LIVE, [sidecar()]);
+    const newer = backupKey(undefined, DB_ID, new Date("2026-09-11T09:30:00Z"), "local-2");
+    (io.buckets.get("BACKUPS") as ReturnType<typeof fakeBackupBucket>).objects.set(newer, { bytes: new Uint8Array(1), customMetadata: {} });
+    expect((await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).backedUpBy).toBe(sidecar().key);
+  });
+
+  it("takes the dump --dump names, and refuses one taken from another database", async () => {
+    const root = appRoot();
+    const named = sidecar({ takenAt: "2026-09-11T08:00:00.000Z" });
+    const foreign = sidecar({ databaseId: "other", key: backupKey(undefined, "other", new Date("2026-09-11T09:00:00Z"), "local-3") });
+    const io = await database(root, LIVE, [sidecar(), named, foreign]);
     const run = await context(root, io);
 
-    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: true }))).message).toBe(
+    expect((await prepareReset(run, { expect: "app-db", allowUnbacked: false, dump: named.key })).backedUpBy).toBe(named.key);
+    expect((await refusal(() => prepareReset(run, { expect: "app-db", allowUnbacked: false, dump: foreign.key }))).message).toBe(
+      `app-db holds 2 rows and ${foreign.key} was taken from database other and this target is ${DB_ID}`,
+    );
+  });
+
+  it("reads the dumps from the bucket --bucket names, and refuses when several are bound and none is BACKUPS", async () => {
+    const root = appRoot({
+      r2_buckets: [
+        { binding: "ARCHIVE", bucket_name: "a" },
+        { binding: "MEDIA", bucket_name: "m" },
+      ],
+    });
+    const io = await database(root, LIVE, [sidecar()]);
+    io.buckets.set("ARCHIVE", io.buckets.get("BACKUPS") ?? fakeBackupBucket());
+    io.buckets.delete("BACKUPS");
+    const run = await context(root, io);
+
+    expect((await prepareReset(run, { expect: "app-db", allowUnbacked: false, bucket: "ARCHIVE" })).backedUpBy).toBe(sidecar().key);
+    expect((await refusal(() => prepareReset(run, { expect: "app-db", allowUnbacked: false }))).message).toBe(
+      `${join(root, "wrangler.jsonc")} binds several R2 buckets (ARCHIVE, MEDIA) and none named BACKUPS — pass --bucket`,
+    );
+  });
+
+  it("refuses a local reset when another environment's database shares the state directory", async () => {
+    const root = appRoot({
+      env: { staging: { d1_databases: [{ binding: "DB", database_name: "app-db-staging", database_id: "1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a" }] } },
+    });
+    const io = await database(root, LIVE);
+    expect((await refusal(async () => runReset(await context(root, io), { expect: "app-db", allowUnbacked: true }))).message).toBe(
       `${join(root, "wrangler.jsonc")} declares 2 d1 databases across its environments (app-db, app-db-staging) and the miniflare state filename is a hash — this tool cannot reset one of several`,
     );
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-    expect(io.calls).toEqual([]);
   });
 
-  it("refuses to empty a database holding rows that no verified backup names", async () => {
+  it("empties an unbacked database when allowUnbacked says so, and reports no dump", async () => {
     const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
-    const run = await context(root, io);
-
-    expect(await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
-      kind: "invalid-args",
-      message: `app-db holds 2 rows and no verified backup of it exists under ${join(root, ".forge/backups")} — run \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
-    });
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("refuses an artifact whose counts no longer describe the database, before reading a row", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const io = fakeDatabase(
-      { [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")), ...artifactFiles(directory) },
-      { tasks: [...ROWS, { uuid: "t3", lane: "done" }] },
-    );
-    const run = await context(root, io);
-
-    expect(await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).toEqual({
-      kind: "invalid-args",
-      message: `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 3 rows are recoverable:\n  tasks: the artifact holds 2 row(s) and the database now holds 3\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
-    });
-    expect(io.calls.some((call) => call.some((arg) => arg.includes("forge:type:")))).toBe(false);
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("refuses an artifact whose counts agree and whose rows do not, naming the table", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const io = fakeDatabase(
-      { [join(state, "db.sqlite")]: "", [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db")), ...artifactFiles(directory) },
-      {
-        tasks: [
-          { uuid: "t1", lane: "todo" },
-          { uuid: "t2", lane: "done" },
-        ],
-      },
-    );
-    const run = await context(root, io);
-
-    expect((await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false }))).message).toBe(
-      `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 2 rows are recoverable:\n  tasks: 2 row(s) in both, and their contents differ\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
-    );
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("accepts a backup of a composite-keyed table whose rows span more than one page, and refuses it once a row moves", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const directory = join(root, ".forge/backups", "app-db-20260911T090000Z");
-    const members = Array.from({ length: 300 }, (_, index) => ({ team: `team-${index % 2}`, person: `p${String(index).padStart(3, "0")}` }));
-    const ordered = [...members].sort((left, right) =>
-      left.team === right.team ? (left.person < right.person ? -1 : 1) : left.team < right.team ? -1 : 1,
-    );
-    const digest = sha256(ordered.map((row) => canonicaliseRow(["team", "person"], ["team", "person"], row).canonical).join("\n"));
-    const seed = {
-      [join(state, "db.sqlite")]: "",
-      [join(directory, "manifest.json")]: JSON.stringify(manifest("app-db", { tables: [{ name: "members", rows: 300, digest }] })),
-      ...artifactFiles(directory),
-    };
-    const moved = members.map((row, index) => (index === 299 ? { ...row, person: "p999" } : row));
-
-    expect(
-      await runReset(await context(root, fakeDatabase(seed, { members }, MEMBERS_INVENTORY)), { expect: "app-db", allowUnbacked: false }),
-    ).toEqual({ database: "app-db", rows: 300, removed: state, backedUpBy: "app-db-20260911T090000Z" });
-    expect(
-      (
-        await refusal(async () =>
-          runReset(await context(root, fakeDatabase(seed, { members: moved }, MEMBERS_INVENTORY)), { expect: "app-db", allowUnbacked: false }),
-        )
-      ).message,
-    ).toBe(
-      `app-db-20260911T090000Z no longer describes app-db, so it does not prove these 300 rows are recoverable:\n  members: 300 row(s) in both, and their contents differ\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
-    );
-  });
-
-  it("takes the artifact backup names rather than the most recent one", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const chosen = join(root, "elsewhere", "app-db-20260910T090000Z");
-    const io = fakeDatabase({
-      [join(state, "db.sqlite")]: "",
-      [join(chosen, "manifest.json")]: JSON.stringify(manifest("app-db")),
-      ...artifactFiles(chosen),
-      // Newer, and the one `findVerifiedBackup` would have taken.
-      [join(root, ".forge/backups", "app-db-20260911T090000Z", "manifest.json")]: JSON.stringify(manifest("app-db")),
-    });
-
-    expect(
-      await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false, backup: "elsewhere/app-db-20260910T090000Z" }),
-    ).toEqual({ database: "app-db", rows: 2, removed: state, backedUpBy: chosen });
-  });
-
-  it("refuses a named artifact that its own run never proved", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const chosen = join(root, "elsewhere", "app-db-20260910T090000Z");
-    const io = fakeDatabase({
-      [join(state, "db.sqlite")]: "",
-      [join(chosen, "manifest.json")]: JSON.stringify(manifest("app-db", { verified: [] })),
-    });
-    const run = await context(root, io);
-
-    expect(
-      (await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false, backup: "elsewhere/app-db-20260910T090000Z" }))).message,
-    ).toBe(`${chosen} was taken from app-db and its own run never proved it rebuilds — a reset relies on an artifact that did`);
-    expect(io.exists(join(state, "db.sqlite"))).toBe(true);
-  });
-
-  it("refuses a named artifact taken from another database", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const chosen = join(root, "elsewhere", "other-db-20260910T090000Z");
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "", [join(chosen, "manifest.json")]: JSON.stringify(manifest("other-db")) });
-    const run = await context(root, io);
-
-    expect(
-      (await refusal(() => runReset(run, { expect: "app-db", allowUnbacked: false, backup: "elsewhere/other-db-20260910T090000Z" }))).message,
-    ).toBe(`${chosen} was taken from other-db and this target is app-db`);
-  });
-
-  it("empties an unbacked database when allowUnbacked says so, and reports no artifact", async () => {
-    const root = appRoot();
-    const state = join(root, ".wrangler", "state", ...STATE);
-    const io = fakeDatabase({ [join(state, "db.sqlite")]: "" });
-
+    const io = await database(root, LIVE);
     expect(await runReset(await context(root, io), { expect: "app-db", allowUnbacked: true })).toEqual({
       database: "app-db",
       rows: 2,
-      removed: state,
+      removed: join(root, ".wrangler", "state", ...STATE),
       backedUpBy: null,
     });
-    expect(io.exists(join(state, "db.sqlite"))).toBe(false);
   });
 });

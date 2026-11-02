@@ -57,6 +57,17 @@ describe("storeMultipart()", () => {
     expect([bucket.aborted, bucket.objects.size]).toEqual([["k.sql"], 0]);
   });
 
+  it("refuses a length other than the one announced, aborting the upload", async () => {
+    const bucket = fakeBackupBucket();
+    const error = await storeMultipart(bucket, "k.sql", streamOf(new Uint8Array(3)), {}, 4).catch((thrown: unknown) => thrown);
+    expect([(error as D1BackupError).kind, (error as Error).message, bucket.aborted, bucket.objects.size]).toEqual([
+      "download",
+      "the D1 export downloaded 3 bytes of the 4 its Content-Length announced",
+      ["k.sql"],
+      0,
+    ]);
+  });
+
   it("refuses an empty dump as a download failure, aborting the upload", async () => {
     const bucket = fakeBackupBucket();
     const error = await storeMultipart(bucket, "k.sql", streamOf(), {}).catch((thrown: unknown) => thrown);

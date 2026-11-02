@@ -448,11 +448,12 @@ import { runD1Backup } from "@y-core/forge/storage/backup";
 
 export class D1Backup extends WorkflowEntrypoint<Env> {
   async run(event: WorkflowEvent<unknown>, step: WorkflowStep) {
-    await runD1Backup(step, {
+    return runD1Backup(step, {
       accountId: this.env.CF_ACCOUNT_ID,
       databaseId: this.env.D1_DATABASE_ID,
       apiToken: this.env.D1_BACKUP_TOKEN,
       bucket: this.env.BACKUPS,
+      database: this.env.DB,
       at: event.timestamp,
       keep: 30,
       nonRetryable: (message) => new NonRetryableError(message),
@@ -474,19 +475,83 @@ account, and keep it out of `vars`.
 **Pass `event.timestamp` as `at`.** A retried step must name the same object, and `Date.now()` would change on every retry. Each dump is kept at
 `d1-backups/<database id>/<at>-<bookmark>.sql`, so its name says when it was taken and the Time Travel bookmark it was taken at.
 
-**An export blocks the database while it runs**, the same as `forge db backup --via export`. Schedule it for the quietest hour.
+**Pass the database's own binding as `database`.** Before the export, the run reads the database's schema, its last recorded migration and any
+value D1's export will not reproduce: a text value holding both a newline and a literal `\n`, an integer past ±2^53, or a whole-number REAL in a
+column without REAL affinity. Such a dump is still stored, and its sidecar names each table, column and count. A virtual table (FTS5) fails the
+run, because D1 cannot export one.
+
+**A dump is complete once its sidecar is written.** Beside each `.sql`, the run writes a `.json` sidecar. It holds the dump's size, md5 and
+sha256, the `INSERT` rows per table counted as the dump streamed, the schema digest, the migration head and the hazards. A download shorter than
+its `Content-Length`, or one that stalls for `idleTimeoutMs` (60 s by default), fails without storing anything. `readD1Backup(bucket, key)`
+answers a dump's sidecar, or `null` for a dump without one.
+
+**Under `forge cf dev` the same run backs up the local database.** Local D1 serves no export API and keeps no Time Travel, so a build `forge cf
+dev` armed reads the dump through the `database` binding, with the dumper `wrangler d1 export --local` uses. It names the dump `local-<epoch ms>`
+in place of a bookmark, and leaves `accountId` and `apiToken` unread. Every later step (census, digests, sidecar, prune) runs as it does when
+deployed, against your local R2 bucket. A deployed Worker never carries this path.
+
+**An export blocks the database while it runs.** Schedule it for the quietest hour.
+
+**Return the sidecar from `run()`.** It becomes the instance's output, which `forge db backup` reads back and prints. The CLI starts
+the Workflow named `d1-backup`, or the config's only one.
+
+**Age dumps out with R2's own lifecycle rule, or by count with `keep`.** `forge cf sync lifecycle --bucket BACKUPS --expire-days 90` sets a
+rule that deletes dumps and sidecars by age, and can move them to Infrequent Access first. R2 applies it, so it costs your Worker nothing.
+
+**Keep a copy off Cloudflare with `forge db backup pull`.** It copies a dump and its sidecar to disk, checking the bytes against the sidecar's
+sha256. `forge db backup push` uploads them back under the same key before a restore, which reads only from the bucket. Neither replaces an object,
+and a push over 300 MiB goes through R2's S3 API instead ([`src/tooling/db/README.md`][db-backup]).
 
 **`nonRetryable` stops a run that no retry can fix**: a refused token, an unknown database id, or bad options. Every other failure is thrown for the
 Workflow to retry. A failed upload is aborted first, so a retry never leaves parts behind. The signed download URL never leaves the step that uses
 it, so it never reaches the instance's recorded state.
 
 **Restore within 30 days with the dump's bookmark, not the dump.** `forge db bookmark restore --target remote --bookmark <bookmark>` returns the
-database to exactly the state the dump holds. An older dump is a plain SQL file. Download it with `wrangler r2 object get` and load it into a new
-database; `forge db` has no verb that loads one.
+database to exactly the state the dump holds, hazards included. For an older dump, see the next section.
+
+## Restoring a dump into a new database
+
+`runD1Restore` imports one dump into a database it creates, or into an empty standby, as the steps of a second Workflow. Then it checks the result
+against the dump's sidecar. The live database is never its target, so a bad dump costs a spare database and nothing else:
+
+```ts
+import { runD1Restore } from "@y-core/forge/storage/backup";
+
+type RestoreParams = { key: string; standby?: string };
+
+export class D1Restore extends WorkflowEntrypoint<Env, RestoreParams> {
+  async run(event: WorkflowEvent<RestoreParams>, step: WorkflowStep) {
+    const { key, standby } = event.payload;
+    return runD1Restore(step, {
+      accountId: this.env.CF_ACCOUNT_ID,
+      apiToken: this.env.D1_BACKUP_TOKEN,
+      bucket: this.env.BACKUPS,
+      key,
+      into: standby === undefined ? { fresh: `app-db-restore-${event.timestamp.getTime()}` } : { standby },
+      nonRetryable: (message) => new NonRetryableError(message),
+    });
+  }
+}
+```
+
+Declare it beside the backup Workflow as `{ "name": "d1-restore", "binding": "D1_RESTORE", "class_name": "D1Restore" }`. `forge db restore --from
+<key>` starts the Workflow named `d1-restore`, passing `{ key }`, or `{ key, standby }` with `--into standby:<id>`, and prints the report.
+
+**The report lists every mismatch.** It names the new database's id and name, the bookmark the import finished at, and `mismatches`. A
+mismatch is a table whose row count differs from the sidecar's, a schema digest that differs, or a different last migration. An empty list means
+the database holds what the dump held. The app still reads its old database. Pointing the binding at the new one is a separate, deliberate
+step, which `forge db promote --target remote --instance <id>` takes once the report is clean.
+
+**The import's start runs once.** D1 begins importing as soon as it recognises a file it already holds, so a retried start could import twice.
+A failed start fails the run. Run it again into a new database.
+
+**`into: { standby: <database id> }` imports into an existing database**, refusing one that already holds a table. Under `forge cf dev`, pass the
+standby's binding as `into.database`; a dev session cannot create a database, so `fresh` is refused there.
 
 ## Listing archives from an admin page
 
-`listD1Backups` reads the dumps of one database from the bucket, newest first, paging through the listing for you:
+`listD1Backups` reads the dumps of one database from the bucket, newest first, paging through the listing for you. Each record says whether its
+sidecar was written. `latestD1Backup` answers the newest complete one, so a health check can alert when its `takenAt` grows too old:
 
 ```ts
 import { listD1Backups } from "@y-core/forge/storage/backup";
@@ -495,8 +560,10 @@ app.get("/admin/backups", async (c) => Response.json(await listD1Backups(c.env.B
 app.post("/admin/backups", async (c) => Response.json({ id: (await c.env.D1_BACKUP.create()).id }, { status: 202 }));
 ```
 
-Mount both in your admin route group, so the admin guard runs first ([`AUTH_MOUNTING.md`][am-2] §2). Starting a backup and listing them are the
-only operations to expose this way. Restoring stays on the command line, where it asks first and prints its own undo.
+Mount both in your admin route group, so the admin guard runs first ([`AUTH_MOUNTING.md`][am-2] §2), and put the POST behind
+`csrfProtection` from `@y-core/forge/form`: it starts a Workflow, and a cross-site form must not be able to. Starting a restore Workflow may be
+mounted the same way, CSRF included, since it never touches the live database. Pointing the app at a restored database, and a Time Travel
+restore, stay on the command line ([`DATABASE_BACKUPS.md`][db-6] §6).
 
 ---
 
@@ -534,6 +601,8 @@ reserved `||` separator, and an empty-string `prefix` on `createKVStore` (it wou
 
 [am-2]: ../../docs/AUTH_MOUNTING.md#2-the-route-groups-and-their-guards
 [app-readme-bindings]: ../app/README.md#validating-bindings-before-anything-reads-them
+[db-6]: ../../docs/DATABASE_BACKUPS.md#6-what-an-app-may-expose-over-http
+[db-backup]: ../tooling/db/README.md#backing-up-and-restoring
 [dm]: ../../docs/DATABASE_MANAGEMENT.md
 [eh]: ../../docs/FORGE_ERRORS.md
 [eh-5c]: ../../docs/FORGE_ERRORS.md#5c-infrastructure-errors--log-and-fail-closed

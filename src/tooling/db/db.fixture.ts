@@ -2,24 +2,16 @@ import { join } from "node:path";
 import process from "node:process";
 import { PassThrough } from "node:stream";
 
+import type { FakeBackupBucket } from "../../storage/backup/backup.fixture";
+import { cutSqlStatements } from "../../storage/backup/split";
 import type { CfAuth } from "../cf/types";
+import { CliError } from "../cli/errors";
 import type { CliIO } from "../cli/types";
-import { SqlReal } from "./backup/artifact";
 import { persistRoot } from "./home";
+import { SqlReal } from "./literal";
 import { formatComposeHeader } from "./schema/header";
 import { schemaModelSelects } from "./schema/introspect";
-import type { FakeDbIo, Home, Spawned } from "./types";
-
-/** True when `words` occur in argv in this order, not necessarily adjacent. */
-export function argvHas(args: readonly string[], ...words: string[]): boolean {
-  let from = 0;
-  for (const word of words) {
-    const at = args.indexOf(word, from);
-    if (at === -1) return false;
-    from = at + 1;
-  }
-  return true;
-}
+import type { FakeDbIo, FakeRestRule, Home } from "./types";
 
 /** The rows one statement of `readSchemaModel`'s batch answers with, by which read it is. */
 export function schemaModelRows(
@@ -176,30 +168,16 @@ export function keysetPageReply(
   return projectReadRows(rows.slice(0, Number(limit)));
 }
 
-/** A successful run with nothing to say. */
-export const OK: Spawned = { code: 0, stdout: "", stderr: "" };
-
-/** Terminated statements, quotes respected, as `unstable_splitSqlQuery` hands them to the real port. */
-export function splitStatements(sql: string): string[] {
-  const statements: string[] = [];
-  let current = "";
-  let quote: string | null = null;
-  for (const char of sql) {
-    if (quote !== null) {
-      current += char;
-      if (char === quote) quote = null;
-      continue;
-    }
-    if (char === "'" || char === '"') quote = char;
-    if (char === ";") {
-      statements.push(current);
-      current = "";
-      continue;
-    }
-    current += char;
-  }
-  statements.push(current);
-  return statements.map((statement) => statement.trim()).filter((statement) => statement !== "");
+/** `bytes` as a stream of small chunks, so a reader that needs the whole body at once is caught. */
+export function chunkedStream(bytes: Uint8Array, size = 4096): ReadableStream<Uint8Array> {
+  let offset = 0;
+  return new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (offset >= bytes.byteLength) return controller.close();
+      controller.enqueue(bytes.slice(offset, offset + size));
+      offset += size;
+    },
+  });
 }
 
 /** The rows the fake answers one statement with: the first rule that matches it, else none — a statement writing rows answers none. */
@@ -239,7 +217,8 @@ function answerQuery(io: FakeDbIo, homes: readonly Home[], path: string, body: s
   const home = homes.find((candidate) => candidate.databaseId === databaseId);
   if (home === undefined) return cfRefusal(7003, `fake cloudflare: no home has the D1 id ${databaseId}`, 404);
   const parsed = JSON.parse(body ?? "{}") as { sql?: string; batch?: { sql: string }[] };
-  const statements = parsed.batch === undefined ? splitStatements(parsed.sql ?? "") : parsed.batch.map(({ sql }) => splitStatements(sql)[0] ?? sql);
+  const statements =
+    parsed.batch === undefined ? cutSqlStatements(parsed.sql ?? "") : parsed.batch.map(({ sql }) => cutSqlStatements(sql)[0] ?? sql);
   try {
     return cfEnvelope(statements.map((statement) => ({ results: answerStatement(io, statement, home), success: true, meta: {} })));
   } catch (error) {
@@ -247,37 +226,76 @@ function answerQuery(io: FakeDbIo, homes: readonly Home[], path: string, body: s
   }
 }
 
-/** Builds a fake `DbIo` with an optional seed filesystem. Unmatched wrangler calls and Cloudflare requests fail loudly. */
+const R2_OBJECTS = /\/r2\/buckets\/[^/]+\/objects(?:\/(.+))?$/;
+
+/** Cloudflare's REST R2 object endpoints over `bucket`: a listing paged as the bucket pages, and each body served in small chunks. */
+export function r2RestRules(bucket: FakeBackupBucket): FakeRestRule[] {
+  return [
+    {
+      match: (url) => R2_OBJECTS.test(new URL(url).pathname),
+      reply: async (url, init) => {
+        const parsed = new URL(url);
+        const encoded = R2_OBJECTS.exec(parsed.pathname)?.[1];
+        if (encoded === undefined) {
+          const cursor = parsed.searchParams.get("cursor");
+          const page = await bucket.list({ prefix: parsed.searchParams.get("prefix") ?? "", ...(cursor === null ? {} : { cursor }) });
+          return Response.json({
+            success: true,
+            errors: [],
+            messages: [],
+            result: page.objects.map((object) => ({ ...object, etag: "etag" })),
+            result_info: { per_page: Number(parsed.searchParams.get("per_page")), is_truncated: page.truncated, cursor: page.cursor ?? "" },
+          });
+        }
+        const key = encoded.split("/").map(decodeURIComponent).join("/");
+        if (init?.method === "PUT") {
+          await bucket.put(key, init.body as string | Uint8Array | ReadableStream<Uint8Array>);
+          return cfEnvelope({ key });
+        }
+        if (init?.method === "DELETE") {
+          await bucket.delete(key);
+          return cfEnvelope({});
+        }
+        const stored = bucket.objects.get(key);
+        if (stored === undefined) return cfRefusal(10007, "The specified key does not exist.", 404);
+        return new Response(chunkedStream(stored.bytes, 7), { headers: { "content-length": String(stored.bytes.byteLength) } });
+      },
+    },
+  ];
+}
+
+/** Builds a fake `DbIo` with an optional seed filesystem. Unmatched Cloudflare requests fail loudly. */
 export function fakeDbIo(
   seed: Record<string, string> = {},
   options: { now?: Date; env?: Record<string, string>; homes?: readonly Home[] } = {},
 ): FakeDbIo {
   const files = new Map(Object.entries(seed));
   const dirs = new Set<string>();
+  const startedAt = options.now ?? new Date("2026-09-11T10:00:00Z");
+  let elapsedMs = 0;
   const io: FakeDbIo = {
     files,
-    calls: [],
     logs: [],
-    rules: [],
     d1Calls: [],
     d1Rules: [],
     restRules: [],
     restCalls: [],
     closed: [],
-    spawn(cmd, args) {
-      io.calls.push([cmd, ...args]);
-      for (const rule of io.rules) {
-        if (rule.match(args)) return typeof rule.reply === "function" ? rule.reply(args) : rule.reply;
-      }
-      return { code: 1, stdout: "", stderr: `fake wrangler: no rule matches ${cmd} ${args.join(" ")}` };
-    },
+    slept: [],
     d1(home, sql) {
-      const statements = sql.flatMap((text) => splitStatements(text));
+      const statements = sql.flatMap((text) => cutSqlStatements(text));
       const source = sql.length === 1 ? ([...files].find(([, text]) => text === sql[0])?.[0] ?? null) : null;
       io.d1Calls.push({ home: home.label, place: home.place, persistTo: persistRoot(home), statements, source });
       return Promise.resolve(statements.map((statement) => answerStatement(io, statement, home)));
     },
-    splitD1: (_home, sql) => Promise.resolve(splitStatements(sql)),
+    splitD1: (_home, sql) => Promise.resolve(cutSqlStatements(sql)),
+    buckets: new Map(),
+    bucket(home, binding) {
+      const bucket = io.buckets.get(binding);
+      if (bucket === undefined)
+        return Promise.reject(new CliError("invalid-args", `${home.configPath} declares no r2_buckets binding named ${binding}`));
+      return Promise.resolve(bucket);
+    },
     closeD1(home) {
       io.closed.push(home === null ? "*" : persistRoot(home));
       return Promise.resolve();
@@ -290,6 +308,14 @@ export function fakeDbIo(
     },
     writeText: (p, text) => {
       files.set(p, text);
+    },
+    readStream: (p) => {
+      const text = files.get(p);
+      if (text === undefined) throw new Error(`ENOENT: ${p}`);
+      return chunkedStream(new TextEncoder().encode(text));
+    },
+    writeStream: async (p, body) => {
+      files.set(p, await new Response(body).text());
     },
     createExclusive: (p, text) => {
       if (files.has(p)) return false;
@@ -318,7 +344,12 @@ export function fakeDbIo(
       for (const dir of [...dirs]) if (dir === p || dir.startsWith(`${p}/`)) dirs.delete(dir);
     },
     mtime: (p) => (files.has(p) ? (options.now ?? new Date()).getTime() : null),
-    now: () => options.now ?? new Date("2026-09-11T10:00:00Z"),
+    now: () => new Date(startedAt.getTime() + elapsedMs),
+    sleep: (ms) => {
+      io.slept.push(ms);
+      elapsedMs += ms;
+      return Promise.resolve();
+    },
     env: options.env ?? {},
     fetch: async (input, init) => {
       const url = input instanceof Request ? input.url : String(input);

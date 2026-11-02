@@ -218,7 +218,6 @@ describe("composeMigration()", () => {
     expect(outcome).toEqual({ path: null, snapshotPath: null, plan: [], warnings: [], causes: [], sql: "", dryRun: false });
     expect(out).toEqual(["config/db.config.ts names no `schemas`, and there is no snapshot and no migration — nothing to compose"]);
     expect([...io.files.keys()]).toEqual([]);
-    expect(io.calls).toEqual([]);
   });
 
   describe("refuses an empty `schemas` over history, which composing nothing would drop", () => {
@@ -233,14 +232,13 @@ describe("composeMigration()", () => {
         () => null,
         (thrown: unknown) => thrown,
       );
-      return { message: error instanceof Error ? error.message : null, files: [...io.files.keys()].sort(), calls: io.calls };
+      return { message: error instanceof Error ? error.message : null, files: [...io.files.keys()].sort() };
     };
 
     it("names the migrations on disk", async () => {
       expect(await refusal({ [`${MIGRATIONS}/0001_init.sql`]: INIT })).toEqual({
         message: `the migrations reach 0001_init — there is history to hold in step, so composing from no schema is refused:\n${guidance}`,
         files: [`${MIGRATIONS}/0001_init.sql`],
-        calls: [],
       });
     });
 
@@ -248,7 +246,6 @@ describe("composeMigration()", () => {
       expect(await refusal({ [SNAPSHOT]: snapshot })).toEqual({
         message: `${SNAPSHOT} exists — there is history to hold in step, so composing from no schema is refused:\n${guidance}`,
         files: [SNAPSHOT],
-        calls: [],
       });
     });
 
@@ -282,7 +279,6 @@ describe("composeMigration()", () => {
       "schema.sql declares table `_forge_audit`\n`_forge_`, `sqlite_`, `_cf_` are reserved for forge, SQLite and the platform — rename it, or drop it from the schema.",
     );
     expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
-    expect(io.calls).toEqual([]);
   });
 
   it("writes the numbered migration, its compose header and the snapshot for a created table", async () => {
@@ -816,7 +812,6 @@ describe("await composeMigration() --restamp", () => {
       forge: "unknown",
     });
     expect(written.split("\n").slice(2).join("\n")).toBe(wrong.split("\n").slice(2).join("\n"));
-    expect(io.calls).toEqual([]);
     expect(outcome).toEqual({
       path: `${MIGRATIONS}/0002_schema.sql`,
       snapshotPath: null,
@@ -903,6 +898,5 @@ describe("await composeMigration() --restamp", () => {
       "--restamp 0004_nope names no migration — on disk: 0001_init, 0002_edited",
     );
     expect(io.files.get(`${MIGRATIONS}/0002_edited.sql`)).toBe(edited);
-    expect(io.calls).toEqual([]);
   });
 });

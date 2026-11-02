@@ -1,8 +1,8 @@
 import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
-import { insertStatement, SqlReal, sqlValueExpression } from "../backup/artifact";
 import { executeFile, queryBatches } from "../d1";
+import { insertStatement, SqlReal, sqlValueExpression } from "../literal";
 import { quoteSqlIdentifier, sqlColumnAffinity } from "../sql";
 import type { DbRunContext, Home, SqlAffinity } from "../types";
 import { columnTypeKey } from "./diff";

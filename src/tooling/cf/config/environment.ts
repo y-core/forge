@@ -20,6 +20,8 @@ export const ENVIRONMENT_INHERITANCE = {
   alias: "top-level",
   define: "not-inherited",
   d1_databases: "not-inherited",
+  r2_buckets: "not-inherited",
+  workflows: "not-inherited",
 } as const satisfies Record<DeploymentKey, EnvironmentInheritance>;
 
 const DEPLOYMENT_KEYS = Object.keys(ENVIRONMENT_INHERITANCE) as DeploymentKey[];

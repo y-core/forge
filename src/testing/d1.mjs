@@ -5,7 +5,77 @@ import { existsSync as existsSync2, mkdtempSync, readdirSync, readFileSync, rmSy
 import { tmpdir } from "node:os";
 import { join as join2, resolve as resolve3 } from "node:path";
 import process from "node:process";
-import { getPlatformProxy, unstable_splitSqlQuery } from "wrangler";
+import { getPlatformProxy } from "wrangler";
+
+// src/storage/backup/split.ts
+var WORD = /[A-Za-z_][A-Za-z0-9_$]*/y;
+function pastQuoted(sql2, index, quote) {
+  let at = index;
+  do {
+    const close = sql2.indexOf(quote, at + 1);
+    if (close === -1) return sql2.length;
+    at = close + 1;
+  } while (sql2[at] === quote);
+  return at;
+}
+function pastMarker(sql2, from, marker) {
+  const at = sql2.indexOf(marker, from);
+  return at === -1 ? sql2.length : at + marker.length;
+}
+function opensTrigger(lead) {
+  const [create, second, third] = lead;
+  return create === "CREATE" && (second === "TRIGGER" || (second === "TEMP" || second === "TEMPORARY") && third === "TRIGGER");
+}
+function sqlStatementSpans(sql2) {
+  const spans = [];
+  let start = 0;
+  let index = 0;
+  let depth = 0;
+  let useful = false;
+  let lead = [];
+  const token = (word) => {
+    useful = true;
+    if (lead.length < 3) lead.push(word);
+  };
+  const finish = (end, terminated) => {
+    spans.push({ start, end, terminated, useful });
+    start = end + 1;
+    depth = 0;
+    useful = false;
+    lead = [];
+  };
+  while (index < sql2.length) {
+    const char = sql2[index] ?? "";
+    const next = sql2[index + 1];
+    if (char === "'" || char === '"' || char === "`") {
+      token("");
+      index = pastQuoted(sql2, index, char);
+    } else if (char === "[") {
+      token("");
+      index = pastMarker(sql2, index + 1, "]");
+    } else if (char === "-" && next === "-") index = pastMarker(sql2, index, "\n");
+    else if (char === "/" && next === "*") index = pastMarker(sql2, index + 2, "*/");
+    else if (/[A-Za-z_]/.test(char)) {
+      WORD.lastIndex = index;
+      const word = (WORD.exec(sql2)?.[0] ?? char).toUpperCase();
+      token(word);
+      if (word === "BEGIN" || word === "CASE") depth += 1;
+      else if (word === "END") depth = Math.max(0, depth - 1);
+      index += word.length;
+    } else if (char === ";" && !(depth > 0 && opensTrigger(lead))) {
+      finish(index, true);
+      index += 1;
+    } else {
+      if (char !== ";" && !/\s/.test(char)) token("");
+      index += 1;
+    }
+  }
+  finish(sql2.length, false);
+  return spans;
+}
+function cutSqlStatements(sql2) {
+  return sqlStatementSpans(sql2).filter((span) => span.useful).map((span) => sql2.slice(span.start, span.end).trim());
+}
 
 // src/storage/db/migrations.ts
 var DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json" };
@@ -72,8 +142,7 @@ var DbHostConfigSchema = v.strictObject({
   schemas: v.optional(v.array(v.string())),
   seeds: v.optional(v.array(v.string())),
   migrations: v.optional(v.string()),
-  snapshot: v.optional(v.string()),
-  backupsDir: v.optional(v.string())
+  snapshot: v.optional(v.string())
 });
 
 // src/tooling/db/declared.ts
@@ -197,7 +266,7 @@ async function openTestD1(options = {}) {
   const rows = async (sql2) => (await db.prepare(sql2).all()).results;
   const migrate = async () => {
     for (const migration of migrations) {
-      const statements = unstable_splitSqlQuery(migration.sql).filter((statement) => statement.trim() !== "");
+      const statements = cutSqlStatements(migration.sql);
       if (statements.length === 0) continue;
       await db.batch(statements.map((statement) => db.prepare(statement))).catch((error) => {
         throw new Error(`openTestD1: ${migration.name} failed to apply: ${error instanceof Error ? error.message : String(error)}`, {

@@ -2,38 +2,10 @@ import { describe, expect, it } from "bun:test";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 
-import { SqlReal } from "./backup/artifact";
-import {
-  argvHas,
-  cfEnvelope,
-  cfRefusal,
-  fakeDbIo,
-  keysetPageReply,
-  minimalWranglerConfig,
-  OK,
-  onStdin,
-  splitStatements,
-  REMOTE_AUTH,
-} from "./db.fixture";
+import { cutSqlStatements } from "../../storage/backup/split";
+import { cfEnvelope, cfRefusal, fakeDbIo, keysetPageReply, minimalWranglerConfig, onStdin, REMOTE_AUTH } from "./db.fixture";
+import { SqlReal } from "./literal";
 import type { Home } from "./types";
-
-describe("argvHas()", () => {
-  it("finds words in order without requiring them to be adjacent", () => {
-    const argv = ["d1", "execute", "app-db", "--local", "--json", "--command", "SELECT 1"];
-    expect([
-      argvHas(argv, "execute", "--json"),
-      argvHas(argv, "d1", "execute", "app-db"),
-      argvHas(argv, "--json", "execute"),
-      argvHas(argv, "execute", "--remote"),
-      argvHas(argv),
-    ]).toEqual([true, true, false, false, true]);
-  });
-
-  it("needs one occurrence per repeated word", () => {
-    expect(argvHas(["-c", "a", "-c", "b"], "-c", "-c")).toBe(true);
-    expect(argvHas(["-c", "a"], "-c", "-c")).toBe(false);
-  });
-});
 
 describe("fakeDbIo()", () => {
   it("reads back what it wrote and reports a missing path as absent", () => {
@@ -64,23 +36,7 @@ describe("fakeDbIo()", () => {
     expect(io.mtime("/absent")).toBeNull();
   });
 
-  it("answers a spawn from the first matching rule and records every call", () => {
-    const io = fakeDbIo();
-    io.rules.push({ match: (args) => argvHas(args, "execute"), reply: (args) => ({ code: 0, stdout: args.join(" "), stderr: "" }) });
-    expect(io.spawn("wrangler", ["d1", "execute", "app-db"], { cwd: "/app" })).toEqual({ code: 0, stdout: "d1 execute app-db", stderr: "" });
-    expect(io.calls).toEqual([["wrangler", "d1", "execute", "app-db"]]);
-  });
-
-  it("fails an unmatched spawn with the command it could not answer", () => {
-    const io = fakeDbIo();
-    expect(io.spawn("wrangler", ["d1", "export", "app-db"], { cwd: "/app" })).toEqual({
-      code: 1,
-      stdout: "",
-      stderr: "fake wrangler: no rule matches wrangler d1 export app-db",
-    });
-  });
-
-  it("splits through splitD1 exactly as splitStatements does, recording no in-process call", async () => {
+  it("splits through splitD1 exactly as the real port cuts, recording no in-process call", async () => {
     const io = fakeDbIo();
     const sql = "INSERT INTO t (a) VALUES ('x;y');\n\nDROP VIEW v;";
     const home: Home = {
@@ -97,9 +53,19 @@ describe("fakeDbIo()", () => {
       synthesized: false,
     };
     const split = await io.splitD1(home, sql);
-    expect(split).toEqual(splitStatements(sql));
+    expect(split).toEqual(cutSqlStatements(sql));
     expect(split).toEqual(["INSERT INTO t (a) VALUES ('x;y')", "DROP VIEW v"]);
     expect(io.d1Calls).toEqual([]);
+  });
+
+  it("streams a file out in small chunks and back whole, refusing a file it does not hold", async () => {
+    const io = fakeDbIo({ "/a.sql": "x".repeat(10_000) });
+    const sizes: number[] = [];
+    for await (const chunk of io.readStream("/a.sql")) sizes.push((chunk as Uint8Array).byteLength);
+    expect(sizes).toEqual([4096, 4096, 1808]);
+    await io.writeStream("/b.sql", io.readStream("/a.sql"));
+    expect(io.files.get("/b.sql")).toBe("x".repeat(10_000));
+    expect(() => io.readStream("/absent.sql")).toThrow("ENOENT: /absent.sql");
   });
 
   it("collects log lines and defaults the clock and the environment", () => {
@@ -108,6 +74,13 @@ describe("fakeDbIo()", () => {
     expect(io.logs).toEqual(["copying 0001_init.sql"]);
     expect(io.now().toISOString()).toBe("2026-09-11T10:00:00.000Z");
     expect(io.env).toEqual({});
+  });
+
+  it("records each sleep and advances its clock by as much, without waiting", async () => {
+    const io = fakeDbIo({}, { now: new Date("2026-09-11T10:00:00Z") });
+    await io.sleep(1_000);
+    await io.sleep(500);
+    expect([io.slept, io.now().toISOString()]).toEqual([[1_000, 500], "2026-09-11T10:00:01.500Z"]);
   });
 });
 
@@ -278,12 +251,6 @@ describe("keysetPageReply()", () => {
 
   it("is null for a statement that is not a keyset read", () => {
     expect(keysetPageReply('SELECT COUNT(*) AS rows FROM "members"', MEMBERS)).toBeNull();
-  });
-});
-
-describe("OK", () => {
-  it("is a success with neither stream written", () => {
-    expect(OK).toEqual({ code: 0, stdout: "", stderr: "" });
   });
 });
 

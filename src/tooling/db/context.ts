@@ -34,7 +34,7 @@ export async function resolveDbContext(flags: SharedDbFlags, ctx?: CliContext, o
   const root = resolve(flags.root ?? process.cwd());
   const json = Boolean(flags.json);
   const print = (line: string) => (ctx?.io.stdout ?? console.log)(line);
-  const io = overrides.io ?? realDbIo(root, (line) => (ctx?.io.stderr ?? console.error)(line));
+  const io = overrides.io ?? realDbIo((line) => (ctx?.io.stderr ?? console.error)(line));
   const config = resolveDbConfig({ root, config: flags.config, db: flags.db, env: flags.env, target: flags.target });
   const given = flags["account-id"] !== undefined || flags["api-token"] !== undefined;
   const home = resolveHome(config, io, isRemotePlace(config.target.place) && given ? readCfAuth(flags) : null);

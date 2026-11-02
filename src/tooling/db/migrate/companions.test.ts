@@ -53,7 +53,6 @@ describe("ensureCompanionTables()", () => {
     const io = database();
     await ensureCompanionTables(io, home);
 
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls.length).toBe(1);
     expect(io.d1Calls[0]?.persistTo).toBe("/app/.wrangler/state/v3");
     const declared = [FORGE_MIGRATIONS_DDL, FORGE_SEED_HISTORY_DDL].join("\n");

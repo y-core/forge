@@ -42,7 +42,7 @@ import {
 import { AUTH_VIEWS } from "./render";
 import { AUTH_VIEW_GUARDS, authAfterStepUpTarget, resolveAuthView } from "./resolve";
 import { AUTH_ROUTE_GROUPS } from "./routes";
-import type { AuthGuardName, AuthIdentity } from "./types";
+import type { AuthAdminGuardOptions, AuthGuardName, AuthIdentity } from "./types";
 import type { AuthPageState, AuthRequestServices, AuthWebOptions } from "./types";
 import type { AuthViewName, AuthViewProps } from "./types";
 import type { AuthViewRequest } from "./types";
@@ -50,6 +50,7 @@ import { SigninView } from "./views/signin";
 import type { SigninViewProps } from "./views/types";
 import type { AuthViewChrome } from "./views/types";
 import {
+  fakeAdminGuardChain,
   fakeAdminUserStore,
   fakeAuthCredential,
   fakeAuthCredentialStore,
@@ -63,6 +64,7 @@ import {
   fakeFactorStore,
   attrOf,
   attrsOf,
+  demoteAuthIdentity,
   elementOf,
   elementsOf,
   tagOf,
@@ -666,40 +668,38 @@ describe("resolveAuthView holds a host to the guards the page's data assumes", (
     expect(await res.text()).toBe("Forbidden");
   });
 
-  function adminViewApp(onForbidden: AuthWebOptions["onForbidden"], identity: AuthIdentity | null, name: AdminViewName = "adminUsers"): Forge {
-    return guardedApp(async (c) => {
-      const view = await resolveAuthView(c, { ...options, onForbidden }, { name, guarded: AUTH_VIEW_GUARDS[name] } as AuthViewRequest<typeof name>);
-      return view.ok ? new Response(String(await renderToString(view.data.node))) : view.error;
-    }, identity);
+  /** An app serving `name` behind the admin stack `createAuthGuards` wires from `onForbidden`, for an administrator the chain admits, demoted after it when `demoted`. */
+  function adminViewApp(onForbidden: AuthAdminGuardOptions["onForbidden"], demoted: boolean, name: AdminViewName = "adminUsers"): Forge {
+    const guards = [...fakeAdminGuardChain(onForbidden), ...(demoted ? [demoteAuthIdentity] : [])];
+    return guardedApp(
+      async (c) => {
+        const view = await resolveAuthView(c, options, { name, guarded: AUTH_VIEW_GUARDS[name] } as AuthViewRequest<typeof name>);
+        return view.ok ? new Response(String(await renderToString(view.data.node))) : view.error;
+      },
+      admin,
+      "/page",
+      guards,
+    );
   }
 
-  it("refuses a signed-in non-admin on every admin-gated view through `onForbidden`, handed the request's app context", async () => {
+  it("refuses a non-admin on every admin-gated view through the `onForbidden` given only to `createAuthGuards`, handed the request's app context", async () => {
     const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403, headers: { "content-type": "text/html" } });
     const answers = [];
     for (const name of ADMIN_VIEWS) {
-      const res = await adminViewApp(onForbidden, member, name).request("/page");
+      const res = await adminViewApp(onForbidden, true, name).request("/page");
       answers.push({ name, status: res.status, type: res.headers.get("content-type"), body: await res.text() });
     }
     expect(answers).toEqual(ADMIN_VIEWS.map((name) => ({ name, status: 403, type: "text/html", body: "admin only: /page" })));
   });
 
-  it("answers a signed-in non-admin with what an async `onForbidden` resolves to", async () => {
-    const res = await adminViewApp(async () => new Response("later", { status: 451 }), member).request("/page");
+  it("answers a non-admin with what an async `onForbidden` given to `createAuthGuards` resolves to", async () => {
+    const res = await adminViewApp(async () => new Response("later", { status: 451 }), true).request("/page");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 451, body: "later" });
   });
 
-  it("sends an anonymous request to sign-in without consulting `onForbidden`", async () => {
-    const consulted: string[] = [];
-    const onForbidden = (c: AppContext) => {
-      consulted.push(c.url.pathname);
-      return new Response("admin only", { status: 403 });
-    };
-    const res = await adminViewApp(onForbidden, null).request("/page");
-    expect({ ...{ status: res.status, location: res.headers.get("location") }, consulted }).toEqual({
-      status: 302,
-      location: "/auth/signin",
-      consulted: [],
-    });
+  it("refuses a non-admin with a plain-text 403 behind a `createAuthGuards` chain given no `onForbidden`", async () => {
+    const res = await adminViewApp(undefined, true).request("/page");
+    expect({ status: res.status, body: await res.text() }).toEqual({ status: 403, body: "Forbidden" });
   });
 
   it("serves an administrator the page without consulting `onForbidden`", async () => {
@@ -708,7 +708,7 @@ describe("resolveAuthView holds a host to the guards the page's data assumes", (
       consulted.push(c.url.pathname);
       return new Response("admin only", { status: 403 });
     };
-    const res = await adminViewApp(onForbidden, admin).request("/page");
+    const res = await adminViewApp(onForbidden, false).request("/page");
     expect({ status: res.status, consulted }).toEqual({ status: 200, consulted: [] });
   });
 

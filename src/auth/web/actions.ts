@@ -766,7 +766,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
       // The role is judged here and not left to the group's `require-admin`: that guard runs on the
       // loader this handler redirects to, which is after the write it was meant to refuse has landed.
-      if (!viewer.isAdmin) return forbidden(c, options);
+      if (!viewer.isAdmin) return forbidden(c);
 
       const parsed = await readAuthSubmission(c, authAdminUserSchema());
       if (!parsed.ok) return loadAdminUserEdit(c, options, { fieldError: parsed.error.message, status: 422 });
@@ -812,7 +812,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
       const viewer = resolveAuthViewer(c);
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
-      if (!viewer.isAdmin) return forbidden(c, options);
+      if (!viewer.isAdmin) return forbidden(c);
 
       // The loaded row is compared and not the route parameter: a UUID is case-insensitive, so an
       // uppercased one names the same account and would slip the deactivation guard's irreversible twin.
@@ -835,7 +835,7 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
 
       const viewer = resolveAuthViewer(c);
       if (viewer === null) return createAuthRedirect(c, options.paths.auth.signin());
-      if (!viewer.isAdmin) return forbidden(c, options);
+      if (!viewer.isAdmin) return forbidden(c);
 
       const found = await services.admin.view(id);
       if (!found.ok) return unavailable();

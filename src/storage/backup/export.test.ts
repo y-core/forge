@@ -2,8 +2,8 @@ import { describe, expect, it } from "bun:test";
 
 import { exportReply } from "./backup.fixture";
 import { D1BackupError } from "./errors";
-import { requestD1Export } from "./export";
-import type { D1BackupOptions } from "./types";
+import { requestD1Export, restTransfer } from "./export";
+import type { D1BackupOptions, D1RestoreOptions } from "./types";
 
 const TOKEN = "tkn-Zq9xW2vLp7";
 const SIGNED = "https://d1-exports.example.com/dump.sql?X-Amz-Signature=deadbeef";
@@ -14,6 +14,7 @@ function options(reply: () => Response | Promise<Response>, calls: { url: string
     databaseId: "db/1",
     apiToken: TOKEN,
     bucket: {} as D1BackupOptions["bucket"],
+    database: {} as D1BackupOptions["database"],
     at: new Date("2026-11-01T02:00:00Z"),
     fetch: async (url, init) => {
       calls.push(init === undefined ? { url } : { url, init });
@@ -106,5 +107,37 @@ describe("requestD1Export()", () => {
       expect(error.message).not.toContain(TOKEN);
       expect(error.message).not.toContain("X-Amz-Signature");
     }
+  });
+});
+
+describe("restTransfer.openTarget()", () => {
+  function standbyInto(reply: () => Response, calls: { url: string; init?: RequestInit }[]): D1RestoreOptions {
+    return {
+      accountId: "acct",
+      apiToken: TOKEN,
+      bucket: {} as D1RestoreOptions["bucket"],
+      key: "d1-backups/db/dump.sql",
+      into: { standby: "uuid-standby" },
+      fetch: async (url, init) => {
+        calls.push(init === undefined ? { url } : { url, init });
+        return reply();
+      },
+    };
+  }
+
+  it("answers the name the API returns for a standby, not its id", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const target = await restTransfer.openTarget(standbyInto(() => exportReply({ uuid: "uuid-standby", name: "app-db-standby" }), calls));
+
+    expect(target).toEqual({ databaseId: "uuid-standby", name: "app-db-standby" });
+    expect([calls[0]?.url, calls[0]?.init?.method]).toEqual(["https://api.cloudflare.com/client/v4/accounts/acct/d1/database/uuid-standby", "GET"]);
+  });
+
+  it("refuses a missing standby as not-found on the database read, before any import call", async () => {
+    const calls: { url: string; init?: RequestInit }[] = [];
+    const error = await failure(restTransfer.openTarget(standbyInto(() => new Response("{}", { status: 404 }), calls)));
+
+    expect([error.kind, error.status]).toEqual(["not-found", 404]);
+    expect(calls.map((call) => call.url)).toEqual(["https://api.cloudflare.com/client/v4/accounts/acct/d1/database/uuid-standby"]);
   });
 });

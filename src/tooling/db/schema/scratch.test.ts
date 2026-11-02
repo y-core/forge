@@ -96,7 +96,6 @@ describe("replayBaseline", () => {
     ]);
     expect(io.readText(`${COMPOSE}/baseline/0001_init.sql`)).toBe("CREATE TABLE a (id INTEGER);");
     expect(io.readText(`${COMPOSE}/baseline/0002_next.sql`)).toBe("CREATE TABLE b (id INTEGER);");
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls.map((call) => [call.source, call.persistTo])).toEqual([
       [`${COMPOSE}/baseline/0001_init.sql`, `${COMPOSE}/baseline/.wrangler/state/v3`],
       [`${COMPOSE}/baseline/0002_next.sql`, `${COMPOSE}/baseline/.wrangler/state/v3`],
@@ -169,7 +168,7 @@ describe("scratchModelKey", () => {
 
 describe("cachedSchemaModel", () => {
   it("returns the cached model without producing one", async () => {
-    const { run, io } = context({ [`${COMPOSE}/desired/cache/k1/model.json`]: `${JSON.stringify(CACHED)}\n` });
+    const { run } = context({ [`${COMPOSE}/desired/cache/k1/model.json`]: `${JSON.stringify(CACHED)}\n` });
     let produced = 0;
     const model = await cachedSchemaModel(run, "desired", "k1", true, () => {
       produced += 1;
@@ -177,7 +176,6 @@ describe("cachedSchemaModel", () => {
     });
     expect(produced).toBe(0);
     expect(model).toEqual(CACHED);
-    expect(io.calls).toEqual([]);
   });
 
   it("rebuilds rather than returns a cache entry that is not a schema model", async () => {

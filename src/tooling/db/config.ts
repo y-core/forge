@@ -61,7 +61,7 @@ export function selectD1Entry(entries: readonly D1DatabaseConfig[], db: string |
 /** Normalises one config entry into the shape every verb reads, with paths made absolute. */
 export function toD1Entry(entry: D1DatabaseConfig, configPath: string): D1Entry {
   const databaseName = entry.database_name ?? entry.binding;
-  // The name reaches `wrangler d1 export <name>` as an argv positional and a backup directory name.
+  // The name becomes part of a backup directory's name, and of the path a standby database lives under.
   if (!DATABASE_NAME.test(databaseName)) {
     throw new CliError(
       "invalid-args",

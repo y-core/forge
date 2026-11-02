@@ -44,12 +44,14 @@ import { requireApproval, requireFreshStepUp } from "./guards";
 import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { authRoutes } from "./routes";
-import type { AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
+import type { AuthAdminGuardOptions, AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
 import {
   approvedSession,
   attrOf,
+  demoteAuthIdentity,
   elementOf,
   HOSTILE_TEXT,
+  fakeAdminGuardChain,
   fakeAdminUserStore,
   fakeApproval,
   fakeAuthCredential,
@@ -118,6 +120,12 @@ function actionApp(seed: Seed = {}): Forge {
 
 function mounted(app: Forge, method: "POST" | "PATCH" | "DELETE", pattern: string, action: TestAction): Forge {
   mapHandler(app, method, pattern, action);
+  return app;
+}
+
+/** `app` behind the admin stack `createAuthGuards` wires from `onForbidden`, which admits the seeded administrator before a demotion lands. */
+function demotedBehindAdminChain(app: Forge, onForbidden: AuthAdminGuardOptions["onForbidden"]): Forge {
+  app.use("*", ...fakeAdminGuardChain(onForbidden), demoteAuthIdentity);
   return app;
 }
 
@@ -1832,7 +1840,7 @@ describe("createAdminUserActions — resetFactors", () => {
   const target = fakeAuthUser({ id: "u2", email: "member@example.com" });
   const actor = fakeAuthUser({ id: "u9", email: "grace@example.com", isAdmin: true });
 
-  function resetApp(seed: Seed, outcome: "changed" | "not-found" = "changed", onForbidden?: AuthWebOptions["onForbidden"]) {
+  function resetApp(seed: Seed, outcome: "changed" | "not-found" = "changed", app: Forge = actionApp(seed)) {
     const resets: string[] = [];
     const admin = fakeAdminUserStore([target, actor], {
       resetFactors: async (id, at) => {
@@ -1840,9 +1848,8 @@ describe("createAdminUserActions — resetFactors", () => {
         return ok(outcome);
       },
     });
-    const options = { ...optionsWith({ users: fakeAuthUserStore([target, actor]), admin }), onForbidden };
-    const app = mounted(actionApp(seed), "POST", "/admin/users/:id/factors/reset", createAdminUserActions(options).resetFactors);
-    return { resets, app };
+    const options = optionsWith({ users: fakeAuthUserStore([target, actor]), admin });
+    return { resets, app: mounted(app, "POST", "/admin/users/:id/factors/reset", createAdminUserActions(options).resetFactors) };
   }
 
   const answerOf = async (res: Response) => ({ status: res.status, location: res.headers.get("location") });
@@ -1859,9 +1866,10 @@ describe("createAdminUserActions — resetFactors", () => {
     expect({ status: res.status, body: await res.text(), resets }).toEqual({ status: 403, body: "Forbidden", resets: [] });
   });
 
-  it("refuses a signed-in non-administrator through `onForbidden` without resetting anything", async () => {
+  it("refuses a non-administrator through the `onForbidden` given only to `createAuthGuards`, without resetting anything", async () => {
     const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
-    const { resets, app } = resetApp({ userId: "u9", admin: false }, "changed", onForbidden);
+    const seed = { userId: "u9", admin: true };
+    const { resets, app } = resetApp(seed, "changed", demotedBehindAdminChain(actionApp(seed), onForbidden));
     const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
     expect({ status: res.status, body: await res.text(), resets }).toEqual({
       status: 403,
@@ -2146,7 +2154,7 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     expect({ status: res.status, body: await res.text(), writes }).toEqual({ status: 403, body: "Forbidden", writes: 0 });
   });
 
-  it("answers a signed-in non-administrator's PATCH through `onForbidden`, writing nothing", async () => {
+  it("answers a non-administrator's PATCH through the `onForbidden` given only to `createAuthGuards`, writing nothing", async () => {
     let writes = 0;
     const admin = fakeAdminUserStore([member], {
       setAdmin: async () => {
@@ -2155,8 +2163,9 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
       },
     });
     const onForbidden = (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
-    const options = { ...optionsWith({ users: fakeAuthUserStore([member]), admin }), onForbidden };
-    const app = mounted(actionApp({ userId: "u2", admin: false }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+    const options = optionsWith({ users: fakeAuthUserStore([member]), admin });
+    const guarded = demotedBehindAdminChain(actionApp({ userId: "u2", admin: true }), onForbidden);
+    const app = mounted(guarded, "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
 
     const res = await app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
     expect({ status: res.status, body: await res.text(), writes }).toEqual({ status: 403, body: "admin only: /admin/users/u2", writes: 0 });
@@ -2180,7 +2189,7 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
     expect({ status: res.status, body: await res.text(), removals }).toEqual({ status: 403, body: "Forbidden", removals: 0 });
   });
 
-  it("answers a signed-in non-administrator's DELETE through what an async `onForbidden` resolves to, deleting nothing", async () => {
+  it("answers a non-administrator's DELETE through what an async `onForbidden` given only to `createAuthGuards` resolves to, deleting nothing", async () => {
     const target = fakeAuthUser({ id: "u3", email: "target@example.com" });
     let removals = 0;
     const admin = fakeAdminUserStore([member, target], {
@@ -2190,8 +2199,9 @@ describe("createAdminUserActions — the write path refuses an unprivileged requ
       },
     });
     const onForbidden = async (c: AppContext) => new Response(`admin only: ${c.url.pathname}`, { status: 403 });
-    const options = { ...optionsWith({ users: fakeAuthUserStore([member, target]), admin }), onForbidden };
-    const app = mounted(actionApp({ userId: "u2", admin: false }), "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
+    const options = optionsWith({ users: fakeAuthUserStore([member, target]), admin });
+    const guarded = demotedBehindAdminChain(actionApp({ userId: "u2", admin: true }), onForbidden);
+    const app = mounted(guarded, "DELETE", "/admin/users/:id", createAdminUserActions(options).remove);
 
     const res = await app.request("/admin/users/u3", { method: "DELETE" });
     expect({ status: res.status, body: await res.text(), removals }).toEqual({ status: 403, body: "admin only: /admin/users/u3", removals: 0 });

@@ -111,8 +111,8 @@ describe("resolveDbContext()", () => {
 
   it("takes the host config an override supplies instead of reading the file", async () => {
     const root = appRoot('export default { seedsDir: "fixtures/seeds" };\n');
-    const run = await resolveDbContext(flags({ root }), undefined, { io: fakeDbIo(), host: { backupsDir: "tmp/backups" } });
-    expect(run.host).toEqual({ backupsDir: "tmp/backups" });
+    const run = await resolveDbContext(flags({ root }), undefined, { io: fakeDbIo(), host: { snapshot: "db/schema.snapshot.json" } });
+    expect(run.host).toEqual({ snapshot: "db/schema.snapshot.json" });
   });
 
   it("resolves the root before anything is read from it", async () => {

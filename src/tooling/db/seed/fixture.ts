@@ -1,10 +1,10 @@
 import { dirname, join } from "node:path";
 
 import { CliError } from "../../cli/errors";
-import { insertStatement } from "../backup/artifact";
 import { executeFile, queryBatches, queryOne } from "../d1";
 import { declaredSeeds } from "../declared";
 import { sha256 } from "../digest";
+import { insertStatement } from "../literal";
 import { readSchemaInputs } from "../schema/compose";
 import { loadDesired } from "../schema/scratch";
 import { rowCountSelect, tableInfoSelect, toColumnInfo } from "../sql";
@@ -23,7 +23,7 @@ function refuseUndeclaredPath(run: DbRunContext, path: string): void {
   );
 }
 
-/** Each table's declared columns in `cid` order, read in one spawn; a table the schema does not declare is refused by name. */
+/** Each table's declared columns in `cid` order, read in one round trip; a table the schema does not declare is refused by name. */
 async function declaredColumns(run: DbRunContext, home: Home, tables: readonly string[]): Promise<Map<string, string[]>> {
   const batches = await queryBatches(run.io, home, tables.map(tableInfoSelect));
   const columns = new Map<string, string[]>();

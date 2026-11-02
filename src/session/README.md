@@ -58,7 +58,8 @@ that calls `sessionCtx.get`.
 ## Remembering a visitor without an account
 
 For settings, drafts and preferences with no login, `createAnonymousSession` is the whole story. The cookie carries **only an opaque signed session
-id**; the data lives server-side in KV under that id with a sliding TTL.
+id**; the data lives server-side in KV under that id with a sliding TTL. A visit that sets nothing writes no KV record, so the signed cookie's
+expiry, not the KV TTL, limits how long such an id lives.
 
 ```ts
 app.use(

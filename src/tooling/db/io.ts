@@ -1,35 +1,23 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { open } from "node:fs/promises";
+import type { FileHandle } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { delimiter, dirname, join } from "node:path";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 
+import { cutSqlStatements } from "../../storage/backup/split";
+import type { BackupBucket } from "../../storage/backup/types";
 import { retryWithBackoff } from "../../storage/db/retry";
 import type { D1DatabaseLike } from "../../storage/db/types";
 import type { D1RetryPolicy } from "../../storage/db/types";
 import { CliError } from "../cli/errors";
-import { captureStreams } from "../cli/proc";
 import { persistRoot } from "./home";
 import { isReadOnlyBatch } from "./sql";
-import type { DbIo, Home, Spawned, WranglerD1Module } from "./types";
-
-function binDirs(from: string): string[] {
-  const found: string[] = [];
-  for (let dir = from; ; dir = dirname(dir)) {
-    const bin = join(dir, "node_modules", ".bin");
-    if (existsSync(bin)) found.push(bin);
-    if (dirname(dir) === dir) return found;
-  }
-}
+import type { DbIo, Home, WranglerD1Module } from "./types";
 
 interface LocalD1 {
   readonly db: D1DatabaseLike;
-  readonly split: (sql: string) => string[];
+  readonly env: Readonly<Record<string, unknown>>;
   readonly dispose: () => Promise<void>;
-}
-
-function splitLocal(handle: LocalD1, sql: string): string[] {
-  return handle.split(sql).filter((statement) => statement.trim() !== "");
 }
 
 function refuseDeployedHome(home: Home): CliError {
@@ -48,11 +36,60 @@ export function wranglerUnreachable(home: Home, refusal: { readonly missing: str
   return new CliError("external", `wrangler would not load — ${reach}${detail ? `:\n${detail}` : ""}`, { cause: refusal.error });
 }
 
-/** The first export `forge db` needs that a loaded wrangler does not have, or `null` when it has both. @internal */
-export function missingWranglerExport(module: { getPlatformProxy?: unknown; unstable_splitSqlQuery?: unknown }): string | null {
-  if (module.getPlatformProxy === undefined) return "getPlatformProxy";
-  if (module.unstable_splitSqlQuery === undefined) return "unstable_splitSqlQuery";
-  return null;
+/** The export `forge db` needs that a loaded wrangler does not have, or `null` when it has it. @internal */
+export function missingWranglerExport(module: { getPlatformProxy?: unknown }): string | null {
+  return module.getPlatformProxy === undefined ? "getPlatformProxy" : null;
+}
+
+const READ_CHUNK_BYTES = 64 * 1024;
+
+function readStreamFromFile(path: string): ReadableStream<Uint8Array> {
+  const opening = open(path, "r");
+  return new ReadableStream<Uint8Array>({
+    async start() {
+      await opening;
+    },
+    async pull(controller) {
+      const file = await opening;
+      const buffer = new Uint8Array(READ_CHUNK_BYTES);
+      const { bytesRead } = await file.read(buffer, 0, buffer.byteLength, null).catch(async (error: unknown) => {
+        await file.close();
+        throw error;
+      });
+      if (bytesRead > 0) return controller.enqueue(buffer.subarray(0, bytesRead));
+      await file.close();
+      controller.close();
+    },
+    async cancel() {
+      await (await opening).close();
+    },
+  });
+}
+
+async function writeStreamToFile(path: string, body: ReadableStream<Uint8Array>): Promise<void> {
+  const reader = body.getReader();
+  let file: FileHandle;
+  try {
+    // Removed first, so a shorter body never leaves a longer file's tail behind it.
+    rmSync(path, { force: true });
+    file = await open(path, "wx", 0o600);
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  }
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await file.write(value);
+    }
+  } catch (error) {
+    await reader.cancel(error).catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+    await file.close();
+  }
 }
 
 /** The `version` a loaded wrangler `package.json` declares, or `unknown` when it declares none or will not load. @internal */
@@ -62,23 +99,6 @@ export function installedWranglerVersion(load: () => unknown): string {
     return typeof manifest?.version === "string" && manifest.version !== "" ? manifest.version : "unknown";
   } catch {
     return "unknown";
-  }
-}
-
-/** The script a wrangler `package.json` at `manifestPath` names as its `wrangler` bin, or `null` when it names none. @internal */
-export function wranglerScript(manifestPath: string, manifest: unknown): string | null {
-  const bin = (manifest as { bin?: unknown } | null)?.bin;
-  const script = typeof bin === "string" ? bin : (bin as Record<string, unknown> | undefined)?.wrangler;
-  return typeof script === "string" && script !== "" ? join(dirname(manifestPath), script) : null;
-}
-
-function importedWranglerScript(): string | null {
-  try {
-    const require = createRequire(import.meta.url);
-    const manifestPath = require.resolve("wrangler/package.json");
-    return wranglerScript(manifestPath, require(manifestPath));
-  } catch {
-    return null;
   }
 }
 
@@ -93,15 +113,14 @@ export function isD1BusyRefusal(error: unknown): boolean {
 }
 
 async function openLocalD1(home: Home, loadWrangler: () => Promise<WranglerD1Module>): Promise<LocalD1> {
-  // In process, wrangler's own logger writes to this tool's stderr, where a spawned one wrote to a
-  // pipe nothing read. `error` keeps that parity: its chatter never was part of forge's output.
+  // In process, wrangler's own logger writes to this tool's stderr, and its chatter is not forge's output.
   process.env.WRANGLER_LOG ??= "error";
   const wrangler = await loadWrangler().catch((error: unknown) => {
     throw wranglerUnreachable(home, { error });
   });
   const missing = missingWranglerExport(wrangler);
   if (missing !== null) throw wranglerUnreachable(home, { missing });
-  const { getPlatformProxy, unstable_splitSqlQuery } = wrangler as Required<WranglerD1Module>;
+  const { getPlatformProxy } = wrangler as Required<WranglerD1Module>;
   const proxy = await getPlatformProxy<Record<string, D1DatabaseLike>>({
     configPath: home.configPath,
     ...(home.env === null ? {} : { environment: home.env }),
@@ -116,12 +135,11 @@ async function openLocalD1(home: Home, loadWrangler: () => Promise<WranglerD1Mod
     await proxy.dispose();
     throw new CliError("invalid-args", `${home.configPath} declares no d1_databases binding named ${home.binding}`);
   }
-  return { db, split: unstable_splitSqlQuery, dispose: proxy.dispose };
+  return { db, env: proxy.env, dispose: proxy.dispose };
 }
 
-/** The real side effects: node's filesystem, a spawned wrangler, and the process environment. @internal */
+/** The real side effects: node's filesystem, wrangler's in-process D1, and the process environment. @internal */
 export function realDbIo(
-  root: string,
   log: (line: string) => void = (line) => console.error(line),
   // Imported rather than named at the top: wrangler is an optional peer, and a static import would
   // fail a consumer that installed forge without it before any verb could say so.
@@ -150,16 +168,7 @@ export function realDbIo(
     );
   }
 
-  const path = [...binDirs(root), ...binDirs(dirname(fileURLToPath(import.meta.url))), process.env.PATH ?? ""].join(delimiter);
-  // bun 1.4 colourises a pipe, and a failed export quotes the child's output back.
-  const env = { ...process.env, PATH: path, WRANGLER_SEND_METRICS: "false", FORCE_COLOR: "0" };
   return {
-    // `wrangler` is the package forge imports, the one `wranglerVersion` names, never whichever `node_modules/.bin` puts first.
-    spawn(cmd, args, opts): Spawned {
-      const script = cmd === "wrangler" ? importedWranglerScript() : null;
-      const [program, prefix] = script === null ? [cmd, []] : ["node", [script]];
-      return captureStreams(program, [...prefix, ...args], { cwd: opts.cwd, env, maxBuffer: 256 * 1024 * 1024 });
-    },
     async d1(home, sql): Promise<Record<string, unknown>[][]> {
       if (home.persistTo === null) throw refuseDeployedHome(home);
       const key = handleKey(home);
@@ -170,7 +179,7 @@ export function realDbIo(
           // Nothing says workerd's D1 object reopens a database it failed to open, so a retry starts a new one.
           if (tried > 1) await release(key);
           const handle = await reach(home, key);
-          const statements = sql.flatMap((text) => splitLocal(handle, text));
+          const statements = sql.flatMap((text) => cutSqlStatements(text));
           if (statements.length === 0) return [];
           readOnly = isReadOnlyBatch(statements);
           const batch = handle.db.batch<Record<string, unknown>>(statements.map((statement) => handle.db.prepare(statement)));
@@ -189,7 +198,15 @@ export function realDbIo(
     },
     async splitD1(home, sql): Promise<string[]> {
       if (home.persistTo === null) throw refuseDeployedHome(home);
-      return splitLocal(await reach(home, handleKey(home)), sql);
+      return cutSqlStatements(sql);
+    },
+    async bucket(home, binding): Promise<BackupBucket> {
+      if (home.persistTo === null) throw refuseDeployedHome(home);
+      const bucket = (await reach(home, handleKey(home))).env[binding] as Partial<BackupBucket> | undefined;
+      if (typeof bucket?.list !== "function" || typeof bucket.get !== "function") {
+        throw new CliError("invalid-args", `${home.configPath} declares no r2_buckets binding named ${binding}`);
+      }
+      return bucket as BackupBucket;
     },
     async closeD1(home): Promise<void> {
       for (const key of home === null ? [...handles.keys()] : [handleKey(home)]) await release(key);
@@ -197,6 +214,8 @@ export function realDbIo(
     exists: (p) => existsSync(p),
     readText: (p) => readFileSync(p, "utf-8"),
     writeText: (p, text) => writeFileSync(p, text, { encoding: "utf-8", mode: 0o600 }),
+    readStream: (p) => readStreamFromFile(p),
+    writeStream: (p, body) => writeStreamToFile(p, body),
     createExclusive: (p, text) => {
       try {
         writeFileSync(p, text, { encoding: "utf-8", flag: "wx", mode: 0o600 });
@@ -212,6 +231,7 @@ export function realDbIo(
     remove: (p) => rmSync(p, { recursive: true, force: true }),
     mtime: (p) => (existsSync(p) ? statSync(p).mtimeMs : null),
     now: () => new Date(),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     env: process.env,
     fetch: (input, init) => globalThis.fetch(input, init),
     wranglerVersion: () => installedWranglerVersion(() => createRequire(import.meta.url)("wrangler/package.json")),

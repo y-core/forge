@@ -27,6 +27,7 @@ test.beforeAll(async () => {
   write("1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE);");
   write("2_posts.sql", "CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users (id) ON DELETE CASCADE);");
   write("3_keyed.sql", "CREATE TABLE keyed (id BLOB PRIMARY KEY NOT NULL);");
+  write("4_notes.sql", "CREATE TABLE notes (body TEXT NOT NULL);\nINSERT INTO notes (body) VALUES ('BEGIN TRANSACTION; seeded; COMMIT;');");
   write("10_posts_user.sql", "CREATE INDEX posts_user ON posts (user_id);\nCREATE VIEW post_count AS SELECT count(*) AS n FROM posts;");
   db = await openTestD1({ root });
 });
@@ -38,6 +39,10 @@ test.afterAll(async () => {
 
 test("applies the migrations in wrangler's number order, read from the host config", async () => {
   expect(await db.rows("SELECT name FROM sqlite_master WHERE name = 'posts_user'")).toEqual([{ name: "posts_user" }]);
+});
+
+test("applies a migration whose literal holds BEGIN TRANSACTION and COMMIT, the text kept byte for byte", async () => {
+  expect(await db.rows("SELECT body FROM notes")).toEqual([{ body: "BEGIN TRANSACTION; seeded; COMMIT;" }]);
 });
 
 test("refuses a foreign-key violation, with no PRAGMA set", async () => {

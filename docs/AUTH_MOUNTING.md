@@ -247,7 +247,7 @@ mistake, not a request to refuse, so it 500s rather than rendering. An unguarded
 
 **`require-auth`, `require-admin` and `require-approval` are re-checked here and are not taken on trust.** `require-auth` reads the identity off
 `authCtx` and nowhere else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin`
-off that identity and answers through `AuthWebOptions.onForbidden` where one is passed, and with the plain 403 `requireAdmin` gives otherwise.
+off that identity and answers with the `onForbidden` that `requireAdmin` was given, and with the plain 403 where it was given none.
 `require-approval` reads `approvalCtx`, which only an admitting `requireApproval` sets, so an `adminElevate` embed on a route that skips it answers
 404 rather than showing the claim form to a visitor who never presented the code; the claim's own handler refuses the same way. The rest —
 `resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` — need a factor-registry round trip that would cost one

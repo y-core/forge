@@ -145,13 +145,22 @@ function establishedIdentity(context: Parameters<Middleware>[0], guard: string):
   return identity;
 }
 
+function refuseNonAdmin(): Response {
+  return new Response("Forbidden", { status: 403 });
+}
+
+/** The refusal the `requireAdmin` this request passed through gives a non-administrator, published whether or not it admitted the request. @internal */
+export const adminRefusalCtx = contextVar<() => Response | Promise<Response>>("auth.adminRefusal");
+
 /** Refuses a request whose established identity is not an administrator. @public */
 export function requireAdmin<Bindings = Record<string, unknown>>(options: AuthAdminGuardOptions<Bindings> = {}): Middleware {
   const { onForbidden } = options;
   return (context, next) => {
+    const refusal = onForbidden === undefined ? refuseNonAdmin : () => onForbidden(getAppContext<Bindings>(context));
+    adminRefusalCtx.set(context, refusal);
     const identity = establishedIdentity(context, "requireAdmin");
     if (identity.isAdmin) return next();
-    return onForbidden === undefined ? new Response("Forbidden", { status: 403 }) : onForbidden(getAppContext<Bindings>(context));
+    return refusal();
   };
 }
 

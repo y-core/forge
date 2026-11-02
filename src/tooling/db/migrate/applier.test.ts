@@ -109,7 +109,6 @@ describe("applyMigrations()", () => {
   it("reaches the database not at all for an empty list, not even the companion tables", async () => {
     const io = ready(fakeDbIo({}, { now: NOW }));
     await applyMigrations(context(io), HOME, [], { label: "migrate", record: true });
-    expect(io.calls).toEqual([]);
     expect(io.d1Calls).toEqual([]);
     expect(io.files.size).toBe(0);
   });

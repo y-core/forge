@@ -1,214 +1,155 @@
 ---
 title: Database Backups
-description: "The backup artifact: what it holds, the proof both restore routes pass before it exists, what binds it to a schema, the data format and its limits, and what restore and reset check."
+description: "The D1 backup pipeline: D1's own dump in R2 with a sidecar, what a dump cannot carry, the restore ladder, what reset and rehearse rely on, and what an app may expose over HTTP."
 audience: consumer
 ---
 
 # Database Backups
 
-> Owns what `forge db backup`, `forge db restore` and `forge db reset` decide: what an artifact holds, why it is proven before it is written, why
-> forge emits the data itself rather than taking D1's dump, and what each verb checks before it acts. The places a backup is taken from and
-> the undo each place has are [`DATABASE_MANAGEMENT.md`][dm-3] §3's.
+> Owns what a D1 backup is and what each verb that reads one decides: the dump and its sidecar, the census taken before the export, the transports
+> the one pipeline runs on, the restore ladder, and the dump `reset` and `--rehearse` rely on. How to wire the Workflows is
+> [`src/storage/README.md`][storage-readme]'s; the undo each place has is [`DATABASE_MANAGEMENT.md`][dm-3] §3's.
 
 ---
 
 ## 0. Quick Reference
 
-- §1 The Artifact: the directory name, what it holds, and which route restores from each
-- §2 Proven Before Written: both routes replayed into a scratch and compared row by row, and what a backup holds the lock for
-- §3 A Remote Backup Is a Read: no lock, no bookmark, proven into a local scratch
-- §4 Self-Contained and Bound: the embedded migrations, the facts the manifest binds to, and the manifest's own digest
-- §5 The Data Format: why forge writes the rows itself, what the format carries, and the limits that follow
-- §5a What a Backup Costs: the page size, the request per page, the whole-database memory bound, and what `--no-verify` skips
-- §5b Backing Up Through an Export: the route for a database too large to read, what it refuses, and what it blocks
-- §6 Restore and Reset: an empty target only, the whole artifact checked first, and what a reset relies on
+- §1 A Dump and Its Sidecar: D1's own export in R2, the `.json` written beside it that marks it complete, and a copy kept off R2
+- §2 What a Dump Cannot Carry: the hazards the census names, the virtual table that refuses the export, and the exact restore that remains
+- §3 One Pipeline, a Transport per Place: REST for a deployed database, the bindings under `forge cf dev`, and the CLI as a driver
+- §4 The Restore Ladder: Time Travel first, then an import into a new database, then promotion as its own step
+- §4a A Restore Never Targets the Live Database: fresh or empty only, and an import started once
+- §4b What a Restore Checks: the schema digest, the rows per table and the migration head
+- §5 Reset and Rehearse Rely on a Local Dump: the age and the row counts a reset holds a dump to
+- §6 What an App May Expose Over HTTP: backup, listing and restore into a new database yes; promotion and Time Travel no
 
 ---
 
-## 1. The Artifact
+## 1. A Dump and Its Sidecar
 
-`forge db backup` writes a directory named `<database>-<YYYYMMDDTHHMMSSZ>` under `.forge/backups` (or `backupsDir`, or `--out`), holding the files
-below and a directory of migrations. The name is the second the backup began, so a second backup of that database in that second is refused rather
-than written over the first. Every file and directory forge writes under `.forge/` is created readable by the owner alone (`0600` and `0700`), since
-an artifact holds every row the database does.
+**A backup is D1's own SQL export, stored as one R2 object.** `runD1Backup` asks D1 for the export and streams the dump into the bucket at
+`<prefix>/<database id>/<ISO instant>-<bookmark>.sql`. Forge never parses the dump into rows and never writes one itself. The name leads with the
+instant, so a listing sorts by age without reading anything. It carries the Time Travel bookmark the export was taken at.
 
-| File | What it is | Restores by |
-| --- | --- | --- |
-| `schema.sql` | The schema alone, from a schema-only export | `--route full` loads this first, then `data.sql` |
-| `data.sql` | Rows only, for the app's tables and forge's companions — the migration history among them | Both routes: after `migrations/`, or after `schema.sql` |
-| `migrations/` | Every migration the artifact was taken with, under the name the history recorded | `--route migrations` applies exactly these |
-| `manifest.json` | What was read, what it hashes to, and what was proven | Read first by every restore |
+**The sidecar is written after the dump, and its presence is what makes the dump complete.** R2 fixes an object's custom metadata when the object
+is written, and the checksums are only known once the stream has ended. So the facts go in `<same name>.json`, beside the dump. A dump with no
+sidecar is a run that never finished: `listD1Backups` marks it incomplete, and `latestD1Backup`, a restore, `reset` and `--rehearse` each pass over
+it or refuse it. What the sidecar holds is `D1BackupSidecar` in `src/storage/backup/types.ts`.
 
----
+**The size, md5 and sha256 are computed as the dump streams through.** A download shorter than its `Content-Length` aborts the upload and stores
+nothing, and so does one that stalls for `idleTimeoutMs`. md5 is the etag D1's import takes, so a restore never re-reads the dump to compute it.
 
-## 2. Proven Before Written
+**The rows per table are counted from the stream, not from the database.** D1's dumper writes each row as one `INSERT` on one line, escaping a
+newline inside a value. It writes every index, trigger and view after the last row. So a line count is exact at the export's bookmark, which a
+`COUNT(*)` taken beside the export would not be while the app keeps writing.
 
-**Both routes are proven before the artifact is written.** Each is replayed into a throwaway database under `.forge/scratch/`, and compared against
-the source: every row of every app table, every row of forge's companion tables, and a digest of the restored schema's app objects — a merge-join on
-the table's key, not a positional zip. Any of those diverging fails the backup, before any manifest is written — so a directory holding one is a
-directory whose proof passed. The schema comparison covers app objects only, since the `_forge_*` companion **tables** are created by forge on route
-`migrations` rather than declared by any migration — their **rows** are restored, and are compared like any others.
-`--no-verify` skips the proof and records in the manifest that nothing was proven, which `restore` repeats back on the way in.
-
-**A backup is a snapshot, and says so.** On a local target it holds the apply lock (`.forge/db-apply.lock`) for the whole run, so a concurrent
-`migrate` cannot write underneath the read, and a second verb refuses while it is held naming `backup`. `tables[].rows` is the number of rows the
-artifact holds; every table is counted again after the reads and the proof (just before the export, under `--via export`, §5b), and a count
-disagreeing with the rows read refuses the backup naming the table and both numbers — something outside forge wrote during the read. The
-incomplete directory holds no `manifest.json`, so no verb will read it.
+**A dump can leave Cloudflare and come back, checked by sha256 both ways.** `forge db backup pull <key>` streams the dump and its sidecar to disk
+and keeps neither unless the bytes match the sidecar's size and sha256. `forge db backup push <file>` checks the file against its sidecar the same
+way, then uploads both under the dump's own key, refusing a key the bucket already holds. Against a deployed bucket both go through Cloudflare's
+REST object endpoint, which takes at most 300 MiB per upload, so a larger dump goes back through R2's S3 API.
 
 ---
 
-## 3. A Remote Backup Is a Read
+## 2. What a Dump Cannot Carry
 
-`--target remote` or `--target preview` takes no lock and no bookmark: the torn-read count above is the only concurrency guard, and a write during
-the read is refused the same way. Both routes are still proven, into a scratch under `.forge/scratch/` forced to `local` whatever the target —
-nothing in the proof reaches the deployed database. The manifest names the target and carries a warning saying restore is refused for it, which
-`restore` repeats on the way in; the artifact restores into `local`, `standby` or a rehearsal scratch ([`DATABASE_MANAGEMENT.md`][dm-6f] §6f). A
-local `reset` selects the most recent verified artifact by database name alone, so a remote artifact of the same name can be the one it relies on —
-and its rows must still match, or it is refused as stale like any other.
+**Some values do not survive D1's dumper, and the census names them before the export.** It reads every table through the database's own binding
+and counts these per column:
 
----
+- **A text value holding both a real newline and the two characters `\n`.** The dumper writes the newline as `\n` and wraps the value in
+  `replace(…,'\n',char(10))`, which turns the literal `\n` into a newline too.
+- **An integer past ±2^53**, which the dumper rounds through a JavaScript number.
+- **A whole-number REAL in a column without REAL affinity**, which reads back as INTEGER.
 
-## 4. Self-Contained and Bound
+The dump is still stored. The sidecar's `hazards` names each table, column and count, and `forge db backup` prints them as warnings and exits zero.
+A table whose scan fails is recorded `unscanned`, never silently clean. The census runs before the export, so a value written in between can escape
+it.
 
-**An artifact is self-contained.** Route `migrations` replays the SQL the artifact embeds, never the checkout: the manifest lists every migration by
-name and hash, each of which must read back from `migrations/` hashing to what the manifest declares. The app owns every one of those files, so the
-migrations digest the manifest carries is the whole story. This is what makes an artifact restorable from a git checkout years later.
+**A virtual table refuses the backup before the export starts.** D1's dumper throws on `CREATE VIRTUAL TABLE`, so the census refuses it first,
+naming the table.
 
-**A replay records nothing, because the history rides in `data.sql`.** Every `_forge_migrations` row is an ordinary row of an ordinary table, so it
-is read, written and restored like any other — which makes the restore stricter than a rebuilt history could be. The rows come back with the source
-database's own `applied_at`, its certified `fingerprint`, and its explicit `id`, so `ORDER BY id DESC LIMIT 1` picks out the same last row on the
-restored database that it picked on the source, and the fingerprint the Worker reads is the one the source certified
-([`DATABASE_MANAGEMENT.md`][dm-4a] §4a). A replay that also recorded would collide with every one of those rows on the `name` index; it therefore
-applies the bodies and records nothing at all.
-
-The manifest binds the artifact to a schema by the applied migration names, a digest of the app's own schema objects (the same set the
-proof compares; the managed tables are created, not restored), and the migrations digest — and a restore reports every one of them that disagrees
-with the app as it now stands. Every check a restore or a reset makes — the manifest, the artifact's files against their declared hashes, and a
-target that is empty across the app tables and forge's companions alike — runs before the confirmation is asked, so a refused verb never asks. A
-restore that ends with a table not matching its declared digest fails, and there is deliberately no repair path: discard the target and retry from
-an empty one.
-
-**The manifest records whether the source was the schema its own migrations built.** `drift` holds `match`, `mismatch`, `unrecorded` or
-`unavailable` — the state `forge db migrate status` reports, read at the instant the backup was taken. On `mismatch` the run says so on stderr and
-the artifact carries a warning a restore prints back, because every digest in the manifest describes the database **as found**: a backup of a
-drifted database is still worth having, and is exactly what to take before repairing one. What it may not do is pass that schema off as certified —
-the proof compares a restored copy against the source's own digest, so a drifted source proves clean, and `drift` is what says the proof was of the
-schema as found ([`DATABASE_MANAGEMENT.md`][dm-6e] §6e).
-
-**The manifest carries a digest of itself.** `selfDigest` is the SHA-256 of the manifest written with that one field blanked, and a restore refuses
-one whose bytes do not hash to it. It detects truncation, a swapped file and bit rot. **It does not detect tampering**: anyone who edits a manifest
-can recompute the digest. Tamper resistance is a signature, and is out of scope.
+**No exact backup remains, and this is accepted.** Within Time Travel's window, the dump's bookmark restores the database exactly, hazards
+included (§4). Past it, a dump with hazards restores with those values changed, and its sidecar says which.
 
 ---
 
-## 5. The Data Format
+## 3. One Pipeline, a Transport per Place
 
-**Forge emits the data itself rather than taking D1's dump**, because D1's dumper is not injective. It writes a newline as a backslash
-followed by `n`, and reverses that without escaping the backslash — so a value that already contained those two characters comes back as a newline,
-silently. Forge instead writes each row as a single-line `INSERT` naming its columns, with any newline carried on a token that the SQL reverses with
-`replace(…, char(10))`; the token is accepted only after decoding it reproduces the input byte for byte. Naming the columns is what lets an artifact
-load into a schema whose column order differs. A value holding a NUL byte is refused naming the table and the column, since no SQL text can carry
-one.
+**Backup and restore are one set of Workflow steps in `storage/backup`, and only the transport differs.** Against a deployed database the transport
+is D1's REST export and import. Under `forge cf dev` it is the `#relax/d1-transfer` port ([`NAMESPACES.md`][namespaces-5i] §5i): the export is
+miniflare's `PRAGMA miniflare_d1_export` through the database's binding, and the import is one `db.batch` into a standby binding. Every other step
+(the census, the digests, the row count, the sidecar, the validation, the pruning) runs the same code locally as it does deployed. A production
+bundle carries the REST transport alone.
 
-What the format carries, and the limits that follow from it — each refused up front rather than discovered mid-restore:
+**A local dump is named `local-<epoch ms>` in place of a bookmark**, since local D1 keeps no Time Travel.
 
-- **The value types the format carries** are text, finite numbers, NULL and `BLOB`. Both sources are read the same way — a deployed database
-  over D1's REST API, a local one and every scratch restore through the D1 binding in process — with `typeof` beside every value and a BLOB
-  projected as `hex()`, which is decoded and written as `X'hex'`. That is what lets a database with 16-byte BLOB keys (forge's own auth schema)
-  be backed up. A REAL that happens to be integral reaches the read without its point, so the `real` tag writes it as `1.0`; the storage class
-  would otherwise change under a column with no affinity. An integer past 2^53 is refused: it cannot round-trip. A stored `±Infinity` arrives
-  as `null` under a `real` tag from both sources (measured), and is refused for the same reason rather than restored as NULL. Text that is not
-  well-formed UTF-8 — only `char()` in hand-run SQL can write it, since a Worker encodes a lone surrogate as U+FFFD before D1 sees it — arrives
-  from both sources as replacement characters (measured) and the read cannot tell; it restores changed.
-- **No virtual tables.** D1's dumper throws on one, which is also why the linter treats `CREATE VIRTUAL TABLE` as an error
-  ([`DATABASE_MANAGEMENT.md`][dm-5] §5).
-- **No `AUTOINCREMENT` on an app table.** A backup restores keys from the artifact, and an engine-allocated key needs `sqlite_sequence` carried
-  alongside it.
-- **A table whose key has any column declared with a collation other than BINARY is read by `rowid` instead**, since the read seeks past the last
-  key it saw — every column of a composite key compared as one row value — and compares by code point, BINARY's order and no other collation's. A
-  `WITHOUT ROWID` table has no other column to order by and is refused up front, naming the column and its collation. Only the column's own
-  `COLLATE` counts: one inside a `CHECK`, `DEFAULT` or generated expression does not change how the column sorts.
-- **A key collated only inside the `PRIMARY KEY (…)` clause** sorts BINARY, but its index is ordered by that clause's collation and cannot serve
-  the read's order, so a key read would scan and sort the table on every page. A rowid table is read by `rowid` to keep the indexed seek; a
-  `WITHOUT ROWID` table is read by its own key and accepts that scan, which is correct because a key unique under its collation is unique under
-  BINARY too.
-- **A trigger may delete rows.** `schema.sql` is checked statement by statement, and a `CREATE TRIGGER … BEGIN … END` is one statement, so a
-  `DELETE FROM` inside its body is the trigger's and not a row-removal the schema must never carry.
-
-### 5a. What a Backup Costs, and the Size It Stops Suiting
-
-**This is a documented limit, not a defect.** The reader is shaped for a database small enough to read a page at a time, and it is worth knowing
-where that stops. A local database, and every scratch the proof restores into, is read in process; a deployed one is read over D1's REST API.
-
-- **One read per 256 rows.** The page size is set so one page's worst case fits a single query response; against a deployed database a 100k-row
-  table is roughly 400 requests for one pass over it.
-- **Every other read is batched.** The inventory, each table's shape, each key probe and each row count go out as one request carrying many
-  statements, so describing N tables costs two reads rather than 2N.
-- **A route-`full` load is two loads**, `schema.sql` then `data.sql`, each whole.
-- **The whole database is held in memory at once.** Every table is read whole before anything is written, and each is held twice: the canonical rows
-  the artifact is emitted from, and the raw rows the verification compares against. Peak memory therefore tracks the database's size, not the
-  largest table's.
-- **A verified backup reads every row again, once per route.** The proof replays `migrations` and `full` into a scratch and compares row by row
-  (§2). `--no-verify` skips both, at the cost §2 states.
-
-At tens of thousands of rows this is seconds. At millions it is not the right tool: take it `--via export` (§5b), or rely on Time Travel. The
-export holds no rows in memory beyond the `data.sql` text, but it pays off only for a remote source: the scratch it reads back is local whatever the
-target, so a local database pays the same paged reads plus an export and a load. Nor does it compare the rows' contents with the source — only
-their counts and the schema.
-
-### 5b. Backing Up Through an Export
-
-**`forge db backup --via export` has an export write the rows** — `wrangler d1 export --local` for a local database, D1's export endpoint, polled to
-completion and downloaded from its signed URL, for a deployed one — instead of reading them a page at a time. Schema comes from a schema-only export
-and data from a data-only one, so the artifact keeps its layout and `forge db restore` reads it unchanged. The manifest records `via: "export"`, and
-for a deployed database the Time Travel `bookmark` taken just before the export. It is near the exported rows rather than their instant: a write
-landing between the bookmark and the data export is in `data.sql` and not at the bookmark. The manifest's `exporter` records who wrote the SQL: the
-installed wrangler's version for a local database, or the bookmark each of D1's exports was taken at for a deployed one.
-
-**The table digests come from a scratch restore of the export**, read a page at a time and never held whole. Route `migrations` is proven against
-that scratch with both sides paged. Route `full` is proven on the scratch itself, already a route-`full` load, by its schema digest alone. **The
-rows' contents are never compared with the source.** Each table's count, taken just before the export, must equal the rows the export holds, and
-the app schema is read again after the data export and must still match — a check `--no-verify` keeps, because a schema change between the two
-exports leaves `schema.sql` and `data.sql` describing different schemas. The read path checks the schema again after its own schema export,
-so both paths refuse a schema change made during the backup, even under `--no-verify`. A value the export changed in place passes, so the export
-is refused up front wherever D1's dumper is known not to reproduce one:
-
-- **Text holding a `\n` escape beside a real newline, or a `\r` escape beside a real carriage return.** The dumper wraps such a value in a
-  `replace()` that turns the escape into a second control character. A `\n` with no real newline beside it comes through intact.
-- **An integer past ±2^53**, which it rounds to a JavaScript number.
-- **A REAL with no fraction in a column without REAL affinity**, which it writes as an integer — a declared `REAL` column restores it as REAL.
-- **A virtual table**, which the dumper cannot write at all.
-
-One counting query per table finds the first three on the database itself, before anything is exported; the refusal names each column. The
-`sqlite_stat1` rows `ANALYZE` and `PRAGMA optimize` leave are dropped from the export, as they are from every backup.
-
-**An export blocks the database while it runs.** Every other request waits behind it, so take one when traffic allows. Time Travel still covers the
-last 30 days (7 on the free plan) without blocking anything; the export is for a copy that outlives that window or leaves Cloudflare.
+**The CLI drives the Workflows rather than repeating them.** `forge db backup` starts the app's `d1-backup` Workflow and `forge db restore --from`
+its `d1-restore` Workflow, then each follows the instance to its end and prints what the run returned. A deployed database is reached through the
+Cloudflare API, and a local one through the running `forge cf dev` session.
 
 ---
 
-## 6. Restore and Reset
+## 4. The Restore Ladder
 
-A restore loads into an empty database only: it adds rows and never removes them, so a target holding data is refused with the instruction to
-`forge db reset` first. Empty means empty of forge's companion rows too — a target that already holds a migration history cannot take a data-only
-load over it.
+1. **Within Time Travel's window, restore the dump's bookmark.** `forge db bookmark restore --bookmark <bookmark>` returns the database to exactly
+   the state the dump holds, moves no data and prints its own undo ([`DATABASE_MANAGEMENT.md`][dm-3] §3). It is the default whenever it applies.
+2. **Past the window, or to check before going live, import the dump into a new database** with `runD1Restore`, through `forge db restore --from`
+   or the app's own route (§6). The report names every way the result differs from the sidecar (§4b). A restore reads only from the bucket, so a
+   dump kept off R2 is pushed back first with `forge db backup push` (§1).
+3. **Promotion is a separate, deliberate step.** Pointing the app's binding at the restored database changes what every request reads, so nothing in
+   a restore does it. `forge db promote --instance <id>` reads the restore's report, refuses one with a mismatch, and rewrites the binding's
+   `database_id` and `database_name` in the wrangler config once you confirm. It prints the swap-back command, keeps the old database as the
+   fallback, and leaves the deploy to you, since forge drives no deploy.
 
-**A restore checks the whole artifact before it touches the target.** After the manifest is read and before anything is queried, every declared file
-is hashed against its `artifacts[].sha256` — a missing one is the same refusal — and every file is put back through the check that admitted it at
-backup time: `schema.sql` against the schema-only check, `data.sql` against the data-only one. A damaged artifact is refused with no row loaded,
-rather than discovered afterwards, where there is deliberately no repair path.
+### 4a. A Restore Never Targets the Live Database
 
-**An artifact whose `formatVersion` does not match is refused, not misread.** The field is bumped whenever a manifest field changes meaning, and the
-refusal names both numbers and says to take the backup again. There is no converter, pre-1.0.
+**A restore imports into a database it creates, or into an empty standby.** D1's import needs an empty target, and D1 cannot copy one database into
+another. So a restore creates `into.fresh`, or takes `into.standby` and refuses it if it already holds a table. A database of the same name that a
+lost reply already created is adopted, and it is held to the same emptiness check. A dev session cannot create a database, so locally only a standby
+is accepted.
 
-`forge db reset` refuses a database holding rows unless a verified artifact still describes them — not "a backup exists". Every app table's count is
-compared against the manifest's `tables[].rows` first, refusing immediately and naming the table when one differs; only when every count agrees are
-the rows read and each digest compared, which catches an update hiding behind an unchanged count. `--backup <dir>` names the artifact to rely on,
-and `--allow-unbacked` skips all of it.
+**The import's start runs once.** D1 begins importing at `init` when it already holds a file with the dump's md5, so a retried start could import
+the dump twice. The step that starts it has no retries, and a failure fails the run; the target is disposable, so the remedy is a new run into a new
+database. Polling an import already started is retried like any read.
 
+### 4b. What a Restore Checks
+
+The restored database is read back and held to the sidecar. Its schema digest is computed over the same objects in the same way
+(`schemaDigest` in `src/storage/backup/census.ts`). Each table must hold the rows the dump holds. And the last row of `_forge_migrations` must be
+the migration head the census recorded. Each difference is a line in the report's `mismatches`, and `forge db restore` exits non-zero on any.
+`num_queries`, the statement count D1's import answers, is reported and never compared, since what it counts is not documented.
+
+---
+
+## 5. Reset and Rehearse Rely on a Local Dump
+
+**`forge db reset` refuses a database holding rows unless a dump still describes them, not merely because a dump exists.** It reads the newest
+complete dump in the local R2 bucket (`BACKUPS`, or `--bucket`). The dump must be under 24 hours old, and each table's live row count must equal
+the rows its sidecar recorded. Otherwise the reset is refused, naming each table that moved. A count cannot see an update that leaves it unchanged;
+that is the price of a dump forge does not read row by row. `--dump <key>` names the dump to rely on, a dump of another database is refused, and
+`--allow-unbacked` skips all of it.
+
+**`forge db migrate --rehearse` loads a dump into a scratch database before it applies anything** ([`DATABASE_MANAGEMENT.md`][dm-6f] §6f). The load
+is held to the sidecar as a restore is (§4b), and the dump must have been taken at the migration the target is at.
+
+---
+
+## 6. What an App May Expose Over HTTP
+
+`storage/backup` ships functions, not routes. An app may mount these behind its admin guard, with CSRF on each POST
+([`AUTH_MOUNTING.md`][am-2] §2), because none of them changes what the live app reads:
+
+- **Starting a backup**: `env.<WORKFLOW>.create()` on the Workflow that calls `runD1Backup`.
+- **Listing dumps and reading a sidecar**: `listD1Backups`, `latestD1Backup` and `readD1Backup`.
+- **Restoring a dump with `runD1Restore`**, because it only ever imports into a database it creates, or into an empty standby. The live database
+  is never its target, so a stolen admin session can at worst create a database.
+
+These stay on an operator's machine, where the CLI asks first and prints its undo:
+
+- **Promotion**, which points the app's binding at a restored database. Once deployed, it changes what every request reads.
+- **A Time Travel restore**, which rewrites the live database in place, even though it can be undone.
+
+[am-2]: ./AUTH_MOUNTING.md#2-the-route-groups-and-their-guards
 [dm-3]: ./DATABASE_MANAGEMENT.md#3-the-undo-per-place
-[dm-4a]: ./DATABASE_MANAGEMENT.md#4a-_forge_migrations--the-migration-history
-[dm-5]: ./DATABASE_MANAGEMENT.md#5-the-migration-lint-rules
-[dm-6e]: ./DATABASE_MANAGEMENT.md#6e-who-else-holds-the-database-to-its-fingerprint
 [dm-6f]: ./DATABASE_MANAGEMENT.md#6f-rehearsing-against-real-rows
+[namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
+[storage-readme]: ../src/storage/README.md#archiving-a-d1-database-into-r2-on-a-schedule

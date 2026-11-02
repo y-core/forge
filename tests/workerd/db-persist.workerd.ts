@@ -43,7 +43,7 @@ test.beforeAll(async () => {
       2,
     )}\n`,
   );
-  io = realDbIo(root);
+  io = realDbIo();
   const ran = await wrangler(
     [
       "d1",
@@ -111,7 +111,7 @@ test.describe("realDbIo().d1()", () => {
   test("sweeps past an open that fails against a malformed config, raising nothing", async () => {
     const broken = mkdtempSync(join(tmpdir(), "forge-db-persist-broken-"));
     writeFileSync(join(broken, "wrangler.jsonc"), `{ "name": "broken", "d1_databases": [ , ] }\n`);
-    const io = realDbIo(broken);
+    const io = realDbIo();
 
     const call = io.d1({ ...home(join(broken, ".wrangler", "state")), dir: broken, configPath: join(broken, "wrangler.jsonc") }, ["SELECT 1"]);
     const sweep = io.closeD1(null);

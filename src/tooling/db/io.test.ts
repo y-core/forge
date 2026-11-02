@@ -1,12 +1,15 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 
-import { installedWranglerVersion, isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerScript, wranglerUnreachable } from "./io";
-import type { Home, Spawned, WranglerD1Module } from "./types";
+import { unstable_splitSqlQuery } from "wrangler";
+
+import { cutSqlStatements } from "../../storage/backup/split";
+import { installedWranglerVersion, isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
+import type { Home, WranglerD1Module } from "./types";
 
 const roots: string[] = [];
 
@@ -20,26 +23,17 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
-// A child bun, so the assertion is about a real spawn's own outcome rather than about anything this
-// process has arranged around it.
-function spawnFresh(root: string, cmd: string, args: readonly string[], cwd: string): Spawned {
-  const script = `import { realDbIo } from ${JSON.stringify(new URL("./io.ts", import.meta.url).pathname)};
-console.log(JSON.stringify(realDbIo(${JSON.stringify(root)}).spawn(${JSON.stringify(cmd)}, ${JSON.stringify(args)}, { cwd: ${JSON.stringify(cwd)} })));`;
-  const child = Bun.spawnSync(["bun", "-e", script], { cwd: root });
-  return JSON.parse(child.stdout.toString()) as Spawned;
-}
-
 describe("realDbIo() — filesystem", () => {
   it("reads back what it wrote", () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo();
     io.writeText(join(root, "a.sql"), "CREATE TABLE t (a);");
     expect(io.readText(join(root, "a.sql"))).toBe("CREATE TABLE t (a);");
   });
 
   it("writes a file and a directory readable by the owner alone, since a scratch may hold an expanded seed", () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo();
     io.mkdir(join(root, "scratch"));
     io.writeText(join(root, "scratch", "seed.sql"), "x");
     io.createExclusive(join(root, "scratch", "lock"), "x");
@@ -49,16 +43,62 @@ describe("realDbIo() — filesystem", () => {
     ]);
   });
 
+  it("streams a file out in chunks and back in byte for byte, owner-only", async () => {
+    const root = tempRoot();
+    const io = realDbIo();
+    const bytes = Uint8Array.from({ length: 200_000 }, (_, index) => index % 251);
+    writeFileSync(join(root, "dump.sql"), bytes);
+    const chunks: number[] = [];
+    const counted = io.readStream(join(root, "dump.sql")).pipeThrough(
+      new TransformStream<Uint8Array, Uint8Array>({
+        transform(chunk, controller) {
+          chunks.push(chunk.byteLength);
+          controller.enqueue(chunk);
+        },
+      }),
+    );
+    await io.writeStream(join(root, "copy.sql"), counted);
+    expect([chunks.length > 1, Math.max(...chunks) < bytes.byteLength]).toEqual([true, true]);
+    expect(new Uint8Array(readFileSync(join(root, "copy.sql")))).toEqual(bytes);
+    expect(statSync(join(root, "copy.sql")).mode & 0o777).toBe(0o600);
+  });
+
+  it("replaces a longer file whole, leaving none of its tail", async () => {
+    const root = tempRoot();
+    const io = realDbIo();
+    io.writeText(join(root, "copy.sql"), "a much longer body than the next one");
+    await io.writeStream(join(root, "copy.sql"), new Response("short").body as ReadableStream<Uint8Array>);
+    expect(io.readText(join(root, "copy.sql"))).toBe("short");
+  });
+
+  it("cancels the body when the file cannot be opened, and throws the open's error", async () => {
+    const root = tempRoot();
+    const io = realDbIo();
+    let cancelled: unknown = null;
+    const body = new ReadableStream<Uint8Array>({
+      cancel(reason) {
+        cancelled = reason;
+      },
+    });
+    await expect(io.writeStream(join(root, "absent", "copy.sql"), body)).rejects.toThrow("ENOENT");
+    expect(String(cancelled)).toContain("ENOENT");
+  });
+
+  it("errors a read stream over a file that is not there", async () => {
+    const root = tempRoot();
+    await expect(new Response(realDbIo().readStream(join(root, "absent.sql"))).text()).rejects.toThrow("ENOENT");
+  });
+
   it("reports a present path and an absent one", () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo();
     io.writeText(join(root, "a.sql"), "x");
     expect([io.exists(join(root, "a.sql")), io.exists(join(root, "b.sql"))]).toEqual([true, false]);
   });
 
   it("creates a nested directory in one call and lists what is in it", () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo();
     io.mkdir(join(root, "deep", "nested"));
     io.writeText(join(root, "deep", "nested", "0001_init.sql"), "A");
     io.writeText(join(root, "deep", "nested", "0002_next.sql"), "B");
@@ -67,7 +107,7 @@ describe("realDbIo() — filesystem", () => {
 
   it("removes a directory and everything under it, and is silent about one that is not there", () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo();
     io.mkdir(join(root, "state", "d1"));
     io.writeText(join(root, "state", "d1", "db.sqlite"), "x");
     io.remove(join(root, "state"));
@@ -77,7 +117,7 @@ describe("realDbIo() — filesystem", () => {
 
   it("dates a file it can see and answers null for one it cannot", () => {
     const root = tempRoot();
-    const io = realDbIo(root);
+    const io = realDbIo();
     const before = Date.now();
     io.writeText(join(root, "a.sql"), "x");
     const stamped = io.mtime(join(root, "a.sql"));
@@ -86,86 +126,26 @@ describe("realDbIo() — filesystem", () => {
   });
 });
 
-describe("realDbIo() — spawn", () => {
-  it("keeps the two streams apart, so --json output is never mixed with progress", () => {
-    const root = tempRoot();
-    const run = spawnFresh(root, "bun", ["-e", "console.log('out'); console.error('err')"], root);
-    expect(run).toEqual({ code: 0, exited: true, stdout: "out\n", stderr: "err\n" });
-  });
-
-  it("carries the failing exit code through", () => {
-    const root = tempRoot();
-    const run = spawnFresh(root, "bun", ["-e", "process.exit(3)"], root);
-    expect([run.code, run.stdout, run.stderr]).toEqual([3, "", ""]);
-  });
-
-  it("reports a command that is not on the path as a failure with the reason on stderr", () => {
-    const root = tempRoot();
-    const run = spawnFresh(root, "forge-db-not-a-real-command", [], root);
-    expect(run).toEqual({ code: 1, exited: false, stdout: "", stderr: 'Executable not found in $PATH: "forge-db-not-a-real-command"\n' });
-  });
-
-  it("resolves the app's own node_modules/.bin ahead of the ambient path", () => {
-    const root = tempRoot();
-    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
-    writeFileSync(join(root, "node_modules", ".bin", "forge-db-fixture"), "#!/bin/sh\necho local-copy\n", "utf-8");
-    chmodSync(join(root, "node_modules", ".bin", "forge-db-fixture"), 0o755);
-    expect(spawnFresh(root, "forge-db-fixture", [], root)).toEqual({ code: 0, exited: true, stdout: "local-copy\n", stderr: "" });
-  });
-
-  it("resolves the nearest node_modules/.bin first when several lie on the way up", () => {
-    const outer = tempRoot();
-    const app = join(outer, "app");
-    for (const [at, answer] of [
-      [outer, "far"],
-      [app, "near"],
-    ] as const) {
-      mkdirSync(join(at, "node_modules", ".bin"), { recursive: true });
-      writeFileSync(join(at, "node_modules", ".bin", "forge-db-nearest"), `#!/bin/sh\necho ${answer}\n`, "utf-8");
-      chmodSync(join(at, "node_modules", ".bin", "forge-db-nearest"), 0o755);
-    }
-    expect(spawnFresh(app, "forge-db-nearest", [], app)).toEqual({ code: 0, exited: true, stdout: "near\n", stderr: "" });
-  });
-
-  it("runs the wrangler forge imports, never the app's node_modules/.bin copy", () => {
-    const imported = JSON.parse(readFileSync(fileURLToPath(import.meta.resolve("wrangler/package.json")), "utf-8")) as { version: string };
-    const root = tempRoot();
-    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
-    writeFileSync(join(root, "node_modules", ".bin", "wrangler"), "#!/bin/sh\necho app-copy\n", "utf-8");
-    chmodSync(join(root, "node_modules", ".bin", "wrangler"), 0o755);
-    const run = spawnFresh(root, "wrangler", ["--version"], root);
-    expect(run.code).toBe(0);
-    expect(run.stdout).not.toContain("app-copy");
-    expect(run.stdout).toContain(imported.version);
-  });
-
-  it("turns wrangler's metrics prompt off in the child's environment", () => {
-    const root = tempRoot();
-    const run = spawnFresh(root, "bun", ["-e", "console.log(process.env.WRANGLER_SEND_METRICS)"], root);
-    expect(run.stdout).toBe("false\n");
-  });
-
-  it("runs in the directory it was given, not the one the test process is in", () => {
-    const root = tempRoot();
-    const run = spawnFresh(tempRoot(), "bun", ["-e", "console.log(process.cwd())"], root);
-    expect(run.stdout.trim()).toBe(root);
-  });
-});
-
 describe("realDbIo() — ambient", () => {
   it("exposes the process environment unchanged, so a seed reads the same variables the shell has", () => {
-    expect(realDbIo(tempRoot()).env.PATH).toBe(process.env.PATH);
+    expect(realDbIo().env.PATH).toBe(process.env.PATH);
   });
 
   it("routes progress to the sink it was handed rather than to stdout", () => {
     const lines: string[] = [];
-    realDbIo(tempRoot(), (line) => lines.push(line)).log("copying 0001_init.sql");
+    realDbIo((line) => lines.push(line)).log("copying 0001_init.sql");
     expect(lines).toEqual(["copying 0001_init.sql"]);
   });
 
   it("reads the clock rather than a fixed instant", () => {
-    const now = realDbIo(tempRoot()).now();
+    const now = realDbIo().now();
     expect(Math.abs(now.getTime() - Date.now())).toBeLessThan(5000);
+  });
+
+  it("waits on the real clock", async () => {
+    const before = performance.now();
+    await realDbIo().sleep(20);
+    expect(performance.now() - before).toBeGreaterThanOrEqual(15);
   });
 });
 
@@ -194,7 +174,6 @@ let holdOpen: ((error: Error) => void) | null = null;
 
 const loadFakeWrangler = async (): Promise<WranglerD1Module> => ({
   getPlatformProxy: platformProxy as unknown as Required<WranglerD1Module>["getPlatformProxy"],
-  unstable_splitSqlQuery: (sql: string) => sql.split(";"),
 });
 
 function platformProxy(options: Record<string, unknown>) {
@@ -248,25 +227,6 @@ describe("wranglerUnreachable()", () => {
   });
 });
 
-describe("wranglerScript()", () => {
-  it("resolves the wrangler bin of a map against the manifest's directory", () => {
-    expect(wranglerScript("/m/node_modules/wrangler/package.json", { bin: { wrangler: "./bin/wrangler.js" } })).toBe(
-      "/m/node_modules/wrangler/bin/wrangler.js",
-    );
-  });
-
-  it("resolves a bin given as one string", () => {
-    expect(wranglerScript("/m/wrangler/package.json", { bin: "cli.js" })).toBe("/m/wrangler/cli.js");
-  });
-
-  it("answers null for a manifest naming no wrangler bin", () => {
-    expect(wranglerScript("/m/package.json", {})).toBeNull();
-    expect(wranglerScript("/m/package.json", { bin: { other: "x.js" } })).toBeNull();
-    expect(wranglerScript("/m/package.json", { bin: "" })).toBeNull();
-    expect(wranglerScript("/m/package.json", null)).toBeNull();
-  });
-});
-
 describe("installedWranglerVersion()", () => {
   it("answers the version the package declares", () => {
     expect(installedWranglerVersion(() => ({ name: "wrangler", version: "4.151.2" }))).toBe("4.151.2");
@@ -286,31 +246,15 @@ describe("installedWranglerVersion()", () => {
     expect(installedWranglerVersion(() => null)).toBe("unknown");
   });
 
-  it("reads the version of the wrangler forge imports through realDbIo, never the app's own wrangler package or CLI", () => {
+  it("reads the version of the wrangler forge imports through realDbIo", () => {
     const imported = JSON.parse(readFileSync(fileURLToPath(import.meta.resolve("wrangler/package.json")), "utf-8")) as { version: string };
-    const root = tempRoot();
-    mkdirSync(join(root, "node_modules", "wrangler"), { recursive: true });
-    mkdirSync(join(root, "node_modules", ".bin"), { recursive: true });
-    writeFileSync(join(root, "node_modules", "wrangler", "package.json"), JSON.stringify({ name: "wrangler", version: "0.0.1-app" }));
-    writeFileSync(join(root, "node_modules", ".bin", "wrangler"), "#!/bin/sh\necho 0.0.1-app\n");
-    chmodSync(join(root, "node_modules", ".bin", "wrangler"), 0o755);
-    expect(realDbIo(root).wranglerVersion()).toBe(imported.version);
+    expect(realDbIo().wranglerVersion()).toBe(imported.version);
   });
 });
 
 describe("missingWranglerExport()", () => {
-  it("names the half a wrangler exporting only getPlatformProxy is missing", () => {
-    const missing = missingWranglerExport({ getPlatformProxy: () => undefined });
-    expect(wranglerUnreachable(localHome("/app"), { missing: missing ?? "" }).message).toBe(
-      "wrangler is not installed, or is too old to export unstable_splitSqlQuery — `forge db` reaches local (app-db) through it",
-    );
-  });
-
-  it("names getPlatformProxy first, and answers null for a wrangler exporting both", () => {
-    expect([
-      missingWranglerExport({ unstable_splitSqlQuery: () => [] }),
-      missingWranglerExport({ getPlatformProxy: () => undefined, unstable_splitSqlQuery: () => [] }),
-    ]).toEqual(["getPlatformProxy", null]);
+  it("names getPlatformProxy for a wrangler without it, and answers null for one exporting it", () => {
+    expect([missingWranglerExport({}), missingWranglerExport({ getPlatformProxy: () => undefined })]).toEqual(["getPlatformProxy", null]);
   });
 });
 
@@ -319,7 +263,7 @@ describe("realDbIo() — the local D1 port", () => {
     const root = tempRoot();
     const cause = new Error("Cannot find module 'wrangler'");
     const opensBefore = opens;
-    const io = realDbIo(root, undefined, () => Promise.reject(cause));
+    const io = realDbIo(undefined, () => Promise.reject(cause));
     await expect(io.d1(localHome(root), ["SELECT 1"])).rejects.toMatchObject({
       kind: "external",
       message: wranglerUnreachable(localHome(root), { error: cause }).message,
@@ -329,7 +273,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("opens the binding over the home's own `v3` state, with remote bindings off", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.closeD1(null);
 
@@ -345,7 +289,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("opens one handle for repeated calls against the same state, and none after it is closed", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.d1(localHome(root), ["SELECT 2"]);
@@ -360,7 +304,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("opens a separate handle for a home naming different config or a different environment", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.d1({ ...localHome(root), configPath: join(root, "wrangler.other.jsonc") }, ["SELECT 1"]);
@@ -378,7 +322,7 @@ describe("realDbIo() — the local D1 port", () => {
   it("keeps no handle for an open that failed, and sweeps past it to release the ones that opened", async () => {
     const failing = tempRoot();
     const working = tempRoot();
-    const io = realDbIo(failing, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
 
     refuseOpen = true;
     await expect(io.d1(localHome(failing), ["SELECT 1"])).rejects.toThrow("Unexpected token }");
@@ -395,7 +339,7 @@ describe("realDbIo() — the local D1 port", () => {
 
   it("refuses a deployed home, which nothing reaches in process", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
     );
@@ -403,26 +347,17 @@ describe("realDbIo() — the local D1 port", () => {
 });
 
 describe("realDbIo() — splitD1", () => {
-  it("answers wrangler's split over the home's handle, with blank statements dropped", async () => {
+  it("answers the cut d1 runs, with blank statements dropped, and opens no handle to make it", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
-    expect(await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);  ;\nDROP VIEW v;")).toEqual(["INSERT INTO t VALUES (1)", "\nDROP VIEW v"]);
-    await io.closeD1(null);
-  });
-
-  it("opens one handle for a split and a batch against the same state", async () => {
-    const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
-    const [opened0, batched0] = [opens, batches.length];
-    const [statement = ""] = await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);");
-    await io.d1(localHome(root), [statement]);
-    expect([opens - opened0, batches.slice(batched0)]).toEqual([1, [["INSERT INTO t VALUES (1)"]]]);
-    await io.closeD1(null);
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const opened0 = opens;
+    expect(await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);  ;\nDROP VIEW v;")).toEqual(["INSERT INTO t VALUES (1)", "DROP VIEW v"]);
+    expect(opens - opened0).toBe(0);
   });
 
   it("refuses a deployed home with the words d1 refuses it in", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     const opened0 = opens;
     await expect(io.splitD1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, "SELECT 1;")).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
@@ -445,7 +380,7 @@ describe("isD1BusyRefusal()", () => {
 describe("realDbIo() — a batch refused for the lock", () => {
   it("disposes the refused handle and replays the batch on a new one", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
     refusals = [BUSY_REFUSAL];
     expect(await io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).toEqual([[]]);
@@ -459,7 +394,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
 
   it("replays a read batch on a new handle even after the handle has answered", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
     refusals = [BUSY_REFUSAL];
@@ -470,7 +405,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
 
   it("never replays a write batch on a handle that has already answered", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     const [opened0, batched0] = [opens, batches.length];
     refusals = [BUSY_REFUSAL];
@@ -481,11 +416,78 @@ describe("realDbIo() — a batch refused for the lock", () => {
 
   it("does not retry a first batch that failed on its SQL", async () => {
     const root = tempRoot();
-    const io = realDbIo(root, undefined, loadFakeWrangler);
+    const io = realDbIo(undefined, loadFakeWrangler);
     const [opened0, batched0] = [opens, batches.length];
     refusals = ["D1_ERROR: no such table: t: SQLITE_ERROR"];
     await expect(io.d1(localHome(root), ["INSERT INTO t VALUES (1)"])).rejects.toThrow("no such table: t");
     expect([opens - opened0, batches.length - batched0]).toEqual([1, 1]);
+    await io.closeD1(null);
+  });
+});
+
+describe("cutSqlStatements() against wrangler's splitter", () => {
+  const repo = fileURLToPath(new URL("../../../", import.meta.url));
+  const corpus = ["src/auth", "tests/fixtures"]
+    .flatMap((dir) => readdirSync(join(repo, dir), { recursive: true }).map((path) => `${dir}/${String(path)}`))
+    .filter((path) => path.endsWith(".sql") && !path.includes("/.forge/"))
+    .sort();
+  const seed = [
+    "-- users the dev session signs in as",
+    "INSERT INTO users (id, email) VALUES (1, 'ada@example.com');",
+    "INSERT INTO users (id, email) VALUES (2, 'grace@example.com'); -- trailing note",
+    "/* roles */ UPDATE users SET role = 'admin' WHERE id = 1;",
+  ].join("\n");
+  const dump = [
+    "PRAGMA defer_foreign_keys=TRUE;",
+    'CREATE TABLE "notes" (id INTEGER PRIMARY KEY, body TEXT);',
+    "CREATE TRIGGER notes_ai AFTER INSERT ON notes BEGIN\n  UPDATE notes SET body = trim(body) WHERE id = new.id;\nEND;",
+    `INSERT INTO "notes" ("id","body") VALUES(1,replace('line one\\nline; two','\\n',char(10)));`,
+    `INSERT INTO "notes" ("id","body") VALUES(2,'it''s -- not a comment; nor /* this */');`,
+  ].join("\n");
+
+  // Wrangler hands text holding one statement back whole, `;` and trailing space included, where the
+  // cut trims it the way it trims every other: D1 prepares both the same.
+  const wranglerCut = (sql: string): string[] => {
+    const cut = unstable_splitSqlQuery(sql);
+    return cut.length === 1 ? cut.map((statement) => statement.trim().replace(/;$/, "")) : cut;
+  };
+
+  it("reads a corpus holding the auth schema and a migration with a trigger", () => {
+    expect(corpus).toContain("src/auth/schema.sql");
+    expect(corpus.some((path) => /CREATE TRIGGER/i.test(readFileSync(join(repo, path), "utf-8")))).toBe(true);
+  });
+
+  it("cuts a seed with leading and trailing comments as wrangler does", () => {
+    expect(cutSqlStatements(seed)).toEqual(wranglerCut(seed));
+  });
+
+  for (const path of corpus) {
+    it(`cuts ${path} as wrangler does`, () => {
+      const sql = readFileSync(join(repo, path), "utf-8");
+      expect(cutSqlStatements(sql)).toEqual(wranglerCut(sql));
+    });
+  }
+
+  it("cuts a dump with a trigger and escaped newlines as wrangler does", () => {
+    expect(cutSqlStatements(dump)).toEqual(wranglerCut(dump));
+    expect(cutSqlStatements(dump)).toHaveLength(5);
+  });
+
+  it("diverges only where a literal holds BEGIN TRANSACTION and COMMIT, which wrangler deletes and the cut keeps", () => {
+    const literal = "INSERT INTO notes (body) VALUES ('BEGIN TRANSACTION; then COMMIT; done');\nSELECT 1;";
+    expect(unstable_splitSqlQuery(literal)).toEqual(["INSERT INTO notes (body) VALUES (' then  done')", "SELECT 1"]);
+    expect(cutSqlStatements(literal)).toEqual(["INSERT INTO notes (body) VALUES ('BEGIN TRANSACTION; then COMMIT; done')", "SELECT 1"]);
+  });
+});
+
+describe("realDbIo() — a literal holding transaction text", () => {
+  it("batches a seed whose literal holds BEGIN TRANSACTION and COMMIT byte for byte", async () => {
+    const root = tempRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const insert = "INSERT INTO notes (body) VALUES ('BEGIN TRANSACTION; step; COMMIT;')";
+    const batched0 = batches.length;
+    await io.d1(localHome(root), [`${insert};\n${insert};`]);
+    expect(batches.slice(batched0)).toEqual([[insert, insert]]);
     await io.closeD1(null);
   });
 });

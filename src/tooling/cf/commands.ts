@@ -3,6 +3,7 @@ import type { CliContext, CommandBase } from "../cli/types";
 import { createSyncAccountCommand, runSyncAccount, SYNC_ACCOUNT_DESCRIPTION, syncAccountFlags } from "./account/commands";
 import { createDevCommand } from "./dev/command";
 import { createGenEnvCommand } from "./gen/cf-env-command";
+import { createSyncLifecycleCommand } from "./lifecycle/commands";
 import { createSyncZoneCommand } from "./zone/commands";
 
 type LooseFlags = Record<string, string | string[] | boolean | undefined>;
@@ -24,6 +25,7 @@ export function createCfCommands(): CommandBase {
   });
   addCommand(sync, createSyncAccountCommand());
   addCommand(sync, createSyncZoneCommand());
+  addCommand(sync, createSyncLifecycleCommand());
   addCommand(cf, sync);
 
   const gen = createCommand({ name: "gen", description: "Generate a typed module from Cloudflare configuration" });

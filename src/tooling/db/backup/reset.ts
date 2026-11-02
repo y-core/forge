@@ -1,89 +1,18 @@
-import { join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { CliError } from "../../cli/errors";
 import { sharedD1Databases } from "../config";
-import { queryBatches, queryRows } from "../d1";
 import { persistRoot } from "../home";
-import { INVENTORY_SELECT, rowCountSelect, toSchemaObjects } from "../sql";
+import { classifyTable } from "../sql";
 import { isRemotePlace } from "../target";
-import type { BackupManifest, DbRunContext } from "../types";
-import { classifyTable, isVerifiedBackupOf, validateManifest, verifyBackupArtifact } from "./artifact";
-import { resolveBackupsDir } from "./backup";
-import { describeTables, digestWholeTable } from "./read";
-import { readBackupManifest } from "./restore";
+import type { DbRunContext } from "../types";
+import { compareRowCounts, liveRowCounts, readLocalDump, resolveDumpSource } from "./dumps";
 import type { ResetOptions, ResetOutcome, ResetPlan } from "./types";
 
-interface BackupSelection {
-  readonly directory: string;
-  readonly path: string;
-  readonly manifest: BackupManifest;
-}
+/** How old a dump may be for a reset to rely on it. @internal */
+export const RESET_DUMP_MAX_AGE_MS = 24 * 60 * 60_000;
 
-function latestVerified(run: DbRunContext, database: string): BackupSelection | null {
-  const root = resolveBackupsDir(run);
-  if (!run.io.exists(root)) return null;
-  let found: BackupSelection | null = null;
-  for (const entry of run.io.readDir(root).sort()) {
-    const path = join(root, entry, "manifest.json");
-    if (!run.io.exists(path)) continue;
-    try {
-      const parsed: unknown = JSON.parse(run.io.readText(path));
-      if (validateManifest(parsed).length > 0) continue;
-      if (isVerifiedBackupOf(parsed as BackupManifest, database)) {
-        found = { directory: entry, path: join(root, entry), manifest: parsed as BackupManifest };
-      }
-    } catch {
-      continue;
-    }
-  }
-  return found;
-}
-
-/** The most recent artifact naming this database whose own run proved it rebuilds. @public */
-export function findVerifiedBackup(run: DbRunContext, database: string): string | null {
-  return latestVerified(run, database)?.directory ?? null;
-}
-
-function selectBackup(run: DbRunContext, database: string, rows: number, artifact: string | undefined): BackupSelection {
-  if (artifact === undefined) {
-    const found = latestVerified(run, database);
-    if (found === null) {
-      throw new CliError(
-        "invalid-args",
-        `${database} holds ${rows} rows and no verified backup of it exists under ${resolveBackupsDir(run)} — run \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
-      );
-    }
-    return found;
-  }
-
-  const directory = resolve(run.config.root, artifact);
-  const manifest = readBackupManifest(run, directory);
-  if (!isVerifiedBackupOf(manifest, database)) {
-    throw new CliError(
-      "invalid-args",
-      manifest.database.name === database
-        ? `${directory} was taken from ${database} and its own run never proved it rebuilds — a reset relies on an artifact that did`
-        : `${directory} was taken from ${manifest.database.name} and this target is ${database}`,
-    );
-  }
-  return { directory, path: directory, manifest };
-}
-
-function compareCounts(manifest: BackupManifest, counts: ReadonlyMap<string, number>): string[] {
-  const problems: string[] = [];
-  const declared = new Map(manifest.tables.map((table) => [table.name, table.rows]));
-  for (const [name, count] of [...counts].sort()) {
-    const held = declared.get(name);
-    if (held === undefined) problems.push(`${name} holds ${count} row(s) and the artifact does not carry it at all`);
-    else if (held !== count) problems.push(`${name}: the artifact holds ${held} row(s) and the database now holds ${count}`);
-  }
-  for (const table of manifest.tables) {
-    if (!counts.has(table.name)) problems.push(`${table.name} is in the artifact and this database no longer declares it`);
-  }
-  return problems;
-}
-
-/** Everything a reset checks before it asks: the target, the state directory, its rows, and the artifact that proves them recoverable. @public */
+/** Everything a reset checks before it asks: the target, the state directory, its rows, and the R2 dump that proves them recoverable. @public */
 export async function prepareReset(run: DbRunContext, options: ResetOptions): Promise<ResetPlan> {
   const { io, home, config } = run;
   if (isRemotePlace(config.target.place)) {
@@ -110,33 +39,28 @@ export async function prepareReset(run: DbRunContext, options: ResetOptions): Pr
   const state = join(persistRoot(home), "d1", "miniflare-D1DatabaseObject");
   if (!io.exists(state)) return { database: home.database, state: null, rows: 0, backedUpBy: null };
 
-  const objects = toSchemaObjects(await queryRows(io, home, INVENTORY_SELECT));
-  const appTables = objects.filter((object) => object.type === "table" && classifyTable(object.name) === "app").map((object) => object.name);
-  const counted = await queryBatches(io, home, appTables.map(rowCountSelect));
-  const counts = new Map<string, number>(appTables.map((name, index) => [name, Number(counted[index]?.[0]?.rows ?? 0)]));
-  const rows = [...counts.values()].reduce((total, count) => total + count, 0);
+  const counts = await liveRowCounts(run, home);
+  const rows = [...counts].filter(([name]) => classifyTable(name) === "app").reduce((total, [, count]) => total + count, 0);
 
   let backedUpBy: string | null = null;
   if (rows > 0 && !options.allowUnbacked) {
-    const selected = selectBackup(run, home.database, rows, options.backup);
-    verifyBackupArtifact(io, selected.path, selected.manifest);
-    const stale = compareCounts(selected.manifest, counts);
-    if (stale.length === 0) {
-      const digests = new Map(selected.manifest.tables.map((table) => [table.name, table.digest]));
-      for (const table of await describeTables(io, home, [...counts.keys()].sort())) {
-        const read = await digestWholeTable(io, home, table);
-        if (digests.get(table.name) !== read.digest) {
-          stale.push(`${table.name}: ${read.rows} row(s) in both, and their contents differ`);
-        }
-      }
-    }
+    const unbacked = "Run `forge db backup` first, or pass --allow-unbacked if this database is genuinely disposable";
+    const source = resolveDumpSource(run, { bucket: options.bucket, prefix: options.prefix });
+    const sidecar = await readLocalDump(run, source, options.dump).catch((error: unknown) => {
+      throw error instanceof CliError ? new CliError("invalid-args", `${home.database} holds ${rows} rows and ${error.message}`) : error;
+    });
+    const age = io.now().getTime() - Date.parse(sidecar.takenAt);
+    const stale = compareRowCounts(sidecar, counts);
+    if (!Number.isFinite(age) || age < 0) stale.unshift(`its takenAt ${JSON.stringify(sidecar.takenAt)} is not an instant in the past`);
+    else if (age > RESET_DUMP_MAX_AGE_MS)
+      stale.unshift(`it was taken ${sidecar.takenAt}, more than ${RESET_DUMP_MAX_AGE_MS / 3_600_000} hours ago`);
     if (stale.length > 0) {
       throw new CliError(
         "invalid-args",
-        `${selected.directory} no longer describes ${home.database}, so it does not prove these ${rows} rows are recoverable:\n  ${stale.join("\n  ")}\nRun \`forge db backup\` first, or pass --allow-unbacked if this database is genuinely disposable`,
+        `${sidecar.key} no longer describes ${home.database}, so it does not prove these ${rows} rows are recoverable:\n  ${stale.join("\n  ")}\n${unbacked}`,
       );
     }
-    backedUpBy = selected.directory;
+    backedUpBy = sidecar.key;
   }
 
   return { database: home.database, state, rows, backedUpBy };

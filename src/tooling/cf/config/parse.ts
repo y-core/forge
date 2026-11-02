@@ -21,6 +21,10 @@ const D1DatabaseSchema = v.looseObject({
 });
 
 const ENVIRONMENT_ENTRIES = {
+  r2_buckets: v.optional(v.array(v.looseObject({ binding: v.string() }))),
+  workflows: v.optional(
+    v.array(v.looseObject({ name: v.string(), binding: v.string(), class_name: v.string(), script_name: v.optional(v.string()) })),
+  ),
   name: v.optional(v.string()),
   main: v.optional(v.string()),
   compatibility_date: v.optional(v.string()),
@@ -62,7 +66,6 @@ const WranglerConfigSchema = v.looseObject(
     ),
     vars: v.optional(v.record(v.string(), v.unknown())),
     kv_namespaces: v.optional(v.array(v.looseObject({ binding: v.string() }))),
-    r2_buckets: v.optional(v.array(v.looseObject({ binding: v.string() }))),
     queues: v.optional(
       v.looseObject({
         producers: v.optional(v.array(v.looseObject({ binding: v.string() }))),

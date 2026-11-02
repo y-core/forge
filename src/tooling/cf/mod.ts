@@ -67,3 +67,4 @@ export type {
 } from "./types";
 export { ACTION_LABELS, RESOURCE_TYPES } from "./types";
 export { createSyncZoneCommand, planZoneRules, rulesInSync } from "./zone/commands";
+export { createSyncLifecycleCommand } from "./lifecycle/commands";

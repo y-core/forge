@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import type { WranglerConfig } from "../cf/types";
 import { CliError } from "../cli/errors";
-import { timeTravelInfo, timeTravelRestore } from "./bookmark";
+import { describeBookmarkUndo, timeTravelInfo, timeTravelRestore } from "./bookmark";
 import { cfEnvelope, cfRefusal, fakeDbIo, REMOTE_AUTH } from "./db.fixture";
 import type { DbConfig, FakeDbIo, Home } from "./types";
 
@@ -31,6 +31,7 @@ const PREVIEW = home({ label: "preview", place: "preview", databaseId: "1a2b3c4d
 const BASE = `https://api.cloudflare.com/client/v4/accounts/acct/d1/database/${DB_ID}`;
 const BOOKMARK = "00000085-0000027c-00004f1e-90dbd1f2b0a54cfd";
 const PREVIOUS = "00000084-0000027b-00004f1d-80dbd1f2b0a54cfd";
+const BEFORE = "00000084-0000027a-00004f1c-70dbd1f2b0a54cfd";
 
 const CONFIG: DbConfig = {
   root: "/app",
@@ -48,7 +49,6 @@ function ioAnswering(reply: Response): FakeDbIo {
 }
 
 const infoReplying = (bookmark: string) => ioAnswering(cfEnvelope({ bookmark }));
-const restoreReplying = (previous: string) => ioAnswering(cfEnvelope({ bookmark: BOOKMARK, previous_bookmark: previous, message: "Restored" }));
 
 /** Splits a printed command the way a POSIX shell would, honouring single quotes. */
 function splitArgs(command: string): string[] {
@@ -159,14 +159,33 @@ describe("timeTravelInfo()", () => {
   });
 });
 
+const AFTER_GAP = "that bookmark was read just before the restore, so an undo to it loses any write that landed in between";
+
+/** Answers the pre-read with `before` and the restore with `restore`, routed by path. */
+function restoreIo(restore: () => Response, before: () => Response = () => cfEnvelope({ bookmark: BEFORE })): FakeDbIo {
+  const io = fakeDbIo({});
+  io.restRules.push({ match: (url) => new URL(url).pathname.endsWith("/time_travel/bookmark"), reply: before });
+  io.restRules.push({ match: (url) => new URL(url).pathname.endsWith("/time_travel/restore"), reply: restore });
+  return io;
+}
+
+const restoreReplying = (previous: string) => restoreIo(() => cfEnvelope({ bookmark: BOOKMARK, previous_bookmark: previous, message: "Restored" }));
+
+const restoreCalls = (io: FakeDbIo) => io.restCalls.filter((call) => call.url.includes("/time_travel/restore"));
+
 describe("timeTravelRestore()", () => {
-  it("restores to a bookmark and returns the undo built from the bookmark it held before", async () => {
+  it("reads the bookmark first, restores, and returns the undo built from the bookmark D1 says it left", async () => {
     const io = restoreReplying(PREVIOUS);
     expect(await timeTravelRestore(io, home(), { bookmark: BOOKMARK })).toEqual({
       bookmark: PREVIOUS,
       restoreCommand: `forge db bookmark restore --target remote --bookmark ${PREVIOUS}`,
+      from: "restore",
+      replyReadable: true,
     });
-    expect(io.restCalls[0]).toMatchObject({ method: "POST", url: `${BASE}/time_travel/restore?bookmark=${BOOKMARK}`, body: null });
+    expect(io.restCalls.map((call) => [call.method, call.url, call.body])).toEqual([
+      ["GET", `${BASE}/time_travel/bookmark`, null],
+      ["POST", `${BASE}/time_travel/restore?bookmark=${BOOKMARK}`, null],
+    ]);
   });
 
   it("aims the undo with the run's config", async () => {
@@ -179,7 +198,112 @@ describe("timeTravelRestore()", () => {
     const io = restoreReplying(PREVIOUS);
     const undo = await timeTravelRestore(io, PREVIEW, { timestamp: "2026-09-01T00:00:00Z" });
     expect(undo.restoreCommand).toBe(`forge db bookmark restore --target preview --bookmark ${PREVIOUS}`);
-    expect(io.restCalls[0]?.url).toEndWith("/time_travel/restore?timestamp=2026-09-01T00%3A00%3A00.000Z");
+    expect(restoreCalls(io)[0]?.url).toEndWith("/time_travel/restore?timestamp=2026-09-01T00%3A00%3A00.000Z");
+  });
+
+  it("falls back to the bookmark read first when D1's reply names none", async () => {
+    const io = restoreIo(() => cfEnvelope({}));
+    expect(await timeTravelRestore(io, home(), { bookmark: BOOKMARK }, CONFIG)).toEqual({
+      bookmark: BEFORE,
+      restoreCommand: `forge db bookmark restore --target remote --bookmark ${BEFORE} --root '/app' --config '/app/wrangler.jsonc' --db 'DB' -e 'staging'`,
+      from: "pre-read",
+      replyReadable: true,
+    });
+  });
+
+  it("answers an accepted restore whose reply is unreadable as restored, with the undo to the bookmark read first", async () => {
+    for (const reply of [
+      () => cfEnvelope({ bookmark: BOOKMARK, previous_bookmark: "$(rm -rf /)" }),
+      () => cfEnvelope({ previous_bookmark: 42 }),
+      () => new Response("<html>ok</html>", { status: 200 }),
+    ]) {
+      const undo = await timeTravelRestore(restoreIo(reply), home(), { bookmark: BOOKMARK });
+      expect(undo).toEqual({
+        bookmark: BEFORE,
+        restoreCommand: `forge db bookmark restore --target remote --bookmark ${BEFORE}`,
+        from: "pre-read",
+        replyReadable: false,
+      });
+    }
+  });
+
+  it("reports a restore whose transport failed after sending as one that may have restored, naming the undo read first", async () => {
+    const io = restoreIo(() => {
+      throw new Error("connection reset");
+    });
+    const error = await capture(() => timeTravelRestore(io, home(), { bookmark: BOOKMARK }));
+    expect([error.kind, error.message]).toEqual([
+      "external",
+      `time-travel restore against remote (app-db) may have restored: Network error: connection reset. Undo with: forge db bookmark restore --target remote --bookmark ${BEFORE} — ${AFTER_GAP}`,
+    ]);
+    expect(restoreCalls(io)).toHaveLength(1);
+  });
+
+  it("reports a restore answered by a 5xx as one that may have restored, and a 4xx as not restored", async () => {
+    const gateway = restoreIo(() => cfRefusal(10001, "Bad gateway", 502));
+    const failed = await capture(() => timeTravelRestore(gateway, home(), { bookmark: BOOKMARK }));
+    expect(failed.message).toBe(
+      `time-travel restore against remote (app-db) may have restored: D1 answered HTTP 502. Undo with: forge db bookmark restore --target remote --bookmark ${BEFORE} — ${AFTER_GAP}`,
+    );
+    expect(restoreCalls(gateway)).toHaveLength(1);
+
+    const refused = await capture(() =>
+      timeTravelRestore(
+        restoreIo(() => cfRefusal(7400, "Invalid bookmark", 400)),
+        home(),
+        { bookmark: BOOKMARK },
+      ),
+    );
+    expect(refused.message).toBe("time-travel restore against remote (app-db) failed: Invalid bookmark (Cloudflare error 7400)");
+  });
+
+  it("reports an accepted restore answered with a failure envelope as one that may have restored, naming the undo read first", async () => {
+    const io = restoreIo(() => Response.json({ success: false, errors: [], result: null }, { status: 200 }));
+    expect((await capture(() => timeTravelRestore(io, home(), { bookmark: BOOKMARK }))).message).toBe(
+      `time-travel restore against remote (app-db) may have restored: D1 answered HTTP 200 with a failure envelope. Undo with: forge db bookmark restore --target remote --bookmark ${BEFORE} — ${AFTER_GAP}`,
+    );
+  });
+
+  it("sends the restore once, whatever D1 answers", async () => {
+    for (const reply of [
+      () => cfEnvelope({ bookmark: BOOKMARK, previous_bookmark: PREVIOUS }),
+      () => cfEnvelope({}),
+      () => new Response("<html>ok</html>", { status: 200 }),
+      () => {
+        throw new Error("connection reset");
+      },
+      () => cfRefusal(10001, "Service unavailable", 503),
+      () => Response.json({ success: false, errors: [], result: null }, { status: 200 }),
+      () => cfRefusal(971, "Too many requests", 429),
+      () => cfRefusal(7400, "Invalid bookmark", 400),
+    ]) {
+      const io = restoreIo(reply);
+      await timeTravelRestore(io, home(), { bookmark: BOOKMARK }).catch(() => undefined);
+      expect(restoreCalls(io)).toHaveLength(1);
+    }
+  });
+
+  it("reports a rate-limited restore as not restored", async () => {
+    const io = restoreIo(() => cfRefusal(971, "Too many requests", 429));
+    const error = await capture(() => timeTravelRestore(io, home(), { bookmark: BOOKMARK }));
+    expect([error.kind, error.message]).toEqual([
+      "external",
+      "time-travel restore against remote (app-db) failed: not restored — D1 rate-limited the restore; try again in a few minutes",
+    ]);
+  });
+
+  it("sends no restore when the bookmark to undo it with cannot be read first", async () => {
+    for (const before of [
+      () => cfRefusal(10000, "Authentication error"),
+      () => cfEnvelope({ bookmark: "" }),
+      () => cfEnvelope({ bookmark: "$(x)" }),
+    ]) {
+      const io = restoreReplying(PREVIOUS);
+      io.restRules.unshift({ match: (url) => url.includes("/time_travel/bookmark"), reply: before });
+      const error = await capture(() => timeTravelRestore(io, home(), { bookmark: BOOKMARK }));
+      expect(error.message).toStartWith("time-travel restore not sent — the bookmark to undo it with could not be read first: ");
+      expect(restoreCalls(io)).toEqual([]);
+    }
   });
 
   it("refuses a local place before any request", async () => {
@@ -219,28 +343,39 @@ describe("timeTravelRestore()", () => {
     }
   });
 
-  it("refuses a previous bookmark D1 answers that is not one, since the undo prints it into a shell command", async () => {
-    const error = await capture(() => timeTravelRestore(restoreReplying("$(rm -rf /)"), home(), { bookmark: BOOKMARK }));
-    expect([error.kind, error.message]).toEqual([
-      "invalid-args",
-      '--bookmark "$(rm -rf /)" is not a bookmark — 1 to 128 characters of letters, digits, underscore and hyphen, starting with a letter or a digit',
-    ]);
-  });
-
   it("refuses before any request when the home carries no credentials", async () => {
     const io = fakeDbIo({});
     const bare = home({ auth: null });
-    expect((await capture(() => timeTravelRestore(io, bare, { bookmark: BOOKMARK }))).message).toStartWith(
+    expect((await capture(() => timeTravelRestore(io, bare, { bookmark: BOOKMARK }))).message).toContain(
       "--account-id and --api-token are not given.",
     );
     expect((await capture(() => timeTravelInfo(io, bare))).message).toStartWith("--account-id and --api-token are not given.");
     expect(io.restCalls).toEqual([]);
   });
 
-  it("passes D1's refusal through", async () => {
-    const io = ioAnswering(cfRefusal(7500, "bookmark is outside the retention window"));
+  it("passes D1's refusal of the restore through", async () => {
+    const io = restoreIo(() => cfRefusal(7500, "bookmark is outside the retention window"));
     expect((await capture(() => timeTravelRestore(io, home(), { bookmark: BOOKMARK }))).message).toBe(
       "time-travel restore against remote (app-db) failed: bookmark is outside the retention window (Cloudflare error 7500)",
+    );
+  });
+});
+
+describe("describeBookmarkUndo()", () => {
+  const command = `forge db bookmark restore --target remote --bookmark ${BEFORE}`;
+
+  it("prints the undo alone when D1 named the bookmark it left", () => {
+    expect(describeBookmarkUndo({ bookmark: BEFORE, restoreCommand: command, from: "restore", replyReadable: true })).toBe(
+      `restored\nundo with: ${command}`,
+    );
+  });
+
+  it("says a pre-read undo may miss writes, and why D1's own was not used", () => {
+    expect(describeBookmarkUndo({ bookmark: BEFORE, restoreCommand: command, from: "pre-read", replyReadable: true })).toBe(
+      `restored, but D1's reply named no bookmark it restored from\nundo with: ${command}\n${AFTER_GAP}`,
+    );
+    expect(describeBookmarkUndo({ bookmark: BEFORE, restoreCommand: command, from: "pre-read", replyReadable: false })).toBe(
+      `restored, but the reply was unreadable\nundo with: ${command}\n${AFTER_GAP}`,
     );
   });
 });

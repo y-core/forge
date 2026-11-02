@@ -1,5 +1,6 @@
-import type { getPlatformProxy, unstable_splitSqlQuery } from "wrangler";
+import type { getPlatformProxy } from "wrangler";
 
+import type { BackupBucket } from "../../storage/backup/types";
 import type { SchemaHealthState } from "../../storage/db/types";
 import { v } from "../../validation/mod";
 import type { CfAuth, WranglerConfig } from "../cf/types";
@@ -38,25 +39,23 @@ export interface DbConfig {
   readonly target: DbTarget;
 }
 
-/** What one process run produced, with stdout and stderr kept apart so `--json` stays parseable. @public */
-export interface Spawned {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
 /** The side effects every I/O module reaches the world through, so a test injects a fake. @public */
 export interface DbIo {
-  spawn(cmd: string, args: readonly string[], opts: { cwd: string }): Spawned;
   /** Statements against a local home's own state, in one transaction, each answered with its own rows. */
   d1(home: Home, sql: readonly string[]): Promise<Record<string, unknown>[][]>;
-  /** The statements a local home's own handle cuts `sql` into — the cut `d1` makes before it runs them. */
+  /** The statements `sql` is cut into for a local home — the cut `d1` makes before it runs them. */
   splitD1(home: Home, sql: string): Promise<string[]>;
-  /** Releases the handle over `home`'s state — which anything about to delete or to spawn against that state must do first — or every handle when `home` is null. */
+  /** The R2 bucket a local home's config binds as `binding`, read through the same handle as its D1 state. */
+  bucket(home: Home, binding: string): Promise<BackupBucket>;
+  /** Releases the handle over `home`'s state — which anything about to delete that state must do first — or every handle when `home` is null. */
   closeD1(home: Home | null): Promise<void>;
   exists(path: string): boolean;
   readText(path: string): string;
   writeText(path: string, text: string): void;
+  /** The file's bytes as they are read, never held whole. */
+  readStream(path: string): ReadableStream<Uint8Array>;
+  /** Writes `body` to the file as it arrives, owner-only, replacing whatever was there, and cancels `body` when the file cannot be opened. */
+  writeStream(path: string, body: ReadableStream<Uint8Array>): Promise<void>;
   /** Creates the file only when nothing is there, returning false when the path already exists. */
   createExclusive(path: string, text: string): boolean;
   readDir(path: string): string[];
@@ -67,20 +66,19 @@ export interface DbIo {
   /** Modification time in epoch milliseconds, or null when the path is absent. */
   mtime(path: string): number | null;
   now(): Date;
+  /** Waits `ms` on the clock `now` reads — a poll's delay and a retry's backoff both wait here. */
+  sleep(ms: number): Promise<void>;
   readonly env: Readonly<Record<string, string | undefined>>;
   /** HTTPS to Cloudflare: the D1 REST API and an export's signed download. */
   fetch: typeof globalThis.fetch;
-  /** The installed wrangler's version, which a local export's escaping depends on, or `unknown`. */
+  /** The installed wrangler's version, whose in-process D1 every local read goes through, or `unknown`. */
   wranglerVersion(): string;
   /** Progress lines, kept off stdout so `--json` output is the only thing there. */
   log(line: string): void;
 }
 
-/** The wrangler exports a local D1 handle opens through, either absent from a wrangler too old to carry it. @internal */
-export type WranglerD1Module = {
-  readonly getPlatformProxy?: typeof getPlatformProxy;
-  readonly unstable_splitSqlQuery?: typeof unstable_splitSqlQuery;
-};
+/** The wrangler export a local D1 handle opens through, absent from a wrangler too old to carry it. @internal */
+export type WranglerD1Module = { readonly getPlatformProxy?: typeof getPlatformProxy };
 
 /** A database home: where its config is, and where wrangler keeps its local state. @public */
 export interface Home {
@@ -88,7 +86,7 @@ export interface Home {
   readonly database: string;
   /** The `d1_databases` binding the database is reached through in-process. */
   readonly binding: string;
-  /** Directory `wrangler` runs in; `d1 export` resolves state relative to it. */
+  /** The config's directory, which holds the apply lock and, by default, the local state. */
   readonly dir: string;
   readonly configPath: string;
   /** Passed as `--persist-to`; null for a remote place. */
@@ -342,8 +340,6 @@ export interface DbHostConfig {
   readonly migrations?: string;
   /** Where the composed snapshot lives. Defaults to `config/db/schema.snapshot.json` under the root. */
   readonly snapshot?: string;
-  /** Where backups go, relative to the root. Defaults to `.forge/backups`. */
-  readonly backupsDir?: string;
 }
 
 /** The shape `config/db.config.ts` must export, held at the boundary so a misspelt key or a bare string is refused by name. @internal */
@@ -352,54 +348,13 @@ export const DbHostConfigSchema = v.strictObject({
   seeds: v.optional(v.array(v.string())),
   migrations: v.optional(v.string()),
   snapshot: v.optional(v.string()),
-  backupsDir: v.optional(v.string()),
 });
 
-/** One backup artifact directory's `manifest.json`. @public */
-export interface BackupManifest {
-  readonly formatVersion: number;
-  readonly createdAt: string;
-  readonly label: string | null;
-  readonly exporter: BackupExporter;
-  /** How the rows were taken: read through queries, or written by an export. */
-  readonly via: BackupVia;
-  /** The Time Travel bookmark of a deployed database, captured before an export; `null` for a local one and a read. */
-  readonly bookmark: string | null;
-  readonly database: { readonly name: string; readonly id: string | null; readonly target: string; readonly persistPath: string | null };
-  readonly schema: SchemaFacts;
-  /** How the source stood against its own certified fingerprint when this was taken; `mismatch` means every digest here describes a schema no migration built. */
-  readonly drift: SchemaHealthState;
-  /** Every migration the artifact was taken with, whose SQL it embeds under `migrations/`. */
-  readonly migrations: readonly { readonly name: string; readonly sha256: string }[];
-  readonly tables: readonly { readonly name: string; readonly rows: number; readonly digest: string }[];
-  readonly artifacts: readonly { readonly file: string; readonly bytes: number; readonly sha256: string }[];
-  readonly warnings: readonly string[];
-  readonly verified: readonly { readonly route: string; readonly divergent: number }[];
-  /** This manifest's own digest, which detects truncation, a swapped file and bit rot — and no tampering. */
-  readonly selfDigest: string;
-}
-
-/** The facts that bind an artifact to a schema, each catching what the others cannot. @public */
-export interface SchemaFacts {
-  readonly migrations: readonly string[];
-  /** SHA-256 over the app's own objects — the managed tables are created rather than restored, so they are not in it. */
-  readonly digest: string;
-  readonly migrationsDigest: string;
-}
-
-/** Who wrote a backup's exported SQL: the installed wrangler for a local database, D1's export for a deployed one. @public */
-export type BackupExporter =
-  | { readonly tool: "wrangler"; readonly version: string }
-  | { readonly tool: "d1"; readonly schemaBookmark: string | null; readonly dataBookmark: string | null };
-
-/** Which half of a database one export writes. @internal */
-export type D1ExportPart = "schema" | "data";
-
-/** How `forge db backup` takes the rows: `read` queries them in pages, `export` has an export write them, for a database too large to read. @public */
-export type BackupVia = "read" | "export";
-
-/** `full` loads a whole database; `migrations` applies the migrations dir and then loads data into it. @public */
-export type RestoreRoute = "full" | "migrations";
+/** How a sent Time Travel restore ended short of a refusal: D1's reply, a reply that could not be read, or a fate the transport lost. @internal */
+export type D1RestoreAnswer =
+  | { readonly kind: "restored"; readonly previousBookmark: string | null }
+  | { readonly kind: "unreadable" }
+  | { readonly kind: "unknown"; readonly reason: string };
 
 /** The flags every `forge db` verb shares, which a caller of `resolveDbContext` names. @public */
 export interface SharedDbFlags {
@@ -442,6 +397,14 @@ export interface Bookmark {
   readonly restoreCommand: string;
 }
 
+/** The undo a Time Travel restore answers, and which reading of D1 its bookmark came from. @public */
+export interface BookmarkUndo extends Bookmark {
+  /** `restore` when D1's reply named the point it left; `pre-read` when it was read before the restore, and misses any write landing in between. */
+  readonly from: "restore" | "pre-read";
+  /** False when D1 accepted the restore but answered with a reply forge could not read. */
+  readonly replyReadable: boolean;
+}
+
 /** What a verb runs with: the resolved config and home, the I/O port, and how to print. @public */
 export interface DbRunContext {
   config: DbConfig;
@@ -458,12 +421,6 @@ export interface DbRunContext {
 export interface DbContextOverrides {
   io?: DbIo;
   host?: DbHostConfig;
-}
-
-/** One canned wrangler answer, matched against argv. @internal */
-export interface FakeWranglerRule {
-  match: (args: readonly string[]) => boolean;
-  reply: Spawned | ((args: readonly string[]) => Spawned);
 }
 
 /** One group of statements the run put to a local database, and where they came from. @internal */
@@ -486,7 +443,7 @@ export interface FakeD1Rule {
 /** One canned Cloudflare answer, matched against the request. @internal */
 export interface FakeRestRule {
   match: (url: string, init: RequestInit | undefined) => boolean;
-  reply: Response | ((url: string, init: RequestInit | undefined) => Response);
+  reply: Response | ((url: string, init: RequestInit | undefined) => Response | Promise<Response>);
 }
 
 /** One request the run sent through `DbIo.fetch`. @internal */
@@ -501,13 +458,29 @@ export interface FakeRestCall {
 /** An in-memory `DbIo`: a map for the filesystem, a rule table for each effect, and every call recorded. @internal */
 export interface FakeDbIo extends DbIo {
   files: Map<string, string>;
-  calls: string[][];
   logs: string[];
-  rules: FakeWranglerRule[];
   d1Calls: FakeD1Call[];
   d1Rules: FakeD1Rule[];
   restRules: FakeRestRule[];
+  /** The local R2 buckets `bucket` answers, by binding. */
+  readonly buckets: Map<string, BackupBucket>;
   restCalls: FakeRestCall[];
-  /** Persist paths in close order, which is what pins the obligations to close before a delete and before a spawn. */
+  /** Persist paths in close order, which is what pins the obligation to close before a delete. */
   closed: string[];
+  /** Every wait `sleep` was asked for, in order; each one advances `now` by as much. */
+  slept: number[];
+}
+
+/** A Workflow instance's state as the CLI reads it back, from either route. @internal */
+export interface WorkflowInstanceState {
+  readonly status: string;
+  readonly output: unknown;
+  readonly error: string | null;
+}
+
+/** Where `forge db backup` starts and reads a Workflow instance: the Cloudflare API, or a local dev session. @internal */
+export interface WorkflowRoute {
+  readonly where: string;
+  create(workflow: string, params: unknown): Promise<string>;
+  read(workflow: string, id: string): Promise<WorkflowInstanceState>;
 }

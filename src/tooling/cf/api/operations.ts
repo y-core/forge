@@ -9,7 +9,17 @@ export const CF_ENVELOPE = v.object({
   errors: v.optional(v.array(v.object({ code: v.exactOptional(v.number()), message: v.string() })), []),
   result: v.unknown(),
   result_info: v.nullish(
-    jsonTable(v.object({ page: count, per_page: count, count, total_count: count, total_pages: count, cursor: v.nullish(v.string()) })),
+    jsonTable(
+      v.object({
+        page: count,
+        per_page: count,
+        count,
+        total_count: count,
+        total_pages: count,
+        cursor: v.nullish(v.string()),
+        is_truncated: v.exactOptional(v.boolean()),
+      }),
+    ),
   ),
 });
 
@@ -44,15 +54,12 @@ const d1Statement = jsonTable(
   v.object({ results: v.optional(v.array(v.record(v.string(), v.unknown())), []), success: v.optional(v.boolean(), true) }),
 );
 
-const d1Export = v.variant("status", [
-  v.object({ status: v.literal("active"), at_bookmark: v.string() }),
-  v.object({
-    status: v.literal("complete"),
-    at_bookmark: v.exactOptional(v.string()),
-    result: v.object({ filename: v.string(), signed_url: v.string() }),
-  }),
-  v.object({ status: v.literal("error"), error: v.optional(v.string(), "") }),
-]);
+/** A Workflow instance as both the Cloudflare API and a local dev session's explorer answer it. @internal */
+export const CF_WORKFLOW_INSTANCE = v.looseObject({
+  status: v.string(),
+  output: v.exactOptional(v.unknown()),
+  error: v.nullish(v.union([v.string(), v.looseObject({ message: v.string() })])),
+});
 
 const buildVariable = v.object({ value: v.nullish(v.string()), is_secret: v.optional(v.boolean(), false) });
 
@@ -67,11 +74,17 @@ export const CF_OPERATIONS = {
   listD1Databases: { name: "GET /accounts/{account_id}/d1/database", paging: "page", result: v.array(d1Database) },
   createD1Database: { name: "POST /accounts/{account_id}/d1/database", result: d1Database },
   queryD1Database: { name: `POST ${D1_DATABASE}/query`, result: v.array(d1Statement) },
-  exportD1Database: { name: `POST ${D1_DATABASE}/export`, result: d1Export },
-  getD1Bookmark: { name: `GET ${D1_DATABASE}/time_travel/bookmark`, result: jsonTable(v.object({ bookmark: v.string() })) },
+  readD1Database: { name: `POST ${D1_DATABASE}/query`, result: v.array(d1Statement), idempotent: true },
+  getD1Bookmark: { name: `GET ${D1_DATABASE}/time_travel/bookmark`, result: jsonTable(v.object({ bookmark: v.string() })), idempotent: true },
   restoreD1Bookmark: {
     name: `POST ${D1_DATABASE}/time_travel/restore`,
-    result: jsonTable(v.object({ bookmark: v.string(), previous_bookmark: v.string() })),
+    result: jsonTable(v.object({ bookmark: v.exactOptional(v.string()), previous_bookmark: v.exactOptional(v.string()) })),
+  },
+  createWorkflowInstance: { name: "POST /accounts/{account_id}/workflows/{workflow_name}/instances", result: v.looseObject({ id: v.string() }) },
+  getWorkflowInstance: {
+    name: "GET /accounts/{account_id}/workflows/{workflow_name}/instances/{instance_id}",
+    result: CF_WORKFLOW_INSTANCE,
+    idempotent: true,
   },
   listR2Buckets: {
     name: "GET /accounts/{account_id}/r2/buckets",
@@ -81,6 +94,23 @@ export const CF_OPERATIONS = {
       v.transform((r) => r.buckets),
     ),
   },
+  getR2Lifecycle: {
+    name: "GET /accounts/{account_id}/r2/buckets/{bucket_name}/lifecycle",
+    result: jsonTable(
+      v.object({
+        rules: v.optional(v.array(v.looseObject({ id: v.string(), enabled: v.boolean(), conditions: v.looseObject({ prefix: v.string() }) })), []),
+      }),
+    ),
+    idempotent: true,
+  },
+  listR2Objects: {
+    name: "GET /accounts/{account_id}/r2/buckets/{bucket_name}/objects",
+    result: v.array(v.object({ key: v.string(), size: v.number() })),
+    idempotent: true,
+  },
+  getR2Object: { name: "GET /accounts/{account_id}/r2/buckets/{bucket_name}/objects/{object_key}", result: v.unknown(), idempotent: true },
+  putR2Object: { name: "PUT /accounts/{account_id}/r2/buckets/{bucket_name}/objects/{object_key}", result: v.unknown() },
+  putR2Lifecycle: { name: "PUT /accounts/{account_id}/r2/buckets/{bucket_name}/lifecycle", result: v.unknown() },
   createR2Bucket: { name: "PUT /accounts/{account_id}/r2/buckets/{bucket_name}", result: v.unknown() },
   listQueues: { name: "GET /accounts/{account_id}/queues", paging: "page", result: v.array(queue) },
   createQueue: { name: "POST /accounts/{account_id}/queues", result: queue },

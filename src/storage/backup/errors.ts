@@ -13,7 +13,27 @@ export class D1BackupError extends Error {
   }
 }
 
-/** Whether no retry can change the outcome: the options, the token or the database id is wrong. @internal */
+const PERMANENT: ReadonlySet<D1BackupFailureKind> = new Set(["options", "auth", "not-found", "unsupported", "incomplete", "target", "import"]);
+
+/** Whether no retry can change the outcome: the options, the token, the database id, the database's own shape, the dump or the target is wrong. @internal */
 export function isPermanentBackupFailure(error: unknown): boolean {
-  return error instanceof D1BackupError && (error.kind === "options" || error.kind === "auth" || error.kind === "not-found");
+  return error instanceof D1BackupError && PERMANENT.has(error.kind);
 }
+
+/** Wraps a step's callback so a failure no retry can change reaches the Workflow through `nonRetryable`, and any other is thrown as it was. @internal */
+export function permanentFailures<T>(
+  options: { readonly nonRetryable?: ((message: string) => Error) | undefined },
+  run: () => Promise<T>,
+): () => Promise<T> {
+  return async () => {
+    try {
+      return await run();
+    } catch (error) {
+      if (options.nonRetryable !== undefined && isPermanentBackupFailure(error)) throw options.nonRetryable((error as Error).message);
+      throw error;
+    }
+  };
+}
+
+/** Resolves after `ms`, the pause between two polls of an export or an import. @internal */
+export const wait = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));

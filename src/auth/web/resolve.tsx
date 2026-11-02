@@ -10,7 +10,7 @@ import { v } from "../../validation/mod";
 import { authFactorContext } from "../factors/registry";
 import type { AuthFactorService, RecoveryCodeFactorService, TotpAppEnrolment } from "../factors/types";
 import type { AuthFactorKind } from "../types";
-import { approvalCtx, authFreshStepUpWindow, authStepUpOwed, authStepUpWindow } from "./guards";
+import { adminRefusalCtx, approvalCtx, authFreshStepUpWindow, authStepUpOwed, authStepUpWindow } from "./guards";
 import { authCtx } from "./identity";
 import {
   authNow,
@@ -56,9 +56,10 @@ export function notFound(): Response {
   return new Response(NOT_FOUND, { status: 404 });
 }
 
-/** The refusal an authenticated request without the role its target demands gets, through `onForbidden` where one is passed. @internal */
-export function forbidden<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>): Response | Promise<Response> {
-  return options.onForbidden === undefined ? new Response(FORBIDDEN, { status: 403 }) : options.onForbidden(c);
+/** The refusal an authenticated request without the role its target demands gets: the one `requireAdmin` published, or a plain-text 403 where none ran. @internal */
+export function forbidden<Bindings>(c: AppContext<Bindings>): Response | Promise<Response> {
+  const refusal = adminRefusalCtx.getOptional(c);
+  return refusal === undefined ? new Response(FORBIDDEN, { status: 403 }) : refusal();
 }
 
 // `authCtx` and nothing else: a page's data is read for whoever a guard established, so a route that
@@ -802,7 +803,7 @@ async function refuseUnguarded<Bindings>(
 ): Promise<Result<AuthIdentity | null, Response>> {
   const viewer = resolveAuthViewer(c);
   if (guards.includes("require-auth") && viewer === null) return err(createAuthRedirect(c, options.paths.auth.signin(), 302));
-  if (guards.includes("require-admin") && viewer?.isAdmin !== true) return err(await forbidden(c, options));
+  if (guards.includes("require-admin") && viewer?.isAdmin !== true) return err(await forbidden(c));
   if (guards.includes("require-approval") && approvalCtx.getOptional(c) === undefined) return err(notFound());
   return ok(viewer);
 }

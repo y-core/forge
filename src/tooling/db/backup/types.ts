@@ -1,118 +1,14 @@
-import type { BackupManifest, BackupVia, Migration, RestoreRoute, SchemaObject } from "../types";
-
-/** One table, with what a bounded keyset read of it needs: the columns it orders by, and how many rows a page holds. @internal */
-export interface AppTable {
-  readonly name: string;
-  readonly keys: readonly string[];
-  /** Every declared column in order, which a whole-table read projects. */
-  readonly columns: readonly string[];
-  readonly pageRows: number;
-}
-
-/** One row, encoded: its identity, its whole-row form, and each cell by column name. @internal */
-export interface CanonicalRow {
-  readonly key: readonly string[];
-  readonly canonical: string;
-  readonly cells: Readonly<Record<string, string>>;
-}
-
-/** Something in an artifact that is not what the artifact claims to be. @internal */
-export interface ArtifactFault {
-  readonly line: number;
-  readonly reason: string;
-}
-
-/** One way two copies of a table disagree. Values ride at full width; truncation is the formatter's job. @internal */
-export type Divergence =
-  | { readonly kind: "only-in-source"; readonly key: readonly string[] }
-  | { readonly kind: "only-in-target"; readonly key: readonly string[] }
-  | { readonly kind: "value"; readonly key: readonly string[]; readonly column: string; readonly source: string; readonly target: string }
-  | { readonly kind: "duplicate-key"; readonly key: readonly string[]; readonly side: "source" | "target" };
-
-/** The verdict for one table. @internal */
-export interface TableComparison {
-  readonly table: string;
-  /** Exact and never truncated — this is the number a caller asserts is zero. */
-  readonly divergent: number;
-  readonly divergences: readonly Divergence[];
-  readonly truncated: boolean;
-  readonly sourceRows: number;
-  readonly targetRows: number;
-}
-
-/** The merge in progress, opaque to callers apart from being threaded from page to page. @internal */
-export interface CompareState {
-  readonly divergent: number;
-  readonly divergences: readonly Divergence[];
-  readonly sourceRows: number;
-  readonly targetRows: number;
-  readonly pendingSource: readonly CanonicalRow[];
-  readonly pendingTarget: readonly CanonicalRow[];
-  readonly lastSourceKey: readonly string[] | null;
-  readonly lastTargetKey: readonly string[] | null;
-  readonly sourceExhausted: boolean;
-  readonly targetExhausted: boolean;
-}
-
-/** Where a keyset read seeks from: the last key read, one cell per key column as text, a number or blob bytes, or null before the first page. @internal */
-export type ReadCursor = readonly (string | number | readonly number[])[] | null;
-
-/** One page of a table: the canonical rows, the raw rows the artifact is authored from, and the next cursor. @internal */
-export interface RowPage {
-  readonly rows: readonly CanonicalRow[];
-  readonly raw: readonly Record<string, unknown>[];
-  readonly cursor: ReadCursor;
-  readonly exhausted: boolean;
-}
-
-/** A table read whole, kept in memory so one read can be compared against more than one restored target. @internal */
-export interface SourceTable {
-  readonly table: AppTable;
-  readonly columns: readonly string[];
-  readonly rows: readonly CanonicalRow[];
-  readonly raw: readonly Record<string, unknown>[];
-}
-
-/** What a `db backup` run produced. @public */
-export interface BackupOutcome {
-  readonly directory: string;
-  readonly manifest: BackupManifest;
-}
-
-/** What `db backup` was asked for beyond the shared flags. @public */
-export interface BackupOptions {
-  /** Where the artifact directory is created; null takes the host config's `backupsDir`. Relative paths resolve against the root. */
-  readonly out: string | null;
-  readonly verify: boolean;
-  readonly label: string | null;
-  /** `read` where absent. */
-  readonly via?: BackupVia | undefined;
-}
-
-/** What `db restore` was asked for beyond the shared flags. @public */
-export interface RestoreOptions {
-  /** The artifact directory holding `manifest.json`. */
-  readonly artifact: string;
-  readonly route: RestoreRoute;
-  /** The database name the artifact must have been taken from. */
-  readonly expect?: string | undefined;
-}
-
-/** What a `db restore` run proved about the target it loaded. @public */
-export interface RestoreOutcome {
-  readonly database: string;
-  readonly route: RestoreRoute;
-  readonly artifact: string;
-  readonly tables: readonly { readonly name: string; readonly rows: number; readonly matches: boolean }[];
-}
+import type { JsoncEdit } from "../../cli/types";
 
 /** What `db reset` was asked for beyond the shared flags. @public */
 export interface ResetOptions {
   /** The database name the target must have, so a reset cannot be aimed by a stale flag. */
   readonly expect: string;
   readonly allowUnbacked: boolean;
-  /** The artifact directory this reset relies on; absent takes the most recent verified backup of this database. */
-  readonly backup?: string | undefined;
+  /** The R2 dump this reset relies on; absent takes the newest complete dump of this database. */
+  readonly dump?: string | undefined;
+  readonly bucket?: string | undefined;
+  readonly prefix?: string | undefined;
 }
 
 /** What a `db reset` run removed, and what it counted before removing it. @public */
@@ -120,27 +16,8 @@ export interface ResetOutcome {
   readonly database: string;
   readonly rows: number;
   readonly removed: string | null;
-  /** The artifact directory that proved this database is recoverable, when one was needed. */
+  /** The key of the R2 dump that proved this database is recoverable, when one was needed. */
   readonly backedUpBy: string | null;
-}
-
-/** What a target declared and held when a restore looked at it. @public */
-export interface RestoreTargetState {
-  readonly objects: readonly SchemaObject[];
-  readonly counts: Record<string, number>;
-}
-
-/** A restore checked through to the empty target, ready to be confirmed and then executed. @public */
-export interface RestorePlan {
-  readonly artifact: string;
-  readonly route: RestoreRoute;
-  readonly manifest: BackupManifest;
-  /** The migrations the artifact embeds, each read back hashing to what the manifest declares. */
-  readonly migrations: readonly Migration[];
-  readonly expectedTables: readonly string[];
-  readonly before: RestoreTargetState;
-  /** The rows the artifact holds across every app table. */
-  readonly rows: number;
 }
 
 /** A reset checked through to the artifact that proves its rows recoverable, ready to be confirmed and then executed. @public */
@@ -149,6 +26,57 @@ export interface ResetPlan {
   /** The state directory to remove, or null when there is none. */
   readonly state: string | null;
   readonly rows: number;
-  /** The artifact directory that proved this database is recoverable, when one was needed. */
+  /** The key of the R2 dump that proved this database is recoverable, when one was needed. */
   readonly backedUpBy: string | null;
+}
+
+/** What a CLI verb expects of the Workflow it starts: its conventional name, and what its `run()` must return. @internal */
+export interface WorkflowPurpose<T> {
+  readonly preferred: string;
+  readonly returns: string;
+  read(output: unknown): T | null;
+}
+
+/** Where a database's dumps are kept: an R2 binding and the bucket it names, the prefix, and the database id they are kept under. @internal */
+export interface DumpSource {
+  readonly binding: string;
+  /** The `bucket_name` the binding declares, which the REST API addresses a deployed bucket by. */
+  readonly bucketName: string;
+  readonly prefix: string;
+  readonly databaseId: string;
+}
+
+/** One dump copied between R2 and disk: its key, the two files on disk, and what its bytes measured. @internal */
+export interface DumpCopy {
+  readonly key: string;
+  /** The dump file on disk. */
+  readonly path: string;
+  /** The sidecar file beside it. */
+  readonly sidecar: string;
+  readonly size: number;
+  readonly sha256: string;
+}
+
+/** How long the REST bucket waits on Cloudflare before it fails a call. @internal */
+export interface RestBucketTimeouts {
+  /** A request's wait for its answer, and an upload's for its next chunk to be taken. */
+  readonly requestMs: number;
+  /** A download's wait between two chunks of its body. */
+  readonly idleMs: number;
+}
+
+/** A D1 database a binding can name. @internal */
+export interface PromotionTarget {
+  readonly databaseId: string;
+  readonly name: string;
+}
+
+/** What a promotion would change: one binding's database, from the one it names now to a restored one. @internal */
+export interface PromotionPlan {
+  readonly configPath: string;
+  readonly binding: string;
+  readonly env: string | null;
+  readonly from: PromotionTarget;
+  readonly to: PromotionTarget;
+  readonly edits: readonly JsoncEdit[];
 }

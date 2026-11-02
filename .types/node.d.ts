@@ -136,6 +136,15 @@ declare module "node:fs" {
   export function readdirSync(path: string, options?: { recursive?: boolean }): string[];
 }
 
+declare module "node:fs/promises" {
+  export interface FileHandle {
+    write(buffer: Uint8Array, offset?: number): Promise<{ bytesWritten: number }>;
+    read(buffer: Uint8Array, offset: number, length: number, position: number | null): Promise<{ bytesRead: number }>;
+    close(): Promise<void>;
+  }
+  export function open(path: string, flags: string, mode?: number): Promise<FileHandle>;
+}
+
 declare module "node:child_process" {
   interface ExecSyncOptions {
     cwd?: string;

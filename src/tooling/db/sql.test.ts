@@ -1,6 +1,15 @@
 import { describe, expect, it } from "bun:test";
 
-import { isReadOnlyBatch, quoteSqlIdentifier, quoteSqlLiteral, rowCountSelect, sqlColumnAffinity, tableInfoSelect, toColumnInfo } from "./sql";
+import {
+  classifyTable,
+  isReadOnlyBatch,
+  quoteSqlIdentifier,
+  quoteSqlLiteral,
+  rowCountSelect,
+  sqlColumnAffinity,
+  tableInfoSelect,
+  toColumnInfo,
+} from "./sql";
 
 describe("quoteSqlLiteral()", () => {
   it("wraps a string in single quotes and doubles the ones inside it", () => {
@@ -135,6 +144,12 @@ describe("isReadOnlyBatch()", () => {
     expect(isReadOnlyBatch(["/* SELECT */ INSERT INTO t VALUES (1)"])).toBe(false);
   });
 
+  it("refuses an element that packs a write after a read, and keeps a read with its terminator", () => {
+    expect(isReadOnlyBatch(["SELECT 1; DELETE FROM t"])).toBe(false);
+    expect(isReadOnlyBatch(["SELECT 1;\n-- done\nSELECT 2"])).toBe(false);
+    expect(isReadOnlyBatch(["SELECT ';' FROM t; ", "SELECT 1;;\n"])).toBe(true);
+  });
+
   it("refuses a CTE that writes, whichever write it is", () => {
     const ctes = ["INSERT INTO t SELECT * FROM r", "UPDATE t SET a = 1", "DELETE FROM t", "REPLACE INTO t SELECT * FROM r"].map(
       (write) => `WITH r AS (SELECT 1) ${write}`,
@@ -147,6 +162,29 @@ describe("isReadOnlyBatch()", () => {
       false,
       false,
       true,
+    ]);
+  });
+});
+
+describe("classifyTable()", () => {
+  it("classifies the engine's and Cloudflare's own objects as system", () => {
+    expect(["sqlite_autoindex_tasks_1", "_cf_METADATA", "sqlite_stat1"].map((name) => classifyTable(name))).toEqual(["system", "system", "system"]);
+  });
+
+  it("classifies the sequence and forge's own companions as managed", () => {
+    expect(["sqlite_sequence", "_forge_migrations", "_forge_seed_history"].map((name) => classifyTable(name))).toEqual([
+      "managed",
+      "managed",
+      "managed",
+    ]);
+  });
+
+  it("classifies anything else as the app's, including wrangler's own migrations table and a bare forge_ name", () => {
+    expect(["tasks", "some_table_nobody_declared", "d1_migrations", "forge_migrations"].map((name) => classifyTable(name))).toEqual([
+      "app",
+      "app",
+      "app",
+      "app",
     ]);
   });
 });

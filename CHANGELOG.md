@@ -42,7 +42,16 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 - **`timeTravelInfo` and `timeTravelRestore` return promises, and `timeTravelRestore` returns the undo `Bookmark` and takes the run's config.**
   `forge db bookmark restore` prints the command that undoes it.
 - **`DbIo` gains `fetch` and `wranglerVersion`, and `Home` gains `databaseId`.** A hand-built `DbIo` or `Home` must supply them.
-- **Backup manifests are format 9: `dumper` is replaced by `exporter`.** `forge db restore` refuses an older artifact, so take your backups again.
+- **`forge db backup` and `forge db restore` drive your app's D1 Workflows, and the backup artifact is retired.** `forge db backup` starts the
+  `d1-backup` Workflow, which stores D1's own dump and a sidecar in R2. `forge db restore --from <key>` starts `d1-restore`, which imports a dump
+  into a new database. Forge no longer reads rows, writes `.forge/backups` artifacts or downloads an export to disk: `--out`, `--no-verify`,
+  `--label`, `--via`, `--export-timeout`, `--artifact`, `--route`, `backupsDir`, `runBackup`, `prepareRestore`, `executeRestore`,
+  `readBackupManifest` and the manifest types are removed. Wire the Workflows as the storage README shows, and take a backup with them.
+- **`forge db reset` and `forge db migrate --rehearse` rely on R2 dumps instead of backup artifacts.** `reset` refuses a local database holding
+  rows unless the newest complete dump in the local R2 bucket is under 24 hours old and matches its row counts (`--dump` names one, `--bucket`
+  and `--prefix` say where). `--rehearse` loads the newest dump, or the one `--dump` names, into a scratch, checks it against the sidecar, then
+  applies. `reset --backup` and `migrate --artifact` are removed.
+- **`DbIo` loses `writeStream` and gains `bucket`**, which answers a local R2 binding. A hand-built `DbIo` must supply it.
 - **`EmailOtpOptions.address` returns `AuthStoreResult<string>`, and a failed lookup now sends no code and starts no cooldown.**
   `createChallenge` answers it as `unavailable`. Return `ok(email)` where you returned the address, and
   `err(new AuthStoreError("unavailable", …))` where you returned `""`. The auth README's getting-started builder shows the wiring.
@@ -59,18 +68,34 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   from `checks/class-tokens` to `checks/source-scan`, and `@y-core/forge/tooling/gate` still exports it.
 - **`forge cf sync` now reads Workers Builds when `package.json` pins `bun@`, so a token that is account-scoped or lacks Workers CI gets an
   `error` row and the run exits 1.** Give the token Workers CI (Read for a status run, Write for `--commit`) and make it user-scoped.
+- **`WranglerD1Module` no longer needs `unstable_splitSqlQuery`**: forge cuts every local load with its own statement cutter, and needs only
+  `getPlatformProxy` from wrangler.
 
 ### Added
 
 - **`@y-core/forge/ui/chrome` composes the primary navbar from contributions.** Call `createPrimaryNav<Key, Ctx, State>()` once, have each
   feature `contribute` its items, `hrefs`, footer links and state resolver, and pass `definition()` and `resolveHref` to `Navbar`. A misspelled
   key fails `bun check`, a duplicate key or a "Menu" label throws at `contribute`, and an unknown key throws instead of linking home.
+- **`@y-core/forge/storage/backup` restores a dump into a new database with `runD1Restore`.** As Workflow steps, it creates the database (or
+  takes an empty standby), imports the dump through D1's import API, and reports every way the result differs from the dump's sidecar. Under
+  `forge cf dev` it imports into a standby binding. `forge db restore --from <key>` starts the app's `d1-restore` Workflow and prints its report,
+  exiting non-zero on any mismatch.
+- **`forge cf sync lifecycle` keeps an R2 lifecycle rule that ages backups out.** `--bucket`, `--expire-days` and `--ia-days` describe it,
+  `--prefix` defaults to `d1-backups`, and `--commit` writes it. It replaces only forge's own rule, by id, and keeps every other rule on the bucket.
+- **`forge db promote` points the deployed app's D1 binding at a restored database.** Give it the `d1-restore` instance with `--instance`; it
+  refuses a report with a mismatch, rewrites only the binding's `database_id` and `database_name` once you confirm, keeps the old database, and
+  prints the command that swaps back. Deploy afterwards to make it live.
+- **`forge db backup` runs the app's backup Workflow and prints what it stored.** It starts the instance through the Cloudflare API for a
+  deployed database, or through the `forge cf dev` session (`--port`, default 8787) for a local one. It follows the instance to its end and prints
+  the dump's key, size, bookmark, migration head, rows and hazards. `--workflow` names another than `d1-backup`.
 - **`@y-core/forge/storage/backup` archives a deployed D1 database into R2 from a scheduled Workflow.** Call `runD1Backup(step, options)` from
-  your `WorkflowEntrypoint`. It exports through the D1 REST API, streams the dump into R2 by multipart upload, and prunes past `keep`.
-  `listD1Backups` lists the archives, newest first.
+  your `WorkflowEntrypoint`, passing the database's binding as `database`. It exports through the D1 REST API, streams the dump into R2 by
+  multipart upload, and writes a `.json` sidecar beside it: the size, md5, sha256, rows per table, schema digest, migration head, and every
+  value the dump will not reproduce. A short or stalled download stores nothing, and a virtual table is refused before the export. It prunes past
+  `keep`. `listD1Backups` lists the archives newest first, marking which are complete. `latestD1Backup` answers the newest complete one, and
+  `readD1Backup` its sidecar. Under `forge cf dev` the same run backs up the local database into local R2.
 - **`requireAdmin` takes `onForbidden`, so a signed-in non-administrator can be answered with a page instead of a plain 403.** Pass the same
-  function as `onForbidden` to `createAuthGuards` and to `AuthWebOptions`, which the admin pages and their actions read. With none, the answer is
-  unchanged.
+  function as `onForbidden` to `createAuthGuards`, and the admin pages and their actions answer with it too. With none, the answer is unchanged.
 - **`forge cf sync` sets the Workers Builds `BUN_VERSION` from `package.json` `packageManager`.** It reports drift for each build settings scope
   and writes the exact `bun@X.Y.Z` version on `--commit`, through a user-scoped token with Workers CI.
 - **`onForbidden` on `csrfProtection` lets you answer a CSRF refusal yourself**, such as with a fragment an HTMX target can swap. It is called
@@ -80,6 +105,9 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   `onForbidden: authCsrfRefusal(paths.auth)` to `csrfProtection`, and a sign-out posted from a page open longer than an hour goes to
   `auth.signoutConfirm()` instead of answering 403 with the session still signed in. `authRoutes` gains the `signoutConfirm` leaf, so a map of
   your own must handle it with `loadSignoutConfirm`.
+- **`forge db backup list`, `pull <key>` and `push <file>` copy D1 dumps between R2 and disk.** `list` prints each dump with its size, when it was
+  taken, and whether its sidecar was written. `pull` and `push` check the bytes against the sidecar's size and sha256, keep or upload nothing
+  that differs, and never replace an object. A push to a deployed bucket is capped at 300 MiB, the limit of Cloudflare's REST object endpoint.
 
 ### Fixed
 
@@ -93,6 +121,8 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   for a key it states itself, and both summaries count every deployment.
 - **`validate-dev-bundle` no longer refuses `alias` inside an `env.*` block**, since wrangler reads `alias` only at the top level.
 - **A synthesized home under `--env` carries that environment's `account_id` and `compatibility_date`.**
+- **A local load and `openTestD1` keep `BEGIN TRANSACTION` and `COMMIT;` text inside a literal intact.** Wrangler's splitter deleted the first
+  of each anywhere in the text, so such a literal loaded changed, or was refused as holding several transactions.
 
 ---
 

@@ -30,11 +30,11 @@ import type {
   UserStore,
 } from "../types";
 import { defineApproval } from "./approval";
-import { signApprovalCode } from "./guards";
-import { markApproval } from "./identity";
+import { createAuthGuards, signApprovalCode } from "./guards";
+import { authCtx, markApproval } from "./identity";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
-import type { Approval, ApprovalOptions, AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
+import type { Approval, ApprovalOptions, AuthAdminGuardOptions, AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
 import type { AuthFactorAssignment, AuthFactorCell, AuthFactorChoices, AuthFactorOffering } from "./types";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
@@ -477,3 +477,22 @@ export function approvedSession(at?: number, code: string = FAKE_APPROVAL_CODE):
     return next();
   };
 }
+
+/** The `require-auth`, `require-admin` stack `createAuthGuards` wires from `onForbidden`, over an identity a test has already set. @internal */
+export function fakeAdminGuardChain(onForbidden?: AuthAdminGuardOptions["onForbidden"]): Middleware[] {
+  const [group] = createAuthGuards({
+    routes: { admin: adminRoutes("/admin") },
+    auth: { users: () => fakeAuthUserStore([]), signinPath: "/auth/signin" },
+    enrolment: { factors: () => fakeFactorRegistry([]), enrolmentPaths: {}, stepUpPath: "/auth/verify", settledPath: "/" },
+    origin: { allowedOrigins: ["https://app.example"] },
+    groups: [{ path: ["admin", "users"], guards: ["require-auth", "require-admin"], medium: "html", clearsStepUp: true }],
+    onForbidden,
+  });
+  return [...(group?.guards ?? [])];
+}
+
+/** Middleware revoking the administrator role from the identity already on the request, as a demotion landing after `requireAdmin` admitted it would. @internal */
+export const demoteAuthIdentity: Middleware = (context, next) => {
+  authCtx.set(context, { ...authCtx.get(context), isAdmin: false });
+  return next();
+};

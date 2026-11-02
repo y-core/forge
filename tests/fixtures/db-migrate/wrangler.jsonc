@@ -4,4 +4,5 @@
   "d1_databases": [
     { "binding": "DB", "database_name": "db-migrate-fixture", "database_id": "db-migrate-local", "migrations_dir": "config/db/migrations" },
   ],
+  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "db-migrate-fixture-backups" }],
 }

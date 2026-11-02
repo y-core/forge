@@ -228,8 +228,6 @@ export interface AuthWebOptions<Bindings = Record<string, unknown>> {
   readonly signoutClearsSiteData?: boolean | undefined;
   /** A challenge on the anonymous forms; omit it and no form renders or verifies one. */
   readonly turnstile?: AuthTurnstileOptions<Bindings> | undefined;
-  /** The refusal the admin pages and their actions give a signed-in non-administrator, in place of a plain-text 403; pass the one given to `createAuthGuards`. */
-  readonly onForbidden?: AuthAdminGuardOptions<Bindings>["onForbidden"];
 }
 
 /** An anonymous auth form a Turnstile widget can guard; `resend` is the verify page's ask for another code. @public */

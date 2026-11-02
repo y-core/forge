@@ -151,7 +151,7 @@ release. Cite the version constant and the shape; enumerate neither.
 
 | Owns | File |
 | --- | --- |
-| `BACKUP_FORMAT_VERSION` and what a `manifest.json` carries | `BACKUP_FORMAT_VERSION` in `src/tooling/db/backup/artifact.ts` + `BackupManifest` in `src/tooling/db/types.ts` |
+| What a D1 backup's `.json` sidecar carries | `D1BackupSidecar` in `src/storage/backup/types.ts` + `SIDECAR` in `src/storage/backup/sidecar.ts` |
 | `SCHEMA_MODEL_VERSION` and the snapshot's shape | `src/tooling/db/schema/types.ts` |
 | The companion tables forge creates and reads | `COMPANION_TABLES` in `src/tooling/db/migrate/companions.ts` |
 | The table-name prefixes forge treats as managed | `MANAGED_TABLE_PREFIXES` in `src/storage/db/schema.ts` |

@@ -17,13 +17,16 @@ export class CfApiClientError extends Error {
   readonly kind: CfApiClientErrorKind;
   readonly statusCode?: number | undefined;
   readonly cfErrors?: CfApiError[] | undefined;
+  /** The refusing reply's `Retry-After` header, as sent. */
+  readonly retryAfter?: string | undefined;
 
-  constructor(kind: CfApiClientErrorKind, message: string, opts?: { statusCode?: number; cfErrors?: CfApiError[] }) {
+  constructor(kind: CfApiClientErrorKind, message: string, opts?: { statusCode?: number; cfErrors?: CfApiError[]; retryAfter?: string }) {
     super(message);
     this.name = "CfApiClientError";
     this.kind = kind;
     this.statusCode = opts?.statusCode;
     this.cfErrors = opts?.cfErrors;
+    this.retryAfter = opts?.retryAfter;
   }
 }
 
@@ -32,6 +35,8 @@ export type CfPaging = "page" | "cursor";
 export interface CfOperation<T> {
   name: string;
   result: v.GenericSchema<unknown, T>;
+  /** Safe to resend after an unknown outcome, so the client retries it on a 429, a 5xx or a transport failure. */
+  idempotent?: boolean;
 }
 
 export interface CfListOperation<T> extends CfOperation<T[]> {

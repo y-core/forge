@@ -121,8 +121,8 @@ describe("createKVSessionStorage — a session holding no data", () => {
     expect(data.size).toBe(0);
   });
 
-  it("writes no record for a first-visit session dirtied only by reading its id", async () => {
-    const { kv, data, puts } = fakeSessionKV();
+  it("writes no record and deletes nothing for a first-visit session dirtied only by reading its id", async () => {
+    const { kv, data, puts, deletes } = fakeSessionKV();
     const storage = createKVSessionStorage(kv);
     const session = trackSessionId(createSession(), null);
     const id = session.id;
@@ -130,6 +130,7 @@ describe("createKVSessionStorage — a session holding no data", () => {
     expect(session.dirty).toBe(true);
     expect(await storage.save(session)).toBe(id);
     expect(puts).toEqual([]);
+    expect(deletes).toEqual([]);
     expect(data.size).toBe(0);
   });
 

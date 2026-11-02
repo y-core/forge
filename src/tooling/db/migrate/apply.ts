@@ -182,8 +182,8 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
     // nothing to ask about until the migrations are known to apply to rows like its own.
     let rehearsed: RehearsalOutcome | undefined;
     if (options.rehearse && plan.pending.length > 0 && !options.dryRun) {
-      rehearsed = await rehearseMigrations(run, plan.pending, options.artifact, applied);
-      say(`rehearsal ✓ ${rehearsed.applied.length} migration(s) over ${rehearsed.rows} row(s) restored from ${rehearsed.artifact}`);
+      rehearsed = await rehearseMigrations(run, plan.pending, options, applied);
+      say(`rehearsal ✓ ${rehearsed.applied.length} migration(s) over ${rehearsed.rows} row(s) restored from ${rehearsed.dump}`);
     }
 
     if (options.dryRun) {
@@ -192,7 +192,7 @@ export async function runMigrate(run: DbRunContext, options: MigrateOptions): Pr
           ? `${home.database} (${config.target.place}) is up to date`
           : `would apply ${names.length} to ${home.database} (${config.target.place}): ${names.join(", ")}`;
       say(would);
-      if (options.rehearse && names.length > 0) say("--rehearse restores an artifact and applies to it, so a dry run does not rehearse");
+      if (options.rehearse && names.length > 0) say("--rehearse restores a dump and applies to it, so a dry run does not rehearse");
       return { applied: [], skipped, dryRun: true };
     }
 

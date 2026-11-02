@@ -347,8 +347,8 @@ request rather than at construction.
 requireAdmin({ onForbidden: (c) => htmlResponse(renderAdminOnlyPage(c), 403) });
 ```
 
-On a mount, pass the same function as `onForbidden` to both `createAuthGuards` and `AuthWebOptions`, because the admin pages and their actions
-re-check the role themselves.
+On a mount, pass it as `onForbidden` to `createAuthGuards`. The admin pages and their actions re-check the role themselves and answer with the same
+function, or with the plain 403 where none was passed.
 
 Read the identity through `authCtx` — `authCtx.get(c)` where a guard has run, `authCtx.getOptional(c)` otherwise. The store is read once per
 request however many guards run, so mounting `resolveAuth` globally costs the guarded routes nothing extra.

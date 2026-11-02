@@ -1,11 +1,18 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
+import { getPlatformProxy } from "wrangler";
 
+import { takeD1Census } from "../../src/storage/backup/census";
+import { backupKey } from "../../src/storage/backup/list";
+import { dumpRowCounter } from "../../src/storage/backup/meter";
+import { writeSidecar } from "../../src/storage/backup/sidecar";
+import type { BackupBucket, BackupDatabase } from "../../src/storage/backup/types";
 import { checkSchemaHealth } from "../../src/storage/db/health";
 import { formatComposeHeader } from "../../src/tooling/db/schema/header";
 import { type D1Handle, openD1 } from "./d1";
@@ -31,6 +38,40 @@ async function withD1<T>(use: (db: D1Handle) => Promise<T>): Promise<T> {
     return await use(db);
   } finally {
     await db.dispose();
+  }
+}
+
+/** Writes a dump of the local database and its sidecar into the local R2 bucket, as `runD1Backup` under `forge cf dev` leaves them. */
+async function seedLocalDump(): Promise<void> {
+  const proxy = await getPlatformProxy<{ DB: D1Database; BACKUPS: R2Bucket }>({
+    configPath: join(root, "wrangler.jsonc"),
+    persist: { path: join(root, ".wrangler", "state", "v3") },
+    remoteBindings: false,
+    envFiles: [],
+  });
+  try {
+    const database = proxy.env.DB as unknown as BackupDatabase;
+    const bucket = proxy.env.BACKUPS as unknown as BackupBucket;
+    const [statements] = await proxy.env.DB.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(0, 0).raw<string[]>();
+    const dump = (statements ?? []).join("\n");
+    const counter = dumpRowCounter();
+    counter.push(new TextEncoder().encode(dump));
+    const at = new Date();
+    const key = backupKey(undefined, "db-migrate-local", at, `local-${at.getTime()}`);
+    await proxy.env.BACKUPS.put(key, dump);
+    await writeSidecar(bucket, {
+      key,
+      databaseId: "db-migrate-local",
+      bookmark: `local-${at.getTime()}`,
+      takenAt: at.toISOString(),
+      size: Buffer.byteLength(dump),
+      md5: createHash("md5").update(dump).digest("hex"),
+      sha256: createHash("sha256").update(dump).digest("hex"),
+      rows: counter.finish(),
+      ...(await takeD1Census(database)),
+    });
+  } finally {
+    await proxy.dispose();
   }
 }
 
@@ -174,7 +215,7 @@ test.describe("forge db migrate --target local against real D1", () => {
     expect(Object.keys(health).sort()).toEqual(["actual", "recorded", "state"]);
   });
 
-  test("refuses a migration that only fails on data, on a copy restored from a backup, leaving the target alone", async () => {
+  test("refuses a migration that only fails on data, on a copy restored from an R2 dump, leaving the target alone", async () => {
     const user = (id: string, key: string) =>
       `INSERT INTO auth_users (id, email, email_key, is_admin, created_at, updated_at) VALUES (X'${id}', 'ada@example.com', '${key}', 0, 1, 1)`;
     await withD1(async (db) => {
@@ -182,8 +223,7 @@ test.describe("forge db migrate --target local against real D1", () => {
       await db.exec(user("02020202020202020202020202020202", "two@example.com"));
     });
 
-    const backup = forgeDb(["backup", "--target", "local", "--yes"]);
-    expect(backup.code, `backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
+    await seedLocalDump();
 
     const rehearsed = mkdtempSync(join(tmpdir(), "forge-db-rehearse-"));
     cpSync(root, rehearsed, { recursive: true });
@@ -247,66 +287,25 @@ test.describe("forge db migrate --target local against real D1", () => {
     }
   });
 
-  test("backs up through wrangler d1 export, and restores the artifact through forge db restore", async () => {
-    const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--json", "--out", join(root, "exports")]);
-    expect(backup.code, `export backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
-    const { directory, manifest } = JSON.parse(backup.stdout.trim().split("\n").at(-1) ?? "{}") as {
-      directory: string;
-      manifest: { via: string; bookmark: string | null; tables: { name: string; rows: number }[]; verified: { divergent: number }[] };
-    };
-    expect([manifest.via, manifest.bookmark, manifest.verified.map((route) => route.divergent)]).toEqual(["export", null, [0, 0]]);
-    expect(manifest.tables.find((table) => table.name === "auth_users")?.rows).toBe(2);
-
-    const restore = forgeDb(["restore", "--target", "standby", "--artifact", directory, "--route", "full", "--yes"]);
-    expect(restore.code, `restore failed\n${restore.stdout}\n${restore.stderr}`).toBe(0);
-    expect(restore.stdout).toContain("✓ auth_users — 2 rows");
-  });
-
-  test("refuses --via export, naming each column, for every value D1's dumper would not reproduce", async () => {
-    await withD1((db) =>
-      db.exec(
+  test("names each column holding a value D1's dumper would not reproduce, and none whose escape it writes intact", async () => {
+    await withD1(async (db) => {
+      await db.exec(
         "CREATE TABLE probe_hazard (id INTEGER PRIMARY KEY, crlf, lflf, plain, num);" +
           "INSERT INTO probe_hazard VALUES (1, 'a\\ry' || char(13), 'a\\ny' || char(10), 'a\\ny', 1.0);",
-      ),
-    );
-    try {
-      const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--out", join(root, "refused")]);
-      expect(backup.code).toBe(1);
-      const named = ["crlf", "lflf", "plain", "num"].filter((column) => backup.stderr.includes(`probe_hazard.${column}:`));
-      expect(named).toEqual(["crlf", "lflf", "num"]);
-    } finally {
-      await withD1((db) => db.exec("DROP TABLE probe_hazard"));
-    }
-  });
-
-  test("exports a backslash-n with no real newline byte for byte, past the sqlite_stat1 rows ANALYZE leaves", async () => {
-    const row = "X'04040404040404040404040404040404'";
-    await withD1((db) =>
-      db.exec(
-        `INSERT INTO auth_users (id, email, email_key, is_admin, created_at, updated_at) VALUES (${row}, 'a\\ny@example.com', 'k4', 0, 1, 1);ANALYZE;`,
-      ),
-    );
-    const standby = join(root, ".forge", "standby", "probe");
-    let copy: D1Handle | null = null;
-    try {
-      const stats = await withD1((db) => db.rows<{ n: number }>("SELECT count(*) AS n FROM sqlite_stat1"));
-      expect(stats[0]?.n).toBeGreaterThan(0);
-
-      const backup = forgeDb(["backup", "--target", "local", "--via", "export", "--yes", "--json", "--out", join(root, "plain")]);
-      expect(backup.code, `export backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
-      const { directory } = JSON.parse(backup.stdout.trim().split("\n").at(-1) ?? "{}") as { directory: string };
-      const restore = forgeDb(["restore", "--target", "standby:probe", "--artifact", directory, "--route", "full", "--yes"]);
-      expect(restore.code, `restore failed\n${restore.stdout}\n${restore.stderr}`).toBe(0);
-
-      const read = `SELECT hex(email) AS email, typeof(email) AS kind FROM auth_users WHERE id = ${row}`;
-      const source = await withD1((db) => db.rows(read));
-      copy = await openD1(standby, join(standby, ".wrangler", "state", "v3"));
-      expect(await copy.rows(read)).toEqual(source);
-      expect(source).toEqual([{ email: "615C6E79406578616D706C652E636F6D", kind: "text" }]);
-    } finally {
-      await copy?.dispose();
-      await withD1((db) => db.exec(`DELETE FROM auth_users WHERE id = ${row}`));
-    }
+      );
+      try {
+        const hazards = (await takeD1Census(db.binding as unknown as BackupDatabase)).hazards.filter((hazard) => hazard.table === "probe_hazard");
+        expect(hazards).toEqual([
+          { table: "probe_hazard", column: "crlf", kind: "escape", count: 1 },
+          { table: "probe_hazard", column: "lflf", kind: "escape", count: 1 },
+          { table: "probe_hazard", column: "num", kind: "real", count: 1 },
+        ]);
+        const dump = await db.binding.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(1, 0, "probe_hazard").raw<string[]>();
+        expect(dump[0]?.find((line) => line.startsWith("INSERT"))).toContain(",'a\\ny',");
+      } finally {
+        await db.exec("DROP TABLE probe_hazard");
+      }
+    });
   });
 
   test("reports mismatch once DDL is run by hand", async () => {

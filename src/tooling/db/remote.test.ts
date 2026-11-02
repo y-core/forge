@@ -3,7 +3,16 @@ import { describe, expect, it } from "bun:test";
 import { CfApiClientError } from "../cf/api/types";
 import { CliError } from "../cli/errors";
 import { cfEnvelope, cfRefusal, fakeDbIo, REMOTE_AUTH } from "./db.fixture";
-import { executeDeployed, exportDeployed, queryDeployed, readDeployedBookmark, restoreDeployedBookmark } from "./remote";
+import {
+  D1_BATCH_MAX_BYTES,
+  D1_BATCH_MAX_STATEMENTS,
+  D1_STATEMENT_MAX_BYTES,
+  executeDeployed,
+  isD1ResultOverCap,
+  queryDeployed,
+  readDeployedBookmark,
+  restoreDeployedBookmark,
+} from "./remote";
 import type { FakeDbIo, Home } from "./types";
 
 const DB_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
@@ -26,9 +35,7 @@ const REMOTE: Home = {
 const PREVIEW: Home = { ...REMOTE, label: "preview", place: "preview", databaseId: PREVIEW_ID };
 
 const BASE = `https://api.cloudflare.com/client/v4/accounts/acct/d1/database/${DB_ID}`;
-const SIGNED_URL = "https://d1-exports.example.com/dump.sql?X-Amz-Signature=deadbeef";
 const QUERY_OPERATION = "POST /accounts/{account_id}/d1/database/{database_id}/query";
-const EXPORT_OPERATION = "POST /accounts/{account_id}/d1/database/{database_id}/export";
 
 function remoteIo(): FakeDbIo {
   return fakeDbIo({}, { homes: [REMOTE, PREVIEW] });
@@ -61,8 +68,16 @@ function bodyOf(io: FakeDbIo, index: number): unknown {
   return JSON.parse(io.restCalls[index]?.body ?? "null");
 }
 
-const exportCalls = (io: FakeDbIo) => io.restCalls.filter((call) => call.url.endsWith("/export"));
-const downloads = (io: FakeDbIo) => io.restCalls.filter((call) => call.url === SIGNED_URL);
+function echoStatements(io: FakeDbIo): FakeDbIo {
+  io.restRules.push({
+    match: (url) => new URL(url).pathname.endsWith("/query"),
+    reply: (_url, init) => {
+      const { batch } = JSON.parse(typeof init?.body === "string" ? init.body : "{}") as { batch: { sql: string }[] };
+      return cfEnvelope(batch.map(({ sql }) => ({ results: [{ sql }], success: true })));
+    },
+  });
+  return io;
+}
 
 describe("queryDeployed()", () => {
   it("posts the batch to the database's query path with the token as a bearer credential", async () => {
@@ -88,13 +103,145 @@ describe("queryDeployed()", () => {
     expect(bodyOf(io, 0)).toEqual({ batch: [{ sql: "SELECT 1" }, { sql: "SELECT 2;\n" }] });
   });
 
-  it("sends a batch over 131072 bytes as one request, with no argv to cap it", async () => {
-    const io = remoteIo();
-    const wide = `SELECT '${"x".repeat(50_000)}'`;
-    replyTo(io, "/query", cfEnvelope([{ results: [] }, { results: [] }, { results: [] }]));
-    await queryDeployed(io, REMOTE, [wide, wide, wide], "query");
+  it("sends a read batch over the byte budget as ordered requests whose answers line up with the statements", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = Array.from({ length: 5 }, (_, index) => `SELECT ${index} AS n, '${"x".repeat(30_000)}' AS pad`);
+    const answers = await queryDeployed(io, REMOTE, statements, "query");
+    expect(io.restCalls.length).toBeGreaterThan(1);
+    expect(io.restCalls.every((call) => new TextEncoder().encode(call.body ?? "").length <= D1_BATCH_MAX_BYTES)).toBe(true);
+    expect(io.restCalls.flatMap((call) => (JSON.parse(call.body ?? "{}") as { batch: { sql: string }[] }).batch.map(({ sql }) => sql))).toEqual(
+      statements,
+    );
+    expect(answers).toEqual(statements.map((sql) => [{ sql }]));
+  });
+
+  it("splits a read batch at the statement cap", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = Array.from({ length: D1_BATCH_MAX_STATEMENTS + 1 }, (_, index) => `SELECT ${index}`);
+    expect(await queryDeployed(io, REMOTE, statements, "query")).toEqual(statements.map((sql) => [{ sql }]));
+    expect(io.restCalls.map((call) => (JSON.parse(call.body ?? "{}") as { batch: unknown[] }).batch.length)).toEqual([D1_BATCH_MAX_STATEMENTS, 1]);
+  });
+
+  it("measures the budget in UTF-8 bytes, not UTF-16 units", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = [`SELECT '${"é".repeat(20_000)}'`, `SELECT '${"é".repeat(20_000)}'`];
+    await queryDeployed(io, REMOTE, statements, "query");
+    expect(io.restCalls).toHaveLength(2);
+  });
+
+  it("sends a batch that fits the budget as one request", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = [`SELECT '${"x".repeat(30_000)}'`, `SELECT '${"y".repeat(30_000)}'`];
+    expect(await queryDeployed(io, REMOTE, statements, "query")).toEqual(statements.map((sql) => [{ sql }]));
     expect(io.restCalls).toHaveLength(1);
-    expect(io.restCalls[0]?.body?.length).toBeGreaterThan(131_072);
+  });
+
+  it("sends one statement over the budget but under D1's statement limit alone", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = ["SELECT 1", `SELECT '${"x".repeat(90_000)}'`, "SELECT 2"];
+    expect(await queryDeployed(io, REMOTE, statements, "query")).toEqual(statements.map((sql) => [{ sql }]));
+    expect(io.restCalls).toHaveLength(3);
+  });
+
+  it("refuses a statement over D1's 100 KB limit before any request, naming the caller's query", async () => {
+    const io = echoStatements(remoteIo());
+    const statement = `SELECT '${"x".repeat(101 * 1024)}'`;
+    const error = await capture(() => queryDeployed(io, REMOTE, ["SELECT 1", statement], "query `SELECT big`"));
+    expect(error.message).toBe(
+      `query \`SELECT big\` against remote (app-db) failed: statement 2 is ${statement.length} bytes, over D1's ${D1_STATEMENT_MAX_BYTES}-byte statement limit`,
+    );
+    expect(io.restCalls).toEqual([]);
+  });
+
+  it("refuses a write batch that would need more than one request before any request", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = [`INSERT INTO t VALUES ('${"x".repeat(40_000)}')`, `INSERT INTO t VALUES ('${"y".repeat(40_000)}')`];
+    const error = await capture(() => queryDeployed(io, REMOTE, statements, "seed"));
+    expect(error.message).toBe(
+      "seed against remote (app-db) failed: a batch holding a write has to go as one request, and these 2 statements exceed one",
+    );
+    expect(io.restCalls).toEqual([]);
+  });
+
+  it("numbers an unsuccessful statement in a later request by its place in the whole batch", async () => {
+    const io = remoteIo();
+    replyTo(
+      io,
+      "/query",
+      cfEnvelope(Array.from({ length: D1_BATCH_MAX_STATEMENTS }, () => ({ results: [], success: true }))),
+      cfEnvelope([{ results: [], success: false }]),
+    );
+    const statements = Array.from({ length: D1_BATCH_MAX_STATEMENTS + 1 }, (_, index) => `SELECT ${index}`);
+    expect((await capture(() => queryDeployed(io, REMOTE, statements, "query"))).message).toBe(
+      `query against remote (app-db) failed: D1 reported statement ${D1_BATCH_MAX_STATEMENTS + 1} unsuccessful`,
+    );
+  });
+
+  it("sends a statement of exactly D1's documented 100,000 bytes, alone", async () => {
+    const io = echoStatements(remoteIo());
+    const statement = `SELECT '${"x".repeat(100_000 - "SELECT ''".length)}'`;
+    expect(await queryDeployed(io, REMOTE, ["SELECT 1", statement], "query")).toEqual([[{ sql: "SELECT 1" }], [{ sql: statement }]]);
+    expect(io.restCalls.map((_, index) => bodyOf(io, index))).toEqual([{ batch: [{ sql: "SELECT 1" }] }, { batch: [{ sql: statement }] }]);
+  });
+
+  it("refuses a statement one byte over D1's documented 100,000 bytes before any request", async () => {
+    const io = echoStatements(remoteIo());
+    const statement = `SELECT '${"x".repeat(100_001 - "SELECT ''".length)}'`;
+    expect((await capture(() => queryDeployed(io, REMOTE, [statement], "query"))).message).toBe(
+      "query against remote (app-db) failed: statement 1 is 100001 bytes, over D1's 100000-byte statement limit",
+    );
+    expect(io.restCalls).toEqual([]);
+  });
+
+  it("packs two statements whose body exactly fills the budget into one request, and splits them one byte over", async () => {
+    const pad = (n: number) => [`SELECT '${"x".repeat(n)}'`, "SELECT 1"];
+    const bodyBytes = (statements: string[]) => new TextEncoder().encode(JSON.stringify({ batch: statements.map((sql) => ({ sql })) })).length;
+    const filling = D1_BATCH_MAX_BYTES - bodyBytes(pad(0));
+
+    const exact = echoStatements(remoteIo());
+    await queryDeployed(exact, REMOTE, pad(filling), "query");
+    expect(exact.restCalls).toHaveLength(1);
+
+    const over = echoStatements(remoteIo());
+    await queryDeployed(over, REMOTE, pad(filling + 1), "query");
+    expect(over.restCalls).toHaveLength(2);
+  });
+
+  it("stops at a request midway whose statement D1 reports unsuccessful, numbering it in the whole batch and sending no later request", async () => {
+    const io = remoteIo();
+    const succeeded = Array.from({ length: D1_BATCH_MAX_STATEMENTS }, () => ({ results: [], success: true }));
+    replyTo(
+      io,
+      "/query",
+      cfEnvelope(succeeded),
+      cfEnvelope(succeeded.map((statement, index) => (index === 5 ? { results: [], success: false } : statement))),
+      cfEnvelope(succeeded),
+    );
+    const statements = Array.from({ length: 2 * D1_BATCH_MAX_STATEMENTS + 1 }, (_, index) => `SELECT ${index}`);
+    expect((await capture(() => queryDeployed(io, REMOTE, statements, "query"))).message).toBe(
+      `query against remote (app-db) failed: D1 reported statement ${D1_BATCH_MAX_STATEMENTS + 6} unsuccessful`,
+    );
+    expect(io.restCalls).toHaveLength(2);
+  });
+
+  it("stops at a request midway that D1 refuses, sending no later request", async () => {
+    const io = remoteIo();
+    const succeeded = Array.from({ length: D1_BATCH_MAX_STATEMENTS }, () => ({ results: [], success: true }));
+    replyTo(io, "/query", cfEnvelope(succeeded), cfRefusal(7500, "no such table: t"), cfEnvelope(succeeded));
+    const statements = Array.from({ length: 2 * D1_BATCH_MAX_STATEMENTS + 1 }, (_, index) => `SELECT ${index}`);
+    expect((await capture(() => queryDeployed(io, REMOTE, statements, "query"))).message).toBe(
+      "query against remote (app-db) failed: no such table: t (Cloudflare error 7500)",
+    );
+    expect(io.restCalls).toHaveLength(2);
+  });
+
+  it("refuses a write batch over the statement cap before any request, naming the caller's query", async () => {
+    const io = echoStatements(remoteIo());
+    const statements = Array.from({ length: D1_BATCH_MAX_STATEMENTS + 1 }, (_, index) => `INSERT INTO t VALUES (${index})`);
+    expect((await capture(() => queryDeployed(io, REMOTE, statements, "seed"))).message).toBe(
+      `seed against remote (app-db) failed: a batch holding a write has to go as one request, and these ${D1_BATCH_MAX_STATEMENTS + 1} statements exceed one`,
+    );
+    expect(io.restCalls).toEqual([]);
   });
 
   it("refuses a statement D1 reports unsuccessful, naming the home and its position", async () => {
@@ -181,7 +328,7 @@ describe("a failure envelope", () => {
   it("refuses a body that is not JSON, naming the home", async () => {
     const io = remoteIo();
     replyTo(io, "/query", new Response("<html>Bad gateway</html>", { status: 502 }));
-    const error = await capture(() => queryDeployed(io, REMOTE, ["SELECT 1"], "query"));
+    const error = await capture(() => queryDeployed(io, REMOTE, ["DELETE FROM t"], "query"));
     expect(error.kind).toBe("external");
     expect(error.message).toBe("query against remote (app-db) failed: Failed to parse response (HTTP 502)");
   });
@@ -194,14 +341,13 @@ describe("a failure envelope", () => {
         throw new Error("connection reset");
       },
     });
-    expect((await capture(() => queryDeployed(io, REMOTE, ["SELECT 1"], "query"))).message).toContain("failed: network error — ");
+    expect((await capture(() => queryDeployed(io, REMOTE, ["DELETE FROM t"], "query"))).message).toContain("failed: network error — ");
   });
 });
 
 describe("missing credentials", () => {
   const OPERATIONS: [string, (io: FakeDbIo, home: Home) => Promise<unknown>][] = [
     ["query", (io, home) => queryDeployed(io, home, ["SELECT 1"], "query")],
-    ["export", (io, home) => exportDeployed(io, home, "/out.sql", "schema")],
     ["bookmark", (io, home) => readDeployedBookmark(io, home)],
     ["execute", (io, home) => executeDeployed(io, home, "DELETE FROM t", "execute")],
     ["restore", (io, home) => restoreDeployedBookmark(io, home, { bookmark: "B" })],
@@ -233,175 +379,52 @@ describe("missing credentials", () => {
   });
 });
 
-describe("exportDeployed()", () => {
-  const active = (bookmark: string) => cfEnvelope({ status: "active", at_bookmark: bookmark, messages: [] }, 202);
-  const complete = (bookmark?: string, signedUrl = SIGNED_URL) =>
-    cfEnvelope({
-      status: "complete",
-      ...(bookmark === undefined ? {} : { at_bookmark: bookmark }),
-      result: { filename: "dump.sql", signed_url: signedUrl },
-    });
+describe("retrying a transient failure", () => {
+  const unavailable = () => cfRefusal(7500, "unavailable", 503);
+  const retryNow = () => Response.json({ success: false, errors: [], result: null }, { status: 503, headers: { "Retry-After": "0" } });
+  const sentTo = (io: FakeDbIo, suffix: string) => io.restCalls.filter((call) => new URL(call.url).pathname.endsWith(suffix)).length;
 
-  function exportIo(...polls: Response[]): FakeDbIo {
+  it("retries a read-only query batch", async () => {
     const io = remoteIo();
-    replyTo(io, "/export", ...polls);
-    io.restRules.push({ match: (url) => url === SIGNED_URL, reply: () => new Response("CREATE TABLE t (a);\n") });
-    return io;
-  }
-
-  it("asks for a schema-only export first, carrying no bookmark", async () => {
-    const io = exportIo(complete("B"));
-    await exportDeployed(io, REMOTE, "/out.sql", "schema");
-    expect(io.restCalls[0]?.url).toBe(`${BASE}/export`);
-    expect(bodyOf(io, 0)).toEqual({ output_format: "polling", dump_options: { no_data: true } });
+    replyTo(io, "/query", retryNow(), cfEnvelope([{ results: [{ n: 1 }] }]));
+    expect(await queryDeployed(io, REMOTE, ["SELECT 1 AS n"], "query")).toEqual([[{ n: 1 }]]);
+    expect(sentTo(io, "/query")).toBe(2);
   });
 
-  it("asks for the data part with no_schema", async () => {
-    const io = exportIo(complete("B"));
-    await exportDeployed(io, REMOTE, "/out.sql", "data");
-    expect(bodyOf(io, 0)).toEqual({ output_format: "polling", dump_options: { no_schema: true } });
-  });
-
-  it("polls an active export with the bookmark it answered, then downloads without the token and returns it", async () => {
-    const io = exportIo(active("B"), complete("B"));
-    expect(await exportDeployed(io, REMOTE, "/out.sql", "schema")).toBe("B");
-    expect(exportCalls(io)).toHaveLength(2);
-    expect(bodyOf(io, 1)).toEqual({ output_format: "polling", dump_options: { no_data: true }, current_bookmark: "B" });
-    expect(downloads(io)).toEqual([{ url: SIGNED_URL, method: "GET", headers: {}, body: null }]);
-    expect(io.readText("/out.sql")).toBe("CREATE TABLE t (a);\n");
-  });
-
-  it("makes one request when the export completes at once, returning its bookmark or null", async () => {
-    const withBookmark = exportIo(complete("B"));
-    expect(await exportDeployed(withBookmark, REMOTE, "/out.sql", "schema")).toBe("B");
-    expect(exportCalls(withBookmark)).toHaveLength(1);
-
-    const without = exportIo(complete());
-    expect(await exportDeployed(without, REMOTE, "/out.sql", "schema")).toBeNull();
-    expect(exportCalls(without)).toHaveLength(1);
-  });
-
-  it("falls back to the polled bookmark when the completed export names none", async () => {
-    expect(await exportDeployed(exportIo(active("B"), complete()), REMOTE, "/out.sql", "schema")).toBe("B");
-  });
-
-  it("refuses an export D1 reports in error with D1's text, and downloads nothing", async () => {
-    const io = exportIo(cfEnvelope({ status: "error", error: "database is too large to export" }));
-    expect((await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"))).message).toBe(
-      "export against remote (app-db) failed: database is too large to export",
-    );
-    expect(downloads(io)).toEqual([]);
-  });
-
-  it("says so when D1 reports an error and no detail", async () => {
-    const io = exportIo(cfEnvelope({ status: "error" }));
-    expect((await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"))).message).toBe(
-      "export against remote (app-db) failed: D1 reported an error and no detail",
-    );
-  });
-
-  it("refuses an export whose bookmark moves while it is polled", async () => {
-    const io = exportIo(active("B"), active("C"));
-    expect((await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"))).message).toBe(
-      "export against remote (app-db) failed: D1 moved the export's bookmark while it was being polled",
-    );
-    expect(downloads(io)).toEqual([]);
-  });
-
-  it("refuses an active export with no bookmark as a schema refusal", async () => {
-    const io = exportIo(cfEnvelope({ status: "active" }, 202));
-    const { message } = await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"));
-    expect(message).toContain(EXPORT_OPERATION);
-    expect(message).toContain("unexpected response shape at at_bookmark");
-  });
-
-  it("refuses a signed URL that is not HTTPS without fetching or quoting it", async () => {
-    const plain = "http://d1-exports.example.com/dump.sql?X-Amz-Signature=deadbeef";
-    const io = exportIo(complete("B", plain));
-    const { message } = await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"));
-    expect(message).toBe("downloading the export of remote (app-db) was refused: D1 answered a signed URL that is not HTTPS");
-    expect(io.restCalls.map((call) => call.url)).not.toContain(plain);
-    expect(message).not.toContain("d1-exports.example.com");
-  });
-
-  it("refuses a download the signed URL answers with an error status, naming the status alone and writing nothing", async () => {
+  it("sends a query batch holding a write once", async () => {
     const io = remoteIo();
-    replyTo(io, "/export", complete("B"));
-    io.restRules.push({ match: (url) => url === SIGNED_URL, reply: () => new Response("denied", { status: 403 }) });
-    const { message } = await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"));
-    expect(message).toBe("downloading the export of remote (app-db) failed (HTTP 403)");
-    expect(io.exists("/out.sql")).toBe(false);
+    replyTo(io, "/query", unavailable(), cfEnvelope([{ results: [] }, { results: [] }]));
+    await capture(() => queryDeployed(io, REMOTE, ["SELECT 1", "INSERT INTO t VALUES (1)"], "query"));
+    expect(sentTo(io, "/query")).toBe(1);
   });
 
-  it("reports a download that throws as a network error carrying no cause, writing nothing", async () => {
+  it("sends an element packing a write after a read once", async () => {
     const io = remoteIo();
-    replyTo(io, "/export", complete("B"));
-    io.restRules.push({ match: (url) => url === SIGNED_URL, reply: () => Promise.reject(new Error(`fetch ${SIGNED_URL} failed`)) as never });
-    const error = await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"));
-    expect([error.kind, error.message, error.cause]).toEqual([
-      "external",
-      "downloading the export of remote (app-db) failed: network error",
-      undefined,
-    ]);
-    expect(io.exists("/out.sql")).toBe(false);
+    replyTo(io, "/query", retryNow(), cfEnvelope([{ results: [] }]));
+    const error = await capture(() => queryDeployed(io, REMOTE, ["SELECT 1; DELETE FROM t"], "query"));
+    expect(error.kind).toBe("external");
+    expect(sentTo(io, "/query")).toBe(1);
   });
 
-  it("writes nothing when the signed URL is refused for not being HTTPS", async () => {
-    const io = exportIo(complete("B", "HTTP://d1-exports.example.com/dump.sql"));
-    await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"));
-    expect([downloads(io), io.restCalls.filter((call) => call.url.includes("d1-exports")), io.exists("/out.sql")]).toEqual([[], [], false]);
+  it("sends a body of SQL loaded from a file once", async () => {
+    const io = remoteIo();
+    replyTo(io, "/query", unavailable(), cfEnvelope([{ results: [] }]));
+    await capture(() => executeDeployed(io, REMOTE, "INSERT INTO t VALUES (1);", "loading m.sql"));
+    expect(sentTo(io, "/query")).toBe(1);
   });
 
-  it("refuses a completed export whose result is malformed without quoting the signed URL it carried", async () => {
-    const io = exportIo(cfEnvelope({ status: "complete", at_bookmark: "B", result: { signed_url: SIGNED_URL } }));
-    const error = await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"));
-    expect(error.message).toStartWith(`export against remote (app-db) failed: ${EXPORT_OPERATION}: unexpected response shape at result.filename`);
-    expect(error.message).not.toContain("d1-exports.example.com");
-    expect(String((error.cause as Error | undefined)?.message)).not.toContain("d1-exports.example.com");
-    expect(downloads(io)).toEqual([]);
+  it("sends a Time Travel restore once", async () => {
+    const io = remoteIo();
+    replyTo(io, "/time_travel/restore", unavailable(), cfEnvelope({ bookmark: "B", previous_bookmark: "A" }));
+    expect((await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).kind).toBe("unknown");
+    expect(sentTo(io, "/time_travel/restore")).toBe(1);
   });
 
-  it("keeps polling an export that stays active at the same bookmark, carrying it on every poll", async () => {
-    const io = exportIo(active("B"), active("B"), active("B"), complete("B"));
-    expect(await exportDeployed(io, REMOTE, "/out.sql", "schema")).toBe("B");
-    expect(exportCalls(io).map((call) => (JSON.parse(call.body ?? "{}") as { current_bookmark?: string }).current_bookmark)).toEqual([
-      undefined,
-      "B",
-      "B",
-      "B",
-    ]);
-  });
-
-  it("refuses an export in error after a poll, downloading nothing", async () => {
-    const io = exportIo(active("B"), cfEnvelope({ status: "error", error: "export cancelled" }));
-    expect((await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"))).message).toBe(
-      "export against remote (app-db) failed: export cancelled",
-    );
-    expect(downloads(io)).toEqual([]);
-  });
-
-  it("never puts the signed URL in a message or a log line, whether the download succeeds or fails", async () => {
-    const succeeded = exportIo(active("B"), complete("B"));
-    await exportDeployed(succeeded, REMOTE, "/out.sql", "schema");
-    expect(succeeded.logs.join("\n")).not.toContain("d1-exports.example.com");
-
-    for (const reply of [() => new Response("denied", { status: 403 }), () => Promise.reject(new Error(`fetch ${SIGNED_URL} failed`))]) {
-      const failing = remoteIo();
-      replyTo(failing, "/export", complete("B"));
-      failing.restRules.push({ match: (url) => url === SIGNED_URL, reply: reply as () => Response });
-      const error = await capture(() => exportDeployed(failing, REMOTE, "/out.sql", "schema"));
-      expect(error.message).not.toContain("d1-exports.example.com");
-      expect(error.message).not.toContain("X-Amz-Signature");
-      expect(String(error.cause ?? "")).not.toContain("d1-exports.example.com");
-      expect(failing.logs.join("\n")).not.toContain("d1-exports.example.com");
-    }
-  });
-
-  it("gives the auth message when a poll is refused for the token", async () => {
-    const io = exportIo(active("B"), cfRefusal(10000, "Authentication error"));
-    expect((await capture(() => exportDeployed(io, REMOTE, "/out.sql", "schema"))).message).toBe(
-      "export against remote (app-db) failed: Cloudflare refused the --api-token — it is invalid, or lacks Account → D1 → Edit · code 10000",
-    );
+  it("retries a bookmark read", async () => {
+    const io = remoteIo();
+    replyTo(io, "/time_travel/bookmark", retryNow(), cfEnvelope({ bookmark: "b" }));
+    expect(await readDeployedBookmark(io, REMOTE)).toBe("b");
+    expect(sentTo(io, "/time_travel/bookmark")).toBe(2);
   });
 });
 
@@ -423,23 +446,90 @@ describe("Time Travel", () => {
   it("restores to a bookmark with no body, returning the bookmark it held before", async () => {
     const io = remoteIo();
     replyTo(io, "/time_travel/restore", cfEnvelope({ bookmark: "B", previous_bookmark: "A", message: "Restored" }));
-    expect(await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).toBe("A");
+    expect(await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).toEqual({ kind: "restored", previousBookmark: "A" });
     expect(io.restCalls[0]).toMatchObject({ url: `${BASE}/time_travel/restore?bookmark=B`, method: "POST", body: null });
   });
 
   it("restores to a timestamp as an ISO 8601 instant", async () => {
     const io = remoteIo();
     replyTo(io, "/time_travel/restore", cfEnvelope({ bookmark: "B", previous_bookmark: "A" }));
-    expect(await restoreDeployedBookmark(io, REMOTE, { timestamp: "2026-09-01T00:00:00Z" })).toBe("A");
+    expect(await restoreDeployedBookmark(io, REMOTE, { timestamp: "2026-09-01T00:00:00Z" })).toEqual({ kind: "restored", previousBookmark: "A" });
     expect(io.restCalls[0]?.url).toBe(`${BASE}/time_travel/restore?timestamp=2026-09-01T00%3A00%3A00.000Z`);
   });
 
-  it("refuses a restore whose answer carries no previous bookmark as a schema refusal", async () => {
+  it("answers a restore whose reply names no previous bookmark as restored with none", async () => {
     const io = remoteIo();
     replyTo(io, "/time_travel/restore", cfEnvelope({ bookmark: "B" }));
-    const { message } = await capture(() => restoreDeployedBookmark(io, REMOTE, { bookmark: "B" }));
-    expect(message).toContain("POST /accounts/{account_id}/d1/database/{database_id}/time_travel/restore");
-    expect(message).toContain("unexpected response shape at previous_bookmark");
+    expect(await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).toEqual({ kind: "restored", previousBookmark: null });
+  });
+
+  it("answers an accepted restore whose reply cannot be read as unreadable, never as a refusal", async () => {
+    for (const reply of [
+      cfEnvelope({ previous_bookmark: 42 }),
+      cfEnvelope([]),
+      new Response("<html>ok</html>", { status: 200 }),
+      Response.json({ result: null }),
+    ]) {
+      const io = remoteIo();
+      replyTo(io, "/time_travel/restore", reply);
+      expect(await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).toEqual({ kind: "unreadable" });
+    }
+  });
+
+  it("answers a restore whose transport failed as unknown, having sent it once", async () => {
+    const io = remoteIo();
+    io.restRules.push({
+      match: (url) => url.includes("/time_travel/restore"),
+      reply: () => {
+        throw new Error("connection reset");
+      },
+    });
+    expect(await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).toEqual({ kind: "unknown", reason: "Network error: connection reset" });
+    expect(io.restCalls).toHaveLength(1);
+  });
+
+  it("answers a failure envelope on a 2xx as unknown, since D1 may have acted on it", async () => {
+    const io = remoteIo();
+    replyTo(io, "/time_travel/restore", Response.json({ success: false, errors: [], result: null }, { status: 200 }));
+    expect(await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" })).toEqual({
+      kind: "unknown",
+      reason: "D1 answered HTTP 200 with a failure envelope",
+    });
+  });
+
+  it("refuses a rate-limited restore as not restored, naming the time a Retry-After allows the next", async () => {
+    const io = remoteIo();
+    replyTo(
+      io,
+      "/time_travel/restore",
+      Response.json({ success: false, errors: [], result: null }, { status: 429, headers: { "Retry-After": "90" } }),
+    );
+    const error = await capture(() => restoreDeployedBookmark(io, REMOTE, { bookmark: "B" }));
+    expect([error.kind, error.message]).toEqual([
+      "external",
+      "time-travel restore against remote (app-db) failed: not restored — D1 rate-limited the restore; the next is allowed after 2026-09-11T10:01:30.000Z",
+    ]);
+    expect(io.restCalls).toHaveLength(1);
+  });
+
+  it("names the time a Retry-After HTTP date allows the next restore", async () => {
+    const io = remoteIo();
+    replyTo(
+      io,
+      "/time_travel/restore",
+      Response.json({ success: false, errors: [], result: null }, { status: 429, headers: { "Retry-After": "Fri, 11 Sep 2026 10:05:00 GMT" } }),
+    );
+    expect((await capture(() => restoreDeployedBookmark(io, REMOTE, { bookmark: "B" }))).message).toBe(
+      "time-travel restore against remote (app-db) failed: not restored — D1 rate-limited the restore; the next is allowed after 2026-09-11T10:05:00.000Z",
+    );
+  });
+
+  it("refuses a rate-limited restore with no Retry-After as not restored", async () => {
+    const io = remoteIo();
+    replyTo(io, "/time_travel/restore", cfRefusal(971, "Too many requests", 429));
+    expect((await capture(() => restoreDeployedBookmark(io, REMOTE, { bookmark: "B" }))).message).toBe(
+      "time-travel restore against remote (app-db) failed: not restored — D1 rate-limited the restore; try again in a few minutes",
+    );
   });
 
   it("refuses a date that does not exist before any request, rather than rolling it over", async () => {
@@ -461,7 +551,7 @@ describe("Time Travel", () => {
     ] as const) {
       const io = remoteIo();
       replyTo(io, "/time_travel/restore", cfEnvelope({ bookmark: "B", previous_bookmark: "A" }));
-      expect(await restoreDeployedBookmark(io, REMOTE, { timestamp })).toBe("A");
+      expect(await restoreDeployedBookmark(io, REMOTE, { timestamp })).toEqual({ kind: "restored", previousBookmark: "A" });
       expect(io.restCalls[0]?.url).toBe(`${BASE}/time_travel/restore?timestamp=${sent}`);
     }
   });
@@ -490,22 +580,7 @@ describe("Time Travel", () => {
 describe("a schema refusal", () => {
   const SENTINEL = "do-not-echo-7f3a";
   const CASES: { name: string; reply: Response; run: (io: FakeDbIo) => Promise<unknown> }[] = [
-    {
-      name: "an export status D1 does not define",
-      reply: cfEnvelope({ status: SENTINEL }),
-      run: (io) => exportDeployed(io, REMOTE, "/o.sql", "schema"),
-    },
-    {
-      name: "an active export whose bookmark is not text",
-      reply: cfEnvelope({ status: "active", at_bookmark: [SENTINEL] }, 202),
-      run: (io) => exportDeployed(io, REMOTE, "/o.sql", "schema"),
-    },
     { name: "a bookmark that is not text", reply: cfEnvelope({ bookmark: { value: SENTINEL } }), run: (io) => readDeployedBookmark(io, REMOTE) },
-    {
-      name: "a restore with no previous bookmark",
-      reply: cfEnvelope({ bookmark: SENTINEL, message: SENTINEL }),
-      run: (io) => restoreDeployedBookmark(io, REMOTE, { bookmark: "B" }),
-    },
     {
       name: "a statement whose rows are not a list",
       reply: cfEnvelope([{ results: SENTINEL }]),
@@ -555,36 +630,23 @@ describe("the API token", () => {
     it(`never appears in the refusal for ${name}`, async () => {
       const io = remoteIo();
       io.restRules.push({ match: () => true, reply });
-      const error = await capture(() => queryDeployed(io, HOME, ["SELECT 1"], "query"));
+      const error = await capture(() => queryDeployed(io, HOME, ["DELETE FROM t"], "query"));
       expect(error.kind).toBe("external");
       expect(error.message).not.toContain(TOKEN);
       expect(String((error.cause as Error | undefined)?.message)).not.toContain(TOKEN);
       expect(io.logs.join("\n")).not.toContain(TOKEN);
     });
   }
-
-  it("never reaches the signed URL, nor a refused download's message", async () => {
-    const io = remoteIo();
-    replyTo(io, "/export", cfEnvelope({ status: "complete", at_bookmark: "B", result: { filename: "d.sql", signed_url: SIGNED_URL } }));
-    io.restRules.push({ match: (url) => url === SIGNED_URL, reply: () => new Response("denied", { status: 403 }) });
-    const error = await capture(() => exportDeployed(io, HOME, "/out.sql", "schema"));
-    expect(downloads(io)).toHaveLength(1);
-    expect(JSON.stringify(downloads(io))).not.toContain(TOKEN);
-    expect(error.message).not.toContain(TOKEN);
-  });
 });
 
 describe("paging", () => {
   it("sends no paging parameter on any D1 request", async () => {
     const io = remoteIo();
     replyTo(io, "/query", cfEnvelope([{ results: [] }]));
-    replyTo(io, "/export", cfEnvelope({ status: "complete", at_bookmark: "B", result: { filename: "d.sql", signed_url: SIGNED_URL } }));
     replyTo(io, "/time_travel/bookmark", cfEnvelope({ bookmark: "B" }));
     replyTo(io, "/time_travel/restore", cfEnvelope({ bookmark: "B", previous_bookmark: "A" }));
-    io.restRules.push({ match: (url) => url === SIGNED_URL, reply: () => new Response("") });
     await queryDeployed(io, REMOTE, ["SELECT 1"], "query");
     await executeDeployed(io, REMOTE, "SELECT 1", "execute");
-    await exportDeployed(io, REMOTE, "/out.sql", "schema");
     await readDeployedBookmark(io, REMOTE, "1700000000");
     await restoreDeployedBookmark(io, REMOTE, { bookmark: "B" });
     for (const call of io.restCalls.filter((c) => c.url.startsWith("https://api.cloudflare.com/"))) {
@@ -593,4 +655,31 @@ describe("paging", () => {
       expect(new URL(call.url).searchParams.has("cursor")).toBe(false);
     }
   });
+});
+
+describe("isD1ResultOverCap()", () => {
+  const OVER_CAP = "Query result size exceeds the 50 MB limit";
+
+  it("holds for a query D1 refused with a message naming the result size limit", async () => {
+    const io = remoteIo();
+    replyTo(io, "/query", cfRefusal(7500, OVER_CAP));
+    expect(isD1ResultOverCap(await capture(() => queryDeployed(io, REMOTE, ["SELECT * FROM t"], "query")))).toBe(true);
+  });
+
+  it("does not hold for another refusal, nor for the same words outside a Cloudflare refusal", async () => {
+    const io = remoteIo();
+    replyTo(io, "/query", cfRefusal(7500, "no such table: t"));
+    expect(isD1ResultOverCap(await capture(() => queryDeployed(io, REMOTE, ["SELECT * FROM t"], "query")))).toBe(false);
+    expect(isD1ResultOverCap(new CliError("external", OVER_CAP))).toBe(false);
+    expect(isD1ResultOverCap(new CliError("external", "x", { cause: new CfApiClientError("network", OVER_CAP) }))).toBe(false);
+    expect(isD1ResultOverCap(new Error(OVER_CAP))).toBe(false);
+  });
+
+  for (const message of ["no such column: result", 'near "result": syntax error', "D1_ERROR: result set is empty", "string or blob too big"]) {
+    it(`does not hold for a Cloudflare refusal that is not about the result cap: ${message}`, async () => {
+      const io = remoteIo();
+      replyTo(io, "/query", cfRefusal(7500, message));
+      expect(isD1ResultOverCap(await capture(() => queryDeployed(io, REMOTE, ["SELECT * FROM t"], "query")))).toBe(false);
+    });
+  }
 });

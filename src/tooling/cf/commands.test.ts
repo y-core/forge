@@ -34,8 +34,8 @@ describe("createCfCommands", () => {
 });
 
 describe("createCfCommands — sync", () => {
-  it("scopes to account and zone, in that order", () => {
-    expect(child(createCfCommands(), "sync").commands.map((c) => c.name)).toEqual(["account", "zone"]);
+  it("scopes to account, zone and a bucket's lifecycle, in that order", () => {
+    expect(child(createCfCommands(), "sync").commands.map((c) => c.name)).toEqual(["account", "zone", "lifecycle"]);
   });
 
   it("describes itself as the account scope with a scope name available", () => {

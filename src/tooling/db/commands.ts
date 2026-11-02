@@ -3,7 +3,7 @@ import { confirm } from "../cli/confirm";
 import { CliError } from "../cli/errors";
 import type { CliContext, CommandBase } from "../cli/types";
 import { createBackupCommands } from "./backup/commands";
-import { timeTravelInfo, timeTravelRestore } from "./bookmark";
+import { describeBookmarkUndo, timeTravelInfo, timeTravelRestore } from "./bookmark";
 import { confirmPrinter, sharedDbFlags, withDbRun } from "./context";
 import { createMigrateCommands } from "./migrate/commands";
 import { createSchemaCommands } from "./schema/commands";
@@ -68,7 +68,7 @@ function createBookmarkCommands(overrides: DbContextOverrides): CommandBase {
           });
           const undo = await timeTravelRestore(run.io, run.home, point, run.config);
           if (run.json) run.print(JSON.stringify({ target: run.config.target.place, database: run.home.database, restored: point, undo }));
-          else run.print(`restored\nundo with: ${undo.restoreCommand}`);
+          else run.print(describeBookmarkUndo(undo));
         });
       },
     }),

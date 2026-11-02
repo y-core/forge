@@ -3,8 +3,9 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import process from "node:process";
 
-import { getPlatformProxy, unstable_splitSqlQuery } from "wrangler";
+import { getPlatformProxy } from "wrangler";
 
+import { cutSqlStatements } from "../storage/backup/split";
 import { DB_LAYOUT, inMigrationOrder, isMigrationFileName } from "../storage/db/migrations";
 import { INVENTORY_SELECT } from "../storage/db/schema";
 import type { D1Database, SqlFragment } from "../storage/db/types";
@@ -128,7 +129,7 @@ export async function openTestD1(options: OpenTestD1Options = {}): Promise<TestD
 
   const migrate = async (): Promise<void> => {
     for (const migration of migrations) {
-      const statements = unstable_splitSqlQuery(migration.sql).filter((statement) => statement.trim() !== "");
+      const statements = cutSqlStatements(migration.sql);
       if (statements.length === 0) continue;
       await db.batch(statements.map((statement) => db.prepare(statement))).catch((error: unknown) => {
         throw new Error(`openTestD1: ${migration.name} failed to apply: ${error instanceof Error ? error.message : String(error)}`, {

@@ -16,6 +16,7 @@ Reach for it before a deploy, in the gate, and as your `dev` script.
 forge cf sync                 # status for the account scope. Writes nothing
 forge cf sync --commit        # create the missing remotes, write the resolved ids back
 forge cf sync zone            # zone rules, read from config/site.config.ts
+forge cf sync lifecycle --bucket BACKUPS --expire-days 90 --ia-days 30   # age out D1 dumps in R2
 forge cf gen env              # emit env.schema.ts from wrangler.jsonc + .dev.vars
 forge cf dev                  # wrangler dev, with forge's development relaxations on
 ```
@@ -286,6 +287,23 @@ account-scoped: **Account → _Account Rulesets: Edit_**. Both phases failing to
 only one.
 
 ---
+
+## Ageing out backups in R2
+
+`forge cf sync lifecycle` keeps one R2 lifecycle rule on a bucket: it deletes objects under a prefix after `--expire-days`, and moves them to
+Infrequent Access after `--ia-days`. R2 does the work itself, so pruning old D1 dumps by age costs your Worker nothing:
+
+```bash
+forge cf sync lifecycle --bucket BACKUPS --expire-days 90 --ia-days 30            # show the rule as it is and as wanted
+forge cf sync lifecycle --bucket BACKUPS --expire-days 90 --ia-days 30 --commit   # write it
+```
+
+**`--bucket` takes the `r2_buckets` binding or the bucket's own name.** `--prefix` defaults to `d1-backups`, the prefix `runD1Backup` writes
+under, so each dump and its `.json` sidecar expire together.
+
+**Only forge's own rule is touched.** R2's lifecycle API replaces every rule on a bucket at once, so the run reads them first and writes back
+the full list. Forge's rule is replaced in place, by its id (`forge-d1-backups` for the default prefix), and every other rule is kept as it was.
+A move to Infrequent Access that would come no earlier than the expiry is refused. The token needs Account → Workers R2 Storage → Edit.
 
 ## Generating the env schema
 

@@ -5,6 +5,8 @@ import {
   D1_WRITE_PERMISSION,
   d1DatabasePath,
   d1Path,
+  r2ObjectPath,
+  r2ObjectsPath,
   WORKER_PERMISSION,
   workerBuildSettings,
   WORKERS_CI_PERMISSION,
@@ -147,5 +149,17 @@ describe("d1DatabasePath", () => {
 
   it("encodes a slash in the database id, so it cannot reach a sibling operation", () => {
     expect(d1DatabasePath("acc-1", "x/../y")).toBe("/accounts/acc-1/d1/database/x%2F..%2Fy");
+  });
+});
+
+describe("r2ObjectPath", () => {
+  it("builds a bucket's object listing path", () => {
+    expect(r2ObjectsPath("acc-1", "app-backups")).toBe("/accounts/acc-1/r2/buckets/app-backups/objects");
+  });
+
+  it("keeps each slash of the key as a path separator and encodes every segment", () => {
+    expect(r2ObjectPath("acc-1", "app-backups", "d1-backups/db 1/2026-09-11T09:00:00.000Z-b?.sql")).toBe(
+      "/accounts/acc-1/r2/buckets/app-backups/objects/d1-backups/db%201/2026-09-11T09%3A00%3A00.000Z-b%3F.sql",
+    );
   });
 });

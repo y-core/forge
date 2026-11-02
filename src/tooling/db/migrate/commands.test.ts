@@ -200,7 +200,6 @@ describe("forge db migrate", () => {
       expect(result.code).toBe(1);
       expect(result.err.join("\n")).toContain(reason);
       expect(io.d1Calls).toEqual([]);
-      expect(io.calls).toEqual([]);
     });
   }
 });
@@ -225,7 +224,7 @@ describe("forge db migrate against the deployed database", () => {
     ["--yes", "applied 1: 0001_init"],
     ["--dry-run", "would apply 1 to app-db (remote): 0001_init"],
   ] as const) {
-    it(`reaches the database under ${flag} only through DbIo.fetch, never the global fetch, spawning nothing`, async () => {
+    it(`reaches the database under ${flag} only through DbIo.fetch, never the global fetch`, async () => {
       const root = appRoot();
       const io = fakeDbIo({ [join(root, "config", "db", "migrations", "0001_init.sql")]: GENERATED_INIT }, { now: NOW, homes: [REMOTE_HOME] });
       wire(io);
@@ -236,7 +235,6 @@ describe("forge db migrate against the deployed database", () => {
 
       expect([result.code, result.err, result.out.at(-1), sent]).toEqual([null, [], last, []]);
       expect(io.restCalls.length).toBeGreaterThan(0);
-      expect(io.calls).toEqual([]);
     });
   }
 
@@ -503,7 +501,6 @@ describe("forge db lint", () => {
       expect(result.code).toBe(1);
       expect(result.err.join("\n")).toStartWith("Error: ");
       expect(io.d1Calls).toEqual([]);
-      expect(io.calls).toEqual([]);
     });
   }
 
@@ -539,7 +536,6 @@ describe("forge db lint", () => {
 
     expect(result.code).toBe(1);
     expect(result.err.join("\n")).toContain("remote is refused while wrangler.jsonc's database_id is the placeholder app-db-local");
-    expect(io.calls).toEqual([]);
   });
 
   it("reads a remote target over the D1 REST API", async () => {
@@ -551,7 +547,6 @@ describe("forge db lint", () => {
 
     expect([result.code, result.out]).toEqual([null, ["1 pending migration(s) on app-db (remote) — no findings"]]);
     expect(sentBatches(io)).toContain(INVENTORY_SELECT);
-    expect(io.calls).toEqual([]);
   });
 
   it("refuses a drop its file does not approve, and names each one it does", async () => {
