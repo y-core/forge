@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.7.3] — 2026-11-03
+
 ### Breaking Changes
 
 - **`createConfig` refuses an `env("…")` name your `wrangler.jsonc` does not declare, and a binding's name.** The module `forge cf gen env`
@@ -1545,6 +1551,7 @@ the Worker secret holding the D1 token if nothing else reads it. Schedule `forge
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.7.3]: https://github.com/y-core/forge/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/y-core/forge/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/y-core/forge/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/y-core/forge/compare/v0.6.2...v0.7.0
