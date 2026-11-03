@@ -14,6 +14,15 @@ export const R2_REST_PUT_MAX_BYTES = 300 * 1024 * 1024;
 
 const LIST_PAGE_SIZE = 1000;
 
+/** Why a body cannot go through Cloudflare's REST object endpoint: it is over its cap, or of no stated length. @internal */
+export function restPutRefusal(key: string, size: number | null): CliError {
+  const what = size === null ? `${key} has no stated length` : `${key} is ${size} bytes`;
+  return new CliError(
+    "invalid-args",
+    `${what}, and Cloudflare's REST object endpoint — the one \`wrangler r2 object put\` uses — takes a body of stated length of at most ${R2_REST_PUT_MAX_BYTES} — upload it through R2's S3 API instead`,
+  );
+}
+
 /** How long a request may go without an answer or an upload's progress, and a download between two chunks. @internal */
 export const REST_BUCKET_TIMEOUTS: RestBucketTimeouts = { requestMs: D1_REQUEST_TIMEOUT_MS, idleMs: 60_000 };
 
@@ -85,21 +94,16 @@ function parsedJson(text: string): unknown {
   }
 }
 
-function unsupported(verb: string): Error {
-  return new Error(`restBackupBucket: ${verb} is not offered over Cloudflare's REST object endpoint`);
-}
-
 function bodyLength(
   value: string | Uint8Array | ReadableStream<Uint8Array>,
   stated: number | undefined,
-): { body: Uint8Array | ReadableStream<Uint8Array>; size: number } {
+): { body: Uint8Array | ReadableStream<Uint8Array>; size: number | null } {
   if (typeof value === "string") {
     const bytes = new TextEncoder().encode(value);
     return { body: bytes, size: bytes.byteLength };
   }
   if (value instanceof Uint8Array) return { body: value, size: value.byteLength };
-  if (stated === undefined) throw new Error("restBackupBucket: a stream body needs its contentLength stated");
-  return { body: value, size: stated };
+  return { body: value, size: stated ?? null };
 }
 
 /** The R2 bucket `bucketName` reached over Cloudflare's REST object endpoint, as the surface the backup readers take. @internal */
@@ -171,12 +175,9 @@ export function restBackupBucket(io: DbIo, auth: CfAuth, bucketName: string, tim
     async put(key, value, options = {}) {
       const what = `writing ${key} to ${bucketName}`;
       const { body, size } = bodyLength(value, options.contentLength);
-      if (size > R2_REST_PUT_MAX_BYTES) {
+      if (size === null || size > R2_REST_PUT_MAX_BYTES) {
         if (body instanceof ReadableStream) await body.cancel();
-        throw new CliError(
-          "invalid-args",
-          `${key} is ${size} bytes, and Cloudflare's REST object endpoint — the one \`wrangler r2 object put\` uses — takes at most ${R2_REST_PUT_MAX_BYTES} — upload it through R2's S3 API instead`,
-        );
+        throw restPutRefusal(key, size);
       }
       const headers: Record<string, string> = { ...authorization, "Content-Length": String(size) };
       const contentType = options.httpMetadata?.contentType;
@@ -209,6 +210,5 @@ export function restBackupBucket(io: DbIo, auth: CfAuth, bucketName: string, tim
         await res.body?.cancel();
       }
     },
-    createMultipartUpload: () => Promise.reject(unsupported("createMultipartUpload")),
   };
 }

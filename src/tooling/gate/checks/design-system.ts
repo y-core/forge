@@ -4,10 +4,13 @@ import { dirname } from "node:path";
 import { stylesheetPath } from "../../assets/css-declaration";
 import type { DesignSystem } from "./types";
 
+// A specifier the compiler cannot read keeps the optional peer out of a consumer's type-check.
+const TAILWIND = "tailwindcss";
+
 /** Whether `tailwindcss` can be resolved — a derivation is unrunnable without it, and it is an optional peer. @public */
 export function hasTailwind(): boolean {
   try {
-    import.meta.resolve("tailwindcss");
+    import.meta.resolve(TAILWIND);
     return true;
   } catch {
     return false;
@@ -21,7 +24,7 @@ export const fileURLToPathish = (url: string): string => (url.startsWith("file:/
 // and a silent no-op would hide the day it does.
 /** Compiles the stylesheet at `entry` into the design system it declares. @public */
 export async function loadDesignSystem(entry: string): Promise<DesignSystem> {
-  const { __unstable__loadDesignSystem } = (await import("tailwindcss")) as {
+  const { __unstable__loadDesignSystem } = (await import(TAILWIND)) as {
     __unstable__loadDesignSystem: (css: string, options: unknown) => Promise<DesignSystem>;
   };
 

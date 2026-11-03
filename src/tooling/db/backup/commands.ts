@@ -1,3 +1,4 @@
+import { restoreReportKey } from "../../../storage/backup/list";
 import { addCommand, createCommand } from "../../cli/command";
 import { confirm } from "../../cli/confirm";
 import { CliError } from "../../cli/errors";
@@ -6,15 +7,26 @@ import { confirmPrinter, sharedDbFlags, withDbRun } from "../context";
 import { isRemotePlace } from "../target";
 import type { DbContextOverrides, SharedDbFlags } from "../types";
 import { listDumps, pullDump, pushDump } from "./copy";
-import { dumpDatabaseId, resolveDumpSource } from "./dumps";
+import { describeRestore, describeSidecar } from "./describe";
+import { openBackupPorts, resolveDumpSource } from "./dumps";
 import { describePromotion, executePromotion, preparePromotion } from "./promote";
 import { executeReset, prepareReset } from "./reset";
-import { BACKUP_WORKFLOW, describeRestore, describeSidecar, followWorkflow, RESTORE_WORKFLOW } from "./workflow";
+import { restoreD1Backup } from "./restore";
+import { D1PruneError, takeD1Backup } from "./run";
 
-function readPort(value: string | undefined): number {
-  if (value === undefined) return 8787;
-  if (!/^[1-9]\d{0,4}$/.test(value) || Number(value) > 65_535) throw new CliError("invalid-args", `--port takes a TCP port, not ${value}`);
+const D1_NAME_LIMIT = 64;
+
+function readKeep(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) throw new CliError("invalid-args", `--keep takes a number of dumps, not ${value}`);
   return Number(value);
+}
+
+function rerun(error: unknown, verb: "backup" | "restore"): unknown {
+  if (!(error instanceof CliError) || error.kind !== "external" || error instanceof D1PruneError) return error;
+  const left = verb === "backup" ? "no sidecar was written, so this run left no complete dump" : "the restore did not finish";
+  const into = verb === "restore" ? " into a new or empty database" : "";
+  return new CliError("external", `${error.message}\n${left} — run \`forge db ${verb}\` again${into}`, { cause: error });
 }
 
 function readInto(value: string | undefined): string | null {
@@ -24,38 +36,38 @@ function readInto(value: string | undefined): string | null {
   return standby;
 }
 
-const bucketFlag = {
-  bucket: { type: "string" as const, description: "The R2 binding the dumps are in. Defaults to BACKUPS, or the config's only one" },
-};
+const bucketFlag = { bucket: { type: "string" as const, description: "The R2 binding the dumps are in. Defaults to BACKUPS" } };
 
-const dumpFlags = { ...bucketFlag, prefix: { type: "string" as const, description: "The prefix runD1Backup was given. Defaults to d1-backups" } };
-
-const workflowFlags = {
-  workflow: {
-    type: "string" as const,
-    description: "The Workflow to start, by name or binding. Defaults to its conventional name, or the config's only one",
-  },
-  port: { type: "string" as const, description: "Against a local database: the port `forge cf dev` serves on. Defaults to 8787" },
+const dumpFlags = {
+  ...bucketFlag,
+  prefix: { type: "string" as const, description: "The prefix forge db backup was given. Defaults to d1-backups" },
 };
 
 /** The `forge db` verbs this directory owns: backup, restore, reset and promote. @internal */
 export function createBackupCommands(overrides: DbContextOverrides = {}): CommandBase[] {
   const backup = createCommand({
     name: "backup",
-    description: "Run the app's d1-backup Workflow, which stores D1's dump and its sidecar in R2, and report what it stored",
-    flags: { ...sharedDbFlags, ...workflowFlags },
+    description: "Export the database through D1's own dumper into R2, beside a sidecar of what it holds, and report what it stored",
+    flags: {
+      ...sharedDbFlags,
+      ...dumpFlags,
+      keep: { type: "string" as const, description: "How many complete dumps of this database to keep, the newest first. Defaults to every one" },
+    },
     run: async (_args, flags, ctx?: CliContext) => {
-      const port = readPort(flags.port);
+      const keep = readKeep(flags.keep);
       return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
-        const { instance, output: sidecar } = await followWorkflow(run, BACKUP_WORKFLOW, { workflow: flags.workflow, port, params: {} });
-        const expected = dumpDatabaseId(run);
-        if (sidecar.databaseId !== expected) {
-          throw new CliError(
-            "external",
-            `${instance} dumped database ${sidecar.databaseId}, not ${run.home.database} (${expected}) — the Workflow is wired to another database, so ${run.home.database} is not backed up`,
-          );
-        }
-        if (run.json) run.print(JSON.stringify({ instance, sidecar }));
+        const source = resolveDumpSource(run, flags);
+        const ports = await openBackupPorts(run, source);
+        const sidecar = await takeD1Backup({
+          databaseId: source.databaseId,
+          prefix: source.prefix,
+          at: run.io.now(),
+          ...ports,
+          ...(keep === undefined ? {} : { keep }),
+        }).catch((error: unknown) => {
+          throw rerun(error, "backup");
+        });
+        if (run.json) run.print(JSON.stringify(sidecar));
         else for (const line of describeSidecar(sidecar)) run.print(line);
       });
     },
@@ -122,26 +134,42 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
 
   const restore = createCommand({
     name: "restore",
-    description: "Run the app's d1-restore Workflow on one R2 dump, importing it into a new or empty database, and report every mismatch",
+    description: "Import one R2 dump into a new or empty database, check it against the dump's sidecar, and keep the report beside the dumps",
     flags: {
       ...sharedDbFlags,
-      ...workflowFlags,
+      ...dumpFlags,
       from: { type: "string" as const, required: true, description: "The R2 dump's key" },
       into: {
         type: "string" as const,
-        description: "fresh (default) has the Workflow create a database; standby:<id> imports into an empty one — the only choice locally",
+        description:
+          "fresh (default) creates a database over REST; standby:<id> imports into an empty one — locally standby:<binding>, the only choice",
       },
     },
     run: async (_args, flags, ctx?: CliContext) => {
-      const into = readInto(flags.into);
-      const port = readPort(flags.port);
+      const standby = readInto(flags.into);
       return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
-        if (into === null && !isRemotePlace(run.config.target.place)) {
-          throw new CliError("invalid-args", "a dev session cannot create a database — pass --into standby:<id> to import into an empty standby");
+        if (standby === null && !isRemotePlace(run.config.target.place)) {
+          throw new CliError(
+            "invalid-args",
+            "a local target cannot create a database — pass --into standby:<binding> to import into an empty standby",
+          );
         }
-        const params = into === null ? { key: flags.from } : { key: flags.from, standby: into };
-        const { instance, output: report } = await followWorkflow(run, RESTORE_WORKFLOW, { workflow: flags.workflow, port, params });
-        if (run.json) run.print(JSON.stringify({ instance, report }));
+        const into = standby === null ? { fresh: `${run.home.database}-restore-${run.io.now().getTime()}` } : { standby };
+        if ("fresh" in into && into.fresh.length > D1_NAME_LIMIT) {
+          throw new CliError(
+            "invalid-args",
+            `${run.home.database} is too long to restore fresh — ${into.fresh} would pass D1's ${D1_NAME_LIMIT}-character database name limit, so pass --into standby:<id>`,
+          );
+        }
+        const source = resolveDumpSource(run, flags);
+        const ports = await openBackupPorts(run, source);
+        const report = await restoreD1Backup({ bucket: ports.bucket, key: flags.from, into, transfer: ports.transfer }).catch((error: unknown) => {
+          throw rerun(error, "restore");
+        });
+        await ports.bucket.put(restoreReportKey(source.prefix, source.databaseId, report.databaseId), JSON.stringify(report), {
+          httpMetadata: { contentType: "application/json" },
+        });
+        if (run.json) run.print(JSON.stringify(report));
         else for (const line of describeRestore(report)) run.print(line);
         if (report.mismatches.length > 0)
           throw new CliError("external", `${report.name} differs from the dump's sidecar; the live database is untouched`);
@@ -197,11 +225,11 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
     description: "Point the deployed app's D1 binding at a restored database, keeping the old one. Asks first, then leaves the deploy to you",
     flags: {
       ...sharedDbFlags,
-      instance: {
+      ...dumpFlags,
+      restored: {
         type: "string" as const,
-        description: "The d1-restore instance whose report names the restored database; it must show no mismatch",
+        description: "The id of the database `forge db restore` restored into; its report must show no mismatch",
       },
-      workflow: { type: "string" as const, description: "With --instance: the restore Workflow, by name or binding. Defaults to d1-restore" },
       "database-id": {
         type: "string" as const,
         description: "With --database-name: point the binding at this database instead, as a swap back does",
@@ -211,10 +239,11 @@ export function createBackupCommands(overrides: DbContextOverrides = {}): Comman
     run: async (_args, flags, ctx?: CliContext) => {
       return withDbRun(flags as unknown as SharedDbFlags, ctx, overrides, async (run) => {
         const plan = await preparePromotion(run, {
-          instance: flags.instance,
-          workflow: flags.workflow,
+          restored: flags.restored,
           databaseId: flags["database-id"],
           databaseName: flags["database-name"],
+          bucket: flags.bucket,
+          prefix: flags.prefix,
         });
         await confirm({
           verb: "promote",

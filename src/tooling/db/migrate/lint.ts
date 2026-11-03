@@ -1,5 +1,5 @@
-import { sqlStatementSpans } from "../../../storage/backup/split";
 import { D1_LIMITS } from "../../../storage/db/limits";
+import { sqlStatementSpans } from "../backup/split";
 import { sha256 } from "../digest";
 import { parseMigrationHeader } from "../schema/header";
 import { maskSqlProse, splitCreateTableBody } from "../schema/normalize";

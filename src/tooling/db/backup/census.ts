@@ -1,6 +1,7 @@
-import { bytesToHex, sha256 } from "../../crypto/primitives/mod";
-import { D1BackupError } from "./errors";
-import type { BackupDatabase, D1BackupCensus, D1BackupHazard } from "./types";
+import { bytesToHex, sha256 } from "../../../crypto/primitives/mod";
+import type { D1BackupCensus, D1BackupHazard } from "../../../storage/backup/types";
+import { CliError } from "../../cli/errors";
+import type { CensusDatabase } from "./types";
 
 const SAFE_INTEGER = "9007199254740991";
 
@@ -57,7 +58,7 @@ export async function schemaDigest(rows: readonly SchemaRow[]): Promise<string> 
   return bytesToHex(await sha256(lines.join("\n")));
 }
 
-async function selectAll(database: BackupDatabase, query: string): Promise<Record<string, unknown>[]> {
+async function selectAll(database: CensusDatabase, query: string): Promise<Record<string, unknown>[]> {
   return (await database.prepare(query).all()).results;
 }
 
@@ -69,7 +70,7 @@ export function readSchemaRow(row: Record<string, unknown>): SchemaRow {
   return { type: String(row.type ?? ""), name: String(row.name ?? ""), tableName: String(row.tbl_name ?? ""), sql: String(row.sql ?? "") };
 }
 
-async function tableHazards(database: BackupDatabase, table: string): Promise<D1BackupHazard[]> {
+async function tableHazards(database: CensusDatabase, table: string): Promise<D1BackupHazard[]> {
   try {
     const columns = (await selectAll(database, `SELECT name, type FROM pragma_table_info(${quoteLiteral(table)})`)).map((row) => ({
       name: String(row.name ?? ""),
@@ -88,11 +89,11 @@ async function tableHazards(database: BackupDatabase, table: string): Promise<D1
 }
 
 /** Measures the database before its export: its schema digest, its migration head, and the values its dump will not reproduce. @internal */
-export async function takeD1Census(database: BackupDatabase): Promise<D1BackupCensus> {
+export async function takeD1Census(database: CensusDatabase): Promise<D1BackupCensus> {
   const schema = (await selectAll(database, SCHEMA_SELECT)).map(readSchemaRow);
   const virtual = schema.filter((row) => row.type === "table" && VIRTUAL.test(row.sql)).map((row) => row.name);
   if (virtual.length > 0) {
-    throw new D1BackupError("unsupported", `D1's export refuses virtual tables, so this database cannot be backed up: ${virtual.join(", ")}`);
+    throw new CliError("invalid-args", `D1's export refuses virtual tables, so this database cannot be backed up: ${virtual.join(", ")}`);
   }
   const tables = schema.filter((row) => row.type === "table" && isDumpedObject(row.name, row.tableName)).map((row) => row.name);
   const hazards = (await Promise.all(tables.map((table) => tableHazards(database, table)))).flat();

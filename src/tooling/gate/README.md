@@ -168,6 +168,7 @@ Most rows are opt-in, and each option is a question about your repository rather
 | A `wrangler.jsonc` this gate should read | `workerConfig` | `--config` on `types:cf-runtime`, plus `validate-exposure` — tuned by `exposure` |
 | An assets pipeline | `assetConfig` (and `assetOut`) | `types:assets` and `validate-asset-manifest`; with `workerConfig` too, `validate-asset-root` |
 | Runtime types you supply yourself | `wranglerTypes: false` | Drops `types:cf-runtime` and `validate-generated-types`, which fails a wrangler-generated `.types/` file no row writes |
+| An env schema `forge cf gen env` writes elsewhere, or none at all | `envSchema: { out, config }`, or `envSchema: false` | Moves or drops `validate-env-schema`, the default-on row that fails a committed schema a fresh `gen env` would write differently; `--fix` rewrites it |
 | A suite split by the question each set answers | `testSets` | One labelled `bun test` row per set, replacing the single `test` row that `tests` feeds |
 | `ui/*` components and a Tailwind stylesheet | `design` | The platform-CSS and class rows; `design.cssDir` adds `validate-css-tokens` |
 | Contrast pairs this repository actually draws | `contrast` | `validate-contrast` — the audit fails a run that measured no pairs |
@@ -542,7 +543,7 @@ const labels = (tier: GateTier) => {
   const selection = selectSteps(resolved.data, { tier });
   return selection.ok ? selection.steps.map((s) => s.label) : [];
 };
-expect(labels("static").slice(0, 3)).toEqual(["types:cf-runtime", "validate-generated-types", "typecheck"]);
+expect(labels("static").slice(0, 4)).toEqual(["types:cf-runtime", "validate-generated-types", "validate-env-schema", "typecheck"]);
 
 // A tier that leads with tier("static") runs every static row first, in the static tier's order.
 expect(labels("unit").slice(0, labels("static").length)).toEqual(labels("static"));

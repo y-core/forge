@@ -364,6 +364,19 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     expect(lines(source, TSX)).toEqual(["2 forge-ui-platform-display-contents"]);
   });
 
+  it("does not flag a group named by its own element, which keeps a heading and its intro one item of a gap stack", () => {
+    const source = [
+      "<main class='flex flex-col gap-8'>",
+      "  <hgroup>",
+      "    <h1>Upload</h1>",
+      "    <p class='mt-4'>Intro</p>",
+      "  </hgroup>",
+      "</main>",
+    ].join("\n");
+
+    expect(ids(source, TSX)).toEqual([]);
+  });
+
   it("does not flag a sibling element closed on its own line", () => {
     expect(ids("<div class='flex items-center gap-2'>\n  <span>Left</span>\n</div>", TSX)).toEqual([]);
   });

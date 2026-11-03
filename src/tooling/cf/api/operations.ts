@@ -50,16 +50,30 @@ const ZONE_ENTRYPOINT = "/zones/{zone_id}/rulesets/phases/{ruleset_phase}/entryp
 
 const D1_DATABASE = "/accounts/{account_id}/d1/database/{database_id}";
 
+const d1Export = v.variant("status", [
+  v.object({ status: v.literal("active"), at_bookmark: v.string() }),
+  v.object({
+    status: v.literal("complete"),
+    at_bookmark: v.optional(v.string()),
+    result: v.object({ filename: v.string(), signed_url: v.string() }),
+  }),
+  v.object({ status: v.literal("error"), error: v.optional(v.string(), "") }),
+]);
+
+const d1Import = v.looseObject({
+  success: v.optional(v.boolean(), true),
+  status: v.optional(v.string()),
+  at_bookmark: v.optional(v.string()),
+  upload_url: v.optional(v.string()),
+  filename: v.optional(v.string()),
+  error: v.optional(v.string()),
+  errors: v.optional(v.array(v.string()), []),
+  result: v.optional(v.looseObject({ num_queries: v.optional(v.number()), final_bookmark: v.optional(v.string()) })),
+});
+
 const d1Statement = jsonTable(
   v.object({ results: v.optional(v.array(v.record(v.string(), v.unknown())), []), success: v.optional(v.boolean(), true) }),
 );
-
-/** A Workflow instance as both the Cloudflare API and a local dev session's explorer answer it. @internal */
-export const CF_WORKFLOW_INSTANCE = v.looseObject({
-  status: v.string(),
-  output: v.exactOptional(v.unknown()),
-  error: v.nullish(v.union([v.string(), v.looseObject({ message: v.string() })])),
-});
 
 const buildVariable = v.object({ value: v.nullish(v.string()), is_secret: v.optional(v.boolean(), false) });
 
@@ -73,18 +87,17 @@ export const CF_OPERATIONS = {
   createKvNamespace: { name: "POST /accounts/{account_id}/storage/kv/namespaces", result: kvNamespace },
   listD1Databases: { name: "GET /accounts/{account_id}/d1/database", paging: "page", result: v.array(d1Database) },
   createD1Database: { name: "POST /accounts/{account_id}/d1/database", result: d1Database },
+  getD1Database: { name: `GET ${D1_DATABASE}`, result: d1Database, idempotent: true },
+  startD1Export: { name: `POST ${D1_DATABASE}/export`, result: d1Export },
+  pollD1Export: { name: `POST ${D1_DATABASE}/export`, result: d1Export, idempotent: true },
+  importD1Database: { name: `POST ${D1_DATABASE}/import`, result: d1Import },
+  pollD1Import: { name: `POST ${D1_DATABASE}/import`, result: d1Import, idempotent: true },
   queryD1Database: { name: `POST ${D1_DATABASE}/query`, result: v.array(d1Statement) },
   readD1Database: { name: `POST ${D1_DATABASE}/query`, result: v.array(d1Statement), idempotent: true },
   getD1Bookmark: { name: `GET ${D1_DATABASE}/time_travel/bookmark`, result: jsonTable(v.object({ bookmark: v.string() })), idempotent: true },
   restoreD1Bookmark: {
     name: `POST ${D1_DATABASE}/time_travel/restore`,
     result: jsonTable(v.object({ bookmark: v.exactOptional(v.string()), previous_bookmark: v.exactOptional(v.string()) })),
-  },
-  createWorkflowInstance: { name: "POST /accounts/{account_id}/workflows/{workflow_name}/instances", result: v.looseObject({ id: v.string() }) },
-  getWorkflowInstance: {
-    name: "GET /accounts/{account_id}/workflows/{workflow_name}/instances/{instance_id}",
-    result: CF_WORKFLOW_INSTANCE,
-    idempotent: true,
   },
   listR2Buckets: {
     name: "GET /accounts/{account_id}/r2/buckets",

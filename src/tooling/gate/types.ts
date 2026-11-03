@@ -134,6 +134,8 @@ export interface CloudflareWorkerStepOptions {
   assetOut?: string;
   /** Whether to emit the `types:cf-runtime` step. Defaults to `true`. */
   wranglerTypes?: boolean;
+  /** `false` to emit no env-schema drift row; otherwise where `forge cf gen env` writes and which host-policy module it reads. */
+  envSchema?: false | { out?: string; config?: string };
   /** The wrangler config every row that reads one is pointed at, `--config` on `types:cf-runtime` included. */
   workerConfig?: string;
   /** How the exposure row judges each deployment; omit to take `require: "stated"`. Read only when `workerConfig` is set. */

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 
-import { cutSqlStatements } from "../../src/storage/backup/split";
 import { openPlatformD1 } from "../../src/testing/d1";
+import { cutSqlStatements } from "../../src/tooling/db/backup/split";
 
 /** A D1 binding over the state a `--persist-to` run wrote, and the workerd process behind it. */
 export interface D1Handle {

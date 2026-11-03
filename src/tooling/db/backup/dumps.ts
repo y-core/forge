@@ -1,19 +1,23 @@
-import { isDumpedObject, readSchemaRow, SCHEMA_SELECT } from "../../../storage/backup/census";
 import { DEFAULT_BACKUP_PREFIX, latestD1Backup } from "../../../storage/backup/list";
 import { readD1Backup } from "../../../storage/backup/sidecar";
-import { splitDumpStatements } from "../../../storage/backup/split";
 import type { BackupBucket, D1BackupSidecar } from "../../../storage/backup/types";
 import { readCfAuth } from "../../cf/auth";
 import { readDeployment } from "../../cf/config/environment";
 import { resolveLifecycleBucket } from "../../cf/lifecycle/commands";
 import { CliError } from "../../cli/errors";
 import { queryRows } from "../d1";
+import { queryDeployed } from "../remote";
 import { rowCountSelect } from "../sql";
-import type { DbRunContext, Home } from "../types";
+import { isRemotePlace } from "../target";
+import type { DbIo, DbRunContext, Home } from "../types";
+import { isDumpedObject, readSchemaRow, SCHEMA_SELECT } from "./census";
+import { localTransfer } from "./local-transfer";
 import { restBackupBucket } from "./rest-bucket";
-import type { DumpSource } from "./types";
+import { restTransfer } from "./rest-transfer";
+import { splitDumpStatements } from "./split";
+import type { BackupPorts, CensusDatabase, DumpSource } from "./types";
 
-/** The R2 binding a local dump is read from when the config binds more than one and no --bucket names it. @internal */
+/** The R2 binding the dumps are in when no --bucket names one. @internal */
 export const DEFAULT_BACKUP_BINDING = "BACKUPS";
 
 /** The database id a dump of the run's target is kept under: the deployed id, or locally the binding's configured id or name. @internal */
@@ -21,7 +25,7 @@ export function dumpDatabaseId(run: Pick<DbRunContext, "home" | "config">): stri
   return run.home.databaseId ?? run.config.entry.databaseId ?? run.config.entry.databaseName;
 }
 
-/** Where the dumps of the run's database live: the R2 binding and its bucket, the prefix, and the database id `runD1Backup` was given. @internal */
+/** Where the dumps of the run's database live: the R2 binding and its bucket, the prefix, and the database id `forge db backup` was given. @internal */
 export function resolveDumpSource(
   run: Pick<DbRunContext, "home" | "config">,
   flags: { readonly bucket?: string | undefined; readonly prefix?: string | undefined },
@@ -38,20 +42,38 @@ export function resolveDumpSource(
   });
   if (flags.bucket !== undefined) return at(flags.bucket);
   if (bindings.includes(DEFAULT_BACKUP_BINDING)) return at(DEFAULT_BACKUP_BINDING);
-  const [only, ...rest] = bindings;
-  if (only === undefined || rest.length > 0) {
-    throw new CliError(
-      "invalid-args",
-      `${config.configPath} binds ${only === undefined ? "no R2 bucket" : `several R2 buckets (${bindings.join(", ")})`} and none named ${DEFAULT_BACKUP_BINDING} — pass --bucket`,
-    );
-  }
-  return at(only);
+  const others = bindings.length === 0 ? "" : ` (it binds ${bindings.join(", ")})`;
+  throw new CliError(
+    "invalid-args",
+    `${config.configPath} binds no R2 bucket named ${DEFAULT_BACKUP_BINDING}${others} — declare one in r2_buckets to keep the dumps apart from other data, or pass --bucket`,
+  );
 }
 
 /** The bucket the dumps are in: the dev session's own R2 for a local target, else the deployed bucket over REST. @internal */
 export async function openDumpBucket(run: DbRunContext, source: DumpSource): Promise<BackupBucket> {
   if (run.home.persistTo !== null) return run.io.bucket(run.home, source.binding);
   return restBackupBucket(run.io, run.home.auth ?? readCfAuth({}), source.bucketName);
+}
+
+/** A deployed home read for the census over D1's REST query, one request per statement. @internal */
+export function deployedCensusDatabase(io: DbIo, home: Home): CensusDatabase {
+  return { prepare: (query) => ({ all: async () => ({ results: (await queryDeployed(io, home, [query], "the backup census"))[0] ?? [] }) }) };
+}
+
+/** The bucket, census and D1 transport a backup or restore of the run's database goes through, picked by its place. @internal */
+export async function openBackupPorts(run: DbRunContext, source: DumpSource): Promise<BackupPorts> {
+  const bucket = await openDumpBucket(run, source);
+  if (isRemotePlace(run.config.target.place)) {
+    if (run.home.databaseId === null) throw new CliError("invalid-args", `${run.home.label} (${run.home.database}) has no D1 id to address`);
+    return {
+      bucket,
+      database: deployedCensusDatabase(run.io, run.home),
+      transfer: restTransfer(run.io, run.home.auth ?? readCfAuth({}), run.home.databaseId),
+      upload: "stream",
+    };
+  }
+  const database = await run.io.database(run.home, run.home.binding);
+  return { bucket, database, transfer: localTransfer(database, (binding) => run.io.database(run.home, binding)), upload: "whole" };
 }
 
 function where(source: DumpSource): string {

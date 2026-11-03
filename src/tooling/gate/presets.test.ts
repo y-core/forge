@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { defaultEnvFlags, renderEnvSchema } from "../cf/gen/cf-env-command";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
 import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
@@ -10,7 +11,17 @@ import { cloudflareWorkerSteps, forgeChecks } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
 import { declaredSteps, resolveTiers } from "./tiers";
 import { GATE_TIERS } from "./types";
-import type { CheckResult, CloudflareWorkerStepOptions, CommandStep, LibraryStepOptions, ResolvedTiers, Step, StepTiers, TierRef } from "./types";
+import type {
+  CheckResult,
+  CheckStep,
+  CloudflareWorkerStepOptions,
+  CommandStep,
+  LibraryStepOptions,
+  ResolvedTiers,
+  Step,
+  StepTiers,
+  TierRef,
+} from "./types";
 
 afterAll(() => {
   rmSync(curateFixtureTemplate(), { recursive: true, force: true });
@@ -87,6 +98,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
     expect(labelsOf(workerRows())).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -104,6 +116,7 @@ describe("cloudflareWorkerSteps() — shape", () => {
       "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -186,6 +199,7 @@ describe("cloudflareWorkerSteps() — the exposure row", () => {
     expect(labelsOf(workerRows({ workerConfig: "wrangler.workers.jsonc" }))).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -455,6 +469,7 @@ describe("cloudflareWorkerSteps() — the test rows", () => {
     expect(labels).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -511,6 +526,7 @@ describe("cloudflareWorkerSteps() — the opt-in check rows", () => {
     expect(labels).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -759,6 +775,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
     expect(labels).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -779,6 +796,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
     expect(labelsOf(workerRows({ design: DESIGN }))).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -803,6 +821,7 @@ describe("cloudflareWorkerSteps() — the design rows", () => {
       "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -878,6 +897,19 @@ describe("cloudflareWorkerSteps() — the generated-type commands", () => {
       dropped: ["types:cf-runtime", "validate-generated-types"],
       added: [],
     });
+  });
+
+  it("accepts the table for a project whose `.types/` holds only gitignored output, running validate-generated-types on every change", () => {
+    const tiers = cloudflareWorkerSteps();
+    const step = declaredSteps(tiers).find((row) => row.label === "validate-generated-types");
+
+    expect(step?.watches).toBeUndefined();
+    expect(
+      selectSteps(resolved(tiers), {
+        tier: "unit",
+        files: ["src/worker.ts", "tests/worker.test.ts", "config/steps.config.ts", "wrangler.jsonc", ".gitignore"],
+      }),
+    ).toMatchObject({ ok: true });
   });
 
   it("fails a `.types/` file no row writes, such as the retired worker-configuration.d.ts, naming the file", async () => {
@@ -1005,6 +1037,7 @@ describe("cloudflareWorkerSteps() — the markdown row", () => {
     expect(labelsOf(steps)).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -1040,6 +1073,7 @@ describe("cloudflareWorkerSteps() — the warden step", () => {
     expect(labelsOf(steps)).toEqual([
       "types:cf-runtime",
       "validate-generated-types",
+      "validate-env-schema",
       "typecheck",
       "lint",
       "format",
@@ -1058,12 +1092,181 @@ describe("cloudflareWorkerSteps() — the warden step", () => {
   });
 });
 
+const SECRETS_WRANGLER = `{ "name": "app", "vars": { "BASE_URL": "https://example.com" }, "secrets": { "required": ["API_KEY"] } }`;
+
+const envRoots: string[] = [];
+
+afterAll(() => {
+  for (const root of envRoots) rmSync(root, { recursive: true, force: true });
+});
+
+function envRoot(files: Record<string, string>): string {
+  const root = gateFixtureRoot({ "src/app/.keep": "", ...files }, "forge-env-schema-");
+  envRoots.push(root);
+  return root;
+}
+
+function envSchemaRow(options: CloudflareWorkerStepOptions): CheckStep {
+  const row = workerRows(options).find((step) => step.label === "validate-env-schema");
+  if (row === undefined || !isCheckStep(row) || row.fix === undefined) throw new Error("no fixable validate-env-schema row");
+  return row;
+}
+
+function fileAndCommand(result: CheckResult): [boolean, (string | undefined)[][]] {
+  return [result.ok, result.findings.map((finding) => [finding.file, finding.detail?.at(-1)])];
+}
+
+describe("cloudflareWorkerSteps() — the env-schema row", () => {
+  it("fails a var renamed in wrangler.jsonc, naming the schema file and the regenerate command, and passes after its fix", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+    const row = envSchemaRow({ root });
+    await row.fix?.();
+    writeFileSync(join(root, "wrangler.jsonc"), SECRETS_WRANGLER.replace("BASE_URL", "SITE_URL"));
+
+    expect(fileAndCommand(await row.run("static"))).toEqual([false, [["src/app/env.schema.ts", "run `forge cf gen env`"]]]);
+    await row.fix?.();
+    expect(fileAndCommand(await row.run("static"))).toEqual([true, []]);
+  });
+
+  it("passes on the schema its own fix writes", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+    const row = envSchemaRow({ root });
+    await row.fix?.();
+
+    expect((await row.run("static")).ok).toBe(true);
+  });
+
+  it("passes on the schema the command's renderer produces, so the row and `forge cf gen env` agree", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+    writeFileSync(join(root, "src/app/env.schema.ts"), (await renderEnvSchema(root, defaultEnvFlags())).text);
+
+    expect((await envSchemaRow({ root }).run("static")).ok).toBe(true);
+  });
+
+  it("names the first line that differs, as committed and as freshly rendered", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+    const row = envSchemaRow({ root });
+    await row.fix?.();
+    writeFileSync(join(root, "wrangler.jsonc"), SECRETS_WRANGLER.replace("BASE_URL", "SITE_URL"));
+
+    expect((await row.run("static")).findings[0]?.detail?.[0]).toBe(
+      "line 10: committed `  BASE_URL: v.string(),`, fresh `  SITE_URL: v.string(),`",
+    );
+  });
+
+  it("fails a missing schema file, naming the file and the regenerate command", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+
+    expect(fileAndCommand(await envSchemaRow({ root }).run("static"))).toEqual([false, [["src/app/env.schema.ts", "run `forge cf gen env`"]]]);
+  });
+
+  it("fails a worker config that declares no `secrets`, on the wrangler file, pointing at `secrets.required`", async () => {
+    const root = envRoot({ "wrangler.jsonc": `{ "name": "app", "vars": { "BASE_URL": "https://example.com" } }`, ".dev.vars": "API_KEY=x\n" });
+    const row = envSchemaRow({ root });
+    await row.fix?.();
+    const result = await row.run("static");
+
+    expect([result.ok, result.findings.map((finding) => finding.file)]).toEqual([false, ["wrangler.jsonc"]]);
+    expect(result.findings[0]?.detail?.some((line) => line.includes("secrets.required"))).toBe(true);
+  });
+
+  const unloadable = [
+    { name: "a missing worker config", files: {} },
+    // Names no Worker, so the config loader refuses it.
+    { name: "a malformed worker config", files: { "wrangler.jsonc": `{ "secrets": { "required": ["API_KEY"] } }` } },
+    { name: "a worker config that does not parse", files: { "wrangler.jsonc": `{ "name": ` } },
+  ];
+  for (const { name, files } of unloadable) {
+    it(`reports ${name} as a finding on the wrangler file rather than throwing`, async () => {
+      const root = envRoot(files);
+
+      expect(fileAndCommand(await envSchemaRow({ root }).run("static"))).toEqual([false, [["wrangler.jsonc", "run `forge cf gen env`"]]]);
+    });
+  }
+
+  it("omits the row under `envSchema: false`", () => {
+    expect(labelsOf(workerRows({ envSchema: false }))).not.toContain("validate-env-schema");
+  });
+
+  it("names a moved `envSchema.out` in the regenerate command", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+
+    expect(fileAndCommand(await envSchemaRow({ root, envSchema: { out: "src/app/env-schema.ts" } }).run("static"))).toEqual([
+      false,
+      [["src/app/env-schema.ts", "run `forge cf gen env --out src/app/env-schema.ts`"]],
+    ]);
+  });
+
+  it("writes and compares the schema at a moved `envSchema.out`, with its header naming that path", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+    const row = envSchemaRow({ root, envSchema: { out: "src/app/env-schema.ts" } });
+    await row.fix?.();
+    const header = readFileSync(join(root, "src/app/env-schema.ts"), "utf-8").split("\n")[0];
+    const passed = (await row.run("static")).ok;
+    writeFileSync(join(root, "src/app/env-schema.ts"), "export {};\n");
+
+    expect([header, passed, existsSync(join(root, "src/app/env.schema.ts"))]).toEqual([
+      "/** GENERATED — do not edit; run `forge cf gen env --out src/app/env-schema.ts`. */",
+      true,
+      false,
+    ]);
+    expect(fileAndCommand(await row.run("static"))[1].map(([file]) => file)).toEqual(["src/app/env-schema.ts"]);
+  });
+
+  it("names a moved `envSchema.config` in the regenerate command", async () => {
+    const root = envRoot({ "wrangler.jsonc": SECRETS_WRANGLER });
+
+    expect(fileAndCommand(await envSchemaRow({ root, envSchema: { config: "config/app.env.ts" } }).run("static"))[1]).toEqual([
+      ["src/app/env.schema.ts", "run `forge cf gen env --config config/app.env.ts`"],
+    ]);
+  });
+
+  it("reads the policy module a moved `envSchema.config` names", async () => {
+    const root = envRoot({
+      "wrangler.jsonc": `{ "name": "app", "secrets": { "required": ["API_KEY"] } }`,
+      "config/app.env.ts": `export default { optional: new Set(["SITE_ORIGIN"]) };\n`,
+    });
+    const row = envSchemaRow({ root, envSchema: { config: "config/app.env.ts" } });
+    await row.fix?.();
+
+    expect(readFileSync(join(root, "src/app/env.schema.ts"), "utf-8")).toContain("SITE_ORIGIN: v.optional(v.string()),");
+  });
+
+  it("reads the worker config `workerConfig` names, and passes it as `--wrangler`", async () => {
+    const root = envRoot({ "wrangler.workers.jsonc": SECRETS_WRANGLER });
+    const row = envSchemaRow({ root, workerConfig: "wrangler.workers.jsonc" });
+    const before = fileAndCommand(await row.run("static"));
+    await row.fix?.();
+
+    expect(before).toEqual([false, [["src/app/env.schema.ts", "run `forge cf gen env --wrangler wrangler.workers.jsonc`"]]]);
+    expect((await row.run("static")).ok).toBe(true);
+  });
+
+  it("declares no watches", () => {
+    expect(envSchemaRow({}).watches).toBeUndefined();
+  });
+
+  const placements = [
+    { name: "the generated-types check", options: {}, expected: ["validate-generated-types", "typecheck"] },
+    { name: "the asset pair", options: { assetConfig: "src/assets/config.ts" }, expected: ["validate-asset-manifest", "typecheck"] },
+    { name: "nothing", options: { wranglerTypes: false }, expected: [undefined, "typecheck"] },
+  ];
+  for (const { name, options, expected } of placements) {
+    it(`sits after ${name} and immediately before typecheck`, () => {
+      const labels = labelsOf(workerRows(options));
+      const at = labels.indexOf("validate-env-schema");
+
+      expect([labels[at - 1], labels[at + 1]]).toEqual(expected);
+    });
+  }
+});
+
 describe("cloudflareWorkerSteps() — fixers", () => {
   // `lint` before `format`: under `--fix` the formatter must write last and own the final layout.
-  it("gives lint and format the only fixers, so --fix never silently rewrites generated types", () => {
-    const fixable = workerRows({ assetConfig: "src/assets/config.ts" }).filter((step) => fixerOf(step) !== undefined);
+  it("gives the env-schema row the only fixer that rewrites a generated file, so --fix never rewrites generated types", () => {
+    const fixable = workerRows({ assetConfig: "src/assets/config.ts" }).filter((step) => step.fix !== undefined);
 
-    expect(labelsOf(fixable)).toEqual(["lint", "format"]);
+    expect(labelsOf(fixable)).toEqual(["validate-env-schema", "lint", "format"]);
   });
 });
 
@@ -1098,8 +1301,10 @@ describe("cloudflareWorkerSteps() — watches", () => {
 
     expect(undeclared).toEqual([
       "types:cf-runtime",
+      "validate-generated-types",
       "types:assets",
       "validate-asset-manifest",
+      "validate-env-schema",
       "typecheck",
       "lint:types",
       "validate-contrast",

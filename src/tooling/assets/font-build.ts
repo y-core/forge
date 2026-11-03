@@ -1,13 +1,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
-import type { Face, Font } from "harfbuzzjs";
-
 import { safeJoin } from "./paths";
 import { shaper, subsetWasm } from "./peers";
-import type { FontBuild, FontMetricsData, FontPackData, FontSubset, SubsetRequest } from "./types";
-
-type Harfbuzz = typeof import("harfbuzzjs");
+import type { FontBuild, FontMetricsData, FontPackData, FontSubset, HarfbuzzFace, HarfbuzzFont, HarfbuzzModule, SubsetRequest } from "./types";
 
 // The subset API is HarfBuzz's C surface, which harfbuzzjs does not wrap, so the module is
 // instantiated directly. Build-time only: no Worker ever loads this, and no runtime dependency.
@@ -82,7 +78,7 @@ export async function subsetFont(request: SubsetRequest): Promise<Uint8Array> {
 
 // harfbuzzjs exposes ascender, descender and line gap and no bounding box at all, so the one table
 // carrying it is read directly: `head` holds xMin, yMin, xMax and yMax as int16s from byte 36.
-function boundingBox(face: Face): [number, number, number, number] {
+function boundingBox(face: HarfbuzzFace): [number, number, number, number] {
   const head = face.referenceTable("head") ?? new Uint8Array();
   const view = new DataView(head.buffer as ArrayBuffer, head.byteOffset, head.byteLength);
   const at = (offset: number): number => (head.byteLength >= offset + 2 ? view.getInt16(offset) : 0);
@@ -143,7 +139,7 @@ export async function extractFontMetrics(sfnt: Uint8Array, codePoints: Iterable<
 
 // Shaping the pair is what reads GPOS, so the adjustment is whatever HarfBuzz would apply — rather
 // than a second parser of the table that could disagree with the one that laid the text out.
-function extractKerning(hb: Harfbuzz, font: Font, codePoints: Iterable<number>): Record<string, number> {
+function extractKerning(hb: HarfbuzzModule, font: HarfbuzzFont, codePoints: Iterable<number>): Record<string, number> {
   const points = [...codePoints];
   const pairs: Record<string, number> = {};
   const single = new Map<number, number>();
@@ -159,7 +155,7 @@ function extractKerning(hb: Harfbuzz, font: Font, codePoints: Iterable<number>):
   return pairs;
 }
 
-function advanceOf(hb: Harfbuzz, font: Font, run: string): number {
+function advanceOf(hb: HarfbuzzModule, font: HarfbuzzFont, run: string): number {
   const buffer = new hb.Buffer();
   buffer.addText(run);
   buffer.guessSegmentProperties();

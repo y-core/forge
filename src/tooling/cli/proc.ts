@@ -11,6 +11,11 @@ function spawnDeadline(timeoutMs: number | undefined): { timeout: number; killSi
   return timeoutMs === undefined ? {} : { timeout: timeoutMs, killSignal: "SIGKILL" };
 }
 
+/** Quotes a value for a POSIX shell, so a path holding a space or a quote survives being pasted back. @internal */
+export function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 /** Idempotently inserts `dir` at the front of `process.env.PATH`. */
 export function insertPath(dir: string): void {
   if (!dir || !existsSync(dir)) return;
@@ -92,11 +97,11 @@ export function capture(
 export function captureStreams(
   cmd: string,
   args: string[],
-  opts: { cwd?: string; env?: typeof process.env; timeoutMs?: number; maxBuffer?: number },
+  opts: { cwd?: string; env?: typeof process.env; timeoutMs?: number; maxBuffer?: number; input?: string },
   spawn: SpawnSync = defaultSpawn,
 ): StreamCapture {
   const r = spawn(cmd, args, {
-    stdio: ["ignore", "pipe", "pipe"],
+    ...(opts.input === undefined ? { stdio: ["ignore", "pipe", "pipe"] } : { stdio: ["pipe", "pipe", "pipe"], input: opts.input }),
     encoding: "utf-8",
     env: opts.env ?? process.env,
     ...(opts.cwd ? { cwd: opts.cwd } : {}),

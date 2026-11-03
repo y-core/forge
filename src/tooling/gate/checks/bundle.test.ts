@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
 import { BUNDLE_FIXER, BUNDLES } from "../../../../config/bundles";
-import { checkBundle, checkNodeExports, hasEsbuild, nodeBundles } from "./bundle";
+import { checkBundle, checkNodeExports, hasEsbuild, importEsbuild, nodeBundles } from "./bundle";
 import type { BundleCheckConfig, ExportsMap, NodeManifest } from "./types";
 
 const ROOT = resolve(import.meta.dir, "../../../..");
@@ -149,6 +149,10 @@ describe("nodeBundles()", () => {
 describe("checkBundle()", () => {
   it("finds the optional peer this repository installs", () => {
     expect(hasEsbuild()).toBe(true);
+  });
+
+  it("imports the optional peer it finds", async () => {
+    expect(typeof (await importEsbuild()).build).toBe("function");
   });
 
   for (const config of CONFIGS) {

@@ -1,25 +1,34 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import type { EsbuildModule } from "../../assets/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { moduleImports } from "./packaging";
 import { collectFiles } from "./source-scan";
 import type { BundleCheckConfig, ExportsMap, NodeBundle, NodeExportsCheckConfig, NodeManifest } from "./types";
 
+// A specifier the compiler cannot read keeps the optional peer out of a consumer's type-check.
+const ESBUILD = "esbuild";
+
 /** Whether `esbuild` can be resolved — a bundle cannot be rebuilt without it, and it is an optional peer. @public */
 export function hasEsbuild(): boolean {
   try {
-    import.meta.resolve("esbuild");
+    import.meta.resolve(ESBUILD);
     return true;
   } catch {
     return false;
   }
 }
 
+/** Imports the optional `esbuild` peer, rejecting when it is not installed. @internal */
+export async function importEsbuild(): Promise<EsbuildModule> {
+  return (await import(ESBUILD)) as EsbuildModule;
+}
+
 /** Bundles an entry into the single self-contained ES module node loads. @public */
 export async function bundleSource(config: BundleCheckConfig): Promise<string> {
-  const esbuild = (await import("esbuild")) as typeof import("esbuild");
+  const esbuild = await importEsbuild();
   const result = await esbuild.build({
     entryPoints: [resolve(config.root, config.entry)],
     bundle: true,
@@ -31,7 +40,7 @@ export async function bundleSource(config: BundleCheckConfig): Promise<string> {
     // The banner is what tells a reader of that file not to edit it.
     banner: { js: `// Generated from ${config.entry} by \`${config.fixer}\` — do not edit.` },
   });
-  return result.outputFiles[0]?.text ?? "";
+  return result.outputFiles?.[0]?.text ?? "";
 }
 
 /** Rebuilds a bundle and reports any drift from the committed copy. @public */

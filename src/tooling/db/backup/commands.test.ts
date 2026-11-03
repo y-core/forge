@@ -1,11 +1,13 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { FakeBackupBucket } from "../../../storage/backup/backup.fixture";
 import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
-import { backupKey } from "../../../storage/backup/list";
-import { writeSidecar } from "../../../storage/backup/sidecar";
+import { readD1Backup } from "../../../storage/backup/sidecar";
+import { CliError } from "../../cli/errors";
 import { execute } from "../../cli/execute";
 import { createDbCommands } from "../commands";
 import {
@@ -26,7 +28,11 @@ import {
 import { sha256 } from "../digest";
 import { RECORDED_CHECKSUM_SELECT } from "../migrate/checksum";
 import type { FakeDbIo, Home } from "../types";
+import { fakeD1Rest, fakeDatabase } from "./backup.fixture";
+import { takeD1Census } from "./census";
 import { createBackupCommands } from "./commands";
+import { backupKey, writeSidecar } from "./store";
+import type { BackupDatabase } from "./types";
 
 const roots: string[] = [];
 
@@ -196,7 +202,7 @@ describe("forge db reset", () => {
     io.writeText(join(state, "db.sqlite"), "");
     const bucket = fakeBackupBucket();
     const key = backupKey(undefined, REMOTE_ID, new Date("2026-09-11T09:00:00Z"), "local-1");
-    bucket.objects.set(key, { bytes: new Uint8Array(1), customMetadata: {} });
+    bucket.objects.set(key, { bytes: new Uint8Array(1) });
     await writeSidecar(bucket, {
       key,
       databaseId: REMOTE_ID,
@@ -304,5 +310,412 @@ describe("forge db backup list / pull / push", () => {
     const corrupted = await holding(`${DUMP.slice(0, -2)}X\n`);
     const refused = await runCli(corrupted, ["backup", "pull", KEY, "--root", root, "--target", "remote", ...REMOTE_ARGS, "--out", out]);
     expect([refused.code !== 0 && refused.code !== null, corrupted.files.has(file)]).toEqual([true, false]);
+  });
+});
+
+const DUMP = [
+  "PRAGMA defer_foreign_keys=TRUE;",
+  'CREATE TABLE IF NOT EXISTS "_forge_migrations" (id INTEGER PRIMARY KEY, name TEXT NOT NULL);',
+  `INSERT INTO "_forge_migrations" ("id","name") VALUES(1,'0001_notes.sql');`,
+  'CREATE TABLE IF NOT EXISTS "notes" (id INTEGER PRIMARY KEY, body TEXT);',
+  `INSERT INTO "notes" ("id","body") VALUES(1,'one; two');`,
+  `INSERT INTO "notes" ("id","body") VALUES(2,'three');`,
+].join("\n");
+
+const DUMP_STATEMENTS = 6;
+
+const DUMP_KEY = `d1-backups/${REMOTE_ID}/2026-09-10T03:00:00.000Z-B1.sql`;
+
+const NOW = "2026-09-11T10:00:00.000Z";
+
+const NOW_MS = Date.parse(NOW);
+
+const BOOKMARK = "00000085-0000024c-00004c6d-8e61117bf38d7adb";
+
+const SIGNED_DUMP = "https://d1-exports.example.com/dump.sql?X-Amz-Signature=deadbeef";
+
+const hexOf = (algorithm: string, text: string) => createHash(algorithm).update(text).digest("hex");
+
+const bytesOf = (text: string) => new TextEncoder().encode(text).byteLength;
+
+const reportKeys = (bucket: FakeBackupBucket) => [...bucket.objects.keys()].filter((key) => key.includes("/restores/"));
+
+/** A local binding over `dump` that answers miniflare's export pragma with the dump's statements, as miniflare does. */
+function localBinding(dump = DUMP): BackupDatabase {
+  const database = fakeDatabase(dump);
+  return {
+    batch: (statements) => database.batch(statements),
+    prepare: (query) =>
+      query === "PRAGMA miniflare_d1_export(?,?,?);"
+        ? { all: async () => ({ results: [] }), bind: () => ({ raw: async () => [dump.split("\n")] }) }
+        : database.prepare(query),
+  };
+}
+
+/** A deployed database whose REST queries a SQLite copy of `DUMP` answers, and whose export completes at `BOOKMARK` with `DUMP`. */
+function deployedSource(startReply?: Response): { io: FakeDbIo; bucket: FakeBackupBucket } {
+  const io = fakeDbIo({}, { homes: [REMOTE_HOME] });
+  const source = fakeDatabase(DUMP);
+  const bucket = fakeBackupBucket();
+  io.d1Rules.push({ match: () => true, reply: (statement) => source.sqlite.query(statement).all() as Record<string, unknown>[] });
+  io.restRules.push(
+    {
+      match: (url) => url.endsWith("/export"),
+      reply: (_url, init) => {
+        const started = (JSON.parse(String(init?.body)) as { current_bookmark?: string }).current_bookmark !== undefined;
+        if (!started) return startReply ?? cfEnvelope({ status: "active", at_bookmark: BOOKMARK });
+        return cfEnvelope({ status: "complete", at_bookmark: BOOKMARK, result: { filename: "dump.sql", signed_url: SIGNED_DUMP } });
+      },
+    },
+    { match: (url) => url === SIGNED_DUMP, reply: () => new Response(DUMP, { headers: { "content-length": String(bytesOf(DUMP)) } }) },
+    ...r2RestRules(bucket),
+  );
+  return { io, bucket };
+}
+
+function localSource(): { io: FakeDbIo; bucket: FakeBackupBucket } {
+  const io = fakeDbIo();
+  const bucket = fakeBackupBucket();
+  io.buckets.set("BACKUPS", bucket);
+  io.databases.set("DB", localBinding());
+  return { io, bucket };
+}
+
+describe("forge db backup", () => {
+  const REMOTE_KEY = `d1-backups/${REMOTE_ID}/${NOW}-${BOOKMARK}.sql`;
+
+  it("exports a deployed database into R2 beside its sidecar and prints what it stored, starting no Workflow", async () => {
+    const root = appRoot();
+    const { io, bucket } = deployedSource();
+    const buffer = await runCli(io, ["backup", "--root", root, "--target", "remote", ...REMOTE_ARGS]);
+
+    expect([buffer.err, buffer.code]).toEqual([[], null]);
+    expect(buffer.out).toEqual([
+      `✓ ${REMOTE_KEY}`,
+      `  ${bytesOf(DUMP)} bytes at bookmark ${BOOKMARK}, migration head 0001_notes.sql`,
+      "  rows: _forge_migrations 1, notes 2",
+    ]);
+    expect([bucket.objects.get(REMOTE_KEY)?.bytes.toBase64(), (await readD1Backup(bucket, REMOTE_KEY))?.sha256]).toEqual([
+      new TextEncoder().encode(DUMP).toBase64(),
+      hexOf("sha256", DUMP),
+    ]);
+    expect([io.restCalls.some((call) => call.url.endsWith("/export")), io.restCalls.filter((call) => call.url.includes("/workflows/"))]).toEqual([
+      true,
+      [],
+    ]);
+  });
+
+  it("exports a local database through miniflare's dumper, stamping the run's clock and making no REST call", async () => {
+    const root = appRoot();
+    const { io, bucket } = localSource();
+    const buffer = await runCli(io, ["backup", "--root", root]);
+
+    const key = `d1-backups/${REMOTE_ID}/${NOW}-local-${NOW_MS}.sql`;
+    const sidecar = await readD1Backup(bucket, key);
+    expect([buffer.err, sidecar?.bookmark, sidecar?.takenAt, sidecar?.rows, io.restCalls]).toEqual([
+      [],
+      `local-${NOW_MS}`,
+      NOW,
+      { _forge_migrations: 1, notes: 2 },
+      [],
+    ]);
+  });
+
+  it("prunes an older complete dump past --keep", async () => {
+    const root = appRoot();
+    const { io, bucket } = localSource();
+    const older = `d1-backups/${REMOTE_ID}/2026-09-10T03:00:00.000Z-local-1.sql`;
+    bucket.objects.set(older, { bytes: new Uint8Array(1) });
+    await writeSidecar(bucket, { ...(await seededSidecar()), key: older });
+    const buffer = await runCli(io, ["backup", "--root", root, "--keep", "1"]);
+
+    const kept = `d1-backups/${REMOTE_ID}/${NOW}-local-${NOW_MS}`;
+    expect([buffer.err, [...bucket.objects.keys()].sort()]).toEqual([[], [`${kept}.json`, `${kept}.sql`]]);
+  });
+
+  it("says the dump is stored, and never to run the backup again, when only the prune after it fails", async () => {
+    const root = appRoot();
+    const { io, bucket } = localSource();
+    const older = `d1-backups/${REMOTE_ID}/2026-09-10T03:00:00.000Z-local-1.sql`;
+    bucket.objects.set(older, { bytes: new Uint8Array(1) });
+    await writeSidecar(bucket, { ...(await seededSidecar()), key: older });
+    bucket.delete = () => Promise.reject(new CliError("external", "deleting from BACKUPS failed: HTTP 500"));
+    const buffer = await runCli(io, ["backup", "--root", root, "--keep", "1"]);
+
+    const kept = `d1-backups/${REMOTE_ID}/${NOW}-local-${NOW_MS}.sql`;
+    expect([buffer.code, buffer.err, (await readD1Backup(bucket, kept))?.key]).toEqual([
+      1,
+      [
+        `Error: ${kept} and its sidecar are stored, but pruning to the newest 1 failed: deleting from BACKUPS failed: HTTP 500 — the next \`forge db backup --keep 1\` prunes again`,
+      ],
+      kept,
+    ]);
+  });
+
+  it("refuses a config whose only R2 bucket is not BACKUPS, before any request, writing nothing there", async () => {
+    const root = appRoot();
+    const config = minimalWranglerConfig(root, { r2_buckets: [{ binding: "UPLOADS", bucket_name: "app-uploads" }] });
+    writeFileSync(config.path, config.text);
+    const { io } = localSource();
+    const uploads = fakeBackupBucket();
+    io.buckets.set("UPLOADS", uploads);
+    const buffer = await runCli(io, ["backup", "--root", root]);
+
+    expect([buffer.code, buffer.err, io.restCalls, uploads.objects.size]).toEqual([
+      1,
+      [
+        `Error: ${config.path} binds no R2 bucket named BACKUPS (it binds UPLOADS) — declare one in r2_buckets to keep the dumps apart from other data, or pass --bucket`,
+      ],
+      [],
+      0,
+    ]);
+  });
+
+  it("refuses a --keep that is not a number before any request", async () => {
+    const root = appRoot();
+    const { io, bucket } = deployedSource();
+    const buffer = await runCli(io, ["backup", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--keep", "x"]);
+
+    expect([buffer.err, buffer.code, io.restCalls, bucket.objects.size]).toEqual([["Error: --keep takes a number of dumps, not x"], 1, [], 0]);
+  });
+
+  it("prints the sidecar alone on --json", async () => {
+    const root = appRoot();
+    const { io, bucket } = localSource();
+    const buffer = await runCli(io, ["backup", "--root", root, "--json"]);
+
+    const stored = await readD1Backup(bucket, `d1-backups/${REMOTE_ID}/${NOW}-local-${NOW_MS}.sql`);
+    expect([buffer.out.length, JSON.parse(buffer.out.join(""))]).toEqual([1, stored]);
+  });
+
+  it("exits 1 on a failed export, saying to run the backup again", async () => {
+    const root = appRoot();
+    const { io, bucket } = deployedSource(cfEnvelope({ status: "error", error: "the database is busy" }));
+    const buffer = await runCli(io, ["backup", "--root", root, "--target", "remote", ...REMOTE_ARGS]);
+
+    expect([buffer.err, buffer.code, bucket.objects.size]).toEqual([
+      [
+        "Error: D1 refused to start the export: the database is busy\nno sidecar was written, so this run left no complete dump — run `forge db backup` again",
+      ],
+      1,
+      0,
+    ]);
+  });
+});
+
+/** The sidecar `forge db backup` would have written for `DUMP` at `DUMP_KEY`. */
+async function seededSidecar(rows: Record<string, number> = { _forge_migrations: 1, notes: 2 }) {
+  return {
+    key: DUMP_KEY,
+    databaseId: REMOTE_ID,
+    bookmark: "B1",
+    takenAt: "2026-09-10T03:00:00.000Z",
+    size: bytesOf(DUMP),
+    md5: hexOf("md5", DUMP),
+    sha256: hexOf("sha256", DUMP),
+    rows,
+    ...(await takeD1Census(fakeDatabase(DUMP))),
+  };
+}
+
+async function dumpBucket(rows?: Record<string, number>): Promise<FakeBackupBucket> {
+  const bucket = fakeBackupBucket();
+  await bucket.put(DUMP_KEY, DUMP);
+  await writeSidecar(bucket, await seededSidecar(rows));
+  return bucket;
+}
+
+/** A deployed account whose D1 REST API `rest` serves, and whose R2 holds `DUMP` at `DUMP_KEY`. */
+async function deployedTarget(rest = fakeD1Rest()): Promise<{ io: FakeDbIo; bucket: FakeBackupBucket; rest: ReturnType<typeof fakeD1Rest> }> {
+  const io = fakeDbIo({}, { homes: [REMOTE_HOME] });
+  const bucket = await dumpBucket();
+  io.restRules.push(...r2RestRules(bucket), {
+    match: (url) => url.includes("/d1/database") || url.startsWith("https://upload.example.com/"),
+    reply: (url, init) => rest.fetch(url, init),
+  });
+  return { io, bucket, rest };
+}
+
+async function localTarget(standby: string, rows?: Record<string, number>): Promise<{ io: FakeDbIo; bucket: FakeBackupBucket }> {
+  const io = fakeDbIo();
+  const bucket = await dumpBucket(rows);
+  io.buckets.set("BACKUPS", bucket);
+  io.databases.set("DB", localBinding());
+  io.databases.set("STANDBY", fakeDatabase(standby));
+  return { io, bucket };
+}
+
+describe("forge db restore --from", () => {
+  const FRESH = `app-db-restore-${NOW_MS}`;
+
+  it("creates a fresh deployed database, imports the dump, prints the restore and keeps its report beside the dumps", async () => {
+    const root = appRoot();
+    const { io, bucket, rest } = await deployedTarget();
+    const buffer = await runCli(io, ["restore", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY]);
+
+    expect([buffer.err, buffer.code]).toEqual([[], null]);
+    expect(buffer.out).toEqual([
+      `✓ restored ${DUMP_KEY} into ${FRESH} (uuid-${FRESH}) at bookmark B-final`,
+      "  it holds what the dump's sidecar recorded",
+    ]);
+    const stored = await bucket.get(`d1-backups/${REMOTE_ID}/restores/uuid-${FRESH}.json`);
+    expect(JSON.parse((await stored?.text()) ?? "null")).toEqual({
+      databaseId: `uuid-${FRESH}`,
+      name: FRESH,
+      key: DUMP_KEY,
+      bookmark: "B-final",
+      queries: DUMP_STATEMENTS,
+      mismatches: [],
+    });
+    expect(rest.databases.get(`uuid-${FRESH}`)?.sqlite.query("SELECT body FROM notes ORDER BY id").all()).toEqual([
+      { body: "one; two" },
+      { body: "three" },
+    ]);
+  });
+
+  it("prints on --json the report it stored", async () => {
+    const root = appRoot();
+    const { io, bucket } = await deployedTarget();
+    const buffer = await runCli(io, ["restore", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY, "--json"]);
+
+    const stored = await bucket.get(`d1-backups/${REMOTE_ID}/restores/uuid-${FRESH}.json`);
+    expect([buffer.out.length, JSON.parse(buffer.out.join(""))]).toEqual([1, JSON.parse((await stored?.text()) ?? "null")]);
+  });
+
+  it("imports a local dump into an empty standby binding, making no REST call", async () => {
+    const root = appRoot();
+    const { io, bucket } = await localTarget("");
+    const buffer = await runCli(io, ["restore", "--root", root, "--from", DUMP_KEY, "--into", "standby:STANDBY"]);
+
+    expect([buffer.err, buffer.out, io.restCalls]).toEqual([
+      [],
+      [`✓ restored ${DUMP_KEY} into STANDBY (STANDBY)`, "  it holds what the dump's sidecar recorded"],
+      [],
+    ]);
+    expect(reportKeys(bucket)).toEqual([`d1-backups/${REMOTE_ID}/restores/STANDBY.json`]);
+  });
+
+  it("refuses a local fresh restore before any request", async () => {
+    const root = appRoot();
+    const { io, bucket } = await localTarget("");
+    const buffer = await runCli(io, ["restore", "--root", root, "--from", DUMP_KEY]);
+
+    expect([buffer.err, buffer.code, io.restCalls, reportKeys(bucket)]).toEqual([
+      ["Error: a local target cannot create a database — pass --into standby:<binding> to import into an empty standby"],
+      1,
+      [],
+      [],
+    ]);
+  });
+
+  it("refuses a standby that already holds a table, writing no report", async () => {
+    const root = appRoot();
+    const { io, bucket } = await localTarget("CREATE TABLE notes (id INTEGER PRIMARY KEY, body TEXT);");
+    const buffer = await runCli(io, ["restore", "--root", root, "--from", DUMP_KEY, "--into", "standby:STANDBY"]);
+
+    expect([buffer.err, buffer.code, reportKeys(bucket)]).toEqual([
+      ["Error: STANDBY already holds notes — a restore imports only into an empty database"],
+      1,
+      [],
+    ]);
+  });
+
+  it("exits 1 on a restore that differs from the sidecar, still keeping its report", async () => {
+    const root = appRoot();
+    const { io, bucket } = await localTarget("", { _forge_migrations: 1, notes: 3 });
+    const buffer = await runCli(io, ["restore", "--root", root, "--from", DUMP_KEY, "--into", "standby:STANDBY"]);
+
+    expect([buffer.out, buffer.err, buffer.code]).toEqual([
+      [`✗ restored ${DUMP_KEY} into STANDBY (STANDBY), but it differs from the dump's sidecar:`, "  ! notes holds 2 rows, but the dump holds 3"],
+      ["Error: STANDBY differs from the dump's sidecar; the live database is untouched"],
+      1,
+    ]);
+    const stored = await bucket.get(`d1-backups/${REMOTE_ID}/restores/STANDBY.json`);
+    expect((JSON.parse((await stored?.text()) ?? "null") as { mismatches: string[] }).mismatches).toEqual([
+      "notes holds 2 rows, but the dump holds 3",
+    ]);
+  });
+
+  it("refuses an --into that is neither fresh nor standby:<id>, and a missing --from, before any request", async () => {
+    const root = appRoot();
+    const { io } = await deployedTarget();
+    const into = await runCli(io, ["restore", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY, "--into", "elsewhere"]);
+    const from = await runCli(io, ["restore", "--root", root, "--target", "remote", ...REMOTE_ARGS]);
+
+    expect([into.err, into.code, from.code, from.err.join("\n").includes("--from"), io.restCalls]).toEqual([
+      ["Error: --into takes fresh or standby:<id>, not elsewhere"],
+      1,
+      1,
+      true,
+      [],
+    ]);
+  });
+
+  it("says to run the restore again into a new or empty database when the import fails, writing no report", async () => {
+    const root = appRoot();
+    const { io, bucket } = await deployedTarget(fakeD1Rest({ importError: "UNIQUE constraint failed" }));
+    const buffer = await runCli(io, ["restore", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY]);
+
+    expect([buffer.err, buffer.code, reportKeys(bucket)]).toEqual([
+      [
+        `Error: D1 reported the import into ${FRESH} failed: UNIQUE constraint failed\nthe restore did not finish — run \`forge db restore\` again into a new or empty database`,
+      ],
+      1,
+      [],
+    ]);
+  });
+
+  /** A temp root whose config names the database `name`, beside the BACKUPS bucket. */
+  function namedRoot(name: string): string {
+    const root = mkdtempSync(join(tmpdir(), "forge-db-backup-"));
+    roots.push(root);
+    const config = minimalWranglerConfig(root, {
+      d1_databases: [{ binding: "DB", database_name: name, database_id: REMOTE_ID, migrations_dir: "config/db/migrations" }],
+      r2_buckets: [{ binding: "BACKUPS", bucket_name: "app-backups" }],
+    });
+    writeFileSync(config.path, config.text);
+    return root;
+  }
+
+  it("restores fresh a database whose 42-character name leaves the restored name at D1's 64-character limit", async () => {
+    const name = "a".repeat(42);
+    const { io, bucket } = await deployedTarget();
+    const buffer = await runCli(io, ["restore", "--root", namedRoot(name), "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY]);
+
+    expect([buffer.err, reportKeys(bucket)]).toEqual([[], [`d1-backups/${REMOTE_ID}/restores/uuid-${name}-restore-${NOW_MS}.json`]]);
+  });
+
+  it("refuses before any request a fresh restore of a 43-character name, which would pass D1's 64-character limit", async () => {
+    const name = "a".repeat(43);
+    const { io, bucket, rest } = await deployedTarget();
+    const buffer = await runCli(io, ["restore", "--root", namedRoot(name), "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY]);
+
+    expect([buffer.err, buffer.code, io.restCalls, rest.calls, reportKeys(bucket)]).toEqual([
+      [
+        `Error: ${name} is too long to restore fresh — ${name}-restore-${NOW_MS} would pass D1's 64-character database name limit, so pass --into standby:<id>`,
+      ],
+      1,
+      [],
+      [],
+      [],
+    ]);
+  });
+});
+
+describe("forge db restore → promote", () => {
+  it("round-trips the restore report into promote --restored", async () => {
+    const restored = "9f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+    const root = appRoot();
+    const { io } = await deployedTarget(fakeD1Rest({ id: () => restored }));
+    const configPath = join(root, "wrangler.jsonc");
+    io.writeText(configPath, minimalWranglerConfig(root, { r2_buckets: [{ binding: "BACKUPS", bucket_name: "app-backups" }] }).text);
+
+    const restore = await runCli(io, ["restore", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--from", DUMP_KEY]);
+    const promote = await runCli(io, ["promote", "--root", root, "--target", "remote", ...REMOTE_ARGS, "--restored", restored, "--yes"]);
+
+    expect([restore.err, promote.err]).toEqual([[], []]);
+    expect((JSON.parse(io.readText(configPath)) as { d1_databases: unknown[] }).d1_databases).toEqual([
+      { binding: "DB", database_name: `app-db-restore-${NOW_MS}`, database_id: restored, migrations_dir: "config/db/migrations" },
+    ]);
   });
 });

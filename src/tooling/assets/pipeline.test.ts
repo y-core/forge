@@ -45,7 +45,8 @@ const DATA_BLOCK = "const DATA: Record<string, string> = {";
 
 function stubTailwind(css = "/* built css */") {
   return mock((_cmd: string, args: string[], _opts: SpawnOptions): SpawnOutcome => {
-    writeFileSync(args[args.indexOf("-o") + 1] as string, css);
+    const out = args.indexOf("-o");
+    if (out !== -1) writeFileSync(args[out + 1] as string, css);
     return { status: 0 };
   });
 }

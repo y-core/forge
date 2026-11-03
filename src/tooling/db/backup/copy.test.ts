@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
 import type { FakeBackupBucket } from "../../../storage/backup/backup.fixture";
-import { backupKey, sidecarKey } from "../../../storage/backup/list";
+import { sidecarKey } from "../../../storage/backup/list";
 import type { D1BackupSidecar } from "../../../storage/backup/types";
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
@@ -13,6 +13,7 @@ import type { DbConfig, DbRunContext, FakeDbIo, Home } from "../types";
 import { listDumps, pullDump, pushDump } from "./copy";
 import { resolveDumpSource } from "./dumps";
 import { restBackupBucket } from "./rest-bucket";
+import { backupKey } from "./store";
 
 const DB_ID = "0f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
 const KEY = backupKey(undefined, DB_ID, new Date("2026-09-11T09:00:00Z"), "local-1");

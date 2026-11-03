@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { fakeBackupBucket } from "./backup.fixture";
 import { D1BackupError } from "./errors";
 import { sidecarKey } from "./list";
-import { parseSidecar, readD1Backup, writeSidecar } from "./sidecar";
+import { parseSidecar, readD1Backup } from "./sidecar";
 import type { D1BackupSidecar } from "./types";
 
 const KEY = "d1-backups/db/2026-11-01T02:00:00.000Z-B.sql";
@@ -23,10 +23,10 @@ const SIDECAR: D1BackupSidecar = {
 };
 
 describe("readD1Backup()", () => {
-  it("reads back the sidecar writeSidecar kept beside the dump", async () => {
+  it("reads back the sidecar kept beside the dump", async () => {
     const bucket = fakeBackupBucket();
-    await writeSidecar(bucket, SIDECAR);
-    expect([[...bucket.objects.keys()], await readD1Backup(bucket, KEY)]).toEqual([[sidecarKey(KEY)], SIDECAR]);
+    await bucket.put(sidecarKey(KEY), JSON.stringify(SIDECAR));
+    expect(await readD1Backup(bucket, KEY)).toEqual(SIDECAR);
   });
 
   it("answers null for a dump with no sidecar", async () => {
@@ -46,6 +46,6 @@ describe("readD1Backup()", () => {
 describe("parseSidecar()", () => {
   it("reads the sidecar text a dump keeps, and refuses one naming another dump", () => {
     expect(parseSidecar(JSON.stringify(SIDECAR), KEY)).toEqual(SIDECAR);
-    expect(() => parseSidecar(JSON.stringify(SIDECAR), "other.sql")).toThrow("the sidecar of other.sql is not one runD1Backup wrote");
+    expect(() => parseSidecar(JSON.stringify(SIDECAR), "other.sql")).toThrow("the sidecar of other.sql is not one forge db backup wrote");
   });
 });

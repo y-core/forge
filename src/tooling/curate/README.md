@@ -1,6 +1,6 @@
 ---
 title: Curating a Demonstrator
-description: "Copies a working tree into a fresh directory keeping the features you name and what they require, or dropping them and what requires them, and gates every skeleton a profile names."
+description: "Copies a git working tree, keeping or dropping the features you name, with every other byte unchanged: nothing is reformatted or gated, and the copy is no git work tree."
 audience: internal
 ---
 

@@ -25,11 +25,8 @@ const migrateFlags = {
     type: "string" as const,
     description: "The R2 dump --rehearse restores; implies --rehearse, and defaults to the newest complete dump of this database",
   },
-  bucket: {
-    type: "string" as const,
-    description: "With --rehearse: the R2 binding the dumps are in. Defaults to BACKUPS, or the config's only one",
-  },
-  prefix: { type: "string" as const, description: "With --rehearse: the prefix runD1Backup was given. Defaults to d1-backups" },
+  bucket: { type: "string" as const, description: "With --rehearse: the R2 binding the dumps are in. Defaults to BACKUPS" },
+  prefix: { type: "string" as const, description: "With --rehearse: the prefix forge db backup was given. Defaults to d1-backups" },
 };
 
 /** What `db migrate apply` does, which the bare `db migrate` runs too. */

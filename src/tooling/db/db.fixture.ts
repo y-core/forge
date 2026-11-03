@@ -3,10 +3,10 @@ import process from "node:process";
 import { PassThrough } from "node:stream";
 
 import type { FakeBackupBucket } from "../../storage/backup/backup.fixture";
-import { cutSqlStatements } from "../../storage/backup/split";
 import type { CfAuth } from "../cf/types";
 import { CliError } from "../cli/errors";
 import type { CliIO } from "../cli/types";
+import { cutSqlStatements } from "./backup/split";
 import { persistRoot } from "./home";
 import { SqlReal } from "./literal";
 import { formatComposeHeader } from "./schema/header";
@@ -295,6 +295,13 @@ export function fakeDbIo(
       if (bucket === undefined)
         return Promise.reject(new CliError("invalid-args", `${home.configPath} declares no r2_buckets binding named ${binding}`));
       return Promise.resolve(bucket);
+    },
+    databases: new Map(),
+    database(home, binding) {
+      const database = io.databases.get(binding);
+      if (database === undefined)
+        return Promise.reject(new CliError("invalid-args", `${home.configPath} declares no d1_databases binding named ${binding}`));
+      return Promise.resolve(database);
     },
     closeD1(home) {
       io.closed.push(home === null ? "*" : persistRoot(home));

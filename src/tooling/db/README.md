@@ -1,6 +1,6 @@
 ---
 title: D1 Database Management
-description: "The `forge db` command tree: migrations composed from declared schema files, applied forward-only with checksums and a schema fingerprint, D1 backups through the app's Workflows, and idempotent seeds."
+description: "The `forge db` command tree: migrations composed from declared schema files, applied forward-only with checksums and a schema fingerprint, D1 backups into R2 and their restore, and idempotent seeds."
 audience: internal
 ---
 
@@ -177,12 +177,12 @@ that bookmark was read just before the restore, so an undo to it loses any write
 A restore whose connection fails once it is sent exits 1 with `may have restored` and the same undo. A rate-limited one exits 1 with `not
 restored`, and names when the next is allowed if D1 says. `--json` carries the undo's `from` (`restore` or `pre-read`) and `replyReadable`.
 
-**Local.** Back up under `forge cf dev`, then reset; restore a dump into a standby:
+**Local.** Back up, then reset; restore a dump into a standby binding:
 
 ```bash
 forge db backup
 forge db reset --expect my-app-db
-forge db restore --from <key> --into standby:<id>
+forge db restore --from <key> --into standby:<binding>
 ```
 
 `bookmark` is refused for a local database, and `reset` for a deployed one.
@@ -192,39 +192,85 @@ forge db restore --from <key> --into standby:<id>
 ## Backing up and restoring
 
 ```bash
-forge db backup                               # run the app's d1-backup Workflow, print the dump and its sidecar
-forge db backup --target remote               # the same against the deployed database
-forge db restore --from <key> --target remote # import a dump into a new database, and print every mismatch
-forge db reset --expect my-app-db             # remove a local database's state files
-forge db backup list --target remote          # every dump in R2, newest first, complete or not
-forge db backup pull <key> --out backups/     # copy one dump and its sidecar to disk, checked by sha256
-forge db backup push backups/<file>.sql       # upload it and its sidecar back under the dump's own key
+forge db backup                                   # export the local database into R2, print the dump and its sidecar
+forge db backup --target remote --keep 30         # the deployed database, keeping its 30 newest complete dumps
+forge db backup list --target remote              # every dump in R2, newest first, complete or not
+forge db restore --from <key> --target remote     # import a dump into a new database, and print every mismatch
+forge db promote --target remote --restored <id>  # point the binding at that database once its report is clean
+forge db backup pull <key> --out backups/         # copy one dump and its sidecar to disk, checked by sha256
+forge db backup push backups/<file>.sql           # upload it and its sidecar back under the dump's own key
 ```
 
-**Both verbs drive your app's own Workflows** ([`src/storage/README.md`][storage-readme]). Against a deployed database the CLI starts them
-through the Cloudflare API. Against a local one, it starts them through the `forge cf dev` session on `--port` (8787 by default). Either way it
-follows the instance to its end. `--workflow` names another Workflow than `d1-backup` or `d1-restore`, by name or binding.
+Each verb runs in the CLI itself, against the deployed database over the Cloudflare API with `--account-id` and `--api-token`, or against the
+local one through `wrangler`, with no dev session running. Why it works this way is [`DATABASE_BACKUPS.md`][bk-3] §3. A Worker lists and reads
+the same dumps through [`@y-core/forge/storage/backup`][storage-readme].
+
+### Choosing where the dumps go
+
+**Give the dumps a bucket of their own.** A dump holds the whole database, sessions and password hashes included, so it should not share a bucket
+whose public access, CORS or lifecycle rules were set for other data such as uploads. Declare it as `BACKUPS`, under each `env.<name>` too,
+because wrangler does not inherit R2 bindings:
+
+```jsonc
+{ "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "app-d1-backups" }] }
+```
+
+`--bucket` names another binding instead. Without it, a config that binds no `BACKUPS` is refused, even when it binds a single other bucket.
+`--prefix` defaults to `d1-backups`. Give `backup`, `list`, `restore`, `promote` and `reset` the same pair, because each finds the dumps by it.
+
+### Taking a backup
 
 **`forge db backup` prints the dump's key, size, bookmark, migration head and rows per table.** Each value the dump will not reproduce is printed
-as a warning, and the run still exits zero ([`DATABASE_BACKUPS.md`][bk-2] §2).
+as a warning, and the run still exits zero ([`DATABASE_BACKUPS.md`][bk-2] §2). `--json` prints the sidecar alone.
 
-**`forge db restore --from <key>` never touches the live database.** `--into fresh`, the default, has the Workflow create a database.
-`--into standby:<id>` imports into an empty one, and is the only choice against a local database, because a dev session cannot create one. The run
-prints each way the result differs from the dump's sidecar, and exits non-zero if it differs at all. Pointing the app at the restored database is a
-separate step ([`DATABASE_BACKUPS.md`][bk-4] §4): `forge db promote --target remote --instance <id>` rewrites the binding once the restore's
-report shows no mismatch, then you deploy. It prints the command that swaps back.
+**`--keep <n>` deletes every dump older than the newest `n` complete ones**, each with its sidecar. Without it every dump is kept; R2's own
+lifecycle rule, set with `forge cf sync lifecycle`, ages them out instead.
+
+**To back up on a schedule, run `forge db backup --target remote` from a CI schedule or a cron job**, passing the account id and the token from
+that runner's secrets. The token needs `Account → D1 → Edit` and `Account → Workers R2 Storage → Edit`.
+
+**A deployed dump over 300 MiB, or one D1 serves with no stated length, is refused before it is uploaded**, since the dump goes into R2 through
+Cloudflare's REST object endpoint.
+
+### Restoring a dump
+
+**`forge db restore --from <key>` never touches the live database.** Pick the target with `--into`:
+
+- **`--into fresh`**, the default, creates `<database>-restore-<epoch ms>`. It is refused before anything is sent when that name would pass D1's
+  64-character limit; restore into a standby instead.
+- **`--into standby:<id>`** imports into an existing database that holds no table. Locally it is `standby:<binding>`, a second `d1_databases`
+  binding, and the only choice, because local D1 cannot create a database.
+
+The run prints each way the result differs from the dump's sidecar, and exits non-zero if it differs at all. Either way it keeps the report in R2,
+at `<prefix>/<database id>/restores/<restored id>.json`, where promotion reads it. `--json` prints the report alone.
+
+### Pointing the app at a restored database
+
+**`forge db promote --target remote --restored <id>` rewrites the binding to the database `restore` created**, once the report under `restores/`
+shows no mismatch and names a dump of this binding's own database. It asks first, prints the command that swaps back, and leaves the deploy to
+you. `--database-id` with `--database-name` points the binding at any database, which is how the swap back runs. Promotion is its own step for the
+reason [`DATABASE_BACKUPS.md`][bk-4] §4 gives.
+
+### When a backup or restore fails
+
+**Run the verb again when the failure says to.** Neither verb resumes a failed run. A backup that failed before its sidecar was written leaves no
+complete dump, and a failed restore leaves a database that is not the live one, so each says to run it again. A backup whose prune past `--keep`
+failed has stored its dump and sidecar: it says so, and the next backup with the same `--keep` prunes again ([`DATABASE_BACKUPS.md`][bk-3b] §3b).
+
+### Copying a dump off Cloudflare
 
 **`backup pull` and `backup push` copy a dump between R2 and disk, and keep nothing that does not match its sidecar.** `pull` refuses a dump with
 no sidecar and a file already on disk. It deletes the copy if its size or sha256 differs from the sidecar, and exits non-zero. `push` needs the
 `.json` sidecar beside the `.sql` file and checks the file against it before uploading anything. It refuses a key the bucket already holds, so it
 never replaces a dump. Against a deployed bucket the dump streams through Cloudflare's REST object endpoint, which refuses an upload over 300 MiB;
-push a larger one through R2's S3 API instead. Against the dev session's bucket the dump is read whole first, since the local binding needs a body
-of known length. `--bucket` names the R2 binding, and `list` also takes `--prefix`.
+push a larger one through R2's S3 API instead. Against the local bucket the dump is read whole first, since the local binding needs a body of
+known length.
+
+### Resetting a local database
 
 **`--expect` is mandatory on `reset` because a stale `--target` must not be able to aim it.** The name you pass is the name the resolved target must
 have. `reset` also refuses a database holding rows unless a dump in the local R2 bucket, under 24 hours old, still holds the same row counts. Take
-one with `forge db backup` under `forge cf dev`. `--dump` names which dump to rely on, and `--allow-unbacked` skips the check
-([`DATABASE_BACKUPS.md`][bk-5] §5).
+one with `forge db backup`. `--dump` names which dump to rely on, and `--allow-unbacked` skips the check ([`DATABASE_BACKUPS.md`][bk-5] §5).
 
 ---
 
@@ -289,9 +335,9 @@ Every app runs the same lifecycle, so the scripts are the same in each. Copy the
 | `db:migrate:remote` | `forge db migrate --target remote` | Applies pending migrations to the deployed database, under a bookmark |
 | `deploy` | `forge db migrate --target remote --yes --account-id "$CLOUDFLARE_ACCOUNT_ID" --api-token "$CLOUDFLARE_API_TOKEN" && wrangler deploy` | Applies the deployed database's pending migrations, then deploys the Worker — the Workers Builds deploy command |
 | `db:standby` | `forge db standby reset` | Rebuilds the standby database from the migrations and the seeds |
-| `db:backup` | `forge db backup` | Runs the app's backup Workflow, storing D1's dump and its sidecar in R2 |
+| `db:backup` | `forge db backup` | Exports the local database through D1's own dumper into R2, beside its sidecar |
 | `db:backup:list` | `forge db backup list` | Lists the database's dumps in R2, newest first, each marked complete or not |
-| `db:restore` | `forge db restore` | Restores the R2 dump `--from` names into a new database, through the app's restore Workflow |
+| `db:restore` | `forge db restore` | Restores the R2 dump `--from` names into the empty standby `--into standby:<binding>` names |
 | `db:reset` | `forge db reset` | Removes the local database's state files, so a restore has an empty target |
 
 Which lines belong in CI, and why neither covers the other, is [`DATABASE_MANAGEMENT.md`][dm-9] §9:
@@ -369,7 +415,7 @@ the top level. Forge refuses so that a mistyped name never reaches the top-level
 
 **`--json` owns stdout.** Progress lines, confirmations and warnings go to stderr under it, so the document on stdout is parseable whole.
 
-**Scratch databases live under `.forge/scratch/`.** Compose, rehearsal and backup verification are what build them; `--to` applies against the real
+**Scratch databases live under `.forge/scratch/`.** Compose and rehearsal are what build them; `--to` applies against the real
 home.
 
 **A drop that followed a file leaving `config/db.config.ts` names the file that declared it**, so the refusal is attributable rather than
@@ -388,6 +434,8 @@ unexplained ([`SCHEMA_COMPOSITION.md`][sc-3] §3).
 
 [bk]: ../../../docs/DATABASE_BACKUPS.md
 [bk-2]: ../../../docs/DATABASE_BACKUPS.md#2-what-a-dump-cannot-carry
+[bk-3]: ../../../docs/DATABASE_BACKUPS.md#3-the-cli-runs-the-pipeline-a-transport-per-place
+[bk-3b]: ../../../docs/DATABASE_BACKUPS.md#3b-a-failed-run-is-run-again
 [bk-4]: ../../../docs/DATABASE_BACKUPS.md#4-the-restore-ladder
 [bk-5]: ../../../docs/DATABASE_BACKUPS.md#5-reset-and-rehearse-rely-on-a-local-dump
 [cf-readme]: ../cf/README.md
@@ -414,4 +462,4 @@ unexplained ([`SCHEMA_COMPOSITION.md`][sc-3] §3).
 [sc-4]: ../../../docs/SCHEMA_COMPOSITION.md#4-what-compose-emits
 [sc-5]: ../../../docs/SCHEMA_COMPOSITION.md#5-renames
 [sc-6]: ../../../docs/SCHEMA_COMPOSITION.md#6-the-stamp-the-snapshot-and-the-two-checks
-[storage-readme]: ../../storage/README.md
+[storage-readme]: ../../storage/README.md#listing-backups-from-an-admin-page

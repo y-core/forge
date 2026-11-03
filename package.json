@@ -45,6 +45,7 @@
   "scripts": {
     "fix": "bun run src/tooling/root/bin.ts verify --fix",
     "gen:bundles": "bun run config/bundles.ts",
+    "gen:d1-baseline": "bun run config/d1-baseline.ts && bun fmt --no-script src/tooling/db/backup/baseline-dump.fixture.ts",
     "gen:icc": "bun run src/tooling/gate/checks/icc-profile.ts && bun fmt --no-script src/render/pdf/icc.ts",
     "gen:class-groups": "bun run src/tooling/gate/checks/class-groups.ts && bun fmt --no-script src/ui/core/utils/class-groups.ts",
     "gen:design-scale": "bun run src/tooling/gate/checks/design-scale.ts && bun fmt --no-script src/tooling/lint/data/design-scale.ts",
@@ -88,6 +89,7 @@
     "harfbuzzjs": "^1.6.3",
     "oxlint": "1.89.0",
     "oxlint-tsgolint": "7.0.2004",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4.3.3",
     "wrangler": "^4.151.2"
   },
@@ -97,6 +99,7 @@
     "@codemirror/language": "^6.12.0",
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.0",
+    "@tailwindcss/cli": ">=4.0.0",
     "esbuild": ">=0.20.0",
     "harfbuzzjs": ">=1.6.0",
     "sharp": "^0.35.5",
@@ -117,6 +120,9 @@
       "optional": true
     },
     "@codemirror/view": {
+      "optional": true
+    },
+    "@tailwindcss/cli": {
       "optional": true
     },
     "esbuild": {
@@ -155,10 +161,6 @@
     "#relax/error-page": {
       "forge-dev": "./src/app/error-page.dev.ts",
       "default": "./src/app/error-page.strict.ts"
-    },
-    "#relax/d1-transfer": {
-      "forge-dev": "./src/storage/backup/transfer.dev.ts",
-      "default": "./src/storage/backup/transfer.strict.ts"
     }
   },
   "exports": {

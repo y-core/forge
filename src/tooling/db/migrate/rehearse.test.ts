@@ -1,12 +1,11 @@
 import { describe, expect, it } from "bun:test";
 
 import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
-import { readSchemaRow, schemaDigest } from "../../../storage/backup/census";
-import { backupKey } from "../../../storage/backup/list";
-import { writeSidecar } from "../../../storage/backup/sidecar";
 import type { D1BackupSidecar } from "../../../storage/backup/types";
 import type { WranglerConfig } from "../../cf/types";
 import { PLAIN } from "../../term/color";
+import { readSchemaRow, schemaDigest } from "../backup/census";
+import { backupKey, writeSidecar } from "../backup/store";
 import { fakeDbIo } from "../db.fixture";
 import { sha256 } from "../digest";
 import { appHome } from "../home";
@@ -85,7 +84,7 @@ async function context(
   const run: DbRunContext = { config, home: appHome(config), io, host: {}, json: false, yes: true, style: PLAIN, print: () => {} };
   const bucket = fakeBackupBucket();
   for (const dump of dumps) {
-    bucket.objects.set(dump.key, { bytes: new TextEncoder().encode(DUMP), customMetadata: {} });
+    bucket.objects.set(dump.key, { bytes: new TextEncoder().encode(DUMP) });
     await writeSidecar(bucket, dump);
   }
   io.buckets.set("BACKUPS", bucket);

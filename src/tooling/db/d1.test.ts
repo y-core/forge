@@ -1,8 +1,13 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import { CliError } from "../cli/errors";
+import { fakeDatabase } from "./backup/backup.fixture";
 import { describeForeignKeyWatch, executeFile, executeSql, foreignKeyWatch, queryBatches, queryOne, queryRows, queryRowsIfTable } from "./d1";
 import { cfEnvelope, cfRefusal, fakeDbIo, REMOTE_AUTH } from "./db.fixture";
+import { realDbIo } from "./io";
 import type { FakeDbIo } from "./types";
 import type { Home } from "./types";
 
@@ -297,6 +302,27 @@ describe("executeFile()", () => {
     expect((await capture(() => executeFile(io, home(), "/tmp/dump.sql"))).message).toBe(
       "loading /tmp/dump.sql against local (app-db) failed:\nparse error at line 3",
     );
+  });
+
+  it("leaves no row from a local file's first statement when its second fails, since the file goes as one batch", async () => {
+    const root = mkdtempSync(join(tmpdir(), "forge-db-d1-"));
+    const file = join(root, "partial.sql");
+    writeFileSync(file, "INSERT INTO t VALUES (1);\nINSERT INTO missing VALUES (2);");
+    const db = fakeDatabase("CREATE TABLE t (id INTEGER)");
+    const io = realDbIo(
+      () => {},
+      async () => ({ getPlatformProxy: async () => ({ env: { DB: db }, dispose: async () => {} }) }) as never,
+    );
+    let error: CliError;
+    try {
+      error = await capture(() => executeFile(io, home({ dir: root, configPath: join(root, "wrangler.jsonc") }), file));
+    } finally {
+      await io.closeD1(null);
+      rmSync(root, { recursive: true, force: true });
+    }
+
+    expect(error).toMatchObject({ kind: "external", message: `loading ${file} against local (app-db) failed:\nno such table: missing` });
+    expect([db.sqlite.query("SELECT COUNT(*) AS n FROM t").get(), db.batches]).toEqual([{ n: 0 }, [2]]);
   });
 
   describe("a local load refused at commit", () => {

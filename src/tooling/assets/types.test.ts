@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
+import type { BuildOptions, BuildResult, Metafile } from "esbuild";
+import type { Blob, Face } from "harfbuzzjs";
+
 import { SITE_FILES } from "../../site/robots";
 import { v } from "../../validation/mod";
 import { AssetsConfigSchema, SITE_OUTPUTS } from "./types";
+import type { EsbuildBuildOptions, EsbuildBuildResult, EsbuildMetafile, EsbuildModule, HarfbuzzModule, SharpRasterizer } from "./types";
 
 const parse = (value: unknown) => v.safeParse(AssetsConfigSchema, value);
 
@@ -325,5 +329,35 @@ describe("AssetsConfigSchema — site", () => {
 
   it("rejects a site block with no outDir, since the two files are only meaningful at a known root", () => {
     expect(parse({ site: { config: siteConfig } }).success).toBe(false);
+  });
+});
+
+// Each binding is typed by the local interface and assigned the installed peer, so a peer release
+// that drops or reshapes a member forge calls fails `bun check` here.
+describe("optional peer surfaces", () => {
+  it("are met by the installed esbuild", async () => {
+    const esbuild: EsbuildModule = await import("esbuild");
+    expect(typeof esbuild.build).toBe("function");
+  });
+
+  it("are met by the installed esbuild's options, metafile and result", () => {
+    const pinned: [
+      EsbuildBuildOptions extends BuildOptions ? true : false,
+      Metafile extends EsbuildMetafile ? true : false,
+      BuildResult extends EsbuildBuildResult ? true : false,
+    ] = [true, true, true];
+    expect(pinned).toEqual([true, true, true]);
+  });
+
+  it("are met by the installed sharp's default export", async () => {
+    const sharp: SharpRasterizer = (await import("sharp")).default;
+    expect(typeof sharp).toBe("function");
+  });
+
+  it("are met by the installed harfbuzzjs", async () => {
+    const harfbuzz: HarfbuzzModule<Blob, Face> = await import("harfbuzzjs");
+    expect([harfbuzz.Blob, harfbuzz.Face, harfbuzz.Font, harfbuzz.Buffer, harfbuzz.shape].every((member) => typeof member === "function")).toBe(
+      true,
+    );
   });
 });

@@ -7,8 +7,8 @@ import { experimental_generateTypes } from "wrangler";
 
 import { validateCommentBudget } from "../../gate/checks/comment-budget-parse";
 import { createGenEnvCommand, loadOptions } from "./cf-env-command";
-import { collectBindings, collectSecretNames, collectVars, emit } from "./cf-env-gen";
-import { DEFAULT_OPTIONS, HEADER } from "./cf-env-registry";
+import { collectBindings, collectNamedEnvVars, collectPolicyVars, collectSecretNames, collectVars, declaresSecrets, emit } from "./cf-env-gen";
+import { DEFAULT_OPTIONS } from "./cf-env-registry";
 import type { Entry, GenOptions } from "./types";
 
 const roots: string[] = [];
@@ -94,15 +94,22 @@ describe("collectBindings", () => {
   });
 });
 
-async function wranglerRequiredStrings(cfg: Record<string, unknown>, devVarsText: string): Promise<string[]> {
+async function wranglerBaseEnv(cfg: Record<string, unknown>, devVarsText: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "forge-cfgen-secrets-"));
   roots.push(dir);
   writeFileSync(join(dir, "index.ts"), "export default {};\n");
   writeFileSync(join(dir, ".dev.vars"), devVarsText);
   writeFileSync(join(dir, "wrangler.json"), JSON.stringify({ name: "secrets", main: "index.ts", compatibility_date: "2025-01-01", ...cfg }));
   const { env } = await experimental_generateTypes({ config: join(dir, "wrangler.json"), includeRuntime: false });
-  const base = /^interface __BaseEnv_Env \{\n(.*?)^\}/ms.exec(env ?? "")?.[1] ?? "";
-  return [...base.matchAll(/^\t(\w+): string;$/gm)].map((match) => match[1]!);
+  return /^interface __BaseEnv_Env \{\n(.*?)^\}/ms.exec(env ?? "")?.[1] ?? "";
+}
+
+async function wranglerRequiredStrings(cfg: Record<string, unknown>, devVarsText: string): Promise<string[]> {
+  return [...(await wranglerBaseEnv(cfg, devVarsText)).matchAll(/^\t(\w+): string;$/gm)].map((match) => match[1]!);
+}
+
+async function wranglerOptionalNames(cfg: Record<string, unknown>, devVarsText: string): Promise<string[]> {
+  return [...(await wranglerBaseEnv(cfg, devVarsText)).matchAll(/^\t(\w+)\?:/gm)].map((match) => match[1]!).toSorted();
 }
 
 describe("collectSecretNames", () => {
@@ -170,6 +177,20 @@ describe("collectSecretNames", () => {
   }, 30_000);
 });
 
+describe("declaresSecrets", () => {
+  const cases = [
+    { name: "a top-level `secrets`", cfg: { name: "app", secrets: { required: ["API_KEY"] } }, expected: true },
+    { name: "a named env's `secrets`", cfg: { name: "app", env: { staging: { secrets: { required: ["API_KEY"] } } } }, expected: true },
+    { name: "named envs without `secrets`", cfg: { name: "app", env: { staging: { vars: { LOG_LEVEL: "debug" } } } }, expected: false },
+    { name: "neither", cfg: { name: "app", vars: { BASE_URL: "https://example.com" } }, expected: false },
+  ];
+  for (const { name, cfg, expected } of cases) {
+    it(`is ${expected} for a config with ${name}`, () => {
+      expect(declaresSecrets(cfg)).toBe(expected);
+    });
+  }
+});
+
 describe("collectVars", () => {
   it("types wrangler `vars` by JS type, treats secret names as strings, and applies refinements", () => {
     const wranglerVars = { ENABLED: true, MAX_ITEMS: 5, LABEL: "hi" };
@@ -193,15 +214,127 @@ describe("collectVars", () => {
   });
 });
 
+describe("collectNamedEnvVars", () => {
+  const cases: { name: string; cfg: Record<string, unknown>; declared: string[]; expected: Entry[] }[] = [
+    {
+      name: "types a var only env.dev declares by its value, optional",
+      cfg: { env: { dev: { vars: { SITE_ORIGIN: "http://localhost", PORT: 8787, DEBUG: true } } } },
+      declared: [],
+      expected: [
+        { name: "SITE_ORIGIN", expr: "v.optional(v.string())" },
+        { name: "PORT", expr: "v.optional(v.number())" },
+        { name: "DEBUG", expr: "v.optional(v.boolean())" },
+      ],
+    },
+    {
+      name: "types a required secret only env.dev declares as an optional string",
+      cfg: { env: { dev: { secrets: { required: ["DEV_KEY"] } } } },
+      declared: [],
+      expected: [{ name: "DEV_KEY", expr: "v.optional(v.string())" }],
+    },
+    {
+      name: "skips a name the top level already declares",
+      cfg: { vars: { LOG_LEVEL: "info" }, env: { dev: { vars: { LOG_LEVEL: "debug", SITE_ORIGIN: "http://localhost" } } } },
+      declared: ["LOG_LEVEL"],
+      expected: [{ name: "SITE_ORIGIN", expr: "v.optional(v.string())" }],
+    },
+    {
+      name: "types a name that is a var in one env and a secret in another as a string",
+      cfg: { env: { dev: { vars: { TOKEN: 7 } }, prod: { secrets: { required: ["TOKEN"] } } } },
+      declared: [],
+      expected: [{ name: "TOKEN", expr: "v.optional(v.string())" }],
+    },
+    { name: "returns nothing when `env` is null", cfg: { env: null }, declared: [], expected: [] },
+    {
+      name: "skips a null environment entry and reads the rest",
+      cfg: { env: { staging: null, dev: { vars: { SITE_ORIGIN: "http://localhost" } } } },
+      declared: [],
+      expected: [{ name: "SITE_ORIGIN", expr: "v.optional(v.string())" }],
+    },
+    {
+      name: "drops non-string and empty secret names",
+      cfg: { env: { dev: { secrets: { required: ["DEV_KEY", 7, "", null] } } } },
+      declared: [],
+      expected: [{ name: "DEV_KEY", expr: "v.optional(v.string())" }],
+    },
+    { name: "returns nothing for a config without environments", cfg: { vars: { A: "a" } }, declared: ["A"], expected: [] },
+  ];
+
+  for (const { name, cfg, declared, expected } of cases) {
+    it(name, () => {
+      expect(collectNamedEnvVars(cfg, new Set(declared), DEFAULT_OPTIONS)).toEqual(expected);
+    });
+  }
+
+  it("applies a refinement inside the optional wrapper", () => {
+    const cfg = { env: { dev: { secrets: { required: ["SESSION_SECRET"] } } } };
+    expect(collectNamedEnvVars(cfg, new Set(), OPTIONS)).toEqual([
+      { name: "SESSION_SECRET", expr: "v.optional(v.pipe(v.string(), v.minLength(32)))" },
+    ]);
+  });
+
+  it("names exactly the names wrangler types as optional on the top-level Env", async () => {
+    const DEV_VARS = "";
+    const shapes: Record<string, unknown>[] = [
+      { env: { dev: { vars: { SITE_ORIGIN: "http://localhost" } } } },
+      { env: { dev: { secrets: { required: ["DEV_KEY"] } } } },
+      { env: { dev: { vars: { SITE_ORIGIN: "http://localhost", LOG_LEVEL: "debug" }, secrets: { required: ["DEV_KEY"] } } } },
+      {
+        vars: { LOG_LEVEL: "info" },
+        secrets: { required: ["API_KEY"] },
+        env: { dev: { vars: { LOG_LEVEL: "debug", SITE_ORIGIN: "http://localhost" }, secrets: { required: ["API_KEY", "DEV_KEY"] } } },
+      },
+    ];
+    const wrangler = await Promise.all(shapes.map((cfg) => wranglerOptionalNames(cfg, DEV_VARS)));
+
+    const ours = shapes.map((cfg) => {
+      const declared = collectVars(collectSecretNames(cfg, DEV_VARS), (cfg.vars ?? {}) as Record<string, unknown>, DEFAULT_OPTIONS);
+      return collectNamedEnvVars(cfg, new Set(declared.map((entry) => entry.name)), DEFAULT_OPTIONS)
+        .map((entry) => entry.name)
+        .toSorted();
+    });
+    expect(ours).toEqual(wrangler);
+  }, 30_000);
+});
+
+describe("collectPolicyVars", () => {
+  const policy = (optional: string[]): GenOptions => ({ ...OPTIONS, optional: new Set(optional) });
+
+  it("makes an optional name nothing declares an optional string", () => {
+    expect(collectPolicyVars(new Set(), policy(["TURNSTILE_SITE_KEY"]))).toEqual([{ name: "TURNSTILE_SITE_KEY", expr: "v.optional(v.string())" }]);
+  });
+
+  it("skips an optional name something already declares", () => {
+    expect(collectPolicyVars(new Set(["RATE_LIMITER"]), policy(["RATE_LIMITER", "TURNSTILE_SITE_KEY"]))).toEqual([
+      { name: "TURNSTILE_SITE_KEY", expr: "v.optional(v.string())" },
+    ]);
+  });
+
+  it("applies a refinement inside the optional wrapper", () => {
+    expect(collectPolicyVars(new Set(), policy(["SESSION_SECRET"]))).toEqual([
+      { name: "SESSION_SECRET", expr: "v.optional(v.pipe(v.string(), v.minLength(32)))" },
+    ]);
+  });
+
+  it("returns nothing when the policy names no optional", () => {
+    expect(collectPolicyVars(new Set(), DEFAULT_OPTIONS)).toEqual([]);
+  });
+});
+
 describe("emit", () => {
-  it("renders the baked HEADER, the single `v` import (no guard import), schema, and type", () => {
+  const COMMAND = "forge cf gen env --out src/app/env-schema.ts";
+
+  it("renders the header, the single `v` import, the type, the schema, and the DeclaredEnv augmentation", () => {
     const entries: Entry[] = [
       { name: "SETTINGS", expr: `v.custom<KVNamespace>(${CHECK}, "SETTINGS must be a KV namespace binding")` },
       { name: "BASE_URL", expr: "v.string()" },
     ];
-    expect(emit(entries)).toBe(`${HEADER}
+    expect(emit(entries, COMMAND)).toBe(`/** GENERATED — do not edit; run \`forge cf gen env --out src/app/env-schema.ts\`. */
 
 import { v } from "@y-core/forge/validation";
+
+/** The Worker's binding/var surface as a type — inferred from \`EnvSchema\`. */
+export type Env = v.InferOutput<typeof EnvSchema>;
 
 /** The Worker's binding/var surface as a runtime valibot schema. */
 export const EnvSchema = v.object({
@@ -209,18 +342,40 @@ export const EnvSchema = v.object({
   BASE_URL: v.string(),
 });
 
-/** The Worker's binding/var surface as a type — inferred from \`EnvSchema\`. */
-export type Env = v.InferOutput<typeof EnvSchema>;
+declare module "@y-core/forge/config" {
+  interface DeclaredEnv extends Env {}
+}
+`);
+  });
+
+  const commands = ["forge cf gen env", COMMAND, "forge cf gen env --wrangler wrangler.prod.jsonc --config config/prod.env.ts"];
+  for (const command of commands) {
+    it(`names \`${command}\` on the first line`, () => {
+      expect(emit([], command).split("\n")[0]).toBe(`/** GENERATED — do not edit; run \`${command}\`. */`);
+    });
+  }
+
+  it("declares the Env type before the EnvSchema const", () => {
+    const lines = emit([{ name: "BASE_URL", expr: "v.string()" }], COMMAND).split("\n");
+    const declarations = lines.filter((line) => line.startsWith("export ")).map((line) => line.split(" ").slice(0, 3).join(" "));
+    expect(declarations).toEqual(["export type Env", "export const EnvSchema"]);
+  });
+
+  it("ends with the block that merges Env into the config namespace's DeclaredEnv", () => {
+    const source = emit([{ name: "BASE_URL", expr: "v.string()" }], COMMAND);
+    expect(source.slice(source.indexOf("declare module"))).toBe(`declare module "@y-core/forge/config" {
+  interface DeclaredEnv extends Env {}
+}
 `);
   });
 
   it("writes a module the comment budget passes", () => {
-    const source = emit([{ name: "BASE_URL", expr: "v.string()" }]);
+    const source = emit([{ name: "BASE_URL", expr: "v.string()" }], COMMAND);
     expect(validateCommentBudget("src/app/env.schema.ts", source)).toEqual([]);
   });
 
   it("quotes a key that is not a valid identifier, so the generated module still parses", () => {
-    expect(emit([{ name: "WEIRD-KEY", expr: "v.string()" }])).toContain(`  "WEIRD-KEY": v.string(),`);
+    expect(emit([{ name: "WEIRD-KEY", expr: "v.string()" }], COMMAND)).toContain(`  "WEIRD-KEY": v.string(),`);
   });
 });
 
@@ -241,7 +396,7 @@ describe("createGenEnvCommand", () => {
 
 describe("loadOptions", () => {
   it("returns the defaults when no config path is given", async () => {
-    expect(await loadOptions()).toBe(DEFAULT_OPTIONS);
+    expect(await loadOptions(process.cwd())).toBe(DEFAULT_OPTIONS);
   });
 
   it("merges a host --config module over the defaults, inheriting unspecified fields", async () => {
@@ -249,7 +404,7 @@ describe("loadOptions", () => {
     roots.push(dir);
     const path = join(dir, "config.fixture.ts");
     writeFileSync(path, 'export default { optional: new Set(["RATE_LIMITER"]), refinements: { SESSION_SECRET: { minLength: 32 } } };\n');
-    const opts = await loadOptions(path);
+    const opts = await loadOptions(dir, path);
     expect([...opts.optional]).toEqual(["RATE_LIMITER"]);
     expect(opts.refinements).toEqual({ SESSION_SECRET: { minLength: 32 } });
     expect(opts.bindingCheck).toBe(DEFAULT_OPTIONS.bindingCheck);

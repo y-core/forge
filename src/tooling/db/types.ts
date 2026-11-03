@@ -5,6 +5,7 @@ import type { SchemaHealthState } from "../../storage/db/types";
 import { v } from "../../validation/mod";
 import type { CfAuth, WranglerConfig } from "../cf/types";
 import type { Colorize } from "../term/types";
+import type { BackupDatabase } from "./backup/types";
 import type { ComposeStamp } from "./schema/types";
 
 export type { SchemaHealthState, SchemaObject } from "../../storage/db/types";
@@ -47,6 +48,8 @@ export interface DbIo {
   splitD1(home: Home, sql: string): Promise<string[]>;
   /** The R2 bucket a local home's config binds as `binding`, read through the same handle as its D1 state. */
   bucket(home: Home, binding: string): Promise<BackupBucket>;
+  /** The D1 binding a local home's config declares as `binding`, read through the same handle as its state. */
+  database(home: Home, binding: string): Promise<BackupDatabase>;
   /** Releases the handle over `home`'s state — which anything about to delete that state must do first — or every handle when `home` is null. */
   closeD1(home: Home | null): Promise<void>;
   exists(path: string): boolean;
@@ -464,23 +467,11 @@ export interface FakeDbIo extends DbIo {
   restRules: FakeRestRule[];
   /** The local R2 buckets `bucket` answers, by binding. */
   readonly buckets: Map<string, BackupBucket>;
+  /** The local D1 bindings `database` answers, by binding. */
+  readonly databases: Map<string, BackupDatabase>;
   restCalls: FakeRestCall[];
   /** Persist paths in close order, which is what pins the obligation to close before a delete. */
   closed: string[];
   /** Every wait `sleep` was asked for, in order; each one advances `now` by as much. */
   slept: number[];
-}
-
-/** A Workflow instance's state as the CLI reads it back, from either route. @internal */
-export interface WorkflowInstanceState {
-  readonly status: string;
-  readonly output: unknown;
-  readonly error: string | null;
-}
-
-/** Where `forge db backup` starts and reads a Workflow instance: the Cloudflare API, or a local dev session. @internal */
-export interface WorkflowRoute {
-  readonly where: string;
-  create(workflow: string, params: unknown): Promise<string>;
-  read(workflow: string, id: string): Promise<WorkflowInstanceState>;
 }

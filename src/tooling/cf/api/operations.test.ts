@@ -17,6 +17,11 @@ const SAMPLES: Record<OperationKey, { good: unknown; bad?: unknown }> = {
   createKvNamespace: { good: { id: "ns-1", title: "PROJ_KV" }, bad: { id: "ns-1" } },
   listD1Databases: { good: [{ uuid: "db-1", name: "app-db" }], bad: [{ name: "app-db" }] },
   createD1Database: { good: { uuid: "db-1", name: "app-db" }, bad: { uuid: "db-1" } },
+  getD1Database: { good: { uuid: "db-1", name: "a" }, bad: { uuid: "db-1" } },
+  startD1Export: { good: { status: "active", at_bookmark: "b" }, bad: { status: "x" } },
+  pollD1Export: { good: { status: "active", at_bookmark: "b" }, bad: { status: "x" } },
+  importD1Database: { good: { status: "complete", result: { num_queries: 1 } }, bad: { errors: [1] } },
+  pollD1Import: { good: { status: "complete", result: { num_queries: 1 } }, bad: { errors: [1] } },
   queryD1Database: { good: [{ results: [{ n: 1 }], success: true, meta: {} }], bad: [{ results: "x" }] },
   readD1Database: { good: [{ results: [{ n: 1 }], success: true, meta: {} }], bad: [{ results: "x" }] },
   getD1Bookmark: { good: { bookmark: "b" }, bad: {} },
@@ -26,8 +31,6 @@ const SAMPLES: Record<OperationKey, { good: unknown; bad?: unknown }> = {
   listR2Objects: { good: [{ key: "d1-backups/a.sql", size: 12, etag: "e" }], bad: [{ key: "d1-backups/a.sql" }] },
   getR2Object: { good: null },
   putR2Object: { good: { key: "d1-backups/a.sql" } },
-  createWorkflowInstance: { good: { id: "i-1", status: "queued" }, bad: { id: 1 } },
-  getWorkflowInstance: { good: { status: "errored", output: null, error: { name: "Error", message: "boom" } }, bad: { status: 1 } },
   listR2Buckets: { good: { buckets: [{ name: "assets" }] }, bad: { buckets: [{}] } },
   createR2Bucket: { good: null },
   listQueues: { good: [{ queue_id: "q-1", queue_name: "jobs" }], bad: [{ queue_name: "jobs" }] },
@@ -161,12 +164,21 @@ describe("CF_OPERATIONS", () => {
 });
 
 describe("CF_OPERATIONS idempotency", () => {
-  it("marks only the reads — of a query, a bookmark, a Workflow instance, a lifecycle, an object or a listing — as safe to resend", () => {
+  it("marks only the reads — of a query, a bookmark, a database, a lifecycle, an object, a listing or an export or import poll — as safe to resend", () => {
     const idempotent = (Object.keys(CF_OPERATIONS) as OperationKey[]).filter((key) => {
       const operation: CfOperation<unknown> | CfListOperation<unknown> = CF_OPERATIONS[key];
       return operation.idempotent === true;
     });
-    expect(idempotent.sort()).toEqual(["getD1Bookmark", "getR2Lifecycle", "getR2Object", "getWorkflowInstance", "listR2Objects", "readD1Database"]);
+    expect(idempotent.sort()).toEqual([
+      "getD1Bookmark",
+      "getD1Database",
+      "getR2Lifecycle",
+      "getR2Object",
+      "listR2Objects",
+      "pollD1Export",
+      "pollD1Import",
+      "readD1Database",
+    ]);
   });
 });
 

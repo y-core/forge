@@ -10,7 +10,18 @@ export type ConfigContext<C> = { config: C };
 export type EnvRef<K extends string = string> = { readonly __env: K };
 
 /** A config mapping node: a literal string, an {@link EnvRef}, or a nested record of mappings. @public */
-export type EnvMapping<K extends string = string> = string | EnvRef<K> | { [key: string]: EnvMapping<K> };
+export type EnvMapping<K extends string = string> = string | EnvRef<K> | { readonly [key: string]: EnvMapping<K>; readonly __env?: never };
+
+/** The Worker's env surface, which the module `forge cf gen env` writes merges into, so `createConfig` refuses an undeclared `env()` name. @public */
+export interface DeclaredEnv extends Record<never, never> {}
+
+/** The names of `E`'s vars and secrets, never its bindings, or any string when `E` declares nothing. @internal */
+export type EnvVarName<E> = [keyof E] extends [never]
+  ? string
+  : Extract<{ [K in keyof E]-?: NonNullable<E[K]> extends string | number | boolean ? K : never }[keyof E], string>;
+
+/** A name `env()` may reference in a config mapping: a var or secret of {@link DeclaredEnv}, or any string while nothing declares one. @public */
+export type DeclaredEnvName = EnvVarName<DeclaredEnv>;
 
 /** Environment-conditional config override: `detect` selects, `patch` mutates the parsed config. @public */
 export interface ConfigOverrides<ConfigData> {

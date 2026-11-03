@@ -1,5 +1,5 @@
 import { parseDevVars } from "../account/handlers/devvars";
-import { HEADER, REGISTRY } from "./cf-env-registry";
+import { REGISTRY } from "./cf-env-registry";
 import type { BindingDef, Entry, GenOptions } from "./types";
 
 function getPath(obj: unknown, path: string): unknown {
@@ -39,7 +39,8 @@ function refine(name: string, base: string, opts: GenOptions): string {
   return base;
 }
 
-function declaresSecrets(cfg: Record<string, unknown>): boolean {
+/** Whether the worker config declares `secrets`, at the top level or in any named env. @internal */
+export function declaresSecrets(cfg: Record<string, unknown>): boolean {
   if (cfg.secrets !== undefined) return true;
   const envs = cfg.env;
   if (envs == null || typeof envs !== "object") return false;
@@ -78,22 +79,51 @@ export function collectVars(secretNames: readonly string[], wranglerVars: Record
   return entries;
 }
 
-/** Renders the full env-schema module text for the collected entries. @internal */
-export function emit(entries: Entry[]): string {
+/** The vars and required secrets only a named environment declares, each optional on the Env as `wrangler types` makes it; a secret is a string. @internal */
+export function collectNamedEnvVars(cfg: Record<string, unknown>, declared: ReadonlySet<string>, opts: GenOptions): Entry[] {
+  const envs = cfg.env !== null && typeof cfg.env === "object" ? Object.values(cfg.env) : [];
+  const bases = new Map<string, string>();
+  for (const env of envs) {
+    if (env === null || typeof env !== "object") continue;
+    const vars = (env as Record<string, unknown>).vars;
+    for (const [name, value] of Object.entries(vars !== null && typeof vars === "object" ? vars : {})) {
+      if (!bases.has(name)) bases.set(name, typeof value === "number" ? "v.number()" : typeof value === "boolean" ? "v.boolean()" : "v.string()");
+    }
+    const required = getPath(env, "secrets.required");
+    for (const name of Array.isArray(required) ? required : []) {
+      if (typeof name === "string" && name !== "") bases.set(name, "v.string()");
+    }
+  }
+  return [...bases].filter(([name]) => !declared.has(name)).map(([name, base]) => ({ name, expr: `v.optional(${refine(name, base, opts)})` }));
+}
+
+/** An optional string var for each `optional` name nothing else declares, such as one set only in the dashboard. @internal */
+export function collectPolicyVars(declared: ReadonlySet<string>, opts: GenOptions): Entry[] {
+  return [...opts.optional]
+    .filter((name) => !declared.has(name))
+    .map((name) => ({ name, expr: `v.optional(${refine(name, "v.string()", opts)})` }));
+}
+
+/** Renders the env-schema module for the collected entries, its header naming `command`, the invocation that regenerates it. @internal */
+export function emit(entries: Entry[], command: string): string {
   // `.dev.vars` accepts names an object literal does not, so `WEIRD-KEY` must be
   // quoted or the generated module is a syntax error.
   const key = (name: string) => (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(name) ? name : JSON.stringify(name));
   const body = entries.map((e) => `  ${key(e.name)}: ${e.expr},`).join("\n");
-  return `${HEADER}
+  return `/** GENERATED — do not edit; run \`${command}\`. */
 
 import { v } from "@y-core/forge/validation";
+
+/** The Worker's binding/var surface as a type — inferred from \`EnvSchema\`. */
+export type Env = v.InferOutput<typeof EnvSchema>;
 
 /** The Worker's binding/var surface as a runtime valibot schema. */
 export const EnvSchema = v.object({
 ${body}
 });
 
-/** The Worker's binding/var surface as a type — inferred from \`EnvSchema\`. */
-export type Env = v.InferOutput<typeof EnvSchema>;
+declare module "@y-core/forge/config" {
+  interface DeclaredEnv extends Env {}
+}
 `;
 }

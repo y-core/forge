@@ -1,11 +1,9 @@
 import { mkdirSync, readdirSync, rmSync } from "node:fs";
 import { basename, extname, join, relative, resolve } from "node:path";
 
-import type { BuildOptions, Metafile } from "esbuild";
-
 import { safeJoin } from "./paths";
 import { bundler } from "./peers";
-import type { JsBuildResult, JsBuildShape, ResolvedJsBundle } from "./types";
+import type { EsbuildBuildOptions, EsbuildMetafile, JsBuildResult, JsBuildShape, ResolvedJsBundle } from "./types";
 
 /** The shape `bundle` builds with, its own settings over the run's `minify`. @internal */
 export function jsBuildShape(bundle: ResolvedJsBundle, minify: boolean | undefined): JsBuildShape {
@@ -19,7 +17,7 @@ export function jsBuildShape(bundle: ResolvedJsBundle, minify: boolean | undefin
 }
 
 /** The esbuild options every browser bundle and the service worker are built with, placement aside. @internal */
-export function jsBuildOptions(shape: JsBuildShape): BuildOptions {
+export function jsBuildOptions(shape: JsBuildShape): EsbuildBuildOptions {
   return {
     bundle: true,
     splitting: shape.splitting,
@@ -40,7 +38,7 @@ function ownsOutput(name: string, stems: ReadonlySet<string>): boolean {
 }
 
 /** Every output reachable from `roots` through static imports, and through dynamic ones too when `lazy`, roots and CSS bundles included. @internal */
-export function outputClosure(outputs: Metafile["outputs"], roots: Iterable<string>, lazy: boolean): Set<string> {
+export function outputClosure(outputs: EsbuildMetafile["outputs"], roots: Iterable<string>, lazy: boolean): Set<string> {
   const reached = new Set<string>();
   const pending = [...roots];
   for (let path = pending.pop(); path !== undefined; path = pending.pop()) {

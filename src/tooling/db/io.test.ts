@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 
 import { unstable_splitSqlQuery } from "wrangler";
 
-import { cutSqlStatements } from "../../storage/backup/split";
+import { CliError } from "../cli/errors";
+import { cutSqlStatements } from "./backup/split";
 import { installedWranglerVersion, isD1BusyRefusal, missingWranglerExport, realDbIo, wranglerUnreachable } from "./io";
 import type { Home, WranglerD1Module } from "./types";
 
@@ -166,6 +167,25 @@ const stubDb = () => ({
   },
 });
 
+const DUMP = new Uint8Array([0x41, 0x3b, 0x0a, 0xff, 0x42, 0x3b]);
+
+/** An R2 binding as the proxy answers it under Bun: an object body that refuses every read, and an `arrayBuffer` that works. */
+const proxyBucket = {
+  put: () => Promise.resolve(null),
+  list: () => Promise.resolve({ objects: [], truncated: false }),
+  delete: () => Promise.resolve(),
+  get: (key: string) =>
+    Promise.resolve(
+      key !== "dump.sql"
+        ? null
+        : {
+            size: DUMP.byteLength,
+            body: new ReadableStream({ pull: () => Promise.reject(new DOMException("Found invalid value in transferList.", "DataCloneError")) }),
+            arrayBuffer: () => Promise.resolve(DUMP.slice().buffer),
+          },
+    ),
+};
+
 const opened: Record<string, unknown>[] = [];
 let opens = 0;
 let disposals = 0;
@@ -183,7 +203,7 @@ function platformProxy(options: Record<string, unknown>) {
   // Left pending until the test rejects it, so a sweep can reach an open that has not settled.
   if (holdOpen !== null) return new Promise((_resolve, reject) => (holdOpen = reject));
   return Promise.resolve({
-    env: { DB: stubDb() },
+    env: { DB: stubDb(), STANDBY: stubDb(), BACKUPS: proxyBucket },
     dispose: () => {
       disposals += 1;
       return Promise.resolve();
@@ -343,6 +363,63 @@ describe("realDbIo() — the local D1 port", () => {
     await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
     );
+  });
+});
+
+describe("realDbIo() — bucket", () => {
+  it("answers an object whose body reads, byte for byte, where the proxy's own body refuses every read", async () => {
+    const root = tempRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const object = await (await io.bucket(localHome(root), "BACKUPS")).get("dump.sql");
+    const absent = await (await io.bucket(localHome(root), "BACKUPS")).get("missing.sql");
+    await io.closeD1(null);
+
+    expect(object?.size).toBe(DUMP.byteLength);
+    expect(new Uint8Array(await new Response(object?.body).arrayBuffer())).toEqual(DUMP);
+    expect(absent).toBeNull();
+  });
+});
+
+describe("realDbIo() — database", () => {
+  it("answers a binding the home's config declares, through the handle `d1` opens", async () => {
+    const root = tempRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const before = opens;
+    await io.d1(localHome(root), ["SELECT 1"]);
+    const standby = await io.database(localHome(root), "STANDBY");
+    await standby.batch([standby.prepare("SELECT 2")]);
+    await io.closeD1(null);
+
+    expect(opens - before).toBe(1);
+    expect(batches.at(-1)).toEqual(["SELECT 2"]);
+  });
+
+  it("refuses a binding the config does not declare", async () => {
+    const root = tempRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const error = await io.database(localHome(root), "MISSING").catch((thrown: unknown) => thrown);
+    await io.closeD1(null);
+
+    expect(error).toBeInstanceOf(CliError);
+    expect(error).toMatchObject({
+      kind: "invalid-args",
+      message: `${join(root, "wrangler.jsonc")} declares no d1_databases binding named MISSING`,
+    });
+  });
+
+  it("refuses a deployed home, opening nothing", async () => {
+    const root = tempRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const before = opens;
+    const error = await io
+      .database({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, "STANDBY")
+      .catch((thrown: unknown) => thrown);
+
+    expect(error).toMatchObject({
+      kind: "invalid-args",
+      message: "remote (app-db) is deployed, and nothing reaches a deployed database in process",
+    });
+    expect(opens).toBe(before);
   });
 });
 

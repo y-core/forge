@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 
 import { CliError } from "../cli/errors";
+import type { EsbuildModule, HarfbuzzModule, SharpRasterizer } from "./types";
 
 function absent(pkg: string, configKey: string, demand: string, cause: unknown): CliError {
   return new CliError(
@@ -32,19 +33,19 @@ export function peerFile(pkg: string, subpath: string, configKey: string, demand
 }
 
 /** Loads the optional `sharp` peer, naming the config that demanded it when it is not installed. @internal */
-export async function rasterizer(configKey: string): Promise<typeof import("sharp").default> {
-  const mod = await peer<{ default: typeof import("sharp").default }>("sharp", configKey, "a rasterized PNG");
+export async function rasterizer(configKey: string): Promise<SharpRasterizer> {
+  const mod = await peer<{ default: SharpRasterizer }>("sharp", configKey, "a rasterized PNG");
   return mod.default;
 }
 
 /** Loads the optional `esbuild` peer, naming the config that demanded it when it is not installed. @internal */
-export async function bundler(configKey: string): Promise<typeof import("esbuild")> {
-  return peer<typeof import("esbuild")>("esbuild", configKey, "a JavaScript bundle");
+export async function bundler(configKey: string): Promise<EsbuildModule> {
+  return peer<EsbuildModule>("esbuild", configKey, "a JavaScript bundle");
 }
 
 /** Loads the optional `harfbuzzjs` peer, naming the config that demanded it when it is not installed. @internal */
-export async function shaper(configKey: string): Promise<typeof import("harfbuzzjs")> {
-  return peer<typeof import("harfbuzzjs")>("harfbuzzjs", configKey, "a subset font");
+export async function shaper(configKey: string): Promise<HarfbuzzModule> {
+  return peer<HarfbuzzModule>("harfbuzzjs", configKey, "a subset font");
 }
 
 /** Locates the subsetter module `harfbuzzjs` ships, which is a `.wasm` file rather than an import. @internal */

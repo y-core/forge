@@ -23,18 +23,13 @@ const SIDECAR = v.object({
   ),
 });
 
-/** Writes a dump's sidecar beside it, which marks the dump complete. @internal */
-export async function writeSidecar(bucket: BackupBucket, sidecar: D1BackupSidecar): Promise<void> {
-  await bucket.put(sidecarKey(sidecar.key), JSON.stringify(sidecar), { httpMetadata: { contentType: "application/json" } });
-}
-
-/** `value` as a sidecar, or `null` when it is not one `runD1Backup` wrote. @internal */
+/** `value` as a sidecar, or `null` when it is not one `forge db backup` wrote. @internal */
 export function readSidecarValue(value: unknown): D1BackupSidecar | null {
   const checked = v.safeParse(SIDECAR, value);
   return checked.success ? checked.output : null;
 }
 
-/** The sidecar `text` holds for the dump at `key`, refused unless it is one `runD1Backup` wrote for that dump. @internal */
+/** The sidecar `text` holds for the dump at `key`, refused unless it is one `forge db backup` wrote for that dump. @internal */
 export function parseSidecar(text: string, key: string): D1BackupSidecar {
   let parsed: unknown;
   try {
@@ -43,7 +38,7 @@ export function parseSidecar(text: string, key: string): D1BackupSidecar {
     parsed = null;
   }
   const sidecar = readSidecarValue(parsed);
-  if (sidecar === null || sidecar.key !== key) throw new D1BackupError("malformed", `the sidecar of ${key} is not one runD1Backup wrote`);
+  if (sidecar === null || sidecar.key !== key) throw new D1BackupError("malformed", `the sidecar of ${key} is not one forge db backup wrote`);
   return sidecar;
 }
 

@@ -1,7 +1,8 @@
 import { mkdirSync, readdirSync, renameSync, rmSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
 
-import { run } from "../cli/proc";
+import { CliError } from "../cli/errors";
+import { probeOk, run } from "../cli/proc";
 import type { SpawnSync } from "../cli/types";
 import { hashFile } from "./hash";
 import { safeJoin } from "./paths";
@@ -13,6 +14,12 @@ export function buildCSS(
   opts: { outDir: string; minify?: boolean; hash?: boolean },
   spawn?: SpawnSync,
 ): Record<string, string> {
+  if (!probeOk("tailwindcss", ["--help"], spawn)) {
+    throw new CliError(
+      "external",
+      `[forge-assets] css entry ${cssBuild.input} asks for a stylesheet, which needs the \`tailwindcss\` binary the optional peer "@tailwindcss/cli" ships. Install it: bun add -d @tailwindcss/cli tailwindcss`,
+    );
+  }
   const output = safeJoin(opts.outDir, cssBuild.output);
   const outDirPath = dirname(output);
   const shouldHash = opts.hash ?? false;

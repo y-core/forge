@@ -1,8 +1,6 @@
 import { existsSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import type { BuildOptions } from "esbuild";
-
 import { importClosure } from "./closure";
 import { loadConfig } from "./config";
 import { isCssSourceCovered, readCssDeclaration } from "./css-declaration";
@@ -10,7 +8,7 @@ import { jsBuildOptions, jsBuildShape } from "./js";
 import { safeJoin } from "./paths";
 import { bundler } from "./peers";
 import { SERVICE_WORKER_FILE, serviceWorkerBuildOptions } from "./service-worker";
-import type { ResolvedConfig } from "./types";
+import type { EsbuildBuildOptions, ResolvedConfig } from "./types";
 
 const REMOTE_SOURCE = /^https?:\/\//i;
 const VIRTUAL_MODULE = /^[\w-]+:/;
@@ -21,10 +19,10 @@ function repoRelative(root: string, path: string): string | undefined {
   return rel.split("/").includes("node_modules") ? undefined : rel;
 }
 
-async function bundleInputs(root: string, configKey: string, options: BuildOptions): Promise<string[]> {
+async function bundleInputs(root: string, configKey: string, options: EsbuildBuildOptions): Promise<string[]> {
   const esbuild = await bundler(configKey);
   const result = await esbuild.build({ ...options, absWorkingDir: root, write: false, metafile: true, logLevel: "silent" });
-  return Object.keys(result.metafile.inputs)
+  return Object.keys(result.metafile?.inputs ?? {})
     .filter((path) => !VIRTUAL_MODULE.test(path))
     .map((path) => resolve(root, path));
 }

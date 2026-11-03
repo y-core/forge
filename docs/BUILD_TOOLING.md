@@ -314,9 +314,17 @@ no second generator describes a binding. `--config` goes on that invocation when
 compatibility date and flags. `validate-generated-types` follows it and fails any other wrangler-generated file under `.types/`: nothing
 regenerates one, so `typecheck` would pass against types older than the config. A stub written by hand there is not wrangler's and passes.
 
+**`validate-env-schema` holds that committed `Env` to the config, in-process.** It renders the module through the renderer the command writes
+with, formatted under the app's own `bun fmt` config, and compares bytes. So `forge verify --only validate-env-schema` is the standalone check,
+and no `--check` flag on the command keeps a second entry point in step. Its `fix` writes the render; the row never regenerates ahead of
+`typecheck`, which would let CI pass over a stale committed file. It fails a config that declares no `secrets`, because names read from the
+gitignored `.dev.vars` would make the render differ between machines. It declares no `watches`: its inputs include optional, possibly
+untracked paths, which the dead-glob rule refuses.
+
 **The options are the fleet's actual disagreements, and nothing else.** `assetOut` exists because the emitter writes nothing useful without `--out`;
-`wranglerTypes: false` for an app that supplies its runtime types itself. Omitting `assetConfig` drops the asset rows — a shorter table, not a
-step that succeeds vacuously. The `.types/` path is baked in: an option nobody varies is surface for nothing, like the temp-dir prefix (§2f).
+`wranglerTypes: false` for an app that supplies its runtime types itself; `envSchema.out` for an app whose schema lives elsewhere. Omitting
+`assetConfig` drops the asset rows — a shorter table, not a step that succeeds vacuously. The `.types/` path is baked in: an option nobody varies
+is surface for nothing, like the temp-dir prefix (§2f).
 
 **`presets.test.ts` pins every emitted command verbatim**, because the contract is "these are the commands the fleet runs": only a literal
 assertion catches a table that type-checks but names a command no app can run.

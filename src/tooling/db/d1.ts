@@ -94,7 +94,7 @@ async function watchForeignKeys(io: DbIo, home: Home, sql: string): Promise<stri
   }
 }
 
-/** Loads a `.sql` file, applying in one transaction, all or nothing. @internal */
+/** Loads a `.sql` file; locally it applies in one transaction, all or nothing. @internal */
 export async function executeFile(io: DbIo, home: Home, file: string): Promise<void> {
   if (!isRemotePlace(home.place)) {
     const sql = io.readText(file);

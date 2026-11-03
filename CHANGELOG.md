@@ -18,7 +18,65 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **`createConfig` refuses an `env("…")` name your `wrangler.jsonc` does not declare, and a binding's name.** The module `forge cf gen env`
+  writes now declares the Worker's env to `@y-core/forge/config`, and the check runs once that module is in the program. A var set only in
+  the dashboard is declared in `config/env.config.ts` as `optional: new Set(["NAME"])`, which writes it as an optional string. `EnvMapping`'s
+  nested-record branch no longer matches an `EnvRef`, which is what let any name through before.
+- **A var or required secret that only `env.<name>` declares is now in `EnvSchema` and `Env`, optional**, as `wrangler types` types it.
+- **`cloudflareWorkerSteps` adds the default-on row `validate-env-schema`**, which fails a committed env schema that differs from what
+  `forge cf gen env` would write now, so a var renamed in `wrangler.jsonc` without a regeneration fails the gate. Commit the module, and run
+  `bun run gen:env` or `forge verify --fix`. A worker config must declare `secrets`, listing them in `secrets.required`. An app whose script
+  passes `--out` or `--config` sets `envSchema: { out, config }`; `envSchema: false` drops the row.
+- **`loadOptions` from `@y-core/forge/tooling/cf` takes the root it resolves the config module against first**, as `loadOptions(root, path)`,
+  rather than reading `process.cwd()`.
+
+- **`forge db backup` and `forge db restore` run the pipeline in the CLI, and the D1 backup Workflows are retired.** `runD1Backup`,
+  `runD1Restore`, `BackupWorkflowStep`, `BackupStepConfig`, `BackupDuration`, `BackupMultipartUpload`, `BackupUploadedPart`, `CloudflareAccess`,
+  `BackupDatabase`, `BackupStatement`, `D1BackupOptions`, `D1RestoreOptions` and `D1RestoreTarget` are removed from
+  `@y-core/forge/storage/backup`, which keeps the readers: `listD1Backups`, `latestD1Backup`, `readD1Backup` and their types.
+- **`backup` and `restore` drop `--workflow` and `--port`, and gain `--bucket` and `--prefix`; `backup` gains `--keep`.** A local run reaches
+  D1 and R2 through the platform proxy and needs no dev session. A remote run uses `--account-id` and `--api-token`, a token holding
+  `Account → D1 → Edit` and `Account → Workers R2 Storage → Edit`, since it reads and writes the dump bucket too.
+- **`forge db promote --instance` and `--workflow` are replaced by `--restored <database id>`.** `restore` keeps its report in R2 at
+  `<prefix>/<database id>/restores/<restored id>.json`, and `promote` reads it there.
+- **The `forge db` dump verbs no longer fall back to a config's only R2 bucket.** Without `--bucket` they use the `BACKUPS` binding, and a
+  config without one is refused, so a dump never lands beside unrelated data such as user uploads. Declare a `BACKUPS` bucket for the dumps.
+- **`restore --into fresh` refuses a database whose name would make the new one longer than D1's 64 characters**, before any request.
+- **`new D1BackupError(kind, message)` takes no `status`, `D1BackupFailureKind` is only `"malformed"`, and `BackupBucket` loses
+  `createMultipartUpload`.** `isPermanentBackupFailure` and `permanentFailures` are removed.
+- **`DbIo` gains `database`**, which answers a local D1 binding. A hand-built `DbIo` must supply it.
+
+### Fixed
+
+- **`verify` no longer refuses the step table once `.types/` holds only gitignored output.** `validate-generated-types` watched `.types/**`,
+  which matched nothing git lists after an app deleted the stubs 0.7.1 retires, so every tier and `--list` exited. The row now runs on every
+  change, since the wrangler output it looks for is gitignored and no tracked change would run it.
+- **The `forge-ui-platform-display-contents` rule and warning name the wrapper that makes its children one item of a `grid` or `flex` parent.**
+  Dissolving it puts the parent's gap between them, so name that group with an element such as `<hgroup>` or `<header>`, which the check
+  does not flag.
+- **`@y-core/forge/tooling/assets` type-checks without `harfbuzzjs`, `sharp` or `esbuild` installed.** Its sources no longer take types from
+  the optional peers, so an app can delete any local `declare module` stand-in for them.
+- **`@y-core/forge/tooling/gate` type-checks without `esbuild` or `tailwindcss` installed.** Its bundle and design-system checks no longer
+  take types from either optional peer.
+- **`forge assets build` refuses a `css` entry up front when no `tailwindcss` binary runs**, naming the entry and `@tailwindcss/cli`, the package
+  Tailwind v4 ships the binary in. Forge now declares it as an optional peer beside `tailwindcss`.
+- **`forge cf gen env` writes a header naming the command that regenerates the file, every non-default flag included**, so a module written
+  with `--out` no longer tells you to run a command that writes somewhere else.
+- **`forge cf gen env` writes `type Env` before `EnvSchema`**, so the module passes an imports → types → consts layout check and needs no
+  exclusion.
+
+### Upgrading
+
+Run your `gen:env` script, or `forge cf gen env` with the flags your module's old path needs, then `bun check`. Each error names an `env()`
+key that `wrangler.jsonc` does not declare: declare it there, or list it under `optional` in `config/env.config.ts` if it is set only in the
+dashboard. Delete any hand-written check of `env()` names against `Env`, and any layout-check exclusion for the generated module.
+
+An app wired with the old backup Workflows deletes its `D1Backup` and `D1Restore` classes, their `workflows` entries in `wrangler.jsonc`, and
+the Worker secret holding the D1 token if nothing else reads it. Schedule `forge db backup --target remote --account-id … --api-token … --keep
+<n>` from CI or cron instead, and promote with `forge db promote --restored <database id>`. An app whose dumps went to its only R2 bucket declares a
+`BACKUPS` bucket and deletes the `d1-backups/` prefix from the old one once a backup has run.
 
 ---
 

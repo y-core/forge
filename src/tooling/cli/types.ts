@@ -217,13 +217,14 @@ export interface ConfirmOptions {
 
 /** The options this namespace's spawning helpers hand a spawner. */
 export interface SpawnOptions {
-  readonly stdio: "ignore" | "inherit" | ["ignore", number, number] | ["ignore", "pipe", "pipe"];
+  readonly stdio: "ignore" | "inherit" | ["ignore", number, number] | ["ignore", "pipe", "pipe"] | ["pipe", "pipe", "pipe"];
   readonly env: typeof process.env;
   readonly cwd?: string;
   readonly encoding?: "utf-8";
   readonly maxBuffer?: number;
   readonly timeout?: number;
   readonly killSignal?: "SIGKILL";
+  readonly input?: string;
 }
 
 /** How a spawned command exited, narrowed to what this namespace reads of it. */

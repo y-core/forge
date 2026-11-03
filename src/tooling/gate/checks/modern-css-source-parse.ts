@@ -319,7 +319,7 @@ function findDisplayContents(out: Emitter): void {
       out,
       wrapper,
       "forge-ui-platform-display-contents",
-      "an attribute-free wrapper inside a `display: grid` or `display: flex` parent — let its children join the parent with `display: contents`",
+      "an attribute-free wrapper inside a `display: grid` or `display: flex` parent — let its children join the parent with `display: contents`, or, if it makes them one item of the parent, name the group with an element such as `<hgroup>` or `<header>`",
     );
   }
 }

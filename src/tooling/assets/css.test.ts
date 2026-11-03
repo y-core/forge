@@ -10,7 +10,8 @@ const CSS_BUILD = { tool: "tailwindcss", input: "src/app.css", output: "css/app.
 
 function stubTailwind(content = "/* built css */") {
   return mock((_cmd: string, args: string[], _opts: SpawnOptions): SpawnOutcome => {
-    writeFileSync(args[args.indexOf("-o") + 1] as string, content);
+    const out = args.indexOf("-o");
+    if (out !== -1) writeFileSync(args[out + 1] as string, content);
     return { status: 0 };
   });
 }
@@ -25,8 +26,11 @@ describe("buildCSS()", () => {
 
       expect(existsSync(join(tmpDir, "css", "app.css"))).toBe(true);
       expect(manifest).toEqual({ "css/app.css": "css/app.css" });
-      expect(spawn).toHaveBeenCalledTimes(1);
-      const [cmd, args] = spawn.mock.calls[0]!;
+      expect(spawn.mock.calls.map(([cmd, args]) => [cmd, args[0]])).toEqual([
+        ["tailwindcss", "--help"],
+        ["tailwindcss", "-i"],
+      ]);
+      const [cmd, args] = spawn.mock.calls[1]!;
       expect(cmd).toBe("tailwindcss");
       expect(args).toEqual(["-i", "src/app.css", "-o", join(tmpDir, "css", "app.css")]);
     } finally {
@@ -40,7 +44,7 @@ describe("buildCSS()", () => {
     const spawn = stubTailwind();
     try {
       buildCSS(CSS_BUILD, { outDir: tmpDir, minify: true }, spawn);
-      const args = spawn.mock.calls[0]![1] as string[];
+      const args = spawn.mock.calls[1]![1] as string[];
       expect(args).toEqual(["-i", "src/app.css", "-o", join(tmpDir, "css", "app.css"), "--minify"]);
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
@@ -127,5 +131,28 @@ describe("buildCSS()", () => {
     } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
+  });
+
+  it("refuses before building when no tailwindcss binary runs, naming the css entry and @tailwindcss/cli", () => {
+    const spawn = mock((_cmd: string, _args: string[], _opts: SpawnOptions): SpawnOutcome => ({
+      status: null,
+      error: new Error("spawnSync tailwindcss ENOENT"),
+    }));
+    const error = (() => {
+      try {
+        buildCSS(CSS_BUILD, { outDir: join(tmpdir(), "forge-css-never-written") }, spawn);
+      } catch (thrown) {
+        return thrown;
+      }
+      return undefined;
+    })();
+
+    expect(error).toMatchObject({
+      kind: "external",
+      message:
+        '[forge-assets] css entry src/app.css asks for a stylesheet, which needs the `tailwindcss` binary the optional peer "@tailwindcss/cli" ships. Install it: bun add -d @tailwindcss/cli tailwindcss',
+    });
+    expect(spawn.mock.calls.map(([, args]) => args)).toEqual([["--help"]]);
+    expect(existsSync(join(tmpdir(), "forge-css-never-written"))).toBe(false);
   });
 });

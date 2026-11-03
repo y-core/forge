@@ -31,6 +31,13 @@ export default defineAssetsConfig({
 });
 ```
 
+Each section needs its optional peer installed. A `css` entry runs the `tailwindcss` binary, which Tailwind v4 ships in `@tailwindcss/cli`
+rather than in `tailwindcss` itself, so install both; a build without the binary is refused before it starts, naming the entry:
+
+```bash
+bun add -d @tailwindcss/cli tailwindcss
+```
+
 Build it, then read paths out of the generated module:
 
 ```bash

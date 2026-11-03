@@ -4,12 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
+import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
+import { restoreReportKey } from "../../../storage/backup/list";
 import type { D1RestoreReport } from "../../../storage/backup/types";
 import type { WranglerConfig } from "../../cf/types";
 import { execute } from "../../cli/execute";
 import { PLAIN } from "../../term/color";
 import { createDbCommands } from "../commands";
-import { bufferedIO, cfEnvelope, fakeDbIo, onStdin, REMOTE_ARGS } from "../db.fixture";
+import { bufferedIO, fakeDbIo, onStdin, r2RestRules, REMOTE_ARGS } from "../db.fixture";
 import { appHome } from "../home";
 import type { DbConfig, DbRunContext, FakeDbIo } from "../types";
 import { executePromotion } from "./promote";
@@ -36,7 +38,7 @@ const CONFIG = `{
       "migrations_dir": "config/db/migrations",
     },
   ],
-  "workflows": [{ "name": "d1-restore", "binding": "D1_RESTORE", "class_name": "D1Restore" }],
+  "r2_buckets": [{ "binding": "BACKUPS", "bucket_name": "backups" }],
 }
 `;
 
@@ -49,7 +51,7 @@ const REPORT: D1RestoreReport = {
   mismatches: [],
 };
 
-const INSTANCE = "https://api.cloudflare.com/client/v4/accounts/acct/workflows/d1-restore/instances/i-7";
+const REPORT_KEY = restoreReportKey(undefined, OLD_ID, REPORT.databaseId);
 
 function appRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-promote-"));
@@ -59,7 +61,7 @@ function appRoot(): string {
 }
 
 /** A fake io over the real config file, so the edit lands on disk where the assertion reads it. */
-function diskIo(instance: unknown, renames: [string, string][] = []): FakeDbIo {
+function diskIo(report: unknown, renames: [string, string][] = []): FakeDbIo {
   const io = fakeDbIo();
   io.readText = (path) => readFileSync(path, "utf-8");
   io.writeText = (path, text) => writeFileSync(path, text);
@@ -67,7 +69,9 @@ function diskIo(instance: unknown, renames: [string, string][] = []): FakeDbIo {
     renames.push([from, to]);
     renameSync(from, to);
   };
-  io.restRules.push({ match: (url) => url === INSTANCE, reply: () => cfEnvelope(instance) });
+  const bucket = fakeBackupBucket();
+  if (report !== null) bucket.objects.set(REPORT_KEY, { bytes: new TextEncoder().encode(JSON.stringify(report)) });
+  io.restRules.push(...r2RestRules(bucket));
   return io;
 }
 
@@ -84,18 +88,10 @@ async function runCli(io: FakeDbIo, argv: string[]): Promise<{ out: string[]; er
 const REMOTE = ["--target", "remote", "--db", "DB", ...REMOTE_ARGS];
 
 describe("forge db promote", () => {
-  it("points the binding at the restored database the instance reports, changing nothing else in the file", async () => {
+  it("points the binding at the restored database the report in R2 names, changing nothing else in the file", async () => {
     const root = appRoot();
     const renames: [string, string][] = [];
-    const buffer = await runCli(diskIo({ status: "complete", output: REPORT }, renames), [
-      "promote",
-      "--root",
-      root,
-      ...REMOTE,
-      "--instance",
-      "i-7",
-      "--yes",
-    ]);
+    const buffer = await runCli(diskIo(REPORT, renames), ["promote", "--root", root, ...REMOTE, "--restored", REPORT.databaseId, "--yes"]);
 
     expect(buffer.err).toEqual([]);
     expect(readFileSync(join(root, "wrangler.jsonc"), "utf-8")).toBe(
@@ -115,15 +111,7 @@ describe("forge db promote", () => {
   it("refuses a restore whose report holds a mismatch, writing nothing", async () => {
     const root = appRoot();
     const report = { ...REPORT, mismatches: ["notes holds 1 rows, but the dump holds 2"] };
-    const buffer = await runCli(diskIo({ status: "complete", output: report }), [
-      "promote",
-      "--root",
-      root,
-      ...REMOTE,
-      "--instance",
-      "i-7",
-      "--yes",
-    ]);
+    const buffer = await runCli(diskIo(report), ["promote", "--root", root, ...REMOTE, "--restored", REPORT.databaseId, "--yes"]);
 
     expect(buffer.err.join("\n")).toContain(
       "app-db-restore-1 differs from the dump it was restored from, so it is not promoted:\n  notes holds 1 rows",
@@ -137,37 +125,74 @@ describe("forge db promote", () => {
         { ...REPORT, key: "d1-backups/1f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a/2026-11-02T03:00:00.000Z-B1.sql" },
         "was restored from a dump of database 1f8c2a5e",
       ],
-      [{ ...REPORT, databaseId: "x; rm -rf /" }, `names database id "x; rm -rf /", which is not a D1 id`],
+      [{ ...REPORT, databaseId: "x; rm -rf /" }, `${REPORT_KEY} reports a restore into x; rm -rf /, not ${REPORT.databaseId}`],
       [{ ...REPORT, name: "a b" }, `names database "a b", which is not a D1 database name`],
     ] as const) {
       const root = appRoot();
-      const buffer = await runCli(diskIo({ status: "complete", output: report }), [
-        "promote",
-        "--root",
-        root,
-        ...REMOTE,
-        "--instance",
-        "i-7",
-        "--yes",
-      ]);
+      const buffer = await runCli(diskIo(report), ["promote", "--root", root, ...REMOTE, "--restored", REPORT.databaseId, "--yes"]);
       expect([buffer.err.join("\n").includes(message), readFileSync(join(root, "wrangler.jsonc"), "utf-8")]).toEqual([true, CONFIG]);
     }
   });
 
-  it("refuses an instance that has not completed, or returned no report", async () => {
-    for (const [instance, message] of [
-      [{ status: "running" }, "d1-restore instance i-7 is running, so it restored nothing to promote"],
-      [{ status: "complete", output: { key: "k" } }, "d1-restore instance i-7 returned no runD1Restore report"],
-    ] as const) {
-      const buffer = await runCli(diskIo(instance), ["promote", "--root", appRoot(), ...REMOTE, "--instance", "i-7", "--yes"]);
-      expect(buffer.err.join("\n")).toContain(message);
-    }
+  it("refuses a report whose databaseId is not --restored, writing nothing", async () => {
+    const root = appRoot();
+    const other = "2f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+    const buffer = await runCli(diskIo({ ...REPORT, databaseId: other }), [
+      "promote",
+      "--root",
+      root,
+      ...REMOTE,
+      "--restored",
+      REPORT.databaseId,
+      "--yes",
+    ]);
+
+    expect([buffer.err, readFileSync(join(root, "wrangler.jsonc"), "utf-8")]).toEqual([
+      [`Error: ${REPORT_KEY} reports a restore into ${other}, not ${REPORT.databaseId}`],
+      CONFIG,
+    ]);
+  });
+
+  it("refuses a --restored that is not a D1 id before it asks R2 for anything, and edits nothing", async () => {
+    const root = appRoot();
+    const io = diskIo(REPORT);
+    const buffer = await runCli(io, ["promote", "--root", root, ...REMOTE, "--restored", "i-7", "--yes"]);
+
+    expect([buffer.err, io.restCalls, readFileSync(join(root, "wrangler.jsonc"), "utf-8")]).toEqual([
+      [`Error: --restored "i-7" is not a D1 id`],
+      [],
+      CONFIG,
+    ]);
+  });
+
+  it("refuses a --restored with no report in R2, editing nothing", async () => {
+    const root = appRoot();
+    const missing = "2f8c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a";
+    const buffer = await runCli(diskIo(REPORT), ["promote", "--root", root, ...REMOTE, "--restored", missing, "--yes"]);
+
+    expect([buffer.err, readFileSync(join(root, "wrangler.jsonc"), "utf-8")]).toEqual([
+      [
+        `Error: BACKUPS holds no restore report at ${restoreReportKey(undefined, OLD_ID, missing)} — restore with \`forge db restore --from\` first`,
+      ],
+      CONFIG,
+    ]);
+  });
+
+  it("reads the report under --prefix", async () => {
+    const root = appRoot();
+    const io = diskIo(null);
+    const bucket = fakeBackupBucket();
+    await bucket.put(restoreReportKey("ops/backups", OLD_ID, REPORT.databaseId), JSON.stringify(REPORT));
+    io.restRules.unshift(...r2RestRules(bucket));
+    const buffer = await runCli(io, ["promote", "--root", root, ...REMOTE, "--prefix", "ops/backups/", "--restored", REPORT.databaseId, "--yes"]);
+
+    expect([buffer.err, readFileSync(join(root, "wrangler.jsonc"), "utf-8").includes(`"database_id": "${REPORT.databaseId}"`)]).toEqual([[], true]);
   });
 
   it("writes nothing when the confirmation is declined", async () => {
     const root = appRoot();
-    const io = diskIo({ status: "complete", output: REPORT });
-    await onStdin(true, "n", () => runCli(io, ["promote", "--root", root, ...REMOTE, "--instance", "i-7"]));
+    const io = diskIo(REPORT);
+    await onStdin(true, "n", () => runCli(io, ["promote", "--root", root, ...REMOTE, "--restored", REPORT.databaseId]));
     expect(readFileSync(join(root, "wrangler.jsonc"), "utf-8")).toBe(CONFIG);
   });
 
@@ -191,9 +216,9 @@ describe("forge db promote", () => {
 
   it("refuses a local target, both sources or neither, half an explicit database, and the database the binding already names", async () => {
     for (const [argv, message] of [
-      [["--db", "DB", "--instance", "i-7"], "local has no binding to promote onto"],
-      [[...REMOTE], "promote takes --instance <restore instance id>, or --database-id and --database-name"],
-      [[...REMOTE, "--instance", "i-7", "--database-id", "x"], "promote takes --instance <restore instance id>"],
+      [["--db", "DB", "--restored", REPORT.databaseId], "local has no binding to promote onto"],
+      [[...REMOTE], "promote takes --restored <database id>, or --database-id and --database-name"],
+      [[...REMOTE, "--restored", REPORT.databaseId, "--database-id", "x"], "promote takes --restored <database id>"],
       [[...REMOTE, "--database-id", "x"], "--database-id and --database-name go together"],
       [[...REMOTE, "--database-id", "x", "--database-name", "y"], `names database id "x", which is not a D1 id`],
       [[...REMOTE, "--database-id", OLD_ID, "--database-name", "app-db"], `DB already points at app-db (${OLD_ID})`],

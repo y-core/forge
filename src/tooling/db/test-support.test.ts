@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import process from "node:process";
 import { createInterface } from "node:readline/promises";
 
-import { cutSqlStatements } from "../../storage/backup/split";
+import { cutSqlStatements } from "./backup/split";
 import { cfEnvelope, cfRefusal, fakeDbIo, keysetPageReply, minimalWranglerConfig, onStdin, REMOTE_AUTH } from "./db.fixture";
 import { SqlReal } from "./literal";
 import type { Home } from "./types";

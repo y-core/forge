@@ -1,6 +1,6 @@
 import { parseEnv } from "../validation/parse-env";
 import { v } from "../validation/validation";
-import type { ConfigDescriptor, ConfigOverrides, EnvMapping, EnvRef } from "./types";
+import type { ConfigDescriptor, ConfigOverrides, DeclaredEnvName, EnvMapping, EnvRef } from "./types";
 
 function resolve<ConfigData>(bindings: object, descriptor: ConfigDescriptor<ConfigData>): ConfigData {
   const record = bindings as Record<string, unknown>;
@@ -106,7 +106,7 @@ export class Config<ConfigData> {
 
   /** Instantiates a holder; prefer the {@link createConfig} factory. @internal */
   static create<ConfigData>(
-    map: EnvMapping,
+    map: EnvMapping<DeclaredEnvName>,
     schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>,
     overrides?: ConfigOverrides<ConfigData>,
   ): Config<ConfigData> {
@@ -139,7 +139,7 @@ export class Config<ConfigData> {
 
 /** Creates a lazy config holder that resolves and caches parsed config per distinct `env`. @public */
 export function createConfig<ConfigData>(
-  map: EnvMapping,
+  map: EnvMapping<DeclaredEnvName>,
   schema: v.BaseSchema<unknown, ConfigData, v.BaseIssue<unknown>>,
   overrides?: ConfigOverrides<ConfigData>,
 ): Config<ConfigData> {

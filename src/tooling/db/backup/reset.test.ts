@@ -4,14 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
-import { backupKey } from "../../../storage/backup/list";
-import { writeSidecar } from "../../../storage/backup/sidecar";
 import type { D1BackupSidecar } from "../../../storage/backup/types";
 import { CliError } from "../../cli/errors";
 import { resolveDbContext } from "../context";
 import { fakeDbIo, minimalWranglerConfig } from "../db.fixture";
 import type { DbRunContext, FakeDbIo, SharedDbFlags } from "../types";
 import { executeReset, prepareReset, RESET_DUMP_MAX_AGE_MS } from "./reset";
+import { backupKey, writeSidecar } from "./store";
 import type { ResetOptions, ResetOutcome } from "./types";
 
 const roots: string[] = [];
@@ -79,7 +78,7 @@ async function database(root: string, rows: Readonly<Record<string, number>>, du
   });
   const bucket = fakeBackupBucket();
   for (const dump of dumps) {
-    bucket.objects.set(dump.key, { bytes: new Uint8Array(dump.size), customMetadata: {} });
+    bucket.objects.set(dump.key, { bytes: new Uint8Array(dump.size) });
     await writeSidecar(bucket, dump);
   }
   io.buckets.set("BACKUPS", bucket);
@@ -194,7 +193,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     const root = appRoot();
     const io = await database(root, LIVE, [sidecar()]);
     const newer = backupKey(undefined, DB_ID, new Date("2026-09-11T09:30:00Z"), "local-2");
-    (io.buckets.get("BACKUPS") as ReturnType<typeof fakeBackupBucket>).objects.set(newer, { bytes: new Uint8Array(1), customMetadata: {} });
+    (io.buckets.get("BACKUPS") as ReturnType<typeof fakeBackupBucket>).objects.set(newer, { bytes: new Uint8Array(1) });
     expect((await runReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).backedUpBy).toBe(sidecar().key);
   });
 
@@ -211,7 +210,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     );
   });
 
-  it("reads the dumps from the bucket --bucket names, and refuses when several are bound and none is BACKUPS", async () => {
+  it("reads the dumps from the bucket --bucket names, and refuses when none is BACKUPS", async () => {
     const root = appRoot({
       r2_buckets: [
         { binding: "ARCHIVE", bucket_name: "a" },
@@ -225,7 +224,7 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
 
     expect((await prepareReset(run, { expect: "app-db", allowUnbacked: false, bucket: "ARCHIVE" })).backedUpBy).toBe(sidecar().key);
     expect((await refusal(() => prepareReset(run, { expect: "app-db", allowUnbacked: false }))).message).toBe(
-      `${join(root, "wrangler.jsonc")} binds several R2 buckets (ARCHIVE, MEDIA) and none named BACKUPS — pass --bucket`,
+      `${join(root, "wrangler.jsonc")} binds no R2 bucket named BACKUPS (it binds ARCHIVE, MEDIA) — declare one in r2_buckets to keep the dumps apart from other data, or pass --bucket`,
     );
   });
 

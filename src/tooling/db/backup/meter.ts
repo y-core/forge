@@ -1,5 +1,6 @@
-import { bytesToHex } from "../../crypto/primitives/mod";
-import { D1BackupError } from "./errors";
+import { createHash } from "node:crypto";
+
+import { CliError } from "../../cli/errors";
 import type { DumpMeter } from "./types";
 
 const INSERT = /^INSERT INTO "((?:[^"]|"")*)" \(/;
@@ -41,17 +42,10 @@ export function dumpRowCounter(): { push(chunk: Uint8Array): void; finish(): Rec
   };
 }
 
-function digester(algorithm: "MD5" | "SHA-256"): { writer: WritableStreamDefaultWriter<ArrayBufferView>; digest: Promise<ArrayBuffer> } {
-  const DigestStream = crypto.DigestStream;
-  if (DigestStream === undefined) throw new D1BackupError("unsupported", "crypto.DigestStream is missing — run the backup in a Worker");
-  const stream = new DigestStream(algorithm);
-  return { writer: stream.getWriter(), digest: stream.digest };
-}
-
 async function readWithin(reader: ReadableStreamDefaultReader<Uint8Array>, idleMs: number): Promise<ReadableStreamReadResult<Uint8Array>> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const stalled = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new D1BackupError("download", `the D1 export download sent nothing for ${idleMs} ms`)), idleMs);
+    timer = setTimeout(() => reject(new CliError("external", `the D1 export download sent nothing for ${idleMs} ms`)), idleMs);
   });
   try {
     return await Promise.race([reader.read(), stalled]);
@@ -61,36 +55,40 @@ async function readWithin(reader: ReadableStreamDefaultReader<Uint8Array>, idleM
 }
 
 /** Passes a dump through, hashing it, counting its bytes and rows, and failing it once it stalls for `idleMs`. @internal */
-export function meterDump(body: ReadableStream<Uint8Array>, idleMs: number): DumpMeter {
-  const md5 = digester("MD5");
-  const sha256 = digester("SHA-256");
+export function meterDump(source: ReadableStream<Uint8Array>, idleMs: number): DumpMeter {
+  const md5 = createHash("md5");
+  const sha256 = createHash("sha256");
   const counter = dumpRowCounter();
+  const reader = source.getReader();
   let size = 0;
   let ended = false;
-  async function* chunks(): AsyncGenerator<Uint8Array> {
-    const reader = body.getReader();
-    try {
-      for (;;) {
-        const { done, value } = await readWithin(reader, idleMs);
-        if (done) break;
-        await Promise.all([md5.writer.write(value), sha256.writer.write(value)]);
-        counter.push(value);
-        size += value.byteLength;
-        yield value;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let read: ReadableStreamReadResult<Uint8Array>;
+      try {
+        read = await readWithin(reader, idleMs);
+      } catch (error) {
+        await reader.cancel(error).catch(() => {});
+        throw error;
       }
-      ended = true;
-    } finally {
-      if (!ended) await reader.cancel().catch(() => {});
-      reader.releaseLock();
-    }
-  }
+      if (read.done) {
+        ended = true;
+        controller.close();
+        return;
+      }
+      md5.update(read.value);
+      sha256.update(read.value);
+      counter.push(read.value);
+      size += read.value.byteLength;
+      controller.enqueue(read.value);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  });
   return {
-    chunks: chunks(),
-    async measure() {
+    body,
+    measure() {
       if (!ended) throw new Error("meterDump: measure() before every chunk was read");
-      await Promise.all([md5.writer.close(), sha256.writer.close()]);
-      const [md5Hex, sha256Hex] = (await Promise.all([md5.digest, sha256.digest])).map((buffer) => bytesToHex(new Uint8Array(buffer)));
-      return { size, md5: md5Hex ?? "", sha256: sha256Hex ?? "", rows: counter.finish() };
+      return { size, md5: md5.digest("hex"), sha256: sha256.digest("hex"), rows: counter.finish() };
     },
   };
 }

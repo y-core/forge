@@ -4,12 +4,13 @@ import type { FileHandle } from "node:fs/promises";
 import { createRequire } from "node:module";
 import process from "node:process";
 
-import { cutSqlStatements } from "../../storage/backup/split";
 import type { BackupBucket } from "../../storage/backup/types";
 import { retryWithBackoff } from "../../storage/db/retry";
 import type { D1DatabaseLike } from "../../storage/db/types";
 import type { D1RetryPolicy } from "../../storage/db/types";
 import { CliError } from "../cli/errors";
+import { cutSqlStatements } from "./backup/split";
+import type { BackupDatabase } from "./backup/types";
 import { persistRoot } from "./home";
 import { isReadOnlyBatch } from "./sql";
 import type { DbIo, Home, WranglerD1Module } from "./types";
@@ -64,6 +65,23 @@ function readStreamFromFile(path: string): ReadableStream<Uint8Array> {
       await (await opening).close();
     },
   });
+}
+
+type ProxyBucket = Omit<BackupBucket, "get"> & { get(key: string): Promise<{ readonly size: number; arrayBuffer(): Promise<ArrayBuffer> } | null> };
+
+// Under Bun the platform proxy's R2 body throws `DataCloneError` on any read, while `arrayBuffer()` works, so a local object is read whole.
+function wholeBodies(bucket: ProxyBucket): BackupBucket {
+  return {
+    put: (key, value, options) => bucket.put(key, value, options),
+    list: (options) => bucket.list(options),
+    delete: (keys) => bucket.delete(keys),
+    async get(key) {
+      const object = await bucket.get(key);
+      if (object === null) return null;
+      const bytes = new Uint8Array(await object.arrayBuffer());
+      return { size: object.size, body: new Blob([bytes]).stream(), text: async () => new TextDecoder().decode(bytes) };
+    },
+  };
 }
 
 async function writeStreamToFile(path: string, body: ReadableStream<Uint8Array>): Promise<void> {
@@ -206,7 +224,15 @@ export function realDbIo(
       if (typeof bucket?.list !== "function" || typeof bucket.get !== "function") {
         throw new CliError("invalid-args", `${home.configPath} declares no r2_buckets binding named ${binding}`);
       }
-      return bucket as BackupBucket;
+      return wholeBodies(bucket as ProxyBucket);
+    },
+    async database(home, binding): Promise<BackupDatabase> {
+      if (home.persistTo === null) throw refuseDeployedHome(home);
+      const database = (await reach(home, handleKey(home))).env[binding] as Partial<BackupDatabase> | undefined;
+      if (typeof database?.prepare !== "function" || typeof database.batch !== "function") {
+        throw new CliError("invalid-args", `${home.configPath} declares no d1_databases binding named ${binding}`);
+      }
+      return database as BackupDatabase;
     },
     async closeD1(home): Promise<void> {
       for (const key of home === null ? [...handles.keys()] : [handleKey(home)]) await release(key);

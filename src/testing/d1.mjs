@@ -7,7 +7,32 @@ import { join as join2, resolve as resolve3 } from "node:path";
 import process from "node:process";
 import { getPlatformProxy } from "wrangler";
 
-// src/storage/backup/split.ts
+// src/storage/db/migrations.ts
+var DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json" };
+var MIGRATION_FILE = /^(\d+)_(.+)\.sql$/;
+function isMigrationFileName(name) {
+  return MIGRATION_FILE.test(name);
+}
+function inMigrationOrder(files) {
+  const numbered = files.map((file) => {
+    const match = MIGRATION_FILE.exec(file.name);
+    if (match === null) throw new Error(`${file.name} is not a migration file name \u2014 wrangler applies <NNNN>_<name>.sql and nothing else`);
+    return { file, version: Number(match[1]), digits: match[1] ?? "" };
+  });
+  numbered.sort((a, b) => a.version - b.version || (a.file.name < b.file.name ? -1 : a.file.name > b.file.name ? 1 : 0));
+  const seen = /* @__PURE__ */ new Map();
+  return numbered.map(({ file, version, digits }) => {
+    const other = seen.get(version);
+    if (other !== void 0) throw new Error(`${file.name} and ${other} share the number ${digits} \u2014 renumber one so they apply in one order`);
+    seen.set(version, file.name);
+    return { ...file, version };
+  });
+}
+
+// src/storage/db/schema.ts
+var INVENTORY_SELECT = "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' ORDER BY type, name";
+
+// src/tooling/db/backup/split.ts
 var WORD = /[A-Za-z_][A-Za-z0-9_$]*/y;
 function pastQuoted(sql2, index, quote) {
   let at = index;
@@ -76,31 +101,6 @@ function sqlStatementSpans(sql2) {
 function cutSqlStatements(sql2) {
   return sqlStatementSpans(sql2).filter((span) => span.useful).map((span) => sql2.slice(span.start, span.end).trim());
 }
-
-// src/storage/db/migrations.ts
-var DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json" };
-var MIGRATION_FILE = /^(\d+)_(.+)\.sql$/;
-function isMigrationFileName(name) {
-  return MIGRATION_FILE.test(name);
-}
-function inMigrationOrder(files) {
-  const numbered = files.map((file) => {
-    const match = MIGRATION_FILE.exec(file.name);
-    if (match === null) throw new Error(`${file.name} is not a migration file name \u2014 wrangler applies <NNNN>_<name>.sql and nothing else`);
-    return { file, version: Number(match[1]), digits: match[1] ?? "" };
-  });
-  numbered.sort((a, b) => a.version - b.version || (a.file.name < b.file.name ? -1 : a.file.name > b.file.name ? 1 : 0));
-  const seen = /* @__PURE__ */ new Map();
-  return numbered.map(({ file, version, digits }) => {
-    const other = seen.get(version);
-    if (other !== void 0) throw new Error(`${file.name} and ${other} share the number ${digits} \u2014 renumber one so they apply in one order`);
-    seen.set(version, file.name);
-    return { ...file, version };
-  });
-}
-
-// src/storage/db/schema.ts
-var INVENTORY_SELECT = "SELECT type, name, tbl_name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_cf\\_%' ESCAPE '\\' ORDER BY type, name";
 
 // src/tooling/db/declared.ts
 import { createRequire } from "node:module";

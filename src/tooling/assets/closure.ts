@@ -1,5 +1,8 @@
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
+import { peer } from "./peers";
+import type { EsbuildModule } from "./types";
+
 const ENTRY = "forge-import-closure-entry.ts";
 
 const WRANGLER_MODULE_RULES = { ".txt": "text", ".html": "text", ".sql": "text", ".bin": "binary", ".wasm": "binary" } as const;
@@ -11,11 +14,11 @@ function relativeTo(root: string, path: string): string {
 /** Every file under `root` that `specifiers`, resolved from `from` as esbuild bundles them, statically import, relative to `root`; rejects when any one does not resolve. @public */
 export async function importClosure(root: string, specifiers: readonly string[], from: string = root): Promise<string[]> {
   if (specifiers.length === 0) return [];
-  const { build } = await import("esbuild");
+  const esbuild = await peer<EsbuildModule>("esbuild", "importClosure", "a traced import closure");
   const contents = specifiers
     .map((specifier, i) => `import * as m${i} from ${JSON.stringify(specifier)};\nglobalThis["m${i}"] = m${i};`)
     .join("\n");
-  const result = await build({
+  const result = await esbuild.build({
     stdin: { contents, resolveDir: resolve(root, from), loader: "ts", sourcefile: ENTRY },
     absWorkingDir: resolve(root),
     bundle: true,
@@ -28,7 +31,7 @@ export async function importClosure(root: string, specifiers: readonly string[],
     logLevel: "silent",
   });
   const entry = relativeTo(root, resolve(root, from, ENTRY));
-  return Object.keys(result.metafile.inputs)
+  return Object.keys(result.metafile?.inputs ?? {})
     .map((path) => relativeTo(root, resolve(root, path)))
     .filter((path) => path !== entry && !path.startsWith("node_modules/") && !path.includes("/node_modules/"))
     .filter((path) => !path.startsWith("../") && !isAbsolute(path))

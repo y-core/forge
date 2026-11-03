@@ -298,8 +298,8 @@ forge cf sync lifecycle --bucket BACKUPS --expire-days 90 --ia-days 30          
 forge cf sync lifecycle --bucket BACKUPS --expire-days 90 --ia-days 30 --commit   # write it
 ```
 
-**`--bucket` takes the `r2_buckets` binding or the bucket's own name.** `--prefix` defaults to `d1-backups`, the prefix `runD1Backup` writes
-under, so each dump and its `.json` sidecar expire together.
+**`--bucket` takes the `r2_buckets` binding or the bucket's own name.** Pass `--prefix` the prefix `forge db backup` was given,
+`d1-backups` by default, so each dump and its `.json` sidecar expire together.
 
 **Only forge's own rule is touched.** R2's lifecycle API replaces every rule on a bucket at once, so the run reads them first and writes back
 the full list. Forge's rule is replaced in place, by its id (`forge-d1-backups` for the default prefix), and every other rule is kept as it was.
@@ -320,27 +320,55 @@ is [`src/config/README.md`][config-readme]:
 **Secret names come from `.dev.vars` unless `wrangler.jsonc` declares `secrets`.** Then `secrets.required` lists them and `.dev.vars` is not read
 for names, as `wrangler types` does.
 
-Run it as a script; `forge cf gen env --help` lists the flags that move each path above:
+Run it as a script; `forge cf gen env --help` lists the flags that move each path above. **A script that moves a path keeps the flag**, so the
+script and the header of the module it writes name the same command:
 
 ```json
-{ "scripts": { "gen:env": "forge cf gen env" } }
+{ "scripts": { "gen:env": "forge cf gen env --out src/app/env-schema.ts" } }
 ```
 
-A typical generated module:
+A typical generated module, written by that script:
 
 ```ts
-/** env.schema.ts — GENERATED — do not edit; run `forge cf gen env`. */
+/** GENERATED — do not edit; run `forge cf gen env --out src/app/env-schema.ts`. */
+
 import { v } from "@y-core/forge/validation";
 
+/** The Worker's binding/var surface as a type — inferred from `EnvSchema`. */
+export type Env = v.InferOutput<typeof EnvSchema>;
+
+/** The Worker's binding/var surface as a runtime valibot schema. */
 export const EnvSchema = v.object({
   MY_KV: v.custom<KVNamespace>((x) => typeof x === "object" && x !== null, "MY_KV must be a KV namespace binding"),
   API_BASE_URL: v.string(),
+  SITE_ORIGIN: v.optional(v.string()),
 });
 
-export type Env = v.InferOutput<typeof EnvSchema>;
+declare module "@y-core/forge/config" {
+  interface DeclaredEnv extends Env {}
+}
 ```
 
-The command emits the module and runs a `bun fmt` pass, so the generated file passes the lint gate.
+**The header names the command that regenerates this file.** It carries every flag the run gave a value other than its default, and only those.
+Copy it rather than retyping it.
+
+**The closing `declare module` block is what checks your `env()` names.** Once the module is in the program, `createConfig` refuses a name it does
+not declare; [`src/config/README.md`][config-readme] shows what that looks like.
+
+**A name only a named environment declares is optional.** A var under `env.<name>.vars`, or a secret under `env.<name>.secrets.required`, with no
+top-level counterpart is emitted `v.optional(...)` — `SITE_ORIGIN` above — because `wrangler types` makes it optional too.
+
+**A var set only in the dashboard is declared in `optional`.** A top-level `vars` entry would overwrite the dashboard value on every deploy, so
+leave it out of `wrangler.jsonc` and list its name in `config/env.config.ts`; a name in `optional` that nothing else declares is emitted as an
+optional string var.
+
+The command formats the module with `bun fmt` under your own formatter config before writing it, so the generated file passes the lint gate. A
+failed format pass writes the file unformatted and logs a warning.
+
+**The gate holds the committed file to `wrangler.jsonc`.** `cloudflareWorkerSteps` runs `validate-env-schema`, which renders the module as this
+command would and fails when the file is missing or differs, naming the command to run; `forge verify --fix` rewrites it. A script that moves a
+path states the same path to the row, as `envSchema: { out: "src/app/env-schema.ts" }`. The row also fails a `wrangler.jsonc` that declares no
+`secrets`: `.dev.vars` is gitignored, so names read from it would differ between your machine and CI. Declare them in `secrets.required`.
 
 ### Typing a binding gen env leaves out
 

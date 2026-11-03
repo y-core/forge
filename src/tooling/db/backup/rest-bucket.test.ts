@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
 import { listD1Backups } from "../../../storage/backup/list";
 import { cfEnvelope, cfRefusal, fakeDbIo, r2RestRules, REMOTE_AUTH } from "../db.fixture";
-import { R2_REST_PUT_MAX_BYTES, restBackupBucket } from "./rest-bucket";
+import { R2_REST_PUT_MAX_BYTES, restBackupBucket, restPutRefusal } from "./rest-bucket";
 
 const OBJECTS = "https://api.cloudflare.com/client/v4/accounts/acct/r2/buckets/app-backups/objects";
 
@@ -125,14 +125,23 @@ describe("restBackupBucket() — put", () => {
       },
     });
     const refused = bucket.put("d1-backups/big.sql", body, { contentLength: R2_REST_PUT_MAX_BYTES + 1 });
-    await expect(refused).rejects.toThrow("`wrangler r2 object put`");
-    await expect(refused).rejects.toThrow("upload it through R2's S3 API instead");
+    await expect(refused).rejects.toMatchObject({
+      kind: "invalid-args",
+      message: restPutRefusal("d1-backups/big.sql", R2_REST_PUT_MAX_BYTES + 1).message,
+    });
     expect([io.restCalls, cancelled]).toEqual([[], true]);
   });
 
-  it("refuses a stream whose length is not stated", async () => {
-    const { bucket } = remote();
-    await expect(bucket.put("k.sql", new ReadableStream<Uint8Array>())).rejects.toThrow("a stream body needs its contentLength stated");
+  it("refuses a stream whose length is not stated before sending anything, and cancels the stream", async () => {
+    const { io, store, bucket } = remote();
+    let cancelled = false;
+    const body = new ReadableStream<Uint8Array>({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    await expect(bucket.put("k.sql", body)).rejects.toMatchObject({ kind: "invalid-args", message: restPutRefusal("k.sql", null).message });
+    expect([io.restCalls, store.objects.size, cancelled]).toEqual([[], 0, true]);
   });
 
   it("reports Cloudflare's refusal of a write", async () => {
@@ -162,13 +171,6 @@ describe("restBackupBucket() — delete", () => {
     await expect(restBackupBucket(io, REMOTE_AUTH, "b").delete("k.sql")).rejects.toThrow(
       "deleting k.sql from b failed: Bucket is read only (Cloudflare error 10004, HTTP 400)",
     );
-  });
-});
-
-describe("restBackupBucket() — what the REST endpoint does not offer", () => {
-  it("refuses a multipart upload, which nothing on this path calls", async () => {
-    const { bucket } = remote();
-    await expect(bucket.createMultipartUpload("k.sql")).rejects.toThrow("createMultipartUpload is not offered");
   });
 });
 

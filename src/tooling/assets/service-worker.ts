@@ -2,12 +2,10 @@ import { createHash } from "node:crypto";
 import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-import type { BuildOptions, Plugin } from "esbuild";
-
 import { jsBuildOptions } from "./js";
 import { assetUrlBase } from "./paths";
 import { bundler } from "./peers";
-import type { ResolvedServiceWorkerBuild } from "./types";
+import type { EsbuildBuildOptions, EsbuildPlugin, ResolvedServiceWorkerBuild } from "./types";
 
 // At the deploy root, so it is served from `/sw.js` and its default scope is the whole origin.
 /** The worker's filename in the deploy root. @internal */
@@ -44,7 +42,7 @@ export function precacheVersion(publicDir: string, exclude: Iterable<string>): s
   return hash.digest("hex");
 }
 
-function precachePlugin(precache: readonly string[], version: string): Plugin {
+function precachePlugin(precache: readonly string[], version: string): EsbuildPlugin {
   return {
     name: PRECACHE_NAMESPACE,
     setup(build) {
@@ -61,7 +59,7 @@ function precachePlugin(precache: readonly string[], version: string): Plugin {
 export function serviceWorkerBuildOptions(
   serviceWorker: ResolvedServiceWorkerBuild,
   opts: { precache: readonly string[]; version: string; minify?: boolean | undefined },
-): BuildOptions {
+): EsbuildBuildOptions {
   return {
     ...jsBuildOptions({
       format: "iife",

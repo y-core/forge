@@ -32,10 +32,6 @@ export const r2ObjectsPath = (accountId: string, bucket: string) => `${acct(acco
 export const r2ObjectPath = (accountId: string, bucket: string, key: string) =>
   `${r2ObjectsPath(accountId, bucket)}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
-/** One Workflow's instances — POST creates one; GET on `/{id}` reads its status and output. */
-export const workflowInstancesPath = (accountId: string, workflow: string) =>
-  `${acct(accountId)}/workflows/${encodeURIComponent(workflow)}/instances`;
-
 const zone = (zoneId: string) => `/zones/${encodeURIComponent(zoneId)}`;
 
 /** The phase entry point ruleset for a zone — GET reads the latest version, PUT replaces it. */

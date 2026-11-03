@@ -1,8 +1,12 @@
 import { describe, expect, it } from "bun:test";
 
-import { fakeDatabase, stubDatabase } from "./backup.fixture";
+import { CliError } from "../../cli/errors";
+import { changedCells, fakeDatabase, stubDatabase } from "./backup.fixture";
+import { BASELINE_DUMP, BASELINE_VIRTUAL_REFUSAL } from "./baseline-dump.fixture";
+import { BASELINE_SEED, BASELINE_VIRTUAL_SEED } from "./baseline-seed.fixture";
 import { hasRealAffinity, hazardSelect, isDumpedObject, readSchemaRow, SCHEMA_SELECT, schemaDigest, takeD1Census } from "./census";
-import { D1BackupError } from "./errors";
+import { dumpRowCounter } from "./meter";
+import { splitDumpStatements } from "./split";
 
 const MIGRATIONS = "CREATE TABLE _forge_migrations (id INTEGER PRIMARY KEY, name TEXT NOT NULL);";
 
@@ -131,7 +135,56 @@ describe("takeD1Census()", () => {
 
   it("refuses a virtual table, naming it", async () => {
     const db = stubDatabase([{ type: "table", name: "docs", tbl_name: "docs", sql: "CREATE VIRTUAL TABLE docs USING fts5(b)" }]);
-    const error = (await takeD1Census(db).catch((thrown: unknown) => thrown)) as D1BackupError;
-    expect([error instanceof D1BackupError, error.kind, error.message.endsWith("docs")]).toEqual([true, "unsupported", true]);
+    const error = (await takeD1Census(db).catch((thrown: unknown) => thrown)) as CliError;
+    expect([error instanceof CliError, error.kind, error.message.endsWith("docs")]).toEqual([true, "invalid-args", true]);
+  });
+});
+
+describe("the census against miniflare's baseline dump", () => {
+  const seeded = () => fakeDatabase(BASELINE_SEED.join(";\n"));
+
+  it("names exactly the values miniflare's dump will not reproduce", async () => {
+    expect(await takeD1Census(seeded())).toMatchObject({
+      migrationHead: "0001_baseline.sql",
+      hazards: [
+        { table: "cases", column: "body", kind: "escape", count: 1 },
+        { table: "cases", column: "wide", kind: "integer", count: 1 },
+        { table: "cases", column: "loose", kind: "real", count: 1 },
+      ],
+    });
+  });
+
+  it("counts each row of the dump once, line by line, whatever chunks it arrives in", () => {
+    const bytes = new TextEncoder().encode(BASELINE_DUMP);
+    const whole = dumpRowCounter();
+    whole.push(bytes);
+    const byByte = dumpRowCounter();
+    for (const byte of bytes) byByte.push(Uint8Array.of(byte));
+    const seedInserts = (table: string) => BASELINE_SEED.filter((sql) => sql.startsWith(`INSERT INTO ${table} `)).length;
+
+    expect([whole.finish(), byByte.finish()]).toEqual([
+      { _forge_migrations: 1, cases: 6 },
+      { _forge_migrations: 1, cases: 6 },
+    ]);
+    expect([seedInserts("_forge_migrations"), seedInserts("cases")]).toEqual([1, 6]);
+    expect(BASELINE_DUMP.split("\n").filter((line) => line.startsWith('INSERT INTO "cases" ')).length).toBe(6);
+  });
+
+  it("differs from the seed in exactly the rows the census names", async () => {
+    const seed = seeded();
+    const restored = fakeDatabase();
+    for (const statement of splitDumpStatements(BASELINE_DUMP)) restored.sqlite.exec(statement);
+    const named = Object.fromEntries((await takeD1Census(seed)).hazards.map((hazard) => [hazard.column, hazard.count]));
+
+    expect(changedCells(seed.sqlite, restored.sqlite, "cases")).toEqual(named);
+    expect(changedCells(seed.sqlite, restored.sqlite, "_forge_migrations")).toEqual({});
+  });
+
+  it("refuses a virtual table before export, as miniflare's own export does", async () => {
+    const db = stubDatabase([{ type: "table", name: "docs", tbl_name: "docs", sql: BASELINE_VIRTUAL_SEED[0] }]);
+    const error = (await takeD1Census(db).catch((thrown: unknown) => thrown)) as CliError;
+
+    expect([error instanceof CliError, error.kind, error.message.endsWith(": docs")]).toEqual([true, "invalid-args", true]);
+    expect(BASELINE_VIRTUAL_REFUSAL).toContain("cannot export databases with Virtual Tables");
   });
 });

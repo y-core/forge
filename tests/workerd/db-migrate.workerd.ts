@@ -8,12 +8,12 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 import { getPlatformProxy } from "wrangler";
 
-import { takeD1Census } from "../../src/storage/backup/census";
-import { backupKey } from "../../src/storage/backup/list";
-import { dumpRowCounter } from "../../src/storage/backup/meter";
-import { writeSidecar } from "../../src/storage/backup/sidecar";
-import type { BackupBucket, BackupDatabase } from "../../src/storage/backup/types";
+import type { BackupBucket } from "../../src/storage/backup/types";
 import { checkSchemaHealth } from "../../src/storage/db/health";
+import { takeD1Census } from "../../src/tooling/db/backup/census";
+import { dumpRowCounter } from "../../src/tooling/db/backup/meter";
+import { backupKey, writeSidecar } from "../../src/tooling/db/backup/store";
+import type { BackupDatabase } from "../../src/tooling/db/backup/types";
 import { formatComposeHeader } from "../../src/tooling/db/schema/header";
 import { type D1Handle, openD1 } from "./d1";
 import { wrangler } from "./wrangler";
@@ -41,7 +41,7 @@ async function withD1<T>(use: (db: D1Handle) => Promise<T>): Promise<T> {
   }
 }
 
-/** Writes a dump of the local database and its sidecar into the local R2 bucket, as `runD1Backup` under `forge cf dev` leaves them. */
+/** Writes a dump of the local database and its sidecar into the local R2 bucket, as `forge db backup` leaves them for a local target. */
 async function seedLocalDump(): Promise<void> {
   const proxy = await getPlatformProxy<{ DB: D1Database; BACKUPS: R2Bucket }>({
     configPath: join(root, "wrangler.jsonc"),

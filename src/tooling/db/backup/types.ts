@@ -1,3 +1,4 @@
+import type { BackupBucket, D1RestoredDatabase } from "../../../storage/backup/types";
 import type { JsoncEdit } from "../../cli/types";
 
 /** What `db reset` was asked for beyond the shared flags. @public */
@@ -28,13 +29,6 @@ export interface ResetPlan {
   readonly rows: number;
   /** The key of the R2 dump that proved this database is recoverable, when one was needed. */
   readonly backedUpBy: string | null;
-}
-
-/** What a CLI verb expects of the Workflow it starts: its conventional name, and what its `run()` must return. @internal */
-export interface WorkflowPurpose<T> {
-  readonly preferred: string;
-  readonly returns: string;
-  read(output: unknown): T | null;
 }
 
 /** Where a database's dumps are kept: an R2 binding and the bucket it names, the prefix, and the database id they are kept under. @internal */
@@ -79,4 +73,113 @@ export interface PromotionPlan {
   readonly from: PromotionTarget;
   readonly to: PromotionTarget;
   readonly edits: readonly JsoncEdit[];
+}
+
+/** The consumed surface of one prepared D1 statement. @internal */
+export interface BackupStatement {
+  all(): Promise<{ results: Record<string, unknown>[] }>;
+  bind(...values: unknown[]): { raw(): Promise<unknown[][]> };
+}
+
+/** The read a census takes: one statement's rows. @internal */
+export interface CensusDatabase {
+  prepare(query: string): { all(): Promise<{ results: Record<string, unknown>[] }> };
+}
+
+/** The consumed surface of a local D1 binding: the census read, miniflare's export, and a batch import. @internal */
+export interface BackupDatabase extends CensusDatabase {
+  prepare(query: string): BackupStatement;
+  batch(statements: BackupStatement[]): Promise<unknown>;
+}
+
+/** One dump on its way into a restore target. @internal */
+export interface D1ImportSource {
+  readonly body: ReadableStream<Uint8Array>;
+  readonly size: number;
+  readonly md5: string;
+}
+
+/** Where a D1 import stands: still running at a bookmark, finished, or refused. @internal */
+export type D1ImportState =
+  | { readonly status: "active"; readonly bookmark: string }
+  | { readonly status: "complete"; readonly bookmark: string | null; readonly queries: number }
+  | { readonly status: "error"; readonly error: string };
+
+/** Where a D1 export stands: still running at a bookmark, ready behind a signed URL, or refused. @internal */
+export type D1ExportState =
+  | { readonly status: "active"; readonly bookmark: string }
+  | { readonly status: "complete"; readonly bookmark: string | null; readonly signedUrl: string }
+  | { readonly status: "error"; readonly error: string };
+
+/** One fragment of SQL text between statement boundaries, as offsets into the text it was cut from. @internal */
+export interface SqlStatementSpan {
+  readonly start: number;
+  /** The index of the terminating `;`, or the text's length for an unterminated tail. */
+  readonly end: number;
+  readonly terminated: boolean;
+  /** True when the fragment holds a token other than whitespace and comments. */
+  readonly useful: boolean;
+}
+
+/** What a dump measured as it streamed. @internal */
+export interface DumpMeasure {
+  readonly size: number;
+  readonly md5: string;
+  readonly sha256: string;
+  readonly rows: Record<string, number>;
+}
+
+/** A dump's bytes as they pass through, and what they measured once every one has. @internal */
+export interface DumpMeter {
+  readonly body: ReadableStream<Uint8Array>;
+  measure(): DumpMeasure;
+}
+
+/** How the pipeline reaches D1's export and import: over REST for a deployed database, or through the platform proxy's bindings for a local one. @internal */
+export interface D1Transfer {
+  startExport(at: Date): Promise<string>;
+  openExport(bookmark: string): Promise<{ readonly body: ReadableStream<Uint8Array>; readonly length: number | null }>;
+  openTarget(into: D1RestoreTarget): Promise<D1RestoredDatabase>;
+  startImport(target: D1RestoredDatabase, source: D1ImportSource): Promise<D1ImportState>;
+  pollImport(target: D1RestoredDatabase, bookmark: string): Promise<D1ImportState>;
+  query(target: D1RestoredDatabase, sql: string): Promise<Record<string, unknown>[]>;
+}
+
+/** What one backup or restore of the run's database goes through: its bucket, its census, and its D1 transport. @internal */
+export interface BackupPorts {
+  readonly bucket: BackupBucket;
+  readonly database: CensusDatabase;
+  readonly transfer: D1Transfer;
+  /** `stream` sends the dump as it downloads, at its announced length; `whole` reads it first, as a local binding needs. */
+  readonly upload: "stream" | "whole";
+}
+
+/** Where `restoreD1Backup` imports a dump: a database it creates, or the empty one `standby` names. @internal */
+export type D1RestoreTarget = { readonly fresh: string } | { readonly standby: string };
+
+/** What `takeD1Backup` exports, and where it keeps the dump. @internal */
+export interface D1BackupOptions {
+  readonly databaseId: string;
+  readonly bucket: BackupBucket;
+  readonly database: CensusDatabase;
+  readonly transfer: D1Transfer;
+  /** `stream` sends the dump as it downloads, at its announced length; `whole` reads it first, as a local binding needs. */
+  readonly upload: "stream" | "whole";
+  /** The instant the dump is named by. */
+  readonly at: Date;
+  /** Defaults to `d1-backups`. */
+  readonly prefix?: string;
+  /** How many dumps of this database to keep, the newest first; omitted keeps every one. */
+  readonly keep?: number;
+  /** How long the download may go without a byte before it fails. Defaults to 60000. */
+  readonly idleTimeoutMs?: number;
+}
+
+/** Which dump `restoreD1Backup` imports, and where. @internal */
+export interface D1RestoreOptions {
+  readonly bucket: BackupBucket;
+  /** The dump's object key, as `listD1Backups` answers it. */
+  readonly key: string;
+  readonly into: D1RestoreTarget;
+  readonly transfer: D1Transfer;
 }

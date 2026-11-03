@@ -7,9 +7,6 @@ export const DEFAULT_OPTIONS: GenOptions = {
   bindingCheck: '(x) => typeof x === "object" && x !== null',
 };
 
-/** The generated module's header comment. @internal */
-export const HEADER = "/** env.schema.ts — GENERATED — do not edit; run `forge cf gen env`. */";
-
 const K2_PRODUCER_TYPE =
   "{ send(records: | { content: ArrayBuffer; headers?: Record<string, string> }[] | { content: Uint8Array; headers?: Record<string, string> }[] ): Promise< | { success: true } | { success: false; error: { code: number; message: string; retryable: boolean } } >; }";
 

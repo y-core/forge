@@ -1,14 +1,17 @@
 import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 
-import { fakeBackupBucket, fakeD1Rest, fakeDatabase, fakeStep } from "./backup.fixture";
+import { fakeBackupBucket } from "../../../storage/backup/backup.fixture";
+import type { D1BackupSidecar } from "../../../storage/backup/types";
+import { CliError } from "../../cli/errors";
+import { fakeDbIo, REMOTE_AUTH } from "../db.fixture";
+import { fakeD1Rest, fakeDatabase } from "./backup.fixture";
 import { takeD1Census } from "./census";
-import { D1BackupError } from "./errors";
-import { restTransfer } from "./export";
 import { dumpRowCounter } from "./meter";
-import { compareWithSidecar, runD1Restore } from "./restore";
-import { writeSidecar } from "./sidecar";
-import type { D1BackupSidecar, D1RestoreOptions } from "./types";
+import { restTransfer } from "./rest-transfer";
+import { compareWithSidecar, restoreD1Backup } from "./restore";
+import { writeSidecar } from "./store";
+import type { D1RestoreOptions } from "./types";
 
 const KEY = "d1-backups/db/2026-11-02T03:00:00.000Z-B1.sql";
 
@@ -39,34 +42,32 @@ async function sidecarOf(dump: string): Promise<D1BackupSidecar> {
   };
 }
 
-async function wire(over: Partial<D1RestoreOptions> = {}, rest = fakeD1Rest(), dump = DUMP) {
+async function wire(over: Partial<D1RestoreOptions> = {}, rest = fakeD1Rest(), fetch = rest.fetch, dump = DUMP) {
   const bucket = fakeBackupBucket();
-  bucket.objects.set(KEY, { bytes: new TextEncoder().encode(dump), customMetadata: {} });
+  bucket.objects.set(KEY, { bytes: new TextEncoder().encode(dump) });
   await writeSidecar(bucket, await sidecarOf(dump));
+  const io = fakeDbIo();
+  io.fetch = (input, init) => fetch(String(input), init);
   const options: D1RestoreOptions = {
-    accountId: "acct",
-    apiToken: "tok",
     bucket,
     key: KEY,
     into: { fresh: "app-db-restore-1" },
-    pollIntervalMs: 0,
-    fetch: rest.fetch,
+    transfer: restTransfer(io, REMOTE_AUTH, "unused"),
     ...over,
   };
   return { options, bucket, rest };
 }
 
-async function failure(run: Promise<unknown>): Promise<D1BackupError> {
+async function failure(run: Promise<unknown>): Promise<CliError> {
   const error = await run.catch((thrown: unknown) => thrown);
-  if (!(error instanceof D1BackupError)) throw new Error(`expected a D1BackupError, got ${String(error)}`);
+  if (!(error instanceof CliError)) throw new Error(`expected a CliError, got ${String(error)}`);
   return error;
 }
 
-describe("runD1Restore()", () => {
+describe("restoreD1Backup()", () => {
   it("creates a fresh database, imports the dump by init → PUT → ingest → poll, and finds it matches the sidecar", async () => {
     const { options, rest } = await wire();
-    const step = fakeStep();
-    const report = await runD1Restore(step, options);
+    const report = await restoreD1Backup(options);
 
     expect(report).toEqual({
       databaseId: "uuid-app-db-restore-1",
@@ -84,41 +85,24 @@ describe("runD1Restore()", () => {
       "poll",
     ]);
     expect(imports[0]?.body).toEqual({ action: "init", etag: createHash("md5").update(DUMP).digest("hex") });
-    expect(step.ran.map((ran) => ran.name)).toEqual([
-      "read d1 dump sidecar",
-      "open restore target",
-      "start d1 import",
-      "await d1 import",
-      "compare restore with sidecar",
-    ]);
-  });
-
-  it("runs the import's start once, with no retries, since D1 begins work at init", async () => {
-    const step = fakeStep();
-    await runD1Restore(step, (await wire({ timeout: "3 hours" })).options);
-    expect(step.ran[2]?.config).toEqual({ retries: { limit: 0, delay: "1 second", backoff: "constant" }, timeout: "3 hours" });
   });
 
   it("skips the upload when D1 already holds a file with the dump's md5", async () => {
     const { options, rest } = await wire({}, fakeD1Rest({ uploaded: true }));
-    await runD1Restore(fakeStep(), options);
+    await restoreD1Backup(options);
     expect(rest.calls.some((call) => call.method === "PUT")).toBe(false);
   });
 
-  it("never returns or quotes the upload URL or the uploaded file's name", async () => {
-    const step = fakeStep();
+  it("never quotes the upload URL or the uploaded file's name", async () => {
     const { options } = await wire({}, fakeD1Rest({ etag: () => "other" }));
-    const error = await failure(runD1Restore(step, options));
-    expect(error.kind).toBe("import");
-    for (const text of [error.message, JSON.stringify(step.ran.map((ran) => ran.result))]) {
-      expect([text.includes("sig=secret"), text.includes("secret-file")]).toEqual([false, false]);
-    }
+    const error = await failure(restoreD1Backup(options));
+    expect([error.kind, error.message.includes("sig=secret"), error.message.includes("secret-file")]).toEqual(["external", false, false]);
   });
 
   it("fails on an import D1 reports failed, naming the target", async () => {
     const { options } = await wire({}, fakeD1Rest({ importError: "UNIQUE constraint failed" }));
-    const error = await failure(runD1Restore(fakeStep(), options));
-    expect([error.kind, error.message]).toEqual(["import", "D1 reported the import into app-db-restore-1 failed: UNIQUE constraint failed"]);
+    const error = await failure(restoreD1Backup(options));
+    expect([error.kind, error.message]).toEqual(["external", "D1 reported the import into app-db-restore-1 failed: UNIQUE constraint failed"]);
   });
 
   it("refuses a standby that already holds a table, before any import call", async () => {
@@ -126,9 +110,9 @@ describe("runD1Restore()", () => {
     const standby = fakeDatabase("CREATE TABLE users (id INTEGER);");
     rest.databases.set("standby-id", standby);
     const { options } = await wire({ into: { standby: "standby-id" } }, rest);
-    const error = await failure(runD1Restore(fakeStep(), options));
+    const error = await failure(restoreD1Backup(options));
     expect([error.kind, error.message, rest.calls.some((call) => call.url.endsWith("/import"))]).toEqual([
-      "target",
+      "invalid-args",
       "standby-id already holds users — a restore imports only into an empty database",
       false,
     ]);
@@ -137,12 +121,23 @@ describe("runD1Restore()", () => {
   it("refuses a dump with no sidecar, and one whose stored size differs from it", async () => {
     const missing = await wire();
     missing.bucket.objects.delete(KEY.replace(/\.sql$/, ".json"));
-    expect((await failure(runD1Restore(fakeStep(), missing.options))).kind).toBe("incomplete");
+    expect((await failure(restoreD1Backup(missing.options))).kind).toBe("invalid-args");
 
     const truncated = await wire();
-    truncated.bucket.objects.set(KEY, { bytes: new TextEncoder().encode(DUMP.slice(0, 10)), customMetadata: {} });
-    const error = await failure(runD1Restore(fakeStep(), truncated.options));
-    expect([error.kind, error.message.includes("its sidecar recorded")]).toEqual(["incomplete", true]);
+    truncated.bucket.objects.set(KEY, { bytes: new TextEncoder().encode(DUMP.slice(0, 10)) });
+    const error = await failure(restoreD1Backup(truncated.options));
+    expect([error.kind, error.message.includes("its sidecar recorded")]).toEqual(["invalid-args", true]);
+  });
+
+  it("refuses a dump gone from the bucket though its sidecar remains, before any import call", async () => {
+    const { options, bucket, rest } = await wire();
+    bucket.objects.delete(KEY);
+    const error = await failure(restoreD1Backup(options));
+    expect([error.kind, error.message, rest.calls.some((call) => call.url.endsWith("/import"))]).toEqual([
+      "invalid-args",
+      `${KEY} is gone from the bucket`,
+      false,
+    ]);
   });
 
   it("adopts a database of the same name a lost create reply already made", async () => {
@@ -156,15 +151,15 @@ describe("runD1Restore()", () => {
       if (url.includes("?name=")) return Response.json({ success: true, result: [{ uuid: "uuid-app-db-restore-1", name: "app-db-restore-1" }] });
       return rest.fetch(url, init);
     };
-    const { options } = await wire({ fetch }, rest);
-    expect((await runD1Restore(fakeStep(), options)).databaseId).toBe("uuid-app-db-restore-1");
+    const { options } = await wire({}, rest, fetch);
+    expect((await restoreD1Backup(options)).databaseId).toBe("uuid-app-db-restore-1");
   });
 
-  it("refuses bad options before any step", async () => {
-    for (const over of [{ key: "" }, { apiToken: "" }, { into: { fresh: "" } }]) {
-      const step = fakeStep();
-      const error = await failure(runD1Restore(step, (await wire(over)).options));
-      expect([error.kind, step.ran.length]).toEqual(["options", 0]);
+  it("refuses bad options before any request", async () => {
+    for (const over of [{ key: "" }, { into: { fresh: "" } }, { into: { standby: "" } }]) {
+      const { options, rest } = await wire(over);
+      const error = await failure(restoreD1Backup(options));
+      expect([error.kind, rest.calls.length]).toEqual(["invalid-args", 0]);
     }
   });
 });
@@ -178,7 +173,7 @@ describe("compareWithSidecar()", () => {
     target.sqlite.exec("INSERT INTO notes (body) VALUES ('only one')");
     rest.databases.set("t", target);
     const { options } = await wire({}, rest);
-    const mismatches = await compareWithSidecar((sql) => restTransfer.query(options, { databaseId: "t", name: "t" }, sql), await sidecarOf(DUMP));
+    const mismatches = await compareWithSidecar((sql) => options.transfer.query({ databaseId: "t", name: "t" }, sql), await sidecarOf(DUMP));
     expect(mismatches[0]).toMatch(/^the schema digests [0-9a-f]{64}, but the sidecar recorded [0-9a-f]{64}$/);
     expect(mismatches.slice(1)).toEqual([
       "_forge_migrations holds 0 rows, but the dump holds 1",

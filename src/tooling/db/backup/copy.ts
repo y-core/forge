@@ -69,7 +69,7 @@ export async function pullDump(run: DbRunContext, source: DumpSource, key: strin
   return { key, path, sidecar: sidecarPath, size: sidecar.size, sha256: sidecar.sha256 };
 }
 
-/** The sidecar beside a dump file on disk, refused unless it is one `runD1Backup` wrote for a dump of that file's name. */
+/** The sidecar beside a dump file on disk, refused unless it is one `forge db backup` wrote for a dump of that file's name. */
 function readSidecarBeside(run: DbRunContext, path: string): { sidecar: D1BackupSidecar; text: string; path: string } {
   if (!path.endsWith(".sql")) throw new CliError("invalid-args", `${path} is not a dump — a dump's file name ends in .sql`);
   const sidecarPath = join(dirname(path), basename(sidecarKey(path)));
@@ -83,7 +83,7 @@ function readSidecarBeside(run: DbRunContext, path: string): { sidecar: D1Backup
     parsed = null;
   }
   const sidecar = readSidecarValue(parsed);
-  if (sidecar === null) throw new CliError("invalid-args", `${sidecarPath} is not a sidecar runD1Backup wrote`);
+  if (sidecar === null) throw new CliError("invalid-args", `${sidecarPath} is not a sidecar forge db backup wrote`);
   if (basename(sidecar.key) !== basename(path)) {
     throw new CliError("invalid-args", `${sidecarPath} is the sidecar of ${sidecar.key}, not of ${basename(path)}`);
   }

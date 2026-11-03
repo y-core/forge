@@ -5,10 +5,10 @@ import process from "node:process";
 
 import { getPlatformProxy } from "wrangler";
 
-import { cutSqlStatements } from "../storage/backup/split";
 import { DB_LAYOUT, inMigrationOrder, isMigrationFileName } from "../storage/db/migrations";
 import { INVENTORY_SELECT } from "../storage/db/schema";
 import type { D1Database, SqlFragment } from "../storage/db/types";
+import { cutSqlStatements } from "../tooling/db/backup/split";
 import { declaredPath, DEFAULT_DB_CONFIG, loadHostConfig } from "../tooling/db/declared";
 
 export { sql } from "../storage/db/sql";

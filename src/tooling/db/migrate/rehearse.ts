@@ -1,6 +1,6 @@
-import { compareWithSidecar } from "../../../storage/backup/restore";
 import { CliError } from "../../cli/errors";
 import { loadLocalDump, readLocalDump, resolveDumpSource } from "../backup/dumps";
+import { compareWithSidecar } from "../backup/restore";
 import { queryRows, queryRowsIfTable } from "../d1";
 import { clearLocalState, scratchHome } from "../home";
 import { localScratchConfig } from "../schema/scratch";

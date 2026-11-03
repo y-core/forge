@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { v } from "../validation/mod";
 import { applyMapping, createConfig, env, optionalGroup, requiredGroup, resolveConfig } from "./config";
+import type { DeclaredEnvName, EnvMapping, EnvVarName } from "./types";
 
 describe("applyMapping", () => {
   it("returns a literal string value as-is", () => {
@@ -404,5 +405,53 @@ describe("resolveConfig", () => {
 
   it("returns an empty object when no store is registered", () => {
     expect(resolveConfig(undefined, { ANY: "thing" })).toEqual({});
+  });
+});
+
+describe("EnvVarName and EnvMapping — at compile time", () => {
+  type Surface = { A: string; B?: string; N: number; DB: { prepare(query: string): unknown } };
+  type Expected = "A" | "B" | "N";
+
+  it("names exactly the vars and secrets of an env, optional ones included", () => {
+    const expected: Expected[] = ["A", "B", "N"];
+    const names: EnvVarName<Surface>[] = expected;
+    const back: Expected[] = names;
+    expect(back).toEqual(["A", "B", "N"]);
+  });
+
+  it("refuses a binding name", () => {
+    // @ts-expect-error -- DB is a D1 binding, not a var or secret
+    const name: EnvVarName<Surface> = "DB";
+    expect(name).toBe("DB");
+  });
+
+  it("is any string for an env that declares nothing", () => {
+    const anything: string = "ANY_NAME";
+    const name: EnvVarName<Record<never, never>> = anything;
+    const declared: DeclaredEnvName = anything;
+    expect([name, declared]).toEqual(["ANY_NAME", "ANY_NAME"]);
+  });
+
+  it("accepts a mapping of declared names and literal strings", () => {
+    const map: EnvMapping<"A"> = { db: { url: env("A"), label: "primary" } };
+    expect(applyMapping({ A: "postgres://a" }, map)).toEqual({ db: { url: "postgres://a", label: "primary" } });
+  });
+
+  it("refuses an undeclared name nested in a record", () => {
+    // @ts-expect-error -- "X" is not a declared name
+    const map: EnvMapping<"A"> = { db: { url: env("X") } };
+    expect(applyMapping({ X: "x" }, map)).toEqual({ db: { url: "x" } });
+  });
+
+  it("refuses an undeclared name at the root", () => {
+    // @ts-expect-error -- "X" is not a declared name
+    const map: EnvMapping<"A"> = env("X");
+    expect(applyMapping({ X: "x" }, map)).toBe("x");
+  });
+
+  it("refuses a binding name in a mapping keyed by EnvVarName", () => {
+    // @ts-expect-error -- DB is a binding, so env("DB") is not a var name
+    const map: EnvMapping<EnvVarName<Surface>> = { db: env("DB") };
+    expect(Object.keys(map)).toEqual(["db"]);
   });
 });

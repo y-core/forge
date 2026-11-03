@@ -340,7 +340,9 @@ element down, so a transition between two descendants needs it declared above bo
 `forge-ui-interaction-no-motion-on-layout` carves out for exactly this reason: their height change is the moment rather than an accident of it.
 
 Default: let a wrapper's children join a `grid` or `flex` parent with `display: contents` rather than leaving an attribute-free `<div>` or `<span>`
-between them — unless the wrapper carries a background, border, radius or transform, every one of which disappears with the box it was painted on.
+between them — unless the wrapper carries a background, border, radius or transform, every one of which disappears with the box it was painted on,
+or makes its children one item of the parent, as a heading and its intro inside a `gap` stack are: dissolving it puts the parent's gap between them.
+Name that group with the element that means it, such as `<hgroup>`, `<header>` or `<section>`, which the check does not flag.
 <!-- rule:forge-ui-platform-display-contents --> `forge-ui.css` uses it for the theme-icon spans, which are wrappers around a glyph and nothing
 else. Check the accessibility role too: older engines drop the box's role with it, so a wrapper that carries one is not a candidate.
 

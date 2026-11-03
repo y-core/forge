@@ -3,17 +3,16 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import type { EsbuildBuildOptions, EsbuildModule } from "../../assets/types";
 import { listDeployments } from "../../cf/config/environment";
 import { DEV_CONDITION, WRANGLER_CONDITIONS } from "../../cf/dev/conditions";
 import type { WranglerConfig } from "../../cf/types";
 import { checkResult, fail } from "../finding";
 import type { CheckResult, Finding } from "../types";
-import { hasEsbuild } from "./bundle";
+import { hasEsbuild, importEsbuild } from "./bundle";
 import { DEV_MODULE, isForbidden, manifestPath } from "./dev-boundary";
 import type { BundleMetafile, DevBundleCheckConfig } from "./types";
 import { readWorkerConfig } from "./worker-config";
-
-type Esbuild = typeof import("esbuild");
 
 /** The worker config keys that change what wrangler bundles, which this check does not reproduce. */
 const UNMODELLED = ["alias", "build", "define", "rules"] as const;
@@ -42,11 +41,11 @@ function real(path: string): string {
 }
 
 /** esbuild from the project, or from wrangler's own dependency when the project lists none. */
-async function loadEsbuild(root: string): Promise<Esbuild | null> {
-  if (hasEsbuild()) return (await import("esbuild")) as Esbuild;
+async function loadEsbuild(root: string): Promise<EsbuildModule | null> {
+  if (hasEsbuild()) return importEsbuild();
   try {
     const wrangler = createRequire(resolve(root, "package.json")).resolve("wrangler");
-    return (await import(pathToFileURL(createRequire(wrangler).resolve("esbuild")).href)) as Esbuild;
+    return (await import(pathToFileURL(createRequire(wrangler).resolve("esbuild")).href)) as EsbuildModule;
   } catch {
     return null;
   }
@@ -68,15 +67,16 @@ export function workerBuildOptions(root: string, entry: string, conditions: read
     metafile: true,
     write: false,
     logLevel: "silent",
-  } satisfies Parameters<Esbuild["build"]>[0];
+  } satisfies EsbuildBuildOptions;
 }
 
 /** Bundles `entry` with the resolution wrangler applies to a module Worker, and returns the metafile. @public */
 export async function bundleWorker(root: string, entry: string, conditions: readonly string[] = WRANGLER_CONDITIONS): Promise<BundleMetafile> {
   const esbuild = await loadEsbuild(root);
   if (esbuild === null) throw new Error("esbuild is not installed, and wrangler's own copy could not be resolved");
-  const result = await esbuild.build(workerBuildOptions(root, entry, conditions));
-  return result.metafile;
+  const { metafile } = await esbuild.build(workerBuildOptions(root, entry, conditions));
+  if (metafile === undefined) throw new Error("esbuild returned no metafile, though the build asked for one");
+  return metafile;
 }
 
 interface DeclaringManifest {

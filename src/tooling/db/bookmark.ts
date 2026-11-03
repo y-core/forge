@@ -1,12 +1,8 @@
 import { isD1Bookmark } from "../../storage/backup/bookmark";
 import { CliError } from "../cli/errors";
+import { shellQuote } from "../cli/proc";
 import { readDeployedBookmark, restoreDeployedBookmark } from "./remote";
 import type { Bookmark, BookmarkUndo, DbConfig, DbIo, Home } from "./types";
-
-/** Quotes a value for a POSIX shell, so a path holding a space survives being pasted back. */
-function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", "'\\''")}'`;
-}
 
 function undoFlags(config: DbConfig | undefined): string {
   if (config === undefined) return "";

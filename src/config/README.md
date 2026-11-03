@@ -64,6 +64,35 @@ export default defineEnvConfig({
 
 Layer 2 — the `Config` stores below — then consumes already-validated vars, and never re-checks that a binding exists.
 
+### Catching a mistyped `env()` name
+
+**Once the generated module is in the program, every `env("…")` name is checked against its `Env`.** The module merges `Env` into this
+namespace, so a name that is not a declared var or secret fails the type check at the `createConfig` call, naming the name you wrote:
+
+```ts
+createConfig({ origin: env("SITE_ORIGN") }, v.object({ origin: v.string() }));
+// error TS2322: Type 'EnvRef<"SITE_ORIGN">' is not assignable to type 'EnvMapping<"ANALYTICS_ID" | "SITE_ORIGIN">'.
+```
+
+A binding name such as a KV namespace is refused the same way: `env()` reads a string, and a binding is not one. Until the generated module is
+part of the program, any name is accepted.
+
+### Reading a var set only in the dashboard
+
+A var an operator sets in the Cloudflare dashboard must stay out of `wrangler.jsonc`, whose top-level `vars` would overwrite it on every deploy.
+Declare its name in `optional` instead, regenerate, and `env()` accepts it:
+
+```ts
+// config/env.config.ts
+export default defineEnvConfig({ optional: new Set(["ANALYTICS_ID"]) });
+```
+
+```ts
+const analyticsConfig = createConfig({ siteId: env("ANALYTICS_ID") }, v.object({ siteId: v.optional(v.string()) }));
+```
+
+The generated `Env` types it as an optional string, so the schema must allow it to be absent — or wrap it in [`optionalGroup`][optional-group].
+
 ---
 
 ## Grouping related variables
@@ -208,5 +237,6 @@ reach the parsed config.
 - [`docs/SOURCE_OF_TRUTH.md`][sot-2f] §2f — why this README, and not a `docs/` document, owns the rulings above
 
 [app-readme]: ../app/README.md
+[optional-group]: #turning-an-integration-off-until-it-is-configured
 [sot-2f]: ../../docs/SOURCE_OF_TRUTH.md#2f-the-prose-rows
 [validation-readme]: ../validation/README.md

@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { readdirSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter } from "node:path";
 
-import { capture, captureStreams, hasTool, insertPath, probeOk, requireTools, run, runUnchecked } from "./proc";
+import { capture, captureStreams, hasTool, insertPath, probeOk, requireTools, run, runUnchecked, shellQuote } from "./proc";
 import type { SpawnOptions, SpawnOutcome, SpawnSync } from "./types";
 
 // The injected seam, not `mock.module`: a module mock is process-global and Bun never restores it,
@@ -244,6 +245,26 @@ describe("captureStreams()", () => {
     expect(Date.now() - started).toBeLessThan(2_500);
   });
 
+  it("pipes stdin and hands the spawner the input when one is given", () => {
+    mockSpawnSync.mockClear();
+
+    captureStreams("bun", ["fmt"], { input: "const a = 1\n" }, mockSpawnSync);
+    const opts = mockSpawnSync.mock.calls[0]![2];
+    expect([opts.stdio, opts.input]).toEqual([["pipe", "pipe", "pipe"], "const a = 1\n"]);
+  });
+
+  it("leaves stdin ignored and passes no input when none is given", () => {
+    mockSpawnSync.mockClear();
+
+    captureStreams("ls", [], {}, mockSpawnSync);
+    const opts = mockSpawnSync.mock.calls[0]![2];
+    expect([opts.stdio, "input" in opts]).toEqual([["ignore", "pipe", "pipe"], false]);
+  });
+
+  it("feeds the input to a real child's stdin through the default spawner", () => {
+    expect(captureStreams("cat", [], { input: "piped\n" })).toEqual({ code: 0, exited: true, stdout: "piped\n", stderr: "" });
+  });
+
   it("reads a real child's stdout as a string through the default spawner", () => {
     expect(captureStreams("echo", ["hi"], {})).toEqual({ code: 0, exited: true, stdout: "hi\n", stderr: "" });
   });
@@ -438,5 +459,15 @@ describe("probeOk() and hasTool() — against real processes", () => {
 
   it("keeps hasTool answering false for a tool that is absent", () => {
     expect(hasTool(MISSING)).toBe(false);
+  });
+});
+
+describe("shellQuote", () => {
+  it("gives back each value as one argument from a POSIX shell, a space, a quote and a dollar included", () => {
+    const values = ["plain", "src/my app/env.ts", "it's", "$HOME", 'a"b', "", "'"];
+    const argv = (spawnSync("sh", ["-c", `printf '%s\\0' ${values.map(shellQuote).join(" ")}`], { encoding: "utf-8" }).stdout ?? "")
+      .split("\0")
+      .slice(0, -1);
+    expect(argv).toEqual(values);
   });
 });

@@ -1,10 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { createHash } from "node:crypto";
 
-import { installDigestStream } from "./backup.fixture";
+import { CliError } from "../../cli/errors";
 import { dumpRowCounter, meterDump } from "./meter";
-
-installDigestStream();
 
 const encode = (text: string) => new TextEncoder().encode(text);
 
@@ -44,14 +42,13 @@ describe("dumpRowCounter()", () => {
 });
 
 describe("meterDump()", () => {
-  it("passes every chunk through and measures its size, md5, sha256 and rows", async () => {
+  it("passes every byte through and measures its size, md5, sha256 and rows", async () => {
     const dump = 'INSERT INTO "t" ("a") VALUES(1);\n';
     const meter = meterDump(new Response(dump).body ?? new ReadableStream(), 1000);
-    const passed: number[] = [];
-    for await (const chunk of meter.chunks) passed.push(...chunk);
+    const passed = new Uint8Array(await new Response(meter.body).arrayBuffer());
 
-    expect(new TextDecoder().decode(new Uint8Array(passed))).toBe(dump);
-    expect(await meter.measure()).toEqual({
+    expect(new TextDecoder().decode(passed)).toBe(dump);
+    expect(meter.measure()).toEqual({
       size: dump.length,
       md5: createHash("md5").update(dump).digest("hex"),
       sha256: createHash("sha256").update(dump).digest("hex"),
@@ -59,16 +56,28 @@ describe("meterDump()", () => {
     });
   });
 
-  it("refuses to measure a dump not yet read through", async () => {
-    await expect(meterDump(new Response("x").body ?? new ReadableStream(), 1000).measure()).rejects.toThrow("before every chunk");
+  it("refuses to measure a dump not yet read through", () => {
+    expect(() => meterDump(new Response("x").body ?? new ReadableStream(), 1000).measure()).toThrow("before every chunk");
   });
 
-  it("cancels the body when the reader stops early", async () => {
+  it("cancels the source when the body is cancelled", async () => {
     let cancelled = false;
-    const body = new ReadableStream<Uint8Array>({ pull: (controller) => controller.enqueue(encode("x")), cancel: () => void (cancelled = true) });
-    const chunks = meterDump(body, 1000).chunks[Symbol.asyncIterator]();
-    await chunks.next();
-    await chunks.return?.(undefined);
+    const source = new ReadableStream<Uint8Array>({ pull: (controller) => controller.enqueue(encode("x")), cancel: () => void (cancelled = true) });
+    const reader = meterDump(source, 1000).body.getReader();
+    await reader.read();
+    await reader.cancel();
     expect(cancelled).toBe(true);
+  });
+
+  it("fails a source that sends nothing for `idleMs`, cancelling it", async () => {
+    let cancelled = false;
+    const source = new ReadableStream<Uint8Array>({ pull: () => new Promise(() => {}), cancel: () => void (cancelled = true) });
+    const error = await new Response(meterDump(source, 5).body).arrayBuffer().catch((thrown: unknown) => thrown);
+    expect([error instanceof CliError, (error as CliError).kind, (error as CliError).message, cancelled]).toEqual([
+      true,
+      "external",
+      "the D1 export download sent nothing for 5 ms",
+      true,
+    ]);
   });
 });

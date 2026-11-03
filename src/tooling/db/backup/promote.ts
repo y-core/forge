@@ -1,14 +1,15 @@
 import process from "node:process";
 
-import { readRestoreReportValue } from "../../../storage/backup/report";
+import { restoreReportKey } from "../../../storage/backup/list";
+import { readRestoreReport } from "../../../storage/backup/report";
 import { decodeWranglerSource, validateWranglerConfig } from "../../cf/config/parse";
 import type { WranglerConfig } from "../../cf/types";
 import { CliError } from "../../cli/errors";
 import { applyJsoncEdits } from "../../cli/jsonc-edit";
 import { d1Entries } from "../config";
-import type { DbRunContext, WorkflowRoute } from "../types";
+import type { DbRunContext } from "../types";
+import { openDumpBucket, resolveDumpSource } from "./dumps";
 import type { PromotionPlan, PromotionTarget } from "./types";
-import { cloudflareWorkflowRoute, resolveWorkflow, RESTORE_WORKFLOW } from "./workflow";
 
 const D1_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -30,34 +31,35 @@ function dumpSource(key: string): string | null {
 
 async function reportedTarget(
   run: DbRunContext,
-  instance: string,
-  workflow: string | undefined,
-  route: WorkflowRoute,
+  restored: string,
+  flags: { readonly bucket?: string | undefined; readonly prefix?: string | undefined },
 ): Promise<PromotionTarget & { readonly source: string | null }> {
-  const name = resolveWorkflow(run.config, workflow, RESTORE_WORKFLOW);
-  const state = await route.read(name, instance);
-  if (state.status !== "complete")
-    throw new CliError("invalid-args", `${name} instance ${instance} is ${state.status}, so it restored nothing to promote`);
-  const report = readRestoreReportValue(state.output);
-  if (report === null) throw new CliError("invalid-args", `${name} instance ${instance} returned no runD1Restore report`);
+  if (!D1_ID.test(restored)) throw new CliError("invalid-args", `--restored ${JSON.stringify(restored)} is not a D1 id`);
+  const dumps = resolveDumpSource(run, flags);
+  const key = restoreReportKey(dumps.prefix, dumps.databaseId, restored);
+  const report = await readRestoreReport(await openDumpBucket(run, dumps), key);
+  if (report === null) {
+    throw new CliError("invalid-args", `${dumps.binding} holds no restore report at ${key} — restore with \`forge db restore --from\` first`);
+  }
+  if (report.databaseId !== restored) throw new CliError("invalid-args", `${key} reports a restore into ${report.databaseId}, not ${restored}`);
   if (report.mismatches.length > 0) {
     throw new CliError(
       "invalid-args",
       `${report.name} differs from the dump it was restored from, so it is not promoted:\n  ${report.mismatches.join("\n  ")}`,
     );
   }
-  return { ...checkedTarget({ databaseId: report.databaseId, name: report.name }, `${name} instance ${instance}`), source: dumpSource(report.key) };
+  return { ...checkedTarget({ databaseId: report.databaseId, name: report.name }, key), source: dumpSource(report.key) };
 }
 
 /** Everything a promotion checks before it asks: a deployed target, the binding's current database, and the restore it would point at. @internal */
 export async function preparePromotion(
   run: DbRunContext,
   options: {
-    readonly instance?: string | undefined;
+    readonly restored?: string | undefined;
     readonly databaseId?: string | undefined;
     readonly databaseName?: string | undefined;
-    readonly workflow?: string | undefined;
-    readonly route?: WorkflowRoute;
+    readonly bucket?: string | undefined;
+    readonly prefix?: string | undefined;
   },
 ): Promise<PromotionPlan> {
   const { config } = run;
@@ -68,13 +70,13 @@ export async function preparePromotion(
     );
   }
   const explicit = options.databaseId !== undefined || options.databaseName !== undefined;
-  if (explicit === (options.instance !== undefined)) {
-    throw new CliError("invalid-args", "promote takes --instance <restore instance id>, or --database-id and --database-name to swap back");
+  if (explicit === (options.restored !== undefined)) {
+    throw new CliError("invalid-args", "promote takes --restored <database id>, or --database-id and --database-name to swap back");
   }
   let to: PromotionTarget;
   let source: string | null = null;
-  if (options.instance !== undefined) {
-    const reported = await reportedTarget(run, options.instance, options.workflow, options.route ?? cloudflareWorkflowRoute(run.io, run.home));
+  if (options.restored !== undefined) {
+    const reported = await reportedTarget(run, options.restored, options);
     to = { databaseId: reported.databaseId, name: reported.name };
     source = reported.source;
   } else {
@@ -93,7 +95,7 @@ export async function preparePromotion(
   const from: PromotionTarget = { databaseId: entry.database_id, name: entry.database_name ?? config.entry.databaseName };
   if (from.databaseId === to.databaseId)
     throw new CliError("invalid-args", `${config.entry.binding} already points at ${to.name} (${to.databaseId})`);
-  if (options.instance !== undefined && source !== from.databaseId) {
+  if (options.restored !== undefined && source !== from.databaseId) {
     throw new CliError(
       "invalid-args",
       `${to.name} was restored from a dump of database ${source ?? "unknown"}, and ${config.entry.binding} names ${from.name} (${from.databaseId}) — promote a restore of this binding's own database`,

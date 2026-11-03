@@ -1,7 +1,11 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 
+import { loadWranglerConfig } from "../cf/config/parse";
+import { defaultEnvFlags, regenerateCommand, renderEnvSchema } from "../cf/gen/cf-env-command";
+import { declaresSecrets } from "../cf/gen/cf-env-gen";
 import { CliError } from "../cli/errors";
+import type { SpawnSync } from "../cli/types";
 import { loadFeatures } from "../curate/config";
 import {
   assetManifestStep,
@@ -68,6 +72,51 @@ export function checkGeneratedTypes(root: string): CheckResult {
   return checkResult(findings, `\`.types/\` holds no wrangler output but \`${owned}\``);
 }
 
+function firstDifference(committed: string, fresh: string): string {
+  const [was, now] = [committed.split("\n"), fresh.split("\n")];
+  const at = Array.from({ length: Math.max(was.length, now.length) }, (_, index) => index).find((index) => was[index] !== now[index]) ?? 0;
+  return `line ${at + 1}: committed \`${was[at] ?? "<end of file>"}\`, fresh \`${now[at] ?? "<end of file>"}\``;
+}
+
+/** Fails a committed env schema that differs from what `forge cf gen env` would write now, or one no tracked input pins. @internal */
+export async function checkEnvSchema(root: string, flags: ReturnType<typeof defaultEnvFlags>, spawn?: SpawnSync): Promise<CheckResult> {
+  const rerun = `run \`${regenerateCommand(flags)}\``;
+  let config: Record<string, unknown>;
+  try {
+    config = loadWranglerConfig(resolve(root, flags.wrangler)).config;
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    return checkResult([fail(error.message, { file: flags.wrangler, detail: [rerun] })], "");
+  }
+  if (!declaresSecrets(config)) {
+    return checkResult(
+      [
+        fail(
+          "the worker config declares no `secrets`, so the schema takes its secret names from the gitignored `.dev.vars` and differs per machine",
+          { file: flags.wrangler, detail: ["declare `secrets.required` in the wrangler config", rerun] },
+        ),
+      ],
+      "",
+    );
+  }
+
+  const path = resolve(root, flags.out);
+  if (!existsSync(path)) return checkResult([fail("the committed env schema is missing", { file: flags.out, detail: [rerun] })], "");
+
+  const committed = readFileSync(path, "utf-8");
+  const { text } = await renderEnvSchema(root, flags, spawn);
+  if (committed === text) return checkResult([], `\`${flags.out}\` matches a fresh \`forge cf gen env\``);
+  return checkResult(
+    [
+      fail("the committed env schema no longer matches a fresh `forge cf gen env`", {
+        file: flags.out,
+        detail: [firstDifference(committed, text), rerun],
+      }),
+    ],
+    "",
+  );
+}
+
 function besideVendor(root: string, vendorDir: string): string[] {
   const parent = posix.dirname(vendorDir);
   const full = resolve(root, parent);
@@ -100,7 +149,8 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
         ...(options.workerConfig === undefined ? [] : ["--config", options.workerConfig]),
       ],
     });
-    steps.push(checkStep("validate-generated-types", () => checkGeneratedTypes(root), {}, { watches: [".types/**"] }));
+    // No `watches`: the wrangler output this hunts is gitignored, so no git-visible change would ever run it, and `.types/` may list nothing.
+    steps.push(checkStep("validate-generated-types", () => checkGeneratedTypes(root), {}));
   }
 
   if (options.assetConfig !== undefined) {
@@ -108,6 +158,18 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
     // The step that may rewrite the artifact is followed by the one that judges it, before a
     // typecheck and a test run that would otherwise pass on a manifest ahead of the built tree.
     steps.push(assetManifestStep({ root, assetConfig: options.assetConfig, assetsPath: assetOut }));
+  }
+
+  if (options.envSchema !== false) {
+    const flags = {
+      ...defaultEnvFlags(),
+      ...(options.workerConfig === undefined ? {} : { wrangler: options.workerConfig }),
+      ...(options.envSchema?.out === undefined ? {} : { out: options.envSchema.out }),
+      ...(options.envSchema?.config === undefined ? {} : { config: options.envSchema.config }),
+    };
+    const fix = async () => writeFileSync(resolve(root, flags.out), (await renderEnvSchema(root, flags)).text);
+    // No `watches`: its inputs include optional, possibly untracked paths — the env config, the schema itself — that the dead-glob rule refuses.
+    steps.push(checkStep("validate-env-schema", () => checkEnvSchema(root, flags), {}, { fix }));
   }
 
   steps.push(typecheckStep(), lintStep({ sources }), formatStep({ sources }));

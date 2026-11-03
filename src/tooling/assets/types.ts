@@ -415,3 +415,114 @@ export interface CssDeclaration {
   /** Absolute paths, the entry first. */
   stylesheets: readonly string[];
 }
+
+/** One esbuild loader a build names, out of the set esbuild accepts. @internal */
+export type EsbuildLoader = "binary" | "css" | "js" | "json" | "jsx" | "text" | "ts" | "tsx";
+
+/** One output esbuild reports in a metafile, the inputs that contributed bytes to it, and the outputs it reaches. @internal */
+export interface EsbuildMetafileOutput {
+  inputs: Record<string, { bytesInOutput: number }>;
+  imports: { path: string; kind: string }[];
+  entryPoint?: string | undefined;
+  cssBundle?: string | undefined;
+}
+
+/** The part of an esbuild metafile forge's builds and bundle checks read. @internal */
+export interface EsbuildMetafile {
+  inputs: Record<string, unknown>;
+  outputs: Record<string, EsbuildMetafileOutput>;
+}
+
+/** The plugin hooks the service worker's precache module is served through. @internal */
+export interface EsbuildPluginBuild {
+  onResolve(options: { filter: RegExp }, callback: () => { path: string; namespace: string }): void;
+  onLoad(options: { filter: RegExp; namespace: string }, callback: () => { contents: string; loader: EsbuildLoader }): void;
+}
+
+/** An esbuild plugin, as the service worker build declares one. @internal */
+export interface EsbuildPlugin {
+  name: string;
+  setup(build: EsbuildPluginBuild): void;
+}
+
+/** The esbuild options forge's builds and bundle checks set. @internal */
+export interface EsbuildBuildOptions {
+  absWorkingDir?: string;
+  banner?: Record<string, string>;
+  bundle?: boolean;
+  chunkNames?: string;
+  conditions?: string[];
+  define?: Record<string, string>;
+  entryNames?: string;
+  entryPoints?: string[];
+  external?: string[];
+  format?: "esm" | "cjs" | "iife";
+  jsx?: "automatic";
+  jsxImportSource?: string;
+  loader?: Record<string, EsbuildLoader>;
+  logLevel?: "silent";
+  mainFields?: string[];
+  metafile?: boolean;
+  minify?: boolean;
+  outdir?: string;
+  outfile?: string;
+  packages?: "external";
+  platform?: "browser" | "node" | "neutral";
+  plugins?: EsbuildPlugin[];
+  splitting?: boolean;
+  stdin?: { contents: string; resolveDir: string; loader: EsbuildLoader; sourcefile: string };
+  write?: boolean;
+}
+
+/** The part of an esbuild build result forge reads: the metafile, and each output's text when nothing was written. @internal */
+export interface EsbuildBuildResult {
+  metafile?: EsbuildMetafile | undefined;
+  outputFiles?: { text: string }[] | undefined;
+}
+
+/** The surface of the optional `esbuild` peer forge's builds and bundle checks call. @internal */
+export interface EsbuildModule {
+  build(options: EsbuildBuildOptions): Promise<EsbuildBuildResult>;
+}
+
+/** One `sharp` pipeline, resized and encoded to a PNG. @internal */
+export interface SharpPipeline {
+  resize(width: number, height: number): SharpPipeline;
+  resize(options: { width?: number; height?: number }): SharpPipeline;
+  png(): SharpPipeline;
+  toBuffer(): Promise<Uint8Array>;
+  toFile(path: string): Promise<unknown>;
+}
+
+/** The default export of the optional `sharp` peer, which opens an SVG as a pipeline. @internal */
+export type SharpRasterizer = (input: Uint8Array, options: { density: number }) => SharpPipeline;
+
+/** A HarfBuzz face, read for its em size and its raw tables. @internal */
+export interface HarfbuzzFace {
+  readonly upem: number;
+  referenceTable(tag: string): Uint8Array | undefined;
+}
+
+/** A HarfBuzz font, read for its vertical extents, its cmap and its advances. @internal */
+export interface HarfbuzzFont {
+  readonly face: HarfbuzzFace;
+  hExtents(): { ascender: number; descender: number };
+  nominalGlyph(codePoint: number): number | undefined;
+  glyphHAdvance(glyph: number): number;
+}
+
+/** A HarfBuzz buffer, filled with a run of text and read back as glyph positions. @internal */
+export interface HarfbuzzBuffer {
+  addText(text: string): void;
+  guessSegmentProperties(): void;
+  getGlyphPositions(): { xAdvance: number }[];
+}
+
+/** The surface of the optional `harfbuzzjs` peer the font build calls. @internal */
+export interface HarfbuzzModule<Blob = unknown, Face extends HarfbuzzFace = HarfbuzzFace> {
+  Blob: new (data: Uint8Array) => Blob;
+  Face: new (blob: Blob, index: number) => Face;
+  Font: new (face: Face) => HarfbuzzFont;
+  Buffer: new () => HarfbuzzBuffer;
+  shape(font: HarfbuzzFont, buffer: HarfbuzzBuffer): void;
+}
