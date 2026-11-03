@@ -53,9 +53,12 @@ export interface NavMenu {
   filters?: string[] | undefined;
 }
 
+/** Slot content that renders differently inside a menu, where a row needs the `menuitem` role, than at bar level. @public */
+export type NavSlotRender = (place: { inMenu: boolean }) => JSXNode;
+
 /** A slot: an inline JSX node, OR a string key resolved from {@link NavRenderCtx.slots}. @public */
 export interface NavSlot {
-  slot: JSXNode | string;
+  slot: JSXNode | NavSlotRender | string;
   label?: string | undefined;
   /** Presentational visibility tokens, not access control: the slot is shown only when one is in the active set, but its markup is sent to every viewer. */
   filters?: string[] | undefined;
@@ -138,7 +141,7 @@ export type NavCollapsible = "mobile" | "always";
 /** Threaded through the recursive renderers. @internal */
 export interface NavRenderCtx {
   resolveHref: (key: string) => string;
-  slots?: Record<string, JSXNode> | undefined;
+  slots?: Record<string, JSXNode | NavSlotRender> | undefined;
   activeFilters: string[];
   icon: ForgeIcon<NavGlyph>;
   /** Namespace prefix for generated menu ids — the bar's `id` when given, else its placement. */
@@ -275,7 +278,7 @@ interface NavbarSharedProps extends Omit<JSX.IntrinsicElements["nav"], "children
   /** Resolves a route-map key to a URL — REQUIRED, since `href` is always a key. */
   resolveHref: (key: string) => string;
   /** Fills string-keyed slots. */
-  slots?: Record<string, JSXNode> | undefined;
+  slots?: Record<string, JSXNode | NavSlotRender> | undefined;
   /** The tokens held at first paint, deciding which `filters` items render unhidden; never a substitute for a route guard. */
   activeFilters?: string[] | undefined;
   /** Desktop edge to pin the bar to; defaults to `"top"`, or `"left"` when `collapsible="always"`. */

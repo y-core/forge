@@ -118,7 +118,7 @@ var MODERN_CSS_RULES = {
     tier: "B",
     severity: "warn",
     corpus: CORPUS,
-    replacement: "<dialog> opened with showModal()",
+    replacement: "<dialog> opened with showModal(), or show() when non-modal",
     verify: "showModal() puts the element in the top layer and makes the rest of the page inert, which a positioned div was not doing"
   },
   "forge-ui-platform-native-popover": {

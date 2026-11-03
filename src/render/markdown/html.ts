@@ -706,7 +706,7 @@ function createRenderer(document: MarkdownDocument, options: MarkdownRenderOptio
       ["data-footnotes", footnoteFlag],
       ["class", "footnotes"],
     ]);
-    writer.open("h2", [
+    writer.open(`h${Math.min(2 + headingOffset, 6)}`, [
       ["class", "sr-only"],
       ["id", labelId],
     ]);

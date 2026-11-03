@@ -9,6 +9,7 @@ import { Card } from "../../../ui/core/card";
 import { EmptyState } from "../../../ui/core/empty-state";
 import { Form } from "../../../ui/core/form";
 import { cn } from "../../../ui/core/utils/cn";
+import { nestedHeadingLevel } from "./heading";
 import { AuthTimestamp } from "./timestamp";
 import type { PasskeyListViewProps } from "./types";
 
@@ -55,7 +56,7 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
       <Card.Content>
         {rows.length === 0 ? (
           <EmptyState>
-            <EmptyState.Title level={2}>No passkeys yet</EmptyState.Title>
+            <EmptyState.Title level={nestedHeadingLevel(level ?? 1)}>No passkeys yet</EmptyState.Title>
             <EmptyState.Description>A passkey signs you in with the screen lock you already use on this device.</EmptyState.Description>
             <EmptyState.Actions>
               <Button asChild tone='neutral' appearance='outline'>

@@ -160,7 +160,7 @@ describe("renderMarkdownHtml heading offset", () => {
       h1: {},
       h2: { attributes: ["class", "id"] },
       h3: {},
-      h4: {},
+      h4: { attributes: ["class", "id"] },
       h5: {},
       h6: {},
       section: { attributes: ["data-footnotes", "class"] },
@@ -205,11 +205,15 @@ describe("renderMarkdownHtml heading offset", () => {
     expect(renderMarkdownHtml(parseMarkdown("# a"), { schema, headingOffset: 2, handlers: { heading } })).toBe("<h3>a</h3>");
   });
 
-  test("leaves the footnote section's h2 label unshifted", () => {
+  test("shifts the footnote section's label by the offset", () => {
     expect(renderMarkdownHtml(parseMarkdown("a[^1]\n\n[^1]: x\n"), { schema, headingOffset: 2 })).toBe(
       '<p>a<sup><a href="#user-content-fn-1" id="user-content-fnref-1" data-footnote-ref aria-describedby="footnote-label">1</a></sup></p>\n' +
-        '<section data-footnotes class="footnotes"><h2 class="sr-only" id="footnote-label">Footnotes</h2>\n<ol>\n<li id="user-content-fn-1">\n<p>x <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">\u21a9</a></p>\n</li>\n</ol>\n</section>',
+        '<section data-footnotes class="footnotes"><h4 class="sr-only" id="footnote-label">Footnotes</h4>\n<ol>\n<li id="user-content-fn-1">\n<p>x <a href="#user-content-fnref-1" data-footnote-backref="" aria-label="Back to reference 1" class="data-footnote-backref">\u21a9</a></p>\n</li>\n</ol>\n</section>',
     );
+  });
+
+  test("labels the footnote section with an h2 at the default offset", () => {
+    expect(renderMarkdownHtml(parseMarkdown("a[^1]\n\n[^1]: x\n"), { schema })).toContain('<h2 class="sr-only" id="footnote-label">Footnotes</h2>');
   });
 });
 

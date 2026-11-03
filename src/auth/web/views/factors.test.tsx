@@ -24,6 +24,11 @@ function words(element: string): string {
   return element.replace(/<[^>]*>/g, "");
 }
 
+/** Every heading in document order, as its tag and its text. */
+function headings(html: string): string[] {
+  return [...html.matchAll(/<(h[1-6])[\s>][\s\S]*?<\/\1>/g)].map((match) => `${match[1]} ${words(match[0])}`);
+}
+
 /** The `href` each element in `elements` points at. */
 function hrefs(elements: readonly string[]): string[] {
   return elements.map((element) => /href="([^"]*)"/.exec(element)?.[1] ?? "");
@@ -101,10 +106,22 @@ describe("AuthFactorsView", () => {
     expect(elementsOf(html, "h3", 'data-slot="empty-state-title"').map(words)).toEqual(["No sign-in methods offered"]);
   });
 
-  it("takes its heading level from the host, and puts the empty state's one below it", async () => {
+  it("names the page at h1 by default, with its subsections at h2 and the empty state under them at h3", async () => {
+    const html = await panel({ factors: [] });
+    expect(headings(html)).toEqual(["h1 Sign-in methods", "h2 Methods offered", "h3 No sign-in methods offered", "h2 Registered passkeys"]);
+  });
+
+  it("takes its heading level from the host, and nests every heading under it", async () => {
     const html = await panel({ factors: [], level: 3 });
-    expect(elementsOf(html, "h3", 'class="text-sm font-medium text-foreground"').length).toBe(2);
-    expect(elementsOf(html, "h4", 'data-slot="empty-state-title"').map(words)).toEqual(["No sign-in methods offered"]);
+    expect(headings(html)).toEqual(["h3 Sign-in methods", "h4 Methods offered", "h5 No sign-in methods offered", "h4 Registered passkeys"]);
+  });
+
+  it("labels its section by its own heading", async () => {
+    const html = await panel();
+    expect(attrOf(html, 'data-ref="factors"', "aria-labelledby")).toBe("auth-factors-heading");
+    expect(elementOf(html, "h1", 'id="auth-factors-heading"')).toBe(
+      '<h1 id="auth-factors-heading" class="text-lg font-semibold text-foreground">Sign-in methods</h1>',
+    );
   });
 });
 

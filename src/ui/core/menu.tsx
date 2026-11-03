@@ -14,7 +14,7 @@ import { mergeIdRefs } from "./utils/id-refs";
 import { fillPartProps } from "./utils/part-props";
 import { RULE } from "./utils/recipes";
 
-interface MenuRootProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
+interface MenuRootProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: JSXNode | undefined;
 }
 
@@ -28,7 +28,7 @@ interface MenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], "childr
 
 type MenuPopupProps = MenuPopupNaming & MenuPopupOwnProps;
 
-interface MenuPopupOwnProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
+interface MenuPopupOwnProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Element id — the `commandfor` target named by the matching `Menu.Trigger`. */
   id: string;
   /** Which side of its anchor the popup opens on. */
@@ -61,7 +61,7 @@ interface MenuSubmenuTriggerProps extends Omit<JSX.IntrinsicElements["button"], 
   children?: JSXNode | undefined;
 }
 
-interface MenuGroupProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
+interface MenuGroupProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   /** Disable every row in the group that leaves its own `disabled` unset. */
   disabled?: boolean | undefined;
   children?: JSXNode | undefined;
@@ -71,7 +71,7 @@ interface MenuGroupLabelProps extends Omit<JSX.IntrinsicElements["span"], "child
   children?: JSXNode | undefined;
 }
 
-type MenuSeparatorProps = Omit<JSX.IntrinsicElements["span"], "children">;
+type MenuSeparatorProps = Omit<JSX.IntrinsicElements["hr"], "children">;
 
 // No `display` utility: the UA rule `[popover]:not(:popover-open){display:none}` is not
 // `!important`, so an author-origin `display` here leaves a closed popup permanently visible.
@@ -79,9 +79,9 @@ const POPUP_BASE = "z-50 min-w-40 rounded-box border-field border-border bg-popo
 const ITEM_BASE = MENU_ITEM_CLASS;
 
 const MenuRoot: FC<MenuRootProps> = ({ class: cls, children, "data-slot": inherited, ...rest }) => (
-  <span data-slot={slotToken("menu", inherited)} class={cn("relative inline-block", cls)} {...rest}>
+  <div data-slot={slotToken("menu", inherited)} class={cn("relative inline-block", cls)} {...rest}>
     {children}
-  </span>
+  </div>
 );
 
 const MenuTrigger: FC<MenuTriggerProps> = ({ for: target, shape, class: cls, children, "data-slot": inherited, ...rest }) => (
@@ -115,7 +115,7 @@ const MenuPopup: FC<MenuPopupProps> = ({
   "aria-labelledby": ownLabelledBy,
   ...rest
 }) => (
-  <span
+  <div
     id={id}
     role='menu'
     // The derived reference is reachable only through `triggered`, which is the caller asserting the
@@ -131,7 +131,7 @@ const MenuPopup: FC<MenuPopupProps> = ({
     class={cn(POPUP_BASE, cls)}
     {...rest}>
     {children}
-  </span>
+  </div>
 );
 
 // `menuItemAttrs` is published for rows an app builds in the browser; spending it here too is what
@@ -201,14 +201,14 @@ const DISABLED_ROWS = new Map<ComponentFn, Record<string, unknown>>(
 
 /** A labelled section of a menu. */
 const MenuGroup: FC<MenuGroupProps> = ({ disabled = false, class: cls, children, "data-slot": inherited, ...rest }) => (
-  <span
+  <div
     data-slot={slotToken("menu-group", inherited)}
     role='group'
     {...(disabled ? { "aria-disabled": "true" } : {})}
     class={cn("flex flex-col", cls)}
     {...rest}>
     {disabled ? fillPartProps(children, DISABLED_ROWS) : children}
-  </span>
+  </div>
 );
 
 /** Name a `Menu.Group` by giving this an `id` and pointing the group's `aria-labelledby` at it. */
@@ -222,7 +222,7 @@ const MenuGroupLabel: FC<MenuGroupLabelProps> = ({ class: cls, children, "data-s
 );
 
 const MenuSeparator: FC<MenuSeparatorProps> = ({ class: cls, "data-slot": inherited, ...rest }) => (
-  <span data-slot={slotToken("menu-separator", inherited)} role='separator' class={cn("my-1 block h-px w-full", RULE, cls)} {...rest} />
+  <hr data-slot={slotToken("menu-separator", inherited)} class={cn("my-1 block h-px w-full", RULE, cls)} {...rest} />
 );
 
 /** Compound menu built on the native Popover and Invoker Commands APIs. @public */

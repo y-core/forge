@@ -371,8 +371,8 @@ export const LogDetailRow: FC<{ record: LogRecord | null; rowKey: string }> = ({
 /** Full log viewer content — heading, filter bar, and the bounded table. @internal */
 export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"chevron-down"> }> = ({ data, icon }) => (
   // Only a definite shell height bounds a flex column, and only the consumer's layout can set one:
-  // `data-fill-viewport` is the handle it switches on (`LogViewerOptions.layout`).
-  <main id='main-content' data-fill-viewport class='mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10'>
+  // `data-fill-viewport` is the handle it switches on.
+  <div data-fill-viewport class='mx-auto flex min-h-0 w-full max-w-7xl flex-1 flex-col gap-4 px-6 py-10 lg:px-10'>
     <h1 class='text-2xl font-semibold tracking-tight text-balance text-foreground'>Request Log</h1>
     <LogFilterBar level={data.level} q={data.q} targetId={LOG_TBODY_ID} formAction={data.basePath} icon={icon} />
     <Card class='min-h-0 flex-1'>
@@ -393,5 +393,5 @@ export const LogViewerContent: FC<{ data: LogViewerLoaderData; icon: ForgeIcon<"
         </ScrollArea>
       </Card.Content>
     </Card>
-  </main>
+  </div>
 );

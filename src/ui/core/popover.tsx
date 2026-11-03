@@ -9,7 +9,7 @@ import { buttonBox } from "./button";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
 
-interface PopoverProps extends Omit<JSX.IntrinsicElements["span"], "children"> {
+interface PopoverProps extends Omit<JSX.IntrinsicElements["div"], "children"> {
   children?: JSXNode | undefined;
 }
 
@@ -23,7 +23,7 @@ interface PopoverTriggerProps extends Omit<JSX.IntrinsicElements["button"], "chi
   children?: JSXNode | undefined;
 }
 
-type PopoverContentBase = Omit<JSX.IntrinsicElements["span"], "children" | "role">;
+type PopoverContentBase = Omit<JSX.IntrinsicElements["div"], "children" | "role">;
 
 /** A panel is `role="dialog"`, which is `nameFrom: author`, so a name is required rather than optional. */
 type PopoverContentProps = PopoverContentBase & {
@@ -35,9 +35,9 @@ type PopoverContentProps = PopoverContentBase & {
 } & ({ label: string; labelledby?: undefined } | { labelledby: string; label?: undefined });
 
 const PopoverRoot: FC<PopoverProps> = ({ class: cls, children, "data-slot": inherited, ...props }) => (
-  <span data-slot={slotToken("popover", inherited)} class={cn("relative inline-block", cls)} {...props}>
+  <div data-slot={slotToken("popover", inherited)} class={cn("relative inline-block", cls)} {...props}>
     {children}
-  </span>
+  </div>
 );
 
 const PopoverTrigger: FC<PopoverTriggerProps> = ({ for: target, shape, class: cls, children, "data-slot": inherited, ...props }) => (
@@ -64,7 +64,7 @@ const PopoverContent: FC<PopoverContentProps> = ({
   "data-slot": inherited,
   ...rest
 }) => (
-  <span
+  <div
     id={id}
     role='dialog'
     {...nameAttrs({ label, labelledby })}
@@ -75,7 +75,7 @@ const PopoverContent: FC<PopoverContentProps> = ({
     class={cn("z-50 min-w-32 rounded-box border-field border-border bg-popover p-1 text-popover-foreground shadow-md", cls)}
     {...rest}>
     {children}
-  </span>
+  </div>
 );
 
 /** Compound popover built on the native Popover + Invoker Commands APIs, linked by the trigger's `for` and the content's `id`. @public */

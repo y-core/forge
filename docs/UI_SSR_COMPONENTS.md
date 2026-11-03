@@ -69,8 +69,8 @@ correct platform default with a guess — and gives two Navbars on one page the 
 **`Navbar`'s name is also deliberately not required at the type level, unlike every other container forge names.** Those refuse to compile unnamed,
 because each renders a role that takes no name from its contents and is anonymous without one. A `<nav>` is the opposite case: one on a page is
 correctly named by its role alone, so requiring a name would make every single-nav page invent one — the same guess the paragraph above rejects,
-moved from forge to the consumer. The obligation is therefore a documented one, owed only by a page rendering more than one bar, and forge's own
-pages are held to it by that test rather than by the compiler.
+moved from forge to the consumer. The obligation is therefore a documented one, owed wherever a page renders more than one `<nav>` — a `Dock`,
+`Breadcrumbs` or `Pagination` with `landmark` is one too — and forge's own pages are held to it by that test rather than by the compiler.
 
 **Import `../contracts/labels` at each call site, never `../contracts/mod`** — that is what keeps the barrel from pulling every contract table into
 the Worker graph. Reference the table as `LABEL_DEFAULTS.x` rather than re-spelling the literal. `state-attrs.ts` and `vocabulary.ts` spell

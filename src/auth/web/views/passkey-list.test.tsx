@@ -106,6 +106,12 @@ describe("PasskeyListView", () => {
     expect(attrOf(html, 'data-ref="passkey-enrol-empty"', "href")).toBe("/account/passkeys/new");
   });
 
+  it("puts the empty state's title one level below the view's heading", async () => {
+    const html = await passkeys({ rows: [], level: 3 });
+    expect(textOf(html, "h3", 'class="text-xl"')).toBe("Your passkeys");
+    expect(textOf(html, "h4", 'data-slot="empty-state-title"')).toBe("No passkeys yet");
+  });
+
   it("points the header action and the empty state's action at the one enrolment path it was handed", async () => {
     const html = await passkeys({ rows: [], enrolPath: "/settings/keys/add" });
     expect([attrOf(html, 'data-ref="passkey-enrol"', "href"), attrOf(html, 'data-ref="passkey-enrol-empty"', "href")]).toEqual([

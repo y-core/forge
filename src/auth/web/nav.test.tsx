@@ -10,6 +10,10 @@ import { verifyCsrfToken } from "../../form/csrf";
 import { sessionCtx } from "../../session/session";
 import { createTestContext } from "../../testing/context";
 import { render } from "../../testing/render";
+import { Navbar } from "../../ui/chrome/navbar";
+import type { NavDefinition, NavGlyph } from "../../ui/chrome/types";
+import { createIcon } from "../../ui/core/icon";
+import type { ForgeIcon } from "../../ui/core/types";
 import { authCtx } from "./identity";
 import { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
 import type { AuthIdentity, AuthNavContext, AuthNavOptions } from "./types";
@@ -17,6 +21,7 @@ import { attrOf, attrsOf, tagOf, textOf } from "./web.fixture";
 
 const HEX_SECRET = "38f516127047072640d79f757593f8c971ed2324a5e1db688f6f129f9b0478db";
 const SIGNOUT_PATH = "/auth/signout";
+const NAV_ICON = createIcon("/sprite.svg") as ForgeIcon<NavGlyph>;
 
 function fakeIdentity(overrides: Partial<AuthIdentity> = {}): AuthIdentity {
   return { userId: "u1", email: "ada@example.com", isAdmin: false, stepUpAt: null, ...overrides };
@@ -98,7 +103,7 @@ describe("authNav slots", () => {
   it("posts to the sign-out path, carrying the token in both the field and the htmx header", async () => {
     const nav = await fixedKeyNav();
     const { slots } = await nav(navContext({ identity: fakeIdentity() }));
-    const html = await render(slots[AUTH_NAV_SIGNOUT_SLOT]);
+    const html = await render(slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false }));
     const token = attrOf(html, 'name="_csrf"', "value");
 
     expect(attrOf(html, 'data-slot="form"', "action")).toBe(SIGNOUT_PATH);
@@ -107,19 +112,44 @@ describe("authNav slots", () => {
     expect(attrsOf(html, 'name="_csrf"')).toEqual({ "data-slot": "form-csrf", type: "hidden", name: "_csrf", value: token });
   });
 
-  it("submits from a menu row rather than a link", async () => {
+  it("submits from a button rather than a link", async () => {
     const nav = await fixedKeyNav();
     const { slots } = await nav(navContext({ identity: fakeIdentity() }));
-    const html = await render(slots[AUTH_NAV_SIGNOUT_SLOT]);
+    const html = await render(slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false }));
 
-    expect(attrOf(html, 'type="submit"', "role")).toBe("menuitem");
+    expect(tagOf(html, 'type="submit"')).toStartWith("<button");
+    expect(attrOf(html, 'type="submit"', "role")).toBe("");
     expect(tagOf(html, 'href="/auth/signout"')).toBe("");
+  });
+
+  it("makes the sign-out a menu item inside a navbar menu, and in no copy that sits outside one", async () => {
+    const nav = await fixedKeyNav();
+    const { slots } = await nav(navContext({ identity: fakeIdentity() }));
+    const config: NavDefinition = {
+      sections: [{ items: [{ slot: AUTH_NAV_SIGNOUT_SLOT }, { label: "Account", items: [{ slot: AUTH_NAV_SIGNOUT_SLOT }] }] }],
+    };
+    const html = await render(<Navbar config={config} resolveHref={(key) => key} icon={NAV_ICON} slots={slots} />);
+    const popup = html.indexOf('role="menu"');
+    const disclosure = html.indexOf('data-slot="navbar-disclosure"');
+    const menuitems = [...html.matchAll(/role="menuitem"[^>]*type="submit"|type="submit"[^>]*role="menuitem"/g)].map((hit) => hit.index);
+
+    expect(html.match(/type="submit"/g)?.length).toBe(3);
+    expect(menuitems).toHaveLength(1);
+    expect([popup < (menuitems[0] ?? -1), (menuitems[0] ?? Infinity) < disclosure]).toEqual([true, true]);
+  });
+
+  it("lets the host's own menuitem setting win in every place", async () => {
+    const nav = await fixedKeyNav({ signout: { menuitem: false } });
+    const { slots } = await nav(navContext({ identity: fakeIdentity() }));
+    const html = await render(slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: true }));
+
+    expect(attrOf(html, 'type="submit"', "role")).toBe("");
   });
 
   it("takes the host's wording over its own default", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const nav = authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring, signout: { label: "Log out" } });
-    const html = await render((await nav(navContext({ identity: fakeIdentity() }))).slots[AUTH_NAV_SIGNOUT_SLOT]);
+    const html = await render((await nav(navContext({ identity: fakeIdentity() }))).slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false }));
 
     expect(textOf(html, "button", 'type="submit"')).toBe("Log out");
   });
@@ -129,7 +159,9 @@ describe("authNav token", () => {
   it("binds the token to this session, so another session's cannot end it", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const nav = authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring });
-    const html = await render((await nav(navContext({ identity: fakeIdentity(), sessionId: "sess-1" }))).slots[AUTH_NAV_SIGNOUT_SLOT]);
+    const html = await render(
+      (await nav(navContext({ identity: fakeIdentity(), sessionId: "sess-1" }))).slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false }),
+    );
     const token = attrOf(html, 'name="_csrf"', "value");
 
     expect(await verifyCsrfToken(ring, token, SIGNOUT_PATH, { subject: "sess-1" })).toEqual({ ok: true });
@@ -139,7 +171,7 @@ describe("authNav token", () => {
   it("scopes the token to the sign-out path, so it authorises no other POST", async () => {
     const ring = await importKeyRing([HEX_SECRET]);
     const nav = authNav({ signoutPath: SIGNOUT_PATH, ring: () => ring });
-    const html = await render((await nav(navContext({ identity: fakeIdentity() }))).slots[AUTH_NAV_SIGNOUT_SLOT]);
+    const html = await render((await nav(navContext({ identity: fakeIdentity() }))).slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false }));
     const token = attrOf(html, 'name="_csrf"', "value");
 
     expect(await verifyCsrfToken(ring, token, "/account/email", { subject: "sess-1" })).toEqual({ ok: false, error: "path-mismatch" });

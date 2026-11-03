@@ -1182,71 +1182,68 @@ test.describe("Menu — a row's focus and state cues are not colour alone", { ta
   });
 });
 
-test.describe("Menu — inside a paragraph", () => {
-  test("stays inside the paragraph instead of splitting it", async ({ page }) => {
-    const menu = await render(
-      Menu({
-        children: [
-          Menu.Trigger({ for: "para-menu", children: "File" }),
-          Menu.Popup({
-            triggered: true,
-            id: "para-menu",
-            children: [Menu.GroupLabel({ children: "Recent" }), Menu.Item({ for: "para-menu", children: "Open" })],
-          }),
-        ],
-      }),
-    );
-    await mount(page, `<p>text ${menu} more</p>`);
+test.describe("Menu — inside a paragraph", { tag: "@cross-engine" }, () => {
+  async function inParagraph(trigger: JSXNode, popup: JSXNode): Promise<string> {
+    return `<p>text ${await render(trigger)} more</p>${await render(popup)}`;
+  }
 
-    expect(
-      await page.evaluate(() => {
-        const paragraph = document.querySelector("p");
-        return {
-          paragraphs: document.querySelectorAll("p").length,
-          keepsTail: paragraph?.textContent?.includes("more") ?? false,
-          holdsRoot: paragraph?.querySelector("[data-slot~='menu']") !== null,
-          holdsPopup: paragraph?.querySelector("#para-menu") !== null,
-        };
-      }),
-    ).toEqual({ paragraphs: 1, keepsTail: true, holdsRoot: true, holdsPopup: true });
+  const paragraphState = (id: string) => ({
+    paragraphs: document.querySelectorAll("p").length,
+    keepsTail: document.querySelector("p")?.textContent?.includes("more") ?? false,
+    holdsTrigger: document.querySelector("p")?.querySelector(`#${id}-trigger`) !== null,
+    popupOpen: document.querySelector(`#${id}`)?.matches(":popover-open") ?? false,
   });
 
-  test("a group and a separator stay inside the paragraph and the group keeps its name", async ({ page }) => {
-    const menu = await render(
-      Menu({
-        children: [
-          Menu.Trigger({ for: "grouped-menu", children: "View" }),
-          Menu.Popup({
-            triggered: true,
-            id: "grouped-menu",
-            children: [
-              Menu.Group({
-                "aria-labelledby": "g",
-                children: [
-                  Menu.GroupLabel({ id: "g", children: "Recent" }),
-                  Menu.RadioItem({ for: "grouped-menu", checked: true, children: "Small" }),
-                  Menu.RadioItem({ for: "grouped-menu", children: "Large" }),
-                ],
-              }),
-              Menu.Separator({}),
-            ],
-          }),
-        ],
-      }),
+  test("a trigger in the paragraph leaves it whole and opens the panel placed after it", async ({ page }) => {
+    await mount(
+      page,
+      await inParagraph(
+        Menu.Trigger({ for: "para-menu", children: "File" }),
+        Menu.Popup({
+          triggered: true,
+          id: "para-menu",
+          children: [Menu.GroupLabel({ children: "Recent" }), Menu.Item({ for: "para-menu", children: "Open" })],
+        }),
+      ),
+      EXPOSE,
     );
-    await mount(page, `<p>text ${menu} more</p>`);
+    await start(page);
+    await page.locator("#para-menu-trigger").click();
+
+    await expect
+      .poll(() => page.evaluate(paragraphState, "para-menu"))
+      .toEqual({ paragraphs: 1, keepsTail: true, holdsTrigger: true, popupOpen: true });
+  });
+
+  test("a group and a separator in the panel after the paragraph leave it whole, and the group keeps its name", async ({ page }) => {
+    await mount(
+      page,
+      await inParagraph(
+        Menu.Trigger({ for: "grouped-menu", children: "View" }),
+        Menu.Popup({
+          triggered: true,
+          id: "grouped-menu",
+          children: [
+            Menu.Group({
+              "aria-labelledby": "g",
+              children: [
+                Menu.GroupLabel({ id: "g", children: "Recent" }),
+                Menu.RadioItem({ for: "grouped-menu", checked: true, children: "Small" }),
+                Menu.RadioItem({ for: "grouped-menu", children: "Large" }),
+              ],
+            }),
+            Menu.Separator({}),
+          ],
+        }),
+      ),
+      EXPOSE,
+    );
+    await start(page);
     await page.locator("#grouped-menu-trigger").click();
 
-    expect(
-      await page.evaluate(() => {
-        const paragraph = document.querySelector("p");
-        return {
-          paragraphs: document.querySelectorAll("p").length,
-          keepsTail: paragraph?.textContent?.includes("more") ?? false,
-          holdsPopup: paragraph?.querySelector("#grouped-menu") !== null,
-        };
-      }),
-    ).toEqual({ paragraphs: 1, keepsTail: true, holdsPopup: true });
+    await expect
+      .poll(() => page.evaluate(paragraphState, "grouped-menu"))
+      .toEqual({ paragraphs: 1, keepsTail: true, holdsTrigger: true, popupOpen: true });
     await expect(page.getByRole("group", { name: "Recent" })).toBeVisible();
   });
 });

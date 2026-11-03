@@ -67,7 +67,7 @@ fragment, which is what lets one `Navbar` serve as a table of contents for a sin
 would be a group inside a `role="menu"` popup, and keeping it out of `NavItem` makes that a compile error rather than a case the renderer has to
 degrade at runtime.
 
-A group's heading renders as a `<p>` carrying `role="group"` and `aria-labelledby`, never as an `<h2>`. `Navbar` has no way to know which heading
+A group renders as a `<div role="group" aria-labelledby>` labelled by a `<p>` heading, never by an `<h2>`. `Navbar` has no way to know which heading
 level it is nested under, and picking one for its type size is exactly what `forge-ui-heading-order` forbids; the ARIA pairing gives the
 programmatic association without asserting a level. Its children render as bar links rather than menu rows, because visible destinations are the
 whole reason to reach for a group.

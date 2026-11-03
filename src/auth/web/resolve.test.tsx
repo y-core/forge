@@ -794,6 +794,28 @@ describe("AuthViewChrome", () => {
   });
 });
 
+describe("the factors page served as an htmx fragment", () => {
+  const factorsCase = CASES.find((one) => one.label === "adminUserFactors");
+
+  it("resolves at level 2, under the h1 of the edit page it is swapped into", async () => {
+    if (factorsCase === undefined) throw new Error("no adminUserFactors case");
+    const levels = await Promise.all(
+      [{ "HX-Request": "true", "HX-Request-Type": "partial" }, {}].map(async (headers) => {
+        const app = guardedApp(
+          async (c) => {
+            const view = await resolveAuthView(c, factorsCase.options, { name: "adminUserFactors", guarded: AUTH_VIEW_GUARDS.adminUserFactors });
+            return view.ok ? Response.json({ level: view.data.props.level ?? null }) : view.error;
+          },
+          admin,
+          "/page/:id",
+        );
+        return (await (await app.request("/page/u2", { headers })).json()) as { level: number | null };
+      }),
+    );
+    expect(levels).toEqual([{ level: 2 }, { level: null }]);
+  });
+});
+
 // The hazard `AuthViewChrome` carries is changing what a mount already renders, so every view is
 // checked on both sides: the heading it moves, and the bytes it leaves alone when asked nothing.
 describe("every view places its heading where the host says", () => {
@@ -817,6 +839,10 @@ describe("every view places its heading where the host says", () => {
   }
 
   for (const one of CASES) {
+    it(`opens ${one.label} on an h1 when its host asks for no level`, async () => {
+      expect(/<h[1-6][\s>]/.exec(await rendered(one, one.name, {}))?.[0]).toBe("<h1 ");
+    });
+
     it(`moves ${one.label}'s heading to the level its host asked for`, async () => {
       const html = await rendered(one, one.name, { level: 2 });
 

@@ -342,7 +342,9 @@ element down, so a transition between two descendants needs it declared above bo
 Default: let a wrapper's children join a `grid` or `flex` parent with `display: contents` rather than leaving an attribute-free `<div>` or `<span>`
 between them — unless the wrapper carries a background, border, radius or transform, every one of which disappears with the box it was painted on,
 or makes its children one item of the parent, as a heading and its intro inside a `gap` stack are: dissolving it puts the parent's gap between them.
-Name that group with the element that means it, such as `<hgroup>`, `<header>` or `<section>`, which the check does not flag.
+Name a heading and its intro with `<hgroup>`, which the check does not flag, and keep any other group's `<div>` under a `modern-css-allow` reason.
+Neither `<header>` nor `<section>` is a neutral name for it: a `<header>` outside sectioning content is a second `banner` landmark, and invalid
+inside a `<footer>`, and a `<section>` is sectioning content that wants a heading of its own.
 <!-- rule:forge-ui-platform-display-contents --> `forge-ui.css` uses it for the theme-icon spans, which are wrappers around a glyph and nothing
 else. Check the accessibility role too: older engines drop the box's role with it, so a wrapper that carries one is not a candidate.
 

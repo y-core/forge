@@ -120,20 +120,23 @@ test.describe("Popover", { tag: "@cross-engine" }, () => {
   });
 });
 
-test.describe("Popover — inside a paragraph", () => {
-  test("stays inside the paragraph instead of splitting it", async ({ page }) => {
-    await mount(page, `<p>text ${await markup()} more</p>`);
+test.describe("Popover — inside a paragraph", { tag: "@cross-engine" }, () => {
+  test("a trigger in the paragraph leaves it whole and opens the panel placed after it", async ({ page }) => {
+    const trigger = await render(Popover.Trigger({ for: "tips", "data-ref": "trigger", children: "Tips" }));
+    const content = await render(Popover.Content({ id: "tips", label: "Tips", side: "top", align: "end", children: "Body" }));
+    await mount(page, `<p>text ${trigger} more</p>${content}`, EXPOSE);
+    await start(page);
+    await page.click("[data-ref='trigger']");
 
-    expect(
-      await page.evaluate(() => {
-        const paragraph = document.querySelector("p");
-        return {
+    await expect
+      .poll(() =>
+        page.evaluate(() => ({
           paragraphs: document.querySelectorAll("p").length,
-          keepsTail: paragraph?.textContent?.includes("more") ?? false,
-          holdsRoot: paragraph?.querySelector("[data-slot~='popover']") !== null,
-          holdsContent: paragraph?.querySelector("#tips") !== null,
-        };
-      }),
-    ).toEqual({ paragraphs: 1, keepsTail: true, holdsRoot: true, holdsContent: true });
+          keepsTail: document.querySelector("p")?.textContent?.includes("more") ?? false,
+          holdsTrigger: document.querySelector("p [data-ref='trigger']") !== null,
+          contentOpen: document.querySelector("#tips")?.matches(":popover-open") ?? false,
+        })),
+      )
+      .toEqual({ paragraphs: 1, keepsTail: true, holdsTrigger: true, contentOpen: true });
   });
 });

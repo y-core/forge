@@ -485,6 +485,10 @@ viewer holds. The destination still needs its own guard (`requireSignedIn`, `req
 isolate rather than on every render. It reads the identity off `authCtx`, so `resolveAuth` or a `requireAuth` must run before the layout renders.
 An anonymous request gets `activeFilters` and an empty slot map.
 
+The sign-out slot is a function of where the bar places it: inside a menu the button is `role="menuitem"`, and at bar level or in the collapsed
+copy it is a plain button. `signout.menuitem` overrides that in every place. To put the control somewhere other than a `Navbar`, call the slot
+yourself, as `slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false })`.
+
 ---
 
 ## Replacing the markup of a shipped page
@@ -501,7 +505,8 @@ const options: AuthWebOptions<Env> = {
 ```
 
 An entry typed for the wrong page is a **compile** error rather than a view reading `undefined`. Each shipped view also accepts `class` and
-`level` for placement.
+`level` for placement. The factors page swapped into the admin edit page as an htmx fragment resolves at `level` 2, under that page's `<h1>`; if
+you render the edit page at another level, set the fragment's in a `views.adminUserFactors` override.
 
 To put one page inside a page of your own rather than replacing it, use `resolveAuthView` — the recipe, the `guarded` claim it takes, and the
 CSRF configuration your route must share are [`AUTH_MOUNTING.md`][am-6] §6.
@@ -524,21 +529,28 @@ on its own root and targets it.
 
 ```tsx
 import { AUTH_PASSKEY_LIST_ID, type PasskeyListViewProps } from "@y-core/forge/auth/web";
-import { Button, Form } from "@y-core/forge/ui/core";
+import { Button, Card, Form } from "@y-core/forge/ui/core";
 
 const MyPasskeys = ({ rows, paths, csrfHeader }: PasskeyListViewProps) => (
-  <section id={AUTH_PASSKEY_LIST_ID}>
-    {rows.map(({ credential, csrfToken }) => (
-      <Form
-        csrfToken={csrfToken}
-        csrfHeader={csrfHeader}
-        hx-delete={paths.passkeyRemove({ id: credential.id })}
-        hx-target={`#${AUTH_PASSKEY_LIST_ID}`}
-        hx-swap='outerHTML'>
-        <Button type='submit'>Remove</Button>
-      </Form>
-    ))}
-  </section>
+  <Card id={AUTH_PASSKEY_LIST_ID}>
+    <Card.Header>
+      <Card.Title>
+        <h1>Your passkeys</h1>
+      </Card.Title>
+    </Card.Header>
+    <Card.Content>
+      {rows.map(({ credential, csrfToken }) => (
+        <Form
+          csrfToken={csrfToken}
+          csrfHeader={csrfHeader}
+          hx-delete={paths.passkeyRemove({ id: credential.id })}
+          hx-target={`#${AUTH_PASSKEY_LIST_ID}`}
+          hx-swap='outerHTML'>
+          <Button type='submit'>Remove</Button>
+        </Form>
+      ))}
+    </Card.Content>
+  </Card>
 );
 ```
 

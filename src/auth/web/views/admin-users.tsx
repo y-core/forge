@@ -12,6 +12,7 @@ import { Link } from "../../../ui/core/link";
 import { Pagination } from "../../../ui/core/pagination";
 import { Table } from "../../../ui/core/table";
 import { cn } from "../../../ui/core/utils/cn";
+import { nestedHeadingLevel } from "./heading";
 import { AuthTimestamp } from "./timestamp";
 import type { AdminUsersViewProps } from "./types";
 
@@ -36,7 +37,9 @@ export const AdminUsersView: FC<AdminUsersViewProps> = ({ users, query, nextCurs
       </Form>
       {users.length === 0 ? (
         <EmptyState>
-          <EmptyState.Title level={2}>{query === "" ? "No accounts yet" : "No account matches that search"}</EmptyState.Title>
+          <EmptyState.Title level={nestedHeadingLevel(level ?? 1)}>
+            {query === "" ? "No accounts yet" : "No account matches that search"}
+          </EmptyState.Title>
           <EmptyState.Description>
             {query === "" ? "An account appears here the first time someone signs up." : "Search matches a whole address or the start of one."}
           </EmptyState.Description>

@@ -383,6 +383,27 @@ render**, such as a `.Close`, never by an outside click or Escape, so the reader
 backdrop click, except an `alert` `Dialog` or `Drawer`, which closes on Escape alone. The rulings behind the choices are
 [`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
 
+### Put a popover or menu in running text
+
+A `Popover` or `Menu` root and its panel are `<div>`s, because a panel holds flow content, and a `<p>` cannot hold a `<div>`. In running text,
+put only the trigger inside the paragraph and the panel straight after it:
+
+```tsx
+import { Popover } from "@y-core/forge/ui/core";
+
+<>
+  <p>
+    Rates change monthly. <Popover.Trigger for='rates'>Why?</Popover.Trigger>
+  </p>
+  <Popover.Content id='rates' label='Why rates change'>
+    …
+  </Popover.Content>
+</>;
+```
+
+The pair needs no shared parent: `for` and `id` link them, and the panel is placed against its trigger's implicit anchor. Only the open-state
+highlight on the trigger is keyed on the root, so a trigger outside one goes without it. `Menu.Trigger` and `Menu.Popup` split the same way.
+
 ### Make a keyboard-driven component actually respond
 
 `Toolbar`, `Menu`, `Tabs`, `Tooltip`, `NumberField`, `ToggleGroup`, a modal `Dialog`, a `Popover.Content` and an unbound readout `Slider` render a
@@ -503,9 +524,9 @@ hover fill ([`UI_CLASS_COMPOSITION.md`][ucc-1e] §1e):
 ```tsx
 import { toneSurface } from "@y-core/forge/ui/core";
 
-<section class={toneSurface({ tone: "info", appearance: "soft", class: "rounded-box border-field p-4 text-sm" })}>
+<p class={toneSurface({ tone: "info", appearance: "soft", class: "rounded-box border-field p-4 text-sm" })}>
   Scheduled maintenance starts at 22:00 UTC.
-</section>;
+</p>;
 ```
 
 ### Put a glyph inside a file input
@@ -771,7 +792,7 @@ silent breaking change for you, and one forge's gate cannot detect. The key is t
 
 One name has no default and takes none: `Navbar`'s `<nav>` landmark. An unnamed `<nav>` already announces as "navigation", so a constant default
 would replace a correct platform default with a guess — and give two Navbars on one page the same name. Pass `aria-label` or `aria-labelledby`
-yourself wherever a page renders more than one.
+yourself wherever a page renders more than one `<nav>`, counting a `Dock`, `Breadcrumbs` and a `Pagination` with `landmark`.
 
 ### Assert on forge's markup in your own tests
 
@@ -1252,6 +1273,8 @@ The type does not express these rules, and both bite silently:
   later moves.
 - **A `slot` that is a `string` is looked up in the `slots` map**, while a `JSXNode` is rendered inline — which is how a user's name reaches a bar
   that is otherwise static data.
+- **A slot that is a function is called with `{ inMenu }`**, `true` only inside a menu popup. A control that must be a `menuitem` there must not be
+  one at bar level or in the collapsed disclosure copy, where no `role="menu"` encloses it.
 
 **A group renders a heading over destinations that stay visible** — a `role="group"` wrapper with a `<p>` heading, since `Navbar` cannot know which
 heading level it is nested under. Only a section's items and a mega menu's groups accept one, so a group nested inside a menu is a compile error

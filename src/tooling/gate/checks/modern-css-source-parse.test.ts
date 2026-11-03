@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { findModernCssSourceViolations } from "./modern-css-source-parse";
+import { findModernCssSourceViolations, openingTag } from "./modern-css-source-parse";
 
 const TSX = "src/ui/core/fixture.tsx";
 const TS = "src/ui/client/fixture.ts";
@@ -28,7 +28,8 @@ describe("findModernCssSourceViolations() — Tier B behaviour", () => {
         file: TSX,
         line: 1,
         ruleId: "forge-ui-platform-native-dialog",
-        detail: "`role` on a `<div>` — open a native `<dialog>` with `showModal()` instead of re-declaring the role",
+        detail:
+          "`role` on a `<div>` — open a native `<dialog>` instead of re-declaring the role: `showModal()` for a modal, `show()` for a non-modal panel",
       },
       {
         file: TSX,
@@ -36,6 +37,12 @@ describe("findModernCssSourceViolations() — Tier B behaviour", () => {
         ruleId: "forge-ui-platform-native-dialog",
         detail: "`aria-modal` on a `<div>` — open a native `<dialog>` with `showModal()` instead of re-declaring the role",
       },
+    ]);
+  });
+
+  it("names `show()` for a dialog role that claims no modal", () => {
+    expect(findModernCssSourceViolations("<div role='dialog'>", TSX).map((finding) => finding.detail)).toEqual([
+      "`role` on a `<div>` — open a native `<dialog>` instead of re-declaring the role: `showModal()` for a modal, `show()` for a non-modal panel",
     ]);
   });
 
@@ -67,6 +74,30 @@ describe("findModernCssSourceViolations() — Tier B behaviour", () => {
     const source = ["<button aria-expanded='false' data-slot='trigger'>", 'el.addEventListener("click", toggle);'].join("\n");
 
     expect(lines(source, TSX)).toEqual(["1 forge-ui-platform-native-details"]);
+  });
+
+  it("names the separate-subtree exception in the disclosure advice", () => {
+    const source = ["<button aria-expanded='false'>", 'el.addEventListener("click", toggle);'].join("\n");
+
+    expect(findModernCssSourceViolations(source, TSX).map((finding) => finding.detail)).toEqual([
+      "`aria-expanded` toggled from a click handler — express the disclosure with `<details>` and `<summary>`, unless the trigger and the panel cannot be one subtree",
+    ]);
+  });
+
+  it("does not flag `aria-expanded` on a widget whose role `<summary>` would strip", () => {
+    const click = 'el.addEventListener("click", toggle);';
+
+    expect(ids(["<button aria-haspopup='menu' aria-expanded='false'>", click].join("\n"), TSX)).toEqual([]);
+    expect(ids(["<input role='combobox' aria-expanded='false' />", click].join("\n"), TSX)).toEqual([]);
+    expect(ids(["<li role='treeitem' aria-expanded='false'>", click].join("\n"), TSX)).toEqual([]);
+  });
+
+  it("reads a widget role past an arrow function inside the opening tag", () => {
+    const source = ["<button onClick={() => open()} aria-expanded='false' aria-haspopup='menu'>", 'el.addEventListener("click", toggle);'].join(
+      "\n",
+    );
+
+    expect(ids(source, TSX)).toEqual([]);
   });
 
   it("does not flag `aria-expanded` with no click handler in the file", () => {
@@ -377,6 +408,65 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     expect(ids(source, TSX)).toEqual([]);
   });
 
+  it("advises `<hgroup>` and an allow reason, never `<header>`, for a heading-less group inside a `<footer>`", () => {
+    const footer = ["<footer class='flex justify-between gap-6'>", "  <div>", "    <p>Firm</p>", "    <p>Tagline</p>", "  </div>", "</footer>"];
+    const allowed = [
+      footer[0],
+      "  {/* modern-css-allow: forge-ui-platform-display-contents — the name and tagline are one item */}",
+      ...footer.slice(1),
+    ];
+
+    expect(findModernCssSourceViolations(footer.join("\n"), TSX).map((finding) => finding.detail)).toEqual([
+      "an attribute-free wrapper inside a `display: grid` or `display: flex` parent — let its children join the parent with `display: contents`, or, if it makes them one item of the parent, wrap a heading and its intro in `<hgroup>` and give any other group a `modern-css-allow` reason",
+    ]);
+    expect(ids(allowed.join("\n"), TSX)).toEqual([]);
+  });
+
+  it("clears a wrapper only by its own rule's allow reason, never by another comment between it and its parent", () => {
+    const above = (comment: string): string =>
+      ["<footer class='flex justify-between gap-6'>", `  {/* ${comment} */}`, "  <div>", "    <p>Firm</p>", "  </div>", "</footer>"].join("\n");
+
+    expect(lines(above("modern-css-allow: forge-ui-platform-scope — the name and tagline are one item"), TSX)).toEqual([
+      "3 forge-ui-platform-display-contents",
+    ]);
+    expect(lines(above("the name and tagline are one item"), TSX)).toEqual(["3 forge-ui-platform-display-contents"]);
+  });
+
+  it("flags a wrapper below a two-line JSX comment that carries no allow reason", () => {
+    const source = [
+      "<footer class='flex gap-6'>",
+      "  {/* the name",
+      "     and tagline */}",
+      "  <div>",
+      "    <p>Firm</p>",
+      "  </div>",
+      "</footer>",
+    ].join("\n");
+
+    expect(lines(source, TSX)).toEqual(["4 forge-ui-platform-display-contents"]);
+  });
+
+  it("walks whitespace-only lines after a layout parent in linear time", () => {
+    const source = ["<div class='flex gap-2'>", ...Array.from({ length: 10 }, () => " ".repeat(40)), "  <p>x</p>", "</div>"].join("\n");
+
+    expect(ids(source, TSX)).toEqual([]);
+  });
+
+  it("honours an allow reason on the wrapper's own line", () => {
+    const source = [
+      "<footer class='flex justify-between gap-6'>",
+      "  <div> {/* modern-css-allow: forge-ui-platform-display-contents — the name and tagline are one item */}",
+      "    <p>Firm</p>",
+      "  </div>",
+      "</footer>",
+    ].join("\n");
+
+    expect(ids(source, TSX)).toEqual([]);
+    expect(lines(source.replace("modern-css-allow: forge-ui-platform-display-contents — ", ""), TSX)).toEqual([
+      "2 forge-ui-platform-display-contents",
+    ]);
+  });
+
   it("does not flag a sibling element closed on its own line", () => {
     expect(ids("<div class='flex items-center gap-2'>\n  <span>Left</span>\n</div>", TSX)).toEqual([]);
   });
@@ -621,5 +711,19 @@ describe("findModernCssSourceViolations() — open-state geometry", () => {
 
   it("keeps forge's own stylesheet quiet", () => {
     expect(exit(SHIPPED_CSS)).toEqual([]);
+  });
+});
+
+describe("openingTag()", () => {
+  it("returns the tag past a `=>` inside an attribute expression", () => {
+    const source = "<button onClick={() => open()} aria-expanded='false'>Menu</button>";
+
+    expect(openingTag(source, source.indexOf("aria-expanded"))).toBe("<button onClick={() => open()} aria-expanded='false'>");
+  });
+
+  it("returns nothing for an index after the tag has closed", () => {
+    const source = "<div>text aria-expanded</div>";
+
+    expect(openingTag(source, source.indexOf("aria-expanded"))).toBe("");
   });
 });

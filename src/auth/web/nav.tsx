@@ -36,13 +36,13 @@ export function authNav(options: AuthNavOptions): (context: AuthNavContext) => P
     return {
       activeFilters,
       slots: {
-        [slotKey]: (
+        [slotKey]: ({ inMenu }) => (
           <AuthSignout
             action={options.signoutPath}
             appearance='ghost'
             class='w-full justify-start'
             csrfToken={csrfToken}
-            menuitem
+            menuitem={inMenu}
             size='sm'
             {...options.signout}
           />

@@ -18,7 +18,7 @@ export type {
   NavSection,
   NavSectionItem,
 } from "./types";
-export type { NavSlot } from "./types";
+export type { NavSlot, NavSlotRender } from "./types";
 export { DARK_CLASS, DEFAULT_THEME_PREF, FOUC_SCRIPT, THEME_ATTR, THEME_STORAGE_KEY } from "./theme";
 export type { ThemeToggleProps } from "./types";
 export { ThemeToggle } from "./theme-toggle";

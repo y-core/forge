@@ -18,7 +18,47 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **The markdown footnotes label moves down with `headingOffset`.** It was a fixed `<h2>`, so under an offset it outranked the document's own
+  headings; at 2 it is now an `<h4>`. `MARKDOWN_ELEMENTS` allows `class` and `id` on `h3` to `h6` for it. A schema of your own that allows them
+  only on `h2` must widen the shifted tag when it passes an offset, or the label loses `sr-only` and shows.
+- **The log viewer's root is a `<div>`, no longer `<main id="main-content">`.** Inside a shell that wraps its page in `<main>` it nested one
+  `main` in another. Your shell supplies the landmark: a skip link that targeted `#main-content` points at the shell's own `<main>` instead, and
+  a `<main>` between the body and the viewer is a flex column itself (`flex min-h-0 flex-1 flex-col`) for the table to fill the viewport.
+- **`Popover` and `Menu` render their roots and panels as `<div>`, `Menu.Group` as `<div role="group">` and `Menu.Separator` as `<hr>`,
+  reversing 0.6.0's `<span>`s.** A panel holds flow content — the navbar megamenu, the chrome toolbar flyout, `authNav`'s sign-out `<form>` —
+  which a `<span>` may not. `Tooltip` and `Menu.GroupLabel` stay `<span>`s, since they hold only text. To place one in running text, put only
+  the `Popover.Trigger` or `Menu.Trigger` inside the `<p>` and the panel straight after it; `for` and `id` link them and the panel still
+  anchors to its trigger. A selector of yours that names the tag, such as `span[data-slot="menu"]`, stops matching; key it on `[data-slot]`.
+- **`AuthNav.slots` holds render functions, and the sign-out button is a `menuitem` only inside a navbar menu.** Every copy carried
+  `role="menuitem"`, so the bar-level slot and the collapsed disclosure copy exposed a menu item with no menu around it. A `Navbar` slot may now
+  be a `NavSlotRender`, called with `{ inMenu }`. Spreading `authNav`'s result onto `Navbar` is unchanged; a layout that places the slot itself
+  calls it, as `slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false })`.
+- **`AuthFactorsView` names its page with an `<h1>`, "Sign-in methods", and defaults to `level` 1 like every other auth view.** Served
+  whole it had only two `<h2>`s. Its subsections, the first renamed "Methods offered", move to `<h2>` and the empty state's title to `<h3>`.
+  Served as an htmx fragment into the admin edit page it resolves at level 2. A stylesheet or test of yours keyed on `h2` in this view must
+  follow the new levels.
+- **The `Navbar` slot wrapper is a `<div>`, no longer a `<span>`.** A slot with a `label` or `filters` is wrapped, and `authNav`'s filtered
+  sign-out slot put its `<form>` inside a `<span>`. The wrapper's classes and box are unchanged. A selector of yours on
+  `span[data-slot~="navbar-slot"]` stops matching; key it on `[data-slot~="navbar-slot"]`.
+
+### Fixed
+
+- **The `forge-ui-platform-display-contents` rule no longer advises `<header>` or `<section>` for a group that is one item of a `grid` or `flex`
+  parent.** A `<header>` outside sectioning content is a second `banner` landmark, and invalid inside a `<footer>`. The rule names `<hgroup>`
+  for a heading and its intro, and a `modern-css-allow` reason on the `<div>` for any other group.
+- **A comment between a `grid` or `flex` parent and its wrapper no longer silences `forge-ui-platform-display-contents`.** Only a
+  `modern-css-allow` reason naming the rule, on the wrapper's line or the one above it, clears the wrapper, so a wrapper an unrelated comment
+  used to hide is now flagged.
+- **`forge-ui-platform-native-dialog` names `show()` for a `role="dialog"` that claims no modal.** It advised `showModal()` for every hit,
+  which makes the rest of the page inert behind a non-modal panel; an `aria-modal` hit still gets `showModal()`. Preflight item 78 accepts a
+  hit on a `popover` element, as `Popover.Content` is.
+- **`forge-ui-platform-native-details` no longer flags `aria-expanded` on a menu button, a combobox, a menu item, a tree item or a row.** An
+  element carrying `aria-haspopup` or one of those roles is skipped, since `<summary>` permits no role. The message names the documented
+  exception, a trigger and panel that cannot be one subtree.
+- **The passkey list's and the admin user list's empty-state titles nest under the view's heading.** They were a fixed `<h2>`, so a view
+  placed with `level={3}` gave its empty state a title that outranked it; it is now an `<h4>` there, and still an `<h2>` by default.
 
 ---
 

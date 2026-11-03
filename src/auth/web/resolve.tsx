@@ -3,6 +3,7 @@
 
 import type { AppContext } from "../../context/types";
 import { mintCsrf } from "../../form/csrf";
+import { isPartial } from "../../render/htmx/htmx-headers";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import type { OtpLength } from "../../ui/core/types";
@@ -603,7 +604,7 @@ async function factorsPanel<Bindings>(
   const listed = await services.credentials.listByUser(userId);
   if (!listed.ok) return err(unavailable());
 
-  return ok({ factors: rows, passkeys: listed.data, ...extra, icon: options.icon });
+  return ok({ factors: rows, passkeys: listed.data, ...extra, icon: options.icon, ...(isPartial(c) ? { level: 2 as const } : {}) });
 }
 
 async function resolveAccountFactors<Bindings>(

@@ -89,6 +89,12 @@ describe("AdminUsersView when there is nothing to list", () => {
     expect(textOf(html, "p", 'data-slot="empty-state-description"')).toBe("Search matches a whole address or the start of one.");
   });
 
+  it("puts the empty state's title one level below the view's heading", async () => {
+    const html = await users({ users: [], level: 3 });
+    expect(textOf(html, "h3", 'class="text-xl font-semibold text-foreground"')).toBe("Users");
+    expect(textOf(html, "h4", 'data-slot="empty-state-title"')).toBe("No accounts yet");
+  });
+
   it("offers the way back to the unfiltered listing", async () => {
     expect(attrOf(await users({ users: [], query: "zz" }), 'data-ref="admin-user-clear"', "href")).toBe("/admin/users");
   });

@@ -56,16 +56,17 @@ function chevron(ctx: NavRenderCtx, cls?: string): JSXNode {
   );
 }
 
-/** Resolves a slot's content: a string key looks up `slots`, otherwise the node is used directly. */
+/** Resolves a slot's content: a string key looks up `slots`, and a render function learns whether it sits in a menu. */
 function renderSlot(item: NavSlot, depth: number, ctx: NavRenderCtx): JSXNode {
-  const node = typeof item.slot === "string" ? ctx.slots?.[item.slot] : item.slot;
+  const content = typeof item.slot === "string" ? ctx.slots?.[item.slot] : item.slot;
+  const node = typeof content === "function" ? content({ inMenu: depth > 0 }) : content;
   const fattrs = filterAttrs(item, ctx.activeFilters);
   if (!item.label && !("data-filter" in fattrs)) return node ?? null;
   return (
-    <span data-slot={slotToken("navbar-slot")} {...(depth === 0 ? {} : { role: "none" })} class='inline-flex items-center gap-2' {...fattrs}>
+    <div data-slot={slotToken("navbar-slot")} {...(depth === 0 ? {} : { role: "none" })} class='inline-flex items-center gap-2' {...fattrs}>
       {item.label ? <span>{item.label}</span> : null}
       {node ?? null}
-    </span>
+    </div>
   );
 }
 

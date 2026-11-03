@@ -63,11 +63,24 @@ const DIALOG_ATTR = /(?<![\w-])(role)\s*=\s*["'](?:alert)?dialog["']|(?<![\w-])(
 
 const POPOVER_ATTR = /(?<![\w-])popover(?=[\s=])/;
 
-function isPopoverElement(source: string, index: number): boolean {
+/** The opening tag `index` sits inside, from `<` to its `>`, past any `{…}` expression; empty outside a tag. @internal */
+export function openingTag(source: string, index: number): string {
   const open = source.lastIndexOf("<", index);
-  if (open === -1) return false;
-  const close = source.indexOf(">", open);
-  return POPOVER_ATTR.test(source.slice(open, close === -1 ? source.length : close));
+  if (open === -1) return "";
+  let at = open + 1;
+  while (at < source.length && source[at] !== ">") {
+    if (source[at] === "{") {
+      const close = balancedSpan(source, at);
+      if (close === -1) return source.slice(open);
+      at = close;
+    }
+    at++;
+  }
+  return at < index ? "" : source.slice(open, at + 1);
+}
+
+function isPopoverElement(source: string, index: number): boolean {
+  return POPOVER_ATTR.test(openingTag(source, index));
 }
 
 function findNativeDialog(out: Emitter): void {
@@ -75,12 +88,15 @@ function findNativeDialog(out: Emitter): void {
     const tag = enclosingTag(out.scanned, match.index);
     if (tag.toLowerCase() === "dialog") continue;
     if (match[1] !== undefined && isPopoverElement(out.scanned, match.index)) continue;
-    const attr = match[1] ?? match[2] ?? "";
+    const advice =
+      match[1] === undefined
+        ? "with `showModal()` instead of re-declaring the role"
+        : "instead of re-declaring the role: `showModal()` for a modal, `show()` for a non-modal panel";
     emit(
       out,
       match.index,
       "forge-ui-platform-native-dialog",
-      `\`${attr}\` on a \`<${tag}>\` — open a native \`<dialog>\` with \`showModal()\` instead of re-declaring the role`,
+      `\`${match[1] ?? match[2] ?? ""}\` on a \`<${tag}>\` — open a native \`<dialog>\` ${advice}`,
     );
   }
 }
@@ -102,14 +118,20 @@ function findNativePopover(out: Emitter): void {
 
 const CLICK_HANDLER = /addEventListener\(\s*["']click["']|(?<![\w-])onclick\s*=/;
 
+// `<summary>` permits no role, so a widget that owns `aria-expanded` would lose its own.
+const WIDGET_EXPANDED = /(?<![\w-])aria-haspopup(?=[\s=>])|(?<![\w-])role\s*=\s*["'](?:combobox|menuitem|treeitem|row)["']/;
+
 function findNativeDetails(out: Emitter): void {
   if (!CLICK_HANDLER.test(out.scanned)) return;
-  scanLines(
-    out,
-    "forge-ui-platform-native-details",
-    /(?<![\w-])aria-expanded(?=[\s=])/g,
-    () => "`aria-expanded` toggled from a click handler — express the disclosure with `<details>` and `<summary>`",
-  );
+  for (const match of out.scanned.matchAll(/(?<![\w-])aria-expanded(?=[\s=])/g)) {
+    if (WIDGET_EXPANDED.test(openingTag(out.scanned, match.index))) continue;
+    emit(
+      out,
+      match.index,
+      "forge-ui-platform-native-details",
+      "`aria-expanded` toggled from a click handler — express the disclosure with `<details>` and `<summary>`, unless the trigger and the panel cannot be one subtree",
+    );
+  }
 }
 
 function findParentState(out: Emitter): void {
@@ -308,18 +330,27 @@ function findScriptedWidthQuery(out: Emitter): void {
   );
 }
 
-// The wrapper has to open a subtree: a `<span>Left</span>` closed on its own line is a sibling in
-// the row, and `display: contents` would dissolve the box its content needs.
-const BARE_WRAPPER = /class\s*=\s*[{'"][^\n]*(?<![\w-])(?:grid|flex)(?![\w-])[^\n]*\n[ \t]*(<(?:div|span)>)[ \t]*(?=\n)/g;
+const LAYOUT_PARENT = /class\s*=\s*[{'"].*(?<![\w-])(?:grid|flex)(?![\w-])/;
+// The wrapper has to open a subtree, as a `<span>Left</span>` closed on its line is a row sibling.
+const BARE_WRAPPER = /^[ \t]*<(?:div|span)>[\s{}]*$/;
+// A blanked JSX comment leaves only braces, so only an allow reason read by `emit` clears a wrapper.
+const BLANKED = /^[\s{}]*$/;
 
 function findDisplayContents(out: Emitter): void {
-  for (const match of out.scanned.matchAll(BARE_WRAPPER)) {
-    const wrapper = match.index + match[0].lastIndexOf(match[1] ?? "");
+  const lines = out.scanned.split("\n");
+  const starts: number[] = [];
+  lines.reduce((start, line) => (starts.push(start), start + line.length + 1), 0);
+  for (const [index, line] of lines.entries()) {
+    if (!LAYOUT_PARENT.test(line)) continue;
+    let next = index + 1;
+    while (next < lines.length && BLANKED.test(lines[next] ?? "")) next++;
+    const candidate = lines[next];
+    if (candidate === undefined || !BARE_WRAPPER.test(candidate)) continue;
     emit(
       out,
-      wrapper,
+      (starts[next] ?? 0) + candidate.indexOf("<"),
       "forge-ui-platform-display-contents",
-      "an attribute-free wrapper inside a `display: grid` or `display: flex` parent — let its children join the parent with `display: contents`, or, if it makes them one item of the parent, name the group with an element such as `<hgroup>` or `<header>`",
+      "an attribute-free wrapper inside a `display: grid` or `display: flex` parent — let its children join the parent with `display: contents`, or, if it makes them one item of the parent, wrap a heading and its intro in `<hgroup>` and give any other group a `modern-css-allow` reason",
     );
   }
 }

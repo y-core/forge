@@ -100,10 +100,10 @@ describe("Popover.Content", () => {
         </Popover.Content>,
       ),
     ).toBe(
-      '<span id="menu-1" role="dialog" aria-label="Card &amp; tools" data-slot="popover-content" data-scope="popover" popover="auto"' +
+      '<div id="menu-1" role="dialog" aria-label="Card &amp; tools" data-slot="popover-content" data-scope="popover" popover="auto"' +
         ' data-side="bottom" data-align="start"' +
         ' class="z-50 min-w-32 rounded-box border-field border-border bg-popover p-1 text-popover-foreground shadow-md"' +
-        ' data-note="a&amp;b">Items</span>',
+        ' data-note="a&amp;b">Items</div>',
     );
   });
 
@@ -213,15 +213,26 @@ describe("Popover.Content — the name a reader entering the panel gets", () => 
   });
 });
 
-describe("Popover — phrasing content", () => {
-  it("renders its root and its content as spans, so neither splits an enclosing paragraph", async () => {
-    expect(await render(<Popover />)).toStartWith("<span");
+describe("Popover — content model", () => {
+  it("renders its root and its content as divs, which hold the flow content a panel carries", async () => {
+    expect(await render(<Popover />)).toStartWith("<div");
     expect(
       await render(
         <Popover.Content id='p' label='Tips'>
           Body
         </Popover.Content>,
       ),
-    ).toStartWith("<span");
+    ).toStartWith("<div");
+  });
+
+  it("renders a trigger as a button, which a paragraph holds without the root around it", async () => {
+    const html = await render(
+      <p>
+        See the <Popover.Trigger for='p'>tips</Popover.Trigger>.
+      </p>,
+    );
+
+    expect(html).toStartWith("<p>See the <button");
+    expect(html).not.toContain("<div");
   });
 });

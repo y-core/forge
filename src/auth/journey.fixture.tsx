@@ -160,7 +160,7 @@ const shell: PageShell<JourneyEnv> = async (c, content, slot) => (
     </head>
     <body>
       <Announcer />
-      <nav>{(await nav(c)).slots[AUTH_NAV_SIGNOUT_SLOT]}</nav>
+      <nav>{(await nav(c)).slots[AUTH_NAV_SIGNOUT_SLOT]?.({ inMenu: false })}</nav>
       <main>{content}</main>
     </body>
   </html>

@@ -453,5 +453,6 @@ export interface AuthNavOptions {
 /** What a `Navbar` is given to show this request's viewer their own destinations. @public */
 export interface AuthNav {
   readonly activeFilters: string[];
-  readonly slots: Record<string, JSXNode>;
+  /** Each slot learns whether it sits in a menu, so the sign-out button is a `menuitem` only there. */
+  readonly slots: Record<string, (place: { inMenu: boolean }) => JSXNode>;
 }

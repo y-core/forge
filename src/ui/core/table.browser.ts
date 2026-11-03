@@ -36,18 +36,22 @@ test.describe("Table — pinned header", { tag: "@cross-engine" }, () => {
     await mount(page, await withCompiledCss(`<div style="max-height:200px">${html}</div>`));
 
     await page.hover("[data-slot='table-scroll']");
-    await page.mouse.wheel(0, 700);
+    await expect
+      .poll(async () => {
+        await page.mouse.wheel(0, 700);
+        return page.evaluate(() => (document.querySelector("[data-slot='table-scroll']") as HTMLElement).scrollTop > 0);
+      })
+      .toBe(true);
 
     await expect
       .poll(() =>
         page.evaluate(() => {
           const scroller = document.querySelector("[data-slot='table-scroll']") as HTMLElement;
           const head = document.querySelector("th") as HTMLElement;
-          const pinned = head.getBoundingClientRect().top === scroller.getBoundingClientRect().top + scroller.clientTop;
-          return { pinned, scrolled: scroller.scrollTop > 0 };
+          return head.getBoundingClientRect().top === scroller.getBoundingClientRect().top + scroller.clientTop;
         }),
       )
-      .toEqual({ pinned: true, scrolled: true });
+      .toBe(true);
   });
 
   test("a parent sized by height alone leaves the wrapper unscrolled, so the header scrolls away with the page", async ({ page }) => {

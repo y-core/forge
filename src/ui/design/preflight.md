@@ -230,8 +230,8 @@ Defaults like the rest of this block.
     `forge-ui-platform-scrollbar`
 77. **Count** selectors declared a second time under `prefers-color-scheme`: `rg -c 'prefers-color-scheme'`. Expect 0; one `light-dark()` value
     holds both modes. `forge-ui-platform-light-dark`
-78. **Grep** `rg 'role="(alert)?dialog"|aria-modal'` and, for each hit, name the element it sits on. Expect every hit on a `<dialog>`, and 0 on a
-    `div`. `forge-ui-platform-native-dialog`
+78. **Grep** `rg 'role="(alert)?dialog"|aria-modal'` and, for each hit, name the element it sits on. Expect every hit on a `<dialog>` or a `popover`
+    element, and 0 `aria-modal` off a `<dialog>`. `forge-ui-platform-native-dialog`
 79. **Count** headings at `text-2xl` or larger, then count those carrying `text-balance`. Expect equal, less any heading that cannot wrap.
     `forge-ui-platform-text-balance`
 

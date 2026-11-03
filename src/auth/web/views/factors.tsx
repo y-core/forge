@@ -12,6 +12,7 @@ import { Link } from "../../../ui/core/link";
 import { Separator } from "../../../ui/core/separator";
 import { cn } from "../../../ui/core/utils/cn";
 import type { AuthFactorKind } from "../../types";
+import { nestedHeadingLevel } from "./heading";
 import { AuthTimestamp } from "./timestamp";
 import type { AuthFactorRow, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./types";
 
@@ -32,6 +33,8 @@ const FACTOR_NOTE: Readonly<Record<AuthFactorKind, string>> = {
 };
 
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
+
+const HEADING_ID = "auth-factors-heading";
 
 const RESET_NOTE =
   "Removes every authenticator app, passkey and recovery code on this account and signs it out everywhere. The holder then signs in with an emailed code and enrols again.";
@@ -99,11 +102,15 @@ const AuthFactorItem: FC<{ row: AuthFactorRow; manage: string | undefined }> = (
 // is managing a factor, offered only to the holder; failure is a down store, which the resolver answers.
 /** One account's sign-in methods and registered passkeys, identical whoever is reading them. @public */
 export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, manage, recovered, reset, icon: AppIcon, class: cls, level }) => {
-  const own = level ?? 2;
-  const Heading = `h${own}` as "h2";
-  const nested = (own < 6 ? own + 1 : 6) as 3;
+  const own = level ?? 1;
+  const Heading = `h${own}` as "h1";
+  const nested = nestedHeadingLevel(own);
+  const Subheading = `h${nested}` as "h2";
   return (
-    <section data-ref='factors' class={cn("flex flex-col gap-6", cls)}>
+    <section data-ref='factors' aria-labelledby={HEADING_ID} class={cn("mx-auto flex w-full max-w-2xl flex-col gap-6", cls)}>
+      <Heading id={HEADING_ID} class='text-lg font-semibold text-foreground'>
+        Sign-in methods
+      </Heading>
       {recovered === undefined ? null : (
         <Alert tone='info' data-ref='factors-recovered'>
           <AppIcon name='key' class='size-4' />
@@ -114,10 +121,10 @@ export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, m
           </Alert.Description>
         </Alert>
       )}
-      <Heading class='text-sm font-medium text-foreground'>Sign-in methods</Heading>
+      <Subheading class='text-sm font-medium text-foreground'>Methods offered</Subheading>
       {factors.length === 0 ? (
         <EmptyState>
-          <EmptyState.Title level={nested}>No sign-in methods offered</EmptyState.Title>
+          <EmptyState.Title level={nestedHeadingLevel(nested)}>No sign-in methods offered</EmptyState.Title>
           <EmptyState.Description>This deployment offers no factor, so nothing can be enrolled here.</EmptyState.Description>
         </EmptyState>
       ) : (
@@ -128,7 +135,7 @@ export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, m
         </ul>
       )}
       <Separator />
-      <Heading class='text-sm font-medium text-foreground'>Registered passkeys</Heading>
+      <Subheading class='text-sm font-medium text-foreground'>Registered passkeys</Subheading>
       {passkeys.length === 0 ? (
         <p data-ref='passkey-none' class='max-w-prose text-sm text-pretty text-muted-foreground'>
           <AppIcon name='key' class='me-2 inline-block size-4' />

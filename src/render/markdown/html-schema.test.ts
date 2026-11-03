@@ -30,6 +30,7 @@ const OPTION_SETS: readonly Omit<MarkdownRenderOptions, "schema">[] = [
     tasks: { name: "t", disabled: true },
     classNames: { "task-list-item": "todo", footnotes: null },
   },
+  ...[2, 3, 4].map((headingOffset) => ({ headingOffset })),
 ];
 
 const DOCUMENTS: readonly MarkdownDocument[] = SOURCES.map((source) => parseMarkdown(source));

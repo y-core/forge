@@ -324,7 +324,8 @@ The loader answers every path itself — the page, the filtered `<tbody>`, the n
 drawn in place as an alert with a retry, the reason withheld because a channel error can name a binding or a key prefix.
 
 The viewer renders into the shell you registered with `createApp({ shell })` ([`ROUTING_AND_MIDDLEWARE.md`][ram-6] §6) and builds no document of its
-own, so it sits inside your nav and your theme. With no shell registered it renders bare and unstyled.
+own, so it sits inside your nav and your theme. Its root is a `<div>`: the shell supplies the `<main>` landmark around it, and the skip link's
+target with it. With no shell registered it renders bare and unstyled.
 
 For the table to fill the viewport instead of growing the page, the shell's content must be a direct child of a flex column that goes _definite_:
 
@@ -332,6 +333,7 @@ For the table to fill the viewport instead of growing the page, the shell's cont
 <body class="flex min-h-dvh flex-col has-[[data-fill-viewport]]:h-dvh has-[[data-fill-viewport]]:overflow-hidden"></body>
 ```
 
+A `<main>` between the body and the viewer is an item of that column and a column itself, as `<main class="flex min-h-0 flex-1 flex-col">`.
 `min-h-dvh` alone is not enough — an indefinite column takes its height from its content, so a long table grows the document. Any other layout still
 renders correctly; the table just falls back to a `max-h-dvh` box.
 

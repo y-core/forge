@@ -57,9 +57,10 @@ rendered inside it, and `layout` says whether those children are laid out inline
 and `footnotes` renames the footnote ids.
 
 To nest a document under the page's own headings, pass `headingOffset`: every heading moves down that many levels, from 0 to 5, and one pushed past
-`h6` renders as `h6`, so at 2 a `#` heading is an `h3` and `####` onward are all `h6`. Any other value throws. To keep the line breaks an author
-typed, pass `breaks: true`: a line ending inside a paragraph, list item, blockquote or heading is then written as `<br>`, exactly as a hard break
-is. Allow `br` and the shifted heading tags in your schema, or the writer drops them.
+`h6` renders as `h6`, so at 2 a `#` heading is an `h3`, `####` onward are all `h6` and the hidden footnotes label is an `h4`. Any other value
+throws. To keep the line breaks an author typed, pass `breaks: true`: a line ending inside a paragraph, list item, blockquote or heading is then
+written as `<br>`, exactly as a hard break is. Allow `br` and the shifted heading tags in your schema, with `class` and `id` on the footnotes
+label's tag, or the writer drops them.
 
 A handler can fall back to the frozen `DEFAULT_MARKDOWN_HANDLERS`. It has no `table`, `linkReference`, `imageReference` or
 `footnoteReference` handler, because those keep state across one render; leave such a type out of `handlers` to keep its default.

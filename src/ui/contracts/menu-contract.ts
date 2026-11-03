@@ -15,7 +15,7 @@ export const MENU_RADIO_SELECTOR = "[role='menuitemradio']";
 /** Marks a link row that leaves its menu open when activated. @public */
 export const MENU_KEEP_OPEN_ATTR = "data-menu-keep-open";
 
-/** The element a radio row's mutually-exclusive siblings share; `Menu.Group` is a `role=group` span. @public */
+/** The element a radio row's mutually-exclusive siblings share; `Menu.Group` is a `role=group` div. @public */
 export const MENU_GROUP_SELECTOR = "[role='group']";
 
 /** The class string every menu row shape wears, including client-built rows. @public */

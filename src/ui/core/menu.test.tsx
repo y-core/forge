@@ -225,31 +225,42 @@ describe("a trigger's aria-haspopup names the role its target actually carries",
   });
 });
 
-describe("Menu — phrasing content", () => {
-  it("renders its root, its popup and a group label as spans, so none splits an enclosing paragraph", async () => {
-    expect(await render(<Menu />)).toStartWith("<span");
+describe("Menu — content model", () => {
+  it("renders its root and its popup as divs, and a group label, which holds only text, as a span", async () => {
+    expect(await render(<Menu />)).toStartWith("<div");
     expect(
       await render(
         <Menu.Popup id='m' label='File'>
           Open
         </Menu.Popup>,
       ),
-    ).toStartWith("<span");
+    ).toStartWith("<div");
     expect(await render(<Menu.GroupLabel>Recent</Menu.GroupLabel>)).toStartWith("<span");
+  });
+
+  it("renders a trigger as a button, which a paragraph holds without the root around it", async () => {
+    const html = await render(
+      <p>
+        Open the <Menu.Trigger for='m'>file menu</Menu.Trigger>.
+      </p>,
+    );
+
+    expect(html).toStartWith("<p>Open the <button");
+    expect(html).not.toContain("<div");
   });
 
   it("lays a group label out as a block, so its padding holds directly inside the popup", async () => {
     expect(classesOf(await render(<Menu.GroupLabel>Recent</Menu.GroupLabel>))).toContain("block");
   });
 
-  it("renders a group and a separator as spans carrying their roles", async () => {
+  it("renders a group as a div carrying its role, and a separator as an hr, whose separator role is native", async () => {
     const group = await render(<Menu.Group aria-labelledby='g' />);
     const separator = await render(<Menu.Separator />);
 
-    expect(group).toStartWith("<span");
+    expect(group).toStartWith("<div");
     expect(attrOf(group, "role", 'data-slot="menu-group"')).toBe("group");
-    expect(separator).toStartWith("<span");
-    expect(attrOf(separator, "role", 'data-slot="menu-separator"')).toBe("separator");
+    expect(separator).toStartWith("<hr");
+    expect(separator).not.toContain("role=");
   });
 
   it("disables every row of a disabled group unless a row sets its own disabled", async () => {

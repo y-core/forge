@@ -173,9 +173,9 @@ import { Card, Separator } from "@y-core/forge/ui/core";
 
 <Card>
   <Card.Content class='flex flex-col gap-4'>
-    <section>Shipping</section>
+    <div>Shipping</div>
     <Separator />
-    <section>Billing</section>
+    <div>Billing</div>
   </Card.Content>
 </Card>;
 ```
