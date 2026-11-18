@@ -291,7 +291,8 @@ bun run verify:scheduled --report tmp/gate/ # write tmp/gate/report.json and eve
 **`--report <dir>` is for a run nobody is watching**, such as a cron one. `report.json` names the tier, the `HEAD` commit, the tree, the start
 time, the duration and the verdict, then each step's status — `passed`, `failed`, `setup`, `skipped`, `untouched` or `unreached` — with its
 duration and the log file beside it. A browser row also lists its failing tests by engine, spec, title and first error line, read from Playwright's
-JSON reporter, which the gate adds to the row only under `--report`. A browser row that never reached a test — `webServer` or `globalSetup`
+JSON reporter, which the gate adds to the row only under `--report`, beside the `failures` reporter, so the row's log holds only the
+failing tests and the summary. A browser row that never reached a test — `webServer` or `globalSetup`
 failed, or the Playwright server was absent — is `setup`, not `failed`, because it says nothing about the code. `--report` takes no `--list`,
 `--fix`, `--reuse` or `--affected`.
 

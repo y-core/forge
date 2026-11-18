@@ -45,9 +45,13 @@ function markup(): Promise<string> {
   );
 }
 
-async function open(page: Page): Promise<void> {
+async function mountPopover(page: Page): Promise<void> {
   const html = await markup();
   await mount(page, `${FIXTURE}<style>${await compiledCss(renderedClasses(html))}</style>${html}`);
+}
+
+async function open(page: Page): Promise<void> {
+  await mountPopover(page);
   await page.click('[data-slot~="popover-trigger"]');
 }
 
@@ -57,9 +61,10 @@ test.describe("overlay motion is the platform's", { tag: "@cross-engine" }, () =
   // The UA applies `@starting-style` inside the style engine, so the first painted frame is already
   // the starting one — no frame of scheduling is needed to produce a from-value.
   test("@starting-style supplies the enter's from-value in the same task as the click", async ({ page }) => {
-    await open(page);
+    await mountPopover(page);
     const enter = await page.evaluate(() => {
       const panel = document.querySelector("#tips") as HTMLElement;
+      (document.querySelector('[data-slot~="popover-trigger"]') as HTMLElement).click();
       const fade = panel.getAnimations().find((animation) => (animation as CSSTransition).transitionProperty === "opacity");
       return {
         open: panel.matches(":popover-open"),
@@ -71,23 +76,20 @@ test.describe("overlay motion is the platform's", { tag: "@cross-engine" }, () =
   });
 
   test("the enter interpolates rather than snapping", async ({ page }) => {
-    await open(page);
-    const mid = await page.evaluate(
-      () =>
-        new Promise<number>((resolve) => {
-          const panel = document.querySelector("#tips") as HTMLElement;
-          let frames = 0;
-          const tick = () => {
-            frames += 1;
-            if (frames < 3) {
-              requestAnimationFrame(tick);
-              return;
-            }
-            resolve(Number(getComputedStyle(panel).opacity));
-          };
-          requestAnimationFrame(tick);
-        }),
-    );
+    await mountPopover(page);
+    // Clicked and seeked in one task: a stalled frame rate carries a frame-counted sample past the 300ms enter.
+    const mid = await page.evaluate(() => {
+      const panel = document.querySelector("#tips") as HTMLElement;
+      (document.querySelector('[data-slot~="popover-trigger"]') as HTMLElement).click();
+      const enter = panel.getAnimations();
+      for (const animation of enter) {
+        animation.pause();
+        animation.currentTime = 150;
+      }
+      const opacity = Number(getComputedStyle(panel).opacity);
+      for (const animation of enter) animation.play();
+      return opacity;
+    });
 
     expect(mid > 0 && mid < 1, `mid-enter opacity ${mid} is not strictly between 0 and 1`).toBe(true);
     await expect.poll(() => panelOpacity(page)).toBe(1);
@@ -104,27 +106,24 @@ test.describe("overlay motion is the platform's", { tag: "@cross-engine" }, () =
     await open(page);
     await expect.poll(() => panelOpacity(page)).toBe(1);
 
-    const frames = await page.evaluate(
-      () =>
-        new Promise<Array<{ open: boolean; height: number; display: string; overlay: string; opacity: number }>>((resolve) => {
-          const panel = document.querySelector("#tips") as HTMLElement;
-          const out: Array<{ open: boolean; height: number; display: string; overlay: string; opacity: number }> = [];
-          panel.hidePopover();
-          const tick = () => {
-            const style = getComputedStyle(panel);
-            out.push({
-              open: panel.matches(":popover-open"),
-              height: Math.round(panel.getBoundingClientRect().height),
-              display: style.display,
-              overlay: style.getPropertyValue("overlay"),
-              opacity: Number(style.opacity),
-            });
-            if (out.length < 12) requestAnimationFrame(tick);
-            else resolve(out);
-          };
-          requestAnimationFrame(tick);
-        }),
-    );
+    // Seeked rather than sampled per frame: a stalled frame rate carries real-time samples past the 300ms exit.
+    const frames = await page.evaluate(() => {
+      const panel = document.querySelector("#tips") as HTMLElement;
+      panel.hidePopover();
+      const exit = panel.getAnimations();
+      for (const animation of exit) animation.pause();
+      return [0, 60, 120, 180, 240, 290].map((at) => {
+        for (const animation of exit) animation.currentTime = at;
+        const style = getComputedStyle(panel);
+        return {
+          open: panel.matches(":popover-open"),
+          height: Math.round(panel.getBoundingClientRect().height),
+          display: style.display,
+          overlay: style.getPropertyValue("overlay"),
+          opacity: Number(style.opacity),
+        };
+      });
+    });
 
     const exiting = frames.filter((frame) => !frame.open);
     expect(exiting.length, `no frame caught the panel after the close: ${JSON.stringify(frames)}`).toBeGreaterThan(0);

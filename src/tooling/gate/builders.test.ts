@@ -219,10 +219,10 @@ describe("browserStep()", () => {
     expect(browserStep().widen).toBeUndefined();
   });
 
-  it("asks Playwright for its JSON report beside the console's list, through the variable naming the file", () => {
+  it("asks Playwright for its JSON report beside the console's failures-only one, through the variable naming the file", () => {
     const results = browserStep().results;
 
-    expect([results?.args, results?.env]).toEqual([["--reporter=list,json"], "PLAYWRIGHT_JSON_OUTPUT_FILE"]);
+    expect([results?.args, results?.env]).toEqual([["--reporter=failures,json"], "PLAYWRIGHT_JSON_OUTPUT_FILE"]);
   });
 });
 

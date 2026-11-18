@@ -12,6 +12,7 @@ import { browserRequired, COMPAT_SERVER, PRIMARY_SERVER } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
 import { createGateCommand } from "./command";
 import { checkResult, fail } from "./finding";
+import { PLAYWRIGHT_RESULTS } from "./playwright-results";
 import { clearReceipt, readReceipt, recordReceipt } from "./receipt";
 import { tier } from "./tiers";
 import type { CommandStep, GateRunReport, Step, StepResults, StepTiers, TestFailure } from "./types";
@@ -1265,6 +1266,17 @@ describe("createGateCommand() — --report", () => {
 
     expect(readReport(dir).steps[0]?.status).toBe("setup");
     expect(readReport(dir).steps[0]?.failures).toBeUndefined();
+  });
+
+  it("records a cross-engine row whose `@cross-engine` selection matched nothing as setup", async () => {
+    const dir = reportDir();
+    const empty = JSON.stringify({ config: {}, suites: [], errors: [{ message: "Error: No tests found" }] });
+    await run(
+      [shell("test:browser:cross-engine", `printf '%s' '${empty}' > "$PLAYWRIGHT_JSON_OUTPUT_FILE"; exit 1`, { results: PLAYWRIGHT_RESULTS })],
+      { report: dir },
+    );
+
+    expect(readReport(dir).steps).toMatchObject([{ label: "test:browser:cross-engine", status: "setup" }]);
   });
 
   it("records a red step that wrote no results file at all as setup", async () => {

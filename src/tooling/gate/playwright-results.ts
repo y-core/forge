@@ -67,5 +67,9 @@ export function readPlaywrightResults(json: string): readonly TestFailure[] | un
   return out.ran === 0 ? undefined : out.failures;
 }
 
-/** The browser rows' results: Playwright's JSON reporter beside the console's `list`. @internal */
-export const PLAYWRIGHT_RESULTS: StepResults = { args: ["--reporter=list,json"], env: "PLAYWRIGHT_JSON_OUTPUT_FILE", read: readPlaywrightResults };
+/** The browser rows' results: Playwright's JSON reporter beside the console's `failures`, which prints only failing tests and the summary. @internal */
+export const PLAYWRIGHT_RESULTS: StepResults = {
+  args: ["--reporter=failures,json"],
+  env: "PLAYWRIGHT_JSON_OUTPUT_FILE",
+  read: readPlaywrightResults,
+};

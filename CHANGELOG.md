@@ -18,7 +18,18 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **Under `--report`, a browser row runs Playwright's `failures` reporter beside `json`, in place of `list`, and needs `@playwright/test`
+  1.65.** A green row's log now holds only the summary. `failures` is new in 1.65, and devctl's Playwright servers refuse any other
+  major.minor, so pin `"@playwright/test": "~1.65.1"`: a caret lets `bun update` resolve a 1.66 the server answers with a 428.
+- **The optional `wrangler` peer floor rises from `>=4.151.2` to `>=4.164.0`**, the version the gate runs. That wrangler needs Node 22.12.0
+  or later.
+
+### Fixed
+
+- **`Range` and `ContentRange` from `@y-core/forge/http` follow `@remix-run/headers` 1.1.0.** `Range.normalize()` returns only the ranges
+  the resource can satisfy, and `ContentRange.from()` returns an empty instance for invalid bounds.
 
 ---
 
