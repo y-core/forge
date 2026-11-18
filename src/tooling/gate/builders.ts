@@ -350,10 +350,10 @@ function dbWatches(root: string | undefined, exercises: readonly string[] | unde
   return [...watched, `${root.replace(/\/+$/, "")}/**`];
 }
 
-/** The `forge db` rows: the schema digests as `static` rows; the lint, which reads the local database, and the schema replay as `runtime` rows, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. Watching a relative `root` and every namespace `exercises` reaches through `graph`, else every change; a source file in `forge` runs them whole when its import closure changes. @public */
+/** The `forge db` rows: the schema digests as `static` rows; the lint, which reads the local database, the schema replay and the row-types check as `runtime` rows, behind the installed runtime. `forge` is the command that runs the CLI, `["forge"]` by default. Watching a relative `root` and every namespace `exercises` reaches through `graph`, else every change; a source file in `forge` runs them whole when its import closure changes. @public */
 export function dbSteps(
   options: { root?: string; forge?: readonly [string, ...string[]]; hint?: string; exercises?: readonly string[]; graph?: DeclaredGraph } = {},
-): { static: [CommandStep]; runtime: [CommandStep, CommandStep] } {
+): { static: [CommandStep]; runtime: [CommandStep, CommandStep, CommandStep] } {
   const forge = options.forge ?? ["forge"];
   const root = options.root === undefined ? [] : ["--root", options.root];
   const watches = watching(dbWatches(options.root, options.exercises, options.graph));
@@ -369,6 +369,7 @@ export function dbSteps(
     runtime: [
       { label: "db:lint", tail: 40, cmd: [...forge, "db", "lint", ...root], requires, ...watches, ...traced },
       { label: "db:schema", tail: 60, cmd: [...forge, "db", "schema", "check", "--replay", ...root], requires, ...watches, ...traced },
+      { label: "db:types", tail: 40, cmd: [...forge, "db", "types", "--check", ...root], requires, ...watches, ...traced },
     ],
   };
 }

@@ -376,16 +376,17 @@ describe("cloudflareWorkerSteps() — the workerd row", () => {
 });
 
 describe("cloudflareWorkerSteps() — the db rows", () => {
-  it("emits the digests row on static, and the lint and replay rows on runtime, behind the installed runtime", () => {
+  it("emits the digests row on static, and the lint, replay and row-types rows on runtime, behind the installed runtime", () => {
     const tiers = cloudflareWorkerSteps({ db: true });
     const rows = declaredSteps(tiers).filter((step) => step.label.startsWith("db:"));
 
     expect(entriesOf(tiers.static).at(-1)).toBe("db:schema:digests");
-    expect(entriesOf(tiers.runtime)).toEqual([{ tier: "unit" }, "db:lint", "db:schema"]);
+    expect(entriesOf(tiers.runtime)).toEqual([{ tier: "unit" }, "db:lint", "db:schema", "db:types"]);
     expect(rows.map((step) => [step.label, step.requires?.tool])).toEqual([
       ["db:schema:digests", undefined],
       ["db:lint", "workerd"],
       ["db:schema", "workerd"],
+      ["db:types", "workerd"],
     ]);
   });
 
@@ -401,11 +402,12 @@ describe("cloudflareWorkerSteps() — the db rows", () => {
   });
 
   it("orders the db rows before the browser and workerd rows", () => {
-    expect(labelsOf(workerRows({ db: true, browser: true, workerd: true })).slice(-7)).toEqual([
+    expect(labelsOf(workerRows({ db: true, browser: true, workerd: true })).slice(-8)).toEqual([
       "db:schema:digests",
       "test",
       "db:lint",
       "db:schema",
+      "db:types",
       "validate-dev-bundle",
       "test:browser",
       "test:workerd",
@@ -1313,6 +1315,7 @@ describe("cloudflareWorkerSteps() — watches", () => {
       "test",
       "db:lint",
       "db:schema",
+      "db:types",
       "validate-dev-bundle",
       "test:browser",
       "test:workerd",

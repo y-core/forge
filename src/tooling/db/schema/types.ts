@@ -272,3 +272,15 @@ export interface SchemaCheckReport {
   /** Null when nothing is declared and no snapshot exists, so there is nothing to hold in step. */
   readonly problems: readonly string[] | null;
 }
+
+/** What `forge db types` found or did: no schema declared, the file absent, stale, current, or just written. @internal */
+export type RowTypesState = "undeclared" | "absent" | "stale" | "current" | "written";
+
+/** The outcome of one `forge db types` run, which `--json` prints. @internal */
+export interface RowTypesReport {
+  /** Absolute. */
+  readonly path: string;
+  /** Each declared schema, as `config/db.config.ts` wrote it. */
+  readonly schemas: readonly string[];
+  readonly state: RowTypesState;
+}

@@ -117,7 +117,7 @@ function createStandbyCommands(overrides: DbContextOverrides): CommandBase {
   return standby;
 }
 
-/** The `forge db` command tree: migrate, lint, schema, backup, restore, reset, seed, standby and bookmark. @public */
+/** The `forge db` command tree. @public */
 export function createDbCommands(overrides: DbContextOverrides = {}): CommandBase {
   const db = createCommand({
     name: "db",

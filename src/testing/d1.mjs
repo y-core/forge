@@ -8,7 +8,7 @@ import process from "node:process";
 import { getPlatformProxy } from "wrangler";
 
 // src/storage/db/migrations.ts
-var DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json" };
+var DB_LAYOUT = { migrations: "config/db/migrations", snapshot: "config/db/schema.snapshot.json", types: "config/db/tables.ts" };
 var MIGRATION_FILE = /^(\d+)_(.+)\.sql$/;
 function isMigrationFileName(name) {
   return MIGRATION_FILE.test(name);
@@ -142,7 +142,8 @@ var DbHostConfigSchema = v.strictObject({
   schemas: v.optional(v.array(v.string())),
   seeds: v.optional(v.array(v.string())),
   migrations: v.optional(v.string()),
-  snapshot: v.optional(v.string())
+  snapshot: v.optional(v.string()),
+  types: v.optional(v.string())
 });
 
 // src/tooling/db/declared.ts

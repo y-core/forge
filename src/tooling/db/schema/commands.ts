@@ -4,12 +4,22 @@ import type { CliContext, CommandBase, ResolvedFlags } from "../../cli/types";
 import { sharedDbFlags, withDbRun } from "../context";
 import type { DbContextOverrides, SharedDbFlags } from "../types";
 import { checkSchema, formatSchemaCheck } from "./check";
+import { formatRowTypes, generateRowTypes } from "./row-types";
 
 const cacheFlag = { "no-cache": { type: "boolean" as const, description: "Replay into the scratch database even when a cached model matches" } };
 
 const checkFlags = {
   ...sharedDbFlags,
   replay: { type: "boolean" as const, description: "Also replay the migrations and load the declared schemas, and compare both to the snapshot" },
+  ...cacheFlag,
+};
+
+const typesFlags = {
+  ...sharedDbFlags,
+  check: {
+    type: "boolean" as const,
+    description: "Write nothing, and exit non-zero when the file is absent or not what the declared schemas generate. For CI",
+  },
   ...cacheFlag,
 };
 
@@ -46,7 +56,23 @@ function createSchemaCommand(overrides: DbContextOverrides): CommandBase {
   return schema;
 }
 
+/** The `forge db types` verb: the row interfaces generated from the declared schemas, or under `--check` held against them. */
+function createTypesCommand(overrides: DbContextOverrides): CommandBase {
+  return createCommand({
+    name: "types",
+    description: "Generate one row interface per declared table, and a Tables map, for D1Client.query<T>",
+    flags: typesFlags,
+    run: (_args, flags, ctx?: CliContext) =>
+      withDbRun(flags as SharedDbFlags, ctx, overrides, async (run) => {
+        const report = await generateRowTypes(run, { check: Boolean(flags.check), cache: !flags["no-cache"] });
+        run.print(run.json ? JSON.stringify(report) : formatRowTypes(report));
+        if (report.state === "absent" || report.state === "stale")
+          throw new CliError("invalid-args", "the row types are not what the declared schemas generate — see above.");
+      }),
+  });
+}
+
 /** The `forge db` verbs this directory owns. @internal */
 export function createSchemaCommands(overrides: DbContextOverrides = {}): CommandBase[] {
-  return [createSchemaCommand(overrides)];
+  return [createSchemaCommand(overrides), createTypesCommand(overrides)];
 }

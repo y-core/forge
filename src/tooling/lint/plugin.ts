@@ -26,6 +26,8 @@ import { reducedMotion } from "./rules/reduced-motion.ts";
 import { spacingScaleOnly } from "./rules/spacing-scale-only.ts";
 import { sqlDeleteAuthorised } from "./rules/sql-delete-authorised.ts";
 import { sqlExplicitTransaction } from "./rules/sql-explicit-transaction.ts";
+import { sqlInLoop } from "./rules/sql-in-loop.ts";
+import { sqlTagCalledDirectly } from "./rules/sql-tag-called-directly.ts";
 import { suppressionNeedsReason } from "./rules/suppression-needs-reason.ts";
 import { typeImportExternal } from "./rules/type-import-external.ts";
 import { typeImportSeparation } from "./rules/type-import-separation.ts";
@@ -61,6 +63,8 @@ export const lintPlugin: LintPlugin = {
     "spacing-scale-only": spacingScaleOnly,
     "sql-delete-authorised": sqlDeleteAuthorised,
     "sql-explicit-transaction": sqlExplicitTransaction,
+    "sql-in-loop": sqlInLoop,
+    "sql-tag-called-directly": sqlTagCalledDirectly,
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,
     "type-import-separation": typeImportSeparation,

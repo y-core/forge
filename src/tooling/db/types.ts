@@ -343,6 +343,8 @@ export interface DbHostConfig {
   readonly migrations?: string;
   /** Where the composed snapshot lives. Defaults to `config/db/schema.snapshot.json` under the root. */
   readonly snapshot?: string;
+  /** Where `forge db types` writes the generated row interfaces. Defaults to `config/db/tables.ts` under the root. */
+  readonly types?: string;
 }
 
 /** The shape `config/db.config.ts` must export, held at the boundary so a misspelt key or a bare string is refused by name. @internal */
@@ -351,6 +353,7 @@ export const DbHostConfigSchema = v.strictObject({
   seeds: v.optional(v.array(v.string())),
   migrations: v.optional(v.string()),
   snapshot: v.optional(v.string()),
+  types: v.optional(v.string()),
 });
 
 /** How a sent Time Travel restore ended short of a refusal: D1's reply, a reply that could not be read, or a fate the transport lost. @internal */

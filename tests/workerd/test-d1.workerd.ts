@@ -7,6 +7,7 @@ import { expect, test } from "@playwright/test";
 
 import { createD1Client } from "../../src/storage/db/client";
 import { classifyD1Error } from "../../src/storage/db/failure";
+import { createRowLoader } from "../../src/storage/db/loader";
 import { incomingBookmark } from "../../src/storage/db/session";
 import { sql } from "../../src/storage/db/sql";
 import { uuidFromBytes, uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
@@ -125,6 +126,43 @@ test("reads BLOB uuid keys from their strings through unhex(value, '-'), by the 
   const plan = await explainPlan(db, fragment);
   expect(read.ok ? read.data.map((row) => uuidFromBytes(new Uint8Array(row.id))) : read.error.message).toEqual([...wanted].sort());
   expect([usesIndex(plan, "sqlite_autoindex_keyed_1"), scansTable(plan, "keyed")]).toEqual([true, false]);
+});
+
+test("queryOne reads one row of many in the statement's own order, and a write's RETURNING still runs", async () => {
+  await db.reset();
+  const insert = (id: number) => db.binding.prepare("INSERT INTO users (id, email) VALUES (?, ?)").bind(id, `u${id}@example.com`);
+  await db.binding.batch(Array.from({ length: 50 }, (_, i) => insert(i + 1)));
+  const client = createD1Client(db.binding);
+
+  const read = await client.queryOne<{ id: number }>(sql`SELECT id FROM users ORDER BY id DESC`);
+  expect([read.ok ? read.data : read.error.message, read.meta.cost?.rowsRead]).toEqual([{ id: 50 }, 1]);
+  const taken = await client.queryOne<{ id: number }>(sql`DELETE FROM users WHERE id = ${7} RETURNING id`);
+  expect([taken.ok ? taken.data : taken.error.message, await db.rows("SELECT count(*) AS n FROM users")]).toEqual([{ id: 7 }, [{ n: 49 }]]);
+});
+
+test("queryOne over a join that repeats a column name answers the same row object query's first row is", async () => {
+  await db.reset();
+  await db.binding.batch([
+    db.binding.prepare("INSERT INTO users (id, email) VALUES (1, 'a@example.com'), (2, 'b@example.com')"),
+    db.binding.prepare("INSERT INTO posts (id, user_id) VALUES (9, 1), (8, 2)"),
+  ]);
+  const client = createD1Client(db.binding);
+  const joined = sql`SELECT users.id, posts.id FROM users JOIN posts ON posts.user_id = users.id ORDER BY users.id`;
+
+  const [one, all] = [await client.queryOne(joined), await client.query(joined)];
+  expect([one.ok ? one.data : one.error.message, all.ok ? all.data[0] : all.error.message]).toEqual([{ id: 9 }, { id: 9 }]);
+});
+
+test("createRowLoader answers many emails from one json_each statement that reaches them by the unique index", async () => {
+  await db.reset();
+  const insert = (id: number) => db.binding.prepare("INSERT INTO users (id, email) VALUES (?, ?)").bind(id, `u${id}@example.com`);
+  await db.binding.batch(Array.from({ length: 40 }, (_, i) => insert(i + 1)));
+  const select = (keysJson: string) => sql`SELECT id, email FROM users WHERE email IN (SELECT value FROM json_each(${keysJson}))`;
+  const loader = createRowLoader(createD1Client(db.binding), { select, keyOf: (row: { id: number; email: string }) => row.email });
+
+  const answers = await Promise.all(["u3@example.com", "u30@example.com", "none@example.com"].map((email) => loader.load(email)));
+  expect(answers.map((answer) => (answer.ok ? (answer.data?.id ?? null) : answer.error.message))).toEqual([3, 30, null]);
+  expect(usesIndex(await explainPlan(db, select('["u3@example.com"]')), "sqlite_autoindex_users_1")).toBe(true);
 });
 
 test("matches no row for an empty json_each list, without a syntax error", async () => {

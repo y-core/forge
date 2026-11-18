@@ -705,28 +705,28 @@ describe("builders — derived watches", () => {
 
     const db = dbSteps({ root: "db/fixture/", exercises: ["a"], graph: GRAPH });
 
-    expect([...db.static, ...db.runtime].map((step) => step.watches)).toEqual([watched, watched, watched]);
+    expect([...db.static, ...db.runtime].map((step) => step.watches)).toEqual([watched, watched, watched, watched]);
   });
 
   it("watches every change for a db row with no `exercises`, or whose root is the project itself", () => {
     const watching = (db: ReturnType<typeof dbSteps>) => [...db.static, ...db.runtime].map((step) => Object.hasOwn(step, "watches"));
 
-    expect(watching(dbSteps())).toEqual([false, false, false]);
-    expect(watching(dbSteps({ root: "db/fixture" }))).toEqual([false, false, false]);
-    expect(watching(dbSteps({ root: "/app", exercises: ["a"], graph: GRAPH }))).toEqual([false, false, false]);
+    expect(watching(dbSteps())).toEqual([false, false, false, false]);
+    expect(watching(dbSteps({ root: "db/fixture" }))).toEqual([false, false, false, false]);
+    expect(watching(dbSteps({ root: "/app", exercises: ["a"], graph: GRAPH }))).toEqual([false, false, false, false]);
   });
 
   it("traces the source file its command runs, resolved from the gate's root, and nothing for a bare binary", async () => {
     const {
       static: [digests],
-      runtime: [lint, replay],
+      runtime: [lint, replay, types],
     } = dbSteps({ forge: ["bun", "run", "./bin.ts"] });
     const root = gateFixtureRoot({ "bin.ts": 'import { a } from "./lib/a";\nexport { a };\n', "lib/a.ts": "export const a = 1;\n" });
 
     expect(await lint.widen?.(root)).toEqual(["bin.ts", "lib/a.ts"]);
-    expect([digests.widen, replay.widen].every((widen) => widen === lint.widen)).toBe(true);
+    expect([digests.widen, replay.widen, types.widen].every((widen) => widen === lint.widen)).toBe(true);
     const db = dbSteps();
-    expect([...db.static, ...db.runtime].map((step) => step.widen)).toEqual([undefined, undefined, undefined]);
+    expect([...db.static, ...db.runtime].map((step) => step.widen)).toEqual([undefined, undefined, undefined, undefined]);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -737,11 +737,14 @@ describe("builders — derived watches", () => {
     expect(() => dbSteps({ root: "db", exercises: ["a"] })).toThrow("needs the `graph`");
   });
 
-  it("puts the lint and the replay in runtime behind workerd, and the digests in static", () => {
+  it("puts the lint, the replay and the row-types check in runtime behind workerd, and the digests in static", () => {
     const db = dbSteps();
 
-    expect([db.static.map((step) => step.label), db.runtime.map((step) => step.label)]).toEqual([["db:schema:digests"], ["db:lint", "db:schema"]]);
-    expect([...db.static, ...db.runtime].map((step) => step.requires?.tool)).toEqual([undefined, "workerd", "workerd"]);
+    expect([db.static.map((step) => step.label), db.runtime.map((step) => step.label)]).toEqual([
+      ["db:schema:digests"],
+      ["db:lint", "db:schema", "db:types"],
+    ]);
+    expect([...db.static, ...db.runtime].map((step) => step.requires?.tool)).toEqual([undefined, "workerd", "workerd", "workerd"]);
   });
 
   it("passes --root and the forge command to every row", () => {
@@ -751,6 +754,7 @@ describe("builders — derived watches", () => {
       "bun x db schema check --root app",
       "bun x db lint --root app",
       "bun x db schema check --replay --root app",
+      "bun x db types --check --root app",
     ]);
   });
 });

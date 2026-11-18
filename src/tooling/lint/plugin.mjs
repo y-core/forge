@@ -1965,6 +1965,74 @@ var sqlExplicitTransaction = {
   }
 };
 
+// src/tooling/lint/rules/sql-in-loop.ts
+var D1_CALL = /* @__PURE__ */ new Set(["query", "queryOne", "execute"]);
+var LOOP = /* @__PURE__ */ new Set(["ForStatement", "ForOfStatement", "ForInStatement", "WhileStatement", "DoWhileStatement"]);
+var FUNCTION = /* @__PURE__ */ new Set(["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"]);
+var PER_ITEM = /* @__PURE__ */ new Set(["map", "flatMap", "forEach"]);
+function methodOf(call) {
+  const callee = call.callee;
+  return callee?.type === "MemberExpression" ? callee.property?.name : void 0;
+}
+function repeatingScope(call) {
+  const awaited = call.parent?.type === "AwaitExpression";
+  for (let child = call, current = call.parent; current != null; child = current, current = current.parent) {
+    if (LOOP.has(current.type)) {
+      const once = child === current.init || child === current.right;
+      return awaited && !once ? "loop" : void 0;
+    }
+    if (!FUNCTION.has(current.type)) continue;
+    const host = current.parent;
+    const isCallback = host?.type === "CallExpression" && host.callee !== child && PER_ITEM.has(methodOf(host) ?? "");
+    return isCallback ? "callback" : void 0;
+  }
+  return void 0;
+}
+var sqlInLoop = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "A D1 call per item is the N+1 shape: each one is a round trip and counts toward the invocation's query cap, so the items' keys go to one `json_each` statement or a `createRowLoader` instead."
+    }
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const method = methodOf(node);
+        if (method === void 0 || !D1_CALL.has(method)) return;
+        const scope = repeatingScope(node);
+        if (scope === void 0) return;
+        context.report({
+          message: `\`.${method}(\u2026)\` runs once per item ${scope === "loop" ? "of a loop" : "of a per-item callback"} \u2014 read every key in one statement through \`json_each\`, or load them through \`createRowLoader\` (docs/STORAGE_BINDINGS.md \xA71h).`,
+          loc: node.loc
+        });
+      }
+    };
+  }
+};
+
+// src/tooling/lint/rules/sql-tag-called-directly.ts
+var sqlTagCalledDirectly = {
+  meta: {
+    type: "problem",
+    docs: {
+      description: "`sql` called as a function takes its statement text from the caller rather than from a template literal, so every downstream call site trusts text nothing bound \u2014 map a choice onto fixed fragments instead."
+    }
+  },
+  create(context) {
+    return {
+      CallExpression(node) {
+        const callee = node.callee;
+        if (callee?.type !== "Identifier" || callee.name !== "sql") return;
+        context.report({
+          message: "`sql(\u2026)` called as a function builds a fragment from caller text that no `?` binds \u2014 write the statement as a `sql`\u2026`` template, and map a column or direction onto fixed fragments (docs/STORAGE_BINDINGS.md \xA71b).",
+          loc: node.loc
+        });
+      }
+    };
+  }
+};
+
 // src/tooling/lint/rules/suppression-needs-reason.ts
 var named = (directive) => directive.value === "" ? "every rule" : `\`${directive.value}\``;
 var suppressionNeedsReason = {
@@ -2067,6 +2135,8 @@ var lintPlugin = {
     "spacing-scale-only": spacingScaleOnly,
     "sql-delete-authorised": sqlDeleteAuthorised,
     "sql-explicit-transaction": sqlExplicitTransaction,
+    "sql-in-loop": sqlInLoop,
+    "sql-tag-called-directly": sqlTagCalledDirectly,
     "suppression-needs-reason": suppressionNeedsReason,
     "type-import-external": typeImportExternal,
     "type-import-separation": typeImportSeparation

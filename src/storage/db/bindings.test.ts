@@ -2,8 +2,13 @@ import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
 import type { AppContext } from "../../context/types";
+import { createLogger } from "../../logging/logger";
+import type { LogRecord } from "../../logging/types";
+import { fakeD1 } from "../../testing/fakes";
 import { mapHandler } from "../../testing/route";
 import { d1BindingSpec, resolveD1Client, validateD1Binding } from "./bindings";
+import { createD1Client } from "./client";
+import { sql } from "./sql";
 import type { D1BindingOptions, D1Database, D1DatabaseLike, D1PreparedStatement, D1Result } from "./types";
 
 const stubDb: D1Database = {
@@ -145,5 +150,64 @@ describe("validateD1Binding", () => {
 describe("d1BindingSpec", () => {
   it("holds the named binding to carrying prepare", () => {
     expect(d1BindingSpec("DB")).toEqual({ name: "DB", methods: ["prepare"], label: "a D1 database binding" });
+  });
+});
+
+describe("resolveD1Client — the request's query budget", () => {
+  function budgetApp(perRequest: (c: AppContext<{ DB: D1Database }>, logger: ReturnType<typeof createLogger>) => Promise<void>) {
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/db", { channels: [{ write: (record) => void records.push(record) }] });
+    const app = new Forge<{ DB: D1Database }>();
+    mapHandler(app, "GET", "/", async (c) => {
+      await perRequest(c as AppContext<{ DB: D1Database }>, logger);
+      return new Response("ok");
+    });
+    const budget = () => records.filter((record) => record.message === "d1.request.budget").map((record) => [record.level, record.data]);
+    return { app, budget };
+  }
+  const binding = (c: AppContext<{ DB: D1Database }>) => c.env.DB;
+
+  it("warns once at the eleventh run of one statement in a request, by default", async () => {
+    const db = fakeD1(() => [{ id: 1 }]);
+    const { app, budget } = budgetApp(async (c, logger) => {
+      const client = resolveD1Client(c, { binding, client: { logger } });
+      for (let id = 0; id < 12; id += 1) await client?.queryOne(sql`SELECT * FROM users WHERE id = ${id}`);
+    });
+    await app.request("/", {}, { DB: db });
+    expect([db.calls.length, budget()]).toEqual([
+      12,
+      [["warn", { reason: "repeats", sql: "SELECT * FROM users WHERE id = ?\nLIMIT 1", runs: 11, queries: 11 }]],
+    ]);
+  });
+
+  it("shares one tally between two clients resolved in the same request, and starts the next request afresh", async () => {
+    const { app, budget } = budgetApp(async (c, logger) => {
+      const options = { binding, client: { logger, queryBudget: { repeats: 1 } } };
+      await resolveD1Client(c, options)?.execute(sql`DELETE FROM t WHERE id = ${1}`);
+      await resolveD1Client(c, options)?.execute(sql`DELETE FROM t WHERE id = ${2}`);
+    });
+    const warning = ["warn", { reason: "repeats", sql: "DELETE FROM t WHERE id = ?", runs: 2, queries: 2 }];
+    await app.request("/", {}, { DB: fakeD1() });
+    expect(budget()).toEqual([warning]);
+    await app.request("/", {}, { DB: fakeD1() });
+    expect(budget()).toEqual([warning, warning]);
+  });
+
+  it("warns once two clients together reach the request's `queries`", async () => {
+    const { app, budget } = budgetApp(async (c, logger) => {
+      const options = { binding, client: { logger, queryBudget: { queries: 3 } } };
+      for (const n of [1, 2]) await resolveD1Client(c, options)?.query(sql`SELECT ${n}`);
+      await resolveD1Client(c, options)?.batch([sql`SELECT 3`, sql`SELECT 4`]);
+    });
+    await app.request("/", {}, { DB: fakeD1() });
+    expect(budget()).toEqual([["warn", { reason: "queries", queries: 3 }]]);
+  });
+
+  it("counts nothing for a client made outside a request", async () => {
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/db", { channels: [{ write: (record) => void records.push(record) }] });
+    const client = createD1Client(fakeD1(), { logger, queryBudget: { repeats: 1, queries: 1 } });
+    for (let i = 0; i < 3; i += 1) await client.query(sql`SELECT 1`);
+    expect(records.filter((record) => record.message === "d1.request.budget")).toEqual([]);
   });
 });

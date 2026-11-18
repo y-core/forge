@@ -4,6 +4,7 @@ export { createD1Client } from "./client";
 export { classifyD1Error, D1Failure } from "./failure";
 export { checkSchemaHealth, schemaHealthCheck, schemaHealthMonitor } from "./health";
 export { defineD1Binding } from "./mount";
+export { createRowLoader } from "./loader";
 export { d1Sessions } from "./session";
 export { D1_LIMITS } from "./limits";
 export { compareCodePoints } from "./schema";
@@ -25,6 +26,7 @@ export type {
   D1FailureKind,
   D1Outcome,
   D1PreparedStatement,
+  D1QueryBudget,
   D1Queryable,
   D1Result,
   D1RetryPolicy,
@@ -32,6 +34,8 @@ export type {
   D1SessionConstraint,
   D1SessionsOptions,
   D1WriteOptions,
+  RowLoader,
+  RowLoaderOptions,
   SchemaHealth,
   SchemaHealthMonitorOptions,
   SchemaHealthState,

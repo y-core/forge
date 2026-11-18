@@ -24,6 +24,14 @@ function squash(sql: string): string {
   return sql.replace(/\s+/g, " ").trim();
 }
 
+const FIRST_ROW = /^(SELECT .*) LIMIT 1$/;
+
+/** The rows `answer` gives a statement, read past the `LIMIT 1` `queryOne` appends to a read. */
+function firstRowOf(sql: string, answer: (statement: string) => Record<string, unknown>[]): Record<string, unknown>[] {
+  const inner = FIRST_ROW.exec(sql)?.[1];
+  return inner === undefined ? answer(sql) : answer(inner).slice(0, 1);
+}
+
 function sameBytes(left: unknown, right: Uint8Array | null | undefined): boolean {
   if (!(left instanceof Uint8Array) || right == null || left.length !== right.length) return false;
   return left.every((byte, index) => byte === right[index]);
@@ -190,7 +198,7 @@ export function fakeAuthD1(
   const ephemera: AuthEphemera = { challenges: new Map(), nonces: new Set() };
   // An unmodelled SELECT answers no rows rather than throwing: every store reads "no rows" as the
   // absence it is, not as a failure it cannot describe.
-  return fakeD1((sql, params) => respond(users, ephemera, squash(sql), params) ?? [], {
+  return fakeD1((sql, params) => firstRowOf(squash(sql), (statement) => respond(users, ephemera, statement, params) ?? []), {
     ...options,
     rowsWritten: (sql, params) => options?.rowsWritten?.(sql, params) ?? write(ephemera, squash(sql), params),
   });

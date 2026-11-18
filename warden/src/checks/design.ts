@@ -33,6 +33,8 @@ const STATES_NO_CORPUS_RULE = new Set([
   "exact-markup-assertion",
   "sql-delete-authorised",
   "sql-explicit-transaction",
+  "sql-in-loop",
+  "sql-tag-called-directly",
   "type-import-external",
   "type-import-separation",
 ]);

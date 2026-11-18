@@ -86,11 +86,15 @@
       "rules": { "forge/type-import-external": "error", "forge/type-import-separation": "error" }
     },
     {
-      // A runtime `sql` fragment never opens or closes a transaction (`docs/STORAGE_BINDINGS.md` §1g).
+      // A runtime `sql` fragment never opens or closes a transaction (`docs/STORAGE_BINDINGS.md` §1g), never takes its text from a
+      // caller (§1b), and never runs once per item (§1h).
       "files": ["src/**/*.ts", "src/**/*.tsx"],
-      "rules": { "forge/sql-explicit-transaction": "error" }
+      "rules": { "forge/sql-explicit-transaction": "error", "forge/sql-tag-called-directly": "error", "forge/sql-in-loop": "error" }
     },
-    { "files": ["src/tooling/**", "src/**/*.test.ts", "src/**/*.test.tsx"], "rules": { "forge/sql-explicit-transaction": "off" } },
+    {
+      "files": ["src/tooling/**", "src/**/*.test.ts", "src/**/*.test.tsx"],
+      "rules": { "forge/sql-explicit-transaction": "off", "forge/sql-tag-called-directly": "off", "forge/sql-in-loop": "off" }
+    },
     {
       // A `types.ts` is where the rule sends a declaration, so it cannot itself be a violation. A
       // spec's fixture types are its own business — nothing shipped can name them, and `files`

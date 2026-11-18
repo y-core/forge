@@ -108,6 +108,41 @@ describe("createD1Client — queryOne", () => {
     const res = await client.queryOne(sql`SELECT * FROM t WHERE 0`);
     expect(res).toEqual({ ok: true, data: null, meta: { attempts: 1 } });
   });
+
+  it("appends LIMIT 1 to a SELECT, its trailing semicolon dropped and a trailing comment closed off", async () => {
+    const { db, calls } = makeD1Stub([{ id: 1 }, { id: 2 }]);
+    const client = createD1Client(db);
+    await client.queryOne(sql`SELECT id FROM t WHERE a = ${1};`);
+    await client.queryOne(sql`  select a.id, b.id FROM a JOIN b ON b.a_id = a.id -- note`);
+    expect(calls).toEqual([
+      { text: "SELECT id FROM t WHERE a = ?\nLIMIT 1", params: [1] },
+      { text: "  select a.id, b.id FROM a JOIN b ON b.a_id = a.id -- note\nLIMIT 1", params: [] },
+    ]);
+  });
+
+  it("leaves a SELECT with its own top-level LIMIT as written, and limits one whose LIMIT is nested or quoted", async () => {
+    const { db, calls } = makeD1Stub([{ id: 1 }]);
+    const client = createD1Client(db);
+    await client.queryOne(sql`SELECT id FROM t ORDER BY id limit ${5}`);
+    await client.queryOne(sql`SELECT id FROM t WHERE id IN (SELECT id FROM u LIMIT 3) AND note = 'LIMIT' AND "limit" = 1`);
+    expect(calls.map((call) => call.text)).toEqual([
+      "SELECT id FROM t ORDER BY id limit ?",
+      `SELECT id FROM t WHERE id IN (SELECT id FROM u LIMIT 3) AND note = 'LIMIT' AND "limit" = 1\nLIMIT 1`,
+    ]);
+  });
+
+  it("sends VALUES, a write's RETURNING and a WITH statement as written, since none takes an appended LIMIT", async () => {
+    const { db, calls } = makeD1Stub([{ id: 1 }]);
+    const client = createD1Client(db);
+    await client.queryOne(sql`VALUES (${1}), (${2})`);
+    await client.queryOne(sql`DELETE FROM t WHERE id = ${1} RETURNING id`);
+    await client.queryOne(sql`WITH x AS (SELECT 1) DELETE FROM t RETURNING id`);
+    expect(calls.map((call) => call.text)).toEqual([
+      "VALUES (?), (?)",
+      "DELETE FROM t WHERE id = ? RETURNING id",
+      "WITH x AS (SELECT 1) DELETE FROM t RETURNING id",
+    ]);
+  });
 });
 
 describe("createD1Client — execute", () => {

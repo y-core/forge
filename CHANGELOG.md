@@ -25,9 +25,24 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   major.minor, so pin `"@playwright/test": "~1.65.1"`: a caret lets `bun update` resolve a 1.66 the server answers with a 428.
 - **The optional `wrangler` peer floor rises from `>=4.151.2` to `>=4.164.0`**, the version the gate runs. That wrangler needs Node 22.12.0
   or later.
+- **`dbSteps` adds a `runtime` row, `db:types`, running `forge db types --check`.** An app that declares `schemas` fails it until it runs
+  `forge db types` and commits the file.
+
+### Added
+
+- **`createRowLoader(db, { select, keyOf })` in `@y-core/forge/storage/db`** answers every `load(key)` made in one microtask tick from
+  one `query`, binding the distinct keys as one JSON array for `json_each`.
+- **A client from `resolveD1Client` or `defineD1Binding` counts its request's calls** and logs `d1.request.budget` at `warn` on the 11th
+  run of one statement and at the 900th call; `queryBudget: { repeats, queries }` in the client options moves either threshold.
+- **Lint rules `forge/sql-in-loop`** (a `.query`, `.queryOne` or `.execute` awaited in a loop or run in a `.map`/`.flatMap`/`.forEach`
+  callback) **and `forge/sql-tag-called-directly`** (`sql(…)` called as a function).
+- **`forge db types` writes `config/db/tables.ts`** (the host config's `types`): one row interface per declared table and a `Tables` map, for
+  `db.query<Tables["users"]>(…)`.
 
 ### Fixed
 
+- **`queryOne` appends `LIMIT 1` to a `SELECT` with no top-level `LIMIT` of its own**, so D1 reads and bills one row rather than every
+  match. Any other statement, `VALUES` and a write's `RETURNING` included, is sent as written.
 - **`Range` and `ContentRange` from `@y-core/forge/http` follow `@remix-run/headers` 1.1.0.** `Range.normalize()` returns only the ranges
   the resource can satisfy, and `ContentRange.from()` returns an empty instance for invalid bounds.
 

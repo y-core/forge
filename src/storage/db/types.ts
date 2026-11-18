@@ -20,6 +20,19 @@ export interface D1ClientOptions {
   retry?: Partial<D1RetryPolicy>;
   /** A call whose D1-reported duration exceeds this logs its `d1.query` record at `warn` instead of `debug`. */
   slowQueryMs?: number;
+  queryBudget?: Partial<D1QueryBudget>;
+}
+
+/** The runs of one statement, and the calls in one request, past which a client resolved from the request logs `d1.request.budget` at `warn`. @public */
+export interface D1QueryBudget {
+  readonly repeats: number;
+  readonly queries: number;
+}
+
+/** One request's D1 calls so far, and the runs of each statement text among them. @internal */
+export interface D1QueryTally {
+  queries: number;
+  readonly runs: Map<string, number>;
 }
 
 /** How often an idempotent call is tried on a transient failure, and the base and cap of the jittered wait. @public */
@@ -200,4 +213,15 @@ export type UuidByteInput = readonly number[] | Uint8Array | ArrayBuffer;
 /** Options for {@link createUuidv7Bytes} and {@link createUuidv7}. @public */
 export interface Uuidv7Options {
   now?: () => number;
+}
+
+/** What a `RowLoader` asks of its table: the statement reading every row whose key is in `keysJson`, a JSON array to bind for `json_each`, and the key a row answers. @public */
+export interface RowLoaderOptions<K extends string | number, T> {
+  select(keysJson: string): SqlFragment;
+  keyOf(row: T): K;
+}
+
+/** Reads rows by key, many `load`s to one statement. @public */
+export interface RowLoader<K extends string | number, T> {
+  load(key: K): Promise<D1Outcome<T | null>>;
 }

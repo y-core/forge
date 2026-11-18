@@ -1,5 +1,6 @@
 import { createLogger } from "../../logging/logger";
 import type { Logger } from "../../logging/types";
+import { countQuery, D1_QUERY_BUDGET } from "./budget";
 import { classifyD1Error, D1Failure } from "./failure";
 import { D1_LIMITS } from "./limits";
 import { D1_RETRY_POLICY, retryWithBackoff } from "./retry";
@@ -10,6 +11,8 @@ import type {
   D1Cost,
   D1Queryable,
   D1Outcome,
+  D1QueryBudget,
+  D1QueryTally,
   D1Result,
   D1RetryPolicy,
   D1ServedBy,
@@ -68,6 +71,26 @@ function oversized(fragments: readonly SqlFragment[]): D1Failure | null {
   return null;
 }
 
+const SELECT = /^\s*SELECT\b/i;
+const PROSE = /'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?(?:\*\/|$)/g;
+
+/** Whether a statement carries its own `LIMIT` outside every parenthesis, its strings, quoted names and comments blanked first. */
+function limitsItself(text: string): boolean {
+  let depth = 0;
+  for (const [token] of text.replace(PROSE, (prose) => " ".repeat(prose.length)).matchAll(/[()]|\bLIMIT\b/gi)) {
+    if (token === "(") depth += 1;
+    else if (token === ")") depth -= 1;
+    else if (depth === 0) return true;
+  }
+  return false;
+}
+
+/** The statement `queryOne` sends: a `SELECT` with no limit of its own gains `LIMIT 1`, so D1 stops at its first row, and any other statement goes as written. */
+function firstRowOf(fragment: SqlFragment): SqlFragment {
+  if (!SELECT.test(fragment.text) || limitsItself(fragment.text)) return fragment;
+  return { ...fragment, text: `${fragment.text.replace(/[\s;]+$/, "")}\nLIMIT 1` };
+}
+
 type CallOp = "batch" | "execute" | "query" | "queryOne";
 
 /** Runs one call, retrying a transient failure only when `retry` is set, classifies whatever it finally throws, and logs one `d1.query` record without any bound value; a statement over D1's limits fails unsent. */
@@ -75,10 +98,13 @@ async function call<T>(
   op: CallOp,
   fragments: readonly SqlFragment[],
   retry: boolean,
-  context: { policy: D1RetryPolicy; logger: Logger; slowQueryMs: number | undefined },
+  context: { policy: D1RetryPolicy; logger: Logger; slowQueryMs: number | undefined; budget: D1QueryBudget; tally: D1QueryTally | undefined },
   run: () => Promise<Answer<T>>,
 ): Promise<D1Outcome<T>> {
   const outcome = await dispatch(fragments, retry, context.policy, run);
+  if (context.tally !== undefined && outcome.meta.attempts > 0) {
+    countQuery(context.tally, op === "batch" ? null : (fragments[0]?.text ?? null), context.budget, context.logger);
+  }
   const { cost, servedBy } = outcome.meta;
   const record = {
     op,
@@ -127,10 +153,17 @@ async function dispatch<T>(
 
 /** Creates a D1Client accepting only SqlFragment — raw string SQL is rejected by the type system, so bind parameters are enforced by construction. @public */
 export function createD1Client(db: D1Queryable, options?: D1ClientOptions): D1Client {
+  return clientCounting(db, options, undefined);
+}
+
+/** A D1Client whose calls count against `tally`, the request's, where one is given. @internal */
+export function clientCounting(db: D1Queryable, options: D1ClientOptions | undefined, tally: D1QueryTally | undefined): D1Client {
   const context = {
     logger: options?.logger ?? createLogger("storage/db", { channels: [] }),
     policy: { ...D1_RETRY_POLICY, ...options?.retry },
     slowQueryMs: options?.slowQueryMs,
+    budget: { ...D1_QUERY_BUDGET, ...options?.queryBudget },
+    tally,
   };
 
   return {
@@ -162,11 +195,12 @@ export function createD1Client(db: D1Queryable, options?: D1ClientOptions): D1Cl
     },
 
     queryOne<T = unknown>(fragment: SqlFragment) {
+      const sent = firstRowOf(fragment);
       // `first()` returns the row alone, without the `meta` that carries D1's own read retries.
-      return call("queryOne", [fragment], false, context, async () => {
+      return call("queryOne", [sent], false, context, async () => {
         const res = await db
-          .prepare(fragment.text)
-          .bind(...fragment.params)
+          .prepare(sent.text)
+          .bind(...sent.params)
           .all<T>();
         return { data: res.results[0] ?? null, metas: [res.meta] };
       });

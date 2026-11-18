@@ -64,6 +64,11 @@ export function snapshotPath(run: DbRunContext): string {
   return declaredPath(run.config.root, run.host.snapshot ?? DB_LAYOUT.snapshot).path;
 }
 
+/** Where the row types live: the host config's `types`, else `config/db/tables.ts` under the root. @internal */
+export function rowTypesPath(run: DbRunContext): string {
+  return declaredPath(run.config.root, run.host.types ?? DB_LAYOUT.types).path;
+}
+
 /** The refusal for a wrangler entry whose `migrations_dir` is not the directory forge applies from, or whose `migrations_pattern` selects other files than its top-level `.sql`, naming the key to set; `null` when they agree. @internal */
 export function migrationsDirRefusal(run: DbRunContext, migrationsDir: string | undefined, migrationsPattern?: string): string | null {
   const forge = declaredMigrations(run);

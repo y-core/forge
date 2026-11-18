@@ -179,7 +179,9 @@ describe("the gate's watches", () => {
     const selected = affected(["docs/TEST_RUNNERS.md"]);
 
     expect(selected).toContain("validate-markdown");
-    expect(selected.filter((label) => ["db:lint", "db:schema", "validate-contrast", "validate-icc-profile"].includes(label))).toEqual([]);
+    expect(selected.filter((label) => ["db:lint", "db:schema", "db:types", "validate-contrast", "validate-icc-profile"].includes(label))).toEqual(
+      [],
+    );
   });
 });
 
@@ -196,7 +198,7 @@ describe("the runtime tier's narrowing", () => {
   const traced = async (label: string): Promise<readonly string[]> => (await STEPS.find((step) => step.label === label)?.widen?.(ROOT)) ?? [];
 
   it("traces the command every database row runs, so a change to the CLI that loads `forge db` runs them whole", async () => {
-    for (const label of ["db:lint", "db:schema"]) {
+    for (const label of ["db:lint", "db:schema", "db:types"]) {
       const db = await traced(label);
       expect([label, db.includes("src/tooling/root/root.ts"), db.includes("src/tooling/release/release.ts")]).toEqual([label, true, true]);
     }
@@ -211,7 +213,7 @@ describe("the runtime tier's narrowing", () => {
   it("watches no database row with a hand-kept source glob", () => {
     const db = STEPS.filter((step) => step.label.startsWith("db:"));
 
-    expect(db.map((step) => step.watches?.includes("src/**"))).toEqual([false, false, false]);
+    expect(db.map((step) => step.watches?.includes("src/**"))).toEqual([false, false, false, false]);
     expect(db.every((step) => step.watches?.includes("tests/fixtures/db-schema/**"))).toBe(true);
   });
 
@@ -226,6 +228,7 @@ describe("the runtime tier's narrowing", () => {
     expect(narrowed).toEqual([
       ["db:lint", "untouched"],
       ["db:schema", "untouched"],
+      ["db:types", "untouched"],
     ]);
   });
 });

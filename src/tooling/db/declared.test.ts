@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { WranglerConfig } from "../cf/types";
+import { CliError } from "../cli/errors";
 import { checkConfigFiles } from "../gate/checks/config-files";
 import { PLAIN } from "../term/color";
 import { fakeDbIo } from "./db.fixture";
@@ -16,8 +17,10 @@ import {
   declaredSeeds,
   defineDbConfig,
   forgeSchema,
+  loadHostConfig,
   migrationsDirRefusal,
   NO_SCHEMAS,
+  rowTypesPath,
   snapshotPath,
 } from "./declared";
 import { appHome } from "./home";
@@ -79,6 +82,40 @@ describe("snapshotPath()", () => {
 
   it("takes the host config's own position when it names one", () => {
     expect(snapshotPath(context({ snapshot: "src/auth/schema.snapshot.json" }))).toBe("/app/src/auth/schema.snapshot.json");
+  });
+});
+
+describe("rowTypesPath()", () => {
+  it("defaults to config/db/tables.ts under the root", () => {
+    expect(rowTypesPath(context())).toBe("/app/config/db/tables.ts");
+  });
+
+  it("resolves the host config's own position against the root", () => {
+    expect(rowTypesPath(context({ types: "src/db/rows.ts" }))).toBe("/app/src/db/rows.ts");
+  });
+});
+
+describe("loadHostConfig()", () => {
+  async function loadWritten(text: string): Promise<DbHostConfig> {
+    const root = mkdtempSync(join(tmpdir(), "forge-host-config-"));
+    try {
+      mkdirSync(join(root, "config"));
+      writeFileSync(join(root, DEFAULT_DB_CONFIG), text);
+      return await loadHostConfig(root, DEFAULT_DB_CONFIG, false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }
+
+  it("accepts a types position", async () => {
+    expect(await loadWritten('export default { types: "x.ts" };\n')).toEqual({ types: "x.ts" });
+  });
+
+  it("refuses a types position that is not a string, naming the field", async () => {
+    const refused = loadWritten("export default { types: 1 };\n");
+
+    await expect(refused).rejects.toBeInstanceOf(CliError);
+    await expect(refused).rejects.toThrow(new RegExp(`^${DEFAULT_DB_CONFIG}: types: `));
   });
 });
 

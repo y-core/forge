@@ -71,7 +71,7 @@ describe("createOtpStateStore — spending a guess", () => {
     const [client, db] = clientOf(() => []);
     expect(await createOtpStateStore(client).read(USER_ID, NOW)).toEqual({ ok: true, data: null });
     expect(normalized(db.calls[0]?.sql)).toBe(
-      "SELECT token, attempts, issued_at, expires_at FROM auth_otp_state WHERE user_id = ? AND expires_at > ?",
+      "SELECT token, attempts, issued_at, expires_at FROM auth_otp_state WHERE user_id = ? AND expires_at > ? LIMIT 1",
     );
     expect(db.calls[0]?.params).toEqual([uuidToBytes(USER_ID), NOW]);
   });
