@@ -1597,7 +1597,11 @@ describe("createRecoveryCodeActions", () => {
     updatedAt: 1,
   });
 
-  function codePages(holds: readonly AuthFactorKind[], guard: { readonly freshStepUpMaxAgeMs?: number | null; readonly mounted?: boolean } = {}) {
+  function codePages(
+    holds: readonly AuthFactorKind[],
+    guard: { readonly freshStepUpMaxAgeMs?: number | null; readonly mounted?: boolean } = {},
+    returnParam?: string,
+  ) {
     const calls: string[] = [];
     const holding = (kind: "totp-app" | "passkey") =>
       ({ ...fakeFactorService(kind), listEnrolments: async () => ok(holds.includes(kind) ? [confirmedRow(kind)] : []) }) as AuthFactorService;
@@ -1623,7 +1627,7 @@ describe("createRecoveryCodeActions", () => {
         ],
       }),
     });
-    const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
+    const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW, ...(returnParam === undefined ? {} : { returnParam }) });
     const actions = createRecoveryCodeActions(options);
     const freshStepUp = requireFreshStepUp({
       factors: () => ({ resolve: async () => ok({ status: "satisfied" as const }) }),
@@ -1794,6 +1798,21 @@ describe("createRecoveryCodeActions", () => {
       expect({ answers, calls }).toEqual(expected);
     });
   }
+
+  it("carries the return-to onto verify under the parameter the mount renamed it to, on both code POSTs", async () => {
+    const { calls, app } = codePages(["totp-app"], { mounted: false }, "back");
+    const mountedApp = app({ userId: "u9", stepUpAt: NOW - 1 });
+    const answers = [];
+    for (const [path, fields] of [
+      ["/account/recovery-codes", {}],
+      ["/account/recovery-codes/confirm", { code: ISSUED[1] ?? "" }],
+    ] as const) {
+      const res = await mountedApp.request(path, formBody(fields));
+      answers.push({ status: res.status, location: res.headers.get("location") });
+    }
+    const toVerify = { status: 303, location: "/auth/verify?back=%2Faccount%2Frecovery-codes" };
+    expect({ answers, calls }).toEqual({ answers: [toVerify, toVerify], calls: [] });
+  });
 
   it("names why an account without an authenticator is refused codes", async () => {
     const { app } = codePages([]);

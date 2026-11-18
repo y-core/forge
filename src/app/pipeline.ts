@@ -48,9 +48,12 @@ export async function screenTurnstile<Bindings>(
 }
 
 /** Builds the read → guard → validate sequence both mutation builders run before their own terminal step. @internal */
-export function createSubmissionPipeline<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown>(
-  def: SubmissionPipelineDefinition<S, Bindings, ConfigData>,
-): SubmissionPipeline<S, Bindings, ConfigData> {
+export function createSubmissionPipeline<
+  S extends v.GenericSchema,
+  Bindings = Record<string, unknown>,
+  Params extends Record<string, string | undefined> = Record<string, string | undefined>,
+  ConfigData = unknown,
+>(def: SubmissionPipelineDefinition<S, Bindings, Params, ConfigData>): SubmissionPipeline<S, Bindings, Params, ConfigData> {
   const parseOptions: ParseFormDataOptions = def.maxBytes !== undefined ? { maxBytes: def.maxBytes } : {};
   const turnstileField = def.turnstile ? (def.turnstile.tokenField ?? TURNSTILE_FIELD_DEFAULT) : undefined;
   const declaredDrops = turnstileField === undefined ? [] : [turnstileField];

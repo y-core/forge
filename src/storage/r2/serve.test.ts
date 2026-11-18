@@ -54,6 +54,33 @@ function makeBackend(obj: ObjectBody | null): ObjectStorageBackend {
   };
 }
 
+function countingBackend(
+  obj: ObjectBody | null,
+  opts?: { throwOnGet?: unknown },
+): { backend: ObjectStorageBackend; counters: { gets: number; heads: number } } {
+  const counters = { gets: 0, heads: 0 };
+  const backend: ObjectStorageBackend = {
+    name: "counting",
+    async put() {
+      return obj ?? makeObjectBody();
+    },
+    async get() {
+      counters.gets += 1;
+      if (opts?.throwOnGet !== undefined) throw opts.throwOnGet;
+      return obj;
+    },
+    async head() {
+      counters.heads += 1;
+      return obj;
+    },
+    async delete() {},
+    async list() {
+      return { objects: [], truncated: false };
+    },
+  };
+  return { backend, counters };
+}
+
 describe("serveObject — 200", () => {
   it("returns 200 with Content-Type and ETag headers", async () => {
     const backend = makeBackend(makeObjectBody());
@@ -65,20 +92,312 @@ describe("serveObject — 200", () => {
   });
 });
 
+const UPLOADED_HTTP_DATE = "Thu, 01 Jan 2026 00:00:00 GMT";
+
+function conditional(headers: Record<string, string>): Request {
+  return new Request("http://x/test.txt", { headers });
+}
+
 describe("serveObject — 304 (conditional GET)", () => {
   it("returns 304 when ETag matches If-None-Match", async () => {
-    const backend = makeBackend(makeObjectBody());
-    const req = new Request("http://x/test.txt", { headers: { "If-None-Match": '"abc123"' } });
-    const res = await serveObject(backend, req, "test.txt");
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": '"abc123"' }), "test.txt");
     expect(res.status).toBe(304);
   });
 
   it("returns 200 when ETag does not match", async () => {
-    const backend = makeBackend(makeObjectBody());
-    const req = new Request("http://x/test.txt", { headers: { "If-None-Match": '"stale"' } });
-    const res = await serveObject(backend, req, "test.txt");
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": '"stale"' }), "test.txt");
     expect(res.status).toBe(200);
   });
+
+  it("matches a weak If-None-Match and answers 304 carrying ETag and Last-Modified", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": 'W/"abc123"' }), "test.txt");
+    expect(res.status).toBe(304);
+    expect(res.headers.get("ETag")).toBe('"abc123"');
+    expect(res.headers.get("Last-Modified")).toBe(UPLOADED_HTTP_DATE);
+  });
+
+  it("answers 304 for a matching If-None-Match even when a Range is present", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": '"abc123"', Range: "bytes=0-4" }), "test.txt");
+    expect(res.status).toBe(304);
+  });
+
+  it("returns 304 when the object is unmodified since If-Modified-Since", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-Modified-Since": UPLOADED_HTTP_DATE }), "test.txt");
+    expect(res.status).toBe(304);
+    expect(res.headers.get("Last-Modified")).toBe(UPLOADED_HTTP_DATE);
+  });
+
+  it("returns 200 when the object changed after If-Modified-Since", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-Modified-Since": "Wed, 31 Dec 2025 00:00:00 GMT" }), "test.txt");
+    expect(res.status).toBe(200);
+  });
+
+  it("ignores If-Modified-Since when If-None-Match is present", async () => {
+    const req = conditional({ "If-None-Match": '"stale"', "If-Modified-Since": UPLOADED_HTTP_DATE });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(200);
+  });
+
+  it("emits Last-Modified from the upload time on a 200", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), new Request("http://x/test.txt"), "test.txt");
+    expect(res.headers.get("Last-Modified")).toBe(UPLOADED_HTTP_DATE);
+  });
+});
+
+describe("serveObject — 412 (failed precondition)", () => {
+  it("returns 412 when If-Match names another ETag", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-Match": '"other"' }), "test.txt");
+    expect(res.status).toBe(412);
+    expect(res.headers.get("ETag")).toBe('"abc123"');
+  });
+
+  it("returns 412 when If-Match names only a weak form of the ETag", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-Match": 'W/"abc123"' }), "test.txt");
+    expect(res.status).toBe(412);
+  });
+
+  it("serves the object when If-Match matches or is a wildcard", async () => {
+    const exact = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-Match": '"abc123"' }), "test.txt");
+    expect(exact.status).toBe(200);
+    const wildcard = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-Match": "*" }), "test.txt");
+    expect(wildcard.status).toBe(200);
+  });
+
+  it("returns 412 when the object changed after If-Unmodified-Since", async () => {
+    const req = conditional({ "If-Unmodified-Since": "Wed, 31 Dec 2025 00:00:00 GMT" });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(412);
+    expect(res.headers.get("Last-Modified")).toBe(UPLOADED_HTTP_DATE);
+  });
+
+  it("ignores If-Unmodified-Since when If-Match is present", async () => {
+    const req = conditional({ "If-Match": '"abc123"', "If-Unmodified-Since": "Wed, 31 Dec 2025 00:00:00 GMT" });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(200);
+  });
+
+  it("evaluates If-Match before If-None-Match", async () => {
+    const req = conditional({ "If-Match": '"other"', "If-None-Match": '"abc123"' });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(412);
+  });
+});
+
+describe("serveObject — If-Range", () => {
+  it("serves the whole object with 200 when If-Range names a stale ETag", async () => {
+    const req = conditional({ Range: "bytes=0-4", "If-Range": '"stale"' });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Range")).toBeNull();
+    expect(res.headers.get("Content-Length")).toBe("11");
+  });
+
+  it("serves the whole object with 200 when If-Range names a stale date", async () => {
+    const req = conditional({ Range: "bytes=0-4", "If-Range": "Wed, 31 Dec 2025 00:00:00 GMT" });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(200);
+  });
+
+  it("serves the range with 206 when If-Range matches the ETag or the upload date", async () => {
+    const byEtag = await serveObject(makeBackend(makeObjectBody()), conditional({ Range: "bytes=0-4", "If-Range": '"abc123"' }), "test.txt");
+    expect(byEtag.status).toBe(206);
+    expect(byEtag.headers.get("Content-Range")).toBe("bytes 0-4/11");
+    const byDate = await serveObject(
+      makeBackend(makeObjectBody()),
+      conditional({ Range: "bytes=0-4", "If-Range": UPLOADED_HTTP_DATE }),
+      "test.txt",
+    );
+    expect(byDate.status).toBe(206);
+  });
+});
+
+describe("serveObject — Range on methods other than GET (RFC 9110 §14.2)", () => {
+  for (const method of ["HEAD", "POST", "PUT"]) {
+    it(`ignores Range on ${method} and answers 200 for the whole object`, async () => {
+      const { backend, counters } = countingBackend(makeObjectBody());
+      const req = new Request("http://x/test.txt", { method, headers: { Range: "bytes=0-4" } });
+      const res = await serveObject(backend, req, "test.txt");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Range")).toBeNull();
+      expect(res.headers.get("Content-Length")).toBe("11");
+      expect(counters).toEqual({ gets: 1, heads: 0 });
+    });
+  }
+
+  it("spends no head on If-Range when the method is HEAD", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const req = new Request("http://x/test.txt", { method: "HEAD", headers: { Range: "bytes=0-4", "If-Range": '"abc123"' } });
+    const res = await serveObject(backend, req, "test.txt");
+    expect(res.status).toBe(200);
+    expect(counters).toEqual({ gets: 1, heads: 0 });
+  });
+
+  it("does not answer 416 on HEAD for a range past the end", async () => {
+    const req = new Request("http://x/test.txt", { method: "HEAD", headers: { Range: "bytes=20-30" } });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(200);
+  });
+
+  it("still answers 304 to a HEAD whose If-None-Match matches", async () => {
+    const req = new Request("http://x/test.txt", { method: "HEAD", headers: { Range: "bytes=0-4", "If-None-Match": '"abc123"' } });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(304);
+  });
+});
+
+describe("serveObject — If-Range against a weak validator", () => {
+  it("ignores the Range when If-Range carries a weak ETag, since If-Range compares strongly", async () => {
+    const req = conditional({ Range: "bytes=0-4", "If-Range": 'W/"abc123"' });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range"), await res.text()]).toEqual([200, null, "hello world"]);
+  });
+
+  it("ignores the Range when the stored ETag is weak, even though If-Range names its opaque tag", async () => {
+    const req = conditional({ Range: "bytes=0-4", "If-Range": '"abc123"' });
+    const res = await serveObject(makeBackend(makeObjectBody({ httpEtag: 'W/"abc123"' })), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([200, null]);
+  });
+
+  it("serves the range on an If-Range date matching the upload, however weak the stored ETag", async () => {
+    const req = conditional({ Range: "bytes=0-4", "If-Range": UPLOADED_HTTP_DATE });
+    const res = await serveObject(makeBackend(makeObjectBody({ httpEtag: 'W/"abc123"' })), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([206, "bytes 0-4/11"]);
+  });
+
+  it("serves the range on an If-Range date naming the upload's second, though the upload carried milliseconds", async () => {
+    const req = conditional({ Range: "bytes=0-4", "If-Range": UPLOADED_HTTP_DATE });
+    const res = await serveObject(makeBackend(makeObjectBody({ uploaded: new Date("2026-01-01T00:00:00.750Z") })), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([206, "bytes 0-4/11"]);
+  });
+
+  it("serves the whole object rather than 416 when a stale If-Range voids an unsatisfiable Range", async () => {
+    const req = conditional({ Range: "bytes=500-600", "If-Range": '"stale"' });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range"), res.headers.get("Content-Length")]).toEqual([200, null, "11"]);
+  });
+
+  it("answers 416 when a matching If-Range admits an unsatisfiable Range", async () => {
+    const req = conditional({ Range: "bytes=500-600", "If-Range": '"abc123"' });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([416, "bytes */11"]);
+  });
+
+  it("ignores If-Range without a Range, spending no head on it", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const res = await serveObject(backend, conditional({ "If-Range": '"stale"' }), "test.txt");
+    expect([res.status, await res.text(), counters]).toEqual([200, "hello world", { gets: 1, heads: 0 }]);
+  });
+});
+
+describe("serveObject — precondition interactions (RFC 9110 §13.2.2)", () => {
+  it("serves the range when If-Match passes beside it", async () => {
+    const req = conditional({ "If-Match": '"abc123"', Range: "bytes=0-4" });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([206, "bytes 0-4/11"]);
+  });
+
+  it("answers 412 before the Range is considered, fetching no body", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const res = await serveObject(backend, conditional({ "If-Match": '"other"', Range: "bytes=0-4" }), "test.txt");
+    expect([res.status, res.headers.get("Content-Range"), await res.text(), counters]).toEqual([
+      412,
+      null,
+      "Precondition Failed",
+      { gets: 0, heads: 1 },
+    ]);
+  });
+
+  it("answers 412 for an If-Match naming the stored weak ETag, since If-Match compares strongly", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody({ httpEtag: 'W/"abc123"' })), conditional({ "If-Match": 'W/"abc123"' }), "test.txt");
+    expect([res.status, res.headers.get("ETag")]).toEqual([412, 'W/"abc123"']);
+  });
+
+  it("answers 412 for a failed If-Unmodified-Since before a matching If-None-Match is reached", async () => {
+    const req = conditional({ "If-Unmodified-Since": "Wed, 31 Dec 2025 00:00:00 GMT", "If-None-Match": '"abc123"' });
+    const res = await serveObject(makeBackend(makeObjectBody()), req, "test.txt");
+    expect(res.status).toBe(412);
+  });
+
+  it("answers 304 for If-None-Match `*` on an object that exists, with an empty body and no get", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const res = await serveObject(backend, conditional({ "If-None-Match": "*" }), "test.txt");
+    expect([res.status, res.headers.get("ETag"), res.headers.get("Last-Modified"), await res.text(), counters]).toEqual([
+      304,
+      '"abc123"',
+      UPLOADED_HTTP_DATE,
+      "",
+      { gets: 0, heads: 1 },
+    ]);
+  });
+
+  it("answers 304 for If-None-Match `*` beside a Range", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": "*", Range: "bytes=0-4" }), "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([304, null]);
+  });
+
+  it("answers 304 when the ETag is one entry of an If-None-Match list", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": '"v1", W/"abc123", "v3"' }), "test.txt");
+    expect(res.status).toBe(304);
+  });
+
+  it("answers 304 for a strong If-None-Match against a weak stored ETag, as an edge-compressed object carries", async () => {
+    const res = await serveObject(
+      makeBackend(makeObjectBody({ httpEtag: 'W/"abc123"' })),
+      conditional({ "If-None-Match": '"abc123"' }),
+      "test.txt",
+    );
+    expect([res.status, res.headers.get("ETag")]).toEqual([304, 'W/"abc123"']);
+  });
+
+  it("serves the range when a stale If-None-Match sits beside it", async () => {
+    const res = await serveObject(makeBackend(makeObjectBody()), conditional({ "If-None-Match": '"stale"', Range: "bytes=0-4" }), "test.txt");
+    expect([res.status, res.headers.get("Content-Range")]).toEqual([206, "bytes 0-4/11"]);
+  });
+
+  const missing: ReadonlyArray<Record<string, string>> = [
+    { "If-Match": '"abc123"' },
+    { "If-Match": "*" },
+    { "If-None-Match": "*" },
+    { "If-Unmodified-Since": UPLOADED_HTTP_DATE },
+    { "If-Modified-Since": UPLOADED_HTTP_DATE },
+  ];
+
+  for (const headers of missing) {
+    it(`answers 404 rather than 304 or 412 for a missing object under ${Object.keys(headers)[0]}: ${Object.values(headers)[0]}`, async () => {
+      const res = await serveObject(makeBackend(null), conditional(headers), "missing.txt");
+      expect(res.status).toBe(404);
+    });
+  }
+});
+
+describe("serveObject — HTTP-date preconditions at one-second precision", () => {
+  const uploadedMidSecond = () => makeObjectBody({ uploaded: new Date("2026-01-01T00:00:00.750Z") });
+
+  it("answers 304 to If-Modified-Since naming the upload's second, though the upload carried milliseconds", async () => {
+    const res = await serveObject(makeBackend(uploadedMidSecond()), conditional({ "If-Modified-Since": UPLOADED_HTTP_DATE }), "test.txt");
+    expect(res.status).toBe(304);
+  });
+
+  it("serves the object to If-Unmodified-Since naming the upload's second, though the upload carried milliseconds", async () => {
+    const res = await serveObject(makeBackend(uploadedMidSecond()), conditional({ "If-Unmodified-Since": UPLOADED_HTTP_DATE }), "test.txt");
+    expect(res.status).toBe(200);
+  });
+
+  it("serves the object to an If-Unmodified-Since later than the upload", async () => {
+    const res = await serveObject(
+      makeBackend(makeObjectBody()),
+      conditional({ "If-Unmodified-Since": "Fri, 02 Jan 2026 00:00:00 GMT" }),
+      "test.txt",
+    );
+    expect(res.status).toBe(200);
+  });
+
+  for (const header of ["If-Modified-Since", "If-Unmodified-Since"]) {
+    it(`ignores an ${header} that is not a date`, async () => {
+      const res = await serveObject(makeBackend(makeObjectBody()), conditional({ [header]: "not a date" }), "test.txt");
+      expect([res.status, await res.text()]).toEqual([200, "hello world"]);
+    });
+  }
 });
 
 describe("serveObject — 206 (range request)", () => {
@@ -108,29 +427,26 @@ describe("serveObject — 416 (unsatisfiable range)", () => {
     expect(res.status).toBe(416);
     expect(res.headers.get("Content-Range")).toBe("bytes */10");
   });
+});
 
-  it("returns 416 for invalid range syntax", async () => {
-    const backend = makeBackend(makeObjectBody());
-    const req = new Request("http://x/test.txt", { headers: { Range: "invalid" } });
-    const res = await serveObject(backend, req, "test.txt");
-    expect(res.status).toBe(416);
-  });
+describe("serveObject — ignored Range (RFC 9110 §14.2)", () => {
+  const ignored: ReadonlyArray<{ label: string; range: string }> = [
+    { label: "invalid syntax", range: "invalid" },
+    { label: "an inverted range", range: "bytes=500-200" },
+    { label: "non-numeric boundaries", range: "bytes=abc-def" },
+    { label: "a multi-range request", range: "bytes=0-1,4-5" },
+    { label: "an unknown unit", range: "items=0-1" },
+  ];
 
-  it("returns 416 for an inverted range (end < start)", async () => {
-    const backend = makeBackend(makeObjectBody({ size: 1000 }));
-    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=500-200" } });
-    const res = await serveObject(backend, req, "test.txt");
-    expect(res.status).toBe(416);
-    expect(res.headers.get("Content-Range")).toBe("bytes */*");
-  });
-
-  it("returns 416 for NaN range boundaries (non-numeric start and end)", async () => {
-    const backend = makeBackend(makeObjectBody({ size: 1000 }));
-    const req = new Request("http://x/test.txt", { headers: { Range: "bytes=abc-def" } });
-    const res = await serveObject(backend, req, "test.txt");
-    expect(res.status).toBe(416);
-    expect(res.headers.get("Content-Range")).toBe("bytes */*");
-  });
+  for (const { label, range } of ignored) {
+    it(`serves the whole object with 200 for ${label}`, async () => {
+      const backend = makeBackend(makeObjectBody());
+      const res = await serveObject(backend, new Request("http://x/test.txt", { headers: { Range: range } }), "test.txt");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Range")).toBeNull();
+      expect(res.headers.get("Content-Length")).toBe("11");
+    });
+  }
 });
 
 describe("serveObject — 206 (valid range parse)", () => {
@@ -194,33 +510,6 @@ describe("serveObject — Content-Disposition", () => {
 });
 
 describe("serveObject — range contract", () => {
-  function countingBackend(
-    obj: ObjectBody | null,
-    opts?: { throwOnGet?: unknown },
-  ): { backend: ObjectStorageBackend; counters: { gets: number; heads: number } } {
-    const counters = { gets: 0, heads: 0 };
-    const backend: ObjectStorageBackend = {
-      name: "counting",
-      async put() {
-        return obj ?? makeObjectBody();
-      },
-      async get() {
-        counters.gets += 1;
-        if (opts?.throwOnGet !== undefined) throw opts.throwOnGet;
-        return obj;
-      },
-      async head() {
-        counters.heads += 1;
-        return obj;
-      },
-      async delete() {},
-      async list() {
-        return { objects: [], truncated: false };
-      },
-    };
-    return { backend, counters };
-  }
-
   it("refuses a 400-digit first-byte-pos without calling the backend", async () => {
     const { backend, counters } = countingBackend(makeObjectBody());
     const res = await serveObject(backend, new Request("http://x/t", { headers: { Range: `bytes=${"9".repeat(400)}-` } }), "test.txt");
@@ -249,6 +538,28 @@ describe("serveObject — range contract", () => {
     await expect(serveObject(backend, new Request("http://x/t", { headers: { Range: "bytes=0-1" } }), "test.txt")).rejects.toThrow(
       "bucket unavailable",
     );
+  });
+
+  it("answers 416 from the head without a get when a precondition already fetched the size", async () => {
+    const { backend, counters } = countingBackend(makeObjectBody());
+    const req = new Request("http://x/t", { headers: { Range: "bytes=500-600", "If-None-Match": '"stale"' } });
+    const res = await serveObject(backend, req, "test.txt");
+    expect(res.status).toBe(416);
+    expect(res.headers.get("Content-Range")).toBe("bytes */11");
+    expect(counters.gets).toBe(0);
+  });
+
+  it("cancels the body it fetched when the range proves unsatisfiable", async () => {
+    let cancelled = false;
+    const obj = makeObjectBody({ size: 10 });
+    const body = new ReadableStream({
+      cancel() {
+        cancelled = true;
+      },
+    });
+    const res = await serveObject(makeBackend({ ...obj, body }), new Request("http://x/t", { headers: { Range: "bytes=20-30" } }), "test.txt");
+    expect(res.status).toBe(416);
+    expect(cancelled).toBe(true);
   });
 
   it("spends no head on a satisfiable ranged get", async () => {
@@ -329,6 +640,7 @@ describe("serveObject — active content types", () => {
         "content-security-policy": "sandbox",
         "content-type": contentType,
         etag: '"abc123"',
+        "last-modified": "Thu, 01 Jan 2026 00:00:00 GMT",
         "x-content-type-options": "nosniff",
       });
     });
@@ -355,6 +667,7 @@ describe("serveObject — active content types", () => {
       "content-length": "11",
       "content-type": "image/png",
       etag: '"abc123"',
+      "last-modified": "Thu, 01 Jan 2026 00:00:00 GMT",
       "x-content-type-options": "nosniff",
     });
   });

@@ -42,4 +42,18 @@ describe("mapHandler", () => {
     expect(res.status).toBe(200);
     expect(order).toEqual(["mw", "handler"]);
   });
+
+  it("types the handler's params from the pattern it registers", async () => {
+    const app = createApp();
+    const text = (value: string): Response => new Response(value);
+    mapHandler(app, "GET", "/tasks/:taskId", (context) => text(context.params.taskId));
+    const res = await app.request("/tasks/42");
+    expect(await res.text()).toBe("42");
+  });
+
+  it("refuses a handler that reads a param its pattern does not capture", () => {
+    const app = createApp();
+    // @ts-expect-error -- `/tasks` captures no `taskId`
+    mapHandler(app, "GET", "/tasks", (context) => new Response(context.params.taskId));
+  });
 });

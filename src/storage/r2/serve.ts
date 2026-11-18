@@ -1,32 +1,14 @@
+import { ContentRange, IfMatch, IfNoneMatch, IfRange, Range } from "../../http/headers";
 import { isActiveContentType } from "./content-type";
 import { UnsatisfiableRangeError } from "./errors";
-import type { ObjectBody, ObjectStorageBackend, ServeOptions } from "./types";
+import type { ObjectBody, ObjectStorageBackend, ServeOptions, StoreGetOptions, StoredObject } from "./types";
 
-function parseRange(header: string): { offset?: number; length?: number; suffix?: number } | null {
-  const suffixMatch = /^bytes=-(\d+)$/.exec(header);
-  if (suffixMatch) {
-    const suffix = parseInt(suffixMatch[1] ?? "", 10);
-    if (Number.isNaN(suffix)) return null;
-    // An oversized suffix clamps to the whole object (RFC 9110 §14.1.1); what must never happen is
-    // an out-of-safe-range number reaching `R2GetOptions`, which R2 answers with a TypeError → 500.
-    return { suffix: Math.min(suffix, Number.MAX_SAFE_INTEGER) };
-  }
-  const match = /^bytes=(\d+)-(\d*)$/.exec(header);
-  if (!match) return null;
-  const offset = parseInt(match[1] ?? "", 10);
-  const end = match[2] ? parseInt(match[2], 10) : undefined;
-  if (Number.isNaN(offset)) return null;
-  // A first-byte-pos past the safe-integer range can satisfy no object, so it is a 416 with no backend call.
-  if (offset > Number.MAX_SAFE_INTEGER) return null;
-  if (end !== undefined && Number.isNaN(end)) return null;
-  if (end !== undefined && end < offset) return null;
-  const clampedEnd = end === undefined ? undefined : Math.min(end, Number.MAX_SAFE_INTEGER);
-  return { offset, ...(clampedEnd !== undefined ? { length: clampedEnd - offset + 1 } : {}) };
-}
+type ByteRange = { start?: number; end?: number };
+
+const CONDITIONAL_HEADERS = ["If-Match", "If-Unmodified-Since", "If-None-Match", "If-Modified-Since"] as const;
 
 const PRINTABLE_ASCII = /^[\x20-\x7e]*$/;
 
-/** Approximates a filename in printable ASCII — a non-Latin-1 character reaching `Headers.set` throws and turns a legitimate download into a 500. */
 function asciiFallbackFilename(filename: string): string {
   const approximated = filename
     .normalize("NFKD")
@@ -52,6 +34,7 @@ function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   if (obj.contentEncoding) h.set("Content-Encoding", obj.contentEncoding);
   if (obj.contentLanguage) h.set("Content-Language", obj.contentLanguage);
   h.set("ETag", obj.httpEtag);
+  h.set("Last-Modified", obj.uploaded.toUTCString());
   h.set("Accept-Ranges", "bytes");
   // `nosniff` stops a sniff *into* a type and does nothing once the stored type already is one the
   // browser executes, so an active type is downloaded under an empty sandbox instead of rendered.
@@ -74,65 +57,100 @@ function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   return h;
 }
 
-/** Serves an object from a storage backend with ETag / If-None-Match / Range support. @public */
+function toSeconds(time: Date | number): number {
+  return Math.floor((time instanceof Date ? time.getTime() : time) / 1000);
+}
+
+function httpDate(header: string | null): number | undefined {
+  if (header === null) return undefined;
+  const parsed = Date.parse(header);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+function validatorHeaders(meta: StoredObject): Headers {
+  return new Headers({ ETag: meta.httpEtag, "Last-Modified": meta.uploaded.toUTCString() });
+}
+
+function preconditionResponse(headers: Headers, meta: StoredObject): Response | undefined {
+  const ifMatch = headers.get("If-Match");
+  if (ifMatch !== null && !IfMatch.from(ifMatch).matches(meta.httpEtag)) {
+    return new Response("Precondition Failed", { status: 412, headers: validatorHeaders(meta) });
+  }
+  const ifUnmodifiedSince = ifMatch === null ? httpDate(headers.get("If-Unmodified-Since")) : undefined;
+  if (ifUnmodifiedSince !== undefined && toSeconds(meta.uploaded) > toSeconds(ifUnmodifiedSince)) {
+    return new Response("Precondition Failed", { status: 412, headers: validatorHeaders(meta) });
+  }
+  const ifNoneMatch = IfNoneMatch.from(headers.get("If-None-Match"));
+  const ifModifiedSince = ifNoneMatch.tags.length === 0 ? httpDate(headers.get("If-Modified-Since")) : undefined;
+  const notModified =
+    ifNoneMatch.matches(meta.httpEtag) || (ifModifiedSince !== undefined && toSeconds(meta.uploaded) <= toSeconds(ifModifiedSince));
+  return notModified ? new Response(null, { status: 304, headers: validatorHeaders(meta) }) : undefined;
+}
+
+function requestedByteRange(headers: Headers, meta: StoredObject | null): ByteRange | undefined {
+  const range = Range.from(headers.get("Range"));
+  if (range.unit.toLowerCase() !== "bytes" || range.ranges.length !== 1) return undefined;
+  if (meta !== null && !IfRange.from(headers.get("If-Range")).matches({ etag: meta.httpEtag, lastModified: meta.uploaded })) return undefined;
+  return range.ranges[0];
+}
+
+function toStoreRange({ start, end }: ByteRange): NonNullable<StoreGetOptions["range"]> {
+  if (start === undefined) return { suffix: end ?? 0 };
+  if (end === undefined) return { offset: start };
+  return { offset: start, length: Math.min(end - start + 1, Number.MAX_SAFE_INTEGER) };
+}
+
+function unsatisfiableRange(size: number | undefined): Response {
+  return new Response("Range Not Satisfiable", {
+    status: 416,
+    headers: { "Content-Range": ContentRange.from({ unit: "bytes", size: size ?? "*" }).toString() },
+  });
+}
+
+/** Serves an object from a storage backend, honouring RFC 9110 preconditions and a single byte `Range`. @public */
 export async function serveObject(backend: ObjectStorageBackend, request: Request, key: string, options?: ServeOptions): Promise<Response> {
-  const ifNoneMatch = request.headers.get("If-None-Match");
-  const rangeHeader = request.headers.get("Range");
+  const requestHeaders = request.headers;
+  // RFC 9110 §14.2 defines Range for GET alone; any other method, HEAD included, ignores it.
+  const honoursRange = request.method === "GET";
+  const needsValidators =
+    CONDITIONAL_HEADERS.some((name) => requestHeaders.has(name)) || (honoursRange && requestHeaders.has("If-Range") && requestHeaders.has("Range"));
 
-  if (ifNoneMatch && !rangeHeader) {
-    const meta = await backend.head(key);
+  let meta: StoredObject | null = null;
+  if (needsValidators) {
+    meta = await backend.head(key);
     if (!meta) return new Response(null, { status: 404 });
-    if (ifNoneMatch === meta.httpEtag) {
-      return new Response(null, { status: 304, headers: { ETag: meta.httpEtag } });
-    }
+    const refusal = preconditionResponse(requestHeaders, meta);
+    if (refusal) return refusal;
   }
 
-  let range: { offset?: number; length?: number; suffix?: number } | undefined;
-  if (rangeHeader) {
-    const parsed = parseRange(rangeHeader);
-    if (!parsed) {
-      return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": "bytes */*" } });
-    }
-    range = parsed;
-  }
+  const byteRange = honoursRange ? requestedByteRange(requestHeaders, meta) : undefined;
+  const range = byteRange && new Range({ unit: "bytes", ranges: [byteRange] });
+  if (range && !range.canSatisfy(meta?.size ?? Number.MAX_SAFE_INTEGER)) return unsatisfiableRange(meta?.size);
 
   let obj: ObjectBody | null;
   try {
-    obj = await backend.get(key, range ? { range } : undefined);
+    obj = await backend.get(key, byteRange ? { range: toStoreRange(byteRange) } : undefined);
   } catch (thrown) {
     // Only the type forge owns is caught, and the extra `head` is spent only here — a satisfiable
     // ranged read stays one round trip.
     if (!(thrown instanceof UnsatisfiableRangeError)) throw thrown;
-    const meta = await backend.head(key);
-    return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${meta?.size ?? "*"}` } });
+    return unsatisfiableRange((meta ?? (await backend.head(key)))?.size);
   }
   if (!obj) return new Response(null, { status: 404 });
 
   const headers = buildHeaders(obj, options);
 
   if (range) {
-    const { offset = 0, length, suffix } = range;
-
-    if (suffix !== undefined) {
-      const start = Math.max(0, obj.size - suffix);
-      const end = obj.size - 1;
-      if (start > end) {
-        await obj.body?.cancel();
-        return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${obj.size}` } });
-      }
-      headers.set("Content-Range", `bytes ${start}-${end}/${obj.size}`);
-      headers.set("Content-Length", String(end - start + 1));
+    if (!range.canSatisfy(obj.size)) {
+      await obj.body?.cancel();
+      return unsatisfiableRange(obj.size);
+    }
+    const [served] = range.normalize(obj.size);
+    if (served) {
+      headers.set("Content-Range", ContentRange.from({ unit: "bytes", start: served.start, end: served.end, size: obj.size }).toString());
+      headers.set("Content-Length", String(served.end - served.start + 1));
       return new Response(obj.body, { status: 206, headers });
     }
-
-    if (offset >= obj.size) {
-      await obj.body?.cancel();
-      return new Response("Range Not Satisfiable", { status: 416, headers: { "Content-Range": `bytes */${obj.size}` } });
-    }
-    const end = length !== undefined ? Math.min(offset + length - 1, obj.size - 1) : obj.size - 1;
-    headers.set("Content-Range", `bytes ${offset}-${end}/${obj.size}`);
-    headers.set("Content-Length", String(end - offset + 1));
-    return new Response(obj.body, { status: 206, headers });
   }
 
   headers.set("Content-Length", String(obj.size));

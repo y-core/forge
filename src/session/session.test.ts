@@ -673,3 +673,141 @@ describe("session primitives (facade re-exports)", () => {
     expect(direct.id).not.toBe(s.id);
   });
 });
+
+describe("sessionMiddleware single mount", () => {
+  const DOUBLE_MOUNT = "a session is already set on this request";
+  const SWAPPED = "holds a different session";
+
+  function countingStorage() {
+    const inner = createMemorySessionStorage();
+    const counts = { read: 0, save: 0 };
+    const storage: SessionStorage = {
+      read: (cookie) => {
+        counts.read++;
+        return inner.read(cookie);
+      },
+      save: (session) => {
+        counts.save++;
+        return inner.save(session);
+      },
+    };
+    return { storage, counts };
+  }
+
+  function appReportingErrors() {
+    const app = new Forge();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    return app;
+  }
+
+  it("throws on entry for a second mount on one path, before any I/O", async () => {
+    const second = countingStorage();
+    const app = appReportingErrors();
+    app.use("*", sessionMiddleware(createMemorySessionStorage(), sessionCookie));
+    app.use("*", sessionMiddleware(second.storage, sessionCookie));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const res = await app.request("/");
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain(DOUBLE_MOUNT);
+    expect(second.counts.read).toBe(0);
+  });
+
+  it("throws only on requests both overlapping mounts match", async () => {
+    const app = appReportingErrors();
+    app.use("*", sessionMiddleware(createMemorySessionStorage(), sessionCookie));
+    app.use("/admin/*", sessionMiddleware(createMemorySessionStorage(), sessionCookie));
+    mapHandler(app, "GET", "/", () => new Response("home"));
+    mapHandler(app, "GET", "/admin/x", () => new Response("admin"));
+
+    const admin = await app.request("/admin/x");
+    expect(admin.status).toBe(500);
+    expect(await admin.text()).toContain(DOUBLE_MOUNT);
+    const home = await app.request("/");
+    expect(home.status).toBe(200);
+    expect(await home.text()).toBe("home");
+  });
+
+  it("refuses a session already set by earlier code", async () => {
+    const app = appReportingErrors();
+    app.use("*", async (context, next) => {
+      sessionCtx.set(context, createSession());
+      return next();
+    });
+    app.use("*", sessionMiddleware(createMemorySessionStorage(), sessionCookie));
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+
+    const res = await app.request("/");
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain(DOUBLE_MOUNT);
+  });
+
+  it("throws after the handler on a swapped session, saving nothing", async () => {
+    const { storage, counts } = countingStorage();
+    const app = appReportingErrors();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "POST", "/", (c) => {
+      sessionCtx.get(c).set("userId", "42");
+      sessionCtx.set(c, createSession());
+      return new Response("ok");
+    });
+
+    const res = await app.request("/", { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain(SWAPPED);
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(counts.save).toBe(0);
+  });
+
+  it("still refuses a swap when the handler then threw, saving nothing", async () => {
+    const { storage, counts } = countingStorage();
+    const app = appReportingErrors();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "POST", "/", (c) => {
+      sessionCtx.get(c).set("userId", "42");
+      sessionCtx.set(c, createSession());
+      throw new Error("handler failed");
+    });
+
+    const res = await app.request("/", { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain(SWAPPED);
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(counts.save).toBe(0);
+  });
+
+  it("lets a later middleware's throw through unmasked by the swap check, saving nothing", async () => {
+    const { storage, counts } = countingStorage();
+    const app = appReportingErrors();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    app.use("*", async (c) => {
+      sessionCtx.get(c).set("userId", "42");
+      sessionCtx.set(c, createSession());
+      throw new Error("downstream failed");
+    });
+    mapHandler(app, "POST", "/", () => new Response("ok"));
+
+    const res = await app.request("/", { method: "POST" });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toBe("downstream failed");
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(counts.save).toBe(0);
+  });
+
+  it("does not treat re-setting the same session as a swap", async () => {
+    const { storage, counts } = countingStorage();
+    const app = appReportingErrors();
+    app.use("*", sessionMiddleware(storage, sessionCookie));
+    mapHandler(app, "POST", "/", (c) => {
+      const session = sessionCtx.get(c);
+      session.set("userId", "42");
+      sessionCtx.set(c, session);
+      return new Response("ok");
+    });
+
+    const res = await app.request("/", { method: "POST" });
+    expect(res.status).toBe(200);
+    expect(res.headers.getSetCookie()).toHaveLength(1);
+    expect(counts.save).toBe(1);
+  });
+});

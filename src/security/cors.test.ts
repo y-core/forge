@@ -269,3 +269,119 @@ describe("appendVary (via cors middleware)", () => {
     expect(res.headers.get("Vary")).toBe("Accept-Encoding");
   });
 });
+
+describe("cors exposedHeaders", () => {
+  const ORIGIN = "https://example.com";
+
+  it("sends the joined names on an allowed actual request", async () => {
+    const app = makeApp({ origins: [ORIGIN], exposedHeaders: ["ETag", "X-Total-Count"] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: ORIGIN } });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBe("ETag, X-Total-Count");
+  });
+
+  it("sends the names beside Access-Control-Allow-Credentials when credentials is true", async () => {
+    const app = makeApp({ origins: [ORIGIN], credentials: true, exposedHeaders: ["ETag"] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: ORIGIN } });
+    expect(res.headers.get("Access-Control-Allow-Credentials")).toBe("true");
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBe("ETag");
+  });
+
+  it("sends the names under a wildcard origin without credentials", async () => {
+    const app = makeApp({ origins: ["*"], exposedHeaders: ["ETag"] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: "https://anyone.example" } });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBe("ETag");
+  });
+
+  it("sends a wildcard name when credentials is off", async () => {
+    const app = makeApp({ origins: [ORIGIN], exposedHeaders: ["*"] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: ORIGIN } });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBe("*");
+  });
+
+  it("never sends the header on a preflight for an allowed origin", async () => {
+    const app = makeApp({ origins: [ORIGIN], exposedHeaders: ["ETag"] });
+    const res = await app.request("/test", { method: "OPTIONS", headers: { Origin: ORIGIN, "Access-Control-Request-Method": "GET" } });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBeNull();
+  });
+
+  it("sends the header on an actual OPTIONS request, which carries no Access-Control-Request-Method", async () => {
+    const app = new Forge();
+    app.use("*", cors({ origins: [ORIGIN], exposedHeaders: ["ETag"] }));
+    mapHandler(app, "OPTIONS", "/test", () => new Response("options"));
+    const res = await app.request("/test", { method: "OPTIONS", headers: { Origin: ORIGIN } });
+    expect([res.status, await res.text(), res.headers.get("Access-Control-Expose-Headers")]).toEqual([200, "options", "ETag"]);
+  });
+
+  it("never sends the header to a disallowed origin", async () => {
+    const app = makeApp({ origins: [ORIGIN], exposedHeaders: ["ETag"] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: "https://evil.com" } });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBeNull();
+  });
+
+  it("never sends the header on a request without an Origin", async () => {
+    const app = makeApp({ origins: [ORIGIN], exposedHeaders: ["ETag"] });
+    const res = await app.request("/test", { method: "GET" });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBeNull();
+  });
+
+  it("sends no header when the option is omitted", async () => {
+    const app = makeApp({ origins: [ORIGIN] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: ORIGIN } });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBeNull();
+  });
+
+  it("sends no header when the option is empty", async () => {
+    const app = makeApp({ origins: [ORIGIN], exposedHeaders: [] });
+    const res = await app.request("/test", { method: "GET", headers: { Origin: ORIGIN } });
+    expect(res.headers.get("Access-Control-Expose-Headers")).toBeNull();
+  });
+
+  it("throws synchronously when a wildcard name is combined with credentials", () => {
+    expect(() => cors({ origins: [ORIGIN], credentials: true, exposedHeaders: ["*"] })).toThrow(
+      'cors: cannot use wildcard exposedHeaders "*" with credentials: true — a credentialed response reads "*" as a header named "*", so it would expose nothing.',
+    );
+  });
+
+  for (const name of ["", "X Total", "ETag,Link", "X-A\r\nSet-Cookie: a=b", "Über"]) {
+    it(`throws synchronously for the non-token name ${JSON.stringify(name)}`, () => {
+      expect(() => cors({ origins: [ORIGIN], exposedHeaders: [name] })).toThrow(
+        `cors: exposedHeaders entry ${JSON.stringify(name)} is not a header name`,
+      );
+    });
+  }
+
+  it("throws for a non-token name listed after a valid one", () => {
+    expect(() => cors({ origins: [ORIGIN], exposedHeaders: ["ETag", "X Total"] })).toThrow(
+      `cors: exposedHeaders entry "X Total" is not a header name`,
+    );
+  });
+
+  it("accepts every tchar class in a name", () => {
+    expect(() => cors({ origins: [ORIGIN], exposedHeaders: ["X-Custom_1.v2", "!#$%&'*+^`|~"] })).not.toThrow();
+  });
+});
+
+describe("cors allowedHeaders", () => {
+  const ORIGIN = "https://example.com";
+
+  for (const name of ["", "X Total", "Content-Type,Authorization", "X-A\r\nSet-Cookie: a=b", "Über"]) {
+    it(`throws synchronously for the non-token name ${JSON.stringify(name)}`, () => {
+      expect(() => cors({ origins: [ORIGIN], allowedHeaders: [name] })).toThrow(
+        `cors: allowedHeaders entry ${JSON.stringify(name)} is not a header name — an RFC 9110 token has no whitespace, comma or control character, and one that did would split or corrupt Access-Control-Allow-Headers.`,
+      );
+    });
+  }
+
+  it("throws for a non-token name listed after a valid one", () => {
+    expect(() => cors({ origins: [ORIGIN], allowedHeaders: ["Content-Type", "X Total"] })).toThrow(
+      `cors: allowedHeaders entry "X Total" is not a header name`,
+    );
+  });
+
+  it("accepts valid tokens and sends them on the preflight", async () => {
+    const app = makeApp({ origins: [ORIGIN], allowedHeaders: ["Content-Type", "X-Custom_1.v2", "!#$%&'*+^`|~"] });
+    const res = await app.request("/test", { method: "OPTIONS", headers: { Origin: ORIGIN, "Access-Control-Request-Method": "POST" } });
+    expect(res.headers.get("Access-Control-Allow-Headers")).toBe("Content-Type, X-Custom_1.v2, !#$%&'*+^`|~");
+  });
+});

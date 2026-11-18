@@ -1,4 +1,4 @@
-import type { RequestHandler } from "@remix-run/fetch-router";
+import type { Route } from "@remix-run/fetch-router/routes";
 
 import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
@@ -6,9 +6,10 @@ import { rebuildResponse } from "../http/rebuild";
 import { createLogger } from "../logging/logger";
 import { serializeError } from "../logging/serialize-error";
 import { toError } from "../result/result";
+import type { RouteParams } from "../router/types";
 import type { v } from "../validation/validation";
 import { createSubmissionPipeline, PIPELINE_ONLY_KEYS } from "./pipeline";
-import type { CacheDirective, PageDefinition } from "./types";
+import type { CacheDirective, PageDefinition, RouteHandler } from "./types";
 
 const logger = createLogger("page");
 
@@ -37,14 +38,17 @@ function applyResponseHeaders(res: Response, cacheHeader: string | undefined, ex
   return rebuildResponse(res, headers);
 }
 
-/** Wraps a view/loader into a RequestHandler with caching, custom headers, and error recovery. @public */
+/** Wraps a view/loader into a RequestHandler with caching, custom headers, and error recovery. @internal */
 export function definePage<
+  // oxlint-disable-next-line typescript/no-explicit-any -- any method and any pattern are both route shapes
+  R extends Route<any, any>,
   Bindings = Record<string, unknown>,
   ConfigData = unknown,
   LoaderData = unknown,
   ActionData = unknown,
   S extends v.GenericSchema = v.GenericSchema,
->(def: PageDefinition<Bindings, ConfigData, LoaderData, ActionData, S>): RequestHandler {
+>(route: R, def: PageDefinition<Bindings, RouteParams<R>, ConfigData, LoaderData, ActionData, S>): RouteHandler<R> {
+  void route;
   if (def.schema === undefined) {
     const stated = PIPELINE_ONLY_KEYS.filter((key) => (def as unknown as Record<string, unknown>)[key] !== undefined);
     if (stated.length > 0) {
@@ -57,12 +61,13 @@ export function definePage<
     }
   }
 
-  const pipeline = def.schema === undefined ? undefined : createSubmissionPipeline<S, Bindings, ConfigData>({ ...def, schema: def.schema });
+  const pipeline =
+    def.schema === undefined ? undefined : createSubmissionPipeline<S, Bindings, RouteParams<R>, ConfigData>({ ...def, schema: def.schema });
   const cacheHeader = buildCacheHeader(def.cache);
 
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
-    const c = getAppContext<Bindings>(context);
+    const c = getAppContext<Bindings, RouteParams<R>>(context);
 
     // HEAD never reaches here as itself — the app rewrites it to GET before routing.
     const isMutation = context.method.toUpperCase() !== "GET";

@@ -176,7 +176,7 @@ export function authAfterStepUpTarget<Bindings>(
   verified: AuthFactorKind,
   otherwise: string,
 ): Promise<string> {
-  if (verified === "recovery-code") return Promise.resolve(authWithQuery(options.paths.account.factors(), AUTH_RECOVERED_PARAM, "1"));
+  if (verified === "recovery-code") return Promise.resolve(options.paths.account.factors({}, { searchParams: { [AUTH_RECOVERED_PARAM]: "1" } }));
   return afterFactorTarget(c, options, identity, null, otherwise);
 }
 
@@ -387,7 +387,7 @@ async function resolveAccountEnrolPasskey<Bindings>(
     const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
     if (!resolved.ok) return err(unavailable());
     if (authStepUpOwed(resolved.data, identity.stepUpAt, fresh))
-      return err(createAuthRedirect(c, authWithQuery(auth.verify.show(), options.returnParam ?? "next", account.passkeyEnrol()), 302));
+      return err(createAuthRedirect(c, auth.verify.show({}, { searchParams: { [options.returnParam ?? "next"]: account.passkeyEnrol() } }), 302));
   }
 
   const redirect = await authAfterEnrolTarget(c, options, identity, "passkey", account.passkeys());

@@ -30,5 +30,5 @@ export function routePaths(routeMap: RouteMap, filter: RouteFilter = {}): string
 /** Wraps `middleware` so it runs only for the given request method(s), and is skipped otherwise. @public */
 export function forMethod(method: RequestMethod | RequestMethod[], middleware: Middleware): Middleware {
   const allowed = new Set((Array.isArray(method) ? method : [method]).map((m) => m.toUpperCase()));
-  return (context, next) => (allowed.has(context.method.toUpperCase()) ? middleware(context, next) : next());
+  return (context, next) => (allowed.has(context.method) ? middleware(context, next) : next());
 }

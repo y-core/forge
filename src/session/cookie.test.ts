@@ -544,6 +544,106 @@ describe("createSignedCookie — the __Host- prefix", () => {
   });
 });
 
+describe("createSignedCookie — the __Secure- prefix", () => {
+  it("serializes with Secure even when an untyped caller asks to drop it", async () => {
+    // @ts-expect-error -- `secure` is not part of SignedCookieOptions
+    const cookie = createSignedCookie("__Secure-s", { ring, secure: false });
+    expect((await cookie.serialize("v")).split("; ").slice(1)).toEqual(["HttpOnly", "Path=/", "SameSite=Lax", "Secure"]);
+    // @ts-expect-error -- `secure` is not part of SignedCookieAttributes
+    expect((await cookie.serialize("v", { secure: false })).split("; ").slice(1)).toEqual(["HttpOnly", "Path=/", "SameSite=Lax", "Secure"]);
+  });
+
+  it("accepts a domain and a path other than /, which only __Host- forbids", async () => {
+    const header = await createSignedCookie("__Secure-s", { ring, domain: "example.com", path: "/app" }).serialize("v");
+    expect(header.split("; ").slice(1)).toEqual(["Domain=example.com", "HttpOnly", "Path=/app", "SameSite=Lax", "Secure"]);
+  });
+});
+
+describe("createUnsignedCookie — the __Host- and __Secure- prefixes", () => {
+  it("refuses a __Host- domain or a path other than / at construction", () => {
+    expect(() => createUnsignedCookie("__Host-u", { domain: "example.com" })).toThrow(
+      'createUnsignedCookie: "__Host-u" is a __Host- cookie, so it must not carry a domain (got example.com)',
+    );
+    expect(() => createUnsignedCookie("__Host-u", { path: "/app" })).toThrow(
+      'createUnsignedCookie: "__Host-u" is a __Host- cookie, so its path must be "/" (got /app)',
+    );
+  });
+
+  it("refuses a __Host- domain or a path other than / on a per-call override", async () => {
+    const cookie = createUnsignedCookie("__Host-u");
+    await expect(cookie.serialize("v", { domain: "example.com" })).rejects.toThrow(
+      'serialize: "__Host-u" is a __Host- cookie, so it must not carry a domain',
+    );
+    await expect(cookie.serialize("v", { path: "/app" })).rejects.toThrow('serialize: "__Host-u" is a __Host- cookie, so its path must be "/"');
+  });
+
+  for (const name of ["__Host-u", "__Secure-u", "__secure-u", "__HOST-u"]) {
+    it(`gives ${name} Secure where no secure option is given`, async () => {
+      expect(await createUnsignedCookie(name).serialize("v")).toBe(`${name}=dg==; Path=/; SameSite=Lax; Secure`);
+    });
+  }
+
+  for (const name of ["__Secure_u", "x__Secure-u", "__Host", "_Host-u"]) {
+    it(`does not treat ${name} as prefixed, so leaves it without Secure`, async () => {
+      expect(await createUnsignedCookie(name, { domain: "example.com", path: "/app" }).serialize("v")).toBe(
+        `${name}=dg==; Domain=example.com; Path=/app; SameSite=Lax`,
+      );
+    });
+  }
+
+  it("accepts a __Host- cookie on path / with Secure stated, at construction and per call", async () => {
+    const cookie = createUnsignedCookie("__Host-u", { path: "/", secure: true });
+    expect(await cookie.serialize("v", { path: "/", secure: true })).toBe("__Host-u=dg==; Path=/; SameSite=Lax; Secure");
+  });
+
+  it("accepts a __Secure- cookie with a domain and a path other than /, which only __Host- forbids", async () => {
+    expect(await createUnsignedCookie("__Secure-u", { domain: "example.com", path: "/app" }).serialize("v")).toBe(
+      "__Secure-u=dg==; Domain=example.com; Path=/app; SameSite=Lax; Secure",
+    );
+  });
+
+  it("applies the __Host- scope rule whatever the prefix's case", () => {
+    expect(() => createUnsignedCookie("__HOST-u", { domain: "example.com" })).toThrow(
+      'createUnsignedCookie: "__HOST-u" is a __Host- cookie, so it must not carry a domain (got example.com)',
+    );
+    expect(() => createUnsignedCookie("__host-u", { path: "/app" })).toThrow(
+      'createUnsignedCookie: "__host-u" is a __Host- cookie, so its path must be "/" (got /app)',
+    );
+  });
+
+  it("refuses a __Host- name with secure: false on a per-call override", async () => {
+    await expect(createUnsignedCookie("__Host-u").serialize("v", { secure: false })).rejects.toThrow(
+      'serialize: "__Host-u" is a __Host- cookie, so it must be Secure (got secure: false)',
+    );
+  });
+
+  it("keeps Secure on a partitioned prefixed cookie whose override asks to drop it", async () => {
+    expect(await createUnsignedCookie("__Secure-u").serialize("v", { partitioned: true, secure: false })).toBe(
+      "__Secure-u=dg==; Partitioned; Path=/; SameSite=Lax; Secure",
+    );
+  });
+
+  it("refuses a prefixed name with secure: false at construction", () => {
+    expect(() => createUnsignedCookie("__Secure-u", { secure: false })).toThrow(
+      'createUnsignedCookie: "__Secure-u" is a __Secure- cookie, so it must be Secure (got secure: false)',
+    );
+    expect(() => createUnsignedCookie("__Host-u", { secure: false })).toThrow(
+      'createUnsignedCookie: "__Host-u" is a __Host- cookie, so it must be Secure (got secure: false)',
+    );
+  });
+
+  it("refuses a prefixed name with secure: false on a per-call override", async () => {
+    await expect(createUnsignedCookie("__Secure-u").serialize("v", { secure: false })).rejects.toThrow(
+      'serialize: "__Secure-u" is a __Secure- cookie, so it must be Secure (got secure: false)',
+    );
+  });
+
+  it("leaves an unprefixed name's secure flag as given", async () => {
+    expect(await createUnsignedCookie("theme").serialize("v")).not.toContain("Secure");
+    expect(await createUnsignedCookie("theme", { secure: false }).serialize("v")).not.toContain("Secure");
+  });
+});
+
 describe("key cache", () => {
   /** Counts `importKey` calls while `run` executes. */
   async function countImports(run: () => Promise<unknown>): Promise<number> {

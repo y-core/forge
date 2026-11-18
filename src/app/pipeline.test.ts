@@ -1,26 +1,31 @@
 import { afterEach, describe, expect, it } from "bun:test";
 
 import { TURNSTILE_FIELD_DEFAULT } from "../form/constants";
+import { post } from "../router/mod";
 import { createTestContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
+import type { TestAction } from "../testing/types";
 import { v } from "../validation/validation";
-import { defineAction } from "./action";
 import { Forge } from "./forge-app";
+import { createHandlerFactory } from "./handler-factory";
 import { firstDeclaredField, screenTurnstile } from "./pipeline";
 import type { ActionTurnstileOptions } from "./types";
+
+const { defineAction } = createHandlerFactory();
+const ACTION_ROUTE = post("/test");
 
 const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };
 
-function makeApp(action: ReturnType<typeof defineAction>) {
+function makeApp(action: TestAction<"/test">) {
   const app = new Forge();
   mapHandler(app, "POST", "/test", action);
   return app;
 }
 
-function post(app: Requestable, body: string, path = "/test"): Promise<Response> {
+function submit(app: Requestable, body: string, path = "/test"): Promise<Response> {
   return app.request(path, { method: "POST", headers: FORM_HEADERS, body });
 }
 
@@ -62,7 +67,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
     });
 
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: {
           secretKey: () => {
@@ -74,7 +79,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ACTION_500_FRAGMENT);
     expect(verified).toBe(false);
@@ -83,7 +88,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
   it("hands a throwing secretKey's error to onError", async () => {
     let captured: Error | undefined;
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: {
           secretKey: () => {
@@ -99,7 +104,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("custom 500");
     expect(captured?.message).toBe("secret binding missing");
@@ -107,14 +112,14 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
 
   it("lets an async-rejecting secretKey reach the same arm", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => Promise.reject(new Error("secret lookup rejected")), verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ACTION_500_FRAGMENT);
   });
@@ -122,7 +127,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
   it("lets a throwing verify reach the 500 arm", async () => {
     let captured: Error | undefined;
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: {
           secretKey: () => "test-secret",
@@ -138,7 +143,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("custom 500");
     expect(captured?.message).toBe("hostname resolver exploded");
@@ -146,7 +151,7 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
 
   it("logs a throwing resolver, because a route defect is the operator's to see", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: {
           secretKey: () => {
@@ -158,33 +163,33 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
       }),
     );
 
-    const logs = await captureLogs(() => post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
+    const logs = await captureLogs(() => submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
     expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
   });
 
   it("logs every tripped turnstile guard with its reason, not only an unreachable siteverify", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
     );
 
-    const logs = await captureLogs(() => post(app, "name=Jane"));
+    const logs = await captureLogs(() => submit(app, "name=Jane"));
     expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("missing-token"))).toBe(true);
   });
 
   it("names the guard that refused on the same line", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
     );
 
-    const logs = await captureLogs(() => post(app, "name=Jane"));
+    const logs = await captureLogs(() => submit(app, "name=Jane"));
     expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("turnstile"))).toBe(true);
   });
 
@@ -192,14 +197,14 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
 
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: (data) => new Response(data.name),
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("Jane");
   });
@@ -208,14 +213,14 @@ describe("createSubmissionPipeline — a throwing Turnstile resolver", () => {
 describe("createSubmissionPipeline — an async-rejecting hook", () => {
   it("absorbs a rejected onValidationError into the 500 arm, exactly as a synchronous throw", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => Promise.reject(new Error("formatter rejected")),
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ACTION_500_FRAGMENT);
   });
@@ -223,7 +228,7 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
   it("hands a rejected onValidationError's error to onError", async () => {
     let captured: Error | undefined;
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: async () => {
@@ -236,7 +241,7 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("custom 500");
     expect(captured?.message).toBe("formatter rejected");
@@ -244,20 +249,20 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
 
   it("logs a rejected onValidationError on the same line a throwing one produces", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => Promise.reject(new Error("formatter rejected")),
       }),
     );
 
-    const logs = await captureLogs(() => post(app, "name="));
+    const logs = await captureLogs(() => submit(app, "name="));
     expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
   });
 
   it("absorbs a rejected onBotDetected into the same arm", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
@@ -265,21 +270,21 @@ describe("createSubmissionPipeline — an async-rejecting hook", () => {
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(ACTION_500_FRAGMENT);
   });
 
   it("still renders an async onValidationError that resolves", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: async (issues) => new Response(issues.map((issue) => issue.message).join("|"), { status: 422 }),
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(422);
     expect(await res.text()).toBe("Name required.");
   });
@@ -423,7 +428,7 @@ describe("createSubmissionPipeline — Turnstile defaults", () => {
 
   function guardedApp(turnstile: ActionTurnstileOptions, errors: Error[] = []) {
     return makeApp(
-      defineAction({
+      defineAction(ACTION_ROUTE, {
         schema: NameSchema,
         turnstile,
         onError: (error) => {

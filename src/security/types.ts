@@ -125,12 +125,14 @@ export interface RateLimitOptions<Bindings = Record<string, unknown>> {
   trustCfHeaders?: boolean;
 }
 
-/** CORS middleware options: allowed origins, methods, headers, credentials, and preflight cache. @public */
+/** CORS middleware options: allowed origins, methods, allowed and exposed headers, credentials, and preflight cache. @public */
 export interface CorsOptions {
   /** Exact allowed origins or subdomain patterns ("https://*.example.com"). */
   origins: string[];
   methods?: string[];
   allowedHeaders?: string[];
+  /** Response headers a calling script may read; sent on allowed actual responses, never a preflight. `"*"` is refused with `credentials`. */
+  exposedHeaders?: string[];
   credentials?: boolean;
   /** Preflight cache duration in seconds. */
   maxAge?: number;

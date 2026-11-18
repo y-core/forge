@@ -32,12 +32,16 @@ export const ConfigKey = createContextKey<unknown>();
 /** Extends `RequestContext` with Workers-specific `env`, `executionCtx`, and `config` properties. @public */
 export type AppContext<
   Bindings = Record<string, unknown>,
-  Params extends Record<string, string> = Record<string, string>,
+  Params extends Record<string, string | undefined> = Record<string, string | undefined>,
   Config = unknown,
 > = RequestContext<Params> & { readonly env: Bindings; readonly executionCtx: ExecutionContext; readonly config: Config };
 
 /** Narrows a `RequestContext` to an `AppContext`, throwing if per-request state has not been injected. @public */
-export function getAppContext<Bindings = Record<string, unknown>, Params extends Record<string, string> = Record<string, string>, Config = unknown>(
+export function getAppContext<
+  Bindings = Record<string, unknown>,
+  Params extends Record<string, string | undefined> = Record<string, string | undefined>,
+  Config = unknown,
+>(
   // oxlint-disable-next-line typescript/no-explicit-any -- bindings/params/config are irrelevant for the state check
   context: RequestContext<any, any>,
 ): AppContext<Bindings, Params, Config> {

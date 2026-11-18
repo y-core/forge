@@ -1,9 +1,7 @@
-import { Cookie as CookieHeader } from "@remix-run/headers/cookie";
-import { SetCookie } from "@remix-run/headers/set-cookie";
-import type { SetCookieInit } from "@remix-run/headers/set-cookie";
-
 import { signWithKeyRing, verifyWithKeyRing } from "../crypto/keyring/sign";
 import { base64DecodeOrNull, base64Encode, utf8Encode } from "../crypto/primitives/mod";
+import { Cookie as CookieHeader, SetCookie } from "../http/headers";
+import type { SetCookieInit } from "../http/headers";
 import type {
   CookieAttributes,
   SignedCookie,
@@ -28,6 +26,7 @@ const EXPIRY_LIMIT = 9_999_999_999;
 const COOKIE_MAX_BYTES = 4096;
 
 const HOST_PREFIX = /^__host-/i;
+const SECURE_REQUIRED_PREFIX = /^__(?:host|secure)-/i;
 
 const SIGNED_COOKIE_PURPOSE = "signed-cookie";
 
@@ -88,6 +87,13 @@ function refuseHostPrefixScope(caller: string, name: string, attributes: { domai
   if (attributes.path !== "/") throw new Error(`${caller}: "${name}" is a __Host- cookie, so its path must be "/" (got ${attributes.path})`);
 }
 
+/** Refuses a `__Host-` or `__Secure-` name without `Secure`, which a browser drops on arrival. */
+function refuseInsecurePrefix(caller: string, name: string, attributes: { secure?: boolean | undefined }): void {
+  if (!SECURE_REQUIRED_PREFIX.test(name) || attributes.secure === true) return;
+  const prefix = HOST_PREFIX.test(name) ? "__Host-" : "__Secure-";
+  throw new Error(`${caller}: "${name}" is a ${prefix} cookie, so it must be Secure (got secure: ${attributes.secure})`);
+}
+
 /** The epoch second past which a value serialized under `attributes` stops verifying, or `null` where they bound nothing. */
 function expiryOf(attributes: ResolvedAttributes): number | null {
   const now = Math.floor(Date.now() / 1000);
@@ -133,6 +139,9 @@ function setCookie(name: string, wire: string, attributes: ResolvedAttributes): 
 export function createUnsignedCookie(name: string, options?: UnsignedCookieOptions): UnsignedCookie {
   if (name === "") throw new Error("createUnsignedCookie: name must not be empty");
   const defaults: CookieAttributes = { path: "/", sameSite: "Lax", ...options };
+  if (SECURE_REQUIRED_PREFIX.test(name)) defaults.secure ??= true;
+  refuseHostPrefixScope("createUnsignedCookie", name, defaults);
+  refuseInsecurePrefix("createUnsignedCookie", name, defaults);
 
   return {
     name,
@@ -146,7 +155,10 @@ export function createUnsignedCookie(name: string, options?: UnsignedCookieOptio
       return decodePayload(wire);
     },
     async serialize(value: string, attributes?: CookieAttributes): Promise<string> {
-      return setCookie(name, value === "" ? "" : encodePayload(value), mergeAttributes(defaults, attributes));
+      const merged = mergeAttributes(defaults, attributes);
+      refuseHostPrefixScope("serialize", name, merged);
+      refuseInsecurePrefix("serialize", name, merged);
+      return setCookie(name, value === "" ? "" : encodePayload(value), merged);
     },
   };
 }
@@ -159,6 +171,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
   // by construction (`WORKERS_PLATFORM.md` §4e), and relaxing it ships a cookie readable in transit.
   const defaults: CookieAttributes = { path: "/", ...rest, sameSite: sameSite ?? "Lax", httpOnly: true, secure: true };
   refuseHostPrefixScope("createSignedCookie", name, defaults);
+  refuseInsecurePrefix("createSignedCookie", name, defaults);
   // Fixed at construction because `parse` has no per-call attributes to consult: a value omitting an
   // expiry where a lifetime is configured is not a value of this cookie, and answers `null`.
   const bounded = expiryOf(mergeAttributes(defaults, undefined)) !== null;
@@ -219,6 +232,7 @@ export function createSignedCookie(name: string, options: SignedCookieOptions): 
       // so an `as any` or a decorating wrapper could otherwise relax what the type refuses to take.
       const merged = mergeAttributes(defaults, { ...attributes, httpOnly: true, secure: true });
       refuseHostPrefixScope("serialize", name, merged);
+      refuseInsecurePrefix("serialize", name, merged);
       // `""` short-circuits both directions: the destroy path costs no encode and no HMAC.
       if (value === "") return setCookie(name, "", merged);
       let expiry: number | null = null;

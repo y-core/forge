@@ -53,6 +53,12 @@ session.destroy(); // clears the session and queues cookie removal
 `sessionCtx.getOptional(c)` returns `Session | undefined` where the middleware may not have run. Register `sessionMiddleware` before any handler
 that calls `sessionCtx.get`.
 
+**Mount one session middleware per request.** A second `sessionMiddleware` or `createAnonymousSession` whose path also matches — one at `*` and
+another at `/admin/*`, say — throws on every request both match, rather than silently replacing the first one's session. So does a handler that
+puts a different session into `sessionCtx`: the middleware refuses to save a session it did not set, and the request answers through the error
+boundary with nothing persisted. Keep two kinds of state apart as two keys of the one session, or mount the middlewares on paths no request
+shares.
+
 ---
 
 ## Remembering a visitor without an account
@@ -102,7 +108,15 @@ discards the whole header without a word: the client silently loses its session,
 nothing in the logs to connect the two. `serialize` refuses instead, naming the cookie and the size it measured. The failure lands at the write.
 
 `createKVSessionStorage(kv, { prefix?, ttlSeconds? })` is also exported standalone for use with `sessionMiddleware` directly. `prefix` defaults to
-`session`, and an empty string is refused because it would key every session under a bare `:id`.
+`session`, and an empty string is refused because it would key every session under a bare `:id`. A `ttlSeconds` below 60 throws at
+construction, here and in `createAnonymousSession`, because Workers KV refuses a shorter `expirationTtl` and every save would fail.
+
+**A validly signed id with no KV record is adopted, not replaced.** KV storage restores it as an empty session under the same id, so a client
+holding a signed id from an expired or deleted record keeps that id. The signature is what stops a forged one.
+
+**A KV logout is not instant everywhere.** KV is eventually consistent, so for up to about 60 seconds after `destroy()` or `regenerateId(true)`
+deletes a record, another edge location can still read it and serve the old session to a cookie that still names it. Where a sign-out must hold at
+once, record the revocation somewhere strongly consistent and check it.
 
 `createMemorySessionStorage()` is **development only**: Workers are stateless and run across many isolates, so in-memory sessions do not survive in
 production.
@@ -227,6 +241,11 @@ throws only on a lone surrogate, which UTF-8 cannot represent and which would th
 `session.flash(key, value)` stores a value readable on the next request and then cleared — the standard pattern for a notice across a redirect.
 Flashing marks the session dirty, so the value is persisted, surfaced once, and removed on the following save.
 
+**Use `session.flash` when a session store is mounted, and `createFlash` from `@y-core/forge/ui/server` when none is.** Under
+`sessionMiddleware` or `createAnonymousSession` the message rides the session the request already saves, so it costs no second cookie. Without
+either, `createFlash` keeps messages in a signed cookie of their own, cleared on the request that reads them: queue one with
+`flasher.success(c, text)` or its `info`, `warning` and `error` siblings, and read them back with `flasher.get(c)`.
+
 ---
 
 ## Security
@@ -242,9 +261,9 @@ rather than a line that is accepted and quietly discarded. The signed `serialize
 catches an `as any` or a decorating wrapper the type never saw.
 
 **A `__Host-` name is held to the scope the prefix promises.** The browser stores a `__Host-` cookie only when it is `Secure`, has `Path=/` and
-carries no `Domain`, and in return refuses one planted from a sibling subdomain. `createSignedCookie` throws on a `__Host-` name given a `domain` or
+carries no `Domain`, and in return refuses one planted from a sibling subdomain. Both cookie factories throw on a `__Host-` name given a `domain` or
 a `path` other than `/`, at construction and on a per-call override to `serialize`, so the cookie cannot be written in a shape the browser would
-silently drop.
+silently drop. A `__Secure-` or `__Host-` name is `Secure` by default under `createUnsignedCookie` too, and `secure: false` on one throws.
 
 **`Secure` is not configurable, and that is the point.** A session cookie that loses `Secure` fails silently in every way that would otherwise catch
 it: no test goes red, nothing is logged, the header is one word shorter, and anyone on the path reads the cookie and replays the session.

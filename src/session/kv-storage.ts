@@ -7,6 +7,20 @@ import type { KVSessionStorageOptions, SessionKVBinding } from "./types";
 type SessionData = NonNullable<Parameters<typeof createSession>[1]>;
 
 const DEFAULT_TTL_SECONDS = 60 * 60 * 24 * 365;
+const KV_MIN_TTL_SECONDS = 60;
+
+/** Throws where a KV session TTL is not finite or is below the shortest `expirationTtl` Workers KV accepts. @internal */
+export function assertKVSessionTtl(operation: string, knob: string, ttlSeconds: number): void {
+  if (!Number.isFinite(ttlSeconds)) {
+    throw new Error(
+      `${operation}: ${knob} is ${ttlSeconds}, which is not a finite number — Workers KV refuses it as an expirationTtl, so every save would throw.`,
+    );
+  }
+  if (ttlSeconds >= KV_MIN_TTL_SECONDS) return;
+  throw new Error(
+    `${operation}: ${knob} is ${ttlSeconds}, below the ${KV_MIN_TTL_SECONDS}-second floor — the shortest expirationTtl Workers KV accepts, so every save would throw.`,
+  );
+}
 
 /** `SessionStorage` backed by Workers KV, keyed by the opaque session id under a sliding TTL. @public */
 export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSessionStorageOptions): SessionStorage {
@@ -17,6 +31,7 @@ export function createKVSessionStorage(kv: SessionKVBinding, options?: KVSession
   }
   const prefix = options?.prefix ?? "session";
   const ttlSeconds = options?.ttlSeconds ?? DEFAULT_TTL_SECONDS;
+  assertKVSessionTtl("createKVSessionStorage", "ttlSeconds", ttlSeconds);
   const keyFor = (id: string) => `${prefix}:${id}`;
 
   return {

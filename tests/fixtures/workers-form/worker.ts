@@ -3,8 +3,8 @@
 import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
-import { defineAction } from "../../../src/app/action";
 import { Forge } from "../../../src/app/forge-app";
+import { createHandlerFactory } from "../../../src/app/handler-factory";
 import { importKeyRing } from "../../../src/crypto/keyring/ring";
 import { csrfProtection, mintCsrf } from "../../../src/form/csrf";
 import { v } from "../../../src/validation/validation";
@@ -12,6 +12,8 @@ import { v } from "../../../src/validation/validation";
 interface Env {
   CSRF_SECRET: string;
 }
+
+const { defineAction } = createHandlerFactory<Env>();
 
 const MAX_BYTES = 4096;
 
@@ -37,13 +39,13 @@ app.map(
   createController(routes, {
     actions: {
       token: (context) => mintCsrf(context, "/api/contact").then((token) => new Response(token)),
-      contact: defineAction<typeof ContactSchema, Env>({
+      contact: defineAction(routes.contact, {
         schema: ContactSchema,
         maxBytes: MAX_BYTES,
         handle: (data) => new Response(`<p>Thanks, ${data.name}.</p>`, { headers: { "content-type": "text/html" } }),
       }),
       guardedToken: (context) => mintCsrf(context, "/api/guarded").then((token) => new Response(token)),
-      guarded: defineAction<typeof ContactSchema, Env>({
+      guarded: defineAction(routes.guarded, {
         schema: ContactSchema,
         maxBytes: MAX_BYTES,
         turnstile: { secretKey: () => "1x0000000000000000000000000000000AA", verify: () => ({ expectedHostname: "example.com" }) },

@@ -24,7 +24,7 @@ audience: consumer
 - §1 The Mount, in Order: the builders, the one order that works, and the test that holds the mount itself
 - §2 The Route Groups and Their Guards: where the group table lives, and why each group is guarded as it is
 - §3 What Forge Does Not Ship: the mailer, the deferral, the confirm route, and the bindings
-- §4 Why Guards Are Wired Separately from Routes: one table, two readers
+- §4 Why Guards Are Wired Separately from Routes: one table, two readers, and why each stack mounts on route patterns, not on routes
 - §5 What Mounting Costs You: the bindings, the fixtures they break, and the pre-release caveat
 - §6 Embedding an Auth View in Your Own Page: `resolveAuthView`, the `guarded` claim, and the chrome props
 - §7 Rotating the Key Ring: the per-key seal bound, what crossing it costs, the cadence, and what dropping a retired secret early costs
@@ -98,8 +98,8 @@ no binding, since a window right for the sign-in POST is wrong for the admin con
 group named for one is emitted for the limit alone. Do not instead match the returned array by path and mutate it: that is the second
 copy of the group table this design exists to prevent.
 
-**`Forge` builds its dispatching router once, lazily, on the first request**, so an `app.use` after that request is silently ignored — everything
-above happens at bootstrap.
+**`Forge` builds its dispatching router once, lazily, on the first request**, so an `app.use` after that request throws rather than register a stack
+that would never run — everything above happens at bootstrap.
 
 ---
 
@@ -190,6 +190,16 @@ a glyph list drifts, and a drifted one is a page with a missing icon and no erro
 which reads the same `AUTH_ROUTE_GROUPS` table the `register*` functions cut their `app.map` calls along. A second copy of that table would drift,
 and a drifted copy is an unguarded admin page that looks guarded. `createAuthGuards` refuses a group that lists an identity-reading guard before
 `require-auth`.
+
+**That is also why each group's stack is mounted with `app.use` on the group's own route patterns, not attached to its routes through
+fetch-router's `map(target, { middleware })`.** `createAuthGuards` gives each group the exact `pattern.source` of every direct leaf of its map — no
+path prefix, and no nested group's leaves, which carry a stack of their own. The table is wider than `register*`: a consumer passes `groups` of its
+own, cut from maps it mounts itself, so guards carried on the routes would leave those unguarded or need a second wiring path, and one reader is
+what lets `createAuthGuards` throw at bootstrap on a guarded group whose map is missing or holds no route of its own (§1). A guard on a pattern
+covers the URL, where route middleware covers one dispatched entry, so a route the app registers at a guarded pattern outside `register*` would
+dispatch with no guard. And fetch-router runs route middleware only once a route has matched the method, so an anonymous `PUT /admin/users/1` would
+get the 404, or the 405 with `Allow`, that [`ROUTING_AND_MIDDLEWARE.md`][ram-1e] §1e describes, instead of the sign-in redirect — the disclosure
+stops at the guard line only because the guard runs before dispatch.
 
 **`rateLimit` is keyed by the group's dotted path rather than declared on `AuthRouteGroup`** (§1), so the group table stays the one description of
 what a group is and a consumer never restates it.
@@ -380,6 +390,7 @@ swaps by [`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a.
 [iv-4a]: ./INPUT_VALIDATION.md#4a-verifyturnstile--cloudflare-turnstile-captcha
 [iv-4b]: ./INPUT_VALIDATION.md#4b-guard-refusal-shape-and-its-residual-oracle
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
+[ram-1e]: ./ROUTING_AND_MIDDLEWARE.md#1e-the-unmatched-url
 [ram-3e]: ./ROUTING_AND_MIDDLEWARE.md#3e-applymiddlewarechain-canonical-chain-builder
 [security-readme]: ../src/security/README.md
 [session-readme]: ../src/session/README.md

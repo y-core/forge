@@ -5,18 +5,23 @@ import type { KeyRing } from "../crypto/keyring/types";
 import { CSRF_FIELD_DEFAULT, TURNSTILE_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection } from "../form/csrf";
 import { parseFormData } from "../form/parse-form-data";
+import { post } from "../router/mod";
 import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
+import type { TestAction } from "../testing/types";
 import { v } from "../validation/validation";
-import { defineAction } from "./action";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
+import { createHandlerFactory } from "./handler-factory";
+
+const { defineAction } = createHandlerFactory();
+const TEST_ROUTE = post("/test");
 
 const CSRF_HEX_KEY = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
 
 const NameSchema = v.strictObject({ name: v.pipe(v.string(), v.minLength(1, "Name required.")) });
 
-function makeApp(action: ReturnType<typeof defineAction>) {
+function makeApp(action: TestAction<"/test">) {
   const app = new Forge();
   mapHandler(app, "POST", "/test", action);
   return app;
@@ -27,7 +32,7 @@ const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };
 
-function post(app: Requestable, body: string, path = "/test"): Promise<Response> {
+function submit(app: Requestable, body: string, path = "/test"): Promise<Response> {
   return app.request(path, { method: "POST", headers: FORM_HEADERS, body });
 }
 
@@ -64,7 +69,7 @@ async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
 
 describe("defineAction", () => {
   it("runs full pipeline successfully", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: VALID_FORM.toString() });
     expect(res.status).toBe(200);
@@ -72,7 +77,7 @@ describe("defineAction", () => {
   });
 
   it("returns validation error fragment when validation fails", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=" });
     expect(res.status).toBe(422);
@@ -82,7 +87,7 @@ describe("defineAction", () => {
   });
 
   it("returns 400 when body cannot be parsed as form data", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
     const res = await app.request("/test", {
       method: "POST",
@@ -94,7 +99,7 @@ describe("defineAction", () => {
 
   it("calls onValidationError when provided", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => new Response("custom error", { status: 422 }),
@@ -108,7 +113,7 @@ describe("defineAction", () => {
 
   it("hands onValidationError the issues themselves, so the app decides how much travels back", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: (issues) => new Response(issues.map((issue) => issue.message).join("|"), { status: 422 }),
@@ -121,7 +126,7 @@ describe("defineAction", () => {
 
   it("returns 500 fragment when handler throws", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           throw new Error("downstream failure");
@@ -135,7 +140,7 @@ describe("defineAction", () => {
 
   it("calls onError when handler throws and onError is provided", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           throw new Error("oops");
@@ -158,7 +163,7 @@ describe("defineAction", () => {
           return next();
         },
       ],
-      handler: defineAction({
+      handler: defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           order.push("handle");
@@ -172,7 +177,7 @@ describe("defineAction", () => {
   });
 
   it("returns 413 when the form body exceeds the default size limit", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
     const res = await app.request("/test", {
       method: "POST",
       headers: FORM_HEADERS,
@@ -183,7 +188,7 @@ describe("defineAction", () => {
   });
 
   it("rejects an oversized streaming body (no Content-Length) with the exact 413 fragment", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
     const big = `name=${"x".repeat(200_000)}`;
     const bytes = new TextEncoder().encode(big);
     const stream = new ReadableStream({
@@ -202,7 +207,9 @@ describe("defineAction", () => {
   });
 
   it("accepts a body above the default cap when the route raises maxBytes", async () => {
-    const app = makeApp(defineAction({ maxBytes: 300 * 1024, schema: NameSchema, handle: (data) => new Response(String(data.name.length)) }));
+    const app = makeApp(
+      defineAction(TEST_ROUTE, { maxBytes: 300 * 1024, schema: NameSchema, handle: (data) => new Response(String(data.name.length)) }),
+    );
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: `name=${"x".repeat(200_000)}` });
     expect(res.status).toBe(200);
@@ -210,7 +217,7 @@ describe("defineAction", () => {
   });
 
   it("still returns 413 for a body above the route's own raised cap", async () => {
-    const app = makeApp(defineAction({ maxBytes: 150 * 1024, schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { maxBytes: 150 * 1024, schema: NameSchema, handle: () => new Response("success") }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: `name=${"x".repeat(200_000)}` });
     expect(res.status).toBe(413);
@@ -222,7 +229,7 @@ describe("defineAction", () => {
     console.log = (msg: string) => logs.push(msg);
     try {
       const app = makeApp(
-        defineAction({
+        defineAction(TEST_ROUTE, {
           schema: NameSchema,
           handle: () => {
             throw new Error("boom downstream");
@@ -254,9 +261,9 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("answers 500 with the generic fragment when a v.transform throws", async () => {
-    const app = makeApp(defineAction({ schema: ThrowingTransform, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingTransform, handle: () => new Response("success") }));
 
-    const res = await post(app, "payload=notjson");
+    const res = await submit(app, "payload=notjson");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
       '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
@@ -266,7 +273,7 @@ describe("defineAction — a throwing schema or hook", () => {
   it("hands a throwing v.transform's error to onError", async () => {
     let captured: Error | undefined;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: ThrowingTransform,
         handle: () => new Response("success"),
         onError: (error) => {
@@ -276,7 +283,7 @@ describe("defineAction — a throwing schema or hook", () => {
       }),
     );
 
-    const res = await post(app, "payload=notjson");
+    const res = await submit(app, "payload=notjson");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("custom 500");
     expect(captured instanceof Error).toBe(true);
@@ -284,15 +291,15 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("logs a throwing v.transform, because a schema defect is the operator's to see", async () => {
-    const app = makeApp(defineAction({ schema: ThrowingTransform, handle: () => new Response("success") }));
-    const logs = await captureLogs(() => post(app, "payload=notjson"));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingTransform, handle: () => new Response("success") }));
+    const logs = await captureLogs(() => submit(app, "payload=notjson"));
     expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
   });
 
   it("answers 500 when a v.check predicate throws", async () => {
-    const app = makeApp(defineAction({ schema: ThrowingCheck, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingCheck, handle: () => new Response("success") }));
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
       '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
@@ -302,7 +309,7 @@ describe("defineAction — a throwing schema or hook", () => {
   it("hands a throwing v.check's error to onError", async () => {
     let captured: Error | undefined;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: ThrowingCheck,
         handle: () => new Response("success"),
         onError: (error) => {
@@ -312,21 +319,21 @@ describe("defineAction — a throwing schema or hook", () => {
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(500);
     expect(captured?.message).toBe("check exploded");
   });
 
   it("logs a throwing v.check", async () => {
-    const app = makeApp(defineAction({ schema: ThrowingCheck, handle: () => new Response("success") }));
-    const logs = await captureLogs(() => post(app, "name=Jane"));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingCheck, handle: () => new Response("success") }));
+    const logs = await captureLogs(() => submit(app, "name=Jane"));
     expect(logs.some((line) => line.includes("Action threw"))).toBe(true);
   });
 
   it("absorbs a throwing onValidationError into the same 500 path, deliberately and symmetrically", async () => {
     let captured: Error | undefined;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => {
@@ -339,7 +346,7 @@ describe("defineAction — a throwing schema or hook", () => {
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("custom 500");
     expect(captured?.message).toBe("formatter exploded");
@@ -347,7 +354,7 @@ describe("defineAction — a throwing schema or hook", () => {
 
   it("answers 500 for a throwing onValidationError with no onError supplied", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => {
@@ -356,7 +363,7 @@ describe("defineAction — a throwing schema or hook", () => {
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(
       '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>Something went wrong. Please try again.</p></div>',
@@ -364,9 +371,9 @@ describe("defineAction — a throwing schema or hook", () => {
   });
 
   it("still reaches handle through a transform that does not throw", async () => {
-    const app = makeApp(defineAction({ schema: ThrowingTransform, handle: (data) => new Response(JSON.stringify(data.payload)) }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: ThrowingTransform, handle: (data) => new Response(JSON.stringify(data.payload)) }));
 
-    const res = await post(app, `payload=${encodeURIComponent('{"ok":true}')}`);
+    const res = await submit(app, `payload=${encodeURIComponent('{"ok":true}')}`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe('{"ok":true}');
   });
@@ -375,7 +382,7 @@ describe("defineAction — a throwing schema or hook", () => {
 describe("defineAction — what reaches the schema", () => {
   it("refuses a field nobody declared", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: (issues) => new Response(issues.map((issue) => issue.type).join("|"), { status: 400 }),
@@ -389,7 +396,7 @@ describe("defineAction — what reaches the schema", () => {
 
   it("lets an absent optional field reach the schema as absent rather than as an empty string", async () => {
     const Schema = v.strictObject({ name: v.string(), phone: v.optional(v.string()) });
-    const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(String(data.phone)) }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: (data) => new Response(String(data.phone)) }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=Jane" });
     expect(res.status).toBe(200);
@@ -398,7 +405,7 @@ describe("defineAction — what reaches the schema", () => {
 
   it("distinguishes a field submitted empty from one not submitted at all", async () => {
     const Schema = v.strictObject({ name: v.string(), phone: v.optional(v.string()) });
-    const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(String(data.phone)) }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: (data) => new Response(String(data.phone)) }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "name=Jane&phone=" });
     expect(res.status).toBe(200);
@@ -407,7 +414,7 @@ describe("defineAction — what reaches the schema", () => {
 
   it("hands a repeated key to the schema as an array, so a scalar schema refuses it", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: (issues) => new Response(issues.map((issue) => issue.type).join("|"), { status: 400 }),
@@ -421,7 +428,7 @@ describe("defineAction — what reaches the schema", () => {
 
   it("accepts a repeated key when the schema declares an array", async () => {
     const Schema = v.strictObject({ tag: v.array(v.string()) });
-    const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(data.tag.join(",")) }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: (data) => new Response(data.tag.join(",")) }));
 
     const res = await app.request("/test", { method: "POST", headers: FORM_HEADERS, body: "tag=a&tag=b" });
     expect(res.status).toBe(200);
@@ -431,7 +438,7 @@ describe("defineAction — what reaches the schema", () => {
   it("does not let a caller-sent __proto__ mutate a prototype or reach the handler", async () => {
     let handled = false;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           handled = true;
@@ -450,14 +457,14 @@ describe("defineAction — what reaches the schema", () => {
   for (const inherited of ["__proto__", "constructor", "toString", "valueOf"]) {
     it(`refuses an undeclared ${inherited} as the undeclared key it is`, async () => {
       const app = makeApp(
-        defineAction({
+        defineAction(TEST_ROUTE, {
           schema: NameSchema,
           handle: () => new Response("success"),
           onValidationError: (issues) => new Response(issues.map((issue) => issue.type).join("|"), { status: 400 }),
         }),
       );
 
-      const res = await post(app, `name=Jane&${encodeURIComponent(inherited)}=sent`);
+      const res = await submit(app, `name=Jane&${encodeURIComponent(inherited)}=sent`);
       expect(res.status).toBe(400);
       expect(await res.text()).toBe("strict_object");
       expect(({} as Record<string, unknown>).polluted).toBeUndefined();
@@ -468,32 +475,32 @@ describe("defineAction — what reaches the schema", () => {
   it("reads a schema field named constructor as absent when the caller did not send it", async () => {
     const Schema = v.strictObject({ name: v.string(), constructor: v.string() });
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: Schema,
         handle: () => new Response("success"),
         onValidationError: (issues) => new Response(issues.map((issue) => issue.message).join("|"), { status: 400 }),
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(400);
     expect(await res.text()).toBe('Invalid key: Expected "constructor" but received undefined');
   });
 
   it("satisfies v.optional on a schema field named constructor by omission", async () => {
     const Schema = v.strictObject({ name: v.string(), constructor: v.optional(v.string()) });
-    const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(Object.keys(data).join(",")) }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: (data) => new Response(Object.keys(data).join(",")) }));
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("name");
   });
 
   it("carries a submitted field named constructor through to handle as the submitted value", async () => {
     const Schema = v.strictObject({ name: v.string(), constructor: v.string() });
-    const app = makeApp(defineAction({ schema: Schema, handle: (data) => new Response(data.constructor) }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: (data) => new Response(data.constructor) }));
 
-    const res = await post(app, "name=Jane&constructor=Acme%20Builders");
+    const res = await submit(app, "name=Jane&constructor=Acme%20Builders");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("Acme Builders");
   });
@@ -503,7 +510,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
   const RAISED = 300 * 1024;
 
   function echoAction(maxBytes?: number) {
-    return defineAction({
+    return defineAction(TEST_ROUTE, {
       ...(maxBytes !== undefined ? { maxBytes } : {}),
       schema: NameSchema,
       handle: (data) => new Response(String(data.name.length)),
@@ -593,7 +600,7 @@ describe("defineAction behind csrfProtection — body size cap", () => {
 describe("defineAction — bot guards", () => {
   function turnstileApp(tokenField?: string) {
     return makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: {
           secretKey: () => "test-secret",
@@ -610,7 +617,7 @@ describe("defineAction — bot guards", () => {
 
     let rejection: unknown;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: (received) => {
@@ -621,7 +628,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("banned");
     expect(rejection).toEqual({ guard: "turnstile", reason: "verification-failed" });
@@ -632,7 +639,7 @@ describe("defineAction — bot guards", () => {
 
     let called = false;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: () => {
@@ -643,7 +650,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(200);
     expect(called).toBe(false);
   });
@@ -651,7 +658,7 @@ describe("defineAction — bot guards", () => {
   it("accepts a cf-turnstile-response body against a v.strictObject that never declares the token field", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
 
-    const res = await post(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("name");
   });
@@ -659,7 +666,7 @@ describe("defineAction — bot guards", () => {
   it("strips a renamed Turnstile token field without the route declaring it twice", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: true, hostname: "localhost" })));
 
-    const res = await post(turnstileApp("my-token"), "name=Jane&my-token=solved-token");
+    const res = await submit(turnstileApp("my-token"), "name=Jane&my-token=solved-token");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("name");
   });
@@ -671,14 +678,14 @@ describe("defineAction — bot guards", () => {
       return new Response(JSON.stringify({ success: true, hostname: "localhost" }));
     });
 
-    await post(turnstileApp("my-token"), "name=Jane&my-token=solved-token");
+    await submit(turnstileApp("my-token"), "name=Jane&my-token=solved-token");
     expect(JSON.parse(sent!)).toEqual({ response: "solved-token", secret: "test-secret" });
   });
 
   it("refuses a submission Turnstile rejects", async () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
-    const res = await post(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
+    const res = await submit(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("name"));
   });
@@ -686,7 +693,7 @@ describe("defineAction — bot guards", () => {
   it("refuses a submission carrying no token at all", async () => {
     let rejection: unknown;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: (received) => {
@@ -697,7 +704,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(403);
     expect(rejection).toEqual({ guard: "turnstile", reason: "missing-token" });
   });
@@ -709,7 +716,7 @@ describe("defineAction — bot guards", () => {
 
     let rejection: unknown;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: (received) => {
@@ -720,7 +727,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(503);
     expect(rejection).toEqual({ guard: "turnstile", reason: "network-error" });
   });
@@ -730,7 +737,7 @@ describe("defineAction — bot guards", () => {
       throw new Error("connection refused");
     });
 
-    const res = await post(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("name"));
   });
@@ -741,7 +748,7 @@ describe("defineAction — bot guards", () => {
       throw new Error("connection refused");
     });
 
-    const logs = await captureLogs(() => post(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
+    const logs = await captureLogs(() => submit(turnstileApp(), `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`));
     expect(logs.some((line) => line.includes("Submission refused by a bot guard") && line.includes("network-error"))).toBe(true);
   });
 
@@ -755,7 +762,7 @@ describe("defineAction — bot guards", () => {
 
     let rejection: unknown;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost", timeoutMs: 1 }) },
         onBotDetected: (received) => {
@@ -766,7 +773,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(504);
     expect(rejection).toEqual({ guard: "turnstile", reason: "timeout" });
   });
@@ -776,7 +783,7 @@ describe("defineAction — bot guards", () => {
 
     let rejection: unknown;
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         onBotDetected: (received) => {
@@ -787,7 +794,7 @@ describe("defineAction — bot guards", () => {
       }),
     );
 
-    const res = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
+    const res = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=solved-token`);
     expect(res.status).toBe(403);
     expect(rejection).toEqual({ guard: "turnstile", reason: "hostname-mismatch" });
   });
@@ -797,11 +804,11 @@ describe("defineAction — injected field derivation", () => {
   const SECRET = CSRF_HEX_KEY;
 
   function keysAction() {
-    return defineAction({ schema: NameSchema, handle: (data) => new Response(Object.keys(data).join(",")) });
+    return defineAction(TEST_ROUTE, { schema: NameSchema, handle: (data) => new Response(Object.keys(data).join(",")) });
   }
 
   function issueTypesAction() {
-    return defineAction({
+    return defineAction(TEST_ROUTE, {
       schema: NameSchema,
       handle: () => new Response("success"),
       onValidationError: (issues) => new Response(issues.map((issue) => issue.type).join("|"), { status: 400 }),
@@ -821,7 +828,7 @@ describe("defineAction — injected field derivation", () => {
   it("strips the CSRF token from a body validated against a schema that never declares it", async () => {
     const { app, token } = await guardedApp();
 
-    const res = await post(app, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded");
+    const res = await submit(app, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("name");
   });
@@ -829,7 +836,7 @@ describe("defineAction — injected field derivation", () => {
   it("strips a renamed CSRF field with no second declaration anywhere on the route", async () => {
     const { app, token } = await guardedApp("xsrf");
 
-    const res = await post(app, `xsrf=${token}&name=Jane`, "/guarded");
+    const res = await submit(app, `xsrf=${token}&name=Jane`, "/guarded");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("name");
   });
@@ -843,20 +850,20 @@ describe("defineAction — injected field derivation", () => {
     });
     const token = await createCsrfToken(ring, "/guarded");
 
-    const res = await post(app, `xsrf=${token}&name=Jane&${CSRF_FIELD_DEFAULT}=stray`, "/guarded");
+    const res = await submit(app, `xsrf=${token}&name=Jane&${CSRF_FIELD_DEFAULT}=stray`, "/guarded");
     expect(res.status).toBe(400);
     expect(await res.text()).toBe("strict_object");
   });
 
   it("refuses _csrf as an undeclared field when no CSRF middleware ran", async () => {
-    const res = await post(makeApp(issueTypesAction()), `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`);
+    const res = await submit(makeApp(issueTypesAction()), `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`);
     expect(res.status).toBe(400);
     expect(await res.text()).toBe("strict_object");
   });
 
   it("names the unconsumed CSRF field in the default refusal, pointing at the missing middleware", async () => {
-    const res = await post(
-      makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") })),
+    const res = await submit(
+      makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") })),
       `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`,
     );
     expect(res.status).toBe(422);
@@ -864,7 +871,7 @@ describe("defineAction — injected field derivation", () => {
   });
 
   it("refuses a renamed CSRF field when no CSRF middleware ran", async () => {
-    const res = await post(makeApp(issueTypesAction()), "name=Jane&xsrf=whatever");
+    const res = await submit(makeApp(issueTypesAction()), "name=Jane&xsrf=whatever");
     expect(res.status).toBe(400);
     expect(await res.text()).toBe("strict_object");
   });
@@ -873,9 +880,9 @@ describe("defineAction — injected field derivation", () => {
     const { app: guarded, token } = await guardedApp();
     const unguarded = makeApp(issueTypesAction());
 
-    expect(await (await post(guarded, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded")).text()).toBe("name");
-    expect(await (await post(unguarded, `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`)).text()).toBe("strict_object");
-    expect(await (await post(guarded, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded")).text()).toBe("name");
+    expect(await (await submit(guarded, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded")).text()).toBe("name");
+    expect(await (await submit(unguarded, `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`)).text()).toBe("strict_object");
+    expect(await (await submit(guarded, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded")).text()).toBe("name");
   });
 });
 
@@ -892,30 +899,33 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("answers 422 by default — a well-formed request the server understood and declined", async () => {
-    const res = await post(makeApp(defineAction({ schema: EmailSchema, handle: () => new Response("success") })), "email=not-an-email");
+    const res = await submit(
+      makeApp(defineAction(TEST_ROUTE, { schema: EmailSchema, handle: () => new Response("success") })),
+      "email=not-an-email",
+    );
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("email"));
   });
 
   it("lets onValidationError replace the status and the body entirely, including with a 2xx", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => new Response("success"),
         onValidationError: () => new Response("<p>try again</p>", { status: 200, headers: { "content-type": "text/html" } }),
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("<p>try again</p>");
   });
 
   it("puts neither the submitted value nor the schema's own pattern into the response", async () => {
     const Schema = v.strictObject({ password: v.pipe(v.string(), v.regex(/^(?=.*[A-Z]).{12,}$/)) });
-    const app = makeApp(defineAction({ schema: Schema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: () => new Response("success") }));
 
-    const res = await post(app, "password=hunter2secret");
+    const res = await submit(app, "password=hunter2secret");
     const body = await res.text();
     expect(res.status).toBe(422);
     expect(body).toBe(refusal("password"));
@@ -925,10 +935,10 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("answers a 50,000-character value and a 5-character one with byte-identical refusals", async () => {
-    const app = makeApp(defineAction({ schema: EmailSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: EmailSchema, handle: () => new Response("success") }));
 
-    const huge = await post(app, `email=${"z".repeat(50_000)}&${LONG_KEY}=1`);
-    const small = await post(app, `email=zzzzz&${LONG_KEY}=1`);
+    const huge = await submit(app, `email=${"z".repeat(50_000)}&${LONG_KEY}=1`);
+    const small = await submit(app, `email=zzzzz&${LONG_KEY}=1`);
     const hugeBody = await huge.text();
     const smallBody = await small.text();
 
@@ -940,10 +950,10 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("bounds the answer identically when the long value passes and the undeclared key is what fails", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
-    const huge = await post(app, `name=${"z".repeat(50_000)}&${LONG_KEY}=1`);
-    const small = await post(app, `name=Jane&${LONG_KEY}=1`);
+    const huge = await submit(app, `name=${"z".repeat(50_000)}&${LONG_KEY}=1`);
+    const small = await submit(app, `name=Jane&${LONG_KEY}=1`);
     const hugeBody = await huge.text();
 
     expect(huge.status).toBe(422);
@@ -953,11 +963,11 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("cannot have its response multiplied by a caller adding fields", async () => {
-    const app = makeApp(defineAction({ schema: EmailSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: EmailSchema, handle: () => new Response("success") }));
     const extras = Array.from({ length: 500 }, (_, index) => `extra${index}=1`).join("&");
 
-    const bare = await post(app, "email=nope");
-    const padded = await post(app, `email=nope&${extras}`);
+    const bare = await submit(app, "email=nope");
+    const padded = await submit(app, `email=nope&${extras}`);
 
     expect(await padded.text()).toBe(await bare.text());
     expect(padded.status).toBe(bare.status);
@@ -966,38 +976,38 @@ describe("defineAction — the one refusal", () => {
   it("pins the issue count to one for a body failing two declared fields", async () => {
     const Schema = v.strictObject({ a: v.pipe(v.string(), v.minLength(2)), b: v.pipe(v.string(), v.minLength(2)) });
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: Schema,
         handle: () => new Response("success"),
         onValidationError: (issues) => new Response(String(issues.length), { status: 400 }),
       }),
     );
 
-    const res = await post(app, "a=&b=");
+    const res = await submit(app, "a=&b=");
     expect(await res.text()).toBe("1");
   });
 
   it("renders one list item for a body failing two declared fields", async () => {
     const Schema = v.strictObject({ a: v.pipe(v.string(), v.minLength(2)), b: v.pipe(v.string(), v.minLength(2)) });
-    const app = makeApp(defineAction({ schema: Schema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: () => new Response("success") }));
 
-    const res = await post(app, "a=&b=");
+    const res = await submit(app, "a=&b=");
     expect(await res.text()).toBe(refusal("a"));
   });
 
   it("truncates a caller-supplied v.record key to forty characters", async () => {
     const Schema = v.record(v.string(), v.pipe(v.string(), v.minLength(5)));
-    const app = makeApp(defineAction({ schema: Schema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: Schema, handle: () => new Response("success") }));
 
-    const res = await post(app, `${"q".repeat(200)}=x`);
+    const res = await submit(app, `${"q".repeat(200)}=x`);
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("q".repeat(40)));
   });
 
   it("still escapes what it does render", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
-    const res = await post(app, `name=Jane&${encodeURIComponent("a&b'c\"d<e>f")}=1`);
+    const res = await submit(app, `name=Jane&${encodeURIComponent("a&b'c\"d<e>f")}=1`);
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("a&amp;b&#39;c&quot;d&lt;e&gt;f"));
   });
@@ -1006,16 +1016,16 @@ describe("defineAction — the one refusal", () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
     const guarded = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
     );
-    const plain = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const plain = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
-    const bot = await post(guarded, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
-    const human = await post(plain, "name=");
+    const bot = await submit(guarded, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
+    const human = await submit(plain, "name=");
 
     expect(bot.status).toBe(422);
     expect(human.status).toBe(422);
@@ -1026,15 +1036,15 @@ describe("defineAction — the one refusal", () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: UnionSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
       }),
     );
 
-    const bot = await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
-    const human = await post(makeApp(defineAction({ schema: UnionSchema, handle: () => new Response("success") })), "zzz=1");
+    const bot = await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad-token`);
+    const human = await submit(makeApp(defineAction(TEST_ROUTE, { schema: UnionSchema, handle: () => new Response("success") })), "zzz=1");
     const botBody = await bot.text();
 
     expect(bot.status).toBe(422);
@@ -1047,7 +1057,7 @@ describe("defineAction — the one refusal", () => {
     fakeSiteverify(async () => new Response(JSON.stringify({ success: false })));
 
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         turnstile: { secretKey: () => "test-secret", verify: () => ({ expectedHostname: "localhost" }) },
         handle: () => new Response("success"),
@@ -1055,8 +1065,8 @@ describe("defineAction — the one refusal", () => {
     );
 
     const bodies = [
-      await (await post(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
-      await (await post(app, `name=&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
+      await (await submit(app, `name=Jane&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
+      await (await submit(app, `name=&${TURNSTILE_FIELD_DEFAULT}=bad`)).text(),
     ];
 
     for (const body of bodies) {
@@ -1066,9 +1076,9 @@ describe("defineAction — the one refusal", () => {
   });
 
   it("names an undeclared field when the schema itself is what refused", async () => {
-    const app = makeApp(defineAction({ schema: NameSchema, handle: () => new Response("success") }));
+    const app = makeApp(defineAction(TEST_ROUTE, { schema: NameSchema, handle: () => new Response("success") }));
 
-    const res = await post(app, `name=Jane&${UNDECLARED}=spam`);
+    const res = await submit(app, `name=Jane&${UNDECLARED}=spam`);
     expect(await res.text()).toBe(refusal(UNDECLARED));
   });
 });
@@ -1078,7 +1088,7 @@ describe("defineAction — error reporting", () => {
 
   it("logs the generic 500 at error level, in the serialized shape", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           throw new Error("handle exploded");
@@ -1086,7 +1096,7 @@ describe("defineAction — error reporting", () => {
       }),
     );
 
-    const records = parse(await captureLogs(() => post(app, VALID_FORM.toString())));
+    const records = parse(await captureLogs(() => submit(app, VALID_FORM.toString())));
     expect(records.length).toBe(1);
     const record = records[0]!;
     expect(record.prefix).toBe("action");
@@ -1100,7 +1110,7 @@ describe("defineAction — error reporting", () => {
 
   it("logs at warn when onError recovers, since the client got a normal response", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           throw new Error("handle exploded");
@@ -1109,7 +1119,7 @@ describe("defineAction — error reporting", () => {
       }),
     );
 
-    const records = parse(await captureLogs(() => post(app, VALID_FORM.toString())));
+    const records = parse(await captureLogs(() => submit(app, VALID_FORM.toString())));
     expect(records.length).toBe(1);
     expect(records[0]!.level).toBe("warn");
     expect(records[0]!.message).toBe("Action threw");
@@ -1117,7 +1127,7 @@ describe("defineAction — error reporting", () => {
 
   it("attributes a throwing onError to the hook and still answers the generic fragment", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           throw new Error("handle exploded");
@@ -1131,7 +1141,7 @@ describe("defineAction — error reporting", () => {
     let res: Response | undefined;
     const records = parse(
       await captureLogs(async () => {
-        res = await post(app, VALID_FORM.toString());
+        res = await submit(app, VALID_FORM.toString());
       }),
     );
 
@@ -1151,7 +1161,7 @@ describe("defineAction — error reporting", () => {
 describe("defineAction — a client that disconnects", () => {
   it("renders no fragment and logs nothing, leaving the boundary its 499", async () => {
     const app = makeApp(
-      defineAction({
+      defineAction(TEST_ROUTE, {
         schema: NameSchema,
         handle: () => {
           throw new Error("handle exploded");
@@ -1185,7 +1195,7 @@ describe("defineAction — Turnstile under a testing secret", () => {
           app,
           "POST",
           "/test",
-          defineAction({
+          defineAction(TEST_ROUTE, {
             schema: NameSchema,
             turnstile: { verify: () => ({ expectedAction: "contact" }) },
             handle: (data) => new Response(data.name),

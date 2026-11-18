@@ -4,15 +4,20 @@ import { importKeyRing } from "../crypto/keyring/ring";
 import { CSRF_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection } from "../form/csrf";
 import { escapeHtml } from "../html/escape";
+import { get, post } from "../router/mod";
 import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
+import type { TestAction } from "../testing/types";
 import { v } from "../validation/validation";
-import { defineAction } from "./action";
 import { Forge } from "./forge-app";
-import { definePage } from "./page";
+import { createHandlerFactory } from "./handler-factory";
 import type { BotRejection } from "./types";
 
-function makeApp(handler: ReturnType<typeof definePage>) {
+const { definePage, defineAction } = createHandlerFactory();
+const PAGE_ROUTE = get("/test");
+const ACTION_ROUTE = post("/action");
+
+function makeApp(handler: TestAction<"/test">) {
   const app = new Forge();
   mapHandler(app, "GET", "/test", handler);
   return app;
@@ -22,7 +27,7 @@ const FORM_HEADERS = { "content-type": "application/x-www-form-urlencoded" };
 
 type Requestable = { request(path: string, init: RequestInit): Promise<Response> };
 
-function post(app: Requestable, body: string, path = "/test"): Promise<Response> {
+function submit(app: Requestable, body: string, path = "/test"): Promise<Response> {
   return app.request(path, { method: "POST", headers: FORM_HEADERS, body });
 }
 
@@ -55,7 +60,10 @@ async function captureLogs(run: () => Promise<unknown>): Promise<string[]> {
 describe("definePage", () => {
   it("renders the view with loader data", async () => {
     const app = makeApp(
-      definePage({ loader: () => ({ message: "hello" }), view: (_c, _config, state) => new Response((state.data as { message: string }).message) }),
+      definePage(PAGE_ROUTE, {
+        loader: () => ({ message: "hello" }),
+        view: (_c, _config, state) => new Response((state.data as { message: string }).message),
+      }),
     );
 
     const res = await app.request("/test");
@@ -64,28 +72,28 @@ describe("definePage", () => {
   });
 
   it("sets cache-control: no-store when cache is 'no-store'", async () => {
-    const app = makeApp(definePage({ cache: "no-store", view: () => new Response("ok") }));
+    const app = makeApp(definePage(PAGE_ROUTE, { cache: "no-store", view: () => new Response("ok") }));
 
     const res = await app.request("/test");
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
   it("defaults an unscoped cache directive to private, not public", async () => {
-    const app = makeApp(definePage({ cache: { maxAge: 3600 }, view: () => new Response("ok") }));
+    const app = makeApp(definePage(PAGE_ROUTE, { cache: { maxAge: 3600 }, view: () => new Response("ok") }));
 
     const res = await app.request("/test");
     expect(res.headers.get("cache-control")).toBe("private, max-age=3600");
   });
 
   it("sets a public cache header when the page asks for edge caching explicitly", async () => {
-    const app = makeApp(definePage({ cache: { maxAge: 3600, scope: "public" }, view: () => new Response("ok") }));
+    const app = makeApp(definePage(PAGE_ROUTE, { cache: { maxAge: 3600, scope: "public" }, view: () => new Response("ok") }));
 
     const res = await app.request("/test");
     expect(res.headers.get("cache-control")).toBe("public, max-age=3600");
   });
 
   it("sets private cache header when scope is private", async () => {
-    const app = makeApp(definePage({ cache: { maxAge: 60, scope: "private" }, view: () => new Response("ok") }));
+    const app = makeApp(definePage(PAGE_ROUTE, { cache: { maxAge: 60, scope: "private" }, view: () => new Response("ok") }));
 
     const res = await app.request("/test");
     expect(res.headers.get("cache-control")).toBe("private, max-age=60");
@@ -93,7 +101,7 @@ describe("definePage", () => {
 
   it("leaves a response that states its own cache-control alone", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         cache: { maxAge: 300 },
         loader: () => new Response("refused", { status: 403, headers: { "cache-control": "no-store" } }),
         view: () => new Response("ok"),
@@ -107,7 +115,7 @@ describe("definePage", () => {
 
   it("applies the page cache to a response that states none", async () => {
     const app = makeApp(
-      definePage({ cache: { maxAge: 300 }, loader: () => new Response("moved", { status: 302 }), view: () => new Response("ok") }),
+      definePage(PAGE_ROUTE, { cache: { maxAge: 300 }, loader: () => new Response("moved", { status: 302 }), view: () => new Response("ok") }),
     );
 
     const res = await app.request("/test");
@@ -117,7 +125,7 @@ describe("definePage", () => {
 
   it("lets `headers` override a response's own cache-control", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         cache: { maxAge: 300 },
         headers: { "cache-control": "private, max-age=10" },
         loader: () => new Response("refused", { status: 403, headers: { "cache-control": "no-store" } }),
@@ -130,21 +138,21 @@ describe("definePage", () => {
   });
 
   it("refuses a pipeline option stated without a schema", () => {
-    expect(() => definePage({ turnstile: TURNSTILE_OPTIONS, view: () => new Response("ok") } as never)).toThrow(
+    expect(() => definePage(PAGE_ROUTE, { turnstile: TURNSTILE_OPTIONS, view: () => new Response("ok") } as never)).toThrow(
       "definePage: `turnstile` requires `schema` — a submission-pipeline option without a schema is ignored.",
     );
-    expect(() => definePage({ turnstile: TURNSTILE_OPTIONS, maxBytes: 1024, view: () => new Response("ok") } as never)).toThrow(
+    expect(() => definePage(PAGE_ROUTE, { turnstile: TURNSTILE_OPTIONS, maxBytes: 1024, view: () => new Response("ok") } as never)).toThrow(
       "definePage: `turnstile`, `maxBytes` require `schema` — submission-pipeline options without a schema are ignored.",
     );
   });
 
   it("refuses a pipeline option stated without a schema at the type level", () => {
     // @ts-expect-error -- `turnstile` is only assignable on the arm that also states `schema`
-    expect(() => definePage({ turnstile: TURNSTILE_OPTIONS, view: () => new Response("ok") })).toThrow();
+    expect(() => definePage(PAGE_ROUTE, { turnstile: TURNSTILE_OPTIONS, view: () => new Response("ok") })).toThrow();
   });
 
   it("sets custom headers", async () => {
-    const app = makeApp(definePage({ headers: { "x-custom": "value" }, view: () => new Response("ok") }));
+    const app = makeApp(definePage(PAGE_ROUTE, { headers: { "x-custom": "value" }, view: () => new Response("ok") }));
 
     const res = await app.request("/test");
     expect(res.headers.get("x-custom")).toBe("value");
@@ -152,7 +160,7 @@ describe("definePage", () => {
 
   it("calls onError when the view throws", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         view: () => {
           throw new Error("render failed");
         },
@@ -167,7 +175,7 @@ describe("definePage", () => {
 
   it("calls onError when the loader throws", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         loader: () => {
           throw new Error("loader failed");
         },
@@ -187,7 +195,7 @@ describe("definePage", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         action: () => ({ saved: true }),
         view: (_c, _config, state) => Response.json({ actionData: state.actionData, method: state.method }),
       }),
@@ -205,7 +213,7 @@ describe("definePage", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         action: () => {
           order.push("action");
           return "done";
@@ -231,7 +239,7 @@ describe("definePage", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         cache: "no-store",
         action: () => new Response(null, { status: 303, headers: { location: "/done" } }),
         view: () => new Response("unreachable"),
@@ -247,7 +255,7 @@ describe("definePage", () => {
   it("skips action on a GET and renders with actionData undefined", async () => {
     let called = false;
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         action: () => {
           called = true;
           return "should not run";
@@ -268,7 +276,7 @@ describe("definePage", () => {
       app,
       "POST",
       "/boundary",
-      definePage({
+      definePage(PAGE_ROUTE, {
         action: () => {
           throw new Error("action failed");
         },
@@ -287,7 +295,7 @@ describe("definePage", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         action: () => {
           throw new Error("action failed");
         },
@@ -311,7 +319,7 @@ describe("definePage", () => {
           return next();
         },
       ],
-      handler: definePage({
+      handler: definePage(PAGE_ROUTE, {
         loader: () => {
           order.push("loader");
           return { ok: true };
@@ -342,7 +350,7 @@ describe("definePage — the schema pipeline", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: NameSchema,
         action: () => {
           calls.push("action");
@@ -359,7 +367,7 @@ describe("definePage — the schema pipeline", () => {
       }),
     );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("name"));
     expect(calls).toEqual([]);
@@ -375,7 +383,7 @@ describe("definePage — the schema pipeline", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: Schema,
         action: (c, _config, data) => {
           calls.push("action");
@@ -394,7 +402,7 @@ describe("definePage — the schema pipeline", () => {
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ actionData: { saved: "Jane" }, data: { count: 1 }, method: "POST" });
     expect(calls).toEqual(["action", "loader", "view"]);
@@ -412,7 +420,7 @@ describe("definePage — the schema pipeline", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         action: async (c, _config, data) => {
           thirdArg = data;
           bodyUsedAtEntry = c.request.bodyUsed;
@@ -424,7 +432,7 @@ describe("definePage — the schema pipeline", () => {
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ actionData: { echoed: "Jane" } });
     expect(thirdArg).toBeUndefined();
@@ -434,9 +442,14 @@ describe("definePage — the schema pipeline", () => {
 
   it("keeps a schema-less page's action reachable with a body a schema would have refused", async () => {
     const app = new Forge();
-    mapHandler(app, "POST", "/test", definePage({ action: () => "ran", view: (_c, _config, state) => new Response(String(state.actionData)) }));
+    mapHandler(
+      app,
+      "POST",
+      "/test",
+      definePage(PAGE_ROUTE, { action: () => "ran", view: (_c, _config, state) => new Response(String(state.actionData)) }),
+    );
 
-    const res = await post(app, "name=&nobody_asked=1");
+    const res = await submit(app, "name=&nobody_asked=1");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ran");
   });
@@ -444,7 +457,7 @@ describe("definePage — the schema pipeline", () => {
   it("never runs the pipeline on a GET, so a bodiless request still renders", async () => {
     const calls: string[] = [];
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: NameSchema,
         action: () => {
           calls.push("action");
@@ -462,9 +475,14 @@ describe("definePage — the schema pipeline", () => {
 
   it("never runs the pipeline when the page declares a schema but no action", async () => {
     const app = new Forge();
-    mapHandler(app, "POST", "/test", definePage({ schema: NameSchema, view: (_c, _config, state) => new Response(`rendered:${state.method}`) }));
+    mapHandler(
+      app,
+      "POST",
+      "/test",
+      definePage(PAGE_ROUTE, { schema: NameSchema, view: (_c, _config, state) => new Response(`rendered:${state.method}`) }),
+    );
 
-    const res = await post(app, "name=");
+    const res = await submit(app, "name=");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("rendered:POST");
   });
@@ -480,7 +498,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         cache: CACHE,
         headers: HEADERS,
         schema: NameSchema,
@@ -496,7 +514,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 
   it("carries them on the 422 a refused schema produces", async () => {
     const calls: string[] = [];
-    const res = await post(headeredApp(calls), "name=");
+    const res = await submit(headeredApp(calls), "name=");
 
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal("name"));
@@ -508,7 +526,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
   it("carries them on the 413 an oversized body produces", async () => {
     const calls: string[] = [];
     // 100 KB default cap; this body is ~200 KB.
-    const res = await post(headeredApp(calls), `name=${"x".repeat(200_000)}`);
+    const res = await submit(headeredApp(calls), `name=${"x".repeat(200_000)}`);
 
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
@@ -538,7 +556,7 @@ describe("definePage — a refusal carries the page's own headers", () => {
 
   it("renders the view normally when the body passes, with the same headers", async () => {
     const calls: string[] = [];
-    const res = await post(headeredApp(calls), "name=Jane");
+    const res = await submit(headeredApp(calls), "name=Jane");
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("rendered");
@@ -566,7 +584,7 @@ describe("definePage — the submission sequence's options are the page's own", 
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: MessageSchema,
         onValidationError: (issues, c) => {
           methodAtRefusal = c.request.method;
@@ -583,7 +601,7 @@ describe("definePage — the submission sequence's options are the page's own", 
       }),
     );
 
-    const res = await post(app, "message=");
+    const res = await submit(app, "message=");
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(
       '<main><h1>Contact</h1><form method="post"><ul><li>Tell us what you&#39;d like &amp; we&#39;ll reply.</li></ul></form></main>',
@@ -600,7 +618,7 @@ describe("definePage — the submission sequence's options are the page's own", 
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: NameSchema,
         turnstile: TURNSTILE_OPTIONS,
         onBotDetected: (received) => {
@@ -615,7 +633,7 @@ describe("definePage — the submission sequence's options are the page's own", 
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("go away");
     expect(rejection).toEqual({ guard: "turnstile", reason: "missing-token" });
@@ -628,7 +646,7 @@ describe("definePage — the submission sequence's options are the page's own", 
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         maxBytes: 300 * 1024,
         schema: NameSchema,
         action: (_c, _config, data) => String(data.name.length),
@@ -637,7 +655,7 @@ describe("definePage — the submission sequence's options are the page's own", 
     );
 
     // ~200 KB, twice the default cap: a 200 here is only reachable through the page's own limit.
-    const res = await post(app, `name=${"x".repeat(200_000)}`);
+    const res = await submit(app, `name=${"x".repeat(200_000)}`);
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("200000");
   });
@@ -649,7 +667,7 @@ describe("definePage — the submission sequence's options are the page's own", 
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         maxBytes: 1024,
         schema: NameSchema,
         action: () => {
@@ -661,7 +679,7 @@ describe("definePage — the submission sequence's options are the page's own", 
     );
 
     // ~2 KB — under the default cap and over this page's, so the 413 can only come from the page's own.
-    const res = await post(app, `name=${"x".repeat(2000)}`);
+    const res = await submit(app, `name=${"x".repeat(2000)}`);
     expect(res.status).toBe(413);
     expect(await res.text()).toBe(
       '<div class="rounded-2xl border border-status-danger-border bg-status-danger-subtle px-4 py-3 text-sm text-status-danger-subtle-foreground"><p>The submitted form is too large. Please reduce its size and try again.</p></div>',
@@ -675,7 +693,7 @@ describe("definePage — the CSRF field the guard consumed", () => {
   const KeysSchema = v.strictObject({ name: v.string() });
 
   function keysPage() {
-    return definePage({
+    return definePage(PAGE_ROUTE, {
       schema: KeysSchema,
       action: (_c, _config, data) => Object.keys(data).join(","),
       view: (_c, _config, state) => new Response(String(state.actionData)),
@@ -688,7 +706,7 @@ describe("definePage — the CSRF field the guard consumed", () => {
     mapHandler(app, "POST", "/guarded", { middleware: [csrfProtection({ ring: () => ring, subject: false })], handler: keysPage() });
     const token = await createCsrfToken(ring, "/guarded");
 
-    const res = await post(app, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded");
+    const res = await submit(app, `${CSRF_FIELD_DEFAULT}=${token}&name=Jane`, "/guarded");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("name");
   });
@@ -697,7 +715,7 @@ describe("definePage — the CSRF field the guard consumed", () => {
     const app = new Forge();
     mapHandler(app, "POST", "/unguarded", keysPage());
 
-    const res = await post(app, `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`, "/unguarded");
+    const res = await submit(app, `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`, "/unguarded");
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal(CSRF_FIELD_DEFAULT));
   });
@@ -719,7 +737,7 @@ describe("definePage — a throwing schema", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: ThrowingCheck,
         action: () => {
           calls.push("action");
@@ -737,7 +755,7 @@ describe("definePage — a throwing schema", () => {
 
   it("rethrows to the app boundary rather than answering defineAction's 500 fragment", async () => {
     const calls: string[] = [];
-    const res = await post(throwingPage(calls), "name=Jane");
+    const res = await submit(throwingPage(calls), "name=Jane");
 
     expect(res.status).toBe(500);
     expect(await res.text()).toBe(APP_BOUNDARY_500);
@@ -752,7 +770,7 @@ describe("definePage — a throwing schema", () => {
       app,
       "POST",
       "/test",
-      definePage({
+      definePage(PAGE_ROUTE, {
         schema: ThrowingCheck,
         action: () => {
           calls.push("action");
@@ -766,7 +784,7 @@ describe("definePage — a throwing schema", () => {
       }),
     );
 
-    const res = await post(app, "name=Jane");
+    const res = await submit(app, "name=Jane");
     expect(res.status).toBe(500);
     expect(await res.text()).toBe("page error");
     expect(captured?.message).toBe("check exploded");
@@ -776,7 +794,7 @@ describe("definePage — a throwing schema", () => {
   it("leaves the record to the boundary and never logs it as an action's", async () => {
     const calls: string[] = [];
     const app = throwingPage(calls);
-    const logs = await captureLogs(() => post(app, "name=Jane"));
+    const logs = await captureLogs(() => submit(app, "name=Jane"));
 
     expect(logs.some((line) => line.includes("Unhandled error"))).toBe(true);
     expect(logs.some((line) => line.includes("Page handler threw"))).toBe(false);
@@ -785,12 +803,17 @@ describe("definePage — a throwing schema", () => {
 
   it("answers one and the same throwing schema differently on each builder, on purpose", async () => {
     const pageApp = new Forge();
-    mapHandler(pageApp, "POST", "/page", definePage({ schema: ThrowingCheck, action: () => "ran", view: () => new Response("rendered") }));
+    mapHandler(
+      pageApp,
+      "POST",
+      "/page",
+      definePage(PAGE_ROUTE, { schema: ThrowingCheck, action: () => "ran", view: () => new Response("rendered") }),
+    );
     const actionApp = new Forge();
-    mapHandler(actionApp, "POST", "/action", defineAction({ schema: ThrowingCheck, handle: () => new Response("handled") }));
+    mapHandler(actionApp, "POST", "/action", defineAction(ACTION_ROUTE, { schema: ThrowingCheck, handle: () => new Response("handled") }));
 
-    const page = await post(pageApp, "name=Jane", "/page");
-    const action = await post(actionApp, "name=Jane", "/action");
+    const page = await submit(pageApp, "name=Jane", "/page");
+    const action = await submit(actionApp, "name=Jane", "/action");
 
     expect(page.status).toBe(500);
     expect(action.status).toBe(500);
@@ -804,7 +827,7 @@ describe("definePage — error reporting", () => {
 
   it("leaves the record to the boundary when no onError is supplied", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         view: () => {
           throw new Error("view exploded");
         },
@@ -818,7 +841,7 @@ describe("definePage — error reporting", () => {
 
   it("logs exactly once, in the serialized shape, when onError recovers", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         view: () => {
           throw new Error("view exploded");
         },
@@ -840,7 +863,7 @@ describe("definePage — error reporting", () => {
 
   it("attributes a throwing onError to the hook and lets the boundary render the original", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         view: () => {
           throw new Error("view exploded");
         },
@@ -866,7 +889,7 @@ describe("definePage — error reporting", () => {
 describe("definePage — a client that disconnects", () => {
   it("renders no onError page and logs nothing, leaving the boundary its 499", async () => {
     const app = makeApp(
-      definePage({
+      definePage(PAGE_ROUTE, {
         view: () => {
           throw new Error("view exploded");
         },

@@ -78,8 +78,9 @@ test.describe("a 101 behind forge's response rebuilds", () => {
     const head = await handshakeHead(served.origin, "/d1-live");
 
     expect(head).toMatch(/^http\/1\.1 101/);
-    expect(head).toMatch(
-      /\r\nset-cookie: d1b=[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{16,64}; path=\/; httponly; secure; samesite=lax(\r\n|$)/,
-    );
+    // Attribute order carries no meaning in a Set-Cookie (RFC 6265 §5.2), so the set is pinned, not the sequence.
+    const [pair, ...attributes] = (head.match(/\r\nset-cookie: (d1b=[^\r\n]*)/)?.[1] ?? "").split("; ");
+    expect(pair).toMatch(/^d1b=[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{16,64}$/);
+    expect(attributes.toSorted()).toEqual(["httponly", "path=/", "samesite=lax", "secure"]);
   });
 });

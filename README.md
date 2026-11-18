@@ -144,7 +144,9 @@ URL generation and middleware wiring all read it. A page pairs a loader with a v
 bot guard and the parse are already written:
 
 ```tsx
-export const homePage = definePage({
+const { definePage } = createHandlerFactory<Bindings, AppConfig>(); // from @y-core/forge/app, once per app
+
+export const homePage = definePage(routes.home, {
   cache: { maxAge: 300, scope: "public" },
   loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
   view: (_c, _config, state) => renderPage(<Home greeting={state.data.greeting} />),

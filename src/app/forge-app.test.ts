@@ -1,20 +1,23 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import type { Middleware } from "@remix-run/fetch-router";
 import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
+import { createMultiMatcher } from "@remix-run/route-pattern/match";
 
 import { setPendingHeader } from "../context/pending-headers";
 import { matchedRoutePattern } from "../context/route-pattern";
 import type { AppContext } from "../context/types";
 import { createLogger } from "../logging/logger";
 import type { LogChannel, LogRecord, Logger } from "../logging/types";
-import { MatcherResourceError } from "../router/mod";
+import { get, MatcherResourceError } from "../router/mod";
 import type { MatcherResourceErrorDetails } from "../router/mod";
 import { collectExecutionContext, mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import { Forge } from "./forge-app";
-import { definePage } from "./page";
+import { createHandlerFactory } from "./handler-factory";
+
+const { definePage } = createHandlerFactory();
 
 /** The `executionCtx` every `fetch` call in this file passes, since the argument is required. */
 const ctx = (): ExecutionContext => collectExecutionContext().executionCtx;
@@ -184,6 +187,38 @@ describe("Forge.use", () => {
     expect(hits).toEqual(["/api/users"]);
   });
 
+  it("matches each registration once per request, however many handlers it holds", async () => {
+    const order: string[] = [];
+    const app = new Forge();
+    app.use("/a/*", probe("a1", order), probe("a2", order), probe("a3", order));
+    app.use(["/b", "/a/x"], probe("b1", order), probe("b2", order));
+    mapHandler(app, "GET", "/a/x", () => new Response("ok"));
+    mapHandler(app, "GET", "/c", () => new Response("ok"));
+
+    // The router dispatches through `matchAll`, so every `match` call is a guard's.
+    const match = spyOn(Object.getPrototypeOf(createMultiMatcher()) as { match: () => unknown }, "match");
+    try {
+      await app.request("/a/x");
+      expect(match).toHaveBeenCalledTimes(2);
+      expect(order).toEqual(["a1", "a2", "a3", "b1", "b2"]);
+
+      await app.request("/c");
+      expect(match).toHaveBeenCalledTimes(4);
+      expect(order).toHaveLength(5);
+    } finally {
+      match.mockRestore();
+    }
+  });
+
+  it("refuses a registration after the first request instead of dropping it", async () => {
+    const app = new Forge();
+    mapHandler(app, "GET", "/", () => new Response("ok"));
+    await app.request("/");
+
+    const pass: Middleware = (_c, next) => next();
+    expect(() => app.use("*", pass)).toThrow(/^Forge\.use: called after the app served its first request/);
+  });
+
   it("lets a guard short-circuit the handler with its own response", async () => {
     const app = new Forge();
     app.use("*", () => new Response("blocked", { status: 403 }));
@@ -192,6 +227,30 @@ describe("Forge.use", () => {
     const res = await app.request("/");
     expect(res.status).toBe(403);
     expect(await res.text()).toBe("blocked");
+  });
+});
+
+describe("Forge.map", () => {
+  it("takes a route mapped after the first request", async () => {
+    const app = new Forge();
+    mapHandler(app, "GET", "/", () => new Response("first"));
+    await app.request("/");
+
+    mapHandler(app, "GET", "/late", () => new Response("late"));
+    const res = await app.request("/late");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("late");
+  });
+
+  it("puts a route mapped after the first request behind the guards already registered", async () => {
+    const app = new Forge();
+    app.use("/admin/*", () => new Response("blocked", { status: 403 }));
+    mapHandler(app, "GET", "/", () => new Response("first"));
+    await app.request("/");
+
+    mapHandler(app, "GET", "/admin/late", () => new Response("late"));
+    const res = await app.request("/admin/late");
+    expect([res.status, await res.text()]).toEqual([403, "blocked"]);
   });
 });
 
@@ -620,7 +679,7 @@ describe("Forge — a cookie-setting response is never shared-cacheable", () => 
   const publicPageApp = (withCookie: boolean): Forge => {
     const app = new Forge();
     if (withCookie) app.use("*", writeCookie);
-    mapHandler(app, "GET", "/", definePage({ cache: { scope: "public", maxAge: 60 }, view: () => new Response("ok") }));
+    mapHandler(app, "GET", "/", definePage(get("/"), { cache: { scope: "public", maxAge: 60 }, view: () => new Response("ok") }));
     return app;
   };
 

@@ -297,13 +297,15 @@ A single call to `loadLogViewer` in a `definePage` loader is the entire mount â€
 `view` never runs:
 
 ```ts
-import { definePage } from "@y-core/forge/app";
 import { kvLogChannel } from "@y-core/forge/logging";
 import { loadLogViewer } from "@y-core/forge/logging/viewer";
 import { sessionCtx } from "@y-core/forge/session";
+
+import { definePage } from "./handlers"; // createHandlerFactory<AppEnv, AppConfig>()
+import { routes } from "./routes"; // logs: get("/admin/logs")
 import { chevronDownIcon } from "./ui/icons";
 
-export const logsPage = definePage<AppEnv, AppConfig>({
+export const logsPage = definePage(routes.logs, {
   loader: (c) =>
     loadLogViewer(c, {
       channel: (cc) => kvLogChannel(cc.env.LOGS_KV!),

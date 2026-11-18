@@ -64,7 +64,7 @@ async function establishIdentity<Bindings>(
 }
 
 function replayableMethod(context: Parameters<Middleware>[0]): boolean {
-  const method = context.method.toUpperCase();
+  const method = context.method;
   return method === "GET" || method === "HEAD";
 }
 
@@ -404,7 +404,7 @@ export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: 
     const fresh: AuthStepUpWindow = { maxAgeMs: maxAgeMs ?? undefined, now: guardNow(options) };
     freshStepUpWindowCtx.set(context, fresh);
     if (maxAgeMs === null) return next();
-    if (SAFE_METHODS.has(context.method.toUpperCase())) return next();
+    if (SAFE_METHODS.has(context.method)) return next();
 
     const identity = establishedIdentity(context, "requireFreshStepUp");
     const resolved = await resolveFactorDemand(context, identity, options);

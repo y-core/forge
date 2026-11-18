@@ -267,8 +267,9 @@ composition, not a primitive, and is ruled out as a class.
 `app` owns bootstrap and the `definePage` / `defineAction` pipeline builders. **If a third pipeline-builder variant is needed, extract all builders
 into a new `handler` namespace.**
 
-**The trigger counts exported `define*` entry points, not modules.** Both builders share one internal submission-pipeline module inside `app`;
-factoring a sequence out of them is an implementation seam and keeps the count at two, so it does not fire the rule
+**The trigger counts the builders `createHandlerFactory` hands out, not modules.** `HandlerFactory`'s members are the only way a consumer reaches a
+builder, so a third member is a third variant. Both builders share one internal submission-pipeline module inside `app`; factoring a sequence out of
+them is an implementation seam and keeps the count at two, so it does not fire the rule
 ([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
 
 ### 5d. http — Responses, Headers and Paths

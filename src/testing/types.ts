@@ -1,7 +1,9 @@
-import type { Middleware } from "@remix-run/fetch-router";
+import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import type { RequestHandler } from "@remix-run/fetch-router";
+import type { Route } from "@remix-run/fetch-router/routes";
 
 import type { Logger } from "../logging/types";
+import type { RouteParams } from "../router/types";
 /** One enrolled factor on a `fakeAuthD1` user. @public */
 export interface FakeAuthFactor {
   readonly kind: string;
@@ -69,8 +71,12 @@ export interface FakeD1Options {
   rowsWritten?: (sql: string, params: unknown[]) => number | null;
 }
 
-/** A route action for the test helper: a bare handler or a `{ middleware, handler }` object. @public */
-export type TestAction = RequestHandler | { middleware: readonly Middleware[]; handler: RequestHandler };
+/** A route action for the test helper, whose context carries the params `P` declares: a bare handler or a `{ middleware, handler }` object. @public */
+export type TestAction<P extends string = string> =
+  // oxlint-disable-next-line typescript/no-explicit-any -- the method plays no part in the params
+  | RequestHandler<RequestContext<RouteParams<Route<any, P>>>>
+  // oxlint-disable-next-line typescript/no-explicit-any -- the method plays no part in the params
+  | { middleware: readonly Middleware[]; handler: RequestHandler<RequestContext<RouteParams<Route<any, P>>>> };
 
 /** The codes an authenticator app would show either side of one step boundary. @public */
 export interface TotpCodes {

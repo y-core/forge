@@ -44,8 +44,10 @@ Attributes are spelled the way HTML spells them — `class`, not React's `classN
 `renderPage` renders the tree, prepends `<!DOCTYPE html>` and wraps it in an HTML `Response`. Return it straight from a `definePage` view:
 
 ```tsx
-import { definePage } from "@y-core/forge/app";
 import { renderPage } from "@y-core/forge/render/jsx";
+
+import { definePage } from "./handlers"; // createHandlerFactory<Bindings, AppConfig>()
+import { routes } from "./routes";
 
 function HomePage({ title }: { title: string }) {
   return (
@@ -60,7 +62,7 @@ function HomePage({ title }: { title: string }) {
   );
 }
 
-export default definePage({
+export default definePage(routes.home, {
   view: () => renderPage(<HomePage title='Home' />),
 });
 ```

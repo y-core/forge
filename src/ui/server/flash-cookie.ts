@@ -21,7 +21,7 @@ function inTurn<T>(c: RequestContext<any, any>, step: () => Promise<T>): Promise
   return run;
 }
 
-/** Creates a `Flasher` backed by a signed cookie cleared on read. @public */
+/** Creates a `Flasher` on a signed cookie cleared on read, for apps with no session store mounted; with one, use `session.flash`. @public */
 export function createFlash<Bindings = Record<string, unknown>>(options: FlashCookieOptions<Bindings>): Flasher {
   const name = options.name ?? "flash";
   const path = options.path ?? "/";

@@ -3,9 +3,12 @@ import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import { contextVar } from "../../context/accessor";
 import { setPendingHeader } from "../../context/pending-headers";
 import { getAppContext } from "../../context/types";
+import { Cookie, SetCookie } from "../../http/headers";
 import type { D1DatabaseLike, D1DatabaseSession, D1PreparedStatement, D1Queryable, D1SessionsOptions } from "./types";
 
 const sessionsCtx = contextVar<Map<D1DatabaseLike, D1DatabaseSession>>("__d1Sessions");
+
+const BOOKMARK_COOKIE = { path: "/", httpOnly: true, secure: true, sameSite: "Lax" } as const;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
@@ -20,14 +23,7 @@ export function queryableFor(c: RequestContext<any, any>, db: D1DatabaseLike): D
 
 /** The bookmark a request carries in its header or cookie, or `null` where it carries none in D1's shape. @internal */
 export function incomingBookmark(request: Request, carrier: NonNullable<D1SessionsOptions["bookmark"]>): string | null {
-  const value =
-    "header" in carrier
-      ? request.headers.get(carrier.header)
-      : (request.headers
-          .get("cookie")
-          ?.split(";")
-          .map((part) => part.trim().split("="))
-          .find(([name]) => name === carrier.cookie)?.[1] ?? null);
+  const value = "header" in carrier ? request.headers.get(carrier.header) : Cookie.from(request.headers.get("cookie")).get(carrier.cookie);
   return value !== null && BOOKMARK.test(value) ? value : null;
 }
 
@@ -87,14 +83,18 @@ export function d1Sessions<Bindings = Record<string, unknown>>(options: D1Sessio
     if (carrier === undefined) return response;
     if (resumed?.refused() === true) {
       if ("cookie" in carrier)
-        setPendingHeader(context, "set-cookie", `${carrier.cookie}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`, { append: true });
+        setPendingHeader(context, "set-cookie", new SetCookie({ ...BOOKMARK_COOKIE, name: carrier.cookie, value: "", maxAge: 0 }).toString(), {
+          append: true,
+        });
       return response;
     }
     const bookmark = session.getBookmark();
     if (bookmark === null) return response;
     if ("header" in carrier) setPendingHeader(context, carrier.header, bookmark);
     else if (bookmark !== incoming)
-      setPendingHeader(context, "set-cookie", `${carrier.cookie}=${bookmark}; Path=/; HttpOnly; Secure; SameSite=Lax`, { append: true });
+      setPendingHeader(context, "set-cookie", new SetCookie({ ...BOOKMARK_COOKIE, name: carrier.cookie, value: bookmark }).toString(), {
+        append: true,
+      });
     return response;
   };
 }

@@ -152,12 +152,14 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
 
   /** Register path-scoped middleware. `"*"` matches all paths; `"/api/*"` matches the prefix; an array matches any of them. */
   use(path: string | readonly string[], ...handlers: Middleware[]): void {
+    if (this._router) {
+      throw new Error(
+        "Forge.use: called after the app served its first request — the middleware stack is fixed when the router is built, so this registration would never run. Register middleware before the first `fetch`.",
+      );
+    }
     const paths = typeof path === "string" ? [path] : path;
     if (paths.length === 0) return;
-    const matcher = compileGuardMatcher(paths);
-    for (const h of handlers) {
-      this._globals.push({ matcher, handler: h });
-    }
+    this._globals.push({ matcher: compileGuardMatcher(paths), handlers });
   }
 
   /** Declarative, map-based route registration — the canonical way to add routes. @public */
@@ -187,11 +189,22 @@ export class Forge<Bindings extends object = Record<string, unknown>> {
       return privatizeCookieResponse(headers === null ? res : rebuildResponse(res, headers));
     };
 
-    const guarded: Middleware[] = this._globals.map(
-      ({ matcher, handler }) =>
-        (context, next) =>
-          matcher === null || matcher.match(context.url) ? handler(context, next) : next(),
-    );
+    const guarded: Middleware[] = this._globals.flatMap(({ matcher, handlers }) => {
+      if (matcher === null) return handlers;
+      const verdicts = new WeakMap<RequestContext, boolean>();
+      const matchesRequest = (context: RequestContext): boolean => {
+        const cached = verdicts.get(context);
+        if (cached !== undefined) return cached;
+        const verdict = matcher.match(context.url) !== null;
+        verdicts.set(context, verdict);
+        return verdict;
+      };
+      return handlers.map(
+        (handler): Middleware =>
+          (context, next) =>
+            matchesRequest(context) ? handler(context, next) : next(),
+      );
+    });
 
     const errorBoundary: Middleware = async (context, next) => {
       try {

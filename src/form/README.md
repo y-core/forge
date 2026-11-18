@@ -24,13 +24,15 @@ that sit outside it — and `csrfProtection`, which is middleware and is always 
 The CSRF guard is mounted as middleware, and the action declares its schema. Nothing else is wired by hand.
 
 ```ts
-import { defineAction } from "@y-core/forge/app";
 import { getAppContext } from "@y-core/forge/context";
 import { csrfProtection } from "@y-core/forge/form";
 import { fragmentResponse } from "@y-core/forge/http";
 import { importKeyRing, parseKeyRingSecrets } from "@y-core/forge/crypto/keyring";
 import { renderSuccess } from "@y-core/forge/render/htmx";
 import { formMultilineText, formText, v } from "@y-core/forge/validation";
+
+import { defineAction } from "./handlers"; // createHandlerFactory<Bindings, AppConfig>()
+import { routes } from "./routes";
 
 const csrfGuard = csrfProtection({
   ring: (c) => importKeyRing(parseKeyRingSecrets(getAppContext(c).env.CSRF_SECRET)),
@@ -43,7 +45,7 @@ const ContactSchema = v.strictObject({
   message: v.pipe(formMultilineText(), v.minLength(10)),
 });
 
-const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
+const contactAction = defineAction(routes.contact, {
   schema: ContactSchema,
   turnstile: { verify: () => ({ expectedAction: "contact" }) },
   handle: async (data) => {

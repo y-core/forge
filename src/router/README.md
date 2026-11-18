@@ -97,7 +97,8 @@ routes.user.href({ id: "42" }); // "/users/42"
 routes.search.href(undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c" — search values are encoded
 ```
 
-Params come first, everything else under the options object. Give `baseURL` the page the link sits on and a same-origin target comes back
+Params come first, everything else under the options object, typed `CreateHrefOptions`; its `searchParams` is a `CreateHrefSearchParams`,
+so a helper that builds either can name the type. Give `baseURL` the page the link sits on and a same-origin target comes back
 path-relative — useful when the markup is rendered once and served under more than one origin. It throws a `TypeError` where the value is not
 absolute, or where no same-origin target can be resolved from it.
 
@@ -107,6 +108,32 @@ performs exactly the join `route(base, defs)` applies — useful when you are co
 ```ts
 createHref("/search", undefined, { searchParams: { q: "a b&c" } }); // "/search?q=a+b%26c"
 ```
+
+---
+
+## Typing a helper that reads a route's params
+
+A page or action built with `definePage` / `defineAction` names its route, so its own `c.params` is already typed
+([`src/app/README.md`][app-readme]). A helper it passes the context to types that context with `RouteParams`, read off the same route:
+
+```ts
+import type { AppContext } from "@y-core/forge/context";
+import { get, post, route, type RouteParams } from "@y-core/forge/router";
+
+export const routes = route({
+  task: get("/tasks/:id"),
+  completeTask: post("/tasks/:id/complete"),
+  archive: get("/archive(/:year)"),
+});
+
+export function loadTask(c: AppContext<AppEnv, RouteParams<typeof routes.task>>) {
+  return c.env.TASKS.get(c.params.id); // `id` is a string
+}
+```
+
+`loadTask` takes the context of the `task` page and of the `completeTask` action alike, because both patterns capture the same params. A param
+inside an optional segment may be absent, so `RouteParams<typeof routes.archive>` is `{ year: string | undefined }`. A helper shared by routes whose
+params differ types its context on a route carrying only the params they share ([`ROUTING_AND_MIDDLEWARE.md`][ram-2e] §2e).
 
 ---
 
@@ -161,7 +188,7 @@ answers `500`. Its `details` carries the discriminant that tells the two apart, 
 ## See also
 
 - [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the governing doctrine: routes as a map, controllers, registration order, and middleware composition
-- [`src/app/README.md`][app-readme] — `createApp`, `app.map`, and the `definePage` / `defineAction` builders that fill a controller's actions
+- [`src/app/README.md`][app-readme] — `createApp`, `app.map`, and the route-first `definePage` / `defineAction` that fill a controller's actions
 - [`src/context/README.md`][context-readme] — what a handler reads off the context these routes dispatch to
 
 [app-readme]: ../app/README.md
@@ -170,3 +197,4 @@ answers `500`. Its `details` carries the discriminant that tells the two apart, 
 [ram-1c]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1c-registering-routes-with-appmap
 [ram-1d]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1d-no-head-verb-export
 [ram-1f]: ../../docs/ROUTING_AND_MIDDLEWARE.md#1f-matcher-resource-budgets
+[ram-2e]: ../../docs/ROUTING_AND_MIDDLEWARE.md#2e-a-page-or-action-names-its-route

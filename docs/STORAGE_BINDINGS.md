@@ -319,13 +319,27 @@ channel.
 
 ### 3b. serveObject — Direct Response from a Backend
 
-`serveObject(backend, request, key, options?)` retrieves an object and returns a fully-formed `Response` ready to return from a handler: `200` with
-the body, `206` for a satisfied `Range`, `304` for a matching `If-None-Match`, `404` when absent, `416` for an unsatisfiable range. It sets
-`Content-Type`, `Content-Encoding`, `Content-Language`, `ETag`, `Accept-Ranges`, `Content-Length`, `Cache-Control` and
-`X-Content-Type-Options: nosniff` — the last unconditionally, because it is what stops an object being sniffed _into_ a type its bytes merely
-resemble.
+`serveObject` retrieves an object and returns a fully-formed `Response` ready to return from a handler: `200` with the body, `206` for a satisfied
+`Range`, `304` or `412` from a precondition, `404` when absent, `416` for an unsatisfiable range. A served object carries `ETag`, and
+`Last-Modified` taken from the object's `uploaded` time, so a client can revalidate by either. `X-Content-Type-Options: nosniff` is set
+unconditionally, because it is what stops an object being sniffed _into_ a type its bytes merely resemble.
 
 **No `null` check is needed** — a missing object yields a `404` `Response`, never an unhandled rejection.
+
+**Preconditions are evaluated in the RFC 9110 section 13.2.2 order**, and the first one that decides the request ends it:
+
+1. **`If-Match`** — a strong comparison, so a weak `W/` tag never matches; `*` matches any object. A miss is a `412`.
+2. **`If-Unmodified-Since`** — only when `If-Match` is absent. An object uploaded after the date is a `412`.
+3. **`If-None-Match`** — a weak comparison, so a `W/` tag an edge produced by compressing the response still matches. A match is a `304`, even when
+   the request also carries a `Range`. **`If-Modified-Since`** is read only when `If-None-Match` is absent; an object not uploaded after the date is
+   a `304`.
+4. **`Range`, gated by `If-Range`** — when `If-Range` names a stale ETag or date, the range is dropped and the whole object is served with `200`.
+
+**A `412` and a `304` both carry `ETag` and `Last-Modified`**, so a client can update its cached validators without a second request.
+
+**Only a single `bytes` range on a `GET` is honoured.** A malformed `Range`, a multi-range request, an unknown unit, or a `Range` on any other
+method, `HEAD` included, is ignored, not refused: the response is the whole object with `200` (RFC 9110 section 14.2). A well-formed range the
+object cannot satisfy is a `416` whose `Content-Range` is `bytes */<size>`.
 
 **A satisfiable ranged read is one round trip.** `serveObject` never heads an object to size a range in advance; the extra `head` is spent only
 after a backend has refused the range, which it signals by throwing `UnsatisfiableRangeError` (`@y-core/forge/storage/r2`). `serveObject` catches

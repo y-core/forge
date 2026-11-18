@@ -4,7 +4,7 @@ import { createController } from "@remix-run/fetch-router";
 import { createRoutes, Route } from "@remix-run/fetch-router/routes";
 
 import { Forge } from "../../../src/app/forge-app";
-import { definePage } from "../../../src/app/page";
+import { createHandlerFactory } from "../../../src/app/handler-factory";
 import { setPendingHeader } from "../../../src/context/pending-headers";
 import { getAppContext } from "../../../src/context/types";
 import { isWebSocketUpgrade } from "../../../src/http/upgrade";
@@ -29,6 +29,8 @@ type Env = { DB: D1DatabaseLike };
 
 const routes = createRoutes({ live: new Route("GET", "/live"), page: new Route("GET", "/page-live"), d1: new Route("GET", "/d1-live") });
 
+const { definePage } = createHandlerFactory();
+
 const app = new Forge();
 
 app.use("*", createSecurityHeaders());
@@ -44,7 +46,11 @@ app.map(
   createController(routes, {
     actions: {
       live: ({ request }) => echoSocket(request),
-      page: definePage({ headers: { "x-page": "live" }, loader: (c) => echoSocket(c.request), view: () => new Response("unreachable") }),
+      page: definePage(routes.page, {
+        headers: { "x-page": "live" },
+        loader: (c) => echoSocket(c.request),
+        view: () => new Response("unreachable"),
+      }),
       d1: async (context) => {
         await resolveD1Client<Env>(getAppContext<Env>(context), { binding: (c) => c.env.DB })?.query(sql`SELECT 1`);
         return echoSocket(context.request);

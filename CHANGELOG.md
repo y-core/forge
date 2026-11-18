@@ -27,6 +27,29 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   or later.
 - **`dbSteps` adds a `runtime` row, `db:types`, running `forge db types --check`.** An app that declares `schemas` fails it until it runs
   `forge db types` and commits the file.
+- **A second session middleware on one request throws, and so does a swapped session.** `sessionMiddleware`, and `createAnonymousSession`
+  with it, throws on entry when `sessionCtx` already holds a session, so two mounts whose paths both match a request (`*` and `/admin/*`)
+  no longer let the second replace the first. After the handler it throws, saving nothing, when `sessionCtx` holds a different session from
+  the one it set. Mount one session middleware per request, and keep separate state as separate keys of the one session.
+- **`definePage` and `defineAction` take their route first, and come only from `createHandlerFactory`.** `@y-core/forge/app` no longer
+  exports them, and `c.params` in every hook is now typed from the route's pattern, so a handler mapped to a route whose params differ fails
+  to compile. To migrate:
+  1. Add one `handlers.ts` exporting `const { definePage, defineAction } = createHandlerFactory<Bindings, AppConfig>();`, and import the
+     builders from it instead of from `@y-core/forge/app`.
+  2. Pass the route first and drop the type arguments: `definePage<Bindings, AppConfig>({ … })` becomes `definePage(routes.task, { … })`.
+     The loader data, the action data and the schema are inferred.
+  3. Drop the `?? ""` fallback on a param the pattern always captures. A param inside an optional segment stays `string | undefined`.
+  4. Type a helper that receives a handler's context as `AppContext<Bindings, RouteParams<typeof routes.task>>`, importing `RouteParams` from
+     `@y-core/forge/router`.
+- **`AppContext` and `getAppContext` default `Params` to `Record<string, string | undefined>`**, where it was `Record<string, string>`, so
+  a context from a route with an optional segment fits every API typed `AppContext<Bindings>`. Code that names no params type — middleware,
+  a plain handler, a helper typed `AppContext<Bindings>` — now sees each `c.params` value as `string | undefined`. Name the params where a
+  `string` is needed: `AppContext<Bindings, RouteParams<typeof routes.task>>` for a route, or `getAppContext<Bindings, { id: string }>(c)`
+  where middleware knows its route.
+- **`Middleware`, `RequestHandler`, `RequestContext` and `createContextKey` are no longer exported from `@y-core/forge/router`.** Import
+  them from `@y-core/forge/context`, which exports all four unchanged.
+- **`@y-core/forge/router` no longer re-exports `RouterTypes`, `RouterOptions`, `RouteEntry`, `MatchData`, `MiddlewareContext`,
+  `BuildRoute`, `RouteDef`, `RouteDefs`, `RoutePatternCapture`, `RoutePatternJSON`, `getRoutePatternCaptures` or `MatcherLimits`.**
 
 ### Added
 
@@ -38,13 +61,41 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   callback) **and `forge/sql-tag-called-directly`** (`sql(…)` called as a function).
 - **`forge db types` writes `config/db/tables.ts`** (the host config's `types`): one row interface per declared table and a `Tables` map, for
   `db.query<Tables["users"]>(…)`.
+- **`exposedHeaders` on `cors()` in `@y-core/forge/security`** sends `Access-Control-Expose-Headers` on allowed actual responses, never on a
+  preflight, so a cross-origin script can read `ETag` or a pagination header. A name that is not a header token, and `"*"` with
+  `credentials: true`, throw at construction.
+- **`Cookie` and `CookieInit` are exported from `@y-core/forge/http`**, for reading a request's `Cookie` header.
+- **`CreateHrefOptions` and `CreateHrefSearchParams` are exported from `@y-core/forge/router`**, the types of the options object `href`
+  and `createHref` take and of its `searchParams`.
+
+### Changed
+
+- **`d1Sessions`' bookmark `Set-Cookie` lists its attributes in `SetCookie`'s order**, as `d1b=…; HttpOnly; Path=/; SameSite=Lax; Secure`.
+  The attributes and their values are unchanged.
 
 ### Fixed
 
+- **`serveObject` honours `Range` on `GET` only** (RFC 9110 section 14.2). A `HEAD` or any other method with a `Range` gets the whole
+  object's `200`, never a `206` or `416`.
+- **`cors` refuses an `allowedHeaders` entry that is not a header-name token at construction**, as it already did for `exposedHeaders`, so
+  a comma, space or CR/LF can no longer split or corrupt `Access-Control-Allow-Headers`.
 - **`queryOne` appends `LIMIT 1` to a `SELECT` with no top-level `LIMIT` of its own**, so D1 reads and bills one row rather than every
   match. Any other statement, `VALUES` and a write's `RETURNING` included, is sent as written.
 - **`Range` and `ContentRange` from `@y-core/forge/http` follow `@remix-run/headers` 1.1.0.** `Range.normalize()` returns only the ranges
   the resource can satisfy, and `ContentRange.from()` returns an empty instance for invalid bounds.
+- **`app.use()` after the app's first request throws** instead of registering middleware that never runs. A `map()` after the first
+  request still takes effect.
+- **`createUnsignedCookie` holds `__Host-` and `__Secure-` names to their prefix**, as `createSignedCookie` does: such a name is `Secure`
+  by default, and `secure: false` or a `__Host-` `domain` or non-`/` `path` throws at construction or on `serialize`.
+- **`createKVSessionStorage` and KV-backed `createAnonymousSession` throw at construction on a TTL below 60 seconds**, the shortest
+  `expirationTtl` Workers KV accepts, instead of failing on every save. Under `createAnonymousSession` that includes a `maxAge` below 60
+  where no `ttlSeconds` is given.
+- **Signing in under `createAnonymousSession`'s cookie storage no longer logs the old session id.** `regenerateId(true)` made upstream
+  `@remix-run/session` `console.warn` it on every sign-in.
+- **`serveObject` evaluates preconditions in RFC 9110 order and sends `Last-Modified` from the upload time.** `If-Match` and
+  `If-Unmodified-Since` answer `412`, `If-None-Match` compares weakly and answers `304` even beside a `Range`, `If-Modified-Since` is
+  honoured, and a stale `If-Range` or a malformed, multi-range or non-`bytes` `Range` serves the whole object with `200` instead of `416`.
+  `IfMatch`, `IfNoneMatch` and `IfRange` are exported from `@y-core/forge/http`.
 
 ---
 

@@ -84,9 +84,9 @@ enumerating refusal is one a caller can lengthen by adding fields, so choose it 
 
 ### 1d. `defineAction` — The Schema Contract
 
-`defineAction` (from `@y-core/forge/app`) wires a POST handler that reads the body, runs the route's body-content guards, validates against a
-declared schema, and delegates to `handle`, returning a structured fragment for each failure mode. `ActionDefinition` (`src/app/types.ts`) is
-authoritative for the option list.
+`defineAction` (from the app's `createHandlerFactory`, [`ROUTING_AND_MIDDLEWARE.md`][ram-2e] §2e) wires a POST handler that reads the body,
+runs the route's body-content guards, validates against a declared schema, and delegates to `handle`, returning a structured fragment for each
+failure mode. `ActionDefinition` (`src/app/types.ts`) is authoritative for the option list.
 
 **The schema is the only way in.** `handle` is unreachable except through a passing `v.safeParse` of `schema`, and it receives the schema's
 _output_, so a transform arrives as the type it actually is. A `parse`/`validate` pair of arbitrary callbacks is the shape this refuses: such a pair
@@ -347,6 +347,7 @@ surface each step calls.
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [namespaces-5i]: ./NAMESPACES.md#5i-dev-only-relaxations--a-relax-module-never-a-boolean-on-a-production-option
 [ram-2b]: ./ROUTING_AND_MIDDLEWARE.md#2b-action-only-routes-with-defineaction
+[ram-2e]: ./ROUTING_AND_MIDDLEWARE.md#2e-a-page-or-action-names-its-route
 [sh]: ./SECURITY_HARDENING.md
 [sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret

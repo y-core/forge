@@ -363,12 +363,24 @@ app.use("/api/*", cors({ origins: ["https://app.example.com", "https://*.preview
 single-label subdomain wildcard: `*` expands to one DNS label and stops at `.`, `/`, `:`, `@`, `?` and `#`, so `https://a/b.example.com` does not
 match `https://*.example.com`. `matchOrigin(origin, patterns)` is the same test, exported for custom origin logic.
 
-The rest of the options are the trade-offs you are choosing between: `methods` and `allowedHeaders` (what the preflight advertises), `maxAge` (how
-long a browser may cache that preflight, default `86400` seconds), and `credentials` (off by default, and the only one with a safety interlock).
-**`credentials: true` with a `"*"` origin throws at construction** — the CORS spec makes the two mutually exclusive.
+A cross-origin script reads only the CORS-safelisted response headers unless you name the others:
+
+```ts
+app.use("/api/*", cors({ origins: ["https://app.example.com"], exposedHeaders: ["ETag", "X-Total-Count"] }));
+```
+
+The rest of the options are the trade-offs you are choosing between: `methods` and `allowedHeaders` (what the preflight advertises),
+`exposedHeaders` (what a script may read from an allowed response; never sent on a preflight), `maxAge` (how long a browser may cache that
+preflight, default `86400` seconds), and `credentials` (off by default, and what both interlocks below hang on).
+**`credentials: true` with a `"*"` origin, or with `"*"` in `exposedHeaders`, throws at construction.** The CORS spec makes the first pair
+mutually exclusive, and a credentialed response reads the second `*` as a header literally named `*`. An `allowedHeaders` or `exposedHeaders`
+entry that is not a header-name token throws too.
 
 **Apply `cors` on the routes actually consumed cross-origin, never globally.** `Vary: Origin` is marked on every origin-dependent response,
 refusals included, except under `origins: ["*"]` without credentials; both rulings are [`SECURITY_HARDENING.md`][sh-3a] §3a's.
+
+**Private Network Access is not offered.** Chrome 142 replaced the PNA preflight with the Local Network Access permission, and a Worker is
+never the private-network target the header is for.
 
 ---
 

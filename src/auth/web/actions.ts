@@ -684,7 +684,7 @@ async function recoveryCodeHolder<Bindings>(
 
   const fresh = authFreshStepUpWindow(c);
   if (fresh === undefined || !stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) {
-    const verify = authWithQuery(auth.verify.show(), options.returnParam ?? "next", account.recoveryCodes());
+    const verify = auth.verify.show({}, { searchParams: { [options.returnParam ?? "next"]: account.recoveryCodes() } });
     return err(createAuthRedirect(c, verify));
   }
   return ok({ identity, service: offered.data });

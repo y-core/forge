@@ -12,7 +12,7 @@ document to render into, and an answer for anything that throws — has to be re
 Reach for it when you are writing the entry point, a route handler, or the document every page renders into.
 
 ```ts
-import { applyMiddlewareChain, createApp, defineAction, definePage, healthCheck } from "@y-core/forge/app";
+import { applyMiddlewareChain, createApp, createHandlerFactory, healthCheck } from "@y-core/forge/app";
 ```
 
 ---
@@ -29,10 +29,11 @@ import { NONCE } from "@y-core/forge/security";
 
 import { appConfig } from "./config";
 import { EnvSchema } from "./env.schema";
-import { registerRoutes } from "./routes";
+import { registerRoutes } from "./register";
 
 export interface Bindings {
   CSRF_SECRET: string;
+  TASKS: KVNamespace;
   ASSETS: AssetsFetcher;
 }
 
@@ -109,23 +110,30 @@ Routes are data: a map of names to `{ method, pattern }`, a controller binding t
 no handlers — why, and what registration order against `app.use` means, are [`ROUTING_AND_MIDDLEWARE.md`][ram-1a] §1a's and [§1c][ram-1c]'s.
 
 ```ts
-import type { Forge } from "@y-core/forge/app";
-import { healthCheck } from "@y-core/forge/app";
-import { createController, route } from "@y-core/forge/router";
-
-import { contactAction, homePage } from "./controllers";
-import { csrfGuard } from "./guards";
+// routes.ts
+import { route } from "@y-core/forge/router";
 
 export const routes = route({
-  home: { method: "GET", pattern: "/" },
+  task: { method: "GET", pattern: "/tasks/:id" },
   contact: { method: "POST", pattern: "/api/contact" },
   health: { method: "GET", pattern: "/api/health" },
 });
+```
+
+```ts
+// register.ts
+import type { Forge } from "@y-core/forge/app";
+import { healthCheck } from "@y-core/forge/app";
+import { createController } from "@y-core/forge/router";
+
+import { contactAction, taskPage } from "./controllers";
+import { csrfGuard } from "./guards";
+import { routes } from "./routes";
 
 export function registerRoutes(app: Forge<Bindings>): void {
   const controller = createController(routes, {
     actions: {
-      home: homePage, // a bare handler
+      task: taskPage, // a bare handler
       contact: { middleware: [csrfGuard], handler: contactAction }, // route middleware lives here
       health: healthCheck<Bindings>({ kv: (c) => Boolean(c.env.MY_KV) }),
     },
@@ -135,9 +143,9 @@ export function registerRoutes(app: Forge<Bindings>): void {
 }
 ```
 
-The `actions` keys must match the route names exactly, so a missing or misspelled handler is a compile error. Per-route middleware goes in the
-controller entry and nowhere else — neither `definePage` nor `defineAction` accepts a `middleware` field ([`ROUTING_AND_MIDDLEWARE.md`][ram-1b]
-§1b).
+The `actions` keys must match the route names exactly, so a missing or misspelled handler is a compile error, and so is a page mapped to a route
+whose params differ from the one it was built for. Per-route middleware goes in the controller entry and nowhere else — neither `definePage` nor
+`defineAction` accepts a `middleware` field ([`ROUTING_AND_MIDDLEWARE.md`][ram-1b] §1b).
 
 **A route pattern has a size ceiling, and `app.map` throws `MatcherResourceError` at registration when one exceeds it** — the same ceiling applies
 to an `app.use` path. Nothing a hand-written pattern reaches; a generated one can, and it fails at startup rather than on a request
@@ -150,17 +158,36 @@ to an `app.use` path. Nothing a hand-written pattern reaches; a generated one ca
 `definePage` turns a loader and a view into a route handler. The loader does the I/O; the view turns state into a `Response`, typically via
 `renderPage` from [`@y-core/forge/render/jsx`][jsx-readme]. Keeping I/O out of the view is [`ROUTING_AND_MIDDLEWARE.md`][ram-5c] §5c's rule.
 
+Take `definePage` and `defineAction` from one module that binds the app's `Bindings` and config type once:
+
+```ts
+// handlers.ts
+import { createHandlerFactory } from "@y-core/forge/app";
+
+export const { definePage, defineAction } = createHandlerFactory<Bindings, AppConfig>();
+```
+
+Then each page names its route first and states no type arguments — the params, the loader's data, the action's data and the schema are all
+inferred:
+
 ```tsx
-import { definePage } from "@y-core/forge/app";
+// controllers/task.tsx
 import { renderPage } from "@y-core/forge/render/jsx";
 
-export const homePage = definePage<Bindings, AppConfig>({
-  cache: { maxAge: 300, scope: "public" },
-  loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
-  view: (_c, _config, state) => renderPage(<Home greeting={state.data.greeting} />),
+import { definePage } from "../handlers";
+import { routes } from "../routes";
+
+export const taskPage = definePage(routes.task, {
+  cache: { maxAge: 60 },
+  loader: async (c, config) => ({ task: await c.env.TASKS.get(c.params.id), site: config.site.name }),
+  view: (_c, _config, state) => renderPage(<Task task={state.data.task} site={state.data.site} />),
   onError: (err, c) => renderErrorPage(err, c),
 });
 ```
+
+**`c.params` is typed from the route.** `c.params.id` is a `string` because `/tasks/:id` always captures it; a param inside an optional segment is
+`string | undefined`, and reading a name the pattern does not capture is a compile error. A helper the loader hands `c` to types it with
+`RouteParams` from [`@y-core/forge/router`][router-readme].
 
 Either the loader or the view may return a `Response` to short-circuit — a redirect from a loader is the common case — and the configured headers
 still apply to it.
@@ -184,10 +211,13 @@ same thing on a page as on an action.
 read → guard → validate sequence first ([`ROUTING_AND_MIDDLEWARE.md`][ram-2d] §2d).
 
 ```ts
-import { defineAction } from "@y-core/forge/app";
+// controllers/contact.ts
 import { fragmentResponse } from "@y-core/forge/http";
 import { renderSuccess } from "@y-core/forge/render/htmx";
 import { formMultilineText, formText, v } from "@y-core/forge/validation";
+
+import { defineAction } from "../handlers";
+import { routes } from "../routes";
 
 const ContactSchema = v.strictObject({
   name: v.pipe(formText(), v.minLength(1)),
@@ -195,7 +225,7 @@ const ContactSchema = v.strictObject({
   message: v.pipe(formMultilineText(), v.minLength(10)),
 });
 
-export const contactAction = defineAction<typeof ContactSchema, Bindings, AppConfig>({
+export const contactAction = defineAction(routes.contact, {
   schema: ContactSchema,
   handle: async (data, c, config) => {
     await sendEmail(config.email, data);
@@ -227,33 +257,6 @@ controller's `middleware` array ([`ROUTING_AND_MIDDLEWARE.md`][ram-2b] §2b).
 ```ts
 turnstile: { verify: () => ({ expectedHostname: "example.com" }) },
 ```
-
----
-
-## Declaring the generics once
-
-TypeScript has no partial type-argument inference, so naming `Bindings` at a call site means naming the schema too. `createHandlerFactory` binds
-both app-wide generics once and hands back the pair, after which a route module names nothing.
-
-```ts
-// app/handlers.ts
-import { createHandlerFactory } from "@y-core/forge/app";
-
-export const { definePage, defineAction } = createHandlerFactory<Bindings, AppConfig>();
-```
-
-```tsx
-// controllers/home.tsx — no type arguments anywhere
-import { definePage } from "../app/handlers";
-
-export const homePage = definePage({
-  loader: async (c, config) => ({ greeting: `Hello from ${config.site.name}` }),
-  view: (_c, _config, state) => renderPage(<Home greeting={state.data.greeting} />),
-});
-```
-
-Per-call generics — loader data, action data, and the action's schema — are still inferred. The factory is sugar: the standalone `definePage` and
-`defineAction` behave identically.
 
 ---
 
@@ -449,13 +452,14 @@ large submission meets — see [`src/form/README.md`][form-readme].
 **No config store means `c.config` is `undefined`**, and handlers receive `undefined` for their `config` argument. Nothing throws.
 
 **The router is built on the first request, not at construction.** Register everything before the app serves anything — which is what the wiring
-hooks guarantee.
+hooks guarantee. A `use()` after the first request throws rather than being silently dropped; a `map()` after it still takes effect.
 
 ---
 
 ## See also
 
-- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the route map, the middleware chain, the handler factories, and the page shell
+- [`docs/ROUTING_AND_MIDDLEWARE.md`][ram] — the route map, the middleware chain, the handler factory and why a handler names its route (§2e), and
+  the page shell
 - [`docs/FORGE_ERRORS.md`][eh] — the error boundary's three paths (§5b), and why the two builders recover differently (§5d)
 - [`docs/INPUT_VALIDATION.md`][iv] — the submission sequence, and what a refusal is allowed to say
 - [`src/config/README.md`][config-readme] — the store `createApp({ config })` resolves per request

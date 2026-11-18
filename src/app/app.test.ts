@@ -7,7 +7,7 @@ import { createConfig } from "../config/config";
 import { importKeyRing } from "../crypto/keyring/ring";
 import { csrfProtection } from "../form/csrf";
 import type { SerializedError } from "../logging/types";
-import { MatcherResourceError } from "../router/mod";
+import { get, MatcherResourceError } from "../router/mod";
 import { createSecurityHeaders } from "../security/headers";
 import { rateLimit } from "../security/rate-limit";
 import { requestId } from "../security/request-id";
@@ -15,7 +15,9 @@ import { mapHandler } from "../testing/route";
 import { v } from "../validation/validation";
 import { createApp } from "./app";
 import { Forge } from "./forge-app";
-import { definePage } from "./page";
+import { createHandlerFactory } from "./handler-factory";
+
+const { definePage } = createHandlerFactory();
 
 const UNEXPECTED = "An unexpected error occurred.";
 
@@ -82,7 +84,7 @@ describe("createApp", () => {
         app,
         "GET",
         "/boom",
-        definePage({
+        definePage(get("/boom"), {
           view: () => {
             throw new Error("view exploded");
           },

@@ -202,7 +202,7 @@ Trusted Types is enforced, htmx's own writes go through the `forge-htmx` policy 
   never carries `upgrade-insecure-requests`, which browsers ignore in a report-only policy. Merging concatenates its source lists as it does the
   enforced ones, and a directive the base's `reportOnly` never stated is backfilled from the merged enforced list rather than from the default,
   which is what inheritance would have given it.
-- **`Cache-Control` is deliberately not a blanket default.** Caching is a per-route decision (`definePage({ cache })`), and a namespace-wide value
+- **`Cache-Control` is deliberately not a blanket default.** Caching is a per-route decision (a page's `cache` option), and a namespace-wide value
   would either over-cache a private page or defeat caching everywhere. Within that per-route decision, `cache.scope` defaults to `"private"`: a page
   that states a `maxAge` and no scope is browser-cacheable and never shared-cacheable, so forgetting the field on a personalised page cannot let an
   edge serve one reader's HTML to another. Edge caching is opted into with `scope: "public"`.
@@ -315,6 +315,15 @@ correct cache key, and it follows the same rebuild-rather-than-mutate ruling abo
 where the ACAO header is the constant `"*"`: it is the same for every caller, so `Vary` would only shred the cache key, and it is suppressed.
 
 **`cors()` and the public `matchOrigin` share one compiled matcher**, so the origin-matching rules have a single implementation.
+
+**`exposedHeaders` is sent on an allowed actual response, never on a preflight or a refusal.** `Access-Control-Expose-Headers` governs which headers
+a script may read from the response it arrives on, so it means something only where the read is permitted. Each entry is checked as an RFC 9110
+header-name token when `cors()` is constructed, so a name with whitespace, a comma or a control character throws rather than splitting the list.
+`"*"` with `credentials: true` throws as well, matching the wildcard-origin interlock: on a credentialed request the browser reads `*` as a header
+named `*`, so the option would expose nothing while appearing to expose everything.
+
+**Private Network Access is not offered.** Chrome 142 replaced the PNA preflight with the Local Network Access permission, and a Worker is
+never the private-network target `Access-Control-Allow-Private-Network` was for.
 
 ### 3b. originGuard — Strict Origin Allowlist
 

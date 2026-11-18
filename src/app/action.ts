@@ -1,4 +1,4 @@
-import type { RequestHandler } from "@remix-run/fetch-router";
+import type { Route } from "@remix-run/fetch-router/routes";
 
 import { ConfigKey, getAppContext } from "../context/types";
 import { fragmentResponse } from "../http/response";
@@ -6,9 +6,10 @@ import { createLogger } from "../logging/logger";
 import { serializeError } from "../logging/serialize-error";
 import { renderError } from "../render/htmx/fragment";
 import { toError } from "../result/result";
+import type { RouteParams } from "../router/types";
 import type { v } from "../validation/validation";
 import { createSubmissionPipeline } from "./pipeline";
-import type { ActionDefinition } from "./types";
+import type { ActionDefinition, RouteHandler } from "./types";
 
 const logger = createLogger("action");
 
@@ -16,15 +17,18 @@ function genericFailure(): Response {
   return fragmentResponse(renderError("Something went wrong. Please try again."), 500);
 }
 
-/** Wires a read → guard → validate → handle pipeline into a POST handler with structured error responses. @public */
-export function defineAction<S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown>(
-  def: ActionDefinition<S, Bindings, ConfigData>,
-): RequestHandler {
-  const pipeline = createSubmissionPipeline<S, Bindings, ConfigData>(def);
+/** Wires a read → guard → validate → handle pipeline into a POST handler with structured error responses. @internal */
+// oxlint-disable-next-line typescript/no-explicit-any -- any method and any pattern are both route shapes
+export function defineAction<R extends Route<any, any>, S extends v.GenericSchema, Bindings = Record<string, unknown>, ConfigData = unknown>(
+  route: R,
+  def: ActionDefinition<S, Bindings, RouteParams<R>, ConfigData>,
+): RouteHandler<R> {
+  void route;
+  const pipeline = createSubmissionPipeline<S, Bindings, RouteParams<R>, ConfigData>(def);
 
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
-    const c = getAppContext<Bindings>(context);
+    const c = getAppContext<Bindings, RouteParams<R>>(context);
 
     try {
       const submission = await pipeline(c, config);

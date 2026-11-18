@@ -28,6 +28,7 @@ audience: consumer
 - §2b Action-Only Routes with defineAction: the handle terminal step and the derive-only drop rule
 - §2c Health Check Route with healthCheck: the bare-handler case
 - §2d The Shared Submission Pipeline: one sequence, two terminal steps, and where the builders diverge
+- §2e A Page or Action Names Its Route: the handler factory's route argument, and why the builders come only from the factory
 - §3 Middleware Composition and Ordering: global versus route-level
 - §3a Global vs Route-Level Middleware: `app.use` scoping and registration order
 - §3b Middleware Handler Type: the contract every middleware obeys
@@ -150,13 +151,14 @@ measured match, never to a suspicion.
 
 ## 2. Page and Action Route Patterns
 
-A route's handler comes from a factory in `@y-core/forge/app` — `definePage`, `defineAction`, `healthCheck` — or from any plain
-`(c: AppContext<Bindings>) => Response`.
+A route's handler comes from `@y-core/forge/app` — `definePage` and `defineAction` from the app's `createHandlerFactory` (§2e), or
+`healthCheck` — or from any plain `(c: AppContext<Bindings>) => Response`.
 
 ### 2a. Full-Page Routes with `definePage`
 
-`definePage({ loader, view, action?, schema?, headers?, cache?, onError? })` runs the optional `action` on a non-`GET` request, then the optional
-`loader`, then renders `view`. Both return values reach the view through render state; either may instead return a `Response` to short-circuit.
+`definePage(route, { loader, view, action?, schema?, headers?, cache?, onError? })` runs the optional `action` on a non-`GET` request, then the
+optional `loader`, then renders `view`. Both return values reach the view through render state; either may instead return a `Response` to
+short-circuit.
 
 **`action` is skipped entirely on a `GET`**, leaving `state.actionData` undefined and `state.method` `"GET"`.
 
@@ -185,11 +187,11 @@ validating at its own boundary is that action's own obligation ([`BOUNDARIES.md`
 
 ### 2b. Action-Only Routes with `defineAction`
 
-`defineAction(def)` reads the body, runs the route's body-content guards, validates against `def.schema`, then calls `handle` with the schema's
-output. **`handle` is unreachable except through a passing `v.safeParse`**, so a route cannot accept a body nothing checked. Guard refusals,
-validation failures, and oversized bodies produce structured fragment responses automatically. That sequence is not this builder's own — it is the
-shared pipeline `definePage` also runs (§2d), and `handle` is simply its terminal step. `ActionDefinition` (`src/app/types.ts`) is authoritative for
-the options; the schema contract and the failure statuses belong to [`INPUT_VALIDATION.md`][iv-1d] §1d.
+`defineAction(route, def)` reads the body, runs the route's body-content guards, validates against `def.schema`, then calls `handle` with the
+schema's output. **`handle` is unreachable except through a passing `v.safeParse`**, so a route cannot accept a body nothing checked. Guard
+refusals, validation failures, and oversized bodies produce structured fragment responses automatically. That sequence is not this builder's own —
+it is the shared pipeline `definePage` also runs (§2d), and `handle` is simply its terminal step. `ActionDefinition` (`src/app/types.ts`) is
+authoritative for the options; the schema contract and the failure statuses belong to [`INPUT_VALIDATION.md`][iv-1d] §1d.
 
 **`handle` returns a `Response` directly and never delegates to a view.** A plain `(c) => Response` action is equally valid when the pipeline is not
 needed. **Like `definePage`, it does not accept a `middleware` field** — transport guards belong in the controller action (§1b), and the pipeline's
@@ -258,6 +260,30 @@ in that builder's own idiom. One shared answer would mean a page rendering a bar
 **A page's refusal carries the page's headers; an action's does not.** A `definePage` refusal is returned through the same header pass as its view,
 so the route's configured `cache` and `headers` apply to it — which matters most for `no-store`, since a `422` that escaped a page's cache directive
 would be the one response on that route a cache could keep. A `defineAction` refusal is returned as the pipeline built it.
+
+### 2e. A Page or Action Names Its Route
+
+**A page or action names its route as its first argument, and an app takes `definePage` and `defineAction` from `createHandlerFactory`.** The app
+binds its bindings and config types once, with `createHandlerFactory<AppEnv, AppConfig>()` from `@y-core/forge/app`, and each handler it returns
+takes the route before the definition. `c.params` is typed from that route's pattern through route-pattern's `MatchParams`: a param the pattern
+always captures is a `string`, and one inside an optional segment is `string | undefined`. The handler's type carries those params, so
+`createController` refuses it on a route whose params differ. The route is there for its type, which is the shape fetch-router's own
+`createAction(route, action)` already has.
+
+**That is also why the `app` barrel exports no standalone `definePage` or `defineAction`.** A standalone builder is called with explicit type
+arguments, as in `definePage<AppEnv, AppConfig, Data>`, and TypeScript infers no type parameter of a call that states any explicitly — so a route
+argument on it would never be inferred. The factory gives the explicit arguments a call of their own, which leaves the route, the loader data and
+the schema to inference. The other shapes lost for these reasons:
+
+- **An optional `route` field in the definition** keeps a second way to define a handler, the one without a route, and it falls to the same
+  inference failure as soon as a caller states a type argument.
+- **No route at all** leaves `c.params` loose. Apps then write `c.params.x ?? ""`, and a param renamed in `routes.ts` still compiles in every
+  handler that read the old name.
+
+**A handler mapped to several routes takes a route whose params are identical on all of them**, and a handler built on a route with no params
+fits any of them — what decides is the route it names, not the params it reads. A helper shared across routes whose params differ types its
+context on the params they share, for example `AppContext<AppEnv, RouteParams<typeof routes.task>>`, with `RouteParams` imported from
+`@y-core/forge/router`.
 
 ---
 
@@ -350,7 +376,7 @@ no guard ran on this request, and §2b is the rule that depends on the distincti
 
 A loader may return a plain object, exposed to the view through render state, or a `Response` directly for a redirect or a stream.
 
-**A loader must not mutate an already-built response's headers** — per-page headers belong in `definePage({ headers, cache })`, and security headers
+**A loader must not mutate an already-built response's headers** — per-page headers belong in the page's `headers` and `cache`, and security headers
 come from `app.use` middleware.
 
 ### 5b. Action — the Mutation Terminal Step
@@ -372,7 +398,11 @@ A view builds a `Response` — typically `renderToString` over a JSX tree wrappe
 
 ### 5d. The `AppContext` Surface
 
-The context is `AppContext<Bindings>` — a `RequestContext` plus `.env` and `.executionCtx`.
+The context is `AppContext<Bindings, Params>` — a `RequestContext` plus `.env`, `.executionCtx` and `.config`. **Inside a `definePage` or
+`defineAction` hook, `c.params` is typed from the route the handler names (§2e)**: a captured param is a `string`, one inside an optional segment
+`string | undefined`, and a name the pattern does not capture is a compile error. **Outside a hook — middleware, a plain handler, a helper
+typed `AppContext<Bindings>` — `c.params` is `Record<string, string | undefined>`**, the default that lets any route's context reach such
+code; a helper that needs a `string` names its params with `RouteParams` (§2e).
 
 Read the request through the standard Web API surface: `c.request.headers.get("X")`, `c.request.json()`, `c.method`, `c.url` (a `URL`), `c.params`.
 Bindings are `c.env.*`; background work is `c.executionCtx.waitUntil(p)`. Resolved config is `c.config`, or `configStore.get(c.env)`.

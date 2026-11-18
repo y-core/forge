@@ -1,11 +1,15 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
+
+import { createSession } from "@remix-run/session";
+import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 
 import { Forge } from "../app/forge-app";
 import { importKeyRing } from "../crypto/keyring/ring";
 import { parseKeyRingSecrets } from "../crypto/keyring/secrets";
 import { mapHandler } from "../testing/route";
 import { createAnonymousSession } from "./anonymous";
-import { sessionCtx } from "./session";
+import { createSignedCookie } from "./cookie";
+import { sessionCtx, sessionMiddleware } from "./session";
 import type { SessionKVBinding } from "./types";
 
 const SECRET = "c15f22e5e9af45d15e1068ac2186b479735f5c60e4fc302f8916ab67aaf6b2c6";
@@ -190,6 +194,29 @@ describe("createAnonymousSession — KV mode", () => {
     });
   });
 
+  it("deletes the old KV record when a sign-in regenerates the id with deletion", async () => {
+    const { kv, data } = fakeSessionKV();
+    const app = makeApp();
+    mapHandler(app, "POST", "/sign-in", (context) => {
+      sessionCtx.get(context).regenerateId(true);
+      return new Response("ok");
+    });
+    const env = { SESSION_SECRET: SECRET, SESSIONS: kv };
+    const write = await app.request("/save", { method: "POST" }, env);
+    const [oldKey] = [...data.keys()];
+    const signIn = await app.request(
+      "/sign-in",
+      { method: "POST", headers: { cookie: (write.headers.get("set-cookie") ?? "").split(";")[0] ?? "" } },
+      env,
+    );
+    const keys = [...data.keys()];
+    expect(oldKey).toBeDefined();
+    expect(keys).toHaveLength(1);
+    expect(keys).not.toContain(oldKey);
+    const read = await app.request("/read", { headers: { cookie: (signIn.headers.get("set-cookie") ?? "").split(";")[0] ?? "" } }, env);
+    expect(await read.json()).toEqual({ settings: { theme: "dark" } });
+  });
+
   it("rejects a short secret with the exact error", async () => {
     const { kv } = fakeSessionKV();
     const app = new Forge<Env>();
@@ -256,6 +283,36 @@ describe("createAnonymousSession — key rotation", () => {
     );
   });
 
+  it("refuses a KV ttlSeconds below 60 at construction, and accepts 60", () => {
+    const kv = () => fakeSessionKV().kv;
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, ttlSeconds: 59 })).toThrow(
+      "createAnonymousSession: ttlSeconds is 59, below the 60-second floor",
+    );
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, ttlSeconds: 60 })).not.toThrow();
+  });
+
+  it("refuses a maxAge below 60 where it is the defaulted KV ttlSeconds", () => {
+    const kv = () => fakeSessionKV().kv;
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, maxAge: 59 })).toThrow(
+      "createAnonymousSession: maxAge is 59, below the 60-second floor",
+    );
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, maxAge: 59, ttlSeconds: 60 })).not.toThrow();
+  });
+
+  it("refuses a KV ttlSeconds or defaulted maxAge that is NaN", () => {
+    const kv = () => fakeSessionKV().kv;
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, ttlSeconds: Number.NaN })).toThrow(
+      "createAnonymousSession: ttlSeconds is NaN",
+    );
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, maxAge: Number.NaN })).toThrow(
+      "createAnonymousSession: maxAge is NaN",
+    );
+  });
+
+  it("does not hold a cookie-storage maxAge to the KV floor", () => {
+    expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), storage: "cookie", maxAge: 30 })).not.toThrow();
+  });
+
   it("refuses a call naming both kv and cookie storage", () => {
     const kv = () => fakeSessionKV().kv;
     expect(() => createAnonymousSession({ ring: () => importKeyRing([SECRET]), kv, storage: "cookie" })).toThrow(
@@ -279,5 +336,137 @@ describe("createAnonymousSession — cookie-storage mode", () => {
     const cookiePair = (write.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
     const read = await app.request("/read", { headers: { cookie: cookiePair } }, env);
     expect(await read.json()).toEqual({ n: 1 });
+  });
+
+  it("signs in with regenerateId(true) without upstream logging the old session id", async () => {
+    const app = new Forge<{ SESSION_SECRET: string }>();
+    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ ring: envRing, storage: "cookie" }));
+    mapHandler(app, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("n", 1);
+      return new Response("ok");
+    });
+    mapHandler(app, "POST", "/sign-in", (context) => {
+      sessionCtx.get(context).regenerateId(true);
+      return new Response("ok");
+    });
+    mapHandler(app, "GET", "/read", (context) => Response.json({ n: sessionCtx.get(context).get("n") ?? null }));
+
+    const env = { SESSION_SECRET: SECRET };
+    const write = await app.request("/save", { method: "POST" }, env);
+    const before = (write.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const signIn = await app.request("/sign-in", { method: "POST", headers: { cookie: before } }, env);
+      const after = (signIn.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+      expect(warn).not.toHaveBeenCalled();
+      expect(after).not.toBe(before);
+      const read = await app.request("/read", { headers: { cookie: after } }, env);
+      expect(await read.json()).toEqual({ n: 1 });
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  function cookieModeApp() {
+    const app = new Forge<{ SESSION_SECRET: string }>();
+    app.use("*", createAnonymousSession<{ SESSION_SECRET: string }>({ ring: envRing, storage: "cookie" }));
+    mapHandler(app, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("n", 1);
+      return new Response("ok");
+    });
+    mapHandler(app, "GET", "/state", (context) => {
+      const session = sessionCtx.get(context);
+      return Response.json({ id: session.id, n: session.get("n") ?? null });
+    });
+    mapHandler(app, "POST", "/rotate", (context) => {
+      sessionCtx.get(context).regenerateId(false);
+      return new Response("ok");
+    });
+    mapHandler(app, "POST", "/logout", (context) => {
+      sessionCtx.get(context).destroy();
+      return new Response("bye");
+    });
+    return app;
+  }
+
+  const env = { SESSION_SECRET: SECRET };
+  const pairOf = (res: Response) => (res.headers.get("set-cookie") ?? "").split(";")[0] ?? "";
+
+  it("persists an id read on a first visit, so the next request sees the same id", async () => {
+    const app = cookieModeApp();
+    const first = await app.request("/state", {}, env);
+    const { id } = (await first.json()) as { id: string };
+    const second = await app.request("/state", { headers: { cookie: pairOf(first) } }, env);
+    expect(await second.json()).toEqual({ id, n: null });
+  });
+
+  it("rotates the id with regenerateId(false), keeping the data and logging nothing", async () => {
+    const app = cookieModeApp();
+    const saved = pairOf(await app.request("/save", { method: "POST" }, env));
+    const { id: before } = (await (await app.request("/state", { headers: { cookie: saved } }, env)).json()) as { id: string };
+    const warn = spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const rotated = await app.request("/rotate", { method: "POST", headers: { cookie: saved } }, env);
+      const state = (await (await app.request("/state", { headers: { cookie: pairOf(rotated) } }, env)).json()) as { id: string; n: number };
+      expect(state.n).toBe(1);
+      expect(state.id).not.toBe(before);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("clears the cookie when the session is destroyed", async () => {
+    const app = cookieModeApp();
+    const saved = pairOf(await app.request("/save", { method: "POST" }, env));
+    const out = await app.request("/logout", { method: "POST", headers: { cookie: saved } }, env);
+    expect(out.headers.get("set-cookie")).toBe("__Host-session=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure");
+  });
+});
+
+describe("createAnonymousSession single mount", () => {
+  async function mountedApp(order: "anonymous-first" | "explicit-first") {
+    const app = new Forge<Env>();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    const anonymous = createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS });
+    const explicit = sessionMiddleware(createCookieSessionStorage(), createSignedCookie("explicit", { ring: await importKeyRing([SECRET]) }));
+    for (const mw of order === "anonymous-first" ? [anonymous, explicit] : [explicit, anonymous]) app.use("*", mw);
+    mapHandler(app, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("settings", { theme: "dark" });
+      return new Response("saved");
+    });
+    return app;
+  }
+
+  it("throws when an explicit session middleware follows it", async () => {
+    const { kv } = fakeSessionKV();
+    const res = await (await mountedApp("anonymous-first")).request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: kv });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("a session is already set on this request");
+  });
+
+  it("throws when it follows an explicit session middleware, writing no KV record", async () => {
+    const { kv, data } = fakeSessionKV();
+    const res = await (await mountedApp("explicit-first")).request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: kv });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("a session is already set on this request");
+    expect(data.size).toBe(0);
+  });
+
+  it("throws on a session swapped by the handler, writing no KV record", async () => {
+    const { kv, data } = fakeSessionKV();
+    const app = new Forge<Env>();
+    app.setOnError((err) => new Response(err.message, { status: 500 }));
+    app.use("*", createAnonymousSession<Env>({ ring: envRing, kv: (c) => c.env.SESSIONS }));
+    mapHandler(app, "POST", "/save", (context) => {
+      sessionCtx.get(context).set("settings", { theme: "dark" });
+      sessionCtx.set(context, createSession());
+      return new Response("saved");
+    });
+    const res = await app.request("/save", { method: "POST" }, { SESSION_SECRET: SECRET, SESSIONS: kv });
+    expect(res.status).toBe(500);
+    expect(await res.text()).toContain("holds a different session");
+    expect(res.headers.getSetCookie()).toEqual([]);
+    expect(data.size).toBe(0);
   });
 });

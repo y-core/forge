@@ -97,7 +97,7 @@ describe("d1Sessions()", () => {
     const db = fakeD1();
     const { forge, env } = app(db, { cookie: "d1b" });
     const written = await forge.request("/", { method: "POST" }, env);
-    expect(written.headers.get("set-cookie")).toBe(`d1b=${BOOKMARK_1}; Path=/; HttpOnly; Secure; SameSite=Lax`);
+    expect(written.headers.get("set-cookie")).toBe(`d1b=${BOOKMARK_1}; HttpOnly; Path=/; SameSite=Lax; Secure`);
     await forge.request("/", { headers: { cookie: `theme=dark; d1b=${BOOKMARK_1}` } }, env);
     expect(db.sessions).toEqual(["first-primary", BOOKMARK_1]);
   });
@@ -120,6 +120,19 @@ describe("d1Sessions()", () => {
       incomingBookmark(request({ cookie: `a=1; b=${travel}` }), { cookie: "b" }),
       incomingBookmark(request({}), { header: "x-b" }),
     ]).toEqual([local, travel, null]);
+  });
+
+  it("reads a cookie bookmark by its exact name only, and the first of two", () => {
+    const travel = "00000085-0000027c-00004f1e-90dbd1f2b0a54cfd";
+    const other = "00000085-0000027c-00004f1e-00000000000000ff";
+    const request = (headers: Record<string, string>) => new Request("http://x/", { headers });
+    expect([
+      incomingBookmark(request({ cookie: `xb=${travel}` }), { cookie: "b" }),
+      incomingBookmark(request({ cookie: `b=${travel}; b=${other}` }), { cookie: "b" }),
+      incomingBookmark(request({ cookie: `a=1;b=${travel}` }), { cookie: "b" }),
+      incomingBookmark(request({}), { cookie: "b" }),
+      incomingBookmark(request({ cookie: `b=${travel}x` }), { cookie: "b" }),
+    ]).toEqual([null, travel, travel, null, null]);
   });
 
   it("sends every query of the request through its session: read-your-write within a request", async () => {
@@ -175,7 +188,7 @@ describe("d1Sessions()", () => {
     const { forge, env } = app(db, { cookie: "d1b" });
     await forge.request("/", { method: "POST" }, env);
     const res = await forge.request("/", { headers: { cookie: `d1b=${BOOKMARK_1}` } }, env);
-    expect(res.headers.getSetCookie()).toEqual([`d1b=${BOOKMARK_2}; Path=/; HttpOnly; Secure; SameSite=Lax`]);
+    expect(res.headers.getSetCookie()).toEqual([`d1b=${BOOKMARK_2}; HttpOnly; Path=/; SameSite=Lax; Secure`]);
   });
 
   it("sets the header carrier's header even when the bookmark is the one the request carried", async () => {
@@ -190,7 +203,7 @@ describe("d1Sessions()", () => {
     {
       carrier: { cookie: "d1b" },
       queued: (h: Headers) => h.getSetCookie(),
-      expected: [`d1b=${BOOKMARK_1}; Path=/; HttpOnly; Secure; SameSite=Lax`],
+      expected: [`d1b=${BOOKMARK_1}; HttpOnly; Path=/; SameSite=Lax; Secure`],
     },
   ] satisfies { carrier: D1SessionsOptions["bookmark"]; queued: (h: Headers) => unknown; expected: unknown }[]) {
     it(`returns the handler's own response object and queues the bookmark beside it, by ${Object.keys(carrier)[0]}`, async () => {
@@ -309,8 +322,8 @@ describe("d1Sessions() with a bookmark D1 refuses", () => {
     const next = await request({ cookie: (cleared[0] ?? "").split(";")[0] ?? "" });
     expect([stub.opened, cleared, next.headers.getSetCookie()]).toEqual([
       [FORGED, "first-unconstrained"],
-      ["d1b=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"],
-      [`d1b=${BOOKMARK_1}; Path=/; HttpOnly; Secure; SameSite=Lax`],
+      ["d1b=; HttpOnly; Max-Age=0; Path=/; SameSite=Lax; Secure"],
+      [`d1b=${BOOKMARK_1}; HttpOnly; Path=/; SameSite=Lax; Secure`],
     ]);
   });
 

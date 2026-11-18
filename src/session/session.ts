@@ -9,19 +9,29 @@ import type { SessionCookieOptions, SignedCookie } from "./types";
 /** Typed accessor for the session variable set by `sessionMiddleware`. @public */
 export const sessionCtx = contextVar<Session>("session");
 
-/** Reads the session cookie on the way in and persists it on the way out only when the cookie would differ from the one the client holds, re-issuing under `rotating` so a retired signature is upgraded. @public */
+/** Reads the session cookie on the way in and persists it on the way out only when the cookie would differ from the one the client holds, re-issuing under `rotating` so a retired signature is upgraded; throws if a session is already set or was swapped. @public */
 export function sessionMiddleware(storage: SessionStorage, cookie: SignedCookie, options?: SessionCookieOptions): Middleware {
   const reissue = options?.reissue ?? false;
   // The cookie already knows whether a rotation is in flight, so the default is right without being
   // remembered; the option survives as an override, for a retired key kept on the ring long-term.
   const rotating = options?.rotating ?? cookie.rotating;
   return async (context, next) => {
+    if (sessionCtx.getOptional(context) !== undefined) {
+      throw new Error(
+        "sessionMiddleware: a session is already set on this request — a second sessionMiddleware or createAnonymousSession whose path also matches would replace it, so mount one per request.",
+      );
+    }
     const reading = await cookie.read(context.request.headers.get("cookie") ?? null);
     const cookieValue = reading?.value ?? null;
     const session = trackSessionId(await storage.read(cookieValue), cookieValue);
     sessionCtx.set(context, session);
 
     const res = await next();
+    if (sessionCtx.getOptional(context) !== session) {
+      throw new Error(
+        "sessionMiddleware: sessionCtx holds a different session from the one this middleware set, so neither is saved — change the session sessionCtx.get(c) returns rather than setting another.",
+      );
+    }
 
     const saved = session.dirty || session.destroyed ? await storage.save(session) : null;
     // `??`, never `||`: `""` is the destroy sentinel. A `null` parse is a tampered or

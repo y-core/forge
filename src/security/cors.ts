@@ -3,6 +3,8 @@ import type { Middleware } from "@remix-run/fetch-router";
 import { rebuildResponse } from "../http/rebuild";
 import type { CorsOptions } from "./types";
 
+const HEADER_NAME_TOKEN = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+
 /** Compiles origin patterns once into an exact-match set plus the wildcard patterns' regexes. */
 function compileOriginMatcher(patterns: readonly string[]): (origin: string) => boolean {
   const exact = new Set<string>();
@@ -38,12 +40,23 @@ function appendVary(headers: Headers, token: string): void {
   if (!present) headers.set("Vary", `${existing}, ${token}`);
 }
 
+function refuseNonTokenHeaderNames(option: string, names: readonly string[], header: string): void {
+  for (const name of names) {
+    if (!HEADER_NAME_TOKEN.test(name)) {
+      throw new Error(
+        `cors: ${option} entry ${JSON.stringify(name)} is not a header name — an RFC 9110 token has no whitespace, comma or control character, and one that did would split or corrupt ${header}.`,
+      );
+    }
+  }
+}
+
 /** Middleware that adds CORS response headers for allowed origins. @public */
 export function cors(options: CorsOptions): Middleware {
   const {
     origins,
     methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders = ["Content-Type"],
+    exposedHeaders = [],
     credentials = false,
     maxAge = 86400,
   } = options;
@@ -51,6 +64,14 @@ export function cors(options: CorsOptions): Middleware {
   if (credentials && origins.includes("*")) {
     throw new Error('cors: cannot use wildcard origin "*" with credentials: true');
   }
+  refuseNonTokenHeaderNames("allowedHeaders", allowedHeaders, "Access-Control-Allow-Headers");
+  refuseNonTokenHeaderNames("exposedHeaders", exposedHeaders, "Access-Control-Expose-Headers");
+  if (credentials && exposedHeaders.includes("*")) {
+    throw new Error(
+      'cors: cannot use wildcard exposedHeaders "*" with credentials: true — a credentialed response reads "*" as a header named "*", so it would expose nothing.',
+    );
+  }
+  const exposeHeaderValue = exposedHeaders.length > 0 ? exposedHeaders.join(", ") : undefined;
 
   const wildcard = origins.includes("*");
   const matchesOrigin = compileOriginMatcher(origins);
@@ -88,6 +109,7 @@ export function cors(options: CorsOptions): Middleware {
     if (allowed) {
       headers.set("Access-Control-Allow-Origin", acaoConstant ?? origin);
       if (credentials) headers.set("Access-Control-Allow-Credentials", "true");
+      if (exposeHeaderValue !== undefined) headers.set("Access-Control-Expose-Headers", exposeHeaderValue);
     }
     if (variesOnOrigin) appendVary(headers, "Origin");
     return rebuildResponse(res, headers);

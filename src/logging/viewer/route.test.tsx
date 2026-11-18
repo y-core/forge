@@ -3,15 +3,17 @@
 import { describe, expect, it } from "bun:test";
 
 import { Forge } from "../../app/forge-app";
-import { definePage } from "../../app/page";
+import { createHandlerFactory } from "../../app/handler-factory";
 import type { PageShell } from "../../app/types";
-import type { AppContext } from "../../context/types";
+import { get } from "../../router/mod";
 import { mapHandler } from "../../testing/route";
 import { createIcon } from "../../ui/core/icon";
 import type { LogChannel, LogQuery, LogRow } from "../types";
 import { LOG_LEVELS } from "../types";
 import { loadLogViewer } from "./route";
 import type { LogViewerAccess } from "./types";
+
+const { definePage } = createHandlerFactory();
 
 const icon = createIcon("/sprite.svg", { "icon-chevron-down": "0 0 16 16" });
 
@@ -51,9 +53,8 @@ function makeApp(options: AppOptions = {}) {
   const { basePath, access = "allow-unauthenticated", channel = emptyChannel, channelFactory, shell = appShell() } = options;
   const app = new Forge();
   app.setShell(shell);
-  const handler = definePage({
-    loader: (c) =>
-      loadLogViewer(c as AppContext, { channel: channelFactory ?? (() => channel), access, icon, ...(basePath !== undefined ? { basePath } : {}) }),
+  const handler = definePage(get("/logs"), {
+    loader: (c) => loadLogViewer(c, { channel: channelFactory ?? (() => channel), access, icon, ...(basePath !== undefined ? { basePath } : {}) }),
     view: () => new Response("view-should-not-run", { status: 500 }),
   });
   mapHandler(app, "GET", "/logs", handler);

@@ -10,7 +10,7 @@ import type { ErrorPageOptions, RelaxErrorDisclosure } from "./types";
 
 const FIXED_MESSAGE = "An unexpected error occurred.";
 
-/** Builds a styled full-page 500 handler for `createApp({ onError })` and `definePage({ onError })`; only a development build discloses the thrown message. @public */
+/** Builds a styled full-page 500 handler for `createApp`'s or a page's `onError`; only a development build discloses the thrown message. @public */
 export function createErrorPage<Bindings = Record<string, unknown>>(
   options: ErrorPageOptions<Bindings> = {},
 ): (error: Error, c: AppContext<Bindings>) => Response {

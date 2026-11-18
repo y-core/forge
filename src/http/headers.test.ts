@@ -1,10 +1,36 @@
 import { describe, expect, it } from "bun:test";
 
-import { Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Range, SetCookie, Vary } from "./mod";
+import {
+  Accept,
+  CacheControl,
+  ContentDisposition,
+  ContentRange,
+  ContentType,
+  Cookie,
+  IfMatch,
+  IfNoneMatch,
+  IfRange,
+  Range,
+  SetCookie,
+  Vary,
+} from "./mod";
 
 describe("http/headers facade", () => {
   it("exports every value symbol as a constructable class", () => {
-    const classes = [Accept, CacheControl, ContentDisposition, ContentRange, ContentType, Range, SetCookie, Vary];
+    const classes = [
+      Accept,
+      CacheControl,
+      ContentDisposition,
+      ContentRange,
+      ContentType,
+      Cookie,
+      IfMatch,
+      IfNoneMatch,
+      IfRange,
+      Range,
+      SetCookie,
+      Vary,
+    ];
     for (const ctor of classes) {
       expect(typeof ctor).toBe("function");
     }

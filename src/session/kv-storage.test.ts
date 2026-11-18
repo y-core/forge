@@ -96,6 +96,23 @@ describe("createKVSessionStorage — save/read round-trip", () => {
     );
   });
 
+  it("refuses a ttlSeconds below KV's 60-second floor at construction, and accepts 60", () => {
+    expect(() => createKVSessionStorage(fakeSessionKV().kv, { ttlSeconds: 59 })).toThrow(
+      "createKVSessionStorage: ttlSeconds is 59, below the 60-second floor — the shortest expirationTtl Workers KV accepts, so every save would throw.",
+    );
+    expect(() => createKVSessionStorage(fakeSessionKV().kv, { ttlSeconds: 60 })).not.toThrow();
+  });
+
+  for (const ttlSeconds of [59.5, 0, -60, Number.NaN, Number.POSITIVE_INFINITY]) {
+    it(`refuses a ttlSeconds of ${ttlSeconds} at construction, which KV would refuse on every save`, () => {
+      expect(() => createKVSessionStorage(fakeSessionKV().kv, { ttlSeconds })).toThrow(`createKVSessionStorage: ttlSeconds is ${ttlSeconds}`);
+    });
+  }
+
+  it("accepts a fractional ttlSeconds above the floor, which KV truncates to whole seconds", () => {
+    expect(() => createKVSessionStorage(fakeSessionKV().kv, { ttlSeconds: 60.5 })).not.toThrow();
+  });
+
   it("applies the configured prefix and sliding TTL on every save", async () => {
     const { kv, data } = fakeSessionKV();
     const storage = createKVSessionStorage(kv, { prefix: "sess", ttlSeconds: 3600 });

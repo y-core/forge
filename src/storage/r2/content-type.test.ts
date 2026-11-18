@@ -83,6 +83,11 @@ describe("isActiveContentType", () => {
     expect(isActiveContentType("  image/SVG+xml  ")).toBe(true);
   });
 
+  it("reads the essence past a quoted parameter", () => {
+    expect(isActiveContentType('Text/HTML; charset="utf-8"')).toBe(true);
+    expect(isActiveContentType('text/plain; charset="utf-8; text/html"')).toBe(false);
+  });
+
   it("leaves an inert type alone", () => {
     for (const type of ["image/png", "application/pdf", "text/plain; charset=utf-8", "application/octet-stream", "application/json"]) {
       expect(isActiveContentType(type)).toBe(false);
