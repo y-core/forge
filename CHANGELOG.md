@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.7.5] — 2026-11-18
+
 ### Breaking Changes
 
 - **Under `--report`, a browser row runs Playwright's `failures` reporter beside `json`, in place of `list`, and needs `@playwright/test`
@@ -1674,6 +1680,7 @@ the Worker secret holding the D1 token if nothing else reads it. Schedule `forge
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.7.5]: https://github.com/y-core/forge/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/y-core/forge/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/y-core/forge/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/y-core/forge/compare/v0.7.1...v0.7.2
