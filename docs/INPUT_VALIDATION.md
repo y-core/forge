@@ -291,12 +291,12 @@ have ([`SECURITY_HARDENING.md`][sh-3f] §3f): a relaxation computed from an env 
 cannot select the module that holds it.
 
 **`expectedAction` is only usable when the widget minted the token with one.** The action rides on the token, so `<Turnstile action='…'>`
-([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c) is the other half of this option — set one without the other and every token is either refused or unscoped,
+([`UI_CLIENT_RUNTIME.md`][ucr-2f] §2f) is the other half of this option — set one without the other and every token is either refused or unscoped,
 which lets a token minted on one form verify at another endpoint on the same host.
 
 **`expectedCData` and `tokenField` each have a widget half too.** `<Turnstile cData='…'>` mints the customer data `expectedCData` compares against —
 the only way to tie a challenge to an app-side record — and `<Turnstile responseFieldName='…'>` renames the hidden token input `tokenField` reads,
-which is what lets two widgets live in one form. Both are named in [`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c.
+which is what lets two widgets live in one form. Both are named in [`UI_CLIENT_RUNTIME.md`][ucr-2f] §2f.
 
 **An unverifiable CAPTCHA fails closed.** A siteverify call that timed out or never landed says nothing about the caller, so the submission is
 refused anyway, and `onBotDetected` receives the reason so an app can tell an outage from an attack.
@@ -351,4 +351,4 @@ surface each step calls.
 [sh-3f]: ./SECURITY_HARDENING.md#3f-deriving-allowedorigins-in-dev
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [testing-3a]: ./TEST_RUNNERS.md#3a-the-encoding-map
-[ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
+[ucr-2f]: ./UI_CLIENT_RUNTIME.md#2f-turnstile--the-token-its-messages-and-the-theme

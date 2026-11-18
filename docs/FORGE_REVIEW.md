@@ -44,25 +44,14 @@ See [`CODE_REVIEW.md`][cr-1] §1 for the review workflow, the green-baseline req
 
 ## 2. Blocking Invariants
 
-These are forge's own invariants. **Any one of them blocks a merge regardless of severity argument.**
-
-**The canon's invariants bind alongside these, not underneath them.** The table below is what forge adds; the fleet's list is
-[`CODE_REVIEW.md`][cr] §2, and an entry there that appears nowhere here still blocks a merge. Read both tables, or read the canon's and treat this
-one as the delta.
+**The canon's blocking invariants apply here whole** ([`CODE_REVIEW.md`][cr] §2). The table below is only what forge adds, and any one of its rows
+also blocks a merge regardless of severity argument.
 
 | Invariant | Owner |
 | --- | --- |
-| No deprecation shim or backward-compatible path before v1.0.0 | [`FORGE_STRUCTURE.md`][la-7] §7 |
-| No hardcoded secret, key, or credential in source | §3c |
-| `mod.ts` uses named exports only — no `export *` | [`NAMESPACE_DESIGN.md`][nd-1b] §1b |
-| No sibling-barrel import outside the sanctioned exemptions | [`NAMESPACES.md`][namespaces-2] §2 |
-| Runtime namespaces use only Web APIs | [`LIBRARY_ARCHITECTURE.md`][la-1d] §1d |
-| `valibot` is never imported outside the facade | [`INPUT_VALIDATION.md`][iv-1a] §1a |
-| Security-critical paths fail closed | [`BOUNDARIES.md`][boundaries-5] §5 |
+| `valibot` is never imported outside the `validation` facade | [`INPUT_VALIDATION.md`][iv-1a] §1a |
 | A state-changing route carries a CSRF guard | [`INPUT_VALIDATION.md`][iv-3a] §3a |
-| A security guard has both a pass and a fail test | [`TEST_RUNNERS.md`][testing-5a] §5a |
 | No props interface types an icon as bare `ForgeIcon` or `ForgeIcon<string>` | §3b |
-| No comment outside the permitted budget | [`CODE_RULES.md`][cr-5a] §5a |
 
 ---
 
@@ -266,7 +255,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |
 | `node:fs` / `node:path` in `src/testing/snapshot.ts` or `src/testing/harness.ts` | A node-only module of a mixed namespace: a fixture comparison reads the disk and a harness starts workerd, and each module is off the `./testing` barrel so no Worker-typed program can reach it — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
-| A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `inFlightStylesheets` in `src/ui/client/lazy.ts` |
+| A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `announcers` in `src/ui/client/announce.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a |
 | `sideEffects` entries in `package.json` | A deliberate bundler hint — [`UI_CLIENT_RUNTIME.md`][ucr-4] §4 |
 | A non-null assertion in a test file | Permitted by the `**/*.test.ts` oxlint override, which sets `typescript/no-non-null-assertion: off`; the rule is `error` in production source |
@@ -360,7 +349,6 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 
 [accessibility]: ../src/ui/design/reference/10-accessibility.md
 [ag-6c]: ../warden/canon/shared/AGENT_GUIDE.md#6c-decisions-versus-usage--the-readme-boundary
-[boundaries-5]: ../warden/canon/libs/BOUNDARIES.md#5-fail-closed
 [boundaries-5a]: ../warden/canon/libs/BOUNDARIES.md#5a-fail-closed-on-missing-critical-context
 [boundaries-5c]: ../warden/canon/libs/BOUNDARIES.md#5c-recording-a-fail-open-exception
 [cr]: ../warden/canon/libs/CODE_REVIEW.md
@@ -383,25 +371,20 @@ forge's published a11y ids and its checked ones — the ids that gap still conta
 [iv-1a]: ./INPUT_VALIDATION.md#1a-v-namespace--complete-valibot-re-export
 [iv-3a]: ./INPUT_VALIDATION.md#3a-csrfprotection-middleware--guard-mutating-routes
 [la-10]: ./FORGE_STRUCTURE.md#10-stylesheets-take-the-source-comment-forms
-[la-1d]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [la-1e]: ../warden/canon/libs/LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability
 [la-4a]: ./FORGE_STRUCTURE.md#4a-re-export-rules-for-facade-namespaces
 [la-6]: ./FORGE_STRUCTURE.md#6-cloudflare-workers-runtime-model
-[la-7]: ./FORGE_STRUCTURE.md#7-pre-10-api-evolution
-[namespaces-2]: ./NAMESPACES.md#2-no-sibling-barrel-import-rule
 [namespaces-3b]: ./NAMESPACES.md#3b-internal-namespaces
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [namespaces-4b]: ./NAMESPACES.md#4b-integration-namespace-rules
 [namespaces-5b]: ./NAMESPACES.md#5b-uicore--ssr-components-only
-[nd-1b]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1b-export-star-ban
 [nd-2c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2c-granting-an-exemption
 [ram-1b]: ./ROUTING_AND_MIDDLEWARE.md#1b-controller--mapping-route-names-to-actions
 [ram-4a]: ./ROUTING_AND_MIDDLEWARE.md#4a-contextvar-typed-accessor
 [sa-2]: ./STATE_ATTRIBUTES.md#2-presentational-attributes-are-declared-too
 [testing]: ../warden/canon/libs/TESTING.md
-[testing-2a]: ../warden/canon/libs/TESTING.md#2a-test-file-naming-convention
+[testing-2a]: ../warden/canon/libs/TESTING.md#2a-which-files-get-a-test-and-the-naming-convention
 [testing-3b]: ./TEST_RUNNERS.md#3b-exact-match--never-substring-matching
-[testing-5a]: ./TEST_RUNNERS.md#5a-both-pass-and-fail-cases-required
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-7f]: ./TEST_RUNNERS.md#7f-subpaths-that-are-not-on-the-barrel
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer

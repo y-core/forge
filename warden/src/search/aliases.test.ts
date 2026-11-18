@@ -67,3 +67,13 @@ describe("placement bridges", () => {
     expect(aliasTerms(["growth", "put"])).not.toContain("growth");
   });
 });
+
+describe("agent-practice bridges", () => {
+  it("reaches the corpus's hyphenated sub-agent from the word Claude Code uses", () => {
+    expect(aliasTerms(["subagent"])).toEqual(["delegate", "sub-agent"]);
+  });
+
+  it("reaches the dependency rule from the package-manager words a reader asks in", () => {
+    for (const term of ["package", "install"]) expect(aliasTerms([term])).toContain("dependency");
+  });
+});

@@ -8,8 +8,7 @@
     "allow": [
       "Bash(bun run *)",
       "Bash(echo \"EXIT:$?\")",
-      "Bash(bun test *)",
-      "Bash(echo \"FIX:$?\")"
+      "Bash(bun test *)"
     ],
     "deny": [
       "Bash(git add *)",
@@ -55,12 +54,15 @@
       "Bash(git -*)"
     ]
   },
-  "model": "opus[1m]",
+  "model": "opus",
   "enabledMcpjsonServers": [
     "ledger",
     "warden"
   ],
   "effortLevel": "medium",
+  "skillOverrides": {
+    "code-review": "user-invocable-only"
+  },
   "showClearContextOnPlanAccept": true,
   "autoMemoryEnabled": false
 }

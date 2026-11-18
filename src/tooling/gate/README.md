@@ -640,7 +640,7 @@ and reading it as "select no steps" would refuse every unscoped run.
 - [`@y-core/forge/tooling/cli`][cli-readme] — the command framework and `resolveAppRoot`.
 - [`BUILD_TOOLING.md`][bt-2] §2 — the rulings behind the published gate, its presets and its checks.
 - [`TEST_RUNNERS.md`][testing-6] §6 — the gate's tiers and its flags as forge itself runs them.
-- [`TESTING.md`][testing-6a] §6a — the general law the tiers and the dependency skip implement.
+- [`TESTING.md`][testing-6a] §6a, [§6e][testing-6e] — the general law the tiers and the dependency skip implement.
 
 [bt-2]: ../../../docs/BUILD_TOOLING.md#2-toolinggate-and-toolingrelease--project-tooling
 [bt-2d]: ../../../docs/BUILD_TOOLING.md#2d-changelog-promotion--the-unreleased-contract
@@ -656,5 +656,6 @@ and reading it as "select no steps" would refuse every unscoped run.
 [testing-6]: ../../../docs/TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../../../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../../../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
+[testing-6e]: ../../../warden/canon/libs/TESTING.md#6e-what-the-runner-promises
 [testing-apps-6a]: ../../../warden/canon/apps/TESTING.md#6a-one-command-nested-tiers
 [testing-apps-6e]: ../../../warden/canon/apps/TESTING.md#6e-one-tier-per-moment

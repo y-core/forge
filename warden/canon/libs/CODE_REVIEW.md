@@ -122,7 +122,7 @@ breaking change — which is precisely what a pre-1.0 version number exists to a
 | Type correctness across every changed signature | the typecheck step |
 | Behaviour of the changed unit | the test runner, scoped to the changed path |
 
-The repository's step-list config names the current steps ([`TESTING.md`][testing-6a] §6a); the labels above are rule classes, not step names.
+The repository's step-list config names the current steps ([`TESTING.md`][testing-6e] §6e); the labels above are rule classes, not step names.
 
 **If a Tier-1 check passes and you still believe the rule is violated, the check is wrong — fix the check, not the review.** A review finding that a
 gate should have caught is a gate defect first and a code defect second.
@@ -292,8 +292,8 @@ reads both.
 [nd-3b]: ./NAMESPACE_DESIGN.md#3b-integration-namespace-rules
 [nd-3e]: ./NAMESPACE_DESIGN.md#3e-duplication-across-a-leaf-boundary
 [nd-4b]: ./NAMESPACE_DESIGN.md#4b-option-and-shape-type-suffixes
-[testing-2a]: ./TESTING.md#2a-test-file-naming-convention
+[testing-2a]: ./TESTING.md#2a-which-files-get-a-test-and-the-naming-convention
 [testing-3d]: ./TESTING.md#3d-assert-the-mechanism-not-an-outcome-a-second-mechanism-also-guarantees
 [testing-3f]: ./TESTING.md#3f-a-deleted-claim-lands-in-a-test
 [testing-5a]: ./TESTING.md#5a-both-pass-and-fail-cases-required
-[testing-6a]: ./TESTING.md#6a-one-command-nested-tiers
+[testing-6e]: ./TESTING.md#6e-what-the-runner-promises

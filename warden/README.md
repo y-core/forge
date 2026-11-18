@@ -34,7 +34,7 @@ already using that directory name for something else is not obliged to rename it
 | `canon/apps/` | The application corpus |
 | `claude/agents/` | Agent definitions — `shared/` plus one tree per kind, layered in that order |
 | `claude/skills/` | Skills, laid out the same way — `shared/` plus one tree per kind |
-| `claude/seed/` | `CLAUDE.md`, `AGENTS.md` and `settings.local.json`, written only when absent |
+| `claude/seed/` | `CLAUDE.md`, `AGENTS.md` and `settings.json`, written only when absent |
 | `share/` | Example editor configuration `warden show` writes to stdout |
 | `src/` | Every module — the command, the sync, the checks, the index, the MCP server |
 
@@ -50,7 +50,7 @@ reads the canon takes `--kind=<libs|apps>` to override the tree selection.
 
 ```bash
 warden sync                  # replace .claude/agents and .claude/skills
-warden sync --init           # also seed CLAUDE.md, AGENTS.md and settings.local.json if absent
+warden sync --init           # also seed CLAUDE.md, AGENTS.md and .claude/settings.json if absent
 warden sync --check          # report drift and exit 1 if any, writing nothing
 
 warden natives               # place the editor architecture's prebuilt native bindings

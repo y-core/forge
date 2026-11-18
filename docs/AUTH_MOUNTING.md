@@ -361,7 +361,7 @@ address. The check runs before the flow is called, so a refusal spends no verifi
 `warn` and is sent nowhere else.
 
 **The covered forms always submit over htmx, whether or not `turnstile` is set.** The widget runs with `challenge="submit"`, which holds the press
-at an htmx request and needs an htmx form to hold it on ([`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c); making the submission depend on the option would
+at an htmx request and needs an htmx form to hold it on ([`UI_CLIENT_RUNTIME.md`][ucr-2h] §2h); making the submission depend on the option would
 give each form two ways to post. Each form keeps its native `action`, so it still posts without JavaScript. A success answers `204` with
 `HX-Redirect`, so htmx navigates rather than swapping the next page into the form. A refusal answers the re-rendered view as a fragment, which
 replaces the card: each form targets its view's root, whose id is `AUTH_SIGNIN_ID`, `AUTH_SIGNUP_ID` or `AUTH_VERIFY_ID`, and a `422` of HTML
@@ -386,7 +386,7 @@ swaps by [`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a.
 [sh-2g]: ./SECURITY_HARDENING.md#2g-trusted-types-and-htmx--the-forge-htmx-policy
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret
 [sot-2d]: ./SOURCE_OF_TRUTH.md#2d-ui-contracts-and-data-tables
-[ucr-2c]: ./UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
+[ucr-2h]: ./UI_CLIENT_RUNTIME.md#2h-turnstile--what-submit-mode-does-not-hold
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
 [ucr-4a]: ./UI_CLIENT_RUNTIME.md#4a-which-responses-swap-html-4xx-yes-5xx-no
 [ui-readme]: ../src/ui/README.md

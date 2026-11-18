@@ -56,7 +56,7 @@ announce a tab as a radio; and calling it structural rather than a state would b
 and a more honest selector, and a false state emits nothing at all. The declaration marks the few valued attributes as such: they carry a choice
 rather than a flag. `data-state` is the valued state a component computes from its own enum, and it is never a serialized payload (§3).
 
-**A state the platform already exposes is not in the table** ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h); republishing it as a `data-` flag would be a
+**A state the platform already exposes is not in the table** ([`UI_SSR_COMPONENTS.md`][usc-3e] §3e); republishing it as a `data-` flag would be a
 second copy of a fact forge does not own.
 
 ### 1b. ARIA States Are Not Styling Hooks
@@ -97,7 +97,7 @@ both attributes whether or not a `loadingIcon` is passed to render a `Spinner` b
 control that cannot yet accept a value.
 
 **A request in flight stays htmx's.** `htmx-indicator` is the request-driven path, because the request is a fact the client owns and a server may
-only stamp what it can keep true ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h); the rule is `forge-ui-htmx-indicator-on-control` in
+only stamp what it can keep true ([`UI_SSR_COMPONENTS.md`][usc-3e] §3e); the rule is `forge-ui-htmx-indicator-on-control` in
 `src/ui/design/reference/11-htmx.md`.
 
 ---
@@ -170,5 +170,5 @@ the record; teaching a class-order check about element identity would be a secon
 [ucc-1a]: ./UI_CLASS_COMPOSITION.md#1a-conflict-resolution-the-fail-open-boundary-and-the-memo
 [ucc-1e]: ./UI_CLASS_COMPOSITION.md#1e-the-utility-recipe-layer
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes
-[usc-1h]: ./UI_SSR_COMPONENTS.md#1h-overlays-and-disclosures
 [usc-1m]: ./UI_SSR_COMPONENTS.md#1m-the-prop-vocabulary
+[usc-3e]: ./UI_SSR_COMPONENTS.md#3e-stamp-only-what-the-server-can-keep-true

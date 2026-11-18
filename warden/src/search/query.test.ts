@@ -12,6 +12,10 @@ describe("terms()", () => {
     expect(terms("what is the rule for this")).toEqual(["rule"]);
   });
 
+  it("drops the first-person words a question to an agent is phrased in", () => {
+    expect(terms("can I commit my changes")).toEqual(["commit", "changes"]);
+  });
+
   it("keeps the stop words when they are all a query has, so it still matches something", () => {
     expect(terms("what is this")).toEqual(["what", "is", "this"]);
   });

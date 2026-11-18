@@ -4,10 +4,12 @@ description: >
   Reviews code against this repository's governing corpus — the blocking invariants, the tiered
   detection commands, the severity calibration and the known-correct patterns that the canon's
   CODE_REVIEW.md owns — and reports findings that cite the chunk id each rule came from. Use when
-  the user asks to "review this", "review my changes", "review the diff", "do a code review",
-  "review this PR", "review the codebase", "check this before I commit", or asks whether a change
-  is secure, production-ready or architecturally sound. Takes an optional scope — a branch, a PR, a
-  path, or "everything" — and defaults to the uncommitted working tree.
+  the user asks for a review of code — a diff, a branch or PR, a path, or the whole codebase — or a
+  check before committing, or asks whether a change is secure, production-ready or architecturally
+  sound. Takes an optional scope — a branch, a PR, a path, or "everything" — and defaults to the
+  uncommitted working tree.
+argument-hint: "[branch|PR|path|everything]"
+disallowed-tools: Edit, Write
 ---
 
 # Warden Review

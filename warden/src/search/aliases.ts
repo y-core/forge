@@ -63,6 +63,10 @@ export const SHARED: AliasTable = new Map([
   ["scheduled", ["cron", "tier"]],
   ["lint", ["rule", "gate"]],
   ["gate", ["verify", "step", "check"]],
+  ["subagent", ["sub-agent", "delegate"]],
+  ["subagents", ["sub-agent", "delegate"]],
+  ["package", ["dependency"]],
+  ["install", ["dependency"]],
 ]);
 
 /** Bridges whose targets are the library's own vocabulary — its exports, its namespaces, and its classification. @public */

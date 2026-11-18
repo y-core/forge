@@ -381,7 +381,7 @@ overlay would open unnamed.
 the panel at its edge above the page, with no backdrop and the page still usable. **A non-modal `open` surface is closed only by a control you
 render**, such as a `.Close`, never by an outside click or Escape, so the reader can work beside it. A modal one closes on Escape or a
 backdrop click, except an `alert` `Dialog` or `Drawer`, which closes on Escape alone. The rulings behind the choices are
-[`UI_SSR_COMPONENTS.md`][usc-1h] §1h.
+[`UI_SSR_COMPONENTS.md`][usc-3i] §3i.
 
 ### Put a popover or menu in running text
 
@@ -469,7 +469,7 @@ import { Toolbar, Tooltip } from "@y-core/forge/ui/core";
 
 The default `kind="description"` is for a trigger that already has a name and wants a hint beside it. A disabled trigger renders
 `aria-disabled="true"` rather than `disabled`, so it still takes hover and focus and the tooltip can say why it is unavailable; the client runtime
-cancels its clicks ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h). To toggle one in the browser, set both the attribute and the state hook:
+cancels its clicks ([`UI_SSR_COMPONENTS.md`][usc-3d] §3d). To toggle one in the browser, set both the attribute and the state hook:
 
 ```ts
 trigger.setAttribute("aria-disabled", String(disabled));
@@ -573,7 +573,7 @@ import { Table } from "@y-core/forge/ui/core";
 ```
 
 A parent sized with `h-96` instead, or a `max-h-96` one level further up, pins nothing: the table grows to its full height and the header scrolls
-away with the page ([`UI_SSR_COMPONENTS.md`][usc-1h] §1h).
+away with the page ([`UI_SSR_COMPONENTS.md`][usc-3j] §3j).
 
 ### Take a one-time code
 
@@ -653,7 +653,7 @@ The choices below are worth making deliberately; everything else has a default t
 - **More than one widget in one form.** `responseFieldName` renames the hidden token input, and pairs with the server's `tokenField` option.
 
 Under `challenge="submit"` the submitter is `disabled` and `aria-busy` while the press is held, and is re-enabled before
-`TURNSTILE_ABANDONED_EVENT` fires. How the hold ends, and which presses it holds at all, is [`UI_CLIENT_RUNTIME.md`][ucr-2c] §2c's.
+`TURNSTILE_ABANDONED_EVENT` fires. How the hold ends, and which presses it holds at all, is [`UI_CLIENT_RUNTIME.md`][ucr-2g] §2g's.
 
 **Every hold that ends without a request tells the page.** Listen for it when the page should react — refocusing the submitter, or surfacing your
 own message:
@@ -1488,6 +1488,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [ucr-2b]: ../../docs/UI_CLIENT_RUNTIME.md#2b-theme-controller-and-fouc-prevention
 [ucr-2c]: ../../docs/UI_CLIENT_RUNTIME.md#2c-the-turnstile-scope--captcha-controller
 [ucr-2d]: ../../docs/UI_CLIENT_RUNTIME.md#2d-the-disposer-contract
+[ucr-2g]: ../../docs/UI_CLIENT_RUNTIME.md#2g-turnstile--submit-mode-holds-the-press
 [ucr-2i]: ../../docs/UI_CLIENT_RUNTIME.md#2i-openpopoverat--coordinate-placement
 [ucr-2m]: ../../docs/UI_CLIENT_RUNTIME.md#2m-announce--the-pages-one-voice
 [ucr-3a]: ../../docs/UI_CLIENT_RUNTIME.md#3a-signals--reactive-state
@@ -1500,11 +1501,13 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 [usc]: ../../docs/UI_SSR_COMPONENTS.md
 [usc-1a]: ../../docs/UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes
 [usc-1c]: ../../docs/UI_SSR_COMPONENTS.md#1c-button-and-the-aschild-invariant
-[usc-1h]: ../../docs/UI_SSR_COMPONENTS.md#1h-overlays-and-disclosures
 [usc-1j]: ../../docs/UI_SSR_COMPONENTS.md#1j-derived-ids-must-be-id-tokens
 [usc-1l]: ../../docs/UI_SSR_COMPONENTS.md#1l-chrome-navigation-announces-only-what-it-implements
 [usc-1m]: ../../docs/UI_SSR_COMPONENTS.md#1m-the-prop-vocabulary
 [usc-2a]: ../../docs/UI_SSR_COMPONENTS.md#2a-the-binding-ownership-boundary
 [usc-2c]: ../../docs/UI_SSR_COMPONENTS.md#2c-uicontrols--bound-variants
 [usc-2d]: ../../docs/UI_SSR_COMPONENTS.md#2d-scoped-components-require-the-client-scope-import
+[usc-3d]: ../../docs/UI_SSR_COMPONENTS.md#3d-tooltip-triggers--naming-and-the-inert-state
+[usc-3i]: ../../docs/UI_SSR_COMPONENTS.md#3i-dialog-names-descriptions-and-closedby
+[usc-3j]: ../../docs/UI_SSR_COMPONENTS.md#3j-table-rows-and-wide-tables
 [validation-readme]: ../validation/README.md

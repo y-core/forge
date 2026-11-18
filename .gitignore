@@ -22,3 +22,6 @@ test-results/
 
 *.test
 *.out
+
+# Personal Claude Code approvals and choices — team policy is .claude/settings.json.
+.claude/settings.local.json

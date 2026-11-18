@@ -258,7 +258,7 @@ released versions carry none), **version contiguity** (a resolved version that n
 
 **One runner, one table per project.** The runner is published; the table is not. That split is the whole design: the fleet shares the selection
 logic, the fail-fast ordering, the `requires` probe and the full-log file, while each repository keeps its own steps as its own source of truth —
-forge's in `config/steps.config.ts` (see [`TESTING.md`][testing-6a] §6a).
+forge's in `config/steps.config.ts` (see [`TESTING.md`][testing-6e] §6e).
 
 **The bin is the entry point; the factory is the escape hatch.** `forge verify` resolves `config/steps.config.ts` (or `--config`) and delegates to
 `createGateCommand`, refusing a module whose default is not a `defineSteps` table, so a project needs no binding file of its own. The factory stays
@@ -267,7 +267,7 @@ published for the case the bin cannot serve — a table assembled at run time, o
 **The tiers are [`TESTING.md`][testing-6a] §6a's, as one command.** Modelling them as separate verbs would cost a duplicated binding file per
 repo and a `gate` config field.
 
-**A dependency's absence is answered by the tier, not the table** ([`TESTING.md`][testing-6a] §6a). That is what lets the design-system steps run
+**A dependency's absence is answered by the tier, not the table** ([`TESTING.md`][testing-6e] §6e). That is what lets the design-system steps run
 on every machine that has `tailwindcss`, an optional peer, while a run from `runtime` up never skips them — a verdict hardcoded in the table could
 state only one of them. `--list` words a step's dependency per tier: conditional, or required.
 
@@ -291,7 +291,7 @@ across every repository that runs it, and would hand the next one the parts to b
 **`selectSteps` _is_ published**, because it is pure — an app unit-tests its own table against it at zero step cost, the same argument that makes
 forge's `steps.test.ts` worth having.
 
-**Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent**; the flags are [`TESTING.md`][testing-6a] §6a's
+**Step sets, an `--inspect`/streaming mode, and a preconditions phase are deliberately absent**; the flags are [`TESTING.md`][testing-6e] §6e's
 table. Narrowing a run means enumerating labels or letting `--affected` read the change; a streamed run is `--list` and then the step's own command.
 
 **The `--reuse` receipt lives in the git directory, not in the working tree.** A working-tree path would need every consumer's `.gitignore` to
@@ -550,3 +550,4 @@ different posture; forge itself ships the step rather than running it, having no
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers
+[testing-6e]: ../warden/canon/libs/TESTING.md#6e-what-the-runner-promises

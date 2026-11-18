@@ -126,3 +126,27 @@ describe("the shipped agent corpus", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("the shipped agent definitions", () => {
+  const dir = join(WARDEN_ROOT, "claude/agents");
+  const agents = walk(dir)
+    .filter((path) => path.endsWith(".md"))
+    .map((path) => join(dir, path));
+
+  // An agent that skips CLAUDE.md loses the rule CLAUDE.md carries for every other one.
+  it("state the data-not-instruction rule in the body of every agent that omits CLAUDE.md", () => {
+    const omitting = agents.filter((path) => /^omitClaudeMd: true$/m.test(readFileSync(path, "utf-8")));
+    expect(omitting.length).toBeGreaterThan(0);
+    for (const path of omitting) expect(readFileSync(path, "utf-8")).toContain("(`AGENT_WORKFLOW.md` §6)");
+  });
+});
+
+describe("the shipped reviewer skills", () => {
+  // A reviewer reviews and closes; a repair it made itself would be a change nobody reviews.
+  for (const skill of ["warden-review", "review-handoff"]) {
+    it(`${skill} cannot edit while it is active`, () => {
+      const source = readFileSync(join(WARDEN_ROOT, "claude/skills/shared", skill, "SKILL.md"), "utf-8");
+      expect(/^disallowed-tools: (.*)$/m.exec(source)?.[1]?.split(", ")).toEqual(["Edit", "Write"]);
+    });
+  }
+});

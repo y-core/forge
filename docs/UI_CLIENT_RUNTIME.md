@@ -20,9 +20,12 @@ audience: consumer
 - §2 Mount Controllers: the disposer every controller returns, and what decides which are exported
 - §2a State-Only Islands versus Contract-Bearing Scopes: when to reach for `Resumable`, and when the scope root is hand-rendered
 - §2b Theme Controller and FOUC Prevention: where the theme surface lives, and what earns a pre-paint script
-- §2c The `turnstile` scope — CAPTCHA controller: component-scoped, eager by default, self-healing, fails visible, and the opt-in
-  challenge-at-submit mode that holds a press and replays it
+- §2c The `turnstile` scope — CAPTCHA controller: component-scoped, a required search root, and the server as the only enforcement point
 - §2d The Disposer Contract: every controller returns one, and why
+- §2e Turnstile — Loading, Focus, Nonce and Frame: eager or deferred, the focus guard, the nonced script, and the reserved box
+- §2f Turnstile — The Token, Its Messages and the Theme: the action-scoped token, self-healing, the message slots, and the theme re-render
+- §2g Turnstile — Submit Mode Holds the Press: `challenge="submit"`, the bounded hold, and the replay
+- §2h Turnstile — What Submit Mode Does Not Hold: invalid forms, a foreign `hx-trigger`, the last press, and a non-htmx form
 - §2i openPopoverAt — Coordinate Placement: the popup with no invoker to anchor to
 - §2j mountCarouselDots — Strip-Driven Dot Marker: why it lifts the selected spelling off the row instead of restating it
 - §2k mountScrollSpy — Fragment Nav Current Marker: what orders the entries, and what it refuses to emit
@@ -105,7 +108,7 @@ the event's name and payload shape.
 **Any script on the page may dispatch it, and that is a ratified fail-open, not a hole** ([`BOUNDARIES.md`][boundaries-5c] §5c). The listeners take
 any dispatcher and the payload is unauthenticated, so a forged `navbar:filters` can repaint the bar with any token set. What it cannot do is widen
 what the viewer may reach: `filters` decides which of the **already-delivered** items are painted, and the server put every one of those hrefs in
-the HTML before the event existed. Reaching a destination is the route guard's decision — `requireSignedIn`, `requireAdmin` — which runs on the
+the HTML before the event existed. Reaching a destination is the route guard's decision — `requireAuth`, `requireAdmin` — which runs on the
 server and never consults the bar. **The degradation is presentational:** the worst outcome is a navigation bar showing links the viewer's own
 requests will be refused at, which is the same outcome as a stale first paint.
 
@@ -123,75 +126,7 @@ when either is absent from the tree it was given.
 **The server is the only enforcement point, in either mode.** `verifyTurnstile` ([`INPUT_VALIDATION.md`][iv-4a] §4a) fails closed, so nothing the
 controller does may brick a form: a slow, blocked or dead widget degrades the page and never gates it.
 
-Its deliberate behaviours:
-
-- **Eager by default, deferrable per widget.** The script loads at mount, so a challenge is solved before the reader reaches submit. `load="focus"`
-  defers to the first `focusin` within the form, for a form incidental to its page. **There is no third, app-triggered mode**: `"lazy"` would
-  collide with `ui/client`'s `lazy()`, which means an IntersectionObserver. **It never calls `turnstile.ready()`**, which throws under an async
-  load.
-- **The post-render focus guard is armed unconditionally; the restore acts only on a focus the reader held.** Turnstile steals focus a beat after
-  `render` returns, by which time an eagerly rendered page's reader has clicked the first field — so arming on a held focus alone would leave that
-  page undefended, while a restore needs somewhere to restore _to_. A `focusout` from inside the container is ignored, so tabbing between fields is
-  unaffected. **The accepted hazard is a click-yank** within `TURNSTILE_FOCUS_GUARD_MS`: from the event, a steal and a deliberate click are the same
-  thing, and the steal is far commoner.
-- **The injected script carries the page's own CSP nonce**, copied from an already-nonced `<script>` and read off the **property**, because the
-  browser empties the `nonce` content attribute after insertion to stop it being exfiltrated through a CSS attribute selector. **A `data-nonce`
-  attribute of forge's own is therefore forbidden**, and the value is written with `setAttribute` rather than `script.nonce =`, which sets only the
-  internal slot in some engines. So `script-src 'nonce-…' 'strict-dynamic'` works without widening anything to Cloudflare's origin
-  ([`SECURITY_HARDENING.md`][sh-3] §3).
-- **The widget's frame reserves its box only when the widget is always visible, and the messages sit outside it.** The frame is the
-  `[data-ref="turnstile-frame"]` element the widget mounts into, and the reservation is keyed on `appearance`, not `challenge`: `always` holds
-  Cloudflare's published dimensions so the eager render stops shifting first paint, while `execute` and `interaction-only` reserve nothing rather
-  than leaving a permanent hole. Both messages render below the frame, outside it, so a revealed message pushes the form down rather than sliding
-  under the widget. Classes, never a `style` attribute ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a).
-- **The token is scoped to the form's own action, and to its own submission.** `action`, `cData` and `responseFieldName` are the widget halves of
-  `verifyTurnstile`'s options, and why each pair must be set together is [`INPUT_VALIDATION.md`][iv-4a] §4a's. A value outside
-  `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the server stays the one enforcement point.
-  **One predicate decides both htmx seams — the `htmx:config:request` hold and the `htmx:finally:request` reset — by testing the element htmx
-  issued the request from**, so a descendant field's own request is neither held nor reset and cannot burn the single-use token. **The test is
-  structural because the answered URL cannot bear it**: a redirect leaves `responseURL` naming a URL the form never declared.
-- **Self-healing token, with expiry and timeout left to Cloudflare.** The token resets whenever one of the form's own requests ends — a success, an
-  error status or a network failure; the form clears only on a 2xx. No `expired-callback` or `timeout-callback` is wired — `refresh-expired` and
-  `refresh-timeout` both default to `auto`, so a `reset()` of forge's own would be redundant at best and a second challenge at worst.
-- **Fails visible, and the message comes back down.** Two message slots, each overridable by prop: the general one (`children`) and an `unsupported`
-  sibling for the one cause the general text misleads on — a browser Turnstile cannot run, where "disable your ad blocker" is advice the visitor
-  cannot act on. **Those slots, and not one per cause**, because the text is the app's and the controller cannot invent English of its own. `retry`
-  defaults to `auto`, so a transient fault the widget then solves takes its own message back down.
-- **A theme flip re-renders the widget, but never at the cost of a solved token.** Once a token has been issued the widget keeps the colour it
-  rendered in, rather than making the visitor pay for a second challenge to change a colour. It observes the `dark` class deliberately —
-  `ui/chrome`'s theme signal would be a cross-namespace dependency ([`NAMESPACE_DESIGN.md`][nd-3] §3).
-- **When the challenge runs is a second axis, and `challenge="submit"` is the opt-in.** `load` decides when the script is fetched, `challenge` when
-  the challenge runs. The default `"render"` starts the single-use token ageing at mount — right for a short form, wrong for one that outlives the
-  token, where a backgrounded tab can miss the auto-refresh and hand siteverify a `timeout-or-duplicate`. `"submit"` runs exactly one challenge at
-  the press, from `htmx:config:request`; it is opt-in because render-time is the prevalent configuration. `appearance` stays independent, as
-  Cloudflare treats it — pair `challenge="submit"` with `appearance="interaction-only"`.
-- **In submit mode the press is deferred, for a bounded window that always ends, and never on a widget that cannot answer.** The submitter is marked
-  `disabled` and `aria-busy` for the window, since htmx's own indicators start only once the request is issued. **The hold is conditional on widget
-  health**: a render that threw, a pre-press `error-callback` or a script that never loaded lets the press through unheld for `verifyTurnstile` to
-  refuse, rather than sitting disabled for `TURNSTILE_EXECUTE_TIMEOUT_MS`. **An interactive challenge swaps the budget rather than standing it
-  down** — the busy state drops while the reader is asked to click, and the window becomes `TURNSTILE_INTERACTIVE_TIMEOUT_MS`, well inside the
-  token's life. **On failure the held request is dropped rather than issued**: a tokenless POST answers with a refusal naming the schema's first
-  field, which reads as a validation error the reader cannot act on. The fallback is revealed and a second press retries.
-- **The press is held at `htmx:config:request` and replayed when the token arrives.** The controller cancels htmx's request and records the control
-  pressed; on the token it dispatches the press again — a `submit` carrying that control as its submitter for a form, a `click` for a control — and
-  the replayed press goes through because the token input is now filled. **Holding inside htmx's request instead would fail on each count**: htmx
-  has collected the body before any hook runs, so the token would have to be patched into it; htmx's own request timeout would race the interactive
-  window; and htmx's per-element request queue would break last press wins.
-- **An invalid form spends no challenge wherever htmx halts it, and forge runs no validity check of its own.** htmx validates a form before
-  `htmx:config:request` fires, so a press it halts never reaches the hold. **On a `novalidate` form, a button-issued submission, or a press whose
-  control carries `formnovalidate`, an invalid press therefore spends a challenge** — htmx sends the request either way.
-- **A form whose own `hx-trigger` names some other event is not supported in submit mode.** Its press is held like any other, but the replay issues
-  only a `submit` or a `click`, which that form does not listen for — so the press is never sent. The replay is deliberately not generalised to an
-  arbitrary trigger.
-- **Last press wins, because each replay carries its own submitter, and every dropped press is reported.** A second press displaces the first and
-  re-arms the window but rides the challenge in flight, so one press stays one challenge, and the replay carries the second press's control alone —
-  answering with the first would send one button's `name=value` under the other's press. Every hold that ends without a request dispatches
-  `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, its detail a `TurnstileAbandonedDetail`; the submitter is un-busied
-  before dispatch so a handler that focuses it finds a live target. It deliberately carries no way to release the held press: reviving it is the
-  tokenless POST the drop exists to prevent. Teardown is the one silent exception, since it runs mid-swap into a page already going away.
-- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx request attribute — a verb or `hx-action` — fires no
-  `htmx:config:request` and has no request to hold, so the controller reports the authoring error and falls back to `challenge="render"` — a
-  degraded form, never a dead submit button.
+Its deliberate behaviours are §2e to §2h.
 
 ### 2d. The Disposer Contract
 
@@ -221,6 +156,85 @@ These consequences follow, each the rule rather than a special case:
   resumed with no disposer would be unreachable by every teardown and inert on re-resume, which is a worse failure than the throw.
 - **A throwing disposer is reported and does not stop the rest of teardown.** Teardown iterates every live scope, so one failure must not silently
   skip the scopes queued behind it.
+
+### 2e. Turnstile — Loading, Focus, Nonce and Frame
+
+- **Eager by default, deferrable per widget.** The script loads at mount, so a challenge is solved before the reader reaches submit. `load="focus"`
+  defers to the first `focusin` within the form, for a form incidental to its page. **There is no third, app-triggered mode**: `"lazy"` would
+  collide with `ui/client`'s `lazy()`, which means an IntersectionObserver. **It never calls `turnstile.ready()`**, which throws under an async
+  load.
+- **The post-render focus guard is armed unconditionally; the restore acts only on a focus the reader held.** Turnstile steals focus a beat after
+  `render` returns, by which time an eagerly rendered page's reader has clicked the first field — so arming on a held focus alone would leave that
+  page undefended, while a restore needs somewhere to restore _to_. A `focusout` from inside the container is ignored, so tabbing between fields is
+  unaffected. **The accepted hazard is a click-yank** within `TURNSTILE_FOCUS_GUARD_MS`: from the event, a steal and a deliberate click are the same
+  thing, and the steal is far commoner.
+- **The injected script carries the page's own CSP nonce**, copied from an already-nonced `<script>` and read off the **property**, because the
+  browser empties the `nonce` content attribute after insertion to stop it being exfiltrated through a CSS attribute selector. **A `data-nonce`
+  attribute of forge's own is therefore forbidden**, and the value is written with `setAttribute` rather than `script.nonce =`, which sets only the
+  internal slot in some engines. So `script-src 'nonce-…' 'strict-dynamic'` works without widening anything to Cloudflare's origin
+  ([`SECURITY_HARDENING.md`][sh-3] §3).
+- **The widget's frame reserves its box only when the widget is always visible, and the messages sit outside it.** The frame is the
+  `[data-ref="turnstile-frame"]` element the widget mounts into, and the reservation is keyed on `appearance`, not `challenge`: `always` holds
+  Cloudflare's published dimensions so the eager render stops shifting first paint, while `execute` and `interaction-only` reserve nothing rather
+  than leaving a permanent hole. Both messages render below the frame, outside it, so a revealed message pushes the form down rather than sliding
+  under the widget. Classes, never a `style` attribute ([`UI_SSR_COMPONENTS.md`][usc-1a] §1a).
+
+### 2f. Turnstile — The Token, Its Messages and the Theme
+
+- **The token is scoped to the form's own action, and to its own submission.** `action`, `cData` and `responseFieldName` are the widget halves of
+  `verifyTurnstile`'s options, and why each pair must be set together is [`INPUT_VALIDATION.md`][iv-4a] §4a's. A value outside
+  `TURNSTILE_ACTION_PATTERN` or `TURNSTILE_CDATA_PATTERN` is **reported and still forwarded**, so the server stays the one enforcement point.
+  **One predicate decides both htmx seams — the `htmx:config:request` hold and the `htmx:finally:request` reset — by testing the element htmx
+  issued the request from**, so a descendant field's own request is neither held nor reset and cannot burn the single-use token. **The test is
+  structural because the answered URL cannot bear it**: a redirect leaves `responseURL` naming a URL the form never declared.
+- **Self-healing token, with expiry and timeout left to Cloudflare.** The token resets whenever one of the form's own requests ends — a success, an
+  error status or a network failure; the form clears only on a 2xx. No `expired-callback` or `timeout-callback` is wired — `refresh-expired` and
+  `refresh-timeout` both default to `auto`, so a `reset()` of forge's own would be redundant at best and a second challenge at worst.
+- **Fails visible, and the message comes back down.** Two message slots, each overridable by prop: the general one (`children`) and an `unsupported`
+  sibling for the one cause the general text misleads on — a browser Turnstile cannot run, where "disable your ad blocker" is advice the visitor
+  cannot act on. **Those slots, and not one per cause**, because the text is the app's and the controller cannot invent English of its own. `retry`
+  defaults to `auto`, so a transient fault the widget then solves takes its own message back down.
+- **A theme flip re-renders the widget, but never at the cost of a solved token.** Once a token has been issued the widget keeps the colour it
+  rendered in, rather than making the visitor pay for a second challenge to change a colour. It observes the `dark` class deliberately —
+  `ui/chrome`'s theme signal would be a cross-namespace dependency ([`NAMESPACE_DESIGN.md`][nd-3] §3).
+
+### 2g. Turnstile — Submit Mode Holds the Press
+
+- **When the challenge runs is a second axis, and `challenge="submit"` is the opt-in.** `load` decides when the script is fetched, `challenge` when
+  the challenge runs. The default `"render"` starts the single-use token ageing at mount — right for a short form, wrong for one that outlives the
+  token, where a backgrounded tab can miss the auto-refresh and hand siteverify a `timeout-or-duplicate`. `"submit"` runs exactly one challenge at
+  the press, from `htmx:config:request`; it is opt-in because render-time is the prevalent configuration. `appearance` stays independent, as
+  Cloudflare treats it — pair `challenge="submit"` with `appearance="interaction-only"`.
+- **In submit mode the press is deferred, for a bounded window that always ends, and never on a widget that cannot answer.** The submitter is marked
+  `disabled` and `aria-busy` for the window, since htmx's own indicators start only once the request is issued. **The hold is conditional on widget
+  health**: a render that threw, a pre-press `error-callback` or a script that never loaded lets the press through unheld for `verifyTurnstile` to
+  refuse, rather than sitting disabled for `TURNSTILE_EXECUTE_TIMEOUT_MS`. **An interactive challenge swaps the budget rather than standing it
+  down** — the busy state drops while the reader is asked to click, and the window becomes `TURNSTILE_INTERACTIVE_TIMEOUT_MS`, well inside the
+  token's life. **On failure the held request is dropped rather than issued**: a tokenless POST answers with a refusal naming the schema's first
+  field, which reads as a validation error the reader cannot act on. The fallback is revealed and a second press retries.
+- **The press is held at `htmx:config:request` and replayed when the token arrives.** The controller cancels htmx's request and records the control
+  pressed; on the token it dispatches the press again — a `submit` carrying that control as its submitter for a form, a `click` for a control — and
+  the replayed press goes through because the token input is now filled. **Holding inside htmx's request instead would fail on each count**: htmx
+  has collected the body before any hook runs, so the token would have to be patched into it; htmx's own request timeout would race the interactive
+  window; and htmx's per-element request queue would break last press wins.
+
+### 2h. Turnstile — What Submit Mode Does Not Hold
+
+- **An invalid form spends no challenge wherever htmx halts it, and forge runs no validity check of its own.** htmx validates a form before
+  `htmx:config:request` fires, so a press it halts never reaches the hold. **On a `novalidate` form, a button-issued submission, or a press whose
+  control carries `formnovalidate`, an invalid press therefore spends a challenge** — htmx sends the request either way.
+- **A form whose own `hx-trigger` names some other event is not supported in submit mode.** Its press is held like any other, but the replay issues
+  only a `submit` or a `click`, which that form does not listen for — so the press is never sent. The replay is deliberately not generalised to an
+  arbitrary trigger.
+- **Last press wins, because each replay carries its own submitter, and every dropped press is reported.** A second press displaces the first and
+  re-arms the window but rides the challenge in flight, so one press stays one challenge, and the replay carries the second press's control alone —
+  answering with the first would send one button's `name=value` under the other's press. Every hold that ends without a request dispatches
+  `TURNSTILE_ABANDONED_EVENT` on the **form**, bubbling and not cancelable, its detail a `TurnstileAbandonedDetail`; the submitter is un-busied
+  before dispatch so a handler that focuses it finds a live target. It deliberately carries no way to release the held press: reviving it is the
+  tokenless POST the drop exists to prevent. Teardown is the one silent exception, since it runs mid-swap into a page already going away.
+- **Submit mode needs an htmx submission, and refuses without one.** A form with no htmx request attribute — a verb or `hx-action` — fires no
+  `htmx:config:request` and has no request to hold, so the controller reports the authoring error and falls back to `challenge="render"` — a
+  degraded form, never a dead submit button.
 
 ### 2i. `openPopoverAt` — Coordinate Placement
 
@@ -451,7 +465,7 @@ the runtime's listeners and the server's emitted `data-on-*` attributes, so addi
 
 **One further delegated listener bridges native Invoker Commands, and it is not another entry in that vocabulary.** It routes **only custom
 commands** — those whose name begins with `--` — and leaves the platform's built-ins entirely to the platform, which is what the markup-only menu of
-[`UI_SSR_COMPONENTS.md`][usc-1h] §1h depends on. The invoker enters the same handler table a `data-on-*` action does, so the server writes no new
+[`UI_SSR_COMPONENTS.md`][usc-3a] §3a depends on. The invoker enters the same handler table a `data-on-*` action does, so the server writes no new
 attribute. **That listener must be capture-phase**, and that is the platform's constraint rather than a preference: `command` is dispatched with
 `bubbles: false`, so a bubble-phase delegated listener never sees it and every custom invoker action goes dead — silently, because the invoker
 still fires and the platform still ignores a command it does not know.
@@ -531,6 +545,6 @@ is described by its namespace's README ([`NAMESPACES.md`][namespaces-3a] §3a).
 [sh-3]: ./SECURITY_HARDENING.md#3-cors-and-origin-protection
 [usc]: ./UI_SSR_COMPONENTS.md
 [usc-1a]: ./UI_SSR_COMPONENTS.md#1a-dropped-and-unsanitized-pass-through-attributes
-[usc-1h]: ./UI_SSR_COMPONENTS.md#1h-overlays-and-disclosures
 [usc-1o]: ./UI_SSR_COMPONENTS.md#1o-announcer--the-one-live-region
 [usc-2d]: ./UI_SSR_COMPONENTS.md#2d-scoped-components-require-the-client-scope-import
+[usc-3a]: ./UI_SSR_COMPONENTS.md#3a-platform-overlays-never-re-created-in-javascript

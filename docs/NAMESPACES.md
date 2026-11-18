@@ -31,7 +31,7 @@ audience: internal
 - §4c Foundational Primitive Namespaces: `result`, `crypto/primitives`, `context` and `validation` sit below the split
 - §5 Growth Rules: where a new concern belongs
 - §5a security — Transport-Layer Hardening Only: what goes to `auth` instead
-- §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, and the deliberate `ui/controls` shadowing
+- §5b ui/core — SSR Components Only: the server/browser split with `ui/client`, one flat barrel, and the deliberate `ui/controls` shadowing
 - §5c app — Bootstrap and Pipeline Builders: the third-builder trigger and what counts toward it
 - §5d http — Responses, Headers and Paths: the canonical home for what a handler sends, and why escaping is not part of it
 - §5e Exported Factory and Type Naming Convention: `create*`, `resolve*`, and type suffixes
@@ -137,12 +137,8 @@ is written.
 
 ### 4a. Leaf Namespace Rules
 
-A namespace is **leaf** when it imports only from its own `src/{name}/` directory, external npm packages, Web APIs, and the foundational primitives
-of §4c — **zero other cross-namespace forge imports.**
-
-**Which namespaces are leaf is declared in `config/namespaces.ts` (`LEAF`), not here.** That file is authoritative for the graph, and this document
-enumerates none of it — the reasoning for that inversion is stated at the head of the file, and `validate-namespace-graph` fails the enumeration's
-return anywhere in this document. What stays here is why a classification holds, which is the part prose is better at.
+The leaf rule is [`NAMESPACE_DESIGN.md`][nd-3a] §3a's, with §4c's primitives standing in for the canon's. **forge declares which namespaces
+are leaf in `config/namespaces.ts` (`LEAF`)**, and `validate-namespace-graph` fails an enumeration of it anywhere in this document.
 
 **A directory is a namespace only when it owns an export subpath.** `src/tooling/root/` has none — it is the `forge` binary's assembly and nothing
 imports it — so it belongs to no namespace and contributes no edges. Classifying by directory instead of by subpath reports namespaces the package
@@ -238,8 +234,12 @@ This is forge's map of the concerns [`BOUNDARIES.md`][boundaries-2b] §2b routes
 
 ### 5b. ui/core — SSR Components Only
 
-`ui/core` contains SSR JSX components; client behaviour lives in `ui/client`. If the component count exceeds ~25, introduce sub-barrels
-(`ui/core/form/mod.ts`) but keep the export path stable.
+`ui/core` contains SSR JSX components; client behaviour lives in `ui/client`.
+
+**`ui/core` keeps one flat barrel at any component count, a local departure from [`NAMESPACE_DESIGN.md`][nd-5c] §5c.** The canon names a
+component count as a trigger for sub-barrels, because past it a barrel stops being scannable. forge declines that trigger for `ui/core`: its barrel
+is one export line per component file, with that component's types beside it, so a reader finds a component by searching for its name at any
+count, and splitting it would add a level to scan without changing what a consumer imports.
 
 **`ui/controls` intentionally shadows the `ui/core` control names** — `Input` and its siblings are exported from both, unbound from `ui/core` and
 bound from `ui/controls`. **The collision is by design; do not rename either side.**
@@ -247,23 +247,17 @@ bound from `ui/controls`. **The collision is by design; do not rename either sid
 **Rule: a module must import a given control name from exactly one of those barrels, never both.** The mechanism is in
 [`UI_SSR_COMPONENTS.md`][usc].
 
-**Growth rulings on the second-tier primitives** (the daisyUI set):
+**Growth rulings on the second-tier primitives** (the daisyUI set) — the candidates declined, and the one absorbed into an existing export:
 
 | Candidate | Ruling | Why |
 | --- | --- | --- |
-| `Timeline` | **shipped** | Markup-only: an `<ol>` of steps with a rule between them is `Steps` on the vertical axis plus a time column, and no controller. Shipped as `ui/core` `Timeline`. |
-| `Carousel` | **shipped** | Markup-only on `scroll-snap`; the platform scrolls, forge supplies the strip, the snap points and the `Pagination`-shaped dot row. Shipped as `ui/core` `Carousel`. |
 | `List` | **rejected** | A `<ul>` with `divide-y` and `Stat`/`Card` rows is already expressible; a component would be a class string with a name, which is what the `@utility` layer is for, not `ui/core`. |
 | `Rating` | **rejected** | It is a `RadioGroup` whose items paint a glyph — a skin, not a primitive. A consumer composes `RadioGroup.Item` with an `Icon`; the corpus shows the composition instead of shipping it. |
 | `Swap` | **rejected** | A `Toggle` whose two children swap on `:has(:checked)`; the `Toggle` already carries the state hook, so the swap is two `group-has-[:checked]:` utilities on the consumer's children. |
 | `RadialProgress` | **rejected** | A conic-gradient over `<progress>` semantics has no accessible value beyond what `Progress`/`Meter` already announce, and a SVG ring would be the first canvas-style drawing in `ui/core`. |
 | `Calendar` | **rejected** | Needs a client controller, locale and calendar-system handling, and keyboard grid navigation — an application-layer widget, out of scope for the primitive set before v1.0.0. |
-| `Stack` | **shipped** | Not a `List`-style class string: the fanned offset is a transform recipe per `placement` kept in one home, and `data-placement` is already a structural attribute. Markup-only `ui/core` `Stack`. |
-| `Dock` | **shipped** | `ui/chrome`, beside `Navbar`: a fixed bottom bar of three to five destinations on the same `resolveHref` and `icon` contract; markup-only, the current item is `aria-current="page"` plus `data-selected`. |
-| `Filter` | **shipped** | Not a `RadioGroup` skin: the hide-siblings-on-check plus reset composition is `:has()` CSS a consumer would get wrong. A `ToggleGroup type="single"` sibling in `ui/core`: markup, plus the `filter` scope `ui/core/client` registers to turn its reset into a clear. |
-| `OtpInput` | **shipped** | One native `<input autocomplete="one-time-code">` painted as cells by an `@utility` — one field, one value, native paste and autofill. Its one controller reduces an edit to the field's digits, and the server's `formDigits()` stays authoritative, so the no-script render submits the same code. A per-cell input array is rejected: it assembles its value client-side. Bound variant in `ui/controls`. |
 | `SpeedDial` | **rejected** | A floating action button earns its place only on a screen with no toolbar and no header primary, which the primitive set does not target, and its `asChild` action could not close the panel because invoker commands are button-only. A consumer composes `Popover` with `Button` rows instead. |
-| `Megamenu` | **shipped as `Navbar` growth** | Not a new export: a `NavMegaMenu` item renders as a wide `Popover` of `NavGroup` columns, which hold links and slots, beside a disclosure twin for the collapsed panel. `role="menu"` is wrong for a block of links, so it is `Popover` plus `<nav>`, not `core/Menu`. |
+| `Megamenu` | **`Navbar` growth, not an export** | Not a new export: a `NavMegaMenu` item renders as a wide `Popover` of `NavGroup` columns, which hold links and slots, beside a disclosure twin for the collapsed panel. `role="menu"` is wrong for a block of links, so it is `Popover` plus `<nav>`, not `core/Menu`. |
 
 The marketing and effect set (hero, footer, mockups, mask, hover-3D, hover gallery, aura, text rotate, countdown, diff, chat bubble) is app-level
 composition, not a primitive, and is ruled out as a class.
@@ -287,22 +281,11 @@ renderer produces, and `safeRedirectPath` strips the same control characters `sa
 
 ### 5e. Exported Factory and Type Naming Convention
 
-**Factories use the `create*` prefix — never `make*`** (`createApp`, `createSecurityHeaders`, `createD1Client`). **Request-time binding accessors
-use `resolve*`** (`resolveKVStore`, `resolveObjectStore`). **Declarative handler configs use `define*`** (`definePage`, `defineAction`).
-
-`ok` / `err` are the one documented exception ([`FORGE_ERRORS.md`][eh-1a] §1a).
-
-Exported option and shape types take a suffix chosen by what the type _is_:
-
-| Suffix | Meaning | Examples |
-| --- | --- | --- |
-| `*Config` | Validated/resolved **data shape**, typically schema-backed | `CsrfConfig`, `AssetsConfig`, `BaseUrlConfig` |
-| `*Options` | **Behaviour configuration** passed to a factory or middleware | `SecurityHeadersOptions`, `KVStoreOptions`, `RateLimitOptions` |
-| `*Definition` | **Declarative handler/component shape** consumed by a builder | `PageDefinition`, `ActionDefinition`, `NavDefinition` |
-| `*Descriptor` / `*Def` | Fine-grained declarative **member shapes** within a definition | `ConfigDescriptor`, `FieldDescriptor`, `FlagDef`, `BindingDef` |
-
-**A declarative shape must not be named `*Config`** (that suffix implies validated env/data), and **behaviour knobs must not be named `*Config` or
-`*Definition`.**
+The verbs are [`CODE_RULES.md`][cr-1d] §1d's and the type suffixes [`NAMESPACE_DESIGN.md`][nd-4b] §4b's. forge's instances, for matching a
+new name against: factories `createApp`, `createSecurityHeaders`, `createD1Client`; accessors `resolveKVStore`, `resolveObjectStore`; declarative
+configs `definePage`, `defineAction`; `*Config` `AssetsConfig`, `SiteConfig`; `*Options` `SecurityHeadersOptions`, `RateLimitOptions`;
+`*Definition` `PageDefinition`, `NavDefinition`; `*Descriptor` / `*Def` `FieldDescriptor`, `FlagDef`. `ok` / `err` are the documented exception
+([`FORGE_ERRORS.md`][eh-1a] §1a).
 
 **An adapter is named by the contract it fulfils; the backing is the argument's type.** `createUserStore(db: D1Client)` is the spelling, never
 `createD1UserStore`. `createD1Client` is product-named because it wraps D1's own API; an adapter wraps a forge contract, and the product beneath it
@@ -557,7 +540,7 @@ register the documents it governs at all: a list disagrees with the directory it
 `canon/libs/` is where it would be portable to — but it has been measured against exactly one corpus, forge's. It is promoted to the canon when a
 second repository needs it.
 
-[ag-5c]: ../warden/canon/shared/AGENT_GUIDE.md#5c-the-agent-roster-is-reconciled-both-ways
+[ag-5c]: ../warden/canon/shared/AGENT_GUIDE.md#5c-no-document-register-agents-and-the-review-skill-are-reconciled
 [ap-2c]: ./ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
 [boundaries-1]: ../warden/canon/libs/BOUNDARIES.md#1-ssr-versus-browser--the-hard-runtime-boundary
 [boundaries-2a]: ../warden/canon/libs/BOUNDARIES.md#2a-what-belongs-at-the-transport-layer
@@ -567,6 +550,7 @@ second repository needs it.
 [bt-2n]: ./BUILD_TOOLING.md#2n-a-node-reached-export-is-declared-under-forgenode
 [cf-readme]: ../src/tooling/cf/README.md#running-the-app-locally
 [cr]: ../warden/canon/shared/CODE_RULES.md
+[cr-1d]: ../warden/canon/shared/CODE_RULES.md#1d-factory-verbs-and-bare-constructors
 [cr-7]: ../warden/canon/shared/CODE_RULES.md#7-name-distinctiveness-rule
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-1]: ./FORGE_ERRORS.md#1-result-monad
@@ -577,9 +561,12 @@ second repository needs it.
 [nd-1]: ../warden/canon/libs/NAMESPACE_DESIGN.md#1-barrel-rules-and-export-discipline
 [nd-2]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2-no-sibling-barrel-import-rule
 [nd-2c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#2c-granting-an-exemption
+[nd-3a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3a-leaf-namespace-rules
 [nd-3b]: ../warden/canon/libs/NAMESPACE_DESIGN.md#3b-integration-namespace-rules
+[nd-4b]: ../warden/canon/libs/NAMESPACE_DESIGN.md#4b-option-and-shape-type-suffixes
 [nd-5]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5-when-to-add-a-new-namespace
 [nd-5a]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5a-criteria-for-a-new-namespace
+[nd-5c]: ../warden/canon/libs/NAMESPACE_DESIGN.md#5c-extraction-triggers
 [ram-2d]: ./ROUTING_AND_MIDDLEWARE.md#2d-the-shared-submission-pipeline
 [relax-readme]: ../src/relax/README.md
 [sh-8]: ./SECURITY_HARDENING.md#8-secret-strength--one-rule-for-every-secret

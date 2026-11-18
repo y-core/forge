@@ -30,7 +30,7 @@ description: "How docs/ documents are structured, numbered, sized, cross-referen
 - §5 Cross-Reference Format: how documents point at each other
 - §5a Inter-Document Links: reference-style links, defined once, anchored on the cited section
 - §5b Intra-Document Section References: the `§N` shorthand
-- §5c The Agent Roster Is Reconciled Both Ways: no document register, but every agent named exists, and the review skill is named
+- §5c No Document Register; Agents and the Review Skill Are Reconciled: every agent `CLAUDE.md` names exists, and every one defined is named
 - §5d Crossing the Governance Boundary: which direction a link may run
 - §6 Document Size and Scope: what belongs in a governing document at all
 - §6a Size Targets and the Split-or-Cut Threshold: 200–600 target, 800 hard fail
@@ -226,7 +226,7 @@ Within one document, use the `§N` shorthand inline:
 The export validation rule (§3f) interacts with the barrel rules (§3a).
 ```
 
-### 5c. The Agent Roster Is Reconciled Both Ways
+### 5c. No Document Register; Agents and the Review Skill Are Reconciled
 
 **A governing document is not registered anywhere.** Warden indexes the corpus and serves it, so a document is found by asking a question —
 registering it in a hand-maintained table would add a list that can disagree with the directory it describes, to solve a problem search already

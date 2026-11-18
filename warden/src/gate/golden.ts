@@ -67,6 +67,9 @@ export const GOLDEN: readonly GoldenQuery[] = [
   { query: "can I put the API key in the finding", expect: "canon:AGENT_WORKFLOW.md#7", within: 4, dimension: "prohibition" },
   { query: "the requested scope is what I deliver", expect: "canon:AGENT_WORKFLOW.md#1a", dimension: "procedure" },
   { query: "when does a sub-agent earn its cost", expect: "canon:AGENT_WORKFLOW.md#4a", dimension: "rationale" },
+  { query: "can I commit my changes", expect: "canon:AGENT_WORKFLOW.md#4b", dimension: "prohibition" },
+  { query: "should I use a subagent", expect: "canon:AGENT_WORKFLOW.md#4a", dimension: "rationale" },
+  { query: "can I bun add a new package", expect: "canon:AGENT_WORKFLOW.md#1", dimension: "prohibition" },
 
   { query: "response length and proportion", expect: "canon:PLAIN_LANGUAGE.md#8", dimension: "procedure" },
   { query: "do not narrate each step", expect: "canon:PLAIN_LANGUAGE.md#9", dimension: "prohibition" },
@@ -82,7 +85,7 @@ export const GOLDEN: readonly GoldenQuery[] = [
   { query: "csrf token field", expect: "project:docs/INPUT_VALIDATION.md#3a", within: 4, dimension: "procedure" },
   { query: "route map and controller", expect: "project:docs/ROUTING_AND_MIDDLEWARE.md#1b", within: 4, dimension: "rationale" },
   { query: "mount controller disposer contract", expect: "project:docs/UI_CLIENT_RUNTIME.md#2d", dimension: "procedure" },
-  { query: "may a verification step be skipped", expect: "canon:TESTING.md#6a", dimension: "prohibition" },
+  { query: "may a verification step be skipped", expect: "canon:TESTING.md#6e", dimension: "prohibition" },
   { query: "cli commands are values", expect: "project:docs/BUILD_TOOLING.md#1a", dimension: "rationale" },
 
   { query: "how many comments am I allowed to write", expect: "canon:CODE_RULES.md#5a", dimension: "prohibition" },

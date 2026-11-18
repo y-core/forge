@@ -243,4 +243,4 @@ threshold rather than arguing the instance.
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
 [la]: ./LIBRARY_ARCHITECTURE.md
 [la-1d]: ./LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
-[testing-2a]: ./TESTING.md#2a-test-file-naming-convention
+[testing-2a]: ./TESTING.md#2a-which-files-get-a-test-and-the-naming-convention

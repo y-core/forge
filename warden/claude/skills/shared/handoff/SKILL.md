@@ -4,6 +4,7 @@ description: >
   Hand finished work to the forge-review session — check the tasks are in review, then ring the
   reviewer's doorbell over SendMessage. Use after moving work to `review`. Takes task ids, an epic
   or a wave, and defaults to what this session just moved.
+argument-hint: "[task-ids|epic|wave]"
 ---
 
 # Handoff

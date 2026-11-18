@@ -479,7 +479,7 @@ Mark each item in your own nav definition with the tokens that may see it — `f
 item marked for members does not vanish for them. Which items carry which tokens is yours to decide.
 
 **Marking an item does not gate the route.** `filters` only decides what the bar paints — the item's `href` is in the delivered HTML whatever the
-viewer holds. The destination still needs its own guard (`requireSignedIn`, `requireAdmin`).
+viewer holds. The destination still needs its own guard (`requireAuth`, `requireAdmin`).
 
 `authNav` returns a **factory**, so call it at module scope and reuse the resolver it hands back per request: the signing key is then imported per
 isolate rather than on every render. It reads the identity off `authCtx`, so `resolveAuth` or a `requireAuth` must run before the layout renders.

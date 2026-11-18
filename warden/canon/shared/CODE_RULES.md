@@ -182,7 +182,8 @@ flag when a response must enumerate every error.
 
 ## 4. Testability Rule
 
-**Every source file has a co-located test file, and dependencies are faked rather than mocked.** `TESTING.md` §2 and §4 own both rules.
+**Source with logic is tested, and dependencies are faked rather than mocked.** Which files need a test and where it sits differ between a library
+and an application, so `TESTING.md` §2 owns placement and §4 owns fakes.
 
 ### 4a. No Globals to Mock
 
@@ -206,8 +207,8 @@ continuously; the comment's value is paid once, at most.
 named intermediate. Naming and convention done well leave no compelling reason for prose that regurgitates what is already evident. §7 is what makes
 that possible, and §7a states the pairing from the naming end.
 
-**Be draconian.** A second, third or fourth layer saying the same thing goes, unless it clarifies something that cannot be expressed any other way.
-Duplicated prose promotes confusion and stale references on top of the debt it already is.
+**A restatement goes.** A second layer of prose saying what the code or another comment already says is deleted, unless it clarifies something
+that cannot be expressed any other way. Duplicated prose promotes confusion and stale references on top of the debt it already is.
 
 ### 5a. The Entire Permitted Budget
 
@@ -253,8 +254,8 @@ const clientIp = trustedClientIp(request) ?? fallbackIp(request);
 
 ### 5b. Forbidden Outright
 
-Delete these on sight, in existing code as readily as in new code. No deprecation window, no "leave it for now" — an unbudgeted comment is removed
-in whatever change touches the file.
+Delete these from every file a change touches, in existing code as readily as in new code; there is no deprecation window. A file the change does
+not touch is outside its footprint, so what you notice there is filed as a task rather than fixed in passing (`AGENT_WORKFLOW.md` §1b).
 
 - **Multi-paragraph TSDoc.** Design rationale, alternatives weighed, history, numbered justifications, "for four reasons", "two earlier attempts
   were wrong".

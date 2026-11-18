@@ -231,7 +231,7 @@ per-request for env-dependent selection (§2d); `bindings` adds extra fields to 
 
 ### 3c. Ordering: requestId Before requestLogger
 
-`requestId()` middleware MUST run before `requestLogger` in the middleware chain so the `bindings` callback can read the already-set request ID from
+`requestId()` middleware must run before `requestLogger` in the middleware chain so the `bindings` callback can read the already-set request ID from
 context. If ordered incorrectly, `requestId` will be undefined in every log record.
 
 `applyMiddlewareChain` produces that order, along with the rest of the chain's — see [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e, which is where the

@@ -9,7 +9,7 @@ export function seedFiles(claudeRoot: string, kind: Kind): SeedFile[] {
   return [
     { file: "CLAUDE.md", from: join(dir, `CLAUDE.${kind}.md`) },
     { file: "AGENTS.md", from: join(dir, "AGENTS.md") },
-    { file: ".claude/settings.local.json", from: join(dir, "settings.local.json") },
+    { file: ".claude/settings.json", from: join(dir, "settings.json") },
   ];
 }
 

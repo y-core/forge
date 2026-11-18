@@ -42,9 +42,9 @@ whose stated subject is something else, so the reader who approves the diff has 
 
 These additions are never made unilaterally, because both bind everyone downstream:
 
-- **A runtime dependency.** Every consumer inherits it — its install size, its transitive tree, its release cadence and its vulnerabilities — and
-  removing one after it ships is a breaking change. Propose it with what it replaces and why the standard library or an existing dependency will not
-  do. A build-time or development dependency is a smaller commitment, not an exempt one.
+- **A runtime dependency, such as a new package from `bun add`.** Every consumer inherits it — its install size, its transitive tree, its release
+  cadence and its vulnerabilities — and removing one after it ships is a breaking change. Propose it with what it replaces and why the standard
+  library or an existing dependency will not do. A build-time or development dependency is a smaller commitment, not an exempt one.
 - **A new abstraction the task did not call for.** An interface, a base class or an indirection layer introduced "for later" is a shape the next
   reader must satisfy before they may change anything through it.
 
@@ -60,7 +60,7 @@ work if the guess were wrong. Scaling a task down is the requester's call, so a 
   say what you chose, and continue. Ask only when two readings lead to materially different work.
 - **State a concern in a sentence, then do the work.** If the request has a real problem, say so briefly, name the assumption you are proceeding
   under, and deliver. A concern is not a reason to stop, and a reaffirmed request is a decision.
-- **Finish every part that is not blocked.** Do not stop at the easy portion and report completion.
+- **Finish every part that is not blocked.** A part left undone is reported as undone, never folded into a report of completion.
 - **Name what you left out, and why.** Silently reducing scope is a `PLAIN_LANGUAGE.md` §3d failure — the reader cannot re-scope what they were
   not told was cut. Scaling the work down is their call.
 - **Do not exceed the scope either.** An unrequested improvement, a nearby refactor, or an extra abstraction is expensive to review and was not
@@ -132,7 +132,7 @@ Each refusal is for the failure it prevents:
 where that signal would otherwise be lost — inside a pipeline, behind a redirect, or where a command reports failure in its output and not in its
 status.
 
-**There is exactly one permitted spelling, and the repository's local Claude settings file allows exactly that one** — as an exact-string entry, not
+**There is exactly one permitted spelling, and the repository's Claude settings allow exactly that one** — as an exact-string entry, not
 a prefix wildcard. Deviating by one character is what turns a silent run into a prompt, and an allowlist carrying several variants is how the rule
 stops being a rule.
 
@@ -146,7 +146,7 @@ than discovered one prompt at a time:
 - **Braces and quotes never mix** — `"{...}"` in one word is flagged as expansion obfuscation.
 - **Prefer `${VAR}` over `$VAR`**, and keep expansions out of option-position arguments and redirect targets.
 - **No command substitution in a redirect target.** Compute the path in a prior command.
-- **One command per call.** Prefer several tool calls over one chained line.
+- **One command per call**, the §3 exit suffix aside. Prefer several tool calls over one chained line.
 - **No `IFS=` assignments, no unquoted heredoc delimiters, no `[[ ]]` regex.** Use `<<'EOF'` when a heredoc is unavoidable.
 - **Use the dedicated tools** — read, edit, write, grep and glob never touch the shell parser at all.
 - **Long or generated commands go in a script**, written to a file and run by path.
@@ -209,8 +209,10 @@ calling context. It buys nothing else, and it is not free — every sub-agent co
   a gate whose output would otherwise fill this context.
 - **Do not delegate what you can finish in a handful of tool calls.** Reading three files and answering is faster done than described to somebody
   else.
-- **Do not delegate to verify or double-check your own work.** A second agent re-reading your change is not an independent check; it is the same
-  reasoning at one remove, and it costs a full context to produce agreement. Where a mechanical check exists, run it — that is what a gate is for.
+- **Do not delegate a re-check of your own conclusion.** A subagent briefed with your reasoning and asked to confirm it is the same reasoning at
+  one remove, and it costs a full context to produce agreement. Where a mechanical check exists, run it — that is what a gate is for.
+- **An independent review is a different thing.** A reviewer that starts from the code rather than from your conclusion — the review skill, or the
+  reviewer session (§5a) — is a real second check, and this rule does not cover it.
 - **One agent where one suffices.** Two agents on one track produce two answers and a reconciliation problem.
 
 Where an agent definition names a delegation boundary of its own — what it may never delegate, where its gate runs go — that boundary is narrower
@@ -218,9 +220,9 @@ than this section and wins.
 
 ### 4b. The User Commits
 
-**The user commits, once the review has closed. An agent never commits, never asks to, and never reminds.** A commit is the user's decision about
-a tree the reviewer has finished with, and so is everything that makes one — a tag and a release included. An offer to commit is a question the
-user did not ask, and a reminder hands them a task (`PLAIN_LANGUAGE.md` §9a).
+**The user commits the changes, once the review has closed. An agent never commits, never asks to, and never reminds.** A commit is the user's
+decision about a tree the reviewer has finished with, and so is everything that makes one — a tag and a release included. An offer to commit is a
+question the user did not ask, and a reminder hands them a task (`PLAIN_LANGUAGE.md` §9a).
 
 **The agent's whole part is the full gate, sent to the runner once when an epic closes** — when the reviewer's reply leaves no task of the epic
 open, or, for tasks filed under no epic, none of the set it handed off (§5a). The verdict is the report. A red one is new work: filed as a task
@@ -249,8 +251,9 @@ The rhythm:
 - **Filing a task in any project but the connected one needs the user's permission first.** A connection is scoped to one project, and that
   project's ledger is the one the task at hand already writes to. A task landed in another project's ledger is work handed to people who did not
   ask for it, so it is asked for in the turn that files it, never assumed from an earlier approval.
-- **A task is filed only for code changes that has been thoroughly researched, designed and confirmed.** The ledger does not manage devops, setup,
-  configuration, provisioning a resource, a dashboard, DNS step, secret or a deployment.
+- **A task is filed for a code change, in the turn the work is found** (`PLAIN_LANGUAGE.md` §9a). Work whose design is not yet settled is filed as
+  a spike or a decision rather than as a change to make. The ledger does not manage devops, setup, configuration, provisioning a resource, a
+  dashboard, a DNS step, a secret or a deployment.
 
 ### 5a. The Session Handoff
 

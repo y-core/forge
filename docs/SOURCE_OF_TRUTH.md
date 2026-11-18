@@ -75,7 +75,7 @@ A fact that is stable and short â€” a naming convention, a posture, a boundary â
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
 | The database host config's fields and their defaults | `DbHostConfig` in `src/tooling/db/types.ts` |
 | The feature manifest's shape | `FeatureManifestSchema` in `src/tooling/curate/types.ts` |
-| Bash allowlist patterns, including the exit-check literal | `.claude/settings.local.json` `permissions.allow` |
+| Bash allowlist patterns, including the exit-check literal | `.claude/settings.json` `permissions.allow` |
 
 ### 2b. Enforced Rules
 

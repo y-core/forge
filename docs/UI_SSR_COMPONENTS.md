@@ -28,8 +28,7 @@ audience: consumer
 - §1e Switch and Slider — Painted Native Inputs: the `peer-*` trap, the sanitized readout and who keeps it true, the declined formatter seam
 - §1f Turnstile — Server-Rendered Mount Point: deliberate omission of auto-render
 - §1g Composite Widgets: the markers that make many focusable items one tab stop
-- §1h Overlays and Disclosures: native popover and `<details>`; the box a Trigger or Close carries; naming a panel; which opens light-dismiss;
-  how a popup's side resolves against the reader's direction
+- §1h Overlays and Disclosures: native overlays only; the rulings are §3
 - §1i Native-Input Primitive Decisions: an axis that is not an orientation, a scroll area that hijacks nothing, the bounds content-sizing needs, and
   a frame clipped rather than scrolled
 - §1j Derived Ids Must Be Id Tokens: why a whitespace-bearing `name` or `scope` derives no wiring, why suppressing won, and the reserved item values
@@ -43,6 +42,17 @@ audience: consumer
 - §2a The Binding Ownership Boundary: what forge owns in both directions, and what the app supplies
 - §2c ui/controls — Bound Variants: the static barrel, the bespoke case, and the deliberate name collision
 - §2d Scoped Components Require the Client Scope Import: the `resume()` precondition
+- §3 Overlays and Disclosures: the rulings behind every overlay and disclosure component
+- §3a Platform Overlays, Never Re-Created in JavaScript: native popover, `<dialog>` and `<details>`, and why `Tooltip` is `hint`
+- §3b An Accordion Header Is Not a Heading: the cost accepted, and what a caller does instead
+- §3c Trigger and Close Primitives Carry the sm Button Box: the Floor, `shape="icon"`, and where `asChild` is offered
+- §3d Tooltip Triggers — Naming and the Inert State: `kind="label"`, and `aria-disabled` over `disabled`
+- §3e Stamp Only What the Server Can Keep True: which overlays stamp a scope, and why open state is never stamped
+- §3f A Popup's Side and the Reader's Direction: one value space, `:dir()` selection, and the renderable subset
+- §3g Popover.Content Is Always Named: the required name and the unforwardable `role`
+- §3h A Derived Reference Needs the Caller's Assertion: `titled`, `triggered`, and the `Tabs.Content` exception
+- §3i Dialog Names, Descriptions and closedby: the caller's name first, `described`, and which surfaces light-dismiss
+- §3j Table Rows and Wide Tables: `selected` paints without announcing, the named scroller, and `pinRows`
 
 ---
 
@@ -186,124 +196,8 @@ the controller writes the same value, selecting a panel's tab on `beforematch`; 
 
 ### 1h. Overlays and Disclosures
 
-**Never re-create a platform overlay in JavaScript.** The overlays build on the native Popover API, `<dialog>` and `<details>`, so the top layer,
-light-dismiss, Escape, exclusive-open and the disclosure toggle are all the platform's and cost nothing. **`<details>` owns open and closed; mirror
-neither** — style the native `[open]`. `Menu` opens, closes and dismisses with **no JavaScript at all**, through invoker commands against a
-`popover="auto"` popup; the client adds only what ARIA's menu pattern asks for and the platform does not supply (§1g). **`Tooltip` is
-`popover="hint"` deliberately**: `auto` would put it in the platform's exclusive-open stack, so opening a tooltip would close an open menu beneath
-it. `hint` has a light-dismiss stack of its own, which is the behaviour a tooltip wants and the reason it is not `manual`. `Accordion` is not a
-composite — each item is its own disclosure and tab stop, as a native `<details>` list is.
-
-**Accept that an `Accordion` header is not a heading, and do not simulate one.** APG's Accordion wraps each header button in an element with role
-`heading` and an `aria-level`, so a reader walking headings with `H` reaches every section. A native `<summary>` cannot be given that wrapper: a
-heading around the `<details>` encloses the panel as well, making the whole section's prose part of the heading, and a heading nested _inside_ the
-`<summary>` is flattened, because the summary's role takes presentational children. The cost is real and is the one being accepted — `H` navigation
-skips the accordion, and a reader finds its sections by Tab instead, where each `<summary>` is a stop that announces its own expanded state. What
-buys it is everything §1h opens with: exclusive-open, the toggle, and correct first paint with no script. **A caller who needs `H` navigation
-renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
-did would be asserting a structure the platform contradicts.
-
-**A Trigger or Close primitive carries the `sm` button box.** `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`, `Popover.Trigger`,
-`Menu.Trigger` and a bare `Tooltip.Trigger` render `buttonBox({ size: "sm" })` — its height, padding and `focus-ring`, with a transparent border and
-none of `buttonVariants`' paint — and merge the caller's `class` through `cn`, so a caller's padding wins while the height holds the 28px Floor
-(`src/ui/design/floor.md` §1f). **An icon-only one takes `shape="icon"`**, forwarded to the box, and never a `size-*` or padding override: `size-*`
-replaces the box's width and height but not its `px-3`, which squeezes the icon. The prop is `InvokerShape`, which has no `square`: that shape's
-`h-auto` would trade the height for the parent's width. An unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each
-caller has to remember. `asChild` is not offered on any of them except `Tooltip.Trigger`, whose `asChild` keeps its child's box: no forge caller
-needs one, and a child would hand the Floor back to the caller's choice of element.
-
-**Name an icon-only trigger with `kind="label"`, never with a description.** `Tooltip.Trigger` points `aria-describedby` at its content by
-default, which is right when the trigger already has a name. An icon-only button has none but the tooltip's text, and repeating that text as an
-`aria-label` beside a description announces it twice. `kind="label"` points `aria-labelledby` at the content instead and emits no description, so
-the tooltip is the name and is read once. A label-mode trigger carrying `aria-label` or `aria-labelledby` throws, because whichever name wins, the
-other is silently dead ([`ERROR_HANDLING.md`][eh-5a] §5a).
-
-**Render an inert tooltip trigger `aria-disabled`, never `disabled`.** A natively disabled button receives no pointer events and no focus, so the
-tooltip explaining why it is unavailable could never be shown. `Tooltip.Trigger` converts `disabled`, its own or an `asChild` child's, into
-`aria-disabled="true"` with the disabled state hook; the paint stays, the stylesheet leaves the trigger slot hoverable, and the click the platform
-would still act on is cancelled by the runtime ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
-
-**Stamp no scope on an overlay whose behaviour is wholly the platform's.** `Dialog`, `Accordion` and `Collapsible` ship neither scope nor
-controller. The one exception is `Dialog`'s `openModal`: a modal has no markup spelling at all, so `showModal()` has to run on resume, and that prop
-alone stamps the dialog scope and an eager controller. It also suppresses `open`, which would otherwise render the dialog non-modal and make that
-`showModal()` throw. `Menu` and `Tooltip` stamp one because they add a keyboard layer, eager by necessity rather than taste
-([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). `Popover` stamps an eager scope on `Popover.Content` for one job: its trigger's `aria-expanded`, which the
-platform does not keep in step.
-
-**Stamp only what the server can keep true.** Placement is decided at render and fixed for the element's life, so stamp it. **Never stamp open
-state** — that asserts a fact the platform owns and the component cannot follow. The one exception is a `Popover` or `Menu` trigger's
-`aria-expanded`, which ARIA asks of the trigger. It renders `"false"`, which is true at first paint because no popover is ever server-open, and the
-eager scope moves it on every `beforetoggle` and `toggle`. Without `ui/core/client` it stays `"false"` while the popup is open. Read open state from
-the element itself: `:popover-open`, or `[open]` on a `<dialog>` or `<details>`, the one source that cannot drift. Forward an initial `open`, which
-the server genuinely sets and the platform maintains from there.
-
-**Keep physical and logical spellings in one value space.** A side is stamped at SSR, where the Worker cannot know the reader's direction, so `Side`
-carries both (`src/ui/contracts/state-attrs.ts`). Keep the physical members — a popup that must _not_ mirror needs them — and add no separate
-logical type: splitting it would let a caller hold a value the attribute cannot express.
-
-**Resolve direction with physical declarations selected by `:dir()`, never with logical CSS** (`src/ui/assets/css/forge-ui.css`). Both shorter
-spellings are wrong and both are tempting. `anchor(inline-end)` is outright invalid — `<anchor-side>` has no logical keywords. And
-`inset-inline-start: anchor(start)` parses but resolves against the **containing block's** writing mode; a top-layer popup's containing block is the
-viewport, whose direction is the root element's, so a `dir="rtl"` subtree inside an LTR document resolves to the LTR answer. `:dir()` asks the
-_tree_, which is the only thing that knows. `position-try-fallbacks` needs nothing added: `flip-inline` transforms _used_ declarations after the
-cascade settles, so `:dir()` selection happens first. Only the inline axis mirrors, so only the rows resolving on it are `:dir()`-keyed.
-
-**Name every `Popover.Content`, and never forward a `role` to it.** `role="dialog"` is `nameFrom: author`, so the type requires `label` or
-`labelledby` — one of them, not neither — and a nameless panel is a compile error rather than an `aria-dialog-name` failure in a consumer's axe run.
-`role` is not forwardable for the matching reason: `Popover.Trigger` emits a fixed `aria-haspopup="dialog"` and has no way to say otherwise, so a
-re-roled panel would leave the pair disagreeing. Reach for `Menu.Popup` for a menu-role popup — it brings a trigger that agrees with it. An
-optional name would leave every consumer's panel nameless by default, which is the defect rather than a lesser form of it.
-
-**Never emit a derived reference a rendered page might not resolve — make the caller assert the element it points at.** `Dialog` and `Drawer` take
-`titled`, and `Menu.Popup` takes `triggered`; each is the caller saying the `.Title` or the forge trigger exists, and each is the only route to the
-`${id}-title` or `${id}-trigger` reference. Every one of these roots is `nameFrom: author`, so a name has to come from somewhere, and the type makes
-that a choice rather than a default: naming nothing does not compile. **The assertion is needed because single-pass SSR cannot check it** — a
-caller's own component may render the `.Title`, and forge's invoker contract invites any `commandfor` element to open a `Menu.Popup`, so neither a
-children walk nor a document query can tell a missing element from one forge cannot see. An unconditional reference was the alternative in both
-places, and it leaves an IDREF resolving to nothing: inert under AccName, an `aria-valid-attr-value` violation in a consumer's axe run, and a panel
-with no name for a reader who enters it. **The assertion also has to be what the emission reads** — a prop the root destructures and never passes on
-leaves the derived reference unconditional, so the rule holds only on the type and evaporates under a spread of a wider object, an `as` cast or a
-`.js` consumer.
-
-**`Tabs.Content` is the one derived reference emitted unconditionally, because its target is not optional.** A tabpanel names itself from its tab
-and from nothing else, and a panel no `Tab` controls is not a panel missing a name — it is one no reader can reach at all, since a tab is the only
-thing that reveals it and it renders `hidden` until one selects it. There is no second way to name it and so nothing for an assertion to choose
-between; the defect the assertion would catch is already a broken tab set, which a reader meets as an unreachable panel rather than as a dangling
-IDREF.
-
-**Give a `<dialog>` root the caller's name where there is one, and the derived reference only on their word** (`contracts/dialog-contract.ts`).
-`Dialog` and `Drawer` take `label`, `labelledby` or `titled`, and `label` and `labelledby` suppress the `${id}-title` reference: a derived reference
-emitted beside a caller's own would name a heading they never wrote. **Point a deliberately titleless drawer's `labelledby` at its own trigger's
-id**: that is React Aria's fallback, and `Drawer.Trigger`'s `commandfor` already proves the relationship exists, in the direction SSR cannot invert.
-**Emit `aria-describedby` only on the same assertion the name takes** — the description computation _is_ a precedence table a UA must not look past,
-so a dangling one suppresses `aria-description` and `title`. `Dialog`'s `described` is that assertion, and `Dialog.Description` is the element it
-points at, derived `${id}-description` from the one id the caller wrote. `alert` renders the root `role="alertdialog"`, which is APG's Alert and
-Message Dialog: a message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel"
-hears the consequence and not the button alone.
-
-**Emit `closedby` only on a surface that can open modal.** A non-modal `open` `Dialog` or `Drawer` renders none, because `closedby="any"` on an
-open non-modal `<dialog>` closes it on any click elsewhere on the page and on Escape pressed anywhere — the reader could never type into the input
-beside it. Every other root renders `closedby="any"`, so a modal open light-dismisses on Escape or a backdrop click. **An `alert` `Dialog` renders
-`closedby="closerequest"` instead**: APG's alert dialog is dismissed from the keyboard, and a stray click on the backdrop must not discard a message
-that interrupted the reader to be read. **A dialog rendered `open` and later reopened modal by its trigger closes on Escape and not on a backdrop
-click**, because it carries no `closedby` and the platform's modal default is `closerequest`.
-
-**Project only the subset the stylesheet can render**, so an unrenderable value is unrepresentable rather than silently unstyled: `Popover.Content`
-and `Tooltip.Content` take `PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the projection tracks the value
-space it is cut from.
-
-**A `Table.Row`'s `selected` paints and does not announce, and a wide table is a named tab stop.** `aria-selected` is a supported state of role
-`row`, but it is only _meaningful_ inside a `grid` or `treegrid`; a `<tr>` in a plain `<table>` is a `row` in a `table`, which has no selection
-model to report it to, so the attribute would be inert while `data-selected` painted. APG's Table pattern is non-interactive by design and
-selectable rows are the Grid pattern, which brings a whole keyboard contract forge does not implement — so the state is a visual one and says so.
-**A caller who needs the selection announced puts a control in the row**: a checkbox in the first cell is announced natively, is operable, and is
-what a reader can act on, where an `aria-selected` on the row is neither. The scroll wrapper takes the shape `ScrollArea.Viewport` has — a named
-`<section>` that is an unconditional tab stop — because a browser makes an overflowing scroller focusable only when it holds nothing focusable, and
-Safari not at all, so a wide table of plain text would otherwise be unscrollable from the keyboard (WCAG 2.1.1). That is why `Table` requires
-`label`. `zebra` stripes skip a row carrying `selected` or a tone, so the stripe never hides either. **Under `pinRows` the wrapper inherits the
-`max-height` of its direct parent and nothing else**, and that inherited limit is what makes the wrapper the scroller the header sticks to. A
-parent sized with `height` alone, or a `max-height` set on a grandparent, leaves the wrapper at `max-height: none`: it grows to the table's height,
-never scrolls, and the header scrolls away with the page.
+**Overlays build on the native Popover API, `<dialog>` and `<details>`, never on a JavaScript re-creation.** The rulings that follow from it — the
+trigger box, naming, open state, direction, dialog dismissal and tables — are §3, one subsection each.
 
 ### 1i. Native-Input Primitive Decisions
 
@@ -487,6 +381,149 @@ Some `ui/core` components render a **resumable scope**, whose behaviour wakes on
 
 Without it the markup still renders but no handler is registered, so **`resume()` warns on every `data-scope` it finds unregistered. Treat that
 warning as a missing client-entry import or a scope-name typo — never as an expected runtime condition.**
+
+---
+
+## 3. Overlays and Disclosures
+
+### 3a. Platform Overlays, Never Re-Created in JavaScript
+
+**Never re-create a platform overlay in JavaScript.** The overlays build on the native Popover API, `<dialog>` and `<details>`, so the top layer,
+light-dismiss, Escape, exclusive-open and the disclosure toggle are all the platform's and cost nothing. **`<details>` owns open and closed; mirror
+neither** — style the native `[open]`. `Menu` opens, closes and dismisses with **no JavaScript at all**, through invoker commands against a
+`popover="auto"` popup; the client adds only what ARIA's menu pattern asks for and the platform does not supply (§1g). **`Tooltip` is
+`popover="hint"` deliberately**: `auto` would put it in the platform's exclusive-open stack, so opening a tooltip would close an open menu beneath
+it. `hint` has a light-dismiss stack of its own, which is the behaviour a tooltip wants and the reason it is not `manual`. `Accordion` is not a
+composite — each item is its own disclosure and tab stop, as a native `<details>` list is.
+
+### 3b. An `Accordion` Header Is Not a Heading
+
+**Accept that an `Accordion` header is not a heading, and do not simulate one.** APG's Accordion wraps each header button in an element with role
+`heading` and an `aria-level`, so a reader walking headings with `H` reaches every section. A native `<summary>` cannot be given that wrapper: a
+heading around the `<details>` encloses the panel as well, making the whole section's prose part of the heading, and a heading nested _inside_ the
+`<summary>` is flattened, because the summary's role takes presentational children. The cost is real and is the one being accepted — `H` navigation
+skips the accordion, and a reader finds its sections by Tab instead, where each `<summary>` is a stop that announces its own expanded state. What
+buys it is everything §3a sets out: exclusive-open, the toggle, and correct first paint with no script. **A caller who needs `H` navigation
+renders their own heading before each `Accordion.Item`** rather than inside its trigger, and forge neither emits nor simulates one; a component that
+did would be asserting a structure the platform contradicts.
+
+### 3c. Trigger and Close Primitives Carry the `sm` Button Box
+
+**A Trigger or Close primitive carries the `sm` button box.** `Dialog.Trigger`, `Dialog.Close`, `Drawer.Trigger`, `Drawer.Close`, `Popover.Trigger`,
+`Menu.Trigger` and a bare `Tooltip.Trigger` render `buttonBox({ size: "sm" })` — its height, padding and `focus-ring`, with a transparent border and
+none of `buttonVariants`' paint — and merge the caller's `class` through `cn`, so a caller's padding wins while the height holds the 28px Floor
+(`src/ui/design/floor.md` §1f). **An icon-only one takes `shape="icon"`**, forwarded to the box, and never a `size-*` or padding override: `size-*`
+replaces the box's width and height but not its `px-3`, which squeezes the icon. The prop is `InvokerShape`, which has no `square`: that shape's
+`h-auto` would trade the height for the parent's width. An unstyled primitive is a button 24px tall, and a box left to every caller is a Floor each
+caller has to remember. `asChild` is not offered on any of them except `Tooltip.Trigger`, whose `asChild` keeps its child's box: no forge caller
+needs one, and a child would hand the Floor back to the caller's choice of element.
+
+### 3d. Tooltip Triggers — Naming and the Inert State
+
+**Name an icon-only trigger with `kind="label"`, never with a description.** `Tooltip.Trigger` points `aria-describedby` at its content by
+default, which is right when the trigger already has a name. An icon-only button has none but the tooltip's text, and repeating that text as an
+`aria-label` beside a description announces it twice. `kind="label"` points `aria-labelledby` at the content instead and emits no description, so
+the tooltip is the name and is read once. A label-mode trigger carrying `aria-label` or `aria-labelledby` throws, because whichever name wins, the
+other is silently dead ([`ERROR_HANDLING.md`][eh-5a] §5a).
+
+**Render an inert tooltip trigger `aria-disabled`, never `disabled`.** A natively disabled button receives no pointer events and no focus, so the
+tooltip explaining why it is unavailable could never be shown. `Tooltip.Trigger` converts `disabled`, its own or an `asChild` child's, into
+`aria-disabled="true"` with the disabled state hook; the paint stays, the stylesheet leaves the trigger slot hoverable, and the click the platform
+would still act on is cancelled by the runtime ([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c).
+
+### 3e. Stamp Only What the Server Can Keep True
+
+**Stamp no scope on an overlay whose behaviour is wholly the platform's.** `Dialog`, `Accordion` and `Collapsible` ship neither scope nor
+controller. The one exception is `Dialog`'s `openModal`: a modal has no markup spelling at all, so `showModal()` has to run on resume, and that prop
+alone stamps the dialog scope and an eager controller. It also suppresses `open`, which would otherwise render the dialog non-modal and make that
+`showModal()` throw. `Menu` and `Tooltip` stamp one because they add a keyboard layer, eager by necessity rather than taste
+([`UI_CLIENT_RUNTIME.md`][ucr-3c] §3c). `Popover` stamps an eager scope on `Popover.Content` for one job: its trigger's `aria-expanded`, which the
+platform does not keep in step.
+
+**Stamp only what the server can keep true.** Placement is decided at render and fixed for the element's life, so stamp it. **Never stamp open
+state** — that asserts a fact the platform owns and the component cannot follow. The one exception is a `Popover` or `Menu` trigger's
+`aria-expanded`, which ARIA asks of the trigger. It renders `"false"`, which is true at first paint because no popover is ever server-open, and the
+eager scope moves it on every `beforetoggle` and `toggle`. Without `ui/core/client` it stays `"false"` while the popup is open. Read open state from
+the element itself: `:popover-open`, or `[open]` on a `<dialog>` or `<details>`, the one source that cannot drift. Forward an initial `open`, which
+the server genuinely sets and the platform maintains from there.
+
+### 3f. A Popup's Side and the Reader's Direction
+
+**Keep physical and logical spellings in one value space.** A side is stamped at SSR, where the Worker cannot know the reader's direction, so `Side`
+carries both (`src/ui/contracts/state-attrs.ts`). Keep the physical members — a popup that must _not_ mirror needs them — and add no separate
+logical type: splitting it would let a caller hold a value the attribute cannot express.
+
+**Resolve direction with physical declarations selected by `:dir()`, never with logical CSS** (`src/ui/assets/css/forge-ui.css`). Both shorter
+spellings are wrong and both are tempting. `anchor(inline-end)` is outright invalid — `<anchor-side>` has no logical keywords. And
+`inset-inline-start: anchor(start)` parses but resolves against the **containing block's** writing mode; a top-layer popup's containing block is the
+viewport, whose direction is the root element's, so a `dir="rtl"` subtree inside an LTR document resolves to the LTR answer. `:dir()` asks the
+_tree_, which is the only thing that knows. `position-try-fallbacks` needs nothing added: `flip-inline` transforms _used_ declarations after the
+cascade settles, so `:dir()` selection happens first. Only the inline axis mirrors, so only the rows resolving on it are `:dir()`-keyed.
+
+**Project only the subset the stylesheet can render**, so an unrenderable value is unrepresentable rather than silently unstyled: `Popover.Content`
+and `Tooltip.Content` take `PhysicalSide`, the named member of `Side` rather than a literal union of their own, so the projection tracks the value
+space it is cut from.
+
+### 3g. `Popover.Content` Is Always Named
+
+**Name every `Popover.Content`, and never forward a `role` to it.** `role="dialog"` is `nameFrom: author`, so the type requires `label` or
+`labelledby` — one of them, not neither — and a nameless panel is a compile error rather than an `aria-dialog-name` failure in a consumer's axe run.
+`role` is not forwardable for the matching reason: `Popover.Trigger` emits a fixed `aria-haspopup="dialog"` and has no way to say otherwise, so a
+re-roled panel would leave the pair disagreeing. Reach for `Menu.Popup` for a menu-role popup — it brings a trigger that agrees with it. An
+optional name would leave every consumer's panel nameless by default, which is the defect rather than a lesser form of it.
+
+### 3h. A Derived Reference Needs the Caller's Assertion
+
+**Never emit a derived reference a rendered page might not resolve — make the caller assert the element it points at.** `Dialog` and `Drawer` take
+`titled`, and `Menu.Popup` takes `triggered`; each is the caller saying the `.Title` or the forge trigger exists, and each is the only route to the
+`${id}-title` or `${id}-trigger` reference. Every one of these roots is `nameFrom: author`, so a name has to come from somewhere, and the type makes
+that a choice rather than a default: naming nothing does not compile. **The assertion is needed because single-pass SSR cannot check it** — a
+caller's own component may render the `.Title`, and forge's invoker contract invites any `commandfor` element to open a `Menu.Popup`, so neither a
+children walk nor a document query can tell a missing element from one forge cannot see. An unconditional reference was the alternative in both
+places, and it leaves an IDREF resolving to nothing: inert under AccName, an `aria-valid-attr-value` violation in a consumer's axe run, and a panel
+with no name for a reader who enters it. **The assertion also has to be what the emission reads** — a prop the root destructures and never passes on
+leaves the derived reference unconditional, so the rule holds only on the type and evaporates under a spread of a wider object, an `as` cast or a
+`.js` consumer.
+
+**`Tabs.Content` is the one derived reference emitted unconditionally, because its target is not optional.** A tabpanel names itself from its tab
+and from nothing else, and a panel no `Tab` controls is not a panel missing a name — it is one no reader can reach at all, since a tab is the only
+thing that reveals it and it renders `hidden` until one selects it. There is no second way to name it and so nothing for an assertion to choose
+between; the defect the assertion would catch is already a broken tab set, which a reader meets as an unreachable panel rather than as a dangling
+IDREF.
+
+### 3i. Dialog Names, Descriptions and `closedby`
+
+**Give a `<dialog>` root the caller's name where there is one, and the derived reference only on their word** (`contracts/dialog-contract.ts`).
+`Dialog` and `Drawer` take `label`, `labelledby` or `titled`, and `label` and `labelledby` suppress the `${id}-title` reference: a derived reference
+emitted beside a caller's own would name a heading they never wrote. **Point a deliberately titleless drawer's `labelledby` at its own trigger's
+id**: that is React Aria's fallback, and `Drawer.Trigger`'s `commandfor` already proves the relationship exists, in the direction SSR cannot invert.
+**Emit `aria-describedby` only on the same assertion the name takes** — the description computation _is_ a precedence table a UA must not look past,
+so a dangling one suppresses `aria-description` and `title`. `Dialog`'s `described` is that assertion, and `Dialog.Description` is the element it
+points at, derived `${id}-description` from the one id the caller wrote. `alert` renders the root `role="alertdialog"`, which is APG's Alert and
+Message Dialog: a message interrupting the reader's work, named by its title and described by its text, so a reader whose focus lands on "Cancel"
+hears the consequence and not the button alone.
+
+**Emit `closedby` only on a surface that can open modal.** A non-modal `open` `Dialog` or `Drawer` renders none, because `closedby="any"` on an
+open non-modal `<dialog>` closes it on any click elsewhere on the page and on Escape pressed anywhere — the reader could never type into the input
+beside it. Every other root renders `closedby="any"`, so a modal open light-dismisses on Escape or a backdrop click. **An `alert` `Dialog` renders
+`closedby="closerequest"` instead**: APG's alert dialog is dismissed from the keyboard, and a stray click on the backdrop must not discard a message
+that interrupted the reader to be read. **A dialog rendered `open` and later reopened modal by its trigger closes on Escape and not on a backdrop
+click**, because it carries no `closedby` and the platform's modal default is `closerequest`.
+
+### 3j. `Table` Rows and Wide Tables
+
+**A `Table.Row`'s `selected` paints and does not announce, and a wide table is a named tab stop.** `aria-selected` is a supported state of role
+`row`, but it is only _meaningful_ inside a `grid` or `treegrid`; a `<tr>` in a plain `<table>` is a `row` in a `table`, which has no selection
+model to report it to, so the attribute would be inert while `data-selected` painted. APG's Table pattern is non-interactive by design and
+selectable rows are the Grid pattern, which brings a whole keyboard contract forge does not implement — so the state is a visual one and says so.
+**A caller who needs the selection announced puts a control in the row**: a checkbox in the first cell is announced natively, is operable, and is
+what a reader can act on, where an `aria-selected` on the row is neither. The scroll wrapper takes the shape `ScrollArea.Viewport` has — a named
+`<section>` that is an unconditional tab stop — because a browser makes an overflowing scroller focusable only when it holds nothing focusable, and
+Safari not at all, so a wide table of plain text would otherwise be unscrollable from the keyboard (WCAG 2.1.1). That is why `Table` requires
+`label`. `zebra` stripes skip a row carrying `selected` or a tone, so the stripe never hides either. **Under `pinRows` the wrapper inherits the
+`max-height` of its direct parent and nothing else**, and that inherited limit is what makes the wrapper the scroller the header sticks to. A
+parent sized with `height` alone, or a `max-height` set on a grandparent, leaves the wrapper at `max-height: none`: it grows to the table's height,
+never scrolls, and the header scrolls away with the page.
 
 [cr-1]: ../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
 [eh-5a]: ../warden/canon/libs/ERROR_HANDLING.md#5a-expected-errors--return-result

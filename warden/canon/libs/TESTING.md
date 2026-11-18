@@ -20,7 +20,7 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §1b No Runtime-Specific Type Package: the hard ban and the hand-written stub
 - §1c The Browser Set: real Chromium behind its own verb
 - §2 Co-Located Test Files: tests live beside their source
-- §2a Test File Naming Convention: same name, same directory, test suffix
+- §2a Which Files Get a Test, and the Naming Convention: non-trivial logic, same name, same directory, test suffix
 - §2b Excluded From Publish: tests never ship
 - §2c Import Concrete Files in Tests: never through the barrel
 - §3 Assertion Rules: exactness, and what an assertion is allowed to prove
@@ -39,11 +39,11 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §5b Negative Case Structure: assert status and body
 - §5c No Mocking of Security Primitives: a testability signal, not a mocking one
 - §6 The Verification Gate: what must pass before a task closes, and before an epic does
-- §6a One Command, Nested Tiers: which tier each moment runs, why `verify:scheduled` is never an agent's, the daily cron, and an absent
-  prerequisite
+- §6a One Command, Nested Tiers: which tier each moment runs, why `verify:scheduled` is never an agent's, and the daily cron
 - §6b What Each Tool Catches: the failure classes
 - §6c The Lines Between the Tiers: what a step needs, the heavy step, the price of running it late, and how a table nests its tiers
 - §6d A Scoped Run Is Not a Gate Run: why a narrowed selection brands itself
+- §6e What the Runner Promises: the step table, zero errors, an absent prerequisite, the verdict line, and the flags
 
 ---
 
@@ -82,7 +82,7 @@ is therefore found by the next daily cron run or the next tag, not by the epic g
 
 **Chromium is the set's engine, and another engine is a `scheduled` row of the same table**, so a tag and the cron run both take it (§6a, §6c).
 A library adds one when its consumers need wider compatibility. Where the environment serves the other engines from their own server, the browser
-config routes those projects there. A run at `scheduled` without that server fails rather than skipping (§6a).
+config routes those projects there. A run at `scheduled` without that server fails rather than skipping (§6e).
 
 **This is why a DOM shim is rejected, and why the two runners never share a process.** A shim defines hundreds of globals, shadows the runtime
 natives the rest of the suite exercises, and certifies components against a model of the platform that lacks the very features they are built on;
@@ -107,7 +107,7 @@ fixture.
 
 ## 2. Co-Located Test Files
 
-### 2a. Test File Naming Convention
+### 2a. Which Files Get a Test, and the Naming Convention
 
 **Every source file with non-trivial logic has a test file beside it**, same directory, with a test suffix:
 
@@ -382,34 +382,9 @@ the ledger as a task without anyone being told to look.
 work tree, with `--report`. A failure lands as one open task in the ledger of the project it ran for, rewritten in place by each later failure while
 it stays open. A run that never reached a test is logged and filed as nothing.
 
-**A config file owns the step table**: every step, how it runs, and the tiers that list it. Read it there rather than trusting any prose copy. A
-step is one of two things: an external command, or a check the runner calls in-process.
-
-**Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
-warning" — is a failure.
-
-**A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
-Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
-same hint, because those tiers promise that a runtime ran, and an epic or a tag may not be closed on a step nobody ran. **A
-run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
-
-The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
-never inferred from raw tool output. The tier is part of the verdict, because the tiers are different assurances, and **a skipped step is part
-of it too** — a green that skipped a step is not the green that ran it.
-
-| Flag | Effect |
-| --- | --- |
-| `--tier <static\|unit\|runtime\|scheduled>` | Select the tier; omitted, the run is `runtime` |
-| `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
-| `--list` | Print the resolved selection and exit, running nothing |
-| `--fix` | Run each selected step's fixer instead of the step, and name the steps that have none; a plain run then confirms |
-| `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this tier or higher; otherwise run the gate |
-| `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
-| `--report <dir>` | Write `report.json` — tier, commit, tree, verdict, and each step's status, duration, log and failing tests — and every step's whole log into `<dir>`, whatever the verdict |
-
 ### 6b. What Each Tool Catches
 
-Keyed by tool rather than by step: which steps exist drifts, and §6a already says where that list lives. What a given tool proves does not drift.
+Keyed by tool rather than by step: which steps exist drifts, and §6e says where that list lives. What a given tool proves does not drift.
 
 | Tool | Catches |
 | --- | --- |
@@ -436,7 +411,7 @@ a fail-fast run stops there without being told to.
 something about it; a test suite executes what the source builds. A type-aware lint that takes seconds stays in `static`, and a suite that happens
 to be quick is still `unit`, which is what lets a writer trust one run to judge everything they just wrote. **Every step below `runtime` works on
 any machine with the repository's dependencies installed**, which makes those runs the gate anyone may run at any time. A step that declares a
-`requires` probe on an optional dependency runs wherever that dependency happens to be installed, and §6a's tier-decided verdict keeps that from
+`requires` probe on an optional dependency runs wherever that dependency happens to be installed, and §6e's tier-decided verdict keeps that from
 weakening the gate an epic closes on.
 
 **A heavy step goes to `scheduled`, and that is the one line cost draws.** A step is heavy when any of these holds:
@@ -498,6 +473,33 @@ same commit.
 **A run that executes no step is not refused when it cannot pass for a gate that ran.** A reuse run's verdict names the recorded run it stands on
 and the tree hash that run judged, so its green is that run's green, carried only to bytes it covered. An `--affected` run whose changes touch no
 step says so, exits 0 and carries the scoped brand, so it is never a green gate.
+
+### 6e. What the Runner Promises
+
+**A config file owns the step table**: every step, how it runs, and the tiers that list it. Read it there rather than trusting any prose copy. A
+step is one of two things: an external command, or a check the runner calls in-process.
+
+**Every step the run actually executed must pass with zero errors before a task is declared complete.** A partial pass — "types pass, lint has one
+warning" — is a failure.
+
+**A step may declare a prerequisite, and what an absent one means is the tier's answer rather than the step's.** The runner probes once per step.
+Below `runtime` the step is **skipped**, named as skipped with the hint that would install its dependency; from `runtime` up it **fails** with that
+same hint, because those tiers promise that a runtime ran, and an epic or a tag may not be closed on a step nobody ran. **A
+run in which every selected step skipped is red** — for the reason a zero-step selection is refused (§6d): it proves nothing.
+
+The runner reports each step as it finishes, stops at the first failure, and names it. **That name is the verdict** — read off the summary line,
+never inferred from raw tool output. The tier is part of the verdict, because the tiers are different assurances, and **a skipped step is part
+of it too** — a green that skipped a step is not the green that ran it.
+
+| Flag | Effect |
+| --- | --- |
+| `--tier <static\|unit\|runtime\|scheduled>` | Select the tier; omitted, the run is `runtime` |
+| `--only <a,b>` | Run only those steps; an unknown label is refused, with the known ones listed |
+| `--list` | Print the resolved selection and exit, running nothing |
+| `--fix` | Run each selected step's fixer instead of the step, and name the steps that have none; a plain run then confirms |
+| `--reuse` | Exit green at once when the gate's own receipt shows a passing run of these exact bytes at this tier or higher; otherwise run the gate |
+| `--affected` | Run only the steps whose declared paths the working tree's changes touch; always a scoped run |
+| `--report <dir>` | Write `report.json` — tier, commit, tree, verdict, and each step's status, duration, log and failing tests — and every step's whole log into `<dir>`, whatever the verdict |
 
 [boundaries]: ./BOUNDARIES.md
 [cr-5d]: ../shared/CODE_RULES.md#5d-tests-are-not-exempt

@@ -13,7 +13,7 @@ description: >
   - "Update the security implementation doc to reflect the new guard tier"
   - "Write the README for the session namespace"
   - "Add TSDoc to the newly exported storage symbols"
-tools: Read, Grep, Glob, LSP, Edit, Write, Bash, mcp__warden, mcp__ledger
+tools: Read, Grep, Glob, LSP, Edit, Write, Bash, mcp__warden__*, mcp__ledger__*
 model: opus
 color: cyan
 ---
@@ -81,7 +81,7 @@ Corollaries you will need constantly:
 
 4. **TSDoc on exports** — one line per exported symbol, plus `@internal` where non-public. That is the whole of it; see the next section.
 
-## The Comment Budget — Binding
+## The Comment Budget
 
 **`CODE_RULES.md` §5 is binding on every source comment you write or leave standing.** It is a ceiling, not a floor; §5a is the entire permitted
 budget.
@@ -146,10 +146,7 @@ What no check measures, and why this agent exists:
 
 ## Return Format
 
-> **This section governs the agent-to-agent report** — the structured handoff the calling agent reads. It is a data shape, and it stays rigid.
->
-> **Prose addressed to a human being is governed by `PLAIN_LANGUAGE.md` instead**: lead with the outcome, match length to substance, say plainly
-> what did not get done, and do not narrate the steps a reader already watched happen (§3d, §8, §9).
+> The agent-to-agent report the caller parses; keep its shape. Prose to a person follows `PLAIN_LANGUAGE.md`.
 
 Report back in this shape:
 
@@ -173,37 +170,16 @@ Report back in this shape:
 <task id> → <lane>, or "no ledger item"
 ```
 
-When the doc pass closes a task, close it yourself over MCP, never by editing files. There is no protocol document to fetch: the tool descriptions
-carry every rule a call must satisfy, and a refusal quotes the `rule` it applied, the `requires` that would satisfy it, and whether it is
-`retryable`. Act on that payload rather than guessing past it. Read before you write — a read carries the `revision` a later edit must cite — and
-record the resolution with, or before, the move to `done`. **Offering a task for review is a claim about a run** (`AGENT_WORKFLOW.md` §5): for a
-docs-only change the `static` tier is that run, and it judges the wrap, the link style and every structural rule of what you just wrote. The source
-claims you verified are the evidence it cannot check.
+Update the ledger yourself when the doc pass closes a task. For a docs-only change the `static` tier is the run that offering it
+for review claims (`AGENT_WORKFLOW.md` §5); the source claims you verified are the evidence it cannot check.
 
 ## Delegation
 
-**Delegate a track that is genuinely independent and sizeable. Do not delegate what you could finish in a handful of tool calls, and never delegate
-in order to double-check your own work** — a second agent re-reading your change is the same reasoning at one remove, at the cost of a whole context
-(`AGENT_WORKFLOW.md` §4a). One agent where one suffices.
-
-You may spawn sub-agents to parallelise segmentable work — for example, verifying claims across several namespaces at once. Standing
-conditions:
-
-1. **You stay in control of the split and the synthesis** — one writer per file, always.
-2. **You verify every returned result before acting on it** — a sub-agent's factual claim is a claim until you have seen the source.
-3. **You never delegate an ownership decision** — deciding which file owns a rule is this agent's reason for existing. When two files could own it,
-   decide yourself or escalate; never let two sub-agents each keep a copy.
-
-Full-gate runs go to `cc-tester` regardless of depth.
+Delegate only a sizeable, independent track — for example, verifying claims across several namespaces at once. Keep the split and the synthesis,
+read what a subagent returns before acting on it, and never delegate an ownership decision — deciding which file owns a rule is this agent's reason
+for existing. When two files could own it, decide yourself or escalate; never let two sub-agents each keep a copy (`AGENT_WORKFLOW.md` §4a).
 
 ## Navigation
 
-**Before writing a section, search for the document that owns the fact.** `knowledge_search` in plain words, then `knowledge_read` on the chunk id —
-that is also how you find whether the rule you are about to write already has a home, and `knowledge_outline` lists a long document's sections
-without reading it (`AGENT_GUIDE.md §1`). Search `canon` and `local` both: a rule already carried by the canon must not be restated in `docs/`, and
-an empty result is an answer — nothing owns it yet. Cite the chunk id you deferred to.
-
-Where no warden MCP is configured, the same index is `warden search` then `warden outline <path>` → the target section. Read a doc in full when the
-whole doc is the subject, as it is during a rewrite. `Read`, `Grep` and `Glob` remain the tools for source.
-
-The TypeScript LSP plugin is available; use it to confirm a symbol's real name and signature before documenting it.
+Use LSP for definitions and for every reference before you change or rely on a symbol; `Grep` under-reports re-exported and
+aliased symbols.
