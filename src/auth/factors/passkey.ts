@@ -10,7 +10,7 @@ import type { PasskeyAssertionCredential, PasskeyAuthenticationReason } from "..
 import type { PasskeyCeremonyOptions } from "../passkey/types";
 import type { PasskeyRegistrationCredential, PasskeyRegistrationReason } from "../passkey/types";
 import type { AuthFactor, AuthStoreResult } from "../types";
-import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./types";
+import type { AuthFactorCaller, AuthFactorChallenge, AuthFactorReason, AuthFactorVerified, EnrollableFactorService } from "./types";
 import type { PasskeyFactorOptions } from "./types";
 
 /** Bytes of the WebAuthn user handle a discoverable login resolves the account from. */
@@ -183,12 +183,18 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
     return ok({ kind: "passkey", expiresAt: at + ttlSeconds * 1000, options: enrolmentOptions });
   }
 
-  async function completeEnrolment(userId: string, presented: string, at: number): Promise<Result<AuthFactor, AuthFactorReason>> {
+  async function completeEnrolment(
+    userId: string,
+    presented: string,
+    at: number,
+    caller: AuthFactorCaller,
+  ): Promise<Result<AuthFactor, AuthFactorReason>> {
     const enrolment = parseEnrolment(presented);
     if (!enrolment) return err("unrecognised");
+    const origin = { keep: caller.keep };
     const verified = await verifyPasskeyRegistration(
       verifyOptions(),
-      { sessionId: options.sessionId, userId, credential: enrolment.credential, label: enrolment.label },
+      { sessionId: options.sessionId, userId, credential: enrolment.credential, label: enrolment.label, origin },
       at,
     );
     if (!verified.ok) return err(ceremonyReason(verified.error));
@@ -199,7 +205,7 @@ export function createPasskeyFactor(options: PasskeyFactorOptions): EnrollableFa
     if (!existing.ok) return err("unavailable");
     if (existing.data?.confirmedAt != null) return ok(existing.data);
     if (existing.data) {
-      const confirmed = await options.factors.confirm(existing.data.id, userId, at);
+      const confirmed = await options.factors.confirm(existing.data.id, userId, at, origin);
       if (!confirmed.ok) return err("unavailable");
       return ok({ ...existing.data, confirmedAt: at, updatedAt: at });
     }

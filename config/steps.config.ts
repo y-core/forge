@@ -95,6 +95,7 @@ export default defineSteps({
         tail: 20,
         cmd: ["bun", "check", "--no-script", "--no-pretty", "-p", "tests/fixtures/service-worker-consumer/tsconfig.json"],
       },
+      { label: "typecheck:tests", tail: 20, cmd: ["bun", "check", "--no-script", "--no-pretty", "-p", "tests/tsconfig.json"] },
       lintStep({ sources: ["src/", "config/", "warden/"] }),
       formatStep({ sources: ["."] }),
       // `bun fmt` ignores `**/*.md`, so this step is what holds markdown to a house layout.

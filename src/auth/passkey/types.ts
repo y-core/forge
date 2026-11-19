@@ -4,6 +4,7 @@ import type { ChallengeStore } from "../types";
 import type { CredentialStore } from "../types";
 import type { UserStore } from "../types";
 import type { AuthAlgorithm } from "../types";
+import type { AuthWriteOrigin } from "../types";
 
 /** Every value the CTAP2 canonical CBOR subset can carry. @internal */
 export type CborValue = number | bigint | string | boolean | null | undefined | Uint8Array<ArrayBuffer> | CborValue[] | Map<CborValue, CborValue>;
@@ -270,6 +271,8 @@ export interface PasskeyRegistrationInput {
   readonly userId: string;
   readonly credential: PasskeyRegistrationCredential;
   readonly label?: string | null;
+  /** Where the registration was made from, which the `factor-added` event it records names. */
+  readonly origin: AuthWriteOrigin;
 }
 
 /** What a registration ceremony is held against, and where the credential it establishes is written. @public */

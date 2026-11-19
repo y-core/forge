@@ -67,6 +67,8 @@ export interface AuthOtpStateRow {
   attempts: number;
   issued_at: number;
   expires_at: number;
+  window_started_at: number | null;
+  binding: number[] | null;
 }
 
 export interface AuthRecoveryCodesRow {
@@ -78,6 +80,28 @@ export interface AuthRecoveryCodesRow {
   created_at: number;
 }
 
+export interface AuthSecurityEventsRow {
+  id: number[];
+  user_id: number[];
+  type: string;
+  factor_kind: string | null;
+  session_id: number[] | null;
+  admin_id: number[] | null;
+  at: number;
+}
+
+export interface AuthSessionsRow {
+  token_hash: number[];
+  user_id: number[];
+  signed_in_at: number;
+  expires_at: number;
+  step_up_at: number | null;
+  id: number[];
+  step_up_kind: string | null;
+  last_seen_at: number;
+  device: string | null;
+}
+
 export interface AuthUsersRow {
   id: number[];
   email: string;
@@ -86,9 +110,9 @@ export interface AuthUsersRow {
   webauthn_id: number[] | null;
   is_admin: number;
   deactivated_at: number | null;
-  sessions_invalid_before: number | null;
   created_at: number;
   updated_at: number;
+  email_change_requested_at: number | null;
 }
 
 export interface Tables {
@@ -100,5 +124,7 @@ export interface Tables {
   auth_nonces: AuthNoncesRow;
   auth_otp_state: AuthOtpStateRow;
   auth_recovery_codes: AuthRecoveryCodesRow;
+  auth_security_events: AuthSecurityEventsRow;
+  auth_sessions: AuthSessionsRow;
   auth_users: AuthUsersRow;
 }

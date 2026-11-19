@@ -1,5 +1,6 @@
 import type { AdminUserOutcome } from "../types";
 import type { AdminUserStore } from "../types";
+import type { AuthSessionRotation } from "../types";
 import type { AuthStoreResult } from "../types";
 import type { AuthUser } from "../types";
 import type { AuthUserPage } from "../types";
@@ -17,12 +18,12 @@ export interface AdminUserService {
   /** Admins who could still sign in — what the last-admin controls and the first-admin claim read. */
   countAdmins(): Promise<AuthStoreResult<number>>;
   /** Takes the role while the deployment has none; `admin-exists` is the claim arriving second. */
-  claimFirst(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
-  elevate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
-  demote(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
-  deactivate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
-  reactivate(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
+  claimFirst(id: string, at: number, rotation?: AuthSessionRotation): Promise<AuthStoreResult<AdminUserOutcome>>;
+  elevate(id: string, at: number, adminId: string): Promise<AuthStoreResult<AdminUserOutcome>>;
+  demote(id: string, at: number, adminId: string): Promise<AuthStoreResult<AdminUserOutcome>>;
+  deactivate(id: string, at: number, adminId: string): Promise<AuthStoreResult<AdminUserOutcome>>;
+  reactivate(id: string, at: number, adminId: string): Promise<AuthStoreResult<AdminUserOutcome>>;
   remove(id: string): Promise<AuthStoreResult<AdminUserOutcome>>;
   /** Clears every second factor and recovery code, ends every session and revokes every bearer token — the last resort, leaving email alone to re-enrol with. */
-  resetFactors(id: string, at: number): Promise<AuthStoreResult<AdminUserOutcome>>;
+  resetFactors(id: string, at: number, adminId: string): Promise<AuthStoreResult<AdminUserOutcome>>;
 }

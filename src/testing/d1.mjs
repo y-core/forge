@@ -168,6 +168,13 @@ function declaredPath(root, declared) {
   }
 }
 
+// src/tooling/db/sql.ts
+function quoteSqlIdentifier(name) {
+  if (name === "") throw new Error("an empty string is not a SQL identifier");
+  if (name.includes("\0")) throw new Error("a NUL byte cannot appear in a SQL identifier");
+  return `"${name.replaceAll('"', '""')}"`;
+}
+
 // src/storage/db/sql.ts
 var SQL_PLACEHOLDER = "?";
 var SQL_FRAGMENT_BRAND = /* @__PURE__ */ Symbol("forge.storage.db.SqlFragment");
@@ -229,12 +236,11 @@ function testD1Config() {
 `;
 }
 function dropStatements(objects, parents) {
-  const quote = (name) => `"${name.replaceAll('"', '""')}"`;
   const of = (type) => objects.filter((object) => object.type === type).map((object) => object.name);
   const drops = [
-    ...of("trigger").map((name) => `DROP TRIGGER IF EXISTS ${quote(name)}`),
-    ...of("view").map((name) => `DROP VIEW IF EXISTS ${quote(name)}`),
-    ...of("index").map((name) => `DROP INDEX IF EXISTS ${quote(name)}`)
+    ...of("trigger").map((name) => `DROP TRIGGER IF EXISTS ${quoteSqlIdentifier(name)}`),
+    ...of("view").map((name) => `DROP VIEW IF EXISTS ${quoteSqlIdentifier(name)}`),
+    ...of("index").map((name) => `DROP INDEX IF EXISTS ${quoteSqlIdentifier(name)}`)
   ];
   const remaining = new Set(of("table"));
   while (remaining.size > 0) {
@@ -242,7 +248,7 @@ function dropStatements(objects, parents) {
     const leaves = [...remaining].filter((table) => !referenced.has(table)).sort();
     const next = leaves.length > 0 ? leaves : [...remaining].sort();
     for (const table of next) {
-      drops.push(`DROP TABLE IF EXISTS ${quote(table)}`);
+      drops.push(`DROP TABLE IF EXISTS ${quoteSqlIdentifier(table)}`);
       remaining.delete(table);
     }
   }
@@ -294,7 +300,7 @@ async function openTestD1(options = {}) {
       const parents = /* @__PURE__ */ new Map();
       for (const { type, name } of objects) {
         if (type !== "table") continue;
-        const keys = await rows(`PRAGMA foreign_key_list("${name.replaceAll('"', '""')}")`);
+        const keys = await rows(`PRAGMA foreign_key_list(${quoteSqlIdentifier(name)})`);
         parents.set(
           name,
           keys.map((key) => key.table)

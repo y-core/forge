@@ -2,7 +2,26 @@ import { D1_LIMITS } from "../../../storage/db/limits";
 import { sqlStatementSpans } from "../backup/split";
 import { sha256 } from "../digest";
 import { parseMigrationHeader } from "../schema/header";
-import { maskSqlProse, splitCreateTableBody } from "../schema/normalize";
+import {
+  bareSqlName,
+  maskSqlProse,
+  readQualifiedObjectName,
+  splitCreateTableBody,
+  sqlIdentifierKey,
+  unquoteSqlIdentifier,
+} from "../schema/normalize";
+import {
+  isSqlName,
+  isSqlPrimaryKeyAt,
+  isSqlWord,
+  sqlCheckNullRefusals,
+  sqlColumnHasNonNullDefault,
+  sqlColumnNullRefusals,
+  sqlColumnRefusesOwnNull,
+  splitSqlAtDepthZero,
+  spokenSqlTokens,
+} from "../schema/nullability";
+import type { CreateTableParts, SqlToken } from "../schema/types";
 import { sqlLineAt } from "../sql";
 import type { LintFinding, LintRule, Migration, SqlStatement } from "../types";
 
@@ -20,7 +39,6 @@ export function splitSqlStatements(sql: string): SqlStatement[] {
 const ALTER_TABLE = /\bALTER\s+TABLE\b/i;
 const ADD_COLUMN = /\bADD\s+(COLUMN\s+)?/i;
 const WHERE = /\bWHERE\b/i;
-const DEFAULT = /\bDEFAULT\b/i;
 
 interface LintContext {
   statement: SqlStatement;
@@ -32,6 +50,22 @@ interface Check {
   rule: LintRule;
   message: string;
   find: (context: LintContext) => number;
+}
+
+interface CheckHit {
+  at: number;
+  message: string;
+}
+
+interface DetailedCheck {
+  rule: LintRule;
+  findEach: (context: LintContext) => readonly CheckHit[];
+}
+
+function checkHits(check: Check | DetailedCheck, context: LintContext): readonly CheckHit[] {
+  if ("findEach" in check) return check.findEach(context);
+  const at = check.find(context);
+  return at === -1 ? [] : [{ at, message: check.message }];
 }
 
 function unboundedAt(masked: string, verb: RegExp): number {
@@ -93,7 +127,143 @@ function pragmaName(masked: string): string | null {
   return /^\s*PRAGMA\s+(?:[A-Za-z_][A-Za-z0-9_]*\s*\.\s*)?([A-Za-z_][A-Za-z0-9_]*)/i.exec(masked)?.[1]?.toLowerCase() ?? null;
 }
 
-const CHECKS: readonly Check[] = [
+const CREATE_TABLE = /^\s*CREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TABLE\b/i;
+
+const AUTH_TABLE_PREFIX = "auth_";
+
+interface AuthForeignKey {
+  at: number;
+  columns: readonly string[];
+  parent: string;
+  action: string | null;
+}
+
+interface BodyClause {
+  kind: "column" | "constraint";
+  tokens: readonly SqlToken[];
+}
+
+function onDeleteAction(tokens: readonly SqlToken[]): string | null {
+  const on = tokens.findIndex((token, i) => isSqlWord(token, "ON") && isSqlWord(tokens[i + 1], "DELETE"));
+  if (on === -1) return null;
+  const verb = tokens[on + 2]?.text.toUpperCase() ?? "";
+  return verb === "SET" || verb === "NO" ? `${verb} ${tokens[on + 3]?.text.toUpperCase() ?? ""}` : verb;
+}
+
+function authKeyAt(tokens: readonly SqlToken[], references: number, end: number, columns: readonly string[], at: number): AuthForeignKey[] {
+  const named = readQualifiedObjectName(tokens, references + 1);
+  if (named === null) return [];
+  const parent = named.name.replace(REBUILD_PREFIX, "");
+  if (!sqlIdentifierKey(parent).startsWith(AUTH_TABLE_PREFIX)) return [];
+  return [{ at, columns, parent, action: onDeleteAction(tokens.slice(references + 1, end)) }];
+}
+
+function columnAuthKeys(tokens: readonly SqlToken[]): AuthForeignKey[] {
+  const head = tokens[0];
+  if (head === undefined) return [];
+  const references = tokens.flatMap((token, i) => (isSqlWord(token, "REFERENCES") ? [i] : []));
+  return references.flatMap((r, n) =>
+    authKeyAt(tokens, r, references[n + 1] ?? tokens.length, [unquoteSqlIdentifier(head.text)], tokens[r]?.start ?? head.start),
+  );
+}
+
+function listedColumns(tokens: readonly SqlToken[], open: number): string[] {
+  const close = tokens.findIndex((token, i) => i > open && token.kind === "punct" && token.text === ")");
+  return tokens
+    .slice(open + 1, close === -1 ? tokens.length : close)
+    .filter(isSqlName)
+    .map(bareSqlName);
+}
+
+function tableAuthKeys(tokens: readonly SqlToken[]): AuthForeignKey[] {
+  const foreign = tokens.findIndex((token, i) => isSqlWord(token, "FOREIGN") && isSqlWord(tokens[i + 1], "KEY"));
+  if (foreign === -1) return [];
+  const references = tokens.findIndex((token, i) => i > foreign && isSqlWord(token, "REFERENCES"));
+  if (references === -1) return [];
+  return authKeyAt(tokens, references, tokens.length, listedColumns(tokens, foreign + 2), tokens[foreign]?.start ?? 0);
+}
+
+function constraintRefusesNull(tokens: readonly SqlToken[]): string[] {
+  const primary = tokens.findIndex((_, i) => isSqlPrimaryKeyAt(tokens, i));
+  if (primary !== -1) return listedColumns(tokens, primary + 2);
+  return sqlCheckNullRefusals(tokens);
+}
+
+// The tokens of the column an `ALTER TABLE … ADD [COLUMN]` adds, or `null` when the statement adds none.
+function addedColumn(tokens: readonly SqlToken[]): SqlToken[] | null {
+  const table = tokens.findIndex((token) => isSqlWord(token, "TABLE"));
+  const add = tokens.findIndex((token, i) => i > table + 1 && isSqlWord(token, "ADD"));
+  if (add === -1) return null;
+  return splitSqlAtDepthZero(tokens.slice(isSqlWord(tokens[add + 1], "COLUMN") ? add + 2 : add + 1), ",")[0] ?? null;
+}
+
+function addColumnRefusingNullAt(raw: string): number {
+  const column = addedColumn(spokenSqlTokens(raw));
+  const head = column?.[0];
+  if (column === null || head === undefined || sqlColumnHasNonNullDefault(column)) return -1;
+  return sqlColumnRefusesOwnNull(column) ? head.start : -1;
+}
+
+function alteredOrCreatedTable(tokens: readonly SqlToken[]): string {
+  const table = tokens.findIndex((token) => isSqlWord(token, "TABLE"));
+  const exists = isSqlWord(tokens[table + 1], "IF") && isSqlWord(tokens[table + 2], "NOT") && isSqlWord(tokens[table + 3], "EXISTS");
+  const name = readQualifiedObjectName(tokens, table + (exists ? 4 : 1))?.name ?? "";
+  return name.replace(REBUILD_PREFIX, "");
+}
+
+function authKeyFault(key: AuthForeignKey, notNull: ReadonlySet<string>): string | null {
+  if (key.action === "CASCADE") return null;
+  if (key.action === null) return "no ON DELETE clause, which is NO ACTION";
+  if (key.action !== "SET NULL") return `ON DELETE ${key.action}`;
+  const held = key.columns.filter((column) => notNull.has(sqlIdentifierKey(column)));
+  return held.length === 0 ? null : `ON DELETE SET NULL on ${held.join(", ")}, which cannot hold NULL`;
+}
+
+function authKeyHits(table: string, keys: readonly AuthForeignKey[], notNull: ReadonlySet<string>): CheckHit[] {
+  return keys.flatMap((key) => {
+    const fault = authKeyFault(key, notNull);
+    if (fault === null) return [];
+    const message =
+      `${table} (${key.columns.join(", ")}) references ${key.parent} with ${fault}, so D1 refuses the delete of an ${key.parent} row ` +
+      "that purgeAuthEphemera or an admin remove makes — declare ON DELETE CASCADE, or ON DELETE SET NULL on a nullable column";
+    return [{ at: key.at, message }];
+  });
+}
+
+function bodyClauses(raw: string, parts: CreateTableParts): BodyClause[] {
+  let cursor = parts.open + 1;
+  return parts.clauses.map((clause) => {
+    const start = raw.indexOf(clause.raw, cursor);
+    cursor = start + clause.raw.length;
+    return { kind: clause.kind, tokens: spokenSqlTokens(clause.raw, start) };
+  });
+}
+
+function createTableAuthHits(raw: string): CheckHit[] {
+  let parts: CreateTableParts;
+  try {
+    parts = splitCreateTableBody(raw);
+  } catch {
+    return [];
+  }
+  const clauses = bodyClauses(raw, parts);
+  const notNull = new Set(
+    clauses
+      .flatMap(({ kind, tokens }) => (kind === "constraint" ? constraintRefusesNull(tokens) : sqlColumnNullRefusals(tokens)))
+      .map(sqlIdentifierKey),
+  );
+  const keys = clauses.flatMap(({ kind, tokens }) => (kind === "column" ? columnAuthKeys(tokens) : tableAuthKeys(tokens)));
+  return authKeyHits(alteredOrCreatedTable(spokenSqlTokens(raw)), keys, notNull);
+}
+
+function addColumnAuthHits(raw: string): CheckHit[] {
+  const tokens = spokenSqlTokens(raw);
+  const column = addedColumn(tokens);
+  if (column === null) return [];
+  return authKeyHits(alteredOrCreatedTable(tokens), columnAuthKeys(column), new Set(sqlColumnNullRefusals(column).map(sqlIdentifierKey)));
+}
+
+const CHECKS: readonly (Check | DetailedCheck)[] = [
   {
     rule: "drop-no-if-exists",
     message: "DROP without IF EXISTS fails the whole migration when the object is already gone — write DROP … IF EXISTS",
@@ -140,12 +310,10 @@ const CHECKS: readonly Check[] = [
   },
   {
     rule: "add-column-not-null-no-default",
-    message: "ADD COLUMN … NOT NULL with no DEFAULT is refused by SQLite outright",
-    find: ({ statement }) => {
-      const s = statement.masked;
-      if (!ALTER_TABLE.test(s) || DEFAULT.test(s) || s.search(ADD_COLUMN) === -1) return -1;
-      return s.search(/\bNOT\s+NULL\b/i);
-    },
+    message:
+      "ADD COLUMN of a column that refuses NULL, with no non-NULL DEFAULT, fails on any table that already has rows — add it nullable or with a constant DEFAULT",
+    find: ({ statement }) =>
+      ALTER_TABLE.test(statement.masked) && ADD_COLUMN.test(statement.masked) ? addColumnRefusingNullAt(statement.raw) : -1,
   },
   {
     rule: "add-column-non-constant-default",
@@ -188,7 +356,7 @@ const CHECKS: readonly Check[] = [
     rule: "table-too-wide",
     message: `a table of more than ${D1_LIMITS.columns} columns, which D1 refuses — split it into tables joined on its key`,
     find: ({ statement }) => {
-      if (!/^\s*CREATE\s+(?:TEMP\s+|TEMPORARY\s+)?TABLE\b/i.test(statement.masked)) return -1;
+      if (!CREATE_TABLE.test(statement.masked)) return -1;
       let columns: number;
       try {
         columns = splitCreateTableBody(statement.raw).clauses.filter((clause) => clause.kind === "column").length;
@@ -196,6 +364,14 @@ const CHECKS: readonly Check[] = [
         return -1;
       }
       return columns > D1_LIMITS.columns ? statement.masked.search(/\bCREATE\b/i) : -1;
+    },
+  },
+  {
+    rule: "auth-key-blocks-delete",
+    findEach: ({ statement }) => {
+      if (CREATE_TABLE.test(statement.masked)) return createTableAuthHits(statement.raw);
+      if (ALTER_TABLE.test(statement.masked) && ADD_COLUMN.test(statement.masked)) return addColumnAuthHits(statement.raw);
+      return [];
     },
   },
 ];
@@ -223,9 +399,8 @@ export function lintMigration(file: string, sql: string): LintFinding[] {
   for (const [i, statement] of statements.entries()) {
     const context: LintContext = { statement, before: statements.slice(0, i), file };
     for (const check of CHECKS) {
-      const at = check.find(context);
-      if (at === -1) continue;
-      findings.push({ rule: check.rule, file, line: sqlLineAt(sql, statement.offset + at), message: check.message });
+      for (const hit of checkHits(check, context))
+        findings.push({ rule: check.rule, file, line: sqlLineAt(sql, statement.offset + hit.at), message: hit.message });
     }
   }
   return findings;
@@ -239,9 +414,8 @@ export function lintStatements(file: string, sql: string, rules: readonly LintRu
     const context: LintContext = { statement, before: statements.slice(0, i), file };
     for (const check of CHECKS) {
       if (!rules.includes(check.rule)) continue;
-      const at = check.find(context);
-      if (at === -1) continue;
-      findings.push({ rule: check.rule, file, line: sqlLineAt(sql, statement.offset + at), message: check.message });
+      for (const hit of checkHits(check, context))
+        findings.push({ rule: check.rule, file, line: sqlLineAt(sql, statement.offset + hit.at), message: hit.message });
     }
   }
   return findings;

@@ -45,17 +45,21 @@ const UNTRACKED: Record<string, string> = {
 
 /** The manifest the fixture's markers are written against, as `CURATE_FIXTURE_MANIFEST` spells it. */
 export const CURATE_FIXTURE_FEATURES: FeatureManifest = {
-  showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] },
-  contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },
+  features: {
+    showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] },
+    contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },
+  },
 };
 
 /** `CURATE_FIXTURE_FEATURES` as a `config/features.config.ts` module, each feature's entry marked so a curation keeps exactly the remaining ones. */
 export const CURATE_FIXTURE_MANIFEST = [
   "export default {",
-  '  showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] }, // feature:showcase',
-  "  // feature:contact:begin",
-  '  contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },',
-  "  // feature:contact:end",
+  "  features: {",
+  '    showcase: { directories: ["src/showcase/"], scripts: ["showcase:demo"], seams: ["src/app.ts", "README.md"] }, // feature:showcase',
+  "    // feature:contact:begin",
+  '    contact: { directories: ["src/contact"], files: ["config/contact.toml"], scripts: ["contact:send"], seams: ["src/app.ts", "config/app.toml"] },',
+  "    // feature:contact:end",
+  "  },",
   "};",
   "",
 ].join("\n");

@@ -4,7 +4,7 @@ import { CliError } from "../cli/errors";
 import { describeFeatureGraph, featureGraph, resolveFeatures } from "./graph";
 import type { FeatureManifest, FeatureSelection } from "./types";
 
-function feature(requires?: string[], run?: [string, ...string[]]): FeatureManifest[string] {
+function feature(requires?: string[], run?: [string, ...string[]]): FeatureManifest["features"][string] {
   return {
     directories: [],
     seams: ["src/app.ts"],
@@ -13,7 +13,7 @@ function feature(requires?: string[], run?: [string, ...string[]]): FeatureManif
   };
 }
 
-function manifest(entries: Record<string, string[] | undefined>): FeatureManifest {
+function manifest(entries: Record<string, string[] | undefined>): FeatureManifest["features"] {
   return Object.fromEntries(Object.entries(entries).map(([name, requires]) => [name, feature(requires)]));
 }
 
@@ -27,13 +27,13 @@ function refusal(body: () => unknown): CliError {
   throw new Error("expected a refusal");
 }
 
-function refusedGraph(config: FeatureManifest): string {
+function refusedGraph(config: FeatureManifest["features"]): string {
   const error = refusal(() => featureGraph(config));
   expect(error.kind).toBe("invalid-args");
   return error.message;
 }
 
-function refusedSelection(config: FeatureManifest, selection: FeatureSelection): string {
+function refusedSelection(config: FeatureManifest["features"], selection: FeatureSelection): string {
   const error = refusal(() => resolveFeatures(config, selection));
   expect(error.kind).toBe("invalid-args");
   return error.message;
@@ -194,7 +194,11 @@ describe("resolveFeatures() — closure", () => {
 
 describe("describeFeatureGraph()", () => {
   it("prints one row per feature in requirement order, each with its direct edges and any regeneration", () => {
-    const config: FeatureManifest = { auth: feature(["db"]), db: feature(undefined, ["forge", "db", "migrate", "compose"]), showcase: feature() };
+    const config: FeatureManifest["features"] = {
+      auth: feature(["db"]),
+      db: feature(undefined, ["forge", "db", "migrate", "compose"]),
+      showcase: feature(),
+    };
 
     expect(describeFeatureGraph(config)).toEqual([
       "  db:       requires nothing; required by auth; regenerates with `forge db migrate compose`",

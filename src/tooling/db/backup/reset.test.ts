@@ -153,6 +153,42 @@ describe("prepareReset + executeReset — the pair the CLI confirms between", ()
     expect(io.d1Calls.flatMap((call) => call.statements).some((statement) => statement.includes("_cf_KV"))).toBe(false);
   });
 
+  it("counts every app table in one batch after reading the table list, matching the dump's census", async () => {
+    const root = appRoot();
+    const io = await database(root, LIVE, [sidecar()]);
+    expect(await prepareReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toMatchObject({
+      rows: 2,
+      backedUpBy: sidecar().key,
+    });
+    expect(io.d1Calls.length).toBe(2);
+    expect(io.d1Calls[1]?.statements).toEqual(['SELECT COUNT(*) AS rows FROM "_forge_migrations"', 'SELECT COUNT(*) AS rows FROM "tasks"']);
+  });
+
+  it("reads only the table list when the database declares no app table, dispatching no count batch", async () => {
+    const root = appRoot();
+    const io = await database(root, LIVE);
+    io.d1Rules.unshift({ match: (statement) => statement.includes("sqlite_master"), reply: INVENTORY.filter((row) => row.name === "_cf_KV") });
+    expect(await prepareReset(await context(root, io), { expect: "app-db", allowUnbacked: false })).toMatchObject({ rows: 0, backedUpBy: null });
+    expect(io.d1Calls.length).toBe(1);
+  });
+
+  it("refuses to reset when the count batch fails, naming both counts, and removes nothing", async () => {
+    const root = appRoot();
+    const io = await database(root, LIVE, [sidecar()]);
+    io.d1Rules.unshift({
+      match: (statement) => statement.startsWith("SELECT COUNT(*)"),
+      reply: () => {
+        throw new Error("D1_ERROR: database is locked");
+      },
+    });
+    expect(await refusal(async () => runReset(await context(root, io), { expect: "app-db", allowUnbacked: false }))).toEqual({
+      kind: "external",
+      message:
+        'query `SELECT COUNT(*) AS rows FROM "_forge_migrations"\nSELECT COUNT(*) AS rows FROM "tasks"` against local (app-db) failed:\nD1_ERROR: database is locked',
+    });
+    expect(io.exists(join(root, ".wrangler", "state", ...STATE, "db.sqlite"))).toBe(true);
+  });
+
   it("refuses to empty a database holding rows when no complete dump exists, naming where it looked", async () => {
     const root = appRoot();
     const io = await database(root, LIVE);

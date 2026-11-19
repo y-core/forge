@@ -23,6 +23,7 @@ import { createRecoveryCodeFactor } from "./factors/recovery-code";
 import { createFactorRegistry } from "./factors/registry";
 import { createTotpAppFactor } from "./factors/totp-app";
 import { createEmailChangeFlow } from "./flows/email-change";
+import { createSecurityNotices } from "./flows/security-notices";
 import { createSigninFlow } from "./flows/signin";
 import { createSignupFlow } from "./flows/signup";
 import { importAuthKeyRing } from "./keys/ring";
@@ -33,6 +34,7 @@ import { createFactorStore } from "./stores/factors";
 import { createNonceStore } from "./stores/nonces";
 import { createOtpStateStore } from "./stores/otp-state";
 import { createRecoveryCodeStore } from "./stores/recovery-codes";
+import { createAuthSessionStore } from "./stores/sessions";
 import { createUserStore } from "./stores/users";
 import type { AuthNotifier, UserStore } from "./types";
 import { createAuthGuards, resolveAuth } from "./web/guards";
@@ -75,7 +77,9 @@ const csrfKey: KeyRingResolver<JourneyEnv> = (context) => importKeyRing([context
 // wrangler prints a logged object across several lines, so the notice is one line of JSON instead.
 const notifier: AuthNotifier = {
   send(message) {
-    console.log(`${JOURNEY_NOTICE}${JSON.stringify({ kind: message.kind, to: message.to, code: message.code })}`);
+    console.log(
+      `${JOURNEY_NOTICE}${JSON.stringify({ kind: message.kind, to: message.to, code: message.kind === "otp" ? message.code : undefined })}`,
+    );
     return Promise.resolve(ok());
   },
 };
@@ -94,49 +98,53 @@ async function buildServices(c: AppContext<JourneyEnv>): Promise<AuthRequestServ
   const credentials = createCredentialStore(db);
   const state = createOtpStateStore(db);
   const nonces = createNonceStore(db);
+  const challenges = createChallengeStore(db);
   const address = (userId: string): Promise<string> => addressOf(users, userId);
 
   const factors = createFactorRegistry(enrolments, {
-    offered: [
-      { service: createEmailOtpFactor({ keys, state, nonces, notifier, address: async (userId) => ok(await address(userId)) }), role: "primary" },
-      {
-        service: createTotpAppFactor({ keys, factors: enrolments, issuer: "Forge journey", account: address }),
-        role: "second",
-        requirement: "mandatory",
-      },
-      {
-        service: createPasskeyFactor({
-          rpId: c.url.hostname,
-          rpName: "Forge journey",
-          // http, not `c.url`'s scheme: the dev server stamps https onto the URL the Worker sees, while
-          // the client data a passkey signs carries the http origin the page was loaded from.
-          origin: `http://${c.url.host}`,
-          sessionId: sessionCtx.get(c).id,
-          users,
-          factors: enrolments,
-          credentials,
-          challenges: createChallengeStore(db),
-          subject: async (userId) => {
-            const email = await address(userId);
-            return { name: email, displayName: email };
-          },
-        }),
-        role: "second",
-        requirement: "optional",
-      },
-      { service: createRecoveryCodeFactor({ factors: enrolments, codes: createRecoveryCodeStore(db) }), role: "second", requirement: "optional" },
-    ],
+    primary: createEmailOtpFactor({ keys, state, nonces, notifier, address: async (userId) => ok(await address(userId)) }),
+    second: {
+      // The starter's shape: the authenticator app mandatory, a passkey optional.
+      offered: [
+        {
+          service: createTotpAppFactor({ keys, factors: enrolments, challenges, issuer: "Forge journey", account: address }),
+          requirement: "mandatory",
+        },
+        {
+          service: createPasskeyFactor({
+            rpId: c.url.hostname,
+            rpName: "Forge journey",
+            // http, not `c.url`'s scheme: the dev server stamps https onto the URL the Worker sees, while
+            // the client data a passkey signs carries the http origin the page was loaded from.
+            origin: `http://${c.url.host}`,
+            sessionId: sessionCtx.get(c).id,
+            users,
+            factors: enrolments,
+            credentials,
+            challenges,
+            subject: async (userId) => {
+              const email = await address(userId);
+              return { name: email, displayName: email };
+            },
+          }),
+          requirement: "optional",
+        },
+      ],
+      recovery: createRecoveryCodeFactor({ factors: enrolments, codes: createRecoveryCodeStore(db) }),
+    },
   });
   const defer = (work: Promise<unknown>): void => c.executionCtx.waitUntil(work);
 
   return {
     users,
+    sessions: createAuthSessionStore(db),
     credentials,
     factors,
     enrolments,
     signin: createSigninFlow({ keys, users, factors, state, nonces, defer }),
     signup: createSignupFlow({ users, factors, defer }),
     emailChange: createEmailChangeFlow({ keys, users, nonces, notifier, defer, confirmUrl: (token) => `${c.url.origin}/?token=${token}` }),
+    notices: createSecurityNotices({ notifier, defer }),
     admin: createAdminUserStore(db),
   };
 }
@@ -193,11 +201,11 @@ export function journeyWorker(ddl: string): { fetch(request: Request, env: Journ
     session: createAnonymousSession<JourneyEnv>({ ring: (c) => importKeyRing([c.env.SESSION_SECRET]), kv: (c) => c.env.KV }),
     globals: [
       csrfProtection({ ring: csrfKey, subject: (c) => sessionCtx.getOptional(c)?.id }),
-      resolveAuth<JourneyEnv>({ users: async (c) => (await resolveServices(c)).users }),
+      resolveAuth<JourneyEnv>({ sessions: async (c) => (await resolveServices(c)).sessions }),
     ],
     guards: createAuthGuards<JourneyEnv>({
       routes: { auth: authMap, account: accountMap, admin: adminMap },
-      auth: { users: async (c) => (await resolveServices(c)).users, signinPath: paths.auth.signin() },
+      auth: { sessions: async (c) => (await resolveServices(c)).sessions, signinPath: paths.auth.signin() },
       enrolment: {
         factors: async (c) => (await resolveServices(c)).factors,
         enrolmentPaths: authEnrolmentPaths(paths.auth),

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 
+import type { D1Database } from "../../src/storage/db/types";
 import { serveWorker } from "../../src/testing/harness";
 import { expect, test } from "./harness.fixture";
 

@@ -70,7 +70,7 @@ async function buildSpriteGroup(
     throw new Error(`[forge-assets] no symbols produced for ${group.target} — every source file parsed to nothing`);
   }
 
-  const sprite = `<svg xmlns="http://www.w3.org/2000/svg" style="display:none">\n${[...symbolMap.values()].join("\n")}\n</svg>`;
+  const sprite = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none">\n${[...symbolMap.values()].join("\n")}\n</svg>`;
 
   const targetStem = basename(group.target, ".svg");
   try {

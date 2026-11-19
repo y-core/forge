@@ -39,7 +39,8 @@ const TARGET = fakeAuthUser({ id: "u2", email: "grace@example.com", isAdmin: tru
 
 const ENROLLED = { status: "enrolled", enrolledAt: 1 } as const;
 
-const ENROLLING = { status: "enrolling", secret: "JBSWY3DPEHPK3PXP", uri: "otpauth://totp/Forge:ada@example.com?secret=JBSWY3DPEHPK3PXP" } as const;
+const PASSKEY_MANDATORY = "Your account requires a passkey. Add another before you remove this one.";
+const TOTP_MANDATORY = "Your account requires an authenticator app, so it can't be removed. Replace it instead.";
 
 type Chrome = { readonly class?: string };
 
@@ -50,6 +51,7 @@ interface AuthHtmxForm {
   readonly path: string;
   readonly submit: string;
   readonly view: (chrome: Chrome) => unknown;
+  readonly refusal: 409 | 422;
   readonly refused: (chrome: Chrome) => unknown;
 }
 
@@ -64,12 +66,14 @@ const passkeyEdit = (chrome: Chrome, fieldError?: string) =>
     ...chrome,
   });
 
-const passkeyList = (chrome: Chrome, fallbackFactors: readonly ["email-otp"] | readonly [] = ["email-otp"]) =>
+const passkeyList = (chrome: Chrome, refused = false) =>
   PasskeyListView({
     rows: [{ credential: CREDENTIAL, csrfToken: TOKEN }],
-    fallbackFactors,
+    mandatory: refused,
     paths: PATHS.account,
     enrolPath: PATHS.account.passkeyEnrol(),
+    backupPrompt: false,
+    error: refused ? PASSKEY_MANDATORY : undefined,
     icon: fakeAuthIcon,
     ...chrome,
   });
@@ -77,12 +81,14 @@ const passkeyList = (chrome: Chrome, fallbackFactors: readonly ["email-otp"] | r
 const adminEdit = (chrome: Chrome, outcome: "last-admin-demote" | null = null) =>
   AdminUserEditView({ user: TARGET, lastAdmin: false, self: false, outcome, paths: PATHS.admin, csrfToken: TOKEN, icon: fakeAuthIcon, ...chrome });
 
-const totp = (chrome: Chrome, state: typeof ENROLLED | typeof ENROLLING = ENROLLED) =>
+const totp = (chrome: Chrome, refused = false) =>
   TotpEnrolView({
-    state,
+    state: ENROLLED,
     enrolPath: PATHS.account.totpEnrol(),
     removePath: PATHS.account.totpRemove(),
     csrfToken: TOKEN,
+    mandatory: refused,
+    error: refused ? TOTP_MANDATORY : undefined,
     icon: fakeAuthIcon,
     ...chrome,
   });
@@ -95,6 +101,7 @@ const FORMS: readonly AuthHtmxForm[] = [
     path: "/account/passkeys/c1",
     submit: "[data-ref='credential-rename-submit']",
     view: (chrome) => passkeyEdit(chrome),
+    refusal: 422,
     refused: (chrome) => passkeyEdit(chrome, "Use a shorter name for this passkey."),
   },
   {
@@ -104,6 +111,7 @@ const FORMS: readonly AuthHtmxForm[] = [
     path: "/admin/users/u2",
     submit: "[data-ref='admin-role-submit']",
     view: (chrome) => adminEdit(chrome),
+    refusal: 409,
     refused: (chrome) => adminEdit(chrome, "last-admin-demote"),
   },
   {
@@ -113,7 +121,8 @@ const FORMS: readonly AuthHtmxForm[] = [
     path: "/account/passkeys/c1",
     submit: "[data-ref='credential-remove']",
     view: (chrome) => passkeyList(chrome),
-    refused: (chrome) => passkeyList(chrome, []),
+    refusal: 409,
+    refused: (chrome) => passkeyList(chrome, true),
   },
   {
     name: "TOTP remove",
@@ -122,7 +131,8 @@ const FORMS: readonly AuthHtmxForm[] = [
     path: "/account/totp",
     submit: "[data-ref='totp-remove']",
     view: (chrome) => totp(chrome),
-    refused: (chrome) => totp(chrome, ENROLLING),
+    refusal: 409,
+    refused: (chrome) => totp(chrome, true),
   },
 ];
 
@@ -158,7 +168,7 @@ for (const form of FORMS) {
   test.describe(`auth htmx form — ${form.name}`, () => {
     for (const [status, answered] of [
       [200, form.view],
-      [422, form.refused],
+      [form.refusal, form.refused],
     ] as const) {
       test(`swaps the ${status} re-render over the view, leaving exactly one #${form.root}`, async ({ page }) => {
         await mountView(page, form.view({}));

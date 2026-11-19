@@ -1,18 +1,18 @@
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 import { getPlatformProxy } from "wrangler";
 
+import type { D1Database } from "../../src/storage/db/types";
 import { executeFile } from "../../src/tooling/db/d1";
 import { realDbIo } from "../../src/tooling/db/io";
 import type { Home } from "../../src/tooling/db/types";
+import { forgeDb } from "./cli";
 
-const FORGE = fileURLToPath(new URL("../..", import.meta.url));
-const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
+/** Every `forge db` run here reads the `DB` binding's local state. */
+const LOCAL_DB = ["--db", "DB", "--target", "local"];
 const DATABASE = "db-backup-fixture";
 
 const SEED = [
@@ -31,11 +31,6 @@ interface Bindings {
 
 let root: string;
 let report: { name: string; key: string; mismatches: string[] };
-
-function forgeDb(args: string[]): { code: number; stdout: string; stderr: string } {
-  const run = spawnSync("bun", ["run", BIN, "db", ...args, "--db", "DB", "--target", "local", "--root", root], { cwd: FORGE, encoding: "utf-8" });
-  return { code: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
-}
 
 async function withBindings<T>(use: (env: Bindings) => Promise<T>): Promise<T> {
   const proxy = await getPlatformProxy<Bindings>({
@@ -86,11 +81,11 @@ test.afterAll(() => {
 });
 
 test.describe("forge db backup, then restore --into standby, against real local D1 and R2", () => {
-  test.beforeAll(() => {
-    const backup = forgeDb(["backup", "--json"]);
+  test.beforeAll(async () => {
+    const backup = await forgeDb(root, ["backup", "--json", ...LOCAL_DB]);
     expect(backup.code, `backup failed\n${backup.stdout}\n${backup.stderr}`).toBe(0);
     const { key } = JSON.parse(backup.stdout) as { key: string };
-    const restore = forgeDb(["restore", "--from", key, "--into", "standby:STANDBY", "--json"]);
+    const restore = await forgeDb(root, ["restore", "--from", key, "--into", "standby:STANDBY", "--json", ...LOCAL_DB]);
     expect(restore.code, `restore failed\n${restore.stdout}\n${restore.stderr}`).toBe(0);
     report = JSON.parse(restore.stdout) as typeof report;
   });
@@ -137,6 +132,8 @@ test.describe("executeFile() against real local D1", () => {
       persistTo: join(root, ".wrangler", "state"),
       place: "local",
       env: null,
+      databaseId: null,
+      auth: null,
       synthesized: false,
     };
     const io = realDbIo();

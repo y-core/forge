@@ -58,8 +58,8 @@ export interface ImportBoundaryCheckConfig {
   packageName?: string;
   /** The `exports` map, verbatim from `package.json` — which subpaths are guarded is *derived* from it. */
   exports?: ExportsMap;
-  /** The feature manifest; its directories under `sources` are guarded, and each may import only what it requires. */
-  features?: FeatureManifest;
+  /** The feature manifest's `features`; their directories under `sources` are guarded, and each may import only what it requires. */
+  features?: FeatureManifest["features"];
 }
 
 /** What the dev-boundary check needs to know about the project. @public */
@@ -690,6 +690,12 @@ export interface ModernCssFinding {
   line: number;
   ruleId: ModernCssReportedId;
   detail: string;
+}
+
+/** What a source file's modern-CSS scan needs from the rest of the scanned tree. @public */
+export interface ModernCssSourceContext {
+  /** A scanned stylesheet carries `@view-transition { navigation: auto; }`, which animates every cross-document navigation. */
+  crossDocumentTransition: boolean;
 }
 
 /** A declaration block — one with no nested block of its own — and the at-rules enclosing it. @public */

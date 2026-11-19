@@ -1,7 +1,8 @@
 import { readD1Backup } from "../../../storage/backup/sidecar";
 import type { D1BackupSidecar, D1RestoredDatabase, D1RestoreReport } from "../../../storage/backup/types";
 import { CliError } from "../../cli/errors";
-import { isDumpedObject, quoteIdentifier, readSchemaRow, SCHEMA_SELECT, schemaDigest } from "./census";
+import { quoteSqlIdentifier } from "../sql";
+import { isAppObject, readSchemaRow, SCHEMA_SELECT, schemaDigest } from "./census";
 import type { D1ImportState, D1RestoreOptions } from "./types";
 
 function checkOptions(options: D1RestoreOptions): void {
@@ -21,7 +22,7 @@ async function readSidecar(options: D1RestoreOptions): Promise<D1BackupSidecar> 
 async function appTables(options: D1RestoreOptions, target: D1RestoredDatabase): Promise<string[]> {
   return (await options.transfer.query(target, SCHEMA_SELECT))
     .map(readSchemaRow)
-    .filter((row) => row.type === "table" && row.name !== "sqlite_sequence" && isDumpedObject(row.name, row.tableName))
+    .filter((row) => row.type === "table" && row.name !== "sqlite_sequence" && isAppObject(row.name, row.tableName))
     .map((row) => row.name);
 }
 
@@ -57,7 +58,7 @@ export async function compareWithSidecar(query: (sql: string) => Promise<Record<
   const digest = await schemaDigest((await query(SCHEMA_SELECT)).map(readSchemaRow));
   if (digest !== sidecar.schemaDigest) mismatches.push(`the schema digests ${digest}, but the sidecar recorded ${sidecar.schemaDigest}`);
   for (const [table, rows] of Object.entries(sidecar.rows)) {
-    const counted = await query(`SELECT COUNT(*) AS n FROM ${quoteIdentifier(table)}`).catch(() => null);
+    const counted = await query(`SELECT COUNT(*) AS n FROM ${quoteSqlIdentifier(table)}`).catch(() => null);
     const held = counted === null ? null : Number(counted[0]?.n ?? 0);
     if (held !== rows) mismatches.push(`${table} holds ${held === null ? "no such table" : `${held} rows`}, but the dump holds ${rows}`);
   }

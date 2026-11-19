@@ -7,6 +7,7 @@ export {
   createPasskeyManageActions,
   createPasskeyStepUpActions,
   createRecoveryCodeActions,
+  createSessionActions,
   authCsrfRefusal,
   createSigninActions,
   createSignoutActions,
@@ -20,6 +21,7 @@ export { defineApproval, registerApproval } from "./approval";
 export type {
   AuthAdminGuardOptions,
   AuthEnrolmentGuardOptions,
+  AuthEnrolmentPaths,
   AuthGuardChainOptions,
   AuthGuardOptions,
   AuthGuardResolver,
@@ -45,22 +47,19 @@ export { AUTH_NAV_FILTERS, AUTH_NAV_SIGNOUT_SLOT, authNav } from "./nav";
 export {
   authCtx,
   AUTH_PENDING_SIGNIN_SESSION_KEY,
-  AUTH_SESSION_KEY,
-  AUTH_SIGNED_IN_SESSION_KEY,
   AUTH_SITE_DATA_OWED_SESSION_KEY,
-  AUTH_STEP_UP_SESSION_KEY,
-  AUTH_SURVIVED_SESSION_KEY,
   clearAuthSession,
   establishAuthSession,
   markAuthSigninPending,
-  renewAuthSession,
   markAuthStepUp,
   resolveAuthIdentity,
   resolveAuthSigninPending,
+  revokeOtherAuthSessions,
 } from "./identity";
 export {
   loadAccountFactors,
   loadAccountPasskeyEnrol,
+  loadAccountSessions,
   loadAdminElevate,
   loadAdminUser,
   loadAdminUserEdit,
@@ -77,6 +76,7 @@ export {
   loadSignoutConfirm,
   loadSignup,
   loadTotpEnrol,
+  loadTotpReplace,
   loadVerify,
 } from "./loaders";
 export type {
@@ -104,6 +104,7 @@ export {
   authAdminUserSchema,
   authEmailChangeSchema,
   authPasskeyLabelSchema,
+  authSessionRevokeSchema,
   authSigninSchema,
   authSignupSchema,
   authTotpEnrolSchema,
@@ -123,7 +124,7 @@ export type { SigninViewProps } from "./views/types";
 export { AUTH_SIGNIN_ID, SigninView } from "./views/signin";
 export type { SignupViewProps } from "./views/types";
 export { AUTH_SIGNUP_ID, SignupView } from "./views/signup";
-export type { VerifyChoice, VerifyViewProps } from "./views/types";
+export type { AuthFactorChoice, VerifyViewProps } from "./views/types";
 export { AUTH_VERIFY_ID, VerifyView } from "./views/verify";
 export type { AuthFactorRow, AuthFactorState, AuthFactorsResetForm, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./views/types";
 export { AuthFactorsTrigger, AuthFactorsView } from "./views/factors";
@@ -141,5 +142,7 @@ export type { PasskeyListViewProps, PasskeyRow } from "./views/types";
 export { AUTH_PASSKEY_LIST_ID, PasskeyListView } from "./views/passkey-list";
 export type { RecoveryCodesViewProps } from "./views/types";
 export { RecoveryCodesView } from "./views/recovery-codes";
+export type { SessionListViewProps } from "./views/types";
+export { AUTH_SESSION_LIST_ID, SessionListView } from "./views/session-list";
 export type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 export { AUTH_TOTP_ID, TotpEnrolView } from "./views/totp-enrol";

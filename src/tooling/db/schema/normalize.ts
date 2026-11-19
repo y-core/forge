@@ -224,7 +224,8 @@ function clause(raw: string, options: { literals?: SqlLiteralRule }): TableBodyC
 const OBJECT_TYPES = new Set(["TABLE", "INDEX", "TRIGGER", "VIEW"]);
 const CREATE_MODIFIERS = new Set(["TEMP", "TEMPORARY", "UNIQUE", "VIRTUAL"]);
 
-function bareName(token: SqlToken): string {
+/** The name a name token carries, its qualifier dropped and its quotes undone. @internal */
+export function bareSqlName(token: SqlToken): string {
   return token.kind === "word" ? (token.text.split(".").pop() ?? token.text) : unquoteSqlIdentifier(token.text);
 }
 
@@ -237,9 +238,9 @@ export function readQualifiedObjectName(tokens: readonly SqlToken[], index: numb
   const after = tokens[index + (trailing ? 1 : 2)];
   const qualified = trailing || (first.kind === "identifier" && tokens[index + 1]?.text === ".");
   if (qualified && after !== undefined && (after.kind === "word" || after.kind === "identifier"))
-    return { name: bareName(after), start: first.start, end: after.end };
+    return { name: bareSqlName(after), start: first.start, end: after.end };
   if (trailing) return null;
-  return { name: bareName(first), start: first.start, end: first.end };
+  return { name: bareSqlName(first), start: first.start, end: first.end };
 }
 
 /** Every object a piece of DDL creates, by type and name, read from its `CREATE` statements. @internal */

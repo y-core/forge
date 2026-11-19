@@ -20,6 +20,7 @@ import { PasskeyEditView } from "./views/passkey-edit";
 import { PasskeyEnrolView } from "./views/passkey-enrol";
 import { PasskeyListView } from "./views/passkey-list";
 import { RecoveryCodesView } from "./views/recovery-codes";
+import { SessionListView } from "./views/session-list";
 import { SigninView } from "./views/signin";
 import { SignoutConfirmView } from "./views/signout";
 import { SignupView } from "./views/signup";
@@ -42,9 +43,11 @@ export const AUTH_VIEWS: { readonly [Name in AuthViewName]: FC<AuthViewProps[Nam
   accountPasskey: PasskeyListView,
   accountPasskeyEdit: PasskeyEditView,
   accountTotp: TotpEnrolView,
+  accountTotpReplace: TotpEnrolView,
   accountEmailChange: EmailChangeView,
   accountFactors: AuthFactorsView,
   accountRecoveryCodes: RecoveryCodesView,
+  accountSessions: SessionListView,
   adminUsers: AdminUsersView,
   adminUser: AdminUserEditView,
   adminUserEdit: AdminUserEditView,
@@ -65,13 +68,15 @@ const AUTH_PAGE_TITLES: Readonly<Record<AuthViewName, string>> = {
   accountPasskey: "Passkeys",
   accountPasskeyEdit: "Rename passkey",
   accountTotp: "Authenticator app",
+  accountTotpReplace: "Replace your authenticator app",
   accountEmailChange: "Change email",
-  accountFactors: "Sign-in methods",
+  accountFactors: "Factors",
   accountRecoveryCodes: "Recovery codes",
+  accountSessions: "Sessions",
   adminUsers: "Users",
   adminUser: "User",
   adminUserEdit: "Edit user",
-  adminUserFactors: "Sign-in methods",
+  adminUserFactors: "Factors",
   adminElevate: "Elevate",
 };
 

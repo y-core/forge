@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 import type { DbRunContext } from "../../src/tooling/db/types";
+import { type CliRun, forgeDb } from "./cli";
 import { type D1Handle, openD1 } from "./d1";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(FORGE, "tests", "fixtures", "db-compose");
-const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
 
 interface Case {
   /** A second schema `config/db.config.ts` declares for the before state and no longer declares for the after one. */
@@ -33,21 +32,6 @@ interface Case {
   rows: Record<string, unknown>[];
 }
 
-interface Step {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function forgeDb(root: string, args: string[]): Promise<Step> {
-  const child = spawn("bun", ["run", BIN, "db", ...args, "--root", root], { cwd: FORGE });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf-8")));
-  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf-8")));
-  return new Promise((resolve) => child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr })));
-}
-
 function freshRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "forge-db-compose-"));
   cpSync(join(FIXTURE, "wrangler.jsonc"), join(root, "wrangler.jsonc"));
@@ -67,7 +51,7 @@ function withoutApproval(args: readonly string[]): string[] {
   return at === -1 ? [...args] : [...args.slice(0, at), ...args.slice(at + 2)];
 }
 
-function composeArgs(spec: Case, refused: Step | null): string[] {
+function composeArgs(spec: Case, refused: CliRun | null): string[] {
   return (spec.args ?? []).map((arg) => {
     if (arg !== "<digest>") return arg;
     const match = DIGEST.exec(refused?.stderr ?? "");
@@ -77,16 +61,16 @@ function composeArgs(spec: Case, refused: Step | null): string[] {
 }
 
 interface Observed {
-  first: Step;
+  first: CliRun;
   firstWritten: boolean;
-  refused: Step | null;
+  refused: CliRun | null;
   refusedWritten: boolean;
-  second: Step;
+  second: CliRun;
   written: string;
-  migrated: [Step, Step | null];
-  check: Step | null;
-  status: Step | null;
-  again: Step | null;
+  migrated: [CliRun, CliRun | null];
+  check: CliRun | null;
+  status: CliRun | null;
+  again: CliRun | null;
   againWritten: boolean;
   rows: unknown;
 }

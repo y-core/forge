@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
 import { CSRF_FIELD_DEFAULT } from "../../form/constants";
-import { attrOf, attrsOf, classesOf } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, tagOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { Form } from "./form";
 
@@ -146,7 +146,7 @@ describe("Form — method=get", () => {
 
 describe("Form — class composition", () => {
   it("emits no class attribute at all when no class is passed", async () => {
-    expect(await render(<Form />)).not.toContain("class=");
+    expect(tagOf(await render(<Form />))).toBe('<form data-slot="form" method="post">');
   });
 
   it("emits a caller's class verbatim when it holds no conflict", async () => {

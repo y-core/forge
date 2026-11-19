@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { type CliRun, collect } from "./cli";
 import { expect, test } from "./harness.fixture";
 
 const FORGE = fileURLToPath(new URL("../../", import.meta.url));
@@ -93,15 +93,15 @@ try {
 `;
 
 /** A consumer whose `node_modules` holds the tarball `bun pm pack` makes of forge, as the release ships it, with forge's dependencies and wrangler beside it. */
-function consumerRoot(): string {
+async function consumerRoot(): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), "forge-harness-consumer-"));
   const installed = join(root, "node_modules", "@y-core", "forge");
   mkdirSync(installed, { recursive: true });
-  const pack = spawnSync("bun", ["pm", "pack", "--destination", root, "--quiet"], { cwd: FORGE, encoding: "utf-8" });
-  if (pack.status !== 0) throw new Error(`bun pm pack failed: ${pack.stderr}`);
+  const pack = await collect("bun", ["pm", "pack", "--destination", root, "--quiet"], FORGE);
+  if (pack.code !== 0) throw new Error(`bun pm pack failed: ${pack.stderr}`);
   const tarball = resolve(root, pack.stdout.trim().split("\n").at(-1) ?? "");
-  const extract = spawnSync("tar", ["-xzf", tarball, "-C", installed, "--strip-components=1"], { encoding: "utf-8" });
-  if (extract.status !== 0) throw new Error(`tar failed: ${extract.stderr}`);
+  const extract = await collect("tar", ["-xzf", tarball, "-C", installed, "--strip-components=1"], root);
+  if (extract.code !== 0) throw new Error(`tar failed: ${extract.stderr}`);
   for (const name of [...Object.keys(MANIFEST.dependencies), "wrangler"]) {
     mkdirSync(dirname(join(root, "node_modules", name)), { recursive: true });
     symlinkSync(join(FORGE, "node_modules", name), join(root, "node_modules", name));
@@ -110,16 +110,16 @@ function consumerRoot(): string {
 }
 
 /** Runs `source` as an ES module under node from `root`, where `@y-core/forge` resolves to the installed tarball. */
-function runNode(root: string, source: string) {
+function runNode(root: string, source: string): Promise<CliRun> {
   writeFileSync(join(root, "spec.mjs"), source);
-  return spawnSync("node", ["spec.mjs"], { cwd: root, encoding: "utf-8", timeout: 120_000 });
+  return collect("node", ["spec.mjs"], root, { timeoutMs: 120_000 });
 }
 
 test.describe("forge installed from its packed tarball", () => {
   let root = "";
 
-  test.beforeAll(() => {
-    root = consumerRoot();
+  test.beforeAll(async () => {
+    root = await consumerRoot();
   });
 
   test.afterAll(() => {
@@ -131,28 +131,28 @@ test.describe("forge installed from its packed tarball", () => {
   });
 
   for (const subpath of NODE_SUBPATHS) {
-    test(`loads ${subpath} under node`, () => {
-      const run = runNode(root, `console.log(String(Object.keys(await import(${JSON.stringify(subpath)})).length));`);
+    test(`loads ${subpath} under node`, async () => {
+      const run = await runNode(root, `console.log(String(Object.keys(await import(${JSON.stringify(subpath)})).length));`);
 
       expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
-      expect(run.status).toBe(0);
+      expect(run.code).toBe(0);
       expect(Number(run.stdout.trim())).toBeGreaterThan(0);
     });
   }
 
-  test("submits a form through a Worker served by testing/harness with a token minted by testing/form", () => {
-    const run = runNode(root, ROUND_TRIP);
+  test("submits a form through a Worker served by testing/harness with a token minted by testing/form", async () => {
+    const run = await runNode(root, ROUND_TRIP);
 
     expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
-    expect(run.status).toBe(0);
+    expect(run.code).toBe(0);
     expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ minted: 200, missing: 403 });
   });
 
-  test("serves a Worker without its rate limiter as `forge cf dev` builds it under dev, and refusing with 503 without", () => {
+  test("serves a Worker without its rate limiter as `forge cf dev` builds it under dev, and refusing with 503 without", async () => {
     writeFileSync(join(root, "limited.mjs"), LIMITED_WORKER);
-    const run = runNode(root, ARMING);
+    const run = await runNode(root, ARMING);
 
-    expect(run.status).toBe(0);
+    expect(run.code).toBe(0);
     expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({ dev: 200, strict: 503 });
   });
   test.describe("testing/d1 from a consumer's node spec", () => {
@@ -164,18 +164,18 @@ test.describe("forge installed from its packed tarball", () => {
       writeFileSync(join(root, "db", "migrations", "0001_posts.sql"), POSTS_MIGRATION);
     });
 
-    test("opens a database with no options from a config/db.config.ts written as the tooling/db README shows", () => {
-      const run = runNode(root, DEFAULT_OPEN);
+    test("opens a database with no options from a config/db.config.ts written as the tooling/db README shows", async () => {
+      const run = await runNode(root, DEFAULT_OPEN);
 
       expect(run.stderr).not.toContain("ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING");
-      expect(run.status).toBe(0);
+      expect(run.code).toBe(0);
       expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual([{ name: "posts" }]);
     });
 
-    test("builds a fragment with testing/d1's sql and explains it, importing nothing node cannot load", () => {
-      const run = runNode(root, EXPLAINED);
+    test("builds a fragment with testing/d1's sql and explains it, importing nothing node cannot load", async () => {
+      const run = await runNode(root, EXPLAINED);
 
-      expect(run.status).toBe(0);
+      expect(run.code).toBe(0);
       expect(JSON.parse(run.stdout.trim().split("\n").at(-1) ?? "")).toEqual({
         fragment: { text: "SELECT id FROM posts WHERE user_id = ?", params: [1] },
         indexed: true,

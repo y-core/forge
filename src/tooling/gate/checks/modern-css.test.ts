@@ -107,6 +107,32 @@ describe("checkModernCss() — the tree it walks", () => {
   });
 });
 
+describe("checkModernCss() — a cross-document navigation", () => {
+  const NAVIGATE = 'export function go(win: Window): void {\n  win.location.replace("/next");\n}\n';
+  const WARNING = `forge-ui-platform-view-transition: a cross-document navigation with no \`@view-transition { navigation: auto; }\` in the stylesheets — opt the navigation into a view transition in CSS (${CORPUS})`;
+
+  it("raises no warning when the app stylesheet opts into a view transition", () => {
+    const root = fixtureRoot({ "src/ui/main.ts": NAVIGATE, "src/ui/app.css": LAYERED("@view-transition {\n  navigation: auto;\n}\n") });
+
+    expect(messages(root)).toEqual([]);
+  });
+
+  it("warns on the navigation when no stylesheet opts in", () => {
+    const root = fixtureRoot({ "src/ui/main.ts": NAVIGATE, "src/ui/app.css": LAYERED(".a {\n  color: red;\n}\n") });
+
+    expect([run(root).ok, messages(root)]).toEqual([true, [WARNING]]);
+  });
+
+  it("still warns when the file holds the bare string `startViewTransition` beside the navigation", () => {
+    const root = fixtureRoot({
+      "src/ui/main.ts": `const api = "startViewTransition";\n${NAVIGATE}`,
+      "src/ui/app.css": LAYERED(".a {\n  color: red;\n}\n"),
+    });
+
+    expect(messages(root)).toEqual([WARNING]);
+  });
+});
+
 describe("checkModernCss() — the deferral list", () => {
   const deferral: DeferredFinding = { path: "src/ui/a.css", ruleId: "forge-ui-platform-isolation", owner: "task-1" };
 

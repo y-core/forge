@@ -37,6 +37,11 @@ describe("RecoveryCodesView standing", () => {
     expect(textOf(html, "button", 'type="submit"')).toBe("Generate recovery codes");
   });
 
+  it("says each code stands in once for a second factor out of reach, not that it signs anyone in", async () => {
+    const description = textOf(await codes({ remaining: 3 }), "div", 'data-slot="card-description"').replace(/<[^>]*>/g, "");
+    expect(description).toBe("You have 3 unused recovery codes left. Each code works once, in place of a second factor you can&#39;t reach.");
+  });
+
   it("counts the unused codes of a confirmed set, singular and plural", async () => {
     const one = await codes({ remaining: 1 });
     const many = await codes({ remaining: 7 });

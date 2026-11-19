@@ -23,7 +23,7 @@ export type EnvVarName<E> = [keyof E] extends [never]
 /** A name `env()` may reference in a config mapping: a var or secret of {@link DeclaredEnv}, or any string while nothing declares one. @public */
 export type DeclaredEnvName = EnvVarName<DeclaredEnv>;
 
-/** Environment-conditional config override: `detect` selects, `patch` mutates the parsed config. @public */
+/** Environment-conditional config override: `detect` selects, and `patch`'s output is used unvalidated, so `detect` must never match in production. @public */
 export interface ConfigOverrides<ConfigData> {
   detect: (env: Record<string, unknown>) => boolean;
   patch: (config: ConfigData) => ConfigData;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { authEnrolmentPaths, authPaths, authWithQuery } from "./paths";
+import { authEnrolmentPaths, authEnrolTarget, authPaths, authWithQuery } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 
 describe("authPaths", () => {
@@ -44,6 +44,37 @@ describe("authWithQuery", () => {
 
 describe("authEnrolmentPaths", () => {
   it("never names recovery codes as an enrolment page, since they are issued after a step-up", () => {
-    expect(Object.keys(authEnrolmentPaths(authPaths(authRoutes("/auth"))))).not.toContain("recovery-code");
+    expect(Object.keys(authEnrolmentPaths(authPaths(authRoutes("/auth"))).kinds)).not.toContain("recovery-code");
   });
+});
+
+describe("authEnrolTarget", () => {
+  const cases = [
+    {
+      label: "goes straight to the page of the one kind owed",
+      paths: { kinds: { passkey: "/pk", "totp-app": "/app" } },
+      kinds: ["passkey"],
+      expected: "/pk",
+    },
+    {
+      label: "goes to the first owed kind's page when two owed kinds each have one, since every owed kind must be enrolled",
+      paths: { kinds: { passkey: "/pk", "totp-app": "/app" } },
+      kinds: ["totp-app", "passkey"],
+      expected: "/app",
+    },
+    {
+      label: "goes straight to the one page when two kinds are owed but only one has a page",
+      paths: { kinds: { "totp-app": "/app" } },
+      kinds: ["passkey", "totp-app"],
+      expected: "/app",
+    },
+    { label: "names no page when no owed kind has one", paths: { kinds: { "totp-app": "/app" } }, kinds: ["passkey"], expected: undefined },
+    { label: "names no page when nothing is owed", paths: { kinds: { passkey: "/pk" } }, kinds: [], expected: undefined },
+  ] as const;
+
+  for (const { label, paths, kinds, expected } of cases) {
+    it(label, () => {
+      expect(authEnrolTarget(paths, kinds)).toBe(expected);
+    });
+  }
 });

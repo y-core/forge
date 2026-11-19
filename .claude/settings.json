@@ -4,6 +4,9 @@
     "commit": "",
     "pr": ""
   },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_CODE_MODE": "1"
+  },
   "permissions": {
     "allow": [
       "Bash(bun run *)",

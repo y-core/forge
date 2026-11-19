@@ -5,7 +5,7 @@ import type { LogRecord } from "../../logging/types";
 import { fakeKV } from "../../testing/fakes";
 import { bytesCodec, textCodec } from "./codec";
 import { createKVStore } from "./store";
-import type { KVListResult, KVNamespace } from "./types";
+import type { KVListResult, KVNamespace, KvCodec } from "./types";
 
 /** Hands out a copy of a stored `ArrayBuffer` so a caller mutating what it read cannot reach back into the store. */
 function copyOut(value: string | ArrayBuffer): string | ArrayBuffer {
@@ -237,7 +237,7 @@ describe("createKVStore() logging", () => {
     expect(records.map((record) => record.message)).toEqual(["kv.miss"]);
   });
 
-  it("records a decode failure as a serialized error carrying the stack", async () => {
+  it("records a decode failure by the error's name alone", async () => {
     const records: LogRecord[] = [];
     const logger = createLogger("storage/kv", { channels: [{ write: (record) => void records.push(record) }] });
     const kv = makeKVStub();
@@ -247,10 +247,33 @@ describe("createKVStore() logging", () => {
     const res = await store.get("broken");
 
     expect(res.ok).toBe(false);
-    const error = records[0]?.data?.error as { type: string; detail: string; stack?: string };
-    expect(records[0]?.message).toBe("kv.decode-error");
-    expect(error.type).toBe("SyntaxError");
-    expect(error.detail).not.toBe("");
-    expect(error.stack).toContain("store.ts");
+    expect(records.map(({ message, data }) => ({ message, data }))).toEqual([{ message: "kv.decode-error", data: { error: "SyntaxError" } }]);
+  });
+
+  it("keeps the key and every fragment of the stored value out of the miss and decode-error records", async () => {
+    const sessionKey = "sess_7f3a9c2e4b1d";
+    const storedValue = "{secret-token-QX81";
+    const records: LogRecord[] = [];
+    const logger = createLogger("storage/kv", { channels: [{ write: (record) => void records.push(record) }] });
+    const kv = makeKVStub();
+    // Quotes its input in the error message, as V8's JSON.parse does and Bun's does not.
+    const quotingCodec: KvCodec<string> = {
+      type: "text",
+      encode: (value) => value,
+      decode: (raw) => {
+        throw new SyntaxError(`Unexpected token in "${String(raw)}"`);
+      },
+    };
+    const store = createKVStore(kv, { logger, prefix: "sessions", codec: quotingCodec });
+
+    await store.getOrSet("sess_absent_5e6f", () => "value");
+    await kv.put(`sessions||${sessionKey}`, storedValue);
+    await store.get(sessionKey);
+
+    expect(records.map((record) => record.message)).toEqual(["kv.miss", "kv.decode-error"]);
+    const serialized = JSON.stringify(records);
+    for (const fragment of [sessionKey, "sess_absent_5e6f", "secret", "token", "QX81"]) {
+      expect(serialized).not.toContain(fragment);
+    }
   });
 });

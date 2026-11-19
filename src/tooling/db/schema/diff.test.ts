@@ -79,8 +79,10 @@ describe("refuseAddColumn()", () => {
     ["nick TEXT DEFAULT NULL REFERENCES users(id)", null],
     ["id2 INTEGER PRIMARY KEY", "a PRIMARY KEY column cannot be added"],
     ["nick TEXT UNIQUE", "a UNIQUE column cannot be added"],
-    ["nick TEXT NOT NULL", "a NOT NULL column with no DEFAULT cannot be added"],
-    ["nick TEXT NOT NULL DEFAULT NULL", "a NOT NULL column whose DEFAULT is NULL cannot be added"],
+    ["nick TEXT NOT NULL", "a column that refuses NULL with no non-NULL DEFAULT cannot be added"],
+    ["nick TEXT NOT NULL DEFAULT NULL", "a column that refuses NULL with no non-NULL DEFAULT cannot be added"],
+    ["nick TEXT CHECK (nick IS NOT NULL)", "a column that refuses NULL with no non-NULL DEFAULT cannot be added"],
+    ["nick TEXT CHECK (nick IS NOT NULL OR other IS NULL)", null],
     ["at INTEGER DEFAULT CURRENT_TIMESTAMP", "a column whose DEFAULT is not a constant cannot be added"],
     ["at INTEGER DEFAULT (unixepoch())", "a column whose DEFAULT is not a constant cannot be added"],
     ["owner INTEGER DEFAULT 1 REFERENCES users(id)", "a REFERENCES column whose DEFAULT is not NULL cannot be added"],
@@ -359,10 +361,20 @@ describe("diffSchemaModels()", () => {
     expect(droppedUnique.destructive).toEqual(["t: drops column code"]);
   });
 
-  it("refuses a NOT NULL column with no DEFAULT on an existing table, whichever route would add it", () => {
-    const wanted = model([table("t", [column("id", "id INTEGER PRIMARY KEY", { pk: 1 }), column("a", "a TEXT"), column("b", "b TEXT NOT NULL")])]);
+  it("refuses a column that refuses NULL with no non-NULL DEFAULT on an existing table, by NOT NULL or by CHECK", () => {
+    const wanted = model([
+      table("t", [
+        column("id", "id INTEGER PRIMARY KEY", { pk: 1 }),
+        column("a", "a TEXT"),
+        column("b", "b TEXT NOT NULL"),
+        column("c", "c TEXT CHECK (c IS NOT NULL)"),
+      ]),
+    ]);
+    const tail =
+      "on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it refuse NULL in a later compose";
     expect(diffSchemaModels(base, wanted).refusals).toEqual([
-      "t.b is NOT NULL with no DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it NOT NULL in a later compose",
+      `t.b refuses NULL with no non-NULL DEFAULT ${tail}`,
+      `t.c refuses NULL with no non-NULL DEFAULT ${tail}`,
     ]);
   });
 

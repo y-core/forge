@@ -6,11 +6,15 @@ import { uuidToBytes, uuidv7 } from "../../storage/db/uuid";
 import { nullLogger } from "../../testing/context";
 import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
+import { eventParams, securityEventText } from "./events.fixture";
 import { createRecoveryCodeStore } from "./recovery-codes";
+import { ACTING_SESSION, seededSessions } from "./sessions.fixture";
 
 const USER_ID = uuidv7();
 const FACTOR_ID = uuidv7();
 const HASH = new Uint8Array(32).fill(7);
+const KEEP = new Uint8Array(32).fill(9);
+const ORIGIN = { keep: KEEP };
 
 type FakeDb = ReturnType<typeof fakeD1>;
 
@@ -19,21 +23,102 @@ function clientOf(rows: (sql: string, params: unknown[]) => unknown[] = () => []
   return [createD1Client(db as unknown as D1Database, { logger: nullLogger }), db];
 }
 
+function rowsOf(params: unknown[]): unknown[][] {
+  return Array.from({ length: params.length / 5 }, (_, index) => params.slice(index * 5, (index + 1) * 5));
+}
+
 describe("createRecoveryCodeStore — stage", () => {
   it("drops the staged set and inserts every new hash as staged, in one batch that leaves the live set alone", async () => {
     const [client, db] = clientOf();
     const hashes = [new Uint8Array(32).fill(1), new Uint8Array(32).fill(2)];
     expect(await createRecoveryCodeStore(client).stage(USER_ID, hashes, 5_000)).toEqual({ ok: true, data: undefined });
-    expect(db.calls.map((call) => call.sql.split("\n")[0]?.trim())).toEqual([
+    expect(db.calls.map((call) => call.sql.replace(/\s+/g, " ").trim())).toEqual([
       "DELETE FROM auth_recovery_codes WHERE user_id = ? AND staged = 1",
-      "INSERT INTO auth_recovery_codes (id, user_id, code_hash, staged, used_at, created_at)",
-      "INSERT INTO auth_recovery_codes (id, user_id, code_hash, staged, used_at, created_at)",
+      "INSERT INTO auth_recovery_codes (id, user_id, code_hash, staged, used_at, created_at) VALUES (?, ?, ?, 1, ?, ?), (?, ?, ?, 1, ?, ?)",
     ]);
-    expect(db.calls.slice(1).map((call) => call.params.slice(1))).toEqual([
+    expect(rowsOf(db.calls[1]?.params ?? []).map((row) => row.slice(1))).toEqual([
       [uuidToBytes(USER_ID), hashes[0], null, 5_000],
       [uuidToBytes(USER_ID), hashes[1], null, 5_000],
     ]);
     expect(db.calls.every((call) => !call.sql.includes("staged = 0"))).toBe(true);
+  });
+
+  it("stages a full set of codes in one multi-row insert behind the drop", async () => {
+    const [client, db] = clientOf();
+    const hashes = Array.from({ length: 10 }, (_, index) => new Uint8Array(32).fill(index));
+    await createRecoveryCodeStore(client).stage(USER_ID, hashes, 5_000);
+    expect(db.calls.map((call) => call.params.length)).toEqual([1, 50]);
+    expect(rowsOf(db.calls[1]?.params ?? []).map((row) => row.slice(1))).toEqual(hashes.map((hash) => [uuidToBytes(USER_ID), hash, null, 5_000]));
+  });
+
+  it("splits more than twenty codes into inserts of at most twenty rows, every row binding its own five params", async () => {
+    const [client, db] = clientOf();
+    const hashes = Array.from({ length: 21 }, (_, index) => new Uint8Array(32).fill(index));
+    await createRecoveryCodeStore(client).stage(USER_ID, hashes, 5_000);
+    expect(db.calls.map((call) => call.params.length)).toEqual([1, 100, 5]);
+    const rows = db.calls.slice(1).flatMap((call) => rowsOf(call.params));
+    expect(rows.map((row) => row.slice(1))).toEqual(hashes.map((hash) => [uuidToBytes(USER_ID), hash, null, 5_000]));
+    expect(new Set(rows.map((row) => String(row[0]))).size).toBe(21);
+  });
+
+  it("fills each insert to D1's hundred params at a twenty-code boundary, and never past it", async () => {
+    const cases = [
+      { codes: 20, params: [1, 100] },
+      { codes: 40, params: [1, 100, 100] },
+      { codes: 41, params: [1, 100, 100, 5] },
+    ];
+    const observed = [];
+    for (const { codes } of cases) {
+      const [client, db] = clientOf();
+      const hashes = Array.from({ length: codes }, (_, index) => new Uint8Array(32).fill(index));
+      const staged = await createRecoveryCodeStore(client).stage(USER_ID, hashes, 5_000);
+      observed.push({ codes, params: staged.ok ? db.calls.map((call) => call.params.length) : staged });
+    }
+    expect(observed).toEqual(cases);
+  });
+
+  it("clears the staged set with the drop alone when given no codes, sending no empty insert", async () => {
+    const [client, db] = clientOf();
+    expect(await createRecoveryCodeStore(client).stage(USER_ID, [], 5_000)).toEqual({ ok: true, data: undefined });
+    expect(db.calls.map((call) => ({ sql: call.sql, params: call.params }))).toEqual([
+      { sql: "DELETE FROM auth_recovery_codes WHERE user_id = ? AND staged = 1", params: [uuidToBytes(USER_ID)] },
+    ]);
+  });
+
+  it("sends the drop and every insert in one batch, so a staged set is never half replaced", async () => {
+    const [client, db] = clientOf();
+    const batches: number[] = [];
+    const batch = db.batch;
+    db.batch = (statements) => {
+      batches.push(statements.length);
+      return batch(statements);
+    };
+    await createRecoveryCodeStore(client).stage(
+      USER_ID,
+      Array.from({ length: 21 }, (_, index) => new Uint8Array(32).fill(index)),
+      5_000,
+    );
+    expect(batches).toEqual([3]);
+  });
+
+  it("reports a failure in a later insert as the stage failing, naming the operation", async () => {
+    const [client] = clientOf(() => [], {
+      failOn: (sql, params) => (sql.startsWith("INSERT") && params.length === 5 ? new Error("D1_ERROR: network lost") : null),
+    });
+    const hashes = Array.from({ length: 21 }, (_, index) => new Uint8Array(32).fill(index));
+    const staged = await createRecoveryCodeStore(client).stage(USER_ID, hashes, 5_000);
+    expect(staged.ok === false && [staged.error.code, staged.error.operation]).toEqual(["unavailable", "recoveryCodes.stage"]);
+  });
+
+  it("reports staging for an owner with no user row as a `reference` failure", async () => {
+    const [client] = clientOf(() => [], {
+      failOn: (sql) =>
+        sql.startsWith("INSERT")
+          ? new Error("D1_ERROR: FOREIGN KEY constraint failed: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_FOREIGNKEY)")
+          : null,
+    });
+    const staged = await createRecoveryCodeStore(client).stage(USER_ID, [HASH], 5_000);
+    expect(staged.ok === false && [staged.error.code, staged.error.operation]).toEqual(["reference", "recoveryCodes.stage"]);
   });
 
   it("refuses an owner id that is not a UUID without issuing a statement", async () => {
@@ -59,22 +144,66 @@ describe("createRecoveryCodeStore — holdsStaged", () => {
 describe("createRecoveryCodeStore — commit", () => {
   it("replaces the live set only where a staged one exists, and confirms the factor with its guesses cleared", async () => {
     const [client, db] = clientOf();
-    expect(await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000)).toEqual({ ok: true, data: undefined });
-    const [dropLive, promote, confirm] = db.calls.map((call) => call.sql.replace(/\s+/g, " "));
+    expect(await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000, ORIGIN)).toEqual({ ok: true, data: false });
+    const [, , dropLive, promote, confirm] = db.calls.map((call) => call.sql.replace(/\s+/g, " "));
     expect(dropLive).toContain("DELETE FROM auth_recovery_codes WHERE user_id = ? AND staged = 0 AND EXISTS");
     expect(promote).toContain("UPDATE auth_recovery_codes SET staged = 0 WHERE user_id = ? AND staged = 1");
     expect(confirm).toContain("confirmed_at = COALESCE(confirmed_at, ?), failed_attempts = 0");
-    expect(db.calls[2]?.params).toEqual([6_000, 6_000, uuidToBytes(FACTOR_ID), uuidToBytes(USER_ID)]);
+    expect(db.calls[4]?.params).toEqual([6_000, 6_000, uuidToBytes(FACTOR_ID), uuidToBytes(USER_ID)]);
+  });
+
+  it("signs every other session out when a staged set is swapped in, keeping the acting one, and none when there was no staged set", async () => {
+    const committedWith = async (staged: number) => {
+      const seeded = await seededSessions(USER_ID, (sql) => (sql.includes("WHERE EXISTS (SELECT 1 FROM auth_recovery_codes") ? staged : null));
+      await createRecoveryCodeStore(seeded.client).commit(USER_ID, FACTOR_ID, 6_000, { keep: ACTING_SESSION });
+      return seeded.live();
+    };
+    expect([await committedWith(1), await committedWith(0)]).toEqual([
+      [true, false],
+      [true, true],
+    ]);
   });
 });
 
 describe("createRecoveryCodeStore — commit, statement by statement", () => {
+  it("answers whether a staged set was there to swap in, which is what its event records", async () => {
+    const answerWith = async (recorded: number) =>
+      createRecoveryCodeStore(clientOf(() => [], { rowsWritten: (sql) => (sql.includes("auth_security_events") ? recorded : 1) })[0]).commit(
+        USER_ID,
+        FACTOR_ID,
+        6_000,
+        ORIGIN,
+      );
+    expect([await answerWith(1), await answerWith(0)]).toEqual([
+      { ok: true, data: true },
+      { ok: true, data: false },
+    ]);
+  });
+
   const flat = (sql: string | undefined) => sql?.replace(/\s+/g, " ").trim();
+
+  it("records the issue from the acting session first, only where the same owner holds a staged set", async () => {
+    const [client, db] = clientOf();
+    await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000, ORIGIN);
+    expect({ sql: flat(db.calls[0]?.sql), params: eventParams(db.calls[0]?.params) }).toEqual({
+      sql: securityEventText({ session: true, guard: "EXISTS (SELECT 1 FROM auth_recovery_codes WHERE user_id = ? AND staged = 1)" }),
+      params: ["event-id", uuidToBytes(USER_ID), "recovery-codes-issued", "recovery-code", KEEP, null, 6_000, uuidToBytes(USER_ID)],
+    });
+  });
+
+  it("revokes every other session directly behind the record, so it goes only where the record landed", async () => {
+    const [client, db] = clientOf();
+    await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000, ORIGIN);
+    expect({ sql: flat(db.calls[1]?.sql), params: db.calls[1]?.params }).toEqual({
+      sql: "DELETE FROM auth_sessions WHERE user_id = ? AND token_hash != ? AND changes() > 0",
+      params: [uuidToBytes(USER_ID), KEEP],
+    });
+  });
 
   it("drops the live set only when the same owner holds a staged set, before promoting it", async () => {
     const [client, db] = clientOf();
-    await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000);
-    expect(db.calls.slice(0, 2).map((call) => ({ sql: flat(call.sql), params: call.params }))).toEqual([
+    await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000, ORIGIN);
+    expect(db.calls.slice(2, 4).map((call) => ({ sql: flat(call.sql), params: call.params }))).toEqual([
       {
         sql: "DELETE FROM auth_recovery_codes WHERE user_id = ? AND staged = 0 AND EXISTS (SELECT 1 FROM auth_recovery_codes WHERE user_id = ? AND staged = 1)",
         params: [uuidToBytes(USER_ID), uuidToBytes(USER_ID)],
@@ -85,14 +214,14 @@ describe("createRecoveryCodeStore — commit, statement by statement", () => {
 
   it("confirms only a factor row the same user owns", async () => {
     const [client, db] = clientOf();
-    await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000);
-    expect(flat(db.calls[2]?.sql)).toEndWith("WHERE id = ? AND user_id = ?");
+    await createRecoveryCodeStore(client).commit(USER_ID, FACTOR_ID, 6_000, ORIGIN);
+    expect(flat(db.calls[4]?.sql)).toEndWith("WHERE id = ? AND user_id = ?");
   });
 
   it("refuses an owner or factor id that is not a UUID without issuing a statement", async () => {
     const [client, db] = clientOf();
     const store = createRecoveryCodeStore(client);
-    const outcomes = [await store.commit("nope", FACTOR_ID, 6_000), await store.commit(USER_ID, "nope", 6_000)];
+    const outcomes = [await store.commit("nope", FACTOR_ID, 6_000, ORIGIN), await store.commit(USER_ID, "nope", 6_000, ORIGIN)];
     expect({ refused: outcomes.map((outcome) => outcome.ok === false && outcome.error.operation), calls: db.calls.length }).toEqual({
       refused: ["recoveryCodes.commit", "recoveryCodes.commit"],
       calls: 0,
@@ -105,7 +234,7 @@ describe("createRecoveryCodeStore — consume, statement by statement", () => {
 
   it("stamps only the owner's own live, unused code", async () => {
     const [client, db] = clientOf(() => [], { rowsWritten: () => 1 });
-    await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000);
+    await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN);
     expect({ sql: flat(db.calls[0]?.sql), params: db.calls[0]?.params }).toEqual({
       sql: "UPDATE auth_recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND staged = 0 AND used_at IS NULL",
       params: [7_000, uuidToBytes(USER_ID), HASH],
@@ -114,21 +243,69 @@ describe("createRecoveryCodeStore — consume, statement by statement", () => {
 
   it("clears guesses only on a factor row the same user owns, and only where this call stamped the code", async () => {
     const [client, db] = clientOf(() => [], { rowsWritten: () => 1 });
-    await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000);
-    expect(flat(db.calls[1]?.sql)).toBe(
+    await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN);
+    expect(flat(db.calls[3]?.sql)).toBe(
       "UPDATE auth_factors SET failed_attempts = 0 WHERE id = ? AND user_id = ? AND EXISTS (SELECT 1 FROM auth_recovery_codes WHERE user_id = ? AND code_hash = ? AND used_at = ?)",
     );
   });
 
+  it("records the use from the acting session directly after the stamp, so only the call that stamped the code records it", async () => {
+    const [client, db] = clientOf(() => [], { rowsWritten: () => 1 });
+    await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN);
+    expect({ sql: flat(db.calls[1]?.sql), params: eventParams(db.calls[1]?.params) }).toEqual({
+      sql: securityEventText({ session: true, guard: "changes() > 0" }),
+      params: ["event-id", uuidToBytes(USER_ID), "recovery-code-used", "recovery-code", KEEP, null, 7_000],
+    });
+  });
+
+  it("revokes every other session directly behind the record, so it goes only where this call stamped the code", async () => {
+    const [client, db] = clientOf(() => [], { rowsWritten: () => 1 });
+    await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN);
+    expect({ sql: flat(db.calls[2]?.sql), params: db.calls[2]?.params }).toEqual({
+      sql: "DELETE FROM auth_sessions WHERE user_id = ? AND token_hash != ? AND changes() > 0",
+      params: [uuidToBytes(USER_ID), KEEP],
+    });
+  });
+
+  it("signs every other session out when a code is spent, keeping the acting one, and none for a code already used", async () => {
+    const spentWith = async (stamped: number) => {
+      const seeded = await seededSessions(USER_ID, (sql) => (sql.startsWith("UPDATE auth_recovery_codes") ? stamped : null));
+      await createRecoveryCodeStore(seeded.client).consume(USER_ID, FACTOR_ID, HASH, 7_000, { keep: ACTING_SESSION });
+      return seeded.live();
+    };
+    expect([await spentWith(1), await spentWith(0)]).toEqual([
+      [true, false],
+      [true, true],
+    ]);
+  });
+
+  it("records nothing for a code another call already stamped at the same instant", async () => {
+    // The fake answers `changes() > 0` from the write before it, as SQLite does.
+    let changed = 0;
+    let recorded = 0;
+    const [client] = clientOf(() => [], {
+      rowsWritten: (sql) => {
+        if (!sql.includes("auth_security_events")) return (changed = 0);
+        const lands = Number(!sql.includes("changes() > 0") || changed > 0);
+        recorded += lands;
+        return lands;
+      },
+    });
+    expect({ consumed: await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN), recorded }).toEqual({
+      consumed: { ok: true, data: false },
+      recorded: 0,
+    });
+  });
+
   it("answers from the stamp alone, so a guess reset reported without one is not a use", async () => {
     const [client] = clientOf(() => [], { rowsWritten: (sql) => (sql.includes("SET used_at") ? 0 : 1) });
-    expect(await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000)).toEqual({ ok: true, data: false });
+    expect(await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN)).toEqual({ ok: true, data: false });
   });
 
   it("answers `false` for an owner or factor id that is not a UUID, without a statement", async () => {
     const [client, db] = clientOf();
     const store = createRecoveryCodeStore(client);
-    const outcomes = [await store.consume("nope", FACTOR_ID, HASH, 7_000), await store.consume(USER_ID, "nope", HASH, 7_000)];
+    const outcomes = [await store.consume("nope", FACTOR_ID, HASH, 7_000, ORIGIN), await store.consume(USER_ID, "nope", HASH, 7_000, ORIGIN)];
     expect({ outcomes, calls: db.calls.length }).toEqual({
       outcomes: [
         { ok: true, data: false },
@@ -146,8 +323,8 @@ describe("createRecoveryCodeStore — a failing database", () => {
     const outcomes = [
       await store.stage(USER_ID, [HASH], 1),
       await store.holdsStaged(USER_ID, HASH),
-      await store.commit(USER_ID, FACTOR_ID, 1),
-      await store.consume(USER_ID, FACTOR_ID, HASH, 1),
+      await store.commit(USER_ID, FACTOR_ID, 1, ORIGIN),
+      await store.consume(USER_ID, FACTOR_ID, HASH, 1, ORIGIN),
       await store.remaining(USER_ID),
     ];
     expect(outcomes.map((outcome) => outcome.ok === false && `${outcome.error.code} ${outcome.error.operation}`)).toEqual([
@@ -171,16 +348,16 @@ describe("createRecoveryCodeStore — a failing database", () => {
 describe("createRecoveryCodeStore — consume", () => {
   it("answers `true` when the one live, unused code was stamped, and clears the guesses in the same batch", async () => {
     const [client, db] = clientOf(() => [], { rowsWritten: (sql) => (sql.includes("SET used_at") ? 1 : 0) });
-    expect(await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000)).toEqual({ ok: true, data: true });
-    expect(db.calls).toHaveLength(2);
+    expect(await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN)).toEqual({ ok: true, data: true });
+    expect(db.calls).toHaveLength(4);
     expect(db.calls[0]?.sql).toContain("staged = 0 AND used_at IS NULL");
-    expect(db.calls[1]?.sql).toContain("SET failed_attempts = 0");
-    expect(db.calls[1]?.params).toEqual([uuidToBytes(FACTOR_ID), uuidToBytes(USER_ID), uuidToBytes(USER_ID), HASH, 7_000]);
+    expect(db.calls[3]?.sql).toContain("SET failed_attempts = 0");
+    expect(db.calls[3]?.params).toEqual([uuidToBytes(FACTOR_ID), uuidToBytes(USER_ID), uuidToBytes(USER_ID), HASH, 7_000]);
   });
 
   it("answers `false` for a code that was already used, staged, or another user's", async () => {
     const [client] = clientOf(() => [], { rowsWritten: () => 0 });
-    expect(await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000)).toEqual({ ok: true, data: false });
+    expect(await createRecoveryCodeStore(client).consume(USER_ID, FACTOR_ID, HASH, 7_000, ORIGIN)).toEqual({ ok: true, data: false });
   });
 });
 

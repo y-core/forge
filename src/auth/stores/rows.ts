@@ -1,7 +1,7 @@
 import { err, ok } from "../../result/result";
 import { classifyD1Error } from "../../storage/db/failure";
 import { sql } from "../../storage/db/sql";
-import type { D1Client, SqlFragment } from "../../storage/db/types";
+import type { D1Client, D1ConstraintRule, SqlFragment } from "../../storage/db/types";
 import { uuidFromBytes, uuidToBytes } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import type {
@@ -11,10 +11,23 @@ import type {
   AuthFactor,
   AuthFactorKind,
   AuthIdentityLink,
+  AuthSecurityEvent,
+  AuthSecurityEventType,
+  AuthSessionRecord,
+  AuthSessionResolved,
   AuthStoreResult,
   AuthUser,
 } from "../types";
-import type { AccessTokenRow, CredentialRow, FactorRow, IdentityLinkRow, UserRow } from "./types";
+import type {
+  AccessTokenRow,
+  AuthSessionRecordRow,
+  AuthSessionRow,
+  CredentialRow,
+  FactorRow,
+  IdentityLinkRow,
+  SecurityEventRow,
+  UserRow,
+} from "./types";
 
 /** How many rows a listing returns when the caller names no limit. @internal */
 export const DEFAULT_PAGE_LIMIT = 50;
@@ -75,6 +88,14 @@ function toUuid(value: unknown): string {
   return uuidFromBytes(blobBytes(value));
 }
 
+const APP_KEY_REFUSAL_RULES: ReadonlySet<D1ConstraintRule> = new Set(["foreign-key", "not-null", "check"]);
+
+/** Whether a forge DELETE's failure is a foreign-key, NOT NULL or CHECK refusal; the DELETE writes no value itself, so only an app key's ON DELETE action raises one. @internal */
+export function isAppKeyDeleteRefusal(cause: unknown): boolean {
+  const rule = classifyD1Error(cause).constraint?.rule;
+  return rule !== undefined && APP_KEY_REFUSAL_RULES.has(rule);
+}
+
 /** Folds a backend failure into the one `AuthStoreError`, naming the index when the backend says which. @internal */
 export function storeError(operation: string, cause: unknown): AuthStoreError {
   const constraint = classifyD1Error(cause).constraint;
@@ -102,9 +123,43 @@ export function readUser(row: UserRow): AuthUser {
     webauthnId: row.webauthn_id === null || row.webauthn_id === undefined ? null : blobBytes(row.webauthn_id),
     isAdmin: flag(row.is_admin),
     deactivatedAt: row.deactivated_at,
-    sessionsInvalidBefore: row.sessions_invalid_before,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+/** @internal */
+export function readAuthSessionRecord(row: AuthSessionRecordRow): AuthSessionRecord {
+  return {
+    id: toUuid(row.session_id),
+    signedInAt: row.signed_in_at,
+    expiresAt: row.expires_at,
+    lastSeenAt: row.last_seen_at,
+    stepUpAt: row.step_up_at,
+    stepUpKind: row.step_up_kind as AuthFactorKind | null,
+    device: row.device ?? null,
+  };
+}
+
+/** @internal */
+export function readAuthSession(row: AuthSessionRow): AuthSessionResolved {
+  return { user: { id: toUuid(row.id), email: row.email, isAdmin: flag(row.is_admin) }, session: readAuthSessionRecord(row) };
+}
+
+function toUuidOrNull(value: unknown): string | null {
+  return value === null || value === undefined ? null : toUuid(value);
+}
+
+/** @internal */
+export function readSecurityEvent(row: SecurityEventRow): AuthSecurityEvent {
+  return {
+    id: toUuid(row.id),
+    userId: toUuid(row.user_id),
+    type: row.type as AuthSecurityEventType,
+    factorKind: row.factor_kind as AuthFactorKind | null,
+    sessionId: toUuidOrNull(row.session_id),
+    adminId: toUuidOrNull(row.admin_id),
+    at: row.at,
   };
 }
 
@@ -188,11 +243,6 @@ export const NOT_LAST_ADMIN: SqlFragment = sql`(is_admin = 0 OR deactivated_at I
 
 /** Matches only while the deployment has no admin who could sign in — the same predicate `countAdmins` reads. @internal */
 export const NO_ADMIN_YET: SqlFragment = sql`NOT EXISTS (SELECT 1 FROM auth_users WHERE is_admin = 1 AND deactivated_at IS NULL)`;
-
-/** The same guard, as a predicate on a child table's row. @internal */
-export function ownerRemovable(key: Uint8Array<ArrayBuffer>): SqlFragment {
-  return sql`EXISTS (SELECT 1 FROM auth_users WHERE id = ${key} AND ${NOT_LAST_ADMIN})`;
-}
 
 /** Names why a guarded administrative write changed nothing, reading the row only once it has declined. @internal */
 export async function adminRefusal(

@@ -43,7 +43,7 @@ export function authRoutes<base extends string>(basePath: base) {
   });
 }
 
-/** Builds the signed-in self-service routes — passkey management and email change — under `basePath`. @public */
+/** Builds the signed-in self-service routes — factor management, email change and the session list — under `basePath`. @public */
 export function accountRoutes<base extends string>(basePath: base) {
   return route(basePath, {
     passkeys: get("/passkeys"),
@@ -56,12 +56,17 @@ export function accountRoutes<base extends string>(basePath: base) {
     totp: get("/totp"),
     totpEnrol: post("/totp"),
     totpRemove: del("/totp"),
+    totpReplace: get("/totp/replace"),
+    totpReplaceConfirm: post("/totp/replace"),
     factors: get("/factors"),
     recoveryCodes: get("/recovery-codes"),
     recoveryCodesGenerate: post("/recovery-codes"),
     recoveryCodesConfirm: post("/recovery-codes/confirm"),
     emailChange: get("/email-change"),
     emailChangeSubmit: post("/email-change"),
+    sessions: get("/sessions"),
+    sessionRevoke: post("/sessions/revoke"),
+    sessionsRevokeOthers: post("/sessions/revoke-others"),
   });
 }
 

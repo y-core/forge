@@ -133,8 +133,8 @@ describe("PasskeyEnrolView markup", () => {
 // lands on, and nothing about it reads as a step-up.
 describe("PasskeyEnrolView and the step-up/enrolment distinction", () => {
   it("is the page for an enrolment demand, and renders a registration ceremony rather than a code field", async () => {
-    const cell = authFactorGrid([]).find((entry) => entry.label === "email-otp+totp-app primary=email-otp / all-mandatory");
-    expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
+    const cell = authFactorGrid([]).find((entry) => entry.label === "passkey+totp-app / mandatory:passkey");
+    expect(await factorDemand(cell as never)).toEqual({ status: "enrolment-required", kinds: ["passkey"], stepUpKinds: [] });
 
     const html = await enrol();
     expect(textOf(html, "h1", 'class="text-xl"')).toBe("Add a passkey");
@@ -172,7 +172,7 @@ describe("PasskeyEnrolView exit", () => {
 
   it("tells a visitor adding another passkey what one is, with no claim that anything is owed", async () => {
     expect(textOf(await enrol({ exit: back }), "div", 'data-slot="card-description"')).toBe(
-      "Sign in with this device&#39;s screen lock or a security key. Signed in as ada@example.com.",
+      "Use this device&#39;s screen lock or a security key as a second factor. Signed in as ada@example.com.",
     );
   });
 

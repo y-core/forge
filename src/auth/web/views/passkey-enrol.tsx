@@ -66,7 +66,7 @@ export const PasskeyEnrolView: FC<PasskeyEnrolViewProps> = ({ contract, exit, cs
         <Card.Description>
           {exit.kind === "signout"
             ? "Your account needs a second factor before you can continue."
-            : "Sign in with this device's screen lock or a security key."}{" "}
+            : "Use this device's screen lock or a security key as a second factor."}{" "}
           Signed in as {email}.
         </Card.Description>
       </Card.Header>

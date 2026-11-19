@@ -722,11 +722,15 @@ describe("checkImportBoundary — feature slices under the feature graph", () =>
   const EMAIL = { "src/email/send.ts": "export const send = 1;\n" };
   const FORM = { "src/form/field.ts": "export const field = 1;\n" };
 
-  function slice(dir: string, requires?: string[]): FeatureManifest[string] {
+  function slice(dir: string, requires?: string[]): FeatureManifest["features"][string] {
     return { directories: [`${dir}/`], seams: [], ...(requires === undefined ? {} : { requires }) };
   }
 
-  function sliced(files: Record<string, string>, features: FeatureManifest, guarded: readonly string[] = []): ImportBoundaryCheckConfig {
+  function sliced(
+    files: Record<string, string>,
+    features: FeatureManifest["features"],
+    guarded: readonly string[] = [],
+  ): ImportBoundaryCheckConfig {
     return { root: fixtureRoot(files, "forge-ib-slice-"), guarded, features };
   }
 

@@ -110,5 +110,6 @@ export async function verifyPasskeyRegistration(
       label,
     },
     at,
+    input.origin,
   );
 }

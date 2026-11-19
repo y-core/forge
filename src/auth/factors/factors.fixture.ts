@@ -1,4 +1,4 @@
-import type { TimingProbe, TimingProbeHandle } from "./types";
+import type { AuthFactorCaller, TimingProbe, TimingProbeHandle } from "./types";
 
 type SubtleWithTimingSafeEqual = SubtleCrypto & {
   timingSafeEqual?: (a: ArrayBuffer | ArrayBufferView, b: ArrayBuffer | ArrayBufferView) => boolean;
@@ -33,4 +33,9 @@ export function installTimingProbe(): TimingProbeHandle {
       else delete subtle.timingSafeEqual;
     },
   };
+}
+
+/** A caller whose emailed codes are bound to `binding`, signed out unless `keep` names its session's token hash. @internal */
+export function fakeFactorCaller(binding: string | null = "browser-a", keep: Uint8Array<ArrayBuffer> | null = null): AuthFactorCaller {
+  return { binding, keep };
 }

@@ -13,7 +13,6 @@ import {
   authFactorGrid,
   elementOf,
   elementsOf,
-  factorChoices,
   HOSTILE_TEXT,
   HOSTILE_TEXT_ESCAPED,
   tagOf,
@@ -26,7 +25,9 @@ import type { SignupViewProps } from "./types";
 const AppIcon = createIcon("/assets/icons.svg") as ForgeIcon<"alert">;
 
 function signup(props: Partial<SignupViewProps> = {}) {
-  return render(<SignupView submitPath='/auth/signup' signinPath='/auth/signin' csrfToken='csrf-1' icon={AppIcon} {...props} />);
+  return render(
+    <SignupView submitPath='/auth/signup' signinPath='/auth/signin' csrfToken='csrf-1' addsSecondFactor={false} icon={AppIcon} {...props} />,
+  );
 }
 
 describe("SignupView", () => {
@@ -43,14 +44,12 @@ describe("SignupView", () => {
     expect(textOf(await signup(), "div", 'data-slot="card-description"')).toBe("We email you a six-digit code to confirm the address.");
   });
 
-  // A deployment demanding no second factor must not promise a step its visitor is never shown, and
-  // one that switched the passkey off must not name it: the copy follows the offered factors.
-  it("names the factor that will be enrolled, and only the one this deployment offers", async () => {
-    const described = async (enrols: SignupViewProps["enrols"]) => textOf(await signup({ enrols }), "div", 'data-slot="card-description"');
+  // A deployment with no mandatory second factor must not promise a step its visitor is never shown.
+  it("promises a second factor only where one is mandatory, without naming a kind", async () => {
+    const described = async (addsSecondFactor: boolean) => textOf(await signup({ addsSecondFactor }), "div", 'data-slot="card-description"');
 
-    expect({ passkey: await described("passkey"), totp: await described("totp-app"), none: await described(undefined) }).toEqual({
-      passkey: "We email you a six-digit code to confirm the address. You choose a passkey afterwards.",
-      totp: "We email you a six-digit code to confirm the address. You add an authenticator app afterwards.",
+    expect({ adds: await described(true), none: await described(false) }).toEqual({
+      adds: "We email you a six-digit code to confirm the address. You then add a second factor.",
       none: "We email you a six-digit code to confirm the address.",
     });
   });
@@ -88,14 +87,13 @@ describe("SignupView", () => {
 });
 
 // A passkey is enrolled against an account, so it cannot be the thing that creates one. That holds
-// in every cell of the matrix, including the ones where passkey is the deployment's primary factor.
+// in every cell of the matrix.
 describe("SignupView across the factor matrix", () => {
   it("renders the same single-address form whatever the offering and policy are", async () => {
     const grid = authFactorGrid();
     const shapes = new Set<string>();
     for (const cell of grid) {
-      if (factorChoices(cell) === null) continue;
-      const html = await signup();
+      const html = await signup({ addsSecondFactor: cell.assignment.mandatory.length > 0 });
       shapes.add(`${valuesOf(html, "name").join(",")}|${tagOf(html, `data-scope="${PASSKEY_SCOPE}"`)}`);
     }
     expect([...shapes]).toEqual(["_csrf,email|"]);

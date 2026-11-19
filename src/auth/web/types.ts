@@ -15,14 +15,16 @@ import type { JSXNode } from "../../render/jsx/types";
 import type { ForgeIcon } from "../../ui/core/types";
 import type { v } from "../../validation/validation";
 import type { AdminUserService } from "../admin/types";
-import type { AuthFactorRegistry } from "../factors/types";
-import type { AuthFactorRequirement } from "../factors/types";
+import type { AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
+import type { AuthSecondFactorKind } from "../factors/types";
 import type { AuthEmailChangeFlow } from "../flows/types";
+import type { AuthSecurityNotices } from "../flows/types";
 import type { AuthSigninFlow } from "../flows/types";
 import type { AuthSignupFlow } from "../flows/types";
 import type { AccessTokenService } from "../tokens/types";
 import type { AdminUserStore } from "../types";
 import type { AuthFactorKind } from "../types";
+import type { AuthSessionStore } from "../types";
 import type { UserStore } from "../types";
 import type { AdminUserOutcome } from "../types";
 import type { CredentialStore } from "../types";
@@ -43,6 +45,7 @@ import type { PasskeyEditViewProps } from "./views/types";
 import type { PasskeyEnrolViewProps } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
 import type { RecoveryCodesViewProps } from "./views/types";
+import type { SessionListViewProps } from "./views/types";
 import type { SigninViewProps } from "./views/types";
 import type { SignoutConfirmViewProps } from "./views/types";
 import type { SignupViewProps } from "./views/types";
@@ -52,10 +55,10 @@ import type { VerifyViewProps } from "./views/types";
 /** Builds one of a guard's dependencies from the request it is guarding. @public */
 export type AuthGuardResolver<Bindings, T> = (c: AppContext<Bindings>) => T | Promise<T>;
 
-/** What `requireAuth` needs to turn a session into an identity, and to refuse one owing a mandatory second factor. @public */
+/** What `requireAuth` needs to turn a session into an identity, and to refuse one owing a required second factor. @public */
 export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
   /** Built per request, and so re-read every request: a demotion or deactivation lands on the next one rather than the next sign-in. */
-  readonly users: AuthGuardResolver<Bindings, Pick<UserStore, "findById">>;
+  readonly sessions: AuthGuardResolver<Bindings, Pick<AuthSessionStore, "resolve">>;
   /** Where an anonymous request is sent — read off `authPaths`, never written as a literal. */
   readonly signinPath: string;
   // Required, not optional: a session that owes a second factor is a session that has not finished
@@ -64,8 +67,8 @@ export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
   readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve">>;
   /** Where a session owing a step-up is sent to clear it — read off `authPaths`. */
   readonly stepUpPath: string;
-  /** How long a completed step-up satisfies a later demand, in milliseconds. Omit to last the session. */
-  readonly stepUpMaxAgeMs?: number;
+  /** How long a completed step-up satisfies a later demand, in milliseconds. Defaults to `AUTH_STEP_UP_MAX_MS`; `null` and it lasts the session. */
+  readonly stepUpMaxAgeMs?: number | null;
   /** Set on a group that exists to clear an owed step-up, which would otherwise be unreachable while one is owed. */
   readonly clearsStepUp?: boolean;
   /** Query parameter carrying the return-to path onto the sign-in page. Defaults to `next`. */
@@ -76,18 +79,23 @@ export interface AuthGuardOptions<Bindings = Record<string, unknown>> {
   readonly now?: () => number;
 }
 
+/** Where an owed enrolment is sent: each enrollable kind's own page. @public */
+export interface AuthEnrolmentPaths {
+  readonly kinds: Partial<Record<AuthFactorKind, string>>;
+}
+
 /** What the enrolment guards need to tell an owed enrolment from an owed step-up from neither. @public */
 export interface AuthEnrolmentGuardOptions<Bindings = Record<string, unknown>> {
   /** Built per request, since the registry is assembled from Worker bindings. */
   readonly factors: AuthGuardResolver<Bindings, Pick<AuthFactorRegistry, "resolve">>;
-  /** Where a user who still owes an enrolment is sent, by the kind they owe — spell it `authEnrolmentPaths(paths.auth)`. */
-  readonly enrolmentPaths: Partial<Record<AuthFactorKind, string>>;
+  /** Where a user who still owes an enrolment is sent — spell it `authEnrolmentPaths(paths.auth)`. */
+  readonly enrolmentPaths: AuthEnrolmentPaths;
   /** Where a user who owes a step-up is sent — read off `authPaths`. */
   readonly stepUpPath: string;
   /** Where a user with nothing outstanding is sent off an enrolment page — read off `authPaths`. */
   readonly settledPath: string;
-  /** How long a completed step-up satisfies a later demand, in milliseconds. Omit to last the session. */
-  readonly stepUpMaxAgeMs?: number;
+  /** How long a completed step-up satisfies a later demand, in milliseconds. Defaults to `AUTH_STEP_UP_MAX_MS`; `null` and it lasts the session. */
+  readonly stepUpMaxAgeMs?: number | null;
   /** How recent a step-up a state-changing request must carry, in milliseconds. Defaults to `AUTH_FRESH_STEP_UP_MS`; `null` and `requireFreshStepUp` demands nothing. */
   readonly freshStepUpMaxAgeMs?: number | null;
   /** How this group answers. A `json` group is refused with a body rather than redirected. Defaults to `html`. */
@@ -175,8 +183,12 @@ export interface AuthIdentity {
   readonly userId: string;
   readonly email: string;
   readonly isAdmin: boolean;
+  /** The handle a session list or an event names this session by, never its token. */
+  readonly sessionId: string;
   /** When this session completed a step-up verification, or `null` when it has not. */
   readonly stepUpAt: number | null;
+  /** The factor that step-up verified with, or `null` when there was none. */
+  readonly stepUpKind: AuthFactorKind | null;
 }
 
 /** The sprite symbols forge's own auth pages draw from. @public */
@@ -185,13 +197,16 @@ export type AuthIconName = "alert" | "chevron-right" | "key" | "mail";
 /** The domain services one auth request runs against, built per request because a ceremony is bound to its session. @public */
 export interface AuthRequestServices {
   readonly users: UserStore;
+  readonly sessions: AuthSessionStore;
   readonly credentials: CredentialStore;
   readonly factors: AuthFactorRegistry;
-  /** The enrolment rows themselves, which the registry keeps private and the account pages must delete. */
+  /** The one `FactorStore` the registry and the factors are built over, which the account pages read every factor's state from and delete through. */
   readonly enrolments: FactorStore;
   readonly signin: AuthSigninFlow;
   readonly signup: AuthSignupFlow;
   readonly emailChange: AuthEmailChangeFlow;
+  /** Where an action that changed an account's security tells its holder; build it with `createSecurityNotices`. */
+  readonly notices: AuthSecurityNotices;
   // The store, not the service forge builds from it: the service is the administrative surface, and
   // handing one in leaves the consumer able to substitute a surface the write path never authorised.
   /** The administrative store; forge builds `AdminUserService` over it, per request. */
@@ -301,9 +316,11 @@ export interface AuthViewProps {
   readonly accountPasskey: PasskeyListViewProps;
   readonly accountPasskeyEdit: PasskeyEditViewProps;
   readonly accountTotp: TotpEnrolViewProps;
+  readonly accountTotpReplace: TotpEnrolViewProps;
   readonly accountEmailChange: EmailChangeViewProps;
   readonly accountFactors: AuthFactorsViewProps;
   readonly accountRecoveryCodes: RecoveryCodesViewProps;
+  readonly accountSessions: SessionListViewProps;
   readonly adminUsers: AdminUsersViewProps;
   readonly adminUser: AdminUserEditViewProps;
   readonly adminUserEdit: AdminUserEditViewProps;
@@ -340,14 +357,16 @@ export interface AuthVerifyDemand {
   /** The signed-in identity owing a step-up, or `null` when this is the second half of a sign-in. */
   readonly identity: AuthIdentity | null;
   /** What the resolution demanded of an established identity; `null` when there is no identity to demand of. */
-  readonly owed: "step-up" | "enrolment" | "none" | "unknown" | null;
+  readonly owed: "step-up" | "enrolment" | "unknown" | null;
   /** The kinds an owed enrolment may be completed with, or an owed step-up's choices; empty for any other `owed`. */
   readonly kinds: readonly AuthFactorKind[];
+  /** The resolution this demand was read from, or `null` when there was no identity or the read failed. */
+  readonly resolution: AuthFactorResolution | null;
 }
 
 /** Where one account stands on recovery codes, as the code pages and the step-up that follows read it. @internal */
 export interface AuthRecoveryStanding {
-  /** Whether a confirmed `totp-app` or `passkey` enrolment stands, which is what codes exist to recover. */
+  /** Whether a confirmed enrolment of an `AUTH_SECOND_FACTORS` kind stands, which is what codes exist to recover. */
   readonly recoverable: boolean;
   /** Whether a set of codes has been typed back and so replaced any before it. */
   readonly confirmed: boolean;
@@ -396,25 +415,22 @@ export interface AuthRouteGroup {
   readonly clearsStepUp?: boolean;
 }
 
-/** One requirement assignment the factor matrix crosses, read by position among the second factors. @internal */
+/** One mandatory/optional assignment the factor matrix crosses an offering with. @internal */
 export interface AuthFactorAssignment {
-  /** How the assignment reads in a cell label, e.g. `all-mandatory`. */
+  /** How the assignment reads in a cell label, e.g. `mandatory:totp-app`. */
   readonly label: string;
-  requirement(index: number): AuthFactorRequirement;
+  /** The offered kinds made mandatory; the rest are optional. */
+  readonly mandatory: readonly AuthSecondFactorKind[];
 }
 
-/** One cell of the factor matrix: an offering crossed with a requirement assignment. @internal */
+/** One cell of the factor matrix: a second-factor offering crossed with a mandatory/optional assignment. @internal */
 export interface AuthFactorCell {
-  /** How the cell reads in a failure message, e.g. `email-otp+passkey primary=passkey / all-mandatory`. */
+  /** How the cell reads in a failure message, e.g. `passkey+totp-app / mandatory:totp-app`. */
   readonly label: string;
-  readonly kinds: readonly AuthFactorKind[];
-  /** The declared primary, absent only where the offered set has no factor that can be one. */
-  readonly primary: AuthFactorKind | undefined;
+  /** The second factors offered, in listing order; empty for a deployment offering none. */
+  readonly kinds: readonly AuthSecondFactorKind[];
   readonly assignment: AuthFactorAssignment;
-  /** The registry the combination builds, or `null` when `createFactorRegistry` refuses it. */
-  readonly registry: AuthFactorRegistry | null;
-  /** Why it was refused, or `null` when it was not. */
-  readonly refusal: string | null;
+  readonly registry: AuthFactorRegistry;
 }
 
 /** What a view is told about the factors, read off the registry rather than restated. @internal */
@@ -425,13 +441,6 @@ export interface AuthFactorChoices {
   readonly stepUp: readonly AuthFactorKind[];
   /** Factors a user enrols in deliberately, in offered order. */
   readonly enrollable: readonly AuthFactorKind[];
-}
-
-/** One offered set together with the primary it is declared with. @internal */
-export interface AuthFactorOffering {
-  readonly kinds: readonly AuthFactorKind[];
-  /** The declared primary, absent only where the offered set has no factor that can be one. */
-  readonly primary: AuthFactorKind | undefined;
 }
 
 /** Any request context: what a navbar renders off is the identity, never the bindings. @public */

@@ -4,7 +4,7 @@ import { CliError } from "../../cli/errors";
 import { changedCells, fakeDatabase, stubDatabase } from "./backup.fixture";
 import { BASELINE_DUMP, BASELINE_VIRTUAL_REFUSAL } from "./baseline-dump.fixture";
 import { BASELINE_SEED, BASELINE_VIRTUAL_SEED } from "./baseline-seed.fixture";
-import { hasRealAffinity, hazardSelect, isDumpedObject, readSchemaRow, SCHEMA_SELECT, schemaDigest, takeD1Census } from "./census";
+import { hasRealAffinity, hazardSelect, isAppObject, readSchemaRow, SCHEMA_SELECT, schemaDigest, takeD1Census } from "./census";
 import { dumpRowCounter } from "./meter";
 import { splitDumpStatements } from "./split";
 
@@ -15,14 +15,14 @@ async function digestOf(schema: string): Promise<string> {
   return schemaDigest((await db.prepare(SCHEMA_SELECT).all()).results.map(readSchemaRow));
 }
 
-describe("isDumpedObject()", () => {
+describe("isAppObject()", () => {
   it("skips Cloudflare's and SQLite's own objects, keeping sqlite_sequence and the app's", () => {
     expect([
-      isDumpedObject("users", "users"),
-      isDumpedObject("sqlite_sequence", "sqlite_sequence"),
-      isDumpedObject("_cf_KV", "_cf_KV"),
-      isDumpedObject("idx", "_cf_KV"),
-      isDumpedObject("sqlite_stat1", "sqlite_stat1"),
+      isAppObject("users", "users"),
+      isAppObject("sqlite_sequence", "sqlite_sequence"),
+      isAppObject("_cf_KV", "_cf_KV"),
+      isAppObject("idx", "_cf_KV"),
+      isAppObject("sqlite_stat1", "sqlite_stat1"),
     ]).toEqual([true, true, false, false, false]);
   });
 });

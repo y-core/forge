@@ -1,4 +1,3 @@
-import type { StepState } from "./types";
 /** The pressed paint every `:has(:checked)` control shares; passed as its own `cn` argument, never a token of another literal. @internal */
 export const PRESSED_PAINT = "has-[:checked]:bg-primary has-[:checked]:text-primary-foreground has-[:checked]:hover:bg-primary";
 
@@ -29,9 +28,8 @@ export const FIELD_SIZE = {
 /** The marker circle a Steps step or a Timeline item paints its state into. @internal */
 export const STEP_MARKER = "inline-flex size-control-sm items-center justify-center rounded-selector border-field text-sm font-medium";
 
-/** The marker's paint per `StepState`, read from the `--tone` properties the root hands down. @internal */
-export const STEP_MARKER_STATE: Record<StepState, string> = {
-  complete: "border-transparent bg-(--tone) text-(--tone-fg)",
-  current: "border-(--tone-text) text-(--tone-text)",
-  upcoming: "border-border text-muted-foreground",
-};
+// Each variant binds the marker to its own item by child combinators — a Steps marker sits under its item, a Timeline marker under the
+// item's marker column — so a trail nested in another item's body takes no tone from the outer item.
+/** The marker's paint per item `data-state`, upcoming by default, read from the `--tone` properties the root hands down. @internal */
+export const STEP_MARKER_TONE =
+  "border-border text-muted-foreground [:is([data-state=complete],[data-state=complete]>*)>&]:border-transparent [:is([data-state=complete],[data-state=complete]>*)>&]:bg-(--tone) [:is([data-state=complete],[data-state=complete]>*)>&]:text-(--tone-fg) [:is([data-state=current],[data-state=current]>*)>&]:border-(--tone-text) [:is([data-state=current],[data-state=current]>*)>&]:text-(--tone-text)";

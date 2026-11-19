@@ -70,7 +70,7 @@ describe("AUTH_ROUTE_GROUPS", () => {
     expect(groupAt(["account"])?.guards).toEqual(["require-auth", "require-enrolment", "require-fresh-step-up"]);
   });
 
-  // `requireAuth` refuses a session owing a mandatory factor, so the endpoints that clear one have
+  // `requireAuth` refuses a session owing a second factor, so the endpoints that clear one have
   // to be exempt or they deadlock. The exemption is a property of the table, and this is its whole extent.
   it("exempts `auth.verify` and its ceremony from the step-up refusal, and exempts nothing else", () => {
     const exempt = AUTH_ROUTE_GROUPS.filter((group) => group.clearsStepUp === true).map((group) => group.path.join("."));
@@ -140,12 +140,17 @@ describe("accountRoutes", () => {
         "/account/totp",
         "/account/totp",
         "/account/totp",
+        "/account/totp/replace",
+        "/account/totp/replace",
         "/account/email-change",
         "/account/email-change",
         "/account/factors",
         "/account/recovery-codes",
         "/account/recovery-codes",
         "/account/recovery-codes/confirm",
+        "/account/sessions",
+        "/account/sessions/revoke",
+        "/account/sessions/revoke-others",
       ].sort(),
     );
   });

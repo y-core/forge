@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,25 +9,20 @@ import { getPlatformProxy } from "wrangler";
 
 import type { BackupBucket } from "../../src/storage/backup/types";
 import { checkSchemaHealth } from "../../src/storage/db/health";
+import type { R2Bucket } from "../../src/storage/r2/types";
 import { takeD1Census } from "../../src/tooling/db/backup/census";
 import { dumpRowCounter } from "../../src/tooling/db/backup/meter";
 import { backupKey, writeSidecar } from "../../src/tooling/db/backup/store";
 import type { BackupDatabase } from "../../src/tooling/db/backup/types";
 import { formatComposeHeader } from "../../src/tooling/db/schema/header";
-import { type D1Handle, openD1 } from "./d1";
-import { wrangler } from "./wrangler";
+import { forgeDb, wrangler } from "./cli";
+import { type D1Handle, openD1, type WorkerdD1 } from "./d1";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(FORGE, "tests", "fixtures", "db-migrate");
-const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
 
 let root: string;
 let migrations: string;
-
-function forgeDb(args: string[]): { code: number; stdout: string; stderr: string } {
-  const run = spawnSync("bun", ["run", BIN, "db", ...args, "--root", root], { cwd: FORGE, encoding: "utf-8" });
-  return { code: run.status ?? 1, stdout: run.stdout ?? "", stderr: run.stderr ?? "" };
-}
 
 // Closed before any `forge db` or `wrangler` call starts: two workerd processes on one database file can
 // meet SQLITE_BUSY, and copying a file a live handle holds open can copy it torn.
@@ -43,7 +37,7 @@ async function withD1<T>(use: (db: D1Handle) => Promise<T>): Promise<T> {
 
 /** Writes a dump of the local database and its sidecar into the local R2 bucket, as `forge db backup` leaves them for a local target. */
 async function seedLocalDump(): Promise<void> {
-  const proxy = await getPlatformProxy<{ DB: D1Database; BACKUPS: R2Bucket }>({
+  const proxy = await getPlatformProxy<{ DB: WorkerdD1; BACKUPS: R2Bucket }>({
     configPath: join(root, "wrangler.jsonc"),
     persist: { path: join(root, ".wrangler", "state", "v3") },
     remoteBindings: false,
@@ -54,8 +48,9 @@ async function seedLocalDump(): Promise<void> {
     const bucket = proxy.env.BACKUPS as unknown as BackupBucket;
     const [statements] = await proxy.env.DB.prepare("PRAGMA miniflare_d1_export(?,?,?);").bind(0, 0).raw<string[]>();
     const dump = (statements ?? []).join("\n");
+    const bytes = new TextEncoder().encode(dump);
     const counter = dumpRowCounter();
-    counter.push(new TextEncoder().encode(dump));
+    counter.push(bytes);
     const at = new Date();
     const key = backupKey(undefined, "db-migrate-local", at, `local-${at.getTime()}`);
     await proxy.env.BACKUPS.put(key, dump);
@@ -64,7 +59,7 @@ async function seedLocalDump(): Promise<void> {
       databaseId: "db-migrate-local",
       bookmark: `local-${at.getTime()}`,
       takenAt: at.toISOString(),
-      size: Buffer.byteLength(dump),
+      size: bytes.byteLength,
       md5: createHash("md5").update(dump).digest("hex"),
       sha256: createHash("sha256").update(dump).digest("hex"),
       rows: counter.finish(),
@@ -89,10 +84,10 @@ test.beforeAll(async () => {
   );
   // Exit status first: it carries the command's own error, where the output assertion reports only
   // that a string is absent and throws the diagnostic away.
-  const compose = forgeDb(["migrate", "compose", "init"]);
+  const compose = await forgeDb(root, ["migrate", "compose", "init"]);
   expect(compose.code, `compose init failed\n${compose.stdout}\n${compose.stderr}`).toBe(0);
   expect(`${compose.stdout}\n${compose.stderr}`.includes("create table auth_users")).toBe(true);
-  const migrate = forgeDb(["migrate", "--target", "local", "--yes"]);
+  const migrate = await forgeDb(root, ["migrate", "--target", "local", "--yes"]);
   expect(migrate.code, `migrate failed\n${migrate.stdout}\n${migrate.stderr}`).toBe(0);
   expect(`${migrate.stdout}\n${migrate.stderr}`.includes("0001_init")).toBe(true);
 });
@@ -126,15 +121,15 @@ test.describe("forge db migrate --target local against real D1", () => {
     expect(Number.isInteger(migrations[0]?.applied_at)).toBe(true);
   });
 
-  test("is a no-op the second time, and status --check exits 0", () => {
-    const again = forgeDb(["migrate", "--target", "local", "--yes"]);
+  test("is a no-op the second time, and status --check exits 0", async () => {
+    const again = await forgeDb(root, ["migrate", "--target", "local", "--yes"]);
     expect(again.code).toBe(0);
-    const status = forgeDb(["migrate", "status", "--check", "--target", "local"]);
+    const status = await forgeDb(root, ["migrate", "status", "--check", "--target", "local"]);
     expect(status.stderr).toBe("");
     expect(status.code).toBe(0);
   });
 
-  test("lets migrate through a stamp edit and a restamp, since a migration's sha256 is over stamp-blanked bytes", () => {
+  test("lets migrate through a stamp edit and a restamp, since a migration's sha256 is over stamp-blanked bytes", async () => {
     const file = join(migrations, "0001_init.sql");
     const composed = readFileSync(file, "utf-8");
     writeFileSync(
@@ -142,52 +137,46 @@ test.describe("forge db migrate --target local against real D1", () => {
       composed.replace(/"baseline":"[0-9a-f]*"/, '"baseline":"0000000000000000000000000000000000000000000000000000000000000000"'),
     );
     expect(readFileSync(file, "utf-8")).not.toBe(composed);
-    const edited = forgeDb(["migrate", "status", "--check", "--target", "local"]);
+    const edited = await forgeDb(root, ["migrate", "status", "--check", "--target", "local"]);
     expect(edited.stderr).toBe("");
     expect(edited.code).toBe(0);
 
-    const restamp = forgeDb(["migrate", "compose", "--restamp", "0001_init"]);
+    const restamp = await forgeDb(root, ["migrate", "compose", "--restamp", "0001_init"]);
     expect(restamp.stderr).toBe("");
     expect(restamp.code).toBe(0);
     expect(readFileSync(file, "utf-8")).toBe(composed);
-    const status = forgeDb(["migrate", "status", "--check", "--target", "local"]);
+    const status = await forgeDb(root, ["migrate", "status", "--check", "--target", "local"]);
     expect(status.stderr).toBe("");
     expect(status.code).toBe(0);
     expect(status.stdout.includes("mismatch")).toBe(false);
 
-    const migrate = forgeDb(["migrate", "--target", "local", "--yes"]);
+    const migrate = await forgeDb(root, ["migrate", "--target", "local", "--yes"]);
     expect(migrate.stderr.includes("edited after they were applied")).toBe(false);
     expect(migrate.code).toBe(0);
   });
 
-  test("makes status --check exit 1 when an applied migration's file has been edited", () => {
+  test("makes status --check exit 1 when an applied migration's file has been edited", async () => {
     const tampered = mkdtempSync(join(tmpdir(), "forge-db-tampered-"));
     cpSync(root, tampered, { recursive: true });
     const file = join(tampered, "config", "db", "migrations", "0001_init.sql");
     writeFileSync(file, `${readFileSync(file, "utf-8")}\n-- edited after apply\n`);
     try {
-      const status = spawnSync("bun", ["run", BIN, "db", "migrate", "status", "--check", "--target", "local", "--root", tampered], {
-        cwd: FORGE,
-        encoding: "utf-8",
-      });
-      expect(status.status).toBe(1);
+      const status = await forgeDb(tampered, ["migrate", "status", "--check", "--target", "local"]);
+      expect(status.code).toBe(1);
       expect(`${status.stdout}\n${status.stderr}`.includes("0001_init")).toBe(true);
     } finally {
       rmSync(tampered, { recursive: true, force: true });
     }
   });
 
-  test("makes migrate refuse the edited history, naming the file and the repair", () => {
+  test("makes migrate refuse the edited history, naming the file and the repair", async () => {
     const tampered = mkdtempSync(join(tmpdir(), "forge-db-tampered-"));
     cpSync(root, tampered, { recursive: true });
     const file = join(tampered, "config", "db", "migrations", "0001_init.sql");
     writeFileSync(file, `${readFileSync(file, "utf-8")}\n-- edited after apply\n`);
     try {
-      const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--root", tampered], {
-        cwd: FORGE,
-        encoding: "utf-8",
-      });
-      expect(migrate.status).toBe(1);
+      const migrate = await forgeDb(tampered, ["migrate", "--target", "local", "--yes"]);
+      expect(migrate.code).toBe(1);
       expect(
         migrate.stderr.includes(
           "has applied migrations whose files were edited after they were applied:\n  0001_init\nRestore each file from version control to the bytes _forge_migrations recorded, or reset the database; forge will not apply over an edited history.",
@@ -198,12 +187,12 @@ test.describe("forge db migrate --target local against real D1", () => {
     }
   });
 
-  test("finds the composed migration to be exactly what every declared schema builds", () => {
-    const compose = forgeDb(["migrate", "compose", "--dry-run"]);
+  test("finds the composed migration to be exactly what every declared schema builds", async () => {
+    const compose = await forgeDb(root, ["migrate", "compose", "--dry-run"]);
     expect(compose.stderr).toBe("");
     expect(compose.code).toBe(0);
     expect(compose.stdout.trim()).toBe(`no changes — ${migrations} already produces every declared schema`);
-    const check = forgeDb(["schema", "check", "--replay"]);
+    const check = await forgeDb(root, ["schema", "check", "--replay"]);
     expect(check.code).toBe(0);
   });
 
@@ -234,11 +223,8 @@ test.describe("forge db migrate --target local against real D1", () => {
     );
     let copy: D1Handle | null = null;
     try {
-      const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--rehearse", "--root", rehearsed], {
-        cwd: FORGE,
-        encoding: "utf-8",
-      });
-      expect(migrate.status).toBe(1);
+      const migrate = await forgeDb(rehearsed, ["migrate", "--target", "local", "--yes", "--rehearse"]);
+      expect(migrate.code).toBe(1);
       expect(migrate.stderr.includes("the rehearsal failed on 0002_email_unique")).toBe(true);
 
       copy = await openD1(rehearsed);
@@ -264,18 +250,12 @@ test.describe("forge db migrate --target local against real D1", () => {
     );
     let copy: D1Handle | null = null;
     try {
-      const migrate = spawnSync("bun", ["run", BIN, "db", "migrate", "--target", "local", "--yes", "--root", orphaned], {
-        cwd: FORGE,
-        encoding: "utf-8",
-      });
-      expect(migrate.status, migrate.stderr).toBe(1);
+      const migrate = await forgeDb(orphaned, ["migrate", "--target", "local", "--yes"]);
+      expect(migrate.code, migrate.stderr).toBe(1);
       expect(migrate.stderr).toContain("FOREIGN KEY constraint failed: child first held a row with no match in parent after `INSERT INTO child");
 
-      const status = spawnSync("bun", ["run", BIN, "db", "migrate", "status", "--check", "--target", "local", "--root", orphaned], {
-        cwd: FORGE,
-        encoding: "utf-8",
-      });
-      expect(status.status).toBe(1);
+      const status = await forgeDb(orphaned, ["migrate", "status", "--check", "--target", "local"]);
+      expect(status.code).toBe(1);
       copy = await openD1(orphaned);
       expect({
         applied: (await copy.rows<{ name: string }>("SELECT name FROM _forge_migrations ORDER BY id")).map((row) => row.name),

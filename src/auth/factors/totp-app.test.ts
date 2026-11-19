@@ -6,11 +6,11 @@ import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
-import type { AuthFactor, AuthFactorInput, FactorStore } from "../types";
-import { installTimingProbe } from "./factors.fixture";
+import type { AuthChallenge, AuthFactor, AuthFactorInput, ChallengeStore, FactorStore } from "../types";
+import { fakeFactorCaller, installTimingProbe } from "./factors.fixture";
 import { createFactorRegistry } from "./registry";
 import { createTotpAppFactor } from "./totp-app";
-import type { AuthFactorRequirement, EnrollableFactorService, ImplicitFactorService, TimingProbeHandle } from "./types";
+import type { AuthSecondFactorRequirement, ImplicitFactorService, RecoveryCodeFactorService, TimingProbeHandle } from "./types";
 
 const USER_ID = uuidv7();
 const PERIOD = 30;
@@ -35,19 +35,36 @@ interface StoreSpy {
   advances: { id: string; counter: number; resealed: boolean }[];
   removals: string[];
   spent: Map<string, number>;
+  origins: [string, Uint8Array | null][];
+  challenges: ChallengeStore;
+  /** What the challenge store holds, by key — a take removes the entry, as the D1 adapter's does. */
+  pending: Map<string, AuthChallenge>;
 }
 
 function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
   const rows: AuthFactor[] = seed ? [seed] : [];
   const advances: { id: string; counter: number; resealed: boolean }[] = [];
   const removals: string[] = [];
+  const origins: [string, Uint8Array | null][] = [];
   const spent = new Map<string, number>();
   const lastSpentAt = new Map<string, number>();
+  const pending = new Map<string, AuthChallenge>();
+  const challenges: ChallengeStore = {
+    put: (key, challenge) => Promise.resolve(ok(void pending.set(key, challenge))),
+    take: (key) => {
+      const taken = pending.get(key) ?? null;
+      pending.delete(key);
+      return Promise.resolve(ok(taken));
+    },
+  };
 
   const store: FactorStore = {
     listByUser: (userId) => Promise.resolve(ok(rows.filter((row) => row.userId === userId))),
     find: (userId, kind) => Promise.resolve(ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null)),
-    findEnrolled: (userId, kinds) => Promise.resolve(ok(rows.filter((row) => row.userId === userId && kinds.includes(row.kind)))),
+    listConfirmedKinds: (userId, kinds) =>
+      Promise.resolve(
+        ok(rows.filter((row) => row.userId === userId && kinds.includes(row.kind) && row.confirmedAt !== null).map((row) => row.kind)),
+      ),
     enrol: (input: AuthFactorInput, at) => {
       const row: AuthFactor = {
         id: uuidv7(),
@@ -76,22 +93,32 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
       lastSpentAt.set(row.id, at);
       return Promise.resolve(ok({ ...row, failedAttempts: spent.get(row.id) ?? 0, updatedAt: at }));
     },
-    confirm: (id, _userId, at) => {
+    confirm: (id, _userId, at, origin) => {
+      origins.push(["confirm", origin.keep]);
       const index = rows.findIndex((row) => row.id === id);
       const row = rows[index];
       if (index < 0 || !row) return Promise.resolve(ok(false));
       rows[index] = { ...row, confirmedAt: at, updatedAt: at };
       return Promise.resolve(ok(true));
     },
-    // The conditional advance the D1 adapter writes as one statement: it takes only a counter above
-    // the last accepted one, so a replay writes neither the counter nor the secret riding with it.
-    recordVerification: (id, _userId, counter, at, secret) => {
-      advances.push({ id, counter, resealed: secret !== undefined });
+    // The adapter's conditional advance: a replay, or a code from a replaced secret, writes nothing.
+    // The frame is compared as hex so the timing probe sees only the factor's own comparisons.
+    recordVerification: (id, _userId, counter, at, frame, resealed) => {
+      advances.push({ id, counter, resealed: resealed !== undefined });
       const index = rows.findIndex((row) => row.id === id);
       const row = rows[index];
-      if (index < 0 || !row) return Promise.resolve(ok(false));
+      if (index < 0 || !row || row.secret === null || bytesToHex(row.secret) !== bytesToHex(frame)) return Promise.resolve(ok(false));
       if (row.lastCounter !== null && row.lastCounter >= counter) return Promise.resolve(ok(false));
-      rows[index] = { ...row, lastCounter: counter, lastVerifiedAt: at, updatedAt: at, ...(secret === undefined ? {} : { secret }) };
+      rows[index] = { ...row, lastCounter: counter, lastVerifiedAt: at, updatedAt: at, ...(resealed === undefined ? {} : { secret: resealed }) };
+      spent.set(id, 0);
+      return Promise.resolve(ok(true));
+    },
+    replaceSecret: (id, userId, secret, counter, at, origin) => {
+      origins.push(["replace", origin.keep]);
+      const index = rows.findIndex((row) => row.id === id && row.userId === userId && row.kind === "totp-app" && row.confirmedAt !== null);
+      const row = rows[index];
+      if (index < 0 || !row) return Promise.resolve(ok(false));
+      rows[index] = { ...row, secret, lastCounter: counter, lastVerifiedAt: at, updatedAt: at };
       spent.set(id, 0);
       return Promise.resolve(ok(true));
     },
@@ -99,15 +126,16 @@ function fakeFactors(seed: AuthFactor | null = null): StoreSpy {
       Promise.resolve(
         ok(rows.filter((row) => row.kind === kind && row.secret !== null && base64urlEncode(row.secret.subarray(0, 6)) !== kid).length),
       ),
-    remove: (id) => {
+    remove: (id, _userId, _at, origin) => {
       removals.push(id);
+      origins.push(["remove", origin.keep]);
       const index = rows.findIndex((row) => row.id === id);
-      if (index < 0) return Promise.resolve(ok(false));
+      if (index < 0) return Promise.resolve(ok("not-found" as const));
       rows.splice(index, 1);
-      return Promise.resolve(ok(true));
+      return Promise.resolve(ok("changed" as const));
     },
   };
-  return { store, rows, advances, removals, spent };
+  return { store, rows, advances, removals, spent, origins, challenges, pending };
 }
 
 const refuse = () => Promise.resolve(err("unavailable" as const));
@@ -125,22 +153,20 @@ const EMAIL_OTP: ImplicitFactorService<"email-otp"> = {
   listEnrolments: () => Promise.resolve(ok([])),
 };
 
-const RECOVERY_CODE: EnrollableFactorService<"recovery-code"> = {
+const RECOVERY_CODE: RecoveryCodeFactorService = {
   ...EMAIL_OTP,
   kind: "recovery-code",
   enrolment: "explicit",
   codeDigits: null,
   beginEnrolment: refuse,
   completeEnrolment: refuse,
+  remaining: () => Promise.resolve(ok(0)),
 };
 
-function resolveOver(spy: StoreSpy, requirement: AuthFactorRequirement) {
+function resolveOver(spy: StoreSpy, requirement: AuthSecondFactorRequirement) {
   return createFactorRegistry(spy.store, {
-    offered: [
-      { service: EMAIL_OTP, role: "primary" },
-      { service: build(spy), role: "second", requirement },
-      { service: RECOVERY_CODE, role: "second", requirement: "optional" },
-    ],
+    primary: EMAIL_OTP,
+    second: { offered: [{ service: build(spy), requirement }], recovery: RECOVERY_CODE },
   }).resolve(USER_ID);
 }
 
@@ -154,6 +180,7 @@ function build(spy: StoreSpy, maxAttempts?: number, lockoutMs?: number, keys: Ke
   return createTotpAppFactor({
     keys,
     factors: spy.store,
+    challenges: spy.challenges,
     issuer: "Forge Demo",
     account: () => "person@example.com",
     period: PERIOD,
@@ -171,9 +198,9 @@ async function wrongCode(secret: Uint8Array<ArrayBuffer>): Promise<string> {
   }
 }
 
-async function enrolled(spy: StoreSpy): Promise<Uint8Array<ArrayBuffer>> {
+async function enrolled(spy: StoreSpy, at: number = AT): Promise<Uint8Array<ArrayBuffer>> {
   const service = build(spy);
-  const begun = await service.beginEnrolment(USER_ID, AT);
+  const begun = await service.beginEnrolment(USER_ID, at);
   if (!begun.ok) throw new Error(`enrolment refused: ${begun.error}`);
   return base32Decode((begun.data.options as { secret: string }).secret);
 }
@@ -181,11 +208,35 @@ async function enrolled(spy: StoreSpy): Promise<Uint8Array<ArrayBuffer>> {
 /** Enrols, confirms, then clears the counter the confirming code advanced, so each test sets its own start. */
 async function confirmed(spy: StoreSpy): Promise<Uint8Array<ArrayBuffer>> {
   const secret = await enrolled(spy);
-  const completed = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT);
+  const completed = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
   if (!completed.ok) throw new Error(`confirmation refused: ${completed.error}`);
   spy.rows[0] = { ...factor(spy), lastCounter: null };
   return secret;
 }
+
+describe("createTotpAppFactor — the session an enrolment change names", () => {
+  it("hands the store the acting session's hash on the confirming write, and none on dropping an unfinished row", async () => {
+    const keep = new Uint8Array(32).fill(5);
+    const spy = fakeFactors({
+      id: uuidv7(),
+      userId: USER_ID,
+      kind: "totp-app",
+      secret: null,
+      lastCounter: null,
+      failedAttempts: 0,
+      lastVerifiedAt: null,
+      confirmedAt: null,
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    const secret = await enrolled(spy);
+    await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller("browser-a", keep));
+    expect(spy.origins).toEqual([
+      ["remove", null],
+      ["confirm", keep],
+    ]);
+  });
+});
 
 describe("createTotpAppFactor — the capability matrix", () => {
   it("offers step-up only, because an authenticator app proves possession and does not identify", () => {
@@ -221,10 +272,13 @@ describe("createTotpAppFactor — enrolment", () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);
     expect(factor(spy).confirmedAt).toBeNull();
-    expect(await build(spy).createChallenge(USER_ID, AT)).toEqual({ ok: false, error: "not-enrolled" });
-    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).toEqual({ ok: false, error: "not-enrolled" });
+    expect(await build(spy).createChallenge(USER_ID, AT, fakeFactorCaller())).toEqual({ ok: false, error: "not-enrolled" });
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "not-enrolled",
+    });
 
-    const completed = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT);
+    const completed = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
     expect(completed.ok && completed.data.confirmedAt).toBe(AT);
     expect(factor(spy).confirmedAt).toBe(AT);
   });
@@ -232,7 +286,7 @@ describe("createTotpAppFactor — enrolment", () => {
   it("refuses a wrong code at completion, leaving the row unconfirmed", async () => {
     const spy = fakeFactors();
     await enrolled(spy);
-    expect(await build(spy).completeEnrolment(USER_ID, "000000", AT)).toEqual({ ok: false, error: "unrecognised" });
+    expect(await build(spy).completeEnrolment(USER_ID, "000000", AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
     expect(factor(spy).confirmedAt).toBeNull();
   });
 
@@ -243,6 +297,28 @@ describe("createTotpAppFactor — enrolment", () => {
     expect(bytesToHex(second)).toBe(bytesToHex(first));
     expect(spy.removals).toHaveLength(0);
     expect(spy.rows).toHaveLength(1);
+  });
+
+  it("re-offers the unconfirmed row's secret up to a moment before 15 minutes from its creation", async () => {
+    const spy = fakeFactors();
+    const first = await enrolled(spy);
+    const second = await enrolled(spy, AT + 15 * 60_000 - 1);
+    expect({ same: bytesToHex(second) === bytesToHex(first), removals: spy.removals.length, rows: spy.rows.length }).toEqual({
+      same: true,
+      removals: 0,
+      rows: 1,
+    });
+  });
+
+  it("replaces an unconfirmed row 15 minutes old with a new secret, so whoever began that enrolment does not know the one confirmed", async () => {
+    const spy = fakeFactors();
+    const first = await enrolled(spy);
+    const second = await enrolled(spy, AT + 15 * 60_000);
+    expect({ same: bytesToHex(second) === bytesToHex(first), removals: spy.removals.length, rows: spy.rows.length }).toEqual({
+      same: false,
+      removals: 1,
+      rows: 1,
+    });
   });
 
   it("re-offers the same provisioning URI too, so the QR code a page renders does not change either", async () => {
@@ -280,7 +356,7 @@ describe("createTotpAppFactor — enrolment", () => {
   it("refuses to re-enrol over a confirmed factor, which would disable a working one", async () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);
-    await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT);
+    await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
     expect(await build(spy).beginEnrolment(USER_ID, AT)).toEqual({ ok: false, error: "already-enrolled" });
   });
 });
@@ -292,10 +368,13 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
     const service = build(spy, 2);
     const wrong = await wrongCode(secret);
 
-    expect(await service.verifyChallenge(USER_ID, wrong, AT)).toEqual({ ok: false, error: "unrecognised" });
-    expect(await service.verifyChallenge(USER_ID, wrong, AT)).toEqual({ ok: false, error: "unrecognised" });
+    expect(await service.verifyChallenge(USER_ID, wrong, AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
+    expect(await service.verifyChallenge(USER_ID, wrong, AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
     // The third never reaches the comparison at all, which is why the *correct* code is refused too.
-    expect(await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).toEqual({ ok: false, error: "too-many-attempts" });
+    expect(await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "too-many-attempts",
+    });
   });
 
   it("clears the spent guesses on an accepted code, so a mistyped digit is not cumulative", async () => {
@@ -303,8 +382,8 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
     const secret = await confirmed(spy);
     const service = build(spy, 2);
 
-    await service.verifyChallenge(USER_ID, await wrongCode(secret), AT);
-    expect((await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).ok).toBe(true);
+    await service.verifyChallenge(USER_ID, await wrongCode(secret), AT, fakeFactorCaller());
+    expect((await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).ok).toBe(true);
     expect(spy.spent.get(factor(spy).id)).toBe(0);
   });
 
@@ -316,12 +395,15 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
     const service = build(spy, 2, 60_000);
     const wrong = await wrongCode(secret);
 
-    await service.verifyChallenge(USER_ID, wrong, AT);
-    await service.verifyChallenge(USER_ID, wrong, AT + 1);
-    expect(await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT + 59_000)).toEqual({ ok: false, error: "too-many-attempts" });
+    await service.verifyChallenge(USER_ID, wrong, AT, fakeFactorCaller());
+    await service.verifyChallenge(USER_ID, wrong, AT + 1, fakeFactorCaller());
+    expect(await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT + 59_000, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "too-many-attempts",
+    });
     const later = AT + 61_001;
     const code = await hotpCode(secret, totpCounter(Math.floor(later / 1000), { period: PERIOD }));
-    expect((await service.verifyChallenge(USER_ID, code, later)).ok).toBe(true);
+    expect((await service.verifyChallenge(USER_ID, code, later, fakeFactorCaller())).ok).toBe(true);
   });
 
   it("holds the ceiling against the enrolment ceremony too, since that is a code the same secret answers", async () => {
@@ -329,8 +411,11 @@ describe("createTotpAppFactor — the attempt ceiling", () => {
     const secret = await enrolled(spy);
     const service = build(spy, 1);
 
-    expect(await service.completeEnrolment(USER_ID, await wrongCode(secret), AT)).toEqual({ ok: false, error: "unrecognised" });
-    expect(await service.completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT)).toEqual({ ok: false, error: "too-many-attempts" });
+    expect(await service.completeEnrolment(USER_ID, await wrongCode(secret), AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
+    expect(await service.completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "too-many-attempts",
+    });
     expect(factor(spy).confirmedAt).toBeNull();
   });
 });
@@ -347,7 +432,7 @@ describe("createTotpAppFactor — the row a guess is spent on", () => {
     const secret = await confirmed(spy);
     const advancedBefore = spy.advances.length;
     spendLandsOnAnotherRow(spy);
-    const outcome = await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT);
+    const outcome = await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
     expect({ outcome, advanced: spy.advances.length - advancedBefore }).toEqual({ outcome: { ok: false, error: "unavailable" }, advanced: 0 });
   });
 
@@ -355,7 +440,7 @@ describe("createTotpAppFactor — the row a guess is spent on", () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);
     spendLandsOnAnotherRow(spy);
-    const outcome = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT);
+    const outcome = await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
     expect({ outcome, confirmed: factor(spy).confirmedAt }).toEqual({ outcome: { ok: false, error: "unavailable" }, confirmed: null });
   });
 });
@@ -370,7 +455,9 @@ describe("createTotpAppFactor — re-sealing a secret under the ring's active ke
     const spy = fakeFactors();
     const secret = await confirmed(spy);
     expect(sealedUnder(spy)).toBe(ring.activeKeyId);
-    expect((await build(spy, undefined, undefined, rotated).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).ok).toBe(true);
+    expect(
+      (await build(spy, undefined, undefined, rotated).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).ok,
+    ).toBe(true);
     expect(sealedUnder(spy)).toBe(rotated.activeKeyId);
     expect(spy.advances.at(-1)?.resealed).toBe(true);
   });
@@ -379,7 +466,7 @@ describe("createTotpAppFactor — re-sealing a secret under the ring's active ke
     const spy = fakeFactors();
     const secret = await confirmed(spy);
     const before = bytesToHex(factor(spy).secret as Uint8Array<ArrayBuffer>);
-    expect((await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).ok).toBe(true);
+    expect((await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).ok).toBe(true);
     expect(bytesToHex(factor(spy).secret as Uint8Array<ArrayBuffer>)).toBe(before);
     expect(spy.advances.at(-1)?.resealed).toBe(false);
   });
@@ -388,10 +475,10 @@ describe("createTotpAppFactor — re-sealing a secret under the ring's active ke
     const spy = fakeFactors();
     const secret = await confirmed(spy);
     const service = build(spy, undefined, undefined, rotated);
-    await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT);
+    await service.verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
     const later = AT + PERIOD * 1000;
     const code = await hotpCode(secret, totpCounter(Math.floor(later / 1000), { period: PERIOD }));
-    expect((await service.verifyChallenge(USER_ID, code, later)).ok).toBe(true);
+    expect((await service.verifyChallenge(USER_ID, code, later, fakeFactorCaller())).ok).toBe(true);
   });
 
   // It rides the write that carries the replay guard, so the guard covers the re-seal for free.
@@ -400,9 +487,9 @@ describe("createTotpAppFactor — re-sealing a secret under the ring's active ke
     const secret = await confirmed(spy);
     const service = build(spy, undefined, undefined, rotated);
     const code = await hotpCode(secret, CURRENT);
-    expect((await service.verifyChallenge(USER_ID, code, AT)).ok).toBe(true);
+    expect((await service.verifyChallenge(USER_ID, code, AT, fakeFactorCaller())).ok).toBe(true);
     const resealedTo = bytesToHex(factor(spy).secret as Uint8Array<ArrayBuffer>);
-    expect(await service.verifyChallenge(USER_ID, code, AT)).toEqual({ ok: false, error: "consumed" });
+    expect(await service.verifyChallenge(USER_ID, code, AT, fakeFactorCaller())).toEqual({ ok: false, error: "consumed" });
     expect(bytesToHex(factor(spy).secret as Uint8Array<ArrayBuffer>)).toBe(resealedTo);
   });
 
@@ -410,7 +497,7 @@ describe("createTotpAppFactor — re-sealing a secret under the ring's active ke
     const spy = fakeFactors();
     const secret = await confirmed(spy);
     expect(await spy.store.countSecretsNotUnder("totp-app", rotated.activeKeyId)).toEqual({ ok: true, data: 1 });
-    await build(spy, undefined, undefined, rotated).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT);
+    await build(spy, undefined, undefined, rotated).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
     expect(await spy.store.countSecretsNotUnder("totp-app", rotated.activeKeyId)).toEqual({ ok: true, data: 0 });
   });
 });
@@ -425,7 +512,7 @@ describe("createTotpAppFactor — a secret that will never open again", () => {
   it("answers `unusable` and leaves the row confirmed with its bytes intact", async () => {
     const spy = fakeFactors();
     await stranded(spy);
-    const refused = await build(spy).verifyChallenge(USER_ID, "000000", AT);
+    const refused = await build(spy).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller());
     expect({ refused, confirmed: factor(spy).confirmedAt !== null, secret: factor(spy).secret }).toEqual({
       refused: { ok: false, error: "unusable" },
       confirmed: true,
@@ -436,7 +523,7 @@ describe("createTotpAppFactor — a secret that will never open again", () => {
   it("spends no guess, since the code was never checked against anything", async () => {
     const spy = fakeFactors();
     await stranded(spy);
-    await build(spy, 2).verifyChallenge(USER_ID, "000000", AT);
+    await build(spy, 2).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller());
     expect(spy.spent.get(factor(spy).id) ?? 0).toBe(0);
   });
 
@@ -445,9 +532,9 @@ describe("createTotpAppFactor — a secret that will never open again", () => {
     const held = await confirmed(spy);
     const sealed = factor(spy).secret;
     spy.rows[0] = { ...factor(spy), secret: new Uint8Array([1, 2, 3]) as Uint8Array<ArrayBuffer> };
-    await build(spy).verifyChallenge(USER_ID, "000000", AT);
+    await build(spy).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller());
     spy.rows[0] = { ...factor(spy), secret: sealed };
-    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(held, CURRENT), AT)).toEqual({
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(held, CURRENT), AT, fakeFactorCaller())).toEqual({
       ok: true,
       data: { kind: "totp-app", userId: USER_ID, verifiedAt: AT },
     });
@@ -467,7 +554,8 @@ describe("createTotpAppFactor — a secret that will never open again", () => {
     for (const requirement of ["optional", "mandatory"] as const) {
       const spy = fakeFactors();
       await stranded(spy);
-      for (let presented = 0; presented < 3; presented++) await build(spy, 2).verifyChallenge(USER_ID, "000000", AT + presented);
+      for (let presented = 0; presented < 3; presented++)
+        await build(spy, 2).verifyChallenge(USER_ID, "000000", AT + presented, fakeFactorCaller());
       outcomes[requirement] = await resolveOver(spy, requirement);
     }
     expect(outcomes).toEqual({
@@ -497,7 +585,7 @@ describe("createTotpAppFactor — a sealing key merely absent from the ring", ()
     const spy = fakeFactors();
     await confirmed(spy);
 
-    const refused = await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT);
+    const refused = await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller());
 
     expect({ refused, confirmed: factor(spy).confirmedAt !== null, spent: spy.spent.get(factor(spy).id) ?? 0 }).toEqual({
       refused: { ok: false, error: "unusable" },
@@ -509,15 +597,15 @@ describe("createTotpAppFactor — a sealing key merely absent from the ring", ()
   it("still resolves `step-up-required`, since the row it could not open stays confirmed", async () => {
     const spy = fakeFactors();
     await confirmed(spy);
-    await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT);
+    await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller());
     expect(await resolveOver(spy, "optional")).toEqual({ ok: true, data: { status: "step-up-required", kinds: ["totp-app"] } });
   });
 
   it("verifies the same row again once the key is back on the ring", async () => {
     const spy = fakeFactors();
     const secret = await confirmed(spy);
-    await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT);
-    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT)).toEqual({
+    await build(spy, undefined, undefined, strangers).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller());
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller())).toEqual({
       ok: true,
       data: { kind: "totp-app", userId: USER_ID, verifiedAt: AT },
     });
@@ -536,7 +624,14 @@ describe("createTotpAppFactor — a sealing key merely absent from the ring", ()
 describe("createTotpAppFactor — the ranges it holds at construction", () => {
   function factory(overrides: Partial<Parameters<typeof createTotpAppFactor>[0]>) {
     return () =>
-      createTotpAppFactor({ keys: ring, factors: fakeFactors().store, issuer: "Forge Demo", account: () => "person@example.com", ...overrides });
+      createTotpAppFactor({
+        keys: ring,
+        factors: fakeFactors().store,
+        challenges: fakeFactors().challenges,
+        issuer: "Forge Demo",
+        account: () => "person@example.com",
+        ...overrides,
+      });
   }
 
   it("refuses a secret below the 16-byte floor at construction, not at the first enrolment", () => {
@@ -621,7 +716,7 @@ describe("createTotpAppFactor — the drift window", () => {
     for (const step of [-2, -1, 0, 1, 2]) {
       const spy = fakeFactors();
       const secret = await confirmed(spy);
-      const outcome = await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT + step), AT);
+      const outcome = await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT + step), AT, fakeFactorCaller());
       expect(`${step}: ${outcome.ok ? "accepted" : outcome.error}`).toBe(`${step}: ${Math.abs(step) <= 1 ? "accepted" : "unrecognised"}`);
     }
   });
@@ -635,24 +730,27 @@ describe("createTotpAppFactor — replay inside one step", () => {
     const secret = await confirmed(spy);
 
     const code = await hotpCode(secret, CURRENT);
-    expect((await build(spy).verifyChallenge(USER_ID, code, AT)).ok).toBe(true);
-    expect(await build(spy).verifyChallenge(USER_ID, code, AT)).toEqual({ ok: false, error: "consumed" });
+    expect((await build(spy).verifyChallenge(USER_ID, code, AT, fakeFactorCaller())).ok).toBe(true);
+    expect(await build(spy).verifyChallenge(USER_ID, code, AT, fakeFactorCaller())).toEqual({ ok: false, error: "consumed" });
     expect(factor(spy).lastCounter).toBe(CURRENT);
   });
 
   it("refuses the previous step's code once the current one has been accepted", async () => {
     const spy = fakeFactors();
     const secret = await confirmed(spy);
-    await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT);
-    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT - 1), AT)).toEqual({ ok: false, error: "consumed" });
+    await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(secret, CURRENT - 1), AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "consumed",
+    });
   });
 
   it("refuses the confirming code itself as a step-up, because confirmation already spent that step", async () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);
     const code = await hotpCode(secret, CURRENT);
-    expect((await build(spy).completeEnrolment(USER_ID, code, AT)).ok).toBe(true);
-    expect(await build(spy).verifyChallenge(USER_ID, code, AT)).toEqual({ ok: false, error: "consumed" });
+    expect((await build(spy).completeEnrolment(USER_ID, code, AT, fakeFactorCaller())).ok).toBe(true);
+    expect(await build(spy).verifyChallenge(USER_ID, code, AT, fakeFactorCaller())).toEqual({ ok: false, error: "consumed" });
   });
 });
 
@@ -660,8 +758,8 @@ describe("createTotpAppFactor — the challenge and the enrolment list", () => {
   it("names the step boundary the code the user is about to read stops working at", async () => {
     const spy = fakeFactors();
     const secret = await enrolled(spy);
-    await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT);
-    const challenge = await build(spy).createChallenge(USER_ID, AT);
+    await build(spy).completeEnrolment(USER_ID, await hotpCode(secret, CURRENT), AT, fakeFactorCaller());
+    const challenge = await build(spy).createChallenge(USER_ID, AT, fakeFactorCaller());
     expect(challenge).toEqual({ ok: true, data: { kind: "totp-app", expiresAt: (CURRENT + 1) * PERIOD * 1000 } });
   });
 
@@ -676,14 +774,20 @@ describe("createTotpAppFactor — the challenge and the enrolment list", () => {
   it("reports a store failure as `unavailable` rather than as a wrong code", async () => {
     const failing = fakeFactors();
     const broken: FactorStore = { ...failing.store, find: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.find"))) };
-    const service = createTotpAppFactor({ keys: ring, factors: broken, issuer: "Forge Demo", account: () => "person@example.com" });
-    expect(await service.verifyChallenge(USER_ID, "000000", AT)).toEqual({ ok: false, error: "unavailable" });
-    expect(await service.createChallenge(USER_ID, AT)).toEqual({ ok: false, error: "unavailable" });
+    const service = createTotpAppFactor({
+      keys: ring,
+      factors: broken,
+      challenges: failing.challenges,
+      issuer: "Forge Demo",
+      account: () => "person@example.com",
+    });
+    expect(await service.verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller())).toEqual({ ok: false, error: "unavailable" });
+    expect(await service.createChallenge(USER_ID, AT, fakeFactorCaller())).toEqual({ ok: false, error: "unavailable" });
   });
 
   it("reports `not-enrolled` for a user who has no row at all", async () => {
     const spy = fakeFactors();
-    expect(await build(spy).verifyChallenge(USER_ID, "000000", AT)).toEqual({ ok: false, error: "not-enrolled" });
+    expect(await build(spy).verifyChallenge(USER_ID, "000000", AT, fakeFactorCaller())).toEqual({ ok: false, error: "not-enrolled" });
   });
 });
 
@@ -702,7 +806,7 @@ describe("createTotpAppFactor — the code comparison is constant-time", () => {
     const secret = await confirmed(spy);
     const wrong = await wrongCode(secret);
     handle = installTimingProbe();
-    const outcome = await build(spy).verifyChallenge(USER_ID, wrong, AT);
+    const outcome = await build(spy).verifyChallenge(USER_ID, wrong, AT, fakeFactorCaller());
     expect({ compared: handle.probe.compared, outcome }).toEqual({
       compared: [false, false, false],
       outcome: { ok: false, error: "unrecognised" },
@@ -714,7 +818,177 @@ describe("createTotpAppFactor — the code comparison is constant-time", () => {
     const secret = await confirmed(spy);
     const code = await hotpCode(secret, CURRENT);
     handle = installTimingProbe();
-    const outcome = await build(spy).verifyChallenge(USER_ID, code, AT);
+    const outcome = await build(spy).verifyChallenge(USER_ID, code, AT, fakeFactorCaller());
     expect({ compared: handle.probe.compared, accepted: outcome.ok }).toEqual({ compared: [false, true], accepted: true });
+  });
+});
+
+describe("createTotpAppFactor — replacing a confirmed app", () => {
+  const ACTING = new Uint8Array(32).fill(5);
+  const ELSEWHERE = new Uint8Array(32).fill(6);
+  const NEXT = AT + PERIOD * 1000;
+
+  async function replacing(spy: StoreSpy, keep = ACTING, at = AT): Promise<Uint8Array<ArrayBuffer>> {
+    const begun = await build(spy).beginReplacement(USER_ID, at, fakeFactorCaller("browser-a", keep));
+    if (!begun.ok) throw new Error(`replacement refused: ${begun.error}`);
+    return base32Decode((begun.data.options as { secret: string }).secret);
+  }
+
+  it("refuses to begin for a user with no row, or with only an unconfirmed one", async () => {
+    const spy = fakeFactors();
+    const begin = () => build(spy).beginReplacement(USER_ID, AT, fakeFactorCaller("browser-a", ACTING));
+    const none = await begin();
+    await enrolled(spy);
+    expect([none, await begin(), spy.pending.size]).toEqual([{ ok: false, error: "not-enrolled" }, { ok: false, error: "not-enrolled" }, 0]);
+  });
+
+  it("resumes the same pending secret for the same session, and mints another for a different one", async () => {
+    const spy = fakeFactors();
+    const live = await confirmed(spy);
+    const first = await replacing(spy);
+    const again = await replacing(spy, ACTING, AT + 60_000);
+    const elsewhere = await replacing(spy, ELSEWHERE);
+    expect({ resumed: bytesToHex(again) === bytesToHex(first), elsewhere: bytesToHex(elsewhere) === bytesToHex(first) }).toEqual({
+      resumed: true,
+      elsewhere: false,
+    });
+    expect([bytesToHex(first), bytesToHex(elsewhere)]).not.toContain(bytesToHex(live));
+  });
+
+  it("leaves the live secret verifying until the replacement commits", async () => {
+    const spy = fakeFactors();
+    const live = await confirmed(spy);
+    await replacing(spy);
+    expect(await build(spy).verifyChallenge(USER_ID, await hotpCode(live, CURRENT), AT, fakeFactorCaller())).toMatchObject({ ok: true });
+  });
+
+  it("commits on a code from the new secret, after which the old one fails and the new one verifies", async () => {
+    const spy = fakeFactors();
+    const live = await confirmed(spy);
+    const next = await replacing(spy);
+    const replaced = await build(spy).completeReplacement(USER_ID, await hotpCode(next, CURRENT), AT, fakeFactorCaller("browser-a", ACTING));
+    const caller = fakeFactorCaller();
+    expect({
+      replaced: replaced.ok && { lastCounter: replaced.data.lastCounter, lastVerifiedAt: replaced.data.lastVerifiedAt },
+      origin: spy.origins.at(-1),
+      held: spy.pending.size,
+      old: await build(spy).verifyChallenge(USER_ID, await hotpCode(live, CURRENT + 1), NEXT, caller),
+      fresh: (await build(spy).verifyChallenge(USER_ID, await hotpCode(next, CURRENT + 1), NEXT, caller)).ok,
+    }).toEqual({
+      replaced: { lastCounter: CURRENT, lastVerifiedAt: AT },
+      origin: ["replace", ACTING],
+      held: 0,
+      old: { ok: false, error: "unrecognised" },
+      fresh: true,
+    });
+  });
+
+  it("drops the pending secret at `maxAttempts` wrong codes, and never spends the live row's budget", async () => {
+    const spy = fakeFactors();
+    await confirmed(spy);
+    const next = await replacing(spy);
+    const caller = fakeFactorCaller("browser-a", ACTING);
+    const wrong = await wrongCode(next);
+    const outcomes = [];
+    for (let attempt = 0; attempt < 3; attempt++) outcomes.push(await build(spy, 3).completeReplacement(USER_ID, wrong, AT, caller));
+    outcomes.push(await build(spy, 3).completeReplacement(USER_ID, await hotpCode(next, CURRENT), AT, caller));
+    expect({ outcomes, spent: spy.spent.get(factor(spy).id) ?? 0, failedAttempts: factor(spy).failedAttempts }).toEqual({
+      outcomes: [
+        { ok: false, error: "unrecognised" },
+        { ok: false, error: "unrecognised" },
+        { ok: false, error: "too-many-attempts" },
+        { ok: false, error: "expired" },
+      ],
+      spent: 0,
+      failedAttempts: 0,
+    });
+  });
+
+  it("refuses a pending secret past its lifetime, or one held for another user", async () => {
+    const spy = fakeFactors();
+    await confirmed(spy);
+    const next = await replacing(spy);
+    const later = AT + 15 * 60_000;
+    const lapsed = await build(spy).completeReplacement(
+      USER_ID,
+      await hotpCode(next, totpCounter(Math.floor(later / 1000), { period: PERIOD })),
+      later,
+      fakeFactorCaller("browser-a", ACTING),
+    );
+    const foreign = await replacing(spy);
+    const stranger = await build(spy).completeReplacement(uuidv7(), await hotpCode(foreign, CURRENT), AT, fakeFactorCaller("browser-a", ACTING));
+    expect([lapsed, stranger]).toEqual([
+      { ok: false, error: "expired" },
+      { ok: false, error: "expired" },
+    ]);
+  });
+
+  // The way back for a user whose ring lost the key their app was sealed under: the replacement reads the
+  // live row's confirmation, never its secret, so a secret that will not open does not block it.
+  it("replaces an app whose live secret no longer opens under the ring, after which the new one verifies", async () => {
+    const spy = fakeFactors();
+    const live = await confirmed(spy);
+    const keyless = await importAuthKeyRing([ROOT_NEW]);
+    const unopened = await build(spy, undefined, undefined, keyless).verifyChallenge(
+      USER_ID,
+      await hotpCode(live, CURRENT),
+      AT,
+      fakeFactorCaller(),
+    );
+    const begun = await build(spy, undefined, undefined, keyless).beginReplacement(USER_ID, AT, fakeFactorCaller("browser-a", ACTING));
+    if (!begun.ok) throw new Error(`replacement refused: ${begun.error}`);
+    const next = base32Decode((begun.data.options as { secret: string }).secret);
+    const replaced = await build(spy, undefined, undefined, keyless).completeReplacement(
+      USER_ID,
+      await hotpCode(next, CURRENT),
+      AT,
+      fakeFactorCaller("browser-a", ACTING),
+    );
+    const fresh = await build(spy, undefined, undefined, keyless).verifyChallenge(
+      USER_ID,
+      await hotpCode(next, CURRENT + 1),
+      NEXT,
+      fakeFactorCaller(),
+    );
+    expect({ unopened, replaced: replaced.ok, fresh: fresh.ok }).toEqual({
+      unopened: { ok: false, error: "unusable" },
+      replaced: true,
+      fresh: true,
+    });
+  });
+
+  it("answers `not-enrolled` when the row was removed before the replacement committed", async () => {
+    const spy = fakeFactors();
+    await confirmed(spy);
+    const next = await replacing(spy);
+    spy.rows.splice(0, 1);
+    expect(await build(spy).completeReplacement(USER_ID, await hotpCode(next, CURRENT), AT, fakeFactorCaller("browser-a", ACTING))).toEqual({
+      ok: false,
+      error: "not-enrolled",
+    });
+  });
+
+  // The read a code is checked against and the write recording it are two statements, and a
+  // replacement can land between them: the old code must then step nobody up.
+  it("refuses a code from the old secret whose check raced the commit, as `consumed`", async () => {
+    const spy = fakeFactors();
+    const live = await confirmed(spy);
+    const next = await replacing(spy);
+    const racing: FactorStore = {
+      ...spy.store,
+      countAttempt: async (...args) => {
+        const spent = await spy.store.countAttempt(...args);
+        await build(spy).completeReplacement(USER_ID, await hotpCode(next, CURRENT - 1), AT, fakeFactorCaller("browser-a", ACTING));
+        return spent;
+      },
+    };
+    // Under a rotated ring the old frame opens stale, so an unguarded write would re-seal it back over the new one.
+    const service = createTotpAppFactor({ keys: rotated, factors: racing, challenges: spy.challenges, issuer: "Forge Demo", account: () => "a" });
+    const caller = fakeFactorCaller();
+    expect({
+      old: await service.verifyChallenge(USER_ID, await hotpCode(live, CURRENT), AT, caller),
+      resealed: spy.advances.at(-1)?.resealed,
+      fresh: (await build(spy).verifyChallenge(USER_ID, await hotpCode(next, CURRENT + 1), NEXT, caller)).ok,
+    }).toEqual({ old: { ok: false, error: "consumed" }, resealed: true, fresh: true });
   });
 });

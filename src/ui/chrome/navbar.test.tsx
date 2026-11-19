@@ -2,7 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf } from "../../testing/markup";
 import { render } from "../../testing/render";
 import type { ScopeDefinition } from "../client/types";
 import { LABEL_DEFAULTS } from "../contracts/labels";
@@ -416,7 +416,10 @@ describe("Navbar — drawer mode", () => {
       <Navbar config={A} resolveHref={id} icon={icon} collapsible='always' collapsedAs='drawer' placement='left' drawerEdge='trailing' />,
     );
 
-    expect(out).not.toContain("-scale-x-100 rtl:scale-x-100");
+    expect([classesOf(out, 'class="group-open:hidden'), classesOf(out, 'class="hidden group-open:inline')]).toEqual([
+      ["group-open:hidden", "rtl:-scale-x-100"],
+      ["hidden", "group-open:inline", "rtl:-scale-x-100"],
+    ]);
   });
 
   it("keeps drawerEdge off the rendered bar, which carries no attribute it would not carry without one", async () => {

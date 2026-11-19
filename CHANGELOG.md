@@ -18,7 +18,299 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Breaking Changes
+
+- **A signed-in identity is an `auth_sessions` row, not a set of session keys.** Signing in creates a row keyed by the SHA-256 of a random
+  token, and the session carries only that token beside its visitor state; an administrator approval stays in the session for every
+  visitor. **Every existing session is signed out on upgrade**, and no backfill exists or is needed: an existing session carries no token.
+- **Schema: run `forge db migrate compose` after upgrading, and apply the migration before the new Worker deploys.** No schema change
+  below has a fill step. `src/auth/schema.sql`'s digest moved, so `db:schema:digests` reports it until you compose.
+- **Schema: `auth_sessions` is a new table.** Its columns are `token_hash BLOB PRIMARY KEY`, 32 bytes; `user_id`, referencing `auth_users`
+  `ON DELETE CASCADE`; `signed_in_at` and `expires_at`, both `INTEGER NOT NULL`, with `expires_at` later than `signed_in_at`; `step_up_at`
+  and `step_up_kind`, both nullable; `id BLOB NOT NULL`, 16 bytes; `last_seen_at INTEGER NOT NULL`; and `device`, nullable and at most 64
+  characters. Its indexes are the unique `auth_sessions_id`, `auth_sessions_user_id` and `auth_sessions_expires_at`. **Apply the migration
+  that adds it before the new Worker deploys**: without the table, every sign-in answers 503.
+- **Schema: `auth_users` drops `sessions_invalid_before`, adds the nullable `email_change_requested_at`, and changes its indexes.** The
+  partial index `auth_users_active_admin`, on `auth_users (id) WHERE is_admin = 1 AND deactivated_at IS NULL`, replaces
+  `auth_users_is_admin`, and the partial index `auth_users_unverified_created_at` is added. Dropping the column is destructive, so compose
+  writes it only under `--allow-destructive <digest>`. The drop is safe once the new Worker is live. Until then the old Worker still writes
+  the column: removing a passkey or the authenticator app and an administrator's factor reset answer 503, and a completed address change
+  moves the account but answers unavailable without signing anyone out. Composing the drop and the additions into one migration and
+  applying it just before the deploy also works, and accepts that short window.
+- **Schema: `auth_otp_state` adds `window_started_at` and `binding`, both nullable**, with a CHECK holding `binding` to 32 bytes. A code
+  issued before the upgrade carries no binding and never verifies, so its user asks for another.
+- **Schema: `auth_security_events` is a new table, with the indexes `auth_security_events_user_id` and `auth_security_events_at`.**
+  **Apply the migration that adds it before the new Worker deploys**: without the table, every sign-in, step-up and factor or account
+  change answers 503.
+- **`AuthGuardOptions.users` is now `sessions`**, a resolver for `Pick<AuthSessionStore, "resolve">`. That covers `requireAuth`,
+  `resolveAuth` and the `auth` options of `createAuthGuards`.
+- **`AuthRequestServices` requires `sessions: AuthSessionStore`.** Return `createAuthSessionStore(db)` from `resolveServices`.
+- **`establishAuthSession`, `markAuthStepUp`, `clearAuthSession` and `resolveAuthIdentity` take the session store and answer an
+  `AuthStoreResult`.** They are `establishAuthSession(session, sessions: Pick<AuthSessionStore, "create">, userId, at, now,
+  { kind, steppedUp?, device? })`, answering `void`; `markAuthStepUp(session, sessions: Pick<AuthSessionStore, "rotate">, at, now, kind)`,
+  answering `boolean`; `clearAuthSession(session, sessions: Pick<AuthSessionStore, "remove">)`, answering `void`; and
+  `resolveAuthIdentity(session, sessions: Pick<AuthSessionStore, "resolve">, at)`, answering `AuthIdentity | null`. `kind` is the factor
+  the sign-in or step-up verified with. No kind ranks above another: the kind is recorded, and nothing compares it. A step-up moves the
+  row onto a new token, so a token read before it no longer resolves.
+- **`AuthIdentity` requires `sessionId` and `stepUpKind`.**
+- **A session stops resolving once it goes unused for `AUTH_SESSION_IDLE_MS` (24 h)**, as well as once `AUTH_SESSION_MAX_MS` has run from
+  sign-in. Pass `createAuthSessionStore` `{ idleTimeoutMs: null }` for no idle bound. Build the guard's store and `resolveServices`' store
+  from one helper so both hold the same bounds.
+- **Removed:** `renewAuthSession` (use `revokeOtherAuthSessions`), `UserStore.revokeSessions`, `AuthUser.sessionsInvalidBefore`,
+  `FakeAuthUser.sessionsInvalidBefore`, `AUTH_SESSION_KEY`, `AUTH_SIGNED_IN_SESSION_KEY`, `AUTH_STEP_UP_SESSION_KEY` and
+  `AUTH_SURVIVED_SESSION_KEY`.
+- **A custom `UserStore` or `AdminUserStore` must delete the user's sessions where the shipped one does.** `UserStore.changeEmail` deletes
+  them in its batch, and so do `AdminUserStore.setDeactivated` when it deactivates, `remove` and `resetFactors`.
+- **`storage: "cookie"` is now the recommended session storage alongside auth.** KV is still supported.
+- **`defineFeatures` takes `{ features, regenerate? }`, not the feature record itself.** Migrate by wrapping the record:
+  `defineFeatures({ features: { … } })`. The new manifest-level `regenerate` runs once after any `forge curate` copy that dropped a
+  feature, after the kept features' own, so a file no feature owns — such as the env schema `forge cf gen env` writes — is rebuilt in a
+  copy that keeps no feature. `ImportBoundaryCheckConfig.features` takes the manifest's `features`.
+
+- **`OtpStateStore` binds a code to the browser that asked for it, and spends one guess budget per account.** It is
+  `issue(userId, state, cooldownMs, binding)`, `countAttempt(userId, maxAttempts, at, windowMs, binding)` and `read(userId, at, binding)`,
+  where `binding` is the SHA-256 of the caller's binding. `issue` no longer resets `attempts`, so the budget survives a reissue and reopens
+  once `windowMs` has run from the first guess. `discard` retires the named code rather than deleting its row. A custom store moves the
+  binding on a reissue and matches it on a count and a read.
+- **`AdminUserStore.claimFirstAdmin` and `AdminUserService.claimFirst` take an optional `AuthSessionRotation`**, run in the claim's own
+  batch. The shipped admin-claim action always passes one, so the claimant's pre-claim token never ends up elevated.
+- **`UserStore` requires `claimEmailChange(id, at, cooldownMs)`.** `AuthEmailChangeFlow.request` claims it before sending, and refuses a
+  request inside the cooldown with the new reason `"too-soon"`.
+- **`requireFreshStepUp` demands a fresh step-up of every user, including one holding no second factor**, who re-proves with an emailed
+  code. A sign-in owing no second factor counts as that proof, through `establishAuthSession`'s `steppedUp`. The verify page no longer
+  sends such a user on; `AuthVerifyDemand.owed` loses `"none"`. Arriving there mails nothing: the page offers "Send a code"
+  (`VerifyViewProps.codeSent: false`), and the resend action issues the code.
+- **`stepUpMaxAgeMs` defaults to `AUTH_STEP_UP_MAX_MS` (24 h) on `requireAuth`, `resolveAuth`, `requireEnrolment` and
+  `requirePendingEnrolment`.** Pass `null` for a step-up that lasts the session, which omitting it used to mean. A window above
+  `AUTH_SESSION_MAX_MS` now throws, and so does a `freshStepUpMaxAgeMs` above it.
+- **An emailed code is bound to the browser that asked for it.** The factor contract takes a trailing `caller: AuthFactorCaller`:
+  `createChallenge(userId, at, caller)`, `verifyChallenge(userId, presented, at, caller)` and
+  `completeEnrolment(userId, presented, at, caller)`. `AuthSigninFlow.request`, `complete`, `requestStepUp` and `stepUp`, and
+  `AuthSignupFlow.request`, take `caller` as their last argument. `createEmailOtpFactor` issues and verifies nothing for a `null`
+  binding, and refuses another browser's guess without spending the account's guess budget; a new browser gets no budget of its own.
+- **Security-relevant writes record an event in their own batch.** A sign-in, a step-up, a factor added or removed, a recovery-code set
+  issued or a code spent, an address change, an administrator grant or revocation, a factor reset, and an account deactivated or
+  reactivated each insert one `auth_security_events` row beside the change, and a refused or failed write records none. A custom store
+  writes the same row in the same batch. The row holds the type, factor kind, public session id, acting administrator and time, and
+  never an address, a client detail, a code or a token.
+- **Store writes take where they came from, as `origin: AuthWriteOrigin`:** `FactorStore.confirm(id, userId, at, origin)`,
+  `CredentialStore.create(input, at, origin)`, `RecoveryCodeStore.commit(userId, factorId, at, origin)` and
+  `RecoveryCodeStore.consume(userId, factorId, hash, at, origin)`. `PasskeyRegistrationInput` requires `origin`.
+- **`FactorStore.confirm` confirms only an unconfirmed row and answers `false` for one already confirmed**, so the authenticator-app
+  enrolment refuses a second confirmation. Confirming a `passkey` row records no event: the credential the ceremony registers does.
+- **`RecoveryCodeStore.commit` answers `boolean`:** `false` when no staged set was there to swap in, which the recovery-code factor
+  refuses as `"unrecognised"`.
+- **Administrative writes take the acting administrator's id:** `AdminUserStore.setAdmin(id, isAdmin, at, adminId)`,
+  `setDeactivated(id, deactivated, at, adminId)` and `resetFactors(id, at, adminId)`, and `AdminUserService.elevate`, `demote`,
+  `deactivate`, `reactivate` and `resetFactors` take `adminId` last.
+- **`AdminUserStore.setAdmin` and `setDeactivated` match only an account not already in the asked-for state, and answer the new
+  `AdminUserOutcome` member `"unchanged"` for one that is.** A repeated deactivation no longer moves `deactivated_at`, and such a write
+  records no event. The admin update action answers `"unchanged"` as it answers `"changed"`, and sends no notice for it.
+- **`AuthMessage` is a union discriminated by `kind`:** `"otp"` carries `code`, `"email-change"` carries `url`, and the new
+  `"security-event"` carries `notice: AuthSecurityNotice` and no expiry. An `AuthNotifier` switches on `kind` before reading a field.
+- **`AuthRequestServices` requires `notices: AuthSecurityNotices`.** Return `createSecurityNotices({ notifier, defer })` from
+  `resolveServices`. The account actions tell the account's address after a factor, recovery-code, role, factor-reset or account-status
+  change, and nothing after a sign-in or a step-up. A completed address change tells the old address.
+- **`AuthDeferral` takes `Promise<unknown>`.**
+- **Adding a factor, issuing recovery codes and spending one sign every other session out, in the batch of the change.**
+  `FactorStore.confirm` for any kind but `passkey`, `CredentialStore.create`, `RecoveryCodeStore.commit` and `consume`, and
+  `FactorStore.remove` of a confirmed factor delete every session the user holds except `origin.keep`'s, only where the change's event
+  lands, so a refused write signs nobody out. A custom store does the same. Removing the authenticator app no longer revokes in a
+  separate call.
+- **`accountRoutes` gains `sessions` (`GET /sessions`), `sessionRevoke` (`POST /sessions/revoke`) and `sessionsRevokeOthers`
+  (`POST /sessions/revoke-others`).** `registerAccount` mounts them behind the account group's guards, `require-fresh-step-up`
+  included. An app mapping `accountRoutes` itself supplies the three handlers: `loadAccountSessions` and `createSessionActions`.
+- **`FactorStore.findEnrolled` is replaced by `listConfirmedKinds(userId, kinds)`**, which answers the kinds among `kinds` the user holds
+  a confirmed row of, never the row or its sealed secret. A custom `FactorStore` implements it; the factor registry is its caller.
+- **`PasskeyListViewProps.backupPrompt` is required.** An app rendering `PasskeyListView` from props of its own passes it; `true` shows the
+  prompt to add a backup passkey.
+- **`definePage` answers `405` to `OPTIONS` and `TRACE`, running neither `action` nor `loader`.** Both used to reach `action` as a mutation.
+  The answer is the app's hardened method-mismatch `405`, and its `Allow` names the methods the page's route serves (`ROUTING_AND_MIDDLEWARE.md`
+  §2a).
+- **`isActiveContentType` counts a value that does not parse as one RFC 9110 media type as active**, parameters included: a comma list, an empty
+  value or a stray quote. `requireFormContentType` answers `415` to such a value where it used to check only the part before the first `;`.
+- **The SVG sanitizer can change an existing icon set's output.** Every kept attribute is rewritten double-quoted with `&`, `<`, `>` and `"`
+  escaped, and text references are written back decoded and escaped, so sprite and cursor bytes change. An attribute holding an unknown,
+  miscased or `;`-less named reference is dropped, so `aria-label="Tom&Jerry"` is lost; write `Tom &amp; Jerry`. So is one that decodes to a
+  character XML forbids. `title` and `desc` lose their child elements and keep their text, and an element carrying the same attribute name
+  twice, in any case, is dropped with everything inside it.
+- **A cursor's `data-cursor-hotspot` must be two non-negative integers.** A hotspot such as `"6"` used to bake as `6 0`; `buildCursors` now
+  fails the build on it, and on anything else that is not `"<x> <y>"`, naming the cursor and its file, so a hotspot can no longer write into
+  the generated CSS.
+- **The account pages and redirects read every factor's state from `AuthRequestServices.enrolments`, so a custom factor service's
+  `listEnrolments` is no longer consulted there.** A service whose rows are not in that `FactorStore` shows there as not enrolled: build one
+  `FactorStore` and hand it to `createFactorRegistry`, to `enrolments` and to the factors. A row of a kind the deployment no longer offers is
+  ignored.
+- **`purgeAuthEphemera(db, at, options?)` answers an `AuthEphemeraPurgeReport` where it answered `void`, and deletes more than expired
+  challenges and nonces.** It also deletes expired sessions, lapsed security events, and accounts still unverified `unverifiedUserTtlMs`
+  after creation, `AUTH_UNVERIFIED_USER_TTL_MS` by default. It deletes in bounded steps, table by table with no transaction spanning them,
+  in the order challenges, nonces, sessions, security events, then accounts, and caps the steps each table takes, so a large backlog clears
+  over several runs; schedule the purge more often until the report's `complete` reads `true`. A failure's `operation` names the report
+  key, as `ephemera.purge.<key>` — `ephemera.purge.signIns` for sessions — where it was `ephemera.purge`.
+- **A constraint that refuses a purge step blocks only its table.** A foreign-key, `NOT NULL` or `CHECK` refusal, which only an app key's
+  `ON DELETE` action can raise, names the table in the report's `blocked`; its remaining steps are skipped and the other tables still purge,
+  where one refusal used to roll back every table's purge on every run. A trigger that fails the delete with one of those errors blocks the
+  table the same way. A `UNIQUE` refusal, an outage or anything else stops the run.
+- **The migration lint refuses an app's foreign key to an `auth_` table that would block forge's deletes**, as `auth-key-blocks-delete`: one
+  that is neither `ON DELETE CASCADE` nor `ON DELETE SET NULL` on columns that can hold `NULL`. A column cannot when it is `NOT NULL`, in a
+  primary key, or named in a table `CHECK (col IS NOT NULL)`. A pending migration that passed before can be refused now, and compose refuses to
+  write such a key from your `schema.sql`, naming it as yours to change. A key already applied, or a column a trigger keeps from `NULL`, is
+  not checked; it shows up as the purge's `blocked` and `AdminUserStore.remove`'s `referenced`. `LintRule` gains
+  `"auth-key-blocks-delete"`.
+
+- **The emailed code is the only way in, and each second factor is mandatory or optional on its own.** `AuthFactorsOptions` is
+  `{ primary, second? }`: `primary` takes an `AuthIdentifyingFactorService`, now an `ImplicitFactorService` of an identifying kind, and
+  `second` an `AuthSecondFactorOffering`, `{ offered, recovery }`. `offered` is a non-empty list of `AuthSecondFactorOffer`,
+  `{ service, requirement }`, in the order every page lists them and owed kinds are enrolled in, and `recovery` is the recovery-code factor.
+  Migrate
+  `{ offered: [{ service: emailOtp, role: "primary" }, { service: totpApp, role: "second", requirement: "mandatory" }, { service: recoveryCodes, role: "second", requirement: "optional" }] }`
+  to `{ primary: emailOtp, second: { offered: [{ service: totpApp, requirement: "mandatory" }], recovery: recoveryCodes } }`.
+- **`AuthSecondFactorRequirement` replaces `AuthFactorRequirement`, and is `"mandatory" | "optional"` alone.** `{ mandatoryForRoles }` is
+  gone with no replacement: a factor is mandatory for everyone or optional. **Removed:** `AuthFactorOffer`, `AuthFactorRequirement`, the
+  offer's `role` field, implicit second factors, `AUTH_ADMIN_ROLE`, `AuthFactorContext` and `authFactorContext`. **Added:**
+  `AUTH_SECOND_FACTORS`, `AuthSecondFactorKind`, `AuthSecondFactorService`, `AuthSecondFactorOffer` and `AuthSecondFactorOffering` in
+  `@y-core/forge/auth`.
+- **`AuthFactorRegistry.resolve(userId)` takes no context, and `seconds` holds `AuthSecondFactorService`s rather than offers.** The registry
+  gains `recovery`, and `mandatory`, the mandatory kinds in offer order. An `enrolment-required` resolution names the mandatory kinds the
+  user does not hold, and its `stepUpKinds` the offered second factors they do hold, with `recovery-code` where they hold codes.
+- **`FactorStore.remove(id, userId, at, origin, floor)` and `CredentialStore.removeForUser(id, userId, at, origin, floor)` answer
+  `AuthFactorRemoval` — `"changed"`, `"not-found"` or `"second-factor-required"` — where they took `(id, userId)` and answered
+  `boolean`.** `origin` is an `AuthWriteOrigin`, and `floor: AuthSecondFactorFloor` is the mandatory kinds, `registry.mandatory`, and empty
+  where none is. A custom store refuses a removal that would take the user's last confirmed row of a `floor` kind, deciding it in the batch
+  that deletes and writing no event and no session revocation for a refusal. `removeForUser` deletes every session the user holds except
+  `origin.keep`'s in its batch, and every session where `origin.keep` is `null`. `AuthSecondFactorFloor` and `AuthFactorRemoval` are
+  exported from `@y-core/forge/auth`.
+- **Removing the last factor of a mandatory kind answers 409.** `passkeyRemove` and `totpRemove` re-render the page with the reason and send
+  no notice. `PasskeyListViewProps.fallbackFactors` is replaced by `mandatory: boolean`, which `TotpEnrolViewProps` also requires and which
+  disables the remove control; both props types gain `error?`. The passkey page's lockout warning is gone.
+- **`AuthEnrolmentGuardOptions.enrolmentPaths` is an `AuthEnrolmentPaths`, `{ kinds }`**, where it was a record by kind, and
+  `authEnrolmentPaths(paths.auth)` builds it. An enrolment owed in several kinds goes to the first one's page in offer order, and to the next
+  once it is confirmed.
+- **`VerifyChoice` is renamed `AuthFactorChoice`.**
+- **`SignupViewProps.enrols` is replaced by `addsSecondFactor: boolean`**, set where any offered second factor is mandatory.
+- **A failed D1 read answers 503 everywhere in auth.** `requireAuth` and `resolveAuth` answer 503 on a session-store failure, keeping the
+  session token, where they treated the visitor as signed out. The redirect after a sign-in, step-up or enrolment answers 503 where it could not read where the user stands, and so do the
+  passkey and authenticator-app pages when the user's enrolments cannot be read. A sign-up or sign-in whose deferred account lookup
+  returns a store failure logs it as `auth.signup.issue.failed` or `auth.signin.issue.failed`, where only a throw was logged.
+- **`purgeStaleTotpSecrets` takes `factors: { offered, mandatory }` in place of `requirement`, and answers `TotpSecretPurgeReport`,
+  `{ purged, kept }`, where it answered a count.** `factors` is plain values, so a scheduled handler builds it without factor services. It
+  throws unless `totp-app` is offered and mandatory, and on a kind listed twice or one that is not a second factor.
+  It keeps the stale row of a user holding no other confirmed second factor and no unused recovery code.
+  `TotpSecretPurgeReport` is exported from `@y-core/forge/auth`.
+- **The auth pages' wording changes.** "Sign-in methods" is "Factors", and the authenticator app and the passkey are described as second
+  factors rather than ways to sign in. The reset note and confirmation read "Remove every second factor and recovery code…", the
+  recovery-code note reads "Each code works once, in place of a second factor you can't reach.", and a passkey step-up says "Passkey
+  accepted." A test or a translation matching the old strings needs updating.
+- **`TotpAppFactorOptions.challenges: ChallengeStore` is required.** It holds a replacement secret until a code from it confirms the swap;
+  pass `createChallengeStore(db)`.
+- **`FactorStore.recordVerification` takes `(id, userId, counter, at, frame, resealed?)`.** `frame` is the sealed secret the code was
+  checked against, and the write must also require `secret = frame`, so a code checked against a secret a replacement has since swapped
+  out matches no row. `resealed` replaces the optional `secret` argument.
+- **A custom `FactorStore` must implement `replaceSecret(id, userId, secret, counter, at, origin)`.** In one batch it updates a confirmed
+  `totp-app` row of that user in place, records `factor-replaced` and deletes the user's sessions but `origin.keep`, each only where the
+  update landed, and answers `false` where no row matched. It and `recordVerification` are the only writers of `last_verified_at`.
+- **`AuthSecurityEventType` and `AuthNotifiedEventType` gain `"factor-replaced"`.** A notifier rendering every notice type must render
+  `{ type: "factor-replaced", factorKind: "totp-app", at }`.
+- **`TotpEnrolState` gains `"replacing"`.** A custom authenticator-app view that switches on `state.status` exhaustively must handle it;
+  it carries the same `secret` and `uri` as `"enrolling"`.
+
+### Added
+
+- **Replacing an authenticator app in place.** `createTotpAppFactor` returns the new `TotpReplaceableFactorService`, with
+  `beginReplacement` and `completeReplacement`. `accountRoutes` gains `totpReplace` (`GET /totp/replace`) and `totpReplaceConfirm`
+  (`POST /totp/replace`); `registerAccount` mounts both, and an app mapping `accountRoutes` itself supplies `loadTotpReplace` and
+  `createTotpManageActions`' `totpReplaceConfirm`. The page renders under the view name `accountTotpReplace`, `TotpEnrolState` gains
+  `"replacing"`, and `TotpEnrolViewProps` gains `replacePath`. The page and the `POST` demand a fresh step-up; the old secret keeps
+  working until a code from the new one commits the swap, which signs every other session out. Replacing is not a removal, so it is open
+  where the app is mandatory and cannot be removed.
+
+- **A session list in `@y-core/forge/auth/web`.** `loadAccountSessions` renders `SessionListView` under the new view name
+  `accountSessions`: each live session's device, sign-in and last activity, the factor it stepped up with, a mark on the current one, and
+  a sign-out on every other row. `createSessionActions` answers the row's sign-out and "Sign out everywhere else". A row's form names its
+  session in a field, so one CSRF token serves every row. Exported beside them: `AUTH_SESSION_LIST_ID`, `authSessionRevokeSchema` and
+  `SessionListViewProps`.
+- **`createSecurityEventStore` and `AuthSecurityEventStore` in `@y-core/forge/auth`**, which list an account's security events newest
+  first, with `AuthSecurityEvent`, `AuthSecurityEventType` and `AuthWriteOrigin`.
+- **`createSecurityNotices`, `AuthSecurityNotices`, `AuthSecurityNoticesOptions`, `AuthSecurityNotice` and `AuthNotifiedEventType` in
+  `@y-core/forge/auth`.** A notice is delivered after the response through the deployment's `AuthNotifier`, and a failed delivery is
+  logged as `auth.security-notice.failed` and never thrown.
+- **`AUTH_SECURITY_EVENT_TTL_MS` (365 days) and `AuthEphemeraPurgeOptions.securityEventTtlMs` in `@y-core/forge/auth`.**
+  `purgeAuthEphemera` deletes security events older than that, with a floor of 30 days. An account's events go with the account and stay
+  through a factor reset.
+
+- **`EmailOtpOptions.logger`.** The email-OTP factor logs every store and delivery failure at `error`, carrying the error, as
+  `auth.email-otp.<step>.failed` — `auth.email-otp.deliver.failed` for a code that could not be delivered. Omit it for the console.
+- **`AuthFactorCaller` in `@y-core/forge/auth`**, what the requesting browser contributes to a factor call.
+- **`AUTH_SESSION_IDLE_MS`, `AUTH_STEP_UP_MAX_MS` and `AuthSessionStoreOptions` in `@y-core/forge/auth`.**
+  `AuthSessionStoreOptions.absoluteLifetimeMs` shortens the absolute session lifetime, from five minutes up to `AUTH_SESSION_MAX_MS`.
+  `idleTimeoutMs` runs from five minutes up to that lifetime, and defaults to the lifetime when it is shorter than 24 h.
+
+- **`AUTH_OTP_GUESS_WINDOW_MS`, `AUTH_EMAIL_CHANGE_COOLDOWN_MS` and `AUTH_UNVERIFIED_USER_TTL_MS` in `@y-core/forge/auth`**, with the
+  matching knobs `EmailOtpOptions.guessWindowMs`, `AuthEmailChangeOptions.cooldownMs` and `AuthEphemeraPurgeOptions.unverifiedUserTtlMs`.
+- **`createAuthSessionStore(db, options?)` and `AuthSessionStore` in `@y-core/forge/auth`**, the signed-in sessions keyed by token hash.
+  `AuthSessionStore` is `create(input, replaces)`, `resolve(tokenHash, at)`, `rotate(replaces, tokenHash, stepUp?)`, `remove(tokenHash)`,
+  `listByUser(userId, at)`, `revoke(userId, sessionId, at, origin)` and `revokeOthers(userId, at, origin)`. `create` mints the row's `id`,
+  sets `expires_at` to `signedInAt` plus the store's absolute lifetime and `last_seen_at` to `signedInAt`, and records `signed-in`.
+  `resolve` answers a live session joined to its active owner, and writes `last_seen_at` at most once per interval, only when the row it
+  read shows the interval has passed. `rotate` moves the row onto a new token with one in-place `UPDATE`, so every column carries over,
+  and records a step-up where one is given. `listByUser` answers the user's live sessions under the same bounds, newest sign-in first.
+  `revoke` deletes the one session the id names when the user holds it and it is not `origin.keep`'s; `revokeOthers` deletes every other
+  session, or every session where `origin.keep` is `null`, and answers how many went. Each records `sessions-revoked` in its batch where a
+  session went. A custom store does the same.
+- **`AuthSessionInput`, `AuthSessionRecord`, `AuthSessionResolved`, `AuthSessionUser`, `AuthSessionStepUp` and `AuthSessionRotation` in
+  `@y-core/forge/auth`.** `AuthSessionInput` is `{ tokenHash, userId, signedInAt, signedInWith, stepUp?, device? }`. `AuthSessionRecord`
+  is `{ id, signedInAt, expiresAt, lastSeenAt, stepUpAt, stepUpKind, device }`, where `id` is the public handle a session list or an event
+  names the session by. `AuthSessionResolved` is `{ session, user }`, with `user` an `AuthSessionUser`,
+  `Pick<AuthUser, "id" | "email" | "isAdmin">`, the only owner columns a signed-in request reads. `AuthSessionStepUp` is `{ at, kind }`,
+  and `AuthSessionRotation` is `{ replaces, tokenHash }`. `device` is a coarse browser-and-platform label of at most 64 characters, such as
+  "Firefox on macOS", which the verify action reads off `User-Agent`; neither the user agent nor an IP address is stored.
+- **`revokeOtherAuthSessions(session, sessions: Pick<AuthSessionStore, "revokeOthers">, userId, at)` in `@y-core/forge/auth/web`**, which
+  deletes every session the user holds except the one `session` names and answers how many went.
+- **The passkey page prompts for a backup passkey** while the visitor holds exactly one, linking to passkey enrolment.
+- **`AuthEphemeraPurgeReport` and `AuthEphemeraPurgeOptions` in `@y-core/forge/auth`.** The report is `{ deleted, complete, blocked }`.
+  `deleted` counts each table's own rows, not the rows a deleted account cascades to, under the keys `challenges`, `nonces`, `signIns`,
+  `securityEvents` and `users`; `signIns` counts sessions. `complete` is `false` while lapsed rows remain, and `blocked` lists, in run
+  order, the keys of the tables a constraint refused, such as `"signIns"`. The sessions key is not `sessions` because the default log
+  redaction masks any key containing `session`, which would hide the count in a logged report.
+
+### Fixed
+
+- **`forge db reset` accepts a dump taken after `ANALYZE`.** The dump's sidecar counts `sqlite_stat1`, which the live count leaves out,
+  so every such dump was refused as stale and `--allow-unbacked` was the only way through. A sidecar already written is covered too.
+- **The gate's `types:cf-runtime` step creates `.types/` before running `wrangler types`**, which exits 1 when the directory is absent.
+  A fresh clone whose `.types/` holds no tracked file no longer fails the step.
+- **`forge-ui-platform-view-transition` names `@view-transition { navigation: auto; }` as the fix for a cross-document navigation**,
+  and only that rule in a scanned stylesheet silences it. It no longer prescribes `startViewTransition()`, which cannot animate a
+  navigation, and a `startViewTransition` string in the file no longer silences it.
+- **`Steps.Step` and `Timeline.Item` recolour their marker when the client changes `data-state`.** The tone was fixed at server
+  render. A trail nested inside another item takes no tone from the outer item.
+- **R2 serving fails closed on a stored type it cannot parse.** `serveObject` sends such a type as `application/octet-stream` under
+  `Content-Security-Policy: sandbox` and, unless the caller passes a `contentDisposition`, as an attachment. The outgoing `Content-Type` is the
+  normalised type rather than the stored string, and `put` infers the type from the key when `contentType` is empty.
+- **The build-time SVG sanitizer is an allowlist.** `sanitizeSVG` keeps only known graphics elements and drops every other element, a prefixed
+  name included, with everything inside it. It keeps a few prefixed attributes and only the root's SVG and XLink namespace declarations, keeps an
+  `href` only as a same-document `#fragment`, and drops any attribute whose `url()` reaches outside the document. `svgToSymbol` and
+  `splitSvgRoot` run the same pass, root attributes included. An unclosed element that is dropped takes everything up to the end of its parent,
+  an unclosed `script` or `style` takes the rest of the file, and kept elements are always closed, so the output is well-formed XML.
+- **A sprite declares the XLink namespace on its root**, and a baked cursor binds it around markup that uses `xlink:href`, so an icon written
+  with `xlink:href` no longer leaves the standalone sprite or the cursor's data URI unparseable.
+- **Removing the last passkey drops its factor row, and the recovery codes nothing else holds.** `CredentialStore.removeForUser` now does in its
+  batch what `FactorStore.remove` does.
+- **KV logs no longer carry a key or a stored value.** `kv.miss` records no key, and `kv.decode-error` records no key and only the error's name
+  as `error`, in place of the serialized error whose message could quote the value.
+- **An unconfirmed authenticator-app secret is re-offered for 15 minutes at most**, counted from when it was minted. Starting enrolment after
+  that replaces it with a new secret.
+- **The account pages read factor state with one `auth_factors` read per page**, where they read each offered factor's rows in turn.
+- **`RecoveryCodeStore.stage` inserts up to 20 codes per statement**, so staging 10 codes is 2 statements where it was 11.
+- **`UserStore.setWebAuthnIdIfAbsent` writes and reads back the handle in one batch**, one round trip where it took two.
+- **`AdminUserStore.remove` deletes the user row alone and leaves the children to the schema's `ON DELETE CASCADE`**, where it deleted each
+  child table first.
+- **`AdminUserStore.remove` answers `referenced` when an app key's `ON DELETE SET NULL` on a column that cannot hold `NULL` refuses the
+  delete**, a `NOT NULL` or `CHECK` refusal, as it does for a foreign-key one; it answered an `AuthStoreError`. A custom `AdminUserStore`
+  answers the same.
+- **`fakeAuthD1` answers `AdminUserStore.remove` as D1 does:** `"changed"` for a removable account, which then no longer reads back and whose
+  sessions and security events go, `"last-admin-delete"` for the last active admin, and `"not-found"` for an unknown id. It answered
+  `"not-found"` for every account.
 
 ---
 

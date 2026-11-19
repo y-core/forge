@@ -8,7 +8,7 @@ import { bundleModules, pasteText } from "../ui/client/browser.fixture";
 import { addVirtualAuthenticator } from "./client/authenticator.fixture";
 import { JOURNEY_NOTICE, JOURNEY_RESET, JOURNEY_SCRIPT } from "./journey.fixture";
 
-/** Sign-up, TOTP enrolment and step-up, a passkey added from the account pages, sign-out, and a passkey step-up on sign-in, against the real mount under workerd. */
+/** Sign-up straight onto the mandatory app's enrolment, TOTP step-up, recovery codes, replacing the app in place, the app's removal refused, an optional passkey added, a passkey step-up on sign-in, and that passkey removed, against the real mount under workerd. */
 
 const CONFIG = new URL("../../tests/fixtures/auth-web/wrangler.jsonc", import.meta.url).pathname;
 
@@ -73,13 +73,17 @@ async function pasteCode(page: Page, text: string, digits: string): Promise<void
   expect(new URLSearchParams(request.postData() ?? "").get("code")).toBe(digits);
 }
 
-test("signs up with an authenticator app, adds a passkey, signs out, and signs back in with the passkey", async ({ page, served }) => {
+test("signs up onto the mandatory authenticator app, replaces it in place, cannot remove it, adds an optional passkey, signs back in with it, and removes it", async ({
+  page,
+  served,
+}) => {
   test.slow();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
   const { session, authenticatorId } = await addVirtualAuthenticator(page);
   const email = `journey-${Date.now()}@example.com`;
   const signout = page.locator("[data-ref='signout']");
+  const removeTotp = page.getByRole("button", { name: "Remove authenticator app" });
 
   await page.goto("/auth/signup");
   await page.getByLabel("Email address").fill(email);
@@ -87,24 +91,65 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   await expect(page).toHaveURL(/\/auth\/verify$/);
   const signupCode = await emailedCode(served, email, 1);
   await pasteCode(page, `${signupCode.slice(0, 3)} ${signupCode.slice(3)}`, signupCode);
+
   await expect(page).toHaveURL(/\/auth\/enrol\/totp$/);
 
   // Enrolling on the previous step's code, inside the server's one-step drift window, leaves the current step unspent for the step-up.
-  const totp = await totpCodes((await page.locator("[data-ref='totp-uri']").textContent())?.trim() ?? "", Date.now());
+  const totpUri = (await page.locator("[data-ref='totp-uri']").textContent())?.trim() ?? "";
+  const totp = await totpCodes(totpUri, Date.now());
   await confirmCode(page, "Code from your app", totp.previous);
   await expect(page).toHaveURL(/\/auth\/verify$/);
   await confirmCode(page, "Verification code", totp.current);
+  await expect(page).toHaveURL(/\/account\/recovery-codes$/);
+  await expect(signout).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Generate recovery codes" }).click();
+  const issued = ((await page.locator("[data-ref='recovery-codes']").textContent()) ?? "").split("\n").filter((code) => code.trim() !== "");
+  expect(issued.length).toBeGreaterThan(0);
+  await page.getByLabel("Recovery code").fill(issued[0] ?? "");
+  await page.getByRole("button", { name: "Confirm the new codes" }).click();
+  await expect(page).toHaveURL(/\/account\/passkeys$/);
+
+  // Still inside the enrolment's fresh step-up, so the replacement page opens without another one.
+  await page.goto("/account/totp");
+  await page.getByRole("link", { name: "Replace authenticator app" }).click();
+  await expect(page).toHaveURL(/\/account\/totp\/replace$/);
+  const replacedUri = (await page.locator("[data-ref='totp-uri']").textContent())?.trim() ?? "";
+  expect(replacedUri).not.toBe(totpUri);
+  await confirmCode(page, "Code from your app", (await totpCodes(replacedUri, Date.now())).previous);
+  await expect(page).toHaveURL(/\/account\/totp$/);
+
+  await signout.click();
+  await expect(page).toHaveURL(/\/auth\/signin$/);
+  await page.getByLabel("Email address").fill(email);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/auth\/verify$/);
+  const replacedSigninCode = await emailedCode(served, email, 2);
+  await pasteCode(page, replacedSigninCode, replacedSigninCode);
+  await expect(page).toHaveURL(/\/auth\/verify$/);
+  await confirmCode(page, "Verification code", (await totpCodes(totpUri, Date.now())).current);
+  await expect(page).toHaveURL(/\/auth\/verify\?factor=totp-app$/);
+  await expect(page.getByText("That code did not match. Enter the code your app shows now.")).toBeVisible();
+  await confirmCode(page, "Verification code", (await totpCodes(replacedUri, Date.now())).current);
   await expect(page).not.toHaveURL(/\/auth\//);
   await expect(signout).toHaveCount(1);
+
+  await page.goto("/account/totp");
+  await expect(removeTotp).toBeDisabled();
+  await expect(removeTotp).toHaveAccessibleDescription("Your account requires an authenticator app, so it can't be removed. Replace it instead.");
 
   await page.goto("/account/passkeys");
   await page.locator("[data-ref='passkey-enrol']").click();
   await expect(page).toHaveURL(/\/account\/passkeys\/new$/);
   await page.getByLabel("Name this passkey").fill("virtual");
   await page.getByRole("button", { name: "Create a passkey" }).click();
-  await expect(page).toHaveURL(/\/account\/recovery-codes$/);
+  await expect(page).toHaveURL(/\/account\/passkeys$/);
   const [enrolled] = (await session.send("WebAuthn.getCredentials", { authenticatorId })).credentials;
   expect(enrolled).toBeDefined();
+
+  // Mandatory, the app stays unremovable with a passkey beside it.
+  await page.goto("/account/totp");
+  await expect(removeTotp).toBeDisabled();
 
   await signout.click();
   await expect(page).toHaveURL(/\/auth\/signin$/);
@@ -113,7 +158,7 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   await page.getByLabel("Email address").fill(email);
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/auth\/verify$/);
-  const signinCode = await emailedCode(served, email, 2);
+  const signinCode = await emailedCode(served, email, 3);
   await pasteCode(page, `${signinCode.slice(0, 3)}-${signinCode.slice(3)}`, signinCode);
   await expect(page).toHaveURL(/\/auth\/verify$/);
   await page.getByRole("link", { name: "Use a passkey instead" }).click();
@@ -125,5 +170,14 @@ test("signs up with an authenticator app, adds a passkey, signs out, and signs b
   const after = (await session.send("WebAuthn.getCredentials", { authenticatorId })).credentials;
   expect(after.map((credential) => credential.credentialId)).toEqual([enrolled?.credentialId]);
   expect(after[0]?.signCount ?? 0).toBeGreaterThan(enrolled?.signCount ?? 0);
+
+  // Optional, the last passkey goes, inside the fresh step-up the passkey sign-in just made.
+  await page.goto("/account/passkeys");
+  const removePasskey = page.locator("[data-ref='credential-remove']");
+  await expect(removePasskey).toBeEnabled();
+  await removePasskey.click();
+  await expect(removePasskey).toHaveCount(0);
+  await page.reload();
+  await expect(removePasskey).toHaveCount(0);
   expect(errors).toEqual([]);
 });

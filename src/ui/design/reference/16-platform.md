@@ -357,11 +357,13 @@ unmodified control, so the replacement owes both an explicit `border-input` boun
 block that gives a High Contrast reader two distinguishable squares. `accent-color` tints the control and cannot change its shape, so it is the
 right answer only where the shape was never in question.
 
-Default: cross-fade a full-document navigation with `startViewTransition()` rather than assigning `location.href` or calling `location.assign()`
-bare — unless the navigation leaves the application, as an external link or an identity provider hand-off does, where there is no next document to
-capture. <!-- rule:forge-ui-platform-view-transition --> A fragment swap is a different thing and belongs to [`11-htmx.md`][htmx]; this is the
-document-level case. The capture freezes the page, so work started in the callback delays the frame the reader is waiting on — and the whole moment
-is gated by `forge-ui-reduced-motion`.
+Default: cross-fade a full-document navigation by opting the stylesheet in with `@view-transition { navigation: auto; }`, rather than leaving a
+`location.href` assignment, a `location.assign()` or a `location.replace()` to swap the page bare — unless the navigation leaves the application, as
+an external link or an identity provider hand-off does, where there is no next document to capture. <!-- rule:forge-ui-platform-view-transition -->
+The opt-in animates only a same-origin navigation whose outgoing and incoming documents both carry it. `startViewTransition()` is the same-document
+API: it animates a DOM change made in its callback, and wrapping a navigation in it animates nothing, because the document unloads before the new
+state is captured. A fragment swap belongs to [`11-htmx.md`][htmx]; this is the document-level case, and the whole moment is gated by
+`forge-ui-reduced-motion`.
 
 ### 3e. Type
 

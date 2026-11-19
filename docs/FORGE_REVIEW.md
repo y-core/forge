@@ -100,12 +100,14 @@ remains and is legitimate: `Switch`'s `peer-focus-visible:ring-2` on the track, 
 **Valibot facade breach**
 
 ```bash
-rg -n 'from "valibot"|from \x27valibot\x27' src/ --glob '!src/validation/**'
+rg -n 'from "valibot"|from \x27valibot\x27' src/ --glob '!src/validation/**' --glob '!**/*.mjs'
 ```
 
 _Triage:_ any hit is a breach, including in a `*.test.ts`. A test that imports valibot directly bypasses the facade exactly as production code
 would, and will not follow a version bump. One class is not a hit but reads as one: a gate check's fixture carries the specifier as a **string
-literal** for the parser under test to find — `src/tooling/gate/checks/` only, and the line is inside a quoted fixture rather than at module scope.
+literal** for the parser under test to find — `src/tooling/gate/` only, and the line is inside a quoted fixture rather than at module scope. The
+`!**/*.mjs` glob drops the generated node bundles, which inline valibot by design: each is published behind a subpath of its own, and its bytes are
+held to its source by a `validate-*-bundle` gate step, so the source file is what this command reads.
 
 **Sibling-barrel import**
 
@@ -124,17 +126,18 @@ excludes the one legitimate class — a published-surface assertion importing a 
 rg -n '\bBun\.|from "node:' src/ \
   --glob '!src/tooling/**' --glob '!src/ui/assets/build/**' --glob '!src/testing/snapshot.ts' \
   --glob '!src/testing/harness.ts' --glob '!**/*.test.ts' --glob '!**/*.test.tsx' --glob '!**/*.browser.ts' --glob '!**/*.md' \
-  --glob '!**/*.fixture.ts'
+  --glob '!**/*.fixture.ts' --glob '!src/testing/d1.ts' --glob '!**/*.mjs'
 ```
 
 _Triage:_ `src/tooling/` is the build-time container — membership _is_ the exemption ([`NAMESPACES.md`][namespaces-4a] §4a) — and `ui/assets/build`
-is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/snapshot.ts` reads a fixture off the disk
-and `src/testing/harness.ts` starts workerd under node, and each is reached only through a subpath of its own and never from the `./testing` barrel
-([`TEST_RUNNERS.md`][testing-7f] §7f) — so reachability exempts them ([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the glob names the files, not the
-namespace around them. Tests and
-`.browser.ts` specs run under Bun or Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker
-does. **Without those globs the command returns dozens of legitimate hits and will be ignored.** A hit anywhere else is a genuine
-runtime-portability break.
+is the one runtime-owned namespace that carries the same exemption behind its own subpath. `src/testing/snapshot.ts` reads a fixture off the disk,
+`src/testing/harness.ts` starts workerd under node and `src/testing/d1.ts` stands up a local D1 under node, and each is reached only through a
+subpath of its own and never from the `./testing` barrel ([`TEST_RUNNERS.md`][testing-7f] §7f) — so reachability exempts them
+([`LIBRARY_ARCHITECTURE.md`][la-1e] §1e) and the glob names the files, not the namespace around them. Tests and `.browser.ts` specs run under Bun or
+Playwright, never in a Worker, and a `*.fixture.ts` is test infrastructure a spec imports rather than a Worker does. The `!**/*.mjs` glob drops the
+generated node bundles: each is subpath-only like the module it is built from, and a `validate-*-bundle` gate step byte-checks it against that
+source, so a breach shows in the `.ts` this command still reads. **Without those globs the command returns dozens of legitimate hits and will be
+ignored.** A hit anywhere else is a genuine runtime-portability break.
 
 _The direction that matters most is already a gate step._ `validate-import-boundary` fails any runtime module that imports a build-time one, so
 a review does not have to find that by hand; run this command for the case the step cannot see — a Node API used **inside** a runtime namespace
@@ -253,7 +256,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | `*.test.ts` beside its source rather than in `tests/` | Co-location is the rule, not a lapse — [`TESTING.md`][testing-2a] §2a |
 | `node:fs` / `node:path` under `src/tooling/` or in `ui/assets/build` | Build-time tooling, exempt from Web-APIs-only — §3b |
 | `node:fs` / `node:path` in `src/ui/client/browser.fixture.ts` | Test infrastructure a `*.browser.ts` spec imports, never a Worker; a `*.fixture.ts` is off every barrel and out of the tarball by convention |
-| `node:fs` / `node:path` in `src/testing/snapshot.ts` or `src/testing/harness.ts` | A node-only module of a mixed namespace: a fixture comparison reads the disk and a harness starts workerd, and each module is off the `./testing` barrel so no Worker-typed program can reach it — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
+| `node:fs` / `node:path` in `src/testing/snapshot.ts`, `src/testing/harness.ts` or `src/testing/d1.ts` | A node-only module of a mixed namespace: a fixture comparison reads the disk, a harness starts workerd and a local D1 runs under node, and each module is off the `./testing` barrel so no Worker-typed program can reach it — [`NAMESPACES.md`][namespaces-4a] §4a, [`TEST_RUNNERS.md`][testing-7f] §7f |
 | `export const X = "…"` at module scope | A constant is not mutable state — [`CODE_RULES.md`][cr-1c] §1c |
 | A mutable module-scope `WeakMap` / `Map` cache in `ui/client` | Browser-only modules are exempt from the zero-global-state rule — [`CODE_RULES.md`][cr-1e] §1e. Keying on `Document` keeps it test-isolated without a reset export; live instance `announcers` in `src/ui/client/announce.ts` |
 | `contextVar` used inside forge source | It is the intended mechanism for a namespace's own accessors — [`ROUTING_AND_MIDDLEWARE.md`][ram-4a] §4a |

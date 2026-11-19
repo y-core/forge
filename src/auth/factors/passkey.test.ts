@@ -2,11 +2,17 @@ import { beforeAll, describe, expect, it } from "bun:test";
 
 import { base64urlEncode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
-import { uuidv7 } from "../../storage/db/uuid";
+import { createD1Client } from "../../storage/db/client";
+import type { D1Database } from "../../storage/db/types";
+import { uuidToBytes, uuidv7 } from "../../storage/db/uuid";
+import { nullLogger } from "../../testing/context";
+import { fakeD1 } from "../../testing/fakes";
 import { AUTH_PASSKEY_ASSERTION_ID_MAX, AUTH_PASSKEY_TTL_MAX_SECONDS, AUTH_PASSKEY_TTL_MIN_SECONDS, AUTH_PASSKEY_TTL_SECONDS } from "../config";
 import { AuthStoreError } from "../errors";
 import { PASSKEY_FLAG, createPasskeyKeyPair, fakePasskeyAssertion, fakePasskeyRegistration } from "../passkey/passkey.fixture";
 import type { PasskeyKeyPair } from "../passkey/types";
+import { createCredentialStore } from "../stores/credentials";
+import { createFactorStore } from "../stores/factors";
 import type {
   AuthChallenge,
   AuthCredential,
@@ -18,6 +24,7 @@ import type {
   FactorStore,
   UserStore,
 } from "../types";
+import { fakeFactorCaller } from "./factors.fixture";
 import { createPasskeyFactor } from "./passkey";
 import type { PasskeyFactorOptions, PasskeyPrfSalts } from "./types";
 
@@ -53,10 +60,12 @@ function fakeChallenges() {
 
 function fakeCredentials(seed: readonly AuthCredential[] = []) {
   const rows = [...seed];
+  const origins: (Uint8Array | null)[] = [];
   const store: CredentialStore = {
     listByUser: (userId) => Promise.resolve(ok(rows.filter((row) => row.userId === userId))),
     findByCredentialId: (credentialId) => Promise.resolve(ok(rows.find((row) => row.credentialId === credentialId) ?? null)),
-    create: (input: AuthCredentialInput, at) => {
+    create: (input: AuthCredentialInput, at, origin) => {
+      origins.push(origin.keep);
       const row: AuthCredential = {
         id: uuidv7(),
         userId: input.userId,
@@ -77,9 +86,9 @@ function fakeCredentials(seed: readonly AuthCredential[] = []) {
     },
     recordUse: () => Promise.resolve(ok(true)),
     relabel: () => Promise.resolve(ok(true)),
-    removeForUser: () => Promise.resolve(ok(true)),
+    removeForUser: () => Promise.resolve(ok("changed" as const)),
   };
-  return { store, rows };
+  return { store, rows, origins };
 }
 
 function fakeFactors() {
@@ -87,7 +96,10 @@ function fakeFactors() {
   const store: FactorStore = {
     listByUser: (userId) => Promise.resolve(ok(rows.filter((row) => row.userId === userId))),
     find: (userId, kind) => Promise.resolve(ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null)),
-    findEnrolled: (userId, kinds) => Promise.resolve(ok(rows.filter((row) => row.userId === userId && kinds.includes(row.kind)))),
+    listConfirmedKinds: (userId, kinds) =>
+      Promise.resolve(
+        ok(rows.filter((row) => row.userId === userId && kinds.includes(row.kind) && row.confirmedAt !== null).map((row) => row.kind)),
+      ),
     enrol: (input, at) => {
       const row: AuthFactor = {
         id: uuidv7(),
@@ -113,8 +125,9 @@ function fakeFactors() {
     },
     countAttempt: (userId, kind) => Promise.resolve(ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     recordVerification: () => Promise.resolve(ok(true)),
+    replaceSecret: () => Promise.resolve(ok(true)),
     countSecretsNotUnder: () => Promise.resolve(ok(0)),
-    remove: () => Promise.resolve(ok(true)),
+    remove: () => Promise.resolve(ok("changed" as const)),
   };
   return { store, rows };
 }
@@ -128,7 +141,6 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -144,7 +156,6 @@ function fakeUsers(seed: readonly AuthUser[]) {
     findByWebAuthnId: (webauthnId) =>
       Promise.resolve(ok(rows.find((row) => row.webauthnId !== null && base64urlEncode(row.webauthnId) === base64urlEncode(webauthnId)) ?? null)),
     create: () => Promise.reject(new Error("not used")),
-    revokeSessions: () => Promise.resolve(ok(true)),
     setWebAuthnIdIfAbsent: (id, webauthnId, at) => {
       minted.push(webauthnId);
       const index = rows.findIndex((row) => row.id === id);
@@ -154,6 +165,7 @@ function fakeUsers(seed: readonly AuthUser[]) {
       return Promise.resolve(ok(rows[index] ?? null));
     },
     markEmailVerified: () => Promise.resolve(ok(true)),
+    claimEmailChange: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
   };
   return { store, rows, minted };
@@ -210,7 +222,7 @@ async function offer(scene: World, nickname?: string) {
     challenge: issuedChallenge(scene, "register"),
     credentialId: CREDENTIAL_ID,
   });
-  return build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential, nickname }), AT);
+  return build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential, nickname }), AT, fakeFactorCaller());
 }
 
 describe("createPasskeyFactor — the contract it implements", () => {
@@ -228,7 +240,7 @@ describe("createPasskeyFactor — the user-verification posture", () => {
   it("asks for `required` in both ceremonies, with no configuration that weakens it", async () => {
     const scene = world();
     const enrolment = await build(scene).beginEnrolment(USER_ID, AT);
-    const request = await build(scene).createChallenge(USER_ID, AT);
+    const request = await build(scene).createChallenge(USER_ID, AT, fakeFactorCaller());
     const registration = enrolment.ok ? (enrolment.data.options as { authenticatorSelection: { userVerification: string } }) : undefined;
     const assertion = request.ok ? (request.data.options as { userVerification: string }) : undefined;
     expect(`${registration?.authenticatorSelection.userVerification} ${assertion?.userVerification}`).toBe("required required");
@@ -239,7 +251,7 @@ describe("createPasskeyFactor — the user-verification posture", () => {
   it("names `userVerification` in the ceremony it builds rather than inheriting whatever the default is", async () => {
     const scene = world();
     const enrolment = await build(scene).beginEnrolment(USER_ID, AT);
-    const request = await build(scene).createChallenge(USER_ID, AT);
+    const request = await build(scene).createChallenge(USER_ID, AT, fakeFactorCaller());
     const registration = enrolment.ok ? (enrolment.data.options as { authenticatorSelection: Record<string, unknown> }) : undefined;
     const assertion = request.ok ? (request.data.options as Record<string, unknown>) : undefined;
     expect(Object.hasOwn(registration?.authenticatorSelection ?? {}, "userVerification")).toBe(true);
@@ -251,7 +263,7 @@ describe("createPasskeyFactor — the credential id an assertion may present", (
   async function verifying(id: string) {
     const scene = world();
     const presented = JSON.stringify({ id, response: { clientDataJSON: "e30", authenticatorData: "e30", signature: "e30" } });
-    return await build(scene).verifyChallenge(USER_ID, presented, AT);
+    return await build(scene).verifyChallenge(USER_ID, presented, AT, fakeFactorCaller());
   }
 
   it("refuses an empty id, one past the cap, and one outside base64url, before any store is asked", async () => {
@@ -292,6 +304,22 @@ describe("createPasskeyFactor — enrolment", () => {
     expect(await build(world([])).beginEnrolment(USER_ID, AT)).toEqual({ ok: false, error: "unrecognised" });
   });
 
+  it("hands the credential store the acting session's hash, which the event the registration records names", async () => {
+    const keep = new Uint8Array(32).fill(5);
+    const scene = world();
+    const begun = await build(scene).beginEnrolment(USER_ID, AT);
+    if (!begun.ok) throw new Error(`enrolment refused: ${begun.error}`);
+    const credential = await fakePasskeyRegistration({
+      key: ES256,
+      rpId: RP_ID,
+      origin: ORIGIN,
+      challenge: issuedChallenge(scene, "register"),
+      credentialId: CREDENTIAL_ID,
+    });
+    await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential }), AT, fakeFactorCaller("browser-a", keep));
+    expect(scene.credentials.origins).toEqual([keep]);
+  });
+
   it("writes the credential and a confirmed factor row, because the ceremony is the confirmation", async () => {
     const scene = world();
     await enrol(scene);
@@ -311,7 +339,7 @@ describe("createPasskeyFactor — enrolment", () => {
       challenge: issuedChallenge(scene, "register"),
       credentialId: new Uint8Array([1, 1, 1, 1]) as Uint8Array<ArrayBuffer>,
     });
-    expect((await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential: second }), AT + 1)).ok).toBe(true);
+    expect((await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential: second }), AT + 1, fakeFactorCaller())).ok).toBe(true);
     expect(scene.factors.rows).toHaveLength(1);
     expect(scene.credentials.rows).toHaveLength(2);
   });
@@ -319,12 +347,14 @@ describe("createPasskeyFactor — enrolment", () => {
   it("reports a spent challenge as `expired` and unparseable JSON as `unrecognised`", async () => {
     const scene = world();
     const credential = await fakePasskeyRegistration({ key: ES256, rpId: RP_ID, origin: ORIGIN, challenge: "c", credentialId: CREDENTIAL_ID });
-    expect(await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential }), AT)).toEqual({ ok: false, error: "expired" });
-    expect(await build(scene).completeEnrolment(USER_ID, "not json", AT)).toEqual({ ok: false, error: "unrecognised" });
-    expect(await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential: { id: "x", response: {} } }), AT)).toEqual({
+    expect(await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential }), AT, fakeFactorCaller())).toEqual({
       ok: false,
-      error: "unrecognised",
+      error: "expired",
     });
+    expect(await build(scene).completeEnrolment(USER_ID, "not json", AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
+    expect(
+      await build(scene).completeEnrolment(USER_ID, JSON.stringify({ credential: { id: "x", response: {} } }), AT, fakeFactorCaller()),
+    ).toEqual({ ok: false, error: "unrecognised" });
   });
 });
 
@@ -356,7 +386,7 @@ describe("createPasskeyFactor — verification", () => {
   it("accepts an assertion the enrolled credential signed, and names the user it establishes", async () => {
     const scene = world();
     const credentialId = await enrol(scene);
-    const challenge = await build(scene).createChallenge(USER_ID, AT);
+    const challenge = await build(scene).createChallenge(USER_ID, AT, fakeFactorCaller());
     expect(challenge.ok && challenge.data.kind).toBe("passkey");
 
     const assertion = await fakePasskeyAssertion({
@@ -367,7 +397,7 @@ describe("createPasskeyFactor — verification", () => {
       credentialId,
       signCount: 1,
     });
-    expect(await build(scene).verifyChallenge(USER_ID, JSON.stringify(assertion), AT)).toEqual({
+    expect(await build(scene).verifyChallenge(USER_ID, JSON.stringify(assertion), AT, fakeFactorCaller())).toEqual({
       ok: true,
       data: { kind: "passkey", userId: USER_ID, verifiedAt: AT },
     });
@@ -376,7 +406,7 @@ describe("createPasskeyFactor — verification", () => {
   it("refuses an assertion whose credential belongs to another user", async () => {
     const scene = world();
     const credentialId = await enrol(scene);
-    await build(scene).createChallenge(USER_ID, AT);
+    await build(scene).createChallenge(USER_ID, AT, fakeFactorCaller());
     const assertion = await fakePasskeyAssertion({
       key: ES256,
       rpId: RP_ID,
@@ -385,13 +415,16 @@ describe("createPasskeyFactor — verification", () => {
       credentialId,
       signCount: 1,
     });
-    expect(await build(scene).verifyChallenge(uuidv7(), JSON.stringify(assertion), AT)).toEqual({ ok: false, error: "unrecognised" });
+    expect(await build(scene).verifyChallenge(uuidv7(), JSON.stringify(assertion), AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "unrecognised",
+    });
   });
 
   it("refuses an assertion with no user-verified flag, because a step-up demands the gesture", async () => {
     const scene = world();
     const credentialId = await enrol(scene);
-    await build(scene).createChallenge(USER_ID, AT);
+    await build(scene).createChallenge(USER_ID, AT, fakeFactorCaller());
     const assertion = await fakePasskeyAssertion({
       key: ES256,
       rpId: RP_ID,
@@ -401,14 +434,17 @@ describe("createPasskeyFactor — verification", () => {
       flags: PASSKEY_FLAG.up,
       signCount: 1,
     });
-    expect(await build(scene).verifyChallenge(USER_ID, JSON.stringify(assertion), AT)).toEqual({ ok: false, error: "unrecognised" });
+    expect(await build(scene).verifyChallenge(USER_ID, JSON.stringify(assertion), AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "unrecognised",
+    });
   });
 
   it("reports a spent challenge as `expired`", async () => {
     const scene = world();
     const credentialId = await enrol(scene);
     const assertion = await fakePasskeyAssertion({ key: ES256, rpId: RP_ID, origin: ORIGIN, challenge: "c", credentialId, signCount: 1 });
-    expect(await build(scene).verifyChallenge(USER_ID, JSON.stringify(assertion), AT)).toEqual({ ok: false, error: "expired" });
+    expect(await build(scene).verifyChallenge(USER_ID, JSON.stringify(assertion), AT, fakeFactorCaller())).toEqual({ ok: false, error: "expired" });
   });
 });
 
@@ -493,7 +529,7 @@ describe("createPasskeyFactor — the ceremony lifetime it holds at construction
   it("spends the default on the browser timeout when no lifetime was configured", async () => {
     const scene = world();
     expect(factory()).not.toThrow();
-    const begun = await build(scene).createChallenge(USER_ID, AT);
+    const begun = await build(scene).createChallenge(USER_ID, AT, fakeFactorCaller());
     expect(begun.ok && (begun.data.options as { timeout: number }).timeout).toBe(AUTH_PASSKEY_TTL_SECONDS * 1000);
   });
 
@@ -548,7 +584,7 @@ describe("createPasskeyFactor — PRF salts", () => {
   }
 
   async function challengeOptions(scene: World, prf?: PasskeyPrfSalts): Promise<Record<string, unknown>> {
-    const challenge = await build(scene, prf).createChallenge(USER_ID, AT);
+    const challenge = await build(scene, prf).createChallenge(USER_ID, AT, fakeFactorCaller());
     if (!challenge.ok) throw new Error(`challenge refused: ${challenge.error}`);
     return challenge.data.options as Record<string, unknown>;
   }
@@ -653,9 +689,9 @@ describe("createPasskeyFactor — PRF salts", () => {
     ];
     for (const { salt, returned } of cases) {
       const scene = world([userRow()], [credentialRow("cred-a")]);
-      await expect(build(scene, stepUpWith(new Map([["cred-a", salt as Uint8Array<ArrayBuffer>]]))).createChallenge(USER_ID, AT)).rejects.toThrow(
-        `createPasskeyFactor: prf.stepUp returned ${returned} — a PRF salt is a non-empty Uint8Array.`,
-      );
+      await expect(
+        build(scene, stepUpWith(new Map([["cred-a", salt as Uint8Array<ArrayBuffer>]]))).createChallenge(USER_ID, AT, fakeFactorCaller()),
+      ).rejects.toThrow(`createPasskeyFactor: prf.stepUp returned ${returned} — a PRF salt is a non-empty Uint8Array.`);
     }
   });
 
@@ -671,10 +707,12 @@ describe("createPasskeyFactor — PRF salts", () => {
       challenge: issuedChallenge(scene, "register"),
       credentialId: CREDENTIAL_ID,
     });
-    expect((await build(scene, prf).completeEnrolment(USER_ID, JSON.stringify({ credential: registration }), AT)).ok).toBe(true);
+    expect((await build(scene, prf).completeEnrolment(USER_ID, JSON.stringify({ credential: registration }), AT, fakeFactorCaller())).ok).toBe(
+      true,
+    );
 
     const credentialId = base64urlEncode(CREDENTIAL_ID);
-    const challenge = await build(scene, prf).createChallenge(USER_ID, AT);
+    const challenge = await build(scene, prf).createChallenge(USER_ID, AT, fakeFactorCaller());
     expect(challenge.ok && (challenge.data.options as Record<string, unknown>).extensions).toEqual({
       prf: { evalByCredential: { [credentialId]: { first: OTHER_SALT_B64URL } } },
     });
@@ -686,9 +724,64 @@ describe("createPasskeyFactor — PRF salts", () => {
       credentialId,
       signCount: 1,
     });
-    expect(await build(scene, prf).verifyChallenge(USER_ID, JSON.stringify(assertion), AT)).toEqual({
+    expect(await build(scene, prf).verifyChallenge(USER_ID, JSON.stringify(assertion), AT, fakeFactorCaller())).toEqual({
       ok: true,
       data: { kind: "passkey", userId: USER_ID, verifiedAt: AT },
     });
+  });
+});
+
+describe("createPasskeyFactor — the event one enrolment records", () => {
+  it("records one `factor-added` for an enrolment that also confirms a leftover unconfirmed factor row", async () => {
+    // Real credential and factor stores over a fake D1 that answers `changes()` from the write before it, as SQLite does.
+    const leftover = {
+      id: uuidToBytes(uuidv7()),
+      user_id: uuidToBytes(USER_ID),
+      kind: "passkey",
+      secret: null,
+      last_counter: null,
+      last_verified_at: null,
+      failed_attempts: 0,
+      confirmed_at: null,
+      created_at: 1,
+      updated_at: 1,
+    };
+    let changed = 0;
+    const recorded: unknown[] = [];
+    const db = fakeD1((sql) => (sql.startsWith("SELECT * FROM auth_factors") ? [leftover] : []), {
+      rowsWritten: (sql, params) => {
+        const flat = sql.replace(/\s+/g, " ");
+        if (!flat.startsWith("INSERT INTO auth_security_events")) return (changed = 1);
+        const guarded = flat.includes("changes() > 0");
+        const excluded = flat.includes("!= ?") && params.at(-1) === leftover.kind;
+        if (guarded && (changed === 0 || excluded)) return 0;
+        recorded.push(params[2]);
+        return 1;
+      },
+    });
+    const client = createD1Client(db as unknown as D1Database, { logger: nullLogger });
+    const scene = world();
+    const factor = createPasskeyFactor({
+      rpId: RP_ID,
+      rpName: "Forge Demo",
+      origin: ORIGIN,
+      sessionId: SESSION_ID,
+      users: scene.users.store,
+      factors: createFactorStore(client),
+      credentials: createCredentialStore(client),
+      challenges: scene.challenges.store,
+      subject: () => ({ name: "person@example.com", displayName: "A Person" }),
+    });
+    const begun = await factor.beginEnrolment(USER_ID, AT);
+    if (!begun.ok) throw new Error(`enrolment refused: ${begun.error}`);
+    const credential = await fakePasskeyRegistration({
+      key: ES256,
+      rpId: RP_ID,
+      origin: ORIGIN,
+      challenge: issuedChallenge(scene, "register"),
+      credentialId: CREDENTIAL_ID,
+    });
+    const completed = await factor.completeEnrolment(USER_ID, JSON.stringify({ credential }), AT, fakeFactorCaller());
+    expect({ completed: completed.ok && completed.data.confirmedAt, recorded }).toEqual({ completed: AT, recorded: ["factor-added"] });
   });
 });

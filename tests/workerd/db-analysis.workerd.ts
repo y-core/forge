@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,25 +12,10 @@ import { readTargetFacts } from "../../src/tooling/db/migrate/apply";
 import { discoverMigrations, readMigrations } from "../../src/tooling/db/migrate/files";
 import type { MigrationFinding } from "../../src/tooling/db/migrate/types";
 import type { DbRunContext, Migration } from "../../src/tooling/db/types";
+import { forgeDb } from "./cli";
 import { openD1 } from "./d1";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
-const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
-
-interface Step {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function forgeDb(root: string, args: string[]): Promise<Step> {
-  const child = spawn("bun", ["run", BIN, "db", ...args, "--root", root], { cwd: FORGE });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf-8")));
-  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf-8")));
-  return new Promise((resolve) => child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr })));
-}
 
 const roots: string[] = [];
 

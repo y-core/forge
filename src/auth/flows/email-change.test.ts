@@ -5,12 +5,12 @@ import { createLogger } from "../../logging/logger";
 import type { LogRecord } from "../../logging/types";
 import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
+import { AUTH_EMAIL_CHANGE_COOLDOWN_MS } from "../config";
 import { AuthStoreError } from "../errors";
 import { importAuthKeyRing } from "../keys/ring";
 import { encodeAuthToken } from "../keys/token";
 import type { AuthMessage, AuthUser, NonceStore, UserStore } from "../types";
 import { createEmailChangeFlow } from "./email-change";
-import type { AuthIssueOutcome } from "./types";
 import type { AuthEmailChangeOptions } from "./types";
 
 const USER_ID = uuidv7();
@@ -35,7 +35,6 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -52,7 +51,7 @@ function fakeUsers(seed: readonly AuthUser[], options: { conflict?: boolean; una
   const rows = [...seed];
   const writes: EmailWrite[] = [];
   const verified: string[] = [];
-  const revoked: { id: string; at: number }[] = [];
+  const claims = new Map<string, number>();
   const store: UserStore = {
     findById: (id) => Promise.resolve(ok(rows.find((row) => row.id === id) ?? null)),
     findByEmailKey: (emailKey) => Promise.resolve(ok(rows.find((row) => row.emailKey === emailKey) ?? null)),
@@ -61,10 +60,6 @@ function fakeUsers(seed: readonly AuthUser[], options: { conflict?: boolean; una
     setWebAuthnIdIfAbsent: () => Promise.resolve(ok(null)),
     markEmailVerified: (id) => {
       verified.push(id);
-      return Promise.resolve(ok(true));
-    },
-    revokeSessions: (id, at) => {
-      revoked.push({ id, at });
       return Promise.resolve(ok(true));
     },
     changeEmail: (id, email, emailKey, at) => {
@@ -79,8 +74,14 @@ function fakeUsers(seed: readonly AuthUser[], options: { conflict?: boolean; una
       rows[index] = { ...row, email, emailKey, emailVerifiedAt: at, updatedAt: at };
       return Promise.resolve(ok(true));
     },
+    claimEmailChange: (id, at, cooldownMs) => {
+      const last = claims.get(id);
+      if (last !== undefined && last > at - cooldownMs) return Promise.resolve(ok(false));
+      claims.set(id, at);
+      return Promise.resolve(ok(true));
+    },
   };
-  return { store, rows, writes, verified, revoked };
+  return { store, rows, writes, verified };
 }
 
 function fakeNonces() {
@@ -125,7 +126,7 @@ function scene(
   const users = fakeUsers(seed, options);
   const nonces = fakeNonces();
   const mail = fakeNotifier();
-  const scheduled: Promise<AuthIssueOutcome>[] = [];
+  const scheduled: Promise<unknown>[] = [];
   const flow = createEmailChangeFlow({
     keys: ring,
     users: users.store,
@@ -138,7 +139,7 @@ function scene(
   return { flow, users, nonces, mail, scheduled };
 }
 
-async function settle(built: ReturnType<typeof scene>): Promise<readonly AuthIssueOutcome[]> {
+async function settle(built: ReturnType<typeof scene>): Promise<readonly unknown[]> {
   built.mail.release();
   return Promise.all(built.scheduled);
 }
@@ -152,9 +153,9 @@ function capturingLogger() {
 }
 
 function tokenOf(sent: readonly AuthMessage[]): string {
-  const url = sent[0]?.url;
-  if (!url) throw new Error("no confirmation mail was sent");
-  return new URL(url).searchParams.get("token") ?? "";
+  const first = sent[0];
+  if (first?.kind !== "email-change") throw new Error("no confirmation mail was sent");
+  return new URL(first.url).searchParams.get("token") ?? "";
 }
 
 describe("createEmailChangeFlow — requesting", () => {
@@ -187,6 +188,16 @@ describe("createEmailChangeFlow — requesting", () => {
     const built = scene();
     expect(await built.flow.request(USER_ID, "PERSON@example.com", AT)).toEqual({ ok: false, error: "unchanged" });
     expect(built.scheduled).toHaveLength(0);
+  });
+
+  it("refuses a second request inside the cooldown and sends it no mail, then admits one the moment the cooldown lapses", async () => {
+    const built = scene([userRow()], {}, { cooldownMs: AUTH_EMAIL_CHANGE_COOLDOWN_MS });
+    expect((await built.flow.request(USER_ID, "new@example.com", AT)).ok).toBe(true);
+    const inside = await built.flow.request(USER_ID, "other@example.com", AT + AUTH_EMAIL_CHANGE_COOLDOWN_MS - 1);
+    expect({ inside, scheduled: built.scheduled.length }).toEqual({ inside: { ok: false, error: "too-soon" }, scheduled: 1 });
+    expect((await built.flow.request(USER_ID, "other@example.com", AT + AUTH_EMAIL_CHANGE_COOLDOWN_MS)).ok).toBe(true);
+    await settle(built);
+    expect(built.mail.sent).toHaveLength(2);
   });
 
   it("refuses an unknown account and a deactivated one", async () => {
@@ -250,7 +261,11 @@ describe("createEmailChangeFlow — confirming", () => {
     const move = await requested(built, "new@example.com");
     const moved = await built.flow.confirm(move, AT + 1_000);
     expect(moved.ok && moved.data.status).toBe("moved");
-    expect(built.mail.sent.map((message) => message.to)).toEqual(["new@example.com"]);
+    await Promise.all(built.scheduled);
+    expect(built.mail.sent.map((message) => [message.kind, message.to])).toEqual([
+      ["email-change", "new@example.com"],
+      ["security-event", "person@example.com"],
+    ]);
     expect(built.users.writes).toEqual([{ id: USER_ID, email: "new@example.com", emailKey: "new@example.com" }]);
   });
 
@@ -298,16 +313,26 @@ describe("createEmailChangeFlow — confirming", () => {
     expect(await built.flow.confirm(token, AT + TTL_MS)).toEqual({ ok: false, error: "expired" });
   });
 
-  it("revokes every session the account holds when the row moves, and none when an approval only forwards", async () => {
+  it("moves the row only on the second link, once, answering the account exactly as the move left it", async () => {
     const built = scene();
     const approve = await requested(built);
-    await built.flow.confirm(approve, AT + 500);
-    expect(built.users.revoked).toEqual([]);
+    const forwarded = await built.flow.confirm(approve, AT + 500);
+    const writesAfterApproval = [...built.users.writes];
     await Promise.all(built.scheduled);
 
     const moved = await built.flow.confirm(tokenOf(built.mail.sent.slice(1)), AT + 1_000);
-    expect(built.users.revoked).toEqual([{ id: USER_ID, at: AT + 1_000 }]);
-    expect(moved.ok && moved.data.status === "moved" && moved.data.user.sessionsInvalidBefore).toBe(AT + 1_000);
+    expect({ forwarded: forwarded.ok && forwarded.data.status, writesAfterApproval, writes: built.users.writes, moved }).toEqual({
+      forwarded: "forwarded",
+      writesAfterApproval: [],
+      writes: [{ id: USER_ID, email: "new@example.com", emailKey: "new@example.com" }],
+      moved: {
+        ok: true,
+        data: {
+          status: "moved",
+          user: { ...userRow(), email: "new@example.com", emailKey: "new@example.com", emailVerifiedAt: AT + 1_000, updatedAt: AT + 1_000 },
+        },
+      },
+    });
   });
 
   it("names the user out of the token, so a link only ever moves the account it was issued for", async () => {
@@ -418,6 +443,62 @@ describe("createEmailChangeFlow — delivery", () => {
   });
 });
 
+describe("createEmailChangeFlow — the notice a completed move sends", () => {
+  async function moveLink(built: ReturnType<typeof scene>): Promise<string> {
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    await settle(built);
+    await built.flow.confirm(tokenOf(built.mail.sent), AT + 500);
+    await Promise.all(built.scheduled);
+    return tokenOf(built.mail.sent.slice(1));
+  }
+
+  it("tells the old address the account moved, once the row has moved, naming neither address in the notice", async () => {
+    const built = scene();
+    const moved = await built.flow.confirm(await moveLink(built), AT + 1_000);
+    await Promise.all(built.scheduled);
+    expect({ moved: moved.ok && moved.data.status, notices: built.mail.sent.filter((message) => message.kind === "security-event") }).toEqual({
+      moved: "moved",
+      notices: [{ to: "person@example.com", kind: "security-event", notice: { type: "email-changed", factorKind: null, at: AT + 1_000 } }],
+    });
+  });
+
+  it("sends no notice when the move is refused", async () => {
+    const built = scene([userRow()], { conflict: true });
+    const moved = await built.flow.confirm(await moveLink(built), AT + 1_000);
+    await Promise.all(built.scheduled);
+    expect({ moved, notices: built.mail.sent.filter((message) => message.kind === "security-event") }).toEqual({
+      moved: { ok: false, error: "unrecognised" },
+      notices: [],
+    });
+  });
+
+  it("still answers the move when the notice cannot be delivered, logging the failure without the address", async () => {
+    const captured = capturingLogger();
+    const sent: AuthMessage[] = [];
+    const outage = new Error("SMTP relay refused the connection");
+    const notifier = {
+      send: (message: AuthMessage) => (message.kind === "security-event" ? Promise.reject(outage) : (sent.push(message), Promise.resolve(ok()))),
+    };
+    const built = scene([userRow()], {}, { notifier, logger: captured.logger });
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    await Promise.all(built.scheduled);
+    await built.flow.confirm(tokenOf(sent), AT + 500);
+    await Promise.all(built.scheduled);
+    const moved = await built.flow.confirm(tokenOf(sent.slice(1)), AT + 1_000);
+    await Promise.all(built.scheduled);
+    expect({ moved: moved.ok && moved.data.status, records: captured.records }).toEqual({
+      moved: "moved",
+      records: [
+        {
+          level: "error",
+          message: "auth.security-notice.failed",
+          data: { type: "email-changed", error: { type: "Error", detail: "SMTP relay refused the connection", stack: outage.stack } },
+        },
+      ],
+    });
+  });
+});
+
 describe("createEmailChangeFlow — the link lifetime it holds at construction", () => {
   const FLOOR =
     "createEmailChangeFlow: ttlMs is 1000, below the 60000-millisecond floor — the shortest expiration the nonce store accepts, below which the link outlives its own replay guard.";
@@ -443,6 +524,77 @@ describe("createEmailChangeFlow — the link lifetime it holds at construction",
   });
 });
 
+describe("createEmailChangeFlow — the request cooldown it holds at construction", () => {
+  it("refuses a cooldown a millisecond under a minute, which leaves the mail one account can send unbounded", () => {
+    expect(() => scene([userRow()], {}, { cooldownMs: 59_999 })).toThrow(
+      "createEmailChangeFlow: cooldownMs is 59999, below the 60000-millisecond floor — the cooldown is the only bound on how much mail one account can send to an address it names.",
+    );
+  });
+
+  it("refuses a cooldown a millisecond over a day, which keeps a user from correcting a mistyped address", () => {
+    expect(() => scene([userRow()], {}, { cooldownMs: 86_400_001 })).toThrow(
+      "createEmailChangeFlow: cooldownMs is 86400001, above the 86400000-millisecond ceiling — a wait longer than a day keeps a user from correcting a mistyped address.",
+    );
+  });
+
+  it("accepts both cooldown bounds themselves", () => {
+    expect(() => scene([userRow()], {}, { cooldownMs: 60_000 })).not.toThrow();
+    expect(() => scene([userRow()], {}, { cooldownMs: 86_400_000 })).not.toThrow();
+  });
+});
+
+describe("createEmailChangeFlow — the request cooldown", () => {
+  it("spaces requests five minutes apart when no cooldown is configured", async () => {
+    const built = scene();
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    expect({
+      inside: await built.flow.request(USER_ID, "new@example.com", AT + 300_000 - 1),
+      lapsed: (await built.flow.request(USER_ID, "new@example.com", AT + 300_000)).ok,
+      scheduled: built.scheduled.length,
+    }).toEqual({ inside: { ok: false, error: "too-soon" }, lapsed: true, scheduled: 2 });
+  });
+
+  it("holds an account with an unverified address to the cooldown too, mailing the new address once", async () => {
+    const built = scene([userRow({ emailVerifiedAt: null })]);
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    const second = await built.flow.request(USER_ID, "new@example.com", AT + 1);
+    await settle(built);
+    expect({ second, to: built.mail.sent.map((message) => message.to) }).toEqual({
+      second: { ok: false, error: "too-soon" },
+      to: ["new@example.com"],
+    });
+  });
+
+  it("spends no cooldown on a request for the address the account already holds", async () => {
+    const built = scene();
+    expect(await built.flow.request(USER_ID, "person@example.com", AT)).toEqual({ ok: false, error: "unchanged" });
+    expect((await built.flow.request(USER_ID, "new@example.com", AT)).ok).toBe(true);
+  });
+
+  it("spends no cooldown on an account it does not hold or one that is deactivated", async () => {
+    const claimed: string[] = [];
+    const users = fakeUsers([userRow({ deactivatedAt: 1_650_000_000_000 })]).store;
+    const recording: UserStore = {
+      ...users,
+      claimEmailChange: (id, at, cooldownMs) => (claimed.push(id), users.claimEmailChange(id, at, cooldownMs)),
+    };
+    const built = scene([], {}, { users: recording });
+    await built.flow.request(USER_ID, "new@example.com", AT);
+    await built.flow.request(OTHER_ID, "new@example.com", AT);
+    expect(claimed).toEqual([]);
+  });
+
+  it("answers unavailable and mails nothing when the cooldown cannot be claimed", async () => {
+    const users = fakeUsers([userRow()]).store;
+    const down: UserStore = { ...users, claimEmailChange: () => Promise.resolve(err(new AuthStoreError("unavailable", "users.claimEmailChange"))) };
+    const built = scene([], {}, { users: down });
+    expect({ requested: await built.flow.request(USER_ID, "new@example.com", AT), scheduled: built.scheduled.length }).toEqual({
+      requested: { ok: false, error: "unavailable" },
+      scheduled: 0,
+    });
+  });
+});
+
 describe("createEmailChangeFlow — inspecting a link", () => {
   async function linkFor(built: ReturnType<typeof scene>): Promise<string> {
     await built.flow.request(USER_ID, "new@example.com", AT);
@@ -457,7 +609,6 @@ describe("createEmailChangeFlow — inspecting a link", () => {
     expect(await built.flow.inspect(approve, AT + 500)).toEqual({ ok: true, data: { stage: "approve", address: "new@example.com" } });
     expect(built.nonces.seen.size).toBe(0);
     expect(built.users.writes).toEqual([]);
-    expect(built.users.revoked).toEqual([]);
     expect(built.scheduled).toHaveLength(1);
     expect(built.mail.sent.map((message) => message.to)).toEqual(["person@example.com"]);
 
@@ -476,14 +627,12 @@ describe("createEmailChangeFlow — inspecting a link", () => {
     expect(await built.flow.inspect(move, AT + 500)).toEqual({ ok: true, data: { stage: "move", address: "new@example.com" } });
     expect(built.users.rows[0]?.email).toBe("person@example.com");
     expect(built.users.writes).toEqual([]);
-    expect(built.users.revoked).toEqual([]);
     expect(built.nonces.seen.size).toBe(0);
     expect(built.scheduled).toHaveLength(1);
 
     const moved = await built.flow.confirm(move, AT + 1_000);
     expect(moved.ok && moved.data.status).toBe("moved");
     expect(built.users.rows[0]?.email).toBe("new@example.com");
-    expect(built.users.revoked).toEqual([{ id: USER_ID, at: AT + 1_000 }]);
     expect(built.nonces.seen.size).toBe(1);
     expect(await built.flow.confirm(move, AT + 2_000)).toEqual({ ok: false, error: "consumed" });
   });
@@ -511,7 +660,7 @@ describe("createEmailChangeFlow — inspecting a link", () => {
           create: unreachable,
           setWebAuthnIdIfAbsent: unreachable,
           markEmailVerified: unreachable,
-          revokeSessions: unreachable,
+          claimEmailChange: unreachable,
           changeEmail: unreachable,
         },
         nonces: { markConsumed: unreachable },

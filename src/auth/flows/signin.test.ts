@@ -7,14 +7,16 @@ import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
+import { fakeFactorCaller } from "../factors/factors.fixture";
 import { createFactorRegistry } from "../factors/registry";
 import type {
+  AuthFactorCaller,
   AuthFactorChallenge,
-  AuthFactorOffer,
   AuthFactorReason,
-  AuthFactorRequirement,
   AuthFactorVerified,
+  AuthSecondFactorRequirement,
   EnrollableFactorService,
+  RecoveryCodeFactorService,
 } from "../factors/types";
 import type { ImplicitFactorService } from "../factors/types";
 import { importAuthKeyRing } from "../keys/ring";
@@ -89,36 +91,35 @@ function totpFactor(spy: FactorSpy): EnrollableFactorService<"totp-app"> {
   };
 }
 
-const RECOVERY_OFFER: AuthFactorOffer = {
-  service: {
-    kind: "recovery-code",
-    enrolment: "explicit",
-    capabilities: { stepUp: true },
-    challengeTtlMs: 900_000,
-    codeDigits: null,
-    codePeriodSeconds: null,
-    reissueAfterMs: null,
-    createChallenge: () => Promise.resolve(err("not-enrolled" as const)),
-    verifyChallenge: () => Promise.resolve(err("not-enrolled" as const)),
-    beginEnrolment: () => Promise.resolve(err("unrecognised" as const)),
-    completeEnrolment: () => Promise.resolve(err("unrecognised" as const)),
-    listEnrolments: () => Promise.resolve(ok([])),
-  },
-  role: "second",
-  requirement: "optional",
+const RECOVERY_CODE: RecoveryCodeFactorService = {
+  kind: "recovery-code",
+  enrolment: "explicit",
+  capabilities: { stepUp: true },
+  challengeTtlMs: 900_000,
+  codeDigits: null,
+  codePeriodSeconds: null,
+  reissueAfterMs: null,
+  createChallenge: () => Promise.resolve(err("not-enrolled" as const)),
+  verifyChallenge: () => Promise.resolve(err("not-enrolled" as const)),
+  beginEnrolment: () => Promise.resolve(err("unrecognised" as const)),
+  completeEnrolment: () => Promise.resolve(err("unrecognised" as const)),
+  listEnrolments: () => Promise.resolve(ok([])),
+  remaining: () => Promise.resolve(ok(0)),
 };
 
 function fakeFactorStore(enrolled: readonly AuthFactor[] = []): FactorStore {
   return {
     listByUser: () => Promise.resolve(ok(enrolled)),
     find: () => Promise.resolve(ok(null)),
-    findEnrolled: (_userId, kinds) => Promise.resolve(ok(enrolled.filter((row) => kinds.includes(row.kind)))),
+    listConfirmedKinds: (_userId, kinds) =>
+      Promise.resolve(ok(enrolled.filter((row) => kinds.includes(row.kind) && row.confirmedAt !== null).map((row) => row.kind))),
     enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
     confirm: () => Promise.resolve(ok(true)),
     countAttempt: (userId, kind) => Promise.resolve(ok(enrolled.find((row) => row.userId === userId && row.kind === kind) ?? null)),
     recordVerification: () => Promise.resolve(ok(true)),
+    replaceSecret: () => Promise.resolve(ok(true)),
     countSecretsNotUnder: () => Promise.resolve(ok(0)),
-    remove: () => Promise.resolve(ok(true)),
+    remove: () => Promise.resolve(ok("changed" as const)),
   };
 }
 
@@ -131,7 +132,6 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -158,8 +158,8 @@ function fakeUsers(rows: readonly AuthUser[]) {
       verifiedAt.push(at);
       return Promise.resolve(ok(true));
     },
+    claimEmailChange: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
-    revokeSessions: async () => ok(true),
   };
   return { store, verifiedAt, reads };
 }
@@ -190,7 +190,7 @@ function capturingLogger() {
 
 function fakeDeferral() {
   const scheduled: Promise<AuthIssueOutcome>[] = [];
-  return { defer: (work: Promise<AuthIssueOutcome>) => void scheduled.push(work), scheduled };
+  return { defer: (work: Promise<unknown>) => void scheduled.push(work as Promise<AuthIssueOutcome>), scheduled };
 }
 
 interface Scene {
@@ -203,19 +203,21 @@ interface Scene {
 
 function flow(
   world: Scene,
-  second: AuthFactorRequirement | "none" = "none",
+  requirement: AuthSecondFactorRequirement | "none" = "none",
   enrolled: readonly AuthFactor[] = [],
   verdict?: Result<AuthFactorVerified, AuthFactorReason>,
   overrides: Partial<AuthSigninOptions> = {},
 ) {
-  const primary = { service: implicitFactor(world.primary, verdict), role: "primary" } as const;
-  const offered: AuthFactorOffer[] =
-    second === "none" ? [primary] : [primary, { service: totpFactor(world.stepUp), role: "second", requirement: second }, RECOVERY_OFFER];
+  const primary = implicitFactor(world.primary, verdict);
+  const factors =
+    requirement === "none"
+      ? { primary }
+      : { primary, second: { offered: [{ service: totpFactor(world.stepUp), requirement }] as const, recovery: RECOVERY_CODE } };
   const options: AuthSigninOptions = {
     keys: ring,
     users: world.users.store,
     ...decoyStores(world.decoyed),
-    factors: createFactorRegistry(fakeFactorStore(enrolled), { offered }),
+    factors: createFactorRegistry(fakeFactorStore(enrolled), factors),
     defer: world.deferral.defer,
     ...overrides,
   };
@@ -251,7 +253,7 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
   const DEACTIVATED = userRow({ deactivatedAt: 1_650_000_000_000 });
 
   async function work(world: Scene, email: string) {
-    const outcome = await flow(world, "none", [], err("unrecognised" as const)).complete(email, "000000", AT);
+    const outcome = await flow(world, "none", [], err("unrecognised" as const)).complete(email, "000000", AT, fakeFactorCaller());
     return { reads: world.users.reads, verified: world.primary.verified.length, decoyed: world.decoyed.length > 0, outcome };
   }
 
@@ -287,8 +289,8 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
   });
 
   it("answers a throttled known address exactly as it answers an unknown one", async () => {
-    const throttled = await flow(scene(), "none", [], err("too-many-attempts" as const)).complete(EMAIL, "000000", AT);
-    const tooSoon = await flow(scene(), "none", [], err("too-soon" as const)).complete(EMAIL, "000000", AT);
+    const throttled = await flow(scene(), "none", [], err("too-many-attempts" as const)).complete(EMAIL, "000000", AT, fakeFactorCaller());
+    const tooSoon = await flow(scene(), "none", [], err("too-soon" as const)).complete(EMAIL, "000000", AT, fakeFactorCaller());
     const unknown = await work(scene([]), "nobody@example.com");
 
     expect(throttled).toEqual({ ok: false, error: "unrecognised" });
@@ -297,7 +299,7 @@ describe("createSigninFlow — anti-enumeration on complete", () => {
   });
 
   it("carries every other refusal through unfolded, so an operator still reads the true reason", async () => {
-    const expired = await flow(scene(), "none", [], err("expired" as const)).complete(EMAIL, "000000", AT);
+    const expired = await flow(scene(), "none", [], err("expired" as const)).complete(EMAIL, "000000", AT, fakeFactorCaller());
     expect(expired).toEqual({ ok: false, error: "expired" });
   });
 });
@@ -307,14 +309,14 @@ describe("createSigninFlow — the step-up path keeps the true reason", () => {
     const world = scene();
     const signin = flow(world, "mandatory", [factorRow("totp-app", 1)]);
     world.stepUp.verdict = err("too-many-attempts" as const);
-    expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT)).toEqual({ ok: false, error: "too-many-attempts" });
+    expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT, fakeFactorCaller())).toEqual({ ok: false, error: "too-many-attempts" });
   });
 
   it("answers `unusable` from stepUp, so the caller can offer another factor rather than a wrong-code notice", async () => {
     const world = scene();
     const signin = flow(world, "mandatory", [factorRow("totp-app", 1)]);
     world.stepUp.verdict = err("unusable" as const);
-    expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT)).toEqual({ ok: false, error: "unusable" });
+    expect(await signin.stepUp(USER_ID, "totp-app", "000000", AT, fakeFactorCaller())).toEqual({ ok: false, error: "unusable" });
   });
 });
 
@@ -322,13 +324,13 @@ describe("createSigninFlow — anti-enumeration on request", () => {
   it("answers a registered address and an unknown one with the identical value", async () => {
     const known = scene();
     const unknown = scene([]);
-    expect(flow(known).request(EMAIL, AT)).toEqual(flow(unknown).request("nobody@example.com", AT));
+    expect(flow(known).request(EMAIL, AT, fakeFactorCaller())).toEqual(flow(unknown).request("nobody@example.com", AT, fakeFactorCaller()));
     await Promise.all([...known.deferral.scheduled, ...unknown.deferral.scheduled]);
   });
 
   it("schedules deferred work on the unknown-address branch too, and that work is the decoy", async () => {
     const unknown = scene([]);
-    flow(unknown).request("nobody@example.com", AT);
+    flow(unknown).request("nobody@example.com", AT, fakeFactorCaller());
     expect(unknown.deferral.scheduled).toHaveLength(1);
     expect(await (unknown.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("decoyed");
     expect(unknown.primary.challenged).toEqual([]);
@@ -337,7 +339,7 @@ describe("createSigninFlow — anti-enumeration on request", () => {
   it("schedules a real challenge on the known-address branch, off the caller's clock", async () => {
     const known = scene();
     known.deferral.scheduled.length = 0;
-    flow(known).request(EMAIL, AT);
+    flow(known).request(EMAIL, AT, fakeFactorCaller());
     expect(known.deferral.scheduled).toHaveLength(1);
     expect(known.primary.challenged).toEqual([]);
     expect(await (known.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("challenged");
@@ -346,16 +348,43 @@ describe("createSigninFlow — anti-enumeration on request", () => {
 
   it("folds a case-different spelling of one mailbox onto the same account", async () => {
     const known = scene();
-    flow(known).request("PERSON@EXAMPLE.COM", AT);
+    flow(known).request("PERSON@EXAMPLE.COM", AT, fakeFactorCaller());
     expect(await (known.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("challenged");
   });
+});
 
-  it("reports a store outage to the deferred work, never to the caller", async () => {
-    const broken = scene();
-    broken.users.store.findByEmailKey = () => Promise.resolve(err(new AuthStoreError("unavailable", "users.findByEmailKey")));
-    const answered = flow(broken).request(EMAIL, AT);
-    expect(answered).toEqual({ kind: "email-otp", expiresAt: AT + 600_000 });
-    expect(await (broken.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("unavailable");
+describe("createSigninFlow — a store failure returned inside the deferred work", () => {
+  it("logs the outage, never reports it to the caller, and challenges nobody when the address lookup fails", async () => {
+    const world = scene();
+    const captured = capturingLogger();
+    const failure = new AuthStoreError("unavailable", "users.findByEmailKey");
+    const users: UserStore = { ...world.users.store, findByEmailKey: () => Promise.resolve(err(failure)) };
+    const answered = flow(world, "none", [], undefined, { users, logger: captured.logger }).request(EMAIL, AT, fakeFactorCaller());
+    expect(answered).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+    expect(await Promise.all(world.deferral.scheduled)).toEqual(["unavailable"]);
+    expect({ challenged: world.primary.challenged, decoyed: world.decoyed, records: captured.records }).toEqual({
+      challenged: [],
+      decoyed: [],
+      records: [
+        {
+          level: "error",
+          message: "auth.signin.issue.failed",
+          data: { error: { type: "AuthStoreError", detail: failure.message, stack: failure.stack } },
+        },
+      ],
+    });
+  });
+
+  it("settles to unavailable with no challenge and no log line when the primary factor refuses with unavailable", async () => {
+    const world = scene();
+    const captured = capturingLogger();
+    const factors = createFactorRegistry(fakeFactorStore(), {
+      primary: { ...implicitFactor(world.primary), createChallenge: () => Promise.resolve(err("unavailable" as const)) },
+    });
+    const answered = flow(world, "none", [], undefined, { factors, logger: captured.logger }).request(EMAIL, AT, fakeFactorCaller());
+    expect(answered).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+    expect(await Promise.all(world.deferral.scheduled)).toEqual(["unavailable"]);
+    expect({ challenged: world.primary.challenged, records: captured.records }).toEqual({ challenged: [], records: [] });
   });
 });
 
@@ -375,7 +404,7 @@ describe("createSigninFlow — a throw inside the deferred work", () => {
       email: EMAIL,
       overrides: (world: Scene): Partial<AuthSigninOptions> => ({
         factors: createFactorRegistry(fakeFactorStore(), {
-          offered: [{ service: { ...implicitFactor(world.primary), createChallenge: () => Promise.reject(outage) }, role: "primary" }],
+          primary: { ...implicitFactor(world.primary), createChallenge: () => Promise.reject(outage) },
         }),
       }),
     },
@@ -389,7 +418,7 @@ describe("createSigninFlow — a throw inside the deferred work", () => {
     it(`settles to unavailable and logs the error when ${name}`, async () => {
       const world = scene(seed);
       const captured = capturingLogger();
-      const answered = flow(world, "none", [], undefined, { ...overrides(world), logger: captured.logger }).request(email, AT);
+      const answered = flow(world, "none", [], undefined, { ...overrides(world), logger: captured.logger }).request(email, AT, fakeFactorCaller());
       expect(answered).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
       expect(await Promise.all(world.deferral.scheduled)).toEqual(["unavailable"]);
       expect(captured.records).toEqual([
@@ -406,57 +435,62 @@ describe("createSigninFlow — a throw inside the deferred work", () => {
 describe("createSigninFlow — completing a sign-in", () => {
   it("refuses an unknown address without touching the factor", async () => {
     const unknown = scene([]);
-    expect(await flow(unknown).complete("nobody@example.com", "123456", AT)).toEqual({ ok: false, error: "unrecognised" });
+    expect(await flow(unknown).complete("nobody@example.com", "123456", AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
     expect(unknown.primary.verified).toEqual([]);
   });
 
   it("passes the factor's own refusal straight through, except the two that name the address", async () => {
     const known = scene();
-    const refused = await flow(known, "none", [], err("expired")).complete(EMAIL, "123456", AT);
+    const refused = await flow(known, "none", [], err("expired")).complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(refused).toEqual({ ok: false, error: "expired" });
   });
 
-  it("marks the address verified on the first pass of an implicit primary factor", async () => {
+  it("marks the address verified on the first pass of the primary factor", async () => {
     const known = scene([userRow({ emailVerifiedAt: null })]);
-    const outcome = await flow(known).complete(EMAIL, "123456", AT);
+    const outcome = await flow(known).complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(known.users.verifiedAt).toEqual([AT]);
     expect(outcome.ok && outcome.data.user.emailVerifiedAt).toBe(AT);
   });
 
   it("does not re-mark an address that is already verified", async () => {
     const known = scene();
-    await flow(known).complete(EMAIL, "123456", AT);
+    await flow(known).complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(known.users.verifiedAt).toEqual([]);
   });
 });
 
 describe("createSigninFlow — the second-factor requirement", () => {
   it("completes where no second factor is offered", async () => {
-    const outcome = await flow(scene()).complete(EMAIL, "123456", AT);
+    const outcome = await flow(scene()).complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(outcome.ok && outcome.data.resolution).toEqual({ status: "satisfied" });
   });
 
   it("answers `enrolment-required` as a success under `mandatory` with nothing enrolled", async () => {
-    const outcome = await flow(scene(), "mandatory").complete(EMAIL, "123456", AT);
+    const outcome = await flow(scene(), "mandatory").complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(outcome.ok).toBe(true);
     expect(outcome.ok && outcome.data.resolution).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
   });
 
   it("completes under `optional` with nothing enrolled, and demands a step-up once one is", async () => {
-    const empty = await flow(scene(), "optional").complete(EMAIL, "123456", AT);
+    const empty = await flow(scene(), "optional").complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(empty.ok && empty.data.resolution).toEqual({ status: "satisfied" });
 
-    const held = await flow(scene(), "optional", [factorRow("totp-app", 5_000)]).complete(EMAIL, "123456", AT);
+    const held = await flow(scene(), "optional", [factorRow("totp-app", 5_000)]).complete(EMAIL, "123456", AT, fakeFactorCaller());
     expect(held.ok && held.data.resolution).toEqual({ status: "step-up-required", kinds: ["totp-app"] });
   });
 
-  it("derives the roles off the row it loaded, so `mandatoryForRoles` binds an admin and nobody else", async () => {
-    const second: AuthFactorRequirement = { mandatoryForRoles: ["admin"] };
-    const matched = await flow(scene([userRow({ isAdmin: true })]), second).complete(EMAIL, "123456", AT);
-    expect(matched.ok && matched.data.resolution).toEqual({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
-
-    const other = await flow(scene(), second).complete(EMAIL, "123456", AT);
-    expect(other.ok && other.data.resolution).toEqual({ status: "satisfied" });
+  it("asks the same of an admin as of anyone, since no requirement is scoped to roles", async () => {
+    const outcomes = await Promise.all(
+      (["mandatory", "optional"] as const).flatMap((requirement) =>
+        [true, false].map((isAdmin) => flow(scene([userRow({ isAdmin })]), requirement).complete(EMAIL, "123456", AT, fakeFactorCaller())),
+      ),
+    );
+    expect(outcomes.map((outcome) => outcome.ok && outcome.data.resolution.status)).toEqual([
+      "enrolment-required",
+      "enrolment-required",
+      "satisfied",
+      "satisfied",
+    ]);
   });
 });
 
@@ -465,22 +499,22 @@ describe("createSigninFlow — a deactivated account", () => {
 
   it("refuses to complete a sign-in, without ever reaching the factor", async () => {
     const closed = deactivated();
-    expect(await flow(closed).complete(EMAIL, "123456", AT)).toEqual({ ok: false, error: "deactivated" });
+    expect(await flow(closed).complete(EMAIL, "123456", AT, fakeFactorCaller())).toEqual({ ok: false, error: "deactivated" });
     expect(closed.primary.verified).toEqual([]);
   });
 
   it("refuses to issue or to verify a step-up", async () => {
     const closed = deactivated();
     const built = flow(closed, "optional");
-    expect(await built.requestStepUp(USER_ID, "totp-app", AT)).toEqual({ ok: false, error: "deactivated" });
-    expect(await built.stepUp(USER_ID, "totp-app", "123456", AT)).toEqual({ ok: false, error: "deactivated" });
+    expect(await built.requestStepUp(USER_ID, "totp-app", AT, fakeFactorCaller())).toEqual({ ok: false, error: "deactivated" });
+    expect(await built.stepUp(USER_ID, "totp-app", "123456", AT, fakeFactorCaller())).toEqual({ ok: false, error: "deactivated" });
     expect(closed.stepUp.challenged).toEqual([]);
     expect(closed.stepUp.verified).toEqual([]);
   });
 
   it("still issues the deferred challenge, because refusing it early would name the account", async () => {
     const closed = deactivated();
-    flow(closed).request(EMAIL, AT);
+    flow(closed).request(EMAIL, AT, fakeFactorCaller());
     expect(await (closed.deferral.scheduled[0] as Promise<AuthIssueOutcome>)).toBe("challenged");
   });
 });
@@ -489,22 +523,77 @@ describe("createSigninFlow — the step-up entry points", () => {
   it("issues and verifies a step-up for an active account", async () => {
     const open = scene();
     const built = flow(open, "optional");
-    expect(await built.requestStepUp(USER_ID, "totp-app", AT)).toEqual({ ok: true, data: { kind: "totp-app", expiresAt: AT + 30_000 } });
-    expect(await built.stepUp(USER_ID, "totp-app", "123456", AT)).toEqual({
+    expect(await built.requestStepUp(USER_ID, "totp-app", AT, fakeFactorCaller())).toEqual({
+      ok: true,
+      data: { kind: "totp-app", expiresAt: AT + 30_000 },
+    });
+    expect(await built.stepUp(USER_ID, "totp-app", "123456", AT, fakeFactorCaller())).toEqual({
       ok: true,
       data: { kind: "totp-app", userId: USER_ID, verifiedAt: AT },
     });
   });
 
-  it("refuses a kind that is not an offered step-up, including the primary factor itself", async () => {
-    const built = flow(scene(), "optional");
-    expect(await built.stepUp(USER_ID, "email-otp", "123456", AT)).toEqual({ ok: false, error: "not-enrolled" });
-    expect(await built.stepUp(USER_ID, "passkey", "123456", AT)).toEqual({ ok: false, error: "not-enrolled" });
+  it("refuses a kind that is not an offered step-up, and the primary factor from a user holding a second one", async () => {
+    const world = scene();
+    const built = flow(world, "optional", [factorRow("totp-app", 1)]);
+    expect(await built.requestStepUp(USER_ID, "email-otp", AT, fakeFactorCaller())).toEqual({ ok: false, error: "not-enrolled" });
+    expect(await built.stepUp(USER_ID, "email-otp", "123456", AT, fakeFactorCaller())).toEqual({ ok: false, error: "not-enrolled" });
+    expect(await built.stepUp(USER_ID, "passkey", "123456", AT, fakeFactorCaller())).toEqual({ ok: false, error: "not-enrolled" });
+    expect({ challenged: world.primary.challenged.length, verified: world.primary.verified.length }).toEqual({ challenged: 0, verified: 0 });
+  });
+
+  it("re-proves a user holding no second factor through the primary factor", async () => {
+    const world = scene();
+    const built = flow(world, "optional");
+    expect((await built.requestStepUp(USER_ID, "email-otp", AT, fakeFactorCaller())).ok).toBe(true);
+    expect(await built.stepUp(USER_ID, "email-otp", "123456", AT, fakeFactorCaller())).toMatchObject({
+      ok: true,
+      data: { kind: "email-otp", userId: USER_ID },
+    });
+    expect({ challenged: world.primary.challenged.length, verified: world.primary.verified.length }).toEqual({ challenged: 1, verified: 1 });
   });
 
   it("refuses a user the store does not hold", async () => {
     const built = flow(scene([]), "optional");
-    expect(await built.stepUp(USER_ID, "totp-app", "123456", AT)).toEqual({ ok: false, error: "unrecognised" });
+    expect(await built.stepUp(USER_ID, "totp-app", "123456", AT, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
+  });
+});
+
+describe("createSigninFlow — the browser a code is bound to", () => {
+  it("hands each factor call the caller its own entry point was given, so a code is issued to and checked against the browser that asked", async () => {
+    const seen: [string, AuthFactorCaller][] = [];
+    const primary = implicitFactor({ challenged: [], verified: [] });
+    const second = totpFactor({ challenged: [], verified: [] });
+    const recordedPrimary: ImplicitFactorService<"email-otp"> = {
+      ...primary,
+      createChallenge: (userId, at, caller) => (seen.push(["email-otp challenge", caller]), primary.createChallenge(userId, at, caller)),
+      verifyChallenge: (userId, code, at, caller) => (seen.push(["email-otp verify", caller]), primary.verifyChallenge(userId, code, at, caller)),
+    };
+    const recordedSecond: EnrollableFactorService<"totp-app"> = {
+      ...second,
+      createChallenge: (userId, at, caller) => (seen.push(["totp-app challenge", caller]), second.createChallenge(userId, at, caller)),
+      verifyChallenge: (userId, code, at, caller) => (seen.push(["totp-app verify", caller]), second.verifyChallenge(userId, code, at, caller)),
+    };
+    const world = scene();
+    const built = flow(world, "none", [], undefined, {
+      factors: createFactorRegistry(fakeFactorStore([factorRow("totp-app", 1)]), {
+        primary: recordedPrimary,
+        second: { offered: [{ service: recordedSecond, requirement: "optional" }], recovery: RECOVERY_CODE },
+      }),
+    });
+
+    built.request(EMAIL, AT, fakeFactorCaller("asked"));
+    await Promise.all(world.deferral.scheduled);
+    await built.complete(EMAIL, "123456", AT, fakeFactorCaller("completed"));
+    await built.requestStepUp(USER_ID, "totp-app", AT, fakeFactorCaller("stepping"));
+    await built.stepUp(USER_ID, "totp-app", "123456", AT, fakeFactorCaller("stepped"));
+
+    expect(seen).toEqual([
+      ["email-otp challenge", fakeFactorCaller("asked")],
+      ["email-otp verify", fakeFactorCaller("completed")],
+      ["totp-app challenge", fakeFactorCaller("stepping")],
+      ["totp-app verify", fakeFactorCaller("stepped")],
+    ]);
   });
 });
 
@@ -535,7 +624,7 @@ describe("redactSigninReason", () => {
 describe("createSigninFlow — the challenge lifetime it reports", () => {
   it("reports the lifetime the primary factor enforces, and has no lifetime of its own to disagree with it", () => {
     const world = scene();
-    const registry = flow(world).request("person@example.com", AT);
+    const registry = flow(world).request("person@example.com", AT, fakeFactorCaller());
     expect(registry).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
   });
 
@@ -546,9 +635,9 @@ describe("createSigninFlow — the challenge lifetime it reports", () => {
       keys: ring,
       users: world.users.store,
       ...decoyStores(),
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: brief, role: "primary" }] }),
+      factors: createFactorRegistry(fakeFactorStore([]), { primary: brief }),
       defer: world.deferral.defer,
     };
-    expect(createSigninFlow(options).request("person@example.com", AT)).toEqual({ kind: "email-otp", expiresAt: AT + 90_000 });
+    expect(createSigninFlow(options).request("person@example.com", AT, fakeFactorCaller())).toEqual({ kind: "email-otp", expiresAt: AT + 90_000 });
   });
 });

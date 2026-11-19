@@ -16,8 +16,8 @@ import { nestedHeadingLevel } from "./heading";
 import { AuthTimestamp } from "./timestamp";
 import type { AuthFactorRow, AuthFactorsTriggerProps, AuthFactorsViewProps } from "./types";
 
-/** What each factor is called on a page, so no surface spells a stored `kind` at a reader. */
-const FACTOR_LABEL: Readonly<Record<AuthFactorKind, string>> = {
+/** What each factor is called on a page, so no surface spells a stored `kind` at a reader. @internal */
+export const FACTOR_LABEL: Readonly<Record<AuthFactorKind, string>> = {
   "email-otp": "Emailed code",
   passkey: "Passkey",
   "recovery-code": "Recovery codes",
@@ -26,10 +26,10 @@ const FACTOR_LABEL: Readonly<Record<AuthFactorKind, string>> = {
 
 /** What each factor does, in the one line a reader needs to tell them apart. */
 const FACTOR_NOTE: Readonly<Record<AuthFactorKind, string>> = {
-  "email-otp": "A single-use code sent to the address on this account.",
-  passkey: "The screen lock or security key held by a registered device.",
-  "recovery-code": "Single-use codes kept for when your other methods are out of reach.",
-  "totp-app": "A rotating code from an authenticator app.",
+  "email-otp": "How you sign in: a single-use code sent to the address on this account.",
+  passkey: "A second factor: the screen lock or security key held by a registered device.",
+  "recovery-code": "Single-use codes. Each code works once, in place of a second factor you can't reach.",
+  "totp-app": "A second factor: a rotating code from an authenticator app.",
 };
 
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
@@ -37,9 +37,9 @@ const UNNAMED_CREDENTIAL = "Unnamed passkey";
 const HEADING_ID = "auth-factors-heading";
 
 const RESET_NOTE =
-  "Removes every authenticator app, passkey and recovery code on this account and signs it out everywhere. The holder then signs in with an emailed code and enrols again.";
+  "Remove every second factor and recovery code on this account, and sign it out everywhere. The holder then signs in with an emailed code and adds any mandatory second factor before reaching anything else.";
 
-const RESET_CONFIRM = "Reset every sign-in method on this account? This cannot be undone.";
+const RESET_CONFIRM = "Remove every second factor and recovery code on this account? This cannot be undone.";
 
 /** The badge each enrolment state earns — a tone, and the word beside it, never the tone alone. */
 const STATE_BADGE: Readonly<Record<AuthFactorRow["state"], { readonly tone: "success" | "warning" | "neutral"; readonly label: string }>> = {
@@ -55,7 +55,7 @@ const STATE_BADGE: Readonly<Record<AuthFactorRow["state"], { readonly tone: "suc
 export const AuthFactorsTrigger: FC<AuthFactorsTriggerProps> = ({ loadPath, label, class: cls }) => (
   <Button asChild tone='neutral' appearance='outline' size='sm' class={cn("self-start", cls)}>
     <a href={loadPath} data-ref='factors-trigger' {...hxAttrs({ get: loadPath, swap: "outerHTML" })}>
-      {label ?? "Show sign-in methods"}
+      {label ?? "Show factors"}
     </a>
   </Button>
 );
@@ -98,10 +98,20 @@ const AuthFactorItem: FC<{ row: AuthFactorRow; manage: string | undefined }> = (
   );
 };
 
-// Design Read: the account's holder or an administrator, checking what can sign it in; the one action
+// Design Read: the account's holder or an administrator, checking which factors it holds; the one action
 // is managing a factor, offered only to the holder; failure is a down store, which the resolver answers.
-/** One account's sign-in methods and registered passkeys, identical whoever is reading them. @public */
-export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, manage, recovered, reset, icon: AppIcon, class: cls, level }) => {
+/** One account's factors and registered passkeys, identical whoever is reading them. @public */
+export const AuthFactorsView: FC<AuthFactorsViewProps> = ({
+  factors,
+  passkeys,
+  manage,
+  recovered,
+  replaceAppPath,
+  reset,
+  icon: AppIcon,
+  class: cls,
+  level,
+}) => {
   const own = level ?? 1;
   const Heading = `h${own}` as "h1";
   const nested = nestedHeadingLevel(own);
@@ -109,22 +119,32 @@ export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, m
   return (
     <section data-ref='factors' aria-labelledby={HEADING_ID} class={cn("mx-auto flex w-full max-w-2xl flex-col gap-6", cls)}>
       <Heading id={HEADING_ID} class='text-lg font-semibold text-foreground'>
-        Sign-in methods
+        Factors
       </Heading>
       {recovered === undefined ? null : (
         <Alert tone='info' data-ref='factors-recovered'>
           <AppIcon name='key' class='size-4' />
           <Alert.Title>You signed in with a recovery code</Alert.Title>
           <Alert.Description>
-            {recovered === 1 ? "You have 1 unused code left." : `You have ${recovered} unused codes left.`} If your authenticator app or passkey no
-            longer works, remove it below and add it again, then generate a new set of codes.
+            {recovered === 1 ? "You have 1 unused code left." : `You have ${recovered} unused codes left.`}{" "}
+            {replaceAppPath === undefined ? (
+              "If your authenticator app or passkey no longer works, add a new one below before you remove the old one, then generate a new set of codes."
+            ) : (
+              <>
+                If your authenticator app no longer works,{" "}
+                <Link href={replaceAppPath} data-ref='factors-replace-app'>
+                  replace it
+                </Link>
+                . If a passkey no longer works, add a new one below before you remove the old one. Then generate a new set of codes.
+              </>
+            )}
           </Alert.Description>
         </Alert>
       )}
-      <Subheading class='text-sm font-medium text-foreground'>Methods offered</Subheading>
+      <Subheading class='text-sm font-medium text-foreground'>Factors offered</Subheading>
       {factors.length === 0 ? (
         <EmptyState>
-          <EmptyState.Title level={nestedHeadingLevel(nested)}>No sign-in methods offered</EmptyState.Title>
+          <EmptyState.Title level={nestedHeadingLevel(nested)}>No factors offered</EmptyState.Title>
           <EmptyState.Description>This deployment offers no factor, so nothing can be enrolled here.</EmptyState.Description>
         </EmptyState>
       ) : (
@@ -133,6 +153,11 @@ export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, m
             <AuthFactorItem key={row.kind} row={row} manage={factorManagePath(row.kind, manage)} />
           ))}
         </ul>
+      )}
+      {manage === undefined ? null : (
+        <Link href={manage.sessions()} decoration='hover' class='self-start' data-ref='factors-sessions'>
+          Sessions
+        </Link>
       )}
       <Separator />
       <Subheading class='text-sm font-medium text-foreground'>Registered passkeys</Subheading>
@@ -172,7 +197,7 @@ export const AuthFactorsView: FC<AuthFactorsViewProps> = ({ factors, passkeys, m
             class='flex flex-col gap-2'>
             <p class='max-w-prose text-sm text-pretty text-muted-foreground'>{RESET_NOTE}</p>
             <Button type='submit' tone='destructive' class='self-start' data-ref='factors-reset'>
-              Reset sign-in methods
+              Reset second factors
             </Button>
           </Form>
         </>

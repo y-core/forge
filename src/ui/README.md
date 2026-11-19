@@ -890,10 +890,11 @@ The build-time computation behind the artifacts `ui/assets` owns. Why it lives b
 
 ### Assemble a sprite, read a theme token, bake a cursor
 
-Reach here from a build script, not from a route. **`sanitizeSVG`, which `svgToSymbol` applies, drops any construct it does not recognise** rather
-than carrying it through. That makes an SVG from a designer safe to inline; it is defence in depth for a source you already trust, not a substitute
-for a DOM sanitizer on one you do not. To bake a themed cursor, `readThemeTokens` reads the per-theme custom properties out of compiled CSS,
-`resolveToken` follows a `var()` chain to a literal, and `buildCursors` turns each cursor × theme into a CSS `cursor` value.
+Reach here from a build script, not from a route. **`sanitizeSVG`, and the same pass inside `svgToSymbol` and `splitSvgRoot`, is an allowlist
+sanitizer:** it keeps what it recognises and drops everything else, under the rules in [Choosing which SVGs to trust][assets-trust]. That makes an
+SVG from a designer safe to inline; it is defence in depth for a source you already trust, not a substitute for a DOM sanitizer on one you do not.
+To bake a themed cursor, `readThemeTokens` reads the per-theme custom properties out of compiled CSS, `resolveToken` follows a `var()` chain to a
+literal, and `buildCursors` turns each cursor × theme into a CSS `cursor` value.
 
 ---
 
@@ -1462,6 +1463,7 @@ a supported composition. **`resume()` owns teardown** for every scope, so there 
 - [`UI_DESIGN_GUIDANCE.md`][udg] — the design corpus's rule tiers and identifiers.
 
 [ap-2c]: ../../docs/ASSET_PIPELINE.md#2c-the-namespace-orchestrates-builders-and-is-not-one
+[assets-trust]: ../tooling/assets/README.md#choosing-which-svgs-to-trust
 [cr-1]: ../../warden/canon/shared/CODE_RULES.md#1-zero-global-state-rule
 [floor]: ./design/floor.md#1f-hit-target-and-reduced-motion
 [gate-presets]: ../tooling/gate/README.md#starting-from-a-preset

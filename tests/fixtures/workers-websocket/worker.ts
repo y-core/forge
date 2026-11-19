@@ -59,4 +59,4 @@ app.map(
   }),
 );
 
-export default { fetch: (request: Request, env: unknown, ctx: ExecutionContext) => app.fetch(request, env, ctx) };
+export default { fetch: (request: Request, env: Record<string, unknown>, ctx: ExecutionContext) => app.fetch(request, env, ctx) };

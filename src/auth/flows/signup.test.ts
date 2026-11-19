@@ -5,8 +5,9 @@ import type { LogRecord } from "../../logging/types";
 import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
+import { fakeFactorCaller } from "../factors/factors.fixture";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorChallenge, ImplicitFactorService } from "../factors/types";
+import type { AuthFactorCaller, AuthFactorChallenge, ImplicitFactorService } from "../factors/types";
 import type { AuthFactor, AuthUser, AuthUserInput, FactorStore, UserStore } from "../types";
 import { createSignupFlow } from "./signup";
 import type { AuthIssueOutcome } from "./types";
@@ -19,13 +20,14 @@ const AT = 1_700_000_000_000;
 const NO_FACTOR_ROWS: FactorStore = {
   listByUser: () => Promise.resolve(ok([] as readonly AuthFactor[])),
   find: () => Promise.resolve(ok(null)),
-  findEnrolled: () => Promise.resolve(ok([])),
+  listConfirmedKinds: () => Promise.resolve(ok([])),
   enrol: () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.enrol"))),
   confirm: () => Promise.resolve(ok(true)),
   countAttempt: () => Promise.resolve(ok(null)),
   recordVerification: () => Promise.resolve(ok(true)),
+  replaceSecret: () => Promise.resolve(ok(true)),
   countSecretsNotUnder: () => Promise.resolve(ok(0)),
-  remove: () => Promise.resolve(ok(true)),
+  remove: () => Promise.resolve(ok("changed" as const)),
 };
 
 function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
@@ -37,7 +39,6 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -60,8 +61,8 @@ function fakeUsers(seed: readonly AuthUser[], options: { conflict?: boolean } = 
     },
     setWebAuthnIdIfAbsent: () => Promise.resolve(ok(null)),
     markEmailVerified: () => Promise.resolve(ok(true)),
+    claimEmailChange: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
-    revokeSessions: async () => ok(true),
   };
   return { store, rows, created };
 }
@@ -70,11 +71,12 @@ const OTP_TTL_MS = 600_000;
 
 function fakeDeferral() {
   const scheduled: Promise<AuthIssueOutcome>[] = [];
-  return { defer: (work: Promise<AuthIssueOutcome>) => void scheduled.push(work), scheduled };
+  return { defer: (work: Promise<unknown>) => void scheduled.push(work as Promise<AuthIssueOutcome>), scheduled };
 }
 
 function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } = {}, overrides: Partial<AuthSignupOptions> = {}) {
   const challenged: string[] = [];
+  const callers: AuthFactorCaller[] = [];
   const primary: ImplicitFactorService<"email-otp"> = {
     kind: "email-otp",
     enrolment: "implicit",
@@ -83,8 +85,9 @@ function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } =
     codeDigits: 6,
     codePeriodSeconds: null,
     reissueAfterMs: null,
-    createChallenge: (userId, at) => {
+    createChallenge: (userId, at, caller) => {
       challenged.push(userId);
+      callers.push(caller);
       return Promise.resolve(ok({ kind: "email-otp", expiresAt: at + 1_000 } as AuthFactorChallenge));
     },
     verifyChallenge: () => Promise.resolve(err("unrecognised" as const)),
@@ -94,11 +97,11 @@ function scene(seed: readonly AuthUser[] = [], options: { conflict?: boolean } =
   const deferral = fakeDeferral();
   const flow = createSignupFlow({
     users: users.store,
-    factors: createFactorRegistry(NO_FACTOR_ROWS, { offered: [{ service: primary, role: "primary" }] }),
+    factors: createFactorRegistry(NO_FACTOR_ROWS, { primary }),
     defer: deferral.defer,
     ...overrides,
   });
-  return { flow, users, deferral, challenged };
+  return { flow, users, deferral, challenged, callers };
 }
 
 function capturingLogger() {
@@ -117,7 +120,7 @@ describe("createSignupFlow — anti-enumeration on request", () => {
   it("answers a registered address and a new one with the identical value", async () => {
     const fresh = scene();
     const taken = scene([userRow()]);
-    expect(fresh.flow.request(EMAIL, AT)).toEqual(taken.flow.request(EMAIL, AT));
+    expect(fresh.flow.request(EMAIL, AT, fakeFactorCaller())).toEqual(taken.flow.request(EMAIL, AT, fakeFactorCaller()));
     await settle([...fresh.deferral.scheduled, ...taken.deferral.scheduled]);
   });
 
@@ -126,7 +129,7 @@ describe("createSignupFlow — anti-enumeration on request", () => {
       ["new", scene()],
       ["registered", scene([userRow()])],
     ] as const) {
-      built.flow.request(EMAIL, AT);
+      built.flow.request(EMAIL, AT, fakeFactorCaller());
       expect(`${name}: ${built.deferral.scheduled.length} ${built.users.created.length} ${built.challenged.length}`).toBe(`${name}: 1 0 0`);
       expect(`${name}: ${(await settle(built.deferral.scheduled)).join()}`).toBe(`${name}: challenged`);
     }
@@ -134,7 +137,7 @@ describe("createSignupFlow — anti-enumeration on request", () => {
 
   it("creates the account on the new branch and challenges it, trimming and normalising the address", async () => {
     const fresh = scene();
-    fresh.flow.request(EMAIL, AT);
+    fresh.flow.request(EMAIL, AT, fakeFactorCaller());
     await settle(fresh.deferral.scheduled);
     expect(fresh.users.created).toEqual([{ email: "New.Person@Example.COM", emailKey: EMAIL_KEY }]);
     expect(fresh.challenged).toHaveLength(1);
@@ -143,7 +146,7 @@ describe("createSignupFlow — anti-enumeration on request", () => {
   it("challenges a registered address rather than refusing it, and creates no second account", async () => {
     const existing = userRow();
     const taken = scene([existing]);
-    taken.flow.request(EMAIL, AT);
+    taken.flow.request(EMAIL, AT, fakeFactorCaller());
     expect(await settle(taken.deferral.scheduled)).toEqual(["challenged"]);
     expect(taken.users.created).toEqual([]);
     expect(taken.challenged).toEqual([existing.id]);
@@ -151,19 +154,124 @@ describe("createSignupFlow — anti-enumeration on request", () => {
 
   it("keeps a store failure inside the deferred work, never in what the caller is told", async () => {
     const broken = scene([], { conflict: true });
-    expect(broken.flow.request(EMAIL, AT)).toEqual({ kind: "email-otp", expiresAt: AT + 600_000 });
+    expect(broken.flow.request(EMAIL, AT, fakeFactorCaller())).toEqual({ kind: "email-otp", expiresAt: AT + 600_000 });
     expect(await settle(broken.deferral.scheduled)).toEqual(["unavailable"]);
     expect(broken.challenged).toEqual([]);
   });
 
   it("names the primary factor and its window, so a caller can say what to expect", () => {
-    expect(scene().flow.request(EMAIL, AT)).toEqual({ kind: "email-otp", expiresAt: AT + 600_000 });
+    expect(scene().flow.request(EMAIL, AT, fakeFactorCaller())).toEqual({ kind: "email-otp", expiresAt: AT + 600_000 });
+  });
+});
+
+describe("createSignupFlow — the browser a code is bound to", () => {
+  it("issues the code to the caller it was given, on the new-address branch and the registered one alike", async () => {
+    const fresh = scene();
+    fresh.flow.request(EMAIL, AT, fakeFactorCaller("browser-a"));
+    await settle(fresh.deferral.scheduled);
+    const registered = scene([userRow()]);
+    registered.flow.request(EMAIL, AT, fakeFactorCaller("browser-b"));
+    await settle(registered.deferral.scheduled);
+    expect([...fresh.callers, ...registered.callers]).toEqual([fakeFactorCaller("browser-a"), fakeFactorCaller("browser-b")]);
   });
 });
 
 describe("createSignupFlow — the challenge lifetime it reports", () => {
   it("reports the lifetime the primary factor enforces, and has none of its own to disagree with it", () => {
-    expect(scene().flow.request(EMAIL, AT)).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+    expect(scene().flow.request(EMAIL, AT, fakeFactorCaller())).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+  });
+});
+
+describe("createSignupFlow — a store failure returned inside the deferred work", () => {
+  const readFailure = new AuthStoreError("unavailable", "users.findByEmailKey");
+  const writeFailure = new AuthStoreError("unavailable", "users.create");
+
+  for (const { name, failure, users } of [
+    {
+      name: "the address lookup",
+      failure: readFailure,
+      users: (store: UserStore): UserStore => ({ ...store, findByEmailKey: () => Promise.resolve(err(readFailure)) }),
+    },
+    {
+      name: "the account insert",
+      failure: writeFailure,
+      users: (store: UserStore): UserStore => ({ ...store, create: () => Promise.resolve(err(writeFailure)) }),
+    },
+  ]) {
+    it(`logs the outage and creates no account when ${name} fails`, async () => {
+      const captured = capturingLogger();
+      const backing = fakeUsers([]);
+      const built = scene([], {}, { users: users(backing.store), logger: captured.logger });
+      expect(built.flow.request(EMAIL, AT, fakeFactorCaller())).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+      expect(await settle(built.deferral.scheduled)).toEqual(["unavailable"]);
+      expect({ rows: backing.rows, challenged: built.challenged, records: captured.records }).toEqual({
+        rows: [],
+        challenged: [],
+        records: [
+          {
+            level: "error",
+            message: "auth.signup.issue.failed",
+            data: { error: { type: "AuthStoreError", detail: failure.message, stack: failure.stack } },
+          },
+        ],
+      });
+    });
+  }
+});
+
+describe("createSignupFlow — an insert that loses a race for the address", () => {
+  it("challenges the account the other insert wrote, and logs no outage", async () => {
+    const captured = capturingLogger();
+    const winner = userRow();
+    let lookups = 0;
+    const backing = fakeUsers([], { conflict: true });
+    const racing: UserStore = { ...backing.store, findByEmailKey: () => Promise.resolve(ok(lookups++ === 0 ? null : winner)) };
+    const built = scene([], {}, { users: racing, logger: captured.logger });
+    built.flow.request(EMAIL, AT, fakeFactorCaller());
+    expect(await settle(built.deferral.scheduled)).toEqual(["challenged"]);
+    expect({ lookups, challenged: built.challenged, records: captured.records }).toEqual({ lookups: 2, challenged: [winner.id], records: [] });
+  });
+
+  it("logs the re-read's failure as the outage, and challenges nobody, when the lookup after the conflict fails", async () => {
+    const captured = capturingLogger();
+    const reread = new AuthStoreError("unavailable", "users.findByEmailKey");
+    let lookups = 0;
+    const backing = fakeUsers([], { conflict: true });
+    const racing: UserStore = { ...backing.store, findByEmailKey: () => Promise.resolve(lookups++ === 0 ? ok(null) : err(reread)) };
+    const built = scene([], {}, { users: racing, logger: captured.logger });
+    built.flow.request(EMAIL, AT, fakeFactorCaller());
+    expect(await settle(built.deferral.scheduled)).toEqual(["unavailable"]);
+    expect({ lookups, inserts: backing.created.length, challenged: built.challenged, records: captured.records }).toEqual({
+      lookups: 2,
+      inserts: 1,
+      challenged: [],
+      records: [
+        {
+          level: "error",
+          message: "auth.signup.issue.failed",
+          data: { error: { type: "AuthStoreError", detail: reread.message, stack: reread.stack } },
+        },
+      ],
+    });
+  });
+
+  it("logs the conflict itself, and challenges nobody, when the lookup after it still finds no account", async () => {
+    const captured = capturingLogger();
+    const conflict = new AuthStoreError("conflict", "users.create", { constraint: "auth_users.email_key" });
+    const losing: UserStore = { ...fakeUsers([]).store, create: () => Promise.resolve(err(conflict)) };
+    const built = scene([], {}, { users: losing, logger: captured.logger });
+    built.flow.request(EMAIL, AT, fakeFactorCaller());
+    expect(await settle(built.deferral.scheduled)).toEqual(["unavailable"]);
+    expect({ challenged: built.challenged, records: captured.records }).toEqual({
+      challenged: [],
+      records: [
+        {
+          level: "error",
+          message: "auth.signup.issue.failed",
+          data: { error: { type: "AuthStoreError", detail: conflict.message, stack: conflict.stack } },
+        },
+      ],
+    });
   });
 });
 
@@ -185,15 +293,12 @@ describe("createSignupFlow — a throw inside the deferred work", () => {
 
   for (const { name, overrides } of [
     { name: "the user store rejects", overrides: { users: brokenUsers } },
-    {
-      name: "the primary factor rejects",
-      overrides: { factors: createFactorRegistry(NO_FACTOR_ROWS, { offered: [{ service: brokenPrimary, role: "primary" }] }) },
-    },
+    { name: "the primary factor rejects", overrides: { factors: createFactorRegistry(NO_FACTOR_ROWS, { primary: brokenPrimary }) } },
   ] satisfies { name: string; overrides: Partial<AuthSignupOptions> }[]) {
     it(`settles to unavailable and logs the error when ${name}`, async () => {
       const captured = capturingLogger();
       const built = scene([], {}, { ...overrides, logger: captured.logger });
-      expect(built.flow.request(EMAIL, AT)).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
+      expect(built.flow.request(EMAIL, AT, fakeFactorCaller())).toEqual({ kind: "email-otp", expiresAt: AT + OTP_TTL_MS });
       expect(await settle(built.deferral.scheduled)).toEqual(["unavailable"]);
       expect(captured.records).toEqual([
         {

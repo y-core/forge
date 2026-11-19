@@ -592,8 +592,95 @@ describe("composeMigration()", () => {
     wire(io, { baseline: [USERS, NOTES], desired: [USERS, NOTES_WITH_AUTHOR] });
 
     await expect(composeMigration(run, OPTIONS)).rejects.toThrow(
-      "notes.author is NOT NULL with no DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it NOT NULL in a later compose",
+      "notes.author refuses NULL with no non-NULL DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it refuse NULL in a later compose",
     );
+  });
+
+  it("throws the diff's refusal for a column added refusing NULL by CHECK alone, not lint's forge bug, and writes no file", async () => {
+    const checked: Shape = { name: "notes", columns: [...NOTES.columns, ["author", "TEXT CHECK (author IS NOT NULL)"]] };
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, checked]) });
+    wire(io, { baseline: [USERS, NOTES], desired: [USERS, checked] });
+
+    const caught = await composeMigration(run, OPTIONS).catch((error: unknown) => error);
+    expect({ message: (caught as Error).message, written: io.files.has(`${MIGRATIONS}/0002_schema.sql`) }).toEqual({
+      message:
+        "notes.author refuses NULL with no non-NULL DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it refuse NULL in a later compose",
+      written: false,
+    });
+  });
+
+  it("refuses an app key to an auth table as the app's to fix, naming the table, the key and the fix", async () => {
+    const owned: Shape = { name: "notes", columns: [...NOTES.columns, ["user_id", "BLOB REFERENCES auth_users (id)"]] };
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, owned]) });
+    wire(io, { baseline: [USERS], desired: [USERS, owned] });
+
+    const caught = await composeMigration(run, OPTIONS).catch((error: unknown) => error);
+    expect(caught).toBeInstanceOf(CliError);
+    const lines = (caught as CliError).message.split("\n");
+    expect({
+      lead: lines.slice(0, 2),
+      finding: lines[2]?.replace(/^ {2}<composed>:\d+ auth-key-blocks-delete — /, ""),
+      count: lines.length,
+    }).toEqual({
+      lead: [
+        "the composed migration fails lint, and the file was not written:",
+        "a foreign key in the declared schema blocks forge's auth deletes — change it there:",
+      ],
+      finding:
+        "notes (user_id) references auth_users with no ON DELETE clause, which is NO ACTION, so D1 refuses the delete of an auth_users row " +
+        "that purgeAuthEphemera or an admin remove makes — declare ON DELETE CASCADE, or ON DELETE SET NULL on a nullable column",
+      count: 3,
+    });
+    expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+  });
+
+  it("still calls any other lint finding over its own output a forge bug", async () => {
+    const counted: Shape = { name: "notes", columns: [["id", "INTEGER PRIMARY KEY AUTOINCREMENT"]] };
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, counted]) });
+    wire(io, { baseline: [USERS], desired: [USERS, counted] });
+
+    const caught = await composeMigration(run, OPTIONS).catch((error: unknown) => error);
+    expect((caught as CliError).message).toStartWith(
+      "the composed migration fails lint, and the file was not written:\nthis is a forge bug:\n  <composed>:",
+    );
+    expect((caught as CliError).message).toContain(" autoincrement — ");
+    expect((caught as CliError).message).not.toContain("blocks forge's auth deletes");
+    expect(io.files.has(`${MIGRATIONS}/0002_schema.sql`)).toBe(false);
+  });
+
+  it("puts an app key to an auth table under the app's heading and any other finding under forge's when one table carries both", async () => {
+    const mixed: Shape = {
+      name: "notes",
+      columns: [
+        ["id", "INTEGER PRIMARY KEY AUTOINCREMENT"],
+        ["user_id", "BLOB REFERENCES auth_users (id)"],
+      ],
+    };
+    const { run, io } = context({ [`${MIGRATIONS}/0001_init.sql`]: INIT, [SCHEMA]: schemaText([USERS, mixed]) });
+    wire(io, { baseline: [USERS], desired: [USERS, mixed] });
+
+    const caught = await composeMigration(run, OPTIONS).catch((error: unknown) => error);
+    const message = (caught as CliError).message;
+    const lines = message.split("\n");
+    expect({
+      lead: lines[0],
+      app: lines[1],
+      key: /^ {2}<composed>:\d+ auth-key-blocks-delete — notes \(user_id\) references auth_users with no ON DELETE clause/.test(lines[2] ?? ""),
+      forge: lines[3],
+      finding: /^ {2}<composed>:\d+ autoincrement — /.test(lines[4] ?? ""),
+      count: lines.length,
+      notWritten: message.split("not written").length - 1,
+      written: io.files.has(`${MIGRATIONS}/0002_schema.sql`),
+    }).toEqual({
+      lead: "the composed migration fails lint, and the file was not written:",
+      app: "a foreign key in the declared schema blocks forge's auth deletes — change it there:",
+      key: true,
+      forge: "this is a forge bug:",
+      finding: true,
+      count: 5,
+      notWritten: 1,
+      written: false,
+    });
   });
 
   it("numbers the next file above every one already in the migrations directory", async () => {

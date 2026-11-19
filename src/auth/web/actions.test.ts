@@ -5,6 +5,8 @@ import { createCookieSessionStorage } from "@remix-run/session/cookie-storage";
 import { Forge } from "../../app/forge-app";
 import type { AppContext } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
+import { bytesToHex } from "../../crypto/primitives/bytes";
+import { sha256 } from "../../crypto/primitives/digest";
 import { createCsrfToken, csrfMinterCtx, csrfProtection } from "../../form/csrf";
 import { csrfFieldCtx } from "../../form/csrf-context";
 import { parseFormData } from "../../form/parse-form-data";
@@ -15,13 +17,34 @@ import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { createTestContext, nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
 import type { TestAction } from "../../testing/types";
+import { AUTH_OTP_MAX_ATTEMPTS, AUTH_SESSION_MAX_MS } from "../config";
 import { AuthStoreError } from "../errors";
+import { createEmailOtpFactor } from "../factors/email-otp";
 import { createPasskeyFactor } from "../factors/passkey";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorService } from "../factors/types";
+import type { AuthSecondFactorKind, AuthSecondFactorRequirement, AuthSecondFactorService, RecoveryCodeFactorService } from "../factors/types";
+import type { AuthFactorReason, TotpReplaceableFactorService } from "../factors/types";
+import { createEmailChangeFlow } from "../flows/email-change";
+import { createSigninFlow } from "../flows/signin";
+import type { AuthSigninFlow } from "../flows/types";
+import { importAuthKeyRing } from "../keys/ring";
 import { createPasskeyKeyPair, fakePasskeyRegistration } from "../passkey/passkey.fixture";
 import type { PasskeyKeyPair } from "../passkey/types";
-import type { AuthChallenge, AuthCredential, AuthFactor, AuthFactorKind, CredentialStore, UserStore } from "../types";
+import type {
+  AdminUserOutcome,
+  AdminUserStore,
+  AuthChallenge,
+  AuthCredential,
+  AuthFactor,
+  AuthFactorKind,
+  AuthMessage,
+  AuthSessionStore,
+  AuthUser,
+  CredentialStore,
+  OtpState,
+  OtpStateStore,
+  UserStore,
+} from "../types";
 import {
   authCsrfRefusal,
   createAdminElevateActions,
@@ -32,6 +55,7 @@ import {
   createPasskeyManageActions,
   createPasskeyStepUpActions,
   createRecoveryCodeActions,
+  createSessionActions,
   AUTH_CEREMONY_MAX_BYTES,
   createSigninActions,
   createSignoutActions,
@@ -40,8 +64,15 @@ import {
   createTotpManageActions,
   createVerifyActions,
 } from "./actions";
-import { requireApproval, requireFreshStepUp } from "./guards";
-import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, AUTH_STEP_UP_SESSION_KEY, authCtx } from "./identity";
+import { requireApproval, requireFreshStepUp, resolveAuth } from "./guards";
+import {
+  AUTH_PENDING_SIGNIN_SESSION_KEY,
+  AUTH_SESSION_TOKEN_KEY,
+  authCtx,
+  establishAuthSession,
+  markAuthStepUp,
+  resolveAuthIdentity,
+} from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { authRoutes } from "./routes";
 import type { AuthAdminGuardOptions, AuthRequestServices, AuthTurnstileOptions, AuthWebOptions } from "./types";
@@ -58,6 +89,7 @@ import {
   fakeAuthCredentialStore,
   fakeAuthEmailChangeFlow,
   fakeAuthServices,
+  fakeAuthSessionStore,
   fakeAuthSigninFlow,
   fakeAuthSignupFlow,
   fakeAuthUser,
@@ -66,8 +98,10 @@ import {
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
+  fakeSecurityNotices,
+  fakeRecoveryCodeService,
+  fakeSecondFactorOffering,
   fakeSessionCookie,
-  recoveryOffer,
   textOf,
 } from "./web.fixture";
 
@@ -84,6 +118,16 @@ interface Seed {
   readonly stepUpAfter?: unknown[];
 }
 
+const SEEDED_SESSION_ID = "0190f3a0-0000-7000-8000-000000000001";
+
+/** The session rows every `optionsWith` service set and every seeded `actionApp` session share. */
+const actionSessions = fakeAuthSessionStore([]);
+
+async function actionRowStepUp(token: unknown): Promise<number | null> {
+  if (typeof token !== "string") return null;
+  return actionSessions.rows.get(bytesToHex(await sha256(token)))?.stepUpAt ?? null;
+}
+
 /** A `Forge` app with a seeded session and a deterministic CSRF minter, but no CSRF verification. */
 function actionApp(seed: Seed = {}): Forge {
   const app = new Forge();
@@ -91,29 +135,36 @@ function actionApp(seed: Seed = {}): Forge {
   app.use("*", async (context, next) => {
     const session = sessionCtx.get(context);
     if (seed.userId !== undefined) {
-      session.set(AUTH_SESSION_KEY, seed.userId);
+      const now = Date.now();
+      await establishAuthSession(session, actionSessions, seed.userId, now, now, { kind: "email-otp" });
+      if (seed.stepUpAt !== undefined) await markAuthStepUp(session, actionSessions, seed.stepUpAt, seed.stepUpAt, "email-otp");
       authCtx.set(context, {
         userId: seed.userId,
         email: seed.email ?? signedIn.email,
         isAdmin: seed.admin === true,
+        sessionId: SEEDED_SESSION_ID,
         stepUpAt: seed.stepUpAt ?? null,
+        stepUpKind: seed.stepUpAt === undefined ? null : "email-otp",
       });
     }
     if (seed.pendingEmail !== undefined) session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, seed.pendingEmail);
-    if (seed.stepUpAt !== undefined) session.set(AUTH_STEP_UP_SESSION_KEY, seed.stepUpAt);
     const marks = seed.stepUpWrites;
+    const rotate = actionSessions.rotate;
     if (marks !== undefined) {
-      const write = session.set.bind(session);
-      session.set = ((key: string, value: unknown) => {
-        if (key === AUTH_STEP_UP_SESSION_KEY) marks.push(Number(value));
-        return write(key as never, value as never);
-      }) as typeof session.set;
+      actionSessions.rotate = (replaces, tokenHash, stepUp) => {
+        if (stepUp !== undefined) marks.push(stepUp.at);
+        return rotate(replaces, tokenHash, stepUp);
+      };
     }
     csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
     csrfFieldCtx.set(context, "_csrf");
-    const response = await next();
-    seed.stepUpAfter?.push(session.get(AUTH_STEP_UP_SESSION_KEY) ?? null);
-    return response;
+    try {
+      const response = await next();
+      seed.stepUpAfter?.push(await actionRowStepUp(session.get(AUTH_SESSION_TOKEN_KEY)));
+      return response;
+    } finally {
+      actionSessions.rotate = rotate;
+    }
   });
   return app;
 }
@@ -147,7 +198,7 @@ const HX_REQUEST = { "HX-Request": "true" };
 const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
 
 function optionsWith(overrides: Partial<AuthRequestServices>): AuthWebOptions {
-  const services = fakeAuthServices(overrides);
+  const services = fakeAuthServices({ sessions: actionSessions, ...overrides });
   return fakeAuthWebOptions({ resolveServices: () => services });
 }
 
@@ -300,7 +351,7 @@ describe("createVerifyActions on the second half of a sign-in", () => {
     const wide = { ...fakeFactorService("email-otp"), codeDigits: 8 };
     const options = optionsWith({
       signin: fakeAuthSigninFlow({ complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" } }) }),
-      factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: wide, role: "primary" }] }),
+      factors: createFactorRegistry(fakeFactorStore([]), { primary: wide }),
     });
     const app = mounted(actionApp({ pendingEmail: "grace@example.com" }), "POST", "/auth/verify", createVerifyActions(options).submit);
 
@@ -355,31 +406,23 @@ describe("createVerifyActions on the second half of a sign-in", () => {
 describe("createVerifyActions on a step-up", () => {
   const stepUpServices: Partial<AuthRequestServices> = {
     users: fakeAuthUserStore([signedIn]),
-    factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
-      offered: [
-        { service: fakeFactorService("email-otp"), role: "primary" },
-        { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
-        recoveryOffer(),
-      ],
+    factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
+      primary: fakeFactorService("email-otp"),
+      second: fakeSecondFactorOffering([fakeFactorService("totp-app")]),
     }),
   };
 
-  it("sends a signed-in session owing an enrolment to the page that can clear it, rather than asking for a code", async () => {
-    const options = optionsWith({
-      users: fakeAuthUserStore([signedIn]),
-      factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: fakeFactorService("totp-app"), role: "second", requirement: "mandatory" },
-          recoveryOffer(),
-        ],
-      }),
+  it("sends a signed-in session owing an enrolment to the first owed kind's page, rather than asking for a code", async () => {
+    const landing = async (mandatory: readonly AuthSecondFactorKind[]) => {
+      const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: fakeFactorRegistry(["passkey", "totp-app"], mandatory) });
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+      const res = await app.request("/auth/verify", formBody({ code: "123456" }));
+      return { status: res.status, location: res.headers.get("location") };
+    };
+    expect({ app: await landing(["totp-app"]), both: await landing(["passkey", "totp-app"]) }).toEqual({
+      app: { status: 303, location: "/auth/enrol/totp" },
+      both: { status: 303, location: "/auth/enrol/passkey" },
     });
-    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
-
-    const res = await app.request("/auth/verify", formBody({ code: "123456" }));
-    expect(res.status).toBe(303);
-    expect(res.headers.get("location")).toBe("/auth/enrol/totp");
   });
 
   it("marks the step-up and redirects, and marks it nowhere else", async () => {
@@ -410,11 +453,8 @@ describe("createVerifyActions on a step-up", () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([fakeFactorService("totp-app")]),
       }),
     });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
@@ -437,11 +477,8 @@ describe("createVerifyActions on a step-up", () => {
   const holdingBoth: Partial<AuthRequestServices> = {
     users: fakeAuthUserStore([signedIn]),
     factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
-      offered: [
-        { service: fakeFactorService("email-otp"), role: "primary" },
-        { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
-        recoveryOffer(),
-      ],
+      primary: fakeFactorService("email-otp"),
+      second: fakeSecondFactorOffering([fakeFactorService("totp-app")]),
     }),
   };
 
@@ -546,7 +583,7 @@ describe("createVerifyActions on a step-up", () => {
 describe("a step-up is recorded on a verified factor and on no other outcome", () => {
   const EARLIER = 400;
   const VERIFIED_AT = 1_000;
-  const PRIMARY = { service: fakeFactorService("email-otp"), role: "primary" } as const;
+  const PRIMARY = fakeFactorService("email-otp");
 
   async function marked(action: TestAction, route: string, url: string, init: RequestInit, seed: Seed = {}) {
     const stepUpWrites: number[] = [];
@@ -558,12 +595,10 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
 
   const acceptingStepUp = fakeAuthSigninFlow({ stepUp: async (userId, kind, _code, at) => ok({ kind, userId, verifiedAt: at }) });
 
-  function secondFactor(enrolled: readonly AuthFactorKind[], requirement: "optional" | "mandatory"): Partial<AuthRequestServices> {
+  function secondFactor(enrolled: readonly AuthFactorKind[], requirement: AuthSecondFactorRequirement): Partial<AuthRequestServices> {
     return {
       users: fakeAuthUserStore([signedIn]),
-      factors: createFactorRegistry(fakeFactorStore(enrolled), {
-        offered: [PRIMARY, { service: fakeFactorService("totp-app"), role: "second", requirement }, recoveryOffer()],
-      }),
+      factors: fakeFactorRegistry(["totp-app"], requirement === "mandatory" ? ["totp-app"] : [], fakeFactorStore(enrolled)),
     };
   }
 
@@ -596,14 +631,6 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
       code: "123456",
       status: 303,
       location: "/auth/enrol/totp",
-    },
-    {
-      outcome: "the detour of a session owing no step-up",
-      services: { ...secondFactor([], "optional"), signin: acceptingStepUp },
-      url: "/auth/verify?next=%2Fapp",
-      code: "123456",
-      status: 303,
-      location: "/app",
     },
     {
       outcome: "the detour of a session whose factor standing cannot be read",
@@ -649,6 +676,23 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
     });
   });
 
+  it("records the moment a user holding no second factor re-proved with the primary factor", async () => {
+    const stepped: AuthFactorKind[] = [];
+    const signin = fakeAuthSigninFlow({ stepUp: async (userId, kind, _code, at) => (stepped.push(kind), ok({ kind, userId, verifiedAt: at })) });
+    const services = { ...secondFactor([], "optional"), signin };
+    const result = await marked(verifySubmit(services), "/auth/verify", "/auth/verify?next=%2Fapp", formBody({ code: "123456" }), {
+      userId: "u9",
+      stepUpAt: EARLIER,
+    });
+    expect({ ...result, stepped }).toEqual({
+      status: 303,
+      location: "/app",
+      stepUpWrites: [VERIFIED_AT],
+      stepUpAt: VERIFIED_AT,
+      stepped: ["email-otp"],
+    });
+  });
+
   it("leaves an earlier mark as it was when a step-up code is resent", async () => {
     const action = createVerifyActions(optionsWith({ ...secondFactor(["totp-app"], "optional"), signin: acceptingStepUp })).resend;
     const result = await marked(action, "/auth/verify/resend", "/auth/verify/resend", formBody({}), { userId: "u9", stepUpAt: EARLIER });
@@ -663,28 +707,29 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
     {
       outcome: "a sign-in code the flow refuses",
       signin: acceptingStepUp,
-      seed: { pendingEmail: "grace@example.com", stepUpAt: EARLIER },
+      seed: { pendingEmail: "grace@example.com" },
       status: 422,
       location: null,
-      stepUpAt: EARLIER,
+      stepUpAt: null,
     },
     {
       outcome: "a sign-in code posted with no sign-in started",
       signin: acceptingStepUp,
-      seed: { stepUpAt: EARLIER },
+      seed: {},
       status: 303,
       location: "/auth/signin",
-      stepUpAt: EARLIER,
+      stepUpAt: null,
     },
     {
-      outcome: "a completed sign-in, which clears a carried-over mark rather than recording one",
+      outcome: "a completed sign-in that still owes a second factor, which clears a carried-over mark rather than recording one",
       signin: fakeAuthSigninFlow({
         stepUp: acceptingStepUp.stepUp,
-        complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" as const } }),
+        complete: async () =>
+          ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "step-up-required" as const, kinds: ["totp-app" as const] } }),
       }),
       seed: { pendingEmail: "grace@example.com", stepUpAt: EARLIER },
       status: 303,
-      location: "/app",
+      location: "/auth/verify?next=%2Fapp",
       stepUpAt: null,
     },
   ]) {
@@ -699,6 +744,18 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
     });
   }
 
+  it("records the sign-in code as the step-up of a user holding no second factor", async () => {
+    const signin = fakeAuthSigninFlow({
+      complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" as const } }),
+    });
+    const services = { ...secondFactor([], "optional"), signin };
+    expect(
+      await marked(verifySubmit(services), "/auth/verify", "/auth/verify?next=%2Fapp", formBody({ code: "123456" }), {
+        pendingEmail: "grace@example.com",
+      }),
+    ).toEqual({ status: 303, location: "/app", stepUpWrites: [], stepUpAt: VERIFIED_AT });
+  });
+
   const FINISH = "/auth/verify/passkey/finish";
 
   function passkeyFinish(verifies: boolean, offered = true): TestAction {
@@ -706,10 +763,11 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
       ...fakeFactorService("passkey"),
       verifyChallenge: async (userId: string, _presented: string, at: number) =>
         verifies ? ok({ kind: "passkey" as const, userId, verifiedAt: at }) : err("unrecognised" as const),
-    } as AuthFactorService;
-    const factors = createFactorRegistry(fakeFactorStore(offered ? ["passkey"] : []), {
-      offered: offered ? [PRIMARY, { service: passkey, role: "second", requirement: "optional" }, recoveryOffer()] : [PRIMARY],
-    });
+    } as AuthSecondFactorService;
+    const factors = createFactorRegistry(
+      fakeFactorStore(offered ? ["passkey"] : []),
+      offered ? { primary: PRIMARY, second: fakeSecondFactorOffering([passkey]) } : { primary: PRIMARY },
+    );
     return createPasskeyStepUpActions(optionsWith({ users: fakeAuthUserStore([signedIn]), factors })).finish;
   }
 
@@ -774,7 +832,7 @@ describe("a step-up is recorded on a verified factor and on no other outcome", (
       expect({ status: result.status, stepUpWrites: result.stepUpWrites, stepUpAt: result.stepUpAt }).toEqual({
         status,
         stepUpWrites: [],
-        stepUpAt: EARLIER,
+        stepUpAt: "userId" in seed ? EARLIER : null,
       });
     });
   }
@@ -1118,13 +1176,7 @@ describe("createPasskeyEnrolActions — the nickname the ceremony carries", () =
       users: fakeAuthUserStore([signedIn]),
       credentials: credentials.store,
       enrolments,
-      factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: passkey, role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
-      }),
+      factors: createFactorRegistry(fakeFactorStore([]), { primary: fakeFactorService("email-otp"), second: fakeSecondFactorOffering([passkey]) }),
     });
     const actions = createPasskeyEnrolActions(options);
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/enrol/passkey/register/begin", actions.begin);
@@ -1198,17 +1250,13 @@ describe("where a passkey enrolment's finish lands", () => {
       ...fakeFactorService(kind),
       listEnrolments: async () => ok(held.includes(kind) ? [confirmedRow(kind)] : []),
     });
-    const passkey = { ...listed("passkey"), completeEnrolment: async () => ok(confirmedRow("passkey")) } as AuthFactorService;
-    const codes = Object.assign(listed("recovery-code"), { remaining: async () => ok(remaining) }) as AuthFactorService;
+    const passkey = { ...listed("passkey"), completeEnrolment: async () => ok(confirmedRow("passkey")) } as AuthSecondFactorService;
+    const codes = Object.assign(listed("recovery-code"), { remaining: async () => ok(remaining) }) as RecoveryCodeFactorService;
     const services = fakeAuthServices({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore(held), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: listed("totp-app") as AuthFactorService, role: "second", requirement: "optional" },
-          { service: passkey, role: "second", requirement: "optional" },
-          { service: codes, role: "second", requirement: "optional" },
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([listed("totp-app") as AuthSecondFactorService, passkey], [], codes),
       }),
     });
     return fakeAuthWebOptions({ resolveServices: () => services, settledPath: "/app/home" });
@@ -1266,16 +1314,10 @@ describe("the passkey begin endpoints", () => {
       ...fakeFactorService("passkey"),
       createChallenge: async () => ok({ kind: "passkey" as const, expiresAt: 1_000, options: offered }),
       beginEnrolment: async () => ok({ kind: "passkey" as const, expiresAt: 1_000, options: offered }),
-    } as AuthFactorService;
+    } as AuthSecondFactorService;
     return {
       users: fakeAuthUserStore([signedIn]),
-      factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: passkey, role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
-      }),
+      factors: createFactorRegistry(fakeFactorStore([]), { primary: fakeFactorService("email-otp"), second: fakeSecondFactorOffering([passkey]) }),
     };
   }
 
@@ -1503,15 +1545,12 @@ describe("createTotpEnrolActions", () => {
       createdAt: 1,
       updatedAt: 1,
     };
-    const totp = { ...fakeFactorService("totp-app"), completeEnrolment: async () => ok(confirmed) } as AuthFactorService;
+    const totp = { ...fakeFactorService("totp-app"), completeEnrolment: async () => ok(confirmed) } as AuthSecondFactorService;
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: totp, role: "second", requirement: "mandatory" },
-          recoveryOffer(),
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([totp], ["totp-app"]),
       }),
     });
     const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/enrol/totp", createTotpEnrolActions(options).totpEnrol);
@@ -1519,22 +1558,44 @@ describe("createTotpEnrolActions", () => {
     const res = await app.request("/auth/enrol/totp", formBody({ code: "123456" }));
     expect({ status: res.status, location: res.headers.get("location") }).toEqual({ status: 303, location: "/auth/verify" });
   });
+  it("answers 503 when the factor demand cannot be read after the enrolment confirms, rather than guessing a page", async () => {
+    const confirmed: AuthFactor = {
+      id: "f-totp-app",
+      userId: "u9",
+      kind: "totp-app",
+      secret: null,
+      lastCounter: null,
+      failedAttempts: 0,
+      lastVerifiedAt: null,
+      confirmedAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const totp = { ...fakeFactorService("totp-app"), completeEnrolment: async () => ok(confirmed) } as AuthSecondFactorService;
+    const factors = createFactorRegistry(fakeFactorStore(["totp-app"]), {
+      primary: fakeFactorService("email-otp"),
+      second: fakeSecondFactorOffering([totp], ["totp-app"]),
+    });
+    const down = { ...factors, resolve: async () => err(new AuthStoreError("unavailable", "factors.resolve")) };
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: down });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/enrol/totp", createTotpEnrolActions(options).totpEnrol);
+
+    const res = await app.request("/auth/enrol/totp", formBody({ code: "123456" }));
+    expect({ status: res.status, location: res.headers.get("location") }).toEqual({ status: 503, location: null });
+  });
 });
 
 describe("createTotpManageActions", () => {
   const totpService = {
     ...fakeFactorService("totp-app"),
     beginEnrolment: async () => ok({ kind: "totp-app" as const, expiresAt: 1_000, options: { secret: "JBSWY3DP", uri: "otpauth://totp/x" } }),
-  } as AuthFactorService;
+  } as AuthSecondFactorService;
 
   const totpServices: Partial<AuthRequestServices> = {
     users: fakeAuthUserStore([signedIn]),
     factors: createFactorRegistry(fakeFactorStore([]), {
-      offered: [
-        { service: fakeFactorService("email-otp"), role: "primary" },
-        { service: totpService, role: "second", requirement: "optional" },
-        recoveryOffer(),
-      ],
+      primary: fakeFactorService("email-otp"),
+      second: fakeSecondFactorOffering([totpService]),
     }),
   };
 
@@ -1579,6 +1640,254 @@ describe("createTotpManageActions", () => {
   });
 });
 
+describe("createTotpManageActions — replacing the authenticator app", () => {
+  const NOW = 10_000_000;
+  const FRESH_MS = 900_000;
+  const PENDING = { secret: "KRSXG5CT", uri: "otpauth://totp/replace" };
+  const REPLACED: AuthFactor = {
+    id: "f-totp-app",
+    userId: "u9",
+    kind: "totp-app",
+    secret: null,
+    lastCounter: 41,
+    failedAttempts: 0,
+    lastVerifiedAt: NOW,
+    confirmedAt: 1,
+    createdAt: 1,
+    updatedAt: NOW,
+  };
+  const TO_VERIFY = "/auth/verify?next=%2Faccount%2Ftotp%2Freplace";
+
+  /** The confirm POST over a replaceable factor that answers `answer`, behind the guard `guard` describes. */
+  function replacePost(
+    answer: Awaited<ReturnType<TotpReplaceableFactorService["completeReplacement"]>>,
+    guard: { readonly freshStepUpMaxAgeMs?: number | null; readonly mounted?: boolean } = {},
+  ) {
+    const calls: string[] = [];
+    const totp = {
+      ...fakeFactorService("totp-app"),
+      beginReplacement: async () => ok({ kind: "totp-app" as const, expiresAt: NOW, options: PENDING }),
+      completeReplacement: async (userId: string, presented: string) => {
+        calls.push(`complete:${userId}:${presented}`);
+        return answer;
+      },
+    } as TotpReplaceableFactorService;
+    const store = fakeFactorStore(["totp-app"]);
+    const notices = fakeSecurityNotices();
+    const services = fakeAuthServices({
+      sessions: actionSessions,
+      notices,
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(store, { primary: fakeFactorService("email-otp"), second: fakeSecondFactorOffering([totp]) }),
+      enrolments: store,
+    });
+    const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW });
+    const freshStepUp = requireFreshStepUp({
+      factors: () => ({ resolve: async () => ok({ status: "satisfied" as const }) }),
+      enrolmentPaths: authEnrolmentPaths(options.paths.auth),
+      stepUpPath: options.paths.auth.verify.show(),
+      settledPath: "/account",
+      now: () => NOW,
+      ...(guard.freshStepUpMaxAgeMs === undefined ? {} : { freshStepUpMaxAgeMs: guard.freshStepUpMaxAgeMs }),
+    });
+    const request = async (seed: Seed, code = "123456") => {
+      const app = actionApp(seed);
+      if (guard.mounted !== false) app.use("*", freshStepUp);
+      mounted(app, "POST", "/account/totp/replace", createTotpManageActions(options).totpReplaceConfirm);
+      return app.request("/account/totp/replace", formBody({ code }));
+    };
+    return { calls, notices, request };
+  }
+
+  const fresh: Seed = { userId: "u9", stepUpAt: NOW - 1 };
+  const answerOf = (res: Response) => ({ status: res.status, location: res.headers.get("location") });
+
+  it("returns to the authenticator page on a correct code, telling the holder once", async () => {
+    const { notices, request } = replacePost(ok(REPLACED));
+    expect({ answer: answerOf(await request(fresh)), sent: notices.sent }).toEqual({
+      answer: { status: 303, location: "/account/totp" },
+      sent: [{ to: "grace@example.com", notice: { type: "factor-replaced", factorKind: "totp-app", at: NOW } }],
+    });
+  });
+
+  it("re-renders at 422 on a wrong code, with the same pending secret still shown and nothing sent", async () => {
+    const { notices, request } = replacePost(err("unrecognised"));
+    const res = await request(fresh);
+    const html = await res.text();
+    expect({
+      status: res.status,
+      secret: textOf(html, "code", 'data-ref="totp-secret"'),
+      error: textOf(html, "p", 'data-slot="field-error"'),
+      sent: notices.sent,
+    }).toEqual({ status: 422, secret: PENDING.secret, error: "That code did not match. Enter the code your app shows now.", sent: [] });
+  });
+
+  // The reload mints another secret here, so "did not match" would send the user back to an app holding the dropped one.
+  it("tells the user to add the new secret, never that the code did not match, once the pending one was spent or lapsed", async () => {
+    const reasons: AuthFactorReason[] = ["too-many-attempts", "expired"];
+    const answers = [];
+    for (const reason of reasons) {
+      const res = await replacePost(err(reason)).request(fresh);
+      answers.push({ status: res.status, error: textOf(await res.text(), "p", 'data-slot="field-error"') });
+    }
+    const restarted = {
+      status: 422,
+      error: "That setup expired. Remove the entry you just added to your app, then add the new secret below and enter its code.",
+    };
+    expect(answers).toEqual([restarted, restarted]);
+  });
+
+  it("lands on the authenticator page flagged removed, sending nothing, when the row went before the commit", async () => {
+    const { notices, request } = replacePost(err("not-enrolled"));
+    expect({ answer: answerOf(await request(fresh)), sent: notices.sent }).toEqual({
+      answer: { status: 303, location: "/account/totp?removed=1" },
+      sent: [],
+    });
+  });
+
+  it("answers 503 when the store behind the commit is down", async () => {
+    const { notices, request } = replacePost(err("unavailable"));
+    expect({ status: (await request(fresh)).status, sent: notices.sent }).toEqual({ status: 503, sent: [] });
+  });
+
+  // The guard can be opted out of, and then only the action stands between a cookie and a new secret.
+  it("sends a stale step-up to verify, returning to the replacement, wherever the guard does not refuse it first", async () => {
+    const answers = [];
+    const calls = [];
+    for (const [guard, seed] of [
+      [{ freshStepUpMaxAgeMs: null }, { userId: "u9" }],
+      [{ mounted: false }, fresh],
+    ] as const) {
+      const post = replacePost(ok(REPLACED), guard);
+      answers.push(answerOf(await post.request(seed)));
+      calls.push(...post.calls);
+    }
+    expect({ answers, calls }).toEqual({
+      answers: [
+        { status: 303, location: TO_VERIFY },
+        { status: 303, location: TO_VERIFY },
+      ],
+      calls: [],
+    });
+  });
+
+  it("is refused by the guard itself for a step-up outside the default window", async () => {
+    const { calls, request } = replacePost(ok(REPLACED));
+    const res = await request({ userId: "u9", stepUpAt: NOW - FRESH_MS - 1 });
+    expect({ status: res.status, location: res.headers.get("location"), calls }).toEqual({ status: 303, location: "/auth/verify", calls: [] });
+  });
+});
+
+describe("removing a mandatory second factor", () => {
+  const PASSKEY_REFUSAL = "Your account requires a passkey. Add another before you remove this one.";
+  const TOTP_REFUSAL = "Your account requires an authenticator app, so it can&#39;t be removed. Replace it instead.";
+
+  /** Removes `u9`'s one passkey with `mandatory` mandatory, from a store that refuses it whenever the floor names a passkey, as the D1 guard does for a last passkey. */
+  async function removeOnlyPasskey(mandatory: readonly AuthSecondFactorKind[]) {
+    const held = new Set(["c1"]);
+    const floors: unknown[] = [];
+    const credentials: CredentialStore = {
+      ...fakeAuthCredentialStore([]),
+      listByUser: async () => ok([...held].map((id) => fakeAuthCredential({ id, userId: "u9" }))),
+      removeForUser: async (id, _userId, _at, _origin, floor) => {
+        floors.push(floor);
+        if (!held.has(id)) return ok("not-found" as const);
+        if (floor.includes("passkey")) return ok("second-factor-required" as const);
+        held.delete(id);
+        return ok("changed" as const);
+      },
+    };
+    const enrolments = fakeFactorStore(["passkey"]);
+    const notices = fakeSecurityNotices();
+    const options = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      credentials,
+      enrolments,
+      factors: fakeFactorRegistry(["passkey", "totp-app"], mandatory, enrolments),
+      notices,
+    });
+    const app = mounted(actionApp({ userId: "u9" }), "DELETE", "/account/passkeys/:id", createPasskeyManageActions(options).passkeyRemove);
+    const res = await app.request("/account/passkeys/c1", { method: "DELETE" });
+    const html = await res.text();
+    return {
+      status: res.status,
+      held: [...held],
+      floors,
+      notices: notices.sent.length,
+      error: textOf(html, "div", 'data-slot="alert-description"'),
+    };
+  }
+
+  /** Removes `u9`'s confirmed authenticator app with `mandatory` mandatory, from a store that refuses it whenever the floor names the app. */
+  async function removeOnlyApp(mandatory: readonly AuthSecondFactorKind[]) {
+    const store = fakeFactorStore(["totp-app"]);
+    let kept = true;
+    const floors: unknown[] = [];
+    const listed = async (userId: string) => (kept ? store.listByUser(userId) : ok([]));
+    const totp = { ...fakeFactorService("totp-app"), listEnrolments: listed } as AuthSecondFactorService;
+    const notices = fakeSecurityNotices();
+    const options = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      enrolments: {
+        ...store,
+        listByUser: listed,
+        remove: async (_id, _userId, _at, _origin, floor) => {
+          floors.push(floor);
+          if (floor.includes("totp-app")) return ok("second-factor-required" as const);
+          kept = false;
+          return ok("changed" as const);
+        },
+      },
+      factors: createFactorRegistry(store, {
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([totp, "passkey"], mandatory),
+      }),
+      notices,
+    });
+    const app = mounted(actionApp({ userId: "u9" }), "DELETE", "/account/totp", createTotpManageActions(options).totpRemove);
+    const res = await app.request("/account/totp", { method: "DELETE" });
+    const html = await res.text();
+    return {
+      status: res.status,
+      location: res.headers.get("location"),
+      kept,
+      floors,
+      notices: notices.sent.length,
+      error: textOf(html, "div", 'data-slot="alert-description"'),
+    };
+  }
+
+  it("refuses the last passkey where passkeys are mandatory with a 409 re-render naming why, keeping the row and sending no notice", async () => {
+    expect(await removeOnlyPasskey(["passkey"])).toEqual({ status: 409, held: ["c1"], floors: [["passkey"]], notices: 0, error: PASSKEY_REFUSAL });
+  });
+
+  it("removes the last passkey where only the authenticator app is mandatory, passing the store that floor", async () => {
+    expect(await removeOnlyPasskey(["totp-app"])).toEqual({ status: 200, held: [], floors: [["totp-app"]], notices: 1, error: "" });
+  });
+
+  it("removes the last passkey where nothing is mandatory, passing the store an empty floor", async () => {
+    expect(await removeOnlyPasskey([])).toEqual({ status: 200, held: [], floors: [[]], notices: 1, error: "" });
+  });
+
+  it("refuses a mandatory authenticator app with a 409 re-render naming why, keeping the row and sending no notice", async () => {
+    expect(await removeOnlyApp(["totp-app"])).toEqual({
+      status: 409,
+      location: null,
+      kept: true,
+      floors: [["totp-app"]],
+      notices: 0,
+      error: TOTP_REFUSAL,
+    });
+  });
+
+  it("removes an optional authenticator app, whether or not a passkey is mandatory beside it", async () => {
+    expect([await removeOnlyApp([]), await removeOnlyApp(["passkey"])]).toEqual([
+      { status: 303, location: "/account/totp", kept: false, floors: [[]], notices: 1, error: "" },
+      { status: 303, location: "/account/totp", kept: false, floors: [["passkey"]], notices: 1, error: "" },
+    ]);
+  });
+});
+
 describe("createRecoveryCodeActions", () => {
   const NOW = 10_000_000;
   const FRESH_MS = 900_000;
@@ -1603,10 +1912,9 @@ describe("createRecoveryCodeActions", () => {
     returnParam?: string,
   ) {
     const calls: string[] = [];
-    const holding = (kind: "totp-app" | "passkey") =>
-      ({ ...fakeFactorService(kind), listEnrolments: async () => ok(holds.includes(kind) ? [confirmedRow(kind)] : []) }) as AuthFactorService;
+    const store = fakeFactorStore(holds);
     const recovery = {
-      ...fakeFactorService("recovery-code"),
+      ...fakeRecoveryCodeService(),
       beginEnrolment: async (userId: string, at: number) => {
         calls.push(`begin:${userId}`);
         return ok({ kind: "recovery-code" as const, expiresAt: at, options: { codes: ISSUED } });
@@ -1615,17 +1923,16 @@ describe("createRecoveryCodeActions", () => {
         calls.push(`complete:${userId}:${presented}`);
         return presented === ISSUED[1] ? ok(confirmedRow("recovery-code")) : err("unrecognised" as const);
       },
-    } as AuthFactorService;
+    };
+    const notices = fakeSecurityNotices();
     const services = fakeAuthServices({
+      notices,
       users: fakeAuthUserStore([signedIn]),
-      factors: createFactorRegistry(fakeFactorStore(holds), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: holding("totp-app"), role: "second", requirement: "optional" },
-          { service: holding("passkey"), role: "second", requirement: "optional" },
-          { service: recovery, role: "second", requirement: "optional" },
-        ],
+      factors: createFactorRegistry(store, {
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([fakeFactorService("totp-app"), fakeFactorService("passkey")], [], recovery),
       }),
+      enrolments: store,
     });
     const options = fakeAuthWebOptions({ resolveServices: () => services, now: () => NOW, ...(returnParam === undefined ? {} : { returnParam }) });
     const actions = createRecoveryCodeActions(options);
@@ -1643,7 +1950,7 @@ describe("createRecoveryCodeActions", () => {
       const mountedApp = mounted(guardedApp, "POST", "/account/recovery-codes", actions.recoveryCodesGenerate);
       return mounted(mountedApp, "POST", "/account/recovery-codes/confirm", actions.recoveryCodesConfirm);
     };
-    return { calls, app };
+    return { calls, app, notices };
   }
 
   it("shows a freshly staged set once, uncached, to a holder of an authenticator who has just stepped up", async () => {
@@ -1667,6 +1974,8 @@ describe("createRecoveryCodeActions", () => {
     expect({ status: res.status, calls }).toEqual({ status: 200, calls: ["begin:u9"] });
   });
 
+  const GUARD_REFUSAL = { status: 303, location: "/auth/verify" };
+
   const refusals: readonly {
     label: string;
     holds: readonly AuthFactorKind[];
@@ -1685,24 +1994,14 @@ describe("createRecoveryCodeActions", () => {
       seed: { userId: "u9", stepUpAt: NOW - 1 },
       expected: { status: 409, location: null },
     },
-    {
-      label: "a session that never stepped up",
-      holds: ["totp-app"],
-      seed: { userId: "u9" },
-      expected: { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" },
-    },
+    { label: "a session that never stepped up", holds: ["totp-app"], seed: { userId: "u9" }, expected: GUARD_REFUSAL },
     {
       label: "a step-up exactly as old as the freshness window",
       holds: ["totp-app"],
       seed: { userId: "u9", stepUpAt: NOW - FRESH_MS },
-      expected: { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" },
+      expected: GUARD_REFUSAL,
     },
-    {
-      label: "a step-up dated into the future",
-      holds: ["totp-app"],
-      seed: { userId: "u9", stepUpAt: NOW + 1 },
-      expected: { status: 303, location: "/auth/verify?next=%2Faccount%2Frecovery-codes" },
-    },
+    { label: "a step-up dated into the future", holds: ["totp-app"], seed: { userId: "u9", stepUpAt: NOW + 1 }, expected: GUARD_REFUSAL },
     { label: "an anonymous request", holds: ["totp-app"], seed: {}, expected: { status: 303, location: "/auth/signin" } },
   ];
 
@@ -1731,19 +2030,20 @@ describe("createRecoveryCodeActions", () => {
     calls: ["begin:u9", `complete:u9:${ISSUED[1]}`],
   };
   const REFUSED = { answers: [TO_VERIFY, TO_VERIFY], calls: [] };
+  const GUARD_REFUSED = { answers: [GUARD_REFUSAL, GUARD_REFUSAL], calls: [] };
   const MINUTE = 60_000;
 
   const windows: readonly {
     label: string;
     guard: { readonly freshStepUpMaxAgeMs?: number | null; readonly mounted?: boolean };
     seed: Seed;
-    expected: typeof ADMITTED | typeof REFUSED;
+    expected: typeof ADMITTED | typeof REFUSED | typeof GUARD_REFUSED;
   }[] = [
     {
       label: "refuses a 10-minute-old step-up under a configured 60 s window",
       guard: { freshStepUpMaxAgeMs: MINUTE },
       seed: { userId: "u9", stepUpAt: NOW - 10 * MINUTE },
-      expected: REFUSED,
+      expected: GUARD_REFUSED,
     },
     {
       label: "admits a step-up one millisecond inside a configured 60 s window",
@@ -1761,7 +2061,7 @@ describe("createRecoveryCodeActions", () => {
       label: "refuses a step-up one millisecond outside the default 15-minute window",
       guard: {},
       seed: { userId: "u9", stepUpAt: NOW - FRESH_MS - 1 },
-      expected: REFUSED,
+      expected: GUARD_REFUSED,
     },
     {
       label: "admits a day-old step-up in this session when the window is `null`",
@@ -1833,6 +2133,17 @@ describe("createRecoveryCodeActions", () => {
     });
   });
 
+  it("tells the account holder a new set was issued once it is confirmed, and nothing when the code is refused", async () => {
+    const accepted = codePages(["totp-app"]);
+    await accepted.app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes/confirm", formBody({ code: ISSUED[1] ?? "" }));
+    const refused = codePages(["totp-app"]);
+    await refused.app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes/confirm", formBody({ code: ISSUED[0] ?? "" }));
+    expect({ accepted: accepted.notices.sent, refused: refused.notices.sent }).toEqual({
+      accepted: [{ to: signedIn.email, notice: { type: "recovery-codes-issued", factorKind: "recovery-code", at: NOW } }],
+      refused: [],
+    });
+  });
+
   it("re-renders the confirmation at 422 for a code outside the staged set, showing no code again", async () => {
     const { app } = codePages(["totp-app"]);
     const res = await app({ userId: "u9", stepUpAt: NOW - 1 }).request("/account/recovery-codes/confirm", formBody({ code: "ZZZZ-ZZZZ" }));
@@ -1861,14 +2172,17 @@ describe("createAdminUserActions — resetFactors", () => {
 
   function resetApp(seed: Seed, outcome: "changed" | "not-found" = "changed", app: Forge = actionApp(seed)) {
     const resets: string[] = [];
+    const actors: string[] = [];
+    const notices = fakeSecurityNotices();
     const admin = fakeAdminUserStore([target, actor], {
-      resetFactors: async (id, at) => {
+      resetFactors: async (id, at, adminId) => {
         resets.push(`${id}@${at}`);
+        actors.push(adminId);
         return ok(outcome);
       },
     });
-    const options = optionsWith({ users: fakeAuthUserStore([target, actor]), admin });
-    return { resets, app: mounted(app, "POST", "/admin/users/:id/factors/reset", createAdminUserActions(options).resetFactors) };
+    const options = optionsWith({ users: fakeAuthUserStore([target, actor]), admin, notices });
+    return { resets, actors, notices, app: mounted(app, "POST", "/admin/users/:id/factors/reset", createAdminUserActions(options).resetFactors) };
   }
 
   const answerOf = async (res: Response) => ({ status: res.status, location: res.headers.get("location") });
@@ -1877,6 +2191,18 @@ describe("createAdminUserActions — resetFactors", () => {
     const { resets, app } = resetApp({ userId: "u9", admin: true });
     const res = await app.request("/admin/users/u2/factors/reset", formBody({}));
     expect({ answer: await answerOf(res), resets }).toEqual({ answer: { status: 303, location: "/admin/users/u2/factors" }, resets: ["u2@1000"] });
+  });
+
+  it("records the acting administrator on the reset and tells the account's own address, and tells nobody of a reset that found no account", async () => {
+    const done = resetApp({ userId: "u9", admin: true });
+    await done.app.request("/admin/users/u2/factors/reset", formBody({}));
+    const gone = resetApp({ userId: "u9", admin: true }, "not-found");
+    await gone.app.request("/admin/users/u2/factors/reset", formBody({}));
+    expect({ actors: done.actors, sent: done.notices.sent, gone: gone.notices.sent }).toEqual({
+      actors: ["u9"],
+      sent: [{ to: "member@example.com", notice: { type: "factors-reset", factorKind: null, at: 1_000 } }],
+      gone: [],
+    });
   });
 
   it("refuses a signed-in non-administrator with a plain-text 403 without resetting anything", async () => {
@@ -1946,6 +2272,52 @@ describe("createEmailChangeActions", () => {
 
     const res = await app.request("/account/email-change", formBody({ email: "new@example.com" }));
     expect(res.status).toBe(422);
+  });
+
+  it("refuses a second request inside the cooldown with the form and its notice, and mails nothing for it", async () => {
+    const sent: AuthMessage[] = [];
+    const deferred: Promise<unknown>[] = [];
+    const claims = new Map<string, number>();
+    const users: UserStore = {
+      ...fakeAuthUserStore([signedIn]),
+      claimEmailChange: async (id, at, cooldownMs) => {
+        const last = claims.get(id);
+        if (last !== undefined && last > at - cooldownMs) return ok(false);
+        claims.set(id, at);
+        return ok(true);
+      },
+    };
+    const emailChange = createEmailChangeFlow({
+      keys: await importAuthKeyRing(["0ebb4b947b8932ef8a3c1f23c024a2cdf4abcd964cc1d3d064e2c068e432f1cf"]),
+      users,
+      nonces: { markConsumed: async () => ok(true) },
+      notifier: { send: async (message) => (sent.push(message), ok()) },
+      defer: (work) => void deferred.push(work),
+      confirmUrl: (token) => `https://app.example/account/email-change/confirm?token=${token}`,
+    });
+    const options = optionsWith({ users, emailChange });
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/account/email-change", createEmailChangeActions(options).emailChangeSubmit);
+
+    const first = await app.request("/account/email-change", formBody({ email: "new@example.com" }));
+    const second = await app.request("/account/email-change", formBody({ email: "other@example.com" }));
+    await Promise.all(deferred);
+    const html = await second.text();
+
+    expect({
+      first: first.status,
+      second: second.status,
+      title: textOf(html, "div", 'data-slot="alert-title"'),
+      notice: textOf(html, "div", 'data-slot="alert-description"'),
+      typed: attrOf(html, 'name="email"', "value"),
+      mailed: sent.map((message) => message.to),
+    }).toEqual({
+      first: 200,
+      second: 422,
+      title: "We could not use that address",
+      notice: "A change of address was requested recently. Try again in a few minutes.",
+      typed: "other@example.com",
+      mailed: ["grace@example.com"],
+    });
   });
 });
 
@@ -2625,11 +2997,8 @@ describe("the Turnstile guard on the anonymous forms", () => {
     const holdingBoth: Partial<AuthRequestServices> = {
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([fakeFactorService("totp-app")]),
       }),
     };
 
@@ -2847,15 +3216,12 @@ describe("the Turnstile guard on the anonymous forms", () => {
         ...fakeFactorService("passkey"),
         createChallenge: async () => ok({ kind: "passkey" as const, expiresAt: 1_000, options: { challenge: "c" } }),
         verifyChallenge: async (userId: string, _presented: string, at: number) => ok({ kind: "passkey" as const, userId, verifiedAt: at }),
-      } as AuthFactorService;
+      } as AuthSecondFactorService;
       const options = guarded({
         users: fakeAuthUserStore([signedIn]),
         factors: createFactorRegistry(fakeFactorStore(["passkey"]), {
-          offered: [
-            { service: fakeFactorService("email-otp"), role: "primary" },
-            { service: passkey, role: "second", requirement: "optional" },
-            recoveryOffer(),
-          ],
+          primary: fakeFactorService("email-otp"),
+          second: fakeSecondFactorOffering([passkey]),
         }),
       });
       const actions = createPasskeyStepUpActions(options);
@@ -2868,5 +3234,1140 @@ describe("the Turnstile guard on the anonymous forms", () => {
 
       expect({ begin: begin.status, finish: finish.status, sent }).toEqual({ begin: 200, finish: 200, sent: [] });
     });
+  });
+});
+
+describe("the auth-session row each action acts on", () => {
+  const CLOCK = 1_000;
+  const OTHER = "u2";
+  const assertion = { credential: { id: "c", response: {} } };
+  const down = (operation: string) => async () => err(new AuthStoreError("unavailable", operation));
+
+  /** The row store every request of one test resolves and writes through, with any of its writes made to fail. */
+  function rowStore(failing: readonly ("create" | "remove" | "revoke" | "revokeOthers" | "rotate")[] = []) {
+    const inner = fakeAuthSessionStore([signedIn, fakeAuthUser({ id: OTHER, email: "other@example.com" })]);
+    const sessions: AuthSessionStore = {
+      create: failing.includes("create") ? down("sessions.create") : inner.create,
+      resolve: inner.resolve,
+      rotate: failing.includes("rotate") ? down("sessions.rotate") : inner.rotate,
+      remove: failing.includes("remove") ? down("sessions.remove") : inner.remove,
+      listByUser: inner.listByUser,
+      revoke: failing.includes("revoke") ? down("sessions.revoke") : inner.revoke,
+      revokeOthers: failing.includes("revokeOthers") ? down("sessions.revokeOthers") : inner.revokeOthers,
+    };
+    return { sessions, inner, rows: inner.rows };
+  }
+
+  /** `action` mounted behind a real `resolveAuth` over `sessions`, with a seeding route and a route naming who the request resolved as. */
+  function rowApp(
+    sessions: AuthSessionStore,
+    services: Partial<AuthRequestServices>,
+    method: "POST" | "DELETE",
+    pattern: string,
+    action: (options: AuthWebOptions) => TestAction,
+  ): Forge {
+    const resolved = fakeAuthServices({ ...services, sessions });
+    const options = fakeAuthWebOptions({ resolveServices: () => resolved, now: () => CLOCK });
+    const app = new Forge();
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+    app.use("*", resolveAuth({ sessions: () => sessions, now: () => CLOCK }));
+    app.use("*", (context, next) => {
+      csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
+      csrfFieldCtx.set(context, "_csrf");
+      return next();
+    });
+    mapHandler(app, "POST", "/seed", async (context) => {
+      const session = sessionCtx.get(context);
+      const pending = context.url.searchParams.get("pending");
+      if (pending !== null) session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, pending);
+      else await establishAuthSession(session, sessions, "u9", CLOCK, CLOCK, { kind: "email-otp" });
+      return new Response("seeded");
+    });
+    mapHandler(app, "GET", "/whoami", (context) => new Response(authCtx.getOptional(context)?.userId ?? "anonymous"));
+    mapHandler(app, method, pattern, action(options));
+    return app;
+  }
+
+  const pairOf = (res: Response) =>
+    res.headers
+      .getSetCookie()
+      .find((header) => header.startsWith("__session="))
+      ?.split(";")[0] ?? null;
+
+  async function stored(pair: string | null): Promise<{ id: string; data: Record<string, unknown> }> {
+    const decoded = JSON.parse((await fakeSessionCookie.parse(pair ?? "")) ?? "null") as { i: string; d: [Record<string, unknown>] } | null;
+    return { id: decoded?.i ?? "", data: decoded?.d[0] ?? {} };
+  }
+
+  const keyOf = async (token: unknown) => bytesToHex(await sha256(String(token)));
+
+  /** A row for `userId` created out of band, as another browser's sign-in would have. */
+  async function elsewhere(inner: AuthSessionStore, userId = "u9"): Promise<string> {
+    const scratch = createCookieSessionStorage();
+    const session = await scratch.read(null);
+    await establishAuthSession(session, inner, userId, CLOCK, CLOCK, { kind: "email-otp" });
+    return keyOf(session.get(AUTH_SESSION_TOKEN_KEY));
+  }
+
+  async function whoami(app: Forge, cookie: string | null): Promise<string> {
+    return (await app.request("/whoami", { headers: { cookie: cookie ?? "" } })).text();
+  }
+
+  const answerOf = async (res: Response) => ({ status: res.status, body: await res.text() });
+
+  describe("signing in", () => {
+    const completing = {
+      signin: fakeAuthSigninFlow({
+        complete: async () => ok({ user: signedIn, kind: "email-otp" as const, resolution: { status: "satisfied" as const } }),
+      }),
+    };
+    const verify = (options: AuthWebOptions) => createVerifyActions(options).submit;
+
+    it("creates exactly one row for the user, keyed by the SHA-256 of the token the response's session carries, which then resolves", async () => {
+      const { sessions, rows } = rowStore();
+      const app = rowApp(sessions, completing, "POST", "/auth/verify", verify);
+      const pending = pairOf(await app.request("/seed?pending=grace%40example.com", { method: "POST" }));
+
+      const res = await app.request("/auth/verify", {
+        ...formBody({ code: "123456" }),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: pending ?? "" },
+      });
+      const token = (await stored(pairOf(res))).data[AUTH_SESSION_TOKEN_KEY];
+
+      const held = [...rows].map(([key, { id: _id, ...row }]) => [key, row]);
+      expect({ status: res.status, rows: held, who: await whoami(app, pairOf(res)) }).toEqual({
+        status: 303,
+        rows: [
+          [
+            await keyOf(token),
+            {
+              userId: "u9",
+              signedInAt: CLOCK,
+              expiresAt: CLOCK + AUTH_SESSION_MAX_MS,
+              lastSeenAt: CLOCK,
+              stepUpAt: CLOCK,
+              stepUpKind: "email-otp",
+              device: null,
+            },
+          ],
+        ],
+        who: "u9",
+      });
+    });
+
+    it("labels the row with the coarse browser and platform the sign-in came from, never the user agent itself", async () => {
+      const { sessions, rows } = rowStore();
+      const app = rowApp(sessions, completing, "POST", "/auth/verify", verify);
+      const pending = pairOf(await app.request("/seed?pending=grace%40example.com", { method: "POST" }));
+      const agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:128.0) Gecko/20100101 Firefox/128.0";
+
+      await app.request("/auth/verify", {
+        ...formBody({ code: "123456" }),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: pending ?? "", "user-agent": agent },
+      });
+
+      expect([...rows.values()].map((row) => [row.device, JSON.stringify(row).includes("Gecko")])).toEqual([["Firefox on macOS", false]]);
+    });
+
+    it("tells nobody of a sign-in that lands", async () => {
+      const { sessions, rows } = rowStore();
+      const notices = fakeSecurityNotices();
+      const app = rowApp(sessions, { ...completing, notices }, "POST", "/auth/verify", verify);
+      const pending = pairOf(await app.request("/seed?pending=grace%40example.com", { method: "POST" }));
+
+      const res = await app.request("/auth/verify", {
+        ...formBody({ code: "123456" }),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: pending ?? "" },
+      });
+
+      expect({ status: res.status, rows: rows.size, sent: notices.sent }).toEqual({ status: 303, rows: 1, sent: [] });
+    });
+
+    it("answers 503 when the row cannot be created, creating none and leaving the visitor's session holding no token", async () => {
+      const { sessions, rows } = rowStore(["create"]);
+      const app = rowApp(sessions, completing, "POST", "/auth/verify", verify);
+      const pending = pairOf(await app.request("/seed?pending=grace%40example.com", { method: "POST" }));
+
+      const res = await app.request("/auth/verify", {
+        ...formBody({ code: "123456" }),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: pending ?? "" },
+      });
+      const held = await stored(pairOf(res) ?? pending);
+
+      expect({
+        answer: await answerOf(res),
+        rows: rows.size,
+        token: held.data[AUTH_SESSION_TOKEN_KEY],
+        pending: held.data[AUTH_PENDING_SIGNIN_SESSION_KEY],
+      }).toEqual({ answer: { status: 503, body: "Service Unavailable" }, rows: 0, token: undefined, pending: "grace@example.com" });
+    });
+  });
+
+  describe("signing out", () => {
+    const signout = (options: AuthWebOptions) => createSignoutActions(options).signout;
+
+    it("deletes the row and rotates the session, so the cookie held before it, replayed, resolves anonymous", async () => {
+      const { sessions, rows } = rowStore();
+      const app = rowApp(sessions, {}, "POST", "/auth/signout", signout);
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+      const before = await whoami(app, held);
+
+      const res = await app.request("/auth/signout", { method: "POST", headers: { cookie: held ?? "" } });
+
+      expect({
+        before,
+        status: res.status,
+        location: res.headers.get("location"),
+        rows: rows.size,
+        rotated: (await stored(pairOf(res))).id !== (await stored(held)).id,
+        replayed: await whoami(app, held),
+      }).toEqual({ before: "u9", status: 303, location: "/auth/signin", rows: 0, rotated: true, replayed: "anonymous" });
+    });
+
+    it("answers 503 when the row cannot be deleted, keeping the row and the session as they were so the visitor can retry", async () => {
+      const { sessions, rows } = rowStore(["remove"]);
+      const app = rowApp(sessions, {}, "POST", "/auth/signout", signout);
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+
+      const res = await app.request("/auth/signout", { method: "POST", headers: { cookie: held ?? "" } });
+
+      expect({ answer: await answerOf(res), cookie: pairOf(res), rows: rows.size, still: await whoami(app, held) }).toEqual({
+        answer: { status: 503, body: "Service Unavailable" },
+        cookie: null,
+        rows: 1,
+        still: "u9",
+      });
+    });
+  });
+
+  describe("removing a factor signs every other session out", () => {
+    /** A credential store holding one passkey for `u9`, whose removal revokes over `inner`'s rows in one all-or-nothing step, as the D1 batch does. */
+    function passkeyStore(inner: ReturnType<typeof rowStore>["inner"], failing: { revoke: boolean }) {
+      const held = new Set(["c1"]);
+      const credentials: CredentialStore = {
+        ...fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+        listByUser: async (userId) => ok(held.has("c1") && userId === "u9" ? [fakeAuthCredential({ id: "c1", userId: "u9" })] : []),
+        removeForUser: async (id, userId, _at, origin) => {
+          if (failing.revoke) return err(new AuthStoreError("unavailable", "credentials.removeForUser"));
+          if (!held.has(id) || userId !== "u9" || origin.keep === null) return ok("not-found" as const);
+          held.delete(id);
+          await inner.revokeOthers(userId, CLOCK, origin);
+          return ok("changed" as const);
+        },
+      };
+      return { credentials, held };
+    }
+    const passkeyServices = (credentials: CredentialStore): Partial<AuthRequestServices> => ({
+      users: fakeAuthUserStore([signedIn]),
+      credentials,
+      factors: fakeFactorRegistry(["passkey"]),
+    });
+    /** An enrolment store whose removal of the confirmed `totp-app` row revokes over `inner`'s rows in one all-or-nothing step, as the D1 batch does. */
+    function totpServices(inner: ReturnType<typeof rowStore>["inner"], failing = false): Partial<AuthRequestServices> {
+      const enrolled = fakeFactorStore(["totp-app"]);
+      const totp = {
+        ...fakeFactorService("totp-app"),
+        listEnrolments: async (userId: string) => enrolled.listByUser(userId),
+      } as AuthSecondFactorService;
+      return {
+        users: fakeAuthUserStore([signedIn]),
+        enrolments: {
+          ...enrolled,
+          remove: async (_id, userId, at, origin) => {
+            if (failing) return err(new AuthStoreError("unavailable", "factors.remove"));
+            await inner.revokeOthers(userId, at, origin);
+            return ok("changed" as const);
+          },
+        },
+        factors: createFactorRegistry(enrolled, { primary: fakeFactorService("email-otp"), second: fakeSecondFactorOffering([totp]) }),
+      };
+    }
+    const passkeyRemove = (options: AuthWebOptions) => createPasskeyManageActions(options).passkeyRemove;
+
+    it("deletes every other row the user holds on removing a passkey, spares the acting one and another user's, and keeps the visitor signed in", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const { credentials, held } = passkeyStore(inner, { revoke: false });
+      const app = rowApp(sessions, passkeyServices(credentials), "DELETE", "/account/passkeys/:id", passkeyRemove);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      await elsewhere(inner);
+      await elsewhere(inner);
+      const others = await elsewhere(inner, OTHER);
+
+      const res = await app.request("/account/passkeys/c1", { method: "DELETE", headers: { cookie: cookie ?? "" } });
+
+      expect({ status: res.status, held: [...held], rows: [...rows.keys()].sort(), still: await whoami(app, cookie) }).toEqual({
+        status: 200,
+        held: [],
+        rows: [await keyOf((await stored(cookie)).data[AUTH_SESSION_TOKEN_KEY]), others].sort(),
+        still: "u9",
+      });
+    });
+
+    it("answers 404 for a passkey another user holds, asking the store as the visitor and signing out no session of either user", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const asked: string[][] = [];
+      const credentials: CredentialStore = {
+        ...fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" }), fakeAuthCredential({ id: "c2", userId: OTHER })]),
+        removeForUser: async (id, userId, _at, origin) => {
+          asked.push([id, userId, bytesToHex(origin.keep ?? new Uint8Array())]);
+          return ok("not-found" as const);
+        },
+      };
+      const app = rowApp(sessions, passkeyServices(credentials), "DELETE", "/account/passkeys/:id", passkeyRemove);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      const acting = await keyOf((await stored(cookie)).data[AUTH_SESSION_TOKEN_KEY]);
+      const before = [acting, await elsewhere(inner), await elsewhere(inner, OTHER)].sort();
+
+      const res = await app.request("/account/passkeys/c2", { method: "DELETE", headers: { cookie: cookie ?? "" } });
+
+      expect({ answer: await answerOf(res), asked, rows: [...rows.keys()].sort() }).toEqual({
+        answer: { status: 404, body: "Not Found" },
+        asked: [["c2", "u9", acting]],
+        rows: before,
+      });
+    });
+
+    it("keeps the passkey and every session when the revoke fails, and a retry then removes both", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const failing = { revoke: true };
+      const { credentials, held } = passkeyStore(inner, failing);
+      const app = rowApp(sessions, passkeyServices(credentials), "DELETE", "/account/passkeys/:id", passkeyRemove);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      const acting = await keyOf((await stored(cookie)).data[AUTH_SESSION_TOKEN_KEY]);
+      const other = await elsewhere(inner);
+
+      const refused = await app.request("/account/passkeys/c1", { method: "DELETE", headers: { cookie: cookie ?? "" } });
+      const afterRefusal = { answer: await answerOf(refused), held: [...held], rows: [...rows.keys()].sort() };
+      failing.revoke = false;
+      const retried = await app.request("/account/passkeys/c1", { method: "DELETE", headers: { cookie: cookie ?? "" } });
+
+      expect({ afterRefusal, retried: { status: retried.status, held: [...held], rows: [...rows.keys()] } }).toEqual({
+        afterRefusal: { answer: { status: 503, body: "Service Unavailable" }, held: ["c1"], rows: [acting, other].sort() },
+        retried: { status: 200, held: [], rows: [acting] },
+      });
+    });
+
+    it("deletes every other row the user holds on removing the authenticator app, spares the acting one and another user's, and keeps the visitor signed in", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const app = rowApp(sessions, totpServices(inner), "DELETE", "/account/totp", (options) => createTotpManageActions(options).totpRemove);
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+      await elsewhere(inner);
+      await elsewhere(inner);
+      const others = await elsewhere(inner, OTHER);
+
+      const res = await app.request("/account/totp", { method: "DELETE", headers: { cookie: held ?? "" } });
+
+      expect({
+        answer: { status: res.status, location: res.headers.get("location") },
+        rows: [...rows.keys()].sort(),
+        still: await whoami(app, held),
+      }).toEqual({
+        answer: { status: 303, location: "/account/totp" },
+        rows: [await keyOf((await stored(held)).data[AUTH_SESSION_TOKEN_KEY]), others].sort(),
+        still: "u9",
+      });
+    });
+
+    it("answers 503 on removing the authenticator app when its removal batch fails, signing no session out", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const app = rowApp(sessions, totpServices(inner, true), "DELETE", "/account/totp", (options) => createTotpManageActions(options).totpRemove);
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+      await elsewhere(inner);
+
+      const res = await app.request("/account/totp", { method: "DELETE", headers: { cookie: held ?? "" } });
+
+      expect({ answer: await answerOf(res), rows: rows.size }).toEqual({ answer: { status: 503, body: "Service Unavailable" }, rows: 2 });
+    });
+  });
+
+  describe("the session list's sign-outs", () => {
+    const services: Partial<AuthRequestServices> = { users: fakeAuthUserStore([signedIn]) };
+    const revoke = (options: AuthWebOptions) => createSessionActions(options).sessionRevoke;
+    const revokeOthers = (options: AuthWebOptions) => createSessionActions(options).sessionsRevokeOthers;
+    const posted = (fields: Record<string, string>, cookie: string | null): RequestInit => ({
+      ...formBody(fields),
+      headers: { "content-type": "application/x-www-form-urlencoded", cookie: cookie ?? "" },
+    });
+
+    it("signs out everywhere else, leaving only the acting session and another user's, and keeps the visitor signed in", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const app = rowApp(sessions, services, "POST", "/account/sessions/revoke-others", revokeOthers);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      await elsewhere(inner);
+      await elsewhere(inner);
+      const others = await elsewhere(inner, OTHER);
+
+      const res = await app.request("/account/sessions/revoke-others", posted({}, cookie));
+
+      expect({
+        answer: { status: res.status, location: res.headers.get("location") },
+        rows: [...rows.keys()].sort(),
+        still: await whoami(app, cookie),
+      }).toEqual({
+        answer: { status: 303, location: "/account/sessions" },
+        rows: [await keyOf((await stored(cookie)).data[AUTH_SESSION_TOKEN_KEY]), others].sort(),
+        still: "u9",
+      });
+    });
+
+    it("signs out the one session the form names, and nothing else", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const app = rowApp(sessions, services, "POST", "/account/sessions/revoke", revoke);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      const doomed = await elsewhere(inner);
+      const spared = await elsewhere(inner);
+
+      const res = await app.request("/account/sessions/revoke", posted({ session: rows.get(doomed)?.id ?? "" }, cookie));
+
+      expect({ status: res.status, rows: [...rows.keys()].sort() }).toEqual({
+        status: 303,
+        rows: [await keyOf((await stored(cookie)).data[AUTH_SESSION_TOKEN_KEY]), spared].sort(),
+      });
+    });
+
+    it("answers 404 for the acting session's own id and for another user's, signing nothing out", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const app = rowApp(sessions, services, "POST", "/account/sessions/revoke", revoke);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      const acting = await keyOf((await stored(cookie)).data[AUTH_SESSION_TOKEN_KEY]);
+      const theirs = await elsewhere(inner, OTHER);
+
+      const own = await app.request("/account/sessions/revoke", posted({ session: rows.get(acting)?.id ?? "" }, cookie));
+      const other = await app.request("/account/sessions/revoke", posted({ session: rows.get(theirs)?.id ?? "" }, cookie));
+
+      expect({ statuses: [own.status, other.status], rows: rows.size }).toEqual({ statuses: [404, 404], rows: 2 });
+    });
+
+    it("refuses a session field that is not a UUID with 422, asking the store nothing", async () => {
+      const { sessions, inner, rows } = rowStore(["revoke"]);
+      const app = rowApp(sessions, services, "POST", "/account/sessions/revoke", revoke);
+      const cookie = pairOf(await app.request("/seed", { method: "POST" }));
+      await elsewhere(inner);
+
+      const res = await app.request("/account/sessions/revoke", posted({ session: "not-a-session" }, cookie));
+
+      expect({ status: res.status, rows: rows.size }).toEqual({ status: 422, rows: 2 });
+    });
+
+    it("tells nobody of signing one session out or every other one", async () => {
+      const { sessions, inner, rows } = rowStore();
+      const notices = fakeSecurityNotices();
+      const one = rowApp(sessions, { ...services, notices }, "POST", "/account/sessions/revoke", revoke);
+      const all = rowApp(sessions, { ...services, notices }, "POST", "/account/sessions/revoke-others", revokeOthers);
+      const cookie = pairOf(await one.request("/seed", { method: "POST" }));
+      const doomed = await elsewhere(inner);
+      await elsewhere(inner);
+
+      const statuses = [
+        (await one.request("/account/sessions/revoke", posted({ session: rows.get(doomed)?.id ?? "" }, cookie))).status,
+        (await all.request("/account/sessions/revoke-others", posted({}, cookie))).status,
+      ];
+
+      expect({ statuses, left: rows.size, sent: notices.sent }).toEqual({ statuses: [303, 303], left: 1, sent: [] });
+    });
+
+    it("answers 503 when either store write fails", async () => {
+      const { sessions } = rowStore(["revoke", "revokeOthers"]);
+      const one = rowApp(sessions, services, "POST", "/account/sessions/revoke", revoke);
+      const all = rowApp(sessions, services, "POST", "/account/sessions/revoke-others", revokeOthers);
+      const cookie = pairOf(await one.request("/seed", { method: "POST" }));
+
+      const answers = [
+        await answerOf(await one.request("/account/sessions/revoke", posted({ session: "0190a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b" }, cookie))),
+        await answerOf(await all.request("/account/sessions/revoke-others", posted({}, cookie))),
+      ];
+
+      expect(answers).toEqual([
+        { status: 503, body: "Service Unavailable" },
+        { status: 503, body: "Service Unavailable" },
+      ]);
+    });
+  });
+
+  describe("a step-up lands on the row", () => {
+    const stepUpServices: Partial<AuthRequestServices> = {
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([fakeFactorService("totp-app")]),
+      }),
+      signin: fakeAuthSigninFlow({ stepUp: async () => ok({ kind: "totp-app" as const, userId: "u9", verifiedAt: CLOCK }) }),
+    };
+    const passkey = {
+      ...fakeFactorService("passkey"),
+      verifyChallenge: async (userId: string, _presented: string, at: number) => ok({ kind: "passkey" as const, userId, verifiedAt: at }),
+    } as AuthSecondFactorService;
+    const passkeyServices: Partial<AuthRequestServices> = {
+      users: fakeAuthUserStore([signedIn]),
+      factors: createFactorRegistry(fakeFactorStore(["passkey"]), {
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([passkey]),
+      }),
+    };
+    const steps = [
+      {
+        via: "a verified code",
+        services: stepUpServices,
+        pattern: "/auth/verify",
+        init: formBody({ code: "123456" }),
+        action: (options: AuthWebOptions) => createVerifyActions(options).submit,
+        status: 303,
+        refusal: { status: 503, body: "Service Unavailable" },
+      },
+      {
+        via: "a verified passkey assertion",
+        services: passkeyServices,
+        pattern: "/auth/verify/passkey/finish",
+        init: jsonBody(assertion),
+        action: (options: AuthWebOptions) => createPasskeyStepUpActions(options).finish,
+        status: 200,
+        refusal: { status: 503, body: JSON.stringify({ error: "The passkey service is unavailable." }) },
+      },
+    ] as const;
+
+    for (const { via, services, pattern, init, action, status, refusal } of steps) {
+      it(`moves the row onto a new token carrying the step-up on ${via}, so the token held before it no longer resolves`, async () => {
+        const { sessions, rows } = rowStore();
+        const app = rowApp(sessions, services, "POST", pattern, action);
+        const held = pairOf(await app.request("/seed", { method: "POST" }));
+        const before = (await stored(held)).data[AUTH_SESSION_TOKEN_KEY];
+
+        const res = await app.request(pattern, { ...init, headers: { ...(init.headers as Record<string, string>), cookie: held ?? "" } });
+        const after = (await stored(pairOf(res))).data[AUTH_SESSION_TOKEN_KEY];
+
+        expect({
+          status: res.status,
+          rotated: typeof after === "string" && after !== before,
+          rows: [...rows].map(([key, row]) => [key, row.stepUpAt]),
+          previous: await sessions.resolve(await sha256(String(before)), CLOCK),
+        }).toEqual({ status, rotated: true, rows: [[await keyOf(after), CLOCK]], previous: ok(null) });
+      });
+
+      it(`answers ${via} with 503 when the row cannot take the step-up`, async () => {
+        const { sessions, rows } = rowStore(["rotate"]);
+        const app = rowApp(sessions, services, "POST", pattern, action);
+        const held = pairOf(await app.request("/seed", { method: "POST" }));
+
+        const res = await app.request(pattern, { ...init, headers: { ...(init.headers as Record<string, string>), cookie: held ?? "" } });
+
+        expect({ answer: await answerOf(res), stepUps: [...rows.values()].map((row) => row.stepUpAt) }).toEqual({
+          answer: refusal,
+          stepUps: [null],
+        });
+      });
+    }
+
+    const kindCases = [
+      ...(["email-otp", "totp-app", "recovery-code"] as const).map((kind) => ({
+        kind,
+        services: { ...stepUpServices, signin: fakeAuthSigninFlow({ stepUp: async () => ok({ kind, userId: "u9", verifiedAt: CLOCK }) }) },
+        pattern: "/auth/verify",
+        url: "/auth/verify?factor=totp-app",
+        init: formBody({ code: "123456" }),
+        action: (options: AuthWebOptions) => createVerifyActions(options).submit,
+        status: 303,
+      })),
+      {
+        kind: "passkey" as const,
+        services: passkeyServices,
+        pattern: "/auth/verify/passkey/finish",
+        url: "/auth/verify/passkey/finish",
+        init: jsonBody(assertion),
+        action: (options: AuthWebOptions) => createPasskeyStepUpActions(options).finish,
+        status: 200,
+      },
+    ];
+
+    for (const { kind, services, pattern, url, init, action, status } of kindCases) {
+      it(`records ${kind} as the kind a step-up by ${kind} verified with, whatever kind the URL asked for`, async () => {
+        const { sessions } = rowStore();
+        const app = rowApp(sessions, services, "POST", pattern, action);
+        const held = pairOf(await app.request("/seed", { method: "POST" }));
+
+        const res = await app.request(url, { ...init, headers: { ...(init.headers as Record<string, string>), cookie: held ?? "" } });
+        const after = await createCookieSessionStorage().read(null);
+        after.set(AUTH_SESSION_TOKEN_KEY, (await stored(pairOf(res))).data[AUTH_SESSION_TOKEN_KEY]);
+        const resolved = await resolveAuthIdentity(after, sessions, CLOCK);
+        const identity = resolved.ok ? resolved.data : null;
+
+        expect({ status: res.status, stepUpAt: identity?.stepUpAt, stepUpKind: identity?.stepUpKind }).toEqual({
+          status,
+          stepUpAt: CLOCK,
+          stepUpKind: kind,
+        });
+      });
+    }
+  });
+
+  describe("a single-factor re-proof through the resend action", () => {
+    /** A real sign-in flow over an emailed-code primary on a settable clock, behind `resolveAuth`, with a cookie jar and one guarded mutation. */
+    async function reproofScene() {
+      let clock = CLOCK;
+      const now = () => clock;
+      const sent: AuthMessage[] = [];
+      const codes = new Map<string, OtpState & { readonly binding: string }>();
+      const live = (userId: string, at: number, binding: Uint8Array) => {
+        const held = codes.get(userId);
+        return held !== undefined && held.expiresAt > at && held.binding === bytesToHex(binding) ? held : undefined;
+      };
+      const state: OtpStateStore = {
+        issue: async (userId, code, cooldownMs, binding) => {
+          const held = codes.get(userId);
+          if (held !== undefined && held.issuedAt > code.issuedAt - cooldownMs) return ok(false);
+          codes.set(userId, { ...code, attempts: held?.attempts ?? 0, binding: bytesToHex(binding) });
+          return ok(true);
+        },
+        countAttempt: async (userId, maxAttempts, at, _windowMs, binding) => {
+          const held = live(userId, at, binding);
+          if (held === undefined || held.attempts >= maxAttempts) return ok(null);
+          const spent = { ...held, attempts: held.attempts + 1 };
+          codes.set(userId, spent);
+          return ok(spent);
+        },
+        read: async (userId, at, binding) => ok(live(userId, at, binding) ?? null),
+        discard: async () => ok(),
+        clear: async (userId) => (codes.delete(userId), ok()),
+      };
+      const consumed = new Set<string>();
+      const nonces = {
+        markConsumed: async (key: string) => {
+          if (consumed.has(key)) return ok(false);
+          consumed.add(key);
+          return ok(true);
+        },
+      };
+      const keys = await importAuthKeyRing(["17bd3b2b6521b7cfde60fad521de43d2860704680c51641152e6e05aa786d162"]);
+      const notifier = { send: async (message: AuthMessage) => (sent.push(message), ok()) };
+      const emailOtp = createEmailOtpFactor({ keys, state, nonces, notifier, address: async () => ok(signedIn.email) });
+      const users = fakeAuthUserStore([signedIn]);
+      const factors = createFactorRegistry(fakeFactorStore([]), { primary: emailOtp });
+      const sessions = fakeAuthSessionStore([signedIn]);
+      const signin = createSigninFlow({ keys, users, state, nonces, factors, defer: () => undefined });
+      const services = fakeAuthServices({ users, factors, signin, sessions });
+      const options = fakeAuthWebOptions({ resolveServices: () => services, now });
+
+      const app = new Forge();
+      app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+      app.use("*", resolveAuth({ sessions: () => sessions, now }));
+      app.use("*", (context, next) => {
+        csrfMinterCtx.set(context, (path) => Promise.resolve(`csrf-for:${path}`));
+        csrfFieldCtx.set(context, "_csrf");
+        return next();
+      });
+      mapHandler(app, "POST", "/seed", async (context) => {
+        await establishAuthSession(sessionCtx.get(context), sessions, "u9", clock, clock, { kind: "email-otp" });
+        return new Response("seeded");
+      });
+      const verify = createVerifyActions(options);
+      mapHandler(app, "POST", "/auth/verify/resend", verify.resend);
+      mapHandler(app, "POST", "/auth/verify", verify.submit);
+      const fresh = requireFreshStepUp({
+        factors: () => factors,
+        enrolmentPaths: { kinds: {} },
+        stepUpPath: "/auth/verify",
+        settledPath: "/account",
+        now,
+      });
+      mapHandler(app, "POST", "/account/email", { middleware: [fresh], handler: () => new Response("changed") });
+
+      const browser = async () => {
+        let cookie = "";
+        const send = async (path: string, init: RequestInit = { method: "POST" }) => {
+          const res = await app.request(path, { ...init, headers: { ...(init.headers as Record<string, string>), cookie } });
+          cookie = pairOf(res) ?? cookie;
+          return res;
+        };
+        await send("/seed");
+        return send;
+      };
+      return { send: await browser(), browser, sent, advance: (ms: number) => void (clock += ms) };
+    }
+
+    const lastCode = (sent: readonly AuthMessage[]) => {
+      const last = sent.at(-1);
+      return last?.kind === "otp" ? last.code : "";
+    };
+
+    it("mails exactly one code, and presenting it lets a guarded mutation through that was refused before", async () => {
+      const { send, sent } = await reproofScene();
+      const before = await send("/account/email");
+      const resent = await send("/auth/verify/resend");
+      const mailed = sent.length;
+      const verified = await send("/auth/verify", {
+        method: "POST",
+        body: new URLSearchParams({ code: lastCode(sent) }).toString(),
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      });
+      const after = await send("/account/email");
+
+      expect({
+        before: { status: before.status, location: before.headers.get("location") },
+        resent: resent.status,
+        mailed,
+        to: sent.map((message) => message.to),
+        verified: verified.status,
+        after: { status: after.status, body: await after.text() },
+      }).toEqual({
+        before: { status: 303, location: "/auth/verify" },
+        resent: 303,
+        mailed: 1,
+        to: [signedIn.email],
+        verified: 303,
+        after: { status: 200, body: "changed" },
+      });
+    });
+
+    it("refuses the code in another browser of the same account, which leaves the asking browser its whole budget", async () => {
+      const { send, browser, sent } = await reproofScene();
+      const other = await browser();
+      const submit = (from: typeof send, code: string) =>
+        from("/auth/verify", {
+          method: "POST",
+          body: new URLSearchParams({ code }).toString(),
+          headers: { "content-type": "application/x-www-form-urlencoded" },
+        });
+      await send("/auth/verify/resend");
+      const code = lastCode(sent);
+      const wrong = code === "000000" ? "111111" : "000000";
+
+      const foreign: number[] = [];
+      for (let ordinal = 0; ordinal <= AUTH_OTP_MAX_ATTEMPTS; ordinal++) foreign.push((await submit(other, code)).status);
+      const own: number[] = [];
+      for (let ordinal = 1; ordinal < AUTH_OTP_MAX_ATTEMPTS; ordinal++) own.push((await submit(send, wrong)).status);
+      const right = await submit(send, code);
+      const after = await send("/account/email");
+
+      expect({ foreign, own, right: right.status, after: after.status, otherAfter: (await other("/account/email")).status }).toEqual({
+        foreign: Array.from({ length: AUTH_OTP_MAX_ATTEMPTS + 1 }, () => 422),
+        own: Array.from({ length: AUTH_OTP_MAX_ATTEMPTS - 1 }, () => 422),
+        right: 303,
+        after: 200,
+        otherAfter: 303,
+      });
+    });
+
+    it("mails again once the default minute's cooldown has run, and not the millisecond before", async () => {
+      const { send, sent, advance } = await reproofScene();
+      const counts: number[] = [];
+      for (const wait of [0, 59_999, 1]) {
+        advance(wait);
+        await send("/auth/verify/resend");
+        counts.push(sent.length);
+      }
+      expect(counts).toEqual([1, 1, 2]);
+    });
+  });
+
+  describe("an admin claim moves the row onto a new token", () => {
+    const claim = (options: AuthWebOptions): TestAction => ({
+      middleware: [approvedSession(), requireApproval(fakeApproval())],
+      handler: createAdminElevateActions(options).submit,
+    });
+
+    /** An admin store whose claim and rotation land together or not at all, as the D1 batch does, over `users` and `inner`'s rows. */
+    function claimingStore(users: AuthUser[], inner: AuthSessionStore, failing: { rotation: boolean }): AdminUserStore {
+      return fakeAdminUserStore(users, {
+        claimFirstAdmin: async (id, _at, rotation) => {
+          if (failing.rotation) return err(new AuthStoreError("unavailable", "adminUsers.claimFirstAdmin"));
+          const index = users.findIndex((user) => user.id === id);
+          const user = users[index];
+          if (user === undefined) return ok("not-found" as const);
+          users[index] = { ...user, isAdmin: true };
+          if (rotation !== undefined) await inner.rotate(rotation.replaces, rotation.tokenHash);
+          return ok("changed" as const);
+        },
+      });
+    }
+
+    async function claimScene(failing: { rotation: boolean }) {
+      const users = [signedIn];
+      const inner = fakeAuthSessionStore(users);
+      const app = rowApp(
+        inner,
+        { users: fakeAuthUserStore([signedIn]), admin: claimingStore(users, inner, failing) },
+        "POST",
+        "/admin/elevate",
+        claim,
+      );
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+      const before = (await stored(held)).data[AUTH_SESSION_TOKEN_KEY];
+      const res = await app.request("/admin/elevate", {
+        ...formBody({ confirm: "yes" }),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: held ?? "" },
+      });
+      return { users, inner, res, before };
+    }
+
+    it("retires the token held before the claim and sets a cookie carrying a different one that resolves", async () => {
+      const { inner, res, before } = await claimScene({ rotation: false });
+      const after = (await stored(pairOf(res))).data[AUTH_SESSION_TOKEN_KEY];
+      const resolved = await inner.resolve(await sha256(String(after)), CLOCK);
+
+      expect({
+        answer: { status: res.status, location: res.headers.get("location") },
+        rotated: typeof after === "string" && after !== before,
+        previous: await inner.resolve(await sha256(String(before)), CLOCK),
+        elevated: resolved.ok && resolved.data?.user.isAdmin,
+      }).toEqual({ answer: { status: 303, location: "/admin/users" }, rotated: true, previous: ok(null), elevated: true });
+    });
+
+    it("lands no claim when the rotation fails, so the token held before it still resolves to an unelevated session", async () => {
+      const { users, inner, res, before } = await claimScene({ rotation: true });
+      const resolved = await inner.resolve(await sha256(String(before)), CLOCK);
+
+      expect({
+        answer: await answerOf(res),
+        admin: users.map((user) => user.isAdmin),
+        previous: resolved.ok && resolved.data ? { userId: resolved.data.user.id, isAdmin: resolved.data.user.isAdmin } : null,
+      }).toEqual({ answer: { status: 503, body: "Service Unavailable" }, admin: [false], previous: { userId: "u9", isAdmin: false } });
+    });
+
+    it("leaves the session on the token it held when the claim arrives second, so a refused claim signs nobody out", async () => {
+      const users = [signedIn];
+      const inner = fakeAuthSessionStore(users);
+      const admin = fakeAdminUserStore(users, { claimFirstAdmin: async () => ok("admin-exists" as const) });
+      const app = rowApp(inner, { users: fakeAuthUserStore([signedIn]), admin }, "POST", "/admin/elevate", claim);
+      const held = pairOf(await app.request("/seed", { method: "POST" }));
+      const before = (await stored(held)).data[AUTH_SESSION_TOKEN_KEY];
+
+      const res = await app.request("/admin/elevate", {
+        ...formBody({ confirm: "yes" }),
+        headers: { "content-type": "application/x-www-form-urlencoded", cookie: held ?? "" },
+      });
+      const after = (await stored(pairOf(res) ?? held)).data[AUTH_SESSION_TOKEN_KEY];
+      const resolved = await inner.resolve(await sha256(String(before)), CLOCK);
+
+      expect({ status: res.status, token: after === before, previous: resolved.ok && resolved.data?.user.id }).toEqual({
+        status: 409,
+        token: true,
+        previous: "u9",
+      });
+    });
+  });
+});
+
+describe("the security notice each account-changing action sends", () => {
+  const member = fakeAuthUser({ id: "u2", email: "member@example.com" });
+  const confirmed = (kind: AuthFactorKind): AuthFactor => ({
+    id: `f-${kind}`,
+    userId: "u9",
+    kind,
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  const offering = (service: AuthSecondFactorService) =>
+    createFactorRegistry(fakeFactorStore([service.kind]), { primary: fakeFactorService("email-otp"), second: fakeSecondFactorOffering([service]) });
+
+  function adminUpdate(target: AuthUser, outcome: AdminUserOutcome = "changed") {
+    const notices = fakeSecurityNotices();
+    const actors: string[] = [];
+    const recorded = async (_id: string, _flag: boolean, _at: number, adminId: string) => (actors.push(adminId), ok(outcome));
+    const admin = fakeAdminUserStore([target], { setAdmin: recorded, setDeactivated: recorded });
+    const options = optionsWith({ users: fakeAuthUserStore([signedIn]), admin, notices });
+    const app = mounted(actionApp({ userId: "u9", admin: true }), "PATCH", "/admin/users/:id", createAdminUserActions(options).update);
+    return { app, notices, actors };
+  }
+
+  for (const { name, target, form, type } of [
+    { name: "a grant", target: member, form: { role: "admin", status: "active" }, type: "admin-granted" },
+    { name: "a revocation", target: { ...member, isAdmin: true }, form: { role: "member", status: "active" }, type: "admin-revoked" },
+    { name: "a deactivation", target: member, form: { role: "member", status: "deactivated" }, type: "account-deactivated" },
+    { name: "a reactivation", target: { ...member, deactivatedAt: 1 }, form: { role: "member", status: "active" }, type: "account-reactivated" },
+  ] as const) {
+    it(`records the acting administrator on ${name} and tells the account's own address`, async () => {
+      const { app, notices, actors } = adminUpdate(target);
+      await app.request("/admin/users/u2", formBody(form, "PATCH"));
+      expect({ actors, sent: notices.sent }).toEqual({
+        actors: ["u9"],
+        sent: [{ to: "member@example.com", notice: { type, factorKind: null, at: 1_000 } }],
+      });
+    });
+  }
+
+  it("tells nobody of a role or status write that found the account already so, still answering it as done", async () => {
+    const deactivated = adminUpdate(member, "unchanged");
+    const deactivate = await deactivated.app.request("/admin/users/u2", formBody({ role: "member", status: "deactivated" }, "PATCH"));
+    const granted = adminUpdate(member, "unchanged");
+    const grant = await granted.app.request("/admin/users/u2", formBody({ role: "admin", status: "active" }, "PATCH"));
+    expect({ statuses: [deactivate.status, grant.status], sent: [...deactivated.notices.sent, ...granted.notices.sent] }).toEqual({
+      statuses: [200, 200],
+      sent: [],
+    });
+  });
+
+  it("tells nobody of a role or status change the last-admin guard refused", async () => {
+    const demoted = adminUpdate({ ...member, isAdmin: true }, "last-admin-demote");
+    await demoted.app.request("/admin/users/u2", formBody({ role: "member", status: "active" }, "PATCH"));
+    const deactivated = adminUpdate(member, "last-admin-deactivate");
+    await deactivated.app.request("/admin/users/u2", formBody({ role: "member", status: "deactivated" }, "PATCH"));
+    expect([demoted.notices.sent, deactivated.notices.sent]).toEqual([[], []]);
+  });
+
+  it("tells the claimant's own address of a landed first-admin claim, and nobody of a refused one", async () => {
+    const claimed = fakeSecurityNotices();
+    const claimOptions = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([signedIn]), notices: claimed });
+    await mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(claimOptions).submit).request(
+      "/admin/elevate",
+      formBody({ confirm: "yes" }),
+    );
+    const refused = fakeSecurityNotices();
+    const existing = fakeAuthUser({ id: "u1", isAdmin: true });
+    const refusedOptions = optionsWith({ users: fakeAuthUserStore([signedIn]), admin: fakeAdminUserStore([existing]), notices: refused });
+    await mounted(approved(actionApp({ userId: "u9" })), "POST", "/admin/elevate", createAdminElevateActions(refusedOptions).submit).request(
+      "/admin/elevate",
+      formBody({ confirm: "yes" }),
+    );
+    expect({ claimed: claimed.sent, refused: refused.sent }).toEqual({
+      claimed: [{ to: "grace@example.com", notice: { type: "admin-granted", factorKind: null, at: 1_000 } }],
+      refused: [],
+    });
+  });
+
+  it("tells the holder a passkey was removed, and nobody when the passkey was not theirs", async () => {
+    const notices = fakeSecurityNotices();
+    const options = optionsWith({
+      users: fakeAuthUserStore([signedIn]),
+      factors: fakeFactorRegistry(["passkey"]),
+      credentials: fakeAuthCredentialStore([fakeAuthCredential({ id: "c1", userId: "u9" })]),
+      notices,
+    });
+    const app = mounted(actionApp({ userId: "u9" }), "DELETE", "/account/passkeys/:id", createPasskeyManageActions(options).passkeyRemove);
+    const statuses = [
+      (await app.request("/account/passkeys/c1", { method: "DELETE" })).status,
+      (await app.request("/account/passkeys/c9", { method: "DELETE" })).status,
+    ];
+    expect({ statuses, sent: notices.sent }).toEqual({
+      statuses: [200, 404],
+      sent: [{ to: "grace@example.com", notice: { type: "factor-removed", factorKind: "passkey", at: 1_000 } }],
+    });
+  });
+
+  it("tells the holder a passkey was added once the ceremony finishes, and nobody when it is refused", async () => {
+    const sentFor = async (completed: boolean) => {
+      const notices = fakeSecurityNotices();
+      const passkey = {
+        ...fakeFactorService("passkey"),
+        completeEnrolment: async () => (completed ? ok(confirmed("passkey")) : err("unrecognised" as const)),
+      } as AuthSecondFactorService;
+      const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: offering(passkey), notices });
+      const app = mounted(
+        actionApp({ userId: "u9" }),
+        "POST",
+        "/account/passkeys/register/finish",
+        createPasskeyAccountEnrolActions(options).finish,
+      );
+      await app.request("/account/passkeys/register/finish", jsonBody({ credential: { id: "c1" } }));
+      return notices.sent;
+    };
+    expect({ finished: await sentFor(true), refused: await sentFor(false) }).toEqual({
+      finished: [{ to: "grace@example.com", notice: { type: "factor-added", factorKind: "passkey", at: 1_000 } }],
+      refused: [],
+    });
+  });
+
+  it("tells the holder an authenticator app was added, from either enrolment page, and nobody when the code is refused", async () => {
+    const sentFor = async (completed: boolean, actions: typeof createTotpEnrolActions | typeof createTotpManageActions) => {
+      const notices = fakeSecurityNotices();
+      const totp = {
+        ...fakeFactorService("totp-app"),
+        completeEnrolment: async () => (completed ? ok(confirmed("totp-app")) : err("unrecognised" as const)),
+      } as AuthSecondFactorService;
+      const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: offering(totp), notices });
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/totp", actions(options).totpEnrol);
+      await app.request("/totp", formBody({ code: "123456" }));
+      return notices.sent;
+    };
+    const added = [{ to: "grace@example.com", notice: { type: "factor-added", factorKind: "totp-app", at: 1_000 } }];
+    expect([
+      await sentFor(true, createTotpEnrolActions),
+      await sentFor(true, createTotpManageActions),
+      await sentFor(false, createTotpEnrolActions),
+    ]).toEqual([added, added, []]);
+  });
+
+  it("tells the holder an authenticator app was removed, and nobody when there was none or only an unfinished one", async () => {
+    const sentFor = async (held: readonly AuthFactor[]) => {
+      const notices = fakeSecurityNotices();
+      const totp = { ...fakeFactorService("totp-app"), listEnrolments: async () => ok(held) } as AuthSecondFactorService;
+      const options = optionsWith({ users: fakeAuthUserStore([signedIn]), factors: offering(totp), notices });
+      const app = mounted(actionApp({ userId: "u9" }), "DELETE", "/account/totp", createTotpManageActions(options).totpRemove);
+      await app.request("/account/totp", { method: "DELETE" });
+      return notices.sent;
+    };
+    expect({
+      removed: await sentFor([confirmed("totp-app")]),
+      unfinished: await sentFor([{ ...confirmed("totp-app"), confirmedAt: null }]),
+      none: await sentFor([]),
+    }).toEqual({
+      removed: [{ to: "grace@example.com", notice: { type: "factor-removed", factorKind: "totp-app", at: 1_000 } }],
+      unfinished: [],
+      none: [],
+    });
+  });
+
+  it("tells the holder a recovery code was spent on a step-up, and nobody for another factor's step-up or a refused code", async () => {
+    const sentFor = async (stepUp: AuthSigninFlow["stepUp"]) => {
+      const notices = fakeSecurityNotices();
+      const options = optionsWith({
+        users: fakeAuthUserStore([signedIn]),
+        factors: offering(fakeFactorService("totp-app")),
+        signin: fakeAuthSigninFlow({ stepUp }),
+        notices,
+      });
+      const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+      await app.request("/auth/verify", formBody({ code: "123456" }));
+      return notices.sent;
+    };
+    expect({
+      recovery: await sentFor(async (userId, _kind, _code, at) => ok({ kind: "recovery-code" as const, userId, verifiedAt: at })),
+      totp: await sentFor(async (userId, kind, _code, at) => ok({ kind, userId, verifiedAt: at })),
+      refused: await sentFor(async () => err("unrecognised" as const)),
+    }).toEqual({
+      recovery: [{ to: "grace@example.com", notice: { type: "recovery-code-used", factorKind: "recovery-code", at: 1_000 } }],
+      totp: [],
+      refused: [],
+    });
+  });
+});
+
+describe("every onward redirect a confirmed factor earns answers 503 when the factor demand goes unreadable after it", () => {
+  const confirmedRow = (kind: AuthFactorKind): AuthFactor => ({
+    id: `f-${kind}`,
+    userId: "u9",
+    kind,
+    secret: null,
+    lastCounter: null,
+    failedAttempts: 0,
+    lastVerifiedAt: null,
+    confirmedAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  });
+
+  /** A registry over `held` offering `kind`, whose demand stops reading from the moment the factor accepts what it was handed. */
+  function goingDown(kind: "totp-app" | "passkey", held: readonly AuthFactorKind[]) {
+    let down = false;
+    const accepting = {
+      ...fakeFactorService(kind),
+      verifyChallenge: async (userId: string, _presented: string, at: number) => {
+        down = true;
+        return ok({ kind, userId, verifiedAt: at });
+      },
+      completeEnrolment: async () => {
+        down = true;
+        return ok(confirmedRow(kind));
+      },
+    } as AuthSecondFactorService;
+    const registry = createFactorRegistry(fakeFactorStore(held), {
+      primary: fakeFactorService("email-otp"),
+      second: fakeSecondFactorOffering([accepting], [kind]),
+    });
+    const factors = {
+      ...registry,
+      resolve: (...args: Parameters<typeof registry.resolve>) =>
+        down ? Promise.resolve(err(new AuthStoreError("unavailable", "factors.resolve"))) : registry.resolve(...args),
+    };
+    const signin = fakeAuthSigninFlow({
+      stepUp: async (userId, stepped, _code, at) => {
+        down = true;
+        return ok({ kind: stepped, userId, verifiedAt: at });
+      },
+    });
+    return optionsWith({ users: fakeAuthUserStore([signedIn]), factors, signin });
+  }
+
+  const PLAIN = { status: 503, body: "Service Unavailable" };
+  const CEREMONY = { status: 503, body: JSON.stringify({ error: "The passkey service is unavailable." }) };
+
+  const callers = [
+    {
+      label: "a step-up by passkey",
+      route: "/auth/verify/passkey/finish",
+      action: () => createPasskeyStepUpActions(goingDown("passkey", ["passkey", "recovery-code"])).finish,
+      init: jsonBody({ credential: { id: "c", response: {} } }),
+      expected: CEREMONY,
+    },
+    {
+      label: "an owed passkey enrolment",
+      route: "/auth/enrol/passkey/register/finish",
+      action: () => createPasskeyEnrolActions(goingDown("passkey", [])).finish,
+      init: jsonBody({ credential: { id: "cred-1" }, nickname: "Laptop" }),
+      expected: CEREMONY,
+    },
+    {
+      label: "a passkey enrolment from the account pages",
+      route: "/account/passkeys/register/finish",
+      action: () => createPasskeyAccountEnrolActions(goingDown("passkey", [])).finish,
+      init: jsonBody({ credential: { id: "cred-1" }, nickname: "Laptop" }),
+      expected: CEREMONY,
+    },
+    {
+      label: "an owed authenticator-app enrolment",
+      route: "/auth/enrol/totp",
+      action: () => createTotpEnrolActions(goingDown("totp-app", [])).totpEnrol,
+      init: formBody({ code: "123456" }),
+      expected: PLAIN,
+    },
+    {
+      label: "an authenticator-app enrolment from the account pages",
+      route: "/account/totp",
+      action: () => createTotpManageActions(goingDown("totp-app", [])).totpEnrol,
+      init: formBody({ code: "123456" }),
+      expected: PLAIN,
+    },
+  ] as const;
+
+  for (const { label, route, action, init, expected } of callers) {
+    it(`answers ${label} with 503 and no redirect`, async () => {
+      const res = await mounted(actionApp({ userId: "u9" }), "POST", route, action()).request(route, init);
+      expect({ answer: { status: res.status, body: await res.text() }, location: res.headers.get("location") }).toEqual({
+        answer: expected,
+        location: null,
+      });
+    });
+  }
+});
+
+// The onward target reuses the resolution the demand already read, so the read left to fail is the code count.
+describe("the verify POST's onward redirect after a step-up by code", () => {
+  /** Options holding a confirmed authenticator app and recovery codes counted by `remaining`, with every read of the demand tallied in `reads`. */
+  function steppingUp(remaining: RecoveryCodeFactorService["remaining"]) {
+    const reads: string[] = [];
+    const codes = Object.assign(fakeFactorService("recovery-code"), { remaining }) as RecoveryCodeFactorService;
+    const registry = createFactorRegistry(fakeFactorStore(["totp-app", "recovery-code"]), {
+      primary: fakeFactorService("email-otp"),
+      second: fakeSecondFactorOffering(["totp-app"], ["totp-app"], codes),
+    });
+    const factors = {
+      ...registry,
+      resolve: (...args: Parameters<typeof registry.resolve>) => {
+        reads.push(args[0]);
+        return registry.resolve(...args);
+      },
+    };
+    const signin = fakeAuthSigninFlow({ stepUp: async (userId, kind, _code, at) => ok({ kind, userId, verifiedAt: at }) });
+    return { reads, options: optionsWith({ users: fakeAuthUserStore([signedIn]), factors, signin }) };
+  }
+
+  const answerTo = async (options: AuthWebOptions) => {
+    const app = mounted(actionApp({ userId: "u9" }), "POST", "/auth/verify", createVerifyActions(options).submit);
+    const res = await app.request("/auth/verify", formBody({ code: "123456" }));
+    return { status: res.status, location: res.headers.get("location"), body: await res.text() };
+  };
+
+  it("answers 503 and no redirect when the recovery codes it would weigh cannot be counted", async () => {
+    const { options } = steppingUp(async () => err(new AuthStoreError("unavailable", "codes.remaining")));
+    expect(await answerTo(options)).toEqual({ status: 503, location: null, body: "Service Unavailable" });
+  });
+
+  it("redirects onward when the codes are counted, having read the factor demand once", async () => {
+    const { reads, options } = steppingUp(async () => ok(10));
+    const answer = await answerTo(options);
+    expect({ status: answer.status, location: answer.location, reads }).toEqual({ status: 303, location: "/account/passkeys", reads: ["u9"] });
   });
 });

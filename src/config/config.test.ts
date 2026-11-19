@@ -394,6 +394,17 @@ describe("Config", () => {
     const result = cfg.get({ DB_URL: "postgres://prod", MODE: "dev" });
     expect(result.dbUrl).toBe("dev://override");
   });
+
+  it("returns a patched value the schema would reject, unchanged and never re-validated", () => {
+    const schema = v.object({ apiUrl: v.pipe(v.string(), v.url()), port: v.pipe(v.string(), v.transform(Number)) });
+    const cfg = createConfig({ apiUrl: env("API_URL"), port: env("PORT") }, schema, {
+      detect: () => true,
+      patch: (config) => ({ ...config, apiUrl: "not a url", port: -1 }),
+    });
+
+    expect(() => v.parse(schema, { apiUrl: "not a url", port: "8787" })).toThrow();
+    expect(cfg.get({ API_URL: "https://api.example.com", PORT: "8787" })).toEqual({ apiUrl: "not a url", port: -1 });
+  });
 });
 
 describe("resolveConfig", () => {

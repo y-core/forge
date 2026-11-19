@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { attrOf, attrsOf, classesOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
+import { attrOf, attrsOf, classesOf, elementOf, innerOf, tagOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { FormField } from "./field-layout";
 
@@ -92,6 +92,9 @@ describe("Field.Separator", () => {
     const html = await render(<FormField.Separator />);
 
     expect(attrsOf(html)).toEqual({ "data-slot": "field-separator" });
-    expect(html).not.toContain("field-separator-content");
+    expect({
+      classes: classesOf(html),
+      children: [...innerOf(elementOf(html, "div")).matchAll(/data-slot="([^"]*)"/g)].map(([, slot]) => slot),
+    }).toEqual({ classes: ["relative", "h-5", "text-sm"], children: ["separator"] });
   });
 });

@@ -9,6 +9,8 @@ import { createAdminUserService, isLastAdminRefusal } from "./service";
 
 const AT = 1_700_000_000_000;
 
+const ACTOR = uuidv7();
+
 function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
   return {
     id: uuidv7(),
@@ -18,7 +20,6 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -29,6 +30,8 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
 function fakeAdminUsers(seed: readonly AuthUser[]) {
   const rows = [...seed];
   const batches: string[][] = [];
+  const resets: { id: string; at: number }[] = [];
+  const actors: string[] = [];
 
   const activeAdmins = () => rows.filter((row) => row.isAdmin && row.deactivatedAt === null).length;
   const indexOf = (id: string) => rows.findIndex((row) => row.id === id);
@@ -55,12 +58,16 @@ function fakeAdminUsers(seed: readonly AuthUser[]) {
       rows[index] = { ...row, isAdmin: true, updatedAt: at };
       return Promise.resolve(ok("changed" as const));
     },
-    setAdmin: (id, isAdmin, at) =>
-      Promise.resolve(ok(guardedWrite(id, !isAdmin, "last-admin-demote", (row) => ({ ...row, isAdmin, updatedAt: at })))),
-    setDeactivated: (id, deactivated, at) =>
-      Promise.resolve(
+    setAdmin: (id, isAdmin, at, adminId) => {
+      actors.push(adminId);
+      return Promise.resolve(ok(guardedWrite(id, !isAdmin, "last-admin-demote", (row) => ({ ...row, isAdmin, updatedAt: at }))));
+    },
+    setDeactivated: (id, deactivated, at, adminId) => {
+      actors.push(adminId);
+      return Promise.resolve(
         ok(guardedWrite(id, deactivated, "last-admin-deactivate", (row) => ({ ...row, deactivatedAt: deactivated ? at : null, updatedAt: at }))),
-      ),
+      );
+    },
     remove: (id) => {
       const index = indexOf(id);
       const row = rows[index];
@@ -70,16 +77,15 @@ function fakeAdminUsers(seed: readonly AuthUser[]) {
       rows.splice(index, 1);
       return Promise.resolve(ok("changed" as const));
     },
-    resetFactors: (id, at) => {
-      const index = indexOf(id);
-      const row = rows[index];
-      if (index < 0 || !row) return Promise.resolve(ok("not-found" as const));
-      batches.push(["auth_credentials", "auth_factors", "auth_recovery_codes", "auth_users"]);
-      rows[index] = { ...row, sessionsInvalidBefore: at, updatedAt: at };
+    resetFactors: (id, at, adminId) => {
+      actors.push(adminId);
+      if (indexOf(id) < 0) return Promise.resolve(ok("not-found" as const));
+      resets.push({ id, at });
+      batches.push(["auth_credentials", "auth_factors", "auth_recovery_codes", "auth_sessions"]);
       return Promise.resolve(ok("changed" as const));
     },
   };
-  return { store, rows, batches };
+  return { store, rows, batches, resets, actors };
 }
 
 function service(seed: readonly AuthUser[]) {
@@ -118,10 +124,21 @@ describe("createAdminUserService — named writes", () => {
     const bob = userRow({ emailKey: "bob@example.com" });
     const built = service([alice, bob]);
 
-    expect(await built.admin.elevate(bob.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.elevate(bob.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
     expect(built.users.rows[1]?.isAdmin).toBe(true);
-    expect(await built.admin.demote(bob.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.demote(bob.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
     expect(built.users.rows[1]?.isAdmin).toBe(false);
+  });
+
+  it("hands every write the acting administrator's id, which the event each records names", async () => {
+    const bob = userRow({ emailKey: "bob@example.com" });
+    const built = service([userRow({ isAdmin: true }), bob]);
+    await built.admin.elevate(bob.id, AT, ACTOR);
+    await built.admin.demote(bob.id, AT, ACTOR);
+    await built.admin.deactivate(bob.id, AT, ACTOR);
+    await built.admin.reactivate(bob.id, AT, ACTOR);
+    await built.admin.resetFactors(bob.id, AT, ACTOR);
+    expect(built.users.actors).toEqual([ACTOR, ACTOR, ACTOR, ACTOR, ACTOR]);
   });
 
   it("deactivates and reactivates, stamping and clearing the column", async () => {
@@ -129,9 +146,9 @@ describe("createAdminUserService — named writes", () => {
     const bob = userRow({ emailKey: "bob@example.com" });
     const built = service([alice, bob]);
 
-    expect(await built.admin.deactivate(bob.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.deactivate(bob.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
     expect(built.users.rows[1]?.deactivatedAt).toBe(AT);
-    expect(await built.admin.reactivate(bob.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.reactivate(bob.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
     expect(built.users.rows[1]?.deactivatedAt).toBeNull();
   });
 
@@ -139,10 +156,10 @@ describe("createAdminUserService — named writes", () => {
     const built = service([]);
     const absent = uuidv7();
     const outcomes = [
-      await built.admin.elevate(absent, AT),
-      await built.admin.demote(absent, AT),
-      await built.admin.deactivate(absent, AT),
-      await built.admin.reactivate(absent, AT),
+      await built.admin.elevate(absent, AT, ACTOR),
+      await built.admin.demote(absent, AT, ACTOR),
+      await built.admin.deactivate(absent, AT, ACTOR),
+      await built.admin.reactivate(absent, AT, ACTOR),
       await built.admin.remove(absent),
     ];
     expect(outcomes.map((outcome) => outcome.ok && outcome.data)).toEqual(["not-found", "not-found", "not-found", "not-found", "not-found"]);
@@ -158,26 +175,22 @@ describe("createAdminUserService — named writes", () => {
 });
 
 describe("createAdminUserService — resetFactors", () => {
-  it("resets the named user at the given instant, signing them out and leaving the account itself in place", async () => {
+  it("hands the reset to the store for the named user at the given instant, and leaves the account in place", async () => {
     const alice = userRow({ isAdmin: true });
     const bob = userRow({ emailKey: "bob@example.com" });
     const built = service([alice, bob]);
-    expect(await built.admin.resetFactors(bob.id, AT)).toEqual({ ok: true, data: "changed" });
-    expect({
-      rows: built.users.rows.length,
-      bob: built.users.rows[1]?.sessionsInvalidBefore,
-      alice: built.users.rows[0]?.sessionsInvalidBefore,
-    }).toEqual({ rows: 2, bob: AT, alice: null });
+    expect(await built.admin.resetFactors(bob.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
+    expect({ resets: built.users.resets, rows: built.users.rows }).toEqual({ resets: [{ id: bob.id, at: AT }], rows: [alice, bob] });
   });
 
   it("reports an id it does not hold as `not-found`", async () => {
-    expect(await service([]).admin.resetFactors(uuidv7(), AT)).toEqual({ ok: true, data: "not-found" });
+    expect(await service([]).admin.resetFactors(uuidv7(), AT, ACTOR)).toEqual({ ok: true, data: "not-found" });
   });
 
   it("passes a store outage through as the AuthStoreError it was", async () => {
     const built = service([]);
     built.users.store.resetFactors = () => Promise.resolve(err(new AuthStoreError("unavailable", "adminUsers.resetFactors")));
-    const outcome = await built.admin.resetFactors(uuidv7(), AT);
+    const outcome = await built.admin.resetFactors(uuidv7(), AT, ACTOR);
     expect(outcome.ok === false && outcome.error).toBeInstanceOf(AuthStoreError);
   });
 });
@@ -196,8 +209,8 @@ describe("createAdminUserService — the last-admin guard", () => {
         attempt.write === "remove"
           ? await built.admin.remove(only.id)
           : attempt.write === "demote"
-            ? await built.admin.demote(only.id, AT)
-            : await built.admin.deactivate(only.id, AT);
+            ? await built.admin.demote(only.id, AT, ACTOR)
+            : await built.admin.deactivate(only.id, AT, ACTOR);
       expect(`${attempt.write}: ${outcome.ok && outcome.data}`).toBe(`${attempt.write}: ${attempt.reason}`);
       expect(built.users.rows).toHaveLength(1);
       expect(built.users.rows[0]).toEqual(only);
@@ -209,9 +222,9 @@ describe("createAdminUserService — the last-admin guard", () => {
     const bob = userRow({ emailKey: "bob@example.com", isAdmin: true });
     const built = service([alice, bob]);
 
-    expect(await built.admin.deactivate(bob.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.deactivate(bob.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
     // Two admin rows remain, but only one of them can sign in — which is the count the guard uses.
-    expect(await built.admin.demote(alice.id, AT)).toEqual({ ok: true, data: "last-admin-demote" });
+    expect(await built.admin.demote(alice.id, AT, ACTOR)).toEqual({ ok: true, data: "last-admin-demote" });
   });
 
   it("lets an operator clean up a deactivated admin, who is not one the deployment could be recovered with", async () => {
@@ -219,7 +232,7 @@ describe("createAdminUserService — the last-admin guard", () => {
       const alice = userRow({ isAdmin: true });
       const bob = userRow({ emailKey: "bob@example.com", isAdmin: true, deactivatedAt: AT });
       const built = service([alice, bob]);
-      const outcome = write === "remove" ? await built.admin.remove(bob.id) : await built.admin.demote(bob.id, AT);
+      const outcome = write === "remove" ? await built.admin.remove(bob.id) : await built.admin.demote(bob.id, AT, ACTOR);
       expect(`${write}: ${outcome.ok && outcome.data}`).toBe(`${write}: changed`);
     }
   });
@@ -228,15 +241,15 @@ describe("createAdminUserService — the last-admin guard", () => {
     const alice = userRow({ isAdmin: true });
     const bob = userRow({ emailKey: "bob@example.com", isAdmin: true, deactivatedAt: AT });
     const built = service([alice, bob]);
-    expect(await built.admin.demote(alice.id, AT)).toEqual({ ok: true, data: "last-admin-demote" });
+    expect(await built.admin.demote(alice.id, AT, ACTOR)).toEqual({ ok: true, data: "last-admin-demote" });
     expect(await built.admin.remove(alice.id)).toEqual({ ok: true, data: "last-admin-delete" });
   });
 
   it("elevates and reactivates without the guard, because neither can leave a deployment with none", async () => {
     const only = userRow({ isAdmin: true });
     const built = service([only]);
-    expect(await built.admin.elevate(only.id, AT)).toEqual({ ok: true, data: "changed" });
-    expect(await built.admin.reactivate(only.id, AT)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.elevate(only.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
+    expect(await built.admin.reactivate(only.id, AT, ACTOR)).toEqual({ ok: true, data: "changed" });
   });
 
   // The falsifiable criterion for this unit.
@@ -245,7 +258,7 @@ describe("createAdminUserService — the last-admin guard", () => {
     const bob = userRow({ emailKey: "bob@example.com", isAdmin: true });
     const built = service([alice, bob]);
 
-    const [first, second] = await Promise.all([built.admin.demote(alice.id, AT), built.admin.demote(bob.id, AT)]);
+    const [first, second] = await Promise.all([built.admin.demote(alice.id, AT, ACTOR), built.admin.demote(bob.id, AT, ACTOR)]);
     const outcomes = [first, second].map((outcome) => outcome.ok && outcome.data);
     expect(outcomes.filter((outcome) => outcome === "changed")).toHaveLength(1);
     expect(outcomes.filter((outcome) => outcome === "last-admin-demote")).toHaveLength(1);

@@ -3,17 +3,15 @@ import type { Middleware, RequestContext } from "@remix-run/fetch-router";
 import { devExtraOrigins } from "#relax/origin";
 
 import { EnvKey } from "../context/types";
+import { isSafeHttpMethod } from "../http/method";
 import { isWebSocketUpgrade } from "../http/upgrade";
 import { err, ok } from "../result/result";
 import type { OriginResult, RelaxExtraOrigins } from "./types";
 
-/** @internal */
-export const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
-
 // A WebSocket handshake is a GET that opens a cookie-bearing channel, so it is never exempt.
 /** True when an origin guard lets the request through without looking at it. @internal */
 export function isExemptFromOriginCheck(request: Request): boolean {
-  return SAFE_METHODS.has(request.method.toUpperCase()) && !isWebSocketUpgrade(request);
+  return isSafeHttpMethod(request.method) && !isWebSocketUpgrade(request);
 }
 
 /** `allowedOrigins` with the origins `readExtra` finds in this request's bindings appended. @internal */

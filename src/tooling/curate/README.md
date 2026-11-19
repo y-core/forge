@@ -26,15 +26,17 @@ Default-export a manifest from `config/features.config.ts`, naming each feature 
 import { defineFeatures } from "@y-core/forge/tooling/curate";
 
 export default defineFeatures({
-  // feature:showcase:begin
-  showcase: {
-    directories: ["src/showcase/", "tests/showcase/"],
-    seams: ["src/worker.ts", "src/client/main.ts"],
+  features: {
+    // feature:showcase:begin
+    showcase: {
+      directories: ["src/showcase/", "tests/showcase/"],
+      seams: ["src/worker.ts", "src/client/main.ts"],
+    },
+    // feature:showcase:end
+    // feature:contact:begin
+    contact: { directories: ["src/contact/"], seams: ["src/worker.ts", "README.md"] },
+    // feature:contact:end
   },
-  // feature:showcase:end
-  // feature:contact:begin
-  contact: { directories: ["src/contact/"], seams: ["src/worker.ts", "README.md"] },
-  // feature:contact:end
 });
 ```
 
@@ -69,8 +71,10 @@ Name the features a feature cannot work without in `requires`:
 
 ```ts
 export default defineFeatures({
-  email: { directories: ["src/email/"], seams: ["src/worker.ts"] },
-  contact: { directories: ["src/contact/"], seams: ["src/worker.ts"], requires: ["email"] },
+  features: {
+    email: { directories: ["src/email/"], seams: ["src/worker.ts"] },
+    contact: { directories: ["src/contact/"], seams: ["src/worker.ts"], requires: ["email"] },
+  },
 });
 ```
 
@@ -214,12 +218,14 @@ inside the copy:
 
 ```ts
 export default defineFeatures({
-  db: {
-    directories: ["src/db/"],
-    seams: ["src/worker.ts"],
-    regenerate: { remove: ["config/migrations/"], run: ["forge", "db", "migrate", "compose"] },
+  features: {
+    db: {
+      directories: ["src/db/"],
+      seams: ["src/worker.ts"],
+      regenerate: { remove: ["config/migrations/"], run: ["forge", "db", "migrate", "compose"] },
+    },
+    // …
   },
-  // …
 });
 ```
 
@@ -228,6 +234,22 @@ written. The command runs with the root's `node_modules` linked into the copy, i
 the link is removed afterwards. Several kept features regenerate in requirement order. A plain copy, a copy that keeps every feature, and a copy
 dropping `db` itself run nothing: a dropped feature's regeneration would rebuild what the copy does not hold, and a plain copy changed nothing its
 history describes, so in each the demonstrator's own files are still true.
+
+A file every copy derives from the rest of the tree belongs to no feature — the env schema `forge cf gen env` writes from `wrangler.jsonc`, say,
+which a dropped feature's marked binding changes. Give the manifest its own `regenerate`, beside `features`:
+
+```ts
+export default defineFeatures({
+  features: {
+    // …
+  },
+  regenerate: { run: ["forge", "cf", "gen", "env"] },
+});
+```
+
+It takes the same `remove` and `run`, and runs once after any copy that dropped a feature, after the kept features' own regenerations — a copy
+keeping no feature included. A plain copy and a copy keeping every feature run it no more than they run a feature's. The report's `regenerated:`
+row names it `(manifest)`.
 
 ---
 

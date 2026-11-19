@@ -17,12 +17,12 @@ export function createAdminUserService(options: AdminUserServiceOptions): AdminU
     search: (query, page) => options.users.search(query, page),
     view: (id) => options.users.findById(id),
     countAdmins: () => options.users.countAdmins(),
-    claimFirst: (id, at) => options.users.claimFirstAdmin(id, at),
-    elevate: (id, at) => options.users.setAdmin(id, true, at),
-    demote: (id, at) => options.users.setAdmin(id, false, at),
-    deactivate: (id, at) => options.users.setDeactivated(id, true, at),
-    reactivate: (id, at) => options.users.setDeactivated(id, false, at),
+    claimFirst: (id, at, rotation) => options.users.claimFirstAdmin(id, at, rotation),
+    elevate: (id, at, adminId) => options.users.setAdmin(id, true, at, adminId),
+    demote: (id, at, adminId) => options.users.setAdmin(id, false, at, adminId),
+    deactivate: (id, at, adminId) => options.users.setDeactivated(id, true, at, adminId),
+    reactivate: (id, at, adminId) => options.users.setDeactivated(id, false, at, adminId),
     remove: (id) => options.users.remove(id),
-    resetFactors: (id, at) => options.users.resetFactors(id, at),
+    resetFactors: (id, at, adminId) => options.users.resetFactors(id, at, adminId),
   };
 }

@@ -4,7 +4,7 @@ import type { Result } from "../../result/types";
 import { AUTH_RECOVERY_CODE_BYTES, AUTH_RECOVERY_CODE_COUNT, AUTH_TOTP_LOCKOUT_MS } from "../config";
 import { authLimit } from "../limits";
 import type { AuthFactor, AuthStoreResult } from "../types";
-import type { AuthFactorChallenge, AuthFactorReason, AuthFactorVerified } from "./types";
+import type { AuthFactorCaller, AuthFactorChallenge, AuthFactorReason, AuthFactorVerified } from "./types";
 import type { RecoveryCodeFactorOptions, RecoveryCodeFactorService } from "./types";
 
 const CODE_LENGTH = Math.ceil((AUTH_RECOVERY_CODE_BYTES * 8) / 5);
@@ -63,13 +63,18 @@ export function createRecoveryCodeFactor(options: RecoveryCodeFactorOptions): Re
     return ok({ kind: "recovery-code", expiresAt: at + lockoutMs });
   }
 
-  async function verifyChallenge(userId: string, presented: string, at: number): Promise<Result<AuthFactorVerified, AuthFactorReason>> {
+  async function verifyChallenge(
+    userId: string,
+    presented: string,
+    at: number,
+    caller: AuthFactorCaller,
+  ): Promise<Result<AuthFactorVerified, AuthFactorReason>> {
     const spent = await spendAttempt(userId, at);
     if (!spent.ok) return err(spent.error);
     if (spent.data.confirmedAt === null) return err("not-enrolled");
     const code = normaliseRecoveryCode(presented);
     if (code === null) return err("unrecognised");
-    const consumed = await options.codes.consume(userId, spent.data.id, await sha256(code), at);
+    const consumed = await options.codes.consume(userId, spent.data.id, await sha256(code), at, { keep: caller.keep });
     if (!consumed.ok) return err("unavailable");
     if (!consumed.data) return err("unrecognised");
     return ok({ kind: "recovery-code", userId, verifiedAt: at });
@@ -89,7 +94,12 @@ export function createRecoveryCodeFactor(options: RecoveryCodeFactorOptions): Re
     return ok({ kind: "recovery-code", expiresAt: at + lockoutMs, options: { codes } });
   }
 
-  async function completeEnrolment(userId: string, presented: string, at: number): Promise<Result<AuthFactor, AuthFactorReason>> {
+  async function completeEnrolment(
+    userId: string,
+    presented: string,
+    at: number,
+    caller: AuthFactorCaller,
+  ): Promise<Result<AuthFactor, AuthFactorReason>> {
     const spent = await spendAttempt(userId, at);
     if (!spent.ok) return err(spent.error);
     const code = normaliseRecoveryCode(presented);
@@ -97,8 +107,9 @@ export function createRecoveryCodeFactor(options: RecoveryCodeFactorOptions): Re
     const held = await options.codes.holdsStaged(userId, await sha256(code));
     if (!held.ok) return err("unavailable");
     if (!held.data) return err("unrecognised");
-    const committed = await options.codes.commit(userId, spent.data.id, at);
+    const committed = await options.codes.commit(userId, spent.data.id, at, { keep: caller.keep });
     if (!committed.ok) return err("unavailable");
+    if (!committed.data) return err("unrecognised");
     return ok({ ...spent.data, failedAttempts: 0, confirmedAt: spent.data.confirmedAt ?? at, updatedAt: at });
   }
 

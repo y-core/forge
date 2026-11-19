@@ -94,7 +94,7 @@ function fakeCredentials(row: AuthCredential | null) {
       return Promise.resolve(ok(true));
     },
     relabel: () => Promise.resolve(ok(true)),
-    removeForUser: () => Promise.resolve(ok(true)),
+    removeForUser: () => Promise.resolve(ok("changed" as const)),
   };
   return { store, uses, current: () => stored };
 }
@@ -108,7 +108,6 @@ function userRow(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: HANDLE,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -124,8 +123,8 @@ function fakeUsers(rows: readonly AuthUser[]) {
     create: () => Promise.reject(new Error("not used")),
     setWebAuthnIdIfAbsent: () => Promise.resolve(ok(null)),
     markEmailVerified: () => Promise.resolve(ok(true)),
+    claimEmailChange: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
-    revokeSessions: async () => ok(true),
   };
   return store;
 }

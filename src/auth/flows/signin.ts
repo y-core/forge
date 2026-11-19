@@ -2,7 +2,7 @@ import { createLogger } from "../../logging/logger";
 import { serializeError } from "../../logging/serialize-error";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
-import { authFactorContext } from "../factors/registry";
+import type { AuthFactorCaller, AuthFactorService } from "../factors/types";
 import { normalizeEmail } from "../stores/email";
 import type { AuthFactorKind, AuthUser } from "../types";
 import { issueAuthDecoy, verifyAuthDecoy } from "./decoy";
@@ -35,11 +35,14 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
     });
   }
 
-  async function issue(email: string, at: number): Promise<AuthIssueOutcome> {
+  async function issue(email: string, at: number, caller: AuthFactorCaller): Promise<AuthIssueOutcome> {
     const found = await options.users.findByEmailKey(normalizeEmail(email));
-    if (!found.ok) return "unavailable";
+    if (!found.ok) {
+      logger.error("auth.signin.issue.failed", { error: serializeError(found.error) });
+      return "unavailable";
+    }
     if (!found.data) return issueAuthDecoy(decoy, at);
-    const challenge = await options.factors.primary.createChallenge(found.data.id, at);
+    const challenge = await options.factors.primary.createChallenge(found.data.id, at, caller);
     return challenge.ok ? "challenged" : "unavailable";
   }
 
@@ -51,19 +54,27 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
     return ok(found.data);
   }
 
-  function stepUpService(kind: AuthFactorKind) {
-    return options.factors.seconds.find((offer) => offer.service.kind === kind)?.service;
+  // The primary factor steps up only a user whose resolution owes no second one: offered to anyone
+  // else, a mailbox would be enough to pass the factor that exists to be more than a mailbox.
+  async function stepUpService(user: AuthUser, kind: AuthFactorKind): Promise<Result<AuthFactorService, AuthSigninReason>> {
+    if (kind !== options.factors.primary.kind) {
+      const second = options.factors.find(kind);
+      return second ? ok(second) : err("not-enrolled");
+    }
+    const resolution = await options.factors.resolve(user.id);
+    if (!resolution.ok) return err("unavailable");
+    return resolution.data.status === "satisfied" ? ok(options.factors.primary) : err("not-enrolled");
   }
 
   return {
-    request(email, at) {
+    request(email, at, caller) {
       // Nothing about the address is read before this returns, and both branches hand one promise to
       // the same deferral, so a registered address and an unknown one differ in neither shape nor time.
-      options.defer(settled(issue(email, at)));
+      options.defer(settled(issue(email, at, caller)));
       return { kind: options.factors.primary.kind, expiresAt: at + options.factors.primary.challengeTtlMs };
     },
 
-    async complete(email, presented, at) {
+    async complete(email, presented, at, caller) {
       const found = await options.users.findByEmailKey(normalizeEmail(email));
       if (!found.ok) return err("unavailable");
       const user = found.data;
@@ -74,36 +85,36 @@ export function createSigninFlow(options: AuthSigninOptions): AuthSigninFlow {
         return err(user ? "deactivated" : "unrecognised");
       }
 
-      const verified = await options.factors.primary.verifyChallenge(user.id, presented, at);
+      const verified = await options.factors.primary.verifyChallenge(user.id, presented, at, caller);
       if (!verified.ok) return err(redactMembership(verified.error));
 
       let signedIn = user;
-      if (user.emailVerifiedAt === null && options.factors.primary.enrolment === "implicit") {
+      if (user.emailVerifiedAt === null) {
         const marked = await options.users.markEmailVerified(user.id, at);
         if (!marked.ok) return err("unavailable");
         signedIn = { ...user, emailVerifiedAt: at, updatedAt: at };
       }
 
-      const resolution = await options.factors.resolve(user.id, authFactorContext(user));
+      const resolution = await options.factors.resolve(user.id);
       if (!resolution.ok) return err("unavailable");
       return ok({ user: signedIn, kind: options.factors.primary.kind, resolution: resolution.data });
     },
 
-    async requestStepUp(userId, kind, at) {
+    async requestStepUp(userId, kind, at, caller) {
       const active = await loadActive(userId);
       if (!active.ok) return err(active.error);
-      const service = stepUpService(kind);
-      if (!service) return err("not-enrolled");
-      const challenge = await service.createChallenge(userId, at);
+      const service = await stepUpService(active.data, kind);
+      if (!service.ok) return err(service.error);
+      const challenge = await service.data.createChallenge(userId, at, caller);
       return challenge.ok ? ok({ kind, expiresAt: challenge.data.expiresAt }) : err(challenge.error);
     },
 
-    async stepUp(userId, kind, presented, at) {
+    async stepUp(userId, kind, presented, at, caller) {
       const active = await loadActive(userId);
       if (!active.ok) return err(active.error);
-      const service = stepUpService(kind);
-      if (!service) return err("not-enrolled");
-      return service.verifyChallenge(userId, presented, at);
+      const service = await stepUpService(active.data, kind);
+      if (!service.ok) return err(service.error);
+      return service.data.verifyChallenge(userId, presented, at, caller);
     },
   };
 }

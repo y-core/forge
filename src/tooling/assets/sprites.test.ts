@@ -1,6 +1,6 @@
 import { describe, expect, it, spyOn } from "bun:test";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -188,6 +188,24 @@ describe("buildSprites()", () => {
       expect(result.groups.cursors!.meta["icon-orbit"]).toBeUndefined();
     } finally {
       fetchSpy.mockRestore();
+      rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("declares every namespace prefix a symbol in the sprite uses, so the sprite parses as XML", async () => {
+    const tmpDir = join(tmpdir(), `forge-sprites-xlink-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const srcDir = join(tmpDir, "svg-src");
+    mkdirSync(srcDir, { recursive: true });
+    writeFileSync(
+      join(srcDir, "ref.svg"),
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24"><path id="p" d="M0 0"/><use xlink:href="#p"/></svg>`,
+    );
+    try {
+      await buildSprites({ icons: { target: "svg/sprite.svg", sources: [{ path: srcDir, files: ["ref.svg"] }] } }, tmpDir);
+      const sprite = readFileSync(join(tmpDir, "svg", "sprite.svg"), "utf-8");
+      const used = [...sprite.matchAll(/[\s<]([A-Za-z_][\w.-]*):[A-Za-z_]/g)].map((match) => match[1] ?? "");
+      expect(used.filter((prefix) => prefix !== "xml" && prefix !== "xmlns" && !sprite.includes(`xmlns:${prefix}=`))).toEqual([]);
+    } finally {
       rmSync(tmpDir, { recursive: true, force: true });
     }
   });

@@ -226,8 +226,8 @@ This is forge's map of the concerns [`BOUNDARIES.md`][boundaries-2b] §2b routes
 | --- | --- |
 | CSRF token minting and verification | `form` — it reads the body |
 | Session management and cookie storage | `session` |
-| Authentication — JWT, OAuth, magic links, login | `auth` (§5h) |
-| Permissions and RBAC | `auth` (§5h) |
+| Authentication — sign-in, signed-in sessions, federated identity | `auth` (§5h) |
+| Roles and permissions | `auth` (§5h) |
 | API-key lifecycle — issue, rotate, revoke, verify | `auth` (§5h) |
 | Timing-safe comparison and other primitives | sealed-internal `crypto/primitives` (§3b) |
 | Input sanitization and schema validation | `form` and `validation` |
@@ -324,9 +324,10 @@ same migrations. Nothing else outside `tooling` may.
 
 ### 5h. auth — Identity, and Only the Domain of It
 
-**`auth` owns identity: who a user is, which credentials prove it, and what a session may then do.** Authentication (passwordless email
-verification, magic links, WebAuthn passkeys, TOTP), permissions and RBAC, and the API-key lifecycle all belong here — §5a routes each of them out
-of `security`, which is transport-layer and stops at the request.
+**`auth` owns identity: who a user is, which credentials prove it, and what a session may then do.** It provides sign-in by an emailed code,
+WebAuthn passkeys, an authenticator app (TOTP) and recovery codes as second factors, the administrator role, and personal access tokens from issue
+to revocation. Any further credential, role or permission belongs here too — §5a routes each of them out of `security`, which is transport-layer
+and stops at the request.
 
 **The namespace produces no `Response`, renders no markup and touches no `Session`.** A route that mounts a sign-in page, a view that renders one,
 and a middleware that guards one are the web layer's, published under its own subpath. That split is the same one `logging` and `logging/viewer`

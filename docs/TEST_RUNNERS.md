@@ -178,6 +178,12 @@ install`.
 **`test` does not reach `tests/workerd/`, so that this set is not also `unit`'s.** A spec here needs a runtime start, and `unit` is the run for
 a machine with no runtime installed.
 
+**The set and its fixtures are typechecked at `static`, by `typecheck:tests` over `tests/tsconfig.json`**, so a change to forge's API that breaks a
+spec fails on every run, not only on the scheduled one. The program takes the root config's flags and stubs, and resolves `@y-core/forge/*` to
+`src/` for a fixture that imports forge by name. A Workers binding is typed with forge's structural `D1Database` or `R2Bucket`, never a Workers
+global, and `tests/workerd/d1.ts`'s `WorkerdD1` adds the `raw()` read only a spec makes. The two consumer fixtures with their own programs (§7f) are
+left out of it.
+
 ### 1g. The Cross-Engine Subset
 
 **This subset runs on Firefox and WebKit as `test:browser:cross-engine`, a `scheduled` row of `config/steps.config.ts`, so a tag and the cron run
@@ -355,7 +361,7 @@ Where each §5a row is covered at integration level, through `app.request()` wit
 | Body size under / over, both `Content-Length` and streaming | `src/form/parse-form-data.test.ts`, `src/app/action.test.ts` |
 | Content-Type valid / invalid → 415 | `src/security/content-type.test.ts` |
 | Log-viewer access allow / deny → 403 | `src/logging/viewer/route.test.tsx` |
-| Auth middleware valid / expired session | `src/auth/web/guards.test.ts` (anonymous redirect, deactivated user, store unavailable, admin and step-up refusals), `src/auth/web/identity.test.ts` (absolute lifetime, revocation barrier, missing established-at stamp) |
+| Auth middleware valid / expired session | `src/auth/web/guards.test.ts` (anonymous redirect, deactivated user, store unavailable, admin and step-up refusals), `src/auth/web/identity.test.ts` (absolute lifetime and expiry boundary, deactivated owner, unknown or malformed token, sign-out and revoke-others deleting rows) |
 
 **`isHxRequest` has no row.** It is a routing hint, not a security boundary, so there is no guard middleware to test — see [`HTMX.md`][htmx-7] §7.
 

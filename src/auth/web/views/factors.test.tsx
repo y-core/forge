@@ -70,6 +70,17 @@ describe("AuthFactorsView", () => {
     expect(elementsOf(html, "span", 'data-ref="factor-state"').map(words)).toEqual(["Always available", "Enrolled", "Not enrolled"]);
   });
 
+  it("says the emailed code signs a visitor in and every other factor is a second factor", async () => {
+    const html = await panel({ factors: [...OFFERED, { kind: "recovery-code", state: "none", at: null }] });
+    const notes = elementsOf(html, "li", 'data-ref="factor"').map((row) => words(elementOf(row, "span", 'class="max-w-prose')));
+    expect(notes).toEqual([
+      "How you sign in: a single-use code sent to the address on this account.",
+      "A second factor: the screen lock or security key held by a registered device.",
+      "A second factor: a rotating code from an authenticator app.",
+      "Single-use codes. Each code works once, in place of a second factor you can&#39;t reach.",
+    ]);
+  });
+
   it("dates an enrolment it has a date for, and dates nothing it does not", async () => {
     expect(elementsOf(await panel(), "span", 'data-ref="factor-at"').map(words)).toEqual(["Enrolled 2025-01-01"]);
   });
@@ -83,6 +94,15 @@ describe("AuthFactorsView", () => {
   it("offers a management link for each factor with a page, once a holder's paths are given", async () => {
     const html = await panel({ manage: ACCOUNT });
     expect(hrefs(elementsOf(html, "a", 'data-ref="factor-manage"'))).toEqual(["/account/passkeys", "/account/totp"]);
+  });
+
+  it("links the holder to their session list, once a holder's paths are given", async () => {
+    const html = await panel({ manage: ACCOUNT });
+    expect(hrefs(elementsOf(html, "a", 'data-ref="factors-sessions"'))).toEqual([ACCOUNT.sessions()]);
+  });
+
+  it("offers no session link when no holder's paths are given", async () => {
+    expect(elementsOf(await panel(), "a", 'data-ref="factors-sessions"')).toEqual([]);
   });
 
   it("offers no management link at all when no holder's paths are given", async () => {
@@ -103,30 +123,31 @@ describe("AuthFactorsView", () => {
   it("designs the empty state for a deployment offering no factor at all", async () => {
     const html = await panel({ factors: [] });
     expect(elementsOf(html, "ul", 'data-ref="factor-list"')).toEqual([]);
-    expect(elementsOf(html, "h3", 'data-slot="empty-state-title"').map(words)).toEqual(["No sign-in methods offered"]);
+    expect(elementsOf(html, "h3", 'data-slot="empty-state-title"').map(words)).toEqual(["No factors offered"]);
   });
 
   it("names the page at h1 by default, with its subsections at h2 and the empty state under them at h3", async () => {
     const html = await panel({ factors: [] });
-    expect(headings(html)).toEqual(["h1 Sign-in methods", "h2 Methods offered", "h3 No sign-in methods offered", "h2 Registered passkeys"]);
+    expect(headings(html)).toEqual(["h1 Factors", "h2 Factors offered", "h3 No factors offered", "h2 Registered passkeys"]);
   });
 
   it("takes its heading level from the host, and nests every heading under it", async () => {
     const html = await panel({ factors: [], level: 3 });
-    expect(headings(html)).toEqual(["h3 Sign-in methods", "h4 Methods offered", "h5 No sign-in methods offered", "h4 Registered passkeys"]);
+    expect(headings(html)).toEqual(["h3 Factors", "h4 Factors offered", "h5 No factors offered", "h4 Registered passkeys"]);
   });
 
   it("labels its section by its own heading", async () => {
     const html = await panel();
     expect(attrOf(html, 'data-ref="factors"', "aria-labelledby")).toBe("auth-factors-heading");
     expect(elementOf(html, "h1", 'id="auth-factors-heading"')).toBe(
-      '<h1 id="auth-factors-heading" class="text-lg font-semibold text-foreground">Sign-in methods</h1>',
+      '<h1 id="auth-factors-heading" class="text-lg font-semibold text-foreground">Factors</h1>',
     );
   });
 });
 
 describe("AuthFactorsView after a step-up by recovery code", () => {
-  const REPAIR = "If your authenticator app or passkey no longer works, remove it below and add it again, then generate a new set of codes.";
+  const REPAIR =
+    "If your authenticator app or passkey no longer works, add a new one below before you remove the old one, then generate a new set of codes.";
 
   it("counts the codes left, singular and plural, and says how to repair a broken method", async () => {
     const notices = [];
@@ -154,10 +175,17 @@ describe("AuthFactorsView's administrative reset", () => {
       button: words(elementOf(form, "button", 'data-ref="factors-reset"')),
     }).toEqual({
       post: "/admin/users/u2/factors/reset",
-      confirm: "Reset every sign-in method on this account? This cannot be undone.",
+      confirm: "Remove every second factor and recovery code on this account? This cannot be undone.",
       token: "csrf-reset",
-      button: "Reset sign-in methods",
+      button: "Reset second factors",
     });
+  });
+
+  it("says what the reset removes, and that a required second factor is enrolled again before anything else", async () => {
+    const html = await panel({ reset: { path: "/admin/users/u2/factors/reset", csrfToken: "csrf-reset" } });
+    expect(words(elementOf(elementOf(html, "form", 'action="/admin/users/u2/factors/reset"'), "p", 'class="max-w-prose'))).toBe(
+      "Remove every second factor and recovery code on this account, and sign it out everywhere. The holder then signs in with an emailed code and adds any mandatory second factor before reaching anything else.",
+    );
   });
 
   it("sends the token on a renamed CSRF header when the app configured one", async () => {
@@ -175,11 +203,11 @@ describe("AuthFactorsTrigger", () => {
     const html = await render(<AuthFactorsTrigger loadPath='/account/factors' />);
     expect(attrOf(html, 'data-ref="factors-trigger"', "hx-get")).toBe("/account/factors");
     expect(attrOf(html, 'data-ref="factors-trigger"', "hx-swap")).toBe("outerHTML");
-    expect(words(elementOf(html, "a", 'data-ref="factors-trigger"'))).toBe("Show sign-in methods");
+    expect(words(elementOf(html, "a", 'data-ref="factors-trigger"'))).toBe("Show factors");
   });
 
   it("takes the host's own wording for the panel it opens", async () => {
-    const html = await render(<AuthFactorsTrigger loadPath='/admin/users/u1/factors' label='Show their sign-in methods' />);
-    expect(words(elementOf(html, "a", 'data-ref="factors-trigger"'))).toBe("Show their sign-in methods");
+    const html = await render(<AuthFactorsTrigger loadPath='/admin/users/u1/factors' label='Show their factors' />);
+    expect(words(elementOf(html, "a", 'data-ref="factors-trigger"'))).toBe("Show their factors");
   });
 });

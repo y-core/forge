@@ -3,6 +3,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import type { KeyRing } from "../../crypto/keyring/types";
 import { ok } from "../../result/result";
 import { createEmailOtpFactor } from "../factors/email-otp";
+import { fakeFactorCaller } from "../factors/factors.fixture";
 import { importAuthKeyRing } from "../keys/ring";
 import { encodeAuthToken } from "../keys/token";
 import type { AuthNotifier, NonceStore, OtpState, OtpStateStore, UserStore } from "../types";
@@ -56,23 +57,23 @@ function recording(shape: Shape, keys: KeyRing = ring): { stores: AuthDecoyStore
     create: () => Promise.reject(new Error("not used")),
     setWebAuthnIdIfAbsent: () => Promise.resolve(ok(null)),
     markEmailVerified: () => Promise.resolve(ok(true)),
+    claimEmailChange: () => Promise.resolve(ok(true)),
     changeEmail: () => Promise.resolve(ok(true)),
-    revokeSessions: () => Promise.resolve(ok(true)),
   } as UserStore;
 
   const state: OtpStateStore = {
-    issue: (userId) => {
-      calls.push(`state.issue:${userId}`);
+    issue: (userId, _state, _cooldownMs, binding) => {
+      calls.push(`state.issue:${userId}:${binding.byteLength}`);
       return Promise.resolve(ok(true));
     },
-    countAttempt: (userId) => {
-      calls.push(`state.countAttempt:${userId}`);
+    countAttempt: (userId, _maxAttempts, _at, _windowMs, binding) => {
+      calls.push(`state.countAttempt:${userId}:${binding.byteLength}`);
       return Promise.resolve(ok(shape.counted()));
     },
     // Recorded, unlike the fixture this replaced: a read the decoy skipped was invisible while the
     // count was the only statement anything looked at.
-    read: (userId) => {
-      calls.push(`state.read:${userId}`);
+    read: (userId, _at, binding) => {
+      calls.push(`state.read:${userId}:${binding.byteLength}`);
       return Promise.resolve(ok(shape.read()));
     },
     discard: () => Promise.resolve(ok()),
@@ -94,12 +95,17 @@ function recording(shape: Shape, keys: KeyRing = ring): { stores: AuthDecoyStore
 
 const noKeys: KeyRing = { activeKeyId: "aaaaaaaa", keys: {} };
 
-/** The AEAD seals and opens one awaited operation spends, counted off `crypto.subtle` itself. */
-async function aeadOps(work: () => Promise<unknown>): Promise<{ seals: number; opens: number }> {
+/** The AEAD seals and opens and the SHA-256 digests one awaited operation spends, counted off `crypto.subtle` itself. */
+async function cryptoOps(work: () => Promise<unknown>): Promise<{ seals: number; opens: number; digests: number }> {
   const subtle = crypto.subtle;
-  const { encrypt, decrypt } = subtle;
+  const { encrypt, decrypt, digest } = subtle;
   let seals = 0;
   let opens = 0;
+  let digests = 0;
+  subtle.digest = ((...args: Parameters<SubtleCrypto["digest"]>) => {
+    digests += 1;
+    return digest.apply(subtle, args);
+  }) as SubtleCrypto["digest"];
   subtle.encrypt = ((...args: Parameters<SubtleCrypto["encrypt"]>) => {
     seals += 1;
     return encrypt.apply(subtle, args);
@@ -113,8 +119,9 @@ async function aeadOps(work: () => Promise<unknown>): Promise<{ seals: number; o
   } finally {
     subtle.encrypt = encrypt;
     subtle.decrypt = decrypt;
+    subtle.digest = digest;
   }
-  return { seals, opens };
+  return { seals, opens, digests };
 }
 
 describe("issueAuthDecoy", () => {
@@ -124,10 +131,36 @@ describe("issueAuthDecoy", () => {
 
   // The real branch claims the cooldown with one upsert before it mails anything. A decoy that
   // skipped the write returns a whole statement earlier, which is the latency oracle back again.
-  it("spends the store write a real challenge spends, against the decoy id", async () => {
+  it("spends the store write a real challenge spends, against the decoy id and a binding of a real one's width", async () => {
     const world = recording(LIVE);
     await issueAuthDecoy(world.stores, AT);
-    expect(world.calls).toEqual([`state.issue:${DECOY_USER_ID}`]);
+    const real = recording(LIVE);
+    const factor = createEmailOtpFactor({
+      keys: ring,
+      state: real.stores.state,
+      nonces: real.stores.nonces,
+      notifier: NOTIFIER,
+      address: () => ok("ada@example.com"),
+    });
+    await factor.createChallenge(REAL_USER_ID, AT, fakeFactorCaller());
+    expect({ decoy: world.calls, real: real.calls }).toEqual({
+      decoy: [`state.issue:${DECOY_USER_ID}:32`],
+      real: [`state.issue:${REAL_USER_ID}:32`],
+    });
+  });
+
+  it("hashes a binding and seals a token as a real challenge does", async () => {
+    const real = recording(LIVE);
+    const factor = createEmailOtpFactor({
+      keys: ring,
+      state: real.stores.state,
+      nonces: real.stores.nonces,
+      notifier: NOTIFIER,
+      address: () => ok("ada@example.com"),
+    });
+    const decoyed = await cryptoOps(() => issueAuthDecoy(recording(LIVE).stores, AT));
+    expect(decoyed).toEqual({ seals: 1, opens: 0, digests: 1 });
+    expect(await cryptoOps(() => factor.createChallenge(REAL_USER_ID, AT, fakeFactorCaller()))).toEqual(decoyed);
   });
 
   it("does the sealing a real challenge does, rather than resolving immediately", async () => {
@@ -148,7 +181,7 @@ describe("verifyAuthDecoy", () => {
       notifier: NOTIFIER,
       address: () => ok("ada@example.com"),
     });
-    const run = (): Promise<unknown> => factor.verifyChallenge(REAL_USER_ID, "000000", AT);
+    const run = (): Promise<unknown> => factor.verifyChallenge(REAL_USER_ID, "000000", AT, fakeFactorCaller());
     await run();
     return { calls: world.calls.map((call) => call.replace(REAL_USER_ID, "<user>")), run };
   }
@@ -164,16 +197,16 @@ describe("verifyAuthDecoy", () => {
 
   // Counted rather than eyeballed: the seal the decoy used to spend on a token of its own was two
   // AEAD operations against the refusal's one, and no test that compared store calls could see it.
-  it("spends the same AEAD seals and opens every refusal spends, whatever row it was refused against", async () => {
+  it("spends the same AEAD seals and opens and binding digest every refusal spends, whatever row it was refused against", async () => {
     // Warmed first: the stand-in frame is sealed once per key ring, and that one-off is not what
     // either path costs on the request after it.
     await verifyAuthDecoy(recording(LIVE).stores, AT);
 
-    const decoyed = await aeadOps(() => verifyAuthDecoy(recording(LIVE).stores, AT));
-    expect(decoyed).toEqual({ seals: 0, opens: 1 });
+    const decoyed = await cryptoOps(() => verifyAuthDecoy(recording(LIVE).stores, AT));
+    expect(decoyed).toEqual({ seals: 0, opens: 1, digests: 1 });
 
     for (const shape of SHAPES) {
-      expect(await aeadOps((await refusal(shape)).run)).toEqual(decoyed);
+      expect(await cryptoOps((await refusal(shape)).run)).toEqual(decoyed);
     }
   });
 

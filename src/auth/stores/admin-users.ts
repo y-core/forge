@@ -1,9 +1,22 @@
 import { err, ok } from "../../result/result";
 import { sql } from "../../storage/db/sql";
-import type { D1Client } from "../../storage/db/types";
-import type { AdminUserStore, AuthUserPage } from "../types";
+import type { D1Client, SqlFragment } from "../../storage/db/types";
+import type { AdminUserOutcome, AdminUserStore, AuthStoreResult, AuthUserPage } from "../types";
 import { normalizeEmail } from "./email";
-import { adminRefusal, NO_ADMIN_YET, NOT_LAST_ADMIN, ownerRemovable, pageLimit, readMaybe, readRow, readUser, storeError, uuidKey } from "./rows";
+import { authSecurityEventStatement } from "./events";
+import {
+  adminRefusal,
+  isAppKeyDeleteRefusal,
+  NO_ADMIN_YET,
+  NOT_LAST_ADMIN,
+  pageLimit,
+  readMaybe,
+  readRow,
+  readUser,
+  storeError,
+  uuidKey,
+} from "./rows";
+import { authSessionRevocation, authSessionRotation } from "./sessions";
 import type { UserRow } from "./types";
 
 /** The least string above every string starting with `prefix`, or `null` when no string is. @internal */
@@ -14,6 +27,20 @@ function upperBound(prefix: string): string | null {
     if (last < 0x10ffff) return String.fromCodePoint(...points, last === 0xd7ff ? 0xe000 : last + 1);
   }
   return null;
+}
+
+/** Names why a state write changed nothing, reading the row only once it has declined: no such account, one where `held` already holds, or `refused`. */
+async function stateRefusal(
+  db: D1Client,
+  operation: string,
+  key: Uint8Array<ArrayBuffer>,
+  held: SqlFragment,
+  refused: AdminUserOutcome,
+): Promise<AuthStoreResult<AdminUserOutcome>> {
+  const found = await db.queryOne<{ held: number }>(sql`SELECT (${held}) AS held FROM auth_users WHERE id = ${key}`);
+  if (!found.ok) return err(storeError(operation, found.error));
+  if (!found.data) return ok("not-found");
+  return ok(found.data.held === 1 ? "unchanged" : refused);
 }
 
 /** Creates the `AdminUserStore` over a SQL database — the surface that lists, searches, elevates, deactivates and deletes. @public */
@@ -60,61 +87,85 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
       return outcome.ok ? ok(outcome.data?.total ?? 0) : err(storeError("adminUsers.countAdmins", outcome.error));
     },
 
-    async claimFirstAdmin(id, at) {
+    // One batch, so a failed rotation takes the claim down with it. The rotation's `changes()` reads the
+    // event insert, which lands only with the claim: a statement put between them rotates a refused claim.
+    async claimFirstAdmin(id, at, rotation) {
       const key = uuidKey(id);
       if (!key) return ok("not-found");
-      const written = await db.execute(sql`UPDATE auth_users SET is_admin = 1, updated_at = ${at} WHERE id = ${key} AND ${NO_ADMIN_YET}`);
+      const written = await db.batch([
+        sql`UPDATE auth_users SET is_admin = 1, updated_at = ${at} WHERE id = ${key} AND ${NO_ADMIN_YET}`,
+        authSecurityEventStatement(
+          { userKey: key, type: "admin-granted", factorKind: null, keep: rotation?.replaces ?? null, adminKey: key, at },
+          sql`changes() > 0`,
+        ),
+        ...(rotation === undefined ? [] : authSessionRotation(rotation, undefined, sql` AND changes() > 0`)),
+      ]);
       if (!written.ok) return err(storeError("adminUsers.claimFirstAdmin", written.error));
-      if (written.data.rowsWritten > 0) return ok("changed");
+      if ((written.data[0]?.rowsWritten ?? 0) > 0) return ok("changed");
       return adminRefusal(db, "adminUsers.claimFirstAdmin", key, "admin-exists");
     },
 
-    async setAdmin(id, isAdmin, at) {
+    // Each role and status UPDATE matches only a row not already in the asked-for state, so the
+    // `changes()` directly after it records an event for a change that happened and none for a no-op.
+    async setAdmin(id, isAdmin, at, adminId) {
       // Two concurrent demotions each reading "two admins remain" is the race this guard makes
       // unexpressible: the count is evaluated by the statement that writes, not by the caller.
       const key = uuidKey(id);
-      if (!key) return ok("not-found");
+      const admin = uuidKey(adminId);
+      if (!key || !admin) return ok("not-found");
       const fragment = isAdmin
-        ? sql`UPDATE auth_users SET is_admin = 1, updated_at = ${at} WHERE id = ${key}`
-        : sql`UPDATE auth_users SET is_admin = 0, updated_at = ${at} WHERE id = ${key} AND ${NOT_LAST_ADMIN}`;
-      const written = await db.execute(fragment);
+        ? sql`UPDATE auth_users SET is_admin = 1, updated_at = ${at} WHERE id = ${key} AND is_admin = 0`
+        : sql`UPDATE auth_users SET is_admin = 0, updated_at = ${at} WHERE id = ${key} AND is_admin = 1 AND ${NOT_LAST_ADMIN}`;
+      const written = await db.batch([
+        fragment,
+        authSecurityEventStatement(
+          { userKey: key, type: isAdmin ? "admin-granted" : "admin-revoked", factorKind: null, keep: null, adminKey: admin, at },
+          sql`changes() > 0`,
+        ),
+      ]);
       if (!written.ok) return err(storeError("adminUsers.setAdmin", written.error));
-      if (written.data.rowsWritten > 0) return ok("changed");
-      return isAdmin ? ok("not-found") : adminRefusal(db, "adminUsers.setAdmin", key, "last-admin-demote");
+      if ((written.data[0]?.rowsWritten ?? 0) > 0) return ok("changed");
+      return isAdmin
+        ? stateRefusal(db, "adminUsers.setAdmin", key, sql`is_admin = 1`, "unchanged")
+        : stateRefusal(db, "adminUsers.setAdmin", key, sql`is_admin = 0`, "last-admin-demote");
     },
 
-    async setDeactivated(id, deactivated, at) {
+    async setDeactivated(id, deactivated, at, adminId) {
       const key = uuidKey(id);
-      if (!key) return ok("not-found");
-      const fragment = deactivated
-        ? sql`UPDATE auth_users SET deactivated_at = ${at}, updated_at = ${at} WHERE id = ${key} AND ${NOT_LAST_ADMIN}`
-        : sql`UPDATE auth_users SET deactivated_at = NULL, updated_at = ${at} WHERE id = ${key}`;
-      const written = await db.execute(fragment);
-      if (!written.ok) return err(storeError("adminUsers.setDeactivated", written.error));
-      if (written.data.rowsWritten > 0) return ok("changed");
-      return deactivated ? adminRefusal(db, "adminUsers.setDeactivated", key, "last-admin-deactivate") : ok("not-found");
+      const admin = uuidKey(adminId);
+      if (!key || !admin) return ok("not-found");
+      const event = authSecurityEventStatement(
+        { userKey: key, type: deactivated ? "account-deactivated" : "account-reactivated", factorKind: null, keep: null, adminKey: admin, at },
+        sql`changes() > 0`,
+      );
+      if (!deactivated) {
+        const written = await db.batch([
+          sql`UPDATE auth_users SET deactivated_at = NULL, updated_at = ${at} WHERE id = ${key} AND deactivated_at IS NOT NULL`,
+          event,
+        ]);
+        if (!written.ok) return err(storeError("adminUsers.setDeactivated", written.error));
+        if ((written.data[0]?.rowsWritten ?? 0) > 0) return ok("changed");
+        return stateRefusal(db, "adminUsers.setDeactivated", key, sql`deactivated_at IS NULL`, "unchanged");
+      }
+      const outcome = await db.batch([
+        sql`UPDATE auth_users SET deactivated_at = ${at}, updated_at = ${at} WHERE id = ${key} AND deactivated_at IS NULL AND ${NOT_LAST_ADMIN}`,
+        event,
+        authSessionRevocation(key, null, sql`user_id IN (SELECT id FROM auth_users WHERE id = ${key} AND deactivated_at IS NOT NULL)`),
+      ]);
+      if (!outcome.ok) return err(storeError("adminUsers.setDeactivated", outcome.error));
+      if ((outcome.data[0]?.rowsWritten ?? 0) > 0) return ok("changed");
+      return stateRefusal(db, "adminUsers.setDeactivated", key, sql`deactivated_at IS NOT NULL`, "last-admin-deactivate");
     },
 
     async remove(id) {
-      // The children go first so correctness never rests on `PRAGMA foreign_keys`, and `batch()` is
-      // one transaction rolling back whole, so a half-deleted account is not a state to land in.
       const key = uuidKey(id);
       if (!key) return ok("not-found");
       const outcome = await db.batch<{ present: number; deletable: number }>([
         sql`SELECT (SELECT COUNT(*) FROM auth_users WHERE id = ${key}) AS present,
                    (SELECT COUNT(*) FROM auth_users WHERE id = ${key} AND ${NOT_LAST_ADMIN}) AS deletable`,
-        sql`DELETE FROM auth_credentials WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
-        sql`DELETE FROM auth_factors WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
-        sql`DELETE FROM auth_identity_links WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
-        sql`DELETE FROM auth_otp_state WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
-        sql`DELETE FROM auth_access_tokens WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
-        sql`DELETE FROM auth_recovery_codes WHERE user_id = ${key} AND ${ownerRemovable(key)}`,
         sql`DELETE FROM auth_users WHERE id = ${key} AND ${NOT_LAST_ADMIN}`,
       ]);
-      if (!outcome.ok) {
-        const failure = storeError("adminUsers.remove", outcome.error);
-        return failure.code === "reference" ? ok("referenced") : err(failure);
-      }
+      if (!outcome.ok) return isAppKeyDeleteRefusal(outcome.error) ? ok("referenced") : err(storeError("adminUsers.remove", outcome.error));
       const probe = outcome.data[0]?.results[0];
       if (probe === undefined || probe.present === 0) return ok("not-found");
       if (probe.deletable === 0) return ok("last-admin-delete");
@@ -124,17 +175,21 @@ export function createAdminUserStore(db: D1Client): AdminUserStore {
       return removed > 0 ? ok("changed") : err(storeError("adminUsers.remove", "the guarded delete matched the probe but removed no row"));
     },
 
-    async resetFactors(id, at) {
+    async resetFactors(id, at, adminId) {
       const key = uuidKey(id);
-      if (!key) return ok("not-found");
+      const admin = uuidKey(adminId);
+      if (!key || !admin) return ok("not-found");
       const outcome = await db.batch<{ present: number }>([
         sql`SELECT COUNT(*) AS present FROM auth_users WHERE id = ${key}`,
+        authSecurityEventStatement(
+          { userKey: key, type: "factors-reset", factorKind: null, keep: null, adminKey: admin, at },
+          sql`EXISTS (SELECT 1 FROM auth_users WHERE id = ${key})`,
+        ),
         sql`DELETE FROM auth_credentials WHERE user_id = ${key}`,
         sql`DELETE FROM auth_factors WHERE user_id = ${key}`,
         sql`DELETE FROM auth_recovery_codes WHERE user_id = ${key}`,
         sql`UPDATE auth_access_tokens SET revoked_at = ${at} WHERE user_id = ${key} AND revoked_at IS NULL`,
-        sql`UPDATE auth_users SET sessions_invalid_before = ${at}, updated_at = ${at}
-            WHERE id = ${key} AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ${at})`,
+        authSessionRevocation(key, null),
       ]);
       if (!outcome.ok) return err(storeError("adminUsers.resetFactors", outcome.error));
       const probe = outcome.data[0]?.results[0];

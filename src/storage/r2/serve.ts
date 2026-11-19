@@ -1,5 +1,6 @@
-import { ContentRange, IfMatch, IfNoneMatch, IfRange, Range } from "../../http/headers";
-import { isActiveContentType } from "./content-type";
+import { ContentRange, ContentType, IfMatch, IfNoneMatch, IfRange, Range } from "../../http/headers";
+import { isMediaTypeToken, mediaTypeEssence } from "../../http/media-type";
+import { CONTENT_TYPE_DEFAULT, isActiveContentType } from "./content-type";
 import { UnsatisfiableRangeError } from "./errors";
 import type { ObjectBody, ObjectStorageBackend, ServeOptions, StoreGetOptions, StoredObject } from "./types";
 
@@ -28,9 +29,17 @@ function contentDisposition(type: "inline" | "attachment", filename: string): st
   return `${type}; filename="${asciiFallbackFilename(filename)}"; filename*=UTF-8''${encoded}`;
 }
 
+function servedContentType(stored: string | undefined): string {
+  if (stored === undefined) return CONTENT_TYPE_DEFAULT;
+  const essence = mediaTypeEssence(stored);
+  if (essence === null) return CONTENT_TYPE_DEFAULT;
+  const charset = ContentType.from(stored).charset;
+  return charset !== undefined && isMediaTypeToken(charset) ? `${essence}; charset=${charset}` : essence;
+}
+
 function buildHeaders(obj: ObjectBody, opts?: ServeOptions): Headers {
   const h = new Headers();
-  if (obj.contentType) h.set("Content-Type", obj.contentType);
+  h.set("Content-Type", servedContentType(obj.contentType));
   if (obj.contentEncoding) h.set("Content-Encoding", obj.contentEncoding);
   if (obj.contentLanguage) h.set("Content-Language", obj.contentLanguage);
   h.set("ETag", obj.httpEtag);

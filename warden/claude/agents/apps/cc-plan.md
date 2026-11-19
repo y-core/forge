@@ -56,7 +56,8 @@ plan instead.
 
 ## Analysis Process
 
-1. **Understand the request** — clarify if ambiguous. Never assume a layer placement.
+1. **Understand the request** — ask only where two readings lead to materially different plans; otherwise name the assumption in `## Context`
+   (`AGENT_WORKFLOW.md` §1a). Never assume a layer placement.
 2. **Read the route map and the controller binding** — they answer what already exists and what guards it, which is the context most placement
    decisions turn on.
 3. **Classify placement precisely** — concern first, then latency, then thread cost (`APP_ARCHITECTURE.md` §4). Confirm the layer's import rules

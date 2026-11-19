@@ -68,7 +68,7 @@ interface FeatureDir {
   dir: string;
 }
 
-function featureDirs(features: FeatureManifest, sources: readonly string[]): FeatureDir[] {
+function featureDirs(features: FeatureManifest["features"], sources: readonly string[]): FeatureDir[] {
   const walked = sources.map((source) => source.replace(/\/+$/, ""));
   return Object.entries(features).flatMap(([feature, { directories }]) =>
     directories.map((directory) => ({ feature, dir: directory.replace(/\/+$/, "") })).filter(({ dir }) => isGuarded(dir, walked)),

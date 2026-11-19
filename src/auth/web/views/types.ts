@@ -6,6 +6,7 @@ import type { AuthEmailChangeStage } from "../../flows/types";
 import type { AdminUserOutcome } from "../../types";
 import type { AuthUser } from "../../types";
 import type { AuthCredential } from "../../types";
+import type { AuthSessionRecord } from "../../types";
 import type { PasskeyMode } from "../../types";
 import type { AuthFactorKind } from "../../types";
 import type { AuthAdminPaths } from "../types";
@@ -105,6 +106,8 @@ export type AuthFactorsViewProps = AuthViewChrome & {
   readonly manage?: AuthAccountPaths | undefined;
   /** Unused recovery codes left after a step-up by one, which is what makes the panel explain the repair. */
   readonly recovered?: number | undefined;
+  /** Where the repair replaces the holder's authenticator app in place, set beside `recovered` when they hold one the factor can replace. */
+  readonly replaceAppPath?: string | undefined;
   /** Offered to an administrator reading someone else's account, never to the account holder. */
   readonly reset?: AuthFactorsResetForm | undefined;
   readonly icon: ForgeIcon<"key">;
@@ -188,14 +191,32 @@ export type PasskeyRow = { readonly credential: AuthCredential; readonly csrfTok
 /** What the passkey management page renders. @public */
 export type PasskeyListViewProps = AuthViewChrome & {
   readonly rows: readonly PasskeyRow[];
-  /** Factors that would still admit this visitor once every passkey is gone; email-OTP carries no enrolment row, so it cannot be read off `FactorStore`. */
-  readonly fallbackFactors: readonly AuthFactorKind[];
+  /** Set when passkeys are mandatory and the visitor holds one, which disables removing it. */
+  readonly mandatory: boolean;
   readonly paths: AuthAccountPaths;
   /** Where a passkey is enrolled — an `authRoutes` path, which `accountRoutes` does not carry. */
   readonly enrolPath: string;
+  /** Set when the visitor holds exactly one passkey, so losing that device leaves only a recovery code. */
+  readonly backupPrompt: boolean;
+  /** A refused removal, in the web layer's words. */
+  readonly error?: string | undefined;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
+};
+
+/** What the session list renders: every live session, one sign-out form per other row and one for all of them. @public */
+export type SessionListViewProps = AuthViewChrome & {
+  readonly rows: readonly AuthSessionRecord[];
+  /** The public id of the session this page is being read from, which is marked and offered no sign-out. */
+  readonly currentId: string;
+  readonly revokePath: string;
+  /** One token for every row's form, since each names its session in a field rather than the path. */
+  readonly revokeToken: string;
+  readonly revokeOthersPath: string;
+  readonly revokeOthersToken: string;
+  /** The header `csrfProtection` checks the token on, when the app renamed it. */
+  readonly csrfHeader?: string | undefined;
 };
 
 /** What the recovery-code page renders: the codes left, and a new set shown once until one of it is typed back. @public */
@@ -215,8 +236,8 @@ export type RecoveryCodesViewProps = AuthViewChrome & {
   readonly icon: ForgeIcon<"alert" | "key">;
 };
 
-/** One factor the verify page may be switched to, and the page asking for it. @public */
-export type VerifyChoice = { readonly kind: AuthFactorKind; readonly href: string };
+/** One factor a visitor may pick, and the page that asks for it or enrols it. @public */
+export type AuthFactorChoice = { readonly kind: AuthFactorKind; readonly href: string };
 
 /** The public half of a Turnstile challenge a form renders: the site key and the action it is bound to. @public */
 export type AuthTurnstileWidget = { readonly siteKey: string; readonly action: string };
@@ -250,8 +271,8 @@ export type SignupViewProps = AuthViewChrome & {
   readonly fieldError?: string | undefined;
   /** A refusal about the attempt as a whole. */
   readonly error?: string | undefined;
-  /** The factor the visitor enrols after confirming the address, absent when none is demanded. */
-  readonly enrols?: AuthFactorKind | undefined;
+  /** Whether the visitor adds a second factor after confirming the address, which they do where one is required of everyone. */
+  readonly addsSecondFactor: boolean;
   /** The challenge rendered before the submit button, absent when the deployment guards no sign-up. */
   readonly turnstile?: AuthTurnstileWidget | undefined;
   readonly icon: ForgeIcon<"alert">;
@@ -295,26 +316,35 @@ export type SignoutConfirmViewProps = AuthViewChrome & {
 };
 
 /** Which authenticator-app page state is rendering; only the enrolling one carries the secret. @public */
-export type TotpEnrolState = ({ readonly status: "enrolling" } & TotpAppEnrolment) | { readonly status: "enrolled"; readonly enrolledAt: number };
+export type TotpEnrolState =
+  | ({ readonly status: "enrolling" } & TotpAppEnrolment)
+  | ({ readonly status: "replacing" } & TotpAppEnrolment)
+  | { readonly status: "enrolled"; readonly enrolledAt: number };
 
 /** What the authenticator-app page renders. @public */
 export type TotpEnrolViewProps = AuthViewChrome & {
   readonly state: TotpEnrolState;
-  /** Where the confirmation code is posted. */
+  /** Where the confirmation code is posted — the replacement's own confirmation while `replacing`. */
   readonly enrolPath: string;
   // Absent on the page an owed enrolment lands on: there is nothing enrolled there to take away, and
   // a session owing a step-up must not be able to remove the factor that would satisfy it.
   /** Where the settled enrolment is deleted, absent where removal is not offered. */
   readonly removePath?: string | undefined;
+  /** The page that replaces the settled enrolment's app, absent where replacing is not offered. */
+  readonly replacePath?: string | undefined;
   readonly csrfToken: string;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */
   readonly csrfHeader?: string | undefined;
+  /** Set when the authenticator app is mandatory, which disables removing the settled enrolment. */
+  readonly mandatory: boolean;
   /** How wide the code field is, read off the factor. Defaults to the six digits forge's own factor asks for. */
   readonly codeDigits?: OtpLength | undefined;
   /** How often the app refreshes the code, in seconds, read off the factor. Defaults to the thirty seconds forge's own factor uses. */
   readonly codePeriodSeconds?: number | undefined;
   /** Copy for a rejected confirmation code; the view owns the wording, since `describeValidationIssue` returns only a field name. */
   readonly fieldError?: string | undefined;
+  /** A refused removal, or a replacement whose row went first, in the web layer's words. */
+  readonly error?: string | undefined;
   readonly icon: ForgeIcon<"alert">;
 };
 
@@ -327,7 +357,7 @@ export type VerifyViewProps = AuthViewChrome & {
   /** The ceremony contract, required when `factor` is `passkey`. */
   readonly passkey?: AuthPasskeyContract | undefined;
   /** Every confirmed factor this step-up may be met with, `factor` included; absent unless there is another to switch to. */
-  readonly choices?: readonly VerifyChoice[] | undefined;
+  readonly choices?: readonly AuthFactorChoice[] | undefined;
   readonly submitPath: string;
   /** Where a new code is asked for, given only for an emailed code. */
   readonly resendPath?: string | undefined;
@@ -340,6 +370,8 @@ export type VerifyViewProps = AuthViewChrome & {
   // inside the reissue window, so reporting what an admitted resend did would bin an address list.
   /** Whether this render follows a press of the resend control. */
   readonly resent?: boolean | undefined;
+  /** `false` when no code has been mailed for this step-up yet, so the page offers to send one rather than asking for it. */
+  readonly codeSent?: boolean | undefined;
   /** How long until another code can be asked for, absent once the factor's reissue window has passed. */
   readonly resendWaitMs?: number | undefined;
   /** The header `csrfProtection` checks the token on, when the app renamed it. */

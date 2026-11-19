@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { escapeHtml } from "../../html/escape";
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { stateAttrs } from "../contracts/state-attrs";
@@ -54,20 +55,32 @@ describe("Steps.Step", () => {
     expect(labelOf(html)).toBe("One");
   });
 
-  it("fills the marker of a complete step from the inherited tone", async () => {
-    expect(variantClasses(await render(<Steps.Step state='complete' />), await render(<Steps.Step />), MARKER)).toEqual({
-      added: ["border-transparent", "bg-(--tone)", "text-(--tone-fg)"],
-      dropped: ["border-border", "text-muted-foreground"],
-    });
+  it("renders one marker for every state, its tone keyed on the step's `data-state` so a state the client sets recolours it", async () => {
+    const complete = await render(<Steps.Step state='complete' />);
+    const current = await render(<Steps.Step state='current' />);
+    const upcoming = await render(<Steps.Step />);
+
+    expect([variantClasses(complete, upcoming, MARKER), variantClasses(current, upcoming, MARKER)]).toEqual([
+      { added: [], dropped: [] },
+      { added: [], dropped: [] },
+    ]);
+    // A variant binds the marker to its own item by child combinators, so the attribute carries them escaped.
+    expect(classesOf(upcoming, MARKER).filter((token) => token.includes("data-state"))).toEqual(
+      [
+        "[:is([data-state=complete],[data-state=complete]>*)>&]:border-transparent",
+        "[:is([data-state=complete],[data-state=complete]>*)>&]:bg-(--tone)",
+        "[:is([data-state=complete],[data-state=complete]>*)>&]:text-(--tone-fg)",
+        "[:is([data-state=current],[data-state=current]>*)>&]:border-(--tone-text)",
+        "[:is([data-state=current],[data-state=current]>*)>&]:text-(--tone-text)",
+      ].map(escapeHtml),
+    );
   });
 
-  it("outlines the current step and announces it in ARIA, since that is where the reader is", async () => {
-    const html = await render(<Steps.Step state='current' />);
-
-    expect(attrsOf(html)).toEqual({ "data-slot": "steps-step", "data-state": "current", "aria-current": "step" });
-    expect(variantClasses(html, await render(<Steps.Step />), MARKER)).toEqual({
-      added: ["border-(--tone-text)", "text-(--tone-text)"],
-      dropped: ["border-border", "text-muted-foreground"],
+  it("announces the current step in ARIA, since that is where the reader is", async () => {
+    expect(attrsOf(await render(<Steps.Step state='current' />))).toEqual({
+      "data-slot": "steps-step",
+      "data-state": "current",
+      "aria-current": "step",
     });
   });
 

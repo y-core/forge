@@ -8,6 +8,7 @@ import { Button } from "../../../ui/core/button";
 import { Card } from "../../../ui/core/card";
 import { EmptyState } from "../../../ui/core/empty-state";
 import { Form } from "../../../ui/core/form";
+import { Link } from "../../../ui/core/link";
 import { cn } from "../../../ui/core/utils/cn";
 import { nestedHeadingLevel } from "./heading";
 import { AuthTimestamp } from "./timestamp";
@@ -18,24 +19,25 @@ export const AUTH_PASSKEY_LIST_ID = "auth-passkey-list";
 
 const UNNAMED_CREDENTIAL = "Unnamed passkey";
 
-const LOCKOUT_ID = "passkey-lockout";
+const MANDATORY_ID = "passkey-mandatory";
 
-const LOCKOUT_REASON = "It is your only passkey and no other factor is enrolled, so removing it leaves nothing to sign in with.";
+const MANDATORY_REASON = "Your account requires a passkey. Add another before you remove this one.";
 
 // Design Read: a signed-in visitor keeping their passkeys in order; the one action is adding another;
-// failure is removing the last credential with nothing else enrolled — a `warning` Alert in that row.
+// failure is removing the only passkey where one is mandatory — the control disabled with its reason, and a refused removal's Alert.
 /** The visitor's registered passkeys, each with its rename and remove affordances. @public */
 export const PasskeyListView: FC<PasskeyListViewProps> = ({
   rows,
-  fallbackFactors,
+  mandatory,
   paths,
   enrolPath,
+  backupPrompt,
+  error,
   csrfHeader,
   icon: AppIcon,
   class: cls,
   level,
 }) => {
-  const lockout = rows.length === 1 && fallbackFactors.length === 0;
   const Heading = `h${level ?? 1}` as "h1";
 
   return (
@@ -44,7 +46,7 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
         <Card.Title>
           <Heading class='text-xl'>Your passkeys</Heading>
         </Card.Title>
-        <Card.Description>Each passkey signs you in from the device it was created on.</Card.Description>
+        <Card.Description>Each passkey is a second factor that works on the device it was created on.</Card.Description>
         <Card.Action>
           <Button asChild size='sm'>
             <a href={enrolPath} data-ref='passkey-enrol'>
@@ -53,11 +55,30 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
           </Button>
         </Card.Action>
       </Card.Header>
-      <Card.Content>
+      <Card.Content class='flex flex-col gap-6'>
+        {error === undefined ? null : (
+          <Alert tone='destructive' data-ref='passkey-error'>
+            <AppIcon name='alert' class='size-4' />
+            <Alert.Title>We could not remove that passkey</Alert.Title>
+            <Alert.Description>{error}</Alert.Description>
+          </Alert>
+        )}
+        {backupPrompt ? (
+          <Alert data-ref='passkey-backup'>
+            <Alert.Title>Add a backup passkey</Alert.Title>
+            <Alert.Description>
+              This is your only passkey. If you lose this device, you'll need a recovery code to finish signing in.{" "}
+              <Link href={enrolPath} data-ref='passkey-backup-enrol'>
+                Add a second passkey on another device or a security key
+              </Link>
+              .
+            </Alert.Description>
+          </Alert>
+        ) : null}
         {rows.length === 0 ? (
           <EmptyState>
             <EmptyState.Title level={nestedHeadingLevel(level ?? 1)}>No passkeys yet</EmptyState.Title>
-            <EmptyState.Description>A passkey signs you in with the screen lock you already use on this device.</EmptyState.Description>
+            <EmptyState.Description>A passkey is a second factor that checks it's you with this device's screen lock.</EmptyState.Description>
             <EmptyState.Actions>
               <Button asChild tone='neutral' appearance='outline'>
                 <a href={enrolPath} data-ref='passkey-enrol-empty'>
@@ -85,12 +106,10 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
                     </>
                   )}
                 </span>
-                {lockout ? (
-                  <Alert id={LOCKOUT_ID} tone='warning' data-ref='credential-lockout'>
-                    <AppIcon name='alert' class='size-4' />
-                    <Alert.Title>Removing this passkey locks you out</Alert.Title>
-                    <Alert.Description>{LOCKOUT_REASON}</Alert.Description>
-                  </Alert>
+                {mandatory ? (
+                  <span id={MANDATORY_ID} data-ref='credential-mandatory' class='text-sm text-muted-foreground'>
+                    {MANDATORY_REASON}
+                  </span>
                 ) : null}
                 <div class='flex items-center gap-2'>
                   <Button asChild tone='neutral' appearance='outline' size='sm'>
@@ -108,7 +127,8 @@ export const PasskeyListView: FC<PasskeyListViewProps> = ({
                       appearance='outline'
                       size='sm'
                       data-ref='credential-remove'
-                      aria-describedby={lockout ? LOCKOUT_ID : undefined}>
+                      disabled={mandatory}
+                      aria-describedby={mandatory ? MANDATORY_ID : undefined}>
                       Remove
                     </Button>
                   </Form>

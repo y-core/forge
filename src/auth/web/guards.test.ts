@@ -12,15 +12,19 @@ import { bytesToHex } from "../../crypto/primitives/mod";
 import { ok } from "../../result/result";
 import { originProtection } from "../../security/cop";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
+import { createD1Client } from "../../storage/db/client";
+import { fakeAuthD1 } from "../../testing/auth-fakes";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
-import { AUTH_FRESH_STEP_UP_MS } from "../config";
+import { AUTH_FRESH_STEP_UP_MS, AUTH_SESSION_IDLE_MS, AUTH_SESSION_MAX_MS, AUTH_STEP_UP_MAX_MS } from "../config";
 import { AuthStoreError } from "../errors";
-import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorContext, AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
+import type { AuthFactorRegistry, AuthFactorResolution } from "../factors/types";
+import { squashSql } from "../stores/events.fixture";
+import { createFactorStore } from "../stores/factors";
+import { createAuthSessionStore } from "../stores/sessions";
 import { formatAccessToken } from "../tokens/codec";
 import { createAccessTokenService } from "../tokens/service";
-import type { AccessTokenStore, AuthAccessToken, AuthUser, UserStore } from "../types";
+import type { AccessTokenStore, AuthAccessToken, AuthFactorKind, AuthSessionRecord, AuthSessionStore, AuthUser } from "../types";
 import {
   accessTokenCtx,
   approvalCode,
@@ -41,23 +45,23 @@ import {
   APPROVAL_CODE_SESSION_KEY,
   APPROVAL_SESSION_KEY,
   authCtx,
-  AUTH_SESSION_KEY,
-  AUTH_SIGNED_IN_SESSION_KEY,
-  AUTH_STEP_UP_SESSION_KEY,
+  AUTH_SESSION_TOKEN_KEY,
+  clearAuthSession,
+  establishAuthSession,
   markApproval,
+  markAuthStepUp,
 } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthGuardChainOptions, AuthIdentity } from "./types";
 import {
   approvedSession,
-  AUTH_FACTOR_ASSIGNMENTS,
   FAKE_APPROVAL_CODE,
   fakeApproval,
-  fakeFactorService,
+  fakeAuthSessionStore,
+  fakeFactorRegistry,
   fakeFactorStore,
   fakeSessionCookie,
-  recoveryOffer,
 } from "./web.fixture";
 
 const authMap = authRoutes("/auth");
@@ -74,18 +78,22 @@ function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
   };
 }
 
-function fakeUsers(users: readonly AuthUser[]): Pick<UserStore, "findById"> {
-  return { findById: async (id) => ok(users.find((user) => user.id === id) ?? null) };
+/** The session rows every seeded session is created in and every `fakeSessions` store resolves from. */
+const guardSessionRows = new Map<string, AuthSessionRecord & { readonly userId: string }>();
+
+const guardSeeder = fakeAuthSessionStore([], guardSessionRows);
+
+function fakeSessions(users: readonly AuthUser[]): Pick<AuthSessionStore, "resolve"> {
+  return fakeAuthSessionStore(users, guardSessionRows);
 }
 
-const unavailableUsers: Pick<UserStore, "findById"> = { findById: async () => ({ ok: false, error: new Error("db down") as never }) };
+const unavailableSessions: Pick<AuthSessionStore, "resolve"> = { resolve: async () => ({ ok: false, error: new Error("db down") as never }) };
 
 type FakeRegistry = Pick<AuthFactorRegistry, "resolve">;
 
@@ -95,18 +103,13 @@ function fakeFactors(resolution: AuthFactorResolution): FakeRegistry {
 
 const unavailableFactors: FakeRegistry = { resolve: async () => ({ ok: false, error: new Error("kv down") as never }) };
 
-interface ResolveCall {
-  readonly userId: string;
-  readonly context: AuthFactorContext | undefined;
-}
-
-/** A registry stub that answers one verdict and keeps every `resolve` argument it was handed. */
-function recordingFactors(resolution: AuthFactorResolution): FakeRegistry & { readonly calls: ResolveCall[] } {
-  const calls: ResolveCall[] = [];
+/** A registry stub that answers one verdict and keeps every user id `resolve` was handed. */
+function recordingFactors(resolution: AuthFactorResolution): FakeRegistry & { readonly calls: string[] } {
+  const calls: string[] = [];
   return {
     calls,
-    resolve: async (userId, context) => {
-      calls.push({ userId, context });
+    resolve: async (userId) => {
+      calls.push(userId);
       return ok(resolution);
     },
   };
@@ -125,29 +128,28 @@ const enrolment = { enrolmentPaths: authEnrolmentPaths(paths.auth), stepUpPath: 
 
 // `satisfied` by default, so a test about the identity says nothing about the factor policy: the
 // tests that are about an owed step-up pass their own registry.
-function guardOptions(users: Pick<UserStore, "findById">, factors: () => FakeRegistry = satisfied) {
-  return { users: perRequest(users), signinPath: paths.auth.signin(), factors, stepUpPath: paths.auth.verify.show() };
+function guardOptions(sessions: Pick<AuthSessionStore, "resolve">, factors: () => FakeRegistry = satisfied) {
+  return { sessions: perRequest(sessions), signinPath: paths.auth.signin(), factors, stepUpPath: paths.auth.verify.show() };
 }
 
 interface SessionSeed {
   readonly userId?: string;
   readonly signedInAt?: number;
   readonly stepUpAt?: number;
+  readonly stepUpKind?: AuthFactorKind;
 }
 
 /** A `Forge` app with session middleware, a seeded session, `guards`, and one handler per guarded path. */
 function guardedApp(guards: readonly Parameters<Forge["use"]>[1][], seed: SessionSeed = {}): Forge {
   const app = new Forge();
   app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-  app.use("*", (context, next) => {
+  app.use("*", async (context, next) => {
     const session = sessionCtx.get(context);
-    // Both keys, because `establishAuthSession` writes both: without the stamp there is no bound
-    // the absolute lifetime could be checked against, and the identity is refused.
     if (seed.userId !== undefined) {
-      session.set(AUTH_SESSION_KEY, seed.userId);
-      session.set(AUTH_SIGNED_IN_SESSION_KEY, seed.signedInAt ?? Date.now());
+      const signedInAt = seed.signedInAt ?? Date.now();
+      await establishAuthSession(session, guardSeeder, seed.userId, signedInAt, signedInAt, { kind: "email-otp" });
+      if (seed.stepUpAt !== undefined) await markAuthStepUp(session, guardSeeder, seed.stepUpAt, seed.stepUpAt, seed.stepUpKind ?? "email-otp");
     }
-    if (seed.stepUpAt !== undefined) session.set(AUTH_STEP_UP_SESSION_KEY, seed.stepUpAt);
     return next();
   });
   for (const guard of guards) app.use("*", guard);
@@ -176,27 +178,27 @@ async function sessionOf(res: Response): Promise<Record<string, unknown>> {
 
 describe("requireAuth", () => {
   it("redirects an anonymous request to the sign-in path with the return-to it came from", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([])))]);
     const res = await app.request("/account/passkeys?tab=all");
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe("/auth/signin?next=%2Faccount%2Fpasskeys%3Ftab%3Dall");
   });
 
   it("records no return-to off a mutation, and answers 303 so the method is not replayed against the sign-in page", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([])))]);
     const res = await app.request("/account/passkeys?tab=all", { method: "POST" });
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/auth/signin");
   });
 
   it("navigates an anonymous htmx request to sign-in with HX-Redirect, which fetch cannot follow into the page", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([])))]);
     const res = await app.request("/account/passkeys", { method: "DELETE", headers: { "HX-Request": "true" } });
     expect({ ...locationOf(res), redirect: res.headers.get("hx-redirect") }).toEqual({ status: 204, location: null, redirect: "/auth/signin" });
   });
 
   it("records the page an htmx GET was sent from as the return-to, not the fragment endpoint it asked", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([])))]);
     const res = await app.request("/admin/users", {
       headers: { "HX-Request": "true", "HX-Current-URL": "http://localhost/account/passkeys?tab=all" },
     });
@@ -204,7 +206,7 @@ describe("requireAuth", () => {
   });
 
   it("records the page an htmx mutation was sent from, which the visitor can arrive back at by GET", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([])))]);
     const res = await app.request("/account/passkeys", {
       method: "POST",
       headers: { "HX-Request": "true", "HX-Current-URL": "http://localhost/admin/users" },
@@ -213,7 +215,7 @@ describe("requireAuth", () => {
   });
 
   it("records no return-to off an htmx request whose current URL is missing, cross-origin or unparseable", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([])))]);
     const currents = [undefined, "https://evil.example/account/passkeys", "not a url"];
     const redirects = await Promise.all(
       currents.map(async (current) => {
@@ -225,7 +227,7 @@ describe("requireAuth", () => {
   });
 
   it("refuses a `json` group with a body rather than a sign-in redirect a controller cannot read", async () => {
-    const app = guardedApp([requireAuth({ ...guardOptions(fakeUsers([])), medium: "json" })]);
+    const app = guardedApp([requireAuth({ ...guardOptions(fakeSessions([])), medium: "json" })]);
     const res = await app.request("/account/passkeys", { method: "POST" });
     expect(res.status).toBe(401);
     expect(res.headers.get("content-type")).toBe("application/json; charset=utf-8");
@@ -234,32 +236,42 @@ describe("requireAuth", () => {
   });
 
   it("establishes the identity and continues for a signed-in user", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()])))], { userId: "u1" });
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([fakeAuthUser()])))], { userId: "u1" });
     expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
   });
 
   // The harness re-seeds the identity key on every request, so a second request would prove nothing:
   // the cookie this response sets is the whole record of what the denial did to the session.
   it("denies a deactivated user and sends back a session cookie carrying no identity", async () => {
-    const app = guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser({ deactivatedAt: 99 })])))], { userId: "u1" });
+    const app = guardedApp([requireAuth(guardOptions(fakeSessions([fakeAuthUser({ deactivatedAt: 99 })])))], { userId: "u1" });
     const res = await app.request("/account/passkeys");
 
     expect(res.status).toBe(302);
     expect(await sessionOf(res)).toEqual({});
   });
 
-  it("denies when the user store is unavailable, rather than admitting an unverified request", async () => {
-    const signedInAt = Date.now();
-    const app = guardedApp([requireAuth(guardOptions(unavailableUsers))], { userId: "u1", signedInAt });
+  it("answers 503 when the session store is unavailable, keeping the session token so a transient outage signs nobody out", async () => {
+    const app = guardedApp([requireAuth(guardOptions(unavailableSessions))], { userId: "u1", signedInAt: Date.now() });
     const res = await app.request("/account/passkeys");
 
-    expect(res.status).toBe(302);
-    // An outage is transient, so it must not sign the visitor out: the identity survives the denial.
-    expect(await sessionOf(res)).toEqual({ [AUTH_SESSION_KEY]: "u1", [AUTH_SIGNED_IN_SESSION_KEY]: signedInAt });
+    expect({ status: res.status, body: await res.text(), session: Object.keys(await sessionOf(res)) }).toEqual({
+      status: 503,
+      body: "Service Unavailable",
+      session: [AUTH_SESSION_TOKEN_KEY],
+    });
+  });
+
+  it("sends a session unused for the whole idle bound to sign in, and admits one used inside it", async () => {
+    const users = fakeSessions([fakeAuthUser()]);
+    const idle = guardedApp([requireAuth(guardOptions(users))], { userId: "u1", signedInAt: Date.now() - AUTH_SESSION_IDLE_MS - 1 });
+    const active = guardedApp([requireAuth(guardOptions(users))], { userId: "u1", signedInAt: Date.now() - AUTH_SESSION_IDLE_MS + 60_000 });
+
+    expect(locationOf(await idle.request("/account/passkeys"))).toEqual({ status: 302, location: "/auth/signin?next=%2Faccount%2Fpasskeys" });
+    expect(await (await active.request("/account/passkeys")).text()).toBe("passkeys");
   });
 
   it("throws when no session middleware ran, rather than reading as a correct denial", async () => {
-    const guard = requireAuth(guardOptions(fakeUsers([])));
+    const guard = requireAuth(guardOptions(fakeSessions([])));
     const context = new RequestContext(new Request("http://localhost/account/passkeys"));
     expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
       "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",
@@ -270,9 +282,9 @@ describe("requireAuth", () => {
 // `establishAuthSession` runs before the step-up is proved, so until `requireAuth` asks, a session
 // that signed in and skipped `/verify` carries a full identity everywhere the enrolment guards are absent.
 describe("requireAuth — the second factor a session still owes", () => {
-  const users = fakeUsers([fakeAuthUser()]);
+  const users = fakeSessions([fakeAuthUser()]);
 
-  it("sends a session owing a mandatory second factor to the step-up page rather than admitting it", async () => {
+  it("sends a session owing a required second factor to the step-up page rather than admitting it", async () => {
     const app = guardedApp([requireAuth(guardOptions(users, stepUpOwed))], { userId: "u1" });
     const res = await app.request("/account/passkeys");
 
@@ -301,6 +313,39 @@ describe("requireAuth — the second factor a session still owes", () => {
     const app = guardedApp([requireAuth(options)], { userId: "u1", stepUpAt: Date.now() - 60_000 });
 
     expect((await app.request("/account/passkeys")).headers.get("location")).toBe("/auth/verify");
+  });
+
+  it("demands it again past 24 hours when no lifetime is configured, and admits a moment before", async () => {
+    const at = Date.now();
+    const options = { ...guardOptions(users, stepUpOwed), now: () => at };
+    const stale = guardedApp([requireAuth(options)], { userId: "u1", stepUpAt: at - 86_400_000 - 1 });
+    const held = guardedApp([requireAuth(options)], { userId: "u1", stepUpAt: at - 86_400_000 + 1 });
+
+    expect((await stale.request("/account/passkeys")).headers.get("location")).toBe("/auth/verify");
+    expect(await (await held.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  it("lets a completed step-up last the session when the lifetime is `null`", async () => {
+    const options = { ...guardOptions(users, stepUpOwed), stepUpMaxAgeMs: null };
+    const app = guardedApp([requireAuth(options)], { userId: "u1", stepUpAt: Date.now() - AUTH_STEP_UP_MAX_MS - 60_000 });
+
+    expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
+  });
+
+  it("answers a step-up by every kind alike, the kind owed or not, admitting each inside the lifetime and refusing each past it", async () => {
+    const at = Date.now();
+    const options = { ...guardOptions(users, stepUpOwed), stepUpMaxAgeMs: 60_000, now: () => at };
+    const kinds = ["email-otp", "totp-app", "passkey", "recovery-code"] as const;
+    const answers = async (stepUpAt: number) =>
+      Promise.all(
+        kinds.map(async (stepUpKind) =>
+          locationOf(await guardedApp([requireAuth(options)], { userId: "u1", stepUpAt, stepUpKind }).request("/account/passkeys")),
+        ),
+      );
+    expect({ held: await answers(at - 59_000), stale: await answers(at - 61_000) }).toEqual({
+      held: kinds.map(() => ({ status: 200, location: null })),
+      stale: kinds.map(() => ({ status: 303, location: "/auth/verify" })),
+    });
   });
 
   it("admits a session the policy demands no step-up of, which is every account without a second factor", async () => {
@@ -375,44 +420,152 @@ describe("requireAuth — the second factor a session still owes", () => {
   });
 });
 
-/** A user store that answers as `fakeUsers` does and counts every lookup it was asked for. */
-function countingUsers(users: readonly AuthUser[]): Pick<UserStore, "findById"> & { readonly calls: string[] } {
+const SESSION_READ =
+  "SELECT auth_users.id, auth_users.email, auth_users.is_admin, auth_sessions.id AS session_id, auth_sessions.signed_in_at, auth_sessions.expires_at, auth_sessions.step_up_at, auth_sessions.step_up_kind, auth_sessions.last_seen_at, auth_sessions.device FROM auth_sessions JOIN auth_users ON auth_users.id = auth_sessions.user_id WHERE auth_sessions.token_hash = ? AND auth_sessions.expires_at > ? AND auth_users.deactivated_at IS NULL AND auth_sessions.last_seen_at > ? LIMIT 1";
+const SESSION_TOUCH = "UPDATE auth_sessions SET last_seen_at = ? WHERE token_hash = ? AND last_seen_at <= ?";
+const CONFIRMED_KINDS_READ =
+  "SELECT kind FROM auth_factors WHERE user_id = ? AND kind IN (SELECT value FROM json_each(?)) AND confirmed_at IS NOT NULL";
+
+type StatementChain = (deps: {
+  readonly sessions: AuthSessionStore;
+  readonly factors: AuthFactorRegistry;
+  readonly now: () => number;
+}) => Parameters<Forge["use"]>[1][];
+
+const underRequireAuth: StatementChain = ({ sessions, factors, now }) => [requireAuth({ ...guardOptions(sessions, perRequest(factors)), now })];
+
+/** The statements one request issues `elapsedMs` after sign-in under `chain`, over the real stores and a registry offering `totp-app`; `signedIn: false` sends it anonymous. */
+async function statementsOfSignedInRequest(
+  elapsedMs: number,
+  chain: StatementChain = underRequireAuth,
+  request: { readonly method?: "GET" | "POST"; readonly signedIn?: boolean } = {},
+): Promise<{ readonly status: number; readonly statements: string[] }> {
+  const userId = "018f0000-0000-7000-8000-000000000001";
+  const db = fakeAuthD1([{ id: userId, email: "ada@example.test", isAdmin: true, factors: [{ kind: "totp-app" }] }]);
+  const client = createD1Client(db as never);
+  const sessions = createAuthSessionStore(client);
+  const factors = fakeFactorRegistry(["totp-app"], [], createFactorStore(client));
+  const signedInAt = 1_000_000;
+  let issuedBefore = 0;
+  const app = new Forge();
+  app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+  app.use("*", async (context, next) => {
+    if (request.signedIn !== false) {
+      await establishAuthSession(sessionCtx.get(context), sessions, userId, signedInAt, signedInAt, { kind: "email-otp", steppedUp: true });
+    }
+    issuedBefore = db.calls.length;
+    return next();
+  });
+  for (const guard of chain({ sessions, factors, now: () => signedInAt + elapsedMs })) app.use("*", guard);
+  mapHandler(app, "GET", "/account/passkeys", () => new Response("passkeys"));
+  mapHandler(app, "POST", "/account/passkeys", () => new Response("enrolled"));
+  const res = await app.request("/account/passkeys", { method: request.method ?? "GET" });
+  return { status: res.status, statements: db.calls.slice(issuedBefore).map((call) => squashSql(call.sql)) };
+}
+
+describe("requireAuth — the statements one signed-in request issues", () => {
+  it("reads the session joined to its owner and the owner's confirmed factor kinds, touching the row only once the interval has passed", async () => {
+    const touchIntervalMs = AUTH_SESSION_IDLE_MS / 12;
+    const [inside, past] = [await statementsOfSignedInRequest(60_000), await statementsOfSignedInRequest(touchIntervalMs)];
+    expect({ inside, past }).toEqual({
+      inside: { status: 200, statements: [SESSION_READ, CONFIRMED_KINDS_READ] },
+      past: { status: 200, statements: [SESSION_READ, SESSION_TOUCH, CONFIRMED_KINDS_READ] },
+    });
+  });
+
+  it("reads nothing more for `requireEnrolment`, `requireFreshStepUp` and `requireAdmin` stacked behind `requireAuth`", async () => {
+    const stacked: StatementChain = (deps) => [
+      ...underRequireAuth(deps),
+      requireEnrolment({ factors: perRequest(deps.factors), ...enrolment, now: deps.now }),
+      requireFreshStepUp({ factors: perRequest(deps.factors), ...enrolment, now: deps.now }),
+      requireAdmin(),
+    ];
+    expect(await statementsOfSignedInRequest(60_000, stacked, { method: "POST" })).toEqual({
+      status: 200,
+      statements: [SESSION_READ, CONFIRMED_KINDS_READ],
+    });
+  });
+
+  it("reads only the session under `resolveAuth`, and nothing at all for an anonymous request", async () => {
+    const resolving: StatementChain = ({ sessions, now }) => [resolveAuth({ sessions: perRequest(sessions), now })];
+    expect({
+      resolved: await statementsOfSignedInRequest(60_000, resolving),
+      anonymous: await statementsOfSignedInRequest(60_000, resolving, { signedIn: false }),
+      anonymousRequired: (await statementsOfSignedInRequest(60_000, underRequireAuth, { signedIn: false })).statements,
+    }).toEqual({ resolved: { status: 200, statements: [SESSION_READ] }, anonymous: { status: 200, statements: [] }, anonymousRequired: [] });
+  });
+});
+
+/** A session store that answers as `fakeSessions` does and records the owner of every row it was asked for. */
+function countingSessions(users: readonly AuthUser[]): Pick<AuthSessionStore, "resolve"> & { readonly calls: string[] } {
   const calls: string[] = [];
+  const store = fakeSessions(users);
   return {
     calls,
-    findById: async (id) => {
-      calls.push(id);
-      return ok(users.find((user) => user.id === id) ?? null);
+    resolve: async (tokenHash, at) => {
+      calls.push(guardSessionRows.get(bytesToHex(tokenHash))?.userId ?? "");
+      return store.resolve(tokenHash, at);
     },
   };
 }
 
 describe("resolveAuth", () => {
   it("admits an anonymous request unchanged rather than refusing it", async () => {
-    const app = guardedApp([resolveAuth(guardOptions(fakeUsers([])))]);
+    const app = guardedApp([resolveAuth(guardOptions(fakeSessions([])))]);
     const res = await app.request("/account/passkeys");
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("passkeys");
   });
 
+  it("answers 503 when the session store is unavailable, rather than admitting a signed-in visitor as anonymous", async () => {
+    const app = guardedApp([resolveAuth(guardOptions(unavailableSessions))], { userId: "u1", signedInAt: Date.now() });
+    const res = await app.request("/account/passkeys");
+
+    expect({ status: res.status, body: await res.text(), session: Object.keys(await sessionOf(res)) }).toEqual({
+      status: 503,
+      body: "Service Unavailable",
+      session: [AUTH_SESSION_TOKEN_KEY],
+    });
+  });
+
   it("reads no user store for an anonymous request, whose session names nobody to look up", async () => {
-    const users = countingUsers([fakeAuthUser()]);
+    const users = countingSessions([fakeAuthUser()]);
     const app = guardedApp([resolveAuth(guardOptions(users))]);
     await app.request("/account/passkeys");
 
     expect(users.calls).toEqual([]);
   });
 
+  for (const [name, build] of [
+    ["resolveAuth", resolveAuth],
+    ["requireAuth", requireAuth],
+  ] as const) {
+    it(`never builds the session store for an anonymous request under \`${name}\`, and builds it once for a signed-in one`, async () => {
+      const built: string[] = [];
+      const options = {
+        ...guardOptions(fakeSessions([fakeAuthUser()])),
+        sessions: () => {
+          built.push("sessions");
+          return fakeSessions([fakeAuthUser()]);
+        },
+      };
+      await guardedApp([build(options)]).request("/account/passkeys");
+      const anonymous = [...built];
+      await guardedApp([build(options)], { userId: "u1" }).request("/account/passkeys");
+      expect({ anonymous, signedIn: built.length }).toEqual({ anonymous: [], signedIn: 1 });
+    });
+  }
+
   it("establishes the identity, so a guard ordered after it authorises without its own lookup", async () => {
-    const app = guardedApp([resolveAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]))), requireAdmin()], { userId: "u1" });
+    const app = guardedApp([resolveAuth(guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })]))), requireAdmin()], { userId: "u1" });
     expect(await (await app.request("/admin/users")).text()).toBe("users");
   });
 
   // The whole point of the reuse: a globally mounted `resolveAuth` must not double every guarded
   // route's cost, and one request asking the same question twice is what that would look like.
   it("leaves a following `requireAuth` nothing to look up, so the store is read once per request", async () => {
-    const users = countingUsers([fakeAuthUser()]);
+    const users = countingSessions([fakeAuthUser()]);
     const app = guardedApp([resolveAuth(guardOptions(users)), requireAuth(guardOptions(users))], { userId: "u1" });
     const res = await app.request("/account/passkeys");
 
@@ -421,7 +574,7 @@ describe("resolveAuth", () => {
   });
 
   it("still lets `requireAuth` resolve for itself when it runs alone", async () => {
-    const users = countingUsers([fakeAuthUser()]);
+    const users = countingSessions([fakeAuthUser()]);
     const app = guardedApp([requireAuth(guardOptions(users))], { userId: "u1" });
     const res = await app.request("/account/passkeys");
 
@@ -432,7 +585,7 @@ describe("resolveAuth", () => {
   // `resolveAuth` clears the session's auth keys on a refusal, so the identity key is gone by the
   // time `requireAuth` looks — it refuses on an anonymous session rather than on a second lookup.
   it("costs a following `requireAuth` no second lookup when it refuses the identity", async () => {
-    const users = countingUsers([fakeAuthUser({ deactivatedAt: 99 })]);
+    const users = countingSessions([fakeAuthUser({ deactivatedAt: 99 })]);
     const app = guardedApp([resolveAuth(guardOptions(users)), requireAuth(guardOptions(users))], { userId: "u1" });
     const res = await app.request("/account/passkeys");
 
@@ -441,7 +594,7 @@ describe("resolveAuth", () => {
   });
 
   it("throws when no session middleware ran, rather than reading as an anonymous request", () => {
-    const guard = resolveAuth(guardOptions(fakeUsers([])));
+    const guard = resolveAuth(guardOptions(fakeSessions([])));
     const context = new RequestContext(new Request("http://localhost/account/passkeys"));
     expect(guard(context, async () => new Response("ok"))).rejects.toThrow(
       "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.",
@@ -450,8 +603,8 @@ describe("resolveAuth", () => {
 });
 
 describe("requireAdmin", () => {
-  const member = () => requireAuth(guardOptions(fakeUsers([fakeAuthUser()])));
-  const administrator = () => requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })])));
+  const member = () => requireAuth(guardOptions(fakeSessions([fakeAuthUser()])));
+  const administrator = () => requireAuth(guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])));
   const answerOf = async (res: Response) => ({ status: res.status, type: res.headers.get("content-type"), body: await res.text() });
 
   it("refuses a signed-in non-administrator with a plain-text 403 when no `onForbidden` is passed", async () => {
@@ -510,20 +663,27 @@ describe("requireAdmin", () => {
 });
 
 /** A protected page guarded by `requireAuth` then `requireEnrolment`, under one factor verdict. */
-function protectedApp(resolution: AuthFactorResolution, seed: SessionSeed = {}, maxAgeMs?: number) {
-  const options =
-    maxAgeMs === undefined
-      ? { factors: perRequest(fakeFactors(resolution)), ...enrolment }
-      : { factors: perRequest(fakeFactors(resolution)), ...enrolment, stepUpMaxAgeMs: maxAgeMs };
-  // One registry for both guards, as `createAuthGuards` wires it: the demand is resolved once and
-  // memoised, so a second registry here would answer for neither guard predictably.
-  return guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), options.factors)), requireEnrolment(options)], {
+function protectedApp(resolution: AuthFactorResolution, seed: SessionSeed = {}, maxAgeMs?: number | null) {
+  const window = maxAgeMs === undefined ? {} : { stepUpMaxAgeMs: maxAgeMs };
+  const options = { factors: perRequest(fakeFactors(resolution)), ...enrolment, ...window };
+  // One registry and one window for both guards, as `createAuthGuards` wires them: the demand is
+  // resolved once and memoised, so a second registry here would answer for neither guard predictably.
+  return guardedApp([requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), options.factors), ...window }), requireEnrolment(options)], {
     userId: "u1",
     ...seed,
   });
 }
 
 describe("requireEnrolment", () => {
+  it("sends an enrolment owed in two kinds to the first owed kind's page, since each must be enrolled and there is nothing to choose", async () => {
+    const locationFor = async (kinds: readonly AuthFactorKind[]) =>
+      (await protectedApp({ status: "enrolment-required", kinds, stepUpKinds: [] }).request("/account/passkeys")).headers.get("location");
+    expect([await locationFor(["totp-app", "passkey"]), await locationFor(["passkey", "totp-app"])]).toEqual([
+      "/auth/enrol/totp",
+      "/auth/enrol/passkey",
+    ]);
+  });
+
   it("redirects to the enrolment page rather than refusing, because owing an enrolment is a success", async () => {
     const res = await protectedApp({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }).request("/account/passkeys");
     expect(res.status).toBe(303);
@@ -551,7 +711,7 @@ describe("requireEnrolment", () => {
   it("answers its own step-up redirect with 303, behind a `clearsStepUp` require-auth", async () => {
     const factors = perRequest(fakeFactors({ status: "step-up-required", kinds: ["totp-app"] }));
     const app = guardedApp(
-      [requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }), requireEnrolment({ factors, ...enrolment })],
+      [requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), factors), clearsStepUp: true }), requireEnrolment({ factors, ...enrolment })],
       { userId: "u1" },
     );
     const res = await app.request("/account/passkeys");
@@ -566,7 +726,7 @@ describe("requireEnrolment", () => {
   it("refuses rather than redirects when the registry cannot read its store, because every remedy page asks the same store", async () => {
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(unavailableFactors))),
+        requireAuth(guardOptions(fakeSessions([fakeAuthUser()]), perRequest(unavailableFactors))),
         requireEnrolment({ factors: perRequest(unavailableFactors), ...enrolment }),
       ],
       { userId: "u1" },
@@ -597,8 +757,13 @@ describe("requireEnrolment step-up memory", () => {
     expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
   });
 
-  it("lasts the session when no lifetime is configured", async () => {
-    const app = protectedApp(stepUp, { stepUpAt: 1 });
+  it("demands it again past `AUTH_STEP_UP_MAX_MS` when no lifetime is configured", async () => {
+    const app = protectedApp(stepUp, { stepUpAt: Date.now() - AUTH_STEP_UP_MAX_MS - 60_000 });
+    expect((await app.request("/account/passkeys")).headers.get("location")).toBe("/auth/verify");
+  });
+
+  it("lasts the session when the lifetime is `null`", async () => {
+    const app = protectedApp(stepUp, { stepUpAt: 1 }, null);
     expect(await (await app.request("/account/passkeys")).text()).toBe("passkeys");
   });
 
@@ -616,7 +781,7 @@ describe("requireEnrolment step-up memory", () => {
 /** The enrolment page, guarded as `AUTH_ROUTE_GROUPS` declares it, under one factor verdict. */
 function enrolmentApp(resolution: AuthFactorResolution, seed: SessionSeed = {}) {
   const factors = perRequest(fakeFactors(resolution));
-  return guardedApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), factors)), requirePendingEnrolment({ factors, ...enrolment })], {
+  return guardedApp([requireAuth(guardOptions(fakeSessions([fakeAuthUser()]), factors)), requirePendingEnrolment({ factors, ...enrolment })], {
     userId: "u1",
     ...seed,
   });
@@ -641,7 +806,7 @@ describe("requirePendingEnrolment", () => {
     const factors = perRequest(fakeFactors({ status: "step-up-required", kinds: ["totp-app"] }));
     const app = guardedApp(
       [
-        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }),
+        requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), factors), clearsStepUp: true }),
         requirePendingEnrolment({ factors, ...enrolment }),
       ],
       { userId: "u1" },
@@ -678,7 +843,7 @@ describe("requirePendingEnrolment", () => {
     const factors = perRequest(fakeFactors(owedBesideHeld));
     return guardedApp(
       [
-        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }),
+        requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), factors), clearsStepUp: true }),
         requirePendingEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: 30_000 }),
       ],
       { userId: "u1", stepUpAt },
@@ -707,7 +872,7 @@ describe("requirePendingEnrolment", () => {
   it("refuses when the registry cannot read its store", async () => {
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(unavailableFactors))),
+        requireAuth(guardOptions(fakeSessions([fakeAuthUser()]), perRequest(unavailableFactors))),
         requirePendingEnrolment({ factors: perRequest(unavailableFactors), ...enrolment }),
       ],
       { userId: "u1" },
@@ -718,7 +883,7 @@ describe("requirePendingEnrolment", () => {
   it("refuses a `json` group owing a step-up with a body rather than a redirect", async () => {
     const app = guardedApp(
       [
-        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), stepUpOwed), medium: "json" }),
+        requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), stepUpOwed), medium: "json" }),
         requirePendingEnrolment({ factors: stepUpOwed, ...enrolment, medium: "json" }),
       ],
       { userId: "u1" },
@@ -748,7 +913,7 @@ describe("requireFreshStepUp", () => {
     const factors = perRequest(fakeFactors(resolution));
     return guardedApp(
       [
-        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]), factors), clearsStepUp: true }),
+        requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })]), factors), clearsStepUp: true }),
         requireFreshStepUp({ factors, ...enrolment, ...(freshStepUpMaxAgeMs === undefined ? {} : { freshStepUpMaxAgeMs }) }),
       ],
       seed,
@@ -766,23 +931,38 @@ describe("requireFreshStepUp", () => {
     expect(await fresh.text()).toBe("enrolled");
   });
 
+  // No factor kind ranks above another (decision-261119-25): the account repair paths rest on a
+  // recovery code proving exactly what a passkey proves.
+  it("admits a recovery-code step-up exactly as a step-up by any other kind of the same age, and refuses every one once stale", async () => {
+    const kinds = ["recovery-code", "passkey", "totp-app", "email-otp"] as const;
+    const answers = async (stepUpAt: number) =>
+      Promise.all(
+        kinds.map(async (stepUpKind) =>
+          locationOf(await freshApp({ userId: "u1", stepUpAt, stepUpKind }, HOUR).request("/account/passkeys", { method: "POST" })),
+        ),
+      );
+    expect({ fresh: await answers(Date.now() - 1_000), stale: await answers(Date.now() - 2 * HOUR) }).toEqual({
+      fresh: kinds.map(() => ({ status: 200, location: null })),
+      stale: kinds.map(() => ({ status: 303, location: "/auth/verify" })),
+    });
+  });
+
   // Reading the page that offers the action is not the action, and gating the `GET` would leave the
   // visitor unable to reach the form that clears the demand.
   it("admits a safe method whatever the mark, so the page offering the action stays reachable", async () => {
-    const res = await freshApp({ userId: "u1" }, HOUR).request("/account/passkeys");
-    expect(await res.text()).toBe("passkeys");
+    const unmarked = await freshApp({ userId: "u1" }, HOUR).request("/account/passkeys");
+    expect(await unmarked.text()).toBe("passkeys");
+
+    const stale = await freshApp({ userId: "u1", stepUpAt: Date.now() - 2 * HOUR }, HOUR).request("/account/passkeys", { method: "GET" });
+    expect(await stale.text()).toBe("passkeys");
   });
 
   // On by default: a significant action on an account that has a second factor is held to it
   // without the mount having to ask, and the window is forge's own constant.
-  it("demands a step-up inside `AUTH_FRESH_STEP_UP_MS` when no window is configured", async () => {
-    const stale = await freshApp({ userId: "u1", stepUpAt: Date.now() - AUTH_FRESH_STEP_UP_MS - 1 }).request("/account/passkeys", {
-      method: "POST",
-    });
+  it("demands a step-up inside 15 minutes when no window is configured", async () => {
+    const stale = await freshApp({ userId: "u1", stepUpAt: Date.now() - 900_000 - 1 }).request("/account/passkeys", { method: "POST" });
     expect(stale.status).toBe(303);
-    const fresh = await freshApp({ userId: "u1", stepUpAt: Date.now() - AUTH_FRESH_STEP_UP_MS + 5_000 }).request("/account/passkeys", {
-      method: "POST",
-    });
+    const fresh = await freshApp({ userId: "u1", stepUpAt: Date.now() - 900_000 + 5_000 }).request("/account/passkeys", { method: "POST" });
     expect(await fresh.text()).toBe("enrolled");
   });
 
@@ -796,21 +976,38 @@ describe("requireFreshStepUp", () => {
     expect(res.status).toBe(303);
   });
 
-  // The demand is resolved per user: nothing to step up with means nothing to be fresh about.
-  it("admits a user nothing demands a step-up of — no second factor offered, or a mandatory kind not yet enrolled", async () => {
-    const single = await freshApp({ userId: "u1" }, HOUR, { status: "satisfied" }).request("/account/passkeys", { method: "POST" });
-    expect(await single.text()).toBe("enrolled");
-    const unenrolled = await freshApp({ userId: "u1" }, HOUR, { status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] }).request(
-      "/account/passkeys",
-      { method: "POST" },
+  // The defect this closes: an email-only session could move the address, add a factor or change a
+  // role up to the session's own lifetime after signing in, re-proving nothing.
+  it("holds a single-factor session to the window on email change, factor add and an admin mutation, and admits it after a fresh proof", async () => {
+    const single = (seed: SessionSeed) => {
+      const app = freshApp(seed, HOUR, { status: "satisfied" });
+      mapHandler(app, "POST", "/account/email", () => new Response("email"));
+      mapHandler(app, "PATCH", "/admin/users/:id", () => new Response("updated"));
+      return app;
+    };
+    const requests = [
+      ["/account/email", { method: "POST" }],
+      ["/account/passkeys", { method: "POST" }],
+      ["/admin/users/u2", { method: "PATCH" }],
+    ] as const;
+    const answers = async (seed: SessionSeed) =>
+      Promise.all(requests.map(async ([path, init]) => locationOf(await single(seed).request(path, init))));
+
+    expect(await answers({ userId: "u1", signedInAt: Date.now() - 2 * HOUR })).toEqual(
+      requests.map(() => ({ status: 303, location: "/auth/verify" })),
     );
-    expect(await unenrolled.text()).toBe("enrolled");
+    expect(await answers({ userId: "u1", signedInAt: Date.now() - 2 * HOUR, stepUpAt: Date.now() - 2 * HOUR })).toEqual(
+      requests.map(() => ({ status: 303, location: "/auth/verify" })),
+    );
+    expect(await answers({ userId: "u1", signedInAt: Date.now() - 2 * HOUR, stepUpAt: Date.now() - 1_000 })).toEqual(
+      requests.map(() => ({ status: 200, location: null })),
+    );
   });
 
   it("refuses rather than admits when the registry cannot read its store", async () => {
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(unavailableFactors))),
+        requireAuth(guardOptions(fakeSessions([fakeAuthUser()]), perRequest(unavailableFactors))),
         requireFreshStepUp({ factors: perRequest(unavailableFactors), ...enrolment }),
       ],
       { userId: "u1" },
@@ -822,7 +1019,7 @@ describe("requireFreshStepUp", () => {
     const factors = recordingFactors(owing);
     const app = guardedApp(
       [
-        requireAuth(guardOptions(fakeUsers([fakeAuthUser()]), perRequest(factors))),
+        requireAuth(guardOptions(fakeSessions([fakeAuthUser()]), perRequest(factors))),
         requireEnrolment({ factors: perRequest(factors), ...enrolment }),
         requireFreshStepUp({ factors: perRequest(factors), ...enrolment, freshStepUpMaxAgeMs: HOUR }),
       ],
@@ -839,7 +1036,7 @@ describe("requireFreshStepUp", () => {
     const app = (seed: SessionSeed) => {
       const built = guardedApp(
         [
-          requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })]), perRequest(fakeFactors(owing)))),
+          requireAuth(guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })]), perRequest(fakeFactors(owing)))),
           requireEnrolment({ factors: perRequest(fakeFactors(owing)), ...enrolment }),
           requireAdmin(),
           requireFreshStepUp({ factors: perRequest(fakeFactors(owing)), ...enrolment, freshStepUpMaxAgeMs: HOUR }),
@@ -862,7 +1059,7 @@ describe("requireFreshStepUp", () => {
     const factors = perRequest(fakeFactors(owing));
     const app = guardedApp(
       [
-        requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true, medium: "json" }),
+        requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), factors), clearsStepUp: true, medium: "json" }),
         requireFreshStepUp({ factors, ...enrolment, freshStepUpMaxAgeMs: HOUR, medium: "json" }),
       ],
       { userId: "u1" },
@@ -997,7 +1194,7 @@ describe("authFreshStepUpWindow", () => {
 
   function windowApp(guards: readonly Parameters<Forge["use"]>[1][]) {
     const seen: unknown[] = [];
-    const app = guardedApp(guards, { userId: "u1" });
+    const app = guardedApp(guards, { userId: "u1", stepUpAt: CLOCK - 1_000 });
     const record = (context: Parameters<typeof authFreshStepUpWindow>[0]) => {
       seen.push(authFreshStepUpWindow(getAppContext(context)));
       return new Response("recorded");
@@ -1008,7 +1205,7 @@ describe("authFreshStepUpWindow", () => {
   }
 
   const stack = (fresh: { freshStepUpMaxAgeMs?: number | null }) => [
-    requireAuth(guardOptions(fakeUsers([fakeAuthUser()]))),
+    requireAuth(guardOptions(fakeSessions([fakeAuthUser()]))),
     requireFreshStepUp({ factors: satisfied, ...enrolment, now: () => CLOCK, ...fresh }),
   ];
 
@@ -1030,7 +1227,7 @@ describe("authFreshStepUpWindow", () => {
   }
 
   it("returns `undefined` when `requireFreshStepUp` did not run", async () => {
-    const { seen, app } = windowApp([requireAuth(guardOptions(fakeUsers([fakeAuthUser()])))]);
+    const { seen, app } = windowApp([requireAuth(guardOptions(fakeSessions([fakeAuthUser()])))]);
     await app.request("/account/window", { method: "POST" });
     expect(seen).toStrictEqual([undefined]);
   });
@@ -1060,7 +1257,7 @@ describe("the enrolment guards' redirects to an htmx request", () => {
 
   /** `requireAuth` clearing the step-up, so the guard under test answers the demand itself. */
   function behindAuth(guard: Parameters<Forge["use"]>[1], factors: () => FakeRegistry, seed: SessionSeed = { userId: "u1" }): Forge {
-    return guardedApp([requireAuth({ ...guardOptions(fakeUsers([fakeAuthUser()]), factors), clearsStepUp: true }), guard], seed);
+    return guardedApp([requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()]), factors), clearsStepUp: true }), guard], seed);
   }
 
   it("navigates a stale `requireFreshStepUp` POST to verify with HX-Redirect, and a plain one with 303", async () => {
@@ -1144,55 +1341,22 @@ describe("the enrolment guards taken together", () => {
   });
 });
 
-describe("the roles both enrolment guards resolve against", () => {
-  const guards = {
-    requireEnrolment: { build: requireEnrolment, path: "/account/passkeys" },
-    requirePendingEnrolment: { build: requirePendingEnrolment, path: "/auth/enrol/passkey" },
-  };
-
-  for (const [name, guard] of Object.entries(guards)) {
-    it(`hands \`${name}\` the identity's roles, so a \`{mandatoryForRoles}\` requirement is not silently an unscoped one`, async () => {
-      for (const [isAdmin, expected] of [
-        [true, { roles: ["admin"] }],
-        [false, {}],
-      ] as const) {
-        const factors = recordingFactors({ status: "enrolment-required", kinds: ["totp-app"], stepUpKinds: [] });
-        const app = guardedApp(
-          [
-            requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]), perRequest(factors))),
-            guard.build({ factors: perRequest(factors), ...enrolment }),
-          ],
-          { userId: "u1" },
-        );
-        await app.request(guard.path);
-        expect(factors.calls[0]?.context).toEqual(expected);
-      }
-    });
-  }
-
-  it("refuses an admin holding no enrolment against the real registry, and admits the same request from a non-admin", async () => {
-    const assignment = AUTH_FACTOR_ASSIGNMENTS.find((held) => held.label === "for-roles");
-    if (assignment === undefined) throw new Error("the factor matrix no longer carries a `for-roles` assignment");
-    const factors = createFactorRegistry(fakeFactorStore([]), {
-      offered: [
-        { service: fakeFactorService("email-otp"), role: "primary" },
-        { service: fakeFactorService("totp-app"), role: "second", requirement: assignment.requirement(0) },
-        recoveryOffer(),
-      ],
-    });
+describe("a mandatory factor against the real registry", () => {
+  it("owes the same enrolment of an admin as of anyone, since no requirement is scoped to roles", async () => {
+    const factors = fakeFactorRegistry(["totp-app", "passkey"], ["totp-app"], fakeFactorStore([]));
     const app = (isAdmin: boolean) =>
       guardedApp(
         [
-          requireAuth(guardOptions(fakeUsers([fakeAuthUser({ isAdmin })]), perRequest(factors))),
+          requireAuth(guardOptions(fakeSessions([fakeAuthUser({ isAdmin })]), perRequest(factors))),
           requireEnrolment({ factors: perRequest(factors), ...enrolment }),
         ],
         { userId: "u1" },
       );
 
-    const admin = await app(true).request("/account/passkeys");
-    expect(admin.status).toBe(303);
-    expect(admin.headers.get("location")).toBe("/auth/enrol/totp");
-    expect(await (await app(false).request("/account/passkeys")).text()).toBe("passkeys");
+    const answers = await Promise.all(
+      [true, false].map(async (isAdmin) => (await app(isAdmin).request("/account/passkeys")).headers.get("location")),
+    );
+    expect(answers).toEqual(["/auth/enrol/totp", "/auth/enrol/totp"]);
   });
 });
 
@@ -1203,7 +1367,7 @@ describe("createAuthGuards", () => {
   // group of the shipped table carries a mutating leaf, so no chain without one wires at all.
   const chain = {
     routes: { auth: authMap, account: accountMap, admin: adminMap },
-    auth: guardOptions(fakeUsers([fakeAuthUser()])),
+    auth: guardOptions(fakeSessions([fakeAuthUser()])),
     enrolment: { factors: satisfied, ...enrolment },
     origin,
   };
@@ -1241,11 +1405,9 @@ describe("createAuthGuards", () => {
   function elevateApp(options: Partial<AuthGuardChainOptions>, seed: { readonly approved?: boolean; readonly anonymous?: boolean } = {}): Forge {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-    app.use("*", (context, next) => {
-      if (seed.anonymous !== true) {
-        sessionCtx.get(context).set(AUTH_SESSION_KEY, "u1");
-        sessionCtx.get(context).set(AUTH_SIGNED_IN_SESSION_KEY, Date.now());
-      }
+    app.use("*", async (context, next) => {
+      if (seed.anonymous !== true)
+        await establishAuthSession(sessionCtx.get(context), guardSeeder, "u1", Date.now(), Date.now(), { kind: "email-otp" });
       return next();
     });
     if (seed.approved === true) app.use("*", approvedSession());
@@ -1271,14 +1433,46 @@ describe("createAuthGuards", () => {
     expect(await (await elevateApp({ approval: fakeApproval() }, { approved: true }).request("/admin/elevate")).text()).toBe("elevate");
   });
 
+  it("ends an approval with the sign-out it was granted under: the pre-sign-out cookie, replayed, is sent to sign-in by `require-auth`", async () => {
+    const sessions = fakeAuthSessionStore([fakeAuthUser()]);
+    const app = new Forge();
+    app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+    for (const group of createAuthGuards({ ...chain, auth: guardOptions(sessions), approval: fakeApproval() })) {
+      app.use([...group.paths], ...(group.guards ?? []));
+    }
+    mapHandler(app, "GET", "/admin/elevate", () => new Response("elevate"));
+    mapHandler(app, "GET", "/seed", async (context) => {
+      const now = Date.now();
+      await establishAuthSession(sessionCtx.get(context), sessions, "u1", now, now, { kind: "email-otp" });
+      return approvedSession()(context, async () => new Response("seeded"));
+    });
+    mapHandler(app, "POST", "/signout", async (context) => {
+      await clearAuthSession(sessionCtx.get(context), sessions);
+      return new Response("signed out");
+    });
+    const cookieOf = (res: Response) => res.headers.getSetCookie()[0]?.split(";")[0] ?? "";
+
+    const held = cookieOf(await app.request("/seed"));
+    const approved = await app.request("/admin/elevate", { headers: { cookie: held } });
+    const approvedAnswer = { status: approved.status, body: await approved.text() };
+    await app.request("/signout", { method: "POST", headers: { cookie: held } });
+    const replayed = await app.request("/admin/elevate", { headers: { cookie: held } });
+
+    expect({ approved: approvedAnswer, replayed: locationOf(replayed) }).toEqual({
+      approved: { status: 200, body: "elevate" },
+      replayed: { status: 302, location: "/auth/signin?next=%2Fadmin%2Felevate" },
+    });
+  });
+
   /** An app running every stack `options` wires, over a fresh session signed in as `u1`, with the admin user list behind it. */
   function adminListApp(options: Partial<AuthGuardChainOptions>): Forge {
     const app = new Forge();
     app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-    app.use("*", (context, next) => {
-      sessionCtx.get(context).set(AUTH_SESSION_KEY, "u1");
-      sessionCtx.get(context).set(AUTH_SIGNED_IN_SESSION_KEY, Date.now());
-      sessionCtx.get(context).set(AUTH_STEP_UP_SESSION_KEY, Date.now());
+    app.use("*", async (context, next) => {
+      const session = sessionCtx.get(context);
+      const now = Date.now();
+      await establishAuthSession(session, guardSeeder, "u1", now, now, { kind: "email-otp" });
+      await markAuthStepUp(session, guardSeeder, now, now, "email-otp");
       return next();
     });
     for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
@@ -1299,8 +1493,68 @@ describe("createAuthGuards", () => {
 
   it("admits an administrator on `admin.users` past a chain carrying `onForbidden`", async () => {
     const onForbidden = () => new Response("admin only", { status: 403 });
-    const res = await adminListApp({ auth: guardOptions(fakeUsers([fakeAuthUser({ isAdmin: true })])), onForbidden }).request("/admin/users");
+    const res = await adminListApp({ auth: guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])), onForbidden }).request("/admin/users");
     expect({ status: res.status, body: await res.text() }).toEqual({ status: 200, body: "users" });
+  });
+
+  describe("a single-factor administrator on every state-changing account and admin route", () => {
+    type Leaf = { readonly method: string; readonly pattern: { readonly source: string } };
+    const leavesOf = (map: object): Leaf[] =>
+      Object.values(map).flatMap((value: unknown) =>
+        typeof value === "object" && value !== null && "method" in value ? [value as Leaf] : leavesOf(value as object),
+      );
+    const mutations = [...leavesOf(accountMap), ...leavesOf(adminMap)]
+      .filter((leaf) => leaf.method !== "GET")
+      .map((leaf) => ({ method: leaf.method as "POST" | "PATCH" | "DELETE", pattern: leaf.pattern.source }));
+    const TO_VERIFY = { status: 303, location: "/auth/verify", body: "" };
+    const STALE_JSON = { status: 403, location: null, body: JSON.stringify({ error: "This change needs a fresh verification." }) };
+
+    /** The shipped guard table over an approved administrator holding no second factor, signed in two hours ago and stepped up at `stepUpAt`. */
+    function tableApp(stepUpAt: number | null) {
+      const reached: string[] = [];
+      const app = new Forge(nullLogger);
+      app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
+      app.use("*", async (context, next) => {
+        const session = sessionCtx.get(context);
+        const signedInAt = Date.now() - 7_200_000;
+        await establishAuthSession(session, guardSeeder, "u1", signedInAt, signedInAt, { kind: "email-otp" });
+        if (stepUpAt !== null) await markAuthStepUp(session, guardSeeder, stepUpAt, stepUpAt, "email-otp");
+        return next();
+      });
+      app.use("*", approvedSession());
+      const options = { auth: guardOptions(fakeSessions([fakeAuthUser({ isAdmin: true })])), approval: fakeApproval() };
+      for (const group of createAuthGuards({ ...chain, ...options })) app.use([...group.paths], ...(group.guards ?? []));
+      for (const { method, pattern } of mutations) {
+        mapHandler(app, method, pattern, () => (reached.push(`${method} ${pattern}`), new Response("reached")));
+      }
+      const answers = () =>
+        Promise.all(
+          mutations.map(async ({ method, pattern }) => {
+            const res = await app.request(pattern.replace(":id", "x1"), { method, headers: { origin: "https://app.example.com" } });
+            return [`${method} ${pattern}`, { status: res.status, location: res.headers.get("location"), body: await res.text() }] as const;
+          }),
+        );
+      return { reached, answers };
+    }
+
+    const expectedRefusals = () =>
+      mutations.map(({ method, pattern }) => [`${method} ${pattern}`, pattern.includes("/register/") ? STALE_JSON : TO_VERIFY] as const);
+
+    it("refuses each one, reaching no handler, when the step-up is a minute past the window", async () => {
+      const { reached, answers } = tableApp(Date.now() - AUTH_FRESH_STEP_UP_MS - 60_000);
+      expect({ answers: await answers(), reached }).toEqual({ answers: expectedRefusals(), reached: [] });
+    });
+
+    it("refuses each one, reaching no handler, when the session never stepped up", async () => {
+      const { reached, answers } = tableApp(null);
+      expect({ answers: await answers(), reached }).toEqual({ answers: expectedRefusals(), reached: [] });
+    });
+
+    it("reaches every handler once the step-up is fresh", async () => {
+      const { reached, answers } = tableApp(Date.now() - 1_000);
+      await answers();
+      expect(reached.sort()).toEqual(mutations.map(({ method, pattern }) => `${method} ${pattern}`).sort());
+    });
   });
 
   it("throws for every guard that reads the identity, not only `require-admin`", () => {
@@ -1498,7 +1752,7 @@ describe("the enrolment guards — the step-up window they hold at construction"
   // `requireAuth` enforces the owed step-up itself, so it reads the same window the enrolment pair
   // does and has to refuse the same numbers — otherwise a zero there silently owes one every request.
   it("holds `requireAuth` to the same window, which it now enforces the step-up against", () => {
-    const options = guardOptions(fakeUsers([fakeAuthUser()]));
+    const options = guardOptions(fakeSessions([fakeAuthUser()]));
 
     expect(() => requireAuth({ ...options, stepUpMaxAgeMs: 0 })).toThrow(`requireAuth: ${FLOOR}`);
     expect(() => requireAuth({ ...options, stepUpMaxAgeMs: 1_000 })).not.toThrow();
@@ -1506,10 +1760,10 @@ describe("the enrolment guards — the step-up window they hold at construction"
   });
 
   it("holds `resolveAuth` to it too, since the verify page measures marks by the window it records", () => {
-    const users = perRequest(fakeUsers([fakeAuthUser()]));
+    const users = perRequest(fakeSessions([fakeAuthUser()]));
 
-    expect(() => resolveAuth({ users, stepUpMaxAgeMs: 0 })).toThrow(`resolveAuth: ${FLOOR}`);
-    expect(() => resolveAuth({ users, stepUpMaxAgeMs: 1_000 })).not.toThrow();
+    expect(() => resolveAuth({ sessions: users, stepUpMaxAgeMs: 0 })).toThrow(`resolveAuth: ${FLOOR}`);
+    expect(() => resolveAuth({ sessions: users, stepUpMaxAgeMs: 1_000 })).not.toThrow();
   });
 
   it("refuses a fraction", () => {
@@ -1518,13 +1772,36 @@ describe("the enrolment guards — the step-up window they hold at construction"
     );
   });
 
-  it("accepts the floor itself", () => {
+  it("accepts the floor and the ceiling themselves", () => {
     expect(() => requireEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: 1_000 })).not.toThrow();
+    expect(() => requireEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: AUTH_SESSION_MAX_MS })).not.toThrow();
   });
 
-  it("accepts the window omitted, which means the mark lasts the session", () => {
+  it("refuses a window longer than any session lasts, pointing at `null`", () => {
+    expect(() => requireEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: AUTH_SESSION_MAX_MS + 1 })).toThrow(
+      `requireEnrolment: stepUpMaxAgeMs is ${AUTH_SESSION_MAX_MS + 1}, above the ${AUTH_SESSION_MAX_MS}-millisecond ceiling — no session outlives the longest absolute lifetime, so pass \`null\` for a step-up that lasts the session.`,
+    );
+  });
+
+  it("holds `requireAuth` and the freshness window to the same ceiling, accepting the ceiling itself", () => {
+    const options = guardOptions(fakeSessions([fakeAuthUser()]));
+    const ceiling = `above the ${AUTH_SESSION_MAX_MS}-millisecond ceiling`;
+
+    expect(() => requireAuth({ ...options, stepUpMaxAgeMs: AUTH_SESSION_MAX_MS + 1 })).toThrow(
+      `requireAuth: stepUpMaxAgeMs is ${AUTH_SESSION_MAX_MS + 1}, ${ceiling}`,
+    );
+    expect(() => requireFreshStepUp({ factors, ...enrolment, freshStepUpMaxAgeMs: AUTH_SESSION_MAX_MS + 1 })).toThrow(
+      `requireFreshStepUp: freshStepUpMaxAgeMs is ${AUTH_SESSION_MAX_MS + 1}, ${ceiling}`,
+    );
+    expect(() => requireAuth({ ...options, stepUpMaxAgeMs: AUTH_SESSION_MAX_MS })).not.toThrow();
+    expect(() => requireFreshStepUp({ factors, ...enrolment, freshStepUpMaxAgeMs: AUTH_SESSION_MAX_MS })).not.toThrow();
+  });
+
+  it("accepts the window omitted, which means `AUTH_STEP_UP_MAX_MS`, and `null`, which means the mark lasts the session", () => {
     expect(() => requireEnrolment({ factors, ...enrolment })).not.toThrow();
     expect(() => requirePendingEnrolment({ factors, ...enrolment })).not.toThrow();
+    expect(() => requireEnrolment({ factors, ...enrolment, stepUpMaxAgeMs: null })).not.toThrow();
+    expect(() => requireAuth({ ...guardOptions(fakeSessions([fakeAuthUser()])), stepUpMaxAgeMs: null })).not.toThrow();
   });
 });
 
@@ -1587,7 +1864,7 @@ describe("requireBearer", () => {
   it("challenges with a bare Bearer when no credentials were presented, whatever else the request carries", async () => {
     const { service, issue } = bearerService();
     const token = await issue();
-    const identity = { userId: "u1", email: "ada@example.com", isAdmin: false, stepUpAt: null };
+    const identity = { userId: "u1", email: "ada@example.com", isAdmin: false, sessionId: "s1", stepUpAt: null, stepUpKind: null };
     const requests: [string, Forge, string, RequestInit][] = [
       ["no header", bearerApp(service), "/api/token", {}],
       ["Basic", bearerApp(service), "/api/token", { headers: { Authorization: "Basic dTE6cHc=" } }],

@@ -20,7 +20,7 @@ const ACCOUNT = authPaths(accountRoutes("/account"));
 const CREATED_AT = 1735689600000;
 const USED_AT = 1738368000000;
 
-const LOCKOUT_REASON = "It is your only passkey and no other factor is enrolled, so removing it leaves nothing to sign in with.";
+const MANDATORY_REASON = "Your account requires a passkey. Add another before you remove this one.";
 
 function credential(overrides: Partial<AuthCredential> = {}): AuthCredential {
   return {
@@ -49,9 +49,10 @@ function passkeys(props: Partial<PasskeyListViewProps> = {}) {
   return render(
     <PasskeyListView
       rows={[row(credential())]}
-      fallbackFactors={["email-otp"]}
+      mandatory={false}
       paths={ACCOUNT}
       enrolPath={ACCOUNT.passkeyEnrol()}
+      backupPrompt={false}
       icon={AppIcon}
       {...props}
     />,
@@ -121,36 +122,66 @@ describe("PasskeyListView", () => {
   });
 });
 
-// The lock-out path, which is the point of this view: the domain lets a visitor remove their only
-// credential, so the only place the consequence can be stated is before the click.
-describe("PasskeyListView and the last-credential lock-out", () => {
-  it("warns, in place and by name, when the only passkey is the only factor", async () => {
-    const html = await passkeys({ fallbackFactors: [] });
-    expect(attrsOf(html, 'data-ref="credential-lockout"')["data-tone"]).toBe("warning");
-    expect(textOf(html, "div", 'data-slot="alert-title"')).toBe("Removing this passkey locks you out");
-    expect(textOf(html, "div", 'data-slot="alert-description"')).toBe(LOCKOUT_REASON);
+describe("PasskeyListView and a mandatory passkey", () => {
+  it("disables the remove control and names the reason as its description", async () => {
+    const html = await passkeys({ mandatory: true });
+    expect({
+      disabled: attrsOf(html, 'data-ref="credential-remove"')["disabled"],
+      describedBy: attrOf(html, 'data-ref="credential-remove"', "aria-describedby"),
+      id: attrOf(html, 'data-ref="credential-mandatory"', "id"),
+      reason: textOf(html, "span", 'data-ref="credential-mandatory"'),
+    }).toEqual({ disabled: "", describedBy: "passkey-mandatory", id: "passkey-mandatory", reason: MANDATORY_REASON });
   });
 
-  it("names the warning as the remove button's description, so the reason is announced with the control", async () => {
-    const html = await passkeys({ fallbackFactors: [] });
-    expect(attrOf(html, 'data-ref="credential-lockout"', "id")).toBe("passkey-lockout");
-    expect(attrOf(html, 'data-ref="credential-remove"', "aria-describedby")).toBe("passkey-lockout");
+  it("leaves the remove control live and gives no reason when passkeys are optional", async () => {
+    const html = await passkeys({ mandatory: false });
+    expect({
+      disabled: attrsOf(html, 'data-ref="credential-remove"')["disabled"],
+      describedBy: attrOf(html, 'data-ref="credential-remove"', "aria-describedby"),
+      reason: tagOf(html, 'data-ref="credential-mandatory"'),
+    }).toEqual({ disabled: undefined, describedBy: "", reason: "" });
   });
 
-  it("leaves the remove control live, because the store still permits the delete", async () => {
-    const html = await passkeys({ fallbackFactors: [] });
-    expect(attrsOf(html, 'data-ref="credential-remove"')["disabled"]).toBe(undefined);
+  it("states a refused removal in a destructive alert", async () => {
+    const html = await passkeys({ error: "Add another first." });
+    expect({
+      tone: attrsOf(html, 'data-ref="passkey-error"')["data-tone"],
+      title: textOf(html, "div", 'data-slot="alert-title"'),
+      description: textOf(html, "div", 'data-slot="alert-description"'),
+    }).toEqual({ tone: "destructive", title: "We could not remove that passkey", description: "Add another first." });
   });
 
-  it("stays silent when another factor would still admit the visitor", async () => {
-    const html = await passkeys({ fallbackFactors: ["totp-app"] });
-    expect(tagOf(html, 'data-ref="credential-lockout"')).toBe("");
-    expect(attrOf(html, 'data-ref="credential-remove"', "aria-describedby")).toBe("");
+  it("calls a passkey a second factor, never a way to sign in", async () => {
+    const listed = await passkeys();
+    const empty = await passkeys({ rows: [] });
+    expect({
+      listed: textOf(listed, "div", 'data-slot="card-description"'),
+      empty: textOf(empty, "p", 'data-slot="empty-state-description"'),
+    }).toEqual({
+      listed: "Each passkey is a second factor that works on the device it was created on.",
+      empty: "A passkey is a second factor that checks it&#39;s you with this device&#39;s screen lock.",
+    });
+  });
+});
+
+describe("PasskeyListView and the backup prompt", () => {
+  it("names the recovery code as the way back, as a neutral notice rather than a warning", async () => {
+    const html = await passkeys({ backupPrompt: true });
+    expect(attrsOf(html, 'data-ref="passkey-backup"')["data-tone"]).toBe("neutral");
+    expect(textOf(html, "div", 'data-slot="alert-title"')).toBe("Add a backup passkey");
+    expect(textOf(html, "div", 'data-slot="alert-description"').split(" <a ")[0]).toBe(
+      "This is your only passkey. If you lose this device, you&#39;ll need a recovery code to finish signing in.",
+    );
+    expect(textOf(html, "a", 'data-ref="passkey-backup-enrol"')).toBe("Add a second passkey on another device or a security key");
   });
 
-  it("stays silent when a second credential would still admit the visitor", async () => {
-    const html = await passkeys({ rows: [row(credential()), row(credential({ id: "c2" }), "csrf-2")], fallbackFactors: [] });
-    expect(tagOf(html, 'data-ref="credential-lockout"')).toBe("");
+  it("links the prompt to the enrolment path it was handed", async () => {
+    const html = await passkeys({ backupPrompt: true, enrolPath: "/settings/keys/add" });
+    expect(attrOf(html, 'data-ref="passkey-backup-enrol"', "href")).toBe("/settings/keys/add");
+  });
+
+  it("renders no prompt when the resolver did not ask for one", async () => {
+    expect(tagOf(await passkeys(), 'data-ref="passkey-backup"')).toBe("");
   });
 });
 

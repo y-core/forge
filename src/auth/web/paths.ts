@@ -2,7 +2,7 @@ import { Route } from "@remix-run/fetch-router/routes";
 import type { RouteMap } from "@remix-run/fetch-router/routes";
 
 import type { AuthFactorKind } from "../types";
-import type { AuthEntryPaths, AuthPathMap } from "./types";
+import type { AuthEnrolmentPaths, AuthEntryPaths, AuthPathMap } from "./types";
 
 // When the control was pressed and never the outcome: the visitor already knows the one, so it is
 // safe on a URL a shoulder or a log can read, and the other would bin an address list.
@@ -11,6 +11,9 @@ export const AUTH_RESENT_PARAM = "resent";
 
 /** The query flag a step-up by recovery code lands on the factors page with, so it can say what to repair. @internal */
 export const AUTH_RECOVERED_PARAM = "recovered";
+
+/** The query flag a replacement lands back on the authenticator-app page with when the row it was replacing went first. @internal */
+export const AUTH_TOTP_REMOVED_PARAM = "removed";
 
 /** The query parameter naming which confirmed factor the verify page asks for. @internal */
 export const AUTH_FACTOR_PARAM = "factor";
@@ -40,15 +43,13 @@ export function authPaths<routes extends RouteMap>(routeMap: routes): AuthPathMa
 // Total over the kinds a user enrols in deliberately — email-OTP's enrolment is a verified address
 // and has no page — so a chain wired from this cannot own an enrolment it has nowhere to send.
 /** Every enrolment page `authRoutes` mounts, keyed by the factor kind it enrols. @public */
-export function authEnrolmentPaths(paths: AuthEntryPaths): Partial<Record<AuthFactorKind, string>> {
-  return { passkey: paths.enrol.passkey(), "totp-app": paths.enrol.totp() };
+export function authEnrolmentPaths(paths: AuthEntryPaths): AuthEnrolmentPaths {
+  return { kinds: { passkey: paths.enrol.passkey(), "totp-app": paths.enrol.totp() } };
 }
 
-/** The first of `kinds` that `enrolmentPaths` names a page for, or `undefined` when it names none. @internal */
-export function authEnrolTarget(enrolmentPaths: Partial<Record<AuthFactorKind, string>>, kinds: readonly AuthFactorKind[]): string | undefined {
-  for (const kind of kinds) {
-    const path = enrolmentPaths[kind];
-    if (path !== undefined) return path;
-  }
-  return undefined;
+// Every owed kind must be enrolled, so there is nothing to choose: the first is enrolled, and the
+// resolution after it owes the next.
+/** The page of the first kind among `kinds` that has one, or `undefined` when none does. @internal */
+export function authEnrolTarget(enrolmentPaths: AuthEnrolmentPaths, kinds: readonly AuthFactorKind[]): string | undefined {
+  return kinds.flatMap((kind) => enrolmentPaths.kinds[kind] ?? [])[0];
 }

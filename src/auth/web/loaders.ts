@@ -113,6 +113,15 @@ export function loadTotpEnrol<Bindings>(c: AppContext<Bindings>, options: AuthWe
   return authPage(c, options, { name: "accountTotp", state, guarded: AUTH_VIEW_GUARDS.accountTotp });
 }
 
+/** The page replacing a settled authenticator app: a new secret, confirmed by a code from it before the old one stops working. @public */
+export function loadTotpReplace<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "accountTotpReplace", state, guarded: AUTH_VIEW_GUARDS.accountTotpReplace });
+}
+
 /** The email-change page: request a change, then wait for the confirmation to be clicked. @public */
 export function loadEmailChange<Bindings>(
   c: AppContext<Bindings>,
@@ -122,7 +131,7 @@ export function loadEmailChange<Bindings>(
   return authPage(c, options, { name: "accountEmailChange", state, guarded: AUTH_VIEW_GUARDS.accountEmailChange });
 }
 
-/** The visitor's own sign-in methods, as the panel an htmx press swaps in. @public */
+/** The visitor's own factors, as the panel an htmx press swaps in. @public */
 export function loadAccountFactors<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -140,7 +149,16 @@ export function loadRecoveryCodes<Bindings>(
   return authPage(c, options, { name: "accountRecoveryCodes", state, guarded: AUTH_VIEW_GUARDS.accountRecoveryCodes });
 }
 
-/** One named account's sign-in methods, as an administrator reads them — the same panel, minus the management links. @public */
+/** The visitor's live sessions, each other one with its sign-out, and the sign-out of all of them. @public */
+export function loadAccountSessions<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  state: AuthPageState = {},
+): Promise<Response> {
+  return authPage(c, options, { name: "accountSessions", state, guarded: AUTH_VIEW_GUARDS.accountSessions });
+}
+
+/** One named account's factors, as an administrator reads them — the same panel, minus the management links. @public */
 export function loadAdminUserFactors<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,

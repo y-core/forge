@@ -6,25 +6,35 @@ import { mintCsrf } from "../../form/csrf";
 import { isPartial } from "../../render/htmx/htmx-headers";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
+import { sessionCtx } from "../../session/session";
 import type { OtpLength } from "../../ui/core/types";
 import { v } from "../../validation/mod";
-import { authFactorContext } from "../factors/registry";
-import type { AuthFactorService, RecoveryCodeFactorService, TotpAppEnrolment } from "../factors/types";
-import type { AuthFactorKind } from "../types";
-import { adminRefusalCtx, approvalCtx, authFreshStepUpWindow, authStepUpOwed, authStepUpWindow } from "./guards";
-import { authCtx } from "./identity";
+import { AUTH_SECOND_FACTORS } from "../config";
+import type {
+  AuthFactorResolution,
+  AuthFactorService,
+  EnrollableFactorService,
+  RecoveryCodeFactorService,
+  TotpAppEnrolment,
+} from "../factors/types";
+import type { AuthSecondFactorKind } from "../factors/types";
+import type { AuthFactor, AuthFactorKind } from "../types";
+import { adminRefusalCtx, approvalCtx, authFreshStepUpWindow, authStepUpOwed, authStepUpWindow, stepUpHolds } from "./guards";
+import { authCtx, authFactorCaller } from "./identity";
 import {
   authNow,
   authCsrfHeader,
   authEnrollable,
   authPasskeyContract,
+  authReplaceableTotp,
   authReturnPath,
   authReturnQuery,
   authServices,
   authSettledPath,
   authTurnstileWidget,
 } from "./options";
-import { AUTH_FACTOR_PARAM, AUTH_RECOVERED_PARAM, AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
+import { AUTH_FACTOR_PARAM, AUTH_RECOVERED_PARAM, AUTH_RESENT_PARAM, AUTH_TOTP_REMOVED_PARAM } from "./paths";
+import { authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import { AUTH_VIEWS } from "./render";
 import { authAdminSearchSchema } from "./schemas";
@@ -35,7 +45,7 @@ import type { AuthGuardName } from "./types";
 import type { AuthVerifyDemand, AuthViewRequest, AuthViewResolved } from "./types";
 import type { AuthRecoveryStanding } from "./types";
 import type { AuthFactorRow, AuthFactorsViewProps } from "./views/types";
-import type { VerifyChoice } from "./views/types";
+import type { AuthFactorChoice, AuthPasskeyContract } from "./views/types";
 import type { PasskeyListViewProps } from "./views/types";
 import type { TotpEnrolState, TotpEnrolViewProps } from "./views/types";
 
@@ -46,6 +56,8 @@ const UNAVAILABLE = "Service Unavailable";
 const NOT_FOUND = "Not Found";
 
 const FORBIDDEN = "Forbidden";
+
+const TOTP_REMOVED = "Your authenticator app was removed before the replacement finished. Add one again below.";
 
 /** The refusal every resolver gives when the store behind the page it is reading is down. @internal */
 export function unavailable(): Response {
@@ -70,18 +82,16 @@ export function resolveAuthViewer<Bindings>(c: AppContext<Bindings>): AuthIdenti
   return authCtx.getOptional(c) ?? null;
 }
 
-async function resolveFallbackFactors(services: AuthRequestSurface, userId: string): Promise<AuthFactorKind[]> {
-  const kinds: AuthFactorKind[] = [];
-  for (const service of services.factors.offered) {
-    if (service.kind === "passkey" || service.kind === "recovery-code") continue;
-    if (service.enrolment === "implicit") {
-      kinds.push(service.kind);
-      continue;
-    }
-    const enrolled = await service.listEnrolments(userId);
-    if (enrolled.ok && enrolled.data.some((factor) => factor.confirmedAt !== null)) kinds.push(service.kind);
-  }
-  return kinds;
+async function offeredEnrolments(services: AuthRequestSurface, userId: string): Promise<AuthFactor[] | null> {
+  const listed = await services.enrolments.listByUser(userId);
+  if (!listed.ok) return null;
+  return services.factors.offered
+    .filter((service) => service.enrolment === "explicit")
+    .flatMap((service) => listed.data.filter((factor) => factor.kind === service.kind));
+}
+
+function confirmedKindsOf(enrolments: readonly AuthFactor[]): AuthFactorKind[] {
+  return enrolments.filter((factor) => factor.confirmedAt !== null).map((factor) => factor.kind);
 }
 
 function stepUpDemand<Bindings>(
@@ -89,11 +99,12 @@ function stepUpDemand<Bindings>(
   services: AuthRequestSurface,
   identity: AuthIdentity,
   kinds: readonly AuthFactorKind[],
+  resolution: AuthFactorResolution,
 ): AuthVerifyDemand {
   const asked = c.url.searchParams.get(AUTH_FACTOR_PARAM);
   const kind = kinds.find((held) => held === asked) ?? kinds[0];
   const service = kind === undefined ? services.factors.primary : (services.factors.find(kind) ?? services.factors.primary);
-  return { factor: service.kind, digits: service.codeDigits, identity, owed: "step-up", kinds };
+  return { factor: service.kind, digits: service.codeDigits, identity, owed: "step-up", kinds, resolution };
 }
 
 /** What the verify page is presenting: the resolution's demand, and whichever of its step-up kinds the URL chose. @internal */
@@ -103,103 +114,118 @@ export async function resolveAuthVerifyDemand<Bindings>(
   identity: AuthIdentity | null,
 ): Promise<AuthVerifyDemand> {
   const primary = services.factors.primary;
-  if (identity === null) return { factor: primary.kind, digits: primary.codeDigits, identity: null, owed: null, kinds: [] };
+  if (identity === null) return { factor: primary.kind, digits: primary.codeDigits, identity: null, owed: null, kinds: [], resolution: null };
 
-  const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
-  if (!resolved.ok) return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "unknown", kinds: [] };
+  const resolved = await services.factors.resolve(identity.userId);
+  if (!resolved.ok) return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "unknown", kinds: [], resolution: null };
   if (resolved.data.status === "enrolment-required") {
     if (authStepUpOwed(resolved.data, identity.stepUpAt, authStepUpWindow(c)))
-      return stepUpDemand(c, services, identity, resolved.data.stepUpKinds);
-    return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "enrolment", kinds: resolved.data.kinds };
+      return stepUpDemand(c, services, identity, resolved.data.stepUpKinds, resolved.data);
+    return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "enrolment", kinds: resolved.data.kinds, resolution: resolved.data };
   }
-  if (resolved.data.status !== "step-up-required") {
-    return { factor: primary.kind, digits: primary.codeDigits, identity, owed: "none", kinds: [] };
-  }
-  return stepUpDemand(c, services, identity, resolved.data.kinds);
+  if (resolved.data.status === "satisfied") return stepUpDemand(c, services, identity, [primary.kind], resolved.data);
+  return stepUpDemand(c, services, identity, resolved.data.kinds, resolved.data);
 }
-
-const RECOVERABLE_KINDS: readonly AuthFactorKind[] = ["totp-app", "passkey"];
 
 function countsRecoveryCodes(service: AuthFactorService): service is RecoveryCodeFactorService {
   return service.kind === "recovery-code" && "remaining" in service && typeof service.remaining === "function";
 }
 
-async function holdsConfirmed(service: AuthFactorService | undefined, userId: string): Promise<boolean | null> {
-  if (service === undefined) return false;
-  const enrolled = await service.listEnrolments(userId);
-  if (!enrolled.ok) return null;
-  return enrolled.data.some((factor) => factor.confirmedAt !== null);
-}
-
-/** Where `userId` stands on recovery codes, or `null` when a store behind the answer is down. @internal */
-export async function resolveRecoveryStanding(services: AuthRequestSurface, userId: string): Promise<AuthRecoveryStanding | null> {
-  let recoverable = false;
-  for (const kind of RECOVERABLE_KINDS) {
-    const held = await holdsConfirmed(services.factors.find(kind), userId);
-    if (held === null) return null;
-    recoverable ||= held;
-  }
+async function standingOf(
+  services: AuthRequestSurface,
+  userId: string,
+  confirmedKinds: readonly AuthFactorKind[],
+): Promise<AuthRecoveryStanding | null> {
+  const recoverable = AUTH_SECOND_FACTORS.some((kind) => confirmedKinds.includes(kind));
+  const confirmed = confirmedKinds.includes("recovery-code");
   const service = services.factors.find("recovery-code");
-  const confirmed = await holdsConfirmed(service, userId);
-  if (confirmed === null) return null;
   if (!confirmed || service === undefined || !countsRecoveryCodes(service)) return { recoverable, confirmed, remaining: null };
   const remaining = await service.remaining(userId);
   if (!remaining.ok) return null;
   return { recoverable, confirmed, remaining: remaining.data };
 }
 
+/** Where `userId` stands on recovery codes, or `null` when a store behind the answer is down. @internal */
+export async function resolveRecoveryStanding(services: AuthRequestSurface, userId: string): Promise<AuthRecoveryStanding | null> {
+  const enrolments = await offeredEnrolments(services, userId);
+  return enrolments === null ? null : standingOf(services, userId, confirmedKindsOf(enrolments));
+}
+
+function heldSecondKinds(resolution: AuthFactorResolution): readonly AuthFactorKind[] {
+  if (resolution.status === "enrolment-required") return resolution.stepUpKinds;
+  if (resolution.status === "step-up-required") return resolution.kinds;
+  return [];
+}
+
+// `enrolled` is a second factor the resolution has not seen yet, so it is struck from the kinds still
+// owed; whatever mandatory kind remains is enrolled next, in offer order.
 async function afterFactorTarget<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
-  identity: Pick<AuthIdentity, "userId" | "isAdmin">,
-  enrolled: AuthFactorKind | null,
+  identity: Pick<AuthIdentity, "userId">,
+  enrolled: AuthSecondFactorKind | null,
   otherwise: string,
-): Promise<string> {
+  resolution?: AuthFactorResolution,
+): Promise<Result<string, Response>> {
   const services = await authServices(c, options);
-  const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
-  if (resolved.ok && resolved.data.status === "enrolment-required") {
-    const owed = resolved.data.kinds.filter((kind) => kind !== enrolled);
-    if (owed.length > 0) return authEnrolTarget(authEnrolmentPaths(options.paths.auth), owed) ?? authSettledPath(options);
-  }
-  const standing = await resolveRecoveryStanding(services, identity.userId);
-  if (standing === null) return otherwise;
-  const recoverable = standing.recoverable || (enrolled !== null && RECOVERABLE_KINDS.includes(enrolled));
+  const resolved = resolution === undefined ? await services.factors.resolve(identity.userId) : ok(resolution);
+  if (!resolved.ok) return err(unavailable());
+  const owed = resolved.data.status === "enrolment-required" ? resolved.data.kinds.filter((kind) => kind !== enrolled) : [];
+  if (owed.length > 0) return ok(authEnrolTarget(authEnrolmentPaths(options.paths.auth), owed) ?? authSettledPath(options));
+  const standing = await standingOf(services, identity.userId, heldSecondKinds(resolved.data));
+  if (standing === null) return err(unavailable());
+  const recoverable = standing.recoverable || enrolled !== null;
   const owesCodes = recoverable && (!standing.confirmed || standing.remaining === 0);
-  return owesCodes ? authReturnQuery(c, options, options.paths.account.recoveryCodes()) : otherwise;
+  return ok(owesCodes ? authReturnQuery(c, options, options.paths.account.recoveryCodes()) : otherwise);
 }
 
-/** Where a completed step-up sends the visitor: to repair, to an enrolment still owed, to codes still owed, or `otherwise`. @internal */
+/** Where a completed step-up sends the visitor — to repair, to an enrolment still owed, to codes still owed, or `otherwise` — or the 503 a failed read answers. @internal */
 export function authAfterStepUpTarget<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
-  identity: Pick<AuthIdentity, "userId" | "isAdmin">,
+  identity: Pick<AuthIdentity, "userId">,
   verified: AuthFactorKind,
   otherwise: string,
-): Promise<string> {
-  if (verified === "recovery-code") return Promise.resolve(options.paths.account.factors({}, { searchParams: { [AUTH_RECOVERED_PARAM]: "1" } }));
-  return afterFactorTarget(c, options, identity, null, otherwise);
+  resolution?: AuthFactorResolution,
+): Promise<Result<string, Response>> {
+  if (verified === "recovery-code")
+    return Promise.resolve(ok(options.paths.account.factors({}, { searchParams: { [AUTH_RECOVERED_PARAM]: "1" } })));
+  return afterFactorTarget(c, options, identity, null, otherwise, resolution);
 }
 
-/** Where enrolling `enrolled` sends the visitor, judged as though it were already confirmed, so a page can render it beforehand. @internal */
+/** Where enrolling `enrolled` sends the visitor, judged as though it were already confirmed, or the 503 a failed read answers. @internal */
 export function authAfterEnrolTarget<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
-  identity: Pick<AuthIdentity, "userId" | "isAdmin">,
-  enrolled: AuthFactorKind,
+  identity: Pick<AuthIdentity, "userId">,
+  enrolled: AuthSecondFactorKind,
   otherwise: string,
-): Promise<string> {
+): Promise<Result<string, Response>> {
   return afterFactorTarget(c, options, identity, enrolled, otherwise);
 }
 
-// `signin.stepUp` excludes the primary factor, so rendering the code field for anything but an owed
-// step-up builds a form nothing accepts: a visitor would read a correct code as "that did not match".
+// `signin.stepUp` takes the primary factor only from a user owing no second one, so rendering the code
+// field for an owed enrolment builds a form nothing accepts: a correct code would read as "that did not match".
 /** Where an established identity that owes no step-up belongs instead, or `null` when the page stands. @internal */
 export function authVerifyDetour<Bindings>(c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, demand: AuthVerifyDemand): Response | null {
   if (demand.owed === null || demand.owed === "step-up") return null;
   if (demand.owed === "unknown") return unavailable();
-  if (demand.owed === "none") return createAuthRedirect(c, authReturnPath(c, options));
   const enrolment = authEnrolTarget(authEnrolmentPaths(options.paths.auth), demand.kinds) ?? authSettledPath(options);
   return createAuthRedirect(c, enrolment);
+}
+
+// Checked in code and not left to `require-fresh-step-up`: that guard can be opted out of and lets a
+// `GET` through, and these pages hand out a way past the second factor on a session cookie alone.
+/** The redirect to verify, returning to `next`, for a session whose step-up is outside the fresh window; `null` when it is inside. @internal */
+export function authStaleStepUpDetour<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
+  next: string,
+): Response | null {
+  const fresh = authFreshStepUpWindow(c);
+  if (fresh !== undefined && stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) return null;
+  return createAuthRedirect(c, options.paths.auth.verify.show({}, { searchParams: { [options.returnParam ?? "next"]: next } }));
 }
 
 // Both code factors are bounded 6–8 at construction, so this narrows rather than clamps: a width the
@@ -246,9 +272,8 @@ async function resolveSignin<Bindings>(
   });
 }
 
-// `mandatoryForRoles` cannot count towards this: a sign-up has no identity, so it has no roles.
-function signupEnrols(services: AuthRequestSurface): AuthFactorKind | undefined {
-  return services.factors.seconds.find((offer) => offer.requirement === "mandatory" && offer.service.enrolment === "explicit")?.service.kind;
+function signupAddsSecondFactor(services: AuthRequestSurface): boolean {
+  return services.factors.mandatory.length > 0;
 }
 
 async function resolveSignup<Bindings>(
@@ -260,13 +285,13 @@ async function resolveSignup<Bindings>(
   const services = await authServices(c, options);
   const { auth } = options.paths;
   const submitPath = auth.signupSubmit();
-  const enrols = signupEnrols(services);
+  const addsSecondFactor = signupAddsSecondFactor(services);
   const turnstile = await authTurnstileWidget(c, options, "signup");
 
   return ok({
     submitPath: authReturnQuery(c, options, submitPath),
     signinPath: auth.signin(),
-    ...(enrols === undefined ? {} : { enrols }),
+    addsSecondFactor,
     csrfToken: await mintCsrf(c, submitPath),
     ...authCsrfHeader(c),
     email: state.email,
@@ -307,6 +332,9 @@ async function resolveVerify<Bindings>(
   const demand = await resolveAuthVerifyDemand(c, services, viewer);
   const detour = authVerifyDetour(c, options, demand);
   if (detour !== null) return err(detour);
+  // Arriving mails nothing — a `GET` with a side effect is one a cross-site navigation can trigger —
+  // so a re-proof's code is sent only by the resend `POST`, and the page says so until one has been.
+  const reproof = demand.identity !== null && demand.owed === "step-up" && demand.kinds.includes(services.factors.primary.kind);
   const usesPasskey = demand.factor === "passkey";
   const resendPath = demand.factor === "email-otp" ? auth.verify.resend() : undefined;
   const reissueAfterMs = services.factors.find(demand.factor)?.reissueAfterMs ?? null;
@@ -318,18 +346,23 @@ async function resolveVerify<Bindings>(
   const ceremonyFinish = auth.verify.ceremony.finish();
   const stepUp = demand.owed === "step-up" && demand.identity !== null ? demand.identity : null;
   const asking = (path: string, kind: AuthFactorKind) => authWithQuery(authReturnQuery(c, options, path), AUTH_FACTOR_PARAM, kind);
-  const choices: VerifyChoice[] = demand.kinds.map((kind) => ({ kind, href: asking(auth.verify.show(), kind) }));
-  const passkeyContract = async () => {
+  const choices: AuthFactorChoice[] = demand.kinds.map((kind) => ({ kind, href: asking(auth.verify.show(), kind) }));
+  const passkeyContract = async (): Promise<Result<AuthPasskeyContract, Response>> => {
     // The rendered target is the one the controller follows: a step-up changes nothing the next page is chosen by.
     const redirect =
-      stepUp === null ? authReturnPath(c, options) : await authAfterStepUpTarget(c, options, stepUp, "passkey", authReturnPath(c, options));
-    return authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, redirect);
+      stepUp === null
+        ? ok(authReturnPath(c, options))
+        : await authAfterStepUpTarget(c, options, stepUp, "passkey", authReturnPath(c, options), demand.resolution ?? undefined);
+    if (!redirect.ok) return err(redirect.error);
+    return ok(await authPasskeyContract(c, "authentication", ceremony, ceremonyFinish, redirect.data));
   };
+  const passkey = usesPasskey ? await passkeyContract() : undefined;
+  if (passkey !== undefined && !passkey.ok) return err(passkey.error);
 
   return ok({
     factor: demand.factor,
     ...(codeWidth(demand.digits) === undefined ? {} : { codeDigits: codeWidth(demand.digits) }),
-    passkey: usesPasskey ? await passkeyContract() : undefined,
+    passkey: passkey?.data,
     ...(stepUp === null || choices.length < 2 ? {} : { choices }),
     submitPath: stepUp === null ? authReturnQuery(c, options, submitPath) : asking(submitPath, demand.factor),
     ...(resendPath === undefined ? {} : { resendPath: authReturnQuery(c, options, resendPath) }),
@@ -338,6 +371,7 @@ async function resolveVerify<Bindings>(
     // Its own token: `csrfProtection` binds one to the path it was minted for, and this page posts to two.
     ...(resendPath === undefined ? {} : { resendToken: await mintCsrf(c, resendPath) }),
     resent: c.url.searchParams.has(AUTH_RESENT_PARAM),
+    ...(reproof && c.method === "GET" && !c.url.searchParams.has(AUTH_RESENT_PARAM) ? { codeSent: false } : {}),
     // The factor's own number, so the page cannot promise a wait it does not enforce.
     ...(resendWaitMs === undefined ? {} : { resendWaitMs }),
     ...authCsrfHeader(c),
@@ -362,8 +396,9 @@ async function resolveEnrolPasskey<Bindings>(
   if (!offered.ok) return err(offered.error);
 
   const redirect = await authAfterEnrolTarget(c, options, identity, "passkey", authSettledPath(options));
+  if (!redirect.ok) return err(redirect.error);
   return ok({
-    contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), redirect),
+    contract: await authPasskeyContract(c, "registration", auth.enrol.ceremony.begin(), auth.enrol.ceremony.finish(), redirect.data),
     exit: { kind: "signout", path: auth.signout(), csrfToken: await mintCsrf(c, auth.signout()) },
     ...authCsrfHeader(c),
     email: identity.email,
@@ -383,16 +418,14 @@ async function resolveAccountEnrolPasskey<Bindings>(
   const offered = authEnrollable(services, "passkey");
   if (!offered.ok) return err(offered.error);
   const fresh = authFreshStepUpWindow(c);
-  if (fresh !== undefined) {
-    const resolved = await services.factors.resolve(identity.userId, authFactorContext(identity));
-    if (!resolved.ok) return err(unavailable());
-    if (authStepUpOwed(resolved.data, identity.stepUpAt, fresh))
-      return err(createAuthRedirect(c, auth.verify.show({}, { searchParams: { [options.returnParam ?? "next"]: account.passkeyEnrol() } }), 302));
+  if (fresh !== undefined && !stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) {
+    return err(createAuthRedirect(c, auth.verify.show({}, { searchParams: { [options.returnParam ?? "next"]: account.passkeyEnrol() } }), 302));
   }
 
   const redirect = await authAfterEnrolTarget(c, options, identity, "passkey", account.passkeys());
+  if (!redirect.ok) return err(redirect.error);
   return ok({
-    contract: await authPasskeyContract(c, "registration", account.passkeyCeremony.begin(), account.passkeyCeremony.finish(), redirect),
+    contract: await authPasskeyContract(c, "registration", account.passkeyCeremony.begin(), account.passkeyCeremony.finish(), redirect.data),
     exit: { kind: "back", path: account.passkeys() },
     ...authCsrfHeader(c),
     email: identity.email,
@@ -405,6 +438,7 @@ async function passkeyPage<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   identity: AuthIdentity,
+  state: AuthPageState,
   only: string | undefined,
 ): Promise<Result<PasskeyListViewProps, Response>> {
   const services = await authServices(c, options);
@@ -426,9 +460,11 @@ async function passkeyPage<Bindings>(
         csrfToken: await mintCsrf(c, account.passkeyRemove({ id: credential.id })),
       })),
     ),
-    fallbackFactors: await resolveFallbackFactors(services, identity.userId),
+    mandatory: listed.data.length === 1 && services.factors.mandatory.includes("passkey"),
     paths: account,
     enrolPath: account.passkeyEnrol(),
+    backupPrompt: only === undefined && listed.data.length === 1,
+    error: state.error,
     ...authCsrfHeader(c),
     icon: options.icon,
   });
@@ -438,17 +474,19 @@ function resolvePasskeyList<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   identity: AuthIdentity,
+  state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountPasskeys"], Response>> {
-  return passkeyPage(c, options, identity, undefined);
+  return passkeyPage(c, options, identity, state, undefined);
 }
 
 function resolvePasskey<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   identity: AuthIdentity,
+  state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountPasskey"], Response>> {
   const id = c.params.id;
-  return id === undefined ? Promise.resolve(err(notFound())) : passkeyPage(c, options, identity, id);
+  return id === undefined ? Promise.resolve(err(notFound())) : passkeyPage(c, options, identity, state, id);
 }
 
 async function resolvePasskeyEdit<Bindings>(
@@ -483,6 +521,36 @@ async function resolvePasskeyEdit<Bindings>(
 interface TotpPageTargets {
   readonly enrolPath: string;
   readonly removePath?: string | undefined;
+  readonly replacePath?: string | undefined;
+}
+
+/** The authenticator-app view's props for `enrolState`, its width and period read off `service`. */
+async function totpViewProps<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  service: EnrollableFactorService,
+  enrolState: TotpEnrolState,
+  targets: TotpPageTargets,
+  mandatory: boolean,
+  state: AuthPageState,
+): Promise<TotpEnrolViewProps> {
+  const posts = enrolState.status === "enrolled" ? (targets.removePath ?? targets.enrolPath) : targets.enrolPath;
+  return {
+    state: enrolState,
+    enrolPath: targets.enrolPath,
+    ...(targets.removePath === undefined ? {} : { removePath: targets.removePath }),
+    ...(targets.replacePath === undefined ? {} : { replacePath: targets.replacePath }),
+    csrfToken: await mintCsrf(c, posts),
+    ...authCsrfHeader(c),
+    mandatory,
+    // Read off the factor, never restated here: a page asking for a width or promising a refresh
+    // the factor does not use is a page whose copy the factor can be reconfigured out from under.
+    ...(codeWidth(service.codeDigits) === undefined ? {} : { codeDigits: codeWidth(service.codeDigits) }),
+    ...(service.codePeriodSeconds === null ? {} : { codePeriodSeconds: service.codePeriodSeconds }),
+    fieldError: state.fieldError,
+    error: state.error,
+    icon: options.icon,
+  };
 }
 
 async function totpPage<Bindings>(
@@ -497,43 +565,58 @@ async function totpPage<Bindings>(
   if (!offered.ok) return err(offered.error);
   const service = offered.data;
 
-  const enrolled = await service.listEnrolments(identity.userId);
-  if (!enrolled.ok) return err(unavailable());
-  const confirmed = enrolled.data.find((factor) => factor.confirmedAt !== null);
+  const enrolments = await offeredEnrolments(services, identity.userId);
+  if (enrolments === null) return err(unavailable());
+  const confirmed = enrolments.find((factor) => factor.kind === "totp-app" && factor.confirmedAt !== null);
 
-  let enrolState: TotpEnrolState;
   if (confirmed?.confirmedAt != null) {
-    enrolState = { status: "enrolled", enrolledAt: confirmed.confirmedAt };
-  } else {
-    const begun = await service.beginEnrolment(identity.userId, authNow(options));
-    if (!begun.ok) return err(unavailable());
-    enrolState = { status: "enrolling", ...(begun.data.options as TotpAppEnrolment) };
+    const enrolled: TotpEnrolState = { status: "enrolled", enrolledAt: confirmed.confirmedAt };
+    return ok(await totpViewProps(c, options, service, enrolled, targets, services.factors.mandatory.includes("totp-app"), state));
   }
-
-  const posts = enrolState.status === "enrolled" ? (targets.removePath ?? targets.enrolPath) : targets.enrolPath;
-  return ok({
-    state: enrolState,
-    enrolPath: targets.enrolPath,
-    ...(targets.removePath === undefined ? {} : { removePath: targets.removePath }),
-    csrfToken: await mintCsrf(c, posts),
-    ...authCsrfHeader(c),
-    // Read off the factor, never restated here: a page asking for a width or promising a refresh
-    // the factor does not use is a page whose copy the factor can be reconfigured out from under.
-    ...(codeWidth(service.codeDigits) === undefined ? {} : { codeDigits: codeWidth(service.codeDigits) }),
-    ...(service.codePeriodSeconds === null ? {} : { codePeriodSeconds: service.codePeriodSeconds }),
-    fieldError: state.fieldError,
-    icon: options.icon,
-  });
+  const begun = await service.beginEnrolment(identity.userId, authNow(options));
+  if (!begun.ok) return err(unavailable());
+  const enrolling: TotpEnrolState = { status: "enrolling", ...(begun.data.options as TotpAppEnrolment) };
+  return ok(await totpViewProps(c, options, service, enrolling, targets, false, state));
 }
 
-function resolveTotpEnrol<Bindings>(
+async function resolveTotpEnrol<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   identity: AuthIdentity,
   state: AuthPageState,
 ): Promise<Result<AuthViewProps["accountTotp"], Response>> {
   const { account } = options.paths;
-  return totpPage(c, options, identity, state, { enrolPath: account.totpEnrol(), removePath: account.totpRemove() });
+  const removed = state.error === undefined && c.url.searchParams.has(AUTH_TOTP_REMOVED_PARAM) ? { error: TOTP_REMOVED } : {};
+  const replaceable = authReplaceableTotp(await authServices(c, options)).ok;
+  return totpPage(
+    c,
+    options,
+    identity,
+    { ...state, ...removed },
+    { enrolPath: account.totpEnrol(), removePath: account.totpRemove(), ...(replaceable ? { replacePath: account.totpReplace() } : {}) },
+  );
+}
+
+// Minting the pending secret on a `GET` is the enrolment page's own precedent: it binds to this
+// session alone and changes nothing until a code from it is posted.
+async function resolveTotpReplace<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
+  state: AuthPageState,
+): Promise<Result<AuthViewProps["accountTotpReplace"], Response>> {
+  const { account } = options.paths;
+  const detour = authStaleStepUpDetour(c, options, identity, account.totpReplace());
+  if (detour !== null) return err(detour);
+  const replaceable = authReplaceableTotp(await authServices(c, options));
+  if (!replaceable.ok) return err(replaceable.error);
+  const session = sessionCtx.getOptional(c);
+  if (session === undefined) return err(unavailable());
+
+  const begun = await replaceable.data.beginReplacement(identity.userId, authNow(options), await authFactorCaller(session));
+  if (!begun.ok) return err(begun.error === "not-enrolled" ? createAuthRedirect(c, account.totp()) : unavailable());
+  const replacing: TotpEnrolState = { status: "replacing", ...(begun.data.options as TotpAppEnrolment) };
+  return ok(await totpViewProps(c, options, replaceable.data, replacing, { enrolPath: account.totpReplaceConfirm() }, false, state));
 }
 
 // The same page outside the `account` group, which `require-enrolment` refuses precisely while the
@@ -570,53 +653,55 @@ async function resolveEmailChange<Bindings>(
   });
 }
 
-async function resolveFactorRows(services: AuthRequestSurface, userId: string): Promise<AuthFactorRow[] | null> {
-  const rows: AuthFactorRow[] = [];
-  for (const service of services.factors.offered) {
-    if (service.enrolment === "implicit") {
-      rows.push({ kind: service.kind, state: "always", at: null });
-      continue;
-    }
-    const enrolled = await service.listEnrolments(userId);
-    if (!enrolled.ok) return null;
-    const confirmed = enrolled.data.find((factor) => factor.confirmedAt !== null);
-    if (confirmed?.confirmedAt != null) {
-      rows.push({ kind: service.kind, state: "enrolled", at: confirmed.confirmedAt });
-      continue;
-    }
-    const started = enrolled.data[0];
-    rows.push(
-      started === undefined ? { kind: service.kind, state: "none", at: null } : { kind: service.kind, state: "pending", at: started.createdAt },
-    );
-  }
-  return rows;
+function factorRowsOf(services: AuthRequestSurface, enrolments: readonly AuthFactor[]): AuthFactorRow[] {
+  return services.factors.offered.map((service): AuthFactorRow => {
+    if (service === services.factors.primary) return { kind: service.kind, state: "always", at: null };
+    const enrolled = enrolments.filter((factor) => factor.kind === service.kind);
+    const confirmed = enrolled.find((factor) => factor.confirmedAt !== null);
+    if (confirmed?.confirmedAt != null) return { kind: service.kind, state: "enrolled", at: confirmed.confirmedAt };
+    const started = enrolled[0];
+    return started === undefined
+      ? { kind: service.kind, state: "none", at: null }
+      : { kind: service.kind, state: "pending", at: started.createdAt };
+  });
 }
 
 async function factorsPanel<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   userId: string,
-  extra: Pick<AuthFactorsViewProps, "manage" | "recovered" | "reset">,
+  extra: Pick<AuthFactorsViewProps, "manage" | "reset">,
+  recovered = false,
 ): Promise<Result<AuthFactorsViewProps, Response>> {
   const services = await authServices(c, options);
-  const rows = await resolveFactorRows(services, userId);
-  if (rows === null) return err(unavailable());
-  const listed = await services.credentials.listByUser(userId);
-  if (!listed.ok) return err(unavailable());
+  const [enrolments, listed] = await Promise.all([offeredEnrolments(services, userId), services.credentials.listByUser(userId)]);
+  if (enrolments === null || !listed.ok) return err(unavailable());
+  const confirmedKinds = confirmedKindsOf(enrolments);
+  const standing = recovered ? await standingOf(services, userId, confirmedKinds) : null;
+  if (recovered && standing === null) return err(unavailable());
+  // A second app row is impossible, so the repair for a lost app is replacing it, never adding beside it.
+  const replaceAppPath =
+    standing !== null && extra.manage !== undefined && confirmedKinds.includes("totp-app") && authReplaceableTotp(services).ok
+      ? extra.manage.totpReplace()
+      : undefined;
 
-  return ok({ factors: rows, passkeys: listed.data, ...extra, icon: options.icon, ...(isPartial(c) ? { level: 2 as const } : {}) });
+  return ok({
+    factors: factorRowsOf(services, enrolments),
+    passkeys: listed.data,
+    ...extra,
+    ...(standing === null ? {} : { recovered: standing.remaining ?? 0 }),
+    ...(replaceAppPath === undefined ? {} : { replaceAppPath }),
+    icon: options.icon,
+    ...(isPartial(c) ? { level: 2 as const } : {}),
+  });
 }
 
-async function resolveAccountFactors<Bindings>(
+function resolveAccountFactors<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   identity: AuthIdentity,
 ): Promise<Result<AuthViewProps["accountFactors"], Response>> {
-  if (!c.url.searchParams.has(AUTH_RECOVERED_PARAM)) return factorsPanel(c, options, identity.userId, { manage: options.paths.account });
-
-  const standing = await resolveRecoveryStanding(await authServices(c, options), identity.userId);
-  if (standing === null) return err(unavailable());
-  return factorsPanel(c, options, identity.userId, { manage: options.paths.account, recovered: standing.remaining ?? 0 });
+  return factorsPanel(c, options, identity.userId, { manage: options.paths.account }, c.url.searchParams.has(AUTH_RECOVERED_PARAM));
 }
 
 // No `manage` here, deliberately: those pages act on whoever is signed in, so offering an
@@ -663,6 +748,29 @@ async function resolveRecoveryCodes<Bindings>(
     ...authCsrfHeader(c),
     fieldError: state.fieldError,
     icon: options.icon,
+  });
+}
+
+async function resolveAccountSessions<Bindings>(
+  c: AppContext<Bindings>,
+  options: AuthWebOptions<Bindings>,
+  identity: AuthIdentity,
+): Promise<Result<AuthViewProps["accountSessions"], Response>> {
+  const services = await authServices(c, options);
+  const { account } = options.paths;
+  const listed = await services.sessions.listByUser(identity.userId, authNow(options));
+  if (!listed.ok) return err(unavailable());
+
+  const revokePath = account.sessionRevoke();
+  const revokeOthersPath = account.sessionsRevokeOthers();
+  return ok({
+    rows: listed.data,
+    currentId: identity.sessionId,
+    revokePath,
+    revokeToken: await mintCsrf(c, revokePath),
+    revokeOthersPath,
+    revokeOthersToken: await mintCsrf(c, revokeOthersPath),
+    ...authCsrfHeader(c),
   });
 }
 
@@ -760,9 +868,11 @@ const AUTH_VIEW_RESOLVERS: { readonly [Name in AuthViewName]: AuthViewResolver<N
   accountPasskey: resolvePasskey,
   accountPasskeyEdit: resolvePasskeyEdit,
   accountTotp: resolveTotpEnrol,
+  accountTotpReplace: resolveTotpReplace,
   accountEmailChange: resolveEmailChange,
   accountFactors: resolveAccountFactors,
   accountRecoveryCodes: resolveRecoveryCodes,
+  accountSessions: resolveAccountSessions,
   adminUsers: resolveAdminUsers,
   adminUser: adminUserPage,
   adminUserEdit: adminUserPage,
@@ -785,9 +895,11 @@ export const AUTH_VIEW_GUARDS = {
   accountPasskey: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountPasskeyEdit: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountTotp: ["require-auth", "require-enrolment", "require-fresh-step-up"],
+  accountTotpReplace: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountEmailChange: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountFactors: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   accountRecoveryCodes: ["require-auth", "require-enrolment", "require-fresh-step-up"],
+  accountSessions: ["require-auth", "require-enrolment", "require-fresh-step-up"],
   adminUsers: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminUser: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],
   adminUserEdit: ["require-auth", "require-enrolment", "require-admin", "require-fresh-step-up"],

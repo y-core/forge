@@ -21,41 +21,124 @@ export function extractViewBoxes(spriteContent: string): Record<string, string> 
 // oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0/C1 control chars
 const URL_NOISE = /[\u0000-\u0020\u007f-\u009f]/g;
 
+/** Characters XML 1.0 forbids: C0 controls other than tab, LF and CR, U+FFFE, U+FFFF, and a surrogate half without its partner. */
+// oxlint-disable-next-line eslint/no-control-regex -- deliberately matching C0 control chars
+const XML_FORBIDDEN = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/** Named references this decoder knows, spelled as HTML spells them; a name is matched case-sensitively and only with its `;`. */
 const NAMED_REFS = new Map([
+  ["AMP", "&"],
+  ["GT", ">"],
+  ["LT", "<"],
+  ["NewLine", "\n"],
+  ["QUOT", '"'],
+  ["Tab", "\t"],
   ["amp", "&"],
   ["apos", "'"],
   ["colon", ":"],
   ["gt", ">"],
   ["lt", "<"],
-  ["newline", "\n"],
   ["quot", '"'],
-  ["tab", "\t"],
 ]);
 
-const CHAR_REF = /&(#x[0-9a-f]+|#[0-9]+|[a-z]+);?/gi;
+/** A numeric reference, whose `;` the HTML parser does not require, or a named one with or without its `;`. */
+const CHAR_REF = /&(?:#[xX]([0-9a-fA-F]+);?|#([0-9]+);?|([A-Za-z][A-Za-z0-9]*)(;?))/g;
 
-/** One decoding pass over HTML character references, as the parser does it — for comparison only, never written back. */
-function decodeCharRefs(value: string): string {
-  return value.replace(CHAR_REF, (match, ref: string) => {
-    const lower = ref.toLowerCase();
-    const code = lower.startsWith("#x") ? Number.parseInt(ref.slice(2), 16) : lower.startsWith("#") ? Number.parseInt(ref.slice(1), 10) : NaN;
-    if (Number.isNaN(code)) return NAMED_REFS.get(lower) ?? match;
-    return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : match;
+/** The character one reference stands for, or null when the decoder does not know it. */
+function decodeCharRef(
+  hex: string | undefined,
+  decimal: string | undefined,
+  name: string | undefined,
+  semicolon: string | undefined,
+): string | null {
+  if (name !== undefined) return semicolon === ";" ? (NAMED_REFS.get(name) ?? null) : null;
+  const code = hex !== undefined ? Number.parseInt(hex, 16) : Number.parseInt(decimal ?? "", 10);
+  return code <= 0x10ffff ? String.fromCodePoint(code) : null;
+}
+
+/** Decodes an attribute value in one pass, or null when it holds a reference the decoder does not know or a character XML forbids. */
+function decodeAttrValue(value: string): string | null {
+  let known = true;
+  const decoded = value.replace(CHAR_REF, (match, hex?: string, decimal?: string, name?: string, semicolon?: string) => {
+    const char = decodeCharRef(hex, decimal, name, semicolon);
+    if (char === null) known = false;
+    return char ?? match;
   });
+  return known && !XML_FORBIDDEN.test(decoded) ? decoded : null;
 }
 
-/** The scheme a browser would resolve the attribute value to, with every spelling that hides one undone. */
+/** Decodes text in one pass, leaving a reference the decoder does not know as literal text and removing every character XML forbids. */
+function decodeSvgText(text: string): string {
+  const decoded = text.replace(
+    CHAR_REF,
+    (match, hex?: string, decimal?: string, name?: string, semicolon?: string) => decodeCharRef(hex, decimal, name, semicolon) ?? match,
+  );
+  return decoded.replace(new RegExp(XML_FORBIDDEN.source, "g"), "");
+}
+
+/** The scheme a browser would resolve a decoded attribute value to, with the characters it ignores removed. */
 function resolvedScheme(value: string): string {
-  return decodeCharRefs(value.replace(/^["']|["']$/g, ""))
-    .replace(URL_NOISE, "")
-    .toLowerCase();
+  return value.replace(URL_NOISE, "").toLowerCase();
 }
 
-/** Elements dropped with everything they contain, whether or not their closing tag is present. */
-const DROPPED_ELEMENTS = new Set(["script", "style", "foreignobject"]);
+/** The graphics elements kept, by lowercased name; every other element is dropped with everything it contains. */
+const SVG_ELEMENTS = new Set([
+  "circle",
+  "clippath",
+  "defs",
+  "desc",
+  "ellipse",
+  "feblend",
+  "fecolormatrix",
+  "fecomponenttransfer",
+  "fecomposite",
+  "feconvolvematrix",
+  "fediffuselighting",
+  "fedisplacementmap",
+  "fedistantlight",
+  "fedropshadow",
+  "feflood",
+  "fefunca",
+  "fefuncb",
+  "fefuncg",
+  "fefuncr",
+  "fegaussianblur",
+  "feimage",
+  "femerge",
+  "femergenode",
+  "femorphology",
+  "feoffset",
+  "fepointlight",
+  "fespecularlighting",
+  "fespotlight",
+  "fetile",
+  "feturbulence",
+  "filter",
+  "g",
+  "lineargradient",
+  "line",
+  "marker",
+  "mask",
+  "path",
+  "pattern",
+  "polygon",
+  "polyline",
+  "radialgradient",
+  "rect",
+  "stop",
+  "svg",
+  "symbol",
+  "text",
+  "title",
+  "tspan",
+  "use",
+]);
 
-/** The dropped elements whose content is raw text, so no element can nest inside them. */
+/** Elements whose content is raw text, so no element can nest inside them. */
 const RAW_TEXT_ELEMENTS = new Set(["script", "style"]);
+
+/** Elements kept with their text alone; an element inside one is dropped, so no nested `title` can open an HTML raw-text run. */
+const TEXT_ONLY_ELEMENTS = new Set(["desc", "title"]);
 
 /** SMIL elements that retarget one attribute of the element they sit in. */
 const RETARGETING_ELEMENTS = new Set(["animate", "animatetransform", "set"]);
@@ -96,7 +179,25 @@ const ANIMATABLE_ATTRS = new Set([
 ]);
 
 /** Attributes a browser resolves as a URL, so a scheme in one of them executes. */
-const URL_VALUED_ATTRS = new Set(["action", "data", "formaction", "href", "poster", "src", "xlink:base", "xlink:href", "xml:base"]);
+const URL_VALUED_ATTRS = new Set(["action", "data", "formaction", "poster", "src"]);
+
+/** Attributes that reference another element, kept only when the reference stays inside the document. */
+const REFERENCE_ATTRS = new Set(["href", "xlink:href"]);
+
+/** The only namespace-prefixed attributes kept; any other prefix can rebind a name to a meaning the allowlists never saw. */
+const PREFIXED_ATTRS = new Set(["xlink:href", "xml:lang", "xml:space"]);
+
+/** The namespace declarations the root may keep, each only when bound to the namespace its name implies. */
+const ROOT_NAMESPACES = new Map([
+  ["xmlns", "http://www.w3.org/2000/svg"],
+  ["xmlns:xlink", "http://www.w3.org/1999/xlink"],
+]);
+
+/** A CSS `url()` whose argument, past whitespace and an opening quote, is anything but a `#` fragment. */
+const EXTERNAL_CSS_URL = /url\((?!\s*["']?#)/;
+
+/** CSS functions that fetch a bare string as `url()` fetches its argument. */
+const CSS_FETCHING_FUNCTION = /(?:image-set|image|src)\(/;
 
 /** An event handler is spelled `on` plus letters and nothing else, which is what keeps `only-child` out. */
 const HANDLER_ATTR = /^on[a-z]+$/i;
@@ -107,22 +208,27 @@ const TAG_NAME = /^[A-Za-z][A-Za-z0-9:_.-]*$/;
 /** An attribute name the serializer may re-emit. */
 const ATTR_NAME = /^[A-Za-z_:][A-Za-z0-9_.:-]*$/;
 
-/** One attribute as the tokenizer read it, carrying the source text the serializer re-emits. */
+/** One attribute as the tokenizer read it, its value already decoded. */
 interface SvgAttr {
   name: string;
   value: string;
-  source: string;
 }
 
 /** Every construct the sanitizer understands; anything else in the source is dropped rather than re-emitted. */
 type SvgToken =
   | { kind: "text"; text: string }
-  | { kind: "start"; name: string; attrs: readonly SvgAttr[]; selfClosing: boolean }
+  | { kind: "start"; name: string; attrs: readonly SvgAttr[]; selfClosing: boolean; duplicated: boolean }
   | { kind: "end"; name: string };
 
-/** Reads one tag's attributes from `start`, with the index just past the tag that closed them. */
-function readAttrs(markup: string, start: number): { attrs: SvgAttr[]; selfClosing: boolean; next: number } {
+/** Reads one tag's attributes from `start`, with the index just past the tag that closed them; a value the decoder cannot read is left out. */
+function readAttrs(markup: string, start: number): { attrs: SvgAttr[]; duplicated: boolean; selfClosing: boolean; next: number } {
   const attrs: SvgAttr[] = [];
+  const names: string[] = [];
+  const add = (name: string, raw: string): void => {
+    names.push(name.toLowerCase());
+    const value = decodeAttrValue(raw);
+    if (value !== null) attrs.push({ name, value });
+  };
   let p = start;
   let selfClosing = false;
   while (p < markup.length) {
@@ -144,7 +250,7 @@ function readAttrs(markup: string, start: number): { attrs: SvgAttr[]; selfClosi
     const name = markup.slice(nameStart, p);
     while (/\s/.test(markup.charAt(p))) p++;
     if (markup.charAt(p) !== "=") {
-      attrs.push({ name, value: "", source: name });
+      add(name, "");
       continue;
     }
     p++;
@@ -152,39 +258,25 @@ function readAttrs(markup: string, start: number): { attrs: SvgAttr[]; selfClosi
     const quote = markup.charAt(p);
     if (quote === '"' || quote === "'") {
       const end = markup.indexOf(quote, p + 1);
-      const value = markup.slice(p + 1, end === -1 ? markup.length : end);
-      attrs.push({ name, value, source: `${name}=${quote}${value}${quote}` });
+      add(name, markup.slice(p + 1, end === -1 ? markup.length : end));
       p = end === -1 ? markup.length : end + 1;
       continue;
     }
     const valueStart = p;
     while (p < markup.length && !/[\s>]/.test(markup.charAt(p))) p++;
-    const value = markup.slice(valueStart, p);
-    attrs.push({ name, value, source: `${name}=${value}` });
+    add(name, markup.slice(valueStart, p));
   }
-  return { attrs, selfClosing, next: p };
+  return { attrs, duplicated: new Set(names).size !== names.length, selfClosing, next: p };
 }
 
-/** The index just past a dropped element's closing tag, or `null` when the markup carries none. */
-function skipElement(markup: string, from: number, name: string): number | null {
-  const lower = markup.toLowerCase();
-  let depth = 1;
-  let p = from;
-  while (p < markup.length) {
-    const closeAt = lower.indexOf(`</${name}`, p);
-    if (closeAt === -1) return null;
-    const openAt = RAW_TEXT_ELEMENTS.has(name) ? -1 : lower.indexOf(`<${name}`, p);
-    if (openAt !== -1 && openAt < closeAt) {
-      depth++;
-      p = openAt + name.length + 1;
-      continue;
-    }
-    depth--;
-    const gt = markup.indexOf(">", closeAt);
-    p = gt === -1 ? markup.length : gt + 1;
-    if (depth === 0) return p;
-  }
-  return null;
+/** The index just past a raw-text element's closing tag, or `null` when the markup carries none. */
+function skipRawText(markup: string, from: number, name: string): number | null {
+  const close = new RegExp(`</${name}(?=[\\s/>]|$)`, "gi");
+  close.lastIndex = from;
+  const match = close.exec(markup);
+  if (match === null) return null;
+  const gt = markup.indexOf(">", close.lastIndex);
+  return gt === -1 ? markup.length : gt + 1;
 }
 
 /** Whether a SMIL element names an attribute that is safe to animate. */
@@ -193,8 +285,8 @@ function retargetsSafely(attrs: readonly SvgAttr[]): boolean {
   return target !== undefined && ANIMATABLE_ATTRS.has(target.value.trim().toLowerCase());
 }
 
-/** Reads markup into tokens, dropping every element whose content may never be emitted. */
-function tokenize(markup: string): SvgToken[] {
+/** Reads markup into tokens, dropping comments, declarations and raw-text elements with their content. */
+function lexSvg(markup: string): SvgToken[] {
   const tokens: SvgToken[] = [];
   let i = 0;
   while (i < markup.length) {
@@ -235,45 +327,164 @@ function tokenize(markup: string): SvgToken[] {
     if (!TAG_NAME.test(name)) continue;
 
     const lower = name.toLowerCase();
-    if (DROPPED_ELEMENTS.has(lower) || (RETARGETING_ELEMENTS.has(lower) && !retargetsSafely(read.attrs))) {
-      const end = read.selfClosing ? i : skipElement(markup, i, lower);
-      // An unterminated raw-text element swallows the rest of the file as text, so dropping the tag
-      // alone would leave that text to be re-emitted; every other element parses on past its own tag.
-      i = end ?? (RAW_TEXT_ELEMENTS.has(lower) ? markup.length : i);
+    if (RAW_TEXT_ELEMENTS.has(lower)) {
+      // An unterminated raw-text element swallows the rest of the file as text, so that text goes with it.
+      if (!read.selfClosing) i = skipRawText(markup, i, lower) ?? markup.length;
       continue;
     }
-    tokens.push({ kind: "start", name, attrs: read.attrs, selfClosing: read.selfClosing });
+    tokens.push({ kind: "start", name, attrs: read.attrs, selfClosing: read.selfClosing, duplicated: read.duplicated });
   }
   return tokens;
 }
 
-/** Whether one attribute may be re-emitted: a valid name, no handler, and no scheme that executes. */
-function admitsAttr(attr: SvgAttr): boolean {
+/** A stack of open elements that finds the innermost one of a name, and pops back to it, at a cost of the pops alone. */
+interface ElementStack {
+  readonly size: number;
+  readonly insideTextOnly: boolean;
+  push(name: string): void;
+  depthOf(name: string): number;
+  popTo(depth: number): string[];
+}
+
+/** Creates an empty element stack. */
+function createElementStack(): ElementStack {
+  const names: string[] = [];
+  const depths = new Map<string, number[]>();
+  let textOnly = 0;
+  return {
+    get size() {
+      return names.length;
+    },
+    get insideTextOnly() {
+      return textOnly > 0;
+    },
+    push(name) {
+      const lower = name.toLowerCase();
+      const at = depths.get(lower);
+      if (at === undefined) depths.set(lower, [names.length]);
+      else at.push(names.length);
+      if (TEXT_ONLY_ELEMENTS.has(lower)) textOnly++;
+      names.push(name);
+    },
+    depthOf(name) {
+      return depths.get(name.toLowerCase())?.at(-1) ?? -1;
+    },
+    popTo(depth) {
+      const popped = names.splice(depth).reverse();
+      for (const name of popped) {
+        const lower = name.toLowerCase();
+        depths.get(lower)?.pop();
+        if (TEXT_ONLY_ELEMENTS.has(lower)) textOnly--;
+      }
+      return popped;
+    },
+  };
+}
+
+/** Whether a start tag may be kept, given whether a `title` or `desc` is open around it. */
+function admitsElement(token: SvgToken & { kind: "start" }, insideTextOnly: boolean): boolean {
+  if (token.duplicated || insideTextOnly) return false;
+  const name = token.name.toLowerCase();
+  return SVG_ELEMENTS.has(name) || (RETARGETING_ELEMENTS.has(name) && retargetsSafely(token.attrs));
+}
+
+/** Keeps what the allowlists admit, balanced: a dropped element goes with everything up to its own close or its parent's, each close names its start tag, and the first kept tag is the root. */
+function admitTokens(tokens: readonly SvgToken[]): SvgToken[] {
+  const kept: SvgToken[] = [];
+  const open = createElementStack();
+  const dropping = createElementStack();
+  const closeTo = (depth: number): void => {
+    for (const name of open.popTo(depth)) kept.push({ kind: "end", name });
+  };
+  let started = false;
+  for (const token of tokens) {
+    if (dropping.size > 0) {
+      if (token.kind === "text") continue;
+      if (token.kind === "start") {
+        if (!token.selfClosing) dropping.push(token.name);
+        continue;
+      }
+      const at = dropping.depthOf(token.name);
+      if (at !== -1) {
+        dropping.popTo(at);
+        continue;
+      }
+      if (open.depthOf(token.name) === -1) continue;
+      dropping.popTo(0);
+    }
+    if (token.kind === "text") {
+      kept.push(token);
+      continue;
+    }
+    if (token.kind === "end") {
+      const at = open.depthOf(token.name);
+      if (at !== -1) closeTo(at);
+      continue;
+    }
+    if (!admitsElement(token, open.insideTextOnly)) {
+      if (!token.selfClosing) dropping.push(token.name);
+      continue;
+    }
+    const atRoot = !started && token.name.toLowerCase() === "svg";
+    started = true;
+    kept.push({ ...token, attrs: token.attrs.filter((attr) => admitsAttr(attr, atRoot)) });
+    if (!token.selfClosing) open.push(token.name);
+  }
+  closeTo(0);
+  return kept;
+}
+
+/** Reads markup into the tokens the sanitizer keeps. */
+function tokenize(markup: string): SvgToken[] {
+  return admitTokens(lexSvg(markup));
+}
+
+/** Whether a reference resolves to a `#` fragment of this document. */
+function isLocalReference(value: string): boolean {
+  return value.replace(/^[\t\n\f\r ]+/, "").startsWith("#");
+}
+
+/** Whether an attribute value, read as CSS, can fetch anything from outside the document. */
+function fetchesExternally(value: string): boolean {
+  const css = value.toLowerCase();
+  // A CSS escape can spell `url(` in any number of ways, so any escape at all fails closed.
+  return css.includes("\\") || EXTERNAL_CSS_URL.test(css) || CSS_FETCHING_FUNCTION.test(css);
+}
+
+/** Whether one attribute may be re-emitted: a valid name, no handler, no prefix beyond the few kept, and no reference that leaves the document. */
+function admitsAttr(attr: SvgAttr, atRoot: boolean): boolean {
   if (!ATTR_NAME.test(attr.name) || HANDLER_ATTR.test(attr.name)) return false;
-  if (!URL_VALUED_ATTRS.has(attr.name.toLowerCase())) return true;
+  const name = attr.name.toLowerCase();
+  if (name === "xmlns" || name.startsWith("xmlns:")) return atRoot && ROOT_NAMESPACES.get(name) === attr.value;
+  if (name.includes(":") && !PREFIXED_ATTRS.has(name)) return false;
+  if (REFERENCE_ATTRS.has(name)) return isLocalReference(attr.value);
+  if (fetchesExternally(attr.value)) return false;
+  if (!URL_VALUED_ATTRS.has(name)) return true;
   const scheme = resolvedScheme(attr.value);
   return !scheme.startsWith("javascript:") && !scheme.startsWith("data:text/html");
 }
 
-/** An `&` that opens no character reference. */
-const BARE_AMPERSAND = /&(?!(?:#x[0-9a-f]+|#[0-9]+|[a-z][a-z0-9]*);)/gi;
-
-/** Escapes text so no `<` or `>` in it can join a neighbour into markup once an element between them is dropped. */
+/** Escapes decoded text so none of it reads as markup or as a reference. */
 function escapeSvgText(text: string): string {
-  return text.replace(BARE_AMPERSAND, "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
-/** Writes the tokens back out, keeping only the attributes `admitsAttr` allows. */
+/** Writes one decoded attribute double-quoted, so no `<`, `>` or quote in its value reads as markup. */
+function serializeAttr(name: string, value: string): string {
+  return `${name}="${value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")}"`;
+}
+
+/** Writes the tokens back out. */
 function serialize(tokens: readonly SvgToken[]): string {
   let out = "";
   for (const token of tokens) {
     if (token.kind === "text") {
-      out += escapeSvgText(token.text);
+      out += escapeSvgText(decodeSvgText(token.text));
     } else if (token.kind === "end") {
-      if (!DROPPED_ELEMENTS.has(token.name.toLowerCase())) out += `</${token.name}>`;
+      out += `</${token.name}>`;
     } else {
-      const kept = token.attrs.filter(admitsAttr).map((attr) => attr.source);
-      out += `<${token.name}${kept.length === 0 ? "" : ` ${kept.join(" ")}`}${token.selfClosing ? "/>" : ">"}`;
+      const attrs = token.attrs.map((attr) => ` ${serializeAttr(attr.name, attr.value)}`).join("");
+      out += `<${token.name}${attrs}${token.selfClosing ? "/>" : ">"}`;
     }
   }
   return out;
@@ -324,7 +535,7 @@ export function wrapRootAttrs(inner: string, rootAttrs: Partial<Record<string, s
   if (transform !== undefined) attrs.push(`transform="${transform}"`);
   for (const attr of PROPAGATABLE_ATTRS) {
     const value = rootAttrs[attr];
-    if (value !== undefined) attrs.push(`${attr}="${value.replaceAll('"', "&quot;")}"`);
+    if (value !== undefined) attrs.push(serializeAttr(attr, value));
   }
   return attrs.length === 0 ? inner : `<g ${attrs.join(" ")}>${inner}</g>`;
 }
@@ -354,7 +565,7 @@ function readSvgRoot(tokens: readonly SvgToken[]): { root: SvgToken & { kind: "s
 export function splitSvgRoot(content: string): { rootTag: string; inner: string } | null {
   const read = readSvgRoot(tokenize(content));
   if (read === null) return null;
-  return { rootTag: read.root.attrs.map((attr) => attr.source).join(" "), inner: serialize(read.children) };
+  return { rootTag: read.root.attrs.map((attr) => serializeAttr(attr.name, attr.value)).join(" "), inner: serialize(read.children) };
 }
 
 /** Rewrites every id the tokens declare to `${symbolId}__${id}`, along with each reference to one of them. */
@@ -382,7 +593,7 @@ function prefixIds(tokens: readonly SvgToken[], symbolId: string): SvgToken[] {
     if (token.kind !== "start") return token;
     const attrs = token.attrs.map((attr) => {
       const value = rewriteValue(attr.name.toLowerCase(), attr.value);
-      return value === attr.value ? attr : { name: attr.name, value, source: `${attr.name}="${value.replaceAll('"', "&quot;")}"` };
+      return { name: attr.name, value };
     });
     return { ...token, attrs };
   });

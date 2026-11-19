@@ -7,7 +7,7 @@ import type { Orientation } from "../contracts/types";
 import type { Tone } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { RULE, STEP_MARKER, STEP_MARKER_STATE } from "./utils/recipes";
+import { RULE, STEP_MARKER, STEP_MARKER_TONE } from "./utils/recipes";
 import { toneTokens } from "./utils/tone";
 import type { StepState } from "./utils/types";
 
@@ -58,7 +58,7 @@ const TimelineRoot: FC<TimelineRootProps> = ({
 const TimelineItem: FC<TimelineItemProps> = ({ state = "upcoming", marker, stateLabel, class: cls, children, "data-slot": inherited, ...rest }) => (
   <li data-slot={slotToken("timeline-item", inherited)} {...stateAttrs({ state })} class={cn(ITEM, cls)} {...rest}>
     <span data-slot='timeline-marker-column' aria-hidden='true' class={MARKER_COLUMN}>
-      <span data-slot='timeline-marker' class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>
+      <span data-slot='timeline-marker' class={cn(STEP_MARKER, STEP_MARKER_TONE)}>
         {marker}
       </span>
       <span data-slot='timeline-rule' class={RULE_LINE}></span>

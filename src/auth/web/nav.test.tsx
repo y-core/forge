@@ -24,7 +24,7 @@ const SIGNOUT_PATH = "/auth/signout";
 const NAV_ICON = createIcon("/sprite.svg") as ForgeIcon<NavGlyph>;
 
 function fakeIdentity(overrides: Partial<AuthIdentity> = {}): AuthIdentity {
-  return { userId: "u1", email: "ada@example.com", isAdmin: false, stepUpAt: null, ...overrides };
+  return { userId: "u1", email: "ada@example.com", isAdmin: false, sessionId: "s1", stepUpAt: null, stepUpKind: null, ...overrides };
 }
 
 interface NavSeed {

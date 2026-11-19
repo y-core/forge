@@ -5,12 +5,12 @@ import { readCfAuth } from "../../cf/auth";
 import { readDeployment } from "../../cf/config/environment";
 import { resolveLifecycleBucket } from "../../cf/lifecycle/commands";
 import { CliError } from "../../cli/errors";
-import { queryRows } from "../d1";
+import { queryBatches, queryRows } from "../d1";
 import { queryDeployed } from "../remote";
 import { rowCountSelect } from "../sql";
 import { isRemotePlace } from "../target";
 import type { DbIo, DbRunContext, Home } from "../types";
-import { isDumpedObject, readSchemaRow, SCHEMA_SELECT } from "./census";
+import { isAppObject, readSchemaRow, SCHEMA_SELECT } from "./census";
 import { localTransfer } from "./local-transfer";
 import { restBackupBucket } from "./rest-bucket";
 import { restTransfer } from "./rest-transfer";
@@ -110,20 +110,18 @@ export async function loadLocalDump(run: DbRunContext, source: DumpSource, sidec
 export async function liveRowCounts(run: DbRunContext, home: Home): Promise<Map<string, number>> {
   const tables = (await queryRows(run.io, home, SCHEMA_SELECT))
     .map(readSchemaRow)
-    .filter((row) => row.type === "table" && isDumpedObject(row.name, row.tableName))
+    .filter((row) => row.type === "table" && isAppObject(row.name, row.tableName))
     .map((row) => row.name)
     .sort();
-  const counts = new Map<string, number>();
-  for (const table of tables) {
-    const [row] = await queryRows(run.io, home, rowCountSelect(table));
-    counts.set(table, Number(row?.rows ?? 0));
-  }
-  return counts;
+  const counted = await queryBatches(run.io, home, tables.map(rowCountSelect));
+  return new Map(tables.map((table, index) => [table, Number(counted[index]?.[0]?.rows ?? 0)]));
 }
 
 /** Each table whose live row count differs from the dump's, an empty table matching one the dump holds no row of. @internal */
 export function compareRowCounts(sidecar: D1BackupSidecar, live: ReadonlyMap<string, number>): string[] {
-  const names = [...new Set([...live.keys(), ...Object.keys(sidecar.rows)])].sort();
+  // The sidecar counts every table in the dump, `sqlite_stat1` included; `liveRowCounts` counts only the app's own.
+  const own = Object.keys(sidecar.rows).filter((name) => isAppObject(name, name));
+  const names = [...new Set([...live.keys(), ...own])].sort();
   return names.flatMap((name) => {
     const held = sidecar.rows[name] ?? 0;
     const now = live.get(name);

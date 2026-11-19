@@ -13,10 +13,10 @@ import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mintTestCsrfToken } from "../../testing/csrf";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorRequirement, AuthFactorService } from "../factors/types";
+import type { AuthSecondFactorRequirement, AuthSecondFactorService } from "../factors/types";
 import { SITE_DATA_CSRF_HEADER_ATTR, SITE_DATA_PATH_ATTR, SITE_DATA_SCOPE, SITE_DATA_TOKEN_ATTR } from "../site-data-contract";
 import { approvalCtx } from "./guards";
-import { AUTH_SESSION_KEY, AUTH_SITE_DATA_OWED_SESSION_KEY, authCtx } from "./identity";
+import { AUTH_SITE_DATA_OWED_SESSION_KEY, authCtx } from "./identity";
 import {
   loadAccountPasskeyEnrol,
   loadAdminElevate,
@@ -49,10 +49,10 @@ import {
   fakeFactorRegistry,
   fakeFactorService,
   fakeFactorStore,
+  fakeSecondFactorOffering,
   fakeSessionCookie,
   textOf,
   valuesOf,
-  recoveryOffer,
 } from "./web.fixture";
 
 const signedIn = fakeAuthUser({ id: "u9", email: "grace@example.com" });
@@ -74,8 +74,7 @@ function loaderApp(load: Loader, options: AuthWebOptions, pattern = "/page", use
     // The identity as `requireAuth` would have established it: a loader reads `authCtx` and never
     // the session, so seeding the session alone no longer stands in for a guarded route.
     if (userId !== undefined) {
-      sessionCtx.get(context).set(AUTH_SESSION_KEY, userId);
-      authCtx.set(context, { userId, email: signedIn.email, isAdmin: admin, stepUpAt: null });
+      authCtx.set(context, { userId, email: signedIn.email, isAdmin: admin, sessionId: "s1", stepUpAt: null, stepUpKind: null });
       approvalCtx.set(context, Date.now());
     }
     csrfMinterCtx.set(context, minter);
@@ -193,25 +192,17 @@ describe("loadSignup", () => {
     expect(valuesOf(html, "href")).toEqual(["/auth/signin"]);
   });
 
-  // Under `optional` nobody is asked to enrol, so the requirement and not the role is what says
-  // whether the page may promise the step.
-  it("promises the enrolment step only where one is actually demanded", async () => {
-    const described = async (requirement: AuthFactorRequirement) => {
+  it("promises the enrolment step only where a second factor is mandatory", async () => {
+    const described = async (requirement: AuthSecondFactorRequirement) => {
       const services = fakeAuthServices({
-        factors: createFactorRegistry(fakeFactorStore([]), {
-          offered: [
-            { service: fakeFactorService("email-otp"), role: "primary" },
-            { service: fakeFactorService("totp-app"), role: "second", requirement },
-            recoveryOffer(),
-          ],
-        }),
+        factors: fakeFactorRegistry(["totp-app"], requirement === "mandatory" ? ["totp-app"] : [], fakeFactorStore([])),
       });
       const html = await page(loaderApp(loadSignup, fakeAuthWebOptions({ resolveServices: () => services })));
       return textOf(html, "div", 'data-slot="card-description"');
     };
 
     expect({ mandatory: await described("mandatory"), optional: await described("optional") }).toEqual({
-      mandatory: "We email you a six-digit code to confirm the address. You add an authenticator app afterwards.",
+      mandatory: "We email you a six-digit code to confirm the address. You then add a second factor.",
       optional: "We email you a six-digit code to confirm the address.",
     });
   });
@@ -228,13 +219,7 @@ describe("loadVerify", () => {
   it("asks a signed-in visitor who owes a step-up for the enrolled second factor", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
-      factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
-      }),
+      factors: fakeFactorRegistry(["totp-app"], [], fakeFactorStore(["totp-app"])),
     });
     const html = await page(loaderApp(loadVerify, options, "/page", "u9"));
 
@@ -392,17 +377,14 @@ describe("loadTotpEnrol", () => {
   const enrolling = {
     ...fakeFactorService("totp-app"),
     beginEnrolment: async () => ok({ kind: "totp-app" as const, expiresAt: 1_000, options: { secret: "JBSWY3DP", uri: "otpauth://totp/x" } }),
-  } as AuthFactorService;
+  } as AuthSecondFactorService;
 
   it("shows the secret exactly once, alongside the confirmation form", async () => {
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: enrolling, role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([enrolling], []),
       }),
     });
     const html = await page(loaderApp(loadTotpEnrol, options, "/page", "u9"));
@@ -558,15 +540,12 @@ describe("every token a page renders is bound to the path its own control submit
     const enrolling = {
       ...fakeFactorService("totp-app"),
       beginEnrolment: async () => ok({ kind: "totp-app" as const, expiresAt: 1_000, options: { secret: "JBSWY3DP", uri: "otpauth://totp/x" } }),
-    } as AuthFactorService;
+    } as AuthSecondFactorService;
     const options = optionsWith({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: enrolling, role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([enrolling], []),
       }),
     });
     const html = await page(loaderApp(loadTotpEnrol, options, "/page", "u9", realMinter));
@@ -636,13 +615,7 @@ describe("the loaders' Turnstile widgets", () => {
   it("renders no resend widget on a verify page that offers no resend, whatever `flows` says", async () => {
     const services = fakeAuthServices({
       users: fakeAuthUserStore([signedIn]),
-      factors: createFactorRegistry(fakeFactorStore(["totp-app"]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          { service: fakeFactorService("totp-app"), role: "second", requirement: "optional" },
-          recoveryOffer(),
-        ],
-      }),
+      factors: fakeFactorRegistry(["totp-app"], [], fakeFactorStore(["totp-app"])),
     });
     const options = { ...guarded(), resolveServices: () => services };
     expect(widgetsOf(await page(loaderApp(loadVerify, options, "/page", "u9")))).toEqual([{ sitekey: "site-key-public", action: "auth-verify" }]);

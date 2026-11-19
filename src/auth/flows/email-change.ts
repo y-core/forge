@@ -2,17 +2,20 @@ import { createLogger } from "../../logging/logger";
 import { serializeError } from "../../logging/serialize-error";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
-import { AUTH_NOTIFY_TIMEOUT_MS } from "../config";
+import { AUTH_EMAIL_CHANGE_COOLDOWN_MS, AUTH_NOTIFY_TIMEOUT_MS } from "../config";
 import type { AuthStoreError } from "../errors";
 import { authNonceKey, authNonceTtlSeconds, decodeAuthToken, encodeAuthToken } from "../keys/token";
 import { authLimit } from "../limits";
 import { normalizeEmail } from "../stores/email";
+import { deliverAuthSecurityNotice } from "./security-notices";
 import type { AuthEmailChangeConfirm, AuthEmailChangeReason, AuthEmailChangeStage, AuthIssueOutcome } from "./types";
 import type { AuthEmailChangeFlow, AuthEmailChangeOptions } from "./types";
 
 const DEFAULT_TTL_MS = 3_600_000;
 const MIN_TTL_MS = 60_000;
 const MAX_TTL_MS = 86_400_000;
+const MIN_COOLDOWN_MS = 60_000;
+const MAX_COOLDOWN_MS = 86_400_000;
 const PAYLOAD_SEPARATOR = " ";
 
 function readPayload(payload: string): { stage: AuthEmailChangeStage; userId: string; address: string } | undefined {
@@ -36,6 +39,14 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
     unit: "millisecond",
     floor: "the shortest expiration the nonce store accepts, below which the link outlives its own replay guard",
     ceiling: "a change-of-address link that outlives a day is a standing takeover primitive",
+  });
+  const cooldownMs = authLimit("createEmailChangeFlow", "cooldownMs", options.cooldownMs, {
+    fallback: AUTH_EMAIL_CHANGE_COOLDOWN_MS,
+    min: MIN_COOLDOWN_MS,
+    max: MAX_COOLDOWN_MS,
+    unit: "millisecond",
+    floor: "the cooldown is the only bound on how much mail one account can send to an address it names",
+    ceiling: "a wait longer than a day keeps a user from correcting a mistyped address",
   });
   const logger = options.logger ?? createLogger("auth/flows");
 
@@ -82,13 +93,8 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
     if (!changed.ok) return err(changed.error.code === "conflict" ? "unrecognised" : changed.error);
     if (!changed.data) return err("unrecognised");
 
-    const revoked = await options.users.revokeSessions(userId, at);
-    if (!revoked.ok) return err(revoked.error);
-
-    return ok({
-      status: "moved",
-      user: { ...found.data, email: address, emailKey, emailVerifiedAt: at, sessionsInvalidBefore: at, updatedAt: at },
-    });
+    deliverAuthSecurityNotice(options, found.data.email, { type: "email-changed", factorKind: null, at });
+    return ok({ status: "moved", user: { ...found.data, email: address, emailKey, emailVerifiedAt: at, updatedAt: at } });
   }
 
   async function read(
@@ -111,6 +117,10 @@ export function createEmailChangeFlow(options: AuthEmailChangeOptions): AuthEmai
 
       const address = email.trim();
       if (normalizeEmail(address) === found.data.emailKey) return err("unchanged");
+
+      const claimed = await options.users.claimEmailChange(userId, at, cooldownMs);
+      if (!claimed.ok) return err("unavailable");
+      if (!claimed.data) return err("too-soon");
 
       if (found.data.emailVerifiedAt === null) return ok(await forward(userId, address, at));
 

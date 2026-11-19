@@ -156,11 +156,20 @@ A route's handler comes from `@y-core/forge/app` — `definePage` and `defineAct
 
 ### 2a. Full-Page Routes with `definePage`
 
-`definePage(route, { loader, view, action?, schema?, headers?, cache?, onError? })` runs the optional `action` on a non-`GET` request, then the
+`definePage(route, { loader, view, action?, schema?, headers?, cache?, onError? })` runs the optional `action` on an unsafe request, then the
 optional `loader`, then renders `view`. Both return values reach the view through render state; either may instead return a `Response` to
 short-circuit.
 
-**`action` is skipped entirely on a `GET`**, leaving `state.actionData` undefined and `state.method` `"GET"`.
+**`action` is skipped entirely on a `GET`**, leaving `state.actionData` undefined and `state.method` `"GET"`. A `HEAD` reaches the page as that
+`GET`.
+
+**Any other safe method — `OPTIONS`, `TRACE` — answers `405` and runs neither `action` nor `loader`.** `Allow` names what the page's route
+serves: every method a page answers — `GET, HEAD, POST, PUT, PATCH, DELETE` — on an `ANY` route, `GET, HEAD` on a safe-method route, and the
+route's own method otherwise. The `405` is the app's own method-mismatch answer, with the baseline hardening headers and a plain-text body; the
+page's `cache` and `headers` do not apply, because the refusal is answered before the page runs, as a router `405` is. The guards
+in front of a page admit every safe method unchecked: `originProtection` and `requireFreshStepUp` read the shared set in `http/method`, and
+`csrfProtection` exempts only `GET` and `HEAD`, which is deliberately stricter. Were the page to treat `OPTIONS` as a mutation, a route mounted for
+any method would run its action past the origin and step-up checks.
 
 **Declaring a `schema` puts `action` behind the shared submission pipeline (§2d), and the order is not something the action can get around.** The
 body is read and validated first; only a body that passed reaches `action`, which receives the schema's output as its **third** argument —

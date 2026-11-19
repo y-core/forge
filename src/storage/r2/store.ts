@@ -94,7 +94,7 @@ export function createObjectStore(backend: ObjectStorageBackend, options?: Objec
     put(key, value, opts) {
       return result(() => {
         const fullKey = prefixKey(normalizeKey(key));
-        const contentType = opts?.contentType ?? inferContentType(key);
+        const contentType = opts?.contentType || inferContentType(key);
         return backend.put(fullKey, value, { ...opts, contentType }).then(stripObjectPrefix);
       });
     },

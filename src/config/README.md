@@ -167,8 +167,9 @@ requiredGroup({ secretKey: v.pipe(v.string(), v.minLength(32)), siteKey: v.pipe(
 
 ## Patching config for development
 
-Pass `overrides` to rewrite the resolved config when a detector matches. `detect` reads the raw env; `patch` transforms the **already-validated**
-config, so an override can never smuggle a value past the schema.
+Pass `overrides` to rewrite the resolved config when a detector matches. `detect` reads the raw env; `patch` receives the validated config, and
+what it returns is used as-is, **never re-validated** — the schema parses env strings, not your transformed output. A patch can therefore set any
+value, so `detect` must never match in production.
 
 ```ts
 const config = createConfig(

@@ -1,7 +1,7 @@
 import { escapeHtml } from "./escape";
 import type { HtmlTemplateTag, HtmlValue } from "./types";
 
-/** HTML that is safe to emit without further escaping; produced only via `html` or `rawHtml`. @public */
+/** HTML that is safe to emit without further escaping; built by `html`, `rawHtml`, `scriptJson` or `styleText`, and returned by renderers such as `renderToString`. @public */
 export class SafeHtml {
   readonly #html: string;
 
@@ -18,7 +18,7 @@ export class SafeHtml {
   }
 }
 
-/** Type guard for values produced by `html` or `rawHtml`. @public */
+/** Type guard for a {@link SafeHtml} value. @public */
 export function isSafeHtml(value: unknown): value is SafeHtml {
   return value instanceof SafeHtml;
 }

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 
 import { CliError } from "../../cli/errors";
 import {
+  bareSqlName,
   declaredObjectNames,
   maskSqlProse,
   mentionsSqlIdentifier,
@@ -104,6 +105,14 @@ describe("identifiers", () => {
     expect(unquoteSqlIdentifier("`x`")).toBe("x");
     expect(unquoteSqlIdentifier("[y]")).toBe("y");
     expect(unquoteSqlIdentifier("z")).toBe("z");
+  });
+
+  it("reads the bare name a word or a quoted token carries, its qualifier dropped", () => {
+    expect(
+      scanSql(`t.x "a""b" main.users`)
+        .filter((token) => token.kind !== "space")
+        .map(bareSqlName),
+    ).toEqual(["x", 'a"b', "users"]);
   });
 
   it("spells a simple name bare and upper, and anything else quoted", () => {

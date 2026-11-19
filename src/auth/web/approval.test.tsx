@@ -13,10 +13,22 @@ import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { nullLogger } from "../../testing/context";
 import { mapHandler } from "../../testing/route";
 import { APPROVAL_TTL_MS } from "../config";
+import type { AuthSessionStore } from "../types";
 import { APPROVAL_TURNSTILE_ACTION, defineApproval, registerApproval } from "./approval";
 import { requireApproval } from "./guards";
+import { AUTH_SESSION_TOKEN_KEY, establishAuthSession } from "./identity";
 import type { Approval } from "./types";
-import { attrOf, elementOf, FAKE_APPROVAL_CODE, fakeApproval, fakeSessionCookie, fakeWebRing, textOf } from "./web.fixture";
+import {
+  attrOf,
+  elementOf,
+  FAKE_APPROVAL_CODE,
+  fakeApproval,
+  fakeAuthSessionStore,
+  fakeAuthUser,
+  fakeSessionCookie,
+  fakeWebRing,
+  textOf,
+} from "./web.fixture";
 
 const ORIGIN = "https://app.example";
 
@@ -192,6 +204,43 @@ describe("registerApproval — presenting the code", () => {
     await app.request("/approve", presented({ code: "wrong" }));
     await app.request("/approve", presented({ code: FAKE_APPROVAL_CODE }));
     expect(ids.map(([before, after]) => before === after)).toEqual([true, false]);
+  });
+
+  it("keeps a signed-in visitor's session token and row while rotating the session id, and asks the session store nothing", async () => {
+    const rows = fakeAuthSessionStore([fakeAuthUser({ id: "u1" })]);
+    const calls: string[] = [];
+    const sessions: AuthSessionStore = {
+      create: (...args) => rows.create(...args),
+      resolve: (...args) => (calls.push("resolve"), rows.resolve(...args)),
+      rotate: (...args) => (calls.push("rotate"), rows.rotate(...args)),
+      remove: (...args) => (calls.push("remove"), rows.remove(...args)),
+      listByUser: (...args) => (calls.push("listByUser"), rows.listByUser(...args)),
+      revoke: (...args) => (calls.push("revoke"), rows.revoke(...args)),
+      revokeOthers: (...args) => (calls.push("revokeOthers"), rows.revokeOthers(...args)),
+    };
+    const ids: [string, string][] = [];
+    const app = approvalApp(fakeApproval(), [], ids);
+    mapHandler(app, "GET", "/seed", async (context) => {
+      const now = Date.now();
+      await establishAuthSession(sessionCtx.get(context), sessions, "u1", now, now, { kind: "email-otp" });
+      return new Response("seeded");
+    });
+    const tokenOf = async (pair: string) =>
+      (JSON.parse((await fakeSessionCookie.parse(pair)) ?? "null") as { d: [Record<string, unknown>] }).d[0][AUTH_SESSION_TOKEN_KEY];
+
+    const seeded = sessionCookie(await app.request("/seed"));
+    const rowsBefore = [...rows.rows.keys()];
+    calls.length = 0;
+    ids.length = 0;
+    const accepted = await app.request("/approve", presented({ code: FAKE_APPROVAL_CODE }, seeded));
+
+    expect({
+      token: await tokenOf(sessionCookie(accepted)),
+      rows: [...rows.rows.keys()],
+      rotated: ids.map(([before, after]) => before !== after),
+      calls,
+    }).toEqual({ token: await tokenOf(seeded), rows: rowsBefore, rotated: [true], calls: [] });
+    expect({ seededRows: rowsBefore.length, held: typeof (await tokenOf(seeded)) }).toEqual({ seededRows: 1, held: "string" });
   });
 
   it("goes to `/` when the return-to is absent or points off-site", async () => {

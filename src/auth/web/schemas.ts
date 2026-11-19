@@ -26,7 +26,7 @@ const RECOVERY_CODE_MAX = 64;
 /** Bounds a presented administrator code, so a hostile field cannot become an unbounded read. */
 const APPROVAL_CODE_MAX = 512;
 
-/** The page cursor is a user id, so anything else is a crafted parameter rather than a page. */
+/** A page cursor and a session handle are both UUIDs, so anything else is a crafted parameter. */
 const CANONICAL_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function emailField() {
@@ -96,4 +96,9 @@ export function authAdminSearchSchema() {
     q: v.optional(v.pipe(formText(), v.maxLength(SEARCH_MAX))),
     after: v.optional(v.pipe(formText(), v.regex(CANONICAL_UUID))),
   });
+}
+
+/** The session sign-out form: the public id of the session to end, which travels as a field so one token serves every row. @public */
+export function authSessionRevokeSchema() {
+  return v.strictObject({ session: v.pipe(formText(), v.regex(CANONICAL_UUID)) });
 }

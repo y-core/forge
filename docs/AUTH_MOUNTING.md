@@ -25,7 +25,8 @@ audience: consumer
 - §2 The Route Groups and Their Guards: where the group table lives, and why each group is guarded as it is
 - §3 What Forge Does Not Ship: the mailer, the deferral, the confirm route, and the bindings
 - §4 Why Guards Are Wired Separately from Routes: one table, two readers, and why each stack mounts on route patterns, not on routes
-- §5 What Mounting Costs You: the bindings, the fixtures they break, and the pre-release caveat
+- §5 What Mounting Costs You: the bindings, the fixtures they break, the session lifetimes against AAL1 and AAL2, the reads each request makes,
+  the navbar items, and the pre-release caveat
 - §6 Embedding an Auth View in Your Own Page: `resolveAuthView`, the `guarded` claim, and the chrome props
 - §7 Rotating the Key Ring: the per-key seal bound, what crossing it costs, the cadence, and what dropping a retired secret early costs
 - §8 Turnstile on the Anonymous Forms: which forms it covers, why it is an `AuthWebOptions` field, who names the actions, what a refusal answers,
@@ -68,9 +69,26 @@ two are read independently: this one is where a completed sign-in lands, the gua
 **Why that registry is per request, and whether it is the same one `resolveServices` holds.** §3 says the email-OTP and passkey factors are built
 per request because their seams read a `UserStore`; the passkey factor also takes **this request's session id**, which is what the WebAuthn
 challenge is bound to, so a registry built once at bootstrap issues challenges bound to nobody. `requireEnrolment` and `requireFreshStepUp` read
-only `resolve`, which means their registry and `resolveServices`'s **need not be the same object**. What they must share is `offered`: the roles and
-requirements it declares are what decide what is owed, so two registries configured differently leave `requireEnrolment` refusing a page the flow
-believes settled. Building one registry per request and handing it to both is the cheapest way to make that true by construction.
+only `resolve`, which means their registry and `resolveServices`'s **need not be the same object**. What they must share is the `second` offering:
+which of its factors are mandatory is what decides what is owed, so two registries configured differently leave `requireEnrolment` refusing a page
+the flow believes settled. Building one registry per request and handing it to both is the cheapest way to make that true by construction.
+
+**One `createAnonymousSession({ storage: "cookie" })` serves every path, anonymous and signed in.** The session carries a visitor's own state
+and, once they sign in, the token naming their `auth_sessions` row; the identity is the row. So a signed-in visitor keeps their identity on a
+route outside the auth groups, and an anonymous funnel on the same app needs no second session. A second mount on a path the first also
+matches throws ([`src/session/README.md`][session-readme]). KV storage works too, and is the choice only for visitor state too large for a
+cookie.
+
+**Under cookie storage, the address a visitor typed sits readable in their cookie until sign-in completes.** The cookie is signed, so nobody
+can alter it, and httpOnly, so page JavaScript cannot read it. It is not encrypted, so anyone holding the device's cookie store can read the
+address, and so can any log that captures request `Cookie` headers. Do not log `Cookie` headers: such a log already holds the session's bearer
+token, which is the worse leak. Forge does not encrypt the address, because the verify page prints it to whoever holds the cookie anyway.
+
+**Set the cookie's `maxAge` to at least the session's `absoluteLifetimeMs`.** A signed cookie expires `maxAge` after it was last written.
+Sign-in and step-up write it, but the idle touch that keeps a session alive writes only D1, so a shorter `maxAge` ends an active session before
+its row does. For the default lifetime that is 7 days, `AUTH_SESSION_MAX_MS / 1000` seconds; `createAnonymousSession`'s default of 365 days
+already clears it. The row's absolute and idle bounds then decide when a session ends. The cost is that an abandoned sign-in leaves the
+address in the cookie for up to `maxAge`.
 
 **Use `createAnonymousSession`, not `sessionMiddleware`, on a Worker.** `sessionMiddleware(storage, cookie)` takes both eagerly, and
 `createKVSessionStorage` needs a KV binding that exists only per request; `createAnonymousSession` resolves the secret and the binding from the
@@ -128,8 +146,8 @@ Without it every request there reads as a sign-in, `markAuthStepUp` never runs, 
 factor loops between the enrolment guard and the page meant to satisfy it.
 
 **`auth.verify.ceremony` runs every passkey step-up, including the second half of a sign-in** — no passkey ceremony establishes a session, so none
-clears the mark a step-up writes. **`auth.enrol` carries a page per enrollable kind**, because `enrolmentPaths` sends an owed enrolment to the kind
-it actually owes and `require-enrolment` refuses the `account` group while that enrolment is outstanding.
+clears the mark a step-up writes. **`auth.enrol` carries a page per second factor**, because `enrolmentPaths` sends an owed enrolment
+to the page of the first mandatory kind the user lacks, and `require-enrolment` refuses the `account` group while that enrolment is outstanding.
 
 **`account.passkeyCeremony` is the settled user's passkey enrolment, nested under `account` for its JSON medium alone.** A nested group inherits
 nothing from its parent, so it names every `account` guard again, and its POSTs get the origin check like every mutating leaf. Its
@@ -137,16 +155,16 @@ rate-limit key is `account.passkeyCeremony`, apart from `account`'s, so a limit 
 `require-fresh-step-up` refusal sits in the flow is [`AUTH_FLOWS.md`][af-3a] §3a.
 
 **`require-fresh-step-up` gates only what changes something, and it is on unless you turn it off.** Every `POST`, `PATCH` or `DELETE` in a group
-that carries it needs a step-up inside the window — what stands between a long-lived session and stripping the second factor, removing a passkey,
-moving the address, or changing somebody's role. A `GET` is always admitted: reading the page that offers an action is not the action. Omit
+that carries it needs a step-up inside the window — what stands between a long-lived session and removing a second factor,
+moving the address, or changing somebody's role. A `GET` is always admitted: reading the page that offers an action is not the action. The
+authenticator-app replacement page is the exception, because it hands out a secret, so its handler demands the step-up itself
+([`AUTH_FLOWS.md`][af-3c] §3c). Omit
 `freshStepUpMaxAgeMs` and the window is `AUTH_FRESH_STEP_UP_MS`; pass `null`, which is the only opt-out, and the guard demands
 nothing.
 
-**It asks per user, so a deployment with no second factor is not locked out of its own admin pages.** The guard resolves the same offered factors
-`require-enrolment` does and demands a mark only where the answer is `step-up-required` — so an offering with no `second` entry, and an
-all-`optional` one nobody has enrolled against, are admitted rather than sent to a page that could never clear the demand. Both guards read one
-resolution per request through a context variable, so mounting them together costs no second registry query. An unreadable factor registry answers
-**503**, the same as the other enrolment guards, because an unknown demand has no remedy page to redirect to.
+**It asks every user, including one holding no second factor.** A session cookie alone must not move the address, add a factor or change a role,
+so a user whose resolution is `satisfied` is sent to the verify page too, where the primary factor's emailed code is the re-proof. The code that
+signed such a user in counts as that proof, so a fresh sign-in is inside the window from its first request.
 
 **`auth` carries no guards and is still emitted**, because `origin` is required and every mutating leaf of a group gets the allowlist check — its
 sign-in and sign-up POSTs are exactly the mutations with no identity to check. A group with an empty `guards` array is dropped only where it has no
@@ -164,14 +182,13 @@ Every item here is a seam with a contract and no implementation, and each is req
 | An `AuthNotifier` | Forge ships the delivery contract and no mailer. Nothing is emailed until you implement `send`. |
 | An `AuthDeferral` — `executionCtx.waitUntil` in a Worker | Both signup and sign-in return before the credential is issued. Doing the work inline reopens the timing oracle the decoy exists to close. |
 | The email-change **confirm route** | Forge mounts no route that calls `AuthEmailChangeFlow.confirm`; see [`AUTH_FLOWS.md`][af-5] §5. |
-| A D1 binding and the applied auth schema | Every auth store — the durable ones and the ephemeral ceremony pair, challenges and one-shot nonces. The package publishes `src/auth/schema.sql` and no SQL that runs: the app names that file by path in its own `forge db` host config, composes it into a migration of its own with `forge db migrate compose`, then applies it with `forge db migrate`. How that database is migrated, backed up and seeded is [`DATABASE_MANAGEMENT.md`][dm]. |
-| A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row until something deletes it. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong. |
-| A KV binding | Session storage. The cookie carries only the session id, and the auth keys live server-side. |
+| A D1 binding and the applied auth schema | Every auth store — the durable ones, the signed-in sessions, and the ephemeral ceremony pair, challenges and one-shot nonces. The package publishes `src/auth/schema.sql` and no SQL that runs: the app names that file by path in its own `forge db` host config, composes it into a migration of its own with `forge db migrate compose`, then applies it with `forge db migrate`. How that database is migrated, backed up and seeded is [`DATABASE_MANAGEMENT.md`][dm]. |
+| A scheduled call to `purgeAuthEphemera` | SQLite keeps an expired row until something deletes it. Every read holds a row against the clock, so a dead one is already inert — a deployment that never purges is slower, not wrong, for those rows. Nothing else deletes an account that never verified its address or a security event past its retention. One run deletes a bounded amount, names any table an app key's constraint blocked, and answers whether it reached every lapsed row, so how often to schedule it is the app's call; [`src/auth/README.md`][auth-readme]'s "Clearing expired challenges, nonces and sessions" reads the report. |
 | A key ring | Hex root secrets, newest first, each held to [`SECURITY_HARDENING.md`][sh-8] §8's strength rule, held as a Worker secret. Rotating it is an ongoing obligation, not a one-off (§7). |
 | An `Approval` passed to `createAuthGuards` as `approval`, and mounted with `registerApproval`, if this deployment claims its first admin through the page | The claim grants the administrator role, so it fails closed: with no approval passed, both routes under `adminRoutes`' `elevate` send an anonymous visitor to sign-in and answer a signed-in one with **404** rather than offering an open endpoint — as they do when the approval's `code` reads `undefined` or `""`. Read the code off `c.env` per request, because a Worker has no secret until a request carries bindings. |
 | `EmailOtpOptions.address` | The address a code is sent to. It is a `UserStore` read, so build the factor per request alongside the stores. |
 | `PasskeyFactorOptions.subject` | How the account is shown in the authenticator's own picker. Also a `UserStore` read, and also per request. |
-| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **KV**. `storage: "cookie"` works for the auth keys alone, since each is a scalar, but leaves nothing for anything larger — and it is stated rather than reached by leaving `kv` off, which throws. |
+| Session middleware — `createAnonymousSession` from [`@y-core/forge/session`][session-readme] | An action with no session throws by design rather than writing an identity nothing can read back. Back it with **`storage: "cookie"`**: the session carries only the row token and visitor state, so an anonymous request writes nothing server-side, and deleting the row ends a sign-in under either storage (§1). |
 | `csrfProtection` from [`@y-core/forge/form`][form-readme] | `mintCsrf` has no minter without it, so every rendered form carries no token. Mount it before the guard chain. |
 | `import "@y-core/forge/auth/client"` before `resume()` | Nothing registers the passkey scope otherwise, and every ceremony button renders correctly and does nothing. |
 | With `AuthWebOptions.turnstile` set: `import "@y-core/forge/ui/client/htmx"` before `resume()`, the `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY` bindings, and a CSP that admits Cloudflare's challenge | Without that import nothing mounts the widget or holds the press, so no token reaches the server and every guarded form is refused (§8). Without either binding every guarded page answers 500 naming it. The CSP takes either `NONCE` with `'strict-dynamic'` in `scriptSrc`, or `TURNSTILE_CSP` there, and `TURNSTILE_CSP` in `frameSrc` and `connectSrc` either way — [`src/security/README.md`][security-readme] section “Widening the policy for a third-party origin”. Where Trusted Types are enforced, the `trusted-types` directive lists `TURNSTILE_TRUSTED_TYPES_POLICY` beside `HTMX_TRUSTED_TYPES_POLICY` ([`SECURITY_HARDENING.md`][sh-2g] §2g). |
@@ -215,14 +232,47 @@ chain — a special case of the order [`ROUTING_AND_MIDDLEWARE.md`][ram-3e] §3e
 
 None of this is a defect; it is the bill, and it is easier to pay knowingly.
 
-**New non-optional bindings, and a wider config.** The D1 and KV bindings in §3 are required, and your app config grows the secrets that go with
-them. Every test fixture that builds an env or a config **object literal** stops compiling the moment they are added — not because anything broke,
+**New non-optional bindings, and a wider config.** The D1 binding in §3 is required, and your app config grows the secrets that go with
+it. Every test fixture that builds an env or a config **object literal** stops compiling the moment they are added — not because anything broke,
 but because a literal must now name fields it did not before. Expect to touch every such fixture in one pass. Building fixtures through a factory
 with defaults rather than as bare literals is what makes the next binding cost one line instead of one edit per fixture.
 
-**Every signed-in visitor signs in again within `AUTH_SESSION_MAX_MS`.** It is an absolute lifetime measured from the moment the session was
-established, not a window activity extends: a session an attacker took is otherwise one they can keep alive forever. A session carrying no
-established-at stamp is over rather than unbounded.
+**Every signed-in visitor signs in again, and the defaults are set for AAL1, not AAL2.** These bounds decide how long a sign-in and a step-up
+last:
+
+| Bound | Default | Set with |
+| --- | --- | --- |
+| Absolute lifetime, from sign-in | 7 days, `AUTH_SESSION_MAX_MS` | `absoluteLifetimeMs` on `createAuthSessionStore` |
+| Idle bound, from the last request | 24 h, `AUTH_SESSION_IDLE_MS` | `idleTimeoutMs` on `createAuthSessionStore`; `null` for none |
+| How long a step-up satisfies a second-factor demand | 24 h, `AUTH_STEP_UP_MAX_MS` | `stepUpMaxAgeMs` on the guards; `null` lasts the session |
+| How recent a step-up a state-changing request needs | 15 min, `AUTH_FRESH_STEP_UP_MS` | `freshStepUpMaxAgeMs` (§2) |
+| The session cookie, from its last write | 365 days | `maxAge` on `createAnonymousSession`; at least `AUTH_SESSION_MAX_MS / 1000` (§1) |
+
+The absolute lifetime is not a window activity extends: the row records its expiry at sign-in and nothing moves it, because a session an
+attacker took could otherwise be kept alive forever. NIST SP 800-63B-4 asks AAL1 to re-authenticate at least every 30 days, which the defaults
+meet. AAL2 asks for re-authentication at least every 24 hours and after an hour unused, which they do not. A deployment that demands a second
+factor and wants AAL2's bounds sets both:
+
+```ts
+createAuthSessionStore(db, { absoluteLifetimeMs: 86_400_000, idleTimeoutMs: 3_600_000 });
+```
+
+**Build every session store a request uses from one helper**, because the bounds are split between them: the store `resolveServices` returns sets
+a new session's expiry and lists the sessions page, and the store the guards' `sessions` resolver returns decides whether a request is still
+signed in. Configured apart, a session takes its lifetime from one and its idle bound from the other. The helper is in
+[`src/auth/README.md`][auth-readme] section “Getting started”.
+
+**What one signed-in request reads.** It reads its session row joined to the owner's id, address and administrator flag. Under `requireAuth` it
+also reads which second factors the owner has confirmed — their kinds, never a secret — but only where the registry offers a second factor;
+`requireEnrolment` reuses that answer on the same request. `resolveAuth`, `requireFreshStepUp` and `requireAdmin` read
+nothing more. The session read writes the row's `last_seen_at` back only once the row shows the touch interval has passed, so an active session
+costs at most one write per interval. An anonymous request reads and writes nothing. The test `src/auth/web/guards.test.ts` "requireAuth — the
+statements one signed-in request issues" holds the order: inside the interval, the session read then the confirmed-kinds read; past it, the
+session read, the `last_seen_at` touch, then the confirmed-kinds read.
+
+**A Sessions item in your navbar.** `accountRoutes` carries a `sessions` page, where a user sees their live sessions and signs one out, or every
+other one; what it shows and guards is [`AUTH_FLOWS.md`][af-7] §7. `authNav` links no account page, so add a Sessions item to your own `Navbar`
+definition, as you do for passkeys, the authenticator app and recovery codes. The factors page links it too.
 
 **A stylesheet rebuild.** The `sources.css` import in §3 changes what Tailwind scans, so your CSS build depends on the installed package's contents
 as well as on your lockfile.
@@ -259,10 +309,12 @@ mistake, not a request to refuse, so it 500s rather than rendering. An unguarded
 `authCtx` and nowhere else, so a route that never ran the guard resolves nobody and gets the sign-in redirect. `require-admin` re-reads `isAdmin`
 off that identity and answers with the `onForbidden` that `requireAdmin` was given, and with the plain 403 where it was given none.
 `require-approval` reads `approvalCtx`, which only an admitting `requireApproval` sets, so an `adminElevate` embed on a route that skips it answers
-404 rather than showing the claim form to a visitor who never presented the code; the claim's own handler refuses the same way. The rest —
-`resolve-auth`, `require-pending-enrolment`, `require-enrolment` and `require-fresh-step-up` — need a factor-registry round trip that would cost one
-per render, so for those `guarded` is the whole check. That is why it is a claim a reviewer can check, and why a lie about it is a lie about your
-own route.
+404 rather than showing the claim form to a visitor who never presented the code; the claim's own handler refuses the same way.
+`resolve-auth` and `require-fresh-step-up` are not re-checked because a render has nothing for either to refuse: `resolve-auth` admits every
+request, signed in or not, and `require-fresh-step-up` admits every safe-method request, so the form's POST meets it at its own route.
+`require-pending-enrolment` and `require-enrolment` need a factor-registry round trip that would cost one per render, so for those `guarded` is the
+whole check. That is why it is a claim a reviewer can check, and why a lie about it is a
+lie about your own route.
 
 **Your route needs the same CSRF configuration the path the form posts to is verified with.** The token a rendered auth form carries is minted for
 the action path — `authRoutes`' `signinSubmit` for the sign-in view — and `csrfProtection` binds a token to its subject as well as its path. So a
@@ -304,17 +356,18 @@ secret under the active kid when its frame names an older one, riding the write 
 retiring key shrinks as its holders sign in. `authKeysRetirable`, asked about `totp-app`, is true exactly when that population is empty;
 `FactorStore.countSecretsNotUnder` is the same figure for a dashboard.
 
-**Dropping the secret early costs each affected user a recovery code and a re-enrolment, not the account.** Their authenticator app stops being
-checkable: the verify page says so, offers their other methods, and logs `auth.factor.unusable`. They step up with a passkey or a recovery code,
-then remove the authenticator app and add it again. Put the secret back in the ring before they do, and every enrolment still under it works
-again ([`AUTH_FLOWS.md`][af-8] §8).
+**Dropping the secret early costs each affected user a recovery code and a replacement of their app, not the account.** Their authenticator app
+stops being checkable: the verify page says so, offers their other methods, and logs `auth.factor.unusable`. They step up with a passkey or a
+recovery code and replace the app in place ([`AUTH_FLOWS.md`][af-3c] §3c). Put the secret back in the ring before they do, and every enrolment
+still under it works again ([`AUTH_FLOWS.md`][af-9] §9).
 
 **Bounding the wait is `purgeStaleTotpSecrets`, and it is yours to call.** A user who never signs in is never re-sealed, so the count can sit above
 zero on somebody who may never return. The purge drops `totp-app` rows still under an older kid whose last _accepted_ code is older than a window
-you name, from your own scheduled handler. Those users then owe an enrolment, which they reach only after stepping up with another second factor
-or a recovery code ([`AUTH_FLOWS.md`][af-8b] §8b). That is why it is **refused unless your deployment offers `totp-app` as `mandatory`**: under any
-other requirement nothing asks them to replace what was dropped. It takes the
-ring rather than a key id, because it deletes the complement of the active key and a wrong id would take the live enrolments.
+you name, from your own scheduled handler, and keeps the row of any user it would leave nothing to step up with; its report counts both
+([`AUTH_FLOWS.md`][af-9b] §9b). A user whose row goes is asked to enrol the app again only because it is mandatory, so the purge is **refused unless
+your deployment offers `totp-app` as mandatory**: where it is optional, nothing asks them to replace what was dropped. It takes the ring rather than
+a key id, because it deletes the complement of the active key and a wrong id would take the live enrolments. It takes the offered kinds and the
+mandatory ones as plain values rather than the registry, because a scheduled handler has no request to build factor services from.
 
 The mechanism of a rotation, and what `importAuthKeyRing` demands of each secret, is [`src/auth/README.md`][auth-readme] section “Rotating the
 signing secret”.
@@ -379,9 +432,11 @@ swaps by [`UI_CLIENT_RUNTIME.md`][ucr-4a] §4a.
 
 [af]: ./AUTH_FLOWS.md
 [af-3a]: ./AUTH_FLOWS.md#3a-enrolment
+[af-3c]: ./AUTH_FLOWS.md#3c-management
 [af-5]: ./AUTH_FLOWS.md#5-email-change
-[af-8]: ./AUTH_FLOWS.md#8-recovery--no-lost-value-locks-an-account-out-or-lets-it-in-on-less
-[af-8b]: ./AUTH_FLOWS.md#8b-a-confirmed-second-factor-comes-before-any-enrolment
+[af-7]: ./AUTH_FLOWS.md#7-sessions-and-security-events
+[af-9]: ./AUTH_FLOWS.md#9-recovery--no-lost-value-locks-an-account-out-or-lets-it-in-on-less
+[af-9b]: ./AUTH_FLOWS.md#9b-a-held-factor-is-passed-before-any-enrolment
 [auth-readme]: ../src/auth/README.md
 [dm]: ./DATABASE_MANAGEMENT.md
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw

@@ -1,10 +1,11 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
 
 import { loadWranglerConfig } from "../cf/config/parse";
 import { defaultEnvFlags, regenerateCommand, renderEnvSchema } from "../cf/gen/cf-env-command";
 import { declaresSecrets } from "../cf/gen/cf-env-gen";
 import { CliError } from "../cli/errors";
+import { captureStreams } from "../cli/proc";
 import type { SpawnSync } from "../cli/types";
 import { loadFeatures } from "../curate/config";
 import {
@@ -70,6 +71,18 @@ export function checkGeneratedTypes(root: string): CheckResult {
     }),
   );
   return checkResult(findings, `\`.types/\` holds no wrangler output but \`${owned}\``);
+}
+
+const RUNTIME_TYPES_TAIL = 20;
+
+/** Runs `wrangler types` into `.types/`, creating the directory first: wrangler exits 1 when it is absent, as in a fresh clone. @internal */
+export function generateRuntimeTypes(root: string, workerConfig: string | undefined, spawn?: SpawnSync): CheckResult {
+  mkdirSync(resolve(root, posix.dirname(RUNTIME_TYPES)), { recursive: true });
+  const args = ["types", RUNTIME_TYPES, "--no-include-env", ...(workerConfig === undefined ? [] : ["--config", workerConfig])];
+  const result = captureStreams("wrangler", args, { cwd: root }, spawn);
+  if (result.code === 0 && result.exited) return checkResult([], `\`wrangler types\` wrote \`${RUNTIME_TYPES}\``);
+  const tail = `${result.stdout}${result.stderr}`.trimEnd().split("\n").slice(-RUNTIME_TYPES_TAIL);
+  return checkResult([fail(`\`wrangler ${args.join(" ")}\` failed (exit ${result.code})`, { detail: tail })], "");
 }
 
 function firstDifference(committed: string, fresh: string): string {
@@ -138,17 +151,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
   const steps: Step[] = [];
 
   if (options.wranglerTypes !== false) {
-    steps.push({
-      label: "types:cf-runtime",
-      tail: 20,
-      cmd: [
-        "wrangler",
-        "types",
-        RUNTIME_TYPES,
-        "--no-include-env",
-        ...(options.workerConfig === undefined ? [] : ["--config", options.workerConfig]),
-      ],
-    });
+    steps.push(checkStep("types:cf-runtime", () => generateRuntimeTypes(root, options.workerConfig), {}));
     // No `watches`: the wrangler output this hunts is gitignored, so no git-visible change would ever run it, and `.types/` may list nothing.
     steps.push(checkStep("validate-generated-types", () => checkGeneratedTypes(root), {}));
   }
@@ -238,7 +241,7 @@ export function cloudflareWorkerSteps(options: CloudflareWorkerStepOptions = {})
             "validate-import-boundary",
             async () => {
               try {
-                return checkImportBoundary({ root, ...importBoundary, features: await loadFeatures({ root }) });
+                return checkImportBoundary({ root, ...importBoundary, features: (await loadFeatures({ root })).features });
               } catch (error) {
                 if (!(error instanceof CliError)) throw error;
                 return checkResult([fail(error.message)], "");

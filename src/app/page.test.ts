@@ -1,10 +1,13 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 
+import { requireFreshStepUp } from "../auth/web/guards";
 import { importKeyRing } from "../crypto/keyring/ring";
 import { CSRF_FIELD_DEFAULT } from "../form/constants";
 import { createCsrfToken, csrfProtection } from "../form/csrf";
 import { escapeHtml } from "../html/escape";
-import { get, post } from "../router/mod";
+import { ok } from "../result/result";
+import { get, post, put, Route } from "../router/mod";
+import { originProtection } from "../security/cop";
 import { mockExecutionContext } from "../testing/context";
 import { mapHandler } from "../testing/route";
 import type { TestAction } from "../testing/types";
@@ -16,6 +19,7 @@ import type { BotRejection } from "./types";
 const { definePage, defineAction } = createHandlerFactory();
 const PAGE_ROUTE = get("/test");
 const ACTION_ROUTE = post("/action");
+const ANY_PAGE_ROUTE = new Route("ANY", "/test");
 
 function makeApp(handler: TestAction<"/test">) {
   const app = new Forge();
@@ -268,6 +272,56 @@ describe("definePage", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ actionData: null, method: "GET" });
     expect(called).toBe(false);
+  });
+
+  it("answers OPTIONS and TRACE with a 405 naming the methods it serves, running neither the action nor the loader", async () => {
+    const action = mock(() => "should not run");
+    const loader = mock(() => ({ message: "should not run" }));
+    const app = new Forge();
+    mapHandler(app, "ANY", "/test", definePage(ANY_PAGE_ROUTE, { action, loader, view: () => new Response("rendered") }));
+
+    for (const method of ["OPTIONS", "TRACE"]) {
+      const res = await app.request("/test", { method });
+      expect({ method, status: res.status, allow: res.headers.get("allow") }).toEqual({
+        method,
+        status: 405,
+        allow: "GET, HEAD, POST, PUT, PATCH, DELETE",
+      });
+    }
+    expect(action).not.toHaveBeenCalled();
+    expect(loader).not.toHaveBeenCalled();
+  });
+
+  it("answers its 405 exactly as the app answers a method mismatch, ignoring the page's own cache and headers", async () => {
+    const app = new Forge();
+    mapHandler(
+      app,
+      "ANY",
+      "/test",
+      definePage(ANY_PAGE_ROUTE, { cache: { maxAge: 60, scope: "public" }, headers: { "x-page": "yes" }, view: () => new Response("rendered") }),
+    );
+
+    const res = await app.request("/test", { method: "OPTIONS" });
+    expect(Object.fromEntries(res.headers)).toEqual({
+      allow: "GET, HEAD, POST, PUT, PATCH, DELETE",
+      "content-type": "text/plain; charset=utf-8",
+      "x-content-type-options": "nosniff",
+      "content-security-policy": "default-src 'none'",
+      "referrer-policy": "no-referrer",
+    });
+    expect(await res.text()).toBe("Method Not Allowed");
+  });
+
+  it("names only the route's own method in Allow when the page was defined for one", async () => {
+    const allowOn = async (page: TestAction<"/test">) => {
+      const app = new Forge();
+      mapHandler(app, "ANY", "/test", page);
+      return (await app.request("/test", { method: "OPTIONS" })).headers.get("allow");
+    };
+    const view = () => new Response("rendered");
+
+    expect(await allowOn(definePage(PAGE_ROUTE, { view }))).toBe("GET, HEAD");
+    expect(await allowOn(definePage(put("/test"), { view }))).toBe("PUT");
   });
 
   it("sends a throwing action through the same boundary as a throwing view", async () => {
@@ -718,6 +772,35 @@ describe("definePage — the CSRF field the guard consumed", () => {
     const res = await submit(app, `name=Jane&${CSRF_FIELD_DEFAULT}=whatever`, "/unguarded");
     expect(res.status).toBe(422);
     expect(await res.text()).toBe(refusal(CSRF_FIELD_DEFAULT));
+  });
+});
+
+describe("definePage — a safe method behind the mutation guards", () => {
+  const SECRET = "9c55dd3f0812c671dc6d905ab7941deebb36feefbbfe4ba28bd37ae08287a9cf";
+
+  it("answers OPTIONS with a valid CSRF token 405 behind originProtection and requireFreshStepUp, and never runs the action", async () => {
+    const ring = await importKeyRing([SECRET]);
+    const action = mock(() => "mutated");
+    const app = new Forge();
+    mapHandler(app, "ANY", "/guarded", {
+      middleware: [
+        originProtection({ allowedOrigins: ["http://localhost"] }),
+        csrfProtection({ ring: () => ring, subject: false }),
+        requireFreshStepUp({
+          factors: () => ({ resolve: () => Promise.resolve(ok({ status: "satisfied" as const })) }),
+          enrolmentPaths: { kinds: {} },
+          stepUpPath: "/auth/verify",
+          settledPath: "/account",
+        }),
+      ],
+      handler: definePage(new Route("ANY", "/guarded"), { action, view: () => new Response("rendered") }),
+    });
+    const token = await createCsrfToken(ring, "/guarded");
+
+    const res = await app.request("/guarded", { method: "OPTIONS", headers: { "X-CSRF-Token": token } });
+    expect(res.status).toBe(405);
+    expect(res.headers.get("allow")).toBe("GET, HEAD, POST, PUT, PATCH, DELETE");
+    expect(action).not.toHaveBeenCalled();
   });
 });
 

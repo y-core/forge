@@ -7,7 +7,7 @@ import type { Orientation } from "../contracts/types";
 import type { Tone } from "../contracts/types";
 import { slotToken } from "./utils/as-child";
 import { cn } from "./utils/cn";
-import { STEP_MARKER, STEP_MARKER_STATE } from "./utils/recipes";
+import { STEP_MARKER, STEP_MARKER_TONE } from "./utils/recipes";
 import { toneTokens } from "./utils/tone";
 import type { StepState } from "./utils/types";
 
@@ -43,7 +43,7 @@ const Step: FC<StepProps> = ({ state = "upcoming", marker, stateLabel, class: cl
     {...(state === "current" ? { "aria-current": "step" } : {})}
     class={cn("flex items-center gap-2", cls)}
     {...rest}>
-    <span data-slot='steps-marker' aria-hidden='true' class={cn(STEP_MARKER, STEP_MARKER_STATE[state])}>
+    <span data-slot='steps-marker' aria-hidden='true' class={cn(STEP_MARKER, STEP_MARKER_TONE)}>
       {marker}
     </span>
     {/* The states differ only in colour, and the marker is `aria-hidden`. `aria-current` marks

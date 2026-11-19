@@ -28,8 +28,6 @@ export interface FakeAuthUser {
   readonly webauthnId?: Uint8Array | null;
   readonly isAdmin?: boolean;
   readonly deactivatedAt?: number | null;
-  /** The revocation barrier — every session established at or before it is refused; defaults to `null`. */
-  readonly sessionsInvalidBefore?: number | null;
   readonly createdAt?: number;
   readonly updatedAt?: number;
   readonly factors?: readonly FakeAuthFactor[];

@@ -152,9 +152,9 @@ column, after the plan; it is advisory, and the file is written. The proof again
 differing only in an identifier's case composes nothing. Renaming for real is `--rename` (§5).
 
 Every composed file opens with `PRAGMA defer_foreign_keys = true;`. A file that creates or changes an index ends with `PRAGMA optimize;`, which
-refreshes the planner's statistics in `sqlite_stat1`; that table is outside the schema fingerprint and outside a backup. Every emitted statement
-is one the linter (`DATABASE_MANAGEMENT.md` §5) accepts; the rebuild's `DROP TABLE` deliberately has no `IF EXISTS`, since the table was read a
-statement earlier.
+refreshes the planner's statistics in `sqlite_stat1`; that table is outside the schema fingerprint, and a backup carries it but compares no row
+count of it. Every emitted statement is one the linter (`DATABASE_MANAGEMENT.md` §5) accepts; the rebuild's `DROP TABLE` deliberately has no
+`IF EXISTS`, since the table was read a statement earlier.
 
 **A drop or a rename is refused until it is allowed.** A table drop or a column drop is destructive, and a view drop or a rename breaks what the
 Worker still deployed reads; compose prints the plan and stops with a twelve-character digest of it, and `--allow-destructive <digest>` on the next

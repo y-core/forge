@@ -161,6 +161,7 @@ declare module "node:child_process" {
     env?: Record<string, string | undefined>;
     encoding?: string;
     maxBuffer?: number;
+    timeout?: number;
   }
   interface SpawnSyncReturns {
     status: number | null;
@@ -169,8 +170,15 @@ declare module "node:child_process" {
     stdout?: string;
     stderr?: string;
   }
+  /** With `stdio` left to its `"pipe"` default, an `encoding` decodes both streams. */
+  export function spawnSync(
+    command: string,
+    args: string[],
+    options: SpawnSyncOptions & { encoding: string; stdio?: undefined },
+  ): SpawnSyncReturns & { stdout: string; stderr: string };
   export function spawnSync(command: string, args?: string[], options?: SpawnSyncOptions): SpawnSyncReturns;
   interface SpawnOptions {
+    cwd?: string;
     stdio?: string | (string | number)[];
     detached?: boolean;
     env?: Record<string, string | undefined>;
@@ -184,8 +192,16 @@ declare module "node:child_process" {
     readonly signalCode: string | null;
     readonly stdout: Readable | null;
     readonly stderr: Readable | null;
+    on(event: "close", listener: (code: number | null) => void): ChildProcess;
+    kill(signal?: string): boolean;
     unref(): void;
   }
+  /** With `stdio` left to its `"pipe"` default, both streams exist. */
+  export function spawn(
+    command: string,
+    args: string[],
+    options: SpawnOptions & { stdio?: undefined },
+  ): ChildProcess & { readonly stdout: Readable; readonly stderr: Readable };
   export function spawn(command: string, args?: string[], options?: SpawnOptions): ChildProcess;
 }
 
@@ -209,9 +225,13 @@ declare module "node:net" {
   }
   export function createServer(): Server;
   interface Socket {
+    write(data: string): boolean;
+    on(event: "data", listener: (chunk: Buffer) => void): Socket;
+    on(event: "error", listener: (error: Error) => void): Socket;
     destroy(): void;
     end(data?: string): void;
   }
+  export function connect(port: number, host: string, listener: () => void): Socket;
 }
 
 declare module "node:http" {

@@ -203,15 +203,17 @@ namespace.
 ## Seeding an account for an auth test
 
 `fakeAuthD1` is `fakeD1` with forge's auth schema already modelled. State the accounts in domain terms and it answers the user, factor and admin
-stores' own statements, binding each id as the 16 `BLOB` bytes for you; it also holds the challenge and nonce rows written to it, so a taken
-challenge is spent and a replayed nonce loses.
+stores' own statements, binding each id as the 16 `BLOB` bytes for you; it also holds the challenge, nonce and session rows written to it, so a
+taken challenge is spent, a replayed nonce loses, and a signed-out or revoked session stays gone. Deactivating an account through the admin
+store deletes its session rows, and reactivating it revives none of them. It holds each account's email-change cooldown claim, so a second
+request inside the cooldown is refused as `too-soon`.
 
 ```ts
 const DB = fakeAuthD1([{ id: ADA, email: "ada@example.com", isAdmin: true, factors: [{ kind: "passkey" }] }]);
 ```
 
 `id` and `email` are the whole requirement. Everything else defaults to the ordinary case — a verified, active, non-admin account with no factors
-and no revocation barrier — so each field you write is a departure from it. The departures worth knowing: `deactivatedAt` gives you the
+— so each field you write is a departure from it. The departures worth knowing: `deactivatedAt` gives you the
 suspended account, and `confirmedAt: null` on a factor gives the enrolment that was begun and never finished, which is how the pending-enrolment
 and step-up paths are reached.
 

@@ -151,6 +151,7 @@ export type LintRule =
   | "alter-column-unsupported"
   | "pragma-unsupported"
   | "table-too-wide"
+  | "auth-key-blocks-delete"
   | "generated-edited"
   | "seed-insert-not-idempotent";
 

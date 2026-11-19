@@ -1,27 +1,38 @@
 import type { Middleware } from "@remix-run/fetch-router";
 
 import { importKeyRing } from "../../crypto/keyring/ring";
+import { bytesToHex } from "../../crypto/primitives/bytes";
 import { err, ok } from "../../result/result";
 import { createSignedCookie } from "../../session/cookie";
 import { sessionCtx } from "../../session/session";
+import { uuidv7 } from "../../storage/db/uuid";
 import type { ForgeIcon } from "../../ui/core/types";
-import { AUTH_ADMIN_ROLE, AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
-import { authIdentifies, createFactorRegistry } from "../factors/registry";
+import { AUTH_OTP_COOLDOWN_MS, AUTH_OTP_DIGITS, AUTH_OTP_TTL_MS } from "../config";
+import { AuthStoreError } from "../errors";
+import { createFactorRegistry } from "../factors/registry";
 import type {
-  AuthFactorOffer,
-  AuthFactorRequirement,
   AuthFactorRegistry,
   AuthFactorResolution,
   AuthFactorService,
   AuthIdentifyingFactorService,
+  AuthSecondFactorKind,
+  AuthSecondFactorOffering,
+  AuthSecondFactorService,
+  EnrollableFactorService,
+  RecoveryCodeFactorService,
 } from "../factors/types";
-import type { AuthEmailChangeFlow, AuthSigninFlow, AuthSignupFlow } from "../flows/types";
+import type { AuthEmailChangeFlow, AuthSecurityNotices, AuthSigninFlow, AuthSignupFlow } from "../flows/types";
+import { authSessionBounds } from "../stores/sessions";
+import type { AuthSessionStoreOptions } from "../stores/types";
 import type {
   AdminUserStore,
   AuthChallenge,
   AuthCredential,
   AuthFactor,
   AuthFactorKind,
+  AuthSecurityNotice,
+  AuthSessionRecord,
+  AuthSessionStore,
   AuthUser,
   ChallengeStore,
   CredentialStore,
@@ -31,11 +42,11 @@ import type {
 } from "../types";
 import { defineApproval } from "./approval";
 import { createAuthGuards, signApprovalCode } from "./guards";
-import { authCtx, markApproval } from "./identity";
+import { authCtx, establishAuthSession, markApproval, markAuthStepUp } from "./identity";
 import { authPaths } from "./paths";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { Approval, ApprovalOptions, AuthAdminGuardOptions, AuthIconName, AuthRequestServices, AuthWebOptions, AuthWebPaths } from "./types";
-import type { AuthFactorAssignment, AuthFactorCell, AuthFactorChoices, AuthFactorOffering } from "./types";
+import type { AuthFactorAssignment, AuthFactorCell, AuthFactorChoices } from "./types";
 
 /** Escapes a literal so it can be spliced into a regular expression. */
 function rx(literal: string): string {
@@ -116,30 +127,20 @@ export const fakeSessionCookie = createSignedCookie("__session", { path: "/", ri
 /** Which kinds carry an enrolment row; email-OTP's enrolment is a verified email, so it has none. @internal */
 export const AUTH_EXPLICIT_FACTORS: readonly AuthFactorKind[] = ["passkey", "recovery-code", "totp-app"];
 
-/** Every offered set the factor matrix crosses; a set holding `totp-app` or `passkey` is offered with `recovery-code` beside it. @internal */
-export const AUTH_FACTOR_SETS: readonly (readonly AuthFactorKind[])[] = [
-  [],
-  ["email-otp"],
-  ["passkey"],
-  ["totp-app"],
-  ["email-otp", "passkey"],
-  ["email-otp", "recovery-code"],
-  ["email-otp", "totp-app"],
-  ["passkey", "totp-app"],
-  ["email-otp", "passkey", "totp-app"],
-];
+/** Every second-factor offering the factor matrix crosses, in listing order; empty is a deployment offering none. @internal */
+export const AUTH_FACTOR_SETS: readonly (readonly AuthSecondFactorKind[])[] = [[], ["passkey"], ["totp-app"], ["passkey", "totp-app"]];
 
-// A requirement is per factor, so the full cross is 3ⁿ per offering; these are the shapes that differ in behaviour.
-/** Every requirement assignment the factor matrix crosses. @internal */
-export const AUTH_FACTOR_ASSIGNMENTS: readonly AuthFactorAssignment[] = [
-  { label: "all-optional", requirement: () => "optional" },
-  { label: "all-mandatory", requirement: () => "mandatory" },
-  { label: "first-mandatory", requirement: (index) => (index === 0 ? "mandatory" : "optional") },
-  { label: "for-roles", requirement: () => ({ mandatoryForRoles: [AUTH_ADMIN_ROLE] }) },
-];
+/** Every mandatory/optional assignment the factor matrix crosses `kinds` with: each subset of them made mandatory, all-optional first. @internal */
+export function authFactorAssignments(kinds: readonly AuthSecondFactorKind[]): AuthFactorAssignment[] {
+  const subsets = kinds.reduce<AuthSecondFactorKind[][]>((built, kind) => [...built, ...built.map((subset) => [...subset, kind])], [[]]);
+  return subsets.map((mandatory) => ({ label: mandatory.length === 0 ? "optional" : `mandatory:${mandatory.join("+")}`, mandatory }));
+}
 
 /** A factor service standing in for `kind`, carrying that kind's real capabilities and enrolment style. @internal */
-export function fakeFactorService<kind extends AuthFactorKind>(kind: kind): AuthFactorService<kind> {
+export function fakeFactorService(kind: "email-otp"): AuthIdentifyingFactorService;
+export function fakeFactorService<kind extends AuthSecondFactorKind | "recovery-code">(kind: kind): EnrollableFactorService<kind>;
+export function fakeFactorService(kind: AuthFactorKind): AuthFactorService;
+export function fakeFactorService(kind: AuthFactorKind): AuthFactorService {
   const base = {
     kind,
     capabilities: { stepUp: true },
@@ -160,30 +161,65 @@ export function fakeFactorService<kind extends AuthFactorKind>(kind: kind): Auth
   };
 }
 
-/** A factor store reporting `enrolled` as confirmed and nothing else. @internal */
-export function fakeFactorStore(enrolled: readonly AuthFactorKind[]): FactorStore {
-  const rows = enrolled.map((kind, index) => ({
-    id: `f${index}`,
-    userId: "u1",
-    kind,
-    secret: null,
-    lastCounter: null,
-    failedAttempts: 0,
-    lastVerifiedAt: null,
-    confirmedAt: 1,
-    createdAt: 1,
-    updatedAt: 1,
-  }));
+// Typed as the real factor so it can stand in an offering, but without `remaining`: a confirmed set
+// then reads `remaining: null`, as it does behind a factor that cannot count its codes.
+/** The recovery-code factor with no code count behind it. @internal */
+export function fakeRecoveryCodeService(): RecoveryCodeFactorService {
+  return fakeFactorService("recovery-code") as RecoveryCodeFactorService;
+}
+
+/** One enrolment row of `fakeFactorStore`; a bare kind is confirmed at `1`. */
+interface FakeFactorEnrolment {
+  readonly kind: AuthFactorKind;
+  /** `null` is an enrolment begun and never confirmed. Defaults to `1`. */
+  readonly confirmedAt?: number | null;
+  /** Defaults to `1`. */
+  readonly createdAt?: number;
+}
+
+interface FakeFactorStoreOptions {
+  /** Fails every read the store answers. */
+  readonly down?: boolean;
+  /** Called on every read the store answers, before it answers. */
+  readonly onRead?: () => void;
+}
+
+/** A factor store holding `enrolled` and nothing else. @internal */
+export function fakeFactorStore(
+  enrolled: readonly (AuthFactorKind | FakeFactorEnrolment)[],
+  { down = false, onRead = () => {} }: FakeFactorStoreOptions = {},
+): FactorStore {
+  const rows = enrolled.map((entry, index) => {
+    const { kind, confirmedAt = 1, createdAt = 1 } = typeof entry === "string" ? { kind: entry } : entry;
+    return {
+      id: `f${index}`,
+      userId: "u1",
+      kind,
+      secret: null,
+      lastCounter: null,
+      failedAttempts: 0,
+      lastVerifiedAt: null,
+      confirmedAt,
+      createdAt,
+      updatedAt: createdAt,
+    };
+  });
+  const read = <T>(answer: () => T) => {
+    onRead();
+    return down ? err(new AuthStoreError("unavailable", "fakeFactorStore")) : ok(answer());
+  };
   return {
-    listByUser: async () => ok(rows),
-    find: async (_userId, kind) => ok(rows.find((row) => row.kind === kind) ?? null),
-    findEnrolled: async (_userId, kinds) => ok(rows.filter((row) => kinds.includes(row.kind))),
+    listByUser: async () => read(() => rows),
+    find: async (_userId, kind) => read(() => rows.find((row) => row.kind === kind) ?? null),
+    listConfirmedKinds: async (_userId, kinds) =>
+      read(() => rows.filter((row) => row.confirmedAt !== null && kinds.includes(row.kind)).map((row) => row.kind)),
     enrol: async () => err(new Error("fakeFactorStore: enrol is not part of the view fixture") as never),
     confirm: async () => ok(true),
     countAttempt: async (userId, kind) => ok(rows.find((row) => row.userId === userId && row.kind === kind) ?? null),
     recordVerification: async () => ok(true),
+    replaceSecret: async () => ok(true),
     countSecretsNotUnder: async () => ok(0),
-    remove: async () => ok(true),
+    remove: async () => ok("changed" as const),
   };
 }
 
@@ -209,9 +245,10 @@ export function fakeRecoveryCodeStore(): RecoveryCodeStore {
     },
     holdsStaged: async (userId, hash) => ok(codes.some((code) => code.userId === userId && code.staged && code.hash === hex(hash))),
     commit: async (userId) => {
+      if (!codes.some((code) => code.userId === userId && code.staged)) return ok(false);
       codes = codes.filter((code) => !(code.userId === userId && !code.staged));
       for (const code of codes) if (code.userId === userId) code.staged = false;
-      return ok(undefined);
+      return ok(true);
     },
     consume: async (userId, _factorId, hash, at) => {
       const code = codes.find((held) => held.userId === userId && !held.staged && held.usedAt === null && held.hash === hex(hash));
@@ -228,91 +265,52 @@ export function fakeChallengeStore(): ChallengeStore {
   return { put: async () => ok(undefined), take: async () => ok(null as AuthChallenge | null) };
 }
 
-/** One offer of a kind, or of a service, in `role`; a primary offer of a non-identifying kind throws. @internal */
-export function fakeFactorOffer(
-  offered: AuthFactorKind | AuthFactorService,
-  role: "primary" | "second",
-  requirement: AuthFactorRequirement = "optional",
-): AuthFactorOffer {
-  const service = typeof offered === "string" ? fakeFactorService(offered) : offered;
-  if (role !== "primary") return { service, role, requirement };
-  if (!authIdentifies(service.kind)) throw new Error(`fakeFactorOffer: "${service.kind}" cannot be a primary factor`);
-  return { service: service as AuthIdentifyingFactorService, role };
-}
-
-/** The optional `recovery-code` offer the registry demands beside any `totp-app` or `passkey` offer. @internal */
-export function recoveryOffer(): AuthFactorOffer {
-  return fakeFactorOffer("recovery-code", "second");
-}
-
-/** A registry offering email-OTP as primary and `kinds` as optional seconds, with `recovery-code` beside them. @internal */
-export function fakeFactorRegistry(kinds: readonly AuthFactorKind[]): AuthFactorRegistry {
-  const recoverable = kinds.some((kind) => kind === "passkey" || kind === "totp-app");
-  return createFactorRegistry(fakeFactorStore([]), {
-    offered: [
-      fakeFactorOffer("email-otp", "primary"),
-      ...kinds.map((kind) => fakeFactorOffer(kind, "second")),
-      ...(recoverable ? [recoveryOffer()] : []),
-    ],
+/** A second-factor offering of `offered`, those of `mandatory` kind mandatory and the rest optional, with `recovery` beside it; an empty `offered` throws. @internal */
+export function fakeSecondFactorOffering(
+  offered: readonly (AuthSecondFactorKind | AuthSecondFactorService)[],
+  mandatory: readonly AuthSecondFactorKind[] = [],
+  recovery: RecoveryCodeFactorService = fakeRecoveryCodeService(),
+): AuthSecondFactorOffering {
+  const [first, ...rest] = offered.map((entry) => {
+    const service = typeof entry === "string" ? fakeFactorService(entry) : entry;
+    return { service, requirement: mandatory.includes(service.kind) ? ("mandatory" as const) : ("optional" as const) };
   });
+  if (first === undefined) throw new Error("fakeSecondFactorOffering: offer at least one second factor");
+  return { offered: [first, ...rest], recovery };
 }
 
-/** Every offered set with each primary it permits, in a stable order. @internal */
-export function authFactorOfferings(): AuthFactorOffering[] {
-  return AUTH_FACTOR_SETS.flatMap<AuthFactorOffering>((kinds) => {
-    const candidates = kinds.filter((kind) => authIdentifies(kind));
-    if (candidates.length === 0) return [{ kinds, primary: undefined }];
-    return candidates.map((primary) => ({ kinds, primary }));
-  });
+/** A registry offering email-OTP as primary and `kinds` as second factors, those in `mandatory` mandatory, with `recovery-code` beside them. @internal */
+export function fakeFactorRegistry(
+  kinds: readonly AuthSecondFactorKind[],
+  mandatory: readonly AuthSecondFactorKind[] = [],
+  store: FactorStore = fakeFactorStore([]),
+): AuthFactorRegistry {
+  const primary = fakeFactorService("email-otp");
+  return createFactorRegistry(store, kinds.length === 0 ? { primary } : { primary, second: fakeSecondFactorOffering(kinds, mandatory) });
 }
 
-/** The tagged list `kinds` amounts to under `assignment`, with `primary` declared primary and `recovery-code` beside a recoverable kind. @internal */
-function authFactorOffers(
-  kinds: readonly AuthFactorKind[],
-  primary: AuthFactorKind | undefined,
-  assignment: AuthFactorAssignment,
-): AuthFactorOffer[] {
-  let seconds = 0;
-  const offers = kinds.map((kind) =>
-    kind === primary ? fakeFactorOffer(kind, "primary") : fakeFactorOffer(kind, "second", assignment.requirement(seconds++)),
-  );
-  const recoverable = kinds.some((kind) => kind === "passkey" || kind === "totp-app") && !kinds.includes("recovery-code");
-  return recoverable ? [...offers, recoveryOffer()] : offers;
-}
-
-/** Every offering crossed with every assignment, in a stable order. @internal */
+/** Every second-factor offering crossed with each of its mandatory/optional assignments, in a stable order, resolving against `enrolled`. @internal */
 export function authFactorGrid(enrolled: readonly AuthFactorKind[] = []): AuthFactorCell[] {
   const store = fakeFactorStore(enrolled);
-  const cells: AuthFactorCell[] = [];
-  for (const { kinds, primary } of authFactorOfferings()) {
-    for (const assignment of AUTH_FACTOR_ASSIGNMENTS) {
-      const offering = kinds.length === 0 ? "none" : kinds.join("+");
-      const label = `${offering}${primary === undefined ? "" : ` primary=${primary}`} / ${assignment.label}`;
-      const options = { offered: authFactorOffers(kinds, primary, assignment) };
-      try {
-        cells.push({ label, kinds, primary, assignment, registry: createFactorRegistry(store, options), refusal: null });
-      } catch (thrown) {
-        cells.push({ label, kinds, primary, assignment, registry: null, refusal: (thrown as Error).message });
-      }
-    }
-  }
-  return cells;
+  return AUTH_FACTOR_SETS.flatMap((kinds) =>
+    authFactorAssignments(kinds).map((assignment) => ({
+      label: `${kinds.length === 0 ? "none" : kinds.join("+")} / ${assignment.label}`,
+      kinds,
+      assignment,
+      registry: fakeFactorRegistry(kinds, assignment.mandatory, store),
+    })),
+  );
 }
 
-/** The choices `cell` offers a view, or `null` when the combination is refused. @internal */
-export function factorChoices(cell: AuthFactorCell): AuthFactorChoices | null {
-  if (cell.registry === null) return null;
-  const seconds = cell.registry.seconds;
-  return {
-    primary: cell.registry.primary.kind,
-    stepUp: seconds.map((offer) => offer.service.kind),
-    enrollable: seconds.filter((offer) => offer.service.enrolment === "explicit").map((offer) => offer.service.kind),
-  };
+/** The choices `cell` offers a view. @internal */
+export function factorChoices(cell: AuthFactorCell): AuthFactorChoices {
+  const { primary, seconds, recovery } = cell.registry;
+  const kinds = [...seconds, ...(recovery === null ? [] : [recovery])].map((service) => service.kind);
+  return { primary: primary.kind, stepUp: kinds, enrollable: kinds };
 }
 
-/** What `cell` demands of a user holding the grid's enrolments, or `null` when the combination is refused. @internal */
+/** What `cell` demands of a user holding the grid's enrolments, or `null` when the store refuses. @internal */
 export async function factorDemand(cell: AuthFactorCell): Promise<AuthFactorResolution | null> {
-  if (cell.registry === null) return null;
   const resolved = await cell.registry.resolve("u1");
   return resolved.ok ? resolved.data : null;
 }
@@ -327,7 +325,6 @@ export function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
     webauthnId: null,
     isAdmin: false,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
@@ -365,7 +362,86 @@ export function fakeAuthUserStore(users: readonly AuthUser[]): UserStore {
     setWebAuthnIdIfAbsent: async () => ok(null),
     markEmailVerified: async () => ok(true),
     changeEmail: async () => ok(true),
-    revokeSessions: async () => ok(true),
+    claimEmailChange: async () => ok(true),
+  };
+}
+
+type FakeAuthSessionRow = AuthSessionRecord & { readonly userId: string };
+
+/** An in-memory session store holding rows by token hash, refusing nothing, and holding them to `options`' lifetimes as the real store does. @internal */
+export function fakeAuthSessionStore(
+  users: readonly AuthUser[],
+  rows: Map<string, FakeAuthSessionRow> = new Map(),
+  options?: AuthSessionStoreOptions,
+): AuthSessionStore & { readonly rows: Map<string, FakeAuthSessionRow> } {
+  const { absoluteLifetimeMs, idleTimeoutMs, touchIntervalMs } = authSessionBounds(options);
+  return {
+    rows,
+    create: async (input, replaces) => {
+      if (replaces !== null) rows.delete(bytesToHex(replaces));
+      rows.set(bytesToHex(input.tokenHash), {
+        userId: input.userId,
+        id: uuidv7(),
+        signedInAt: input.signedInAt,
+        expiresAt: input.signedInAt + absoluteLifetimeMs,
+        lastSeenAt: input.signedInAt,
+        stepUpAt: input.stepUp?.at ?? null,
+        stepUpKind: input.stepUp?.kind ?? null,
+        device: input.device ?? null,
+      });
+      return ok(undefined);
+    },
+    resolve: async (tokenHash, at) => {
+      const row = rows.get(bytesToHex(tokenHash));
+      const user = row === undefined ? undefined : users.find((held) => held.id === row.userId);
+      if (row === undefined || user === undefined || row.expiresAt <= at || user.deactivatedAt !== null) return ok(null);
+      if (idleTimeoutMs !== null && row.lastSeenAt <= at - idleTimeoutMs) return ok(null);
+      if (at - row.lastSeenAt >= touchIntervalMs) rows.set(bytesToHex(tokenHash), { ...row, lastSeenAt: at });
+      const { userId: _owner, ...session } = row;
+      return ok({ user: { id: user.id, email: user.email, isAdmin: user.isAdmin }, session });
+    },
+    rotate: async (replaces, tokenHash, stepUp) => {
+      const previous = bytesToHex(replaces);
+      const row = rows.get(previous);
+      if (row === undefined) return ok(false);
+      rows.delete(previous);
+      rows.set(bytesToHex(tokenHash), stepUp === undefined ? row : { ...row, stepUpAt: stepUp.at, stepUpKind: stepUp.kind });
+      return ok(true);
+    },
+    remove: async (tokenHash) => ok(rows.delete(bytesToHex(tokenHash))),
+    listByUser: async (userId, at) =>
+      ok(
+        [...rows.values()]
+          .filter((row) => row.userId === userId && row.expiresAt > at && (idleTimeoutMs === null || row.lastSeenAt > at - idleTimeoutMs))
+          .sort((left, right) => right.signedInAt - left.signedInAt)
+          .map(({ userId: _owner, ...session }) => session),
+      ),
+    revoke: async (userId, sessionId, _at, origin) => {
+      const spared = origin.keep === null ? null : bytesToHex(origin.keep);
+      const doomed = [...rows].find(([key, row]) => row.userId === userId && row.id === sessionId && key !== spared);
+      return ok(doomed !== undefined && rows.delete(doomed[0]));
+    },
+    revokeOthers: async (userId, _at, origin) => {
+      const spared = origin.keep === null ? null : bytesToHex(origin.keep);
+      const doomed = [...rows].filter(([key, row]) => row.userId === userId && key !== spared).map(([key]) => key);
+      for (const key of doomed) rows.delete(key);
+      return ok(doomed.length);
+    },
+  };
+}
+
+/** Middleware signing `userId` in on this request's session through the real `establishAuthSession`, stepped up at `stepUpAt` when given. @internal */
+export function signedInSession(sessions: AuthSessionStore, userId: string, stepUpAt?: number): Middleware {
+  return async (context, next) => {
+    const session = sessionCtx.get(context);
+    const now = Date.now();
+    const established = await establishAuthSession(session, sessions, userId, now, now, { kind: "email-otp" });
+    if (!established.ok) throw established.error;
+    if (stepUpAt !== undefined) {
+      const marked = await markAuthStepUp(session, sessions, stepUpAt, now, "email-otp");
+      if (!marked.ok) throw marked.error;
+    }
+    return next();
   };
 }
 
@@ -377,7 +453,7 @@ export function fakeAuthCredentialStore(credentials: readonly AuthCredential[]):
     create: async () => err(new Error("fakeAuthCredentialStore: create is not part of this fixture") as never),
     recordUse: async () => ok(true),
     relabel: async (id) => ok(credentials.some((credential) => credential.id === id)),
-    removeForUser: async (id) => ok(credentials.some((credential) => credential.id === id)),
+    removeForUser: async (id) => (credentials.some((credential) => credential.id === id) ? ok("changed" as const) : ok("not-found" as const)),
   };
 }
 
@@ -425,6 +501,12 @@ export function fakeAuthEmailChangeFlow(overrides: Partial<AuthEmailChangeFlow> 
   };
 }
 
+/** A notice hook recording every notice it is handed, addressed, in the order sent. @internal */
+export function fakeSecurityNotices(): AuthSecurityNotices & { readonly sent: { readonly to: string; readonly notice: AuthSecurityNotice }[] } {
+  const sent: { readonly to: string; readonly notice: AuthSecurityNotice }[] = [];
+  return { sent, send: (to, notice) => void sent.push({ to, notice }) };
+}
+
 /** Every href map the loaders read, built from the route builders at their default mounts. @internal */
 export function fakeAuthWebPaths(): AuthWebPaths {
   return { auth: authPaths(authRoutes("/auth")), account: authPaths(accountRoutes("/account")), admin: authPaths(adminRoutes("/admin")) };
@@ -438,12 +520,14 @@ export function fakeAuthServices(overrides: Partial<AuthRequestServices> = {}): 
   const users = [fakeAuthUser()];
   return {
     users: fakeAuthUserStore(users),
+    sessions: fakeAuthSessionStore(users),
     credentials: fakeAuthCredentialStore([]),
-    factors: createFactorRegistry(fakeFactorStore([]), { offered: [{ service: fakeFactorService("email-otp"), role: "primary" }] }),
+    factors: fakeFactorRegistry([]),
     enrolments: fakeFactorStore([]),
     signin: fakeAuthSigninFlow(),
     signup: fakeAuthSignupFlow(),
     emailChange: fakeAuthEmailChangeFlow(),
+    notices: fakeSecurityNotices(),
     admin: fakeAdminUserStore(users),
     ...overrides,
   };
@@ -482,8 +566,8 @@ export function approvedSession(at?: number, code: string = FAKE_APPROVAL_CODE):
 export function fakeAdminGuardChain(onForbidden?: AuthAdminGuardOptions["onForbidden"]): Middleware[] {
   const [group] = createAuthGuards({
     routes: { admin: adminRoutes("/admin") },
-    auth: { users: () => fakeAuthUserStore([]), signinPath: "/auth/signin" },
-    enrolment: { factors: () => fakeFactorRegistry([]), enrolmentPaths: {}, stepUpPath: "/auth/verify", settledPath: "/" },
+    auth: { sessions: () => fakeAuthSessionStore([]), signinPath: "/auth/signin" },
+    enrolment: { factors: () => fakeFactorRegistry([]), enrolmentPaths: { kinds: {} }, stepUpPath: "/auth/verify", settledPath: "/" },
     origin: { allowedOrigins: ["https://app.example"] },
     groups: [{ path: ["admin", "users"], guards: ["require-auth", "require-admin"], medium: "html", clearsStepUp: true }],
     onForbidden,

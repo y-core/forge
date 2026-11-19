@@ -34,20 +34,20 @@ afterAll(() => {
 
 describe("defineFeatures()", () => {
   it("returns the manifest it is given", () => {
-    const manifest = { showcase: { directories: ["src/showcase/"], seams: [] } };
+    const manifest = { features: { showcase: { directories: ["src/showcase/"], seams: [] } } };
     expect(defineFeatures(manifest)).toBe(manifest);
   });
 });
 
 describe("loadFeatures()", () => {
   it("loads the default export of `config/features.config.ts`", async () => {
-    const root = project('export default { showcase: { directories: ["src/showcase/"], seams: ["src/worker.ts"] } };\n');
-    expect(await loadFeatures({ root })).toEqual({ showcase: { directories: ["src/showcase/"], seams: ["src/worker.ts"] } });
+    const root = project('export default { features: { showcase: { directories: ["src/showcase/"], seams: ["src/worker.ts"] } } };\n');
+    expect(await loadFeatures({ root })).toEqual({ features: { showcase: { directories: ["src/showcase/"], seams: ["src/worker.ts"] } } });
   });
 
   it("loads the module an explicit path names", async () => {
-    const root = project('export default { demo: { directories: ["demo"], seams: [] } };\n', "config/other.ts");
-    expect(await loadFeatures({ root, path: "config/other.ts" })).toEqual({ demo: { directories: ["demo"], seams: [] } });
+    const root = project('export default { features: { demo: { directories: ["demo"], seams: [] } } };\n', "config/other.ts");
+    expect(await loadFeatures({ root, path: "config/other.ts" })).toEqual({ features: { demo: { directories: ["demo"], seams: [] } } });
   });
 
   it("refuses a root with no manifest as invalid arguments, naming where it looked", async () => {
@@ -70,20 +70,24 @@ describe("loadFeatures()", () => {
   });
 
   it("refuses an invalid manifest by the dot path of the field at fault", async () => {
-    const error = await refusal(loadFeatures({ root: project('export default { showcase: { directories: [], seams: ["/abs.ts"] } };\n') }));
+    const error = await refusal(
+      loadFeatures({ root: project('export default { features: { showcase: { directories: [], seams: ["/abs.ts"] } } };\n') }),
+    );
     expect(error).toBeInstanceOf(CliError);
     expect((error as CliError).kind).toBe("invalid-args");
-    expect(error.message).toBe("config/features.config.ts: showcase.seams.0: must be root-relative with no `..` segment");
+    expect(error.message).toBe("config/features.config.ts: features.showcase.seams.0: must be root-relative with no `..` segment");
   });
 
   it("joins every issue, each by its dot path", async () => {
     const error = await refusal(
       loadFeatures({
-        root: project('export default { Demo: { directories: [], seams: ["src/worker.ts"] }, contact: { directories: [], seams: [] } };\n'),
+        root: project(
+          'export default { features: { Demo: { directories: [], seams: ["src/worker.ts"] }, contact: { directories: [], seams: [] } } };\n',
+        ),
       }),
     );
     expect(error.message).toBe(
-      "config/features.config.ts: Demo: must be lowercase letters, digits and `-`, starting with a letter; contact: a feature must name something to remove",
+      "config/features.config.ts: features.Demo: must be lowercase letters, digits and `-`, starting with a letter; features.contact: a feature must name something to remove",
     );
   });
 });

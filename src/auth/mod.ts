@@ -2,7 +2,7 @@ export {
   APPROVAL_TTL_MS,
   AUTH_ACCESS_TOKEN_MAX_LIFETIME_MS,
   AUTH_ACCESS_TOKEN_USE_INTERVAL_MS,
-  AUTH_ADMIN_ROLE,
+  AUTH_EMAIL_CHANGE_COOLDOWN_MS,
   AUTH_FRESH_STEP_UP_MS,
   AUTH_IDENTIFYING_FACTORS,
   AUTH_PASSKEY_ASSERTION_ID_MAX,
@@ -16,13 +16,19 @@ export {
   AUTH_KV_MIN_TTL_SECONDS,
   AUTH_RECOVERY_CODE_BYTES,
   AUTH_RECOVERY_CODE_COUNT,
+  AUTH_SECOND_FACTORS,
+  AUTH_SECURITY_EVENT_TTL_MS,
   AUTH_OTP_COOLDOWN_MS,
   AUTH_OTP_DIGITS,
+  AUTH_OTP_GUESS_WINDOW_MS,
   AUTH_OTP_MAX_ATTEMPTS,
   AUTH_OTP_TTL_MS,
+  AUTH_SESSION_IDLE_MS,
   AUTH_SESSION_MAX_MS,
+  AUTH_STEP_UP_MAX_MS,
   AUTH_SUPPORTED_ALGORITHMS,
   AUTH_TOTP_LOCKOUT_MS,
+  AUTH_UNVERIFIED_USER_TTL_MS,
 } from "./config";
 export type { AdminUserService, AdminUserServiceOptions } from "./admin/types";
 export { isLastAdminRefusal } from "./admin/service";
@@ -37,33 +43,39 @@ export { AuthStoreError } from "./errors";
 export { createAccessTokenStore } from "./stores/access-tokens";
 export { createAdminUserStore } from "./stores/admin-users";
 export { createCredentialStore } from "./stores/credentials";
+export { createSecurityEventStore } from "./stores/events";
 export { createFactorStore } from "./stores/factors";
 export { createIdentityLinkStore } from "./stores/identity-links";
 export { createRecoveryCodeStore } from "./stores/recovery-codes";
+export type { AuthSecondFactorFloor, AuthSessionStoreOptions } from "./stores/types";
+export { createAuthSessionStore } from "./stores/sessions";
 export { createUserStore } from "./stores/users";
 export type {
+  AuthFactorCaller,
   AuthFactorCapabilities,
   AuthFactorChallenge,
-  AuthFactorContext,
-  AuthFactorOffer,
   AuthFactorReason,
   AuthFactorRegistry,
-  AuthFactorRequirement,
   AuthFactorResolution,
   AuthFactorService,
   AuthIdentifyingFactorKind,
   AuthIdentifyingFactorService,
   AuthFactorVerified,
   AuthFactorsOptions,
+  AuthSecondFactorKind,
+  AuthSecondFactorOffer,
+  AuthSecondFactorOffering,
+  AuthSecondFactorRequirement,
+  AuthSecondFactorService,
   EnrollableFactorService,
 } from "./factors/types";
 export type { ImplicitFactorService } from "./factors/types";
-export { authFactorContext, authIdentifies, createFactorRegistry } from "./factors/registry";
+export { authIdentifies, createFactorRegistry } from "./factors/registry";
 export type { PasskeyFactorOptions, PasskeyFactorSubject, PasskeyPrfSalts } from "./factors/types";
 export { createPasskeyFactor } from "./factors/passkey";
 export type { RecoveryCodeFactorOptions, RecoveryCodeFactorService } from "./factors/types";
 export { createRecoveryCodeFactor } from "./factors/recovery-code";
-export type { TotpAppEnrolment, TotpAppFactorOptions } from "./factors/types";
+export type { TotpAppEnrolment, TotpAppFactorOptions, TotpReplaceableFactorService } from "./factors/types";
 export { createTotpAppFactor } from "./factors/totp-app";
 export type { AuthDecoyStores, AuthDeferral, AuthFlowChallenge, AuthIssueOutcome } from "./flows/types";
 export type {
@@ -76,6 +88,8 @@ export type {
   AuthEmailChangeStage,
 } from "./flows/types";
 export { createEmailChangeFlow } from "./flows/email-change";
+export type { AuthSecurityNotices, AuthSecurityNoticesOptions } from "./flows/types";
+export { createSecurityNotices } from "./flows/security-notices";
 export type { AuthSignin, AuthSigninFlow, AuthSigninNotice, AuthSigninOptions, AuthSigninReason } from "./flows/types";
 export { createSigninFlow, redactSigninReason } from "./flows/signin";
 export type { AuthSignupFlow, AuthSignupOptions } from "./flows/types";
@@ -87,9 +101,10 @@ export { createChallengeStore } from "./stores/challenges";
 export type { NonceStoreOptions } from "./stores/types";
 export { createNonceStore } from "./stores/nonces";
 export { createOtpStateStore } from "./stores/otp-state";
+export type { AuthEphemeraPurgeOptions, AuthEphemeraPurgeReport } from "./stores/types";
 export { purgeAuthEphemera } from "./stores/ephemera";
 export { purgeStaleTotpSecrets } from "./stores/factors";
-export type { TotpSecretPurgeOptions } from "./stores/types";
+export type { TotpSecretPurgeOptions, TotpSecretPurgeReport } from "./stores/types";
 export type {
   PasskeyCeremonyOptions,
   PasskeyRegistrationOptions,
@@ -157,14 +172,28 @@ export type {
   AuthFactor,
   AuthFactorInput,
   AuthFactorKind,
+  AuthFactorRemoval,
   AuthIdentityLink,
   AuthIdentityLinkInput,
   AuthMessage,
+  AuthNotifiedEventType,
   AuthNotifier,
+  AuthSecurityEvent,
+  AuthSecurityEventStore,
+  AuthSecurityEventType,
+  AuthSecurityNotice,
+  AuthSessionInput,
+  AuthSessionRecord,
+  AuthSessionResolved,
+  AuthSessionRotation,
+  AuthSessionStepUp,
+  AuthSessionStore,
+  AuthSessionUser,
   AuthStoreResult,
   AuthUser,
   AuthUserInput,
   AuthUserPage,
+  AuthWriteOrigin,
   ChallengeStore,
   CredentialStore,
   FactorStore,

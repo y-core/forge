@@ -16,6 +16,11 @@ type Env = { DB?: D1DatabaseLike };
 const BOOKMARK_1 = `00000000-00000001-00000000-${"0".repeat(32)}`;
 const BOOKMARK_2 = `00000000-00000002-00000000-${"0".repeat(32)}`;
 
+// Bun's Request rewrites a non-canonical method to GET; Workers hands `patch` or an extension method through as sent.
+function deliveredAs(method: string, init: RequestInit = {}): Request {
+  return Object.defineProperty(new Request("http://x/", init), "method", { value: method });
+}
+
 function app(db: D1DatabaseLike, bookmark: D1SessionsOptions["bookmark"] | null = { header: "x-d1-bookmark" }) {
   const forge = new Forge<Env>();
   forge.use("*", d1Sessions<Env>({ binding: (c) => c.env.DB, bookmark: bookmark ?? undefined }));
@@ -75,6 +80,32 @@ describe("d1Sessions()", () => {
     const cookie = posted.headers.getSetCookie().map((set) => set.split(";")[0] ?? "");
     const followed = await forge.request(posted.headers.get("location") ?? "", { headers: { cookie: cookie.join("; ") } }, env);
     expect([posted.status, cookie, followed.status, db.sessions]).toEqual([303, [`d1b=${BOOKMARK_1}`], 200, ["first-primary", BOOKMARK_1]]);
+  });
+
+  it("resumes a safe method from its bookmark and starts every other method on the primary, whatever the method's case", async () => {
+    const opened: Record<string, string[]> = {};
+    for (const method of ["GET", "HEAD", "OPTIONS", "TRACE", "options", "trace", "POST", "PUT", "PATCH", "DELETE", "patch", "delete"]) {
+      const db = fakeD1();
+      const context = createTestContext(deliveredAs(method, { headers: { "x-d1-bookmark": BOOKMARK_1 } }), { env: { DB: db } });
+      await d1Sessions<Env>({ binding: (c) => c.env.DB, bookmark: { header: "x-d1-bookmark" } })(context as never, async () => new Response("ok"));
+      opened[method] = db.sessions;
+    }
+    const resumed = [BOOKMARK_1];
+    const primary = ["first-primary"];
+    expect(opened).toEqual({
+      GET: resumed,
+      HEAD: resumed,
+      OPTIONS: resumed,
+      TRACE: resumed,
+      options: resumed,
+      trace: resumed,
+      POST: primary,
+      PUT: primary,
+      PATCH: primary,
+      DELETE: primary,
+      patch: primary,
+      delete: primary,
+    });
   });
 
   it("starts a write on the primary, whatever bookmark it carries", async () => {

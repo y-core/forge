@@ -1,6 +1,7 @@
 import { bytesToHex, sha256 } from "../../../crypto/primitives/mod";
 import type { D1BackupCensus, D1BackupHazard } from "../../../storage/backup/types";
 import { CliError } from "../../cli/errors";
+import { quoteSqlIdentifier, quoteSqlLiteral } from "../sql";
 import type { CensusDatabase } from "./types";
 
 const SAFE_INTEGER = "9007199254740991";
@@ -14,17 +15,8 @@ interface SchemaRow {
   readonly sql: string;
 }
 
-/** A name as a SQLite identifier, its double quotes doubled. @internal */
-export function quoteIdentifier(name: string): string {
-  return `"${name.replaceAll('"', '""')}"`;
-}
-
-function quoteLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
-/** Whether D1's dumper writes this object: it skips Cloudflare's `_cf_` tables and SQLite's own. @internal */
-export function isDumpedObject(name: string, tableName: string): boolean {
+/** Whether an object is the app's own: not Cloudflare's `_cf_` tables, nor SQLite's but `sqlite_sequence`, which holds the app's `AUTOINCREMENT` counters. @internal */
+export function isAppObject(name: string, tableName: string): boolean {
   return ![name, tableName].some((part) => part.startsWith("_cf_") || (part.startsWith("sqlite_") && part !== "sqlite_sequence"));
 }
 
@@ -38,21 +30,21 @@ export function hasRealAffinity(declared: string): boolean {
 /** One statement counting, per column, the values D1's dumper would not reproduce. @internal */
 export function hazardSelect(table: string, columns: readonly { readonly name: string; readonly real: boolean }[]): string {
   const counts = columns.flatMap(({ name, real }) => {
-    const c = quoteIdentifier(name);
+    const c = quoteSqlIdentifier(name);
     const escape = `(instr(${c}, char(92) || 'n') > 0 AND instr(${c}, char(10)) > 0) OR (instr(${c}, char(92) || 'r') > 0 AND instr(${c}, char(13)) > 0)`;
     return [
-      `SUM(typeof(${c}) = 'text' AND (${escape})) AS ${quoteIdentifier(`escape:${name}`)}`,
-      `SUM(typeof(${c}) = 'integer' AND (${c} > ${SAFE_INTEGER} OR ${c} < -${SAFE_INTEGER})) AS ${quoteIdentifier(`integer:${name}`)}`,
-      ...(real ? [] : [`SUM(typeof(${c}) = 'real' AND ${c} = CAST(${c} AS INTEGER)) AS ${quoteIdentifier(`real:${name}`)}`]),
+      `SUM(typeof(${c}) = 'text' AND (${escape})) AS ${quoteSqlIdentifier(`escape:${name}`)}`,
+      `SUM(typeof(${c}) = 'integer' AND (${c} > ${SAFE_INTEGER} OR ${c} < -${SAFE_INTEGER})) AS ${quoteSqlIdentifier(`integer:${name}`)}`,
+      ...(real ? [] : [`SUM(typeof(${c}) = 'real' AND ${c} = CAST(${c} AS INTEGER)) AS ${quoteSqlIdentifier(`real:${name}`)}`]),
     ];
   });
-  return `SELECT ${counts.join(", ")} FROM ${quoteIdentifier(table)}`;
+  return `SELECT ${counts.join(", ")} FROM ${quoteSqlIdentifier(table)}`;
 }
 
 /** SHA-256 hex over the dumped schema objects, sorted by type and name, so a restored database can be held to it. @internal */
 export async function schemaDigest(rows: readonly SchemaRow[]): Promise<string> {
   const lines = rows
-    .filter((row) => isDumpedObject(row.name, row.tableName))
+    .filter((row) => isAppObject(row.name, row.tableName))
     .map((row) => `${row.type}\t${row.name}\t${row.sql}`)
     .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   return bytesToHex(await sha256(lines.join("\n")));
@@ -72,7 +64,7 @@ export function readSchemaRow(row: Record<string, unknown>): SchemaRow {
 
 async function tableHazards(database: CensusDatabase, table: string): Promise<D1BackupHazard[]> {
   try {
-    const columns = (await selectAll(database, `SELECT name, type FROM pragma_table_info(${quoteLiteral(table)})`)).map((row) => ({
+    const columns = (await selectAll(database, `SELECT name, type FROM pragma_table_info(${quoteSqlLiteral(table)})`)).map((row) => ({
       name: String(row.name ?? ""),
       real: hasRealAffinity(String(row.type ?? "")),
     }));
@@ -95,7 +87,7 @@ export async function takeD1Census(database: CensusDatabase): Promise<D1BackupCe
   if (virtual.length > 0) {
     throw new CliError("invalid-args", `D1's export refuses virtual tables, so this database cannot be backed up: ${virtual.join(", ")}`);
   }
-  const tables = schema.filter((row) => row.type === "table" && isDumpedObject(row.name, row.tableName)).map((row) => row.name);
+  const tables = schema.filter((row) => row.type === "table" && isAppObject(row.name, row.tableName)).map((row) => row.name);
   const hazards = (await Promise.all(tables.map((table) => tableHazards(database, table)))).flat();
   const head = tables.includes("_forge_migrations")
     ? (await selectAll(database, "SELECT name FROM _forge_migrations ORDER BY id DESC LIMIT 1"))[0]?.name

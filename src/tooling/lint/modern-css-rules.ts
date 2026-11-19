@@ -244,8 +244,8 @@ export const MODERN_CSS_RULES: Readonly<Record<ModernCssRuleId, ModernCssRule>> 
     tier: "C",
     severity: "warn",
     corpus: CORPUS,
-    replacement: "startViewTransition()",
-    verify: "a view transition freezes the page for the capture, so work started in the callback delays the frame",
+    replacement: "@view-transition { navigation: auto; }",
+    verify: "the opt-in animates only a same-origin navigation whose outgoing and incoming documents both carry it",
   },
   "forge-ui-platform-text-balance": {
     tier: "C",

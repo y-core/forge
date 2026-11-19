@@ -3,13 +3,13 @@ import type { AuthAlgorithm, AuthFactorKind } from "./types";
 /** The factor kinds that identify the visitor, and so the only ones that may be offered as primary. @public */
 export const AUTH_IDENTIFYING_FACTORS = ["email-otp"] as const satisfies readonly AuthFactorKind[];
 
+/** The factor kinds that may be offered as second factors — what recovery codes exist to recover, and whose last confirmed row takes the codes with it. @public */
+export const AUTH_SECOND_FACTORS = ["totp-app", "passkey"] as const satisfies readonly AuthFactorKind[];
+
 // `-8` is omitted because advertising an algorithm this runtime may not be able to verify is
 // fail-open: the browser enrols an Ed25519 credential and the account is then locked out for good.
 /** The COSE algorithms a passkey ceremony advertises unless a consumer opts into more. @public */
 export const AUTH_SUPPORTED_ALGORITHMS: readonly AuthAlgorithm[] = [-7, -257];
-
-/** The one role forge sources itself, and the name a `mandatoryForRoles` requirement is written against. @public */
-export const AUTH_ADMIN_ROLE = "admin";
 
 /** Shortest expiration Workers KV accepts — session storage's floor, and the one a ceremony borrows. @public */
 export const AUTH_KV_MIN_TTL_SECONDS = 60;
@@ -20,13 +20,25 @@ export const AUTH_OTP_DIGITS = 6;
 /** How long an emailed one-time code stays valid, in milliseconds. @public */
 export const AUTH_OTP_TTL_MS = 300_000;
 
-/** How many guesses one code allows before it is refused outright. @public */
+/** How many guesses one identity's emailed codes allow inside one guess window, however many codes are issued in it. @public */
 export const AUTH_OTP_MAX_ATTEMPTS = 3;
+
+/** How long one identity's guess window runs from its first guess, in milliseconds. @public */
+export const AUTH_OTP_GUESS_WINDOW_MS = 900_000;
 
 // A cooldown and not a count: any per-identity ceiling is a lockout an attacker spends on the
 // victim's behalf, since issuing needs only an address.
 /** How long one identity must wait between issued codes, in milliseconds. @public */
 export const AUTH_OTP_COOLDOWN_MS = 60_000;
+
+/** How long one account must wait between address-change requests, in milliseconds. @public */
+export const AUTH_EMAIL_CHANGE_COOLDOWN_MS = 300_000;
+
+/** How long an account that never verified its address is kept before `purgeAuthEphemera` deletes it, in milliseconds. @public */
+export const AUTH_UNVERIFIED_USER_TTL_MS = 604_800_000;
+
+/** How long `purgeAuthEphemera` keeps a security event, in milliseconds — 365 days. @public */
+export const AUTH_SECURITY_EVENT_TTL_MS = 31_536_000_000;
 
 /** How long an authenticator-app factor stays refused once its guess budget is spent, in milliseconds. @public */
 export const AUTH_TOTP_LOCKOUT_MS = 900_000;
@@ -41,6 +53,12 @@ export const AUTH_RECOVERY_CODE_BYTES = 15;
 // attacker who took it can keep alive forever.
 /** How long a signed-in session stays valid from the moment it was established, in milliseconds. @public */
 export const AUTH_SESSION_MAX_MS = 604_800_000;
+
+/** How long a signed-in session may go unused before it stops resolving, in milliseconds, unless its store says otherwise. @public */
+export const AUTH_SESSION_IDLE_MS = 86_400_000;
+
+/** How long a completed step-up satisfies a later demand, in milliseconds, unless a guard says otherwise. @public */
+export const AUTH_STEP_UP_MAX_MS = 86_400_000;
 
 /** How recent a step-up a state-changing request must carry, in milliseconds, unless a mount says otherwise. @public */
 export const AUTH_FRESH_STEP_UP_MS = 900_000;

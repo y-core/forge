@@ -6,6 +6,7 @@ import { uuidv7 } from "../../storage/db/uuid";
 import { AUTH_RECOVERY_CODE_COUNT, AUTH_TOTP_LOCKOUT_MS } from "../config";
 import { AuthStoreError } from "../errors";
 import type { AuthFactor, AuthFactorInput, FactorStore, RecoveryCodeStore } from "../types";
+import { fakeFactorCaller } from "./factors.fixture";
 import { createRecoveryCodeFactor, normaliseRecoveryCode } from "./recovery-code";
 
 const USER_ID = uuidv7();
@@ -24,11 +25,13 @@ interface World {
   rows: AuthFactor[];
   codeRows: CodeRow[];
   stagedHashes: Uint8Array[];
+  origins: [string, Uint8Array | null][];
 }
 
 /** In-memory stores that decide as the SQL adapters do: attempts spent by `countAttempt`, cleared by `commit` and `consume`. */
 function world(): World {
   const rows: AuthFactor[] = [];
+  const origins: [string, Uint8Array | null][] = [];
   const codeRows: CodeRow[] = [];
   const stagedHashes: Uint8Array[] = [];
   const find = (kind: string) => rows.find((row) => row.userId === USER_ID && row.kind === kind) ?? null;
@@ -40,7 +43,8 @@ function world(): World {
   const factors: FactorStore = {
     listByUser: async () => ok(rows),
     find: async (_userId, kind) => ok(find(kind)),
-    findEnrolled: async (_userId, kinds) => ok(rows.filter((row) => kinds.includes(row.kind))),
+    listConfirmedKinds: async (_userId, kinds) =>
+      ok(rows.filter((row) => kinds.includes(row.kind) && row.confirmedAt !== null).map((row) => row.kind)),
     enrol: async (input: AuthFactorInput, at) => {
       const row: AuthFactor = {
         id: uuidv7(),
@@ -67,8 +71,9 @@ function world(): World {
       return ok({ ...row, failedAttempts, updatedAt: at });
     },
     recordVerification: async () => ok(true),
+    replaceSecret: async () => ok(true),
     countSecretsNotUnder: async () => ok(0),
-    remove: async () => ok(true),
+    remove: async () => ok("changed" as const),
   };
 
   const codes: RecoveryCodeStore = {
@@ -81,16 +86,19 @@ function world(): World {
       return ok(undefined);
     },
     holdsStaged: async (_userId, hash) => ok(codeRows.some((row) => row.staged && row.hash === bytesToHex(hash))),
-    commit: async (_userId, factorId, at) => {
-      if (codeRows.some((row) => row.staged)) {
+    commit: async (_userId, factorId, at, origin) => {
+      origins.push(["commit", origin.keep]);
+      const swapped = codeRows.some((row) => row.staged);
+      if (swapped) {
         for (let index = codeRows.length - 1; index >= 0; index--) if (!codeRows[index]?.staged) codeRows.splice(index, 1);
       }
       for (const row of codeRows) row.staged = false;
       const factor = rows.find((row) => row.id === factorId);
       update(factorId, { confirmedAt: factor?.confirmedAt ?? at, failedAttempts: 0, updatedAt: at });
-      return ok(undefined);
+      return ok(swapped);
     },
-    consume: async (_userId, factorId, hash, at) => {
+    consume: async (_userId, factorId, hash, at, origin) => {
+      origins.push(["consume", origin.keep]);
       const row = codeRows.find((held) => !held.staged && held.usedAt === null && held.hash === bytesToHex(hash));
       if (!row) return ok(false);
       row.usedAt = at;
@@ -100,7 +108,7 @@ function world(): World {
     remaining: async () => ok(codeRows.filter((row) => !row.staged && row.usedAt === null).length),
   };
 
-  return { factors, codes, rows, codeRows, stagedHashes };
+  return { factors, codes, rows, codeRows, stagedHashes, origins };
 }
 
 async function issued(held: World, at = AT): Promise<string[]> {
@@ -111,10 +119,25 @@ async function issued(held: World, at = AT): Promise<string[]> {
 
 async function confirmedCodes(held: World): Promise<string[]> {
   const codes = await issued(held);
-  const confirmed = await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, codes[0] as string, AT);
+  const confirmed = await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, codes[0] as string, AT, fakeFactorCaller());
   if (!confirmed.ok) throw new Error(`completeEnrolment refused: ${confirmed.error}`);
   return codes;
 }
+
+describe("createRecoveryCodeFactor — the session a code change names", () => {
+  it("hands the store the acting session's hash on the confirming commit and on a spent code", async () => {
+    const keep = new Uint8Array(32).fill(5);
+    const held = world();
+    const codes = await issued(held);
+    const factor = createRecoveryCodeFactor(held);
+    await factor.completeEnrolment(USER_ID, codes[0] as string, AT, fakeFactorCaller("browser-a", keep));
+    await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 1, fakeFactorCaller("browser-a", keep));
+    expect(held.origins).toEqual([
+      ["commit", keep],
+      ["consume", keep],
+    ]);
+  });
+});
 
 describe("createRecoveryCodeFactor — issuing a set", () => {
   it("issues the configured count of distinct 24-character codes in groups of four", async () => {
@@ -149,10 +172,20 @@ describe("createRecoveryCodeFactor — confirming a set", () => {
     });
   });
 
+  it("refuses a code whose staged set another confirmation already swapped in, so only the confirmation that swapped it succeeds", async () => {
+    const held = world();
+    const codes = await issued(held);
+    held.codes.commit = async () => ok(false);
+    expect(await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, codes[0] as string, AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "unrecognised",
+    });
+  });
+
   it("refuses a code that is not in the staged set", async () => {
     const held = world();
     await issued(held);
-    expect(await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT)).toEqual({
+    expect(await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT, fakeFactorCaller())).toEqual({
       ok: false,
       error: "unrecognised",
     });
@@ -162,7 +195,7 @@ describe("createRecoveryCodeFactor — confirming a set", () => {
     const held = world();
     const live = await confirmedCodes(held);
     await issued(held, AT + 1);
-    expect(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, live[1] as string, AT + 2)).toEqual({
+    expect(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, live[1] as string, AT + 2, fakeFactorCaller())).toEqual({
       ok: true,
       data: { kind: "recovery-code", userId: USER_ID, verifiedAt: AT + 2 },
     });
@@ -172,8 +205,11 @@ describe("createRecoveryCodeFactor — confirming a set", () => {
     const held = world();
     const live = await confirmedCodes(held);
     const fresh = await issued(held, AT + 1);
-    await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, fresh[0] as string, AT + 2);
-    expect(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, live[1] as string, AT + 3)).toEqual({ ok: false, error: "unrecognised" });
+    await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, fresh[0] as string, AT + 2, fakeFactorCaller());
+    expect(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, live[1] as string, AT + 3, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "unrecognised",
+    });
   });
 });
 
@@ -182,27 +218,30 @@ describe("createRecoveryCodeFactor — stepping up with a code", () => {
     const held = world();
     const codes = await confirmedCodes(held);
     const factor = createRecoveryCodeFactor(held);
-    expect((await factor.verifyChallenge(USER_ID, codes[2] as string, AT + 1)).ok).toBe(true);
-    expect(await factor.verifyChallenge(USER_ID, codes[2] as string, AT + 2)).toEqual({ ok: false, error: "unrecognised" });
+    expect((await factor.verifyChallenge(USER_ID, codes[2] as string, AT + 1, fakeFactorCaller())).ok).toBe(true);
+    expect(await factor.verifyChallenge(USER_ID, codes[2] as string, AT + 2, fakeFactorCaller())).toEqual({ ok: false, error: "unrecognised" });
   });
 
   it("accepts a code typed in lower case with spaces for separators", async () => {
     const held = world();
     const codes = await confirmedCodes(held);
     const typed = (codes[3] as string).toLowerCase().replaceAll("-", " ");
-    expect((await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, typed, AT + 1)).ok).toBe(true);
+    expect((await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, typed, AT + 1, fakeFactorCaller())).ok).toBe(true);
   });
 
   it("refuses a row nobody confirmed as `not-enrolled`", async () => {
     const held = world();
     const codes = await issued(held);
-    expect(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, codes[0] as string, AT)).toEqual({ ok: false, error: "not-enrolled" });
+    expect(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, codes[0] as string, AT, fakeFactorCaller())).toEqual({
+      ok: false,
+      error: "not-enrolled",
+    });
   });
 
   it("spends a guess on malformed input, before it is ever compared", async () => {
     const held = world();
     await confirmedCodes(held);
-    await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, "not a code", AT + 1);
+    await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, "not a code", AT + 1, fakeFactorCaller());
     expect(held.rows[0]?.failedAttempts).toBe(1);
   });
 
@@ -211,7 +250,7 @@ describe("createRecoveryCodeFactor — stepping up with a code", () => {
     const codes = await confirmedCodes(held);
     const factor = createRecoveryCodeFactor({ ...held, maxAttempts: 2 });
     const accepted = [];
-    for (const code of codes.slice(1, 6)) accepted.push((await factor.verifyChallenge(USER_ID, code, AT + 1)).ok);
+    for (const code of codes.slice(1, 6)) accepted.push((await factor.verifyChallenge(USER_ID, code, AT + 1, fakeFactorCaller())).ok);
     expect({ accepted, failedAttempts: held.rows[0]?.failedAttempts }).toEqual({ accepted: [true, true, true, true, true], failedAttempts: 0 });
   });
 
@@ -219,32 +258,32 @@ describe("createRecoveryCodeFactor — stepping up with a code", () => {
     const held = world();
     const codes = await confirmedCodes(held);
     const factor = createRecoveryCodeFactor({ ...held, maxAttempts: 2 });
-    await factor.verifyChallenge(USER_ID, "wrong", AT + 1);
-    await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 2);
-    await factor.verifyChallenge(USER_ID, "wrong", AT + 3);
-    expect((await factor.verifyChallenge(USER_ID, codes[2] as string, AT + 4)).ok).toBe(true);
+    await factor.verifyChallenge(USER_ID, "wrong", AT + 1, fakeFactorCaller());
+    await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 2, fakeFactorCaller());
+    await factor.verifyChallenge(USER_ID, "wrong", AT + 3, fakeFactorCaller());
+    expect((await factor.verifyChallenge(USER_ID, codes[2] as string, AT + 4, fakeFactorCaller())).ok).toBe(true);
   });
 
   it("refuses even a live code once the budget is spent, and leaves that code unconsumed", async () => {
     const held = world();
     const codes = await confirmedCodes(held);
     const factor = createRecoveryCodeFactor({ ...held, maxAttempts: 2 });
-    await factor.verifyChallenge(USER_ID, "wrong", AT + 1);
-    await factor.verifyChallenge(USER_ID, "wrong", AT + 2);
-    expect({ refused: await factor.verifyChallenge(USER_ID, codes[7] as string, AT + 3), remaining: await factor.remaining(USER_ID) }).toEqual({
-      refused: { ok: false, error: "too-many-attempts" },
-      remaining: { ok: true, data: AUTH_RECOVERY_CODE_COUNT },
-    });
+    await factor.verifyChallenge(USER_ID, "wrong", AT + 1, fakeFactorCaller());
+    await factor.verifyChallenge(USER_ID, "wrong", AT + 2, fakeFactorCaller());
+    expect({
+      refused: await factor.verifyChallenge(USER_ID, codes[7] as string, AT + 3, fakeFactorCaller()),
+      remaining: await factor.remaining(USER_ID),
+    }).toEqual({ refused: { ok: false, error: "too-many-attempts" }, remaining: { ok: true, data: AUTH_RECOVERY_CODE_COUNT } });
   });
 
   it("lets the lockout lapse after `lockoutMs`, so a live code is accepted again", async () => {
     const held = world();
     const codes = await confirmedCodes(held);
     const factor = createRecoveryCodeFactor({ ...held, maxAttempts: 1, lockoutMs: 60_000 });
-    await factor.verifyChallenge(USER_ID, "wrong", AT + 1);
+    await factor.verifyChallenge(USER_ID, "wrong", AT + 1, fakeFactorCaller());
     const outcomes = [
-      await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 60_000),
-      await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 60_002),
+      await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 60_000, fakeFactorCaller()),
+      await factor.verifyChallenge(USER_ID, codes[1] as string, AT + 60_002, fakeFactorCaller()),
     ];
     expect(outcomes).toEqual([
       { ok: false, error: "too-many-attempts" },
@@ -264,14 +303,16 @@ describe("createRecoveryCodeFactor — stepping up with a code", () => {
         held.factors.countAttempt = () => Promise.resolve(ok(null));
         held.factors.find = outage;
       }
-      outcomes.push(`${broken}: ${JSON.stringify(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, codes[1] as string, AT + 1))}`);
+      outcomes.push(
+        `${broken}: ${JSON.stringify(await createRecoveryCodeFactor(held).verifyChallenge(USER_ID, codes[1] as string, AT + 1, fakeFactorCaller()))}`,
+      );
     }
     const unavailable = JSON.stringify({ ok: false, error: "unavailable" });
     expect(outcomes).toEqual([`countAttempt: ${unavailable}`, `find: ${unavailable}`, `consume: ${unavailable}`]);
   });
 
   it("answers `not-enrolled` when the user holds no recovery-code row at all", async () => {
-    expect(await createRecoveryCodeFactor(world()).verifyChallenge(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT)).toEqual({
+    expect(await createRecoveryCodeFactor(world()).verifyChallenge(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT, fakeFactorCaller())).toEqual({
       ok: false,
       error: "not-enrolled",
     });
@@ -307,7 +348,7 @@ describe("createRecoveryCodeFactor — enrolment edges", () => {
   });
 
   it("answers `not-enrolled` to a confirming code when nothing was ever issued", async () => {
-    expect(await createRecoveryCodeFactor(world()).completeEnrolment(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT)).toEqual({
+    expect(await createRecoveryCodeFactor(world()).completeEnrolment(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT, fakeFactorCaller())).toEqual({
       ok: false,
       error: "not-enrolled",
     });
@@ -316,7 +357,7 @@ describe("createRecoveryCodeFactor — enrolment edges", () => {
   it("spends a guess on a malformed confirming code and leaves the staged set unconfirmed", async () => {
     const held = world();
     await issued(held);
-    const outcome = await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, "not a code", AT);
+    const outcome = await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, "not a code", AT, fakeFactorCaller());
     expect({ outcome, failedAttempts: held.rows[0]?.failedAttempts, confirmedAt: held.rows[0]?.confirmedAt }).toEqual({
       outcome: { ok: false, error: "unrecognised" },
       failedAttempts: 1,
@@ -328,11 +369,11 @@ describe("createRecoveryCodeFactor — enrolment edges", () => {
     const held = world();
     const codes = await issued(held);
     const factor = createRecoveryCodeFactor({ ...held, maxAttempts: 1 });
-    await factor.completeEnrolment(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT);
-    expect({ outcome: await factor.completeEnrolment(USER_ID, codes[0] as string, AT + 1), confirmedAt: held.rows[0]?.confirmedAt }).toEqual({
-      outcome: { ok: false, error: "too-many-attempts" },
-      confirmedAt: null,
-    });
+    await factor.completeEnrolment(USER_ID, "AAAA-AAAA-AAAA-AAAA-AAAA-AAAA", AT, fakeFactorCaller());
+    expect({
+      outcome: await factor.completeEnrolment(USER_ID, codes[0] as string, AT + 1, fakeFactorCaller()),
+      confirmedAt: held.rows[0]?.confirmedAt,
+    }).toEqual({ outcome: { ok: false, error: "too-many-attempts" }, confirmedAt: null });
   });
 
   it("reports a store outage on the staged lookup or the commit as `unavailable`, leaving the row unconfirmed", async () => {
@@ -342,7 +383,7 @@ describe("createRecoveryCodeFactor — enrolment edges", () => {
       const held = world();
       const codes = await issued(held);
       held.codes[broken] = outage;
-      const outcome = await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, codes[0] as string, AT);
+      const outcome = await createRecoveryCodeFactor(held).completeEnrolment(USER_ID, codes[0] as string, AT, fakeFactorCaller());
       outcomes.push(`${broken}: ${JSON.stringify(outcome)} ${held.rows[0]?.confirmedAt}`);
     }
     const unavailable = JSON.stringify({ ok: false, error: "unavailable" });
@@ -359,9 +400,9 @@ describe("createRecoveryCodeFactor — the challenge and the enrolment list", ()
     await confirmedCodes(confirmed);
     const factor = (held: World) => createRecoveryCodeFactor({ ...held, lockoutMs: 120_000 });
     expect([
-      await factor(absent).createChallenge(USER_ID, AT),
-      await factor(unconfirmed).createChallenge(USER_ID, AT),
-      await factor(confirmed).createChallenge(USER_ID, AT),
+      await factor(absent).createChallenge(USER_ID, AT, fakeFactorCaller()),
+      await factor(unconfirmed).createChallenge(USER_ID, AT, fakeFactorCaller()),
+      await factor(confirmed).createChallenge(USER_ID, AT, fakeFactorCaller()),
     ]).toEqual([
       { ok: false, error: "not-enrolled" },
       { ok: false, error: "not-enrolled" },
@@ -372,7 +413,7 @@ describe("createRecoveryCodeFactor — the challenge and the enrolment list", ()
   it("reports a store outage on the challenge as `unavailable`", async () => {
     const held = world();
     held.factors.find = () => Promise.resolve(err(new AuthStoreError("unavailable", "factors.find")));
-    expect(await createRecoveryCodeFactor(held).createChallenge(USER_ID, AT)).toEqual({ ok: false, error: "unavailable" });
+    expect(await createRecoveryCodeFactor(held).createChallenge(USER_ID, AT, fakeFactorCaller())).toEqual({ ok: false, error: "unavailable" });
   });
 
   it("lists the one row this factor owns, and nothing when there is none", async () => {

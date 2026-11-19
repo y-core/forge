@@ -76,6 +76,11 @@ describe("requireFormContentType middleware", () => {
     { label: "a third path segment", header: "multipart/form-data/extra" },
     { label: "a quoted media type", header: '"multipart/form-data"' },
     { label: "a comma-joined second media type", header: "multipart/form-data,text/html" },
+    { label: "a form type closed by a trailing comma", header: "application/x-www-form-urlencoded," },
+    { label: "a form type preceded by a comma", header: ",multipart/form-data" },
+    { label: "a form type followed by a stray quote", header: 'multipart/form-data"' },
+    { label: "an empty header value", header: "" },
+    { label: "a whitespace-only header value", header: "   " },
   ];
 
   for (const { label, header } of malformed) {
@@ -85,6 +90,15 @@ describe("requireFormContentType middleware", () => {
     });
   }
 
+  it("passes for a multipart boundary whose quoted value holds a comma", async () => {
+    const res = await makeApp().request("/test", {
+      method: "POST",
+      headers: { "content-type": 'multipart/form-data; boundary="a, b"' },
+      body: "x",
+    });
+    expect([res.status, await res.text()]).toEqual([200, "ok"]);
+  });
+
   it("passes for a form type closed by an empty parameter list", async () => {
     const res = await makeApp().request("/test", {
       method: "POST",
@@ -92,6 +106,15 @@ describe("requireFormContentType middleware", () => {
       body: "a=1",
     });
     expect(res.status).toBe(200);
+  });
+
+  it("returns 415 for a form type followed by a second media type", async () => {
+    const res = await makeApp().request("/test", {
+      method: "POST",
+      headers: { "content-type": "multipart/form-data; boundary=x, text/html" },
+      body: "x",
+    });
+    expect(res.status).toBe(415);
   });
 
   it("returns 415 for a quoted form type in a parameter of another media type", async () => {

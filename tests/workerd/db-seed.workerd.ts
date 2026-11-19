@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,25 +10,10 @@ import { readTargetFacts } from "../../src/tooling/db/migrate/apply";
 import { readSeeds } from "../../src/tooling/db/seed/apply";
 import { refuseSchemaChangingSeeds } from "../../src/tooling/db/seed/effect";
 import type { DbIo, DbRunContext } from "../../src/tooling/db/types";
+import { forgeDb } from "./cli";
 import { openD1 } from "./d1";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
-const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
-
-interface Step {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function forgeDb(root: string, args: string[]): Promise<Step> {
-  const child = spawn("bun", ["run", BIN, "db", ...args, "--root", root], { cwd: FORGE });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf-8")));
-  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf-8")));
-  return new Promise((resolve) => child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr })));
-}
 
 const SCHEMA = `CREATE TABLE parent (id INTEGER PRIMARY KEY, code TEXT NOT NULL);
 CREATE TABLE child (id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES parent(id), code TEXT UNIQUE, note TEXT NOT NULL CHECK (note <> ''));

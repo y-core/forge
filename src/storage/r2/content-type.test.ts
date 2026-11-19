@@ -88,6 +88,27 @@ describe("isActiveContentType", () => {
     expect(isActiveContentType('text/plain; charset="utf-8; text/html"')).toBe(false);
   });
 
+  it("counts an active type as active when junk trails in its parameters", () => {
+    expect(isActiveContentType("text/html;charset=utf-8, x")).toBe(true);
+  });
+
+  it("counts a type that does not parse as exactly one media type as active", () => {
+    for (const type of [
+      "text/plain, text/html",
+      "text/html,",
+      "image/png, image/svg+xml",
+      "text/plain; charset=utf-8, text/html",
+      "text/plain;x=y, text/html",
+      "image/png;a=b,image/svg+xml",
+      "",
+      "   ",
+      '"image/png"',
+      'image/png"',
+    ]) {
+      expect(isActiveContentType(type)).toBe(true);
+    }
+  });
+
   it("leaves an inert type alone", () => {
     for (const type of ["image/png", "application/pdf", "text/plain; charset=utf-8", "application/octet-stream", "application/json"]) {
       expect(isActiveContentType(type)).toBe(false);

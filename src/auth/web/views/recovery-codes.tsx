@@ -61,7 +61,7 @@ export const RecoveryCodesView: FC<RecoveryCodesViewProps> = ({
           <Heading class='text-xl'>Recovery codes</Heading>
         </Card.Title>
         <Card.Description>
-          <span data-ref='recovery-remaining'>{standingNote(remaining)}</span> Each code signs you in once when your other methods are out of reach.
+          <span data-ref='recovery-remaining'>{standingNote(remaining)}</span> Each code works once, in place of a second factor you can't reach.
         </Card.Description>
       </Card.Header>
       <Card.Content class='flex flex-col gap-6'>

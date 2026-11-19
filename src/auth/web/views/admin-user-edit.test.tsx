@@ -37,7 +37,6 @@ function user(overrides: Partial<AuthUser> = {}): AuthUser {
     emailVerifiedAt: CREATED_AT,
     isAdmin: true,
     deactivatedAt: null,
-    sessionsInvalidBefore: null,
     webauthnId: null,
     createdAt: CREATED_AT,
     updatedAt: CREATED_AT,
@@ -75,6 +74,10 @@ describe("AdminUserEditView heading", () => {
 
   it("offers the factors panel for this account, fetched on a press", async () => {
     expect(attrOf(await account(), 'data-ref="factors-trigger"', "hx-get")).toBe("/admin/users/u1/factors");
+  });
+
+  it("labels the factors panel trigger by the word the panel heads itself with", async () => {
+    expect(textOf(await account(), "a", 'data-ref="factors-trigger"')).toBe("Show factors");
   });
 });
 

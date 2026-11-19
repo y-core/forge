@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,11 +6,11 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 import { openTestD1 } from "../../src/testing/d1";
+import { type CliRun, collect, forgeDb } from "./cli";
 
 const FORGE = fileURLToPath(new URL("../..", import.meta.url));
 const FIXTURE = join(FORGE, "tests", "fixtures", "db-compose");
 const CONSUMER = join(FORGE, "tests", "fixtures", "workers-consumer");
-const BIN = join(FORGE, "src", "tooling", "root", "bin.ts");
 
 const FILES_DDL = "CREATE TABLE files (key TEXT PRIMARY KEY, body BLOB NOT NULL, note, stamped DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);\n";
 
@@ -61,23 +60,6 @@ export function misuse(user: Tables["users"], post: Tables["posts"]): [number, s
 }
 `;
 
-interface Step {
-  readonly code: number;
-  readonly stdout: string;
-  readonly stderr: string;
-}
-
-function run(command: string, args: string[], cwd = FORGE): Promise<Step> {
-  const child = spawn(command, args, { cwd });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.on("data", (chunk: Buffer) => (stdout += chunk.toString("utf-8")));
-  child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf-8")));
-  return new Promise((resolve) => child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr })));
-}
-
-const forgeDb = (root: string, args: string[]): Promise<Step> => run("bun", ["run", BIN, "db", ...args, "--root", root]);
-
 function writeTsconfig(root: string, files: readonly string[]): string {
   const consumer = JSON.parse(readFileSync(join(CONSUMER, "tsconfig.json"), "utf-8")) as { compilerOptions: Record<string, unknown> };
   const compilerOptions = {
@@ -90,7 +72,7 @@ function writeTsconfig(root: string, files: readonly string[]): string {
   return path;
 }
 
-const typecheck = (tsconfig: string): Promise<Step> => run("bun", ["check", "--no-script", "--no-pretty", "-p", tsconfig], root);
+const typecheck = (tsconfig: string): Promise<CliRun> => collect("bun", ["check", "--no-script", "--no-pretty", "-p", tsconfig], root);
 
 test.describe.configure({ mode: "serial", timeout: 240_000 });
 

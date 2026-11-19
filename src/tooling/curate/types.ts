@@ -37,11 +37,14 @@ const FeatureSchema = v.pipe(
   ),
 );
 
-/** The feature manifest `config/features.config.ts` default-exports. @public */
-export const FeatureManifestSchema = v.pipe(
-  v.record(FeatureNameSchema, FeatureSchema),
-  v.check((features) => Object.keys(features).length > 0, "a manifest must name a feature"),
-);
+/** The feature manifest `config/features.config.ts` default-exports: its features, and how a copy that dropped any of them regenerates what no feature owns. @public */
+export const FeatureManifestSchema = v.strictObject({
+  features: v.pipe(
+    v.record(FeatureNameSchema, FeatureSchema),
+    v.check((features) => Object.keys(features).length > 0, "a manifest must name a feature"),
+  ),
+  regenerate: v.optional(RegenerateSchema),
+});
 
 /** The manifest as written, before validation. @public */
 export type FeatureManifest = v.InferInput<typeof FeatureManifestSchema>;
@@ -49,7 +52,7 @@ export type FeatureManifest = v.InferInput<typeof FeatureManifestSchema>;
 /** One feature as validated. @public */
 export type Feature = v.InferOutput<typeof FeatureSchema>;
 
-/** A feature's post-copy regeneration step as validated. @public */
+/** A post-copy regeneration step, a feature's or the manifest's, as validated. @public */
 export type FeatureRegeneration = v.InferOutput<typeof RegenerateSchema>;
 
 /** The features a curation names: those it keeps, with what they require, or those it drops, with what requires them. @public */
@@ -107,7 +110,7 @@ export interface CurateReport {
   seams: readonly SeamEdit[];
   /** The root-relative manifest path left out of the copy, or `undefined` when the copy keeps it or the working tree does not hold it. */
   manifest: string | undefined;
-  /** The kept features whose regeneration ran, in the order they ran. */
+  /** The kept features whose regeneration ran, in the order they ran, then `(manifest)` when the manifest's own ran last. */
   regenerated: readonly string[];
 }
 

@@ -12,18 +12,15 @@ import { Input } from "../../../ui/core/input";
 import { Link } from "../../../ui/core/link";
 import { Turnstile } from "../../../ui/core/turnstile";
 import { cn } from "../../../ui/core/utils/cn";
-import type { AuthFactorKind } from "../../types";
 import type { SignupViewProps } from "./types";
 
 /** The id on the sign-up view's root, which its form swaps the re-rendered view into. @public */
 export const AUTH_SIGNUP_ID = "auth-signup";
 
 /** What signing up involves, which is the emailed code plus whatever the deployment demands after it. */
-function signupSteps(enrols: AuthFactorKind | undefined): string {
+function signupSteps(addsSecondFactor: boolean): string {
   const confirm = "We email you a six-digit code to confirm the address.";
-  if (enrols === "passkey") return `${confirm} You choose a passkey afterwards.`;
-  if (enrols === "totp-app") return `${confirm} You add an authenticator app afterwards.`;
-  return confirm;
+  return addsSecondFactor ? `${confirm} You then add a second factor.` : confirm;
 }
 
 // Design Read: a visitor with no account; the one action is asking for a verification email; failure
@@ -37,7 +34,7 @@ export const SignupView: FC<SignupViewProps> = ({
   email,
   fieldError,
   error,
-  enrols,
+  addsSecondFactor,
   turnstile,
   icon: AppIcon,
   class: cls,
@@ -50,7 +47,7 @@ export const SignupView: FC<SignupViewProps> = ({
         <Card.Title>
           <Heading class='text-xl'>Create an account</Heading>
         </Card.Title>
-        <Card.Description>{signupSteps(enrols)}</Card.Description>
+        <Card.Description>{signupSteps(addsSecondFactor)}</Card.Description>
       </Card.Header>
       <Card.Content>
         <Form

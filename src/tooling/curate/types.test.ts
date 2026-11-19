@@ -12,14 +12,16 @@ function issues(input: unknown): string[] {
 }
 
 function only(feature: Record<string, unknown>, name = "showcase"): unknown {
-  return { [name]: { directories: [], seams: [], ...feature } };
+  return { features: { [name]: { directories: [], seams: [], ...feature } } };
 }
 
 describe("FeatureManifestSchema", () => {
   it("accepts two features, a directory spelled with a trailing slash, and a seam file both features share", () => {
     const manifest = {
-      showcase: { directories: ["src/showcase/", "tests/unit/showcase/"], seams: ["src/worker.ts", "src/client/main.ts"] },
-      contact: { directories: ["src/contact"], seams: ["src/worker.ts"] },
+      features: {
+        showcase: { directories: ["src/showcase/", "tests/unit/showcase/"], seams: ["src/worker.ts", "src/client/main.ts"] },
+        contact: { directories: ["src/contact"], seams: ["src/worker.ts"] },
+      },
     };
     expect(issues(manifest)).toEqual([]);
   });
@@ -35,48 +37,48 @@ describe("FeatureManifestSchema", () => {
   });
 
   it("refuses a feature that names nothing to remove, empty files and scripts included", () => {
-    expect(issues(only({}))).toEqual(["showcase: a feature must name something to remove"]);
-    expect(issues(only({ files: [], scripts: [] }))).toEqual(["showcase: a feature must name something to remove"]);
+    expect(issues(only({}))).toEqual(["features.showcase: a feature must name something to remove"]);
+    expect(issues(only({ files: [], scripts: [] }))).toEqual(["features.showcase: a feature must name something to remove"]);
   });
 
   it("refuses an owned file climbing out of the root", () => {
-    expect(issues(only({ files: ["../config/db.ts"] }))).toEqual([`showcase.files.0: ${PATH_RULE}`]);
+    expect(issues(only({ files: ["../config/db.ts"] }))).toEqual([`features.showcase.files.0: ${PATH_RULE}`]);
   });
 
   it("refuses an empty script name", () => {
-    expect(issues(only({ scripts: [""] }))[0]).toStartWith("showcase.scripts.0: ");
+    expect(issues(only({ scripts: [""] }))[0]).toStartWith("features.showcase.scripts.0: ");
   });
 
   it("refuses a manifest that names no feature", () => {
-    expect(issues({})).toEqual(["(root): a manifest must name a feature"]);
+    expect(issues({ features: {} })).toEqual(["features: a manifest must name a feature"]);
   });
 
   it("refuses an absolute directory", () => {
-    expect(issues(only({ directories: ["/src/showcase"] }))).toEqual([`showcase.directories.0: ${PATH_RULE}`]);
+    expect(issues(only({ directories: ["/src/showcase"] }))).toEqual([`features.showcase.directories.0: ${PATH_RULE}`]);
   });
 
   it("refuses a seam path climbing out of the root", () => {
-    expect(issues(only({ seams: ["../other/worker.ts"] }))).toEqual([`showcase.seams.0: ${PATH_RULE}`]);
+    expect(issues(only({ seams: ["../other/worker.ts"] }))).toEqual([`features.showcase.seams.0: ${PATH_RULE}`]);
   });
 
   it("refuses a leading `./`, which no working-tree listing spells", () => {
-    expect(issues(only({ directories: ["./src/showcase"] }))).toEqual([`showcase.directories.0: ${PATH_RULE}`]);
+    expect(issues(only({ directories: ["./src/showcase"] }))).toEqual([`features.showcase.directories.0: ${PATH_RULE}`]);
   });
 
   it("refuses an empty path", () => {
-    expect(issues(only({ seams: [""] }))[0]).toStartWith("showcase.seams.0: ");
+    expect(issues(only({ seams: [""] }))[0]).toStartWith("features.showcase.seams.0: ");
   });
 
   it("refuses a seam written as a file and marker pair, since the marker is now derived from the feature name", () => {
-    expect(issues(only({ seams: [{ file: "src/worker.ts", marker: "// feature:showcase" }] }))[0]).toStartWith("showcase.seams.0: ");
+    expect(issues(only({ seams: [{ file: "src/worker.ts", marker: "// feature:showcase" }] }))[0]).toStartWith("features.showcase.seams.0: ");
   });
 
   it("refuses a key a feature does not define", () => {
-    expect(issues(only({ seams: ["src/worker.ts"], marker: "// feature:showcase" }))[0]).toStartWith("showcase.marker: ");
+    expect(issues(only({ seams: ["src/worker.ts"], marker: "// feature:showcase" }))[0]).toStartWith("features.showcase.marker: ");
   });
 
   it("refuses an entry that is not a feature", () => {
-    expect(issues({ showcase: { directories: ["src/showcase"], seams: [] }, profile: "lite" })[0]).toStartWith("profile: ");
+    expect(issues({ features: { showcase: { directories: ["src/showcase"], seams: [] }, profile: "lite" } })[0]).toStartWith("features.profile: ");
   });
 
   it("accepts a feature name of lowercase letters, digits and hyphens that starts with a letter", () => {
@@ -93,22 +95,24 @@ describe("FeatureManifestSchema", () => {
   ];
   for (const [kind, name] of BAD_NAMES) {
     it(`refuses a feature name with ${kind}`, () => {
-      expect(issues(only({ seams: ["src/worker.ts"] }, name))).toEqual([`${name}: ${NAME_RULE}`]);
+      expect(issues(only({ seams: ["src/worker.ts"] }, name))).toEqual([`features.${name}: ${NAME_RULE}`]);
     });
   }
 
   it("refuses an empty feature name", () => {
-    expect(issues(only({ seams: ["src/worker.ts"] }, ""))).toEqual([`: ${NAME_RULE}`]);
+    expect(issues(only({ seams: ["src/worker.ts"] }, ""))).toEqual([`features.: ${NAME_RULE}`]);
   });
 
   it("accepts a feature that requires others and regenerates after the copy", () => {
     const manifest = {
-      db: {
-        directories: ["src/db"],
-        seams: [],
-        regenerate: { remove: ["config/migrations/", "config/snapshot.json"], run: ["forge", "db", "migrate", "compose"] },
+      features: {
+        db: {
+          directories: ["src/db"],
+          seams: [],
+          regenerate: { remove: ["config/migrations/", "config/snapshot.json"], run: ["forge", "db", "migrate", "compose"] },
+        },
+        auth: { directories: ["src/auth"], seams: [], requires: ["db"] },
       },
-      auth: { directories: ["src/auth"], seams: [], requires: ["db"] },
     };
     expect(issues(manifest)).toEqual([]);
   });
@@ -118,25 +122,44 @@ describe("FeatureManifestSchema", () => {
   });
 
   it("refuses a requirement spelled as no feature name can be", () => {
-    expect(issues(only({ seams: ["src/worker.ts"], requires: ["Mail"] }))).toEqual([`showcase.requires.0: ${NAME_RULE}`]);
+    expect(issues(only({ seams: ["src/worker.ts"], requires: ["Mail"] }))).toEqual([`features.showcase.requires.0: ${NAME_RULE}`]);
   });
 
   it("refuses a regeneration that runs no command", () => {
-    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: [] } }))).toEqual(["showcase.regenerate.run: must name a command"]);
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: [] } }))).toEqual(["features.showcase.regenerate.run: must name a command"]);
   });
 
   it("refuses a regeneration whose command holds an empty argument", () => {
-    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge", ""] } }))[0]).toStartWith("showcase.regenerate.run.1: ");
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge", ""] } }))[0]).toStartWith("features.showcase.regenerate.run.1: ");
   });
 
   it("refuses a removal path climbing out of the root", () => {
     expect(issues(only({ seams: ["src/worker.ts"], regenerate: { remove: ["../migrations"], run: ["forge"] } }))).toEqual([
-      `showcase.regenerate.remove.0: ${PATH_RULE}`,
+      `features.showcase.regenerate.remove.0: ${PATH_RULE}`,
     ]);
   });
 
   it("refuses a key a regeneration does not define", () => {
-    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge"], cwd: "config" } }))[0]).toStartWith("showcase.regenerate.cwd: ");
+    expect(issues(only({ seams: ["src/worker.ts"], regenerate: { run: ["forge"], cwd: "config" } }))[0]).toStartWith(
+      "features.showcase.regenerate.cwd: ",
+    );
+  });
+});
+
+describe("FeatureManifestSchema — the manifest around its features", () => {
+  const FEATURES = { showcase: { directories: ["src/showcase"], seams: [] } };
+
+  it("accepts a manifest-level regeneration beside the features", () => {
+    expect(issues({ features: FEATURES, regenerate: { run: ["forge", "cf", "gen", "env"] } })).toEqual([]);
+  });
+
+  it("refuses a bare feature record, the shape before the manifest wrapped it", () => {
+    expect(issues(FEATURES)[0]).toStartWith("features: ");
+  });
+
+  it("refuses a manifest-level regeneration that runs no command, or a key the manifest does not define", () => {
+    expect(issues({ features: FEATURES, regenerate: { run: [] } })).toEqual(["regenerate.run: must name a command"]);
+    expect(issues({ features: FEATURES, profile: "lite" })[0]).toStartWith("profile: ");
   });
 });
 

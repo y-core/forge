@@ -14,7 +14,6 @@ import {
   authFactorGrid,
   elementOf,
   elementsOf,
-  factorChoices,
   HOSTILE_TEXT,
   HOSTILE_TEXT_ESCAPED,
   tagOf,
@@ -99,17 +98,15 @@ describe("SigninView", () => {
 describe("SigninView across the factor matrix", () => {
   const grid = authFactorGrid();
 
-  async function renderCell(cell: AuthFactorCell): Promise<string | null> {
-    if (factorChoices(cell) === null) return null;
+  function renderCell(_cell: AuthFactorCell): Promise<string> {
     return signin();
   }
 
   // Unlike a prop a test can pass, this cannot be kept green from the outside: with one possible
   // primary there is no passkey affordance on this page in any deployment.
-  it("offers no passkey affordance on the sign-in page, in any legal cell", async () => {
+  it("offers no passkey affordance on the sign-in page, in any cell", async () => {
     for (const cell of grid) {
       const html = await renderCell(cell);
-      if (html === null) continue;
       expect({
         cell: cell.label,
         scope: tagOf(html, `data-scope="${PASSKEY_SCOPE}"`),
@@ -118,37 +115,28 @@ describe("SigninView across the factor matrix", () => {
     }
   });
 
-  it("renders the address field in every legal cell, whatever else the deployment offers", async () => {
+  it("renders the address field in every cell, whatever else the deployment offers", async () => {
     const rendered: string[] = [];
     for (const cell of grid) {
       const html = await renderCell(cell);
-      if (html === null) continue;
       rendered.push(`${cell.label} => ${tagOf(html, 'id="field-email"') === "" ? "no-email-field" : "email-field"}`);
     }
     expect(rendered).toEqual([
-      "email-otp primary=email-otp / all-optional => email-field",
-      "email-otp primary=email-otp / all-mandatory => email-field",
-      "email-otp primary=email-otp / first-mandatory => email-field",
-      "email-otp primary=email-otp / for-roles => email-field",
-      "email-otp+passkey primary=email-otp / all-optional => email-field",
-      "email-otp+passkey primary=email-otp / all-mandatory => email-field",
-      "email-otp+passkey primary=email-otp / first-mandatory => email-field",
-      "email-otp+passkey primary=email-otp / for-roles => email-field",
-      "email-otp+totp-app primary=email-otp / all-optional => email-field",
-      "email-otp+totp-app primary=email-otp / all-mandatory => email-field",
-      "email-otp+totp-app primary=email-otp / first-mandatory => email-field",
-      "email-otp+totp-app primary=email-otp / for-roles => email-field",
-      "email-otp+passkey+totp-app primary=email-otp / all-optional => email-field",
-      "email-otp+passkey+totp-app primary=email-otp / all-mandatory => email-field",
-      "email-otp+passkey+totp-app primary=email-otp / first-mandatory => email-field",
-      "email-otp+passkey+totp-app primary=email-otp / for-roles => email-field",
+      "none / optional => email-field",
+      "passkey / optional => email-field",
+      "passkey / mandatory:passkey => email-field",
+      "totp-app / optional => email-field",
+      "totp-app / mandatory:totp-app => email-field",
+      "passkey+totp-app / optional => email-field",
+      "passkey+totp-app / mandatory:passkey => email-field",
+      "passkey+totp-app / mandatory:totp-app => email-field",
+      "passkey+totp-app / mandatory:passkey+totp-app => email-field",
     ]);
   });
 
-  it("draws exactly one primary control in every legal cell, whichever factor is primary", async () => {
+  it("draws exactly one primary control in every cell, whichever factor is primary", async () => {
     for (const cell of grid) {
       const html = await renderCell(cell);
-      if (html === null) continue;
       const primaries = valuesOf(html, "class").filter((cls) => cls === PRIMARY_CLASS || cls === `${PRIMARY_CLASS} w-full`);
       expect({ cell: cell.label, primaries: primaries.length }).toEqual({ cell: cell.label, primaries: 1 });
     }
@@ -157,40 +145,13 @@ describe("SigninView across the factor matrix", () => {
   it("offers no authenticator-app affordance on the sign-in page, in any cell", async () => {
     for (const cell of grid) {
       const html = await renderCell(cell);
-      if (html === null) continue;
       expect({ cell: cell.label, totpNamed: /authenticator/.test(html) }).toEqual({ cell: cell.label, totpNamed: false });
     }
   });
 
-  it("leaves every refused offering with no page to render at all", () => {
-    expect(grid.filter((cell) => factorChoices(cell) === null).map((cell) => cell.label)).toEqual([
-      "none / all-optional",
-      "none / all-mandatory",
-      "none / first-mandatory",
-      "none / for-roles",
-      "passkey / all-optional",
-      "passkey / all-mandatory",
-      "passkey / first-mandatory",
-      "passkey / for-roles",
-      "totp-app / all-optional",
-      "totp-app / all-mandatory",
-      "totp-app / first-mandatory",
-      "totp-app / for-roles",
-      "email-otp+recovery-code primary=email-otp / all-optional",
-      "email-otp+recovery-code primary=email-otp / all-mandatory",
-      "email-otp+recovery-code primary=email-otp / first-mandatory",
-      "email-otp+recovery-code primary=email-otp / for-roles",
-      "passkey+totp-app / all-optional",
-      "passkey+totp-app / all-mandatory",
-      "passkey+totp-app / first-mandatory",
-      "passkey+totp-app / for-roles",
-    ]);
-  });
-
-  it("heads the page the same in every legal cell", async () => {
+  it("heads the page the same in every cell", async () => {
     for (const cell of grid) {
       const html = await renderCell(cell);
-      if (html === null) continue;
       expect({ cell: cell.label, heading: textOf(html, "h1", 'class="text-xl"') }).toEqual({ cell: cell.label, heading: "Sign in" });
     }
   });

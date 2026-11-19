@@ -10,6 +10,7 @@ import { INVENTORY_SELECT } from "../storage/db/schema";
 import type { D1Database, SqlFragment } from "../storage/db/types";
 import { cutSqlStatements } from "../tooling/db/backup/split";
 import { declaredPath, DEFAULT_DB_CONFIG, loadHostConfig } from "../tooling/db/declared";
+import { quoteSqlIdentifier } from "../tooling/db/sql";
 
 export { sql } from "../storage/db/sql";
 
@@ -82,12 +83,11 @@ export function testD1Config(): string {
 
 /** The statements that empty a database of every app object: triggers, views and indexes, then each table before any table it references. @internal */
 export function dropStatements(objects: readonly { type: string; name: string }[], parents: ReadonlyMap<string, readonly string[]>): string[] {
-  const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
   const of = (type: string) => objects.filter((object) => object.type === type).map((object) => object.name);
   const drops = [
-    ...of("trigger").map((name) => `DROP TRIGGER IF EXISTS ${quote(name)}`),
-    ...of("view").map((name) => `DROP VIEW IF EXISTS ${quote(name)}`),
-    ...of("index").map((name) => `DROP INDEX IF EXISTS ${quote(name)}`),
+    ...of("trigger").map((name) => `DROP TRIGGER IF EXISTS ${quoteSqlIdentifier(name)}`),
+    ...of("view").map((name) => `DROP VIEW IF EXISTS ${quoteSqlIdentifier(name)}`),
+    ...of("index").map((name) => `DROP INDEX IF EXISTS ${quoteSqlIdentifier(name)}`),
   ];
   const remaining = new Set(of("table"));
   while (remaining.size > 0) {
@@ -96,7 +96,7 @@ export function dropStatements(objects: readonly { type: string; name: string }[
     // A cycle has no leaf; the batch defers foreign keys, so name order is safe for what is left.
     const next = leaves.length > 0 ? leaves : [...remaining].sort();
     for (const table of next) {
-      drops.push(`DROP TABLE IF EXISTS ${quote(table)}`);
+      drops.push(`DROP TABLE IF EXISTS ${quoteSqlIdentifier(table)}`);
       remaining.delete(table);
     }
   }
@@ -159,7 +159,7 @@ export async function openTestD1(options: OpenTestD1Options = {}): Promise<TestD
       const parents = new Map<string, string[]>();
       for (const { type, name } of objects) {
         if (type !== "table") continue;
-        const keys = await rows<{ table: string }>(`PRAGMA foreign_key_list("${name.replaceAll('"', '""')}")`);
+        const keys = await rows<{ table: string }>(`PRAGMA foreign_key_list(${quoteSqlIdentifier(name)})`);
         parents.set(
           name,
           keys.map((key) => key.table),

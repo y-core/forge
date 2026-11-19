@@ -37,8 +37,8 @@ const rows = items.map((item) => html`<li>${item.label}</li>`); // an array is f
 const list = html`<ul>${rows}</ul>`;
 ```
 
-`rawHtml(s)` marks a string you already trust as `SafeHtml`, and it is the **only** way out of escaping. Anything you hand it is emitted byte for
-byte, so hand it markup you control and nothing else.
+`rawHtml(s)` marks a string you already trust as `SafeHtml`, and it is the **only** producer of one that escapes nothing. Anything you hand it is
+emitted byte for byte, so hand it markup you control and nothing else.
 
 ```ts
 import { html, rawHtml } from "@y-core/forge/html";
@@ -95,7 +95,8 @@ account, including why no `hx-*` attribute is covered, is [`SECURITY_HARDENING.m
 render nothing therefore prints `false` into the page — write `${cond ? markup : null}` instead.
 
 **`SafeHtml` is a class, not a string.** Read the markup out with `String(value)` or by interpolating it; `String.prototype` methods are not on it.
-The barrel exports it as a **type only**, and `html` and `rawHtml` are the only ways to make one.
+The barrel exports it as a **type only**, so you get one from `html`, `rawHtml`, `scriptJson` or `styleText`, or from a renderer that returns one,
+such as `renderToString` from `@y-core/forge/render/jsx`.
 
 **Calling `html(value)` as a plain function throws a `TypeError`** rather than emitting its argument unescaped.
 

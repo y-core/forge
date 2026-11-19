@@ -1,13 +1,16 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { defaultEnvFlags, renderEnvSchema } from "../cf/gen/cf-env-command";
+import type { SpawnSync } from "../cli/types";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
 import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
-import { cloudflareWorkerSteps, forgeChecks } from "./presets";
+import { cloudflareWorkerSteps, forgeChecks, generateRuntimeTypes } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
 import { declaredSteps, resolveTiers } from "./tiers";
 import { GATE_TIERS } from "./types";
@@ -26,6 +29,13 @@ import type {
 afterAll(() => {
   rmSync(curateFixtureTemplate(), { recursive: true, force: true });
 });
+
+// `bun test` puts no `node_modules/.bin` on PATH, as the gate runner does, so the installed CLI stands in for the bare name.
+const WRANGLER_CLI = fileURLToPath(new URL("bin/wrangler.js", import.meta.resolve("wrangler/package.json")));
+
+// TMPDIR is the fixture root, which the test removes: wrangler leaves an `update-check` file in it.
+const installedWrangler: SpawnSync = (command, args, options) =>
+  spawnSync(command === "wrangler" ? WRANGLER_CLI : command, args, { ...options, env: { ...options.env, TMPDIR: options.cwd }, encoding: "utf-8" });
 
 function labelsOf(steps: readonly Step[]): string[] {
   return steps.map((step) => step.label);
@@ -861,34 +871,55 @@ async function classOrderResult(options: Parameters<typeof cloudflareWorkerSteps
 }
 
 describe("cloudflareWorkerSteps() — the generated-type commands", () => {
-  it("generates runtime types only, with no --config when no worker config is set", () => {
-    expect(workerRows().find((s) => s.label === "types:cf-runtime")?.cmd).toEqual([
-      "wrangler",
-      "types",
-      "./.types/cloudflare.d.ts",
-      "--no-include-env",
-    ]);
+  it("creates `.types/` in a root that has none, as a fresh clone does, and writes the runtime types there", () => {
+    const root = gateFixtureRoot({ "wrangler.jsonc": '{ "name": "fixture", "compatibility_date": "2026-01-01" }\n' }, "forge-presets-");
+    try {
+      const result = generateRuntimeTypes(root, undefined, installedWrangler);
+      expect([result.ok, result.findings, readFileSync(join(root, ".types/cloudflare.d.ts"), "utf-8").length > 0]).toEqual([true, [], true]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("runs `wrangler types` for runtime types only, pointed at the worker config when one is set", () => {
+    const root = gateFixtureRoot({}, "forge-presets-");
+    try {
+      const calls: string[][] = [];
+      const spawn: SpawnSync = (command, args) => {
+        calls.push([command, ...args]);
+        return { status: 0, stdout: "", stderr: "" };
+      };
+      generateRuntimeTypes(root, undefined, spawn);
+      generateRuntimeTypes(root, "wrangler.workers.jsonc", spawn);
+      expect(calls).toEqual([
+        ["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env"],
+        ["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env", "--config", "wrangler.workers.jsonc"],
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
-  it("points the runtime invocation at the worker config, whose compatibility date and flags shape runtime types", () => {
-    expect(workerRows({ workerConfig: "wrangler.workers.jsonc" }).find((s) => s.label === "types:cf-runtime")?.cmd).toEqual([
-      "wrangler",
-      "types",
-      "./.types/cloudflare.d.ts",
-      "--no-include-env",
-      "--config",
-      "wrangler.workers.jsonc",
-    ]);
+  it("fails a wrangler that exits non-zero, carrying the last 20 lines of its output", () => {
+    const root = gateFixtureRoot({}, "forge-presets-");
+    try {
+      const lines = Array.from({ length: 25 }, (_, index) => `line ${index + 1}`);
+      const spawn: SpawnSync = () => ({ status: 1, stdout: lines.slice(0, 10).join("\n"), stderr: `\n${lines.slice(10).join("\n")}\n` });
+      const result = generateRuntimeTypes(root, undefined, spawn);
+      expect([result.ok, result.findings.map((finding) => [finding.message, finding.detail])]).toEqual([
+        false,
+        [["`wrangler types ./.types/cloudflare.d.ts --no-include-env` failed (exit 1)", lines.slice(5)]],
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
-  it("leaves the Env interface to `forge cf gen env`: the one `wrangler types` row is the runtime invocation", () => {
-    const wranglerTypes = workerRows(EVERY_OPTION).filter(
-      (s): s is CommandStep => !isCheckStep(s) && s.cmd[0] === "wrangler" && s.cmd[1] === "types",
-    );
+  it("leaves the Env interface to `forge cf gen env`: types:cf-runtime is the one row that runs `wrangler types`", () => {
+    const rows = workerRows(EVERY_OPTION);
+    const wranglerTypes = rows.filter((s): s is CommandStep => !isCheckStep(s) && s.cmd[0] === "wrangler" && s.cmd[1] === "types");
 
-    expect(wranglerTypes.map((s) => [s.label, s.cmd])).toEqual([
-      ["types:cf-runtime", ["wrangler", "types", "./.types/cloudflare.d.ts", "--no-include-env", "--config", "wrangler.jsonc"]],
-    ]);
+    expect([wranglerTypes, rows.filter((s) => s.label === "types:cf-runtime").map(isCheckStep)]).toEqual([[], [true]]);
   });
 
   it("drops the types:cf-runtime row and the check of what it writes under wranglerTypes: false, for an app that supplies its runtime types itself", () => {

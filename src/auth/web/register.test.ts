@@ -11,7 +11,7 @@ import { ok } from "../../result/result";
 import { sessionCtx, sessionMiddleware } from "../../session/session";
 import { mapHandler } from "../../testing/route";
 import { createFactorRegistry } from "../factors/registry";
-import type { AuthFactorService } from "../factors/types";
+import type { AuthSecondFactorService } from "../factors/types";
 import {
   PASSKEY_CSRF_HEADER_ATTR,
   PASSKEY_CSRF_HEADER_DEFAULT,
@@ -22,7 +22,7 @@ import {
 } from "../passkey-contract";
 import { createSigninActions } from "./actions";
 import { approvalCtx } from "./guards";
-import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_KEY, authCtx } from "./identity";
+import { AUTH_PENDING_SIGNIN_SESSION_KEY, AUTH_SESSION_TOKEN_KEY, authCtx, establishAuthSession } from "./identity";
 import { loadSignin } from "./loaders";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
@@ -33,16 +33,17 @@ import {
   fakeAuthCredential,
   fakeAuthCredentialStore,
   fakeAuthServices,
+  fakeAuthSessionStore,
   fakeAuthSigninFlow,
   fakeAuthUser,
   fakeAuthUserStore,
   fakeAuthWebOptions,
   fakeFactorRegistry,
   fakeFactorService,
+  fakeSecondFactorOffering,
   fakeFactorStore,
   fakeSessionCookie,
   valuesOf,
-  recoveryOffer,
 } from "./web.fixture";
 
 const CSRF_SECRET = "38f516127047072640d79f757593f8c971ed2324a5e1db688f6f129f9b0478db";
@@ -52,7 +53,7 @@ interface AppSeed {
   /** Whether the seeded identity is an administrator, as `requireAdmin` would have found it. */
   readonly admin?: boolean;
   readonly pendingEmail?: string;
-  /** Every value written under the identity key, in order. */
+  /** Every token written under the signed-in session key, in order. */
   readonly identityWrites?: string[];
   /** Mint deterministic tokens instead of `csrfProtection`'s, so two renders can be compared byte for byte. */
   readonly fixedCsrf?: boolean;
@@ -63,13 +64,20 @@ interface AppSeed {
 function authApp(seed: AppSeed = {}): Forge {
   const app = new Forge();
   app.use("*", sessionMiddleware(createCookieSessionStorage(), fakeSessionCookie));
-  app.use("*", (context, next) => {
+  app.use("*", async (context, next) => {
     const session = sessionCtx.get(context);
     // These files mount the routes without `createAuthGuards`, so the identity the guards would have
     // established is seeded here instead — a page reads `authCtx` and never the session.
     if (seed.userId !== undefined) {
-      session.set(AUTH_SESSION_KEY, seed.userId);
-      authCtx.set(context, { userId: seed.userId, email: "ada@example.com", isAdmin: seed.admin === true, stepUpAt: null });
+      await establishAuthSession(session, fakeAuthSessionStore([]), seed.userId, Date.now(), Date.now(), { kind: "email-otp" });
+      authCtx.set(context, {
+        userId: seed.userId,
+        email: "ada@example.com",
+        isAdmin: seed.admin === true,
+        sessionId: "s1",
+        stepUpAt: null,
+        stepUpKind: null,
+      });
       approvalCtx.set(context, Date.now());
     }
     if (seed.pendingEmail !== undefined) session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, seed.pendingEmail);
@@ -77,7 +85,7 @@ function authApp(seed: AppSeed = {}): Forge {
     if (writes !== undefined) {
       const write = session.set.bind(session);
       session.set = ((key: string, value: unknown) => {
-        if (key === AUTH_SESSION_KEY) writes.push(String(value));
+        if (key === AUTH_SESSION_TOKEN_KEY) writes.push(String(value));
         return write(key as never, value as never);
       }) as typeof session.set;
     }
@@ -281,7 +289,7 @@ describe("the session identity a verification writes", () => {
     const res = await app.request("/auth/verify", formBody({ code: "123456", _csrf: "x" }));
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/account/passkeys");
-    expect(identityWrites).toEqual(["u9"]);
+    expect(identityWrites).toHaveLength(1);
   });
 
   it("writes no identity at all on a refused verification", async () => {
@@ -302,19 +310,15 @@ describe("the CSRF header name a renamed deployment stamps on the passkey scope"
   const HEADER = "X-App-Csrf";
 
   function passkeyOptions(): AuthWebOptions {
-    const passkey = fakeFactorService("passkey") as AuthFactorService & { beginEnrolment: unknown };
+    const passkey = {
+      ...fakeFactorService("passkey"),
+      beginEnrolment: async () => ok({ options: { rpId: "example.com" } }),
+    } as AuthSecondFactorService;
     const services = fakeAuthServices({
       users: fakeAuthUserStore([signedIn]),
       factors: createFactorRegistry(fakeFactorStore([]), {
-        offered: [
-          { service: fakeFactorService("email-otp"), role: "primary" },
-          {
-            service: { ...passkey, beginEnrolment: async () => ok({ options: { rpId: "example.com" } }) } as AuthFactorService,
-            role: "second",
-            requirement: "mandatory",
-          },
-          recoveryOffer(),
-        ],
+        primary: fakeFactorService("email-otp"),
+        second: fakeSecondFactorOffering([passkey], ["passkey"]),
       }),
     });
     return fakeAuthWebOptions({ resolveServices: () => services });

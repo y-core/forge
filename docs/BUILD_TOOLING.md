@@ -423,8 +423,9 @@ can see the need for is an escape nobody notices going wrong.
 
 ### 2j. Trunk-Only Development and the Amend Floor
 
-**Forge develops on the trunk: no branches, no pull requests, no worktrees.** There is no CI, so a pull request has nothing to run and nobody to
-review it — the gate is `bun run verify`, run locally before the commit that claims it. And branch-shaped git is the unreliable part of this
+**Forge develops on the trunk: no branches, no pull requests, no worktrees.** No workflow runs on a branch or a pull request — the release
+workflow fires only on a pushed `v*` tag — so a pull request has nothing to run and nobody to review it. The gate is `bun run verify`, run locally
+before the commit that claims it. And branch-shaped git is the unreliable part of this
 container: `git stash`, fresh branches and worktree removal have each broken here, where commit, amend and tag have not. Trunk-only is therefore a
 fit to the machinery that works, not a preference about workflow.
 

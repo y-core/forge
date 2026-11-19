@@ -9,6 +9,9 @@ import { extractRootAttrs, splitSvgRoot, wrapRootAttrs } from "./svg-symbols";
 
 const MAX_COLOR_HOPS = 20;
 
+/** A cursor hotspot as CSS takes it: two non-negative integers, x then y. */
+const CURSOR_HOTSPOT = /^\s*(\d+)\s+(\d+)\s*$/;
+
 interface CursorMeta {
   viewBox: string;
   markup: string;
@@ -31,7 +34,9 @@ function parseCursorSvg(content: string): CursorMeta | null {
     dataMatch = dataRegex.exec(rootTag);
   }
 
-  meta.markup = wrapRootAttrs(split.inner.trim(), extractRootAttrs(rootTag));
+  const markup = wrapRootAttrs(split.inner.trim(), extractRootAttrs(rootTag));
+  // The template's own root may not bind `xlink`, and an unbound prefix makes the baked data URI fail to parse as XML.
+  meta.markup = markup.includes(" xlink:href=") ? `<g xmlns:xlink="http://www.w3.org/1999/xlink">${markup}</g>` : markup;
   return meta;
 }
 
@@ -104,6 +109,13 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
       const cursorContent = readFileSync(join(source.path, entry.file), "utf-8");
       const meta = parseCursorSvg(cursorContent);
       if (!meta) continue;
+      const hotspot = (meta.hotspot ?? "0 0").match(CURSOR_HOTSPOT);
+      if (!hotspot) {
+        throw new Error(
+          `[forge-assets] cursor "${entry.key}" (${entry.file}) has an invalid data-cursor-hotspot "${meta.hotspot}": expected two non-negative integers, "<x> <y>"`,
+        );
+      }
+      const [, hx, hy] = hotspot;
 
       const perTheme: Record<string, string> = {};
 
@@ -129,8 +141,6 @@ export function buildCursors(config: CursorsConfig, cssText: string): Record<str
         const resolved = resolveCssVars(uncommented, tokens, dark, entry.key);
         const encoded = encodeURIComponent(resolved);
 
-        const hotspot = meta.hotspot ?? "0 0";
-        const [hx = "0", hy = "0"] = hotspot.trim().split(/\s+/);
         perTheme[theme] = `url("data:image/svg+xml,${encoded}") ${hx} ${hy}, auto`;
       }
 

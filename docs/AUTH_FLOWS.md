@@ -1,13 +1,14 @@
 ---
 title: Auth Flows
-description: "What each auth flow does once mounted — signup, sign-in, passkey and TOTP enrolment, email change, admin management, recovery from a lost value — and this release's limits."
+description: "What each auth flow does once mounted — signup, sign-in, factors, email change, admin, sessions and security events, recovery from a lost value — and this release's limits."
 audience: consumer
 ---
 
 # Auth Flows
 
 > Owns what each flow does once the capability is mounted — the credential each one issues, what the visitor is told, and where a resolution sends
-> them. Owns the limits this release carries (§7), and how an account recovers when a key, a device or a code is lost (§8).
+> them. Owns what a user can see of their sessions and what an account's security record holds (§7), the limits this release carries (§8), and how
+> an account recovers when a key, a device or a code is lost (§9).
 >
 > Defers to: [`AUTH_MOUNTING.md`][am] for the mount itself — the builders, the guard table, the seams forge ships no implementation for, and
 > embedding a single view; [`NAMESPACES.md`][namespaces-5h] §5h for the `auth` / `auth/web` / `auth/client` split and the one-way edge;
@@ -18,26 +19,27 @@ audience: consumer
 
 ## 0. Quick Reference
 
-- §1 Signup: address in, code out, and why an address already taken is challenged rather than refused
-- §2 Sign-in: the request/verify pair and what each factor requirement demands
-- §2a What Each Requirement Demands: `optional`, `mandatory`, `mandatoryForRoles`
+- §1 Signup: address in, code out, why an address already taken is challenged rather than refused, and when an unanswered account is deleted
+- §2 Sign-in: the request/verify pair and what each second factor's requirement demands
+- §2a What Each Requirement Demands: one way in, each second factor mandatory or optional, and the minimum read per factor
 - §2b What the Visitor Is Told: the closed set of notices, and the reasons folded into them
-- §2c Where a Resolution Sends the Visitor: enrolment, step-up, or the return path
+- §2c Where a Resolution Sends the Visitor: the first owed enrolment page, step-up, or the return path, and a 503 for a failed read
 - §3 Passkeys: the two-endpoint ceremony both halves share
-- §3a Enrolment: the registration ceremony, the pending-enrolment gate, and the account's own ceremony
+- §3a Enrolment: owed kinds in offer order, the registration ceremony, the pending-enrolment gate, and the account's own ceremony
 - §3b Sign-in: why a passkey never starts one
-- §3c Management: what the shipped pages do, and the limits they carry
+- §3c Management: a mandatory kind's last factor stays, replacing the app in place, which changes sign other sessions out, the pages' limits
 - §3d PRF Output Stays in the Page: never posted, judged by a real result, salted per credential
 - §4 Authenticator App (TOTP): the secret, the URI, and the confirm step
 - §5 Email Change: the two sealed links, the stage each one carries, and the confirm route you own
 - §6 Admin Management: the user pages, the last-admin guard, and the first-admin bootstrap
-- §7 Limits in This Release: what does not work yet, stated plainly
-- §8 Recovery — No Lost Value Locks an Account Out or Lets It In on Less: what the user sees, and the way back from each loss
-- §8a Choosing a Factor at Step-Up: every confirmed second factor is offered, and the URL names the one presented
-- §8b A Confirmed Second Factor Comes Before Any Enrolment: why an owed enrolment waits for a step-up
-- §8c Recovery Codes: who may be issued them, shown once and never downloadable, the staged set, single use, and the offering the registry demands
-- §8d A Code Lands on the Repair Page: what a step-up by recovery code shows the user
-- §8e The Administrator's Reset Is the Last Resort: what it clears, and the one weakening it allows
+- §7 Sessions and Security Events: the session list, what each event row holds, who is told, and how long rows are kept
+- §8 Limits in This Release: what does not work yet, stated plainly
+- §9 Recovery — No Lost Value Locks an Account Out or Lets It In on Less: what the user sees, and the way back from each loss
+- §9a Choosing a Factor at Step-Up: every confirmed second factor is offered, and the URL names the one presented
+- §9b A Held Factor Is Passed Before Any Enrolment: why an owed enrolment waits for a step-up, and the purge that keeps it rare
+- §9c Recovery Codes: required beside the second factors, who may be issued them, shown once and never downloadable, the staged set, single use
+- §9d A Code Lands on the Repair Page: what a step-up by recovery code shows the user
+- §9e The Administrator's Reset Is the Last Resort: what it clears, and why it is the one path below the minimum
 
 ---
 
@@ -50,9 +52,17 @@ kept in the session — never in the URL, which lands in history, `Referer` and 
 to give, and a code delivered to the address's real owner is harmless. So both branches issue a real challenge, both render the same page, and the
 timing is the same because the issue is deferred either way.
 
-The credential itself depends on the primary factor. With email-OTP primary — the shipped case — the visitor is emailed a short-lived code
-(`AUTH_OTP_DIGITS` and `AUTH_OTP_TTL_MS` in `src/auth/config.ts`), and the code is never stored: what the OTP state holds is the sealed token the
-code is checked against.
+The credential is the primary factor's: the visitor is emailed a short-lived code (`AUTH_OTP_DIGITS` and `AUTH_OTP_TTL_MS` in `src/auth/config.ts`).
+
+**The code is stored only sealed, in `auth_otp_state`, and bound to the browser that asked for it.** The row holds the sealed token the code is
+checked against and the SHA-256 of a random value the requesting browser's session keeps. A guess from any other browser matches no row and spends
+nothing, and asking again from another browser moves the code there, so the first browser's code stops working. The guess budget stays the
+account's, not the browser's (§8).
+
+**An account whose address never answers is deleted.** Sign-up writes an account for any new address it is given, so `purgeAuthEphemera` deletes one
+still unverified `AUTH_UNVERIFIED_USER_TTL_MS` after it was created. The purge works in bounded steps, so a backlog clears over several runs, and
+accounts go last, so a key of the app's whose constraint refuses their delete costs only the accounts: the purge names `users` in its report's
+`blocked`, and the other tables still purge ([`src/auth/README.md`][auth-readme]'s "Clearing expired challenges, nonces and sessions").
 
 ---
 
@@ -67,38 +77,34 @@ the visitor goes.
 
 ### 2a. What Each Requirement Demands
 
-The requirement sits on the factor, not on the deployment. `AuthFactorsOptions.offered` is a tagged list: each entry declares its service `primary`
-or `second`, and a `second` entry carries what this deployment demands of it.
+**The emailed code is the only way in.** `AuthFactorsOptions.primary` takes a factor that identifies the visitor, and only `email-otp` does. The
+authenticator app and the passkey are second factors only, offered under `second`: neither identifies anyone, so neither starts a sign-in (§3b).
 
-| Requirement | What sign-in demands of that factor |
+**Each offered second factor is mandatory or optional, and the developer sets which.** `second.offered` lists the second factors as
+`{ service, requirement }`, in the order every page shows them and owed kinds are enrolled in.
+
+| `requirement` | What it demands of a user |
 | --- | --- |
-| `"optional"` | Nothing. It can satisfy a step-up once the user confirms it, and is never owed. |
-| `"mandatory"` | An enrolment, until the user confirms it. |
-| `{ mandatoryForRoles: [...] }` | `"mandatory"` for a user whose roles match, `"optional"` for everyone else. Forge sources no roles — the caller supplies them. |
+| `"mandatory"` | A confirmed factor of this kind. A user without one owes its enrolment before reaching anything else. |
+| `"optional"` | Nothing. A factor of this kind the user did add is still asked for at every sign-in. |
 
-**Mandatory governs enrolment, not step-up.** `resolve` answers in order: a mandatory factor this user has not confirmed is
-`enrolment-required` naming **only the owed kinds**; otherwise any confirmed second factor is `step-up-required`; otherwise `satisfied`. So a
-mandatory factor cannot be skipped by enrolling a different one, and an optional factor a visitor did enrol is still demanded at every later
-sign-in.
+**A requirement holds for every user, and nothing beyond the per-factor pair can be expressed.** There is no "at least one second factor, of the
+user's choosing": a deployment that wants every user to hold a second factor names the kind that is mandatory. There is no role scoping: a factor
+is mandatory for everyone or optional, and `resolve` takes the user's id alone. An offering carrying a requirement of its own, rather than one per
+offer, is a type error, and `createFactorRegistry` throws on it for a caller casting past the type.
 
-**A deployment offering no second factor is `satisfied` without a store read** — an `offered` list with no `second` entry.
+**`resolve` answers in order.** A user missing a mandatory kind is `enrolment-required`: its `kinds` are the mandatory kinds they lack, in `offered`
+order, and its `stepUpKinds` are the offered second factors they hold, with `recovery-code` where they hold codes (§9b). Otherwise a user holding
+any offered second factor is `step-up-required`. Anyone else is `satisfied`, and a deployment with no `second` is `satisfied` without a store read.
 
-**An implicit factor is enrolled for everyone the moment it is offered.** Email-OTP has no enrolment row by design, so offering it as a second
-factor puts it in the confirmed set unconditionally — it is never owed, and it always satisfies the step-up.
+**The minimum is read per factor: a mandatory kind's last confirmed factor cannot be removed, and an optional kind's can** (§3c). Recovery codes
+pass a step-up but are neither mandatory nor optional, and no minimum counts them (§9c). **Replacing a second factor in place, confirmed by a code
+from the new one after a fresh step-up, is not a removal**, so the minimum does not bar it (§3c). The one way below the minimum is the
+administrator's reset (§9e).
 
-**A factor declared `primary` is not available as a second factor.** The registry's step-up set is the `role: "second"` entries alone, so the
-primary is excluded by construction rather than by a filter: proving it again proves nothing new. An `email-otp` primary with a `second` passkey
-therefore leaves the passkey as the only step-up factor, and `"mandatory"` there demands a **passkey** enrolment.
-
-**The default this release is built around is email-OTP primary with a mandatory authenticator-app second factor**, plus the recovery codes that
-offering requires (§8c). Both offerings work and both are driven through the mount in [`src/auth/web/mount.test.ts`](../src/auth/web/mount.test.ts);
-the passkey step-up is the alternative. With two second factors confirmed the verify page presents **the first in `offered` order** and links the
-others, so the user can choose (§8a).
-
-**An all-optional offering sends nobody to the enrolment pages, so its factors are enrolled from the account pages.** `requirePendingEnrolment`
-admits only a visitor who owes an enrolment, and nobody ever owes an `"optional"` factor — so every visitor goes to `settledPath`, and `authRoutes`'
-`enrol` pages never open. A settled user adds a passkey from `accountRoutes`' `passkeys` page, whose enrol link opens the account's own ceremony
-(§3a), and an authenticator app from its `totp` page (§4). Without `accountRoutes` mounted, an optional factor has no page to be enrolled from.
+**An optional factor is added from the account pages.** `require-pending-enrolment` admits only a visitor who owes a mandatory kind, so where
+nothing is mandatory the `authRoutes` `enrol` pages never open. A user adds a passkey from `accountRoutes`' `passkeys` page (§3a) and an
+authenticator app from its `totp` page (§4); without `accountRoutes` mounted, there is nowhere to add an optional one.
 
 ### 2b. What the Visitor Is Told
 
@@ -106,9 +112,8 @@ The notices are a closed set: the service is unavailable, you are throttled, or 
 enrolled, deactivated, unrecognised — folds into **that did not match**, because telling them apart is the account-enumeration oracle the decoy
 closes. The unredacted reason is for your logs and your branching, never for the page ([`FORGE_ERRORS.md`][eh-1c] §1c).
 
-**A step-up adds one notice: that method cannot be checked right now.** It is the `unusable` reason, answered when a factor's stored secret will
-not open, and it tells the user to choose another method (§8a). It says nothing about membership, because only a signed-in user reaches a
-step-up.
+**A step-up adds one notice: that method cannot be checked right now.** It is the `unusable` reason, answered when a factor's stored secret will not
+open, and it tells the user to choose another method (§9a). It says nothing about membership, because only a signed-in user reaches a step-up.
 
 **On the primary path, throttled folds in too.** A known-but-throttled address answering "you are throttled" where an unknown one answers "that did
 not match" is the same membership answer, so `complete` reports both `too-many-attempts` and `too-soon` as `unrecognised` there. `stepUp` and
@@ -118,14 +123,29 @@ a lockout comprehensible.
 ### 2c. Where a Resolution Sends the Visitor
 
 A resolution that is not `satisfied` is **a successful outcome of a correct sign-in**, not a refusal of one, so it is a page to visit rather than a
-4xx: `enrolment-required` redirects to the enrolment page **for a kind it actually names** — or to the verify page first, while the user holds a
-confirmed second factor they have not yet passed (§8b) — `step-up-required` back to the verify page, and `satisfied` to
-the return path — the `?next=` value reduced to a same-origin path, or your `settledPath`. Both the guards and the sign-in actions read the
-resolution's `kinds`, because a passkey page cannot clear an owed authenticator-app enrolment and sending a visitor there is a loop.
+4xx. `enrolment-required` redirects to the enrolment page of the first kind it names — or to the verify page first, while the user holds a
+second factor or recovery codes they have not yet passed (§9b). Once that kind is confirmed, the next owed kind's page follows, in `offered` order.
+`step-up-required` goes back to the verify page, and `satisfied` to the return path: the `?next=` value reduced to a same-origin path, or your
+`settledPath`. The guards and the sign-in actions both pick the page from the resolution's `kinds`.
 
-The step-up mark is written in exactly one place, when a step-up verification succeeds, and a fresh sign-in clears it: proving the primary factor
-again proves nothing about the second. `requireEnrolment` answers **503** rather than redirecting when it cannot read the factor store, because a
-redirect on an unknown demand loops.
+The step-up mark lives on the signed-in session's D1 row. A step-up verification writes it by moving the row onto a new token, so a token read
+before the step-up does not carry it. A fresh sign-in creates a new row and deletes the one the session held, with no mark where a second factor is
+owed — proving the primary factor again proves nothing about the second — and marked at sign-in where the resolution is `satisfied`, since for
+that user the primary factor is the whole proof.
+
+**A step-up records the factor kind it was verified with, and nothing compares kinds.** The sessions page shows the kind (§7). No guard ranks one
+kind above another, so a step-up by recovery code satisfies a demand exactly as a passkey step-up of the same age does.
+
+**A user owing no second factor re-proves with an emailed code, and arriving at the verify page mails nothing.** When `require-fresh-step-up`
+sends such a user to verify, the page offers to send a code, and only that `POST` issues one: a `GET` with a side effect is one a cross-site
+navigation can trigger.
+
+**A failed D1 read is an outage everywhere in auth, and answers 503.** It is never folded into a guess. A guard that cannot read the session or
+the factor store, a redirect after a sign-in, step-up or enrolment that cannot read where the user stands, and an account page that cannot read
+the user's enrolments each answer 503. A redirect on an unknown demand loops, and a page drawn as though nothing were held offers what the
+minimum would refuse. Issuing a sign-up or sign-in code runs after the response, for the equal timing §1 and §2 owe, so it has no response
+to answer with. A failed account lookup there is logged as `auth.signup.issue.failed` or `auth.signin.issue.failed`, a failure inside the
+email-OTP factor as `auth.email-otp.<step>.failed` with the error it met, and the visitor's page does not change.
 
 ---
 
@@ -144,8 +164,10 @@ rather than failing after the visitor has committed.
 ### 3a. Enrolment
 
 `authRoutes`' `enrol.passkey` and `enrol.totp` pages are guarded by `require-pending-enrolment`, which admits **only** a visitor who owes an
-enrolment. One who owes a step-up instead is sent to verify it first — an owed step-up cannot be enrolled around — and so is one who owes an
-enrolment while holding a confirmed second factor (§8b). One who owes nothing is sent to the settled path.
+enrolment. **Nothing is chosen, because every owed kind must be enrolled:** a visitor owing several mandatory kinds is sent to the first one's page
+in `offered` order, and to the next once it is confirmed. One who owes a step-up instead is sent to verify it first — an owed step-up cannot be
+enrolled around — and so is one who owes an enrolment while holding another second factor or recovery codes (§9b). One who owes nothing is sent
+to the settled path.
 
 The ceremony posts to `enrol.ceremony.begin` for options and `enrol.ceremony.finish` with the credential. Registration excludes the credentials the
 user already has, so re-enrolling one authenticator is refused by the browser rather than by a database conflict later. `finish` writes no session
@@ -153,32 +175,65 @@ state: enrolment does not sign anyone in.
 
 **A settled user adds a passkey through the account, never through `enrol.passkey`.** `accountRoutes`' `passkeyEnrol` page runs the same
 ceremony against `passkeyCeremony.begin` and `passkeyCeremony.finish`, behind the `account` guards instead of the pending-enrolment one
-([`AUTH_MOUNTING.md`][am-2] §2). When the user is subject to a step-up and the last one has fallen outside the fresh window, the page sends them to
+([`AUTH_MOUNTING.md`][am-2] §2). When the last step-up has fallen outside the fresh window — single-factor users included — the page sends them to
 verify and back before it renders, because `require-fresh-step-up` admits every `GET`; the ceremony's own 403 is the backstop. `finish` lands on the
-`passkeys` list, or on the recovery-codes page when the user holds no unused codes (§8c). A user who still owes an enrolment is sent to
-`enrol.passkey`, because `require-enrolment` refuses them the whole `account` group.
+`passkeys` list, or on the recovery-codes page when the user holds no unused codes (§9c). A user who still owes an enrolment is sent to
+the `enrol` pages instead (§2c), because `require-enrolment` refuses them the whole `account` group.
 
 ### 3b. Sign-in
 
-**A primary factor must identify the visitor, and a passkey identifies nobody — so no configuration makes one start a sign-in.** The primary variant
-of `AuthFactorOffer` takes a service whose kind is drawn from `AUTH_IDENTIFYING_FACTORS`: offering the passkey as primary is a type error, and
-`createFactorRegistry` refuses it at runtime for a consumer casting past the type. The sign-in page therefore renders no passkey trigger in any
-deployment, and there are no discoverable endpoints to answer.
+**A primary factor must identify the visitor, and a passkey identifies nobody — so no configuration makes one start a sign-in.**
+`AuthFactorsOptions.primary` takes only a service whose kind is drawn from `AUTH_IDENTIFYING_FACTORS`: offering the passkey as primary is a type
+error, and `createFactorRegistry` refuses it at runtime for a consumer casting past the type. The sign-in page therefore renders no passkey
+trigger in any deployment, and there are no discoverable endpoints to answer.
 
 A passkey ceremony always requires user verification: it only ever runs as a step-up or an enrolment, and a fresh human gesture is the point of one.
 The second half of a sign-in runs the same step-up pair as any other step-up — §2c describes where its resolution sends the visitor.
 
 ### 3c. Management
 
-`accountRoutes`' `passkeys` page lists the visitor's credentials with their labels, creation and last-use times, a rename link and a remove control,
-and warns when removing the last credential would leave nothing to sign in with. Removing a passkey is scoped to its owner in the statement's own
-`WHERE`, so ownership is not a check a caller can forget. Its enrol link, and the one in its empty state, open the account ceremony (§3a).
+`accountRoutes`' `passkeys` page lists the visitor's credentials with their labels, creation and last-use times, a rename link and a remove control.
+Removing a passkey is scoped to its owner in the statement's own `WHERE`, so ownership is not a check a caller can forget. Its enrol link, and
+the one in its empty state, open the account ceremony (§3a). While the visitor holds exactly one passkey, the page also prompts them to add a
+backup on another device or a security key — losing the only one leaves a recovery code as the way back in — and links to the same ceremony.
 
-**Removing one signs every other session out.** The removal raises the account's revocation barrier, and every session established at or before it —
-including the ones on devices this request cannot see — is refused on its own next request. The acting session is carried past the barrier, so the
-visitor stays where they are. Removing the authenticator-app factor does the same.
+**The last confirmed factor of a mandatory kind is never removed, and the store holds the line (§2a).** `FactorStore.remove` and
+`CredentialStore.removeForUser` take the floor — the mandatory kinds — and answer `second-factor-required` for a removal that would take a user's
+last confirmed factor of one. An optional kind's last factor goes like any other. The check runs in the batch that deletes, so where passkeys are
+mandatory, of two concurrent removals of a user's last two passkeys exactly one lands, and a refusal writes no event and signs nobody out. The store
+refuses whoever calls; the one way below the minimum is the administrator's reset (§9e). Where the authenticator app is mandatory, the `totp` page
+disables its remove control and points to replacing it instead; where passkeys are mandatory, the `passkeys` page disables removing a user's only
+passkey and tells them to add another first. A removal that arrives anyway re-renders the page at **409** and sends no notice. Each page reads the
+user's enrolments once, and a failed read answers 503 (§2c).
 
-**No configuration removes the limits that apply to this page** — §7 states them.
+**Replacing the authenticator app in place is not a removal, so the minimum never comes into it.** The new secret is written over the old one
+on the same row, which is never deleted, so at no instant does the user hold no second factor. A user who loses the app steps up with another
+second factor or a recovery code and replaces it; the administrator's reset (§9e) is left for a user holding neither.
+
+- **Where it starts.** The `totp` page links to `accountRoutes`' `totpReplace` page, which shows a new secret, and the code from it posts to
+  `totpReplaceConfirm`. The link appears only on the account mount, and only where the offered authenticator-app factor can replace.
+- **A fresh step-up, checked in the handler.** The page and the `POST` both measure the step-up against the `require-fresh-step-up` window the way
+  the recovery-code `POST`s do (§9c), the page included, because it hands out a secret. A stale one is sent to verify and brought back, where the
+  current app or a recovery code satisfies it.
+- **Nothing changes until a code from the new app commits.** The old secret keeps verifying until then, so an abandoned replacement costs nothing.
+  The pending secret is held sealed in the challenge store, bound to the session that asked, for the lifetime `src/auth/factors/totp-app.ts`
+  gives it.
+- **Wrong codes spend the pending secret's own budget**, `maxAttempts`, never the live row's. At the limit, or once it lapses, the pending secret is
+  dropped, and the page shows a new one and tells the user to add that to their app.
+- **The commit is one batch:** the new secret, the confirming step and a cleared budget on the row, a `factor-replaced` event, and every other
+  session signed out. The user lands on the `totp` page and is sent a notice (§7).
+- **A row removed before the commit is not recreated.** Where another session or an administrator's reset took it first, the user lands on the
+  `totp` page, which says so, and no notice is sent.
+
+A passkey needs no such path: a user may hold several, so a new one is enrolled beside the old before the old is removed.
+
+**Removing one signs every other session out, and so does every other change to how the account steps up.** Adding or removing a passkey,
+adding, removing or replacing the authenticator app, confirming a new set of recovery codes and spending a recovery code each delete every session
+row the account holds except the acting one. The delete runs in the batch of the change and only where the change landed, so a wrong code or a
+refused write signs nobody out. A session on a device this request cannot see is anonymous on its own next request, and the visitor stays where
+they are. What signs out every session, the acting one included, is §7.
+
+**No configuration removes the limits that apply to this page** — §8 states them.
 
 ### 3d. PRF Output Stays in the Page
 
@@ -210,7 +265,7 @@ construction.
 The page is mounted **twice**, and the two are not interchangeable. `authRoutes`' `enrol.totp` sits in `auth.enrol` behind
 `require-pending-enrolment` and is where a visitor who _owes_ the enrolment clears it, because `require-enrolment` refuses the whole `account` group
 while that enrolment is outstanding. `accountRoutes`' `totp` sits in `account` and is the settled visitor's management page; only it offers removal
-(`totpRemove`), there being nothing to remove until something is enrolled.
+(`totpRemove`) and replacement (`totpReplace`, §3c), there being nothing to remove or replace until something is enrolled.
 
 Either mount renders the secret twice — as base32 to type, and as an `otpauth://` URI to paste. **Forge renders no QR code**; the URI is the seam
 for one, and drawing it is yours. Submitting the code (`enrol.totpEnrol` or `totpEnrol`) confirms the enrolment, accepting one step of clock drift
@@ -223,9 +278,8 @@ attempts each spend one rather than all comparing against a count none has writt
 **A spent budget reopens on its own, and the window is why a run of typos is not a permanent lock.** An accepted code clears the count, and so does
 the first guess made more than `lockoutMs` after the one that hit the cap — the same `UPDATE` that admits it resets the count to 1. The default is
 `AUTH_TOTP_LOCKOUT_MS`, configurable on `TotpAppFactorOptions` up to a day, because a longer window is the permanent lock this exists to prevent. A
-refused guess writes nothing, so
-the window runs from the moment the cap was hit rather than from the last attempt, and hammering the factor cannot hold it shut. Without the window
-a user who mistypes `maxAttempts` times loses the factor for good, and where that factor is the deployment's one `"mandatory"` second factor, that
+refused guess writes nothing, so the window runs from the moment the cap was hit rather than from the last attempt, and hammering the factor cannot
+hold it shut. Without the window a user who mistypes `maxAttempts` times loses the factor for good, and where it is their only second factor, that
 is the whole account. The ceiling holds on the enrolment ceremony too, which answers the same secret.
 
 The secret is stored sealed under a per-purpose subkey with the user's own identity as associated data, so a secret lifted from one row cannot be
@@ -246,15 +300,18 @@ stored secret will not open, which is a rotated key rather than an abandoned att
 token and defers delivery of a link built by your `confirmUrl`. The page then says a confirmation has been sent — a 200 with a notice, not a
 redirect, because nothing has changed yet.
 
+**An account may ask for a change once per cooldown.** A request inside `AuthEmailChangeOptions.cooldownMs` of the account's last one —
+`AUTH_EMAIL_CHANGE_COOLDOWN_MS` unless set — is refused as `too-soon` and sends nothing, and the page asks the visitor to try again in a few
+minutes. The cooldown is the one bound on how much mail an account can have sent to an address it names.
+
 **The first link goes to the address the account already holds**, whenever that address is verified, so the move is authorised by whoever owns the
 current mailbox rather than by whoever holds the session — without which a stolen cookie moves the account to the thief's inbox and, with email-OTP
 as the primary factor, locks the owner out for good. An unverified address has proved nothing, so there the new one is the only address to ask and
 gets the link instead.
 
 **Name `sentTo` on the page, not the address the visitor typed.** `AuthEmailChangeFlow.request` answers `AuthEmailChangeRequest`, whose `sentTo` is
-the address the mail actually went to — and which of the two addresses that is depends on whether the account's own is verified. The
-shipped action renders the flow's answer for exactly that reason; a page that echoes the typed address tells half its visitors to watch the wrong
-inbox.
+the address the mail actually went to — and which of the two addresses that is depends on whether the account's own is verified. The shipped action
+renders the flow's answer for exactly that reason; a page that echoes the typed address tells half its visitors to watch the wrong inbox.
 
 **The token carries a stage, and only a `move` token changes the row.** A link mailed to the address the account already holds carries `approve`:
 answering it writes nothing and instead forwards a second link, carrying `move`, to the new address. Answering _that_ one moves the account. An
@@ -300,9 +357,9 @@ and never opens the second link.
 **The token is encrypted, not merely signed.** The confirmation carries an address in a URL, and a URL lands in browser history, the `Referer`
 header, corporate link scanners and proxy logs; a signed cleartext token hands the address to every one of them.
 
-**A completed move signs every session out, this one included.** The address is the account's identity, so the `move` stage raises the revocation
-barrier and nothing is carried over it: the confirmation link is opened from whatever browser answered the mail, which is not necessarily one the
-account was signed in on. Render the `moved` page as a page that asks the visitor to sign in again.
+**A completed move signs every session out, this one included.** The address is the account's identity, so the `move` stage deletes every session
+row the account holds in the batch that writes the address, and spares none: the confirmation link is opened from whatever browser answered the
+mail, which is not necessarily one the account was signed in on. Render the `moved` page as a page that asks the visitor to sign in again.
 
 ---
 
@@ -325,11 +382,12 @@ Deleting a user removes its children first, in one batch that rolls back whole. 
 the delete, and the page answers **409** with the outcome `referenced`: the app's own records go first.
 
 **An account's factors page carries a reset control**, the last resort for a user who has lost every second factor and every recovery code.
-What it clears and what it allows is §8e.
+What it clears and what it allows is §9e.
 
 **Elevation is the first-admin bootstrap, which is why it is not admin-gated.** A signed-in, enrolment-satisfied visitor may claim the role only
 while there is no admin at all, and the count is re-read **at write time** — the check on the page is a courtesy, and the one at the write is what
-stops two simultaneous visitors becoming two first admins.
+stops two simultaneous visitors becoming two first admins. **The claim moves the claimant's session onto a new token in the same batch**, and
+only where the claim landed, so the token held before the claim never ends up elevated.
 
 **The claim is two steps: an administrator approval, then the confirmation.** A visitor whose session holds no approval inside the window is sent
 to the approval prompt to present the administrator code, then returned to the claim page. Only after that do they confirm. The claim form asks for
@@ -341,22 +399,57 @@ challenge fails is not told their code is wrong. How the approval is defined and
 anonymous session that became it. A visitor who presented the code during sign-up is therefore asked for it again at the claim, after they sign
 in. The same holds for an approval granted while another user was signed in on the same browser.
 
+**An approval lives in the session for every visitor, signed in or not, and not on the signed-in session's row.** It has to, because an
+anonymous sign-up can be held behind one. So ending a sign-in from elsewhere — another device's revoke, a deactivation — ends the approval only
+where the route also runs `require-auth`, as `admin.elevate` does. On a route without it, the approval holds until its window runs out.
+
 ---
 
-## 7. Limits in This Release
+## 7. Sessions and Security Events
+
+**`accountRoutes`' `sessions` page lists the user's live sessions, and signs any other one out.** Each row shows the device, when it signed in,
+when it was last used and the factor it last stepped up with, and marks the session the page is read from. A row's sign-out posts the session's
+public id to `sessionRevoke` as a form field, so one CSRF token serves every row. "Sign out everywhere else" posts to `sessionsRevokeOthers`. Both
+`POST`s sit in the `account` group behind `require-fresh-step-up`. An id the user does not hold answers 404, and so does the current session's own
+id, which only sign-out ends. The factors page links the list, and adding it to your app's navbar is yours ([`AUTH_MOUNTING.md`][am-5] §5).
+
+**The device is a coarse label, never the client's own words.** A label such as "Firefox on macOS" is read off `User-Agent` at sign-in against a
+fixed table of browser and platform names, and is absent where neither is recognised. Neither the user agent nor an IP address is stored.
+
+**Sign-ins, step-ups and changes to an account's security each write one `auth_security_events` row.** `AuthSecurityEventType` in
+`src/auth/types.ts` is the list: a sign-in, a step-up, sessions signed out, and every change to a factor, the recovery codes, the address, the
+administrator role or the account's status. `createSecurityEventStore` reads an account's rows, newest first.
+
+**A row holds the event type, the factor kind, the acting session's public id, the acting administrator and the time.** It never holds an
+address, an IP address, a user agent, a code, a token or a token's hash.
+
+**The row is written in the same batch as the change it records.** A refused write leaves no row, and a failed batch rolls the row back with the
+change, so a row exists exactly where its change landed.
+
+**The account holder is told about changes, not about sign-ins.** After a factor is added, removed or replaced, recovery codes are issued or one is
+spent, the administrator role is granted or revoked, the factors are reset, or the account is deactivated or reactivated, the account's address is
+sent a `security-event` message through your `AuthNotifier`. A sign-in, a step-up and a sessions sign-out send nothing; `AuthNotifiedEventType`
+is the list. **An address change is told to the old address**, because the new one belongs to whoever moved the account.
+
+**A notice is best-effort, and the event row is the durable record.** The notice is sent after the response through your `AuthDeferral`. A delivery
+that fails is logged as `auth.security-notice.failed`, and is neither retried nor thrown. No notice is sent for a write whose row did not land.
+
+**Rows are kept for a year, and go with the account.** `purgeAuthEphemera` deletes a row older than `AUTH_SECURITY_EVENT_TTL_MS` (365 days);
+`AuthEphemeraPurgeOptions.securityEventTtlMs` changes that, but never below thirty days. A backlog older than that goes over several runs, since
+each run deletes a bounded number. Deleting the account deletes its rows. An administrator's factor reset keeps them.
+
+**Some changes sign out every session, the acting one included:** a completed address change (§5), a deactivation (§6) and the administrator's
+reset (§9e). A factor change spares the acting session (§3c).
+
+---
+
+## 8. Limits in This Release
 
 Stated here rather than left to be discovered, because each changes what a consumer must build.
 
-**A passkey list of more than one is not fully operable.** The page carries a single CSRF token and renders one delete form per row, and a token is
-bound to one path — so on a list of several credentials, only the first row's Remove succeeds. Supply your own list page until the view takes a
-token per row.
-
-**A passkey cannot be renamed through forge's own markup.** The `PATCH` route, its schema and its action all work; no shipped view submits a label,
-and the rename link resolves to a page that shows the credential rather than a form. Supply the page through the view-override seam if you want it.
-
 **Rate limiting is yours to configure, and forge ships no numbers.** The seam exists — `AuthGuardChainOptions.rateLimit`, keyed by group path,
-[`AUTH_MOUNTING.md`][am-1] §1 — and nothing is mounted until you fill it. The OTP and TOTP counters bound one code's life and say nothing about how
-often a caller may ask across identities, so outbound email is triggerable by anyone until you attach a limit.
+[`AUTH_MOUNTING.md`][am-1] §1 — and nothing is mounted until you fill it. The OTP and TOTP counters bound the guesses against one identity and say
+nothing about how often a caller may ask across identities, so outbound email is triggerable by anyone until you attach a limit.
 
 **No mutation is held across a re-authentication.** When `requireFreshStepUp` refuses a state-changing request, the visitor steps up, lands on the
 settled page and repeats the action — forge keeps no pending write to replay for them.
@@ -370,28 +463,43 @@ enrolled value on every assertion, so a changed one is refused as the misreporti
 credential outright is right for a high-assurance tenant and wrong for a consumer product — read both off `CredentialStore` and decide.
 
 **A new set of recovery codes has no print view.** The user copies the set from the codes page, the only place it is shown, before confirming one
-of the codes. That it is never offered as a download is a ruling rather than a limit (§8c).
+of the codes. That it is never offered as a download is a ruling rather than a limit (§9c).
 
 **Federated identity is not here.** An OIDC relying party or OAuth2 provider is a subpath of its own under the same one-way rule
 ([`NAMESPACES.md`][namespaces-5h] §5h).
 
+**Anyone who knows an address can spend its emailed-code guesses.** A code is bound to the browser that asked for it (§1), but the guess budget
+belongs to the account. So an attacker can ask for a code for someone else's address, which binds it to the attacker's browser, and spend the
+account's guesses there. Until the guess window (`AUTH_OTP_GUESS_WINDOW_MS`) reopens, the owner's own code is refused, and sign-in tells them only
+that it did not match (§2b). A request made once the cooldown (`AUTH_OTP_COOLDOWN_MS` by default) has run also replaces the live code with a new
+one, mailed to the owner but bound to the browser that asked, so the code the owner holds stops working and the one they are sent works only in the
+asker's browser. That needs nothing beyond the address and grants no guess the account's budget does not already allow. This is accepted. A budget
+per browser would give every new browser a fresh set of guesses at the account, so the budget stays per account. A rate limit on the sign-in group
+(above) is what narrows how often one caller can do it.
+
+**Under D1 read replication, a revocation can lag on another device.** A session ended from one device is a deleted row, and a read on another
+device can land on a replica that has not seen the delete yet. With `d1Sessions` and a bookmark carrier, that device's reads start from its own
+last bookmark or from any replica, so it can stay signed in until the replica catches up. Without read replication every read reaches the
+primary, and a revocation holds on the next request. How the bookmark carrier routes a read is
+[`STORAGE_BINDINGS.md`][sb-1g] §1g.
+
 ---
 
-## 8. Recovery — No Lost Value Locks an Account Out or Lets It In on Less
+## 9. Recovery — No Lost Value Locks an Account Out or Lets It In on Less
 
 **No missing key, device or code may lock an account out, and none may let it in on less than it needed before.** Every way back below passes
-through a second factor the user still holds. The one exception is the administrator's reset (§8e), and it is deliberate.
+through a second factor the user still holds. The one exception is the administrator's reset (§9e), and it is deliberate.
 
 | What was lost | What the user sees | How they get back in |
 | --- | --- | --- |
-| The ring key an authenticator-app secret is sealed under, or a secret that will not open under it | The verify page says the method cannot be checked right now, and offers their other methods | Step up with a passkey or a recovery code, then remove the authenticator app and add it again. Putting the key back in the ring makes the old enrolment work again |
-| An authenticator-app row `purgeStaleTotpSecrets` dropped | The verify page, not the enrolment page | Step up with another confirmed factor or a recovery code, then enrol again (§8b) |
-| The phone or security key itself | The verify page | Choose a recovery code, then replace the lost factor from the repair page (§8d) |
+| The ring key an authenticator-app secret is sealed under, or a secret that will not open under it | The verify page says the method cannot be checked right now, and offers their other methods | Step up with a passkey or a recovery code, then replace the app in place (§3c). Putting the key back in the ring instead makes the old enrolment work again |
+| An authenticator-app row `purgeStaleTotpSecrets` dropped | The verify page, not the enrolment page | Step up with another second factor or a recovery code, then enrol the app again, since the purge runs only where it is mandatory (§9b) |
+| The phone or security key itself | The verify page | Choose a recovery code, then replace the lost factor from the repair page (§9d) |
 | The session secret | A signed-out session | Sign in again with the address and the second factor |
 | The CSRF secret | A 403 on a form already on screen | Reload the page and submit again |
-| Every second factor and every recovery code | No way to step up | An administrator resets the account (§8e) |
+| Every second factor and every recovery code | No way to step up | An administrator resets the account (§9e) |
 
-### 8a. Choosing a Factor at Step-Up
+### 9a. Choosing a Factor at Step-Up
 
 **The verify page offers every second factor the user has confirmed, recovery codes included.** It presents the first in `offered` order and
 links each of the others. The link names the kind as `?factor=<kind>` and keeps the return path, and the form posts to the same query. The server
@@ -402,31 +510,29 @@ spends an attempt, and the enrolment stays confirmed, so a key put back in the r
 of §2b and the other methods, and logs `auth.factor.unusable` at warn with the factor's kind. That log is the operator's cue; what to do on it is
 [`src/auth/README.md`][auth-readme]'s.
 
-### 8b. A Confirmed Second Factor Comes Before Any Enrolment
+### 9b. A Held Factor Is Passed Before Any Enrolment
 
-**A user who owes an enrolment while holding a confirmed second factor passes that factor first.** `resolve` answers `enrolment-required` with
-`stepUpKinds`, the second kinds this user has confirmed. While that list is not empty and the session holds no step-up mark inside
-`stepUpMaxAgeMs`, sign-in, verify, `require-auth` and `require-pending-enrolment` all send the user to verify. A mark dated in the future counts as
-none. Verify measures the mark against the same window as the guards, so the two cannot bounce a user between them. After the step-up they go on to
-the enrolment page.
+**A user who owes an enrolment while holding a second factor or recovery codes passes one first.** `resolve` answers `enrolment-required` with
+`stepUpKinds`, which names the offered second factors this user holds, and `recovery-code` when they hold codes. While that list is not empty and
+the session holds no step-up mark inside `stepUpMaxAgeMs`, sign-in, verify, `require-auth` and `require-pending-enrolment` all send the user to
+verify. A mark dated in the future counts as none. Verify measures the mark against the same window as the guards, so the two cannot bounce a user
+between them. After the step-up they go on to the enrolment page.
 
-Without this, holding the mailbox would be enough to enrol an authenticator of your own. It is reachable in two ordinary ways: after
-`purgeStaleTotpSecrets` drops a row under a `"mandatory"` authenticator app, and with a mandatory factor offered beside an optional one the user has
-already confirmed.
+Without this, holding the mailbox would be enough to enrol an authenticator of your own. The ordinary way to reach it is `purgeStaleTotpSecrets`.
+The purge runs only where `totp-app` is offered as mandatory. It drops a stale row only from a user who holds another confirmed offered second
+factor or an unused recovery code, and keeps the row of anyone who holds neither. It answers a `TotpSecretPurgeReport` counting both. A replacement
+(§3c) seals the new secret under the active key, so a user the purge was keeping leaves its `kept` count by replacing the app.
 
-### 8c. Recovery Codes
+### 9c. Recovery Codes
 
-**An offering that includes an authenticator app or a passkey must include recovery codes.** `createFactorRegistry` throws at construction when:
+**Recovery codes are required beside the second factors, and are not one of them.** `AuthSecondFactorOffering` takes them as `recovery`, apart
+from `offered`, because a lost device or key would otherwise lock its users out. So an offering without codes, codes offered as the primary or
+among `offered`, and a requirement set on codes are each a type error, and `createFactorRegistry` throws on the same shapes for a caller casting
+past the types. Codes pass a step-up, but the user does not elect them, and they are neither mandatory nor optional: no minimum counts them (§2a).
 
-- `totp-app` or `passkey` is offered as a second factor without `recovery-code`, because a lost device or key would lock its users out;
-- `recovery-code` is offered as primary;
-- `recovery-code` is offered with a requirement other than `"optional"`, because codes are issued after a step-up and so can never be owed before
-  one;
-- `recovery-code` is the only explicit second factor, because codes recover a factor and have nothing to recover on their own.
-
-**Codes are issued only to a user who holds a confirmed authenticator app or passkey and has stepped up inside the `require-fresh-step-up`
-window.** Both code `POST`s check this in the handler, not through `require-fresh-step-up`, which admits a user the policy owes no step-up. Without
-it, holding the mailbox would be enough to mint a way past the second factor. A user holding neither factor gets a 409, and a stale step-up is
+**Codes are issued only to a user who holds a confirmed second factor and has stepped up inside the `require-fresh-step-up`
+window.** Both code `POST`s check this in the handler, not through `require-fresh-step-up` alone, which a mount can turn off with `null`. Without
+it, holding the mailbox would be enough to mint a way past the second factor. A user holding no such factor gets a 409, and a stale step-up is
 redirected to verify and brought back to the codes page.
 
 **The handler measures the step-up against the window the guard is configured with, never a window of its own.** A tightened
@@ -444,27 +550,31 @@ endpoint, not a `data:` link and not a blob the page builds. Only the SHA-256 of
 **Each code works once.** Using one spends it and clears the factor's spent guesses in the same batch. A wrong code spends a guess, against the
 same `maxAttempts` and `lockoutMs` budget the authenticator app uses. Spaces, dashes and letter case are ignored.
 
-**A user who holds no unused codes is sent to generate them.** After every step-up or enrolment, a user holding a confirmed authenticator app or
-passkey and no unused codes is redirected to the codes page. Enrolling is not a step-up, so after a first enrolment the user proves the new factor
+**A user who holds no unused codes is sent to generate them.** After every step-up or enrolment, a user holding a confirmed second factor and
+no unused codes is redirected to the codes page. Enrolling is not a step-up, so after a first enrolment the user proves the new factor
 once on verify before the codes page lets them generate.
 
-**Removing the last authenticator app or passkey removes the codes with it**, in the same batch, so no account is left holding codes alone.
+**Removing the last second factor removes the codes with it**, in the same batch, so no account is left holding codes alone.
 
-### 8d. A Code Lands on the Repair Page
+### 9d. A Code Lands on the Repair Page
 
 **A step-up by recovery code always lands on the account's factors page with `?recovered=1`**, whatever return path the step-up began with. The
-page says how many unused codes are left, and tells the user to remove an authenticator that does not work, add it again, and then generate a new
-set. A code is spent on getting in, so the repair is the next thing the user must see.
+page says how many unused codes are left and how to repair the factor that stopped working, then to generate a new set. A user holding an
+authenticator app the factor can replace is linked to replace it in place (§3c), because a second app row is impossible. A passkey is added
+before the old one is removed, since removing it first may be refused (§3c). Where the app cannot be replaced, the page gives the
+add-before-remove advice for both. A code is spent on getting in, so the repair is the next thing the user must see.
 
-### 8e. The Administrator's Reset Is the Last Resort
+### 9e. The Administrator's Reset Is the Last Resort
 
-**The reset deletes the user's factors, passkeys and recovery codes, revokes every bearer token they hold, and raises their revocation barrier,
-in one batch.** Every session and every token the user holds is refused on its next request. The control is on the account's admin factors page
+**The reset deletes the user's factors, passkeys, recovery codes and sessions, and revokes every bearer token they hold, in one batch.** Every
+session and every token the user holds is refused on its next request. The control is on the account's admin factors page
 and posts to `adminRoutes`' `users.resetFactors`, which sits in `admin.users`, so the administrator must have stepped up recently.
 
-**This is the one path back that lets an account in on less than it needed before.** The user signs in with the address alone. Where a second
-factor is demanded they enrol it on the strength of the mailbox and are then sent to generate codes; where none is, they are simply signed in.
-That is why the reset takes an administrator rather than anything the user can do.
+**This is the one path below the second-factor minimum (§3c), and the one that lets an account in on less than it needed before.** It is for a
+user who has lost every device and every code; a user with a recovery code left replaces a lost authenticator app in place instead (§3c).
+They sign in with the address alone. Where a second factor is mandatory, they reach nothing until they enrol each mandatory kind, on the strength
+of the mailbox, and are then sent to generate codes. Where none is, zero is already the minimum, and they are simply signed in. That is why the
+reset takes an administrator rather than anything the user can do.
 
 **An administrator cannot reset their own account.** The request answers 409 with the outcome `self`, and an unknown user answers 404.
 
@@ -472,10 +582,12 @@ That is why the reset takes an administrator rather than anything the user can d
 [am-1]: ./AUTH_MOUNTING.md#1-the-mount-in-order
 [am-2]: ./AUTH_MOUNTING.md#2-the-route-groups-and-their-guards
 [am-3]: ./AUTH_MOUNTING.md#3-what-forge-does-not-ship
+[am-5]: ./AUTH_MOUNTING.md#5-what-mounting-costs-you
 [am-6]: ./AUTH_MOUNTING.md#6-embedding-an-auth-view-in-your-own-page
 [auth-readme]: ../src/auth/README.md
 [eh-1c]: ./FORGE_ERRORS.md#1c-guardresult-and-validationresult-domain-aliases
 [eh-5e]: ./FORGE_ERRORS.md#5e-startup-invariants--env-validation-and-binding-resolvers-throw
 [namespaces-5h]: ./NAMESPACES.md#5h-auth--identity-and-only-the-domain-of-it
 [ram-6]: ./ROUTING_AND_MIDDLEWARE.md#6-the-page-shell
+[sb-1g]: ./STORAGE_BINDINGS.md#1g-transactions--batch-is-the-boundary
 [ucr-3c]: ./UI_CLIENT_RUNTIME.md#3c-resumable-scopes

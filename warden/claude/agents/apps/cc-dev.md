@@ -78,7 +78,6 @@ whose dependency is missing, never swallow a verification error, never let PII r
 
 ### Before Writing Code
 
-- Read the target file in full — patterns, imports, style.
 - **Check the shared library before writing a cross-cutting helper** (`FORGE_CONSUMPTION.md` §1a).
 - Find every caller of any function whose signature you are changing, and update all of them.
 - Confirm no equivalent already exists before adding a symbol.
@@ -123,8 +122,6 @@ Stop and report rather than proceeding, when:
   change instead.
 - **A second fix has failed the same check on the same root cause.** A third attempt at the same fix is guessing. Report what you tried and what
   the check says.
-- **You have found scope creep — even when it is an improvement.** A better name, a cleaner abstraction, an adjacent bug: note it in your return, do
-  not implement it. Unrequested improvements are the most expensive kind of change to review.
 
 ## Return Format
 

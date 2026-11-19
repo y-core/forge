@@ -2,10 +2,15 @@
 // `src/auth/schema.sql` is posted rather than imported, so what runs is the build a consumer takes.
 import { readFileSync } from "node:fs";
 
+import { createAdminUserStore } from "../../src/auth/stores/admin-users";
+import { createD1Client } from "../../src/storage/db/client";
+import { uuidToBytes, uuidv7 } from "../../src/storage/db/uuid";
+import type { TestD1 } from "../../src/testing/d1";
+import { openAuthD1, signedUp, tokenHash } from "./auth-d1.fixture";
 import { expect, harnessTest } from "./harness.fixture";
 
 const test = harnessTest({ config: new URL("../fixtures/auth-d1/wrangler.jsonc", import.meta.url).pathname });
-const SCHEMA = readFileSync(new URL("../../src/auth/schema.sql", import.meta.url).pathname, "utf8");
+const SCHEMA = readFileSync(new URL("../../src/auth/schema.sql", import.meta.url).pathname, "utf-8");
 
 function get(origin: string, path: string): Promise<Record<string, unknown>> {
   return fetch(`${origin}${path}`).then((res) => res.json() as Promise<Record<string, unknown>>);
@@ -42,8 +47,6 @@ test.describe("D1 open question — batch() under a mid-batch failure", () => {
     // Held exactly, because `storeError`'s regex is built around this text: the index name ends at
     // the colon before `SQLITE_CONSTRAINT`, which is what the fixture messages in the store specs copy.
     expect(probe.batchError).toBe("D1_ERROR: UNIQUE constraint failed: probe_batch.id: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_PRIMARYKEY)");
-    // Nothing survives: `batch()` is one implicit transaction, which is what lets the admin delete
-    // remove a user's children and the user together without a half-deleted account being possible.
     expect(probe.survivingRows).toEqual([]);
   });
 });
@@ -86,8 +89,8 @@ test.describe("D1 open question — which field a write reports rows-affected in
   });
 
   test("counts a matched row whose value did not change, so re-stamping a state is `changed` and not a refusal", async ({ served }) => {
-    // `setDeactivated` on an already-deactivated user, and `setAdmin(false)` on a non-admin, both
-    // rest on this: the row matched the guard, so the write was allowed, whatever it wrote.
+    // `setAdmin(false)` on a non-admin rests on this: the row matched the guard, so the write was
+    // allowed, whatever it wrote.
     const probe = (await get(served.origin, "/rows-written")) as Record<string, { resolved: number }>;
     expect(probe.updateNoOp?.resolved).toBe(1);
   });
@@ -123,8 +126,8 @@ test.describe("the shipped store adapters against real D1", () => {
 
   test("scopes every factor and credential write to its owner, spends the TOTP budget, refuses a replayed step, and clears every child table", () => {
     expect(guards.ownership).toEqual({
-      removeByStranger: false,
-      removeByOwner: true,
+      removeByStranger: "not-found",
+      removeByOwner: "changed",
       // The count each guess reports is the count that guess wrote, straight out of `RETURNING`.
       spendFirst: 1,
       spendSecond: 2,
@@ -139,15 +142,12 @@ test.describe("the shipped store adapters against real D1", () => {
       spentSecretCarried: 9,
       unlinkByStranger: false,
       unlinkByOwner: true,
-      revokeSessions: true,
-      // Monotonic: an earlier instant must not walk the barrier back and revive a refused session.
-      revokeSessionsBackwards: false,
       advanceByStranger: false,
       advanceFirst: true,
       advanceReplay: false,
       spentAfterAdvance: 0,
       confirmByStranger: false,
-      removeFactorByStranger: false,
+      removeFactorByStranger: "not-found",
       removeUser: "changed",
       // Only `frank` is left: the delete batch took the user and every child row together.
       leftBehind: {
@@ -192,12 +192,11 @@ test.describe("the shipped store adapters against real D1", () => {
       remainingAfterCommit: 2,
       consumeRetired: false,
       consumeSwapped: true,
-      removeLastTotp: true,
+      removeLastTotp: "changed",
       codesAfterRemove: 0,
       codeFactorsAfterRemove: 0,
       resetFactors: "changed",
-      sessionsInvalidBefore: 1_700_000_000_020,
-      leftAfterReset: { auth_credentials: 0, auth_factors: 0, auth_recovery_codes: 0 },
+      leftAfterReset: { auth_credentials: 0, auth_factors: 0, auth_recovery_codes: 0, auth_sessions: 0 },
     });
   });
 
@@ -224,6 +223,91 @@ test.describe("the shipped store adapters against real D1", () => {
       factorKept: 1,
       unknownOwnerCode: "reference",
       afterClearing: "changed",
+    });
+  });
+
+  test("lets exactly one of two concurrent removals of a mandatory passkey through, and with the app mandatory refuses the app while the optional passkey goes", () => {
+    expect({ passkeyPair: guards.secondFactorFloor?.passkeyPair, totpAndPasskey: guards.secondFactorFloor?.totpAndPasskey }).toEqual({
+      passkeyPair: ["changed", "second-factor-required"],
+      totpAndPasskey: { totp: "second-factor-required", passkey: "changed" },
+    });
+    expect({ pia: guards.secondFactorFloor?.piaLeft, quinn: guards.secondFactorFloor?.quinnLeft }).toEqual({
+      pia: { credentials: 1, secondFactors: 1, removedEvents: 1, sessions: 0 },
+      quinn: { secondFactors: 1, kinds: ["totp-app"], credentials: 0, removedEvents: 1, sessions: 0 },
+    });
+  });
+
+  test("refuses a mandatory app without an event or a revoked session, still removes a pending app, and lets an admin reset clear a user at the minimum", () => {
+    expect(guards.secondFactorFloor).toMatchObject({
+      lastRefused: "second-factor-required",
+      rheaAfterRefusal: { secondFactors: 1, removedEvents: 0, sessions: 1 },
+      resetAtMinimum: "changed",
+      rheaAfterReset: { secondFactors: 0, removedEvents: 0, sessions: 0 },
+      pendingRemoved: "changed",
+      saulLeft: { secondFactors: 1, removedEvents: 0, sessions: 0 },
+    });
+  });
+
+  test("lets a user's last optional passkey go, recording the removal and revoking their other sessions", () => {
+    expect({ removed: guards.secondFactorFloor?.lastOptionalPasskey, left: guards.secondFactorFloor?.tessLeft }).toEqual({
+      removed: "changed",
+      left: { credentials: 0, secondFactors: 0, removedEvents: 1, sessions: 0 },
+    });
+  });
+
+  test("refuses a user's last mandatory passkey without an event, a revoked session or a dropped credential", () => {
+    expect({ refused: guards.secondFactorFloor?.lastPasskeyRefused, left: guards.secondFactorFloor?.ivyLeft }).toEqual({
+      refused: "second-factor-required",
+      left: { credentials: 1, secondFactors: 1, removedEvents: 0, sessions: 1 },
+    });
+  });
+
+  test("counts a passkey only while its factor row is confirmed, so an app beside an unconfirmed passkey is the last second factor", () => {
+    expect({ outcomes: guards.secondFactorFloor?.unconfirmedPasskey, left: guards.secondFactorFloor?.umaLeft }).toEqual({
+      outcomes: { totpRemoval: "second-factor-required", passkeyRemoval: "changed" },
+      left: { credentials: 0, secondFactors: 1, removedEvents: 1, sessions: 0 },
+    });
+  });
+
+  test("lets an optional kind go and refuses a mandatory one, whatever else the user holds", () => {
+    expect({ outcomes: guards.secondFactorFloor?.kindOutsideFloor, left: guards.secondFactorFloor?.vicLeft }).toEqual({
+      outcomes: {
+        passkeyUnderPasskeyFloor: "second-factor-required",
+        totpUnderTotpFloor: "second-factor-required",
+        passkeyUnderTotpFloor: "changed",
+        totpUnderPasskeyFloor: "changed",
+      },
+      left: { credentials: 0, secondFactors: 0, removedEvents: 2, sessions: 0 },
+    });
+  });
+
+  test("keeps a stale TOTP row whose owner could step up with nothing else, purges one beside a confirmed passkey or unused codes, and counts what it kept", () => {
+    expect(guards.staleTotpPurge).toMatchObject({
+      report: { purged: 3, kept: 4 },
+      totpOnly: { totp: true, codes: 0 },
+      withPasskey: { totp: false, codes: 0 },
+      withCodes: { totp: false, codes: 1 },
+      unconfirmedPasskey: { totp: true, codes: 0 },
+      stagedCodes: { totp: true, codes: 0 },
+      fresh: { totp: true, codes: 0 },
+    });
+  });
+
+  test("keeps a stale TOTP row whose owner has spent every recovery code, and drops a never-confirmed one nobody steps up with", () => {
+    expect({ usedCodes: guards.staleTotpPurge?.usedCodes, pendingTotp: guards.staleTotpPurge?.pendingTotp }).toEqual({
+      usedCodes: { spent: true, totp: true, codes: 0 },
+      pendingTotp: { totp: false, codes: 0 },
+    });
+  });
+
+  test("refuses a second authenticator-app row for one user, so no stale row can sit beside a fresh one", () => {
+    expect(guards.staleTotpPurge?.secondTotp).toBe("conflict");
+  });
+
+  test("removes a pending app that is a user's only factor row, recording no event and revoking no session", () => {
+    expect({ outcome: guards.secondFactorFloor?.onlyPendingRemoved, left: guards.secondFactorFloor?.wadeLeft }).toEqual({
+      outcome: "changed",
+      left: { factors: 0, secondFactors: 0, removedEvents: 0, sessions: 1 },
     });
   });
 });
@@ -295,5 +379,104 @@ test.describe("D1 open question — the JavaScript shape of a BLOB column", () =
       isArrayBuffer: false,
     });
     expect(probe.bytes).toEqual([1, 2, 3, 250, 251, 252]);
+  });
+});
+
+test.describe("adminUsers.remove and the schema's cascade, on a private real D1", () => {
+  const CHILDREN = [
+    "auth_access_tokens",
+    "auth_credentials",
+    "auth_factors",
+    "auth_identity_links",
+    "auth_otp_state",
+    "auth_recovery_codes",
+    "auth_security_events",
+    "auth_sessions",
+  ] as const;
+  let d1: TestD1;
+
+  test.describe.configure({ mode: "serial", timeout: 120_000 });
+
+  test.beforeAll(async () => {
+    d1 = await openAuthD1();
+  });
+
+  test.afterAll(async () => {
+    await d1?.dispose();
+  });
+
+  test.beforeEach(() => d1.reset());
+
+  /** One row in every auth table that references `auth_users`, owned by `userId`. */
+  async function withEveryChild(userId: string): Promise<void> {
+    const owner = uuidToBytes(userId);
+    const id = () => uuidToBytes(uuidv7());
+    await d1.binding.batch([
+      d1.binding
+        .prepare("INSERT INTO auth_access_tokens (id, user_id, token_hash, label, scopes, created_at) VALUES (?, ?, ?, 'cli', '[]', 1)")
+        .bind(id(), owner, tokenHash()),
+      d1.binding
+        .prepare(
+          "INSERT INTO auth_credentials (id, user_id, credential_id, public_key, algorithm, created_at, updated_at) VALUES (?, ?, ?, ?, -7, 1, 1)",
+        )
+        .bind(id(), owner, `credential-${uuidv7()}`, new Uint8Array(65)),
+      d1.binding.prepare("INSERT INTO auth_factors (id, user_id, kind, created_at, updated_at) VALUES (?, ?, 'passkey', 1, 1)").bind(id(), owner),
+      d1.binding
+        .prepare("INSERT INTO auth_identity_links (id, user_id, provider, subject, created_at, updated_at) VALUES (?, ?, 'github', ?, 1, 1)")
+        .bind(id(), owner, uuidv7()),
+      d1.binding.prepare("INSERT INTO auth_otp_state (user_id, token, issued_at, expires_at) VALUES (?, 'otp', 1, 2)").bind(owner),
+      d1.binding.prepare("INSERT INTO auth_recovery_codes (id, user_id, code_hash, created_at) VALUES (?, ?, ?, 1)").bind(id(), owner, tokenHash()),
+      d1.binding.prepare("INSERT INTO auth_security_events (id, user_id, type, at) VALUES (?, ?, 'signed-in', 1)").bind(id(), owner),
+      d1.binding
+        .prepare("INSERT INTO auth_sessions (token_hash, user_id, signed_in_at, expires_at, id, last_seen_at) VALUES (?, ?, 1, 2, ?, 1)")
+        .bind(tokenHash(), owner, id()),
+    ]);
+  }
+
+  async function heldBy(userId: string): Promise<Record<string, number>> {
+    const owner = uuidToBytes(userId);
+    const counted: Record<string, number> = {};
+    for (const table of ["auth_users", ...CHILDREN]) {
+      const column = table === "auth_users" ? "id" : "user_id";
+      const row = await d1.binding.prepare(`SELECT count(*) AS n FROM ${table} WHERE ${column} = ?`).bind(owner).first<{ n: number }>();
+      counted[table] = row?.n ?? -1;
+    }
+    return counted;
+  }
+
+  const every = (n: number) => Object.fromEntries(["auth_users", ...CHILDREN].map((table) => [table, n]));
+
+  test("deletes a member and leaves no row of theirs in any child table, while the last admin keeps every row", async () => {
+    const member = await signedUp(d1, 1, { verifiedAt: 1 });
+    const admin = await signedUp(d1, 1, { verifiedAt: 1, isAdmin: true });
+    await withEveryChild(member);
+    await withEveryChild(admin);
+    const outcome = await createAdminUserStore(createD1Client(d1.binding)).remove(member);
+    expect({ outcome, member: await heldBy(member), admin: await heldBy(admin) }).toEqual({
+      outcome: { ok: true, data: "changed" },
+      member: every(0),
+      admin: every(1),
+    });
+  });
+
+  test("refuses to delete the last admin who could sign in, and leaves that admin's row in every child table", async () => {
+    const admin = await signedUp(d1, 1, { verifiedAt: 1, isAdmin: true });
+    await withEveryChild(admin);
+    const outcome = await createAdminUserStore(createD1Client(d1.binding)).remove(admin);
+    expect({ outcome, admin: await heldBy(admin) }).toEqual({ outcome: { ok: true, data: "last-admin-delete" }, admin: every(1) });
+  });
+
+  test("answers referenced when an app key's SET NULL over a STRICT primary key refuses the member's deletion, and leaves every row of theirs", async () => {
+    await d1.binding.prepare("CREATE TABLE app_devices (sid BLOB PRIMARY KEY REFERENCES auth_users (id) ON DELETE SET NULL) STRICT").run();
+    const member = await signedUp(d1, 1, { verifiedAt: 1 });
+    await withEveryChild(member);
+    await d1.binding.prepare("INSERT INTO app_devices (sid) VALUES (?)").bind(uuidToBytes(member)).run();
+    const outcome = await createAdminUserStore(createD1Client(d1.binding)).remove(member);
+    const [device] = await d1.rows<{ n: number }>("SELECT count(*) AS n FROM app_devices WHERE sid IS NOT NULL");
+    expect({ outcome, member: await heldBy(member), device: device?.n }).toEqual({
+      outcome: { ok: true, data: "referenced" },
+      member: every(1),
+      device: 1,
+    });
   });
 });

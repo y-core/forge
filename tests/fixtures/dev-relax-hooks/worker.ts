@@ -1,4 +1,5 @@
 import { createApp, createErrorPage } from "../../../src/app/mod";
+import type { Forge } from "../../../src/app/mod";
 import { verifyTurnstile } from "../../../src/form/mod";
 import { checkCrossOriginProtection, crossOriginProtection, originGuard, originProtection, rateLimit } from "../../../src/security/mod";
 import { mapHandler } from "../../../src/testing/mod";
@@ -26,7 +27,7 @@ function throwing(onError?: ReturnType<typeof createErrorPage>) {
 export default {
   fetch: async (_request: Request, env: Record<string, unknown>): Promise<Response> => {
     const post = (headers: Record<string, string> = {}): RequestInit => ({ method: "POST", headers });
-    const status = async (app: ReturnType<typeof createApp>, init: RequestInit) => (await app.request("/", init, env)).status;
+    const status = async (app: Forge, init: RequestInit) => (await app.request("/", init, env)).status;
     const fromPreview = post({ Origin: String(env.PREVIEW_ORIGIN) });
     const token = new FormData();
     token.append("cf-turnstile-response", "XXXX.DUMMY.TOKEN.XXXX");

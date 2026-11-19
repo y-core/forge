@@ -115,7 +115,7 @@ export const AdminUserEditView: FC<AdminUserEditViewProps> = ({
             <Alert.Description>{refused}</Alert.Description>
           </Alert>
         )}
-        <AuthFactorsTrigger loadPath={paths.users.factors({ id: user.id })} label='Show sign-in methods' />
+        <AuthFactorsTrigger loadPath={paths.users.factors({ id: user.id })} label='Show factors' />
         <Separator />
         <Form csrfToken={csrfToken} csrfHeader={csrfHeader} {...hxAttrs({ patch: updatePath, ...ROOT_SWAP })} class='flex flex-col gap-2'>
           <input type='hidden' name='role' value={user.isAdmin ? "member" : "admin"} />

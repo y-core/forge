@@ -43,7 +43,7 @@ const PASSKEY_REQUEST_TIMEOUT_MS = 15_000;
 
 let prfHandler: PasskeyPrfHandler | null = null;
 
-const SUCCESS_MESSAGES: Record<PasskeyMode, string> = { registration: "Passkey created.", authentication: "Passkey accepted. Signing you in." };
+const SUCCESS_MESSAGES: Record<PasskeyMode, string> = { registration: "Passkey created.", authentication: "Passkey accepted." };
 
 const FAILURE_MESSAGES: Record<PasskeyFailureReason, string> = {
   unsupported: "This browser cannot use passkeys. Please try again in a current version of Chrome, Edge, Firefox or Safari.",

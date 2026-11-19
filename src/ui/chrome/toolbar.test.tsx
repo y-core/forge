@@ -233,8 +233,13 @@ describe("Toolbar — action dispatch", () => {
 
     const out = await render(<Toolbar config={config} icon={icon} />);
 
-    expect(out).not.toContain("commandfor");
-    expect(out).not.toContain("command=");
+    expect(attrsOf(out, 'data-slot="toolbar-button toolbar-action"')).toEqual({
+      type: "button",
+      "data-slot": "toolbar-button toolbar-action",
+      "data-toolbar-item": "",
+      title: "Select",
+      "aria-label": "Select",
+    });
   });
 });
 

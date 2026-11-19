@@ -1,5 +1,4 @@
 import { createLogger } from "../../logging/logger";
-import { serializeError } from "../../logging/serialize-error";
 import { result } from "../../result/result";
 import { jsonCodec } from "./codec";
 import type { KVEntry, KVListEntry, KVListOptions, KVNamespace, KVSetOptions, KVStore, KVStoreOptions, KvCodec } from "./types";
@@ -56,7 +55,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
         try {
           return codec.decode(raw);
         } catch (err) {
-          logger.warn("kv.decode-error", { key, error: serializeError(err) });
+          logger.warn("kv.decode-error", { error: err instanceof Error ? err.name : typeof err });
           throw err;
         }
       });
@@ -93,7 +92,7 @@ export function createKVStore<T = unknown>(kv: KVNamespace, options?: KVStoreOpt
         validateKey(key);
         const raw = await getRaw(prefixKey(key));
         if (raw !== null) return codec.decode(raw);
-        logger.debug("kv.miss", { key });
+        logger.debug("kv.miss");
         const value = await factory();
         await kv.put(prefixKey(key), codec.encode(value), putOptions(opts));
         return value;

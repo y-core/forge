@@ -263,10 +263,18 @@ export async function composeMigration(run: DbRunContext, options: ComposeOption
   const sql = `${formatComposeHeader(stamp, body)}${body}`;
 
   const errors = lintMigration("<composed>", sql);
+  const appKeys = errors.filter((finding) => finding.rule === "auth-key-blocks-delete");
+  const forgeErrors = errors.filter((finding) => finding.rule !== "auth-key-blocks-delete");
   if (errors.length > 0) {
     throw new CliError(
       "invalid-args",
-      `the composed migration fails lint — this is a forge bug, and the file was not written:\n${errors.map(formatLintFinding).join("\n")}`,
+      [
+        "the composed migration fails lint, and the file was not written:",
+        ...(appKeys.length > 0 ? ["a foreign key in the declared schema blocks forge's auth deletes — change it there:"] : []),
+        ...appKeys.map((finding) => `  ${formatLintFinding(finding)}`),
+        ...(forgeErrors.length > 0 ? ["this is a forge bug:"] : []),
+        ...forgeErrors.map((finding) => `  ${formatLintFinding(finding)}`),
+      ].join("\n"),
     );
   }
 

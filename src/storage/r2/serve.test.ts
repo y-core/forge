@@ -673,6 +673,61 @@ describe("serveObject — active content types", () => {
   });
 });
 
+describe("serveObject — stored types that do not parse as one media type", () => {
+  for (const contentType of [
+    "text/plain, text/html",
+    "text/html,",
+    "image/png, image/svg+xml",
+    "text/plain; charset=utf-8, text/html",
+    "text/plain;x=y, text/html",
+    "image/png;a=b,image/svg+xml",
+    "text/html;charset=utf-8, x",
+    "",
+    "   ",
+    '"text/html"',
+    "TEXT/HTML,",
+  ]) {
+    it(`downloads a stored ${JSON.stringify(contentType)} as a sandboxed octet-stream attachment`, async () => {
+      const backend = makeBackend(makeObjectBody({ key: "upload.bin", contentType }));
+      const res = await serveObject(backend, new Request("http://x/upload.bin"), "upload.bin");
+      expect(Object.fromEntries(res.headers)).toEqual({
+        "accept-ranges": "bytes",
+        "content-disposition": `attachment; filename="upload.bin"; filename*=UTF-8''upload.bin`,
+        "content-length": "11",
+        "content-security-policy": "sandbox",
+        "content-type": "application/octet-stream",
+        etag: '"abc123"',
+        "last-modified": "Thu, 01 Jan 2026 00:00:00 GMT",
+        "x-content-type-options": "nosniff",
+      });
+    });
+  }
+
+  it("serves an object with no stored type as octet-stream", async () => {
+    const { contentType: _omitted, ...withoutType } = makeObjectBody({ key: "upload.bin" });
+    const res = await serveObject(makeBackend(withoutType), new Request("http://x/upload.bin"), "upload.bin");
+    expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
+  });
+});
+
+describe("serveObject — outgoing Content-Type", () => {
+  const cases: ReadonlyArray<{ stored: string; served: string }> = [
+    { stored: "TEXT/HTML ;charset=utf-8", served: "text/html; charset=utf-8" },
+    { stored: 'text/plain; charset="utf-8"', served: "text/plain; charset=utf-8" },
+    { stored: "image/png; foo=bar", served: "image/png" },
+    { stored: 'text/plain; charset="utf-8, text/html"', served: "text/plain" },
+    { stored: 'multipart/form-data; boundary="a, b"', served: "multipart/form-data" },
+  ];
+
+  for (const { stored, served } of cases) {
+    it(`sends ${JSON.stringify(served)} for a stored ${JSON.stringify(stored)}`, async () => {
+      const backend = makeBackend(makeObjectBody({ contentType: stored }));
+      const res = await serveObject(backend, new Request("http://x/test.txt"), "test.txt");
+      expect(res.headers.get("Content-Type")).toBe(served);
+    });
+  }
+});
+
 describe("serveObject — under forge's security headers", () => {
   const servePage = (request: Request) =>
     serveObject(makeBackend(makeObjectBody({ key: "page.html", contentType: "text/html" })), request, "page.html", {

@@ -2,338 +2,487 @@ import { describe, expect, it } from "bun:test";
 
 import { createSession } from "@remix-run/session";
 
-import { ok } from "../../result/result";
+import { bytesToHex } from "../../crypto/primitives/bytes";
+import { sha256 } from "../../crypto/primitives/digest";
+import { err, ok } from "../../result/result";
 import { AUTH_SESSION_MAX_MS } from "../config";
-import type { AuthUser, UserStore } from "../types";
+import { AuthStoreError } from "../errors";
+import type { AuthSessionStoreOptions } from "../stores/types";
+import type { AuthSessionStore, AuthUser } from "../types";
 import {
   APPROVAL_CODE_SESSION_KEY,
   APPROVAL_SESSION_KEY,
+  AUTH_OTP_BINDING_SESSION_KEY,
   AUTH_PENDING_SIGNIN_SESSION_KEY,
-  AUTH_SESSION_KEY,
-  AUTH_SIGNED_IN_SESSION_KEY,
+  AUTH_SESSION_TOKEN_KEY,
   AUTH_SITE_DATA_OWED_SESSION_KEY,
-  AUTH_STEP_UP_SESSION_KEY,
-  AUTH_SURVIVED_SESSION_KEY,
+  authFactorCaller,
+  authOtpBinding,
   clearAuthSession,
   establishAuthSession,
   markApproval,
   markAuthStepUp,
-  renewAuthSession,
   resolveApprovalMark,
   resolveAuthIdentity,
+  revokeOtherAuthSessions,
 } from "./identity";
-
-function fakeAuthUser(overrides: Partial<AuthUser> = {}): AuthUser {
-  return {
-    id: "u1",
-    email: "ada@example.com",
-    emailKey: "ada@example.com",
-    emailVerifiedAt: 1,
-    webauthnId: null,
-    isAdmin: false,
-    deactivatedAt: null,
-    sessionsInvalidBefore: null,
-    createdAt: 1,
-    updatedAt: 1,
-    ...overrides,
-  };
-}
-
-function fakeUsers(users: readonly AuthUser[]): Pick<UserStore, "findById"> {
-  return { findById: async (id) => ok(users.find((user) => user.id === id) ?? null) };
-}
-
-const unavailableUsers: Pick<UserStore, "findById"> = { findById: async () => ({ ok: false, error: new Error("db down") as never }) };
+import { fakeAuthSessionStore, fakeAuthUser } from "./web.fixture";
 
 const NOW = 1_700_000_000_000;
+const ADA = fakeAuthUser({ id: "u1", email: "ada@example.com", isAdmin: true });
 
-// Seeded through `initialData` and not `set`, so `dirty` starts false and a later assertion on it
-// reports what this call did rather than what the fixture did.
-function signedInSession(userId: string, signedInAt = NOW) {
-  return createSession<Record<string, unknown>>("sid-1", [{ [AUTH_SESSION_KEY]: userId, [AUTH_SIGNED_IN_SESSION_KEY]: signedInAt }, {}]);
+type Method = keyof AuthSessionStore;
+
+/** A `fakeAuthSessionStore` over `users` recording every method it was asked to run, with any method replaceable. */
+function recordingStore(users: readonly AuthUser[] = [ADA], overrides: Partial<AuthSessionStore> = {}, options?: AuthSessionStoreOptions) {
+  const inner = fakeAuthSessionStore(users, new Map(), options);
+  const calls: Method[] = [];
+  const wrap = <M extends Method>(method: M): AuthSessionStore[M] =>
+    ((...args: Parameters<AuthSessionStore[M]>) => {
+      calls.push(method);
+      const run = (overrides[method] ?? inner[method]) as (...a: Parameters<AuthSessionStore[M]>) => ReturnType<AuthSessionStore[M]>;
+      return run(...args);
+    }) as AuthSessionStore[M];
+  const store: AuthSessionStore = {
+    create: wrap("create"),
+    resolve: wrap("resolve"),
+    rotate: wrap("rotate"),
+    remove: wrap("remove"),
+    listByUser: wrap("listByUser"),
+    revoke: wrap("revoke"),
+    revokeOthers: wrap("revokeOthers"),
+  };
+  return { store, rows: inner.rows, calls };
 }
 
-describe("resolveAuthIdentity", () => {
-  it("returns the identity the store confirms, with no step-up until one is marked", async () => {
-    const identity = await resolveAuthIdentity(signedInSession("u1"), fakeUsers([fakeAuthUser({ isAdmin: true })]), NOW);
-    expect(identity).toEqual({ userId: "u1", email: "ada@example.com", isAdmin: true, stepUpAt: null });
-  });
+const failure = (method: Method) => async () => err(new AuthStoreError("unavailable", `sessions.${method}`));
 
-  it("carries the session's step-up timestamp onto the identity", async () => {
-    const session = signedInSession("u1");
-    markAuthStepUp(session, 1_700_000_000_000, Date.now());
-    const identity = await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW);
-    expect(identity?.stepUpAt).toBe(1_700_000_000_000);
-  });
+async function keyOf(token: unknown): Promise<string> {
+  return bytesToHex(await sha256(String(token)));
+}
 
-  it("ignores a step-up mark that is not a finite number", async () => {
-    const session = signedInSession("u1");
-    session.set(AUTH_STEP_UP_SESSION_KEY, "yesterday");
-    const identity = await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW);
-    expect(identity?.stepUpAt).toBeNull();
-  });
+/** A row created for `userId` through the real `establishAuthSession`, answering the token its session carried. */
+async function signedInToken(store: AuthSessionStore, userId = "u1", at = NOW): Promise<string> {
+  const scratch = createSession("scratch");
+  const created = await establishAuthSession(scratch, store, userId, at, at, { kind: "email-otp" });
+  if (!created.ok) throw created.error;
+  return String(scratch.get(AUTH_SESSION_TOKEN_KEY));
+}
 
-  it("returns null for an anonymous session", async () => {
-    expect(await resolveAuthIdentity(createSession("sid-1"), fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
-  });
-
-  it("returns null when the session names a user the store does not have, and drops the auth keys", async () => {
-    const session = signedInSession("ghost");
-    markAuthStepUp(session, 1_700_000_000_000, Date.now());
-    session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, "ada@example.com");
-
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
-    expect(session.get(AUTH_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_PENDING_SIGNIN_SESSION_KEY)).toBeUndefined();
-  });
-
-  it("returns null for a deactivated user, so a live session cannot outlive the account", async () => {
-    const session = signedInSession("u1");
-    markAuthStepUp(session, 1_700_000_000_000, Date.now());
-    session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, "ada@example.com");
-
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser({ deactivatedAt: 99 })]), NOW)).toBeNull();
-    expect(session.get(AUTH_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_PENDING_SIGNIN_SESSION_KEY)).toBeUndefined();
-    expect(session.dirty).toBe(true);
-  });
-
-  // The revocation empties the session rather than granting it anything, so it costs no rotation:
-  // a `regenerateId` here would add a store delete and a `Set-Cookie` on a plain GET.
-  it("revokes a refused id without rotating the session id", async () => {
-    const session = signedInSession("u1");
-    await resolveAuthIdentity(session, fakeUsers([fakeAuthUser({ deactivatedAt: 99 })]), NOW);
-
-    expect(session.id).toBe("sid-1");
-    expect(session.deleteId).toBeUndefined();
-  });
-
-  // The bug: nothing unset the key, so reactivating the account made every cookie still in a
-  // browser live again.
-  it("keeps a revoked session refused once the account is reactivated", async () => {
-    const session = signedInSession("u1");
-    let user = fakeAuthUser({ deactivatedAt: 99 });
-    const users: Pick<UserStore, "findById"> = { findById: async (id) => ok(id === user.id ? user : null) };
-
-    expect(await resolveAuthIdentity(session, users, NOW)).toBeNull();
-    user = fakeAuthUser({ deactivatedAt: null });
-    expect(await resolveAuthIdentity(session, users, NOW)).toBeNull();
-  });
-
-  it("returns null when the store is unavailable, rather than reading as `not an admin`", async () => {
-    const session = signedInSession("u1");
-
-    expect(await resolveAuthIdentity(session, unavailableUsers, NOW)).toBeNull();
-    expect(session.get(AUTH_SESSION_KEY)).toBe("u1");
-    // The whole point of not clearing on an outage: no `Set-Cookie`, so a database blip signs nobody out.
-    expect(session.dirty).toBe(false);
-  });
-
-  it("leaves an anonymous session clean, so no anonymous GET carries a `Set-Cookie`", async () => {
-    const session = createSession("sid-1");
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
-    expect(session.dirty).toBe(false);
-  });
-
-  // An absolute bound, not a sliding one: a session that is merely used often is a session an
-  // attacker who took it can keep alive forever.
-  it("returns null past the absolute lifetime, whatever the session was doing in between", async () => {
-    const session = signedInSession("u1");
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW + AUTH_SESSION_MAX_MS - 1)).not.toBeNull();
-
-    const expired = signedInSession("u1");
-    expect(await resolveAuthIdentity(expired, fakeUsers([fakeAuthUser()]), NOW + AUTH_SESSION_MAX_MS)).toBeNull();
-    expect(expired.get(AUTH_SESSION_KEY)).toBeUndefined();
-  });
-
-  it("returns null for a session carrying no established-at stamp, since no bound could be checked against it", async () => {
-    const session = createSession<Record<string, unknown>>("sid-1", [{ [AUTH_SESSION_KEY]: "u1" }, {}]);
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
-    expect(session.get(AUTH_SESSION_KEY)).toBeUndefined();
-  });
-
-  // Removing a passkey or moving an address raises the barrier, and this is how that reaches the
-  // sessions the request which raised it could not see.
-  it("returns null for a session established at or before the account's revocation barrier", async () => {
-    const users = (invalidBefore: number) => fakeUsers([fakeAuthUser({ sessionsInvalidBefore: invalidBefore })]);
-    const older = signedInSession("u1", NOW - 1);
-    expect(await resolveAuthIdentity(older, users(NOW), NOW + 1)).toBeNull();
-    expect(older.get(AUTH_SESSION_KEY)).toBeUndefined();
-
-    const exactly = signedInSession("u1", NOW);
-    expect(await resolveAuthIdentity(exactly, users(NOW), NOW + 1)).toBeNull();
-
-    // The session the revocation was made from was established after it, and survives.
-    const newer = signedInSession("u1", NOW + 1);
-    expect(await resolveAuthIdentity(newer, users(NOW), NOW + 2)).not.toBeNull();
-  });
-
-  it("returns null for a session whose stored id is not a string", async () => {
-    const session = createSession("sid-1");
-    session.set(AUTH_SESSION_KEY, 7);
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
-  });
-});
+/** A session holding `data` as loaded, so `dirty` starts false and reports only what the call under test did. */
+function loaded(data: Record<string, unknown>) {
+  return createSession<Record<string, unknown>>("sid-1", [data, {}]);
+}
 
 describe("establishAuthSession", () => {
-  it("stores the user id and rotates the session id, so a fixated id cannot survive the sign-in", () => {
+  it("creates exactly one row, signed in at the earlier of `at` and `now` and expiring the absolute lifetime after it", async () => {
+    const { store, rows } = recordingStore();
     const session = createSession("sid-1");
-    establishAuthSession(session, "u1", NOW, Date.now());
-    expect(session.get(AUTH_SESSION_KEY)).toBe("u1");
-    expect(session.id).not.toBe("sid-1");
-    expect(session.deleteId).toBe("sid-1");
+    expect(await establishAuthSession(session, store, "u1", NOW + 5_000, NOW, { kind: "email-otp" })).toEqual({ ok: true, data: undefined });
+    expect([...rows.values()].map(({ id: _id, ...row }) => row)).toEqual([
+      { userId: "u1", signedInAt: NOW, expiresAt: NOW + AUTH_SESSION_MAX_MS, lastSeenAt: NOW, stepUpAt: null, stepUpKind: null, device: null },
+    ]);
   });
 
-  it("stamps when the session was established, which is what the lifetime and the barrier are read against", () => {
-    const session = createSession("sid-1");
-    establishAuthSession(session, "u1", NOW, Date.now());
-    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBe(NOW);
+  it("labels the row with the device it was given", async () => {
+    const { store, rows } = recordingStore();
+    await establishAuthSession(createSession("sid-1"), store, "u1", NOW, NOW, { kind: "email-otp", device: "Firefox on macOS" });
+    expect([...rows.values()].map((row) => row.device)).toEqual(["Firefox on macOS"]);
   });
 
-  it("clamps a stamp dated into the future to now, so a skewed clock cannot make a session last forever", () => {
-    const session = createSession("sid-1");
-    establishAuthSession(session, "u1", Date.now() + 3_600_000, Date.now());
-    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY) as number).toBeLessThanOrEqual(Date.now());
-  });
-
-  it("clamps against the caller's own clock, so an injected clock ahead of wall time stores what it was given", () => {
-    const session = createSession("sid-1");
+  it("clamps against the caller's own clock, so an injected clock ahead of wall time stores what it was given", async () => {
+    const { store, rows } = recordingStore();
     const injected = Date.now() + 3_600_000;
-    establishAuthSession(session, "u1", injected, injected);
-    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBe(injected);
+    await establishAuthSession(createSession("sid-1"), store, "u1", injected, injected, { kind: "email-otp" });
+    expect([...rows.values()].map((row) => row.signedInAt)).toEqual([injected]);
   });
 
-  it("clears a previous step-up, so a new sign-in cannot inherit a demand it never met", () => {
-    const session = createSession("sid-1");
-    markAuthStepUp(session, Date.now(), Date.now());
-    establishAuthSession(session, "u1", NOW, Date.now());
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeUndefined();
+  it("records a sign-in that counts as the step-up under the kind it signed in with, at the sign-in instant", async () => {
+    const { store, rows } = recordingStore();
+    await establishAuthSession(createSession("sid-1"), store, "u1", NOW, NOW, { kind: "passkey", steppedUp: true });
+    expect([...rows.values()].map((row) => [row.stepUpAt, row.stepUpKind])).toEqual([[NOW, "passkey"]]);
   });
 
-  it("clears a previous barrier stamp, so a fresh sign-in starts owing the barriers already raised", () => {
+  it("keeps the token on the session and only its SHA-256 as the row key", async () => {
+    const { store, rows } = recordingStore();
     const session = createSession("sid-1");
-    renewAuthSession(session, Date.now(), Date.now());
-    establishAuthSession(session, "u1", NOW, Date.now());
-    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBeUndefined();
+    await establishAuthSession(session, store, "u1", NOW, NOW, { kind: "email-otp" });
+    const token = session.get(AUTH_SESSION_TOKEN_KEY);
+    expect({ keys: [...rows.keys()], tokenIsKey: rows.has(String(token)), length: String(token).length }).toEqual({
+      keys: [await keyOf(token)],
+      tokenIsKey: false,
+      length: 43,
+    });
   });
 
-  it("clears a storage clear a sign-out left owing, so the new session's storage is never wiped", () => {
+  it("starts the new row with no step-up even when the session's previous row was stepped up, so a sign-in inherits no demand it never met", async () => {
+    const { store, rows } = recordingStore();
     const session = createSession("sid-1");
+    await establishAuthSession(session, store, "u1", NOW, NOW, { kind: "email-otp" });
+    await markAuthStepUp(session, store, NOW, NOW, "email-otp");
+    await establishAuthSession(session, store, "u1", NOW + 1, NOW + 1, { kind: "email-otp" });
+    expect([...rows.values()].map((row) => row.stepUpAt)).toEqual([null]);
+  });
+
+  it("deletes the row the session held before, so a second sign-in leaves one live session and not two", async () => {
+    const { store, rows } = recordingStore();
+    const session = createSession("sid-1");
+    await establishAuthSession(session, store, "u1", NOW, NOW, { kind: "email-otp" });
+    const first = await keyOf(session.get(AUTH_SESSION_TOKEN_KEY));
+    await establishAuthSession(session, store, "u1", NOW + 1, NOW + 1, { kind: "email-otp" });
+    const second = await keyOf(session.get(AUTH_SESSION_TOKEN_KEY));
+    expect({ keys: [...rows.keys()], replaced: first !== second }).toEqual({ keys: [second], replaced: true });
+  });
+
+  it("clears a pending sign-in, a storage clear a sign-out left owing, and an administrator approval given before it", async () => {
+    const { store } = recordingStore();
+    const session = createSession("sid-1");
+    session.set(AUTH_PENDING_SIGNIN_SESSION_KEY, "ada@example.com");
     session.set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
-    establishAuthSession(session, "u1", NOW, Date.now());
-    expect(session.get(AUTH_SITE_DATA_OWED_SESSION_KEY)).toBeUndefined();
+    markApproval(session, { presentedAt: NOW, digest: "k.mac" });
+    await establishAuthSession(session, store, "u1", NOW, NOW, { kind: "email-otp" });
+    expect([
+      session.get(AUTH_PENDING_SIGNIN_SESSION_KEY),
+      session.get(AUTH_SITE_DATA_OWED_SESSION_KEY),
+      session.get(APPROVAL_SESSION_KEY),
+      session.get(APPROVAL_CODE_SESSION_KEY),
+    ]).toEqual([undefined, undefined, undefined, undefined]);
   });
 
-  it("clears an administrator approval, so a sign-in never inherits one given before it, anonymously or to another user", () => {
+  it("rotates the session id and deletes the old one, so a fixated id cannot survive the sign-in", async () => {
+    const { store } = recordingStore();
     const session = createSession("sid-1");
-    markApproval(session, { presentedAt: Date.now(), digest: "k.mac" });
-    establishAuthSession(session, "u1", NOW, Date.now());
-    expect([resolveApprovalMark(session), session.get(APPROVAL_CODE_SESSION_KEY)]).toEqual([null, undefined]);
-  });
-});
-
-// The actor raising a revocation barrier has to survive it, and one stamp cannot mean both "when
-// this session began" and "which barriers it has been carried past".
-describe("renewAuthSession", () => {
-  it("leaves the sign-in stamp alone, so the absolute lifetime is not restarted", () => {
-    const session = signedInSession("u1", NOW);
-    renewAuthSession(session, NOW + 5_000, Date.now());
-
-    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBe(NOW);
+    await establishAuthSession(session, store, "u1", NOW, NOW, { kind: "email-otp" });
+    expect({ rotated: session.id !== "sid-1", deleteId: session.deleteId }).toEqual({ rotated: true, deleteId: "sid-1" });
   });
 
-  it("records the barrier it was carried past, one millisecond after it, so the barrier's own `<=` admits it", () => {
-    const session = signedInSession("u1", NOW);
-    renewAuthSession(session, NOW - 1_000, Date.now());
-
-    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBe(NOW - 999);
-  });
-
-  it("clamps against the caller's own clock, so an injected clock ahead of wall time stores what it was given", () => {
-    const session = signedInSession("u1");
-    const injected = Date.now() + 3_600_000;
-    renewAuthSession(session, injected, injected);
-    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBe(injected + 1);
-  });
-
-  it("clamps a barrier stamp dated into the future, so a skewed clock cannot carry a session past every later revocation", () => {
-    const session = signedInSession("u1", NOW);
-    renewAuthSession(session, Date.now() + 3_600_000, Date.now());
-
-    expect(session.get(AUTH_SURVIVED_SESSION_KEY) as number).toBeLessThanOrEqual(Date.now() + 1);
-  });
-
-  it("keeps the renewed session signed in across the barrier it raised", async () => {
-    const raisedAt = NOW + 1_000;
-    const session = signedInSession("u1", NOW);
-    renewAuthSession(session, raisedAt, Date.now());
-    const users = fakeUsers([fakeAuthUser({ sessionsInvalidBefore: raisedAt })]);
-
-    expect(await resolveAuthIdentity(session, users, NOW + 2_000)).not.toBeNull();
-  });
-
-  it("does not renew the session's expiry: one that is already over stays over", async () => {
-    const session = signedInSession("u1", NOW);
-    renewAuthSession(session, NOW + 1_000, Date.now());
-
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW + AUTH_SESSION_MAX_MS)).toBeNull();
-  });
-
-  it("leaves every session it did not renew behind the barrier", async () => {
-    const raisedAt = NOW + 1_000;
-    const other = signedInSession("u1", NOW);
-    const users = fakeUsers([fakeAuthUser({ sessionsInvalidBefore: raisedAt })]);
-
-    expect(await resolveAuthIdentity(other, users, NOW + 2_000)).toBeNull();
+  it("answers the store's failure and leaves the session exactly as it was — no token, no new id, nothing cleared", async () => {
+    const { store, rows } = recordingStore([ADA], { create: failure("create") });
+    const session = loaded({ [AUTH_PENDING_SIGNIN_SESSION_KEY]: "ada@example.com", [AUTH_SITE_DATA_OWED_SESSION_KEY]: true });
+    const result = await establishAuthSession(session, store, "u1", NOW, NOW, { kind: "email-otp" });
+    expect({
+      ok: result.ok,
+      code: result.ok ? null : result.error.code,
+      rows: rows.size,
+      token: session.get(AUTH_SESSION_TOKEN_KEY),
+      pending: session.get(AUTH_PENDING_SIGNIN_SESSION_KEY),
+      owed: session.get(AUTH_SITE_DATA_OWED_SESSION_KEY),
+      id: session.id,
+      deleteId: session.deleteId,
+      dirty: session.dirty,
+    }).toEqual({
+      ok: false,
+      code: "unavailable",
+      rows: 0,
+      token: undefined,
+      pending: "ada@example.com",
+      owed: true,
+      id: "sid-1",
+      deleteId: undefined,
+      dirty: false,
+    });
   });
 });
 
 describe("markAuthStepUp", () => {
-  it("records the moment the step-up passed, which is the memory `resolve` has not got", () => {
-    const session = signedInSession("u1");
-    markAuthStepUp(session, 42, Date.now());
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBe(42);
+  it("moves the row onto a new token carrying the step-up, so the token held before it resolves nothing, and rotates the id", async () => {
+    const { store, rows } = recordingStore();
+    const token = await signedInToken(store);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    expect(await markAuthStepUp(session, store, NOW + 42, NOW + 100, "email-otp")).toEqual({ ok: true, data: true });
+    const next = session.get(AUTH_SESSION_TOKEN_KEY);
+    expect({
+      rotated: next !== token,
+      rows: [...rows.keys()],
+      stepUpAt: rows.get(await keyOf(next))?.stepUpAt,
+      previous: await store.resolve(await sha256(token), NOW),
+      id: session.id !== "sid-1",
+    }).toEqual({ rotated: true, rows: [await keyOf(next)], stepUpAt: NOW + 42, previous: { ok: true, data: null }, id: true });
   });
 
-  it("clamps a mark dated into the future to now, so a skewed clock cannot make one last forever", () => {
-    const session = signedInSession("u1");
-    markAuthStepUp(session, Date.now() + 3_600_000, Date.now());
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeLessThanOrEqual(Date.now());
+  it("clamps a mark dated after the caller's `now` to `now`, so a skewed clock cannot make one last forever", async () => {
+    const { store, rows } = recordingStore();
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) });
+    await markAuthStepUp(session, store, NOW + 3_600_000, NOW + 10, "email-otp");
+    expect(rows.get(await keyOf(session.get(AUTH_SESSION_TOKEN_KEY)))?.stepUpAt).toBe(NOW + 10);
   });
 
-  it("clamps against the caller's own clock, not the wall clock, so an injected clock stays coherent", () => {
-    const session = signedInSession("u1");
+  it("clamps against the caller's own clock, so an injected clock ahead of wall time stores what it was given", async () => {
+    const { store, rows } = recordingStore();
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) });
     const injected = Date.now() + 3_600_000;
-    markAuthStepUp(session, injected, injected);
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBe(injected);
+    await markAuthStepUp(session, store, injected, injected, "email-otp");
+    expect(rows.get(await keyOf(session.get(AUTH_SESSION_TOKEN_KEY)))?.stepUpAt).toBe(injected);
+  });
+
+  it("answers `false` for a session holding no token, without asking the store", async () => {
+    const { store, calls } = recordingStore();
+    expect(await markAuthStepUp(createSession("sid-1"), store, NOW, NOW, "email-otp")).toEqual({ ok: true, data: false });
+    expect(calls).toEqual([]);
+  });
+
+  it("answers the store's failure, leaving the session on the token it held", async () => {
+    const { store } = recordingStore([ADA], { rotate: failure("rotate") });
+    const token = await signedInToken(store);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    const result = await markAuthStepUp(session, store, NOW, NOW, "email-otp");
+    expect({ code: result.ok ? null : result.error.code, token: session.get(AUTH_SESSION_TOKEN_KEY), dirty: session.dirty }).toEqual({
+      code: "unavailable",
+      token,
+      dirty: false,
+    });
+  });
+});
+
+describe("the absolute lifetime", () => {
+  it("is never moved by use or by a step-up: the row keeps the instants it was created with", async () => {
+    const { store, rows } = recordingStore();
+    const token = await signedInToken(store);
+    const before = rows.get(await keyOf(token));
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    await resolveAuthIdentity(session, store, NOW + 1_000);
+    await markAuthStepUp(session, store, NOW + 2_000, NOW + 2_000, "email-otp");
+    await resolveAuthIdentity(session, store, NOW + 3_000);
+    const after = rows.get(await keyOf(session.get(AUTH_SESSION_TOKEN_KEY)));
+    expect({ signedInAt: after?.signedInAt, expiresAt: after?.expiresAt }).toEqual({
+      signedInAt: before?.signedInAt,
+      expiresAt: NOW + AUTH_SESSION_MAX_MS,
+    });
   });
 });
 
 describe("clearAuthSession", () => {
-  it("drops the user id and the step-up mark, and rotates the session id", () => {
-    const session = signedInSession("u1");
-    markAuthStepUp(session, Date.now(), Date.now());
-    clearAuthSession(session);
-    expect(session.get(AUTH_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_SIGNED_IN_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_SURVIVED_SESSION_KEY)).toBeUndefined();
-    expect(session.get(AUTH_STEP_UP_SESSION_KEY)).toBeUndefined();
-    expect(session.id).not.toBe("sid-1");
+  it("deletes the session's row, drops its token, pending sign-in, code binding and approval, and rotates the id", async () => {
+    const { store, rows } = recordingStore();
+    const token = await signedInToken(store);
+    const session = loaded({
+      [AUTH_SESSION_TOKEN_KEY]: token,
+      [AUTH_PENDING_SIGNIN_SESSION_KEY]: "ada@example.com",
+      [AUTH_OTP_BINDING_SESSION_KEY]: authOtpBinding(createSession("scratch")),
+      [APPROVAL_SESSION_KEY]: NOW,
+      [APPROVAL_CODE_SESSION_KEY]: "k.mac",
+    });
+    expect(await clearAuthSession(session, store)).toEqual({ ok: true, data: undefined });
+    expect({
+      rows: rows.size,
+      token: session.get(AUTH_SESSION_TOKEN_KEY),
+      pending: session.get(AUTH_PENDING_SIGNIN_SESSION_KEY),
+      binding: session.get(AUTH_OTP_BINDING_SESSION_KEY),
+      approval: resolveApprovalMark(session),
+      code: session.get(APPROVAL_CODE_SESSION_KEY),
+      deleteId: session.deleteId,
+    }).toEqual({ rows: 0, token: undefined, pending: undefined, binding: undefined, approval: null, code: undefined, deleteId: "sid-1" });
   });
 
-  it("drops an administrator approval, so a sign-out leaves nothing approved behind", () => {
-    const session = signedInSession("u1");
-    markApproval(session, { presentedAt: Date.now(), digest: "k.mac" });
-    clearAuthSession(session);
-    expect([resolveApprovalMark(session), session.get(APPROVAL_CODE_SESSION_KEY)]).toEqual([null, undefined]);
+  it("keeps the storage clear a sign-out owes, which the sign-out sets after it", async () => {
+    const { store } = recordingStore();
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store), [AUTH_SITE_DATA_OWED_SESSION_KEY]: true });
+    await clearAuthSession(session, store);
+    expect(session.get(AUTH_SITE_DATA_OWED_SESSION_KEY)).toBe(true);
   });
 
-  it("leaves a resolved identity anonymous afterwards", async () => {
-    const session = signedInSession("u1");
-    clearAuthSession(session);
-    expect(await resolveAuthIdentity(session, fakeUsers([fakeAuthUser()]), NOW)).toBeNull();
+  it("leaves only the row it names: another session of the same user stays signed in", async () => {
+    const { store, rows } = recordingStore();
+    const kept = await signedInToken(store);
+    await clearAuthSession(loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) }), store);
+    expect([...rows.keys()]).toEqual([await keyOf(kept)]);
+  });
+
+  it("asks the store nothing for a session holding no token, and still rotates it", async () => {
+    const { store, calls } = recordingStore();
+    const session = createSession("sid-1");
+    expect(await clearAuthSession(session, store)).toEqual({ ok: true, data: undefined });
+    expect({ calls, deleteId: session.deleteId }).toEqual({ calls: [], deleteId: "sid-1" });
+  });
+
+  it("answers the store's failure and leaves the session untouched, so the visitor can retry and no copied cookie outlives a false sign-out", async () => {
+    const { store, rows } = recordingStore([ADA], { remove: failure("remove") });
+    const token = await signedInToken(store);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token, [APPROVAL_SESSION_KEY]: NOW, [APPROVAL_CODE_SESSION_KEY]: "k.mac" });
+    const result = await clearAuthSession(session, store);
+    expect({
+      code: result.ok ? null : result.error.code,
+      rows: rows.size,
+      token: session.get(AUTH_SESSION_TOKEN_KEY),
+      approval: resolveApprovalMark(session),
+      id: session.id,
+      deleteId: session.deleteId,
+      dirty: session.dirty,
+    }).toEqual({
+      code: "unavailable",
+      rows: 1,
+      token,
+      approval: { presentedAt: NOW, digest: "k.mac" },
+      id: "sid-1",
+      deleteId: undefined,
+      dirty: false,
+    });
+  });
+});
+
+describe("authOtpBinding and authFactorCaller", () => {
+  it("mints a binding on first use, stores it, and answers the same one after", () => {
+    const session = loaded({});
+    const minted = authOtpBinding(session);
+    expect({ minted: minted.length, stored: session.get(AUTH_OTP_BINDING_SESSION_KEY), again: authOtpBinding(session) }).toEqual({
+      minted: 43,
+      stored: minted,
+      again: minted,
+    });
+  });
+
+  it("gives two browsers two bindings", () => {
+    expect(authOtpBinding(loaded({}))).not.toBe(authOtpBinding(loaded({})));
+  });
+
+  it("replaces a stored value that is not a binding it could have minted", () => {
+    const session = loaded({ [AUTH_OTP_BINDING_SESSION_KEY]: "short" });
+    const minted = authOtpBinding(session);
+    expect({ replaced: minted !== "short", stored: session.get(AUTH_OTP_BINDING_SESSION_KEY) === minted }).toEqual({
+      replaced: true,
+      stored: true,
+    });
+  });
+
+  it("carries the binding and the SHA-256 of the signed-in token, and no token hash before sign-in", async () => {
+    const { store } = recordingStore();
+    const token = await signedInToken(store);
+    const signedIn = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    const anonymous = loaded({});
+    const caller = await authFactorCaller(signedIn);
+    const before = await authFactorCaller(anonymous);
+    expect({
+      binding: caller.binding === signedIn.get(AUTH_OTP_BINDING_SESSION_KEY),
+      keep: caller.keep === null ? null : bytesToHex(caller.keep),
+      anonymous: { binding: before.binding === anonymous.get(AUTH_OTP_BINDING_SESSION_KEY), keep: before.keep },
+    }).toEqual({ binding: true, keep: await keyOf(token), anonymous: { binding: true, keep: null } });
+  });
+});
+
+describe("revokeOtherAuthSessions", () => {
+  it("deletes every other row the user holds, spares this session's and another user's, and answers how many went", async () => {
+    const grace = fakeAuthUser({ id: "u2", email: "grace@example.com" });
+    const { store, rows } = recordingStore([ADA, grace]);
+    const current = await signedInToken(store);
+    await signedInToken(store);
+    await signedInToken(store);
+    const graces = await signedInToken(store, "u2");
+    expect(await revokeOtherAuthSessions(loaded({ [AUTH_SESSION_TOKEN_KEY]: current }), store, "u1", NOW)).toEqual({ ok: true, data: 2 });
+    expect([...rows.keys()].sort()).toEqual([await keyOf(current), await keyOf(graces)].sort());
+  });
+
+  it("answers zero for a session holding no token, without asking the store", async () => {
+    const { store, rows, calls } = recordingStore();
+    await signedInToken(store);
+    calls.length = 0;
+    expect(await revokeOtherAuthSessions(createSession("sid-1"), store, "u1", NOW)).toEqual({ ok: true, data: 0 });
+    expect({ calls, rows: rows.size }).toEqual({ calls: [], rows: 1 });
+  });
+
+  it("names this session as the one the revocation spares and records it at `at`", async () => {
+    const { store } = recordingStore();
+    const seen: unknown[][] = [];
+    const token = await signedInToken(store);
+    const spy = { revokeOthers: async (...args: Parameters<AuthSessionStore["revokeOthers"]>) => (seen.push(args), store.revokeOthers(...args)) };
+    await revokeOtherAuthSessions(loaded({ [AUTH_SESSION_TOKEN_KEY]: token }), spy, "u1", NOW);
+    expect(seen.map(([userId, at, origin]) => [userId, at, bytesToHex((origin as { keep: Uint8Array }).keep)])).toEqual([
+      ["u1", NOW, await keyOf(token)],
+    ]);
+  });
+
+  it("answers the store's failure", async () => {
+    const { store } = recordingStore([ADA], { revokeOthers: failure("revokeOthers") });
+    const result = await revokeOtherAuthSessions(loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) }), store, "u1", NOW);
+    expect(result.ok ? null : result.error.code).toBe("unavailable");
+  });
+});
+
+describe("resolveAuthIdentity", () => {
+  it("returns the identity of the row's owner, with the step-up the row holds", async () => {
+    const { store, rows } = recordingStore();
+    const token = await signedInToken(store);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    await markAuthStepUp(session, store, NOW + 7, NOW + 7, "passkey");
+    const [row] = rows.values();
+    expect(await resolveAuthIdentity(session, store, NOW + 10)).toEqual(
+      ok({ userId: "u1", email: "ada@example.com", isAdmin: true, sessionId: row?.id, stepUpAt: NOW + 7, stepUpKind: "passkey" }),
+    );
+  });
+
+  it("returns no step-up for a row that was never stepped up", async () => {
+    const { store } = recordingStore();
+    const identity = await resolveAuthIdentity(loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) }), store, NOW);
+    expect(identity.ok ? identity.data?.stepUpAt : "failed").toBeNull();
+  });
+
+  it("asks the store nothing for an anonymous session and leaves it clean, so no anonymous GET writes or carries a `Set-Cookie`", async () => {
+    const { store, calls } = recordingStore();
+    const session = loaded({});
+    expect(await resolveAuthIdentity(session, store, NOW)).toEqual(ok(null));
+    expect({ calls, dirty: session.dirty }).toEqual({ calls: [], dirty: false });
+  });
+
+  for (const [shape, token] of [
+    ["a string one character short", "x".repeat(42)],
+    ["a string one character long", "x".repeat(44)],
+    ["a number", 7],
+    ["an empty string", ""],
+  ] as const) {
+    it(`returns null for a token that is ${shape}, without asking the store`, async () => {
+      const { store, calls } = recordingStore();
+      expect(await resolveAuthIdentity(loaded({ [AUTH_SESSION_TOKEN_KEY]: token }), store, NOW)).toEqual(ok(null));
+      expect(calls).toEqual([]);
+    });
+  }
+
+  it("finds the row one millisecond before it expires, and refuses it at the instant it does, dropping the token", async () => {
+    const { store } = recordingStore([ADA], {}, { idleTimeoutMs: null });
+    const token = await signedInToken(store);
+    const live = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    const expired = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    const before = await resolveAuthIdentity(live, store, NOW + AUTH_SESSION_MAX_MS - 1);
+    const at = await resolveAuthIdentity(expired, store, NOW + AUTH_SESSION_MAX_MS);
+    expect({ before: before.ok ? before.data?.userId : "failed", at, token: expired.get(AUTH_SESSION_TOKEN_KEY) }).toEqual({
+      before: "u1",
+      at: ok(null),
+      token: undefined,
+    });
+  });
+
+  it("refuses a row whose owner is deactivated, dropping the token", async () => {
+    const { store } = recordingStore([fakeAuthUser({ id: "u1", deactivatedAt: 99 })]);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) });
+    expect(await resolveAuthIdentity(session, store, NOW)).toEqual(ok(null));
+    expect(session.get(AUTH_SESSION_TOKEN_KEY)).toBeUndefined();
+  });
+
+  it("refuses a token naming no row, dropping it without rotating the id", async () => {
+    const { store } = recordingStore();
+    const scratch = createSession("scratch");
+    await establishAuthSession(scratch, fakeAuthSessionStore([ADA]), "u1", NOW, NOW, { kind: "email-otp" });
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: scratch.get(AUTH_SESSION_TOKEN_KEY) });
+    expect(await resolveAuthIdentity(session, store, NOW)).toEqual(ok(null));
+    expect({ token: session.get(AUTH_SESSION_TOKEN_KEY), id: session.id, deleteId: session.deleteId }).toEqual({
+      token: undefined,
+      id: "sid-1",
+      deleteId: undefined,
+    });
+  });
+
+  it("answers the store's failure rather than nobody when the store is unavailable, keeping the token and the session clean so an outage signs nobody out", async () => {
+    const { store } = recordingStore([ADA], { resolve: failure("resolve") });
+    const token = await signedInToken(store);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    const resolved = await resolveAuthIdentity(session, store, NOW);
+    expect(resolved.ok ? "resolved" : resolved.error.code).toBe("unavailable");
+    expect({ token: session.get(AUTH_SESSION_TOKEN_KEY), dirty: session.dirty }).toEqual({ token, dirty: false });
+  });
+
+  it("reads a session as anonymous once it was cleared", async () => {
+    const { store } = recordingStore();
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: await signedInToken(store) });
+    await clearAuthSession(session, store);
+    expect(await resolveAuthIdentity(session, store, NOW)).toEqual(ok(null));
   });
 });
 
@@ -359,5 +508,12 @@ describe("markApproval and resolveApprovalMark", () => {
     session.set(APPROVAL_CODE_SESSION_KEY, "k.mac");
     session.set(APPROVAL_SESSION_KEY, "yesterday");
     expect([unset, resolveApprovalMark(session)]).toEqual([null, null]);
+  });
+
+  it("leaves a signed-in session's token alone, and still deletes the old session id", async () => {
+    const token = await signedInToken(recordingStore().store);
+    const session = loaded({ [AUTH_SESSION_TOKEN_KEY]: token });
+    markApproval(session, { presentedAt: NOW, digest: "k.mac" });
+    expect({ token: session.get(AUTH_SESSION_TOKEN_KEY), deleteId: session.deleteId }).toEqual({ token, deleteId: "sid-1" });
   });
 });

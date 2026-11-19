@@ -3,7 +3,9 @@ import { sql } from "../../storage/db/sql";
 import type { D1Client } from "../../storage/db/types";
 import { uuidv7Bytes } from "../../storage/db/uuid";
 import type { UserStore } from "../types";
+import { authSecurityEventStatement } from "./events";
 import { readMaybe, readUser, storeError, uuidKey } from "./rows";
+import { authSessionRevocation } from "./sessions";
 import type { UserRow } from "./types";
 
 /** Creates the `UserStore` over a SQL database — reads and writes, with no capability to delete a user. @public */
@@ -36,7 +38,6 @@ export function createUserStore(db: D1Client): UserStore {
         webauthn_id: null,
         is_admin: input.isAdmin ? 1 : 0,
         deactivated_at: null,
-        sessions_invalid_before: null,
         created_at: at,
         updated_at: at,
       };
@@ -50,16 +51,15 @@ export function createUserStore(db: D1Client): UserStore {
     async setWebAuthnIdIfAbsent(id, webauthnId, at) {
       const key = uuidKey(id);
       if (!key) return ok(null);
-      const written = await db.execute(
-        sql`UPDATE auth_users SET webauthn_id = ${webauthnId}, updated_at = ${at} WHERE id = ${key} AND webauthn_id IS NULL`,
-      );
-      if (!written.ok) return err(storeError("users.setWebAuthnIdIfAbsent", written.error));
       // Whichever request won, the row now carries a handle, so the read reports one rather than
       // deciding anything: a concurrent minter's handle is the answer, not a conflict.
-      const found = await db.queryOne<UserRow>(sql`SELECT * FROM auth_users WHERE id = ${key}`);
-      return found.ok
-        ? readMaybe("users.setWebAuthnIdIfAbsent", found.data, readUser)
-        : err(storeError("users.setWebAuthnIdIfAbsent", found.error));
+      const outcome = await db.batch<UserRow>([
+        sql`UPDATE auth_users SET webauthn_id = ${webauthnId}, updated_at = ${at} WHERE id = ${key} AND webauthn_id IS NULL`,
+        sql`SELECT * FROM auth_users WHERE id = ${key}`,
+      ]);
+      return outcome.ok
+        ? readMaybe("users.setWebAuthnIdIfAbsent", outcome.data[1]?.results[0], readUser)
+        : err(storeError("users.setWebAuthnIdIfAbsent", outcome.error));
     },
 
     async markEmailVerified(id, at) {
@@ -74,23 +74,25 @@ export function createUserStore(db: D1Client): UserStore {
       if (!key) return ok(false);
       // Answering the mailed link *is* proof of control over the new address, so the statement that
       // moves the row verifies it too — a second write could fail and leave the account unverified.
-      const outcome = await db.execute(
+      const outcome = await db.batch([
         sql`UPDATE auth_users SET email = ${email}, email_key = ${emailKey}, email_verified_at = ${at}, updated_at = ${at}
             WHERE id = ${key}`,
-      );
-      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("users.changeEmail", outcome.error));
+        authSecurityEventStatement({ userKey: key, type: "email-changed", factorKind: null, keep: null, adminKey: null, at }, sql`changes() > 0`),
+        authSessionRevocation(key, null),
+      ]);
+      return outcome.ok ? ok((outcome.data[0]?.rowsWritten ?? 0) > 0) : err(storeError("users.changeEmail", outcome.error));
     },
 
-    // Monotonic: two revocations racing must not let the earlier one walk the barrier backwards and
-    // hand a session that was already refused back to its holder.
-    async revokeSessions(id, at) {
+    async claimEmailChange(id, at, cooldownMs) {
       const key = uuidKey(id);
       if (!key) return ok(false);
+      // The cooldown is the row's own condition, as the code issue's is: read it first and every
+      // parallel request sees the same last stamp, and each one sends its own mail.
       const outcome = await db.execute(
-        sql`UPDATE auth_users SET sessions_invalid_before = ${at}, updated_at = ${at}
-            WHERE id = ${key} AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ${at})`,
+        sql`UPDATE auth_users SET email_change_requested_at = ${at}
+            WHERE id = ${key} AND (email_change_requested_at IS NULL OR email_change_requested_at <= ${at - cooldownMs})`,
       );
-      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("users.revokeSessions", outcome.error));
+      return outcome.ok ? ok(outcome.data.rowsWritten > 0) : err(storeError("users.claimEmailChange", outcome.error));
     },
   };
 }

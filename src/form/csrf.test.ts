@@ -174,6 +174,26 @@ describe("csrfProtection middleware", () => {
     expect(await res.text()).toBe("Forbidden");
   });
 
+  it("holds OPTIONS and TRACE to a token, exempting only GET and HEAD", async () => {
+    const app = makeApp();
+    mapHandler(app, "ANY", "/any", () => new Response("ok"));
+
+    for (const method of ["OPTIONS", "TRACE"]) {
+      const res = await app.request("/any", { method });
+      expect({ method, status: res.status, body: await res.text() }).toEqual({ method, status: 403, body: "Forbidden" });
+    }
+  });
+
+  it("OPTIONS with a valid X-CSRF-Token header passes", async () => {
+    const app = makeApp();
+    mapHandler(app, "ANY", "/any", () => new Response("ok"));
+    const token = await createCsrfToken(ring, "/any");
+
+    const res = await app.request("/any", { method: "OPTIONS", headers: { "X-CSRF-Token": token } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+  });
+
   it("respects custom headerName option", async () => {
     const app = new Forge();
     app.use("*", csrfProtection({ ring: () => ring, headerName: "X-My-Token", subject: false }));

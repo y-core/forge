@@ -49,6 +49,9 @@ const PROMPT: Record<AuthFactorKind, string> = {
   "recovery-code": "Enter one of your recovery codes.",
 };
 
+/** How the page asks for an emailed code it has not sent yet. */
+const UNSENT_PROMPT = "Send yourself a code by email, then enter it here.";
+
 /** How the picker offers switching to each factor. */
 const CHOICE: Record<AuthFactorKind, string> = {
   "email-otp": "Use an emailed code instead",
@@ -71,6 +74,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
   csrfToken,
   resendToken,
   resent,
+  codeSent,
   resendWaitMs,
   csrfHeader,
   email,
@@ -91,8 +95,8 @@ export const VerifyView: FC<VerifyViewProps> = ({
           <Heading class='text-xl'>Confirm it&#39;s you</Heading>
         </Card.Title>
         <Card.Description>
-          {PROMPT[factor]}
-          {factor === "email-otp" && email !== undefined ? ` Sent to ${email}.` : ""}
+          {factor === "email-otp" && codeSent === false ? UNSENT_PROMPT : PROMPT[factor]}
+          {factor === "email-otp" && email !== undefined && codeSent !== false ? ` Sent to ${email}.` : ""}
         </Card.Description>
       </Card.Header>
       <Card.Content class='flex flex-col gap-6'>
@@ -170,7 +174,7 @@ export const VerifyView: FC<VerifyViewProps> = ({
               )}
               <Button type='submit' tone='neutral' appearance='ghost' class='w-full' disabled={resendWaitMs !== undefined} data-ref='verify-resend'>
                 <AppIcon name='mail' class='size-4' />
-                Send another code
+                {codeSent === false ? "Send a code" : "Send another code"}
               </Button>
             </Form>
           </div>

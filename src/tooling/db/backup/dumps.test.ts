@@ -105,6 +105,20 @@ describe("compareRowCounts()", () => {
       ),
     ).toEqual([]);
   });
+
+  it("holds the dump's sqlite_stat1, which an ANALYZE leaves and the live count never takes, to nothing, while an app table's drift still reports", () => {
+    const analyzed = { rows: { tasks: 2, sqlite_sequence: 1, sqlite_stat1: 21 } } as unknown as D1BackupSidecar;
+    const live = (tasks: number) =>
+      new Map([
+        ["tasks", tasks],
+        ["sqlite_sequence", 1],
+      ]);
+
+    expect([compareRowCounts(analyzed, live(2)), compareRowCounts(analyzed, live(3))]).toEqual([
+      [],
+      ["tasks: the dump holds 2 row(s) and the database now holds 3"],
+    ]);
+  });
 });
 
 describe("openBackupPorts()", () => {

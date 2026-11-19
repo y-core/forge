@@ -7,11 +7,11 @@ export function quoteList(names: readonly string[]): string {
   return names.map((name) => `\`${name}\``).join(", ");
 }
 
-function requirementsOf(config: FeatureManifest, feature: string): readonly string[] {
+function requirementsOf(config: FeatureManifest["features"], feature: string): readonly string[] {
   return config[feature]?.requires ?? [];
 }
 
-function assertKnownRequirements(config: FeatureManifest, features: readonly string[]): void {
+function assertKnownRequirements(config: FeatureManifest["features"], features: readonly string[]): void {
   for (const feature of features) {
     for (const requirement of requirementsOf(config, feature)) {
       if (requirement === feature) throw new CliError("invalid-args", `feature \`${feature}\` requires itself`);
@@ -25,7 +25,7 @@ function assertKnownRequirements(config: FeatureManifest, features: readonly str
   }
 }
 
-function assertAcyclic(config: FeatureManifest, features: readonly string[]): void {
+function assertAcyclic(config: FeatureManifest["features"], features: readonly string[]): void {
   const finished = new Set<string>();
   const path: string[] = [];
   const visit = (feature: string): void => {
@@ -46,7 +46,7 @@ function assertAcyclic(config: FeatureManifest, features: readonly string[]): vo
   for (const feature of features) visit(feature);
 }
 
-function topologicalOrder(config: FeatureManifest, features: readonly string[]): string[] {
+function topologicalOrder(config: FeatureManifest["features"], features: readonly string[]): string[] {
   const order: string[] = [];
   while (order.length < features.length) {
     const next = features.find((feature) => !order.includes(feature) && requirementsOf(config, feature).every((name) => order.includes(name)));
@@ -57,7 +57,7 @@ function topologicalOrder(config: FeatureManifest, features: readonly string[]):
 }
 
 /** Reads the manifest's requirement edges, refusing an unknown requirement, a feature requiring itself, and a cycle. @internal */
-export function featureGraph(config: FeatureManifest): FeatureGraph {
+export function featureGraph(config: FeatureManifest["features"]): FeatureGraph {
   const features = Object.keys(config);
   assertKnownRequirements(config, features);
   assertAcyclic(config, features);
@@ -77,7 +77,7 @@ export function featureGraph(config: FeatureManifest): FeatureGraph {
 }
 
 /** Resolves a selection: a kept feature keeps what it requires, and a dropped feature drops what requires it. @internal */
-export function resolveFeatures(config: FeatureManifest, selection: FeatureSelection): FeatureResolution {
+export function resolveFeatures(config: FeatureManifest["features"], selection: FeatureSelection): FeatureResolution {
   const graph = featureGraph(config);
   const features = Object.keys(config);
   const mode = "keep" in selection ? "keep" : "drop";
@@ -106,7 +106,7 @@ export function resolveFeatures(config: FeatureManifest, selection: FeatureSelec
 }
 
 /** The `forge curate --list` rows: each feature in requirement order, with its direct edges and any regeneration it declares. @internal */
-export function describeFeatureGraph(config: FeatureManifest): string[] {
+export function describeFeatureGraph(config: FeatureManifest["features"]): string[] {
   const graph = featureGraph(config);
   const entries = graph.order.map((feature) => {
     const requires = [...new Set(requirementsOf(config, feature))];

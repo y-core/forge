@@ -181,7 +181,7 @@ export type { ModernCssCheckConfig } from "./checks/types";
 export { checkModernCss } from "./checks/modern-css";
 export type { DeferredFinding } from "./checks/types";
 export { MODERN_CSS_DEFERRED } from "./checks/modern-css-deferred";
-export type { CssBlock, ModernCssFinding } from "./checks/types";
+export type { CssBlock, ModernCssFinding, ModernCssSourceContext } from "./checks/types";
 export {
   findAspectRatioPadding,
   findCssBlocks,

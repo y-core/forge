@@ -273,6 +273,30 @@ describe("createObjectStore — content-type inference on put", () => {
     }
   });
 
+  it("treats an empty content-type as absent and infers the type from the key", async () => {
+    const backend = makeMemoryBackend();
+    const store = createObjectStore(backend);
+    await store.put("photo.png", "...", { contentType: "" });
+    await store.put("page.html", "<script/>", { contentType: "" });
+    expect(backend._store.get("photo.png")?.contentType).toBe("image/png");
+    expect(backend._store.get("page.html")?.contentType).toBe("application/octet-stream");
+  });
+
+  for (const contentType of ["text/plain, text/html", "text/html,", "image/png, image/svg+xml"]) {
+    it(`serves an upload stored as ${JSON.stringify(contentType)} as a sandboxed octet-stream download`, async () => {
+      const backend = makeMemoryBackend();
+      const store = createObjectStore(backend);
+      await store.put("upload.txt", "<script>alert(1)</script>", { contentType });
+
+      const served = await store.serveObject(new Request("http://x/upload.txt"), "upload.txt");
+      expect(served.ok).toBe(true);
+      if (!served.ok) return;
+      expect(served.data.headers.get("Content-Type")).toBe("application/octet-stream");
+      expect(served.data.headers.get("Content-Security-Policy")).toBe("sandbox");
+      expect(served.data.headers.get("Content-Disposition")).toBe(`attachment; filename="upload.txt"; filename*=UTF-8''upload.txt`);
+    });
+  }
+
   it("still honours an explicit active content-type, and serves it as a sandboxed download", async () => {
     const backend = makeMemoryBackend();
     const store = createObjectStore(backend);

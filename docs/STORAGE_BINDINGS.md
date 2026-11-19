@@ -23,7 +23,7 @@ audience: consumer
 - §1d validateD1Binding — Binding Validation Middleware: first-request shape check
 - §1e uuidv7 — Time-Ordered Primary Keys: the monotonic counter, the frozen Workers clock, and the TEXT-versus-BLOB trade
 - §1f Schema Health: detect and report, never heal
-- §1g Transactions — batch() Is the Boundary: one batch, one transaction; the zero-rows trap and `requireRowsWritten()`
+- §1g Transactions — batch() Is the Boundary: one batch, one transaction; children go by cascade; the zero-rows trap and `requireRowsWritten()`
 - §1h D1's Limits and Long Lists: what the client refuses before sending, binding a long list as one parameter, and keeping a bulk write
   under the caps
 - §2 storage/kv — KV Store: codec-aware key-value access
@@ -191,14 +191,20 @@ would name the same thing twice.
 ([`src/tooling/lint/README.md`][lint-readme]).
 
 **Repositories return fragments; the use case owns the batch.** A store function that needs to be composed with others returns a `SqlFragment` and
-never executes it, so the caller decides what is atomic. `remove` in `src/auth/stores/admin-users.ts` is the shipped form: a probe, the child
-deletes and the guarded parent delete, in one batch.
+never executes it, so the caller decides what is atomic. `remove` in `src/auth/stores/factors.ts` is the shipped form: its own delete, batched with
+the security-event, session-revocation and recovery-code fragments that other stores return.
 
 **Pre-generate ids with `uuidv7()` (§1e).** Every statement in a batch is prepared before any runs, so a child row cannot wait on the parent's
 `last_row_id`; a key minted in the Worker is bound into both.
 
 **Invariants live in the schema.** `CHECK`, `NOT NULL`, `UNIQUE` and a foreign key are evaluated inside the transaction, and a violation is what
 aborts the batch. valibot validates the input and words the error for the caller; it never stands in for a constraint.
+
+**A parent's children go by `ON DELETE CASCADE`, never by deletes of their own.** D1 always enforces foreign keys, so deleting the parent row
+removes every cascading child in the same statement — proved on workerd by the same `tests/workerd/auth-schema.workerd.ts`. `remove` in
+`src/auth/stores/admin-users.ts` is the shipped form: a probe that names the refusal, then the guarded delete of the user row alone. A child table
+that references the parent without a cascade refuses that delete, and the batch rolls back; for an app's key to an `auth_` table, the migration
+lint's `auth-key-blocks-delete` refuses such a key before it is applied ([`DATABASE_MANAGEMENT.md`][dm-5] §5).
 
 **The zero-rows trap.** An `UPDATE … WHERE id = ? AND balance >= ?` that matches no row is a success, and the batch commits around it. The answers,
 in order of preference: a `CHECK` such as `quantity >= 0`, so the write itself fails; and `requireRowsWritten()` appended directly after the write
@@ -275,6 +281,13 @@ parameters, with nothing sent; a list spelled out as one `?` per value is how a 
 rows per statement rather than one per row, and by spreading a large job over several invocations, such as a Queue consumer taking one chunk per
 message. A single `UPDATE` or `DELETE` over hundreds of thousands of rows exceeds D1's execution limits however it is batched; bound it with a key
 range and run it in steps.
+
+**`purgeAuthEphemera` in `src/auth/stores/ephemera.ts` is the shipped bounded-step form.** Each step is one
+`DELETE … WHERE rowid IN (SELECT rowid … ORDER BY <indexed column> LIMIT ?) RETURNING rowid`, each table has a ceiling of steps, and no transaction
+spans them, so a step a constraint refuses undoes only itself and the next run carries on. The steps are counted by the rows `RETURNING` answers,
+because D1's change count also counts the rows a cascade removes. A step a foreign-key, `NOT NULL` or `CHECK` constraint refuses stops that
+table alone and the run goes on to the next; the deletes write no value, so only an app key's `ON DELETE` action can raise one. The steps per
+table are capped so the whole run stays under the free plan's 50 queries.
 
 ---
 
@@ -359,12 +372,17 @@ already _is_ `text/html`:
 
 - **`put` never infers one.** `inferContentType` returns `application/octet-stream` for every extension in `ACTIVE_CONTENT_EXTENSIONS` — `html`,
   `htm`, `svg`, `xml`, `js`, `mjs` — because a key is routinely a user-chosen filename. `MIME_MAP` holds the honest mapping and the inference
-  declines to act on it. An explicit `contentType` on `put` wins, which is how a trusted asset keeps its real type.
+  declines to act on it. An explicit `contentType` on `put` wins, which is how a trusted asset keeps its real type; an empty one counts as
+  absent, so the type is inferred from the key.
 - **`serveObject` downloads one.** When the _stored_ type is active (`isActiveContentType`, matched on the essence so casing and a `charset`
-  parameter cannot hide one), the response carries `Content-Security-Policy: sandbox` and — unless the caller passed a `contentDisposition` —
-  `Content-Disposition: attachment`, overriding a stored `inline`. This is what closes the case the put-side default cannot see: an app that stored
-  an attacker-supplied MIME type explicitly. Inside a Forge app, or under `applySecurityHeaders`, the `sandbox` is combined with the app's CSP
-  rather than replaced by it ([`SECURITY_HARDENING.md`][sh-2f] §2f).
+  parameter cannot hide one), or the whole value does not parse as one RFC 9110 media type, parameters included — a comma list such as
+  `text/plain; charset=utf-8, text/html`, from which a browser renders the last valid entry, an empty value, or a stray quote — the response
+  carries `Content-Security-Policy: sandbox` and, unless the caller passed a `contentDisposition`, `Content-Disposition: attachment`, overriding a
+  stored `inline`. This is what closes the case the put-side default cannot see: an app that stored an attacker-supplied MIME type explicitly.
+  Inside a Forge app, or under `applySecurityHeaders`, the `sandbox` is combined with the app's CSP rather than replaced by it
+  ([`SECURITY_HARDENING.md`][sh-2f] §2f).
+- **The stored string is never sent.** The outgoing `Content-Type` is the lowercased essence, plus `charset` only when its value is a bare token.
+  An absent or unparseable stored type is sent as `application/octet-stream`.
 
 Serving untrusted uploads from a separate origin is still the stronger arrangement, and `contentDisposition: "attachment"` is still available for
 types forge does not class as active.

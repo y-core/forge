@@ -42,7 +42,7 @@ function credentialStore(existing: readonly AuthCredential[]): CredentialStore {
     create: () => Promise.resolve(err(new AuthStoreError("unavailable", "credentials.create"))),
     recordUse: () => Promise.resolve(ok(true)),
     relabel: () => Promise.resolve(ok(true)),
-    removeForUser: () => Promise.resolve(ok(true)),
+    removeForUser: () => Promise.resolve(ok("changed" as const)),
   };
 }
 

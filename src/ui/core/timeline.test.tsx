@@ -2,6 +2,7 @@
 /** @jsxImportSource @y-core/forge/render/jsx */
 import { describe, expect, it } from "bun:test";
 
+import { escapeHtml } from "../../html/escape";
 import { attrOf, attrsOf, classesOf, variantClasses } from "../../testing/markup";
 import { render } from "../../testing/render";
 import { stateAttrs } from "../contracts/state-attrs";
@@ -55,21 +56,29 @@ describe("Timeline.Item", () => {
     ]);
   });
 
-  it("fills the marker of a complete item from the inherited tone", async () => {
-    expect(variantClasses(await render(<Timeline.Item state='complete' />), await render(<Timeline.Item />), MARKER)).toEqual({
-      added: ["border-transparent", "bg-(--tone)", "text-(--tone-fg)"],
-      dropped: ["border-border", "text-muted-foreground"],
-    });
+  it("renders one marker for every state, its tone keyed on the item's `data-state` so a state the client sets recolours it", async () => {
+    const complete = await render(<Timeline.Item state='complete' />);
+    const current = await render(<Timeline.Item state='current' />);
+    const upcoming = await render(<Timeline.Item />);
+
+    expect([variantClasses(complete, upcoming, MARKER), variantClasses(current, upcoming, MARKER)]).toEqual([
+      { added: [], dropped: [] },
+      { added: [], dropped: [] },
+    ]);
+    // A variant binds the marker to its own item by child combinators, so the attribute carries them escaped.
+    expect(classesOf(upcoming, MARKER).filter((token) => token.includes("data-state"))).toEqual(
+      [
+        "[:is([data-state=complete],[data-state=complete]>*)>&]:border-transparent",
+        "[:is([data-state=complete],[data-state=complete]>*)>&]:bg-(--tone)",
+        "[:is([data-state=complete],[data-state=complete]>*)>&]:text-(--tone-fg)",
+        "[:is([data-state=current],[data-state=current]>*)>&]:border-(--tone-text)",
+        "[:is([data-state=current],[data-state=current]>*)>&]:text-(--tone-text)",
+      ].map(escapeHtml),
+    );
   });
 
-  it("outlines the current item and claims no ARIA current, since a record is not a wizard", async () => {
-    const html = await render(<Timeline.Item state='current' />);
-
-    expect(attrsOf(html)).toEqual({ "data-slot": "timeline-item", "data-state": "current" });
-    expect(variantClasses(html, await render(<Timeline.Item />), MARKER)).toEqual({
-      added: ["border-(--tone-text)", "text-(--tone-text)"],
-      dropped: ["border-border", "text-muted-foreground"],
-    });
+  it("claims no ARIA current for the current item, since a record is not a wizard", async () => {
+    expect(attrsOf(await render(<Timeline.Item state='current' />))).toEqual({ "data-slot": "timeline-item", "data-state": "current" });
   });
 
   it("shows the marker it was given inside the circle a screen reader is told to skip", async () => {

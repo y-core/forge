@@ -33,6 +33,7 @@ function totp(props: Partial<TotpEnrolViewProps> = {}) {
       enrolPath={ACCOUNT.totpEnrol()}
       removePath={ACCOUNT.totpRemove()}
       csrfToken='csrf-1'
+      mandatory={false}
       icon={AppIcon}
       {...props}
     />,
@@ -159,6 +160,50 @@ describe("TotpEnrolView once enrolled", () => {
   it("swaps the remove's answer over the view's own root", async () => {
     const html = await totp({ state: ENROLLED });
     expect(attrsOf(html, 'data-slot="form"')).toMatchObject({ "hx-target": `#${AUTH_TOTP_ID}`, "hx-swap": "outerHTML" });
+  });
+});
+
+describe("TotpEnrolView and a mandatory app", () => {
+  it("disables the remove control and names the reason as its description", async () => {
+    const html = await totp({ state: ENROLLED, mandatory: true });
+    expect({
+      disabled: attrsOf(html, 'data-ref="totp-remove"')["disabled"],
+      describedBy: attrOf(html, 'data-ref="totp-remove"', "aria-describedby"),
+      id: attrOf(html, 'data-ref="totp-mandatory"', "id"),
+      reason: textOf(html, "span", 'data-ref="totp-mandatory"'),
+      replace: tagOf(html, 'data-ref="totp-mandatory-replace"'),
+    }).toEqual({
+      disabled: "",
+      describedBy: "totp-mandatory",
+      id: "totp-mandatory",
+      reason: "Your account requires an authenticator app, so it can&#39;t be removed.",
+      replace: "",
+    });
+  });
+
+  it("points the reason at replacing the app where replacing is offered", async () => {
+    const html = await totp({ state: ENROLLED, mandatory: true, replacePath: ACCOUNT.totpReplace() });
+    expect({
+      href: attrOf(html, 'data-ref="totp-mandatory-replace"', "href"),
+      text: textOf(html, "a", 'data-ref="totp-mandatory-replace"'),
+    }).toEqual({ href: ACCOUNT.totpReplace(), text: "Replace it instead." });
+  });
+
+  it("leaves the remove control live and gives no reason when the app is optional", async () => {
+    const html = await totp({ state: ENROLLED, mandatory: false });
+    expect({ disabled: attrsOf(html, 'data-ref="totp-remove"')["disabled"], reason: tagOf(html, 'data-ref="totp-mandatory"') }).toEqual({
+      disabled: undefined,
+      reason: "",
+    });
+  });
+
+  it("states a refused removal in a destructive alert", async () => {
+    const html = await totp({ state: ENROLLED, error: "Add another first." });
+    expect({
+      tone: attrsOf(html, 'data-ref="totp-error"')["data-tone"],
+      title: textOf(html, "div", 'data-slot="alert-title"'),
+      description: textOf(html, "div", 'data-slot="alert-description"'),
+    }).toEqual({ tone: "destructive", title: "We could not remove your authenticator app", description: "Add another first." });
   });
 });
 

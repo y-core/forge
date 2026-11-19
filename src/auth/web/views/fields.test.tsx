@@ -60,7 +60,6 @@ const USER: AuthUser = {
   emailVerifiedAt: CREATED_AT,
   isAdmin: true,
   deactivatedAt: null,
-  sessionsInvalidBefore: null,
   webauthnId: null,
   createdAt: CREATED_AT,
   updatedAt: CREATED_AT,
@@ -84,7 +83,8 @@ const SUBMITTING_VIEWS = [
   {
     view: "SignupView",
     schema: authSignupSchema(),
-    html: () => render(<SignupView submitPath='/auth/signup' signinPath='/auth/signin' csrfToken='csrf-1' icon={AppIcon} />),
+    html: () =>
+      render(<SignupView submitPath='/auth/signup' signinPath='/auth/signin' csrfToken='csrf-1' addsSecondFactor={false} icon={AppIcon} />),
   },
   {
     view: "VerifyView",
@@ -132,7 +132,7 @@ const SUBMITTING_VIEWS = [
   {
     view: "TotpEnrolView",
     schema: authTotpEnrolSchema(),
-    html: () => render(<TotpEnrolView state={TOTP_ENROLLING} enrolPath='/account/totp' csrfToken='csrf-1' icon={AppIcon} />),
+    html: () => render(<TotpEnrolView state={TOTP_ENROLLING} enrolPath='/account/totp' csrfToken='csrf-1' mandatory={false} icon={AppIcon} />),
   },
   {
     view: "AdminElevateView",

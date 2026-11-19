@@ -47,7 +47,44 @@ describe("originGuard middleware", () => {
     const res = await app.request("/test", { method: "HEAD" });
     expect(res.status).toBe(200);
   });
+
+  it("lets OPTIONS and TRACE from a foreign Origin through as safe methods", async () => {
+    const app = makeApp(ALLOWED);
+    for (const method of ["OPTIONS", "TRACE"]) {
+      const res = await app.request("/test", { method, headers: { Origin: "https://evil.com" } });
+      expect({ method, status: res.status, body: await res.text() }).toEqual({ method, status: 200, body: "ok" });
+    }
+  });
+
+  it("refuses PUT, PATCH and DELETE from a foreign Origin with 403 Forbidden", async () => {
+    const app = makeApp(ALLOWED);
+    for (const method of ["PUT", "PATCH", "DELETE"]) {
+      const res = await app.request("/test", { method, headers: { Origin: "https://evil.com" } });
+      expect({ method, status: res.status, body: await res.text() }).toEqual({ method, status: 403, body: "Forbidden" });
+    }
+  });
+
+  it("judges a method by its meaning, not its case: a lowercase safe method passes and a lowercase unsafe one is refused", async () => {
+    const results: Record<string, { status: number; body: string }> = {};
+    for (const method of ["options", "get", "patch", "delete", "post"]) {
+      const context = createTestContext(deliveredAs(method, { headers: { Origin: "https://evil.com" } }));
+      const res = await originGuard(ALLOWED)(context as never, async () => new Response("ok"));
+      results[method] = { status: res.status, body: await res.text() };
+    }
+    expect(results).toEqual({
+      options: { status: 200, body: "ok" },
+      get: { status: 200, body: "ok" },
+      patch: { status: 403, body: "Forbidden" },
+      delete: { status: 403, body: "Forbidden" },
+      post: { status: 403, body: "Forbidden" },
+    });
+  });
 });
+
+// Bun's Request rewrites a non-canonical method to GET; Workers hands `patch` or an extension method through as sent.
+function deliveredAs(method: string, init: RequestInit = {}): Request {
+  return Object.defineProperty(new Request("https://example.com/test", init), "method", { value: method });
+}
 
 describe("originGuard on a WebSocket upgrade", () => {
   const ALLOWED = ["https://example.com"];
@@ -85,7 +122,18 @@ describe("isExemptFromOriginCheck", () => {
   const request = (method: string, headers: Record<string, string> = {}) => new Request("https://example.com/live", { method, headers });
 
   it("exempts a safe method that is not an upgrade", () => {
-    for (const method of ["GET", "HEAD", "OPTIONS"]) expect(isExemptFromOriginCheck(request(method))).toBe(true);
+    for (const method of ["GET", "HEAD", "OPTIONS", "TRACE"]) expect(isExemptFromOriginCheck(request(method))).toBe(true);
+  });
+
+  it("exempts a safe method whatever its case, and holds an unsafe one whatever its case", () => {
+    const verdicts = Object.fromEntries(
+      ["trace", "Options", "patch", "Delete"].map((method) => [method, isExemptFromOriginCheck(deliveredAs(method))]),
+    );
+    expect(verdicts).toEqual({ trace: true, Options: true, patch: false, Delete: false });
+  });
+
+  it("holds PUT, PATCH and DELETE to the check", () => {
+    for (const method of ["PUT", "PATCH", "DELETE"]) expect(isExemptFromOriginCheck(request(method))).toBe(false);
   });
 
   it("holds a WebSocket upgrade and a state-changing method to the check", () => {

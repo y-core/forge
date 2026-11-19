@@ -1,17 +1,27 @@
-import type { Route } from "@remix-run/fetch-router/routes";
+import type { RequestMethod, Route } from "@remix-run/fetch-router/routes";
 
 import { ConfigKey, getAppContext } from "../context/types";
 import { CacheControl } from "../http/headers";
+import { isSafeHttpMethod } from "../http/method";
 import { rebuildResponse } from "../http/rebuild";
 import { createLogger } from "../logging/logger";
 import { serializeError } from "../logging/serialize-error";
 import { toError } from "../result/result";
 import type { RouteParams } from "../router/types";
 import type { v } from "../validation/validation";
+import { hardenedText } from "./hardened-response";
 import { createSubmissionPipeline, PIPELINE_ONLY_KEYS } from "./pipeline";
 import type { CacheDirective, PageDefinition, RouteHandler } from "./types";
 
 const logger = createLogger("page");
+
+const PAGE_SERVED_METHODS = "GET, HEAD, POST, PUT, PATCH, DELETE";
+
+function pageAllowHeader(method: RequestMethod | "ANY"): string {
+  if (method === "ANY") return PAGE_SERVED_METHODS;
+  if (isSafeHttpMethod(method)) return "GET, HEAD";
+  return method;
+}
 
 function buildCacheHeader(cache: "no-store" | CacheDirective | undefined): string | undefined {
   if (cache === "no-store") return new CacheControl({ noStore: true }).toString();
@@ -48,7 +58,6 @@ export function definePage<
   ActionData = unknown,
   S extends v.GenericSchema = v.GenericSchema,
 >(route: R, def: PageDefinition<Bindings, RouteParams<R>, ConfigData, LoaderData, ActionData, S>): RouteHandler<R> {
-  void route;
   if (def.schema === undefined) {
     const stated = PIPELINE_ONLY_KEYS.filter((key) => (def as unknown as Record<string, unknown>)[key] !== undefined);
     if (stated.length > 0) {
@@ -64,13 +73,18 @@ export function definePage<
   const pipeline =
     def.schema === undefined ? undefined : createSubmissionPipeline<S, Bindings, RouteParams<R>, ConfigData>({ ...def, schema: def.schema });
   const cacheHeader = buildCacheHeader(def.cache);
+  const allow = pageAllowHeader(route.method);
 
   return async (context) => {
     const config = context.get(ConfigKey) as ConfigData;
     const c = getAppContext<Bindings, RouteParams<R>>(context);
 
     // HEAD never reaches here as itself — the app rewrites it to GET before routing.
-    const isMutation = context.method.toUpperCase() !== "GET";
+    const method = context.method.toUpperCase();
+    const isMutation = !isSafeHttpMethod(method);
+    if (!isMutation && method !== "GET") {
+      return hardenedText("Method Not Allowed", 405, { allow });
+    }
 
     try {
       // The action runs before the loader so the view renders the state the mutation left behind.

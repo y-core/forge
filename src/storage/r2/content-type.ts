@@ -1,4 +1,4 @@
-import { ContentType } from "../../http/headers";
+import { mediaTypeEssence } from "../../http/media-type";
 
 /** MIME type returned when no extension matches. @public */
 export const CONTENT_TYPE_DEFAULT = "application/octet-stream";
@@ -52,13 +52,15 @@ const ACTIVE_TYPE_ALIASES = [
 ];
 
 const ACTIVE_ESSENCES = new Set([
-  ...[...ACTIVE_CONTENT_EXTENSIONS].map((ext) => ContentType.from(MIME_MAP[ext] as string).mediaType as string),
+  ...[...ACTIVE_CONTENT_EXTENSIONS].map((ext) => mediaTypeEssence(MIME_MAP[ext] as string) as string),
   ...ACTIVE_TYPE_ALIASES,
 ]);
 
-/** Whether a stored MIME type is one a browser would render as a document rather than download. @public */
+/** Whether a stored MIME type is one a browser may render as a document, counting one that does not parse as a single type. @public */
 export function isActiveContentType(contentType: string): boolean {
-  const essence = (ContentType.from(contentType).mediaType ?? "").toLowerCase();
+  const essence = mediaTypeEssence(contentType);
+  // A browser splits a comma list and renders the last valid entry, so anything but one clean type fails closed.
+  if (essence === null) return true;
   // Any `+xml` essence, not an enumeration of them: a browser parses `application/atom+xml` and
   // every other structured-syntax sibling as a document, in which an XHTML `<script>` runs.
   return ACTIVE_ESSENCES.has(essence) || essence.endsWith("+xml");

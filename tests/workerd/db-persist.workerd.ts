@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 
 import { realDbIo } from "../../src/tooling/db/io";
 import type { DbIo, Home } from "../../src/tooling/db/types";
-import { wrangler } from "./wrangler";
+import { wrangler } from "./cli";
 
 const DATABASE = "db-persist-fixture";
 let root: string;
@@ -22,6 +22,8 @@ function home(persistTo: string): Home {
     persistTo,
     place: "local",
     env: null,
+    databaseId: null,
+    auth: null,
     synthesized: false,
   };
 }

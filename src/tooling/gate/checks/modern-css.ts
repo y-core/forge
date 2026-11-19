@@ -6,7 +6,7 @@ import { checkResult, fail, scannedNothing, warn } from "../finding";
 import type { CheckResult, Finding } from "../types";
 import { MODERN_CSS_DEFERRED } from "./modern-css-deferred";
 import { findModernCssViolations } from "./modern-css-parse";
-import { findModernCssSourceViolations } from "./modern-css-source-parse";
+import { declaresCrossDocumentTransition, findModernCssSourceViolations } from "./modern-css-source-parse";
 import { resolveSources, unresolvedSourceEntries } from "./source-scan";
 import type { DeferredFinding } from "./types";
 import type { ModernCssFinding } from "./types";
@@ -37,7 +37,8 @@ export function checkModernCss(config: ModernCssCheckConfig): CheckResult {
   const sourced = files.map((file) => [file, readFileSync(resolve(root, file), "utf-8")] as const);
   // A preprocessor stylesheet is only ever reported for being one, so no textual rule reads it.
   const violations = sourced.filter(([file]) => !PREPROCESSED(file)).flatMap(([file, text]) => findModernCssViolations(text, file));
-  const adoption = sourced.flatMap(([file, text]) => findModernCssSourceViolations(text, file));
+  const context = { crossDocumentTransition: sourced.some(([file, text]) => file.endsWith(".css") && declaresCrossDocumentTransition(text)) };
+  const adoption = sourced.flatMap(([file, text]) => findModernCssSourceViolations(text, file, context));
   const findings: Finding[] = [];
   let deferred = 0;
 

@@ -315,8 +315,35 @@ Each source SVG is normalised on the way in, so an icon set authored at mixed or
 
 ### Choosing which SVGs to trust
 
-Sanitisation admits an allowlist of elements and attributes, dropping scripting, embedded HTML, `on*` handlers, `javascript:` and `data:text/html`
-URLs, and SMIL animation of anything outside a presentation-and-geometry list.
+Sanitisation keeps only what an icon draws with and drops everything else, so an element or attribute it does not know never reaches the sprite.
+What it writes is always well-formed XML, so one bad icon cannot break a standalone sprite:
+
+- **Elements** — shapes and text (`path`, `rect`, `circle`, `ellipse`, `line`, `polyline`, `polygon`, `text`, `tspan`), structure (`svg`, `g`,
+  `defs`, `symbol`, `use`, `title`, `desc`), paint servers and masks (`linearGradient`, `radialGradient`, `stop`, `clipPath`, `mask`,
+  `pattern`, `marker`), and `filter` with its `fe*` primitives. Names compare case-insensitively. Anything else — `script`, `style`,
+  `foreignObject`, `iframe`, `image`, `a`, or any name with a namespace prefix such as `x:script` — goes with everything inside it. One left
+  unclosed goes with everything up to the end of its parent, except an unclosed `script` or `style`, which takes everything to the end of the
+  file. An element carrying the same attribute name twice, in any mix of case, goes the same way.
+- **`title` and `desc`** — keep their text and their own admitted attributes; any element inside them goes.
+- **Animation** — `animate`, `animateTransform` and `set` stay only while they animate a presentation or geometry attribute, never a URL.
+- **References** — `href` and `xlink:href` stay only when the first character after any leading spaces, tabs or line breaks is `#`, so a `use`
+  pointing at another file loses its `href`.
+- **Prefixed attributes** — only `xlink:href`, `xml:space` and `xml:lang`. The root `<svg>` may also keep `xmlns` bound to the SVG namespace and
+  `xmlns:xlink` bound to the XLink namespace; every other namespace declaration goes, so no prefix can be rebound below the root.
+- **`url()` in any attribute** — `style`, `fill`, `stroke`, `filter`, `mask`, `clip-path`, `marker-*`, `cursor` or any other attribute stays
+  only when every `url()` in it names a `#fragment`. It is dropped whole if it calls `image()`, `image-set()` or `src()`, which fetch a bare
+  string, or holds a backslash, since a CSS escape can spell any of them.
+- **Values** — each kept value is decoded once and written back double-quoted, with `&`, `<`, `>` and `"` escaped, so no attribute can carry
+  markup. A numeric reference decodes with or without its `;`. A named one decodes only when spelled exactly, semicolon included, as one of
+  `&amp;`, `&AMP;`, `&lt;`, `&LT;`, `&gt;`, `&GT;`, `&quot;`, `&QUOT;`, `&apos;`, `&colon;`, `&Tab;` or `&NewLine;`. Any other `&` followed by
+  a letter drops the attribute, so `aria-label="Tom&Jerry"` is dropped; write `Tom &amp; Jerry`. A value that decodes to a character XML
+  forbids — a NUL or another C0 control besides tab, line feed and carriage return, U+FFFE, U+FFFF, or half a surrogate pair — is dropped too.
+  So is a numeric reference past U+10FFFF.
+- **Text** — references are decoded the same way and written back escaped. An unknown one such as `&nbsp;`, or a numeric one past U+10FFFF,
+  stays as literal text, and a character XML forbids is removed.
+- **Everything else** — `on*` handlers go, and a `javascript:` or `data:text/html` value goes from any other URL-valued attribute.
+
+A cursor's root attributes pass the same check before its `viewBox`, `data-cursor-*` values and presentation attributes are read.
 
 **For untrusted or user-supplied SVGs this is still not sufficient.** Run a full DOM-based sanitizer such as DOMPurify before the file reaches the
 config. The production CSP remains the primary runtime control.
@@ -400,8 +427,8 @@ baked to a hex literal. A token that is missing, or present but unparseable as a
 diagnostic.
 
 `data-cursor-token` and `data-cursor-hotspot` on the cursor SVG's root `<svg>` drive the bake: the token names the custom property `{{signal}}`
-resolves, and the hotspot carries `"<x> <y>"`. Both are optional — without a token `{{signal}}` bakes `#000000`, and without a hotspot the cursor
-anchors at `0 0`.
+resolves, and the hotspot carries `"<x> <y>"` as two non-negative integers; any other hotspot fails the build, naming the cursor and its file. Both
+are optional — without a token `{{signal}}` bakes `#000000`, and without a hotspot the cursor anchors at `0 0`.
 
 **Declare a colour in `vars` when it is a cursor-only value**, and in CSS when the theme already owns it. A flat string applies to every theme, a
 nested record maps theme keys, a `var(--x)` reference is followed as CSS would follow it, and a config value wins over a CSS-declared one of the

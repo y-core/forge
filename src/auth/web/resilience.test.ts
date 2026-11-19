@@ -9,7 +9,7 @@ import { applyMiddlewareChain } from "../../app/middleware-chain";
 import type { AppContext } from "../../context/types";
 import { importKeyRing } from "../../crypto/keyring/ring";
 import type { KeyRing } from "../../crypto/keyring/types";
-import { base32Decode, totpCode } from "../../crypto/primitives/mod";
+import { base32Decode, timingSafeEqualBytes, totpCode } from "../../crypto/primitives/mod";
 import { csrfProtection, mintCsrf } from "../../form/csrf";
 import { requestLog } from "../../logging/request-logger";
 import type { Logger } from "../../logging/types";
@@ -23,18 +23,39 @@ import { mapHandler } from "../../testing/route";
 import { createRecoveryCodeFactor } from "../factors/recovery-code";
 import { createFactorRegistry } from "../factors/registry";
 import { createTotpAppFactor } from "../factors/totp-app";
-import type { AuthFactorRegistry, AuthFactorRequirement, AuthFactorResolution, AuthFactorService } from "../factors/types";
+import type { AuthFactorRegistry, AuthFactorResolution, AuthIdentifyingFactorService, AuthSecondFactorRequirement } from "../factors/types";
+import { createEmailChangeFlow } from "../flows/email-change";
 import { createSigninFlow } from "../flows/signin";
 import { createSignupFlow } from "../flows/signup";
 import { importAuthKeyRing } from "../keys/ring";
-import type { AuthFactor, AuthFactorKind, AuthUser, FactorStore, NonceStore, OtpStateStore, RecoveryCodeStore, UserStore } from "../types";
+import type {
+  AuthFactor,
+  AuthFactorKind,
+  AuthMessage,
+  AuthUser,
+  FactorStore,
+  NonceStore,
+  OtpStateStore,
+  RecoveryCodeStore,
+  UserStore,
+} from "../types";
 import { createAuthGuards, requireAuth } from "./guards";
 import { authCtx } from "./identity";
 import { authEnrolmentPaths, authPaths } from "./paths";
 import { registerAccount, registerAdmin, registerAuth } from "./register";
 import { accountRoutes, adminRoutes, authRoutes } from "./routes";
 import type { AuthWebOptions } from "./types";
-import { attrOf, elementsOf, fakeAdminUserStore, fakeAuthCredentialStore, fakeAuthIcon, fakeAuthServices, textOf } from "./web.fixture";
+import {
+  attrOf,
+  elementsOf,
+  fakeAdminUserStore,
+  fakeAuthCredentialStore,
+  fakeAuthIcon,
+  fakeAuthServices,
+  fakeAuthSessionStore,
+  fakeChallengeStore,
+  textOf,
+} from "./web.fixture";
 
 interface ResilienceEnv extends Record<string, unknown> {
   readonly KV: KVNamespace;
@@ -107,7 +128,6 @@ function memoryAuth() {
         webauthnId: null,
         isAdmin: false,
         deactivatedAt: null,
-        sessionsInvalidBefore: null,
         createdAt: at,
         updatedAt: at,
       };
@@ -116,17 +136,21 @@ function memoryAuth() {
     },
     setWebAuthnIdIfAbsent: async () => ok(null),
     markEmailVerified: async (id, at) => ok(patchUser(id, { emailVerifiedAt: at })),
-    changeEmail: async () => ok(true),
-    revokeSessions: async (id, at) => {
-      const barrier = users.find((user) => user.id === id)?.sessionsInvalidBefore ?? null;
-      return ok(barrier !== null && barrier >= at ? false : patchUser(id, { sessionsInvalidBefore: at }));
+    claimEmailChange: () => Promise.resolve(ok(true)),
+    changeEmail: async (id, email, emailKey, at) => {
+      const moved = patchUser(id, { email, emailKey, emailVerifiedAt: at, updatedAt: at });
+      for (const [key, row] of sessionStore.rows) if (row.userId === id) sessionStore.rows.delete(key);
+      return ok(moved);
     },
   };
+
+  const sessionStore = fakeAuthSessionStore(users);
 
   const factorStore: FactorStore = {
     listByUser: async (userId) => ok(factors.filter((row) => row.userId === userId)),
     find: async (userId, kind) => ok(factors.find((row) => row.userId === userId && row.kind === kind) ?? null),
-    findEnrolled: async (userId, kinds) => ok(factors.filter((row) => row.userId === userId && kinds.includes(row.kind))),
+    listConfirmedKinds: async (userId, kinds) =>
+      ok(factors.filter((row) => row.userId === userId && kinds.includes(row.kind) && row.confirmedAt !== null).map((row) => row.kind)),
     enrol: async (input, at) => {
       const row: AuthFactor = {
         id: `f${factors.length + 1}-${at}`,
@@ -143,10 +167,11 @@ function memoryAuth() {
       factors.push(row);
       return ok(row);
     },
-    confirm: async (id, userId, at) => {
-      const held = factors.some((row) => row.id === id && row.userId === userId);
-      if (held) patch(id, { confirmedAt: at, updatedAt: at });
-      return ok(held);
+    confirm: async (id, userId, at, origin) => {
+      const row = factors.find((held) => held.id === id && held.userId === userId);
+      if (row !== undefined) patch(id, { confirmedAt: at, updatedAt: at });
+      if (row?.confirmedAt === null && row.kind !== "passkey") await sessionStore.revokeOthers(userId, at, origin);
+      return ok(row !== undefined);
     },
     countAttempt: async (userId, kind, maxAttempts, at, lockoutMs) => {
       const row = factors.find((held) => held.userId === userId && held.kind === kind);
@@ -157,21 +182,37 @@ function memoryAuth() {
       patch(row.id, { failedAttempts: row.failedAttempts >= maxAttempts ? 1 : row.failedAttempts + 1, updatedAt: at });
       return ok(factors.find((held) => held.id === row.id) ?? null);
     },
-    recordVerification: async (id, userId, counter, at, secret) => {
+    recordVerification: async (id, userId, counter, at, frame, resealed) => {
       const row = factors.find((held) => held.id === id && held.userId === userId);
-      if (row === undefined || (row.lastCounter !== null && counter <= row.lastCounter)) return ok(false);
-      patch(id, { lastCounter: counter, failedAttempts: 0, lastVerifiedAt: at, updatedAt: at, ...(secret === undefined ? {} : { secret }) });
+      if (row?.secret == null || !timingSafeEqualBytes(row.secret, frame)) return ok(false);
+      if (row.lastCounter !== null && counter <= row.lastCounter) return ok(false);
+      patch(id, {
+        lastCounter: counter,
+        failedAttempts: 0,
+        lastVerifiedAt: at,
+        updatedAt: at,
+        ...(resealed === undefined ? {} : { secret: resealed }),
+      });
+      return ok(true);
+    },
+    replaceSecret: async (id, userId, secret, counter, at, origin) => {
+      const row = factors.find((held) => held.id === id && held.userId === userId && held.kind === "totp-app" && held.confirmedAt !== null);
+      if (row === undefined) return ok(false);
+      patch(id, { secret, lastCounter: counter, failedAttempts: 0, lastVerifiedAt: at, updatedAt: at });
+      await sessionStore.revokeOthers(userId, at, origin);
       return ok(true);
     },
     countSecretsNotUnder: async () => ok(0),
-    remove: async (id, userId) => {
+    remove: async (id, userId, at, origin) => {
       const held = factors.some((row) => row.id === id && row.userId === userId);
+      if (factors.some((row) => row.id === id && row.userId === userId && row.confirmedAt !== null))
+        await sessionStore.revokeOthers(userId, at, origin);
       factors = factors.filter((row) => !(row.id === id && row.userId === userId));
       if (!recoverable(userId)) {
         codes = codes.filter((code) => code.userId !== userId);
         factors = factors.filter((row) => !(row.userId === userId && row.kind === "recovery-code"));
       }
-      return ok(held);
+      return held ? ok("changed" as const) : ok("not-found" as const);
     },
   };
 
@@ -184,18 +225,21 @@ function memoryAuth() {
       return ok(undefined);
     },
     holdsStaged: async (userId, hash) => ok(codes.some((code) => code.userId === userId && code.staged && code.hash === hex(hash))),
-    commit: async (userId, factorId, at) => {
-      codes = codes.filter((code) => !(code.userId === userId && !code.staged));
+    commit: async (userId, factorId, at, origin) => {
+      const swapped = codes.some((code) => code.userId === userId && code.staged);
+      if (swapped) codes = codes.filter((code) => !(code.userId === userId && !code.staged));
+      if (swapped) await sessionStore.revokeOthers(userId, at, origin);
       for (const code of codes) if (code.userId === userId) code.staged = false;
       const row = factors.find((held) => held.id === factorId);
       patch(factorId, { confirmedAt: row?.confirmedAt ?? at, failedAttempts: 0, updatedAt: at });
-      return ok(undefined);
+      return ok(swapped);
     },
-    consume: async (userId, factorId, hash, at) => {
+    consume: async (userId, factorId, hash, at, origin) => {
       const code = codes.find((held) => held.userId === userId && !held.staged && held.usedAt === null && held.hash === hex(hash));
       if (code === undefined) return ok(false);
       code.usedAt = at;
       patch(factorId, { failedAttempts: 0 });
+      await sessionStore.revokeOthers(userId, at, origin);
       return ok(true);
     },
     remaining: async (userId) => ok(codes.filter((code) => code.userId === userId && !code.staged && code.usedAt === null).length),
@@ -203,17 +247,18 @@ function memoryAuth() {
 
   const adminStore = fakeAdminUserStore([], {
     findById: async (id) => ok(users.find((user) => user.id.toLowerCase() === id.toLowerCase()) ?? null),
-    resetFactors: async (id, at) => {
+    resetFactors: async (id) => {
       if (!users.some((user) => user.id === id)) return ok("not-found" as const);
       factors = factors.filter((row) => row.userId !== id);
       codes = codes.filter((code) => code.userId !== id);
-      patchUser(id, { sessionsInvalidBefore: at });
+      for (const [key, row] of sessionStore.rows) if (row.userId === id) sessionStore.rows.delete(key);
       return ok("changed" as const);
     },
   });
 
   return {
     userStore,
+    sessionStore,
     factorStore,
     codeStore,
     adminStore,
@@ -232,7 +277,7 @@ function memoryAuth() {
 }
 
 /** The email-OTP primary, stubbed to accept `EMAIL_CODE`: the mailbox is not what this file is about. */
-function emailCodeFactor(): AuthFactorService<"email-otp"> {
+function emailCodeFactor(): AuthIdentifyingFactorService {
   return {
     kind: "email-otp",
     enrolment: "implicit",
@@ -249,7 +294,7 @@ function emailCodeFactor(): AuthFactorService<"email-otp"> {
 }
 
 /** The whole mount over real TOTP and recovery-code factors, with every secret swappable between requests. */
-async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: number) {
+async function harness(requirement: AuthSecondFactorRequirement, stepUpMaxAgeMs?: number) {
   const store = memoryAuth();
   const clock = { now: 1_750_000_000_000 };
   const pending: Promise<unknown>[] = [];
@@ -268,23 +313,44 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
     clear: () => Promise.resolve(ok()),
   };
   const nonces: NonceStore = { markConsumed: () => Promise.resolve(ok(true)) };
+  const mail: AuthMessage[] = [];
+  const emailChange = createEmailChangeFlow({
+    keys: ring,
+    users: store.userStore,
+    nonces,
+    notifier: {
+      send: async (message) => {
+        mail.push(message);
+        return ok();
+      },
+    },
+    defer,
+    confirmUrl: (token) => `${ORIGIN}/email/confirm?token=${token}`,
+  });
 
   function registry(): AuthFactorRegistry {
     const built = createFactorRegistry(store.factorStore, {
-      offered: [
-        { service: emailCodeFactor(), role: "primary" },
-        {
-          service: createTotpAppFactor({ keys: ring, factors: store.factorStore, issuer: "Forge", account: (userId) => userId }),
-          role: "second",
-          requirement: totpRequirement,
-        },
-        { service: createRecoveryCodeFactor({ factors: store.factorStore, codes: store.codeStore }), role: "second", requirement: "optional" },
-      ],
+      primary: emailCodeFactor(),
+      second: {
+        offered: [
+          {
+            service: createTotpAppFactor({
+              keys: ring,
+              factors: store.factorStore,
+              challenges: fakeChallengeStore(),
+              issuer: "Forge",
+              account: (userId) => userId,
+            }),
+            requirement,
+          },
+        ],
+        recovery: createRecoveryCodeFactor({ factors: store.factorStore, codes: store.codeStore }),
+      },
     });
     return {
       ...built,
-      resolve: async (userId, context) => {
-        const resolved = await built.resolve(userId, context);
+      resolve: async (userId) => {
+        const resolved = await built.resolve(userId);
         if (resolved.ok && resolved.data.status === "satisfied" && store.secondFactorHolders().has(userId)) {
           audit.violations.push(`resolve answered satisfied for ${userId}, who holds a confirmed second factor`);
         }
@@ -298,11 +364,13 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
       const factors = registry();
       return fakeAuthServices({
         users: store.userStore,
+        sessions: store.sessionStore,
         credentials: fakeAuthCredentialStore([]),
         factors,
         enrolments: store.factorStore,
         signin: createSigninFlow({ keys: ring, users: store.userStore, state: otpState, nonces, factors, defer }),
         signup: createSignupFlow({ users: store.userStore, factors, defer }),
+        emailChange,
         admin: store.adminStore,
       });
     },
@@ -330,7 +398,7 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
 
   const window = stepUpMaxAgeMs === undefined ? {} : { stepUpMaxAgeMs };
   const memberGuard = requireAuth<ResilienceEnv>({
-    users: () => store.userStore,
+    sessions: () => store.sessionStore,
     signinPath: paths.auth.signin(),
     factors: () => registry(),
     stepUpPath: paths.auth.verify.show(),
@@ -352,7 +420,7 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
     guards: [
       ...createAuthGuards<ResilienceEnv>({
         routes: { auth: authMap, account: accountMap, admin: adminMap },
-        auth: { users: () => store.userStore, signinPath: paths.auth.signin(), now: () => clock.now },
+        auth: { sessions: () => store.sessionStore, signinPath: paths.auth.signin(), now: () => clock.now },
         enrolment: {
           factors: () => registry(),
           enrolmentPaths: authEnrolmentPaths(paths.auth),
@@ -371,10 +439,15 @@ async function harness(totpRequirement: AuthFactorRequirement, stepUpMaxAgeMs?: 
   registerAdmin(app, adminMap, options);
   mapHandler(app, "GET", MEMBER_PAGE, () => new Response("member data"));
   mapHandler(app, "GET", "/csrf-token", async (context) => new Response(await mintCsrf(context, context.url.searchParams.get("path") ?? "")));
+  mapHandler(app, "GET", "/email/confirm", async (context) => {
+    const confirmed = await emailChange.confirm(context.url.searchParams.get("token") ?? "", clock.now);
+    return new Response(confirmed.ok ? confirmed.data.status : String(confirmed.error));
+  });
 
   return {
     store,
     audit,
+    mail,
     warnings,
     registry,
     clock,
@@ -539,10 +612,16 @@ describe("the failure matrix: a lost value never locks an account out, and never
     const recovered = await v.form("/auth/verify?factor=recovery-code", { code: ada.codes[1] ?? "" });
     expect(locationOf(recovered)).toEqual({ status: 303, location: "/account/factors?recovered=1" });
     const repair = await v.get("/account/factors?recovered=1");
-    expect({ status: repair.status, notice: noticeOf(await repair.text()) }).toEqual({
+    const repairHtml = await repair.text();
+    expect({
+      status: repair.status,
+      notice: noticeOf(repairHtml).replace(/<a [^>]*>|<\/a>/g, ""),
+      replace: attrOf(repairHtml, 'data-ref="factors-replace-app"', "href"),
+    }).toEqual({
       status: 200,
       notice:
-        "You have 9 unused codes left. If your authenticator app or passkey no longer works, remove it below and add it again, then generate a new set of codes.",
+        "You have 9 unused codes left. If your authenticator app no longer works, replace it. If a passkey no longer works, add a new one below before you remove the old one. Then generate a new set of codes.",
+      replace: "/account/totp/replace",
     });
 
     expect(locationOf(await v.remove("/account/totp", "/account/totp"))).toEqual({ status: 303, location: "/account/totp" });
@@ -627,7 +706,7 @@ describe("the failure matrix: a lost value never locks an account out, and never
     expect(locationOf(await v.get("/account/factors"))).toEqual({ status: 303, location: "/auth/verify" });
   });
 
-  it("purged TOTP under a mandatory TOTP — the user steps up by code before the enrol page is reachable", async () => {
+  it("purged TOTP under a required second factor — the user steps up by code before the enrol page is reachable", async () => {
     const h = await harness("mandatory");
     const ada = await enrolled(h, "ada@example.com");
     h.store.dropFactor(ada.userId, "totp-app");
@@ -659,7 +738,7 @@ describe("the failure matrix: a lost value never locks an account out, and never
     expect((await v.get("/account/factors")).status).toBe(200);
   });
 
-  it("purged TOTP under a mandatory TOTP — a page behind `requireAuth` alone refuses the email-only session until it steps up", async () => {
+  it("purged TOTP under a required second factor — a page behind `requireAuth` alone refuses the email-only session until it steps up", async () => {
     const h = await harness("mandatory");
     const ada = await enrolled(h, "ada@example.com");
     h.store.dropFactor(ada.userId, "totp-app");
@@ -813,3 +892,65 @@ function getLeaves(routes: RouteMap): string[] {
     .filter((leaf): leaf is Route => leaf instanceof Route && leaf.method === "GET")
     .map((leaf) => (leaf.href as (params: Record<string, string>) => string)({ id: "c1" }));
 }
+
+describe("revocation reaches the sessions the acting request cannot see", () => {
+  /** A second device signed in as the enrolled user and stepped up with their authenticator. */
+  async function secondDevice(h: Harness, user: Enrolled): Promise<Visitor> {
+    const device = visitor(h);
+    expect(await signIn(device, "ada@example.com")).toEqual({ status: 303, location: "/auth/verify" });
+    await device.form("/auth/verify", { code: await authenticator(h, user.secret) });
+    expect((await device.get(MEMBER_PAGE)).status).toBe(200);
+    return device;
+  }
+
+  it("signs every other device out when one removes the authenticator app, and keeps the device that removed it", async () => {
+    const h = await harness("optional");
+    const ada = await enrolled(h, "ada@example.com");
+    const other = await secondDevice(h, ada);
+
+    const removed = locationOf(await ada.v.remove("/account/totp", "/account/totp"));
+    const acting = await ada.v.get(MEMBER_PAGE);
+    const elsewhere = locationOf(await other.get(MEMBER_PAGE));
+
+    expect({ removed, acting: [acting.status, await acting.text()], elsewhere }).toEqual({
+      removed: { status: 303, location: "/account/totp" },
+      acting: [200, "member data"],
+      elsewhere: { status: 302, location: "/auth/signin?next=%2Fapp%2Fmember" },
+    });
+  });
+
+  it("signs out every device, the one that asked for it included, when an email change is completed from a third browser", async () => {
+    const h = await harness("optional");
+    const ada = await enrolled(h, "ada@example.com");
+    const other = await secondDevice(h, ada);
+
+    const asked = await ada.v.form("/account/email-change", { email: "new@example.com" });
+    const third = visitor(h);
+    const follow = async (message: AuthMessage | undefined) => {
+      const link = new URL(message?.kind === "email-change" ? message.url : "", ORIGIN);
+      return (await third.get(link.pathname + link.search)).text();
+    };
+    const approved = await follow(h.mail[0]);
+    const moved = await follow(h.mail[1]);
+
+    expect({
+      asked: asked.status,
+      mailedTo: h.mail.map((message) => [message.kind, message.to]),
+      approved,
+      moved,
+      requester: locationOf(await ada.v.get(MEMBER_PAGE)),
+      other: locationOf(await other.get(MEMBER_PAGE)),
+    }).toEqual({
+      asked: 200,
+      mailedTo: [
+        ["email-change", "ada@example.com"],
+        ["email-change", "new@example.com"],
+        ["security-event", "ada@example.com"],
+      ],
+      approved: "forwarded",
+      moved: "moved",
+      requester: { status: 302, location: "/auth/signin?next=%2Fapp%2Fmember" },
+      other: { status: 302, location: "/auth/signin?next=%2Fapp%2Fmember" },
+    });
+  });
+});

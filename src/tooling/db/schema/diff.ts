@@ -1,6 +1,7 @@
 import { CliError } from "../../cli/errors";
 import { sha256 } from "../digest";
 import { mentionsSqlIdentifier, sqlIdentifierEquals, sqlIdentifierKey } from "./normalize";
+import { spokenSqlTokens, sqlColumnHasNonNullDefault, sqlColumnRefusesOwnNull } from "./nullability";
 import type {
   DataDependentStep,
   NamedChanges,
@@ -46,13 +47,18 @@ export function checkSchemaRenames(baseline: SchemaModel, renames: readonly Sche
   return problems;
 }
 
+// Read from the text `ADD COLUMN` emits, which is the text D1 judges.
+function refusesNullUndefaulted(column: SchemaColumn): boolean {
+  const tokens = spokenSqlTokens(column.definitionSource);
+  return sqlColumnRefusesOwnNull(tokens) && !sqlColumnHasNonNullDefault(tokens);
+}
+
 /** Why SQLite would refuse `ALTER TABLE … ADD COLUMN` for this column, or null when it would accept it. @internal */
 export function refuseAddColumn(column: SchemaColumn): string | null {
   const d = column.definition;
   if (/\bPRIMARY KEY\b/.test(d)) return "a PRIMARY KEY column cannot be added";
   if (/\bUNIQUE\b/.test(d)) return "a UNIQUE column cannot be added";
-  if (/\bNOT NULL\b/.test(d) && !/\bDEFAULT\b/.test(d)) return "a NOT NULL column with no DEFAULT cannot be added";
-  if (/\bNOT NULL\b/.test(d) && /\bDEFAULT\s+NULL\b/.test(d)) return "a NOT NULL column whose DEFAULT is NULL cannot be added";
+  if (refusesNullUndefaulted(column)) return "a column that refuses NULL with no non-NULL DEFAULT cannot be added";
   if (/\bDEFAULT\s*\(/.test(d) || /\bDEFAULT\s+CURRENT_(TIME|DATE|TIMESTAMP)\b/.test(d))
     return "a column whose DEFAULT is not a constant cannot be added";
   if (/\bREFERENCES\b/.test(d) && /\bDEFAULT\b/.test(d) && !/\bDEFAULT\s+NULL\b/.test(d))
@@ -190,9 +196,9 @@ function compareTable(
   if (dropped.some((name) => refuseDropColumn(baseline, name, baselineModel) !== null)) reasons.push("drop-column-unsupported");
 
   for (const column of added) {
-    if (/\bNOT NULL\b/.test(column.definition) && !/\bDEFAULT\b/.test(column.definition) && column.hidden === 0) {
+    if (column.hidden === 0 && refusesNullUndefaulted(column)) {
       refusals.push(
-        `${desired.name}.${column.name} is NOT NULL with no DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it NOT NULL in a later compose`,
+        `${desired.name}.${column.name} refuses NULL with no non-NULL DEFAULT on a table that already exists — add it nullable or with a constant DEFAULT, fill it with a seed, then make it refuse NULL in a later compose`,
       );
     }
   }

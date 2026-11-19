@@ -8,6 +8,7 @@ import { fakeD1 } from "../../testing/fakes";
 import type { FakeD1Options } from "../../testing/types";
 import { AuthStoreError } from "../errors";
 import type { AuthUser } from "../types";
+import { eventParams, securityEventText } from "./events.fixture";
 import { createUserStore } from "./users";
 
 const USER_ID = uuidv7();
@@ -35,7 +36,6 @@ function userRow(overrides: Record<string, unknown> = {}): Record<string, unknow
     webauthn_id: null,
     is_admin: 0,
     deactivated_at: null,
-    sessions_invalid_before: null,
     created_at: 1_000,
     updated_at: 2_000,
     ...overrides,
@@ -56,7 +56,6 @@ describe("createUserStore — reads", () => {
         webauthnId: null,
         isAdmin: true,
         deactivatedAt: null,
-        sessionsInvalidBefore: null,
         createdAt: 1_000,
         updatedAt: 2_000,
       } satisfies AuthUser,
@@ -99,7 +98,6 @@ describe("createUserStore — writes", () => {
       webauthnId: null,
       isAdmin: false,
       deactivatedAt: null,
-      sessionsInvalidBefore: null,
       createdAt: 9_000,
       updatedAt: 9_000,
     });
@@ -116,20 +114,48 @@ describe("createUserStore — writes", () => {
     expect(db.calls[0]?.params.slice(0, 4)).toEqual(["new@example.test", "new@example.test", 9_000, 9_000]);
   });
 
-  // Monotonic, so two revocations racing cannot walk the barrier backwards and hand a session that
-  // was already refused back to its holder.
-  it("moves the session barrier forward only, in the statement itself", async () => {
+  it("records `email-changed` directly after the move and deletes every session the user holds, in the batch that moves the address", async () => {
     const [client, db] = writerOf(() => 1);
-    expect(await createUserStore(client).revokeSessions(USER_ID, 9_000)).toEqual({ ok: true, data: true });
-    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toBe(
-      "UPDATE auth_users SET sessions_invalid_before = ?, updated_at = ? WHERE id = ? AND (sessions_invalid_before IS NULL OR sessions_invalid_before < ?)",
-    );
-    expect(db.calls[0]?.params).toEqual([9_000, 9_000, uuidToBytes(USER_ID), 9_000]);
+    const batches: string[][] = [];
+    const batch = db.batch;
+    db.batch = (statements) => {
+      batches.push(statements.map((statement) => (statement as unknown as { sql: string }).sql.replace(/\s+/g, " ").trim()));
+      return batch(statements);
+    };
+    await createUserStore(client).changeEmail(USER_ID, "new@example.test", "new@example.test", 9_000);
+    expect({ batches, event: eventParams(db.calls[1]?.params), deleted: db.calls[2]?.params }).toEqual({
+      batches: [
+        [
+          "UPDATE auth_users SET email = ?, email_key = ?, email_verified_at = ?, updated_at = ? WHERE id = ?",
+          securityEventText({ guard: "changes() > 0" }),
+          "DELETE FROM auth_sessions WHERE user_id = ?",
+        ],
+      ],
+      event: ["event-id", uuidToBytes(USER_ID), "email-changed", null, null, 9_000],
+      deleted: [uuidToBytes(USER_ID)],
+    });
   });
 
-  it("reports no change when the barrier already stood at or past the instant asked for", async () => {
-    const [client] = writerOf(() => 0);
-    expect(await createUserStore(client).revokeSessions(USER_ID, 9_000)).toEqual({ ok: true, data: false });
+  it("holds no address on the event it records, old or new", async () => {
+    const [client, db] = writerOf(() => 1);
+    await createUserStore(client).changeEmail(USER_ID, "new@example.test", "new@example.test", 9_000);
+    expect(db.calls[1]?.params.some((param) => typeof param === "string" && param.includes("@"))).toBe(false);
+  });
+
+  it("answers false when the move matched no row, whatever the session delete reported", async () => {
+    const [client] = writerOf((sql) => (sql.startsWith("DELETE") ? 3 : 0));
+    expect(await createUserStore(client).changeEmail(USER_ID, "new@example.test", "new@example.test", 9_000)).toEqual({ ok: true, data: false });
+  });
+
+  it("classifies the moving statement's unique-index refusal as a `conflict` naming the index", async () => {
+    const [client] = clientOf(undefined, {
+      failOn: (sql) =>
+        sql.startsWith("UPDATE auth_users")
+          ? new Error("D1_ERROR: UNIQUE constraint failed: auth_users.email_key: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)")
+          : null,
+    });
+    const moved = await createUserStore(client).changeEmail(USER_ID, "taken@example.test", "taken@example.test", 9_000);
+    expect(!moved.ok && [moved.error.code, moved.error.constraint]).toEqual(["conflict", "auth_users.email_key"]);
   });
 
   it("has no capability to delete a user", () => {
@@ -165,28 +191,114 @@ describe("createUserStore — the WebAuthn handle", () => {
     expect(found.ok && found.data?.webauthnId).toBeNull();
   });
 
+  const selectOnly = (row: Record<string, unknown>) => (sql: string) => (sql.startsWith("SELECT") ? [row] : []);
+
   it("mints the handle in one conditional statement, only while the column is null", async () => {
-    const [client, db] = writerOf(
-      () => 1,
-      () => [userRow({ webauthn_id: [...HANDLE] })],
-    );
+    const [client, db] = writerOf(() => 1, selectOnly(userRow({ webauthn_id: [...HANDLE] })));
     const set = await createUserStore(client).setWebAuthnIdIfAbsent(USER_ID, HANDLE, 9_000);
     expect(set.ok && set.data?.webauthnId).toEqual(HANDLE);
-    expect(db.calls[0]?.sql.replace(/\s+/g, " ")).toContain("SET webauthn_id = ?, updated_at = ? WHERE id = ? AND webauthn_id IS NULL");
+    expect(db.calls.map((call) => ({ sql: call.sql.replace(/\s+/g, " ").trim(), params: call.params }))).toEqual([
+      {
+        sql: "UPDATE auth_users SET webauthn_id = ?, updated_at = ? WHERE id = ? AND webauthn_id IS NULL",
+        params: [HANDLE, 9_000, uuidToBytes(USER_ID)],
+      },
+      { sql: "SELECT * FROM auth_users WHERE id = ?", params: [uuidToBytes(USER_ID)] },
+    ]);
   });
 
   it("returns the handle a concurrent request already set, rather than an error", async () => {
-    const [client] = writerOf(
-      () => 0,
-      () => [userRow({ webauthn_id: [...WON_BY_ANOTHER] })],
-    );
+    const [client] = writerOf(() => 0, selectOnly(userRow({ webauthn_id: [...WON_BY_ANOTHER] })));
+    expect(await createUserStore(client).setWebAuthnIdIfAbsent(USER_ID, HANDLE, 9_000)).toEqual({
+      ok: true,
+      data: {
+        id: USER_ID,
+        email: "Aurora@Example.test",
+        emailKey: "aurora@example.test",
+        emailVerifiedAt: null,
+        webauthnId: WON_BY_ANOTHER,
+        isAdmin: false,
+        deactivatedAt: null,
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      } satisfies AuthUser,
+    });
+  });
+
+  it("answers ok(null) for an id that is not a UUID, without a statement", async () => {
+    const [client, db] = writerOf(() => 1);
+    expect({ set: await createUserStore(client).setWebAuthnIdIfAbsent("nope", HANDLE, 9_000), calls: db.calls.length }).toEqual({
+      set: { ok: true, data: null },
+      calls: 0,
+    });
+  });
+
+  it("reports a failing write or read as `unavailable`, and a handle another user holds as a `conflict` on its index", async () => {
+    const cases = [
+      { failing: "UPDATE", message: "D1_ERROR: network lost", expected: ["unavailable", "users.setWebAuthnIdIfAbsent", undefined] },
+      { failing: "SELECT", message: "D1_ERROR: network lost", expected: ["unavailable", "users.setWebAuthnIdIfAbsent", undefined] },
+      {
+        failing: "UPDATE",
+        message: "D1_ERROR: UNIQUE constraint failed: auth_users.webauthn_id: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_UNIQUE)",
+        expected: ["conflict", "users.setWebAuthnIdIfAbsent", "auth_users.webauthn_id"],
+      },
+    ];
+    const observed = [];
+    for (const { failing, message } of cases) {
+      const [client] = clientOf(selectOnly(userRow()), { failOn: (sql) => (sql.startsWith(failing) ? new Error(message) : null) });
+      const set = await createUserStore(client).setWebAuthnIdIfAbsent(USER_ID, HANDLE, 9_000);
+      observed.push(set.ok ? set : [set.error.code, set.error.operation, set.error.constraint]);
+    }
+    expect(observed).toEqual(cases.map((entry) => entry.expected));
+  });
+
+  it("reports a row read back that will not decode as `unavailable`, not a throw", async () => {
+    // An id of three bytes is no UUID.
+    const [client] = writerOf(() => 1, selectOnly(userRow({ id: new Uint8Array(3) })));
     const set = await createUserStore(client).setWebAuthnIdIfAbsent(USER_ID, HANDLE, 9_000);
-    expect(set.ok && set.data?.webauthnId).toEqual(WON_BY_ANOTHER);
+    expect(set.ok === false && [set.error.code, set.error.operation]).toEqual(["unavailable", "users.setWebAuthnIdIfAbsent"]);
+  });
+
+  it("mints and reads the handle back in one batch, the read behind the write", async () => {
+    const [client, db] = writerOf(() => 1);
+    const batches: number[] = [];
+    const batch = db.batch;
+    db.batch = (statements) => {
+      batches.push(statements.length);
+      return batch(statements);
+    };
+    await createUserStore(client).setWebAuthnIdIfAbsent(USER_ID, HANDLE, 9_000);
+    expect({ batches, statements: db.calls.map((call) => call.sql.split(" ")[0]) }).toEqual({ batches: [2], statements: ["UPDATE", "SELECT"] });
   });
 
   it("reports a missing user as ok(null), rather than claiming a handle was minted", async () => {
     const [client] = writerOf(() => 0);
     expect(await createUserStore(client).setWebAuthnIdIfAbsent(USER_ID, HANDLE, 1)).toEqual({ ok: true, data: null });
+  });
+});
+
+describe("createUserStore — the address-change cooldown", () => {
+  const normalized = (sql: string | undefined) => sql?.replace(/\s+/g, " ").trim();
+
+  it("stamps the request and decides the cooldown in the one statement that writes, with no read before it", async () => {
+    const [client, db] = writerOf(() => 1);
+    expect(await createUserStore(client).claimEmailChange(USER_ID, 500_000, 300_000)).toEqual({ ok: true, data: true });
+    expect(db.calls.map((call) => [normalized(call.sql), call.params])).toEqual([
+      [
+        "UPDATE auth_users SET email_change_requested_at = ? WHERE id = ? AND (email_change_requested_at IS NULL OR email_change_requested_at <= ?)",
+        [500_000, uuidToBytes(USER_ID), 200_000],
+      ],
+    ]);
+  });
+
+  it("answers false when the statement wrote no row, which is the cooldown refusing", async () => {
+    const [client] = writerOf(() => 0);
+    expect(await createUserStore(client).claimEmailChange(USER_ID, 500_000, 300_000)).toEqual({ ok: true, data: false });
+  });
+
+  it("surfaces a D1 failure as unavailable, naming the operation", async () => {
+    const [client] = clientOf(() => [], { failOn: () => new Error("D1_ERROR: network") });
+    const outcome = await createUserStore(client).claimEmailChange(USER_ID, 500_000, 300_000);
+    expect(outcome.ok === false && [outcome.error.code, outcome.error.operation]).toEqual(["unavailable", "users.claimEmailChange"]);
   });
 });
 

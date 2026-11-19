@@ -4,7 +4,7 @@ import { base64urlEncode } from "../../crypto/primitives/mod";
 import { err, ok } from "../../result/result";
 import { uuidv7 } from "../../storage/db/uuid";
 import { AuthStoreError } from "../errors";
-import type { AuthChallenge, AuthCredential, AuthCredentialInput, ChallengeStore, CredentialStore } from "../types";
+import type { AuthChallenge, AuthCredential, AuthCredentialInput, AuthWriteOrigin, ChallengeStore, CredentialStore } from "../types";
 import { PASSKEY_FLAG, ceremonyCborEncode, createPasskeyKeyPair, fakeClientData, fakePasskeyRegistration } from "./passkey.fixture";
 import { verifyPasskeyRegistration } from "./register";
 import type { CeremonyCborValue, PasskeyKeyPair } from "./types";
@@ -61,12 +61,16 @@ function credentialRow(input: AuthCredentialInput, at: number): AuthCredential {
   };
 }
 
+const ORIGIN_OF_TEST: AuthWriteOrigin = { keep: new Uint8Array(32).fill(7) };
+
 function fakeCredentials(options: { conflict?: boolean } = {}) {
   const created: AuthCredentialInput[] = [];
+  const origins: AuthWriteOrigin[] = [];
   const store: CredentialStore = {
     listByUser: () => Promise.resolve(ok([])),
     findByCredentialId: () => Promise.resolve(ok(null)),
-    create: (input, at) => {
+    create: (input, at, origin) => {
+      origins.push(origin);
       if (options.conflict) {
         return Promise.resolve(err(new AuthStoreError("conflict", "credentials.create", { constraint: "auth_credentials.credential_id" })));
       }
@@ -75,9 +79,9 @@ function fakeCredentials(options: { conflict?: boolean } = {}) {
     },
     recordUse: () => Promise.resolve(ok(true)),
     relabel: () => Promise.resolve(ok(true)),
-    removeForUser: () => Promise.resolve(ok(true)),
+    removeForUser: () => Promise.resolve(ok("changed" as const)),
   };
-  return { store, created };
+  return { store, created, origins };
 }
 
 function verifyOptions(
@@ -104,7 +108,7 @@ describe("verifyPasskeyRegistration — a ceremony that passes", () => {
 
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(challenges.store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential, label: "Phone" },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential, label: "Phone" },
       AT,
     );
 
@@ -122,6 +126,7 @@ describe("verifyPasskeyRegistration — a ceremony that passes", () => {
         label: "Phone",
       },
     ]);
+    expect(credentials.origins).toEqual([ORIGIN_OF_TEST]);
   });
 
   it("stores an RS256 credential when the algorithm list admits it", async () => {
@@ -129,7 +134,7 @@ describe("verifyPasskeyRegistration — a ceremony that passes", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: RS256 });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome.ok).toBe(true);
@@ -142,7 +147,7 @@ describe("verifyPasskeyRegistration — a ceremony that passes", () => {
     const presented = { ...built, id: "an-id-the-client-chose" };
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: presented },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: presented },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "credential-id-mismatch" });
@@ -154,7 +159,7 @@ describe("verifyPasskeyRegistration — a ceremony that passes", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: ES256 });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome.ok).toBe(true);
@@ -169,7 +174,7 @@ describe("verifyPasskeyRegistration — the attestation format", () => {
       const credential = await fakePasskeyRegistration({ ...base(), key: ES256, fmt });
       const outcome = await verifyPasskeyRegistration(
         verifyOptions(fakeChallenges().store, fakeCredentials().store),
-        { sessionId: SESSION_ID, userId: USER_ID, credential },
+        { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
         AT,
       );
       expect(`${fmt}: ${outcome.ok ? "accepted" : outcome.error}`).toBe(`${fmt}: unsupported-attestation`);
@@ -180,7 +185,7 @@ describe("verifyPasskeyRegistration — the attestation format", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: ES256, attStmt: new Map<string, number>([["alg", -7]]) as never });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "attestation-not-empty" });
@@ -190,7 +195,7 @@ describe("verifyPasskeyRegistration — the attestation format", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: ES256, trailing: new Uint8Array([0x01, 0x02]) });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "malformed" });
@@ -200,7 +205,12 @@ describe("verifyPasskeyRegistration — the attestation format", () => {
     const built = await fakePasskeyRegistration({ ...base(), key: ES256 });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: { ...built, response: { ...built.response, attestationObject: "ff" } } },
+      {
+        sessionId: SESSION_ID,
+        userId: USER_ID,
+        origin: ORIGIN_OF_TEST,
+        credential: { ...built, response: { ...built.response, attestationObject: "ff" } },
+      },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "malformed" });
@@ -212,7 +222,7 @@ describe("verifyPasskeyRegistration — the algorithm list", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: RS256 });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store, { algorithms: [-7] }),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "unsupported-algorithm" });
@@ -223,7 +233,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
   it("refuses a session with no stored challenge", async () => {
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges(null).store, fakeCredentials().store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "challenge-not-found" });
@@ -238,7 +248,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
     for (const row of rows) {
       const outcome = await verifyPasskeyRegistration(
         verifyOptions(fakeChallenges(row.seed).store, fakeCredentials().store),
-        { sessionId: SESSION_ID, userId: USER_ID, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
+        { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
         AT,
       );
       expect(`${row.reason}: ${outcome.ok ? "accepted" : outcome.error}`).toBe(`${row.reason}: ${row.reason}`);
@@ -258,6 +268,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
         {
           sessionId: SESSION_ID,
           userId: USER_ID,
+          origin: ORIGIN_OF_TEST,
           credential: { ...built, response: { ...built.response, clientDataJSON: base64urlEncode(fakeClientData(row.fields)) } },
         },
         AT,
@@ -275,7 +286,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
       const credential = await fakePasskeyRegistration({ ...base(), key: ES256, ...row.fixture });
       const outcome = await verifyPasskeyRegistration(
         verifyOptions(fakeChallenges().store, fakeCredentials().store),
-        { sessionId: SESSION_ID, userId: USER_ID, credential },
+        { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
         AT,
       );
       expect(`${row.reason}: ${outcome.ok ? "accepted" : outcome.error}`).toBe(`${row.reason}: ${row.reason}`);
@@ -286,7 +297,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: ES256, flags: PASSKEY_FLAG.up | PASSKEY_FLAG.at });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store, { requireUserVerification: true }),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "user-not-verified" });
@@ -297,7 +308,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: ES256, flags: PASSKEY_FLAG.up | PASSKEY_FLAG.at });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome).toEqual({ ok: false, error: "user-not-verified" });
@@ -307,7 +318,7 @@ describe("verifyPasskeyRegistration — the ceremony bindings", () => {
     const credential = await fakePasskeyRegistration({ ...base(), key: ES256, flags: PASSKEY_FLAG.up | PASSKEY_FLAG.at });
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials().store, { requireUserVerification: false }),
-      { sessionId: SESSION_ID, userId: USER_ID, credential },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential },
       AT,
     );
     expect(outcome.ok).toBe(true);
@@ -318,7 +329,7 @@ describe("verifyPasskeyRegistration — a credential id already registered", () 
   it("surfaces the store's conflict as the AuthStoreError it was", async () => {
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, fakeCredentials({ conflict: true }).store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
       AT,
     );
     expect(outcome.ok).toBe(false);
@@ -339,7 +350,7 @@ describe("verifyPasskeyRegistration — the challenge on the failure path", () =
 
     const first = await verifyPasskeyRegistration(
       verifyOptions(challenges.store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: rejected },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: rejected },
       AT,
     );
     expect(first).toEqual({ ok: false, error: "unsupported-attestation" });
@@ -347,7 +358,7 @@ describe("verifyPasskeyRegistration — the challenge on the failure path", () =
 
     const retry = await verifyPasskeyRegistration(
       verifyOptions(challenges.store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: valid },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: valid },
       AT,
     );
     expect(retry).toEqual({ ok: false, error: "challenge-not-found" });
@@ -358,7 +369,7 @@ describe("verifyPasskeyRegistration — the challenge on the failure path", () =
     const challenges = fakeChallenges();
     await verifyPasskeyRegistration(
       verifyOptions(challenges.store, fakeCredentials({ conflict: true }).store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: await fakePasskeyRegistration({ ...base(), key: ES256 }) },
       AT,
     );
     expect(challenges.entries.size).toBe(0);
@@ -398,7 +409,7 @@ describe("verifyPasskeyRegistration — a key no sign-in could ever use", () => 
     const credentials = fakeCredentials();
     const outcome = await verifyPasskeyRegistration(
       verifyOptions(fakeChallenges().store, credentials.store),
-      { sessionId: SESSION_ID, userId: USER_ID, credential: await fakePasskeyRegistration({ ...base(), key }) },
+      { sessionId: SESSION_ID, userId: USER_ID, origin: ORIGIN_OF_TEST, credential: await fakePasskeyRegistration({ ...base(), key }) },
       AT,
     );
     return { outcome, created: credentials.created };
@@ -428,6 +439,7 @@ describe("verifyPasskeyRegistration — the bounds on what reaches the store", (
       {
         sessionId: SESSION_ID,
         userId: USER_ID,
+        origin: ORIGIN_OF_TEST,
         credential: await fakePasskeyRegistration({
           ...base(),
           key: ES256,

@@ -8,7 +8,7 @@ import { safeRedirectPath } from "../../http/redirect-path";
 import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { createAdminUserService } from "../admin/service";
-import type { EnrollableFactorService } from "../factors/types";
+import type { AuthFactorService, EnrollableFactorService, TotpReplaceableFactorService } from "../factors/types";
 import { PASSKEY_CSRF_HEADER_DEFAULT } from "../passkey-contract";
 import type { AuthFactorKind, PasskeyMode } from "../types";
 import type { AuthRequestSurface, AuthTurnstileCheck, AuthTurnstileFlow, AuthTurnstileOptions, AuthWebOptions } from "./types";
@@ -67,6 +67,16 @@ export function authEnrollable(services: AuthRequestSurface, kind: AuthFactorKin
   const service = services.factors.find(kind);
   if (service === undefined || service.enrolment !== "explicit") return err(notFound());
   return ok(service);
+}
+
+function replacesSecret(service: AuthFactorService): service is TotpReplaceableFactorService {
+  return service.kind === "totp-app" && "beginReplacement" in service && typeof service.beginReplacement === "function";
+}
+
+/** The offered authenticator-app factor where it can replace a confirmed secret in place, or the 404 a deployment without one answers. @internal */
+export function authReplaceableTotp(services: AuthRequestSurface): Result<TotpReplaceableFactorService, Response> {
+  const service = services.factors.find("totp-app");
+  return service !== undefined && replacesSecret(service) ? ok(service) : err(notFound());
 }
 
 /** Mints the path-bound tokens a ceremony needs and packs them with the contract the controller reads. @internal */

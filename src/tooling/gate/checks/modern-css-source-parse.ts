@@ -1,7 +1,7 @@
 import type { ModernCssReportedId } from "../../lint/types";
 import { findCssBlocks, isModernCssSuppressed } from "./modern-css-parse";
 import { balancedSpan, blankSourceComments, lineAt } from "./source-scan";
-import type { ModernCssFinding } from "./types";
+import type { ModernCssFinding, ModernCssSourceContext } from "./types";
 
 interface Emitter {
   file: string;
@@ -308,13 +308,23 @@ function findAccentColor(out: Emitter): void {
   }
 }
 
-function findViewTransition(out: Emitter): void {
-  if (/startViewTransition/.test(out.scanned)) return;
+const CROSS_DOCUMENT_OPT_IN = /(?:^|;)\s*navigation\s*:\s*auto\s*(?:;|$)/;
+
+/** Whether a stylesheet opts its documents' navigations into a view transition with `@view-transition { navigation: auto; }`. @internal */
+export function declaresCrossDocumentTransition(css: string): boolean {
+  return findCssBlocks(blankSourceComments(css)).some((block) => block.prelude === "@view-transition" && CROSS_DOCUMENT_OPT_IN.test(block.body));
+}
+
+// A cross-document navigation is animated by the stylesheet's opt-in alone: `startViewTransition()` is the same-document API,
+// and the document unloads before its callback's navigation could be captured.
+function findViewTransition(out: Emitter, context: ModernCssSourceContext): void {
+  if (context.crossDocumentTransition) return;
   scanLines(
     out,
     "forge-ui-platform-view-transition",
     /location\s*\.\s*(?:href\s*=|assign\(|replace\()/g,
-    () => "a full-page swap with no `startViewTransition()` — cross-fade the navigation with a view transition",
+    () =>
+      "a cross-document navigation with no `@view-transition { navigation: auto; }` in the stylesheets — opt the navigation into a view transition in CSS",
   );
 }
 
@@ -355,7 +365,7 @@ function findDisplayContents(out: Emitter): void {
   }
 }
 
-function findSourceViolations(source: string, file: string): ModernCssFinding[] {
+function findSourceViolations(source: string, file: string, context: ModernCssSourceContext): ModernCssFinding[] {
   const out = emitter(source, file);
   findNativeDialog(out);
   findNativePopover(out);
@@ -376,7 +386,7 @@ function findSourceViolations(source: string, file: string): ModernCssFinding[] 
   findAnchorPositioning(out);
   findFieldSizingAdoption(out);
   findAccentColor(out);
-  findViewTransition(out);
+  findViewTransition(out, context);
   findScriptedWidthQuery(out);
   findDisplayContents(out);
   return out.findings;
@@ -589,12 +599,16 @@ function findPreprocessorNesting(file: string): ModernCssFinding[] {
   ];
 }
 
-/** Every Tier B and Tier C rule over one file, in line order, then by rule id. @public */
-export function findModernCssSourceViolations(source: string, file: string): ModernCssFinding[] {
+/** Every Tier B and Tier C rule over one file, in line order, then by rule id. `context` carries what the rest of the scanned tree declares. @public */
+export function findModernCssSourceViolations(
+  source: string,
+  file: string,
+  context: ModernCssSourceContext = { crossDocumentTransition: false },
+): ModernCssFinding[] {
   const found = /\.(?:scss|sass)$/.test(file)
     ? findPreprocessorNesting(file)
     : file.endsWith(".css")
       ? findStyleViolations(source, file)
-      : findSourceViolations(source, file);
+      : findSourceViolations(source, file, context);
   return found.sort((a, b) => a.line - b.line || a.ruleId.localeCompare(b.ruleId));
 }

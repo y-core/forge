@@ -1,5 +1,3 @@
-import type { Session } from "@remix-run/session";
-
 import { firstDeclaredField, screenTurnstile } from "../../app/pipeline";
 import { getAppContext } from "../../context/types";
 import type { AppContext, RequestContext, RequestHandler } from "../../context/types";
@@ -14,22 +12,27 @@ import { err, ok } from "../../result/result";
 import type { Result } from "../../result/types";
 import { sessionCtx } from "../../session/session";
 import { describeValidationIssue, v } from "../../validation/mod";
-import { authFactorContext } from "../factors/registry";
 import type { EnrollableFactorService } from "../factors/types";
 import { redactSigninReason } from "../flows/signin";
 import type { AuthSigninNotice, AuthSigninReason } from "../flows/types";
 import type { AdminUserOutcome, AuthFactorKind } from "../types";
-import { approvalCtx, authFreshStepUpWindow, stepUpHolds } from "./guards";
+import { authDeviceLabel } from "./device";
+import { approvalCtx } from "./guards";
 import {
   AUTH_SITE_DATA_OWED_SESSION_KEY,
+  authFactorCaller,
+  authSessionTokenHash,
   clearAuthSession,
   establishAuthSession,
   markAuthSigninPending,
   markAuthStepUp,
-  renewAuthSession,
+  mintAuthSessionRotation,
+  authWriteOrigin,
   resolveAuthSigninPending,
+  revokeOtherAuthSessions,
 } from "./identity";
 import {
+  loadAccountSessions,
   loadAdminElevate,
   loadAdminUserEdit,
   loadEmailChange,
@@ -40,14 +43,25 @@ import {
   loadSignin,
   loadSignup,
   loadTotpEnrol,
+  loadTotpReplace,
   loadVerify,
 } from "./loaders";
-import { authEnrollable, authNow, authReturnPath, authReturnQuery, authServices, authSettledPath, authTurnstileCheck } from "./options";
-import { AUTH_RESENT_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
+import {
+  authEnrollable,
+  authNow,
+  authReplaceableTotp,
+  authReturnPath,
+  authReturnQuery,
+  authServices,
+  authSettledPath,
+  authTurnstileCheck,
+} from "./options";
+import { AUTH_RESENT_PARAM, AUTH_TOTP_REMOVED_PARAM, authEnrolTarget, authEnrolmentPaths, authWithQuery } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import {
   authAfterEnrolTarget,
   authAfterStepUpTarget,
+  authStaleStepUpDetour,
   authVerifyDetour,
   forbidden,
   resolveAuthVerifyDemand,
@@ -59,6 +73,7 @@ import {
   authAdminUserSchema,
   authEmailChangeSchema,
   authPasskeyLabelSchema,
+  authSessionRevokeSchema,
   authSigninSchema,
   authSignupSchema,
   authTotpEnrolSchema,
@@ -96,6 +111,9 @@ const RECOVERY_CODE_REFUSAL = "That is not one of the new codes. Enter one exact
 
 const TOTP_ENROL_REFUSAL = "That code did not match. Enter the code your app shows now.";
 
+// The pending secret is gone and the page now shows another, so another code from the app cannot match.
+const TOTP_REPLACE_RESTARTED = "That setup expired. Remove the entry you just added to your app, then add the new secret below and enter its code.";
+
 const UNRECOGNISED_NOTICE: Readonly<Record<AuthFactorKind, string>> = {
   "email-otp": "That did not match. Ask for a new code and try again.",
   "totp-app": TOTP_ENROL_REFUSAL,
@@ -115,6 +133,13 @@ const RECOVERY_CODE_UNREADABLE = "That is not a recovery code. Enter one exactly
 const RECOVERY_CODES_UNOWED = "Recovery codes are issued only to an account holding an authenticator app or a passkey.";
 
 const EMAIL_CHANGE_NOTICE = "We could not start that change. Check the address and try again.";
+
+// No remaining time: the wait is the account's own, and counting it down would date its last request.
+const EMAIL_CHANGE_TOO_SOON_NOTICE = "A change of address was requested recently. Try again in a few minutes.";
+
+const TOTP_MANDATORY = "Your account requires an authenticator app, so it can't be removed. Replace it instead.";
+
+const PASSKEY_MANDATORY = "Your account requires a passkey. Add another before you remove this one.";
 
 const CEREMONY_REFUSED = "The passkey was not accepted.";
 
@@ -236,14 +261,13 @@ async function signedInTarget<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
   userId: string,
-  isAdmin: boolean,
-): Promise<string> {
+): Promise<Result<string, Response>> {
   const services = await authServices(c, options);
-  const resolved = await services.factors.resolve(userId, authFactorContext({ isAdmin }));
-  if (!resolved.ok) return authSettledPath(options);
-  if (resolved.data.status === "enrolment-required" && resolved.data.stepUpKinds.length === 0) return enrolTarget(options, resolved.data.kinds);
-  if (resolved.data.status !== "satisfied") return options.paths.auth.verify.show();
-  return authReturnPath(c, options);
+  const resolved = await services.factors.resolve(userId);
+  if (!resolved.ok) return err(unavailable());
+  if (resolved.data.status === "enrolment-required" && resolved.data.stepUpKinds.length === 0) return ok(enrolTarget(options, resolved.data.kinds));
+  if (resolved.data.status !== "satisfied") return ok(options.paths.auth.verify.show());
+  return ok(authReturnPath(c, options));
 }
 
 /** The POST that starts a sign-in, challenging the deployment's primary factor. @public */
@@ -259,7 +283,7 @@ export function createSigninActions<Bindings>(options: AuthWebOptions<Bindings>)
 
       // The address is on the session and not in the redirect: `complete` needs it back, and a query
       // parameter carrying it lands in browser history, `Referer` and every proxy log on the way.
-      services.signin.request(parsed.data.email, authNow(options));
+      services.signin.request(parsed.data.email, authNow(options), await authFactorCaller(session));
       markAuthSigninPending(session, parsed.data.email);
       return createAuthRedirect(c, authReturnQuery(c, options, options.paths.auth.verify.show()));
     },
@@ -277,7 +301,7 @@ export function createSignupActions<Bindings>(options: AuthWebOptions<Bindings>)
       const parsed = await readAuthSubmission(c, authSignupSchema(), await authTurnstileCheck(c, options, "signup"));
       if (!parsed.ok) return loadSignup(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
 
-      services.signup.request(parsed.data.email, authNow(options));
+      services.signup.request(parsed.data.email, authNow(options), await authFactorCaller(session));
       markAuthSigninPending(session, parsed.data.email);
       return createAuthRedirect(c, authReturnQuery(c, options, options.paths.auth.verify.show()));
     },
@@ -324,26 +348,43 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       }
 
       if (demand.identity !== null) {
-        const stepped = await services.signin.stepUp(demand.identity.userId, demand.factor, parsed.data.code, at);
+        const stepped = await services.signin.stepUp(demand.identity.userId, demand.factor, parsed.data.code, at, await authFactorCaller(session));
         if (!stepped.ok) {
           if (stepped.error === "unusable") requestLog.getOptional(c)?.warn("auth.factor.unusable", { kind: demand.factor });
           return loadVerify(c, options, { error: verifyNoticeFor(demand.factor, stepped.error), status: 422 });
         }
-        markAuthStepUp(session, at, authNow(options));
-        const target = await authAfterStepUpTarget(c, options, demand.identity, demand.factor, authReturnPath(c, options));
-        return createAuthRedirect(c, target);
+        if (stepped.data.kind === "recovery-code") {
+          services.notices.send(demand.identity.email, { type: "recovery-code-used", factorKind: "recovery-code", at });
+        }
+        const marked = await markAuthStepUp(session, services.sessions, at, authNow(options), stepped.data.kind);
+        if (!marked.ok) return unavailable();
+        const target = await authAfterStepUpTarget(
+          c,
+          options,
+          demand.identity,
+          demand.factor,
+          authReturnPath(c, options),
+          demand.resolution ?? undefined,
+        );
+        return target.ok ? createAuthRedirect(c, target.data) : target.error;
       }
 
       const pending = resolveAuthSigninPending(session);
       if (pending === null) return createAuthRedirect(c, options.paths.auth.signin());
 
-      const completed = await services.signin.complete(pending, parsed.data.code, at);
+      const completed = await services.signin.complete(pending, parsed.data.code, at, await authFactorCaller(session));
       if (!completed.ok) {
         return loadVerify(c, options, { email: pending, error: verifyNoticeFor(demand.factor, completed.error), status: 422 });
       }
 
-      establishAuthSession(session, completed.data.user.id, at, authNow(options));
       const resolution = completed.data.resolution;
+      // The code just accepted is the re-proof a user owing no second factor steps up with.
+      const established = await establishAuthSession(session, services.sessions, completed.data.user.id, at, authNow(options), {
+        kind: completed.data.kind,
+        steppedUp: resolution.status === "satisfied",
+        device: authDeviceLabel(c.request.headers),
+      });
+      if (!established.ok) return unavailable();
       if (resolution.status === "enrolment-required" && resolution.stepUpKinds.length === 0) {
         return createAuthRedirect(c, authReturnQuery(c, options, enrolTarget(options, resolution.kinds)));
       }
@@ -368,7 +409,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       if (demand.identity !== null) {
         const refusal = await resendRefusal(c, options);
         if (refusal !== null) return loadVerify(c, options, { error: refusal, status: 422 });
-        await services.signin.requestStepUp(demand.identity.userId, demand.factor, at);
+        await services.signin.requestStepUp(demand.identity.userId, demand.factor, at, await authFactorCaller(session));
         return createAuthRedirect(c, resent);
       }
 
@@ -378,7 +419,7 @@ export function createVerifyActions<Bindings>(options: AuthWebOptions<Bindings>)
       if (refusal !== null) return loadVerify(c, options, { email: pending, error: refusal, status: 422 });
       // Synchronous by design: `request` reads nothing about the address before returning, so a
       // registered one and an unknown one differ in neither shape nor time. There is nothing to await.
-      services.signin.request(pending, at);
+      services.signin.request(pending, at, await authFactorCaller(session));
       return createAuthRedirect(c, resent);
     },
   };
@@ -396,10 +437,12 @@ export function createSignoutActions<Bindings>(options: AuthWebOptions<Bindings>
   readonly signoutSiteData: RequestHandler;
 } {
   return {
-    signout: (context) => {
+    signout: async (context) => {
       const c = getAppContext<Bindings>(context);
       const session = sessionCtx.get(c, NO_SESSION);
-      clearAuthSession(session);
+      const services = await authServices(c, options);
+      const cleared = await clearAuthSession(session, services.sessions);
+      if (!cleared.ok) return unavailable();
       const response = createAuthRedirect(c, options.paths.auth.signin());
       if (options.signoutClearsSiteData === true) {
         session.set(AUTH_SITE_DATA_OWED_SESSION_KEY, true);
@@ -440,11 +483,12 @@ export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bin
     begin: async (context) => {
       const c = getAppContext<Bindings>(context);
       const services = await authServices(c, options);
+      const session = sessionCtx.get(c, NO_SESSION);
       const identity = resolveAuthViewer(c);
       const service = services.factors.find(kind);
       if (identity === null || service === undefined) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
-      const challenge = await service.createChallenge(identity.userId, authNow(options));
+      const challenge = await service.createChallenge(identity.userId, authNow(options), await authFactorCaller(session));
       return challenge.ok ? jsonResponse(challenge.data.options ?? {}) : jsonResponse({ error: CEREMONY_UNAVAILABLE }, 503);
     },
 
@@ -462,11 +506,13 @@ export function createPasskeyStepUpActions<Bindings>(options: AuthWebOptions<Bin
       const body = read.body as { credential?: unknown } | null;
       if (body?.credential === undefined || body.credential === null) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
-      const verified = await service.verifyChallenge(identity.userId, JSON.stringify(body.credential), at);
+      const verified = await service.verifyChallenge(identity.userId, JSON.stringify(body.credential), at, await authFactorCaller(session));
       if (!verified.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
-      markAuthStepUp(session, at, authNow(options));
-      return jsonResponse({ redirect: await authAfterStepUpTarget(c, options, identity, kind, authReturnPath(c, options)) });
+      const marked = await markAuthStepUp(session, services.sessions, at, authNow(options), verified.data.kind);
+      if (!marked.ok) return jsonResponse({ error: CEREMONY_UNAVAILABLE }, 503);
+      const target = await authAfterStepUpTarget(c, options, identity, kind, authReturnPath(c, options));
+      return target.ok ? jsonResponse({ redirect: target.data }) : jsonResponse({ error: CEREMONY_UNAVAILABLE }, 503);
     },
   };
 }
@@ -497,6 +543,7 @@ function passkeyEnrolCeremony<Bindings>(
     finish: async (context) => {
       const c = getAppContext<Bindings>(context);
       const services = await authServices(c, options);
+      const session = sessionCtx.get(c, NO_SESSION);
       const held = await enrolmentService(c, services);
       if (held === null) return jsonResponse({ error: CEREMONY_REFUSED }, 401);
 
@@ -510,9 +557,12 @@ function passkeyEnrolCeremony<Bindings>(
       if (!nickname.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
 
       const envelope = JSON.stringify({ credential, nickname: nickname.data });
-      const completed = await held.service.completeEnrolment(held.identity.userId, envelope, authNow(options));
+      const at = authNow(options);
+      const completed = await held.service.completeEnrolment(held.identity.userId, envelope, at, await authFactorCaller(session));
       if (!completed.ok) return jsonResponse({ error: CEREMONY_REFUSED }, 400);
-      return jsonResponse({ redirect: await authAfterEnrolTarget(c, options, held.identity, "passkey", otherwise) });
+      services.notices.send(held.identity.email, { type: "factor-added", factorKind: "passkey", at });
+      const target = await authAfterEnrolTarget(c, options, held.identity, "passkey", otherwise);
+      return target.ok ? jsonResponse({ redirect: target.data }) : jsonResponse({ error: CEREMONY_UNAVAILABLE }, 503);
     },
   };
 }
@@ -569,25 +619,19 @@ export function createPasskeyManageActions<Bindings>(options: AuthWebOptions<Bin
       if (!offered.ok) return offered.error;
       if (id === undefined) return notFound();
 
-      const removed = await services.credentials.removeForUser(id, identity.userId);
-      if (!removed.ok) return unavailable();
-      if (!removed.data) return notFound();
       // Taking a credential away is what a visitor does when they think it is no longer theirs, so
       // it has to reach the sessions it may already have signed in — which this request cannot see.
-      const revoked = await revokeOtherSessions(services, session, identity.userId, authNow(options));
-      if (!revoked) return unavailable();
+      const keep = await authSessionTokenHash(session);
+      if (keep === null) return createAuthRedirect(c, options.paths.auth.signin());
+      const at = authNow(options);
+      const removed = await services.credentials.removeForUser(id, identity.userId, at, { keep }, services.factors.mandatory);
+      if (!removed.ok) return unavailable();
+      if (removed.data === "second-factor-required") return loadPasskeyList(c, options, { error: PASSKEY_MANDATORY, status: 409 });
+      if (removed.data === "not-found") return notFound();
+      services.notices.send(identity.email, { type: "factor-removed", factorKind: "passkey", at });
       return loadPasskeyList(c, options);
     },
   };
-}
-
-// The barrier refuses every session established at or before it, this one included, so the acting
-// session is re-stamped past it: the visitor stays where they are and every other device does not.
-async function revokeOtherSessions(services: AuthRequestSurface, session: Session, userId: string, at: number): Promise<boolean> {
-  const revoked = await services.users.revokeSessions(userId, at);
-  if (!revoked.ok) return false;
-  renewAuthSession(session, at, at);
-  return true;
 }
 
 type AuthPageReload<Bindings> = (c: AppContext<Bindings>, options: AuthWebOptions<Bindings>, state?: AuthPageState) => Promise<Response>;
@@ -608,8 +652,11 @@ async function confirmTotp<Bindings>(
   const parsed = await readAuthSubmission(c, authTotpEnrolSchema());
   if (!parsed.ok) return err(await reload(c, options, { fieldError: parsed.error.message, status: 422 }));
 
-  const confirmed = await service.completeEnrolment(identity.userId, parsed.data.code, authNow(options));
+  const caller = await authFactorCaller(sessionCtx.get(c, NO_SESSION));
+  const at = authNow(options);
+  const confirmed = await service.completeEnrolment(identity.userId, parsed.data.code, at, caller);
   if (!confirmed.ok) return err(await reload(c, options, { fieldError: TOTP_ENROL_REFUSAL, status: 422 }));
+  services.notices.send(identity.email, { type: "factor-added", factorKind: TOTP_KIND, at });
   return ok(identity);
 }
 
@@ -621,16 +668,17 @@ export function createTotpEnrolActions<Bindings>(options: AuthWebOptions<Binding
       const confirmed = await confirmTotp(c, options, loadEnrolTotp);
       if (!confirmed.ok) return confirmed.error;
 
-      const target = await signedInTarget(c, options, confirmed.data.userId, confirmed.data.isAdmin);
-      return createAuthRedirect(c, target);
+      const target = await signedInTarget(c, options, confirmed.data.userId);
+      return target.ok ? createAuthRedirect(c, target.data) : target.error;
     },
   };
 }
 
-/** The confirmation and removal of an authenticator-app enrolment from the account pages. @public */
+/** The confirmation, removal and in-place replacement of an authenticator-app enrolment from the account pages. @public */
 export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindings>): {
   readonly totpEnrol: RequestHandler;
   readonly totpRemove: RequestHandler;
+  readonly totpReplaceConfirm: RequestHandler;
 } {
   const kind = TOTP_KIND;
 
@@ -640,7 +688,7 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
       const confirmed = await confirmTotp(c, options, loadTotpEnrol);
       if (!confirmed.ok) return confirmed.error;
       const target = await authAfterStepUpTarget(c, options, confirmed.data, kind, options.paths.account.totp());
-      return createAuthRedirect(c, target);
+      return target.ok ? createAuthRedirect(c, target.data) : target.error;
     },
 
     totpRemove: async (context) => {
@@ -653,20 +701,48 @@ export function createTotpManageActions<Bindings>(options: AuthWebOptions<Bindin
 
       const held = await service.listEnrolments(identity.userId);
       if (!held.ok) return unavailable();
+      const origin = await authWriteOrigin(sessionCtx.get(c, NO_SESSION));
+      const at = authNow(options);
+      let removed = false;
       for (const factor of held.data) {
-        const dropped = await services.enrolments.remove(factor.id, identity.userId);
+        const dropped = await services.enrolments.remove(factor.id, identity.userId, at, origin, services.factors.mandatory);
         if (!dropped.ok) return unavailable();
+        if (dropped.data === "second-factor-required") return loadTotpEnrol(c, options, { error: TOTP_MANDATORY, status: 409 });
+        removed ||= dropped.data === "changed" && factor.confirmedAt !== null;
       }
-      // A factor taken away must not leave a session admitted on the strength of it standing on another device.
-      const revoked = await revokeOtherSessions(services, sessionCtx.get(c, NO_SESSION), identity.userId, authNow(options));
-      if (!revoked) return unavailable();
+      if (removed) services.notices.send(identity.email, { type: "factor-removed", factorKind: kind, at });
       return createAuthRedirect(c, options.paths.account.totp());
+    },
+
+    totpReplaceConfirm: async (context) => {
+      const c = getAppContext<Bindings>(context);
+      const { account } = options.paths;
+      const services = await authServices(c, options);
+      const identity = resolveAuthViewer(c);
+      if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
+      const detour = authStaleStepUpDetour(c, options, identity, account.totpReplace());
+      if (detour !== null) return detour;
+      const replaceable = authReplaceableTotp(services);
+      if (!replaceable.ok) return replaceable.error;
+
+      const parsed = await readAuthSubmission(c, authTotpEnrolSchema());
+      if (!parsed.ok) return loadTotpReplace(c, options, { fieldError: parsed.error.message, status: 422 });
+      const caller = await authFactorCaller(sessionCtx.get(c, NO_SESSION));
+      const at = authNow(options);
+      const replaced = await replaceable.data.completeReplacement(identity.userId, parsed.data.code, at, caller);
+      if (!replaced.ok) {
+        if (replaced.error === "unavailable") return unavailable();
+        if (replaced.error === "not-enrolled") return createAuthRedirect(c, account.totp({}, { searchParams: { [AUTH_TOTP_REMOVED_PARAM]: "1" } }));
+        // The reload resumes a pending secret a wrong code put back, and mints the next one where it was spent or lapsed.
+        const restarted = replaced.error === "too-many-attempts" || replaced.error === "expired";
+        return loadTotpReplace(c, options, { fieldError: restarted ? TOTP_REPLACE_RESTARTED : TOTP_ENROL_REFUSAL, status: 422 });
+      }
+      services.notices.send(identity.email, { type: "factor-replaced", factorKind: kind, at });
+      return createAuthRedirect(c, account.totp());
     },
   };
 }
 
-// Checked here and not left to `require-fresh-step-up`: that guard admits a user the policy owes no
-// step-up, and issuing codes on email alone would let a mailbox mint a way past the second factor.
 async function recoveryCodeHolder<Bindings>(
   c: AppContext<Bindings>,
   options: AuthWebOptions<Bindings>,
@@ -682,12 +758,8 @@ async function recoveryCodeHolder<Bindings>(
   if (standing === null) return err(unavailable());
   if (!standing.recoverable) return err(new Response(RECOVERY_CODES_UNOWED, { status: 409 }));
 
-  const fresh = authFreshStepUpWindow(c);
-  if (fresh === undefined || !stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) {
-    const verify = auth.verify.show({}, { searchParams: { [options.returnParam ?? "next"]: account.recoveryCodes() } });
-    return err(createAuthRedirect(c, verify));
-  }
-  return ok({ identity, service: offered.data });
+  const detour = authStaleStepUpDetour(c, options, identity, account.recoveryCodes());
+  return detour === null ? ok({ identity, service: offered.data }) : err(detour);
 }
 
 /** The POSTs that stage a new set of recovery codes and confirm it by one of its codes. @public */
@@ -715,9 +787,48 @@ export function createRecoveryCodeActions<Bindings>(options: AuthWebOptions<Bind
 
       const parsed = await readAuthSubmission(c, authVerifySchema("recovery-code"));
       if (!parsed.ok) return loadRecoveryCodes(c, options, { fieldError: RECOVERY_CODE_REFUSAL, status: 422 });
-      const confirmed = await holder.data.service.completeEnrolment(holder.data.identity.userId, parsed.data.code, authNow(options));
+      const caller = await authFactorCaller(sessionCtx.get(c, NO_SESSION));
+      const at = authNow(options);
+      const confirmed = await holder.data.service.completeEnrolment(holder.data.identity.userId, parsed.data.code, at, caller);
       if (!confirmed.ok) return loadRecoveryCodes(c, options, { fieldError: RECOVERY_CODE_REFUSAL, status: 422 });
+      const services = await authServices(c, options);
+      services.notices.send(holder.data.identity.email, { type: "recovery-codes-issued", factorKind: "recovery-code", at });
       return createAuthRedirect(c, authReturnPath(c, options));
+    },
+  };
+}
+
+/** The POSTs that sign one other session out, and every other session at once. @public */
+export function createSessionActions<Bindings>(options: AuthWebOptions<Bindings>): {
+  readonly sessionRevoke: RequestHandler;
+  readonly sessionsRevokeOthers: RequestHandler;
+} {
+  return {
+    sessionRevoke: async (context) => {
+      const c = getAppContext<Bindings>(context);
+      const services = await authServices(c, options);
+      const identity = resolveAuthViewer(c);
+      if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
+
+      const parsed = await readAuthSubmission(c, authSessionRevokeSchema());
+      if (!parsed.ok) return loadAccountSessions(c, options, { status: 422 });
+
+      const origin = await authWriteOrigin(sessionCtx.get(c, NO_SESSION));
+      const revoked = await services.sessions.revoke(identity.userId, parsed.data.session, authNow(options), origin);
+      if (!revoked.ok) return unavailable();
+      if (!revoked.data) return notFound();
+      return createAuthRedirect(c, options.paths.account.sessions());
+    },
+
+    sessionsRevokeOthers: async (context) => {
+      const c = getAppContext<Bindings>(context);
+      const services = await authServices(c, options);
+      const identity = resolveAuthViewer(c);
+      if (identity === null) return createAuthRedirect(c, options.paths.auth.signin());
+
+      const revoked = await revokeOtherAuthSessions(sessionCtx.get(c, NO_SESSION), services.sessions, identity.userId, authNow(options));
+      if (!revoked.ok) return unavailable();
+      return createAuthRedirect(c, options.paths.account.sessions());
     },
   };
 }
@@ -735,14 +846,17 @@ export function createEmailChangeActions<Bindings>(options: AuthWebOptions<Bindi
       if (!parsed.ok) return loadEmailChange(c, options, { email: parsed.error.values.email, fieldError: parsed.error.message, status: 422 });
 
       const requested = await services.emailChange.request(identity.userId, parsed.data.email, authNow(options));
-      if (!requested.ok) return loadEmailChange(c, options, { email: parsed.data.email, error: EMAIL_CHANGE_NOTICE, status: 422 });
+      if (!requested.ok) {
+        const notice = requested.error === "too-soon" ? EMAIL_CHANGE_TOO_SOON_NOTICE : EMAIL_CHANGE_NOTICE;
+        return loadEmailChange(c, options, { email: parsed.data.email, error: notice, status: 422 });
+      }
       return loadEmailChange(c, options, { sentTo: requested.data.sentTo });
     },
   };
 }
 
 function adminRefusalStatus(outcome: AdminUserOutcome): number | undefined {
-  if (outcome === "changed") return undefined;
+  if (outcome === "changed" || outcome === "unchanged") return undefined;
   if (outcome === "not-found") return 404;
   // `self` is the actor asking to be locked out of the console they are standing in — a refusal of
   // what was asked, like the last-admin guards, and not a permission they lack.
@@ -784,21 +898,29 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
         if (!wantsAdmin && viewer?.userId === found.data.id) {
           return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
         }
-        const written = wantsAdmin ? await services.admin.elevate(id, at) : await services.admin.demote(id, at);
+        const written = wantsAdmin ? await services.admin.elevate(id, at, viewer.userId) : await services.admin.demote(id, at, viewer.userId);
         if (!written.ok) return unavailable();
         outcome = written.data;
+        if (outcome === "changed") {
+          services.notices.send(found.data.email, { type: wantsAdmin ? "admin-granted" : "admin-revoked", factorKind: null, at });
+        }
       }
 
       const wantsActive = parsed.data.status === "active";
-      if (outcome === "changed" && wantsActive !== (found.data.deactivatedAt === null)) {
+      if ((outcome === "changed" || outcome === "unchanged") && wantsActive !== (found.data.deactivatedAt === null)) {
         // Deactivating your own account signs you out of the console you are standing in, and the
         // last-admin guard does not catch it: a deployment with two admins would admit it.
         if (!wantsActive && viewer?.userId === found.data.id) {
           return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
         }
-        const written = wantsActive ? await services.admin.reactivate(id, at) : await services.admin.deactivate(id, at);
+        const written = wantsActive
+          ? await services.admin.reactivate(id, at, viewer.userId)
+          : await services.admin.deactivate(id, at, viewer.userId);
         if (!written.ok) return unavailable();
         outcome = written.data;
+        if (outcome === "changed") {
+          services.notices.send(found.data.email, { type: wantsActive ? "account-reactivated" : "account-deactivated", factorKind: null, at });
+        }
       }
 
       return loadAdminUserEdit(c, options, { outcome, status: adminRefusalStatus(outcome) });
@@ -842,9 +964,13 @@ export function createAdminUserActions<Bindings>(options: AuthWebOptions<Binding
       if (found.data === null) return loadAdminUserEdit(c, options, { outcome: "not-found", status: 404 });
       if (viewer.userId === found.data.id) return loadAdminUserEdit(c, options, { outcome: "self", status: adminRefusalStatus("self") });
 
-      const reset = await services.admin.resetFactors(found.data.id, authNow(options));
+      const at = authNow(options);
+      const reset = await services.admin.resetFactors(found.data.id, at, viewer.userId);
       if (!reset.ok) return unavailable();
-      if (reset.data === "changed") return createAuthRedirect(c, options.paths.admin.users.factors({ id: found.data.id }));
+      if (reset.data === "changed") {
+        services.notices.send(found.data.email, { type: "factors-reset", factorKind: null, at });
+        return createAuthRedirect(c, options.paths.admin.users.factors({ id: found.data.id }));
+      }
       return loadAdminUserEdit(c, options, { outcome: reset.data, status: adminRefusalStatus(reset.data) });
     },
   };
@@ -863,9 +989,16 @@ export function createAdminElevateActions<Bindings>(options: AuthWebOptions<Bind
       const parsed = await readAuthSubmission(c, authAdminElevateSchema());
       if (!parsed.ok) return loadAdminElevate(c, options, { status: 422 });
 
-      const claimed = await services.admin.claimFirst(identity.userId, authNow(options));
+      const minted = await mintAuthSessionRotation(sessionCtx.get(c, NO_SESSION));
+      if (minted === null) return createAuthRedirect(c, options.paths.auth.signin());
+      const at = authNow(options);
+      const claimed = await services.admin.claimFirst(identity.userId, at, minted.rotation);
       if (!claimed.ok) return unavailable();
-      if (claimed.data === "changed") return createAuthRedirect(c, options.paths.admin.users.list());
+      if (claimed.data === "changed") {
+        services.notices.send(identity.email, { type: "admin-granted", factorKind: null, at });
+        minted.apply();
+        return createAuthRedirect(c, options.paths.admin.users.list());
+      }
       if (claimed.data === "not-found") return unavailable();
       return loadAdminElevate(c, options, { status: 409 });
     },

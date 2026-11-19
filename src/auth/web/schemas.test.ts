@@ -8,6 +8,7 @@ import {
   authAdminUserSchema,
   authEmailChangeSchema,
   authPasskeyLabelSchema,
+  authSessionRevokeSchema,
   authSigninSchema,
   authSignupSchema,
   authTotpEnrolSchema,
@@ -193,6 +194,20 @@ describe("approvalSchema", () => {
 
   it("rejects a code longer than the field's bound, rather than reading it", () => {
     expect(fieldsRejected(approvalSchema(), { code: "x".repeat(513) })).toEqual(["code"]);
+  });
+});
+
+describe("authSessionRevokeSchema", () => {
+  it("accepts a canonical session id", () => {
+    const session = "01a08574-257c-71bd-8eb7-f399ec130d3b";
+    expect(output(authSessionRevokeSchema(), { session })).toEqual({ session });
+  });
+
+  it("rejects a session field that is not a canonical id, or absent", () => {
+    for (const session of ["s9", "01a08574257c71bd8eb7f399ec130d3b", "01a08574-257c-71bd-8eb7-f399ec130d3b'"]) {
+      expect(fieldsRejected(authSessionRevokeSchema(), { session })).toEqual(["session"]);
+    }
+    expect(fieldsRejected(authSessionRevokeSchema(), {})).toEqual(["session"]);
   });
 });
 

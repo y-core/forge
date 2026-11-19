@@ -20,17 +20,10 @@ import type { Logger } from "../logging/types";
 import { toError } from "../result/result";
 import { requestIdCtx } from "../security/request-id";
 import { fallbackErrorDocument } from "./error-page";
+import { BASELINE_HEADERS, hardenedText } from "./hardened-response";
 import { shellCtx } from "./shell";
 import type { PageShell } from "./types";
 import type { GlobalMiddlewareEntry, MethodMismatch, RequestState } from "./types";
-
-// Baseline hardening: a response built where the consumer's security middleware cannot reach it —
-// an out-of-chain throw, or a no-match — carries these and nothing else.
-const BASELINE_HEADERS = {
-  "x-content-type-options": "nosniff",
-  "content-security-policy": "default-src 'none'",
-  "referrer-policy": "no-referrer",
-} as const;
 
 /** Downgrades a `public` `Cache-Control` to `private` on a response that sets a cookie. */
 function privatizeCookieResponse(res: Response): Response {
@@ -42,10 +35,6 @@ function privatizeCookieResponse(res: Response): Response {
   const headers = new Headers(res.headers);
   headers.set("cache-control", cacheControl.toString());
   return rebuildResponse(res, headers);
-}
-
-function hardenedText(body: string, status: number, extra?: Record<string, string>): Response {
-  return new Response(body, { status, headers: { ...BASELINE_HEADERS, "content-type": "text/plain; charset=utf-8", ...extra } });
 }
 
 // forge governs every matcher to hold a consumer's routing to a Workers-shaped budget.

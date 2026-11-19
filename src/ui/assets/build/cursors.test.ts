@@ -83,6 +83,65 @@ describe("buildCursors()", () => {
     }
   });
 
+  function bakeHotspot(hotspot: string): Record<string, Record<string, string>> {
+    const dir = join(tmpdir(), `forge-cursors-hotspot-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      writeFileSync(join(dir, "template.svg"), TEMPLATE);
+      writeFileSync(join(dir, "select.svg"), `<svg viewBox="0 0 24 24" data-cursor-hotspot="${hotspot}"><path d="M1 0"/></svg>`);
+      const config: CursorsConfig = {
+        target: "css/cursors.css",
+        themes: { light: ":root" },
+        sources: [{ path: dir, files: [{ key: "select", file: "select.svg" }], template: { path: dir, file: "template.svg" } }],
+      };
+      return buildCursors(config, CSS);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  function bakeCursorSvg(cursorSvg: string): string {
+    const dir = join(tmpdir(), `forge-cursors-ns-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+    try {
+      writeFileSync(join(dir, "template.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="{{viewBox}}">{{markup}}</svg>`);
+      writeFileSync(join(dir, "select.svg"), cursorSvg);
+      const config: CursorsConfig = {
+        target: "css/cursors.css",
+        themes: { light: ":root" },
+        sources: [{ path: dir, files: [{ key: "select", file: "select.svg" }], template: { path: dir, file: "template.svg" } }],
+      };
+      return parseCursorValue(buildCursors(config, CSS).select?.light ?? "").svg;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it("binds the xlink prefix around markup that uses it, whatever the template's root declares", () => {
+    const svg = bakeCursorSvg(
+      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 24 24"><path id="p" d="M0 0"/><use xlink:href="#p"/></svg>`,
+    );
+    expect(svg).toBe(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><g xmlns:xlink="http://www.w3.org/1999/xlink"><path id="p" d="M0 0"/><use xlink:href="#p"/></g></svg>`,
+    );
+  });
+
+  it("adds no xlink binding to markup that does not use the prefix", () => {
+    expect(bakeCursorSvg(`<svg viewBox="0 0 24 24"><use href="#p"/></svg>`)).toBe(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><use href="#p"/></svg>`,
+    );
+  });
+
+  it("bakes a hotspot of two non-negative integers, whatever whitespace separates them", () => {
+    expect(parseCursorValue(bakeHotspot(" 12   0 ").select?.light ?? "").hotspot).toBe("12 0, auto");
+  });
+
+  it("throws, naming the cursor and its file, on a hotspot that is not two non-negative integers", () => {
+    for (const hotspot of ["0;}x{", "0 0;}body{color:red", "6", "-1 2", "1.5 2", "1 2 3"]) {
+      expect(() => bakeHotspot(hotspot)).toThrow(/cursor "select" \(select\.svg\) has an invalid data-cursor-hotspot/);
+    }
+  });
+
   it("each source bakes through its own template wrapper", () => {
     const dir = join(tmpdir(), `forge-cursors-per-src-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(dir, { recursive: true });

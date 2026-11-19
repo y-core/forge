@@ -4,13 +4,12 @@ import { contextVar } from "../../context/accessor";
 import { setPendingHeader } from "../../context/pending-headers";
 import { getAppContext } from "../../context/types";
 import { Cookie, SetCookie } from "../../http/headers";
+import { isSafeHttpMethod } from "../../http/method";
 import type { D1DatabaseLike, D1DatabaseSession, D1PreparedStatement, D1Queryable, D1SessionsOptions } from "./types";
 
 const sessionsCtx = contextVar<Map<D1DatabaseLike, D1DatabaseSession>>("__d1Sessions");
 
 const BOOKMARK_COOKIE = { path: "/", httpOnly: true, secure: true, sameSite: "Lax" } as const;
-
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
 
 // D1's bookmark is four hex groups; local D1 writes the last as 32 digits and a Time Travel bookmark as 16.
 const BOOKMARK = /^[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{8}-[0-9a-f]{16,64}$/i;
@@ -72,7 +71,7 @@ export function d1Sessions<Bindings = Record<string, unknown>>(options: D1Sessio
 
     const carrier = options.bookmark;
     const incoming = carrier === undefined ? null : incomingBookmark(context.request, carrier);
-    const write = !SAFE_METHODS.has(context.request.method.toUpperCase());
+    const write = !isSafeHttpMethod(context.request.method);
     const resumed = write || incoming === null ? null : watched(open(incoming));
     const session = resumed?.session ?? open(write || carrier === undefined ? "first-primary" : "first-unconstrained");
     const sessions = sessionsCtx.getOptional(context) ?? new Map<D1DatabaseLike, D1DatabaseSession>();

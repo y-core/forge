@@ -8,23 +8,30 @@ import { getAppContext } from "../../context/types";
 import { signWithKeyRing, verifyWithKeyRing } from "../../crypto/keyring/sign";
 import type { KeyRing } from "../../crypto/keyring/types";
 import { base64urlDecodeOrNull, base64urlEncode } from "../../crypto/primitives/base64";
+import { isSafeHttpMethod } from "../../http/method";
 import { safeRedirectPath } from "../../http/redirect-path";
 import { jsonResponse } from "../../http/response";
 import { hxCurrentUrl } from "../../render/htmx/htmx-headers";
 import { isHxRequest } from "../../render/htmx/hx-request";
 import { sessionCtx } from "../../session/session";
-import { AUTH_FRESH_STEP_UP_MS } from "../config";
-import { authFactorContext } from "../factors/registry";
+import { AUTH_FRESH_STEP_UP_MS, AUTH_SESSION_MAX_MS, AUTH_STEP_UP_MAX_MS } from "../config";
 import type { AuthFactorResolution } from "../factors/types";
 import { authLimit } from "../limits";
 import type { AuthAccessToken, AuthFactorKind } from "../types";
-import { authCtx, resolveApprovalMark, resolveAuthIdentity } from "./identity";
+import { authCtx, hasAuthSessionToken, resolveApprovalMark, resolveAuthIdentity } from "./identity";
 import { APPROVAL_RETURN_PARAM, authEnrolTarget } from "./paths";
 import { createAuthRedirect } from "./redirect";
 import { AUTH_ROUTE_GROUPS } from "./routes";
 import type { AccessTokenGuardOptions, Approval, AuthIdentity } from "./types";
 import type { AuthGuardName, AuthMedium, AuthRouteGroup } from "./types";
-import type { AuthAdminGuardOptions, AuthEnrolmentGuardOptions, AuthGuardChainOptions, AuthGuardOptions, AuthRouteMaps } from "./types";
+import type {
+  AuthAdminGuardOptions,
+  AuthEnrolmentGuardOptions,
+  AuthEnrolmentPaths,
+  AuthGuardChainOptions,
+  AuthGuardOptions,
+  AuthRouteMaps,
+} from "./types";
 
 const NO_SESSION =
   "auth/web guard: no session on this request — mount session middleware (`createAnonymousSession`, or `sessionMiddleware` behind your own resolver) on the app before the auth guard chain, or the guards deny nothing while appearing to work.";
@@ -51,16 +58,17 @@ function refuse(medium: AuthMedium | undefined, message: string, status: number,
 
 async function establishIdentity<Bindings>(
   context: Parameters<Middleware>[0],
-  options: Pick<AuthGuardOptions<Bindings>, "users" | "now">,
-): Promise<AuthIdentity | null> {
+  options: Pick<AuthGuardOptions<Bindings>, "sessions" | "now">,
+): Promise<AuthIdentity | null | undefined> {
   const established = authCtx.getOptional(context);
   if (established !== undefined) return established;
 
   const session = sessionCtx.getOptional(context);
   if (session === undefined) throw new Error(NO_SESSION);
 
-  const users = await options.users(getAppContext<Bindings>(context));
-  return resolveAuthIdentity(session, users, guardNow(options));
+  if (!hasAuthSessionToken(session)) return null;
+  const resolved = await resolveAuthIdentity(session, await options.sessions(getAppContext<Bindings>(context)), guardNow(options));
+  return resolved.ok ? resolved.data : undefined;
 }
 
 function replayableMethod(context: Parameters<Middleware>[0]): boolean {
@@ -92,12 +100,17 @@ function notFound(medium: AuthMedium | undefined): Response {
   return refuse(medium, NOT_FOUND, 404, () => new Response(NOT_FOUND, { status: 404 }));
 }
 
+function unavailable(medium: AuthMedium | undefined): Response {
+  return refuse(medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
+}
+
 /** Establishes the request's identity from the session, sending an anonymous request to sign-in. @public */
 export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGuardOptions<Bindings>): Middleware {
   assertStepUpMaxAge("requireAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
   const returnParam = options.returnParam ?? "next";
   return async (context, next) => {
     const identity = await establishIdentity<Bindings>(context, options);
+    if (identity === undefined) return unavailable(options.medium);
     if (identity === null) {
       return refuse(options.medium, NOT_SIGNED_IN, 401, () => redirectWithReturn(context, options.signinPath, returnParam));
     }
@@ -108,7 +121,7 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
     // step-up is only enforced by the groups that happen to list an enrolment guard.
     if (options.clearsStepUp !== true) {
       const resolved = await resolveFactorDemand(context, identity, options);
-      if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
+      if (resolved === undefined) return unavailable(options.medium);
       if (authStepUpOwed(resolved, identity.stepUpAt, stepUpWindow(options))) {
         return refuse(options.medium, STEP_UP_OWED, 403, () => createAuthRedirect(context, options.stepUpPath));
       }
@@ -120,11 +133,12 @@ export function requireAuth<Bindings = Record<string, unknown>>(options: AuthGua
 
 /** Establishes the request's identity when the session carries one, and admits an anonymous request unchanged. @public */
 export function resolveAuth<Bindings = Record<string, unknown>>(
-  options: Pick<AuthGuardOptions<Bindings>, "users" | "stepUpMaxAgeMs" | "now">,
+  options: Pick<AuthGuardOptions<Bindings>, "sessions" | "stepUpMaxAgeMs" | "now">,
 ): Middleware {
   assertStepUpMaxAge("resolveAuth", "stepUpMaxAgeMs", options.stepUpMaxAgeMs);
   return async (context, next) => {
     const identity = await establishIdentity<Bindings>(context, options);
+    if (identity === undefined) return unavailable(undefined);
     if (identity !== null) establish(context, identity, options);
     return next();
   };
@@ -253,13 +267,15 @@ type AuthDemand =
   | { readonly status: "step-up" }
   | { readonly status: "unknown" };
 
-function assertStepUpMaxAge(operation: string, option: string, requested: number | undefined): void {
-  if (requested === undefined) return;
+function assertStepUpMaxAge(operation: string, option: string, requested: number | null | undefined): void {
+  if (requested === undefined || requested === null) return;
   authLimit(operation, option, requested, {
     fallback: MIN_STEP_UP_MAX_AGE_MS,
     min: MIN_STEP_UP_MAX_AGE_MS,
+    max: AUTH_SESSION_MAX_MS,
     unit: "millisecond",
     floor: "a window no mark can be inside makes every step-up owe another one",
+    ceiling: "no session outlives the longest absolute lifetime, so pass `null` for a step-up that lasts the session",
   });
 }
 
@@ -284,8 +300,9 @@ interface AuthStepUpWindow {
 
 const stepUpWindowCtx = contextVar<AuthStepUpWindow>("auth.stepUpWindow");
 
-function stepUpWindow(options: { readonly stepUpMaxAgeMs?: number; readonly now?: () => number }): AuthStepUpWindow {
-  return { maxAgeMs: options.stepUpMaxAgeMs, now: guardNow(options) };
+function stepUpWindow(options: { readonly stepUpMaxAgeMs?: number | null; readonly now?: () => number }): AuthStepUpWindow {
+  const maxAgeMs = options.stepUpMaxAgeMs === null ? undefined : (options.stepUpMaxAgeMs ?? AUTH_STEP_UP_MAX_MS);
+  return { maxAgeMs, now: guardNow(options) };
 }
 
 // The verify page reads the window of the guard that established the identity rather than a setting
@@ -316,7 +333,7 @@ async function resolveFactorDemand<Bindings>(
   const held = authDemandCtx.getOptional(context);
   if (held !== undefined) return held;
   const factors = await options.factors(getAppContext<Bindings>(context));
-  const resolved = await factors.resolve(identity.userId, authFactorContext(identity));
+  const resolved = await factors.resolve(identity.userId);
   if (!resolved.ok) return undefined;
   authDemandCtx.set(context, resolved.data);
   return resolved.data;
@@ -342,15 +359,15 @@ function enrolmentTarget<Bindings>(options: AuthEnrolmentGuardOptions<Bindings>,
   const target = authEnrolTarget(options.enrolmentPaths, kinds);
   if (target !== undefined) return target;
   throw new Error(
-    `auth/web guard: this account owes an enrolment in ${kinds.join(", ") || "no offered factor"}, and \`enrolmentPaths\` names a page for none of them — ` +
+    `auth/web guard: this account owes an enrolment in ${kinds.join(", ") || "no offered factor"}, and \`enrolmentPaths.kinds\` names a page for none of them — ` +
       "add one per offered enrollable kind, or spell the whole record `authEnrolmentPaths(paths.auth)`.",
   );
 }
 
-function assertEnrolmentPaths(operation: string, paths: Partial<Record<AuthFactorKind, string>>): void {
-  if (Object.values(paths).some((path) => path !== undefined)) return;
+function assertEnrolmentPaths(operation: string, paths: AuthEnrolmentPaths): void {
+  if (Object.values(paths.kinds).some((path) => path !== undefined)) return;
   throw new Error(
-    `${operation}: \`enrolmentPaths\` names no enrolment page, so every owed enrolment would be refused with nowhere to go — spell it \`authEnrolmentPaths(paths.auth)\`.`,
+    `${operation}: \`enrolmentPaths.kinds\` names no enrolment page, so every owed enrolment would be refused with nowhere to go — spell it \`authEnrolmentPaths(paths.auth)\`.`,
   );
 }
 
@@ -370,7 +387,7 @@ export function requireEnrolment<Bindings = Record<string, unknown>>(options: Au
     if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createAuthRedirect(context, options.stepUpPath));
     // Refused rather than redirected: an unknown demand cannot pick a remedy, and every remedy page
     // asks the same unavailable store, so a redirect here is a loop.
-    if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
+    if (demand.status === "unknown") return unavailable(options.medium);
     return next();
   };
 }
@@ -388,28 +405,27 @@ export function requirePendingEnrolment<Bindings = Record<string, unknown>>(opti
     // The whole point of this guard: a session owing a step-up may not mint the second factor that
     // would satisfy it, so it is sent to verify rather than admitted to enrol.
     if (demand.status === "step-up") return refuse(options.medium, STEP_UP_OWED, 403, () => createAuthRedirect(context, options.stepUpPath));
-    if (demand.status === "unknown") return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
+    if (demand.status === "unknown") return unavailable(options.medium);
     return refuse(options.medium, NOTHING_OWED, 403, () => createAuthRedirect(context, options.settledPath));
   };
 }
 
 // Only a state-changing request is held to it: reading the page that offers the action is not the
 // action, and gating the `GET` would leave a visitor unable to reach the form that clears the demand.
-/** Demands a step-up inside the window on every state-changing request of a user who is subject to a second factor. @public */
+/** Demands a step-up inside the window on every state-changing request. @public */
 export function requireFreshStepUp<Bindings = Record<string, unknown>>(options: AuthEnrolmentGuardOptions<Bindings>): Middleware {
   const maxAgeMs = options.freshStepUpMaxAgeMs === null ? null : (options.freshStepUpMaxAgeMs ?? AUTH_FRESH_STEP_UP_MS);
-  assertStepUpMaxAge("requireFreshStepUp", "freshStepUpMaxAgeMs", maxAgeMs ?? undefined);
+  assertStepUpMaxAge("requireFreshStepUp", "freshStepUpMaxAgeMs", maxAgeMs);
 
-  return async (context, next) => {
+  return (context, next) => {
     const fresh: AuthStepUpWindow = { maxAgeMs: maxAgeMs ?? undefined, now: guardNow(options) };
     freshStepUpWindowCtx.set(context, fresh);
     if (maxAgeMs === null) return next();
-    if (SAFE_METHODS.has(context.method)) return next();
+    if (isSafeHttpMethod(context.method)) return next();
 
     const identity = establishedIdentity(context, "requireFreshStepUp");
-    const resolved = await resolveFactorDemand(context, identity, options);
-    if (resolved === undefined) return refuse(options.medium, UNAVAILABLE, 503, () => new Response(UNAVAILABLE, { status: 503 }));
-    if (resolved.status !== "step-up-required") return next();
+    // Asked of a user holding no second factor too, who re-proves with the primary factor: without
+    // it, a session cookie alone could move the address or enrol a factor.
     if (stepUpHolds(identity.stepUpAt, fresh.maxAgeMs, fresh.now)) return next();
 
     // 303 always: this is a mutation, and a 302 would have the browser replay it at the step-up page.
@@ -433,12 +449,8 @@ function ownRoutes(routeMap: RouteMap): Route[] {
   return Object.values(routeMap).filter((value): value is Route => value instanceof Route);
 }
 
-// Copied rather than imported from `security/origin`: `auth/web` declares no edge to `security`, so
-// the import that would share this set fails `validate-namespace-graph`.
-const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS", "TRACE"]);
-
 function mutates(routes: readonly Route[]): boolean {
-  return routes.some((leaf) => !SAFE_METHODS.has(leaf.method));
+  return routes.some((leaf) => !isSafeHttpMethod(leaf.method));
 }
 
 function assertGuardOrder(group: AuthRouteGroup): void {
@@ -459,7 +471,7 @@ function guardMiddleware<Bindings>(
   const medium = group.medium;
   if (name === "resolve-auth")
     return resolveAuth({
-      users: options.auth.users,
+      sessions: options.auth.sessions,
       ...(options.auth.now === undefined ? {} : { now: options.auth.now }),
       ...(options.enrolment.stepUpMaxAgeMs === undefined ? {} : { stepUpMaxAgeMs: options.enrolment.stepUpMaxAgeMs }),
     });

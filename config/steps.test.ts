@@ -130,6 +130,7 @@ describe("the gate's watches", () => {
       "typecheck:workers-consumer",
       "typecheck:workers-consumer-node",
       "typecheck:service-worker-consumer",
+      "typecheck:tests",
       "lint:types",
       "validate-exports",
       "validate-namespace-graph",

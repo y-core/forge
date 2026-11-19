@@ -2,19 +2,21 @@ import type { KeyRing } from "../../crypto/keyring/types";
 import type { Logger } from "../../logging/types";
 import type { Result } from "../../result/types";
 import type { AuthStoreError } from "../errors";
+import type { AuthFactorCaller } from "../factors/types";
 import type { AuthFactorReason } from "../factors/types";
 import type { AuthFactorRegistry } from "../factors/types";
 import type { AuthFactorResolution } from "../factors/types";
 import type { AuthFactorVerified } from "../factors/types";
 import type { AuthFactorKind } from "../types";
 import type { AuthNotifier } from "../types";
+import type { AuthSecurityNotice } from "../types";
 import type { AuthUser } from "../types";
 import type { NonceStore } from "../types";
 import type { OtpStateStore } from "../types";
 import type { UserStore } from "../types";
 
 /** Where a flow hands work that must outlive the response — `executionCtx.waitUntil` in a Worker. @public */
-export type AuthDeferral = (work: Promise<AuthIssueOutcome>) => void;
+export type AuthDeferral = (work: Promise<unknown>) => void;
 
 /** What one deferred issue did. Server-internal: the caller of `request` is told the same thing either way. @public */
 export type AuthIssueOutcome = "challenged" | "decoyed" | "unavailable";
@@ -26,7 +28,7 @@ export interface AuthFlowChallenge {
 }
 
 /** Why an address change was refused. @public */
-export type AuthEmailChangeReason = "consumed" | "deactivated" | "expired" | "unavailable" | "unchanged" | "unrecognised";
+export type AuthEmailChangeReason = "consumed" | "deactivated" | "expired" | "too-soon" | "unavailable" | "unchanged" | "unrecognised";
 
 /** Where the confirmation link a change request mailed went, and when it stops working. @public */
 export interface AuthEmailChangeRequest {
@@ -61,6 +63,7 @@ export interface AuthEmailChangeOptions {
   /** The link a confirmation mail carries, given the token that authorises the change. */
   confirmUrl: (token: string) => string;
   ttlMs?: number;
+  cooldownMs?: number;
 }
 
 /** Moves an account to a new address only once the old one has approved it and the new one has answered a link of its own. @public */
@@ -104,10 +107,16 @@ export interface AuthSigninOptions {
 
 /** Signs a visitor in through the registry's primary factor, then applies the second-factor policy. @public */
 export interface AuthSigninFlow {
-  request(email: string, at: number): AuthFlowChallenge;
-  complete(email: string, presented: string, at: number): Promise<Result<AuthSignin, AuthSigninReason>>;
-  requestStepUp(userId: string, kind: AuthFactorKind, at: number): Promise<Result<AuthFlowChallenge, AuthSigninReason>>;
-  stepUp(userId: string, kind: AuthFactorKind, presented: string, at: number): Promise<Result<AuthFactorVerified, AuthSigninReason>>;
+  request(email: string, at: number, caller: AuthFactorCaller): AuthFlowChallenge;
+  complete(email: string, presented: string, at: number, caller: AuthFactorCaller): Promise<Result<AuthSignin, AuthSigninReason>>;
+  requestStepUp(userId: string, kind: AuthFactorKind, at: number, caller: AuthFactorCaller): Promise<Result<AuthFlowChallenge, AuthSigninReason>>;
+  stepUp(
+    userId: string,
+    kind: AuthFactorKind,
+    presented: string,
+    at: number,
+    caller: AuthFactorCaller,
+  ): Promise<Result<AuthFactorVerified, AuthSigninReason>>;
 }
 
 /** @public */
@@ -120,5 +129,18 @@ export interface AuthSignupOptions {
 
 /** Starts an account from an address, telling a registered address and a new one apart nowhere the caller can see. @public */
 export interface AuthSignupFlow {
-  request(email: string, at: number): AuthFlowChallenge;
+  request(email: string, at: number, caller: AuthFactorCaller): AuthFlowChallenge;
+}
+
+/** @public */
+export interface AuthSecurityNoticesOptions {
+  notifier: AuthNotifier;
+  defer: AuthDeferral;
+  logger?: Logger;
+}
+
+/** Tells an account holder about a security event, after the write that recorded it. @public */
+export interface AuthSecurityNotices {
+  /** Hands the notice to `defer` and returns at once; a delivery that fails is logged, never thrown. */
+  send(to: string, notice: AuthSecurityNotice): void;
 }

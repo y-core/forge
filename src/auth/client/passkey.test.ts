@@ -475,7 +475,7 @@ describe("mountPasskey — the outcome is spoken through the page's announcer", 
     await new Promise((resolve) => setTimeout(resolve, 0));
     win.flush();
 
-    expect(spoken(polite)).toEqual(["Passkey accepted. Signing you in."]);
+    expect(spoken(polite)).toEqual(["Passkey accepted."]);
     expect(spoken(assertive)).toEqual([]);
     dispose();
   });

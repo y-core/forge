@@ -23,7 +23,16 @@ import { definitionList } from "../term/grid";
 import { DEFAULT_FEATURE_MANIFEST, loadFeatures } from "./config";
 import { describeFeatureGraph, featureGraph, quoteList, resolveFeatures } from "./graph";
 import { trimScripts } from "./scripts";
-import type { CurateReport, CurateRequest, CurateRunner, FeatureGraph, FeatureManifest, FeatureSelection, SeamEdit } from "./types";
+import type {
+  CurateReport,
+  CurateRequest,
+  CurateRunner,
+  FeatureGraph,
+  FeatureManifest,
+  FeatureRegeneration,
+  FeatureSelection,
+  SeamEdit,
+} from "./types";
 
 const REGENERATE_TAIL = 40;
 
@@ -232,7 +241,7 @@ function withoutTrailingSlash(path: string): string {
 }
 
 /** Refuses an owned file that is absent, the manifest, inside a directory, or a seam of a feature other than its owner that could be kept while the owner is dropped. */
-function assertOwnedFiles(files: readonly string[], config: FeatureManifest, graph: FeatureGraph, manifest: string | undefined): void {
+function assertOwnedFiles(files: readonly string[], config: FeatureManifest["features"], graph: FeatureGraph, manifest: string | undefined): void {
   const owned = Object.entries(config).flatMap(([feature, { directories }]) => directories.map((directory) => ({ feature, directory })));
   for (const [owner, { files: listed = [] }] of Object.entries(config)) {
     for (const file of listed) {
@@ -259,7 +268,12 @@ function assertOwnedFiles(files: readonly string[], config: FeatureManifest, gra
 }
 
 /** `package.json` as the copy writes it, without the dropped features' scripts; refuses a script `package.json` does not define. */
-function curatePackageScripts(root: string, files: readonly string[], config: FeatureManifest, dropped: ReadonlySet<string>): string | undefined {
+function curatePackageScripts(
+  root: string,
+  files: readonly string[],
+  config: FeatureManifest["features"],
+  dropped: ReadonlySet<string>,
+): string | undefined {
   const named = Object.entries(config).filter(([, { scripts = [] }]) => scripts.length > 0);
   if (named.length === 0) return undefined;
   if (!files.includes("package.json")) {
@@ -280,61 +294,90 @@ function describeCommand(argv: readonly string[]): string {
   return `\`${argv.join(" ")}\``;
 }
 
-function assertRegenerable(root: string, files: readonly string[], config: FeatureManifest, regenerating: readonly string[]): void {
-  for (const feature of regenerating) {
-    const regenerate = config[feature]?.regenerate;
-    if (regenerate === undefined) continue;
+/** The name a regeneration row carries for the manifest's own step, which belongs to no feature. */
+const MANIFEST_REGENERATION = "(manifest)";
+
+/** One regeneration a curation runs: a kept feature's, or the manifest's under `MANIFEST_REGENERATION`. */
+interface Regeneration {
+  name: string;
+  regenerate: FeatureRegeneration;
+}
+
+function describeRegeneration({ name }: Regeneration): string {
+  return name === MANIFEST_REGENERATION ? "the manifest" : `feature \`${name}\``;
+}
+
+/** The kept features' regenerations in requirement order, then the manifest's — none unless the copy dropped a feature. */
+function plannedRegenerations(
+  config: FeatureManifest,
+  graph: FeatureGraph,
+  plan: { kept: readonly string[]; dropped: readonly string[] },
+): Regeneration[] {
+  if (plan.dropped.length === 0) return [];
+  const features = graph.order.flatMap((name) => {
+    const regenerate = config.features[name]?.regenerate;
+    return plan.kept.includes(name) && regenerate !== undefined ? [{ name, regenerate }] : [];
+  });
+  return config.regenerate === undefined ? features : [...features, { name: MANIFEST_REGENERATION, regenerate: config.regenerate }];
+}
+
+function assertRegenerable(root: string, files: readonly string[], regenerations: readonly Regeneration[]): void {
+  for (const regeneration of regenerations) {
+    const { regenerate } = regeneration;
     for (const path of regenerate.remove ?? []) {
       const removed = withoutTrailingSlash(path);
       if (!files.some((file) => file === removed || isUnder(file, removed))) {
-        throw new CliError("invalid-args", `feature \`${feature}\` regenerates by removing \`${path}\`, which names nothing in the working tree`);
+        throw new CliError(
+          "invalid-args",
+          `${describeRegeneration(regeneration)} regenerates by removing \`${path}\`, which names nothing in the working tree`,
+        );
       }
     }
     if (!existsSync(join(root, "node_modules"))) {
       throw new CliError(
         "invalid-args",
-        `feature \`${feature}\` regenerates with ${describeCommand(regenerate.run)}, which needs the root's node_modules — run \`bun install\``,
+        `${describeRegeneration(regeneration)} regenerates with ${describeCommand(regenerate.run)}, which needs the root's node_modules — run \`bun install\``,
       );
     }
   }
 }
 
-function regenerateTree(root: string, target: string, config: FeatureManifest, regenerating: readonly string[], run: CurateRunner): void {
-  if (regenerating.length === 0) return;
+function regenerateTree(root: string, target: string, regenerations: readonly Regeneration[], run: CurateRunner): void {
+  if (regenerations.length === 0) return;
   withLinkedModules(root, target, () => {
-    for (const feature of regenerating) {
-      const regenerate = config[feature]?.regenerate;
-      if (regenerate === undefined) continue;
-      const [command, ...rest] = regenerate.run;
+    for (const regeneration of regenerations) {
+      const [command, ...rest] = regeneration.regenerate.run;
       if (command === undefined) continue;
       const result = run([command, ...rest], target, skeletonEnv(root, target));
       if (result.code === 0) continue;
       const tail = result.output.trimEnd().split("\n").slice(-REGENERATE_TAIL);
       throw new CliError(
         "external",
-        [`feature \`${feature}\` failed to regenerate: ${describeCommand(regenerate.run)} exited ${result.code}`, ...tail].join("\n"),
+        [
+          `${describeRegeneration(regeneration)} failed to regenerate: ${describeCommand(regeneration.regenerate.run)} exited ${result.code}`,
+          ...tail,
+        ].join("\n"),
       );
     }
   });
 }
 
-/** Copies the working tree at `root` into `target` minus the dropped features' directories and marked lines, then runs each kept feature's regeneration, refusing before writing anything and removing what it wrote when the copy fails. @public */
+/** Copies the working tree at `root` into `target` minus the dropped features' directories and marked lines, then runs each kept feature's regeneration and the manifest's, refusing before writing anything and removing what it wrote when the copy fails. @public */
 export function curateTree(
   request: CurateRequest,
   list: (root: string) => string[] = listWorkingTree,
   run: CurateRunner = runCommand,
 ): CurateReport {
   const { root, target, config } = request;
-  const features = Object.keys(config);
-  const plan = resolveFeatures(config, request.selection);
+  const features = Object.keys(config.features);
+  const plan = resolveFeatures(config.features, request.selection);
   const dropped = new Set(plan.dropped);
-  const graph = featureGraph(config);
-  const regenerating =
-    plan.dropped.length === 0 ? [] : graph.order.filter((feature) => plan.kept.includes(feature) && config[feature]?.regenerate !== undefined);
+  const graph = featureGraph(config.features);
+  const regenerations = plannedRegenerations(config, graph, plan);
   assertFreshTarget(target);
 
   const files = list(root);
-  const owned = Object.entries(config).flatMap(([feature, { directories }]) =>
+  const owned = Object.entries(config.features).flatMap(([feature, { directories }]) =>
     directories.map((directory) => ({ feature, directory: directory.replace(/\/+$/, "") })),
   );
   for (const { directory } of owned) {
@@ -342,14 +385,14 @@ export function curateTree(
       throw new CliError("invalid-args", `directory \`${directory}\` names nothing in the working tree`);
     }
   }
-  assertRegenerable(root, files, config, regenerating);
+  assertRegenerable(root, files, regenerations);
   const manifest = locateManifest(root, files, request.manifest);
-  assertOwnedFiles(files, config, graph, manifest);
-  const packageJson = curatePackageScripts(root, files, config, dropped);
+  assertOwnedFiles(files, config.features, graph, manifest);
+  const packageJson = curatePackageScripts(root, files, config.features, dropped);
   const leavesManifest = plan.kept.length === 0;
   const directories = owned.filter(({ feature }) => dropped.has(feature)).map(({ directory }) => directory);
-  const ownedFiles = plan.dropped.flatMap((feature) => config[feature]?.files ?? []);
-  const regenerated = regenerating.flatMap((feature) => (config[feature]?.regenerate?.remove ?? []).map(withoutTrailingSlash));
+  const ownedFiles = plan.dropped.flatMap((feature) => config.features[feature]?.files ?? []);
+  const regenerated = regenerations.flatMap(({ regenerate }) => (regenerate.remove ?? []).map(withoutTrailingSlash));
   const kept = files.filter(
     (file) =>
       !(file === manifest && leavesManifest) &&
@@ -359,7 +402,7 @@ export function curateTree(
   );
 
   const owners = new Map<string, Set<string>>();
-  for (const [feature, { seams }] of Object.entries(config)) {
+  for (const [feature, { seams }] of Object.entries(config.features)) {
     for (const file of seams) {
       if (!files.includes(file)) throw new CliError("invalid-args", `seam file \`${file}\` is not in the working tree`);
       if (file === manifest) {
@@ -396,7 +439,7 @@ export function curateTree(
     edited.set(file, result.remaining);
     seams.push({ file, removed: lines.length - result.remaining.length });
   }
-  for (const [feature, { seams: listed }] of Object.entries(config)) {
+  for (const [feature, { seams: listed }] of Object.entries(config.features)) {
     const unmarked = listed.find((file) => marked.get(file)?.has(feature) !== true);
     if (unmarked !== undefined) throw new CliError("invalid-args", `seam file \`${unmarked}\` holds no \`feature:${feature}\` marker`);
   }
@@ -411,7 +454,7 @@ export function curateTree(
     }
     for (const [file, lines] of edited) writeFileSync(join(target, file), lines.join("\n"));
     if (packageJson !== undefined && kept.includes("package.json")) writeFileSync(join(target, "package.json"), packageJson);
-    regenerateTree(root, target, config, regenerating, run);
+    regenerateTree(root, target, regenerations, run);
   } catch (error) {
     removeWritten(target, created);
     throw error;
@@ -424,10 +467,10 @@ export function curateTree(
     added: plan.added,
     directories,
     ownedFiles,
-    scripts: plan.dropped.flatMap((feature) => config[feature]?.scripts ?? []),
+    scripts: plan.dropped.flatMap((feature) => config.features[feature]?.scripts ?? []),
     seams,
     manifest: leavesManifest ? manifest : undefined,
-    regenerated: regenerating,
+    regenerated: regenerations.map(({ name }) => name),
   };
 }
 
@@ -452,8 +495,8 @@ function describeAdditions(report: CurateReport, selection: FeatureSelection): s
 }
 
 function describeRegenerated(report: CurateReport, config: FeatureManifest): string {
-  const runs = report.regenerated.map((feature) => `${feature} (${describeCommand(config[feature]?.regenerate?.run ?? [])})`);
-  return runs.join(", ") || "(none)";
+  const runOf = (name: string) => (name === MANIFEST_REGENERATION ? config.regenerate : config.features[name]?.regenerate)?.run ?? [];
+  return report.regenerated.map((name) => `${name} (${describeCommand(runOf(name))})`).join(", ") || "(none)";
 }
 
 /** Builds the `forge curate <dir>` CLI `Command`. @public */
@@ -478,7 +521,7 @@ export function createCurateCommand(): Command<typeof curateFlags> {
       const config = await loadFeatures({ root, ...(flags.config === undefined ? {} : { path: flags.config }) });
       const print = ctx?.io.stdout ?? console.log;
       if (flags.list === true) {
-        for (const line of describeFeatureGraph(config)) print(line);
+        for (const line of describeFeatureGraph(config.features)) print(line);
         return;
       }
 

@@ -197,9 +197,9 @@ apply.
 ## 5. The Migration Lint Rules
 
 `forge db lint` checks the migrations the target does not hold yet (§9b). The same rules run before every apply, and over every migration compose
-emits — a finding there is a forge bug and the file is not written. Comments, string literals and quoted identifiers are masked before matching, so
-a rule fires on code and never on prose inside a comment or on a column called `"delete from"`; a `CREATE TRIGGER … BEGIN … END;` is one statement,
-so the `BEGIN` inside it is not a transaction.
+emits, where a finding is a forge bug — save `auth-key-blocks-delete`, the app's own key — and the file is not written. Comments, strings and
+quoted identifiers are masked first, so a rule never fires on a comment or a column called `"delete from"`; a `CREATE TRIGGER … BEGIN … END;` is
+one statement, so its `BEGIN` is not a transaction.
 
 | Rule | Matches | Why |
 | --- | --- | --- |
@@ -210,13 +210,14 @@ so the `BEGIN` inside it is not a transaction.
 | `autoincrement` | `AUTOINCREMENT` | A restore replays keys from the dump, and an engine-allocated key needs `sqlite_sequence` carried with it |
 | `explicit-transaction` | A statement that is `BEGIN`, `COMMIT`, `ROLLBACK` or `END` | The load of a migration is already one transaction (§6d), and a nested one fails |
 | `attach-database` | `ATTACH` or `DETACH` | D1 is one database |
-| `add-column-not-null-no-default` | `ADD COLUMN … NOT NULL` with no `DEFAULT` | SQLite refuses it outright |
+| `add-column-not-null-no-default` | `ALTER TABLE … ADD [COLUMN]` whose column refuses `NULL` — by its own `NOT NULL` outside any parenthesis, or by a top-level `CHECK (col IS NOT NULL)` conjunct on itself — with no non-`NULL` `DEFAULT`; `DEFAULT NULL` counts as none | D1 refuses it on any table that already has rows: the `NOT NULL` form as a `NOT NULL` column with default `NULL`, the `CHECK` form as a failed `CHECK` constraint |
 | `add-column-non-constant-default` | `ADD COLUMN` whose `DEFAULT` is `CURRENT_TIME`, `CURRENT_DATE`, `CURRENT_TIMESTAMP` or a parenthesised expression | SQLite refuses it |
 | `add-column-constrained` | `ADD COLUMN … PRIMARY KEY` or `… UNIQUE` | SQLite refuses it; a constrained column is a rebuild |
 | `alter-column-unsupported` | `ALTER COLUMN` in an `ALTER TABLE` | D1's SQLite has no `ALTER COLUMN`; changing a column is a rebuild, which compose emits |
 | `pragma-unsupported` | `PRAGMA foreign_keys`, in any form | D1 always enforces foreign keys and ignores the pragma, so the author believes something false; only `defer_foreign_keys` relaxes them, inside a transaction (`SCHEMA_COMPOSITION.md` §4) |
 | `pragma-unsupported` | Any `PRAGMA` outside D1's supported set, which `D1_PRAGMAS` in `src/tooling/db/migrate/lint.ts` holds | D1 refuses it with `SQLITE_AUTH`, so the migration fails where it runs |
 | `table-too-wide` | A `CREATE TABLE` of more than 100 columns, table constraints not counted | D1 refuses a table that wide (`D1_LIMITS.columns`, `STORAGE_BINDINGS.md` §1h); compose also refuses a declared table that wide, which catches an `ADD COLUMN` |
+| `auth-key-blocks-delete` | A foreign key to an `auth_` table that is neither `ON DELETE CASCADE` nor `SET NULL` on columns that can hold `NULL`. A column refuses `NULL` by `NOT NULL`, by `PRIMARY KEY`, or by a `CHECK` top-level `AND` conjunct that is exactly `col IS NOT NULL`, `col NOT NULL`, `col NOTNULL` or `NOT col IS NULL`; a top-level `OR` holds nothing | D1 refuses the auth deletes `purgeAuthEphemera` and `remove` make; a key the lint misses — such as one whose `CHECK` refuses `NULL` another way, like `typeof(col) = 'text'` — shows as the purge's `blocked` |
 | `generated-edited` | A file with no `forge:compose` stamp, or one whose stamp's `body` hash differs from the file below it | Compose writes every migration (§9b); edit `schema.sql` and compose again |
 
 `generated-edited` is what holds every migration to compose, and the whole composer rests on it: were DDL able to reach the database without

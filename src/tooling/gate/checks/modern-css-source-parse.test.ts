@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 
-import { findModernCssSourceViolations, openingTag } from "./modern-css-source-parse";
+import { declaresCrossDocumentTransition, findModernCssSourceViolations, openingTag } from "./modern-css-source-parse";
 
 const TSX = "src/ui/core/fixture.tsx";
 const TS = "src/ui/client/fixture.ts";
@@ -346,12 +346,27 @@ describe("findModernCssSourceViolations() — Tier C adoption", () => {
     expect(ids(SHIPPED, "src/ui/core/checkable-group.tsx")).toEqual([]);
   });
 
-  it("flags a full-page swap with no view transition", () => {
-    expect(ids('win.location.href = "/next";', TS)).toEqual(["forge-ui-platform-view-transition"]);
+  it("flags each cross-document navigation when no stylesheet opts into a view transition, a `startViewTransition()` wrapper included", () => {
+    const navigations = ['win.location.href = "/next";', 'win.location.assign("/next");', 'win.location.replace("/next");'];
+    const wrapped = 'doc.startViewTransition(() => {\n  win.location.href = "/next";\n});';
+
+    expect([...navigations, wrapped].map((source) => ids(source, TS))).toEqual(Array(4).fill(["forge-ui-platform-view-transition"]));
   });
 
-  it("does not flag a swap already wrapped in a view transition", () => {
-    expect(ids('doc.startViewTransition(() => {\n  win.location.href = "/next";\n});', TS)).toEqual([]);
+  it("does not flag a navigation once a stylesheet opts into cross-document view transitions", () => {
+    expect(findModernCssSourceViolations('win.location.replace("/next");', TS, { crossDocumentTransition: true })).toEqual([]);
+  });
+
+  it("reads the opt-in from an `@view-transition` rule setting `navigation: auto`, inside a media query too, and not from a comment or `none`", () => {
+    expect(
+      [
+        "@view-transition {\n  navigation: auto;\n}\n",
+        "@media (prefers-reduced-motion: no-preference) {\n  @view-transition { navigation: auto }\n}\n",
+        "/* @view-transition { navigation: auto; } */\n",
+        "@view-transition {\n  navigation: none;\n}\n",
+        ".a { navigation: auto; }\n",
+      ].map(declaresCrossDocumentTransition),
+    ).toEqual([true, true, false, false, false]);
   });
 
   it("flags a textarea with no `field-sizing-content`", () => {
