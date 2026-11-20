@@ -18,6 +18,12 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
+_Nothing yet._
+
+---
+
+## [0.7.6] — 2026-11-20
+
 ### Breaking Changes
 
 - **A signed-in identity is an `auth_sessions` row, not a set of session keys.** Signing in creates a row keyed by the SHA-256 of a random
@@ -1972,6 +1978,7 @@ the Worker secret holding the D1 token if nothing else reads it. Schedule `forge
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.7.6]: https://github.com/y-core/forge/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/y-core/forge/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/y-core/forge/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/y-core/forge/compare/v0.7.2...v0.7.3
