@@ -43,10 +43,10 @@ export { COLUMN_WEIGHTS, INDEXER_VERSION, SCHEMA, SCHEMA_VERSION, TOKENIZE, UNST
 export type { AliasTable, BuildReport, Freshness, Knowledge, OpenOptions } from "./search/mod";
 export { advisory, aliasesFor, build, freshness, gateIndexPath, indexPath, load, openDatabase, openIndex, rebuild } from "./search/mod";
 export { CANON_ROOT, CLAUDE_ROOT, libraryPrefix, packageNameOf, resolveRepoRoot, walkUpToRepo, WARDEN_ROOT } from "./paths";
-export { check, checkAgents, checkBoundary, checkTree } from "./sync/check";
+export { check, checkAgents, checkBoundary, checkFiles, checkGit, checkTree, MUST_IGNORE } from "./sync/check";
 export { type KindSource, readKind, resolveKind, resolveKindSource } from "./sync/kind";
 export { seed, seedFiles } from "./sync/seed";
-export { copyTree, identical, sync, syncTrees, walk } from "./sync/sync";
-export type { Chunk, Corpus, Divergence, Kind, Relation, SeedFile, SourceDoc, SyncOutcome, SyncTree, Tree } from "./types";
+export { layerTree, mergeOverlay, render, sync, syncFiles, syncPlan, syncTrees, walk, writeTree } from "./sync/sync";
+export type { Chunk, Corpus, CorpusFile, Divergence, Kind, Relation, SourceDoc, SyncOutcome, SyncPlan, SyncTree, Tree } from "./types";
 export { CORPORA } from "./types";
 export { canonVersion } from "./version";

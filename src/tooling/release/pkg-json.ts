@@ -60,19 +60,34 @@ export function writeChangelog(cwd: string, file: string, source: string): void 
   }
 }
 
+/** The digest manifest {@link writeChangelogSections} would write for the changelog `source`. */
+export function changelogSectionsSource(source: string): string {
+  const parsed = parseChangelog(source);
+  if (!parsed.ok) throw new ReleaseError("changelog-malformed", `Cannot record section digests:\n  ${parsed.error.join("\n  ")}`);
+  const sections = Object.fromEntries(parsed.data.versions.map((heading) => [heading.version, changelogSectionDigest(heading.body)]));
+  return `${JSON.stringify(sections, null, 2)}\n`;
+}
+
 // Written in the same commit as the promotion it records, so the gate never sees a changelog whose
 // newest section has no digest — a check that failed every release is one that gets bypassed.
 /** Records each released section's digest, so a later hand edit no longer matches what shipped. */
 export function writeChangelogSections(cwd: string, file: string, source: string): void {
-  const parsed = parseChangelog(source);
-  if (!parsed.ok) throw new ReleaseError("changelog-malformed", `Cannot record section digests:\n  ${parsed.error.join("\n  ")}`);
-  const sections = Object.fromEntries(parsed.data.versions.map((heading) => [heading.version, changelogSectionDigest(heading.body)]));
+  const manifest = changelogSectionsSource(source);
   try {
-    fs.writeFileSync(resolve(cwd, file), `${JSON.stringify(sections, null, 2)}\n`, "utf-8");
+    fs.writeFileSync(resolve(cwd, file), manifest, "utf-8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new ReleaseError("pkg-update", `Failed to write ${file}: ${msg}`);
   }
+}
+
+/** The `package.json` source `raw` becomes with its `version` set to `version`, its indentation kept; throws on JSON that does not parse. */
+export function packageWithVersion(raw: string, version: string): string {
+  const parsed = JSON.parse(raw) as Record<string, unknown>;
+  parsed.version = version;
+  const indentMatch = raw.match(/\n(\s+)"/);
+  const indent = indentMatch ? indentMatch[1] : "  ";
+  return `${JSON.stringify(parsed, null, indent)}\n`;
 }
 
 /** Updates the `version` field in `package.json`, preserving its existing indentation. */
@@ -86,11 +101,7 @@ export function updatePackageVersion(version: string, cwd: string): void {
     throw new ReleaseError("pkg-update", `Failed to read package.json: ${msg}`);
   }
   try {
-    const parsed = JSON.parse(raw) as Record<string, unknown>;
-    parsed.version = version;
-    const indentMatch = raw.match(/\n(\s+)"/);
-    const indent = indentMatch ? indentMatch[1] : "  ";
-    fs.writeFileSync(pkgPath, `${JSON.stringify(parsed, null, indent)}\n`, "utf-8");
+    fs.writeFileSync(pkgPath, packageWithVersion(raw, version), "utf-8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new ReleaseError("pkg-update", `Failed to write package.json: ${msg}`);

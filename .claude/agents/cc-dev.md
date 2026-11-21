@@ -38,7 +38,7 @@ Implement `cc-plan`'s plan faithfully. Every file change is deliberate and trace
 
 ## First Steps
 
-1. Follow the **Coding Ruleset** below.
+1. Follow the canon conventions the **Coding Ruleset** below points at.
 2. Search before inferring a rule mid-implementation: `knowledge_search`, then `knowledge_read` on the chunk id, and cite the chunk id when a rule
    decides your change. If a rephrased search returns nothing, follow the surrounding code and say so.
 3. Read every file in full before modifying it. Understand the existing pattern before adding to it.
@@ -83,21 +83,11 @@ reopen mid-implementation.
 ## The Comment Budget
 
 **`CODE_RULES.md` §5 is binding on every line you write, and it is a ceiling rather than a floor.** Read §5a before your first edit in any session:
-it is the entire permitted budget, and nothing outside it is a judgement call. **Unbudgeted prose is deleted from any file you touch** — that is
-part of the change, not the adjacent refactor the scope rule forbids.
+it is the entire permitted budget. **Unbudgeted prose is deleted from any file you touch** — that is part of the change, not the adjacent refactor
+the scope rule forbids. A field gloss is §5f, a tally §5g, a deleted behavioural claim §5e, rationale §5c, and a `README.md` sentence
+`AGENT_GUIDE.md` §6c. **The first fix for an unclear line is a better name, a smaller function, or a named intermediate — never a comment**
+(§5, §7a).
 
-The rule text lives in the canon and is not repeated here. This is the index from what you are about to write to the section that governs it:
-
-| About to… | Read |
-| --- | --- |
-| Write a TSDoc line, or ask whether a comment is permitted at all | §5a — and most files carry zero inline comments |
-| Gloss an interface field | §5f — a gate step fails a gloss that spells the field name back |
-| Write "two reasons", "the three steps", or any other tally | §5g, and `AGENT_GUIDE.md` §9b for the same rule in a document |
-| Delete a comment that claims behaviour | §5e — the assertion is the missing work, so write the test or name it for `cc-test` |
-| Keep rationale that is real and has nowhere else to go | §5c's routing table — and never the source |
-| Write a sentence into a `README.md` | `AGENT_GUIDE.md` §6c — what the budget evicts is deleted, never relocated into one |
-
-**The first fix for an unclear line is a better name, a smaller function, or a named intermediate — never a comment** (§5, §7a).
 
 ## Build Verification
 
@@ -166,48 +156,6 @@ aliased symbols.
 
 ## Coding Ruleset
 
-> Before touching a namespace, read its governing doc — reach it with `knowledge_search` then `knowledge_read` (`AGENT_GUIDE.md §1`), or with
-> `warden search` and `warden outline` where no warden MCP is configured. That doc owns the rules; this section owns only the conventions that span
-> every namespace.
-
-### Naming Conventions
-
-- **Functions**: camelCase, verb-first (`parseUrl`, `createSecurityHeaders`)
-- **Types and interfaces**: PascalCase (`SecurityHeadersOptions`, `KVStore`)
-- **Factories**: `create*` — **never `make*`**; `resolve*` for request-time binding accessors; `define*` for declarative handler configs
-- **Private fields**: `_` prefix
-- **Test fakes**: `fake` prefix (`fakeKV`, `fakeR2`)
-- **Module constants**: SCREAMING_SNAKE_CASE
-- **Option and shape type suffixes** — `*Config`, `*Options`, `*Definition`, `*Descriptor`/`*Def`: see `NAMESPACE_DESIGN.md` §4b, which owns the
-  distinction
-- **Reachability** — an exported name carries a domain word, not just a verb and a generic noun; one domain word is the floor and roughly the
-  ceiling: see `CODE_RULES.md` §7, which owns the rule
-
-### Structure
-
-- Early returns over nested conditions
-- One exported function per exported concern — no multi-purpose helpers
-- Factory functions accept dependencies as parameters; no module-level mutable state (`CODE_RULES.md` §1)
-- Prefer array methods, object spread, and nullish coalescing over imperative loops and mutation
-- Comments obey the budget in `CODE_RULES.md` §5a. No `@example`, ever.
-- Named exports only — no default exports except Worker entries
-
-### Error Handling
-
-- Return `Result<T, E>` for operations that fail predictably; the validation alias for validation
-- Throw only for programming errors, missing bindings at startup, and violated invariants
-- Never throw from middleware that is meant to degrade gracefully
-- `libs/ERROR_HANDLING.md` §1 owns the primitive; §5 owns the taxonomy
-
-### Validation
-
-- Validate untrusted input at the boundary — handler entry points and config loaders
-- Always use the validation facade; **never import the underlying schema library directly**
-- Abort-early for form validation
-
-### Where New Code Goes
-
-1. **Determine the namespace** — leaf or integration (`NAMESPACE_DESIGN.md` §3).
-2. **Co-locate the test** — beside the source file it covers.
-3. **Add to the barrel** — a named export, imported from the concrete file.
-4. **Internal utilities** — in a sealed-internal module with an `@internal` tag; never added to the export map.
+The canon owns every convention; read the one for the code in front of you before writing it, with `knowledge_search` then `knowledge_read`
+(`AGENT_GUIDE.md §1`). Naming is `CODE_RULES.md` §1d and §7, casing and prefixes §7e; structure §1 and §6; comments §5; errors `ERROR_HANDLING.md`
+§1 and §5; validation `CODE_RULES.md` §3; placement is `CLAUDE.md`'s "Where new code goes" and the recipe each row cites.

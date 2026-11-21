@@ -1,0 +1,149 @@
+{
+  "plugins": ["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"],
+  // Resolved against this file, so it names the bundle beside it: node refuses to strip types from a
+  // file under `node_modules`, and `plugin.mjs` is forge's committed esbuild build of `mod.ts`.
+  "jsPlugins": ["../lint/plugin.mjs"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "forge/suppression-needs-reason": "error",
+    "forge/a11y-aria-beside-data": "error",
+    "forge/a11y-heading-size-by-class": "error",
+    "forge/a11y-label-association": "error",
+    "forge/a11y-live-politeness": "error",
+    "forge/a11y-no-aria-readonly-on-button": "error",
+    "forge/a11y-one-live-region": "error",
+    "forge/color-theme-no-raw-utility": "error",
+    "forge/color-token-only": "error",
+    "forge/data-slot-before-spread": "error",
+    "forge/focus-ring": "error",
+    "forge/interaction-focus-visible": "error",
+    "forge/no-inline-style": "error",
+    "forge/no-nested-card": "error",
+    "forge/optional-prop-undefined": "error",
+    "forge/platform-entry-motion": "error",
+    "forge/platform-logical-spacing": "error",
+    "forge/platform-text-balance": "error",
+    "forge/platform-text-pretty": "error",
+    "forge/reduced-motion": "error",
+    "forge/spacing-scale-only": "error",
+    "forge/sql-explicit-transaction": "error",
+    "forge/sql-in-loop": "error",
+    "forge/sql-tag-called-directly": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/no-invalid-void-type": "error",
+    "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
+    "typescript/no-unsafe-function-type": "error",
+    "typescript/no-wrapper-object-types": "error",
+    "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "ignoreRestSiblings": true }],
+    "eslint/no-irregular-whitespace": ["error", { "skipComments": true }],
+    "eslint/prefer-arrow-callback": "error",
+    "eslint/preserve-caught-error": "error",
+    "eslint/no-shadow": "error",
+    // `verbatimModuleSyntax` keeps a type import from reaching the bundle; these keep it spelled one way.
+    "typescript/consistent-type-imports": ["error", { "prefer": "type-imports", "fixStyle": "separate-type-imports" }],
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+    "import/no-cycle": ["error", { "ignoreTypes": true }],
+    // A spread is how a conditional property is added under `exactOptionalPropertyTypes`, which the
+    // rule reads as useless.
+    "unicorn/no-useless-spread": "off",
+    // The role is what an assistive technology reads; swapping in the tag changes the markup a spec
+    // asserts on for no gain here.
+    "jsx-a11y/prefer-tag-over-role": "off",
+    // The facade, and the Worker/build-time boundary. The tooling group names the bare subpath as
+    // well as its children: `@y-core/forge/tooling` resolves on its own, and a group matching only
+    // `/*` leaves that one spelling open.
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "patterns": [
+          { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." },
+          {
+            "group": ["@y-core/forge/tooling", "@y-core/forge/tooling/*", "@y-core/forge/tooling/**"],
+            "message": "A build-time subpath belongs in config/, scripts/ or playwright.config.ts — never in src/ or tests/."
+          }
+        ]
+      }
+    ],
+    // Type-aware, and the only rules here that read the type program rather than the syntax tree.
+    // They need the `oxlint-tsgolint` driver, which is why it is a pinned devDependency; without it
+    // oxlint skips them silently. The three that are on find defects a Worker actually suffers — a
+    // floating promise is a write that may never land before the isolate is torn down.
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    // Calibrated off: each is noisy on correct code in this style, and an error a reader learns to
+    // ignore is worse than no rule.
+    "typescript/no-base-to-string": "off",
+    "typescript/unbound-method": "off",
+    "typescript/restrict-template-expressions": "off",
+    "typescript/no-misused-spread": "off",
+    "typescript/require-array-sort-compare": "off",
+    "typescript/no-duplicate-type-constituents": "off",
+    "typescript/no-redundant-type-constituents": "off"
+  },
+  "overrides": [
+    {
+      // A spec's job is adversarial markup, so the a11y and design rules are off in the suite —
+      // forge draws the same line in its own config. `exact-markup-assertion` replaces them: it is
+      // the rule that matters for a test, and the canon bans substring matching on markup anyway.
+      "files": ["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts", "**/*.workerd.ts"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off",
+        "forge/exact-markup-assertion": "error",
+        "forge/a11y-aria-beside-data": "off",
+        "forge/a11y-heading-size-by-class": "off",
+        "forge/a11y-label-association": "off",
+        "forge/a11y-live-politeness": "off",
+        "forge/a11y-no-aria-readonly-on-button": "off",
+        "forge/a11y-one-live-region": "off",
+        "forge/color-theme-no-raw-utility": "off",
+        "forge/color-token-only": "off",
+        "forge/data-slot-before-spread": "off",
+        "forge/focus-ring": "off",
+        "forge/interaction-focus-visible": "off",
+        "forge/no-inline-style": "off",
+        "forge/no-nested-card": "off",
+        "forge/optional-prop-undefined": "off",
+        "forge/platform-entry-motion": "off",
+        "forge/platform-logical-spacing": "off",
+        "forge/platform-text-balance": "off",
+        "forge/platform-text-pretty": "off",
+        "forge/reduced-motion": "off",
+        "forge/spacing-scale-only": "off",
+        "jsx-a11y/aria-proptypes": "off",
+        "jsx-a11y/control-has-associated-label": "off",
+        "jsx-a11y/tabindex-no-positive": "off"
+      }
+    },
+    {
+      // A local browser bypasses the Playwright server every runner shares, so a spec never launches one.
+      "files": ["tests/**"],
+      "rules": {
+        "eslint/no-restricted-properties": [
+          "error",
+          { "property": "launch", "message": "Take the browser from the Playwright server — never launch one locally." },
+          { "property": "launchPersistentContext", "message": "Take the browser from the Playwright server — never launch one locally." },
+          { "property": "launchServer", "message": "Take the browser from the Playwright server — never launch one locally." }
+        ]
+      }
+    },
+    {
+      // The trees that are *supposed* to import a build-time subpath: each sits outside
+      // `tsconfig.json`'s `include` precisely so it may. The valibot ban still applies here.
+      "files": ["config/**", "scripts/**", "playwright.config.ts"],
+      "rules": {
+        "eslint/no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              { "group": ["valibot"], "message": "Import `v` from the validation facade (@y-core/forge/validation) — never valibot directly." }
+            ]
+          }
+        ]
+      }
+    },
+    // Worker source only: a spec's fixture deletes rows with no actor to authorise, by design.
+    { "files": ["src/**/*.ts"], "rules": { "forge/sql-delete-authorised": "error" } }
+  ]
+}

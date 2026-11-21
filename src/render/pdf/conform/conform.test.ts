@@ -121,7 +121,7 @@ describe("the checker holds the annotation edge the tree depends on", () => {
     expect((await conformPdf(broken)).map((found) => found.rule)).toContain("annot-flags");
   });
 
-  // The rule that would have caught bug-260921-87: an annotation described with another link's words.
+  // An annotation described with another link's words, which a reader of the tagged PDF hears as the wrong destination.
   test("a /Contents that is not the words its own element paints", async () => {
     const broken = mutated(await rendered(CONFORMANT, false), /\/Contents \([^)]*\)/, "/Contents (some other link)");
     expect((await conformPdf(broken)).map((found) => found.rule)).toContain("annot-contents");
@@ -154,7 +154,7 @@ describe("the checker holds the annotation edge the tree depends on", () => {
   });
 });
 
-describe("the annotation rules see the defect bug-260921-87 was filed for", () => {
+describe("the annotation rules see a link described with another link's words", () => {
   test("a wordless link before a texted one leaves every annotation clean", async () => {
     const commands = createPdfPen().move(0, 0).line(40, 0).close().commands();
     const doc: PdfDocument = {

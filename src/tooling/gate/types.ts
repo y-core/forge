@@ -1,7 +1,7 @@
 import type { ValidationResult } from "../../result/types";
 import type { PlaywrightServerStatus } from "./checks/types";
 import type { ClassOrderCheckConfig } from "./checks/types";
-import type { ContrastCheckConfig } from "./checks/types";
+import type { AcceptedRow, ContrastCheckConfig, ContrastPairInput } from "./checks/types";
 import type { DeferredFinding } from "./checks/types";
 import type { ExportsCheckConfig } from "./checks/types";
 import type { CompatibilityCheckConfig, ExposureCheckConfig } from "./checks/types";
@@ -140,8 +140,8 @@ export interface CloudflareWorkerStepOptions {
   workerConfig?: string;
   /** How the exposure row judges each deployment; omit to take `require: "stated"`. Read only when `workerConfig` is set. */
   exposure?: Omit<ExposureCheckConfig, "root" | "workerConfig">;
-  /** Overrides the flag set the compatibility row demands; omit to take forge's posture. Read only when `workerConfig` is set. */
-  compatibility?: Omit<CompatibilityCheckConfig, "root" | "workerConfig">;
+  /** Overrides the flag set the compatibility row demands, and names Worker configs judged beside `workerConfig`. Read only when `workerConfig` is set. */
+  compatibility?: Omit<CompatibilityCheckConfig, "root" | "workerConfigs"> & { extraWorkerConfigs?: readonly string[] };
   /** Whether to emit the config-files row, which fails a `config/` holding no `*.config.ts`. Defaults to `true`. */
   configFiles?: boolean;
   /** Whether to check the synced `.claude/` trees against the installed corpus. Defaults to `false`. */
@@ -165,7 +165,7 @@ export interface CloudflareWorkerStepOptions {
   importBoundary?: Omit<ImportBoundaryCheckConfig, "root" | "features"> & { features?: boolean };
   /** Omit to emit no vendor-boundary row; its modules may import nothing beside it under its parent directory. */
   vendorDir?: string;
-  /** Omit to emit no contrast row. */
+  /** Omit to emit no contrast row; `appContrast` builds the usual one. */
   contrast?: Omit<ContrastCheckConfig, "root">;
   /** Omit to emit no design rows, so an app that does not use `ui/*` needs no `tailwindcss` peer. */
   design?: CloudflareWorkerDesignOptions;
@@ -412,3 +412,16 @@ export type Selection =
       scoped: boolean;
     }
   | { ok: false; error: string };
+
+/** What an application states to audit its own colours against forge's token layer and contrast pairs. @public */
+export interface AppContrastOptions {
+  root: string;
+  /** The application's stylesheet directory, relative to `root`. */
+  cssDir: string;
+  /** The application's own token files, relative to `root`, cascaded after forge's three. */
+  tokenFiles: readonly string[];
+  /** Pairs measured beside forge's `CONTRAST_PAIRS`. */
+  pairs?: readonly ContrastPairInput[];
+  /** Pairs the criteria do not bind, recorded with what they measure and why they are exempt. */
+  accepted?: readonly AcceptedRow[];
+}

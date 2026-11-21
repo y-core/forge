@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, it } from "bun:test";
-import { rmSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { CheckResult } from "../types";
-import { checkConfigFiles } from "./config-files";
+import { checkConfigFiles, OXLINT_BASE, TSCONFIG_BASE } from "./config-files";
 import { gateFixtureRoot } from "./gate.fixture";
 
 const roots: string[] = [];
@@ -232,4 +233,110 @@ describe("checkConfigFiles() — what it scans", () => {
       });
     });
   }
+});
+
+describe("checkConfigFiles() — baseline", () => {
+  const OXLINT = JSON.stringify({ extends: [OXLINT_BASE], ignorePatterns: [".forge/**", ".types/**"] });
+  const OXFMT = readFileSync(join(import.meta.dir, "../../config/oxfmt.base.json"), "utf-8");
+  const TSCONFIG = JSON.stringify({
+    extends: TSCONFIG_BASE,
+    compilerOptions: { paths: { "@assets": ["./.forge/assets.ts"] } },
+    include: ["src/**/*.ts"],
+  });
+  const CONFORMING = { "config/x.config.ts": PASSING, ".oxlintrc.json": OXLINT, ".oxfmtrc.json": OXFMT, "tsconfig.json": TSCONFIG };
+
+  function baseline(files: Record<string, string>): [string | undefined, string][] {
+    const root = gateFixtureRoot({ ...CONFORMING, ...files }, "forge-config-baseline-");
+    roots.push(root);
+    return checkConfigFiles({ root, baseline: true }).findings.map((finding) => [finding.file, finding.message]);
+  }
+
+  it("passes three configs that extend their bases and only add to them", () => {
+    const oxlint = {
+      extends: [OXLINT_BASE],
+      ignorePatterns: [".forge/**", ".types/**", "src/vendor/**"],
+      rules: { "forge/catalog-wrong-raw-input": "error" },
+    };
+    const oxfmt = { ...JSON.parse(OXFMT), ignorePatterns: [...JSON.parse(OXFMT).ignorePatterns, "**/*.md"] };
+    const tsconfig = { extends: TSCONFIG_BASE, compilerOptions: { resolveJsonModule: true } };
+
+    expect(
+      baseline({ ".oxlintrc.json": JSON.stringify(oxlint), ".oxfmtrc.json": JSON.stringify(oxfmt), "tsconfig.json": JSON.stringify(tsconfig) }),
+    ).toEqual([]);
+  });
+
+  it("holds none of the three configs unless asked, so a library keeps its own", () => {
+    const root = gateFixtureRoot({ "config/x.config.ts": PASSING }, "forge-config-baseline-off-");
+    roots.push(root);
+
+    expect(checkConfigFiles({ root })).toEqual({ ok: true, findings: [], summary: "1 config module(s)" });
+  });
+
+  it("names each config that does not extend its base", () => {
+    expect(baseline({ ".oxlintrc.json": JSON.stringify({ ignorePatterns: [".forge/**", ".types/**"] }), "tsconfig.json": "{}" })).toEqual([
+      [".oxlintrc.json", `does not extend \`${OXLINT_BASE}\``],
+      ["tsconfig.json", `does not extend \`${TSCONFIG_BASE}\``],
+    ]);
+  });
+
+  it("names a local rule or compiler option that overrides a base key, which a local entry may only add to", () => {
+    const oxlint = { extends: [OXLINT_BASE], ignorePatterns: [".forge/**", ".types/**"], rules: { "eslint/no-shadow": "off" } };
+    const tsconfig = { extends: TSCONFIG_BASE, compilerOptions: { strict: false } };
+
+    expect(baseline({ ".oxlintrc.json": JSON.stringify(oxlint), "tsconfig.json": JSON.stringify(tsconfig) })).toEqual([
+      [".oxlintrc.json", "overrides the base's `eslint/no-shadow` — a local rule is an addition; a change to a base rule is made in the base"],
+      ["tsconfig.json", "overrides the base's `strict` — a local compiler option is an addition; a change to a base one is made in the base"],
+    ]);
+  });
+
+  it("names an oxlint key the base states, since a local value replaces the base's", () => {
+    const oxlint = { extends: [OXLINT_BASE], ignorePatterns: [".forge/**", ".types/**"], jsPlugins: ["@y-core/forge/tooling/lint/plugin"] };
+
+    expect(baseline({ ".oxlintrc.json": JSON.stringify(oxlint) })).toEqual([
+      [".oxlintrc.json", "sets `jsPlugins` — the base states it, and a local value replaces the base's"],
+    ]);
+  });
+
+  // oxlint does not inherit `ignorePatterns` through `extends`, so each repository states the generated trees itself.
+  it("names a lint ignore list that leaves a generated tree out", () => {
+    expect(baseline({ ".oxlintrc.json": JSON.stringify({ extends: [OXLINT_BASE], ignorePatterns: [".types/**"] }) })).toEqual([
+      [".oxlintrc.json", "`ignorePatterns` leaves out `.forge/**`"],
+    ]);
+  });
+
+  // `bun fmt` ignores `extends`, so the formatter's copy is compared key by key.
+  it("names a formatter option that differs from the base and an ignore it dropped", () => {
+    const oxfmt = { ...JSON.parse(OXFMT), printWidth: 100, ignorePatterns: [".claude"] };
+
+    expect(
+      baseline({ ".oxfmtrc.json": JSON.stringify(oxfmt) }).map(([file, message]) => [file, message.split(" — ")[0]?.split(" differs")[0]]),
+    ).toEqual([
+      [".oxfmtrc.json", "`printWidth`"],
+      [
+        ".oxfmtrc.json",
+        "`ignorePatterns` leaves out `**/*.snapshot.json`, `.forge/**`, `.types/**`, `public/**`, `test-results/**`, `playwright-report/**`",
+      ],
+    ]);
+  });
+
+  it("names a `.jsonc` spelling, a missing config and an `exclude` beside `include`", () => {
+    const tsconfig = { extends: TSCONFIG_BASE, include: ["src/**/*.ts"], exclude: ["tests/**"] };
+    const root = gateFixtureRoot(
+      { ...CONFORMING, ".oxlintrc.json": "", "tsconfig.json": JSON.stringify(tsconfig) },
+      "forge-config-baseline-shape-",
+    );
+    roots.push(root);
+    rmSync(join(root, ".oxlintrc.json"));
+    writeFileSync(join(root, ".oxfmtrc.jsonc"), OXFMT);
+
+    expect(checkConfigFiles({ root, baseline: true }).findings.map((finding) => [finding.file, finding.message])).toEqual([
+      [".oxlintrc.json", "is missing"],
+      [".oxfmtrc.jsonc", "name it `.oxfmtrc.json` — the fleet spells every tool config `.json`"],
+      ["tsconfig.json", "has an `exclude` key — `include` is the whole answer"],
+    ]);
+  });
+
+  it("reads comments and trailing commas, as oxlint and tsc do", () => {
+    expect(baseline({ "tsconfig.json": `{\n  // the base\n  "extends": "${TSCONFIG_BASE}",\n  "include": ["src/**/*.ts"],\n}\n` })).toEqual([]);
+  });
 });

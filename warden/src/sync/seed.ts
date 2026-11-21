@@ -1,20 +1,20 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
-import type { Kind, SeedFile, SyncOutcome } from "../types";
+import type { CorpusFile, Kind, SyncOutcome } from "../types";
+import { render } from "./sync";
 
 /** The files `--init` writes when they are absent. @public */
-export function seedFiles(claudeRoot: string, kind: Kind): SeedFile[] {
+export function seedFiles(claudeRoot: string, kind: Kind): CorpusFile[] {
   const dir = join(claudeRoot, "seed");
   return [
     { file: "CLAUDE.md", from: join(dir, `CLAUDE.${kind}.md`) },
     { file: "AGENTS.md", from: join(dir, "AGENTS.md") },
-    { file: ".claude/settings.json", from: join(dir, "settings.json") },
   ];
 }
 
-/** Writes each absent seed file, reporting what happened to every one. @public */
-export function seed(repo: string, files: readonly SeedFile[]): Array<{ file: string; outcome: SyncOutcome }> {
+/** Writes each absent seed file, rendered for `slug`, reporting what happened to every one. @public */
+export function seed(repo: string, files: readonly CorpusFile[], slug: string): Array<{ file: string; outcome: SyncOutcome }> {
   const results: Array<{ file: string; outcome: SyncOutcome }> = [];
   for (const { file, from } of files) {
     if (!existsSync(from)) continue;
@@ -24,7 +24,7 @@ export function seed(repo: string, files: readonly SeedFile[]): Array<{ file: st
       continue;
     }
     mkdirSync(dirname(to), { recursive: true });
-    copyFileSync(from, to);
+    writeFileSync(to, render(from, slug));
     results.push({ file, outcome: "seeded" });
   }
   return results;

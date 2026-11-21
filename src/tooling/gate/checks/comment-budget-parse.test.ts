@@ -84,7 +84,7 @@ describe("isToolingDirective() — outside the budget entirely", () => {
   });
 
   it("is true of a block holding a whole-line `--` marker, which needs three lines to exist at all", () => {
-    expect(isToolingDirective(only("/*\n-- row-removal-authorised-by: feat-260101-01\n*/"))).toBe(true);
+    expect(isToolingDirective(only("/*\n-- row-removal-authorised-by: retention-policy\n*/"))).toBe(true);
   });
 
   it("is true of a `--` marker block carrying more than one marker line", () => {

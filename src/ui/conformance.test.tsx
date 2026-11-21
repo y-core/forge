@@ -496,7 +496,7 @@ describe("ui/controls conformance — the bound tier", () => {
   });
 });
 
-describe("ui conformance — forge's default English has one home (decision-260918-49)", () => {
+describe("ui conformance — forge's default English has one home, never a literal in a component", () => {
   const sources = componentSources();
 
   it("defaults no label-shaped prop to a string literal, which would be a second home for the name", () => {

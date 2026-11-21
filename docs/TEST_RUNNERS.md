@@ -66,8 +66,14 @@ Runner commands and lifecycle-hook usage are in `src/testing/README.md`.
 
 ### 1b. Custom bun:test Stub — No bun-types
 
-See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is `.types/bun-test.d.ts`, and it replaces `bun-types` and `@types/bun`:
-**never install either, or reference one from `tsconfig.json` or `package.json`.** The stub is the list of what a suite may import from `bun:test`.
+See [`TESTING.md`][testing-1b] §1b for the ban and its reason. forge's stub is `src/testing/bun.d.ts`, published types-only as
+`@y-core/forge/testing/bun`, and it replaces `bun-types` and `@types/bun`: **never install either, or reference one from `tsconfig.json` or
+`package.json`.** The stub is the list of what a suite may import from `bun:test` and `bun:sqlite`, in forge and in every app that references it.
+
+**One home for each stub, and an app copies neither.** An app's `.types/forge.d.ts` references `@y-core/forge/testing/node` and
+`@y-core/forge/testing/bun`; a call neither declares is widened here, so the fleet's suites type alike. Both declare modules only, never a global —
+`src/testing/stubs.test.ts` fails a top-level declaration — and `typecheck:testing-stubs-consumer` compiles the calls the apps make against them,
+under `"types": []`, in `tests/fixtures/testing-stubs-consumer/`. An app keeps a local stub only for a module neither declares.
 
 ### 1c. The Browser Set
 
@@ -87,7 +93,9 @@ WebKit row is a `scheduled` row of the same table.
 
 **Every browser runs in a devctl Playwright container, and nothing falls back to a local one.** forge, the workspace and the containers are one
 environment, so a missing piece fails loudly. Chromium runs on `playwright`, and Firefox and WebKit on `playwright-compat`, which devctl starts
-only on request. `playwright.config.ts` owns the variable that names each server and the worker limit, and refuses to load without Chromium's.
+only on request. `playwright.config.ts` reads each server and the worker limit through `@y-core/forge/tooling/playwright`'s `playwrightServers`,
+and refuses to load without Chromium's. Every app's config builds its projects through the same subpath, so their names are the ones the gate's
+rows select (`src/tooling/playwright/README.md`).
 
 **A consequence accepted with it:** `validate-co-location` (`src/tooling/gate/checks/co-location.ts`) counts a `.browser.ts` as satisfying
 co-location, so `bun run verify:unit`, which runs no browser, can certify as tested a module whose only test it did not run. Demanding a second
@@ -467,8 +475,8 @@ export target its barrel never re-exports from is left out of that barrel's `@pu
 the gate holds rather than one it tolerates.
 
 **A suite that imports `@y-core/forge/testing/snapshot`, `/d1` or `/harness` references the shim, and then needs no `exclude`.**
-`@y-core/forge/testing/node` is a types-only subpath declaring the node surface those three reach. One line at the top of the file that imports
-one:
+`@y-core/forge/testing/node` is a types-only subpath declaring the node surface those three reach, and the node calls the fleet's tests make
+(§1b). One line at the top of the file that imports one:
 
 ```ts
 /// <reference types="@y-core/forge/testing/node" />
@@ -546,7 +554,7 @@ a fake store should not pay for the whole component library. It needs no node mo
 not. `key` is `barrel/component`, the spelling a coverage manifest's own keys use, because `Input` names a component in both `core` and
 `controls`. The array and each entry are frozen and ordered by `key`, so a failure names the same component first on every run.
 
-[cb-1]: ../warden/canon/apps/CONFIG_BASELINE.md#1-the-tsconfig-flag-set
+[cb-1]: ../warden/canon/apps/CONFIG_BASELINE.md#1-the-tsconfig-base
 [cr-1a]: ../warden/canon/libs/CODE_REVIEW.md#1a-pre-review-preparation
 [db-host-config]: ../src/tooling/db/README.md#declaring-what-forge-reads
 [errors-1a]: ./FORGE_ERRORS.md#1a-the-unified-result-primitive-okerr-result-and-toerror

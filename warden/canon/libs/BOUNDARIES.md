@@ -208,7 +208,7 @@ await verifyRequest(c, signingKey);
 This covers authentication tokens, signing keys, and origin validation secrets: absent binding → `503`, never a degraded unauthenticated mode.
 
 The same posture governs startup: a missing or malformed binding is a **deployment defect**, not a runtime condition to degrade around, so a binding
-resolver throws rather than returning a `Result` ([`ERROR_HANDLING.md`][eh-5e] §5e).
+resolver throws rather than returning a `Result` ([`ERROR_HANDLING.md`][eh-5d] §5d).
 
 ### 5b. `required: false` — Non-Security Features Only
 
@@ -233,6 +233,6 @@ known pattern rather than as a finding.
 
 [cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
 [eh-1]: ./ERROR_HANDLING.md#1-result-monad
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--resolvers-throw
+[eh-5d]: ./ERROR_HANDLING.md#5d-startup-invariants--resolvers-throw
 [nd-3]: ./NAMESPACE_DESIGN.md#3-namespace-classification
 [testing-5]: ./TESTING.md#5-security-test-requirements

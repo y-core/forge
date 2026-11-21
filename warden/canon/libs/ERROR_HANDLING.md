@@ -8,8 +8,9 @@ description: "The one Result primitive and its narrowing rule, how failures cros
 > Owns the `Result` primitive, its domain aliases, and the error taxonomy every namespace classifies against. Other documents link here rather than
 > restating the primitive.
 >
-> Defers to: [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture; [`BOUNDARIES.md`][boundaries-3] §3 for the validation pipeline that
-> produces a validation failure; [`TESTING.md`][testing-5] §5 for the tests an error path requires.
+> Defers to: [`CODE_RULES.md`][cr-2b] §2b for per-route recovery hooks; [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture;
+> [`BOUNDARIES.md`][boundaries-3] §3 for the validation pipeline that produces a validation failure; [`TESTING.md`][testing-5] §5 for the tests an
+> error path requires.
 
 ---
 
@@ -32,8 +33,7 @@ description: "The one Result primitive and its narrowing rule, how failures cros
 - §5a Expected Errors — Return `Result`: return it, never throw
 - §5b Unexpected Errors and the Error Boundary: depth and header guarantees
 - §5c Infrastructure Errors — Log and Fail Closed: log with context, then refuse
-- §5d Per-Route Recovery Hooks: the deliberate page/action divergence
-- §5e Startup Invariants — Resolvers Throw: operations still return a `Result`
+- §5d Startup Invariants — Resolvers Throw: operations still return a `Result`
 
 ---
 
@@ -91,7 +91,7 @@ which turns a failure into a default.
 in production. Within a single module a throw caught two lines later is a control-flow choice; across a published boundary it is a missing part of
 the contract.
 
-The exceptions are enumerated and small: programming errors (§5a), and startup invariants (§5e). Both are conditions no caller could have handled
+The exceptions are enumerated and small: programming errors (§5a), and startup invariants (§5d). Both are conditions no caller could have handled
 anyway.
 
 ---
@@ -184,18 +184,7 @@ the user.
 
 Log enough to diagnose — service, operation, sanitised identifiers — and never user-supplied content that may carry PII.
 
-### 5d. Per-Route Recovery Hooks
-
-A declarative handler builder accepts a recovery hook, and **the default behaviour differs by handler kind on purpose**:
-
-- A **full-page** handler with no hook lets the error **re-throw**, so the boundary (§5b) renders the whole document. A half-rendered navigation is
-  worse than an error page.
-- A **fragment** handler with no hook returns a **self-contained error fragment**, because it is swapping into a page that is already correct.
-
-**Both log on the way out.** The difference is only in what the client receives, never in whether the failure is recorded. **Use these hooks for
-per-route recovery instead of ad-hoc `try/catch`**, which is invisible to a reader auditing the route map.
-
-### 5e. Startup Invariants — Resolvers Throw
+### 5d. Startup Invariants — Resolvers Throw
 
 A missing or malformed binding is a **deployment defect**, not a runtime condition to degrade around. These surfaces `throw` a plain `Error` rather
 than returning `Result`: environment validation, config access, and request-time binding resolvers.
@@ -213,5 +202,6 @@ back. That is a ratified exception, recorded in the owning `docs/` doc, not a li
 [boundaries-4]: ./BOUNDARIES.md#4-no-pii-in-logs
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [boundaries-5b]: ./BOUNDARIES.md#5b-required-false--non-security-features-only
+[cr-2b]: ../shared/CODE_RULES.md#2b-per-route-recovery-hooks
 [nd-4a]: ./NAMESPACE_DESIGN.md#4a-factory-and-accessor-verbs
 [testing-5]: ./TESTING.md#5-security-test-requirements

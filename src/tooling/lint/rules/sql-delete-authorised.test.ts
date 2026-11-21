@@ -39,7 +39,11 @@ describe("sql-delete-authorised", () => {
 
   it("accepts a DELETE whose line before carries the authorisation", () => {
     expect(
-      lint("sql", ["DELETE FROM sessions WHERE id = ", ""], [{ line: 9, value: " row-removal-authorised-by: session expiry, decision-261015-07" }]),
+      lint(
+        "sql",
+        ["DELETE FROM sessions WHERE id = ", ""],
+        [{ line: 9, value: " row-removal-authorised-by: session expiry, past its absolute lifetime" }],
+      ),
     ).toEqual([]);
   });
 

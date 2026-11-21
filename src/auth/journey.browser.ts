@@ -94,12 +94,11 @@ test("signs up onto the mandatory authenticator app, replaces it in place, canno
 
   await expect(page).toHaveURL(/\/auth\/enrol\/totp$/);
 
-  // Enrolling on the previous step's code, inside the server's one-step drift window, leaves the current step unspent for the step-up.
+  // Enrolment spends the current step, so the step-up takes the next one: inside the server's one-step drift and above the recorded counter.
   const totpUri = (await page.locator("[data-ref='totp-uri']").textContent())?.trim() ?? "";
-  const totp = await totpCodes(totpUri, Date.now());
-  await confirmCode(page, "Code from your app", totp.previous);
+  await confirmCode(page, "Code from your app", (await totpCodes(totpUri, Date.now())).current);
   await expect(page).toHaveURL(/\/auth\/verify$/);
-  await confirmCode(page, "Verification code", totp.current);
+  await confirmCode(page, "Verification code", (await totpCodes(totpUri, Date.now() + 30_000)).current);
   await expect(page).toHaveURL(/\/account\/recovery-codes$/);
   await expect(signout).toHaveCount(1);
 
@@ -110,13 +109,14 @@ test("signs up onto the mandatory authenticator app, replaces it in place, canno
   await page.getByRole("button", { name: "Confirm the new codes" }).click();
   await expect(page).toHaveURL(/\/account\/passkeys$/);
 
-  // Still inside the enrolment's fresh step-up, so the replacement page opens without another one.
+  // Still inside the enrolment's fresh step-up, so the replacement page opens without another one. The replacement spends the current step, so
+  // the sign-in takes the next one.
   await page.goto("/account/totp");
   await page.getByRole("link", { name: "Replace authenticator app" }).click();
   await expect(page).toHaveURL(/\/account\/totp\/replace$/);
   const replacedUri = (await page.locator("[data-ref='totp-uri']").textContent())?.trim() ?? "";
   expect(replacedUri).not.toBe(totpUri);
-  await confirmCode(page, "Code from your app", (await totpCodes(replacedUri, Date.now())).previous);
+  await confirmCode(page, "Code from your app", (await totpCodes(replacedUri, Date.now())).current);
   await expect(page).toHaveURL(/\/account\/totp$/);
 
   await signout.click();
@@ -130,7 +130,7 @@ test("signs up onto the mandatory authenticator app, replaces it in place, canno
   await confirmCode(page, "Verification code", (await totpCodes(totpUri, Date.now())).current);
   await expect(page).toHaveURL(/\/auth\/verify\?factor=totp-app$/);
   await expect(page.getByText("That code did not match. Enter the code your app shows now.")).toBeVisible();
-  await confirmCode(page, "Verification code", (await totpCodes(replacedUri, Date.now())).current);
+  await confirmCode(page, "Verification code", (await totpCodes(replacedUri, Date.now() + 30_000)).current);
   await expect(page).not.toHaveURL(/\/auth\//);
   await expect(signout).toHaveCount(1);
 

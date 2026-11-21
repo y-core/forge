@@ -6,7 +6,16 @@ import { join } from "node:path";
 import { readDeployment } from "../cf/config/environment";
 import type { D1DatabaseConfig, WranglerConfig } from "../cf/types";
 import { CliError } from "../cli/errors";
-import { createUndeclaredEnvError, d1Entries, resolveDbConfig, selectD1Entry, sharedD1Databases, toD1Entry, wranglerHistoryTable } from "./config";
+import {
+  createUndeclaredEnvError,
+  d1Entries,
+  platformProxyConfig,
+  resolveDbConfig,
+  selectD1Entry,
+  sharedD1Databases,
+  toD1Entry,
+  wranglerHistoryTable,
+} from "./config";
 import { minimalWranglerConfig } from "./db.fixture";
 
 const roots: string[] = [];
@@ -105,6 +114,45 @@ describe("d1Entries()", () => {
   it("reads a declared environment's own entries and never the top level's", () => {
     const config: WranglerConfig = { name: "app", d1_databases: [DB], env: { staging: { d1_databases: [REPORTS] } } };
     expect(d1Entries(config, "staging")).toEqual([REPORTS]);
+  });
+});
+
+describe("platformProxyConfig()", () => {
+  const WIRED: WranglerConfig = {
+    name: "app",
+    main: "src/worker.ts",
+    compatibility_date: "2026-01-01",
+    compatibility_flags: ["nodejs_compat"],
+    d1_databases: [{ ...DB, preview_database_id: "preview-1", migrations_dir: "config/db/migrations", migrations_table: "history" }],
+    r2_buckets: [{ binding: "BACKUPS", bucket_name: "app-backups" }],
+    durable_objects: { bindings: [{ name: "NOTEBOOK", class_name: "NotebookDO" }] },
+    queues: { producers: [{ binding: "JOBS", queue: "jobs" }] },
+    services: [{ binding: "AUTH", service: "auth-worker" }],
+    workflows: [{ binding: "FLOW", name: "flow", class_name: "Flow" }],
+  };
+
+  it("keeps the D1 entries whole but for their config-relative paths, the R2 entries, and nothing that needs the Worker's code", () => {
+    expect(platformProxyConfig(WIRED, null)).toEqual({
+      name: "app",
+      compatibility_date: "2026-01-01",
+      compatibility_flags: ["nodejs_compat"],
+      d1_databases: [{ ...DB, preview_database_id: "preview-1", migrations_table: "history" }],
+      r2_buckets: [{ binding: "BACKUPS", bucket_name: "app-backups" }],
+    });
+  });
+
+  it("flattens an environment's own entries to the top level, under the name and flags wrangler gives that environment", () => {
+    const config: WranglerConfig = { ...WIRED, env: { staging: { compatibility_flags: ["staging_flag"], d1_databases: [REPORTS] } } };
+    expect(platformProxyConfig(config, "staging")).toEqual({
+      name: "app-staging",
+      compatibility_date: "2026-01-01",
+      compatibility_flags: ["staging_flag"],
+      d1_databases: [REPORTS],
+    });
+  });
+
+  it("refuses an undeclared environment rather than reaching the top level's database", () => {
+    expect(() => platformProxyConfig(WIRED, "ghost")).toThrow("--env ghost names no `env.ghost` block in the wrangler config");
   });
 });
 

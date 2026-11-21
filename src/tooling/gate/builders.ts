@@ -396,7 +396,9 @@ export function exposureStep(config: ExposureCheckConfig, options: StepOptions =
 
 /** Fails a Worker config whose `compatibility_flags` omits or contradicts the runtime posture, in the top level and every `env.*` block that states a set of its own. @public */
 export function compatibilityStep(config: CompatibilityCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-compatibility", () => checkCompatibility(config), options, { watches: [config.workerConfig ?? "wrangler.jsonc"] });
+  return checkStep("validate-compatibility", () => checkCompatibility(config), options, {
+    watches: [...(config.workerConfigs ?? ["wrangler.jsonc"])],
+  });
 }
 
 /** Checks every path the emitted assets manifest maps to exists under the served asset directory. @public */
@@ -446,7 +448,8 @@ export function devBundleStep(config: DevBundleCheckConfig, options: StepOptions
 
 /** Holds every `config/*.config.ts` to one default export that calls an imported `define*` helper. @public */
 export function configFileStep(config: ConfigFileCheckConfig, options: StepOptions = {}): CheckStep {
-  return checkStep("validate-config-files", () => checkConfigFiles(config), options, { watches: ["config/*.config.ts"] });
+  const watches = ["config/*.config.ts", ...(config.baseline === true ? [".oxlintrc.json*", ".oxfmtrc.json*", "tsconfig.json*"] : [])];
+  return checkStep("validate-config-files", () => checkConfigFiles(config), options, { watches });
 }
 
 /** Checks markdown against the house conventions, with a fixer for the mechanical rules. @public */

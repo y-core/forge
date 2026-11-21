@@ -251,7 +251,7 @@ These look wrong and are correct. Each has been mistaken for a defect before.
 | A mutable module-scope cache in a browser-only module | Browser-only modules are exempt from zero-global-state — [`CODE_RULES.md`][cr-1e] §1e |
 | Node built-ins in build-time tooling | Exempt by reachability — [`LIBRARY_ARCHITECTURE.md`][la-1e] §1e |
 | A value constructor not following `create*` | The documented naming exception — [`ERROR_HANDLING.md`][eh-1a] §1a |
-| An HTTP-boundary method returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`][eh-5e] §5e |
+| An HTTP-boundary method returning a `Response`, not a `Result` | A ratified boundary exception — [`ERROR_HANDLING.md`][eh-5d] §5d |
 | A barrel import of a facade or sealed-internal module | A sanctioned exemption — [`NAMESPACE_DESIGN.md`][nd-2c] §2c |
 | Duplicated markup or constants across a leaf boundary | An accepted cost — [`NAMESPACE_DESIGN.md`][nd-3e] §3e |
 | The same symbol name exported from two barrels | Deliberate shadowing where a bound and unbound variant coexist |
@@ -280,7 +280,7 @@ reads both.
 [cr-5f]: ../shared/CODE_RULES.md#5f-a-field-is-a-symbol
 [cr-7]: ../shared/CODE_RULES.md#7-name-distinctiveness-rule
 [eh-1a]: ./ERROR_HANDLING.md#1a-the-unified-result-primitive
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--resolvers-throw
+[eh-5d]: ./ERROR_HANDLING.md#5d-startup-invariants--resolvers-throw
 [la-1a]: ./LIBRARY_ARCHITECTURE.md#1a-facade-over-dependencies
 [la-1d]: ./LIBRARY_ARCHITECTURE.md#1d-web-apis-only-constraint
 [la-1e]: ./LIBRARY_ARCHITECTURE.md#1e-the-build-time-exemption-is-reachability

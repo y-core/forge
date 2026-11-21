@@ -1,10 +1,13 @@
 .DS_Store
 
-.codex
+# Personal Codex configuration; the example beside it is synced from warden and committed.
+.codex/*
+!.codex/config.toml.example
 .reference
 .zed/
 
 .dev.vars
+.env*
 .wrangler/
 .wrangler-harness-*.json
 

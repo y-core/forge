@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -13,7 +13,14 @@ function writeWorkerConfig(body: string): void {
   writeFileSync(join(root, "wrangler.jsonc"), `{\n  // a comment, so the JSONC path is exercised\n  "name": "app",\n${body}\n}\n`);
 }
 
-const run = () => checkCompatibility({ root, workerConfig: "wrangler.jsonc" });
+function writeSandboxConfig(body: string): void {
+  mkdirSync(join(root, "sandbox"), { recursive: true });
+  writeFileSync(join(root, "sandbox/wrangler.jsonc"), `{\n  "name": "sandbox",\n${body}\n}\n`);
+}
+
+const BOTH = ["wrangler.jsonc", "sandbox/wrangler.jsonc"] as const;
+
+const run = () => checkCompatibility({ root, workerConfigs: ["wrangler.jsonc"] });
 
 async function expectRefusedAt(path: string): Promise<void> {
   const result = await run();
@@ -109,7 +116,7 @@ describe("checkCompatibility", () => {
 
   it("takes the required set from `require`, and refuses the opposite of each `no_*` entry", async () => {
     writeWorkerConfig('  "compatibility_flags": ["nodejs_compat"]');
-    const result = await checkCompatibility({ root, workerConfig: "wrangler.jsonc", require: ["no_nodejs_compat"] });
+    const result = await checkCompatibility({ root, workerConfigs: ["wrangler.jsonc"], require: ["no_nodejs_compat"] });
     expect(result.findings.map((f) => f.message)).toEqual([
       "`compatibility_flags` states `nodejs_compat`, which contradicts the required `no_nodejs_compat`",
     ]);
@@ -118,7 +125,7 @@ describe("checkCompatibility", () => {
 
   it("holds a required flag that names no opposite to statedness alone", async () => {
     writeWorkerConfig('  "compatibility_flags": ["new_module_registry"]');
-    const result = await checkCompatibility({ root, workerConfig: "wrangler.jsonc", require: ["new_module_registry"] });
+    const result = await checkCompatibility({ root, workerConfigs: ["wrangler.jsonc"], require: ["new_module_registry"] });
     expect(result.ok).toBe(true);
     expect(result.summary).toBe("compatibility flags: 1/1 required stated");
   });
@@ -219,5 +226,39 @@ describe("checkCompatibility", () => {
     writeWorkerConfig(POSTURE);
     const result = await checkCompatibility({ root });
     expect(result.ok).toBe(true);
+  });
+
+  it("passes two configs that both state the posture, summing the count across them", async () => {
+    writeWorkerConfig(POSTURE);
+    writeSandboxConfig(POSTURE);
+    const result = await checkCompatibility({ root, workerConfigs: BOTH });
+    expect(result.ok).toBe(true);
+    expect(result.summary).toBe("compatibility flags: 6/6 required stated across 2 deployments in 2 configs");
+  });
+
+  it("fails a second config missing a flag while the first passes, naming the second file", async () => {
+    writeWorkerConfig(POSTURE);
+    writeSandboxConfig('  "compatibility_flags": ["no_nodejs_compat_v2", "new_module_registry"]');
+    const result = await checkCompatibility({ root, workerConfigs: BOTH });
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => [f.file, f.message])).toEqual([["sandbox/wrangler.jsonc", "`compatibility_flags` omits `no_nodejs_compat`"]]);
+    expect(result.summary).toBe("compatibility flags: 5/6 required stated across 2 deployments in 2 configs");
+  });
+
+  it("fails a missing second config while still judging the first", async () => {
+    writeWorkerConfig('  "compatibility_flags": []');
+    const result = await checkCompatibility({ root, workerConfigs: BOTH });
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => f.file)).toEqual(["wrangler.jsonc", "wrangler.jsonc", "wrangler.jsonc", "sandbox/wrangler.jsonc"]);
+    expect(result.findings.at(-1)?.message).toBe("`sandbox/wrangler.jsonc` not found");
+    expect(result.summary).toBe("compatibility flags: 0/3 required stated in 2 configs, 1 unreadable");
+  });
+
+  it("refuses an empty config list rather than reporting a green row that judged no Worker", async () => {
+    const result = await checkCompatibility({ root, workerConfigs: [] });
+    expect(result.ok).toBe(false);
+    expect(result.findings.map((f) => f.message)).toEqual([
+      "`workerConfigs` names no Worker config — refusing to report a green compatibility gate that judged nothing",
+    ]);
   });
 });

@@ -34,12 +34,12 @@ export interface ExposureCheckConfig {
 /** `"stated"`: any explicit value passes. `"unroutable"`: the value must be the one that keeps the Worker off the public internet. @public */
 export type ExposurePosture = "stated" | "unroutable";
 
-/** What the compatibility-flag check needs to find the Worker config it reads the runtime posture from. @public */
+/** What the compatibility-flag check needs to find the Worker configs it reads the runtime posture from. @public */
 export interface CompatibilityCheckConfig {
-  /** Application root. The worker config path resolves against it. */
+  /** Application root. Each worker config path resolves against it. */
   root: string;
-  /** Wrangler config path, relative to `root`. Defaults to `wrangler.jsonc`. */
-  workerConfig?: string;
+  /** Every Wrangler config to judge, relative to `root` — the deployed Worker and any local one beside it. Defaults to `["wrangler.jsonc"]`. */
+  workerConfigs?: readonly string[];
   /** The flags every deployment must carry at least; a `no_*` entry also refuses its own opposite. Defaults to forge's posture. */
   require?: readonly string[];
 }
@@ -895,4 +895,6 @@ export type PlaywrightServerStatus = { state: "ready" } | { state: "unreachable"
 export interface ConfigFileCheckConfig {
   /** Repository root; the check reads the `*.config.ts` files directly under its `config/`. */
   root: string;
+  /** Also hold `.oxlintrc.json`, `.oxfmtrc.json` and `tsconfig.json` to forge's application bases. */
+  baseline?: boolean;
 }

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 
+import { LEDGER_ID, ledgerIdMessage } from "../../../src/tooling/gate/checks/ledger-ids";
 import { githubSlug } from "../../../src/tooling/gate/checks/markdown-parse";
 import { collectFiles } from "../../../src/tooling/gate/checks/source-scan";
 import type { ExportsMap } from "../../../src/tooling/gate/checks/types";
@@ -278,7 +279,7 @@ function blockAfter(lines: readonly string[], startPattern: RegExp): { start: nu
   return { start, lines: lines.slice(start, end) };
 }
 
-/** Calendar dates, ticket identifiers and inventory counts — a governing document carries no history and no tally. @public */
+/** Calendar dates, ticket and ledger identifiers, and inventory counts — a governing document carries no history and no tally. @public */
 export function validateNoRot(file: string, lines: readonly string[]): Finding[] {
   const findings: Finding[] = [];
   for (let i = 0; i < lines.length; i++) {
@@ -288,6 +289,8 @@ export function validateNoRot(file: string, lines: readonly string[]): Finding[]
     if (date) findings.push(fail(`calendar date \`${date[0]}\` — governing docs carry no history`, { file, line: i + 1 }));
     const ticket = line.match(/\b[A-Z]{1,3}\d+-\d+(?:\.\d+)*\b/);
     if (ticket) findings.push(fail(`ticket identifier \`${ticket[0]}\` — governing docs carry no task IDs`, { file, line: i + 1 }));
+    const ledgerId = LEDGER_ID.exec(line);
+    if (ledgerId) findings.push(fail(ledgerIdMessage(ledgerId[0], "a governing doc"), { file, line: i + 1 }));
 
     // A count inside quotation marks is a mention rather than a claim about the system, wherever in
     // the sentence it sits — the shape a rule takes when it quotes the spellings it forbids.

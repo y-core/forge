@@ -9,8 +9,8 @@ description: "The tsconfig flags, oxlint base and overrides, gate wiring, script
 > the gate table is wired from, which `package.json` scripts exist, who owns a version pin, and the shape of a config module. Repositories reached
 > different answers, with no principle behind the divergence; this is the one answer.
 >
-> **Diffed by hand, save §6.** No gate check enforces the rest of this document, so each section is written concrete enough to hold a repository
-> against without tooling. §6 is held by `validate-config-files`.
+> **Extend the base; local entries are additions only.** Forge exports one base per tool config, and `validate-config-files` holds each
+> repository's `tsconfig.json`, `.oxlintrc.json` and `.oxfmtrc.json` to it (§6). The rest of this document is held by review.
 >
 > Defers to: [`TESTING.md`][testing-6] §6 for what the gate tiers mean and what a step's tier is; [`FORGE_CONSUMPTION.md`][fc] for the
 > application-to-library relationship, which is a different subject from the toolchain.
@@ -19,37 +19,30 @@ description: "The tsconfig flags, oxlint base and overrides, gate wiring, script
 
 ## 0. Quick Reference
 
-- §1 The tsconfig Flag Set: the strictness flags beyond `strict`, the `@assets` path, and no `exclude` key
-- §2 The oxlint Base and Its Overrides: one base every repository shares, variation only in `overrides`
-- §2a The Base: plugins, categories, ignore patterns, rules, and the type-aware block
-- §2b Overrides Are Scoped and Reasoned: the spec override, and what a legitimate second one looks like
+- §1 The tsconfig Base: extend the base by its `node_modules` path, add `paths` and `include`, and no `exclude` key
+- §2 The oxlint Base and Its Overrides: one base every repository extends, variation only as additions
+- §2a The Base: extended by path, and the ignore list each repository states itself
+- §2b Overrides Are Scoped and Reasoned: the overrides the base carries, and what a legitimate local one looks like
+- §2c The Formatter Copy: `bun fmt` cannot extend, so `.oxfmtrc.json` carries the base unchanged plus its own ignores
 - §3 Gate Wiring: the preset is the table, merged with only the repository's own rows
 - §4 The Script Set: the scripts every repository has, and the sets conditional on what it holds
 - §5 Version Pins: one fleet version, forge's pin is the fleet's pin
-- §6 Config Modules: one default export through a `define*` helper, no top-level work, and the row that holds it
+- §6 Config Modules: one default export through a `define*` helper, no top-level work, and the row that holds it and the tool configs
 
 ---
 
-## 1. The tsconfig Flag Set
+## 1. The tsconfig Base
 
-**Beyond `strict`, every repository carries all of these:**
+**`tsconfig.json` extends `@y-core/forge/tooling/tsconfig.app.json` by its path under `node_modules`**, because Bun's runtime transpiler ignores a
+package `extends` and `bun test` would lose the JSX source; `TSCONFIG_BASE`, from `@y-core/forge/tooling/gate`, is that path. The base holds the
+module settings, the JSX source and every strictness flag beyond `strict`: `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`,
+`noImplicitOverride`, `noImplicitReturns`, `noFallthroughCasesInSwitch`, `allowUnreachableCode: false` and `erasableSyntaxOnly`. They are one set,
+not a menu. Each removes a class of defect the type checker would otherwise hand to review, and a repository that drops one has the review burden of
+a repository carrying none for the class it dropped. A local `compilerOptions` entry adds an option the base does not set, such as
+`resolveJsonModule`; it never restates one.
 
-```json
-{
-  "noUncheckedIndexedAccess": true,
-  "exactOptionalPropertyTypes": true,
-  "noImplicitOverride": true,
-  "noImplicitReturns": true,
-  "noFallthroughCasesInSwitch": true,
-  "allowUnreachableCode": false,
-  "erasableSyntaxOnly": true
-}
-```
-
-They are one set, not a menu. Each removes a class of defect the type checker would otherwise hand to review, and a repository that drops one has
-the review burden of a repository carrying none for the class it dropped.
-
-**`paths` declares the generated asset module**, so markup names `@assets` rather than a relative path into a build artifact:
+**`paths` declares the generated asset module, locally**, so markup names `@assets` rather than a relative path into a build artifact. It cannot
+live in the base: `paths` resolves against the file that declares it, which for the base is inside `node_modules`.
 
 ```json
 { "paths": { "@assets": ["./.forge/assets.ts"] } }
@@ -68,78 +61,40 @@ an application has no equivalent need.
 
 ### 2a. The Base
 
-Everything above `overrides` is shared. A repository does not curate this list — it copies it, and a change to it is a fleet change.
+**`.oxlintrc.json` extends `@y-core/forge/tooling/oxlint.base.json` by its path under `node_modules`**, because oxlint reads `extends` as a file
+and never consults `exports`. `OXLINT_BASE`, from `@y-core/forge/tooling/gate`, is that path spelled as the check demands it.
 
-| Key | Value |
-| --- | --- |
-| `plugins` | `["eslint", "typescript", "unicorn", "oxc", "import", "promise", "jsx-a11y"]` |
-| `jsPlugins` | `["@y-core/forge/tooling/lint/plugin"]` — the published bundle, never a relative path |
-| `categories` | `{ "correctness": "error" }` |
-| `ignorePatterns` | `[".forge/**", ".types/**"]` — the generated trees, which no tool but their emitter owns |
+The base holds the plugins, the `forge/*` plugin as the committed bundle beside it, the categories, every rule and the shared overrides. A
+repository does not restate any of them: a local `plugins`, `jsPlugins` or `categories` replaces the base's value rather than adding to it, and a
+local rule that names a base rule is a disagreement with the base, which is a fleet change made in forge. A rule the base does not carry is an
+addition, and that is the only kind of local rule there is.
 
-`rules` carries the `forge/*` design and accessibility rules the library's own corpus defines, the `typescript/*` shape rules, the
-`eslint/no-restricted-imports` patterns that hold the facade and keep a build-time subpath out of `src/`, and the handful of upstream rules this
-fleet turns off.
+**`ignorePatterns` is the one list each repository states**, because oxlint does not inherit it through `extends`. It names at least the generated
+trees, `.forge/**` and `.types/**`, which no tool but their emitter owns, and adds any vendored tree of the repository's own.
 
-**These entries in it are got wrong by copying the shape and not the options**, so they are written out here:
-
-```json
-{
-  "typescript/no-empty-object-type": ["error", { "allowInterfaces": "with-single-extends" }],
-  "eslint/no-irregular-whitespace": ["error", { "skipComments": true }],
-  "eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_", "ignoreRestSiblings": true }]
-}
-```
-
-A bare `"error"` in place of any of them is not a stricter setting; it is a rule that fires on code the fleet writes on purpose, which is how a
-rule comes to be turned off.
-
-**Both restricted-import bans are `patterns` groups, and the build-time group names three spellings** — the library's `tooling` prefix bare, then
-its `/*` children, then its `/**` descendants. A group matching only the children leaves the bare prefix open the day the library publishes it as a
-barrel, and the ban is the only thing standing between a Worker bundle and a module that needs node's globals.
-
-**The type-aware block is part of the base, not an option.** These rules only run under `oxlint --type-aware`, which §3 makes a gate row:
-
-```json
-{
-  "typescript/no-floating-promises": "error",
-  "typescript/no-misused-promises": "error",
-  "typescript/await-thenable": "error",
-  "typescript/no-base-to-string": "off",
-  "typescript/unbound-method": "off",
-  "typescript/restrict-template-expressions": "off",
-  "typescript/no-misused-spread": "off",
-  "typescript/require-array-sort-compare": "off",
-  "typescript/no-duplicate-type-constituents": "off",
-  "typescript/no-redundant-type-constituents": "off"
-}
-```
-
-The `off` entries are as load-bearing as the `error` ones: without them the type-aware run is noise, and a noisy row is a row someone
-turns off.
+**The type-aware rules in the base only run under `oxlint --type-aware`**, which §3 makes a gate row. Their `off` entries are as load-bearing as
+the `error` ones: without them the type-aware run is noise, and a noisy row is a row someone turns off.
 
 ### 2b. Overrides Are Scoped and Reasoned
 
-**Every difference between two repositories' linter configuration lives in `overrides`, and every override states why it exists in a comment above
-it.** An unexplained override is indistinguishable from a rule someone could not make pass.
+**Every difference between two repositories' linter configuration is a local addition, and every local override states why it exists in a comment
+above it.** An unexplained override is indistinguishable from a rule someone could not make pass. Local overrides are appended after the base's.
 
-**The spec override is shared, and "shared" means the same list.** Under `["**/*.test.ts", "**/*.test.tsx", "**/*.browser.ts"]` every
-`forge/a11y-*`, `forge/platform-*` and design rule is off — a test's job is to feed the adversarial markup a rule exists to catch, so holding a
-fixture to the rule inverts it — and `forge/exact-markup-assertion` is on, which is the only file class it applies to.
-`typescript/no-non-null-assertion` is off there
-too, with the `jsx-a11y` rules a fixture's deliberately malformed markup trips: `aria-proptypes`, `control-has-associated-label` and
-`tabindex-no-positive`.
-
-A repository that turns off some of them and leaves the rest on has not written a narrower override; it has an untested half of the block, and the
-first spec that needs one of the other rules off gets a per-site suppression instead.
-
-**The second shared override is the build-time one**, scoped to `["config/**", "scripts/**", "playwright.config.ts"]` — the trees that sit outside
-`tsconfig.json`'s `include` precisely so they may import a build-time subpath. It restates the valibot ban and drops the tooling one, so the facade
-still holds where the boundary does not apply.
+**The base carries the overrides every repository shares.** The spec override, over every `*.test.ts`, `*.test.tsx`, `*.browser.ts` and
+`*.workerd.ts`, turns the design and accessibility rules off — a test's job is to feed the adversarial markup a rule exists to catch, so holding a
+fixture to the rule inverts it — and turns `forge/exact-markup-assertion` on, which is the only file class it applies to. The build-time override,
+over `config/**`, `scripts/**` and `playwright.config.ts`, restates the valibot ban and drops the tooling one, since those trees sit outside
+`tsconfig.json`'s `include` precisely so they may import a build-time subpath.
 
 **A repository-specific override is legitimate when it is narrow and the narrowing is the argument.** A block scoped to the one view directory that
 owns a page's live region, or to the one generated module a vendor ships, is the shape to aim for. A block scoped to `src/**` is not an override; it
 is a disagreement with the base, and it belongs in the base or nowhere.
+
+### 2c. The Formatter Copy
+
+**`bun fmt` reads `.oxfmtrc.json` and ignores `extends`**, so the formatter is the one tool config a repository copies. It carries every key of
+`@y-core/forge/tooling/oxfmt.base.json` with the base's value, and its `ignorePatterns` holds every base entry plus any of its own — `**/*.md` when
+it takes the `markdown` opt-in (§3). A changed option is a fleet change made in the base and propagated by the next bump.
 
 ---
 
@@ -148,6 +103,10 @@ is a disagreement with the base, and it belongs in the base or nowhere.
 **`cloudflareWorkerSteps()` is the table.** A repository's `config/steps.config.ts` default-exports `defineSteps({ tiers })` whose tiers are the
 preset's. Rows that are genuinely its own, such as a check over its own data or a build its own pipeline needs, are merged in with `mergeTiers`,
 each into the tier [`TESTING.md`][testing-6a] §6a puts it in.
+
+**The setup a table needs comes from the library too.** `appContrast()` builds the `contrast` option from forge's token layer, pairs and floors
+plus the repository's own token files, pairs and accepted rows, and `wardenAppSteps()` addresses the installed canon itself unless `citableDirs`
+names otherwise. A repository resolving forge's stylesheet directory or the canon's path by hand restates what the library already knows.
 
 **`wardenAppSteps()` is the second half of the table, and merging it is not an exception.** The rows it declares are `validate-docs` in `static`
 and `warden:index`, `warden:queries` and `warden:duplicates` in `unit`. They cannot come from the first preset, which lives under the library's
@@ -248,6 +207,10 @@ convention covers what the library's tools load.
 `config/` and fails a named export, a top-level statement other than an import or a `const`, `import.meta.main`, and a default that is not a call
 to an imported `define*` helper. A `config/` holding no `*.config.ts` fails too, because a check that read nothing has nothing to report green
 about.
+
+**The same row holds the tool configs to §1 and §2.** It fails a `tsconfig.json` or `.oxlintrc.json` that does not extend its base, a local
+compiler option or rule that names a base key, a local `plugins`, `jsPlugins` or `categories`, an oxlint ignore list missing a generated tree, an
+`.oxfmtrc.json` key that differs from the base or an ignore list missing a base entry, an `exclude` key, and any of the three spelled `.jsonc`.
 
 [fc]: ./FORGE_CONSUMPTION.md
 [testing-6]: ./TESTING.md#6-the-verification-gate

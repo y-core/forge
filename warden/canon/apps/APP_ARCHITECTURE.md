@@ -180,7 +180,7 @@ const apiKey = config.services.email.apiKey;
 so a missing variable surfaces as `undefined` deep inside a request rather than as a startup error naming the field.
 
 Raw binding access remains correct for **binding objects themselves** — a KV namespace, a database, a rate limiter — which are resolved rather than
-validated ([`ERROR_HANDLING.md`][eh-5e] §5e).
+validated ([`ERROR_HANDLING.md`][eh-5d] §5d).
 
 ### 3b. Environment and Context Type Parameters
 
@@ -273,7 +273,7 @@ long enough to need section comments has absorbed a layer below it ([`CODE_RULES
 [boundaries]: ./BOUNDARIES.md
 [boundaries-2]: ./BOUNDARIES.md#2-middleware-ordering-and-guard-placement
 [cr-5b]: ../shared/CODE_RULES.md#5b-forbidden-outright
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--config-and-resolvers-throw
+[eh-5d]: ./ERROR_HANDLING.md#5d-startup-invariants--config-and-resolvers-throw
 [fc]: ./FORGE_CONSUMPTION.md
 [testing-1]: ./TESTING.md#1-the-app-request-pattern
 [wp]: ./WORKERS_PLATFORM.md

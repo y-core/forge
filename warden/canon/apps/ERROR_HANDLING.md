@@ -8,8 +8,8 @@ description: "The one Result primitive, how failures cross a layer boundary, the
 > Owns the `Result` primitive, the rendering decision for a failed request, and the error taxonomy every layer classifies against. Other documents
 > link here rather than restating them.
 >
-> Defers to: [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture; [`BOUNDARIES.md`][boundaries-2d] §2d for rejection status discipline;
-> [`APP_ARCHITECTURE.md`][aa-2] §2 for the layers a failure crosses.
+> Defers to: [`CODE_RULES.md`][cr-2b] §2b for per-route recovery hooks; [`BOUNDARIES.md`][boundaries-5] §5 for the fail-closed posture;
+> [`BOUNDARIES.md`][boundaries-2d] §2d for rejection status discipline; [`APP_ARCHITECTURE.md`][aa-2] §2 for the layers a failure crosses.
 
 ---
 
@@ -34,8 +34,7 @@ description: "The one Result primitive, how failures cross a layer boundary, the
 - §5a Expected Errors: user input and business rules, not exceptions
 - §5b Unexpected Errors: let them reach the boundary, then fix them
 - §5c Infrastructure Errors: log with the request id, then fail closed
-- §5d Per-Route Recovery Hooks: the deliberate page/fragment divergence
-- §5e Startup Invariants: config and resolvers throw
+- §5d Startup Invariants: config and resolvers throw
 
 ---
 
@@ -107,7 +106,7 @@ This is the error-path half of the layer rule in [`APP_ARCHITECTURE.md`][aa-2c] 
 **A throw is invisible in a signature.** A caller reading the type learns nothing about it, gets no compiler pressure to handle it, and discovers it
 in production.
 
-The exceptions are enumerated and small: programming errors (§5b), and startup invariants (§5e). Both are conditions no caller could have handled
+The exceptions are enumerated and small: programming errors (§5b), and startup invariants (§5d). Both are conditions no caller could have handled
 anyway.
 
 ---
@@ -209,18 +208,7 @@ if (!sent.ok) {
 `503` rather than `500`, because the distinction is actionable: `500` says fix the code, `503` says retry or check the dependency. Log enough to
 diagnose — service, operation, sanitised identifiers — and never user-supplied content ([`BOUNDARIES.md`][boundaries-4] §4).
 
-### 5d. Per-Route Recovery Hooks
-
-A declarative handler builder accepts a recovery hook, and **the default differs by handler kind on purpose**:
-
-- A **full-page** handler with no hook lets the error **re-throw**, so the boundary renders the whole document. A half-rendered navigation is worse
-  than an error page.
-- A **fragment** handler with no hook returns a **self-contained error fragment**, because it is swapping into a page that is already correct.
-
-**Both log on the way out.** The difference is only in what the client receives, never in whether the failure is recorded. **Use these hooks for
-per-route recovery instead of ad-hoc `try/catch`**, which is invisible to a reader auditing the route map.
-
-### 5e. Startup Invariants — Config and Resolvers Throw
+### 5d. Startup Invariants — Config and Resolvers Throw
 
 A missing or malformed binding is a **deployment defect**, not a runtime condition to degrade around. Config access, environment validation, and
 request-time binding resolvers **throw** a plain error rather than returning a `Result`.
@@ -238,5 +226,6 @@ developer sees most often during deployment is the one with the least consistent
 [boundaries-4]: ./BOUNDARIES.md#4-no-pii-in-logs
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [cr-1d]: ../shared/CODE_RULES.md#1d-factory-verbs-and-bare-constructors
+[cr-2b]: ../shared/CODE_RULES.md#2b-per-route-recovery-hooks
 [testing-5]: ./TESTING.md#5-security-and-fail-closed-expectations
 [wp-4d]: ./WORKERS_PLATFORM.md#4d-environment-parity

@@ -240,7 +240,8 @@ measures existence only: what an agent _does_ stays convention, enforced by the 
 **A code review starts at the `warden-review` skill, and `CLAUDE.md` says so.** The skill is the entry point that reaches `CODE_REVIEW.md` through
 the index — the blocking invariants, the tiered detection commands, the severity calibration — and holds a finding to the shape that document sets.
 It ships to `.claude/skills/` by the same sync that writes the roster, so it is present in every repository and named in none of them unless
-`CLAUDE.md` names it. A review begun without it is a review against whatever the reviewing agent happened to remember.
+`CLAUDE.md` names it, which `warden sync --check` therefore requires. A review begun without it is a review against whatever the reviewing agent
+happened to remember.
 
 ### 5d. Crossing the Governance Boundary
 

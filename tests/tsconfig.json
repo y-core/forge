@@ -4,5 +4,5 @@
   // `src/`'s stubs before `.types/`, the order the root program loads them, so their merged overloads resolve alike.
   "include": ["../src/**/*.d.ts", "../.types/**/*.d.ts", "tests.d.ts", "workerd/**/*.ts", "fixtures/**/*.ts", "fixtures/**/*.tsx"],
   // Each has its own tsconfig and `typecheck:*` step.
-  "exclude": ["fixtures/workers-consumer/**", "fixtures/service-worker-consumer/**"]
+  "exclude": ["fixtures/workers-consumer/**", "fixtures/service-worker-consumer/**", "fixtures/testing-stubs-consumer/**"]
 }

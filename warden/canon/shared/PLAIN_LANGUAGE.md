@@ -392,9 +392,9 @@ A reader watching tool calls can already see that work is happening. Narrating i
 
 ### 9a. The Closing Report Assigns the User Nothing
 
-**A report says what is done and what is blocked, and assigns the user nothing.** No list of next steps, no "you should now run", no offer or
-reminder to commit (`AGENT_WORKFLOW.md` §4b). Each is a task handed to the person who asked for the work, in the one place nothing tracks it: a
-to-do list in prose is gone at the next scroll, and nothing ever marks it done.
+**A report says what is done and what is blocked, and assigns the user nothing.** No list of next steps and no "you should now run". Each is a task
+handed to the person who asked for the work, in the one place nothing tracks it: a to-do list in prose is gone at the next scroll, and nothing ever
+marks it done.
 
 **Work to be done is a ledger task, never a to-do list in prose.** It is filed in the turn that finds it and named by id (`AGENT_WORKFLOW.md` §5).
 Work the ledger does not carry — provisioning, a secret, a dashboard or DNS step — is reported as what the work is blocked on.

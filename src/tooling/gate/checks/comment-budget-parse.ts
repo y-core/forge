@@ -1,5 +1,6 @@
 import { fail } from "../finding";
 import type { Finding } from "../types";
+import { LEDGER_ID, ledgerIdMessage } from "./ledger-ids";
 import { findComments, findStylesheetComments } from "./source-scan";
 import type { CommentSpan } from "./types";
 
@@ -223,6 +224,19 @@ function judgeGloss(file: string, source: string, span: CommentSpan): Finding[] 
   ];
 }
 
+function judgeLedgerId(file: string, span: CommentSpan): Finding[] {
+  const match = LEDGER_ID.exec(span.text);
+  if (match === null) return [];
+  const line = span.line + (span.text.slice(0, match.index).match(/\n/g)?.length ?? 0);
+  return [
+    fail(ledgerIdMessage(match[0], "a comment"), {
+      file,
+      line,
+      detail: ["say why in the comment itself (CODE_RULES.md §5b); the row stays in the ledger"],
+    }),
+  ];
+}
+
 function judgeTally(file: string, span: CommentSpan): Finding[] {
   const text = body(span);
   if (LOAD_BEARING_NUMBER.test(text)) return [];
@@ -276,7 +290,8 @@ function judgeRuns(file: string, source: string, spans: readonly CommentSpan[], 
 /** Every way `file` exceeds the `CODE_RULES.md` §5a comment budget, in source order. @public */
 export function validateCommentBudget(file: string, source: string, licensed = false): Finding[] {
   const stylesheet = file.endsWith(".css");
-  const spans = (stylesheet ? findStylesheetComments(source) : findComments(source)).filter((span) => !isToolingDirective(span));
+  const comments = stylesheet ? findStylesheetComments(source) : findComments(source);
+  const spans = comments.filter((span) => !isToolingDirective(span));
   const perComment = spans.flatMap((span) => [
     ...(span.kind === "block"
       ? [...judgeBlock(file, span, stylesheet), ...(stylesheet ? [] : judgeGloss(file, source, span))]
@@ -284,5 +299,7 @@ export function validateCommentBudget(file: string, source: string, licensed = f
     ...(UNACTIONABLE.test(span.text) ? [fail("`TODO`/`FIXME`/`XXX` in a comment — open a ledger task", { file, line: span.line })] : []),
     ...judgeTally(file, span),
   ]);
-  return [...perComment, ...judgeRuns(file, source, spans, licensed)].sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
+  // A tooling directive is exempt from the budget, not from this: its reason is a comment like any other.
+  const ledgerIds = comments.flatMap((span) => judgeLedgerId(file, span));
+  return [...perComment, ...ledgerIds, ...judgeRuns(file, source, spans, licensed)].sort((a, b) => (a.line ?? 0) - (b.line ?? 0));
 }

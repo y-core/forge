@@ -64,6 +64,7 @@ export const CO_LOCATION_EXEMPT: ReadonlyMap<string, string> = new Map([
   ],
   [
     "src/testing/node.d.ts",
-    "a declaration file — it defines nothing to run, and `typecheck:workers-consumer-node` is what holds it against `snapshot.ts`, `d1.ts` and `harness.ts`",
+    "a declaration file — `typecheck:workers-consumer-node` holds it against `snapshot.ts`, `d1.ts` and `harness.ts`, and `typecheck:testing-stubs-consumer` against the apps' calls",
   ],
+  ["src/testing/bun.d.ts", "a declaration file — `typecheck:testing-stubs-consumer` holds it against the apps' `bun:test` and `bun:sqlite` calls"],
 ]);

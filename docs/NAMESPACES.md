@@ -310,7 +310,8 @@ signal API, the lazy-loading seam — is in [`UI_CLIENT_RUNTIME.md`][ucr-2] §2.
 command surface and its flag parsing are `tooling/cli`, terminal output is `tooling/term`, a validator the gate runs is `tooling/gate` (and a check
 is a function, not a script — [`BUILD_TOOLING.md`][bt-2i] §2i), a lint rule is `tooling/lint`, a release step is `tooling/release`, reducing a
 working tree to its skeleton is `tooling/curate`, a Cloudflare API call is `tooling/cf`, a D1 migration, compose, backup or seed verb is
-`tooling/db` ([`DATABASE_MANAGEMENT.md`][dm]), and driving an external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
+`tooling/db` ([`DATABASE_MANAGEMENT.md`][dm]), the pieces every app's `playwright.config.ts` shares are `tooling/playwright`, and driving an
+external builder is `tooling/assets` ([`ASSET_PIPELINE.md`][ap-2c] §2c).
 
 **None of it is ever Worker-reachable.** That is what earns every module here the build-time exemption from the Web-APIs-only rule — the exemption
 is the unreachability and the path is the evidence (§4a), which `validate-import-boundary` checks per file. So a tool placed here may use Node

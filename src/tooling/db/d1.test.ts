@@ -308,6 +308,7 @@ describe("executeFile()", () => {
     const root = mkdtempSync(join(tmpdir(), "forge-db-d1-"));
     const file = join(root, "partial.sql");
     writeFileSync(file, "INSERT INTO t VALUES (1);\nINSERT INTO missing VALUES (2);");
+    writeFileSync(join(root, "wrangler.jsonc"), JSON.stringify({ name: "app", d1_databases: [{ binding: "DB", database_id: "app-db-local" }] }));
     const db = fakeDatabase("CREATE TABLE t (id INTEGER)");
     const io = realDbIo(
       () => {},

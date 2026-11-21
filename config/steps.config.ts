@@ -91,6 +91,11 @@ export default defineSteps({
         cmd: ["bun", "check", "--no-script", "--no-pretty", "-p", "tests/fixtures/workers-consumer/tsconfig.node.json"],
       },
       {
+        label: "typecheck:testing-stubs-consumer",
+        tail: 20,
+        cmd: ["bun", "check", "--no-script", "--no-pretty", "-p", "tests/fixtures/testing-stubs-consumer/tsconfig.json"],
+      },
+      {
         label: "typecheck:service-worker-consumer",
         tail: 20,
         cmd: ["bun", "check", "--no-script", "--no-pretty", "-p", "tests/fixtures/service-worker-consumer/tsconfig.json"],

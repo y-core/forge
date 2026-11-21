@@ -75,7 +75,8 @@ A fact that is stable and short â€” a naming convention, a posture, a boundary â
 | Form parsing limits and defaults, including `FORM_MAX_BYTES_DEFAULT` | `src/form/config.ts` |
 | The database host config's fields and their defaults | `DbHostConfig` in `src/tooling/db/types.ts` |
 | The feature manifest's shape | `FeatureManifestSchema` in `src/tooling/curate/types.ts` |
-| Bash allowlist patterns, including the exit-check literal | `.claude/settings.json` `permissions.allow` |
+| The fleet's harness policy and its deny list | `warden/claude/settings.json`, synced to `.claude/settings.json` |
+| Paths every repository's `.gitignore` must ignore | `MUST_IGNORE` in `warden/src/sync/check.ts` |
 
 ### 2b. Enforced Rules
 

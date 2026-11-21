@@ -72,10 +72,67 @@ Write entries under `[Unreleased]` as you go; the release promotes that section 
 local date, inserts a fresh empty `[Unreleased]` above it, and appends a compare link built from `package.json`'s `repository` URL. The heading
 grammar and the round-trip guarantees are [`BUILD_TOOLING.md`][bt-2d] §2d's.
 
-**The promoted changelog ships in the same commit as the bump**, because `stageFiles` defaults to exactly what the release wrote. The bump, the
-promotion and the tag cannot come apart.
+**The promoted changelog ships in the release commit with the bump**, because `stageFiles` defaults to exactly what the release writes. A file
+you have already committed yourself is left out of it, since the release commits only what still differs from HEAD.
 
 A project with no changelog releases unchanged — promotion is skipped, not failed. `changelogFile` renames the file the release looks for.
+
+---
+
+## Finishing a release over several runs
+
+A release stays open until its tag exists. You can keep working after the first run, and each run brings the release up to date with the
+working tree. This sequence is supported:
+
+1. Run `bun run release`. It runs the gate, bumps `package.json` and promotes `[Unreleased]` into `[<version>]`. With `.git` read-only it
+   stops at the host steps instead of committing and tagging, which leaves the release open.
+2. Commit more work, with or without the release files.
+3. Add changelog entries, under `[Unreleased]` or straight into `[<version>]`.
+4. Run `bun run release` again. It folds every new entry into the one `[<version>]` section, writes only the files that changed, runs the gate
+   over them, and prints fresh host steps.
+5. Run the printed host steps on the host.
+6. Run `bun run release` once more to confirm. It prints `Already at <version> — nothing to release.`
+
+**The date on `[<version>]` stays put unless the content changed.** A rerun with no new entry keeps it; a rerun that folds one in, or finds
+an entry written into `[<version>]` itself, takes today's date. **A release file you have already committed is not committed again**, and
+when every one of them is, the host step tags HEAD with no commit. The states behind this are [`BUILD_TOOLING.md`][bt-2a] §2a's.
+
+**When `.git` is read-only, the summary's `commit:` row reads `on the host (.git is read-only)` rather than `here`**, before the gate runs and
+under `--dry` too. The printed commands carry the real HEAD, version and blob ids, and name only the release files that differ from HEAD. On a
+first run of forge's own release the output reads:
+
+```text
+.git is read-only here, so commit and tag v<version> on the host:
+  test "$(git rev-parse HEAD)" = <sha> && git hash-object package.json CHANGELOG.md config/changelog-sections.json   # expect <ids>
+  git commit -m "chore: release <version>" -- package.json CHANGELOG.md config/changelog-sections.json
+  git tag v<version>
+  git push && git push --tags
+Then run `bun run release` here to confirm.
+```
+
+Run the indented lines on the host, one at a time. **If the first line prints nothing, or ids other than the ones it expects, stop**: HEAD or a
+release file has changed since the run, and committing now would release something the gate never saw. Run the release again for fresh steps.
+The commit names its paths, so nothing else you have staged goes into it, and repeating any of these commands does no harm.
+
+When HEAD already holds every release file, the steps tag HEAD after checking it is the commit the run saw:
+
+```text
+.git is read-only here, so tag v<version> on the host:
+  test "$(git rev-parse HEAD)" = <sha> && git tag v<version>
+  git push && git push --tags
+Then run `bun run release` here to confirm.
+```
+
+When HEAD is the release commit and only the tag was missed, the check is dropped:
+
+```text
+.git is read-only here, so tag v<version> on the host:
+  git tag v<version>
+  git push && git push --tags
+Then run `bun run release` here to confirm.
+```
+
+With `.git` writable, the run commits and tags itself and prints only the push.
 
 ---
 
@@ -95,8 +152,14 @@ Each refusal has a flag or it has none, and the ones with none are the ones wort
 | HEAD is not on the branch the remote publishes from | Switch branch; `--allow-branch` for a deliberate release branch |
 | The gate failed | Fix what it reported; `--allow-unverified` tags a tree no gate has passed |
 | The gate could not be run | Name this project's gate with `gateCommand`; `--allow-unverified` releases without one |
-| The commit failed with the version already written | `git checkout -- package.json CHANGELOG.md`, which the error names |
+| The commit failed with the version already written | Fix the cause (a pre-commit hook, most often) and run the release again; it writes only what still differs |
+| `release-partial`: `package.json` changes more than its version, or the changelog edits a section that already shipped | Commit a `package.json` change of your own first, or restore the file from HEAD with `git show HEAD:./<file> > <file>`, which works with `.git` read-only — no flag reaches this one |
+| `version-mismatch`: another version is already written, or committed and untagged | Run the release again with that version to finish it, then release the next one |
 | The release commit changed a path it never staged, or none | `git reset HEAD^`, which the error names; no tag is cut — no flag reaches this one |
+
+**Run the release again after any failure.** Every run re-derives the release from the working tree and never promotes the changelog twice
+([Finishing a release over several runs](#finishing-a-release-over-several-runs)). When the version is already tagged and a reachable remote
+lacks the tag, the run prints `git push --tags` rather than refusing.
 
 **Every refusal except the clean-tree check, the branch check and the gate fires under `--dry` too**, so a preview never hides the refusal it is
 previewing. Those three are skipped because a dry run writes nothing for them to protect. A remote that cannot be reached at all is reported and
@@ -206,8 +269,9 @@ own changelog and export-surface checks read them too.
 **The git and `package.json` helpers are deliberately unpublished** ([`BUILD_TOOLING.md`][bt-2c] §2c). What forge publishes is the release command
 itself.
 
-**A tag that fails to create after the commit landed says so.** The message names the commit as unpushed and untagged, because that is the state you
-have to clean up.
+**A tag that fails to create after the commit landed is resumed, not cleaned up.** The message names the commit as unpushed and untagged. Run
+the release again: it finds the release commit at HEAD, writes and commits nothing, and cuts only the tag. It runs the gate again only when no
+gate record covers that commit.
 
 ---
 

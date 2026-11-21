@@ -95,6 +95,8 @@ declare module "node:fs" {
   // The options form, for a file that must be created with a restrictive mode, or only when absent.
   export function writeFileSync(path: string, data: string, options: { encoding: "utf-8"; mode?: number; flag?: "wx" }): void;
   export function existsSync(path: string | URL): boolean;
+  export function accessSync(path: string, mode?: number): void;
+  export const constants: { readonly W_OK: number };
   export function chmodSync(path: string, mode: number): void;
   export function utimesSync(path: string, atime: Date | number, mtime: Date | number): void;
   export interface Stats {

@@ -18,7 +18,109 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`forge release` hands the commit and the tag to the host when `.git` is read-only.** It finds out before the gate, says so in its summary
+  as `commit: on the host (.git is read-only)`, `--dry` included, and stops before the commit to print the host's commands with HEAD, the
+  version and the blob ids filled in. Each set opens by checking that HEAD and the release files are still what the run saw, and every command
+  is safe to repeat.
+- **`forge release` re-cuts an untagged release.** A release stays open until its tag exists: a rerun folds new `[Unreleased]` entries and
+  entries added to the `[V]` body into the one `[V]` section, writes only the release files that changed, runs the gate over them, and commits
+  only what differs from HEAD, tagging HEAD with no commit when nothing does. Work committed between runs, with or without the release files,
+  is carried. `[V]` keeps its date unless its content changed.
+- **A green release gate is recorded in `.forge/release/<tag>.json`**, so a rerun over the same base commit and the same release files does not
+  run the gate again.
+
+### Fixed
+
+- **`forge release` no longer writes a release twice.** A rerun after a failed commit, or after a commit that was never tagged, refused as
+  dirty, and forcing it past with `--allow-dirty` or `--allow-empty-changelog` promoted `[Unreleased]` as a second `[V]` section and committed
+  again. It now works out from the repository where V stands and runs only the steps that remain. The failed-commit recovery no longer advises
+  `git checkout --`, which needs a writable `.git`.
+- **`promoteUnreleased()`, in `@y-core/forge/tooling/gate`, refuses a changelog that already holds the `[V]` heading**, instead of promoting
+  a duplicate section under it.
+- **`forge release` refuses an edit to what already shipped** as the new `release-partial` `ReleaseErrorKind`: a `package.json` changed beyond
+  its version, or a released section other than `[V]`. The refusal's recovery, `git show HEAD:./<file>`, works with `.git` read-only.
+- **`forge release` refuses to cut a version over an untagged one** already written or committed, as `version-mismatch`, and names the version
+  to finish first.
+
+---
+
+## [0.7.7] — 2026-11-22
+
+### Breaking Changes
+
+- **`warden sync` now owns `.claude/settings.json` and overwrites it**, from `warden/claude/settings.json`, and no longer seeds it under
+  `--init`. The fleet policy holds a residual deny list and nothing else: `model`, `effortLevel`, `attribution`, `env`, the allow lists and
+  `sandbox` are the user's to set. **Migration:** move any repository-specific setting, such as an extra MCP server, into the untracked
+  `.claude/settings.local.json`, then run `bun x warden sync`.
+- **`warden sync --check` fails on git hygiene drift**: a `.gitignore` that leaves `.claude/settings.local.json`, `.dev.vars`, `.env*`, `.forge/`,
+  `tmp/`, `test-results/`, `playwright-report/`, `coverage/`, `.wrangler/` or `.DS_Store` unignored; one that ignores `.claude/settings.json` or
+  `.codex/config.toml.example`; and a tracked `settings.local.json` still on disk — one already deleted is a removal awaiting the commit.
+  **Migration:** fix `.gitignore`, and delete a tracked `settings.local.json` or remove it from the index, until `bun x warden sync --check`
+  passes.
+- **The fleet deny list no longer blocks read-only `git -C`** or the git writes that `.git` mounted read-only already refuses. It denies `git apply`,
+  `clean`, `clone`, `init`, `push`, `--git-dir` and `--work-tree`, plainly and behind any leading global option such as `-C <dir>` or `-c k=v`,
+  plus `gh`, `wrangler deploy` and `wrangler secret` in every spelling, `rm -rf` and reading `.dev.vars` and `.env*`.
+- **`check()` and `sync()`, in `@y-core/forge/warden`, take a `SyncPlan` in place of a `SyncTree` list**, so one argument carries the
+  synced trees, the synced files and the slug `{{repo}}` renders as. **Migration:** `check(repo, trees)` becomes
+  `check(repo, syncPlan(CLAUDE_ROOT, kind, repo))`, and `sync(repo, trees)` becomes `sync(repo, syncPlan(CLAUDE_ROOT, kind, repo))`.
+- **`checkTree()` and `seed()` take a trailing `slug`**, which `{{repo}}` renders as in every file they compare or write. **Migration:** pass
+  the plan's `slug`, or `libraryPrefix(repo)`.
+- **`SeedFile` is renamed `CorpusFile`**, since it now names a file a sync overwrites as well as one it seeds. **Migration:** rename the
+  import; its fields are unchanged.
+- **`identical()` is removed from `@y-core/forge/warden`**: a synced file is compared as rendered text, not bytes. **Migration:** compare a
+  synced file with `checkFiles()`, or compare two buffers with `.equals()` directly.
+- **`copyTree()` is replaced by `writeTree(to, files)`**, which writes a map of relative path to rendered text instead of copying a
+  directory. **Migration:** `copyTree(from, to)` becomes `writeTree(to, layerTree([from], slug))`.
+- **`cloudflareWorkerSteps()`'s `validate-config-files` row holds `tsconfig.json`, `.oxlintrc.json` and `.oxfmtrc.json` to forge's bases.**
+  Each must extend its base — the formatter's copies it, since `bun fmt` ignores `extends` — and a local entry may only add to it: a local rule
+  or compiler option naming a base key, a local `plugins`, `jsPlugins` or `categories`, an `exclude` key and a `.jsonc` spelling all fail.
+  **Migration:** set `"extends": "./node_modules/@y-core/forge/src/tooling/config/tsconfig.app.json"` — a path, since Bun's runtime ignores a
+  package `extends` — and
+  `"extends": ["./node_modules/@y-core/forge/src/tooling/config/oxlint.base.json"]`, keep `paths`, `include` and `ignorePatterns` (with
+  `.forge/**` and `.types/**`) locally, delete every entry the base now holds, and rename any `.jsonc` to `.json`.
+- **The oxlint base turns on `forge/sql-in-loop`, `forge/sql-tag-called-directly`, `typescript/consistent-type-imports`,
+  `import/consistent-type-specifier-style` and `import/no-cycle` fleet-wide**, applies the spec override to `*.workerd.ts`, and bans launching a
+  local browser under `tests/**`. **Migration:** run `bun run fix` for the type-import rules, and break any import cycle `import/no-cycle` names.
+- **`CompatibilityCheckConfig.workerConfig` is replaced by `workerConfigs`**, a list judged in one `validate-compatibility` row, so a second Worker
+  config cannot drift off the flags unseen. `cloudflareWorkerSteps()` judges `workerConfig` plus `compatibility.extraWorkerConfigs`.
+  **Migration:** a direct `compatibilityStep({ workerConfig: "x.jsonc" })` becomes `compatibilityStep({ workerConfigs: ["x.jsonc"] })`; an app
+  with a local Worker beside the deployed one passes `compatibility: { extraWorkerConfigs: ["path/to/wrangler.jsonc"] }`.
+- **`validate-comment-budget` and `validate-docs` fail a ledger task id** — `bug-`, `feat-`, `chore-`, `spike-` or `decision-` followed by
+  `YYMMDD-NN` — in a comment, a tooling directive included, or in a governing document, `CLAUDE.md` or a README. An id in a string literal passes.
+  **Migration:** rewrite each reported comment or line to state the reason itself; where a document shows the id format, spell it
+  `feat-YYMMDD-NN`.
+
+### Added
+
+- **`warden sync` writes `.codex/config.toml.example`**, carrying the ledger URL scoped to the repository.
+- **`@y-core/forge/tooling/oxlint.base.json`, `oxfmt.base.json` and `tsconfig.app.json`**, the fleet's tool-config bases.
+- **`appContrast()`, in `@y-core/forge/tooling/gate`**, builds the `contrast` option from forge's token layer, pairs and floors plus an
+  application's own token files, pairs and accepted rows, stated as the exported `AppContrastOptions`.
+- **`warden sync` merges a kind's `X.overlay.md` into the shared `X.md`**, filling each `{{slot:name}}` line, through the new `layerTree()`
+  and `mergeOverlay()`; the agent definitions are now one shared body each plus a short overlay per kind.
+- **`syncPlan()`, `syncFiles()`, `render()` and the `SyncPlan` type, in `@y-core/forge/warden`**, which build what a sync writes into a
+  repository and render a corpus file for its slug, and **`checkFiles()`, `checkGit()` and `MUST_IGNORE`**, which back the synced-file and
+  git hygiene findings of `warden sync --check`.
+- **`checkConfigBaseline()`, `OXLINT_BASE` and `TSCONFIG_BASE`, in `@y-core/forge/tooling/gate`**: the check the `validate-config-files`
+  row runs against forge's bases, and the two `extends` paths it requires.
+- **`wardenAppSteps()`, in `@y-core/forge/warden/steps`, defaults `citableDirs`** to the installed canon's `shared` and kind trees, through
+  `canonCitableDirs()`, new in the same subpath.
+- **`@y-core/forge/tooling/playwright`**: `playwrightServers()`, `chromiumProject()`, `crossEngineProjects()`, `workerdProject()` and
+  `runsOnlyWorkerd()`, the pieces every app's `playwright.config.ts` shares, published as a prebuilt `.mjs`. `@playwright/test` becomes an
+  optional peer.
+- **`@y-core/forge/testing/bun`**, a types-only subpath declaring `bun:test` and `bun:sqlite`, and **`@y-core/forge/testing/node` widened** to
+  the node calls the fleet's tests make (`node:child_process`, `node:crypto`, `node:http`, `node:net`, more of `node:fs`, `node:os`, `node:path`
+  and `node:url`, and named `node:process` exports). Both declare modules only, `node:domain`, `Hash.digest(): Uint8Array` and
+  `Statement.columnNames` among them. An app replaces its own `.types/` copies with one `.types/forge.d.ts` referencing the two.
+
+### Fixed
+
+- **`forge db` no longer prints workerd's "no such Durable Object class is exported" warning** in an app that binds a Durable Object of its
+  own Worker. A local database is now opened through a config holding only the app's D1 and R2 entries, written under `.forge/` and removed
+  on close, so the platform proxy no longer boots the app's Durable Objects, queues, services or workflows to read a database. The same
+  local state is read as before.
 
 ---
 
@@ -1978,6 +2080,7 @@ the Worker secret holding the D1 token if nothing else reads it. Schedule `forge
 - **`lintPluginStep`, `chromiumBundleStep` and `totpBundleStep` are replaced by `bundleStep(label, config)`** in `@y-core/forge/tooling/gate`.
   No consuming app calls them.
 
+[0.7.7]: https://github.com/y-core/forge/compare/v0.7.6...v0.7.7
 [0.7.6]: https://github.com/y-core/forge/compare/v0.7.5...v0.7.6
 [0.7.5]: https://github.com/y-core/forge/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/y-core/forge/compare/v0.7.3...v0.7.4

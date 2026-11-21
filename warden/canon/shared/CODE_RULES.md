@@ -23,12 +23,14 @@ description: "The non-negotiable coding rules: zero global state, explicit error
 - §1e Browser-Only Modules Are Exempt: why page-scoped state is safe, and what still applies
 - §2 Explicit Errors via Result Monad: return failures, do not throw them
 - §2a When to Throw vs Return Result: the taxonomy that owns the split, and the canonical throw
+- §2b Per-Route Recovery Hooks: the deliberate page/fragment divergence, and hooks over ad-hoc `try/catch`
 - §3 Validation First Rule: untrusted input stops at the boundary
 - §3a Validate at System Boundaries: the handler and the config loader
 - §3b The Validation Facade: never import the schema library directly
 - §3c Abort-Early Validation: the form-validation default
 - §4 Testability Rule: design so tests need no mocks
 - §4a No Globals to Mock: what factory functions buy
+- §4b Capturing Arguments in Fakes: captures over call assertions
 - §5 Comment Budget Rule: a ceiling on prose, not a floor
 - §5a The Entire Permitted Budget: one-line TSDoc, visibility tags, the rare inline why
 - §5b Forbidden Outright: what is deleted on sight
@@ -43,6 +45,7 @@ description: "The non-negotiable coding rules: zero global state, explicit error
 - §7b One Domain Word — and No More Than the Domain Needs: the floor, and the ceiling beside it
 - §7c One Spelling Per Concept: two words for one entity get built twice
 - §7d Parameters Distinguished by Type, Not Order: make the compiler reject the transposition
+- §7e Casing, Prefixes and Exports: the spelling every symbol takes, and named exports only
 
 ---
 
@@ -133,7 +136,7 @@ values with `ok()` / `err()`; wrap a throwing call with `result()`.
 ### 2a. When to Throw vs Return Result
 
 `ERROR_HANDLING.md` §5a owns the split between an expected failure that returns a `Result` and the programming error that throws;
-`ERROR_HANDLING.md` §5e owns the startup-invariant case. This section adds no rule to either, only the canonical illustration.
+`ERROR_HANDLING.md` §5d owns the startup-invariant case. This section adds no rule to either, only the canonical illustration.
 
 A component that merges props onto a single element child cannot accept a string, fragment, array, or empty child, so it throws rather than emitting
 malformed markup:
@@ -146,6 +149,17 @@ if (asChild && !isValidElement(children)) {
 
 That is a caller bug surfaced at render time — not an expected runtime failure — so a throw is correct where a parse or validation failure would
 return a `Result`.
+
+### 2b. Per-Route Recovery Hooks
+
+A declarative handler builder accepts a recovery hook, and **the default differs by handler kind on purpose**:
+
+- A **full-page** handler with no hook lets the error **re-throw**, so the error boundary (`ERROR_HANDLING.md` §5b) renders the whole document. A
+  half-rendered navigation is worse than an error page.
+- A **fragment** handler with no hook returns a **self-contained error fragment**, because it is swapping into a page that is already correct.
+
+**Both log on the way out.** The difference is only in what the client receives, never in whether the failure is recorded. **Use these hooks for
+per-route recovery instead of ad-hoc `try/catch`**, which is invisible to a reader auditing the route map.
 
 ---
 
@@ -189,6 +203,23 @@ and an application, so `TESTING.md` §2 owns placement and §4 owns fakes.
 
 Because the codebase uses factory functions and Web-standard APIs, **tests call functions directly without mocking global state**. A function that
 cannot be tested without a mock is a design signal: make its dependency an argument.
+
+### 4b. Capturing Arguments in Fakes
+
+**Use a capture variable at the top of the test block**, and reset it in a lifecycle hook when the fake is shared across cases. The fake's method
+assigns the argument; the assertion is an exact `toBe` on the captured value, not a claim about how many times it was called.
+
+```ts
+let capturedKey = "";
+const kv: KVNamespace = {
+  put: async (key) => {
+    capturedKey = key;
+  } /* …rest */,
+};
+
+await handler(fakeContext);
+expect(capturedKey).toBe("session:abc123");
+```
 
 ---
 
@@ -425,5 +456,18 @@ function grantAccess(grant: { userId: UserId; resourceId: ResourceId; role: Role
 
 The compiler is the one reviewer that cannot be skipped, and this is the cheapest class of bug to hand it. Distinct from §3, which governs
 _untrusted_ input arriving at a boundary: §7d governs _internal_ signatures, where the values are already trusted and the whole risk is positional.
+
+### 7e. Casing, Prefixes and Exports
+
+**One spelling per kind of symbol**, so a reader knows what a name is before opening it:
+
+- **Functions** are camelCase and verb-first (`parseUrl`, `sendMessage`); §1d owns which verb.
+- **Types and interfaces** are PascalCase (`SecurityHeadersOptions`, `AppConfig`).
+- **Module constants** are SCREAMING_SNAKE_CASE.
+- **A private field** takes a `_` prefix.
+- **A test fake** takes a `fake` prefix (`fakeKV`, `fakeContext`).
+
+**Exports are named.** A default export is reserved for a Worker entry and a config module, the two places a loader
+reads one by convention.
 
 [nd-4a]: ../libs/NAMESPACE_DESIGN.md#4a-factory-and-accessor-verbs

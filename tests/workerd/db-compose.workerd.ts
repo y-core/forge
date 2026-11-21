@@ -300,7 +300,7 @@ test.describe("the proof over one seeded row per table", () => {
   const DROP_CHILD = 'DROP TABLE IF EXISTS "child";\n';
   const RENAME_IN = /^ALTER TABLE "_forge_new_[^\n]* RENAME TO [^\n]*\n/gm;
 
-  /** The bug-261018-02 order: the dropped child goes after the renames instead of before them. */
+  /** The emit order compose once had: the dropped child goes after the renames instead of before them. */
   function oldEmitOrder(sql: string): string {
     const without = sql.replace(DROP_CHILD, "");
     const last = [...without.matchAll(RENAME_IN)].at(-1);
@@ -315,7 +315,7 @@ test.describe("the proof over one seeded row per table", () => {
   ];
 
   for (const { name, after } of variants) {
-    test(`refuses the bug-261018-02 counterexample in the old emit order, and proves the real one: parent gains ${name}`, async () => {
+    test(`refuses the old emit order's dropped-child counterexample, and proves the real one: parent gains ${name}`, async () => {
       test.setTimeout(120_000);
       await proving(PARENT_CHILD, after, async (run) => {
         const { sql } = await compose(run, "change", [], true);

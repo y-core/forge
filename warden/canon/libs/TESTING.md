@@ -33,7 +33,6 @@ description: "Test placement, the exact-match assertion rule, fakes over mocks, 
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Why Fakes Over Mocks: the comparison, and the no-mock-library rule
-- §4c Capturing Arguments in Fakes: captures over call assertions
 - §5 Security Test Requirements: both directions, always
 - §5a Both Pass and Fail Cases Required: the requirement matrix
 - §5b Negative Case Structure: assert status and body
@@ -287,12 +286,7 @@ request builder, a single-route registrar. A fake that every suite hand-rolls is
 | Coupling | To the interface contract | To call order, argument matchers, invocation counts |
 | Dependencies | None | Requires a mock library |
 
-**Mock libraries are not installed and must not be added.** Use argument-capturing fakes (§4c) when you need to inspect calls.
-
-### 4c. Capturing Arguments in Fakes
-
-**Use a capture variable at the top of the test block**, and reset it in a lifecycle hook when the fake is shared across cases. The fake's method
-assigns the argument; the assertion is an exact `toBe` on the captured value, not a claim about how many times it was called.
+**Mock libraries are not installed and must not be added.** Use argument-capturing fakes (`CODE_RULES.md` §4b) when you need to inspect calls.
 
 ---
 

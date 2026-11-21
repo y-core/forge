@@ -28,6 +28,22 @@ export function d1Entries(config: WranglerConfig, env: string | null): D1Databas
   return entries;
 }
 
+/** The config a local handle opens through: the run's d1 and r2 entries flattened out of any environment, and no binding that needs the Worker's code. @internal */
+export function platformProxyConfig(config: WranglerConfig, env: string | null): Record<string, unknown> {
+  // The migration paths are relative to the app's config, and a platform proxy reads neither.
+  const d1 = d1Entries(config, env).map(({ migrations_dir, migrations_pattern, ...entry }) => entry);
+  const read = readDeployment(config, env);
+  if (!read.ok) throw createUndeclaredEnvError(String(env));
+  const { name, compatibility_date, compatibility_flags, r2_buckets } = read.data.effective;
+  return {
+    ...(name === undefined ? {} : { name }),
+    ...(compatibility_date === undefined ? {} : { compatibility_date }),
+    ...(compatibility_flags === undefined ? {} : { compatibility_flags }),
+    d1_databases: d1,
+    ...(r2_buckets === undefined ? {} : { r2_buckets }),
+  };
+}
+
 /** The table wrangler records its own applied migrations in for the run's entry: its `migrations_table`, else `d1_migrations`. @internal */
 export function wranglerHistoryTable(config: DbConfig): string {
   return d1Entries(config.config, config.env).find((c) => c.binding === config.entry.binding)?.migrations_table ?? "d1_migrations";

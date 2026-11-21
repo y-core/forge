@@ -83,24 +83,10 @@ Corollaries you will need constantly:
 
 ## The Comment Budget
 
-**`CODE_RULES.md` §5 is binding on every source comment you write or leave standing.** It is a ceiling, not a floor; §5a is the entire permitted
-budget.
-
-**Rationale you write goes to a `docs/` doc or a namespace `README.md` — never into a source comment.** §5c is your placement authority: a portable
-rule to the canon (as a corpus change), a local ruling to `docs/`, usage and examples to the README, a behavioural claim to a test, undone work to a
-ledger task, history to the commit message.
-
-**You do not add `@example` blocks to source.** Examples are the README's job — that is the whole reason the README exists. An `@example` in source
-is a defect, and you delete it rather than improve it whenever you touch the file.
-
-**Prose the comment budget evicts is deleted, not relocated.** A README is not where it goes to live (`AGENT_GUIDE.md` §6c). §5c's routing table
-sends _consumer-facing usage_ to the README and nothing else; a paragraph that failed to earn its place in a source file does not earn it by moving.
-
-**A behavioural claim you delete lands in a test** (`CODE_RULES.md` §5e). Find the test that pins it; where none does, the assertion is the missing
-work, and the change is not done until it exists. Name the test for `cc-test` rather than leaving the claim to evaporate.
-
-**A field is a symbol** (`CODE_RULES.md` §5f). An interface field earns at most one line, and nothing at all when its name and type already say it.
-A gloss that spells the field name back is deleted; one carrying a default, a unit, a constraint or a caveat stays.
+**`CODE_RULES.md` §5 is binding on every source comment you write or leave standing**, and §5a is the entire permitted budget. Rationale goes to a
+`docs/` doc or a `README.md`, never a source comment, as §5c routes it; an `@example` in source is deleted on sight, since examples are the README's
+job. **Prose the budget evicts is deleted, not relocated** (`AGENT_GUIDE.md` §6c), a deleted behavioural claim lands in a test you name for
+`cc-test` (§5e), and a field gloss earns a line only for what its name and type cannot say (§5f).
 
 ## Verify, Do Not Assume
 

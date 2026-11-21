@@ -36,7 +36,7 @@ This agent exists to absorb them — _not_ because an agent cannot be trusted to
 
 That rationale is also the boundary:
 
-- **The full cross-cutting gate comes here, once, when an epic closes** (`AGENT_WORKFLOW.md` §4b). `bun run verify`, the gate an epic closes
+- **The full cross-cutting gate comes here, once, when an epic closes** (`AGENT_WORKFLOW.md` §4). `bun run verify`, the gate an epic closes
   on, and any suite whose output is voluminous or whose failure could belong to more than one owner. A
   bare `verify` runs no browser spec, so a verdict on it never says a page works in a browser.
 - **`verify:scheduled` never comes here.** It belongs to the release command and the daily cron (`TESTING.md` §6); a request for it is refused,

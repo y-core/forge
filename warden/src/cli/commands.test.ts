@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -7,7 +8,8 @@ import { createCommand } from "../../../src/tooling/cli/command";
 import { execute } from "../../../src/tooling/cli/execute";
 import type { CliIO } from "../../../src/tooling/cli/types";
 import { CLAUDE_ROOT } from "../paths";
-import { syncTrees, walk } from "../sync/sync";
+import { MUST_IGNORE } from "../sync/check";
+import { layerTree, syncFiles, syncTrees } from "../sync/sync";
 import { createWardenCommands } from "./commands";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
 
@@ -60,24 +62,22 @@ function agentNames(kind: "libs" | "apps"): string[] {
     .sort();
 }
 
-/** A repository synced and carrying the agent roster `CLAUDE.md` owes the corpus. */
+/** A git repository synced, ignoring what the fleet ignores and carrying the agent roster `CLAUDE.md` owes the corpus. */
 async function syncedRepo(kind: "libs" | "apps" = "libs"): Promise<string> {
   const root = emptyRepo();
+  spawnSync("git", ["init", "-q"], { cwd: root, stdio: "ignore" });
+  writeFileSync(join(root, ".gitignore"), `${MUST_IGNORE.join("\n")}\n`);
   await warden("sync", "--root", root, "--kind", kind);
-  writeFileSync(
-    join(root, "CLAUDE.md"),
-    agentNames(kind)
-      .map((name) => `- \`${name}\`\n`)
-      .join(""),
-  );
+  writeFileSync(join(root, "CLAUDE.md"), [...agentNames(kind), "warden-review"].map((name) => `- \`${name}\`\n`).join(""));
   return root;
 }
 
-/** Every file the corpus would place under `.claude/`, as `tree/relative-path`. */
+/** Every file the corpus would place in a repository, as a repository-relative path. */
 function shipped(kind: "libs" | "apps"): string[] {
-  return syncTrees(CLAUDE_ROOT, kind)
-    .flatMap(({ tree, from }) => from.flatMap((source) => walk(source).map((file) => `${tree}/${file}`)))
-    .sort();
+  return [
+    ...syncTrees(CLAUDE_ROOT, kind).flatMap(({ tree, from }) => [...layerTree(from, "forge").keys()].map((file) => `${tree}/${file}`)),
+    ...syncFiles(CLAUDE_ROOT).map(({ file }) => file),
+  ].sort();
 }
 
 describe("warden sync", () => {
@@ -89,6 +89,26 @@ describe("warden sync", () => {
     expect(code).toBeNull();
     expect(shipped("libs").filter((file) => !existsSync(join(root, file)))).toEqual([]);
     expect(out.at(-1)).toBe("✓ warden synced — libs");
+  });
+
+  it("renders the repository's slug into the Codex example's ledger URL and leaves the session names as shipped", async () => {
+    const root = emptyRepo();
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "@y-core/starter" }));
+
+    await warden("sync", "--root", root, "--kind", "apps");
+
+    expect(readFileSync(join(root, ".claude/skills/handoff/SKILL.md"), "utf-8")).toContain("`forge-review`");
+    expect(readFileSync(join(root, ".codex/config.toml.example"), "utf-8")).toContain('/mcp/starter"');
+  });
+
+  it("names a .gitignore that leaves a fleet path unignored as drift", async () => {
+    const root = await syncedRepo();
+    writeFileSync(join(root, ".gitignore"), "node_modules/\n");
+
+    const { err, code } = await warden("sync", "--check", "--root", root, "--kind", "libs");
+
+    expect(code).toBe(1);
+    expect(err.some((line) => line.includes("unignored") && line.includes(".dev.vars"))).toBe(true);
   });
 
   it("defaults an undeclared repository to apps and says so, rather than giving it a tree it never asked for", async () => {

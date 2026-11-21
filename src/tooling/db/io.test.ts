@@ -24,6 +24,32 @@ afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
 });
 
+const APP_CONFIG = {
+  name: "app",
+  main: "src/worker.ts",
+  compatibility_date: "2026-01-01",
+  d1_databases: [
+    { binding: "DB", database_name: "app-db", database_id: "app-db-local", migrations_dir: "config/db/migrations" },
+    { binding: "STANDBY", database_name: "standby-db", database_id: "standby-db-local" },
+  ],
+  r2_buckets: [{ binding: "BACKUPS", bucket_name: "backups" }],
+  durable_objects: { bindings: [{ name: "NOTEBOOK", class_name: "NotebookDO" }] },
+  queues: { producers: [{ binding: "JOBS", queue: "jobs" }] },
+  env: { staging: { d1_databases: [{ binding: "DB", database_name: "app-db-staging", database_id: "app-db-staging-local" }] } },
+};
+
+/** A temp application root whose `wrangler.jsonc` binds an internal Durable Object and a queue beside its D1 and R2 entries. */
+function appRoot(): string {
+  const root = tempRoot();
+  writeFileSync(join(root, "wrangler.jsonc"), `${JSON.stringify(APP_CONFIG, null, 2)}\n`);
+  return root;
+}
+
+/** What a recorded open's config file held when the proxy read it. */
+function derivedConfig(options: Record<string, unknown> | undefined): Record<string, unknown> {
+  return JSON.parse(String(options?.derived).replace(/^\/\/.*\n/, "")) as Record<string, unknown>;
+}
+
 describe("realDbIo() — filesystem", () => {
   it("reads back what it wrote", () => {
     const root = tempRoot();
@@ -197,7 +223,7 @@ const loadFakeWrangler = async (): Promise<WranglerD1Module> => ({
 });
 
 function platformProxy(options: Record<string, unknown>) {
-  opened.push(options);
+  opened.push({ ...options, derived: readFileSync(String(options.configPath), "utf-8") });
   opens += 1;
   if (refuseOpen) return Promise.reject(new Error("Unexpected token } in JSON at position 0"));
   // Left pending until the test rejects it, so a sweep can reach an open that has not settled.
@@ -280,7 +306,7 @@ describe("missingWranglerExport()", () => {
 
 describe("realDbIo() — the local D1 port", () => {
   it("reports a wrangler that would not load through the injected loader, and opens nothing", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const cause = new Error("Cannot find module 'wrangler'");
     const opensBefore = opens;
     const io = realDbIo(undefined, () => Promise.reject(cause));
@@ -292,23 +318,66 @@ describe("realDbIo() — the local D1 port", () => {
   });
 
   it("opens the binding over the home's own `v3` state, with remote bindings off", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.closeD1(null);
 
     // `remoteBindings` defaults to true, and a binding marked remote would open a network session
     // from a handle that answers for local state alone.
-    expect(opened.at(-1)).toMatchObject({
-      configPath: join(root, "wrangler.jsonc"),
-      persist: { path: join(root, ".wrangler", "state", "v3") },
-      remoteBindings: false,
-      envFiles: [],
+    expect(opened.at(-1)).toMatchObject({ persist: { path: join(root, ".wrangler", "state", "v3") }, remoteBindings: false, envFiles: [] });
+    expect(opened.at(-1)?.environment).toBeUndefined();
+  });
+
+  it("opens through a config under `.forge/` holding the app's D1 and R2 entries alone, never its Durable Object or queue", async () => {
+    const root = appRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    await io.d1(localHome(root), ["SELECT 1"]);
+    await io.closeD1(null);
+
+    expect(String(opened.at(-1)?.configPath).startsWith(join(root, ".forge", "d1-proxy-"))).toBe(true);
+    expect(derivedConfig(opened.at(-1))).toEqual({
+      name: "app",
+      compatibility_date: "2026-01-01",
+      d1_databases: [
+        { binding: "DB", database_name: "app-db", database_id: "app-db-local" },
+        { binding: "STANDBY", database_name: "standby-db", database_id: "standby-db-local" },
+      ],
+      r2_buckets: [{ binding: "BACKUPS", bucket_name: "backups" }],
     });
   });
 
+  it("removes the derived config when the handle closes, when the open fails, and when the binding is missing", async () => {
+    const root = appRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    const leftover = () => readdirSync(join(root, ".forge"));
+
+    await io.d1(localHome(root), ["SELECT 1"]);
+    expect(leftover()).toHaveLength(1);
+    await io.closeD1(null);
+    expect(leftover()).toEqual([]);
+
+    refuseOpen = true;
+    await expect(io.d1(localHome(root), ["SELECT 1"])).rejects.toThrow("Unexpected token }");
+    refuseOpen = false;
+    expect(leftover()).toEqual([]);
+
+    await expect(io.d1({ ...localHome(root), binding: "MISSING" }, ["SELECT 1"])).rejects.toThrow("declares no d1_databases binding named MISSING");
+    expect(leftover()).toEqual([]);
+  });
+
+  it("gives handles open at once over one app a derived config each", async () => {
+    const root = appRoot();
+    const io = realDbIo(undefined, loadFakeWrangler);
+    await Promise.all([io.d1(localHome(root), ["SELECT 1"]), io.d1({ ...localHome(root), persistTo: join(root, "other") }, ["SELECT 1"])]);
+    expect(new Set(opened.slice(-2).map((options) => options.configPath)).size).toBe(2);
+    expect(readdirSync(join(root, ".forge"))).toHaveLength(2);
+    await io.closeD1(null);
+    expect(readdirSync(join(root, ".forge"))).toEqual([]);
+  });
+
   it("opens one handle for repeated calls against the same state, and none after it is closed", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
@@ -323,16 +392,20 @@ describe("realDbIo() — the local D1 port", () => {
   });
 
   it("opens a separate handle for a home naming different config or a different environment", async () => {
-    const root = tempRoot();
+    const root = appRoot();
+    writeFileSync(
+      join(root, "wrangler.other.jsonc"),
+      JSON.stringify({ name: "other", d1_databases: [{ binding: "DB", database_id: "other-local" }] }),
+    );
     const io = realDbIo(undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
     await io.d1({ ...localHome(root), configPath: join(root, "wrangler.other.jsonc") }, ["SELECT 1"]);
     await io.d1({ ...localHome(root), env: "staging" }, ["SELECT 1"]);
     expect(opens - before).toBe(3);
-    expect(opened.slice(-2).map((options) => [options.configPath, options.environment])).toEqual([
-      [join(root, "wrangler.other.jsonc"), undefined],
-      [join(root, "wrangler.jsonc"), "staging"],
+    expect(opened.slice(-2).map((options) => [derivedConfig(options).name, derivedConfig(options).d1_databases, options.environment])).toEqual([
+      ["other", [{ binding: "DB", database_id: "other-local" }], undefined],
+      ["app-staging", [{ binding: "DB", database_name: "app-db-staging", database_id: "app-db-staging-local" }], undefined],
     ]);
     await io.closeD1(null);
   });
@@ -340,8 +413,8 @@ describe("realDbIo() — the local D1 port", () => {
   // A failed open is a bad `wrangler.jsonc` away, and every caller releases from a `finally`: the
   // sweep must reach the handles after it, and must not replace the error the run is failing on.
   it("keeps no handle for an open that failed, and sweeps past it to release the ones that opened", async () => {
-    const failing = tempRoot();
-    const working = tempRoot();
+    const failing = appRoot();
+    const working = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
 
     refuseOpen = true;
@@ -358,7 +431,7 @@ describe("realDbIo() — the local D1 port", () => {
   });
 
   it("refuses a deployed home, which nothing reaches in process", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     await expect(io.d1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, ["SELECT 1"])).rejects.toThrow(
       "remote (app-db) is deployed, and nothing reaches a deployed database in process",
@@ -368,7 +441,7 @@ describe("realDbIo() — the local D1 port", () => {
 
 describe("realDbIo() — bucket", () => {
   it("answers an object whose body reads, byte for byte, where the proxy's own body refuses every read", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const object = await (await io.bucket(localHome(root), "BACKUPS")).get("dump.sql");
     const absent = await (await io.bucket(localHome(root), "BACKUPS")).get("missing.sql");
@@ -382,7 +455,7 @@ describe("realDbIo() — bucket", () => {
 
 describe("realDbIo() — database", () => {
   it("answers a binding the home's config declares, through the handle `d1` opens", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const before = opens;
     await io.d1(localHome(root), ["SELECT 1"]);
@@ -395,7 +468,7 @@ describe("realDbIo() — database", () => {
   });
 
   it("refuses a binding the config does not declare", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const error = await io.database(localHome(root), "MISSING").catch((thrown: unknown) => thrown);
     await io.closeD1(null);
@@ -408,7 +481,7 @@ describe("realDbIo() — database", () => {
   });
 
   it("refuses a deployed home, opening nothing", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const before = opens;
     const error = await io
@@ -425,7 +498,7 @@ describe("realDbIo() — database", () => {
 
 describe("realDbIo() — splitD1", () => {
   it("answers the cut d1 runs, with blank statements dropped, and opens no handle to make it", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const opened0 = opens;
     expect(await io.splitD1(localHome(root), "INSERT INTO t VALUES (1);  ;\nDROP VIEW v;")).toEqual(["INSERT INTO t VALUES (1)", "DROP VIEW v"]);
@@ -433,7 +506,7 @@ describe("realDbIo() — splitD1", () => {
   });
 
   it("refuses a deployed home with the words d1 refuses it in", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const opened0 = opens;
     await expect(io.splitD1({ ...localHome(root), persistTo: null, place: "remote", label: "remote" }, "SELECT 1;")).rejects.toThrow(
@@ -456,7 +529,7 @@ describe("isD1BusyRefusal()", () => {
 
 describe("realDbIo() — a batch refused for the lock", () => {
   it("disposes the refused handle and replays the batch on a new one", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
     refusals = [BUSY_REFUSAL];
@@ -470,7 +543,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
   });
 
   it("replays a read batch on a new handle even after the handle has answered", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     const [opened0, disposed0, batched0] = [opens, disposals, batches.length];
@@ -481,7 +554,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
   });
 
   it("never replays a write batch on a handle that has already answered", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     await io.d1(localHome(root), ["SELECT 1"]);
     const [opened0, batched0] = [opens, batches.length];
@@ -492,7 +565,7 @@ describe("realDbIo() — a batch refused for the lock", () => {
   });
 
   it("does not retry a first batch that failed on its SQL", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const [opened0, batched0] = [opens, batches.length];
     refusals = ["D1_ERROR: no such table: t: SQLITE_ERROR"];
@@ -559,7 +632,7 @@ describe("cutSqlStatements() against wrangler's splitter", () => {
 
 describe("realDbIo() — a literal holding transaction text", () => {
   it("batches a seed whose literal holds BEGIN TRANSACTION and COMMIT byte for byte", async () => {
-    const root = tempRoot();
+    const root = appRoot();
     const io = realDbIo(undefined, loadFakeWrangler);
     const insert = "INSERT INTO notes (body) VALUES ('BEGIN TRANSACTION; step; COMMIT;')";
     const batched0 = batches.length;

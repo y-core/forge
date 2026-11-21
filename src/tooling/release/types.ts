@@ -19,6 +19,7 @@ export type ReleaseErrorKind =
   | "gate-failed"
   | "gate-unrunnable"
   | "release-part-written"
+  | "release-partial"
   | "index-stale"
   | "commit-mismatch";
 
@@ -64,6 +65,17 @@ export interface ReleaseCommandConfig {
   gateCommand?: string[];
 }
 
+/** A green gate on `base`, with the release files forge derived from it, so a resumed release on the same bytes can skip running it again. */
+export interface GateRecord {
+  version: string;
+  /** The commit the gate passed on, and the release commit's parent. */
+  base: string;
+  /** Each staged path's sha256, as it is committed. */
+  files: Record<string, string>;
+  gateCommand: string[];
+  passedAt: string;
+}
+
 /** Injectable dependencies of {@link createReleaseCommand}, faked in tests. */
 export interface ReleaseDeps {
   isWorkingTreeClean: (cwd: string) => boolean;
@@ -95,6 +107,21 @@ export interface ReleaseDeps {
   runGate: (cwd: string, command: readonly string[]) => GateOutcome;
   /** The release moment. */
   now: () => Date;
+  /** False when `.git` is read-only, so the commit and the tag are left to the host. */
+  gitWritable: (cwd: string) => boolean;
+  /** The file's exact contents at `ref`, `path` relative to `cwd`, or `null` when it did not exist there. */
+  readFileAtRef: (cwd: string, ref: string, path: string) => string | null;
+  /** The subject line of the HEAD commit. */
+  lastCommitSubject: (cwd: string) => string;
+  /** The commit sha `ref` names. */
+  resolveCommit: (cwd: string, ref: string) => string;
+  /** Every path the working tree changes against HEAD, or `undefined` outside a work tree. */
+  worktreeChanges: (cwd: string) => readonly string[] | undefined;
+  /** Reads a working-tree file, or `null` when it does not exist. */
+  readWorkingFile: (cwd: string, path: string) => string | null;
+  /** The gate record kept for `tag`, or `null` when there is no valid one. */
+  readGateRecord: (cwd: string, tag: string) => GateRecord | null;
+  writeGateRecord: (cwd: string, tag: string, record: GateRecord) => void;
 }
 
 /** Options for {@link resolveVersion}. */

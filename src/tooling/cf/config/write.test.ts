@@ -71,7 +71,7 @@ const EXPECTED = `{
 }
 `;
 
-describe("write-back round trip (bug-260825-04)", () => {
+describe("write-back round trip, which must leave every byte it did not resolve as it was", () => {
   it("inserts the resolved id and leaves every other byte identical", async () => {
     const path = project(INPUT);
     const loaded = loadWranglerConfig(path);

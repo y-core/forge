@@ -5,7 +5,7 @@ import { isCheckStep } from "../../src/tooling/gate/steps";
 import { declaredSteps, mergeTiers, resolveTiers } from "../../src/tooling/gate/tiers";
 import { libraryDocsDir } from "./corpus/dependency";
 import { GOLDEN, NEGATIVE } from "./gate/golden";
-import { changelogStep, designStep, docsStep, duplicatesStep, wardenAppSteps, wardenQueriesStep, wardenStep } from "./steps";
+import { canonCitableDirs, changelogStep, designStep, docsStep, duplicatesStep, wardenAppSteps, wardenQueriesStep, wardenStep } from "./steps";
 
 const EXPORTS = { ".": "./src/mod.ts" };
 
@@ -103,6 +103,13 @@ describe("wardenAppSteps()", () => {
     if (!merged.ok) throw new Error(merged.error);
     expect(merged.data.unit?.steps.map((step) => step.label).slice(-4)).toEqual(["test", "warden:index", "warden:queries", "warden:duplicates"]);
     expect(merged.data.static?.steps.map((step) => step.label)).toContain("validate-docs");
+  });
+
+  it("defaults `citableDirs` to the installed canon's shared and kind trees, addressed from the repository", () => {
+    expect(canonCitableDirs("/app", "apps", "/app/node_modules/@y-core/forge/warden/canon")).toEqual([
+      "node_modules/@y-core/forge/warden/canon/shared",
+      "node_modules/@y-core/forge/warden/canon/apps",
+    ]);
   });
 
   it("appends nothing to `citableDirs` where there is no installed library", () => {

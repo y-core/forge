@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,9 +12,34 @@ const CSRF_SECRET = /"CSRF_SECRET": "([0-9a-f]+)"/.exec(readFileSync(CONFIG, "ut
 
 const MANIFEST = JSON.parse(readFileSync(join(FORGE, "package.json"), "utf-8")) as {
   dependencies: Record<string, string>;
+  peerDependencies: Record<string, string>;
+  exports: Record<string, { import: string }>;
   forge: { node: readonly string[] };
 };
 const NODE_SUBPATHS = MANIFEST.forge.node.map((subpath) => `@y-core/forge${subpath.slice(1)}`);
+
+const STATIC_IMPORT = /^\s*(?:import|export)\b[^;"']*?\bfrom\s*["']([^"']+)["']|^\s*import\s*["']([^"']+)["']/gm;
+
+function packageName(specifier: string): string {
+  const parts = specifier.split("/");
+  return specifier.startsWith("@") ? parts.slice(0, 2).join("/") : (parts[0] ?? specifier);
+}
+
+/** The packages a bundle's static imports name, without `node:` built-ins or relative paths. */
+function bareImports(source: string): Set<string> {
+  const packages = new Set<string>();
+  for (const match of source.matchAll(STATIC_IMPORT)) {
+    const specifier = match[1] ?? match[2] ?? "";
+    if (specifier.startsWith("node:") || specifier.startsWith(".") || specifier.startsWith("/")) continue;
+    packages.add(packageName(specifier));
+  }
+  return packages;
+}
+
+const BUNDLE_IMPORTS = MANIFEST.forge.node.map((subpath) => {
+  const bundle = MANIFEST.exports[subpath]?.import ?? "";
+  return { bundle, packages: bareImports(readFileSync(join(FORGE, bundle), "utf-8")) };
+});
 
 const ROUND_TRIP = `
 const { serveWorker } = await import("@y-core/forge/testing/harness");
@@ -92,7 +117,7 @@ try {
 }
 `;
 
-/** A consumer whose `node_modules` holds the tarball `bun pm pack` makes of forge, as the release ships it, with forge's dependencies and wrangler beside it. */
+/** A consumer whose `node_modules` holds the tarball `bun pm pack` makes of forge, as the release ships it, with forge's dependencies and every package a `forge.node` bundle imports beside it. */
 async function consumerRoot(): Promise<string> {
   const root = mkdtempSync(join(tmpdir(), "forge-harness-consumer-"));
   const installed = join(root, "node_modules", "@y-core", "forge");
@@ -102,9 +127,12 @@ async function consumerRoot(): Promise<string> {
   const tarball = resolve(root, pack.stdout.trim().split("\n").at(-1) ?? "");
   const extract = await collect("tar", ["-xzf", tarball, "-C", installed, "--strip-components=1"], root);
   if (extract.code !== 0) throw new Error(`tar failed: ${extract.stderr}`);
-  for (const name of [...Object.keys(MANIFEST.dependencies), "wrangler"]) {
+  const linked = new Set([...Object.keys(MANIFEST.dependencies), ...BUNDLE_IMPORTS.flatMap(({ packages }) => [...packages])]);
+  for (const name of linked) {
+    const target = join(FORGE, "node_modules", name);
+    if (!existsSync(target)) throw new Error(`${name} is not installed under ${join(FORGE, "node_modules")}`);
     mkdirSync(dirname(join(root, "node_modules", name)), { recursive: true });
-    symlinkSync(join(FORGE, "node_modules", name), join(root, "node_modules", name));
+    symlinkSync(target, join(root, "node_modules", name));
   }
   return root;
 }
@@ -128,6 +156,15 @@ test.describe("forge installed from its packed tarball", () => {
 
   test("reads testing/form among the node subpaths from the `forge.node` declaration", () => {
     expect(NODE_SUBPATHS).toContain("@y-core/forge/testing/form");
+  });
+
+  test("declares every package a `forge.node` bundle imports as a dependency or a peer dependency", () => {
+    const declared = new Set([...Object.keys(MANIFEST.dependencies), ...Object.keys(MANIFEST.peerDependencies)]);
+    const undeclared = BUNDLE_IMPORTS.flatMap(({ bundle, packages }) =>
+      [...packages].filter((name) => !declared.has(name)).map((name) => `${name} (${bundle})`),
+    );
+
+    expect(undeclared, `undeclared bundle imports: ${undeclared.join(", ")}`).toEqual([]);
   });
 
   for (const subpath of NODE_SUBPATHS) {

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
-import { checkDocs, findCodeFences, stripFences } from "./docs";
+import { checkDocs, findCodeFences, stripFences, validateNoRot } from "./docs";
 
 const roots: string[] = [];
 afterAll(() => {
@@ -1178,5 +1178,20 @@ describe("findCodeFences()", () => {
     const source = ["1. Step one:", "", "   ```tsx", "   <Stack>", "     <Badge />", "   </Stack>;", "   ```"].join("\n");
 
     expect(findCodeFences(source)).toEqual([{ lang: "tsx", line: 4, body: "   <Stack>\n     <Badge />\n   </Stack>;" }]);
+  });
+});
+
+describe("validateNoRot — ledger ids", () => {
+  // Assembled, so this file carries no id for the scan it tests to find.
+  const id = ["spike", "261121", "07"].join("-");
+
+  it("fails a prose line carrying a ledger id, naming the rule", () => {
+    expect(validateNoRot("docs/A.md", ["Intro.", `The reason is in ${id}.`]).map((finding) => [finding.line, finding.message])).toEqual([
+      [2, `ledger id \`${id}\` — a governing doc states the reason, not the ledger row that recorded it`],
+    ]);
+  });
+
+  it("passes the placeholder spelling that documents the format", () => {
+    expect(validateNoRot("docs/A.md", ["A task id reads `feat-YYMMDD-NN`."])).toEqual([]);
   });
 });

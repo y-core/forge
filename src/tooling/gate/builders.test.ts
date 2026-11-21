@@ -670,7 +670,7 @@ describe("builders — derived watches", () => {
         ["src/ui", "src/ui/**", "src/ui/css", "src/ui/css/**", "src", "src/**", "src/ui/README.md", "src/ui/README.md/**"],
       ],
       [exposureStep({ root: "/nowhere" }), ["wrangler.jsonc"]],
-      [compatibilityStep({ root: "/nowhere", workerConfig: "app.jsonc" }), ["app.jsonc"]],
+      [compatibilityStep({ root: "/nowhere", workerConfigs: ["app.jsonc", "sandbox/wrangler.jsonc"] }), ["app.jsonc", "sandbox/wrangler.jsonc"]],
     ];
 
     for (const [step, watches] of cases) {

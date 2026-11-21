@@ -32,9 +32,11 @@ already using that directory name for something else is not obliged to rename it
 | `canon/shared/` | The documents both kinds share, byte-identical |
 | `canon/libs/` | The library corpus |
 | `canon/apps/` | The application corpus |
-| `claude/agents/` | Agent definitions — `shared/` plus one tree per kind, layered in that order |
+| `claude/agents/` | Agent definitions — whole agents and shared bodies in `shared/`, and each kind's overlays filling those bodies |
 | `claude/skills/` | Skills, laid out the same way — `shared/` plus one tree per kind |
-| `claude/seed/` | `CLAUDE.md`, `AGENTS.md` and `settings.json`, written only when absent |
+| `claude/settings.json` | The fleet's harness policy, synced to `.claude/settings.json` and overwritten |
+| `claude/codex/` | The Codex example, synced to `.codex/config.toml.example` and overwritten |
+| `claude/seed/` | `CLAUDE.md` and `AGENTS.md`, written only when absent |
 | `share/` | Example editor configuration `warden show` writes to stdout |
 | `src/` | Every module — the command, the sync, the checks, the index, the MCP server |
 
@@ -49,8 +51,8 @@ reads the canon takes `--kind=<libs|apps>` to override the tree selection.
 ### Keeping a repository in step
 
 ```bash
-warden sync                  # replace .claude/agents and .claude/skills
-warden sync --init           # also seed CLAUDE.md, AGENTS.md and .claude/settings.json if absent
+warden sync                  # replace .claude/agents, .claude/skills, .claude/settings.json and .codex/config.toml.example
+warden sync --init           # also seed CLAUDE.md and AGENTS.md if absent
 warden sync --check          # report drift and exit 1 if any, writing nothing
 
 warden natives               # place the editor architecture's prebuilt native bindings
@@ -60,11 +62,22 @@ warden show --zed            # write the Zed user settings to stdout, to merge b
 ```
 
 **A synced tree is layered from more than one source, and replaced as one.** `.claude/agents` is `agents/shared/` then `agents/<kind>/`, and
-`.claude/skills` the same; a file both carry lands as the kind tree's copy. The whole destination is staged and renamed over, so it is only ever a
+`.claude/skills` the same; a file both carry lands as the kind tree's copy. **A kind's `X.overlay.md` fills the slots of the shared `X.md`
+rather than replacing it**: each `{{slot:name}}` line of the body becomes the overlay's block between `<!-- slot:name -->` and `<!-- /slot -->`.
+A slot left unfilled, a block the body has no slot for, and an overlay with no body beneath it each stop the sync, so text the two kinds share is
+written once and only what differs lives per kind. The whole destination is staged and renamed over, so it is only ever a
 complete tree or the one that was already there.
 
 A sync deletes each of those directories wholesale. A repository-local agent or skill added since the last sync is lost — keep one outside them.
-Nothing else under `.claude/` is touched, written or deleted.
+`.claude/settings.json` is overwritten the same way, so a repository's own setting, such as an extra MCP server, goes in the untracked
+`.claude/settings.local.json`. Nothing else under `.claude/` is touched, written or deleted.
+
+**`{{repo}}` in any synced or seeded file becomes the repository's slug**: its `package.json` name with the scope dropped, or the directory name
+when it declares none. That is what gives each repository's Codex example its own ledger URL.
+
+**`--check` also holds the repository's git hygiene**, reading git and never writing it. Its `.gitignore` must ignore every path in
+`MUST_IGNORE`, must not ignore a file the sync writes for it to commit, and no `settings.local.json` may be tracked. Only a `.gitignore` inside the
+repository counts: a pattern from `.git/info/exclude` or the global excludes file is one machine's.
 
 ### Reading the corpus
 

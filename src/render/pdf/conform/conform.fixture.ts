@@ -158,8 +158,8 @@ function wordsOfMark(stream: string, mcid: number): string {
   return [...opened.matchAll(/\(((?:\\.|[^()\\])*)\) Tj/g)].map((found) => found[1] ?? "").join(" ");
 }
 
-// The gap this closes was not theoretical: with no annotation rule, `bug-260921-65`'s "no annotation
-// finding" clause passed against a checker that had nothing whatever to say about one.
+// With no annotation rule, a criterion asking for "no annotation finding" passes against a checker that has
+// nothing whatever to say about one.
 /** Every way a file's link annotations fail to reach, or agree with, the elements that own them. @internal */
 export function annotationFindings(
   file: PdfParsedFile,

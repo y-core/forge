@@ -419,6 +419,23 @@ test("the catalog demonstrates every forge component", () => {
 
 ---
 
+## Typing node and bun in a test program
+
+A forge app's tests compile under `"types": []`, so `node:*`, `bun:test` and `bun:sqlite` need declarations that add no global to the Worker. Two
+types-only subpaths hold them, and one file in `.types/` references both:
+
+```ts
+// .types/forge.d.ts
+/// <reference types="@y-core/forge/testing/node" />
+/// <reference types="@y-core/forge/testing/bun" />
+```
+
+`./testing/node` declares the node modules the fleet's tests call; `./testing/bun` declares `bun:test` and `bun:sqlite`. Both are `declare
+module` only. Keep a local stub for a module neither declares. A call neither stub types is a forge change, not a local widening
+([`TEST_RUNNERS.md`][testing-1b] §1b).
+
+---
+
 ## Gotchas
 
 **`app.request` takes a `RequestInit`, not a `Request`.** A `buildRequest` result goes to `createTestContext`, or to `app.fetch(request, env, ctx)`
@@ -452,6 +469,7 @@ to survive a round trip through an unmodelled table hands the code its own store
 [canon-testing-5c]: ../../warden/canon/libs/TESTING.md#5c-no-mocking-of-security-primitives
 [db-host-config]: ../tooling/db/README.md#declaring-what-forge-reads
 [storage-readme]: ../storage/README.md
+[testing-1b]: ../../docs/TEST_RUNNERS.md#1b-custom-buntest-stub--no-bun-types
 [testing-1f]: ../../docs/TEST_RUNNERS.md#1f-the-workerd-set
 [testing-3c]: ../../docs/TEST_RUNNERS.md#3c-render-once-assert-once
 [testing-7]: ../../docs/TEST_RUNNERS.md#7-testing-namespace-utilities-y-coreforgetesting

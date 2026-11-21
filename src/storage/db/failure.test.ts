@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { classifyD1Error, D1Failure } from "./failure";
 import type { D1Constraint, D1FailureKind } from "./types";
 
-// The constraint and limit texts are what local workerd D1 answered (spike-261016-46/50); the rest are
+// The constraint and limit texts are what local workerd D1 answered when the cases were provoked; the rest are
 // the strings Cloudflare's "Debug D1" page lists.
 const TABLE: [string, D1FailureKind, D1Constraint?][] = [
   [

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 
-import { formatReleaseDate, parseChangelog, promoteUnreleased } from "./changelog";
+import { formatReleaseDate, parseChangelog, promoteUnreleased, reopenRelease } from "./changelog";
 
 /** The em dash the grammar requires, escaped so an en dash cannot pass unnoticed in a diff. */
 const EM = "—";
@@ -272,6 +272,12 @@ describe("promoteUnreleased()", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("refuses a version that already has a heading, so a second run cannot promote it twice", () => {
+    const result = promoteUnreleased(DOC, { version: "0.0.2", date: "2026-02-03" });
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toEqual(["[0.0.2] is already a heading — the release was promoted once, and promoting it again would duplicate it"]);
+  });
+
   it("a promoted document parses, with the new Unreleased empty and the version on top", () => {
     const result = promoteUnreleased(DOC, { version: "0.0.3", date: "2026-02-03", compareUrlBase: "https://x" });
     if (!result.ok) throw new Error("expected ok");
@@ -279,6 +285,53 @@ describe("promoteUnreleased()", () => {
     if (!parsed.ok) throw new Error(`promoted document does not parse: ${parsed.error.join("; ")}`);
     expect(parsed.data.unreleased.empty).toBe(true);
     expect(parsed.data.versions[0]).toEqual({ version: "0.0.3", date: "2026-02-03", line: 12, body: ["", "### Added", "", "- a thing"] });
+  });
+});
+
+describe("reopenRelease()", () => {
+  function promoted(source: string, version: string): string {
+    const result = promoteUnreleased(source, { version, date: "2026-02-03", compareUrlBase: "https://x" });
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error.join("; ")}`);
+    return result.data;
+  }
+
+  function reopened(source: string, version: string): string {
+    const result = reopenRelease(source, version);
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error.join("; ")}`);
+    return result.data;
+  }
+
+  it("is the exact inverse of promoteUnreleased when [Unreleased] holds only the placeholder", () => {
+    const sources = [
+      DOC,
+      `${DOC}\n`,
+      ["# Changelog", "", "## [Unreleased]", "", "- a thing"].join("\n"),
+      ["# Changelog", "", "## [Unreleased]", "", "- a thing", "", `## [0.0.1] ${EM} 2026-01-01`, "", "first body", ""].join("\n"),
+    ];
+    for (const source of sources) expect(reopened(promoted(source, "0.0.3"), "0.0.3")).toBe(source);
+  });
+
+  it("merges an [Unreleased] entry into the matching subsection of the release, after its own entries", () => {
+    const source = promoted(DOC, "0.0.3").replace("## [Unreleased]\n\n_Nothing yet._", "## [Unreleased]\n\n### Added\n\n- a later thing");
+    expect(reopened(source, "0.0.3")).toBe(DOC.replace("- a thing", "- a thing\n- a later thing"));
+  });
+
+  it("appends a subsection the release did not have, keeping the ones it had in place", () => {
+    const source = promoted(DOC, "0.0.3").replace("## [Unreleased]\n\n_Nothing yet._", "## [Unreleased]\n\n### Fixed\n\n- a fix");
+    expect(reopened(source, "0.0.3")).toBe(DOC.replace("- a thing", "- a thing\n\n### Fixed\n\n- a fix"));
+  });
+
+  it("keeps prose that comes before any subsection ahead of the subsections", () => {
+    const source = promoted(DOC, "0.0.3").replace("## [Unreleased]\n\n_Nothing yet._", "## [Unreleased]\n\nA summary paragraph.");
+    expect(reopened(source, "0.0.3")).toBe(DOC.replace("## [Unreleased]\n\n### Added", "## [Unreleased]\n\nA summary paragraph.\n\n### Added"));
+  });
+
+  it("returns a document with no [version] section unchanged", () => {
+    expect(reopened(DOC, "0.0.3")).toBe(DOC);
+  });
+
+  it("refuses to reopen a section that is not the newest release", () => {
+    expect(reopenRelease(DOC, "0.0.1").ok).toBe(false);
   });
 });
 
@@ -295,4 +348,88 @@ describe("formatReleaseDate()", () => {
     // 23:30 local on the 31st: `toISOString()` would stamp the next month in a positive-offset zone.
     expect(formatReleaseDate(new Date(2026, 11, 31, 23, 30))).toBe("2026-12-31");
   });
+});
+
+describe("reopenRelease() — properties over every pairing of body shapes", () => {
+  function shapes(who: string): Record<string, string[]> {
+    return {
+      bullet: [`- ${who} item`],
+      added: ["### Added", "", `- ${who} added`],
+      fixed: ["### Fixed", "", `- ${who} fixed`],
+      prose: [`${who} summary prose.`],
+      both: ["### Added", "", `- ${who} added two`, "", "### Fixed", "", `- ${who} fixed two`],
+    };
+  }
+
+  function document(released: readonly string[], unreleased: readonly string[] | null): string {
+    return [
+      "# Changelog",
+      "",
+      "## [Unreleased]",
+      "",
+      ...(unreleased ?? ["_Nothing yet._"]),
+      "",
+      "---",
+      "",
+      `## [0.0.3] ${EM} 2026-02-03`,
+      "",
+      ...released,
+      "",
+      "---",
+      "",
+      `## [0.0.2] ${EM} 2026-01-02`,
+      "",
+      "second body",
+      "",
+      "[0.0.3]: https://x/compare/v0.0.2...v0.0.3",
+      "[0.0.2]: https://x/releases/tag/v0.0.2",
+    ].join("\n");
+  }
+
+  function unwrap(result: ReturnType<typeof reopenRelease>): string {
+    if (!result.ok) throw new Error(`expected ok, got: ${result.error.join("; ")}`);
+    return result.data;
+  }
+
+  const recut = (source: string): string =>
+    unwrap(promoteUnreleased(unwrap(reopenRelease(source, "0.0.3")), { version: "0.0.3", date: "2026-02-03", compareUrlBase: "https://x" }));
+
+  /** The lines of the section headed `heading`, up to the next level-2 heading. */
+  function sectionLines(source: string, heading: string): string[] {
+    const lines = source.split("\n");
+    const from = lines.findIndex((line) => line.startsWith(heading));
+    const to = lines.findIndex((line, i) => i > from && line.startsWith("## "));
+    return lines.slice(from + 1, to === -1 ? undefined : to);
+  }
+
+  function content(lines: readonly string[]): { entries: string[]; subsections: string[] } {
+    const meaningful = lines.filter((line) => line.trim() !== "" && line.trim() !== "---" && line !== "_Nothing yet._" && !/^\[\d/.test(line));
+    return {
+      entries: meaningful.filter((line) => !line.startsWith("### ")).sort(),
+      subsections: [...new Set(meaningful.filter((line) => line.startsWith("### ")))].sort(),
+    };
+  }
+
+  const pairs: { name: string; released: string[]; unreleased: string[] | null }[] = [];
+  for (const [rName, released] of Object.entries(shapes("v"))) {
+    pairs.push({ name: `${rName} with nothing pending`, released, unreleased: null });
+    for (const [uName, unreleased] of Object.entries(shapes("u"))) pairs.push({ name: `${rName} with ${uName} pending`, released, unreleased });
+  }
+
+  for (const { name, released, unreleased } of pairs) {
+    it(`${name}: re-cutting is idempotent, loses no line from either body, and leaves one [0.0.3] with one link`, () => {
+      const source = document(released, unreleased);
+      const once = recut(source);
+      const expected = content([...released, ...(unreleased ?? [])]);
+
+      expect({
+        twice: recut(once),
+        reopened: content(sectionLines(unwrap(reopenRelease(source, "0.0.3")), "## [Unreleased]")),
+        released: content(sectionLines(once, "## [0.0.3]")),
+        headings: once.split("\n").filter((line) => line.startsWith("## [0.0.3]")).length,
+        links: once.split("\n").filter((line) => line.startsWith("[0.0.3]: ")).length,
+        pureResumeReproduces: unreleased === null ? once === source : true,
+      }).toEqual({ twice: once, reopened: expected, released: expected, headings: 1, links: 1, pureResumeReproduces: true });
+    });
+  }
 });

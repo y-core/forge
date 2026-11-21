@@ -201,7 +201,17 @@ every environment that leaves it out.
 **Each row sits in the tier [`TESTING.md`][testing-apps-6a] §6a's lines put it in.** The `test` rows are in `unit`, the database rows that need
 workerd in `runtime`, and the browser set, the workerd set and `validate-dev-bundle` in `scheduled`. Everything else is in `static`, including
 `validate-config-files`, which holds your `config/*.config.ts` modules ([`CONFIG_BASELINE.md`][cb-6] §6). It fails a `config/` holding none, so
-a repository that keeps its step table elsewhere passes `configFiles: false` to either preset.
+a repository that keeps its step table elsewhere passes `configFiles: false` to either preset. Under `cloudflareWorkerSteps()` the same row holds
+`tsconfig.json`, `.oxlintrc.json` and `.oxfmtrc.json` to the bases forge exports as `@y-core/forge/tooling/tsconfig.app.json`,
+`oxlint.base.json` and `oxfmt.base.json`: the first two extend theirs by the `node_modules` path `TSCONFIG_BASE` and `OXLINT_BASE` spell, the
+formatter's copies its base, and each adds without restating a key.
+
+**Build the `contrast` option with `appContrast()`** rather than resolving forge's stylesheet directory yourself. It cascades forge's three token
+files before yours and measures forge's pairs and floors:
+
+```ts
+contrast: appContrast({ root: ROOT, cssDir: "src/assets/css", tokenFiles: ["src/assets/css/custom.css"], accepted: ACCEPTED }),
+```
 
 `design.sources` does not fall back to the table's top-level `sources`, and `design.deferred` defaults to `[]` rather than forge's own list — no
 application should inherit deferrals keyed to `src/ui/…` paths.

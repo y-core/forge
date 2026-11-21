@@ -36,7 +36,7 @@ function setLines(content: PdfDocument["content"], options: PdfRendererOptions =
   );
 }
 
-// The fixture `bug-260921-05` asks for: concrete break positions, committed before `Text.measure`
+// Concrete break positions, committed before `Text.measure`
 // was reconciled with `preferredWidth`, so the reconciliation's effect on them is a visible diff.
 const ONE_LINE = "Alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango";
 

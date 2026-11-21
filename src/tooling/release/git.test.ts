@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -432,7 +432,7 @@ describe("commit() against a real repository", () => {
       const tree = readGit(root, ["ls-tree", "-r", "--name-only", "HEAD"]).split("\n");
       expect(tree.sort()).toEqual(["CHANGELOG.md", "README.md", "config/changelog-sections.json", "package.json", "src/mod.ts"]);
       expect(git.committedPaths(root).sort()).toEqual([...FILES].sort());
-      expect(git.readFileAtRef(root, "HEAD", "package.json")).toBe('{ "version": "1.0.1" }');
+      expect(git.readFileAtRef(root, "HEAD", "package.json")).toBe('{ "version": "1.0.1" }\n');
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -519,5 +519,97 @@ describe("defaultBranch()", () => {
 
     mockSpawnSync.mockReturnValue(answered(""));
     expect(defaultBranch("/cwd")).toBe(null);
+  });
+});
+
+describe("gitWritable()", () => {
+  /** Whether a write into `dir` is refused, asked of the filesystem itself — chmod denies nothing to root. */
+  function writeRefused(dir: string): boolean {
+    const probe = join(dir, "forge-probe");
+    try {
+      writeFileSync(probe, "");
+    } catch {
+      return true;
+    }
+    rmSync(probe, { force: true });
+    return false;
+  }
+
+  it("answers true for a work tree whose git dir it can write to", () => {
+    const root = worktreeFixture({ "a.txt": "a\n" });
+    try {
+      expect(git.gitWritable(root)).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("answers false for a git dir chmod made read-only, wherever a write into it is refused", () => {
+    const root = worktreeFixture({ "a.txt": "a\n" });
+    const gitDir = join(root, ".git");
+    try {
+      chmodSync(gitDir, 0o555);
+
+      expect(git.gitWritable(root)).toBe(!writeRefused(gitDir));
+    } finally {
+      chmodSync(gitDir, 0o755);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("finds the git dir from a subdirectory of the work tree, rather than looking for .git beside it", () => {
+    const root = worktreeFixture({ "src/a.txt": "a\n" });
+    const gitDir = join(root, ".git");
+    try {
+      const writable = git.gitWritable(join(root, "src"));
+      chmodSync(gitDir, 0o555);
+
+      expect({ writable, locked: git.gitWritable(join(root, "src")) }).toEqual({ writable: true, locked: !writeRefused(gitDir) });
+    } finally {
+      chmodSync(gitDir, 0o755);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses as a git error outside a work tree, rather than answering either way", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-not-a-repo-"));
+    try {
+      const err = caught(() => git.gitWritable(dir));
+
+      expect({ kind: err.kind, prefix: err.message.startsWith("git rev-parse failed: ") }).toEqual({ kind: "git-error", prefix: true });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses as a git error when the git dir cannot be checked at all, naming it", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-git-dir-"));
+    try {
+      const missing = join(dir, "gone");
+      const err = caught(() => git.gitWritable("/cwd", () => answered(`${missing}\n`)));
+
+      expect({ kind: err.kind, prefix: err.message.startsWith(`Cannot tell whether ${missing} is writable: `) }).toEqual({
+        kind: "git-error",
+        prefix: true,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("checks the absolute git dir git names, not a path it builds from cwd", () => {
+    const dir = mkdtempSync(join(tmpdir(), "forge-git-dir-"));
+    try {
+      const gitDir = join(dir, "elsewhere.git");
+      mkdirSync(gitDir);
+      const spawn = mock<SpawnSync>(() => answered(`${gitDir}\n`));
+
+      expect({ writable: git.gitWritable("/cwd", spawn), args: spawn.mock.calls[0]?.[1] }).toEqual({
+        writable: true,
+        args: ["rev-parse", "--absolute-git-dir"],
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

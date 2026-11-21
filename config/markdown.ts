@@ -4,7 +4,8 @@ import type { MarkdownCheckConfig } from "../src/tooling/gate/mod";
 
 export default {
   sources: ["src", "docs", "warden", "README.md", "CLAUDE.md", "AGENTS.md"],
-  exclude: ["CHANGELOG.md", "warden/CATALOGUE.md", ".claude", "tmp"],
+  // The agent sources are bodies and overlays, fragments of a file; warden's sync test holds the merged agents of both kinds to these rules.
+  exclude: ["CHANGELOG.md", "warden/CATALOGUE.md", "warden/claude/agents", ".claude", "tmp"],
   rules: {
     tables: "compact",
     bulletMarker: "-",

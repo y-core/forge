@@ -931,7 +931,7 @@ describe("requireFreshStepUp", () => {
     expect(await fresh.text()).toBe("enrolled");
   });
 
-  // No factor kind ranks above another (decision-261119-25): the account repair paths rest on a
+  // No factor kind ranks above another: the account repair paths rest on a
   // recovery code proving exactly what a passkey proves.
   it("admits a recovery-code step-up exactly as a step-up by any other kind of the same age, and refuses every one once stale", async () => {
     const kinds = ["recovery-code", "passkey", "totp-app", "email-otp"] as const;

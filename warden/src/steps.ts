@@ -1,3 +1,5 @@
+import { join, relative } from "node:path";
+
 import { checkStep } from "../../src/tooling/gate/builders";
 import type { StepOptions } from "../../src/tooling/gate/types";
 import type { CheckStep, StepRequirement, StepTiers } from "../../src/tooling/gate/types";
@@ -10,6 +12,7 @@ import { GOLDEN, NEGATIVE } from "./gate/golden";
 import { checkGoldenQueries, type GoldenCheckConfig } from "./gate/queries";
 import { GOLDEN_STEP_LABEL, type GoldenStep } from "./gate/step-sets";
 import { checkWarden, type WardenCheckConfig } from "./gate/warden";
+import { CANON_ROOT } from "./paths";
 
 const SQLITE: StepRequirement = { tool: "bun:sqlite", probe: () => typeof Bun !== "undefined", hint: "run the gate under Bun — `bun run verify`" };
 
@@ -61,8 +64,8 @@ export interface WardenAppStepOptions {
   negative?: GoldenCheckConfig["negative"];
   /** The corpus tree this repository clones. Defaults to `"apps"`. */
   kind?: DocsCheckConfig["kind"];
-  /** Directories a citation may name; the installed library's own `docs/` is appended, so never list it. */
-  citableDirs: NonNullable<DocsCheckConfig["citableDirs"]>;
+  /** Directories a citation may name. Defaults to `canonCitableDirs`; the installed library's own `docs/` is appended, so never list it. */
+  citableDirs?: NonNullable<DocsCheckConfig["citableDirs"]>;
   /** This repository's own `docs/`; omit where it keeps none. */
   decisionsDir?: string;
   /** Subpaths the docs check holds citations against. Defaults to `{}` — an app publishes none. */
@@ -71,12 +74,18 @@ export interface WardenAppStepOptions {
   requiredFrontmatter?: DocsCheckConfig["requiredFrontmatter"];
 }
 
+/** The installed canon's `shared` tree and the `kind` tree, relative to `root`, as a citation names them. @public */
+export function canonCitableDirs(root: string, kind: NonNullable<DocsCheckConfig["kind"]>, canonRoot = CANON_ROOT): string[] {
+  return [relative(root, join(canonRoot, "shared")), relative(root, join(canonRoot, kind))];
+}
+
 /** The rows every consuming application merges into its table with `mergeTiers`. @public */
 export function wardenAppSteps(options: WardenAppStepOptions): StepTiers {
   const { root, queries } = options;
   const kind = options.kind ?? "apps";
   const scope = { root, kind, dependency: true } as const;
   const libraryDocs = libraryDocsDir(root);
+  const citableDirs = options.citableDirs ?? canonCitableDirs(root, kind);
   return {
     static: [
       docsStep({
@@ -84,7 +93,7 @@ export function wardenAppSteps(options: WardenAppStepOptions): StepTiers {
         packageName: options.packageName,
         exports: options.exports ?? {},
         kind,
-        citableDirs: libraryDocs === undefined ? options.citableDirs : [...options.citableDirs, libraryDocs],
+        citableDirs: libraryDocs === undefined ? citableDirs : [...citableDirs, libraryDocs],
         ...(options.decisionsDir === undefined ? {} : { decisionsDir: options.decisionsDir }),
         ...(options.requiredFrontmatter === undefined ? {} : { requiredFrontmatter: options.requiredFrontmatter }),
       }),

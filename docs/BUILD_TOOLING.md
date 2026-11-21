@@ -23,7 +23,7 @@ audience: internal
 - §1c Errors Carry a Kind, Not an Exit Code: why failure is always exit 1
 - §1d CommandBase and Command Are Not Mergeable: the variance that forces two interfaces
 - §2 tooling/gate and tooling/release — Project Tooling: the blessed release path and the published gate
-- §2a createReleaseCommand — Automated Release Workflow: the ordered steps and the refusals
+- §2a createReleaseCommand — Automated Release Workflow: the ordered steps, the refusals, the resume states and the host commit
 - §2b The Export Surface a Release Compares: the symbol set behind the shrink guard, and what it ignores
 - §2c Git and Manifest Internals: the unpublished helpers the two factories are built from
 - §2d Changelog Promotion — the Unreleased Contract: what release does to `CHANGELOG.md`
@@ -115,17 +115,16 @@ difference ([`NAMESPACES.md`][namespaces-3c] §3c).
 **`createReleaseCommand` takes a config object, not a program**, and its dependencies are injected so the command is testable.
 
 It builds a `release` subcommand whose step order is `src/tooling/release/release.ts`'s; the ordering rule this section holds it to is that every
-guard and the gate come before the first write. **It is the only blessed way to cut a forge release**, and **every place a version lives is computed
-here** — the git tag, the `package.json` field, the changelog's version heading. A hand-typed version anywhere is a defect, and §2e is the gate that
-says so.
+guard comes before the first write, and so does the gate for a fresh release. **It is the only blessed way to cut a forge release**, and **every
+place a version lives is computed here** — the git tag, the `package.json` field, the changelog's version heading. A hand-typed version anywhere is
+a defect, and §2e is the gate that says so.
 
 **It never pushes.** The last thing it prints is the push command for a human to run, so the irreversible step — publishing a tag to a remote —
 stays a deliberate act.
 
-**The commit is atomic, and the default is what makes it so.** `stageFiles` defaults to exactly what this command wrote — `package.json`, plus
-`changelogFile` when a changelog was promoted — so the bump, the promoted section and the tag are one commit rather than a bump commit chasing a
-prose commit. A project with no changelog stages `package.json` alone, because `commit` runs `git add` and naming a path that does not exist would
-fail the release outright.
+**`stageFiles` defaults to exactly what this command writes** — `package.json`, plus `changelogFile` when a changelog is promoted — so the bump
+and the promoted section land in the one release commit rather than a bump commit chasing a prose commit. A project with no changelog stages
+`package.json` alone, because `commit` runs `git add` and naming a path that does not exist would fail the release outright.
 
 **`sectionsFile` is the one exception, because it is not a project's choice.** The section manifest is forge's own write, and the gate's
 `checkChangelog` refuses a version with no recorded digest — so it is staged on every run that promotes a changelog, whether or not `stageFiles`
@@ -141,11 +140,49 @@ release, which is the guard permanently off.
 
 **The gate runs here, not only in CI.** `.github/workflows/release.yml` fires `on: push: tags`, so its `bun run verify:unit` runs against a tag
 that is already public: a failure there aborts before `gh release create` and leaves a fetchable tag with no asset, whose only recoveries are
-deleting a published tag or burning the version. The branch check and the gate run after the re-tag check and before the first write.
+deleting a published tag or burning the version. The branch check runs after the re-tag check and before the first write.
 
-**A failure between the version write and the commit names its own recovery.** The bump, the promotion and the commit run as one guarded step; if
-the commit fails — a pre-commit hook, most often — the refusal states `git checkout -- package.json CHANGELOG.md`. Without it the next run refuses
-as dirty, and forcing past that promotes the changelog a second time under the same heading.
+**A release is open until its tag exists, and every run re-derives it from the working tree.** After V is resolved and the ancestry and push
+checks pass, the run places the repository in one of four states, reading git and the working tree alone. The release files are the ones forge
+writes: `package.json`, `changelogFile` and `sectionsFile`.
+
+| State | Recognised by | The run |
+| --- | --- | --- |
+| fresh | Nothing of V is written: `package.json` is not at V, and the changelog has no `[V]` heading | Guards, gate, write, then commit and tag |
+| open | V is written, in the working tree or in a commit, and is untagged, and HEAD is not a committed release with nothing changed since | Write what differs, gate, then commit what differs from HEAD and tag |
+| committed | HEAD is forge's release commit for V: its subject, its `package.json` at V, only staged paths and every release file. No release file differs from HEAD, and V's tag is absent | Gate unless the record covers it, then tag |
+| tagged | V's tag exists | Reports that V is already released and stops. When a reachable remote lacks the tag, it prints `git push --tags` instead of refusing |
+
+**An open release is rebuilt, not replayed.** `reopenRelease` folds `[V]`'s body back into `[Unreleased]`, merging the two by `###` subsection
+without dropping a line, and `promoteUnreleased` cuts exactly one `[V]` from the result, so an entry added to either after the write lands in
+`[V]`. `package.json` is the working file with `version` set to V, and the sections file is built from the rebuilt changelog. Only a file whose
+rebuilt content differs is written, and the write comes before the gate, so the gate runs over the bytes the commit carries. **The date changes
+only when the content does**: a rebuild that reproduces the working changelog under `[V]`'s own date, with `[V]`'s body still matching its
+digest in the sections file, keeps it, so a resume on a later day does not re-date the release. One that folds in a new entry, or finds `[V]`'s
+body edited, takes today's date.
+
+**The release commit carries only the release files that differ from HEAD.** Work committed between runs may already hold some or all of them;
+when none differ, HEAD is tagged with no commit. A staged path outside the release files, such as a lockfile named in `stageFiles`, is committed
+only when the working tree changes it. Any other changed path is refused as `working-tree-dirty`, and `--allow-dirty` keeps its meaning.
+
+What an open release still refuses:
+
+- **`release-partial` refuses an edit to what shipped**: `package.json` changed beyond `version`, or any released section other than `[V]`.
+  Its recovery restores the file from HEAD with `git show HEAD:./<file>`, which needs no write to `.git`, and nothing is overwritten.
+- **An unfinished release is finished before the next one starts.** When an untagged version other than the resolved one is written, in the
+  working `package.json` or changelog, or is committed at HEAD, the run refuses as `version-mismatch` and names the version to finish.
+- **The lower layer refuses a second promotion** (§2d): `promoteUnreleased` an existing `[V]`, `reopenRelease` a `[V]` that is not newest.
+
+**A green gate is recorded, and a later run reruns it unless the record matches.** The record, `.forge/release/<tag>.json` under the ignored
+`.forge/`, binds the version to the base commit, a hash of each staged file as committed, and the gate command. The base is HEAD, or `HEAD^` with
+HEAD's blobs for _committed_. Forge only reads the record, never executes it, and a record it cannot write is reported, not refused.
+
+**When `.git` is read-only, the run stops before the commit and prints the host's steps.** `gitWritable` resolves the git directory and tests it for
+write access; `EROFS` and `EACCES` both read as read-only. The summary's `commit:` row reports it before the gate runs, `--dry` included. The steps
+are printed, never written as a script: a script the workspace writes and the host runs is workspace code the host executes. Each set opens by
+checking that HEAD is still the commit the run saw, and the blob ids of any file it commits, so a host whose tree has moved stops before it writes.
+Every step fails harmlessly when repeated, and the next run lands in _tagged_. The output and the sequence of runs are
+[`src/tooling/release/README.md`][release-reopen]'s.
 
 **A refusal `throw`s a `ReleaseError`; it does not call `exit`.** `execute` renders any `Error` as `Error: <message>` and exits 1 (§1c), so the
 operator sees the same output while the guard stays reachable from a test that mocks no process. **The changelog verdict is reached after the
@@ -438,7 +475,8 @@ they asked for.
 tag is not an ancestor of HEAD (`history-rewritten`, no override), and when a reachable remote does not carry that tag (`tag-unpushed`) — an
 unpushed tag does not exist for a consumer, and `getLatestTag` would cut the next release on top of it regardless. Neither is a gate step: both are
 properties of the commit that publishes a release, the release command is where they can still be answered, and a network-dependent step would break
-an offline `verify:scheduled` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal.
+an offline `verify:scheduled` for a reason unrelated to the code. A remote that cannot be reached is reported and non-fatal. When the tag is the
+version being released, already cut here but not pushed, there is nothing to refuse: the run is _tagged_ (§2a) and prints `git push --tags`.
 
 These habits carry the rest:
 
@@ -497,7 +535,8 @@ and forge's extensionless imports do not resolve under Node ESM, so a `.ts` targ
 **Everything else is derived from that list.** `nodeBundles` turns each entry into a bundle row — the `validate-<subpath>-bundle` drift check,
 watching the entry's relative-import closure — and `gen:bundles` writes the same rows. `validate-node-exports` fails a listed subpath whose export
 is missing or does not point `import` at a `.mjs`, and an `.mjs` export the list leaves out. `tests/workerd/harness-consumer.workerd.ts` loads every
-listed subpath under node from the packed tarball.
+listed subpath under node from the packed tarball. Its consumer root links forge's `dependencies` and every package a listed bundle
+imports, derived from the bundles themselves.
 
 **An export nobody lists still passes.** Nothing infers which exports Node reaches, so the declaration is the claim and the checks hold the export
 map to it.
@@ -538,6 +577,12 @@ An unstated set, a value that is not a list of names, an omitted flag and a stat
 each reported on their own, and each finding carries the literal line that fixes it. `config.require` overrides the set for a project with a
 different posture; forge itself ships the step rather than running it, having no `wrangler.jsonc` of its own.
 
+**Every Worker config an app holds is judged, in the one row.** A local Worker beside the deployed one — a sandbox served by miniflare and never
+deployed, say — still runs code under its own flags, so `config.workerConfigs` lists every file, and `cloudflareWorkerSteps()` adds
+`compatibility.extraWorkerConfigs` to `workerConfig`. Each finding names its file and the summary sums across them. The row's label stays
+`validate-compatibility`, so a second file adds no row to collide with. An isolate loaded through a `worker_loaders` binding takes its date and
+flags from source, not from any config, and this check cannot see it.
+
 ---
 
 [ap]: ./ASSET_PIPELINE.md
@@ -548,6 +593,7 @@ different posture; forge itself ships the step rather than running it, having no
 [namespaces-3c]: ./NAMESPACES.md#3c-a-surface-node-loads-is-published-prebuilt
 [namespaces-4a]: ./NAMESPACES.md#4a-leaf-namespace-rules
 [release-refusals]: ../src/tooling/release/README.md#getting-past-a-refusal
+[release-reopen]: ../src/tooling/release/README.md#finishing-a-release-over-several-runs
 [testing-6]: ./TEST_RUNNERS.md#6-the-verification-gate
 [testing-6a]: ../warden/canon/libs/TESTING.md#6a-one-command-nested-tiers
 [testing-6c]: ../warden/canon/libs/TESTING.md#6c-the-lines-between-the-tiers

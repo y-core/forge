@@ -1,6 +1,6 @@
 {
   "name": "@y-core/forge",
-  "version": "0.7.6",
+  "version": "0.7.7",
   "bin": {
     "forge": "./src/tooling/root/bin.ts",
     "warden": "./warden/src/bin.ts"
@@ -27,6 +27,7 @@
       "./testing/d1",
       "./testing/form",
       "./testing/harness",
+      "./testing/bun",
       "./testing/node",
       "./testing/snapshot",
       "./testing/totp",
@@ -39,7 +40,8 @@
       "./testing/totp",
       "./tooling/cf/wrangler",
       "./tooling/db/host",
-      "./tooling/lint/plugin"
+      "./tooling/lint/plugin",
+      "./tooling/playwright"
     ]
   },
   "scripts": {
@@ -94,6 +96,7 @@
     "wrangler": "^4.164.0"
   },
   "peerDependencies": {
+    "@playwright/test": ">=1.65.0",
     "@codemirror/commands": "^6.11.0",
     "@codemirror/lang-markdown": "^6.5.0",
     "@codemirror/language": "^6.12.0",
@@ -107,6 +110,9 @@
     "wrangler": ">=4.164.0"
   },
   "peerDependenciesMeta": {
+    "@playwright/test": {
+      "optional": true
+    },
     "@codemirror/commands": {
       "optional": true
     },
@@ -338,6 +344,9 @@
       "types": "./src/testing/harness.ts",
       "import": "./src/testing/harness.mjs"
     },
+    "./testing/bun": {
+      "types": "./src/testing/bun.d.ts"
+    },
     "./testing/node": {
       "types": "./src/testing/node.d.ts"
     },
@@ -393,6 +402,12 @@
       "types": "./src/tooling/lint/mod.ts",
       "import": "./src/tooling/lint/plugin.mjs"
     },
+    "./tooling/oxfmt.base.json": "./src/tooling/config/oxfmt.base.json",
+    "./tooling/oxlint.base.json": "./src/tooling/config/oxlint.base.json",
+    "./tooling/playwright": {
+      "types": "./src/tooling/playwright/config.ts",
+      "import": "./src/tooling/playwright/config.mjs"
+    },
     "./tooling/release": {
       "types": "./src/tooling/release/mod.ts",
       "import": "./src/tooling/release/mod.ts"
@@ -401,6 +416,7 @@
       "types": "./src/tooling/term/mod.ts",
       "import": "./src/tooling/term/mod.ts"
     },
+    "./tooling/tsconfig.app.json": "./src/tooling/config/tsconfig.app.json",
     "./ui/assets": {
       "types": "./src/ui/assets/mod.ts",
       "import": "./src/ui/assets/mod.ts"

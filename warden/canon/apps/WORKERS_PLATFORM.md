@@ -186,7 +186,7 @@ assets that were never uploaded, and the symptom is an unstyled production site.
 ### 4d. Environment Parity
 
 **The config schema validates the environment at request time**, so a missing or malformed variable throws a structured error naming the field
-rather than defaulting silently ([`ERROR_HANDLING.md`][eh-5e] §5e).
+rather than defaulting silently ([`ERROR_HANDLING.md`][eh-5d] §5d).
 
 This is what makes staging worth having: a misconfiguration surfaces as an immediate, legible failure in the first environment it reaches, instead
 of as a subtly wrong behaviour in the last one.
@@ -250,5 +250,5 @@ request.
 [boundaries-5]: ./BOUNDARIES.md#5-fail-closed
 [cr-1]: ../shared/CODE_RULES.md#1-zero-global-state-rule
 [cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--config-and-resolvers-throw
+[eh-5d]: ./ERROR_HANDLING.md#5d-startup-invariants--config-and-resolvers-throw
 [testing-6]: ./TESTING.md#6-the-verification-gate

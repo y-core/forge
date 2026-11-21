@@ -5,12 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { CONTRAST_PAIRS, CRITERION } from "../../ui/contracts/theme/contrast-pairs";
 import { defaultEnvFlags, renderEnvSchema } from "../cf/gen/cf-env-command";
 import type { SpawnSync } from "../cli/types";
 import { CURATE_FIXTURE_MANIFEST, curateFixtureRepo, curateFixtureTemplate } from "../curate/curate.fixture";
 import { importBoundaryStep } from "./builders";
 import { gateFixtureRoot } from "./checks/gate.fixture";
-import { cloudflareWorkerSteps, forgeChecks, generateRuntimeTypes } from "./presets";
+import { appContrast, cloudflareWorkerSteps, forgeChecks, generateRuntimeTypes } from "./presets";
 import { isCheckStep, selectSteps } from "./steps";
 import { declaredSteps, resolveTiers } from "./tiers";
 import { GATE_TIERS } from "./types";
@@ -251,6 +252,12 @@ describe("cloudflareWorkerSteps() — the compatibility row", () => {
 
   it("emits the row from the worker config alone, with no opt-in of its own", () => {
     expect(labelsOf(workerRows({ workerConfig: "wrangler.workers.jsonc" }))).toContain("validate-compatibility");
+  });
+
+  it("judges each extra worker config in the same row, watching every file", () => {
+    const steps = workerRows({ workerConfig: "wrangler.jsonc", compatibility: { extraWorkerConfigs: ["sandbox/wrangler.jsonc"] } });
+    const rows = steps.filter((step) => step.label === "validate-compatibility");
+    expect(rows.map((step) => step.watches)).toEqual([["wrangler.jsonc", "sandbox/wrangler.jsonc"]]);
   });
 });
 
@@ -1460,5 +1467,46 @@ describe("forgeChecks() — options", () => {
 
     expect(labels).not.toContain("validate-docs");
     expect(labels).not.toContain("validate-changelog");
+  });
+});
+
+describe("appContrast()", () => {
+  const FORGE_CSS = "src/ui/assets/css";
+  const ROOT = join(import.meta.dir, "../../..");
+
+  it("cascades forge's three token files before the application's, and maps through forge's base", () => {
+    const contrast = appContrast({ root: ROOT, cssDir: "src/assets/css", tokenFiles: ["src/assets/css/custom.css"] });
+
+    expect(contrast.cssDir).toBe("src/assets/css");
+    expect(contrast.tokenFiles).toEqual([
+      `${FORGE_CSS}/theme-neutral.css`,
+      `${FORGE_CSS}/theme-colors.css`,
+      `${FORGE_CSS}/theme-base.css`,
+      "src/assets/css/custom.css",
+    ]);
+    expect(contrast.mappingFile).toBe(`${FORGE_CSS}/theme-base.css`);
+    for (const file of [...contrast.tokenFiles.slice(0, 3), contrast.mappingFile]) expect(existsSync(join(ROOT, file))).toBe(true);
+  });
+
+  it("measures forge's pairs and floors, then the application's own pairs after them", () => {
+    const own = { ...(CONTRAST_PAIRS[0] as (typeof CONTRAST_PAIRS)[number]), token: "--section" };
+    const contrast = appContrast({ root: ROOT, cssDir: "src/assets/css", tokenFiles: [], pairs: [own] });
+
+    expect(contrast.pairs).toEqual([...CONTRAST_PAIRS, own]);
+    expect(contrast.criteria).toBe(CRITERION);
+  });
+
+  it("addresses forge's files from the application root, wherever forge is installed", () => {
+    const contrast = appContrast({ root: join(ROOT, "src/app"), cssDir: "x", tokenFiles: [] });
+
+    expect(contrast.mappingFile).toBe("../ui/assets/css/theme-base.css");
+  });
+
+  it("resolves Tailwind's palette only when asked, and carries `accepted` only when given", () => {
+    const contrast = appContrast({ root: ROOT, cssDir: "x", tokenFiles: [] });
+
+    expect(existsSync(contrast.palettePath?.() ?? "")).toBe(true);
+    expect(contrast).not.toHaveProperty("accepted");
+    expect(appContrast({ root: ROOT, cssDir: "x", tokenFiles: [], accepted: [] }).accepted).toEqual([]);
   });
 });

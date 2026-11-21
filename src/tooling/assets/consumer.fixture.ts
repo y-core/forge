@@ -10,7 +10,8 @@ const FORGE = resolve(import.meta.dir, "../../..");
 // function is the overload tried first, so `.types/node.d.ts`'s callable `createRequire` has to come last.
 const RUNTIME_STUBS = [
   "src/testing/node.d.ts",
-  ...["bun-build", "bun-sqlite", "bun-test", "crypto", "import-meta", "node", "workers"].map((stub) => `.types/${stub}.d.ts`),
+  "src/testing/bun.d.ts",
+  ...["bun-build", "crypto", "import-meta", "node", "workers"].map((stub) => `.types/${stub}.d.ts`),
 ];
 
 /** Every peer forge's manifest marks optional, which a consumer's install may lack. */

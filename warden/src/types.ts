@@ -9,12 +9,20 @@ export interface SyncTree {
   from: readonly string[];
 }
 
-/** One file a sync writes only when it is absent. @public */
-export interface SeedFile {
+/** One file copied from the installed corpus — overwritten on every sync, or seeded only when absent. @public */
+export interface CorpusFile {
   /** Destination, relative to the repository root. */
   file: string;
   /** Source, absolute, inside the installed warden directory. */
   from: string;
+}
+
+/** Everything a sync writes into one repository, and the slug `{{repo}}` renders as in each of them. @public */
+export interface SyncPlan {
+  trees: readonly SyncTree[];
+  files: readonly CorpusFile[];
+  /** The unscoped package name, which scopes the ledger URL. */
+  slug: string;
 }
 
 /** What a sync did to one path. @public */
@@ -22,7 +30,7 @@ export type SyncOutcome = "synced" | "seeded" | "kept";
 
 /** One line of a `warden sync --check` report. @public */
 export interface Divergence {
-  /** `missing`, `modified`, `extra`, `undefined`, `unnamed` or `absent`. */
+  /** `missing`, `modified`, `extra`, `undefined`, `unnamed`, `absent`, `unignored`, `ignored`, `tracked` or `git`. */
   code: string;
   /** What diverged, and what to do about it. */
   detail: string;

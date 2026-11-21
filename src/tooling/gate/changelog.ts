@@ -133,6 +133,9 @@ export function parseChangelog(source: string): ChangelogParse {
 export function promoteUnreleased(source: string, opts: PromoteOptions): ValidationResult<string> {
   const parsed = parseChangelog(source);
   if (!parsed.ok) return parsed;
+  if (parsed.data.versions.some((heading) => heading.version === opts.version)) {
+    return err([`[${opts.version}] is already a heading — the release was promoted once, and promoting it again would duplicate it`]);
+  }
 
   const tagPrefix = opts.tagPrefix ?? "v";
   const lines = source.split("\n");
@@ -149,6 +152,119 @@ export function promoteUnreleased(source: string, opts: PromoteOptions): Validat
   }
 
   return ok(lines.join("\n"));
+}
+
+const SUBSECTION = /^### /;
+
+function isBlank(line: string): boolean {
+  return line.trim() === "";
+}
+
+function trimBlank(lines: readonly string[]): string[] {
+  let from = 0;
+  let to = lines.length;
+  while (from < to && isBlank(lines[from] ?? "")) from++;
+  while (to > from && isBlank(lines[to - 1] ?? "")) to--;
+  return lines.slice(from, to);
+}
+
+function isListItem(line: string): boolean {
+  return /^\s*[-*] /.test(line);
+}
+
+function trimTrailing(lines: readonly string[]): string[] {
+  let to = lines.length;
+  while (to > 0 && isBlank(lines[to - 1] ?? "")) to--;
+  return lines.slice(0, to);
+}
+
+/** `kept` with `added` appended after its last line, inside the blank lines around it. */
+function appendBlock(kept: readonly string[], added: readonly string[]): string[] {
+  if (added.length === 0) return [...kept];
+  const core = trimBlank(kept);
+  if (core.length === 0) return [...(kept.length === 0 ? [""] : kept), ...added, ""];
+  const lead = kept.indexOf(core[0] ?? "");
+  const tail = kept.slice(lead + core.length);
+  const last = core.at(-1) ?? "";
+  const gap = isListItem(last) && isListItem(added[0] ?? "") ? [] : [""];
+  return [...kept.slice(0, lead), ...core, ...gap, ...added, ...(tail.length === 0 ? [""] : tail)];
+}
+
+interface Subsections {
+  preamble: string[];
+  sections: { heading: string; body: string[] }[];
+}
+
+function splitSubsections(lines: readonly string[]): Subsections {
+  const out: Subsections = { preamble: [], sections: [] };
+  for (const line of lines) {
+    if (SUBSECTION.test(line)) out.sections.push({ heading: line.trim(), body: [] });
+    else (out.sections.at(-1)?.body ?? out.preamble).push(line);
+  }
+  return out;
+}
+
+/** `released` with every line of `unreleased` merged in by `###` subsection; with nothing to merge, `released` unchanged. */
+function mergeBodies(released: readonly string[], unreleased: readonly string[]): string[] {
+  if (trimBlank(unreleased).length === 0) return [...released];
+  const into = splitSubsections(released);
+  const from = splitSubsections(unreleased);
+  const kept = into.sections.flatMap(({ heading, body }) => {
+    const extra = from.sections.filter((section) => section.heading === heading).flatMap((section) => trimBlank(section.body));
+    return [heading, ...appendBlock(body, extra)];
+  });
+  const added = from.sections
+    .filter((section) => !into.sections.some((existing) => existing.heading === section.heading))
+    .flatMap(({ heading, body }) => ["", heading, "", ...trimBlank(body)]);
+  return [...trimTrailing([...appendBlock(into.preamble, trimBlank(from.preamble)), ...kept]), ...added];
+}
+
+/** Folds the released `[version]` section back into `[Unreleased]`, merging both bodies; the inverse of {@link promoteUnreleased}. @internal */
+export function reopenRelease(source: string, version: string): ValidationResult<string> {
+  const parsed = parseChangelog(source);
+  if (!parsed.ok) return parsed;
+  const [newest] = parsed.data.versions;
+  if (newest === undefined || newest.version !== version) {
+    if (parsed.data.versions.some((heading) => heading.version === version)) {
+      return err([`[${version}] is not the newest released section, so it cannot be reopened`]);
+    }
+    return ok(source);
+  }
+
+  const lines = source.split("\n");
+  const unreleased = parsed.data.unreleased.line;
+  const end = sectionEnd(lines, newest.line);
+  const body = lines.slice(newest.line + 1, end);
+  const content = body.slice(0, sectionContentEnd(body));
+  const pending = lines
+    .slice(unreleased + 1, newest.line)
+    .filter((line) => !LINK_REF.test(line) && line.trim() !== "---" && line.trim() !== PLACEHOLDER);
+
+  const reopened = [
+    ...lines.slice(0, unreleased),
+    "## [Unreleased]",
+    ...mergeBodies(content, pending),
+    ...body.slice(content.length),
+    ...lines.slice(end),
+  ];
+
+  const ref = reopened.findIndex((line) => line.match(LINK_REF)?.[1] === version);
+  if (ref !== -1) {
+    const appended = ref === reopened.length - 1 && reopened[ref - 1] === "" && !reopened.some((line, i) => i !== ref && LINK_REF.test(line));
+    reopened.splice(appended ? ref - 1 : ref, appended ? 2 : 1);
+  }
+  return ok(reopened.join("\n"));
+}
+
+/** Where a section body's own lines stop and the separator and link definitions after it begin. */
+function sectionContentEnd(body: readonly string[]): number {
+  let to = body.length;
+  while (to > 0) {
+    const line = body[to - 1] ?? "";
+    if (!isBlank(line) && line.trim() !== "---" && !LINK_REF.test(line)) break;
+    to--;
+  }
+  return to;
 }
 
 // `toISOString().slice(0, 10)` reads UTC, so a late-evening release would stamp tomorrow's date.

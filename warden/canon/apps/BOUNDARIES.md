@@ -234,7 +234,7 @@ await verifyCsrf(c, csrfKey);
 a security regression whatever the intention.
 
 The same posture governs startup — a missing or malformed binding is a **deployment defect**, so config access and binding resolution throw rather
-than defaulting ([`ERROR_HANDLING.md`][eh-5e] §5e).
+than defaulting ([`ERROR_HANDLING.md`][eh-5d] §5d).
 
 ### 5b. `required: false` — Non-Security Features Only
 
@@ -291,5 +291,5 @@ claim stays the author's to make and the reviewer's to test.
 [cr-6]: ./CODE_REVIEW.md#6-valid-patterns--do-not-flag
 [eh-1]: ./ERROR_HANDLING.md#1-result-monad
 [eh-4b]: ./ERROR_HANDLING.md#4b-no-error-path-ships-an-unprotected-response
-[eh-5e]: ./ERROR_HANDLING.md#5e-startup-invariants--config-and-resolvers-throw
+[eh-5d]: ./ERROR_HANDLING.md#5d-startup-invariants--config-and-resolvers-throw
 [testing-5]: ./TESTING.md#5-security-and-fail-closed-expectations

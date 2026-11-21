@@ -35,7 +35,6 @@ description: "The app-request pattern, environment fixtures, exact-match asserti
 - §4 Fakes Over Mocks: implement the interface, add no libraries
 - §4a Fake Pattern — Implement the Interface: compile-time drift detection
 - §4b Stubbing an Outbound Call: the network seam, not the service
-- §4c Capturing Arguments in Fakes: captures over call assertions
 - §5 Security and Fail-Closed Expectations: both directions, every guard
 - §5a Both Pass and Fail Cases Required: the requirement matrix
 - §5b One Test Per Rejection Path: never one test for the whole guard stack
@@ -308,22 +307,6 @@ shaping, its error mapping, its `Result` construction — under test. Replacing 
 
 The exception is a **handler** test, where the service is legitimately a collaborator: inject a fake service and assert the handler's branch on each
 outcome.
-
-### 4c. Capturing Arguments in Fakes
-
-Use a capture variable at the top of the test block, and reset it in a lifecycle hook when the fake is shared:
-
-```ts
-let capturedKey = "";
-const kv: KVNamespace = {
-  put: async (key) => {
-    capturedKey = key;
-  } /* …rest */,
-};
-
-await handler(fakeContext);
-expect(capturedKey).toBe("session:abc123");
-```
 
 ---
 

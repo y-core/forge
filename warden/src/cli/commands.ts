@@ -5,7 +5,7 @@ import { CLAUDE_ROOT, resolveRepoRoot } from "../paths";
 import { check } from "../sync/check";
 import { resolveKindSource } from "../sync/kind";
 import { seed, seedFiles } from "../sync/seed";
-import { sync, syncTrees } from "../sync/sync";
+import { sync, syncPlan } from "../sync/sync";
 import { ROOT_FLAG } from "./flags";
 import { createCatalogueCommand, createKnowledgeCommands, createServeCommand } from "./knowledge";
 import { DEFAULT_ARCH, placeNatives } from "./natives";
@@ -19,17 +19,17 @@ export function createWardenCommands(): CommandBase {
     root,
     createCommand({
       name: "sync",
-      description: "Replace .claude/agents and .claude/skills from the installed corpus",
+      description: "Replace .claude/agents, .claude/skills, .claude/settings.json and .codex/config.toml.example from the installed corpus",
       flags: {
         check: { type: "boolean", description: "Report drift and exit 1 if any, writing nothing" },
-        init: { type: "boolean", description: "Also seed CLAUDE.md, AGENTS.md and .claude/settings.json if absent" },
+        init: { type: "boolean", description: "Also seed CLAUDE.md and AGENTS.md if absent" },
         kind: { type: "string", description: "Select the tree (libs|apps), overriding package.json's `warden.kind`" },
         root: ROOT_FLAG,
       },
       run: (_args, flags) => {
         const repo = resolveRepoRoot(flags.root);
         const { kind, source } = resolveKindSource(repo, flags.kind);
-        const trees = syncTrees(CLAUDE_ROOT, kind);
+        const plan = syncPlan(CLAUDE_ROOT, kind, repo);
         // A sync replaces `.claude/agents/` wholesale, so a libs repository that dropped its
         // declaration would silently be given the apps definitions; naming the default shows it.
         if (source === "default") {
@@ -37,22 +37,23 @@ export function createWardenCommands(): CommandBase {
         }
 
         if (flags.check) {
-          const problems = check(repo, trees);
+          const problems = check(repo, plan);
           if (problems.length === 0) {
             console.log(`✓ warden in sync — ${kind}`);
             return;
           }
           console.error(`✗ warden drift — ${kind}, ${problems.length} problem(s):`);
           for (const { code, detail } of problems) console.error(`  ${code.padEnd(9)} ${detail}`);
-          console.error("\nThe synced trees are overwrite-on-sync: for a missing, modified or extra file run");
-          console.error("`warden sync`, and keep a repository-local rule in that repository's own docs/.");
-          console.error("The rest are this repository's own to fix — CLAUDE.md owns the agents it names,");
-          console.error("and a sync never writes to it.");
+          console.error("\nThe synced trees and files are overwrite-on-sync: for a missing, modified or extra file run");
+          console.error("`warden sync`, keep a repository-local rule in that repository's own docs/, and a");
+          console.error("repository-local setting in the untracked .claude/settings.local.json. The rest are this");
+          console.error("repository's own to fix — its .gitignore, its index, and the agents CLAUDE.md names.");
           throw new CliError("invalid-args", "warden drift");
         }
 
-        for (const tree of sync(repo, trees)) console.log(`synced    ${tree}`);
-        if (flags.init) for (const { file, outcome } of seed(repo, seedFiles(CLAUDE_ROOT, kind))) console.log(`${outcome.padEnd(9)} ${file}`);
+        for (const path of sync(repo, plan)) console.log(`synced    ${path}`);
+        if (flags.init)
+          for (const { file, outcome } of seed(repo, seedFiles(CLAUDE_ROOT, kind), plan.slug)) console.log(`${outcome.padEnd(9)} ${file}`);
         console.log(`✓ warden synced — ${kind}`);
       },
     }),

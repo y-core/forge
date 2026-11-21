@@ -221,7 +221,7 @@ describe("a released section is not a place to write", () => {
     expect(findingsFor(VALID.replace("_Nothing yet._", "- Snuck in."), "1.2.0", VALID)).toEqual([]);
   });
 
-  // A section a release never recorded is one a hand wrote — the shape `bug-260920-54` took.
+  // A section a release never recorded is one a hand wrote, so a dated heading with no digest is refused.
   it("refuses a dated heading the release command never recorded", () => {
     const dir = rootWith(VALID, (doc) => {
       const all = recorded(doc);

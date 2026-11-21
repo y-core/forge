@@ -1,12 +1,13 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
 
 import { realDbIo } from "../../src/tooling/db/io";
 import type { DbIo, Home } from "../../src/tooling/db/types";
-import { wrangler } from "./cli";
+import { collect, wrangler } from "./cli";
 
 const DATABASE = "db-persist-fixture";
 let root: string;
@@ -121,6 +122,40 @@ test.describe("realDbIo().d1()", () => {
     await expect(call).rejects.toThrow();
     await expect(sweep).resolves.toBeUndefined();
     rmSync(broken, { recursive: true, force: true });
+  });
+
+  // In its own process, since workerd writes the warning to the stderr it inherits, which no assertion in this one can read.
+  test("reads the same state through a config binding an internal Durable Object and a queue, and workerd warns of neither", async () => {
+    const wired = mkdtempSync(join(tmpdir(), "forge-db-persist-wired-"));
+    writeFileSync(
+      join(wired, "wrangler.jsonc"),
+      JSON.stringify({
+        name: "db-persist-wired",
+        main: "src/worker.ts",
+        compatibility_date: "2026-01-01",
+        d1_databases: [{ binding: "DB", database_name: DATABASE, database_id: "db-persist-local", migrations_dir: "migrations" }],
+        durable_objects: { bindings: [{ name: "NOTEBOOK", class_name: "NotebookDO" }] },
+        queues: { producers: [{ binding: "JOBS", queue: "jobs" }] },
+      }),
+    );
+    const wiredHome = { ...home(join(root, ".wrangler", "state")), dir: wired, configPath: join(wired, "wrangler.jsonc") };
+    const io = fileURLToPath(new URL("../../src/tooling/db/io.ts", import.meta.url));
+    const script = [
+      `import { realDbIo } from ${JSON.stringify(io)};`,
+      "const io = realDbIo();",
+      `const [rows] = await io.d1(${JSON.stringify(wiredHome)}, ["SELECT id, name FROM widgets ORDER BY id"]);`,
+      "await io.closeD1(null);",
+      "console.log(JSON.stringify(rows));",
+    ].join("\n");
+    try {
+      const ran = await collect("bun", ["--eval", script], wired, { timeoutMs: 60_000 });
+      expect(ran.code, ran.stderr).toBe(0);
+      expect(JSON.parse(ran.stdout)).toEqual([{ id: 1, name: "spindle" }]);
+      expect(ran.stderr).not.toContain("Durable Object");
+      expect(readdirSync(join(wired, ".forge"))).toEqual([]);
+    } finally {
+      rmSync(wired, { recursive: true, force: true });
+    }
   });
 
   test("refuses a deployed home, which nothing reaches in process", async () => {

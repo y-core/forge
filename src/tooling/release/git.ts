@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { accessSync, constants, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 
@@ -99,14 +99,30 @@ function assertRefResolvable(cwd: string, ref: string, cause: unknown, spawn?: S
   }
 }
 
-/** The file's contents at `ref`, or `null` when the path did not exist there; throws when git cannot resolve `ref`. */
+/** The file's exact contents at `ref`, or `null` when the path did not exist there; throws when git cannot resolve `ref`. */
 export function readFileAtRef(cwd: string, ref: string, path: string, spawn?: SpawnSync): string | null {
+  const r = captureStreams("git", ["show", `${ref}:${path}`], { cwd }, spawn);
+  if (r.code === 0) return r.stdout;
+  // A path absent at a resolvable ref is data; a ref git cannot answer for must not read as "nothing was published".
+  assertRefResolvable(cwd, ref, new ReleaseError("git-error", `git show failed: ${failureDetail(r)}`), spawn);
+  return null;
+}
+
+/** The commit sha `ref` names, throwing a {@link ReleaseError} when git cannot resolve it. */
+export function resolveCommit(cwd: string, ref: string, spawn?: SpawnSync): string {
+  return gitExec(["rev-parse", "--verify", `${ref}^{commit}`], cwd, spawn, worktreeGitEnv());
+}
+
+/** False when the git directory of the work tree at `cwd` is read-only, so a commit or a tag has to be made elsewhere. */
+export function gitWritable(cwd: string, spawn?: SpawnSync): boolean {
+  const dir = gitExec(["rev-parse", "--absolute-git-dir"], cwd, spawn, worktreeGitEnv());
   try {
-    return gitExec(["show", `${ref}:${path}`], cwd, spawn);
+    accessSync(dir, constants.W_OK);
+    return true;
   } catch (err) {
-    // A path absent at a resolvable ref is data; a ref git cannot answer for must not read as "nothing was published".
-    assertRefResolvable(cwd, ref, err, spawn);
-    return null;
+    const code = (err as { code?: string }).code;
+    if (code === "EROFS" || code === "EACCES") return false;
+    throw new ReleaseError("git-error", `Cannot tell whether ${dir} is writable: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 

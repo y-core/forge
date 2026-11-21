@@ -100,7 +100,7 @@ describe("openTestD1() refusals", () => {
   });
 });
 
-// Detail strings as local D1 answered them (spike-261016-48).
+// Detail strings as local D1 answered them, so a change in its planner's wording fails here first.
 const step = (detail: string): PlanStep => ({ id: 2, parent: 0, detail });
 
 describe("usesIndex()", () => {

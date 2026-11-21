@@ -57,6 +57,3 @@ from `review`. Do not poll; the reply wakes this session on its own.
   verdict. A red verdict is filed as a task and worked like any other.
 - **Tasks of the epic still open elsewhere** — report the verdict and stop; the gate waits for the
   last of them.
-
-**The user commits, and that is the end of your part.** Never commit, ask to, or remind
-(`AGENT_WORKFLOW.md` §4b).
