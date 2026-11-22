@@ -18,31 +18,7 @@ All notable changes to `@y-core/forge` are documented here. The format follows
 
 ## [Unreleased]
 
-### Added
-
-- **`forge release` hands the commit and the tag to the host when `.git` is read-only.** It finds out before the gate, says so in its summary
-  as `commit: on the host (.git is read-only)`, `--dry` included, and stops before the commit to print the host's commands with HEAD, the
-  version and the blob ids filled in. Each set opens by checking that HEAD and the release files are still what the run saw, and every command
-  is safe to repeat.
-- **`forge release` re-cuts an untagged release.** A release stays open until its tag exists: a rerun folds new `[Unreleased]` entries and
-  entries added to the `[V]` body into the one `[V]` section, writes only the release files that changed, runs the gate over them, and commits
-  only what differs from HEAD, tagging HEAD with no commit when nothing does. Work committed between runs, with or without the release files,
-  is carried. `[V]` keeps its date unless its content changed.
-- **A green release gate is recorded in `.forge/release/<tag>.json`**, so a rerun over the same base commit and the same release files does not
-  run the gate again.
-
-### Fixed
-
-- **`forge release` no longer writes a release twice.** A rerun after a failed commit, or after a commit that was never tagged, refused as
-  dirty, and forcing it past with `--allow-dirty` or `--allow-empty-changelog` promoted `[Unreleased]` as a second `[V]` section and committed
-  again. It now works out from the repository where V stands and runs only the steps that remain. The failed-commit recovery no longer advises
-  `git checkout --`, which needs a writable `.git`.
-- **`promoteUnreleased()`, in `@y-core/forge/tooling/gate`, refuses a changelog that already holds the `[V]` heading**, instead of promoting
-  a duplicate section under it.
-- **`forge release` refuses an edit to what already shipped** as the new `release-partial` `ReleaseErrorKind`: a `package.json` changed beyond
-  its version, or a released section other than `[V]`. The refusal's recovery, `git show HEAD:./<file>`, works with `.git` read-only.
-- **`forge release` refuses to cut a version over an untagged one** already written or committed, as `version-mismatch`, and names the version
-  to finish first.
+_Nothing yet._
 
 ---
 
@@ -115,12 +91,34 @@ All notable changes to `@y-core/forge` are documented here. The format follows
   and `node:url`, and named `node:process` exports). Both declare modules only, `node:domain`, `Hash.digest(): Uint8Array` and
   `Statement.columnNames` among them. An app replaces its own `.types/` copies with one `.types/forge.d.ts` referencing the two.
 
+- **`forge release` hands the commit and the tag to the host when `.git` is read-only.** It finds out before the gate, says so in its summary
+  as `commit: on the host (.git is read-only)`, `--dry` included, and stops before the commit to print the host's commands with HEAD, the
+  version and the blob ids filled in. Each set opens by checking that HEAD and the release files are still what the run saw, and every command
+  is safe to repeat.
+- **`forge release` re-cuts an untagged release.** A release stays open until its tag exists: a rerun folds new `[Unreleased]` entries and
+  entries added to the `[V]` body into the one `[V]` section, writes only the release files that changed, runs the gate over them, and commits
+  only what differs from HEAD, tagging HEAD with no commit when nothing does. Work committed between runs, with or without the release files,
+  is carried. `[V]` keeps its date unless its content changed.
+- **A green release gate is recorded in `.forge/release/<tag>.json`**, so a rerun over the same base commit and the same release files does not
+  run the gate again.
+
 ### Fixed
 
 - **`forge db` no longer prints workerd's "no such Durable Object class is exported" warning** in an app that binds a Durable Object of its
   own Worker. A local database is now opened through a config holding only the app's D1 and R2 entries, written under `.forge/` and removed
   on close, so the platform proxy no longer boots the app's Durable Objects, queues, services or workflows to read a database. The same
   local state is read as before.
+
+- **`forge release` no longer writes a release twice.** A rerun after a failed commit, or after a commit that was never tagged, refused as
+  dirty, and forcing it past with `--allow-dirty` or `--allow-empty-changelog` promoted `[Unreleased]` as a second `[V]` section and committed
+  again. It now works out from the repository where V stands and runs only the steps that remain. The failed-commit recovery no longer advises
+  `git checkout --`, which needs a writable `.git`.
+- **`promoteUnreleased()`, in `@y-core/forge/tooling/gate`, refuses a changelog that already holds the `[V]` heading**, instead of promoting
+  a duplicate section under it.
+- **`forge release` refuses an edit to what already shipped** as the new `release-partial` `ReleaseErrorKind`: a `package.json` changed beyond
+  its version, or a released section other than `[V]`. The refusal's recovery, `git show HEAD:./<file>`, works with `.git` read-only.
+- **`forge release` refuses to cut a version over an untagged one** already written or committed, as `version-mismatch`, and names the version
+  to finish first.
 
 ---
 
